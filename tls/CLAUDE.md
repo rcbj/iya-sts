@@ -17,6 +17,21 @@ in `server.js` (rule 6); the main-port half needs no require order at all, becau
 crosses a module boundary and no network one: it is generated per start, held in
 memory, and `GET /tls/server-certificate` publishes the certificate alone.
 
+**The two listeners are started from `listen()` in `server.js`, not at require
+time** — requiring this module registers its HTTP view (`/tls`) like everything
+else, but binding a port can fail, and a `require` that throws takes the whole
+service down where a route cannot. A failure to bind is RECORDED rather than
+thrown, and published (`listening` / `listenError` on `GET /tls`), because the
+HTTP view answers 200 either way and there is otherwise no way to tell a running
+listener from one whose port was already taken — by a second copy of this
+service. The root `CLAUDE.md`'s *Socket owners start their listeners from
+`listen()`* is the rule this is an instance of.
+
+**The two TLS listeners are shared by every trust realm**, because a socket has
+no path to put a segment in and — unlike the directory — no name inside it to
+put one in either. `realmSupport()` is the index, and both `/admin/realms` and
+`GET /realms` render it.
+
 ## The truststore reaches the MAIN listener too, since 2026-09-06
 
 `POST /tls/trust` filled the client truststore for 8443 and 9443. It now fills
@@ -234,6 +249,47 @@ protected is how to avoid losing that.
   `applySpiffeCertificate()` in `ldap/ldap_server.js`, which says so beside
   `certificatePlan()` for exactly this reason: the two functions look alike
   enough to be "fixed" into agreement by somebody reading only one.
+
+## THE SERVICE ROOT IS IN THE CLIENT TRUSTSTORE, AND A GATE DECIDES WHAT IT VOUCHES FOR (2026-09-13)
+
+A person issues themselves a TLS client certificate on `/portal/signing-key` and
+presents it here. So `secureContextOptions()`'s `ca` is the truststore's anchors
+**plus the service Root** (`issuedClientCertificateAnchor()`, read live, not added
+twice if somebody POSTed it), behind `tls.trustIssuedClientCertificates` —
+restart-only, on by default. Four things are this directory's:
+
+* **THE HANDSHAKE NOW COMPLETES FOR EVERY KEY PAIR THIS SERVICE ISSUED**, on 9443
+  as well, and `common/tls_client_certificates.js`'s `identityOf()` is what
+  separates an identity from a verified chain. `answer()` asks it once and hands
+  it down: a leaf that is `issuedHere` and not `accepted` starts no session, is not
+  recorded as an authentication, is reported as `authentication.refusedAsIdentity`
+  and `clientCertificate.issuedHere`, and **on the required listener answers 403**
+  with `STS-TLS-0031` — "reaching it proves the certificate is acceptable" is still
+  that listener's promise. `common/CLAUDE.md` 3ag argues the four conditions.
+* **AN APPLICATION'S CERTIFICATE SIGNS NOBODY IN** (2026-09-13). The gate
+  accepts a leaf naming a `urn:sts:application:` — RFC 8705's implicit mapping at
+  the token endpoint reads exactly that — and `startCertificateSession()` used to
+  start a browser session under whatever name it carried, so an application whose
+  identifier was a person's username signed in as them. It starts none and is
+  not recorded on `/admin/users`, reported as `session.application`. It became
+  reachable by anybody the day `/admin/applications` began issuing these.
+* **THE SESSION IS STARTED IN THE CERTIFICATE'S REALM.** `inCertificateRealm()`
+  wraps `startCertificateSessionIn()` and the authentication recording in
+  `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
+  username is the leaf's `urn:sts:person:` name. A certificate from an anchor
+  somebody installed is unchanged: default realm, common name.
+* **`listen()` RE-APPLIES THE CONTEXT.** The two servers are created at require
+  time, before the certificate authority starts, so the Root was not there to add;
+  a certified listener has it re-applied when it is certified, a supplied
+  certificate never is.
+* **THE TRUSTSTORE PAGE DOES NOT LIST IT.** It is not an anchor anybody added and
+  cannot be removed there; `GET /tls` carries it at
+  `truststore.issuedClientCertificates`, and `tests/truststore_admin.js` counts
+  `ca` as anchors plus one where a Root exists.
+
+`mtls.peerVerified()` and SCIM's client-certificate scheme ask the same gate
+through `checkSocket()`, which also refuses a realm mismatch — they have an
+ambient realm, these two listeners do not.
 
 ## A PRESENTED CERTIFICATE'S REVOCATION IS CONSULTED (2026-09-12)
 
@@ -677,6 +733,63 @@ a certificate and none naming a cause, on a service that was answering
 perfectly throughout. `tests/tools/run-report.js` re-reads it before every
 protocol job now; `tests/CLAUDE.md` carries that half.
 
+## "STILL CHAINS TO THE ROOT" WAS NOT CURRENT, AND THE FRONT PROCESS BUILT A BRANCH BESIDE A WORKER (2026-09-13)
+
+`tests/vendored/sts_pki_distribution_points.js` failed in `dispatch` mode only:
+*`…/pki/crl/process/intermediate.crl` is named by certificates of two different
+authorities — CN=sts Intermediate CA (Process), O=sts and CN=sts Intermediate CA
+(Process), O=sts*. Read off the kept stack, not guessed: the handshake and
+`GET /tls/server-certificate` chained to a process Intermediate built at
+14:53:56 **by the front process**, while `/pki/ca/process/intermediate.cer`
+(served by the front process) and every worker's `/admin-api/pki` held one
+built at 14:53:57 **by worker 33**. Same subject, same Root, different keys.
+
+The log gave the sequence, a `build-root` from `sts_admin_api_operations` on
+worker 33:
+
+1. **the Root was published first**; the front process adopted it, its listener
+   no longer chained, and `certifyRegistered()` → `certify()` found the process
+   branch stale and **rebuilt it here** (A) and issued the listener from it —
+   while worker 33 was rebuilding the same branch in the same act
+   (`rebuildEveryScope()`);
+2. **worker 33's branch arrived** (B) and was adopted — and the listener, under
+   A, *still chained to the Root*, so `reconcileWithHierarchy()` answered
+   "already chains" and issued nothing;
+3. a later rebuild of that branch on the worker went the same way.
+
+**Two defects, and each fix is one of the two halves of this section's rule
+that the front process owns the certificate and nothing else.**
+
+* **CURRENT MEANS THE CHAIN IS THE ONE THIS PROCESS HOLDS**, not merely one the
+  Root signs. `strandedListenerCertificates()` compares the Issuing CA and the
+  Intermediate the listener travels with against the process branch in the
+  register, certificate for certificate. That alone also covers a `build-scope`
+  or `reissue-use-case` of `*process` on a worker, which moves no Root and was
+  never reconciled at all.
+* **THE FRONT PROCESS WAITS FOR A BRANCH; IT DOES NOT BUILD ONE.** A branch is
+  built once, in one process — `common/CLAUDE.md`'s rule for a realm's branch,
+  which the process branch had escaped. A publish-triggered reconcile passes
+  `buildBranch: false`; `certify()` honours `repairBranch: false` by refusing
+  (`deferred`) rather than rebuilding, so a Root adopted mid-pass cannot slip a
+  build in either. `listenerAwaitsBranch()` names the state, and
+  `request_pool.js` arms a **fallback repair after 30s** for a branch that never
+  arrives (a worker whose rebuild failed logs `STS-PKI-0104` and moves on).
+* **AND ONE RECONCILE AT A TIME.** A worker publishes a row once per save, and
+  overlapping passes could finish out of order and put an older leaf back on
+  the socket. `reconcileTheListener()` coalesces calls during a pass into one
+  more pass, a repair if any caller asked for one.
+
+`tests/listener_branch_adoption.js` pins all of it in a child process, eight
+mutants, all caught. **What it cannot show** is the cross-process timing on a
+real pool; the dispatch-mode run of the distribution-points job is that half.
+
+**A NOTE FROM THE SAME LOG**: dozens of *"the `pki:<realm>` realm's signing keys
+were changed by another process. THEY ARE NOT ADOPTED HERE"* lines per realm
+build were `persistence.js`'s `applyKeysChange()` reading a certificate
+authority row (`sts_keys` under `pki:`) as signing keys — one per `saveRow()`
+per other process. Not a fault; the pool's PKI channel carries those rows. It
+logs them at debug under their own name now.
+
 ## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
 
 `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could reach the port,
@@ -745,7 +858,12 @@ Four things about it are decisions:
 (`common/request_pool.js`'s `NEVER_DISPATCHED`, beside `/tls`). The array is the
 configuration of listeners only that process holds, so a worker changing its own copy
 changes nothing a handshake reads — the socket argument the listener certificate made on
-the same day, read a third time. `tests/truststore_admin.js` pins the primitives, the slot,
+the same day, read a third time. **It took the simpler of the two shapes: a PIN.**
+**Sharing it as a row would not have fixed that** — `tls/tls_server.js` records that it
+WAS briefly a shared store, and even agreed on everywhere the list matters only where it
+can be applied — so the request goes to that process, which is not SPIFFE's hour-long
+pin: SPIFFE's authority was state that happened to be private, and this is configuration
+of a socket. `tests/truststore_admin.js` pins the primitives, the slot,
 the layer, the pin and the product refusal, the last three in a child process, and asserts
 the add and the remove as a REAL HANDSHAKE on a registered listener; `sts_admin_api_operations`
 and `sts_admin_console` drive both doors over HTTP with a CA they mint and remove.

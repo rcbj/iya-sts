@@ -129,6 +129,11 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
     node version.js --stamp . && cat version.json
 
 EXPOSE 9090
+# The HTTPS listener (2026-09-13). It binds only once a certificate and key
+# are readable where PEP_HTTPS_CERT and PEP_HTTPS_KEY point — the pair the
+# PEP's realm issues it, written after the PEP has registered — so a container
+# with no pair exposes a port nothing answers on, and says why on GET /.
+EXPOSE 9443
 
 # LIVENESS ONLY, AND IT DOES NOT ASK WHETHER THE POLICY IS CURRENT — `pep.js`
 # argues that where the endpoint is: a PEP holding a stale copy is working, and

@@ -461,7 +461,16 @@ const SURVEY = `
       .filter(function (t) { return t.indexOf("Editing is live") === 0 ||
                                     t.indexOf("This policy does not type-check") === 0 ||
                                     t.indexOf("Nothing to edit") === 0; }),
-    rows: Array.from(document.querySelectorAll("table tr")).slice(1)
+    // THE TREE TABLE ONLY, found by its own header (2026-09-13). Every
+    // Protocols page now draws an Endpoints table as well
+    // (admin-core/protocol_endpoints.js), and "every tr on the page" counted
+    // its rows as elements of a policy — so the empty repository drew "1 row".
+    rows: Array.from(document.querySelectorAll("table")).filter(function (t) {
+        const th = t.querySelector("tr th");
+        return !!th && (th.textContent || "").trim() === "Element";
+      }).reduce(function (all, t) {
+        return all.concat(Array.from(t.querySelectorAll("tr")).slice(1));
+      }, [])
       .map(function (r) { return { element: cell(r, 0), kind: cell(r, 1) }; }),
     pres: Array.from(document.querySelectorAll("pre")).map(function (p) {
       return p.textContent;

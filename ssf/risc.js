@@ -117,7 +117,16 @@ const AUTO_ACTS = {
   purged: 'account-purged',
   disabled: 'account-disabled',
   enabled: 'account-enabled',
-  identifier: 'identifier-changed'
+  identifier: 'identifier-changed',
+  // TWO ACTS AN ADMINISTRATOR PERFORMS (2026-09-13), on a person's
+  // /admin/users page or through /admin-api/users, and they reach this file
+  // through `observeAct()` rather than through a directory diff: a password
+  // reset or a reset link REQUIRES a credential change, and clearing somebody's
+  // recovery codes changes the information they recover their account with.
+  // Neither is a write `actsFor()` could read off the attributes — a password
+  // hash moving says nothing about who required what.
+  credentialChangeRequired: 'account-credential-change-required',
+  recoveryChanged: 'recovery-information-changed'
 };
 
 // The four events RISC section 2.8 defines as BEING a state rather than as
@@ -247,8 +256,9 @@ function autoEmitActs() {
       ? name.slice(events.RISC_PREFIX.length) : name;
     if (!names[short]) {
       log.warn('risc.autoEmitTypes names "' + name + '", which is not one ' +
-               'of the four acts this service can observe in its own ' +
-               'directory (' + Object.keys(AUTO_ACTS).map(function (act) {
+               'of the ' + Object.keys(AUTO_ACTS).length + ' acts this ' +
+               'service can observe (' +
+               Object.keys(AUTO_ACTS).map(function (act) {
                  return AUTO_ACTS[act];
                }).join(', ') + '). It is DROPPED — nothing here would ever ' +
                'fire it, so honouring it would leave a setting that reads ' +
@@ -1005,6 +1015,25 @@ function observe(notice) {
     log.debug('Leaving observe(). Nothing RISC has a word for.');
     return [];
   }
+  const due = dueForActs(row, acts, asked);
+  // ONE REPORT FOR EVERYTHING ABOVE — the seed's `iss` and `dn`, the notes and
+  // the suppressed count — rather than one per branch, which would be the
+  // branch somebody adds next forgetting it.
+  touch(row);
+  log.debug('Leaving observe(). ' + due.length + ' event(s) due.');
+  return due;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT IS DUE FOR A LIST OF ACTS ON ONE ROW. Split out of `observe()` on
+// 2026-09-13 so that `observeAct()` — an act an administrator performed, with
+// no directory diff behind it — goes through the SAME emission switch, opt-out
+// gate and audit row as a directory write. Two copies of that loop would be two
+// answers to "was this suppressed".
+// ---------------------------------------------------------------------------
+function dueForActs(row, acts, asked) {
+  log.debug('Entering dueForActs(). ' + acts.length + ' act(s).');
+  const accountId = row.accountId;
   const allowed = autoEmitActs();
   const due = [];
   acts.forEach(function (act) {
@@ -1047,11 +1076,49 @@ function observe(notice) {
     due.push({ uri: uri, payload: payload, subject: subject, row: row,
       act: act.act });
   });
-  // ONE REPORT FOR EVERYTHING ABOVE — the seed's `iss` and `dn`, the notes and
-  // the suppressed count — rather than one per branch, which would be the
-  // branch somebody adds next forgetting it.
+  log.debug('Leaving dueForActs(). ' + due.length + ' due.');
+  return due;
+}
+
+// ---------------------------------------------------------------------------
+// AN ACT AN ADMINISTRATOR PERFORMED ON AN ACCOUNT (2026-09-13).
+//
+// `observe()` above reads a directory write and decides what it means. These
+// acts carry their meaning already — the console or `/admin-api` knows it
+// reset a password — so the notice names the act and this answers what is due,
+// through the same switch, gate and register `observe()` uses.
+//
+// The notice: `{ username, act, issuer, dn, realm, email, phone, reasonAdmin,
+// reasonUser }`, `act` one of AUTO_ACTS' keys that a directory diff cannot
+// produce.
+// ---------------------------------------------------------------------------
+function observeAct(notice) {
+  log.debug('Entering observeAct().');
+  const asked = notice || {};
+  const accountId = String(asked.username || '');
+  const act = String(asked.act || '');
+  if (!enabled() || !accountId || !AUTO_ACTS[act]) {
+    log.debug('Leaving observeAct(). Off, nothing named, or not an act.');
+    return [];
+  }
+  let row = register.get(accountId);
+  if (!row) {
+    row = blankRow({
+      accountId: accountId, sub: accountId, username: accountId,
+      iss: String(asked.issuer || ''), dn: String(asked.dn || ''),
+      realm: String(asked.realm || ''),
+      email: String(asked.email || ''), phone: String(asked.phone || '')
+    });
+    register.set(accountId, row);
+    trim();
+  }
+  if (asked.issuer && !row.iss) {
+    row.iss = String(asked.issuer);
+  }
+  row.updatedAt = iso();
+  const due = dueForActs(row, [{ act: act, values: {} }], asked);
   touch(row);
-  log.debug('Leaving observe(). ' + due.length + ' event(s) due.');
+  log.debug('Leaving observeAct(). ' + due.length + ' event(s) due.');
   return due;
 }
 
@@ -1097,6 +1164,11 @@ function applyActLocally(row, act) {
       row.formerIdentifiers.push(row.email);
     }
     row.email = String(act.values['new-value']);
+  } else if (act.act === 'credentialChangeRequired') {
+    row.credentialChangeRequired = true;
+  } else if (act.act === 'recoveryChanged') {
+    row.notes.push('Recovery information changed.');
+    row.notes = row.notes.slice(-5);
   }
   row.updatedAt = iso();
   touch(row);
@@ -1213,6 +1285,12 @@ function reasonFor(act, notice) {
     text = 'The account at ' + where + ' was marked inactive.';
   } else if (act.act === 'enabled') {
     text = 'The account at ' + where + ' was marked active again.';
+  } else if (act.act === 'credentialChangeRequired') {
+    text = String((notice || {}).reasonAdmin || '') ||
+           'An administrator reset the password of ' + where + '.';
+  } else if (act.act === 'recoveryChanged') {
+    text = String((notice || {}).reasonAdmin || '') ||
+           'The recovery codes of ' + where + ' were cleared.';
   } else {
     text = 'An identifier on ' + where + ' was changed.';
   }
@@ -1226,7 +1304,11 @@ function reasonForUser(act) {
     ? 'Your account was deleted.'
     : (act.act === 'disabled' ? 'Your account has been disabled.'
       : (act.act === 'enabled' ? 'Your account has been enabled.'
-        : 'One of your contact details was changed.'));
+        : (act.act === 'credentialChangeRequired'
+          ? 'Your password was reset and must be changed.'
+          : (act.act === 'recoveryChanged'
+            ? 'Your recovery codes were cleared.'
+            : 'One of your contact details was changed.'))));
   log.debug('Leaving reasonForUser().');
   return text;
 }
@@ -1364,6 +1446,8 @@ module.exports = {
   supportedEventUris: supportedEventUris,
   autoEmitActs: autoEmitActs,
   subjectFor: subjectFor,
+  // An act an administrator performed (2026-09-13) — see observeAct().
+  observeAct: observeAct,
   googleSubjectType: googleSubjectType,
   accountIdOf: accountIdOf,
   rowFor: rowFor,

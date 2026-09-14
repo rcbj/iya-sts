@@ -467,6 +467,17 @@ COMPOSE_ENV=(
   "XACML_PEP_NAME=${XACML_PEP_NAME}"
   "XACML_PEP_REALM=${XACML_PEP_REALM}"
   "XACML_PEP_URL=http://xacml-pep:9090"
+  # ---- the PEP's HTTPS listener (2026-09-13) -------------------------------
+  # The pair is issued by the realm the PEP registers to, so it cannot exist
+  # before the job creates that realm: the PEP is pointed at two paths under
+  # its mount that are empty when it starts, and sts_xacml_remote_pep.js writes
+  # the pair there after issuing it. The job sees the same directory under the
+  # report mount, which is why XACML_PEP_SERVER_CERT_DIR is a path inside the
+  # tests container and the other two are paths inside the PEP's.
+  "XACML_PEP_HTTPS_CERT=/certs/server/pep-server.crt"
+  "XACML_PEP_HTTPS_KEY=/certs/server/pep-server.key"
+  "XACML_PEP_HTTPS_URL=https://xacml-pep:9443"
+  "XACML_PEP_SERVER_CERT_DIR=/usr/src/sts/tests/report/pep-credential/server"
   # ---- the management API's client secret, pinned for this run ------------
   # `/admin-api` requires an access token, and the token is obtained by the
   # seeded `sts-management-api` client with `client_credentials`. That client's
@@ -775,6 +786,12 @@ mintThePepCredential()
   # relaxed here, deliberately and narrowly, because this key exists for the
   # length of one test run and protects nothing.
   chmod 0644 "${XACML_PEP_CERT_DIR}/pep.key" 2>/dev/null || true
+  # WHERE THE JOB WRITES THE HTTPS LISTENER'S PAIR, made now because the PEP
+  # container mounts its parent and the job — in the tests container — writes
+  # into it later. World-writable because that container may not be this user;
+  # it holds one test run's key and is removed with the reports.
+  mkdir -p "${XACML_PEP_CERT_DIR}/server"
+  chmod 0777 "${XACML_PEP_CERT_DIR}/server" 2>/dev/null || true
   return 0
 }
 

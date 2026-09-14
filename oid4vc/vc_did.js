@@ -366,6 +366,9 @@ async function domainLinkageCredential(req) {
   // a DID URL into this DID's own document, which is what the DIF specification
   // requires of the JWT form.
   const signer = didSigner();
+  // certificate-header: none — the DIF specification allows exactly `alg`
+  // and `kid` in this header, so an x5c or x5u would make the linkage
+  // non-conformant (common/jose_certificate_header.js).
   const token = stsCrypto.signJws({ iss: did, sub: did, nbf: now, exp: exp,
                                     vc: vc }, signer.key, {
     algorithm: signer.alg,
@@ -483,6 +486,8 @@ function credentialSignedBy(issuerDid, privateKey, alg, kid) {
   if (kid) header.kid = kid;
   logArtifact('generated SD-JWT VC', 'before signing',
               { header: header, payload: payload });
+  // certificate-header: none — a key the request generated and nobody
+  // certified, so there is no chain to name.
   const signed = stsCrypto.signJws(payload, privateKey,
                                    { algorithm: alg, header: header });
   logArtifact('generated SD-JWT VC', 'after signing', signed);

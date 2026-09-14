@@ -189,6 +189,9 @@ const portal = require('../portal/portal');
 // write and the list of people in the realm; see the install for rule 3e's
 // test, which it passes both ways round.
 const personAssertions = require('../common/person_assertions');
+// The certificate-enrollment register (2026-09-13), whose store is the entry a
+// certificate names; it is filled with a slot below.
+const certEnrollment = require('../common/cert_enrollment');
 // The SPIFFE registry's schema and both conversions. The same division
 // applications.js draws: THAT module owns what a registration entry IS, THIS
 // one owns where the containers are, how an entry is created and what the cap
@@ -1814,6 +1817,15 @@ const OWN_NAMES = [
   'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
   'stsTotpCredential',
 
+  // THE BOOTSTRAP ADMINISTRATOR'S FLAGS (2026-09-13) — see readPersonFlags().
+  // `pwdReset` is draft-behera-ldap-password-policy's name, spelt as that draft
+  // spells it, beside the `pwd*` names the password policy already uses.
+  'pwdReset', 'stsBootstrapAdministrator', 'stsConsoleClaimedAt',
+  // WHAT AN ADMINISTRATOR PUT ON A PERSON FROM THEIR /admin/users PAGE
+  // (2026-09-13) — see readPersonFlags(): a second factor required of them, and
+  // the hash of a password reset link.
+  'stsMfaRequired', 'stsPasswordResetToken', 'stsPasswordResetExpires',
+
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so
   // nothing here is sealed; what makes the container sensitive is that an
@@ -1874,7 +1886,16 @@ const OWN_NAMES = [
   // the directory dump and from an LDAP search, ciphertext included, which is
   // one step further than the three credentials above it go: nothing ever reads
   // a Kerberos key back out, so there is no reader whose view it would spoil.
-  'stsKrb5Keys', 'stsKrb5KeyInfo'
+  'stsKrb5Keys', 'stsKrb5KeyInfo',
+
+  // AND AN EIGHTH SINCE 2026-09-13: what ACME, EST and SCEP issued to a person,
+  // the two protocol credentials, and the host names an administrator
+  // registered — `common/cert_enrollment.js` is the register. The private key,
+  // the EAB key and the challenge are WITHHELD from every dump and search in
+  // every mode (`cert_enrollment.withheldValues()`); the certificates and the
+  // host names are public.
+  'stsEnrolledCertificate', 'stsEnrolledPrivateKey', 'stsAcmeEabKey',
+  'stsScepChallenge', 'stsCertificateHostName'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -2343,7 +2364,9 @@ function toSearchEntry(stored, requested, messageId) {
       // succeeds. The KDC reads the store and never a search result, so nothing
       // that needs the key is behind this.
       attributes[canonicalName(name)] =
-        krb5PersonKeys.withheldValues(name, stored.attributes[name].slice(0));
+        certEnrollment.withheldValues(name,
+          krb5PersonKeys.withheldValues(name,
+                                        stored.attributes[name].slice(0)));
     }
   });
   if (wanted.indexOf('entrydn') !== -1) attributes.entryDN = [stored.dn];
@@ -5540,8 +5563,10 @@ function objectFor(name) {
     // thing a dump must not do.
     const attributes = {};
     Object.keys(stored.attributes).sort().forEach(function (attribute) {
-      attributes[canonicalName(attribute)] = stored.attributes[attribute].slice(
-          0);
+      // An enrollment credential is withheld here too (2026-09-13) — see
+      // `cert_enrollment.withheldValues()`.
+      attributes[canonicalName(attribute)] = certEnrollment.withheldValues(
+        attribute, stored.attributes[attribute].slice(0));
     });
     out.entry = {
       dn: stored.dn,
@@ -7038,7 +7063,14 @@ const SECRET_ATTRIBUTES = [
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
+  // A password reset link's hash (2026-09-13), for the activation token's
+  // reason beside it.
+  'stspasswordresettoken',
   'stskrb5keys', 'krb5servicekeys',
+  // Certificate enrollment (2026-09-13): a private key this service generated
+  // for an enrolled certificate, an ACME EAB key and a SCEP challenge record.
+  'stsenrolledprivatekey', 'appenrolledprivatekey',
+  'stsacmeeabkey', 'appacmeeabkey', 'stsscepchallenge', 'appscepchallenge',
   // GNAP (2026-09-12): a client's shared secret for a key reference, and a
   // resource server's macaroon root key. Either one mints a working credential.
   'gnapsymmetrickey', 'gnapmacaroonkey'
@@ -7226,6 +7258,36 @@ function writeStoredPassword(key, hashed, options) {
   // `applyVcAttributes()` learnt the expensive way.
   touchDirectory();
   log.debug('Leaving writeStoredPassword(). Written to ' + stored.dn + '.');
+  return true;
+}
+
+// TAKE THE PASSWORD OFF AN ENTRY (2026-09-13). What issuing a password reset
+// link does to the password the person had: after it, nothing verifies against
+// this entry until the link sets a new one. `options.history` is the history
+// `credentials.js` computed with the removed hash on the front, so the password
+// the administrator took away cannot simply be chosen again through the link.
+// `pwdChangedTime` is stamped, because a password going away is a change to it.
+// It answers false for an entry that is not here, like the writer above.
+function clearStoredPassword(key, options) {
+  log.debug('Entering clearStoredPassword(). key=' + key);
+  const opts = options || {};
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving clearStoredPassword(). No entry.');
+    return false;
+  }
+  delete stored.attributes.userpassword;
+  if (Array.isArray(opts.history)) {
+    if (opts.history.length) {
+      stored.attributes.pwdhistory = opts.history.map(String);
+    } else {
+      delete stored.attributes.pwdhistory;
+    }
+  }
+  stored.attributes.pwdchangedtime = [generalizedTime()];
+  touchDirectory();
+  log.debug('Leaving clearStoredPassword(). Removed from ' + stored.dn + '.');
   return true;
 }
 
@@ -7557,6 +7619,69 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Entering createPerson().");
       log.debug("Leaving createPerson().");
       return createUser(name, {});
+    },
+    // A PASSWORD THAT MUST BE CHANGED (2026-09-13): `pwdReset` on the person's
+    // own entry, in the AMBIENT realm like the password itself.
+    readPasswordReset: function (key) {
+      log.debug("Entering readPasswordReset().");
+      const flags = readPersonFlags(key);
+      log.debug("Leaving readPasswordReset().");
+      return !!(flags && flags.pwdReset);
+    },
+    writePasswordReset: function (key, value) {
+      log.debug("Entering writePasswordReset().");
+      log.debug("Leaving writePasswordReset().");
+      return writePersonFlag(key, 'pwdReset', value ? true : '');
+    },
+    // A SECOND FACTOR REQUIRED OF ONE PERSON (2026-09-13), in the ambient
+    // realm like the rest of their credentials.
+    readMfaRequired: function (key) {
+      log.debug("Entering readMfaRequired().");
+      const flags = readPersonFlags(key);
+      log.debug("Leaving readMfaRequired().");
+      return !!(flags && flags.mfaRequired);
+    },
+    writeMfaRequired: function (key, value) {
+      log.debug("Entering writeMfaRequired().");
+      log.debug("Leaving writeMfaRequired().");
+      return writePersonFlag(key, 'stsMfaRequired', value ? true : '');
+    },
+    // A PASSWORD RESET LINK (2026-09-13): the hash and the expiry, written and
+    // cleared together, which is `writeActivation()`'s shape.
+    readPasswordResetLink: function (key) {
+      log.debug("Entering readPasswordResetLink().");
+      const flags = readPersonFlags(key);
+      log.debug("Leaving readPasswordResetLink().");
+      return flags && flags.passwordResetToken
+        ? { hash: flags.passwordResetToken,
+            expires: flags.passwordResetExpires }
+        : null;
+    },
+    writePasswordResetLink: function (key, hash, expires) {
+      log.debug("Entering writePasswordResetLink().");
+      if (!hash) {
+        const cleared = writePersonFlag(key, 'stsPasswordResetToken', '') &&
+                        writePersonFlag(key, 'stsPasswordResetExpires', '');
+        log.debug("Leaving writePasswordResetLink(). Cleared.");
+        return cleared;
+      }
+      const written =
+        writePersonFlag(key, 'stsPasswordResetToken', String(hash)) &&
+        writePersonFlag(key, 'stsPasswordResetExpires', String(expires));
+      log.debug("Leaving writePasswordResetLink(). Written.");
+      return written;
+    },
+    // TAKING A PASSWORD AWAY (2026-09-13), for a reset link that revokes the
+    // one the person had. `clearStoredPassword()` below says what it keeps.
+    clearPassword: clearStoredPassword,
+    // IS THERE AN ENTRY AT ALL (2026-09-13)? `readPassword()` answers '' for
+    // an absent entry and for one with no password alike, so a credential
+    // action that must refuse "nobody by that name" asks this instead.
+    personExists: function (key) {
+      log.debug("Entering personExists().");
+      const found = !!readPersonFlags(key);
+      log.debug("Leaving personExists(). " + found);
+      return found;
     }
   });
 
@@ -7730,6 +7855,110 @@ if (typeof personAssertions.setDirectory === 'function') {
            'password can be verified or set. Development mode is unaffected ' +
            'because it verifies nothing; PRODUCT MODE WOULD REFUSE EVERY ' +
            'SIGN-IN, which credentials.js reports rather than passing.');
+}
+
+// ---------------------------------------------------------------------------
+// CERTIFICATE ENROLLMENT'S SLOT (2026-09-13).
+//
+// `common/cert_enrollment.js` keeps what ACME, EST and SCEP issued — and the
+// two protocol credentials, and an administrator's registered host names — ON
+// THE ENTRY THE CERTIFICATE NAMES, a person's or an application's. Rule 3e's
+// test answers yes both ways round, for `personAssertions.setDirectory()`'s
+// reason: that module is required by the three protocol families, and a
+// require from it to this file would register every `/ldap` route ahead of
+// them.
+//
+// THREE FUNCTIONS, AND THEY ARE GENERIC OVER AN ATTRIBUTE NAME on purpose: the
+// module on the far end owns which names it uses, and this file owns where an
+// entry is and how a name is spelt in the store. `write()` REPLACES the
+// attribute with the list it is given — an enrollment record is rewritten when
+// it is revoked, so an add-only door would be a door that could never say so.
+// **Neither kind of entry is created here**, for `writeStoredPassword()`'s
+// reason: issuing a certificate to somebody who does not exist would create
+// them.
+// ---------------------------------------------------------------------------
+if (typeof certEnrollment.setDirectory === 'function') {
+  const enrollmentEntry = function (kind, id) {
+    if (kind === 'person') {
+      return locateEntry(String(id || '')).stored || null;
+    }
+    if (kind === 'application') {
+      return applicationEntry(String(id || '')) || null;
+    }
+    return null;
+  };
+  certEnrollment.setDirectory({
+    // THE AMBIENT REALM'S, like every other slot here: a certificate enrolled
+    // at /realm/acme/.well-known/est is about somebody in acme.
+    read: function (kind, id, names) {
+      log.debug('Entering read(). kind=' + kind + ' id=' + id);
+      const stored = enrollmentEntry(kind, id);
+      if (!stored) {
+        log.debug('Leaving read(). No entry.');
+        return null;
+      }
+      const out = {};
+      (names || []).forEach(function (name) {
+        const values = stored.attributes[String(name).toLowerCase()];
+        if (values && values.length) {
+          out[name] = values.slice();
+        }
+      });
+      log.debug('Leaving read(). ' + Object.keys(out).length +
+                ' attribute(s).');
+      return { dn: stored.dn, attributes: out };
+    },
+    write: function (kind, id, name, values) {
+      log.debug('Entering write(). kind=' + kind + ' id=' + id + ' name=' +
+                name);
+      const stored = enrollmentEntry(kind, id);
+      if (!stored) {
+        log.warn(errorCodes.tag('STS-LDAP-0040') +
+                 'ldap: the ' + kind + ' "' + id + '" has no entry in this ' +
+                 'realm, so no enrollment attribute was written.');
+        log.debug('Leaving write(). No entry.');
+        return false;
+      }
+      const attribute = String(name).toLowerCase();
+      const list = (values || []).map(function (one) {
+        return String(one);
+      });
+      if (!list.length) {
+        delete stored.attributes[attribute];
+      } else {
+        stored.attributes[attribute] = list;
+      }
+      touchDirectory(stored.dn);
+      log.debug('Leaving write(). ' + list.length + ' value(s) on ' +
+                stored.dn + '.');
+      return true;
+    },
+    holders: function (kind, name) {
+      log.debug('Entering holders(). kind=' + kind + ' name=' + name);
+      const attribute = String(name).toLowerCase();
+      const out = [];
+      if (kind === 'person') {
+        eachEntryInRealm(function (stored) {
+          if (isPersonEntry(stored) &&
+              (stored.attributes[attribute] || []).length) {
+            const username = usernameOfEntry(stored);
+            if (username) {
+              out.push(username);
+            }
+          }
+        });
+      } else if (kind === 'application') {
+        entriesUnder(applicationsDn()).forEach(function (stored) {
+          const identifier = (stored.attributes.appidentifier || [])[0];
+          if (identifier && (stored.attributes[attribute] || []).length) {
+            out.push(String(identifier));
+          }
+        });
+      }
+      log.debug('Leaving holders(). ' + out.length + '.');
+      return out;
+    }
+  });
 }
 
 // The SEVENTH slot, and the second one that hands over a WRITER as well as
@@ -7961,6 +8190,87 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // acme's would be a console that cannot see the realm it is pointed at. Reading
 // a realm is the console's job; being let in is not the realm's decision.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE THREE FLAGS OF THE BOOTSTRAP ADMINISTRATOR (2026-09-13), on the person's
+// own entry so that they persist, replicate and show in an ldapsearch like
+// everything else about them:
+//
+//   pwdReset                   draft-behera-ldap-password-policy's name: TRUE
+//                              means the password must be changed at the next
+//                              sign-in (`authn.js` enforces it).
+//   stsBootstrapAdministrator  TRUE on the account `admin_rbac.js` seeded.
+//   stsConsoleClaimedAt        when that account first signed in to the
+//                              console, which is what ends the window in which
+//                              every signed-in person may use it.
+//   stsMfaRequired             TRUE when an administrator requires this person
+//                              to sign in with a second factor (2026-09-13).
+//                              `authn.js` asks them to enrol one at the sign-in
+//                              screen when they hold none.
+//   stsPasswordResetToken      the scrypt hash of a password reset link an
+//   stsPasswordResetExpires    administrator issued, and when it stops working
+//                              (2026-09-13). The token is a SECRET_ATTRIBUTE:
+//                              it is a hash, and still one this directory never
+//                              hands to a reader.
+//
+// One reader and one writer for them, narrowed to exactly these names, so that
+// neither slot below becomes a general attribute writer.
+// ---------------------------------------------------------------------------
+const PERSON_FLAGS = ['pwdReset', 'stsBootstrapAdministrator',
+                      'stsConsoleClaimedAt', 'stsMfaRequired',
+                      'stsPasswordResetToken', 'stsPasswordResetExpires'];
+
+function readPersonFlags(key) {
+  log.debug('Entering readPersonFlags(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readPersonFlags(). No entry.');
+    return null;
+  }
+  const one = function (name) {
+    log.debug('Entering one().');
+    const values = stored.attributes[name.toLowerCase()] || [];
+    log.debug('Leaving one().');
+    return values.length ? String(values[0]) : '';
+  };
+  log.debug('Leaving readPersonFlags().');
+  return { dn: stored.dn,
+           pwdReset: one('pwdReset').toUpperCase() === 'TRUE',
+           bootstrapAdministrator:
+             one('stsBootstrapAdministrator').toUpperCase() === 'TRUE',
+           consoleClaimedAt: one('stsConsoleClaimedAt'),
+           mfaRequired: one('stsMfaRequired').toUpperCase() === 'TRUE',
+           passwordResetToken: one('stsPasswordResetToken'),
+           passwordResetExpires: Number(one('stsPasswordResetExpires') || 0) };
+}
+
+function writePersonFlag(key, name, value) {
+  log.debug('Entering writePersonFlag(). key=' + key + ', name=' + name);
+  if (PERSON_FLAGS.indexOf(name) < 0) {
+    log.debug('Leaving writePersonFlag(). Not one of the flags.');
+    return false;
+  }
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0078') + 'ldap: "' + key + '" has no ' +
+             'entry in this realm, so ' + name + ' was not written.');
+    log.debug('Leaving writePersonFlag(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '' ||
+      value === false) {
+    delete stored.attributes[name.toLowerCase()];
+  } else {
+    stored.attributes[name.toLowerCase()] =
+      [value === true ? 'TRUE' : String(value)];
+  }
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  log.debug('Leaving writePersonFlag().');
+  return true;
+}
+
 function inDefaultRealm(fn) {
   log.debug("Entering inDefaultRealm().");
   log.debug("Leaving inDefaultRealm().");
@@ -7991,6 +8301,16 @@ if (typeof adminRbac.setDirectory === 'function') {
     // they could use and a list they were not on, which is the one thing a
     // permissions page must never do.
     claimedMembersOf: inDefaultRealm(claimedMembersOf),
+    // THE BOOTSTRAP ADMINISTRATOR (2026-09-13): its entry made if absent, and
+    // its flags read and written — see readPersonFlags(). Optional members,
+    // checked where they are used, so an older admin_rbac.js still installs.
+    createPerson: inDefaultRealm(function (name) {
+      log.debug("Entering createPerson().");
+      log.debug("Leaving createPerson().");
+      return createUser(name, {});
+    }),
+    readPersonFlags: inDefaultRealm(readPersonFlags),
+    writePersonFlag: inDefaultRealm(writePersonFlag),
     // STRINGS, and the DEFAULT realm's — evaluated once, here, rather than read
     // per call. That is correct precisely because these are pinned: the default
     // realm's base DN cannot change while the process runs, so there is nothing
@@ -9698,6 +10018,12 @@ server.del('', function (req, res, next) {
     return next(ldapRefusal(req, 'STS-LDAP-0013', 'a delete named ' + dn +
       ', which does not exist', new ldap.NoSuchObjectError(dn), dn));
   }
+  if (isBootstrapAdministratorEntry(stored)) {
+    log.debug('Leaving the LDAP delete handler. The bootstrap administrator.');
+    return next(ldapRefusal(req, 'STS-LDAP-0077', 'a delete of ' + dn +
+      ' was refused: it is the default realm\'s bootstrap administrator, ' +
+      'which cannot be deleted', new ldap.UnwillingToPerformError(dn), dn));
+  }
   if (hasChildren(dn)) {
     log.debug('Leaving the LDAP delete handler. It is not a leaf.');
     return next(ldapRefusal(req, 'STS-LDAP-0014', 'a delete of ' + dn +
@@ -9930,6 +10256,13 @@ server.modifyDN('', function (req, res, next) {
     log.debug('Leaving the LDAP modifyDN handler. There is no such entry.');
     return next(ldapRefusal(req, 'STS-LDAP-0013', 'a rename named ' + dn +
       ', which does not exist', new ldap.NoSuchObjectError(dn), dn));
+  }
+  if (isBootstrapAdministratorEntry(stored)) {
+    log.debug('Leaving the LDAP modifyDN handler. The bootstrap administrator.');
+    return next(ldapRefusal(req, 'STS-LDAP-0077', 'a rename of ' + dn +
+      ' was refused: it is the default realm\'s bootstrap administrator, ' +
+      'and a rename would delete that account under another name',
+      new ldap.UnwillingToPerformError(dn), dn));
   }
   if (hasChildren(dn)) {
     // Moving a subtree means rewriting every DN below it, which this mock does
@@ -10806,7 +11139,9 @@ function ldapDirectoryView(req) {
       // `kerberos/krb5_person_keys.js`. This page's job is to show an entry
       // faithfully and the sentence says exactly what was kept back.
       attributes[canonicalName(name)] =
-        krb5PersonKeys.withheldValues(name, stored.attributes[name].slice(0));
+        certEnrollment.withheldValues(name,
+          krb5PersonKeys.withheldValues(name,
+                                        stored.attributes[name].slice(0)));
     });
     listed.push({
       dn: stored.dn,
@@ -11255,6 +11590,15 @@ applications.setDirectory({
     log.debug("Entering containerDn().");
     log.debug("Leaving containerDn().");
     return applicationsDn();
+  },
+  // WHEN ANYTHING UNDER ou=applications LAST CHANGED, in the ambient realm —
+  // what `applications.ssfAllowedEventsFor()` keys its answers on (2026-09-14).
+  // A write through writeApplication() moves it, and a write that names no
+  // location (an LDAP modify) moves every container, so it cannot lag a change.
+  applicationsVersion: function () {
+    log.debug("Entering applicationsVersion().");
+    log.debug("Leaving applicationsVersion().");
+    return subtreeVersion(applicationsDn());
   },
   maxApplications: maxApplications
 });
@@ -12440,6 +12784,31 @@ function writePerson(dn, attributes) {
            entry: entryObject(stored) };
 }
 
+// ---------------------------------------------------------------------------
+// THE BOOTSTRAP ADMINISTRATOR CANNOT BE DELETED OR RENAMED (2026-09-13).
+//
+// `admin.bootstrapUsername` in the DEFAULT realm is the account a new instance
+// is administered through: seeded into both console roles, forced to change its
+// password, and — until it first signs in to the console — the reason every
+// signed-in person may use the console (`admin-ui/admin_rbac.js`). Deleting it
+// would leave a service whose console roster is whatever happened to be left,
+// and renaming it is a delete under another name. So every door that removes a
+// person refuses it: SCIM (through `deletePerson()` here), an LDAP delete and an
+// LDAP rename. The name is compared case-insensitively, as a username is
+// everywhere in this directory, and the rule is the DEFAULT realm's only — a
+// trust realm's `admin` is an ordinary person there.
+// ---------------------------------------------------------------------------
+function isBootstrapAdministratorEntry(stored) {
+  log.debug('Entering isBootstrapAdministratorEntry().');
+  const wanted = String(config.value('admin.bootstrapUsername') || '')
+    .trim().toLowerCase();
+  const answer = !!(stored && wanted && realms.isDefault() &&
+                    isPersonEntry(stored) &&
+                    String(usernameOfEntry(stored)).toLowerCase() === wanted);
+  log.debug('Leaving isBootstrapAdministratorEntry(). ' + answer);
+  return answer;
+}
+
 // Delete a person's entry. It leaves that DN behind in every group that lists
 // it, which is deliberate and is the same non-feature `GET /admin/ldap/service`
 // documents: referential integrity is a directory feature and not a protocol
@@ -12451,6 +12820,14 @@ function deletePerson(dn) {
   if (!stored || !isPersonEntry(stored)) {
     log.debug('Leaving deletePerson(). It was not a person here.');
     return coded('STS-LDAP-0013', { ok: false, reason: 'notFound', dn: dn });
+  }
+  if (isBootstrapAdministratorEntry(stored)) {
+    log.warn(errorCodes.tag('STS-LDAP-0077') + 'ldap: refused to delete ' +
+             stored.dn + ' — it is the default realm\'s bootstrap ' +
+             'administrator (admin.bootstrapUsername).');
+    log.debug('Leaving deletePerson(). The bootstrap administrator.');
+    return coded('STS-LDAP-0077', { ok: false, reason: 'protected',
+                                    dn: stored.dn });
   }
   if (hasChildren(stored.dn)) {
     log.debug('Leaving deletePerson(). It has children.');

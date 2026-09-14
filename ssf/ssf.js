@@ -151,6 +151,10 @@ const streams = require('./ssf_streams');
 // stream behind it, and the page says exactly that rather than looking empty.
 const receivers = require('./ssf_receivers');
 const transport = require('./ssf_http');
+// What the dead-letter queues hold, counted, for Monitoring → Shared Signals →
+// Dead letters. A LIBRARY (rule 3) that registers nothing; the sweep below
+// tells it what each sweep found, and the console slot hands its report out.
+const deadLetterReport = require('./ssf_dead_letter_report');
 const ssfAuth = require('./ssf_auth');
 // The error-code registry, a LEAF. An HTTP refusal is marked on the response
 // (the call-log funnel records it); a refusal with no response of its own — a
@@ -459,8 +463,45 @@ function transmit(record, options) {
     toe: typeof asked.toe === 'number' ? asked.toe : undefined
   });
 
+  // ---------------------------------------------------------------------
+  // A DEAD PUSH STREAM IS NOT PUSHED TO, AND ITS SET IS NOT EVEN SIGNED
+  // (2026-09-14). See ssf_streams.js's DEAD STREAMS. The SET goes to the
+  // stream's dead-letter queue as its claims — signing a document nothing
+  // will receive is the cost this exists to stop, and a probe signs it if it
+  // is ever pushed. Nothing is logged here: the sweep's summary line is where
+  // an undeliverable SET is counted.
+  //
+  // **A VERIFICATION EVENT IS PUSHED ANYWAY.** A receiver asking to verify
+  // its stream is evidence it is listening again, and the push is the probe
+  // it asked for — a success revives the stream.
+  // ---------------------------------------------------------------------
+  if (record.delivery.method === streams.DELIVERY_PUSH &&
+      streams.isDead(record) &&
+      uri !== events.SSF_PREFIX + 'verification') {
+    streams.addDeadLetter(record, { jti: claims.jti, token: '',
+      claims: claims, queuedAt: iso() }, {
+      why: 'the stream is dead (ssf.deadStreamTimeoutS); it is not pushed ' +
+           'to until a probe or an operator revives it',
+      errorCode: 'STS-SSF-0096' });
+    log.debug('Leaving transmit(). The stream is dead; dead-lettered.');
+    return Promise.resolve({ ok: false, delivered: false, deadLettered: true,
+      jti: claims.jti, claims: claims,
+      why: 'This stream is DEAD — its pushes all failed for ' +
+           'ssf.deadStreamTimeoutS — so the event was put on its dead-letter ' +
+           'queue and not pushed. Revive it on /admin/ssf or with POST ' +
+           '/admin-api/ssf/revive.' });
+  }
+
   log.debug("Leaving transmit().");
   return events.signSet(claims).then(function (token) {
+    // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE. Signing
+    // may go to the worker pool and take seconds, and in a service whose
+    // request workers share the stream store another process's write can
+    // REPLACE this record in the meantime — a PATCH, a pause, a poll's
+    // counters. Editing the copy read above and writing it back would undo
+    // that write; streams.touch() refuses to, so the edit would be lost
+    // instead. See ssf_streams.js's touch().
+    record = streams.liveRecord(record);
     // COUNTED HERE, which is after the SET exists and before anybody knows
     // whether it will be delivered — because what /admin/caep-sessions
     // reports is what this transmitter SAID about a session, and a queued
@@ -513,41 +554,52 @@ function transmit(record, options) {
     return transport.pushSetWithRetries(record.delivery.endpoint_url, token, {
       authorizationHeader: record.delivery.authorization_header
     }).then(function (result) {
+      // The push was a network round trip, so the same reason as above.
+      record = streams.liveRecord(record);
       record.lastPushAt = iso();
       if (result.ok) {
         record.counters.delivered += 1;
         entry.counted = true;
         entry.deliveredAt = iso();
-        record.queue = record.queue.filter(function (one) {
-          return one.jti !== entry.jti;
-        });
+        // Off the queue as ONE ROW'S DELETE — see ssf_streams.js's `queued`.
+        streams.dequeue(record, entry.jti);
         record.lastPushError = '';
         streams.note(record, 'push', 'Delivered ' + claims.jti + ' to ' +
           record.delivery.endpoint_url +
           (result.why ? ' — ' + result.why : ''));
+        if (streams.notePushSuccess(record)) {
+          streamRevived(record, 'a push of ' + claims.jti + ' was delivered');
+        }
         log.debug('Leaving transmit(). Pushed.');
         return { ok: true, delivered: true, jti: claims.jti, token: token,
           claims: claims, status: result.status, why: result.why };
       }
       record.counters.failed += 1;
       record.lastPushError = result.why;
-      const tried = (result.attempts || []).length;
-      streams.note(record, 'error', 'The push of ' + claims.jti + ' failed' +
-        (tried > 1 ? ' after ' + tried + ' attempts' : '') + ': ' +
-        result.why + ' The event is STILL ON THE QUEUE — ' +
-        (tried > 1 ? 'ssf.pushRetries is spent' : 'nothing retries it ' +
-         '(ssf.pushRetries is 0, or this failure could not go differently)') +
-        ', so it stays until somebody asks for it again.');
-      audit.audit({ action: 'ssf.event.refused', category: 'signals',
-        protocol: 'SSF', channel: 'http', outcome: 'failure',
-        // ssf_http.js names which of the ways a push fails this was.
+      // ---------------------------------------------------------------
+      // UNDELIVERABLE: OFF THE LIVE QUEUE AND ONTO THE DEAD-LETTER QUEUE
+      // (2026-09-14), WITH NO LOG LINE AND NO AUDIT ROW OF ITS OWN.
+      //
+      // It stayed on the live queue "until somebody asks for it again", and
+      // nobody did; and every failure wrote an `ssf.event.refused` audit row
+      // whose code put a line in the service log — 30,698 of them in one
+      // second on the run this was built for, when a sweep of expired
+      // sessions revoked 1,398 sessions to twenty dead streams. The dead
+      // letter carries the reason, the code and the receiver's status for
+      // inspection, and the sweep logs ONE summary line of how many there
+      // were. `ssf.pushRetries` has already been spent: a final failure.
+      // ---------------------------------------------------------------
+      streams.dequeue(record, entry.jti);
+      streams.addDeadLetter(record, entry, { why: result.why,
         errorCode: result.errorCode || 'STS-SSF-0032',
-        target: record.stream_id,
-        summary: 'A receiver refused ' + claims.jti,
-        detail: { why: result.why, err: result.err,
-          status: result.status } });
-      log.debug('Leaving transmit(). The push failed.');
-      return { ok: false, delivered: false, jti: claims.jti, token: token,
+        status: result.status });
+      const verdict = streams.notePushFailure(record, result);
+      if (verdict.declaredDead) {
+        streamDeclaredDead(record, verdict.moved);
+      }
+      log.debug('Leaving transmit(). The push failed; dead-lettered.');
+      return { ok: false, delivered: false, deadLettered: true,
+        jti: claims.jti, token: token,
         claims: claims, status: result.status, err: result.err,
         why: result.why };
     });
@@ -562,6 +614,185 @@ function transmit(record, options) {
            '. Check ssf.signingAlgorithm.' }, 'error');
   });
 }
+
+// ---------------------------------------------------------------------------
+// A STREAM DECLARED DEAD, AND ONE REVIVED (2026-09-14). One audit row and one
+// log line for each — the only per-stream lines this machinery writes.
+// ---------------------------------------------------------------------------
+function streamDeclaredDead(record, moved) {
+  log.debug('Entering streamDeclaredDead(). ' + record.stream_id);
+  // The audit row's code writes the one log line (audit.js's logFailure()).
+  audit.audit({ action: 'ssf.stream.dead', category: 'signals',
+    protocol: 'SSF', channel: 'http', outcome: 'failure',
+    errorCode: 'STS-SSF-0093', target: record.stream_id,
+    summary: 'ssf: stream ' + record.stream_id + ' in the "' +
+      realms.currentId() + '" realm was declared DEAD after ' +
+      config.value('ssf.deadStreamTimeoutS') + 's of failed pushes to ' +
+      record.delivery.endpoint_url + '; ' + moved + ' waiting SET(s) moved ' +
+      'to its dead-letter queue and nothing more is pushed until a probe or ' +
+      'an operator revives it. Last failure: ' + (record.deadReason || '?'),
+    detail: { endpoint: record.delivery.endpoint_url, moved: moved,
+      why: record.deadReason } });
+  log.debug('Leaving streamDeclaredDead().');
+}
+
+function streamRevived(record, how) {
+  log.debug('Entering streamRevived(). ' + record.stream_id);
+  audit.audit({ action: 'ssf.stream.revived', category: 'signals',
+    protocol: 'SSF', channel: 'http', outcome: 'success',
+    target: record.stream_id,
+    summary: 'The dead stream ' + record.stream_id + ' was revived: ' + how });
+  log.info('ssf: stream ' + record.stream_id + ' in the "' +
+           realms.currentId() + '" realm is alive again (' + how + ') and ' +
+           'is pushed to as before.');
+  log.debug('Leaving streamRevived().');
+}
+
+// ---------------------------------------------------------------------------
+// THE SWEEP (2026-09-14): per process, every `ssf.deadLetterSweepS`, in every
+// realm — delete expired dead letters, probe the dead streams that are due, and
+// log ONE line per realm summarising what was dead-lettered since the last
+// sweep. It is the only place an undeliverable SET is logged.
+//
+// **EVERY PROCESS SWEEPS.** The dead-letter store is shared, so a delete made
+// twice is a no-op; the counts being summarised are each process's own, so
+// four processes log four lines about four different sets of pushes. A probe
+// sets `nextProbeAtMs` on the record before it pushes, which replicates, so
+// processes rarely probe the same stream in the same period — and one extra
+// probe is harmless.
+// ---------------------------------------------------------------------------
+function probeDeadStream(record, now) {
+  log.debug('Entering probeDeadStream(). ' + record.stream_id);
+  const timeout = Number(config.value('ssf.deadStreamTimeoutS')) * 1000;
+  record.nextProbeAtMs = now + (timeout > 0 ? timeout : 300000);
+  streams.touch(record);
+  const oldest = streams.deadLettersOf(record)[0];
+  if (!oldest) {
+    streams.halfOpen(record, now);
+    log.info('ssf: stream ' + record.stream_id + ' in the "' +
+             realms.currentId() + '" realm is dead with nothing left to ' +
+             'probe with; its next SET will be pushed as the probe.');
+    log.debug('Leaving probeDeadStream(). Half-open.');
+    return Promise.resolve(false);
+  }
+  const signed = oldest.token
+    ? Promise.resolve(oldest.token)
+    : events.signSet(oldest.claims);
+  log.debug('Leaving probeDeadStream(). Probing with ' + oldest.jti + '.');
+  return signed.then(function (token) {
+    return transport.pushSetGated(record.delivery.endpoint_url, token, {
+      authorizationHeader: record.delivery.authorization_header });
+  }).then(function (result) {
+    const live = streams.liveRecord(record);
+    if (!result.ok) {
+      log.debug('probeDeadStream(): ' + live.stream_id + ' is still dead: ' +
+                result.why);
+      return false;
+    }
+    streams.removeDeadLetter(live, oldest.jti);
+    live.counters.delivered += 1;
+    if (streams.notePushSuccess(live)) {
+      streamRevived(live, 'a probe push of the dead letter ' + oldest.jti +
+                          ' was delivered');
+    }
+    return true;
+  }).catch(function (e) {
+    log.debug('Caught in probeDeadStream(): ' + ((e && e.message) || e));
+    return false;
+  });
+}
+
+function sweepSignalsRealm(now) {
+  log.debug('Entering sweepSignalsRealm(). ' + realms.currentId());
+  const summary = streams.sweepDeadLetters(now);
+  const dead = streams.listStreams().filter(function (record) {
+    return record.delivery.method === streams.DELIVERY_PUSH &&
+           streams.isDead(record);
+  });
+  if (summary.letters || summary.trimmed) {
+    const top = summary.byStream.sort(function (a, b) {
+      return b[1] - a[1];
+    }).slice(0, 5).map(function (pair) {
+      return pair[0] + ' ' + pair[1];
+    }).join(', ');
+    log.warn(errorCodes.tag('STS-SSF-0094') + 'ssf: ' + summary.letters +
+             ' Security Event Token(s) could not be delivered in the "' +
+             realms.currentId() + '" realm since the last sweep and are on ' +
+             'dead-letter queues (' + summary.byStream.length + ' stream(s)' +
+             (top ? '; most: ' + top : '') + '; by code: ' +
+             summary.byCode.map(function (pair) {
+               return pair[0] + ' ' + pair[1];
+             }).join(', ') + '). ' + summary.held + ' dead letter(s) held, ' +
+             summary.expired + ' expired and deleted, ' + summary.trimmed +
+             ' deleted over ssf.deadLetterMaxPerStream; ' + dead.length +
+             ' dead stream(s). Inspect them on /admin/ssf.');
+  } else if (summary.expired || summary.orphaned) {
+    log.info('ssf: ' + summary.expired + ' dead letter(s) older than ' +
+             'ssf.deadLetterRetentionS and ' + summary.orphaned + ' of ' +
+             'deleted streams were removed in the "' + realms.currentId() +
+             '" realm; ' + summary.held + ' held.');
+  }
+  const due = dead.filter(function (record) {
+    return !(Number(record.nextProbeAtMs) > now);
+  });
+  // THE MONITORING PAGE'S SWEEP HISTORY. Noted here and not in
+  // `sweepDeadLetters()`, because the dead-stream and probe counts are only
+  // known here — and before the probes run, so a probe that throws cannot
+  // leave a sweep unrecorded.
+  deadLetterReport.noteSweep(summary, { nowMs: now, deadStreams: dead.length,
+                                        probes: due.length });
+  log.debug('Leaving sweepSignalsRealm(). ' + due.length + ' probe(s).');
+  return Promise.all(due.map(function (record) {
+    return probeDeadStream(record, now);
+  })).then(function () {
+    return summary;
+  });
+}
+
+let sweepTimer = null;
+
+function sweepSignals() {
+  log.debug('Entering sweepSignals().');
+  const now = Date.now();
+  const all = realms.list();
+  let chain = Promise.resolve();
+  all.forEach(function (realm) {
+    chain = chain.then(function () {
+      return realms.run(realm, function () {
+        try {
+          return sweepSignalsRealm(now);
+        } catch (e) {
+          log.error(errorCodes.tag('STS-SSF-0097') + 'ssf: the dead-letter ' +
+                    'sweep failed in the "' + realm.id + '" realm: ' +
+                    ((e && e.message) || e));
+          return null;
+        }
+      });
+    });
+  });
+  log.debug('Leaving sweepSignals(). ' + all.length + ' realm(s).');
+  return chain.catch(function (e) {
+    log.error(errorCodes.tag('STS-SSF-0097') + 'ssf: the dead-letter sweep ' +
+              'failed: ' + ((e && e.message) || e));
+  });
+}
+
+function scheduleSweep() {
+  log.debug('Entering scheduleSweep().');
+  const seconds = Math.max(5, Number(config.value('ssf.deadLetterSweepS')) ||
+                              60);
+  sweepTimer = setTimeout(function () {
+    sweepSignals().then(scheduleSweep, scheduleSweep);
+  }, seconds * 1000);
+  // A sweep must not keep a process that has finished everything else alive
+  // — `npm test` loads this file and would otherwise wait out the interval.
+  if (sweepTimer.unref) {
+    sweepTimer.unref();
+  }
+  log.debug('Leaving scheduleSweep(). ' + seconds + 's.');
+}
+
+scheduleSweep();
 
 // ---------------------------------------------------------------------------
 // THE TRANSMITTER CONFIGURATION METADATA (SSF 1.0 section 6).
@@ -1076,6 +1307,10 @@ app.post('/ssf/verify', function (req, res) {
     return;
   }
   record.lastVerificationAt = nowSec();
+  // Reported to the journal: `ssf.verificationRateLimit` reads it back, and a
+  // worker that never learnt of it would let a receiver verify as often as
+  // the pool had workers.
+  streams.touch(record);
   transmit(record, {
     uri: events.SSF_PREFIX + 'verification',
     payload: typeof body.state === 'string' && body.state !== ''
@@ -1337,7 +1572,8 @@ function description(req) {
       return { stream_id: record.stream_id, status: record.status,
         delivery: record.delivery.method,
         events_delivered: record.events_delivered,
-        subjects: record.subjects.length, queued: record.queue.length,
+        subjects: record.subjects.length,
+        queued: streams.queueOf(record).length,
         counters: record.counters, createdAt: record.createdAt,
         lastPushError: record.lastPushError };
     }),
@@ -1634,14 +1870,37 @@ function consoleReport(req) {
           verified: one.verified, addedAt: one.addedAt,
           subject: one.subject };
       }),
-      queue: record.queue.map(function (one) {
+      queue: streams.queueOf(record).map(function (one) {
         return { jti: one.jti, queuedAt: one.queuedAt,
           deliveredAt: one.deliveredAt,
           summary: events.describeSet(one.claims) };
       }),
+      // DEAD OR ALIVE, and what could not be delivered (2026-09-14). The
+      // dead letters are newest first and carry no token — a SET is a signed
+      // statement about somebody, and a console page is not where it goes.
+      dead: streams.isDead(record),
+      deadSince: Number(record.deadSinceMs) > 0
+        ? new Date(Number(record.deadSinceMs)).toISOString() : '',
+      deadReason: record.deadReason || '',
+      failingSince: Number(record.failingSinceMs) > 0
+        ? new Date(Number(record.failingSinceMs)).toISOString() : '',
+      nextProbeAt: Number(record.nextProbeAtMs) > 0
+        ? new Date(Number(record.nextProbeAtMs)).toISOString() : '',
+      deadLetters: streams.deadLettersOf(record).reverse().map(function (one) {
+        return { jti: one.jti, queuedAt: one.queuedAt, deadAt: one.deadAt,
+          reason: one.reason, errorCode: one.errorCode, status: one.status,
+          signed: one.signed,
+          summary: one.claims ? events.describeSet(one.claims) : null };
+      }),
       log: record.log.slice().reverse()
     };
   });
+  info.deadLetters = {
+    retentionS: config.value('ssf.deadLetterRetentionS'),
+    maxPerStream: config.value('ssf.deadLetterMaxPerStream'),
+    deadStreamTimeoutS: config.value('ssf.deadStreamTimeoutS'),
+    pushes: transport.pushGateState()
+  };
   info.receivedDetail = streams.listReceived().slice().reverse();
   log.debug('Leaving consoleReport().');
   return info;
@@ -1765,6 +2024,47 @@ function consoleAction(name, body, req) {
     return Promise.resolve({ ok: true, errors: [],
       message: gone + ' received event(s) dropped.' });
   }
+  // REVIVE A DEAD PUSH STREAM BY HAND (2026-09-14): it is pushed to again at
+  // once. Refused for a stream that is not dead, which is a refusal a caller
+  // can act on — reviving a live stream would do nothing and report success.
+  if (name === 'revive') {
+    const record = streams.getStream(id);
+    if (!record) {
+      log.debug('Leaving consoleAction(). No such stream.');
+      return actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
+        errors: ['No stream with stream_id "' + id + '".'] });
+    }
+    if (!streams.revive(record, String(asked.reason || ''))) {
+      log.debug('Leaving consoleAction(). Not dead.');
+      return actionRefused('STS-SSF-0095', 'SSF', name, { ok: false,
+        errors: ['Stream ' + id + ' is not dead, so there is nothing to ' +
+                 'revive. A stream is declared dead when its pushes have all ' +
+                 'failed for ssf.deadStreamTimeoutS.'] });
+    }
+    streamRevived(record, 'revived by hand');
+    log.debug('Leaving consoleAction(). Revived.');
+    return Promise.resolve({ ok: true, errors: [],
+      message: 'Stream ' + id + ' is alive again and will be pushed to. Its ' +
+               'dead-letter queue is kept until ssf.deadLetterRetentionS ' +
+               'passes.' });
+  }
+  // EMPTY A STREAM'S DEAD-LETTER QUEUE BY HAND. What is dropped was already
+  // undeliverable; nothing is sent.
+  if (name === 'clear-dead-letters') {
+    const record = streams.getStream(id);
+    if (!record) {
+      log.debug('Leaving consoleAction(). No such stream.');
+      return actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
+        errors: ['No stream with stream_id "' + id + '".'] });
+    }
+    const gone = streams.clearDeadLettersFor(id);
+    audit.audit({ action: 'ssf.deadletter.clear', category: 'signals',
+      protocol: 'SSF', channel: 'http', target: id,
+      summary: gone + ' dead letter(s) dropped from ' + id });
+    log.debug('Leaving consoleAction(). Dead letters cleared.');
+    return Promise.resolve({ ok: true, errors: [],
+      message: gone + ' dead letter(s) dropped from ' + id + '.' });
+  }
   // THE REFUSAL IS SPELLED THE WAY EVERY OTHER ACTION HANDLER HERE SPELLS IT,
   // AND IT WAS NOT UNTIL 2026-09-01. It said `"x" is not an action on this
   // resource. The ones that are: …`, which reads perfectly well and is
@@ -1788,10 +2088,22 @@ function consoleAction(name, body, req) {
       CONSOLE_ACTIONS.join(', ') + '.'] });
 }
 
-const CONSOLE_ACTIONS = ['status', 'delete', 'transmit', 'clear-received'];
+const CONSOLE_ACTIONS = ['status', 'delete', 'transmit', 'clear-received',
+                         'revive', 'clear-dead-letters'];
 
 adminConsole.setSignalsReporter({
   report: consoleReport,
+  // Monitoring → Shared Signals → Dead letters and
+  // GET /admin-api/ssf/dead-letters (2026-09-14), read inside the ambient
+  // realm. A member of THIS slot rather than a slot of its own: it reads the
+  // same family through the same require, and rule 3e's test for a new slot
+  // is a new cycle or a moved route, neither of which a second reader adds.
+  deadLetters: function () {
+    log.debug('Entering deadLetters().');
+    const out = deadLetterReport.report();
+    log.debug('Leaving deadLetters(). ' + out.totals.held + ' held.');
+    return out;
+  },
   action: consoleAction,
   actions: CONSOLE_ACTIONS,
   eventTypes: function () {
@@ -2506,6 +2818,149 @@ function sendOneRiscEvent(due) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// WHAT AN ADMINISTRATOR DID TO SOMEBODY'S CREDENTIALS, SAID OVER RISC AND CAEP
+// (2026-09-13).
+//
+// A password reset, a reset link, a key or an authenticator app taken off,
+// every second factor disabled — performed on a person's /admin/users page or
+// through /admin-api/users, and the password a reset link sets on
+// /portal/reset-password. None of those is a directory write RISC's observer
+// can read a meaning off (a password hash moving says nothing about who
+// required what) and none is a SESSION CAEP's register could hang an event on,
+// so the two functions below are asked by name, through
+// `ssf/account_signals.js`, by the doors that know what they did.
+//
+// **THEY TAKE THE SAME SWITCHES THE AUTOMATIC EMISSIONS DO.** `caep.autoEmit`
+// and `caep.autoEmitTypes` (the act `credential`), `risc.autoEmit` and
+// `risc.autoEmitTypes` (`credentialChangeRequired`, `recoveryChanged`), the
+// RISC opt-out gate, and every stream's own agreed types and subjects. So
+// "which streams get it" has one answer however the event came about.
+//
+// **THEY NEVER REJECT**, for `riscAutoEmit()`'s reason: the credential change
+// has already happened, and a receiver's push endpoint being down must not turn
+// it into a failure on the page that made it.
+// ---------------------------------------------------------------------------
+function emitRiscAccountAct(notice) {
+  log.debug('Entering emitRiscAccountAct().');
+  if (!enabled()) {
+    log.debug('Leaving emitRiscAccountAct(). SSF is off.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  let due;
+  try {
+    due = risc.observeAct(Object.assign({}, notice || {},
+                                        { issuer: issuerFor(null) }));
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SSF-0090') + 'risc: an administrator\'s ' +
+              'act could not be turned into an event: ' + e.message);
+    log.debug('Leaving emitRiscAccountAct(). Failed.');
+    return Promise.resolve({ sent: 0, streams: 0, why: e.message });
+  }
+  if (!due.length) {
+    log.debug('Leaving emitRiscAccountAct(). Nothing is due.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  log.debug('Leaving emitRiscAccountAct().');
+  return Promise.all(due.map(function (one) {
+    return sendOneRiscEvent(one);
+  })).then(function (results) {
+    const sent = results.reduce(function (total, one) {
+      return total + one.sent;
+    }, 0);
+    return { sent: sent, streams: results.length, results: results };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-SSF-0090') + 'risc: an administrator\'s ' +
+              'act could not be delivered: ' + e.message);
+    return { sent: 0, streams: 0, why: e.message };
+  });
+}
+
+// CAEP's credential-change, about a PERSON. The subject is SSF's complex one
+// with only `user` in it — the issuer/subject pair a receiver already holds
+// from an ID Token — which is what `caep.js`'s own subject is minus the
+// session, so a stream that names the person covers it by the member rule in
+// `streamCoversSubject()`, exactly as it covers that person's sessions.
+function emitCredentialChange(asked) {
+  log.debug('Entering emitCredentialChange().');
+  const options = asked || {};
+  const username = String(options.username || '');
+  if (!enabled() || !username) {
+    log.debug('Leaving emitCredentialChange(). SSF is off or nobody named.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  if (caep.autoEmitActs().indexOf('credential') < 0) {
+    log.info('caep: a credential-change about ' + username + ' was NOT ' +
+             'emitted: caep.enabled, caep.autoEmit or caep.autoEmitTypes ' +
+             'excludes it.');
+    log.debug('Leaving emitCredentialChange(). Not an emitted act.');
+    return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+  }
+  const uri = events.CAEP_PREFIX + 'credential-change';
+  let payload;
+  try {
+    payload = caep.buildPayload(uri, {
+      credential_type: String(options.credentialType || 'password'),
+      change_type: String(options.changeType || 'update'),
+      friendly_name: String(options.friendlyName || '')
+    }, {
+      initiatingEntity: String(options.initiatingEntity || 'admin'),
+      reasonAdmin: String(options.reasonAdmin || ''),
+      reasonUser: String(options.reasonUser || '')
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SSF-0091') + 'caep: a credential-change ' +
+              'about ' + username + ' could not be built: ' + e.message);
+    log.debug('Leaving emitCredentialChange(). Not built.');
+    return Promise.resolve({ sent: 0, streams: 0, why: e.message });
+  }
+  const verdict = events.validateEvent(uri, payload);
+  if (!verdict.ok) {
+    log.error(errorCodes.tag('STS-SSF-0091') + 'caep: a credential-change ' +
+              'about ' + username + ' is not a valid event: ' +
+              verdict.errors.join(' '));
+    log.debug('Leaving emitCredentialChange(). Invalid.');
+    return Promise.resolve({ sent: 0, streams: 0,
+                             why: verdict.errors.join(' ') });
+  }
+  const subject = { user: { format: 'issuer_subject_id',
+    iss: issuerFor(null), sub: username } };
+  const candidates = streams.listStreams().filter(function (record) {
+    return streams.deliversEvent(record, uri) &&
+           streams.streamCoversSubject(record, subject);
+  });
+  audit.audit({ action: 'caep.event.auto', category: 'signals',
+    protocol: 'CAEP', channel: 'http', target: username,
+    summary: 'A CAEP credential-change (' + payload.credential_type + ', ' +
+      payload.change_type + ') is due for ' + username,
+    detail: { type: uri, streams: candidates.length,
+              via: String(options.via || '') } });
+  if (!candidates.length) {
+    log.info('caep: a credential-change about ' + username + ' is due and NO ' +
+             'STREAM takes it — none both delivers that type and covers ' +
+             subjects.describeSubject(subject) + '.');
+    log.debug('Leaving emitCredentialChange(). No stream takes it.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  log.debug('Leaving emitCredentialChange().');
+  return Promise.all(candidates.map(function (record) {
+    return transmit(record, { uri: uri, payload: payload, subject: subject,
+      toe: payload.event_timestamp });
+  })).then(function (reports) {
+    const sent = reports.filter(function (one) {
+      return one.ok;
+    }).length;
+    log.info('caep: credential-change (' + payload.credential_type + ', ' +
+             payload.change_type + ') about ' + username + ' went to ' +
+             sent + ' of ' + candidates.length + ' stream(s).');
+    return { sent: sent, streams: candidates.length, reports: reports };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-SSF-0091') + 'caep: a credential-change ' +
+              'about ' + username + ' could not be delivered: ' + e.message);
+    return { sent: 0, streams: candidates.length, why: e.message };
+  });
+}
+
 // The inverted hook, filled at require time. `ldap/ldap_server.js` is 361 in
 // the require order and this module is 426, so the require above goes the
 // ordinary way and only the FUNCTION travels back — see setAccountObserver()
@@ -2931,6 +3386,7 @@ module.exports = {
   metadata: metadata,
   description: description,
   transmit: transmit,
+  sweepSignals: sweepSignals,
   consoleReport: consoleReport,
   consoleAction: consoleAction,
   CONSOLE_ACTIONS: CONSOLE_ACTIONS,
@@ -2940,6 +3396,10 @@ module.exports = {
   caepAction: caepAction,
   CAEP_CONSOLE_ACTIONS: CAEP_CONSOLE_ACTIONS,
   riscAutoEmit: riscAutoEmit,
+  // What an administrator did to somebody's credentials (2026-09-13); reached
+  // through `ssf/account_signals.js`.
+  emitRiscAccountAct: emitRiscAccountAct,
+  emitCredentialChange: emitCredentialChange,
   riscReport: riscReport,
   riscAction: riscAction,
   RISC_CONSOLE_ACTIONS: RISC_CONSOLE_ACTIONS,

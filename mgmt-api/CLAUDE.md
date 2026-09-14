@@ -474,6 +474,14 @@ gives are still the argument for the OFF SWITCH — they are the reasons
 `adminApi.authRequired=false` has to keep existing, and what changed is only
 which way the default points.
 
+**THE ROOT `CLAUDE.md` SAID THE OPPOSITE FOR AS LONG AS IT EXISTED, TOO.** It
+read "`/admin-api` is NOT gated and that is deliberate — it is what a test
+drives, and it is the way back in when nobody holds a role. Which means anybody
+who can reach this port can grant themselves both roles through it." Every
+clause of that was true and the last one is what the change was for. It is the
+EIGHTH row on the root `CLAUDE.md`'s table of gated surfaces, and it is not a
+turnstile.
+
 **WHAT IT IS NOW.** Every call into `/admin-api` presents an OAuth 2.0 access
 token this service issued, audienced to this API, carrying `admin:read` for a
 read and `admin:write` for anything that changes state. One middleware on the
@@ -483,6 +491,19 @@ base path, so the 232 operations are covered by construction rather than by
 the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.js` decides the
 QUESTION rather than the outcome.
+
+**THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
+ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
+*`/admin-api` under the host the request arrived on* — correct, and a blank box
+on `/admin/rbac`. It is a DERIVED row now: `config.managementApiBaseUrl()`,
+which is `global.publicBaseUrl` + `/admin-api` where that is set and otherwise
+the main port's own scheme, bound host (`localhost` for a wildcard) and port. A
+default cannot see a request, so taking it as the ONLY audience would refuse
+every token minted under another name for one process — `sts:8081` on the
+compose network, the host port a launcher publishes. So while the row is at its
+default, or set empty, `wantedAudiences()` accepts that URL AND the
+request-relative one; any other value pins exactly itself, as it always did.
+Where `global.publicBaseUrl` is set the two are the same string.
 
 **IT IS A DIFFERENT CREDENTIAL FROM THE CONSOLE'S AND MUST STAY ONE.** A
 console session is not an API credential; a token is not a console session.
@@ -520,8 +541,10 @@ They are why the off switch exists.
   every operation over HTTP with no browser and no cookie jar. A credential here
   would be the only one a test had to hold a secret for, in a service whose
   premise is that it authenticates nobody.
-* **It is the way back in.** With `admin.openWhenEmpty` off and no role granted,
-  NO browser can reach the console — the screen that grants the first role is
+* **It is the way back in.** When the console is closed and nobody who holds a
+  role can sign in (the roster emptied after the bootstrap administrator's first
+  sign-in, or `admin.openWhenEmpty` off with no role granted), NO browser can
+  reach the console — the screen that grants the first role is
   behind the gate that role opens. `POST /admin-api/rbac/grant` is the only door
   out of that state, and a door that needed a role would not be one.
 * **The consequence, stated rather than buried: anybody who can reach this port
@@ -1324,6 +1347,35 @@ in the same change as the page (rule 7):
 `GET /admin-api/applications?application=` grew `credentials`, and no GET was
 added: the page is the application drill-down, which already had its operation.
 
+## `issue-tls-client-certificate` AND `revoke-tls-client-certificate` (2026-09-13)
+
+The Mutual TLS subsection of an application's Credentials section, in the same
+change as the page (rule 7), as two arms of `applicationsAction()` over
+`common/tls_client_certificates.js` — issuing to an application is that module's
+`issue()` with `kind: 'application'`, which a person's portal certificate already
+went through. **The issue's reply is the only copy of the private key**: `files`
+holds the PKCS#12 (base64), the encrypted PEM key and the chain, all under
+`password`, which is neither stored nor audited. The action is a PROMISE, answered
+through the handler's existing `refresh-metadata` branch. The revoke looks among
+THIS application's certificates only. Codes `STS-ADMIN-0720..0723`,
+`STS-PKI-0180..0181`. **`/admin-api` also checks RFC 8705's `cnf["x5t#S256"]`
+since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an.
+
+## `issue-software-statement` (2026-09-13)
+
+`POST /admin-api/applications/issue-software-statement` mirrors the *Issue a
+statement* control in the Software statements section of an application's
+console page (rule 7, same change). It calls `applicationsAction()`, which calls
+`oauth-oidc/software_statement.js`'s `issue()`; the reply carries the statement,
+which is not a secret. **The issuer comes from the ROUTE'S context** — both
+doors add `base: baseUrlOf(req)` beside `authorizationServers` — and never from
+the body, because a registration must match the issuer at the address it
+arrives on. `metadata` and `lifetimeSeconds` are `oneOf` object-or-string and
+integer-or-string, for the console form's text. `GET
+/admin-api/applications?application=` grew `softwareStatements` (declared
+issuers, usable keys, the issued statement and whether it verifies now, and how
+the client registered); no GET was added.
+
 ## `GET /admin-api/certificates` — THE CERTIFICATE DETAILS DIALOG, FOR A MACHINE (2026-09-13)
 
 One operation, two shapes, `?certificate=` deciding which — the arrangement
@@ -1368,3 +1420,72 @@ private key — documented on `UserDetail` beside `ldap`.
 **A pre-existing mismatch noticed, not fixed**: `issue` documents `keyAlg` while
 `pkiAction()` reads `leafKeyAlg` (the console's field name), so the API's `keyAlg`
 is accepted by the schema and ignored.
+
+## `GET /admin-api/rbac` PAGES EVERY LIST IN ITS REPLY (2026-09-13)
+
+`grants` was already paged by `page` and `per`. The other two lists were not:
+`candidates` (everybody a role could be granted to) and each role's `members`
+and `claimed` — on a directory of thousands, thousands of rows on every read of
+the roster. Now:
+
+* **`candidates` is paged by `candidatesPage` and the shared `per`**, answered
+  in `candidatesPaging` — `detailPagingParameters()`'s naming, so the request
+  is spelt from the reply. Its default page size is twenty rather than
+  `DEFAULT_PER_PAGE`, because the console's results pane shows twenty and the
+  two should not disagree about who is on a page. `personq` narrows it;
+  `personfrom`, the pane's offset, is honoured as the page it falls on when
+  `candidatesPage` is absent.
+* **`roles[]` carries counts and no member lists.** `members` and `claimed`
+  are the same rows `grants` pages, and `?role=` narrows `grants` to one role,
+  so keeping them would have been an unpaged second copy. Nothing in either
+  suite read them.
+
+`sts_admin_api_operations.js`'s `theAdminRolesRoundTrip()` asserts all three.
+
+## `issue-pep-certificate`: THE ONE XACML ACTION THAT AWAITS (2026-09-13)
+
+`POST /admin-api/xacml/issue-pep-certificate` issues a registered remote PEP the
+key pair for its HTTPS listener, from the realm's `pep-tls` Issuing CA, and
+mirrors the **Issue certificate** control on `/admin/xacml/peps` through the
+same `pepAction()` — rule 7 in the ordinary way. Three things about it:
+
+* **`/xacml/:action` SETTLES A PROMISE NOW.** This action answers one and the
+  other XACML actions answer a result, so `admin-core/admin_actions.js`'s
+  `xacmlAction()` converts either and the handler here `Promise.resolve()`s it,
+  turning a rejection into a 500 naming the message. It is the third action
+  handler here that awaits, after `/ssf/:action` and `/pki/:action`.
+* **THE PRIVATE KEY IS IN THE REPLY**, once, like `/pki/issue`'s, and
+  `sendJson()`'s `no-store` is what keeps it out of caches. `GET
+  /admin-api/xacml/peps` carries the certificate on each row as
+  `listenerCertificate` — never the key — read from `pki.js`'s register.
+* **`keyAlg`'s ENUM IS READ FROM `pki.TLS_SERVER_KEY_ALGS`**, which is why
+  this file requires `common/pki.js` (a library, a cache hit): the document
+  cannot offer an algorithm the module refuses. The example names a PEP that is
+  not registered in the replay's throwaway realm, so the ledger records it as
+  refused about its referent, which is the correct reading.
+
+## `protocolEndpoints` ON THE GET THAT MIRRORS A PROTOCOLS PAGE (2026-09-13)
+
+Every Protocols console page lists its realm's endpoints, and rule 7 asks the
+operation mirroring it to answer the same. **No handler changed.** The
+registration loop wraps a GET whose `mirrors` is exactly `GET /admin/<page>`
+for a page in `admin-core/protocol_endpoints.js`'s table, putting the rows on
+`res.locals`; `sendJson()` adds them as `protocolEndpoints` to a 200 whose body
+is a plain object. A `mirrors` naming two pages is a mirror of neither and gets
+nothing — the one whose `mirrors` reads `GET /admin/pki and GET
+/admin/crypto-metadata` is the case. `admin_api_spec.js`'s `operationOf()` says so in those operations'
+descriptions from the same test (37 of them), rather than in each response
+schema: every one is an `openObject`, and the member is added outside the view
+every schema describes.
+
+## SIX MORE USERS ACTIONS (2026-09-13)
+
+`POST /admin-api/users/{reset-password, issue-password-reset,
+disable-primary-keys, disable-mfa, require-mfa, stop-requiring-mfa}` mirror the
+*Password and second factors* section of a person's console page, through the
+same `usersAction()`. Each documents a `{ user }` body with an example on
+`alice`, which `sts_admin_api_operations.js` replays in its throwaway realm. The
+handler passes `base: baseUrlOf(req)`, so `issue-password-reset`'s `resetUrl`
+names the realm the call was made in. **`reset-password` answers `password` and
+`issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
+retrievable afterwards, and neither is in the audit row.

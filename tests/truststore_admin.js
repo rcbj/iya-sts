@@ -176,7 +176,20 @@ async function thePrimitives(t) {
             JSON.stringify(listed.map(function (one) {
               return { s: one.source, r: one.readable, ca: one.ca };
             })));
-    t.equal(tls.clientTruststoreOptions().ca.length, tls.anchorCount(),
+    // PLUS THE SERVICE ROOT where this process has one (2026-09-13): the
+    // listeners trust it for the TLS client certificates the user portal
+    // issues — `tls_server.js`'s `issuedClientCertificateAnchor()`. It is not
+    // an anchor in this truststore and is never listed or removable here, so
+    // it is counted beside the truststore rather than in it.
+    const issuedRoot = function () {
+      log.debug("Entering issuedRoot().");
+      const held = require('../common/tls_client_certificates')
+        .trustAnchorPem() ? 1 : 0;
+      log.debug("Leaving issuedRoot().");
+      return held;
+    };
+    t.equal(tls.clientTruststoreOptions().ca.length,
+            tls.anchorCount() + issuedRoot(),
             'the listeners\' ca is the truststore after an add');
 
     const dup = tls.truststore.add(anchors.a);
@@ -204,7 +217,8 @@ async function thePrimitives(t) {
             'a remove finds its anchor under the plain-hex spelling of the ' +
             'fingerprint',
             JSON.stringify(removed).slice(0, 300));
-    t.equal(tls.clientTruststoreOptions().ca.length, tls.anchorCount(),
+    t.equal(tls.clientTruststoreOptions().ca.length,
+            tls.anchorCount() + issuedRoot(),
             'and the listeners\' ca follows the remove too');
     t.check(tls.truststore.list().anchors.every(function (one) {
       return one.fingerprint256 !== mine[0];

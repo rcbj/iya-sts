@@ -312,6 +312,54 @@ function run(t) {
     process.env.STS_SSF_RECEIVER_SECRET = before;
   }
 
+  // -----------------------------------------------------------------------
+  // B3. ANOTHER REALM'S RECEIVER STREAM IN THIS REALM IS SWEPT (2026-09-14).
+  //
+  // A replicated row for a realm a process had not heard of yet landed in the
+  // DEFAULT partition (`realms.js`'s `partitionId()`), so a dispatch run's
+  // default realm held forty other realms' receiver streams and pushed every
+  // event to all of them. Such a copy delivers to ANOTHER realm's prefix, so
+  // the endpoint test above cannot see it; it is found by its id, which only
+  // `seedStreams()` ever sets. A receiver's own stream beside it must survive.
+  // -----------------------------------------------------------------------
+  t.log.info('B3. another realm\'s receiver stream in this realm is swept');
+  const leakedId = 'ssf-internal-some-other-realm-admin-console';
+  const leaked = streams.createStream({
+    aud: consoleSurface.audience,
+    events_requested: [events.CAEP_EVENT_URIS[0]],
+    description: 'another realm\'s receiver, put here by a replicated row',
+    delivery: { method: streams.DELIVERY_PUSH,
+                endpoint_url: transport.loopbackOrigin() +
+                              '/realm/some-other-realm' +
+                              consoleSurface.receivePath,
+                authorization_header: 'Bearer whatever' }
+  }, { issuer: 'https://example.test', principal: 'internal',
+       streamId: leakedId });
+  const ordinary = streams.createStream({
+    aud: 'https://receiver.example/ordinary',
+    events_requested: [events.CAEP_EVENT_URIS[0]],
+    delivery: { method: streams.DELIVERY_POLL }
+  }, { issuer: 'https://example.test', principal: 'a-receiver' });
+  t.check(leaked.ok && leaked.stream.stream_id === leakedId && ordinary.ok,
+          'a leaked copy and an ordinary receiver\'s stream are created',
+          JSON.stringify([leaked.errors, ordinary.errors]));
+  t.equal(receivers.seedStreams(), 0,
+          'seeding over the leaked copy creates nothing new');
+  t.equal(streams.listStreams().filter(function (record) {
+    return record.stream_id === leakedId;
+  }).length, 0,
+          'THE OTHER REALM\'S RECEIVER STREAM IS GONE, although it delivers ' +
+          'to a prefix that is not this realm\'s');
+  t.equal(streams.listStreams().filter(function (record) {
+    return record.stream_id === ordinary.stream.stream_id;
+  }).length, 1,
+          'and an ordinary receiver\'s stream is left alone — only an id of ' +
+          'the seeded shape is swept');
+  t.equal(streams.listStreams().filter(function (record) {
+    return record.stream_id === derivedId;
+  }).length, 1, 'and this realm\'s own receiver stream is still there');
+  streams.removeStream(ordinary.stream.stream_id);
+
   t.log.info('C. isOwnLoopback(), and the two exemptions it carries');
   // -----------------------------------------------------------------------
   const mine = transport.loopbackOrigin();

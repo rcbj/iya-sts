@@ -9,6 +9,7 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 | `admin_actions.js` | **what CHANGES state** | 31 actions, the tables they dispatch on, the helpers they share |
 | `admin_views.js` | **what ANSWERS a question** | 38 functions that compute a JSON answer and build no markup |
 | `certificate_views.js` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
+| `protocol_endpoints.js` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
@@ -301,3 +302,29 @@ the two route-registering modules above — lazily, but it reads them — which 
 what this directory's position rule is about. `tests/admin_actions_layer.js`
 still passes with it here, and `tests/certificate_details.js` pins the
 catalogue and its boundary.
+
+## `protocol_endpoints.js`: WHAT EACH PROTOCOLS PAGE LISTS (2026-09-13)
+
+A fourth file, and a library: one table from console page to the routes and
+sockets that page lists, and `forPage(req, page)` turning a row into concrete
+`{ name, methods, url }` rows for the realm the request is in. Both surfaces
+read it at their TRANSPORT EDGE rather than in a view: `admin.respond()` adds
+`protocolEndpoints` to the page (`admin-ui/CLAUDE.md`, the foot), and
+`mgmt-api/admin_api.js` adds the same member to the GET whose `mirrors` names
+exactly that page. So no view function learnt an argument and the two doors
+cannot disagree.
+
+**IT NEVER LOADS A ROUTE-REGISTERING MODULE, NOT EVEN LAZILY.**
+`sts_metadata.js` (names, the router walk), `ldap/ldap_server.js` (the realm's
+base DN), `kerberos/krb5_kdc.js` (the realm name) and `spiffe/spiffe_server.js`
+(the bindings) are read out of `require.cache` by `loaded()` only if something
+already loaded them. `certificate_views.js` requires inside a function, which
+is a cache hit once the stack is up; this goes one step further because the
+first of those four must be LAST and requires the console. An in-process caller
+without the stack gets rows named by their paths and no methods — and no
+`registered` verdict, since nothing was checked. No slot was added: rule 3e's
+test is about a require, and there is none.
+
+It is here rather than in `common/` for this directory's reason: both admin
+surfaces read it, and what it reads is route-registering, lazily or not.
+`tests/protocol_endpoints.js` holds it.

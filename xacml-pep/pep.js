@@ -62,6 +62,9 @@
 // ===========================================================================
 
 const http = require('http');
+const https = require('https');
+const tls = require('tls');
+const nodeCrypto = require('crypto');
 const fs = require('fs');
 const { URL } = require('url');
 const engine = require('./engine');
@@ -272,6 +275,21 @@ const options = {
   // will not have.
   // ---------------------------------------------------------------------
   pipEnabled: process.env.PEP_PIP !== 'false',
+  // ---------------------------------------------------------------------
+  // THE HTTPS LISTENER (2026-09-13). PATHS AND NOT CONTENTS, unlike the
+  // client certificate above, and that is the whole difference between the
+  // two: the client certificate is read once at start because it exists
+  // before the container does, and this pair usually does NOT — it is issued
+  // by the realm the PEP REGISTERED to (`POST /admin-api/xacml/
+  // issue-pep-certificate`), which needs the registration to exist first. So
+  // the files are re-read on `httpsReloadIntervalMs`, a listener starts the
+  // first time a usable pair appears, and a pair written later replaces the
+  // one being served without a restart. See `reloadListenerPair()`.
+  // ---------------------------------------------------------------------
+  httpsCertPath: process.env.PEP_HTTPS_CERT || '',
+  httpsKeyPath: process.env.PEP_HTTPS_KEY || '',
+  httpsPort: intFromEnv('PEP_HTTPS_PORT', 9443),
+  httpsReloadIntervalMs: intFromEnv('PEP_HTTPS_RELOAD_INTERVAL_MS', 5000),
   // The error-code tag for `sync.js` and `pip.js`'s log lines. See
   // `loadErrorCodes()` above.
   tag: tag
@@ -557,6 +575,33 @@ function overview() {
     pdp: options.pdpUrl,
     bias: options.bias,
     protectedAt: '/protected',
+    // THE HTTPS LISTENER, as this process sees it (2026-09-13). The PDP's
+    // `/admin/xacml/peps` says which certificate the realm ISSUED; only this
+    // page can say which one is being SERVED, and the two differ for exactly
+    // as long as a pair has been issued and not yet written where
+    // PEP_HTTPS_CERT points.
+    https: {
+      configured: listener.configured,
+      listening: listener.listening,
+      port: listener.listening ? listener.port : null,
+      certificate: listener.certificate,
+      loadedAt: listener.loadedAt,
+      lastCheckedAt: listener.lastCheckedAt,
+      problem: listener.lastProblem,
+      what: listener.configured
+        ? 'This PEP serves the same four endpoints over HTTPS with a ' +
+          'certificate issued by the Remote PEP listeners Issuing CA of the ' +
+          'realm it registered to. The pair is re-read from ' +
+          options.httpsCertPath + ' and ' + options.httpsKeyPath + ' every ' +
+          options.httpsReloadIntervalMs + 'ms, so a certificate issued after ' +
+          'this container started — which is the ordinary order, since the ' +
+          'realm certifies a PEP only once it has registered — is picked up ' +
+          'without a restart.'
+        : 'No HTTPS listener: PEP_HTTPS_CERT and PEP_HTTPS_KEY are not both ' +
+          'set. Issue a pair with POST /admin-api/xacml/' +
+          'issue-pep-certificate on the PDP, write it to two files this ' +
+          'container can read, and name them.'
+    },
     holding: s.held,
     // COMPUTED HERE AND SEPARATELY FROM THE PDP'S OWN VERDICT, on purpose.
     // The PDP calls this PEP stale after `xacml.pepStaleAfterS` without a
@@ -625,7 +670,13 @@ async function protectedResource(query) {
   return { status: outcome.allowed ? 200 : 403, body: body };
 }
 
-const server = http.createServer(function (req, res) {
+// ONE HANDLER FOR BOTH LISTENERS. The HTTPS listener serves exactly the four
+// endpoints the HTTP one does, decided by exactly this code: a PEP whose two
+// ports answered differently would be two enforcement points sharing a process,
+// and a client moved from one to the other must see no difference but the
+// transport. No per-request Entering/Leaving pair — this is the hot path of
+// the container and would drown its log.
+function handle(req, res) {
   let parsed;
   try {
     parsed = new URL(req.url, 'http://localhost');
@@ -705,7 +756,199 @@ const server = http.createServer(function (req, res) {
     error_description: 'This PEP answers GET /, GET /protected, ' +
                        'POST /notify and GET /healthcheck.'
   });
-});
+}
+
+const server = http.createServer(handle);
+
+// ===========================================================================
+// THE HTTPS LISTENER (2026-09-13).
+//
+// A remote PEP answers its CLIENTS — whoever calls `/protected` — and it
+// answered them in plain http, because a certificate had to come from
+// somewhere and nothing provided one. The PDP's realm now does: its Remote PEP
+// listeners Issuing CA certifies a key pair for a REGISTERED PEP, hands the
+// private key over once, and an operator (or a launcher) writes the two halves
+// to the files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name.
+//
+// **THE FILES ARE WATCHED BECAUSE THE ORDER OF EVENTS REQUIRES IT, NOT FOR
+// CONVENIENCE.** The certificate comes from the realm this PEP registered to,
+// and registering is something this process does after it starts — so the
+// pair does not exist when the container does, and a listener that read its
+// files once at start would never get one. The launchers are the sharp case:
+// they start this container minutes before the realm it polls is created.
+// So the pair is re-read on an interval, the listener starts the first time a
+// USABLE pair appears, and a pair that changes afterwards is swapped in with
+// `setSecureContext()` — which is also what a renewal needs, and a restart to
+// rotate a certificate is an outage of its own.
+//
+// **A BAD PAIR NEVER REPLACES A GOOD ONE.** Files are written one at a time,
+// so between the two writes the certificate and the key disagree; a listener
+// that took that moment's pair would fail every handshake until the second
+// write landed. So a pair is checked whole — both parse, the key is the
+// certificate's, TLS accepts them — before it is used, and the pair already
+// being served stays until a better one arrives.
+//
+// **PLAIN HTTP STAYS**, on `PEP_PORT`. The container's own healthcheck uses it,
+// a deployment with no certificate is still a PEP that enforces, and turning
+// it off is the deployment's decision to make at its network edge rather than
+// this process's to make for it.
+// ===========================================================================
+const listener = {
+  configured: false,
+  listening: false,
+  port: null,
+  digest: '',
+  loadedAt: null,
+  certificate: null,
+  lastProblem: null,
+  lastCheckedAt: null
+};
+let httpsServer = null;
+// The last problem logged, so a file that stays missing for an hour is one log
+// line and not seven hundred. Reset whenever a pair loads.
+let lastLoggedProblem = '';
+
+// A problem, logged once per distinct sentence and always recorded for GET /.
+// `waiting` is the ordinary state before a certificate has been issued, which
+// is information rather than an error.
+function listenerProblem(code, sentence, waiting) {
+  log.debug("Entering listenerProblem().");
+  listener.lastProblem = sentence;
+  if (sentence !== lastLoggedProblem) {
+    lastLoggedProblem = sentence;
+    if (waiting) {
+      log.info('xacml-pep: ' + sentence);
+    } else {
+      // error-code: none — the code is the caller's, a literal at each call.
+      log.error(tag(code) + 'xacml-pep: ' + sentence);
+    }
+  }
+  log.debug("Leaving listenerProblem().");
+}
+
+// What GET / says about the certificate being served. Read with node's own
+// parser, so what the page reports is what a client's handshake will see.
+function describeServed(x509) {
+  log.debug("Entering describeServed().");
+  log.debug("Leaving describeServed().");
+  return {
+    subject: x509.subject.replace(/\n/g, ', '),
+    issuer: x509.issuer.replace(/\n/g, ', '),
+    serialHex: String(x509.serialNumber || '').toLowerCase(),
+    subjectAltName: x509.subjectAltName || '',
+    validFrom: new Date(x509.validFrom).toISOString(),
+    validTo: new Date(x509.validTo).toISOString(),
+    fingerprint256: x509.fingerprint256
+  };
+}
+
+function reloadListenerPair() {
+  log.debug("Entering reloadListenerPair().");
+  listener.lastCheckedAt = new Date().toISOString();
+  const certPath = options.httpsCertPath;
+  const keyPath = options.httpsKeyPath;
+  listener.configured = !!(certPath && keyPath);
+  if (!certPath && !keyPath) {
+    log.debug("Leaving reloadListenerPair(). Not configured.");
+    return;
+  }
+  if (!certPath || !keyPath) {
+    listenerProblem('STS-XPEP-0029', 'only ' +
+      (certPath ? 'PEP_HTTPS_CERT' : 'PEP_HTTPS_KEY') + ' is set, so there ' +
+      'is no HTTPS listener. Both halves of the pair are needed.', false);
+    log.debug("Leaving reloadListenerPair(). Half configured.");
+    return;
+  }
+  let cert;
+  let key;
+  try {
+    cert = fs.readFileSync(certPath);
+    key = fs.readFileSync(keyPath);
+  } catch (error) {
+    // A MISSING FILE IS THE ORDINARY STATE BEFORE A CERTIFICATE IS ISSUED, and
+    // it is said as information: this PEP has to register before its realm
+    // will certify it, so a fresh container meets this every time.
+    const missing = error && error.code === 'ENOENT';
+    listenerProblem('STS-XPEP-0030', missing
+      ? 'no HTTPS listener yet: ' + error.path + ' does not exist. The ' +
+        'certificate comes from the realm this PEP registered to (POST ' +
+        '/admin-api/xacml/issue-pep-certificate); write the pair there and ' +
+        'the listener starts within ' + options.httpsReloadIntervalMs + 'ms.'
+      : 'the HTTPS certificate or key could not be read (' +
+        error.message + ').', missing);
+    log.debug("Leaving reloadListenerPair(). Unreadable.");
+    return;
+  }
+  const digest = nodeCrypto.createHash('sha256').update(cert).update(key)
+    .digest('hex');
+  if (digest === listener.digest) {
+    log.debug("Leaving reloadListenerPair(). Unchanged.");
+    return;
+  }
+  let x509;
+  try {
+    // The FIRST certificate in the file is the leaf, which is what node's
+    // parser reads; the rest is the chain, sent as it is.
+    x509 = new nodeCrypto.X509Certificate(cert);
+    const privateKey = nodeCrypto.createPrivateKey(key);
+    if (!x509.checkPrivateKey(privateKey)) {
+      throw new Error('the private key is not the key this certificate ' +
+                      'certifies — most likely one file of the pair has been ' +
+                      'written and the other not yet');
+    }
+    // And TLS will take them, which is a separate question from whether they
+    // parse — this is the call that would otherwise throw inside the listener.
+    tls.createSecureContext({ cert: cert, key: key });
+  } catch (error) {
+    listenerProblem('STS-XPEP-0030', 'the HTTPS certificate and key were ' +
+      'not used: ' + error.message + '. ' + (listener.listening
+        ? 'The listener keeps serving the pair it has.'
+        : 'The listener starts when a usable pair is written.'), false);
+    log.debug("Leaving reloadListenerPair(). Refused the pair.");
+    return;
+  }
+  const served = describeServed(x509);
+  const now = Date.now();
+  if (now < Date.parse(served.validFrom) || now > Date.parse(served.validTo)) {
+    log.warn(tag('STS-XPEP-0032') + 'xacml-pep: the HTTPS certificate ' +
+             served.serialHex + ' is valid from ' + served.validFrom +
+             ' to ' + served.validTo + ', which does not include now. It is ' +
+             'served anyway — a listener with an expired certificate is ' +
+             'easier to diagnose than one that is not there — and every ' +
+             'client that checks will refuse the handshake.');
+  }
+  listener.digest = digest;
+  listener.certificate = served;
+  listener.loadedAt = new Date().toISOString();
+  listener.lastProblem = null;
+  lastLoggedProblem = '';
+  if (httpsServer) {
+    httpsServer.setSecureContext({ cert: cert, key: key });
+    log.info('xacml-pep: the HTTPS listener on ' + options.httpsPort +
+             ' now serves certificate ' + served.serialHex + ' (' +
+             served.subjectAltName + '), issued by ' + served.issuer +
+             '. Connections already open keep the certificate they ' +
+             'negotiated.');
+    log.debug("Leaving reloadListenerPair(). Swapped.");
+    return;
+  }
+  httpsServer = https.createServer({ cert: cert, key: key }, handle);
+  httpsServer.on('error', function (error) {
+    listener.listening = false;
+    listenerProblem('STS-XPEP-0031', 'the HTTPS listener could not listen ' +
+      'on ' + options.httpsPort + ': ' + error.message + '. Plain HTTP on ' +
+      options.port + ' and enforcement are unaffected.', false);
+  });
+  httpsServer.listen(options.httpsPort, function () {
+    listener.listening = true;
+    // The port BOUND, which is the configured one except where that is 0.
+    listener.port = httpsServer.address().port;
+    log.info('xacml-pep: HTTPS listening on ' + listener.port +
+             ' with certificate ' + served.serialHex + ' (' +
+             served.subjectAltName + '), issued by ' + served.issuer + '.');
+  });
+  log.debug("Leaving reloadListenerPair(). Started.");
+}
 
 async function start() {
   log.debug("Entering start().");
@@ -803,6 +1046,19 @@ async function start() {
     log.info('xacml-pep: listening on ' + options.port +
              '. The protected resource is GET /protected.');
   });
+
+  // THE HTTPS LISTENER, from whatever pair is on disk now, and again on its
+  // own interval — see `reloadListenerPair()` for why it cannot be read once.
+  // Not on the poll timer: that one is the policy contract and a slow read of
+  // a mounted file has no business delaying a pull.
+  if (options.httpsCertPath || options.httpsKeyPath) {
+    log.info('xacml-pep: HTTPS is configured on ' + options.httpsPort +
+             ' from ' + (options.httpsCertPath || '(no PEP_HTTPS_CERT)') +
+             ' and ' + (options.httpsKeyPath || '(no PEP_HTTPS_KEY)') +
+             ', re-read every ' + options.httpsReloadIntervalMs + 'ms.');
+    reloadListenerPair();
+    setInterval(reloadListenerPair, options.httpsReloadIntervalMs).unref();
+  }
   log.debug("Leaving start().");
 }
 
@@ -819,4 +1075,14 @@ if (require.main === module) {
 
 module.exports = { enforce: enforce, decide: decide, overview: overview,
                    protectedResource: protectedResource, options: options,
-                   server: server, start: start };
+                   server: server, start: start,
+                   // For an in-process test of the listener's reload rules,
+                   // which is the one part of this file a wrong pair on disk
+                   // can reach without a PDP.
+                   reloadListenerPair: reloadListenerPair,
+                   listener: listener,
+                   httpsServer: function () {
+                     log.debug("Entering httpsServer().");
+                     log.debug("Leaving httpsServer().");
+                     return httpsServer;
+                   } };

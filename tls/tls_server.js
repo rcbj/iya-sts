@@ -1089,6 +1089,91 @@ function describePem(pem) {
                          fingerprint256: fingerprintOf(pem) }, details);
 }
 
+// ---------------------------------------------------------------------------
+// THE SERVICE ROOT, FOR THE TLS CLIENT CERTIFICATES THE USER PORTAL ISSUES
+// (2026-09-13).
+//
+// A person issues themselves a TLS client certificate on /portal/signing-key,
+// installs it in a browser and presents it here. That only works if this
+// truststore holds the Root it chains to, and OpenSSL will not end a path at an
+// Issuing CA or an Intermediate — so the anchor is the service Root, behind
+// `tls.trustIssuedClientCertificates`. It is read LIVE, so the context this
+// module re-applies when the listener is re-certified under a rebuilt Root
+// carries the new one.
+//
+// **TRUSTING THE ROOT IS NOT TRUSTING WHAT IT ISSUED.** Every key pair this
+// service hands out chains to it, and most of them are not identities.
+// `common/tls_client_certificates.js`'s `identityOf()` is what every door below
+// asks before a verified chain through a held authority signs anybody in or is
+// recorded as an authentication. An anchor POSTed to /tls/trust that happens to
+// be the same Root is not added twice.
+//
+// Required lazily and answered '' on any failure: this is called while the two
+// listeners are created at require time, before the certificate authority has
+// started, and a truststore must never be the thing that fails to build.
+// ---------------------------------------------------------------------------
+function issuedClientCertificateAnchor() {
+  log.debug("Entering issuedClientCertificateAnchor().");
+  let pem = '';
+  try {
+    pem = require('../common/tls_client_certificates').trustAnchorPem();
+  } catch (e) {
+    log.debug("Caught in issuedClientCertificateAnchor(): " +
+              ((e && e.message) || e));
+    pem = '';
+  }
+  const already = !!pem && anchors.some(function (anchor) {
+    return String(anchor.pem).trim() === String(pem).trim();
+  });
+  log.debug("Leaving issuedClientCertificateAnchor().");
+  return pem && !already ? [pem] : [];
+}
+
+// What the truststore report says about the Root added above, or null in a
+// process with no certificate authority.
+function issuedClientCertificateReport() {
+  log.debug("Entering issuedClientCertificateReport().");
+  let out = null;
+  try {
+    out = require('../common/tls_client_certificates').report();
+  } catch (e) {
+    log.debug("Caught in issuedClientCertificateReport(): " +
+              ((e && e.message) || e));
+    out = null;
+  }
+  log.debug("Leaving issuedClientCertificateReport().");
+  return out;
+}
+
+// The identity gate for whatever this socket presented — see the block above.
+// `{ issuedHere: false }` when nothing verified or it was not issued here.
+function issuedIdentityOf(socket) {
+  log.debug("Entering issuedIdentityOf().");
+  let identity = { issuedHere: false, accepted: false };
+  try {
+    identity = require('../common/tls_client_certificates').identityOf(
+      revocationStatus.fromSocket(socket));
+  } catch (e) {
+    // No certificate authority in this process: nothing here was issued by
+    // one, so the gate has nothing to say.
+    log.debug("Caught in issuedIdentityOf(): " + ((e && e.message) || e));
+    identity = { issuedHere: false, accepted: false };
+  }
+  log.debug("Leaving issuedIdentityOf().");
+  return identity;
+}
+
+// Run `fn` in the realm a TLS client certificate names, or as the listener
+// always ran when it names none. A realm that has gone is refused upstream by
+// `identityOf()`, so `realms.get()` answering null here means "not ours".
+function inCertificateRealm(identity, fn) {
+  log.debug("Entering inCertificateRealm().");
+  const realm = identity && identity.accepted ? realms.get(identity.realm)
+                                              : null;
+  log.debug("Leaving inCertificateRealm().");
+  return realm ? realms.run(realm, fn) : fn();
+}
+
 // The `ca` half of the secure context. See the header: the empty case is passed
 // EXPLICITLY as an empty array, because omitting `ca` selects node's bundled
 // root store — which would mean a client certificate chaining to a public CA
@@ -1112,7 +1197,8 @@ function secureContextOptions() {
         ? [one.certPem].concat(one.chainPem).join('')
         : one.certPem;
     }),
-    ca: anchors.map(function (anchor) { return anchor.pem; }),
+    ca: anchors.map(function (anchor) { return anchor.pem; })
+      .concat(issuedClientCertificateAnchor()),
     // The protocol floor and cipher list — see protocolOptions(). In here so
     // that a truststore change, which re-applies this whole object, cannot
     // quietly reset a listener to node's defaults.
@@ -1338,7 +1424,9 @@ function trustAnchorPems() {
 // fails with `unable to get local issuer certificate`.
 //
 // So the front process RECONCILES: if the certificate it is serving no longer
-// chains to the Root this service now holds, it re-certifies from the current
+// chains to the Root this service now holds — or, since 2026-09-13, no longer
+// chains through the process branch this process now holds (see
+// `strandedListenerCertificates()` below) — it re-certifies from the current
 // hierarchy. `certifyRegistered()` is the same call `pki.start()` makes, and
 // `certify()` rebuilds a branch that no longer chains before it issues from
 // it — so one call repairs the branch and the leaf together.
@@ -1351,44 +1439,192 @@ function trustAnchorPems() {
 // A WORKER NEVER TAKES THIS PATH — it owns no socket and was handed its
 // certificate; see certifyServerCertificateUnderPki() above.
 // ===========================================================================
-async function reconcileWithHierarchy() {
+// ---------------------------------------------------------------------------
+// **"STILL CHAINS TO THE ROOT" WAS NOT THE WHOLE QUESTION (2026-09-13).**
+//
+// The check above was the SIGNATURE of the Root over the chain this listener
+// travels with, and that is true of every Intermediate CA (Process) this
+// service has ever built under its current Root — the one the socket presents
+// AND the one this process now HOLDS and publishes at
+// `/pki/ca/process/intermediate.cer`, names in every CRL distribution point
+// and signs that list with. Two different authorities, one subject, both
+// signed by the same Root, and the reconcile answered "already chains" about
+// the stale one.
+//
+// It reached the suite as `tests/vendored/sts_pki_distribution_points.js` in
+// dispatch mode only: *http://…/pki/crl/process/intermediate.crl is named by
+// certificates of two different authorities — CN=sts Intermediate CA
+// (Process), O=sts and CN=sts Intermediate CA (Process), O=sts*. Measured on
+// the kept stack: the handshake and `GET /tls/server-certificate` chained to
+// an Intermediate made at 14:53:56 by the FRONT process, every worker and the
+// front process's own register held one made at 14:53:57 by worker 33. The
+// sequence, from its log, was a `build-root` on worker 33:
+//
+//   .491  worker 33 publishes the new Root; the front process adopts it, its
+//         listener no longer chains, and `certify()` REBUILDS the stale
+//         process branch here (A) and issues the listener from it;
+//   .644  worker 33 publishes the process branch it rebuilt in the same act
+//         (B); the front process adopts it — and the listener, under A, still
+//         chains to the Root, so nothing is re-issued;
+//   57.18 a second rebuild of that branch on worker 33 (C) is adopted the same
+//         way, with the same non-answer.
+//
+// So a certificate is CURRENT when the Root signs its chain AND that chain is
+// the one this process holds for the scope it was certified in. The second
+// half is a comparison of certificates rather than of names, for the reason
+// every check in this file is: every candidate carries the same subject.
+// `pki.js`'s refusal to rebuild a branch on this caller's behalf is the other
+// half — it is what stopped A being built at all.
+// ---------------------------------------------------------------------------
+function certificateBody(pem) {
+  log.debug("Entering certificateBody().");
+  log.debug("Leaving certificateBody().");
+  return String(pem || '').replace(/-----[^-]+-----|\s+/g, '');
+}
+
+// The Issuing CA and the Intermediate this process holds for the listener's
+// scope and use case — the registration above names both — or null where it
+// holds no such branch, which is nothing to compare against.
+function heldListenerChain() {
+  log.debug("Entering heldListenerChain().");
+  let row = null;
+  try {
+    const pki = require('../common/pki');
+    row = pki.rawRowFor(pki.PROCESS_SCOPE);
+  } catch (e) {
+    // A process with no PKI is the ordinary case for `npm test`. Named rather
+    // than swallowed, and answered "nothing held".
+    log.debug("Caught in heldListenerChain(): " + ((e && e.message) || e));
+    row = null;
+  }
+  const issuing = row && row.issuing && row.issuing.tls;
+  if (!issuing || !issuing.certificatePem || !row.intermediate ||
+      !row.intermediate.certificatePem) {
+    log.debug("Leaving heldListenerChain(). None.");
+    return null;
+  }
+  log.debug("Leaving heldListenerChain().");
+  return [issuing.certificatePem, row.intermediate.certificatePem];
+}
+
+function chainIsHeld(record, held) {
+  log.debug("Entering chainIsHeld().");
+  if (!held) {
+    log.debug("Leaving chainIsHeld(). Nothing held to compare with.");
+    return true;
+  }
+  const chain = (record && record.chainPem) || [];
+  const same = chain.length === held.length &&
+               chain.every(function (pem, i) {
+                 return certificateBody(pem) === certificateBody(held[i]);
+               });
+  log.debug("Leaving chainIsHeld(). " + same);
+  return same;
+}
+
+// Every certificate this process certified for its own listeners. **EVERY ONE,
+// NOT ONLY THE FIRST (2026-09-13).** An ML-DSA certificate beside the RSA one
+// is a leaf of the same TLS Issuing CA, so it is stranded by a moved hierarchy
+// in exactly the same way — and a post-quantum client is handed it by
+// OpenSSL's choice rather than by anybody's. One that was never certified (its
+// registration failed) has no chain and is not this module's to repair: it is
+// its own anchor, as it always was.
+function listenerCertificatesOwned() {
+  log.debug("Entering listenerCertificatesOwned().");
+  if (!SERVER_CERTIFICATE || SERVER_CERTIFICATE.algorithm === 'supplied' ||
+      SERVER_CERTIFICATE.handedIn) {
+    log.debug("Leaving listenerCertificatesOwned(). Not this process's.");
+    return [];
+  }
+  log.debug("Leaving listenerCertificatesOwned().");
+  return SERVER_CERTIFICATES.filter(function (one) {
+    return one === SERVER_CERTIFICATE ||
+           (one.chainPem && one.chainPem.length && !one.handedIn &&
+            one.algorithm !== 'supplied');
+  });
+}
+
+// The owned certificates that are not current against `rootPem`, per the
+// block above.
+function strandedListenerCertificates(rootPem) {
+  log.debug("Entering strandedListenerCertificates().");
+  const held = heldListenerChain();
+  const out = listenerCertificatesOwned().filter(function (one) {
+    return !anchorSigns(rootPem, one) || !chainIsHeld(one, held);
+  });
+  log.debug("Leaving strandedListenerCertificates(). " + out.length);
+  return out;
+}
+
+function currentRootPem() {
+  log.debug("Entering currentRootPem().");
+  let root = null;
+  try {
+    root = require('../common/pki').serviceRoot();
+  } catch (e) {
+    // No PKI in this process — see heldListenerChain().
+    log.debug("Caught in currentRootPem(): " + ((e && e.message) || e));
+    root = null;
+  }
+  log.debug("Leaving currentRootPem().");
+  return (root && root.certificatePem) || '';
+}
+
+// ---------------------------------------------------------------------------
+// IS THIS LISTENER WAITING FOR A BRANCH ANOTHER PROCESS IS BUILDING?
+//
+// True when a certificate this process serves is not current AND the process
+// branch it holds does not chain to the Root — the state a Root published
+// ahead of its branches leaves behind. `common/request_pool.js` reads it after
+// a reconcile that declined to build (`buildBranch: false`) and arms the
+// fallback that does build, for the case where that branch never arrives.
+// ---------------------------------------------------------------------------
+function listenerAwaitsBranch() {
+  log.debug("Entering listenerAwaitsBranch().");
+  const rootPem = currentRootPem();
+  if (!rootPem || !strandedListenerCertificates(rootPem).length) {
+    log.debug("Leaving listenerAwaitsBranch(). No.");
+    return false;
+  }
+  let chains = true;
+  try {
+    const pki = require('../common/pki');
+    chains = pki.scopeChainsToRoot(pki.PROCESS_SCOPE);
+  } catch (e) {
+    // No PKI — nothing is being waited for.
+    log.debug("Caught in listenerAwaitsBranch(): " + ((e && e.message) || e));
+    chains = true;
+  }
+  log.debug("Leaving listenerAwaitsBranch(). " + !chains);
+  return !chains;
+}
+
+// `options.buildBranch === false` (2026-09-13): a process branch that does not
+// chain to the Root is WAITED FOR rather than rebuilt here. The front process
+// of a dispatched service passes it on every hierarchy a worker publishes —
+// that worker is rebuilding the branch — and omits it on the fallback it arms
+// in case the branch never arrives. Omitted, this is the repair it always was,
+// which is what an in-process caller wants.
+async function reconcileWithHierarchy(options) {
   log.debug('Entering reconcileWithHierarchy().');
+  const buildBranch = !(options && options.buildBranch === false);
   if (!SERVER_CERTIFICATE || SERVER_CERTIFICATE.algorithm === 'supplied' ||
       SERVER_CERTIFICATE.handedIn) {
     log.debug('Leaving reconcileWithHierarchy(). Not this process\'s to make.');
     return false;
   }
-  let root = null;
-  try {
-    root = require('../common/pki').serviceRoot();
-  } catch (e) {
+  const rootPem = currentRootPem();
+  if (!rootPem) {
     // A process with no PKI is the ordinary case for `npm test`; the
     // self-signed certificate is its own anchor and there is nothing to
     // reconcile with.
-    log.debug('Leaving reconcileWithHierarchy(). No hierarchy: ' + e.message);
-    return false;
-  }
-  if (!root || !root.certificatePem) {
     log.debug('Leaving reconcileWithHierarchy(). No Root.');
     return false;
   }
-  // **EVERY CERTIFICATE THIS PROCESS HAD CERTIFIED, NOT ONLY THE FIRST
-  // (2026-09-13).** An ML-DSA certificate beside the RSA one is a leaf of the
-  // same TLS Issuing CA now, so it is stranded by a rebuilt Root in exactly the
-  // same way — and a post-quantum client is handed it by OpenSSL's choice
-  // rather than by anybody's. One that was never certified (its registration
-  // failed) has no chain and is not this function's to repair: it is its own
-  // anchor, as it always was.
-  const mine = SERVER_CERTIFICATES.filter(function (one) {
-    return one === SERVER_CERTIFICATE ||
-           (one.chainPem && one.chainPem.length && !one.handedIn &&
-            one.algorithm !== 'supplied');
-  });
-  const stranded = mine.filter(function (one) {
-    return !anchorSigns(root.certificatePem, one);
-  });
+  const mine = listenerCertificatesOwned();
+  const stranded = strandedListenerCertificates(rootPem);
   if (!stranded.length) {
-    log.debug('Leaving reconcileWithHierarchy(). Already chains.');
+    log.debug('Leaving reconcileWithHierarchy(). Already current.');
     return false;
   }
   const fingerprints = function () {
@@ -1398,7 +1634,9 @@ async function reconcileWithHierarchy() {
   };
   const was = fingerprints();
   try {
-    await require('../common/pki').certifyRegistered();
+    await require('../common/pki').certifyRegistered({
+      repairBranch: buildBranch
+    });
   } catch (e) {
     // Reported rather than thrown: the caller is the worker pool's message
     // handler, and a listener that could not be re-certified must not take the
@@ -1413,12 +1651,27 @@ async function reconcileWithHierarchy() {
     log.debug('Leaving reconcileWithHierarchy(). Failed.');
     return false;
   }
+  if (fingerprints() === was && !buildBranch && listenerAwaitsBranch()) {
+    // `certify()` declined: the Root does not sign the process branch this
+    // process holds, and this caller asked not to rebuild it. Not the refusal
+    // below — the branch is on its way from the process that replaced the
+    // Root, and the next publish asks again.
+    log.info('tls: this service\'s Root was replaced in another process and ' +
+             'the process branch under it has not arrived yet, so the ' +
+             'listener certificate is re-issued when it does rather than ' +
+             'from a branch built here — two processes building one branch ' +
+             'publish two Intermediate CAs of the same name.');
+    log.debug('Leaving reconcileWithHierarchy(). Waiting for the branch.');
+    return false;
+  }
   if (fingerprints() === was) {
     log.warn(errorCodes.tag('STS-TLS-0026') +
              'tls: the listener certificate does not chain to this ' +
-             'service\'s Root and re-issuing it produced the same ' +
+             'service\'s Root, or not through the process branch this ' +
+             'process holds, and re-issuing it produced the same ' +
              'certificate. Nothing was changed, and GET ' +
-             '/tls/server-certificate publishes no anchor while that is true.');
+             '/tls/server-certificate publishes a chain nothing else here ' +
+             'publishes while that is true.');
     log.debug('Leaving reconcileWithHierarchy(). No change.');
     return false;
   }
@@ -2222,7 +2475,7 @@ function postQuantumOf(socket, leaf) {
   return out;
 }
 
-function describeConnection(req, mode, revocation) {
+function describeConnection(req, mode, revocation, identity) {
   log.debug('Entering describeConnection(). mode=' + mode);
   const socket = req.socket;
   const cipher = socket.getCipher ? (socket.getCipher() || {}) : {};
@@ -2237,6 +2490,14 @@ function describeConnection(req, mode, revocation) {
   // what this service decided.
   const verdictHere = revocation || null;
   const refusedOnRevocation = !!(verdictHere && verdictHere.refused);
+  // THE IDENTITY GATE (2026-09-13): a chain through this service's own Root
+  // that is not a TLS client or enrolled certificate verified and is not an
+  // identity. Kept apart from `refusedOnRevocation` for the reason that one is
+  // kept apart from `authorized`: each is true about a different thing.
+  const gated = identity || { issuedHere: false, accepted: false };
+  const refusedAsIdentity = !!(gated.issuedHere && !gated.accepted);
+  const accepted = presented && authorized && !refusedOnRevocation &&
+                   !refusedAsIdentity;
   // The leaf's subject as a DN, computed ONCE. It is the string this service
   // filed the identity under when the handshake completed, so it appears in two
   // places below and in a link; reading the peer certificate again for each of
@@ -2367,11 +2628,18 @@ function describeConnection(req, mode, revocation) {
       // unknown or unchecked; `policy` in force; `refused`; a sentence; and
       // one link per certificate saying whether the register or a CRL
       // answered it. Null when nothing was presented.
-      revocation: presented ? verdictHere : null
+      revocation: presented ? verdictHere : null,
+      // WHETHER THIS SERVICE ISSUED IT, AND WHETHER THAT MAKES IT AN IDENTITY
+      // (2026-09-13). `accepted` names the realm the session is started in —
+      // the realm whose TLS client or enrollment Issuing CA signed the leaf.
+      issuedHere: presented && authorized ? gated : null
     },
     truststore: {
       anchors: anchors.length,
       subjects: anchors.map(function (anchor) { return anchor.subject; }),
+      // The service Root, added for the TLS client certificates the user
+      // portal issues — `issuedClientCertificateAnchor()`.
+      issuedClientCertificates: issuedClientCertificateReport(),
       note: 'The anchors this service verifies CLIENT certificates against. ' +
         'They are POSTed to /tls/trust at runtime over ' + mainPortPhrase() +
         ', because the CA in question is usually generated in a browser ' +
@@ -2392,21 +2660,22 @@ function describeConnection(req, mode, revocation) {
       // a chain check alone. It is what the check did now: true whenever
       // `pki.revocationCheck` is not off, and a certificate it REFUSED is not
       // authenticated however well its chain built.
-      authenticated: presented && authorized && !refusedOnRevocation,
+      authenticated: accepted,
       revocationChecked: !!(verdictHere && verdictHere.checked),
       revocationStatus: verdictHere ? verdictHere.status : null,
       refusedOnRevocation: refusedOnRevocation,
-      sessionUrl: presented && authorized && !refusedOnRevocation
+      refusedAsIdentity: refusedAsIdentity,
+      sessionUrl: accepted
         ? '/admin/sessions' : null,
       // What DID happen, when the certificate verified: the subject DN was
       // filed as an authentication. Recorded and not authenticated — the
       // distinction the rest of this page exists to keep.
-      recorded: presented && authorized && !refusedOnRevocation,
-      identity: presented && authorized && !refusedOnRevocation ? subjectDn :
+      recorded: accepted,
+      identity: accepted ? subjectDn :
                 null,
-      consoleUrl: presented && authorized && !refusedOnRevocation
+      consoleUrl: accepted
         ? '/admin/users?user=' + encodeURIComponent(subjectDn) : null,
-      directoryUrl: presented && authorized && !refusedOnRevocation
+      directoryUrl: accepted
         ? '/admin/ldap/directory' : null,
       note: 'A verified client certificate means a chain was built to an ' +
         'anchor this service holds, AND that its revocation was consulted ' +
@@ -2427,6 +2696,10 @@ function describeConnection(req, mode, revocation) {
     report.verdict = 'REFUSED ON REVOCATION: ' + verdictHere.why + ' No ' +
       'session was started and no authentication was recorded. ' +
       report.verdict;
+  }
+  if (presented && authorized && !refusedOnRevocation && refusedAsIdentity) {
+    report.verdict = 'NOT AN IDENTITY HERE: ' + gated.why + '. No session ' +
+      'was started and no authentication was recorded. ' + report.verdict;
   }
   log.debug('Leaving describeConnection(). presented=' + presented +
             ' authorized=' + authorized);
@@ -2619,7 +2892,10 @@ function checkedSocket(socket) {
 // for that reason only: everything in it ran synchronously before 2026-09-12.
 function answer(req, res, mode, revocation) {
   log.debug('Entering answer(). mode=' + mode);
-  const report = describeConnection(req, mode, revocation);
+  // THE IDENTITY GATE (2026-09-13), asked once and handed to everything below
+  // that reads it — see `issuedClientCertificateAnchor()`.
+  const identity = issuedIdentityOf(req.socket);
+  const report = describeConnection(req, mode, revocation, identity);
   // Logged in full, like every other exchange this service records: this is
   // the one place the server's own view of a handshake is written down, and
   // when a mutual-TLS test fails it is the first thing worth reading.
@@ -2639,7 +2915,8 @@ function answer(req, res, mode, revocation) {
   // A VERIFIED CLIENT CERTIFICATE IS A SIGN-IN SINCE 2026-09-05, and the
   // section below this function argued the opposite until that day. See it
   // for what changed and what did not.
-  report.session = startCertificateSession(req, res, mode, revocation);
+  report.session = startCertificateSession(req, res, mode, revocation,
+                                           identity);
   // **THE STRICT LISTENER REFUSES A CERTIFICATE THE POLICY REFUSED, AS A 403
   // RATHER THAN AT THE HANDSHAKE** (2026-09-12). Its whole promise is that
   // reaching it proves the certificate is acceptable, and after the
@@ -2663,7 +2940,27 @@ function answer(req, res, mode, revocation) {
       outcome: 'refused'
     });
   }
-  const status = refusedHere ? 403 : 200;
+  // **AND ONE IT REFUSES AS AN IDENTITY (2026-09-13).** The strict listener's
+  // handshake now completes for every key pair this service issued, because
+  // its Root is in the truststore for the TLS client certificates the portal
+  // issues. A leaf that is not one of those verified and is not acceptable
+  // here, and "reaching it proves the certificate is acceptable" is still the
+  // promise — so it is a 403 with the report, exactly as a revocation is.
+  const refusedAsIdentity = mode === 'required' && !refusedHere &&
+                            !!(identity && identity.issuedHere &&
+                               !identity.accepted);
+  if (refusedAsIdentity) {
+    errorCodes.mark(res, 'STS-TLS-0031');
+    audit.failure('STS-TLS-0031', {
+      protocol: 'TLS', channel: 'tls',
+      target: 'TLS port ' + (boundMtlsPort || MTLS_PORT),
+      summary: 'the required-client-certificate listener refused a verified ' +
+               'certificate this service issued, because it is not a TLS ' +
+               'client identity: ' + identity.why,
+      outcome: 'refused'
+    });
+  }
+  const status = refusedHere || refusedAsIdentity ? 403 : 200;
   if (wantsJson) {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(report, null, 2));
@@ -2727,7 +3024,7 @@ function answer(req, res, mode, revocation) {
 // at differently because a cookie needs a response to be written on and
 // `secureConnection` has none.
 // ---------------------------------------------------------------------------
-function startCertificateSession(req, res, mode, revocation) {
+function startCertificateSession(req, res, mode, revocation, identity) {
   log.debug('Entering startCertificateSession(). mode=' + mode);
   const socket = req.socket;
   if (!socket || socket.authorized !== true) {
@@ -2750,13 +3047,61 @@ function startCertificateSession(req, res, mode, revocation) {
                   '(pki.revocationCheck is ' + revocation.policy + '): ' +
                   revocation.why };
   }
+  // NOT AN IDENTITY (2026-09-13): a chain through this service's own Root from
+  // an authority that does not issue TLS client identities. See
+  // `issuedClientCertificateAnchor()` for why that Root is trusted at all and
+  // why trusting it is not trusting everything under it.
+  const gated = identity || issuedIdentityOf(socket);
+  if (gated.issuedHere && !gated.accepted) {
+    log.info('tls: a verified client certificate on the ' + mode + ' ' +
+             'listener was issued by this service and is not a TLS client ' +
+             'identity, so no session was started: ' + gated.why + '.');
+    log.debug('Leaving startCertificateSession(). Not an identity.');
+    return { started: false, refusedAsIdentity: true,
+             why: 'the certificate verified and is NOT AN IDENTITY here: ' +
+                  gated.why };
+  }
+  // AN APPLICATION'S CERTIFICATE IS A CLIENT CREDENTIAL AND NOT A SIGN-IN
+  // (2026-09-13). The identity gate accepts a leaf naming a
+  // urn:sts:application: — that is what RFC 8705's implicit mapping at the
+  // token endpoint reads — and until then this function started a browser
+  // sign-on session for whatever name it carried, so an application whose
+  // identifier happened to be a person's username signed in AS that person.
+  // It became reachable by anybody holding such a certificate the day the
+  // application Credentials section started issuing them.
+  if (gated.issuedHere && gated.accepted && gated.kind === 'application') {
+    log.info('tls: a verified client certificate on the ' + mode + ' ' +
+             'listener was issued to the application ' + gated.username +
+             ', which authenticates at the token endpoint (RFC 8705) and ' +
+             'signs nobody in, so no session was started.');
+    log.debug('Leaving startCertificateSession(). An application.');
+    return { started: false, application: gated.username,
+             why: 'the certificate verified and was issued to the ' +
+                  'application "' + gated.username + '"; an application ' +
+                  'presents it at the token endpoint under RFC 8705, and it ' +
+                  'is not a browser sign-in' };
+  }
+  // A TLS CLIENT OR ENROLLED CERTIFICATE SIGNS ITS HOLDER IN TO ITS OWN REALM,
+  // which is the realm of the authority that signed it; this socket has no
+  // path to carry one. Everything below — the existing-session read, the
+  // session store, the issuance policy — runs in that realm.
+  log.debug('Leaving startCertificateSession(). Continuing in the ' +
+            'certificate\'s realm.');
+  return inCertificateRealm(gated, function () {
+    return startCertificateSessionIn(req, res, mode, revocation, gated);
+  });
+}
+
+function startCertificateSessionIn(req, res, mode, revocation, gated) {
+  log.debug('Entering startCertificateSessionIn(). mode=' + mode);
+  const socket = req.socket;
   // ALREADY SIGNED IN ON THIS BROWSER. Read rather than replaced, so that a
   // page load on 9443 does not mint a second session for somebody who already
   // has one — which would leave a global sign-out reporting two where the
   // person experienced one.
   const existing = authn.sessionOf(req);
   if (existing) {
-    log.debug('Leaving startCertificateSession(). One was already open.');
+    log.debug('Leaving startCertificateSessionIn(). One was already open.');
     return { started: false, id: existing.id, username: existing.user &&
              existing.user.username,
              why: 'this browser already holds a sign-on session, and ' +
@@ -2770,16 +3115,16 @@ function startCertificateSession(req, res, mode, revocation) {
     // A socket that went away between the handshake and this line. Swallowed
     // for recordClientCertificate()'s reason: this runs inside a request
     // handler on a listener of its own, and a throw here answers nothing.
-    log.debug('startCertificateSession(): the peer certificate could not be ' +
-              'read: ' + e.message);
-    log.debug("Leaving startCertificateSession().");
+    log.debug('startCertificateSessionIn(): the peer certificate could not ' +
+              'be read: ' + e.message);
+    log.debug("Leaving startCertificateSessionIn().");
     return { started: false, why: 'the peer certificate could not be read' };
   }
   if (!cert || !Object.keys(cert).length) {
     // A RESUMED TLS SESSION carries no peer certificate — the client does not
     // send it again. Nothing is started, rather than a session with no identity
     // on it.
-    log.debug('Leaving startCertificateSession(). No peer certificate; a ' +
+    log.debug('Leaving startCertificateSessionIn(). No peer certificate; a ' +
               'resumed session.');
     return { started: false,
              why: 'the connection verified but carries no peer certificate, ' +
@@ -2790,9 +3135,14 @@ function startCertificateSession(req, res, mode, revocation) {
     ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
              cert.subject.CN)
     : '';
-  const username = common || subject;
+  // THE IDENTITY THE ISSUING AUTHORITY WROTE, where this service issued it:
+  // the `urn:sts:person:` (or application) name, which is what an enrolled
+  // certificate is mapped to its entry by. Otherwise the common name, as it
+  // has been since 2026-09-05.
+  const username = (gated && gated.accepted && gated.username) ||
+                   common || subject;
   if (!username) {
-    log.debug('Leaving startCertificateSession(). The subject is empty.');
+    log.debug('Leaving startCertificateSessionIn(). The subject is empty.');
     return { started: false,
              why: 'the certificate names nobody: it has neither a common ' +
                   'name nor a subject' };
@@ -2810,7 +3160,7 @@ function startCertificateSession(req, res, mode, revocation) {
               'tls: starting a session for the verified client certificate ' +
               'failed and was ignored; the connection is unaffected: ' +
               e.message);
-    log.debug("Leaving startCertificateSession().");
+    log.debug("Leaving startCertificateSessionIn().");
     return { started: false, why: 'starting the session threw: ' + e.message };
   }
   // THE ISSUANCE POLICY CAN REFUSE IT (2026-09-06), and a NULL is how
@@ -2826,7 +3176,7 @@ function startCertificateSession(req, res, mode, revocation) {
     log.info('tls: the issuance policy refused a session for ' + username +
              ' on a verified client certificate (' + mode + ' listener). The ' +
              'handshake and the chain are unaffected and are still reported.');
-    log.debug("Leaving startCertificateSession().");
+    log.debug("Leaving startCertificateSessionIn().");
     return { started: false,
              why: 'the issuance policy refused a session for "' + username +
                   '". The certificate verified and the connection is ' +
@@ -2842,9 +3192,12 @@ function startCertificateSession(req, res, mode, revocation) {
   log.info('tls: ' + username + ' is signed in on a verified client ' +
            'certificate ' +
            '(' + mode + ' listener). The chain verified and ' + revocationSaid);
-  log.debug('Leaving startCertificateSession(). Started ' + session.id + '.');
+  log.debug('Leaving startCertificateSessionIn(). Started ' + session.id + '.');
   return { started: true, id: session.id, username: username,
            subject: subject,
+           // The realm the session is in: the certificate's issuing authority's
+           // for one this service issued, the default realm's otherwise.
+           realm: realms.currentId(),
            note: 'the chain verified against an anchor in this service\'s ' +
                  'truststore and ' + revocationSaid + '. The session is this ' +
                  'service tracking that the holder got in, which is what ' +
@@ -2916,6 +3269,26 @@ function recordClientCertificate(socket, mode, revocation) {
     log.debug('Leaving recordClientCertificate(). Refused on revocation.');
     return null;
   }
+  // NOT AN IDENTITY (2026-09-13), for `startCertificateSession()`'s reason: a
+  // chain through this service's own Root from an authority that does not
+  // issue TLS client identities is not an authentication, so it is not filed
+  // as one. It gets the refusal row the strict listener's 403 writes, once per
+  // handshake here rather than per request there.
+  const gated = issuedIdentityOf(socket);
+  if (gated.issuedHere && !gated.accepted) {
+    log.info('tls: a verified client certificate on the ' + mode + ' ' +
+             'listener was not recorded as an authentication: ' + gated.why +
+             '.');
+    log.debug('Leaving recordClientCertificate(). Not an identity.');
+    return null;
+  }
+  // An application's certificate is not a person's authentication, for
+  // `startCertificateSession()`'s reason; filing it on /admin/users would put
+  // an application in the register of people.
+  if (gated.issuedHere && gated.accepted && gated.kind === 'application') {
+    log.debug('Leaving recordClientCertificate(). An application.');
+    return null;
+  }
   let cert = null;
   try {
     cert = socket.getPeerCertificate ? socket.getPeerCertificate() : null;
@@ -2944,33 +3317,10 @@ function recordClientCertificate(socket, mode, revocation) {
              cert.subject.CN)
     : '';
   try {
-    stats.recordAuthentication({
-      presented: subject,
-      protocol: 'TLS',
-      method: 'client certificate on the ' + mode + '-client-certificate ' +
-        'listener (port ' + (mode === 'required'
-          ? (boundMtlsPort || MTLS_PORT) : (boundTlsPort || TLS_PORT)) + ')',
-      note: 'the chain verified against one of the ' + anchors.length +
-        ' anchor(s) in this service\'s truststore, and ' +
-        (revocation && revocation.checked
-          ? 'its revocation was consulted (' + revocation.policy + ', ' +
-            revocation.status + ')'
-          : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)') +
-        '. Since 2026-09-05 a sign-on session is started for the holder, so ' +
-        'a global sign-out can end it; no token is issued.',
-      // Both DNs in RFC 4514 form, which is not the form the report on this
-      // connection shows — see dnRfc4514(). These two go into a DIRECTORY, and
-      // that is the only form a directory takes.
-      certificate: {
-        subject: subject,
-        commonName: common,
-        issuer: dnRfc4514(cert.issuer),
-        serialNumber: cert.serialNumber || '',
-        validFrom: cert.valid_from || '',
-        validTo: cert.valid_to || '',
-        fingerprint256: cert.fingerprint256 || '',
-        email: emailOf(cert)
-      }
+    // IN THE CERTIFICATE'S REALM, so the directory entry the observer seeds is
+    // in the subtree of the realm whose authority issued it.
+    inCertificateRealm(gated, function () {
+      recordCertificateAuthentication(subject, common, cert, mode, revocation);
     });
   } catch (e) {
     // Same reason as the read above, and one more: the console and the
@@ -2990,6 +3340,42 @@ function recordClientCertificate(socket, mode, revocation) {
            'request, because a cookie needs a response to be written on.');
   log.debug('Leaving recordClientCertificate(). Recorded.');
   return subject;
+}
+
+// The authentication itself, split out of `recordClientCertificate()` so it
+// can run inside the certificate's realm. It may throw; its caller catches.
+function recordCertificateAuthentication(subject, common, cert, mode,
+                                         revocation) {
+  log.debug('Entering recordCertificateAuthentication().');
+  stats.recordAuthentication({
+    presented: subject,
+    protocol: 'TLS',
+    method: 'client certificate on the ' + mode + '-client-certificate ' +
+      'listener (port ' + (mode === 'required'
+        ? (boundMtlsPort || MTLS_PORT) : (boundTlsPort || TLS_PORT)) + ')',
+    note: 'the chain verified against one of the ' + anchors.length +
+      ' anchor(s) in this service\'s truststore, and ' +
+      (revocation && revocation.checked
+        ? 'its revocation was consulted (' + revocation.policy + ', ' +
+          revocation.status + ')'
+        : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)') +
+      '. Since 2026-09-05 a sign-on session is started for the holder, so ' +
+      'a global sign-out can end it; no token is issued.',
+    // Both DNs in RFC 4514 form, which is not the form the report on this
+    // connection shows — see dnRfc4514(). These two go into a DIRECTORY, and
+    // that is the only form a directory takes.
+    certificate: {
+      subject: subject,
+      commonName: common,
+      issuer: dnRfc4514(cert.issuer),
+      serialNumber: cert.serialNumber || '',
+      validFrom: cert.valid_from || '',
+      validTo: cert.valid_to || '',
+      fingerprint256: cert.fingerprint256 || '',
+      email: emailOf(cert)
+    }
+  });
+  log.debug('Leaving recordCertificateAuthentication().');
 }
 
 // ---------------------------------------------------------------------------
@@ -3833,6 +4219,13 @@ function listen() {
   // restart — and a listener that bound a moment earlier would accept its first
   // connections judged by a truststore missing every runtime anchor.
   reloadStoredAnchors();
+  // AND THE CONTEXT IS RE-APPLIED WHATEVER THAT FOUND (2026-09-13). The two
+  // listeners were created at require time, before the certificate authority
+  // started, so the service Root `issuedClientCertificateAnchor()` adds for
+  // the portal's TLS client certificates was not there to add. A listener
+  // re-certified under the hierarchy has already had it re-applied; one serving
+  // a supplied certificate never is, and would otherwise bind without it.
+  applyAnchors();
   const whenReady = Promise.all([
     start(permissiveServer, TLS_PORT, 'optional-client-certificate'),
     start(strictServer, MTLS_PORT, 'required-client-certificate')
@@ -3970,6 +4363,9 @@ module.exports = {
   // The three the request-worker pool uses. See their headers: the hierarchy
   // can be rebuilt in a process that does not own this socket.
   reconcileWithHierarchy: reconcileWithHierarchy,
+  // Whether the listener is waiting for a process branch another process is
+  // building (2026-09-13) — `common/request_pool.js` arms its fallback on it.
+  listenerAwaitsBranch: listenerAwaitsBranch,
   serverCertificateBundle: serverCertificateBundle,
   adoptServerCertificate: adoptServerCertificate,
   anchorCount: function () {

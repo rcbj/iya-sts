@@ -89,6 +89,7 @@ STS_MODE=development
 STS_PERSISTENCE_MODE=memory
 STS_PERSISTENCE_COORDINATE=false
 STS_WORKERS_REQUEST_COUNT=0
+STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
 STS_KEYS_SOURCE=generated
@@ -116,6 +117,7 @@ STS_MODE=development
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=0
+STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
 STS_KEYS_SOURCE=generated
@@ -144,11 +146,23 @@ EOF
       # the compose file's connection string no longer carries one at all. What
       # is particular to this mode is the KEK, which needs a keystore to be on
       # before anything reads it.
+      #
+      # AND THE CONSOLE AND THE PORTAL ON A POOL OF THEIR OWN (2026-09-13),
+      # which is a fourth axis: `STS_WORKERS_SURFACE_COUNT=1`. ONE worker and
+      # not three, and the argument above for three does not carry over. What
+      # a second pool can get WRONG is the crossing — a console sign-in minted
+      # in a protocol worker and read in a surface worker, and the OIDC back
+      # channel reaching the protocol worker that holds the code — and one
+      # surface worker is enough to cross on every sign-in. Choosing among
+      # several workers WITHIN a pool is the same code the three protocol
+      # workers already exercise, and every extra worker is a whole copy of the
+      # service in a mode that has been killed for memory before.
       cat <<'EOF'
 STS_MODE=development
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
 STS_WORKERS_READ_YOUR_WRITE=true
 STS_KEYS_SOURCE=persisted
@@ -169,7 +183,7 @@ stsModeDescription()
   case "$1" in
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
     postgres) echo "one process, persisted and coordinating through the change log" ;;
-    dispatch) echo "3 request workers, every path dispatched, read-your-write on" ;;
+    dispatch) echo "3 request workers + 1 for the console and portal, every path dispatched, read-your-write on" ;;
     *)        echo "unknown" ;;
   esac
 }

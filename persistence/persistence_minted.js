@@ -241,6 +241,11 @@ let restoring = false;
 // True once stop() has run, so a late flush cannot reach a closed pool.
 let stopped = false;
 
+// The flush whose write has not settled yet, or null. See flush()'s header:
+// ONE AT A TIME PER PROCESS, which is what makes commit order the same as the
+// order the values were read in.
+let flushInFlight = null;
+
 // What /admin/persistence and GET /admin-api/persistence report.
 let lastWriteAt = null;
 let lastError = '';
@@ -750,9 +755,75 @@ function dirty() {
 // `persistence.js`'s reason: a write made while this is in flight has to get
 // its own flush rather than being cleared away unwritten. On a failure the
 // keys go back, so nothing is lost by a database that blinked.
+//
+// ---------------------------------------------------------------------------
+// ONE FLUSH AT A TIME IN A PROCESS, AND THE LATER ONE WAITS (2026-09-13).
+//
+// **A FLUSH READS EACH VALUE WHEN IT TAKES THE JOURNAL AND WRITES IT WHEN ITS
+// TRANSACTION COMMITS, AND THOSE ARE NOT THE SAME MOMENT.** Between them are a
+// pool checkout, a BEGIN and a statement per row, each taking a row lock held
+// to COMMIT. Two flushes from one process could run at once — this function
+// has two callers that do not wait for each other: `persistence.js`'s
+// scheduled flush, and `request_worker.js`'s commit announcement through
+// `flushMinted()` — and a key written between their two journal takes is in
+// BOTH, carrying two different values. The two transactions then commit in
+// whatever order their locks allow, and `ON CONFLICT DO UPDATE` keeps
+// whichever commits LAST, which need not be the one that read LAST.
+//
+// **THAT IS HOW A SIGN-IN WAS STORED AS AN ANONYMOUS ARRIVAL, AND IT IS THE
+// WHOLE OF `sts_global_logout`'S DISPATCH-MODE FAILURE.** A browser arriving
+// at `/wsfed` is given an arrival session — `anonymous`, `chosen: false` — and
+// the sign-in a moment later upgrades the SAME row in place. Worker 34 took the
+// arrival into one flush and the upgrade into another; the arrival's
+// transaction began first (15:00:44.079), waited on a lock the upgrade's held
+// (begun 15:00:44.267), and committed after it, so `sts_changes` shows the two
+// rows for that session with their sequence numbers the opposite way round from
+// their start times (41715 at .267, 41778 at .079). Every other process
+// applied what the store held — an anonymous row nobody had chosen — while
+// worker 34 held the signed-in session in memory. So `/admin-api/sessions`
+// listed seven sessions where eight were live, the global sign-out ended the
+// seven it could see, and the one it could not see went on authorising
+// `prompt=none` at the worker that had it.
+//
+// **NO READ BARRIER COULD HAVE HELPED**, which is why the fix is here and not
+// in `request_pool.js`: the reader caught up correctly — to a store that was
+// wrong. Nor would the sign-out syncing to the latest change first, for the
+// same reason.
+//
+// So a call made while a flush is in flight waits for it and then takes the
+// journal itself. Commit order is then journal order within a process, and a
+// later value can never be overwritten by an earlier one. The waiting call
+// also picks up everything written while it waited, so a burst costs fewer
+// transactions rather than more. What it does not change is two DIFFERENT
+// processes writing one key, which is last-writer-wins by design and argued in
+// `persistence/CLAUDE.md`.
+//
+// `tests/minted_persistence.js` section 5b holds it with a store that commits
+// when told to.
 // ---------------------------------------------------------------------------
 function flush() {
   log.debug('Entering flush().');
+  if (flushInFlight) {
+    // THE LATER CALL WAITS, and re-enters rather than continuing here: the
+    // journal it must take is the one that exists AFTER the write in flight
+    // has settled, not the one that existed when it was called. Several
+    // waiters are harmless — the first takes everything and the rest find
+    // nothing and resolve.
+    const waitingFor = flushInFlight;
+    log.debug('Leaving flush(). One is in flight; waiting for it first.');
+    return waitingFor.then(function () {
+      // A SETTLED WRITE IS NEVER WAITED ON TWICE. The write clears its own
+      // marker before resolving, so this is belt and braces — but the braces
+      // matter: a marker left on a settled promise would make this re-entry
+      // wait on it again at once, for ever, in microtasks, which is a process
+      // that stops answering and then runs out of memory rather than one that
+      // is merely slow.
+      if (flushInFlight === waitingFor) {
+        flushInFlight = null;
+      }
+      return flush();
+    });
+  }
   if (!enabled()) {
     // The journal is cleared rather than kept. A process that is not
     // persisting minted state must not accumulate the names of every session
@@ -840,7 +911,7 @@ function flush() {
   }
 
   log.debug("Leaving flush().");
-  return driver.saveMinted(upserts, deletes).then(function () {
+  const saving = driver.saveMinted(upserts, deletes).then(function () {
     writes++;
     rowsWritten += upserts.length;
     rowsDeleted += deletes.length;
@@ -889,6 +960,26 @@ function flush() {
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   });
+  // CLEARED BEFORE THE RESULT IS HANDED ON, so that a caller waiting on this
+  // promise finds nothing in flight when it re-enters. Cleared on either path:
+  // a handler above that threw must not leave every later flush waiting on a
+  // write that is over. Only if it is still THIS flush — `reset()` may have
+  // started a new life for the module while this one was out.
+  const settled = saving.then(function (result) {
+    if (flushInFlight === settled) {
+      flushInFlight = null;
+    }
+    return result;
+  }, function (err) {
+    log.debug("Caught in flush(): " + ((err && err.message) || err));
+    if (flushInFlight === settled) {
+      flushInFlight = null;
+    }
+    lastError = (err && err.message) || String(err);
+    return { written: false, error: lastError };
+  });
+  flushInFlight = settled;
+  return settled;
 }
 
 // ---------------------------------------------------------------------------
@@ -1169,6 +1260,9 @@ function reset() {
   driver = null;
   stopped = false;
   restoring = false;
+  // A write left in flight by the previous test must not make the next one's
+  // first flush wait on a driver that is no longer installed.
+  flushInFlight = null;
   lastWriteAt = null;
   lastError = '';
   writes = 0;

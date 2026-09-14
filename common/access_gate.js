@@ -145,7 +145,15 @@ const RESOURCE = {
   // with, which is the collapse `roles.js` keeps the two roles apart to
   // prevent — and a policy layer that cannot express the distinction its own
   // register makes is a policy layer somebody will work around.
-  XACML_API: 'xacml-api'
+  XACML_API: 'xacml-api',
+  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the third resource that
+  // is restricted from the start: `debugger/debugger_access.js` puts the two
+  // console roles in the request, so only a console administrator is issued
+  // the debugger permission or reaches the api it opens. Asked TWICE on
+  // purpose — when the scope would be issued and on every call the api's
+  // gate forwards — because a role revoked after a token was minted must stop
+  // working before the token runs out.
+  DEBUGGER: 'protocol-debugger'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's

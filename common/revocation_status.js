@@ -445,6 +445,22 @@ function heldAuthorities() {
   return out;
 }
 
+// WHICH AUTHORITIES ARE HELD, as one string (2026-09-13). For a caller that
+// memoises something it worked out from the walk below —
+// `common/tls_client_certificates.js`'s identity gate — and must not go on
+// believing it once an authority has been replaced: a rebuilt Issuing CA has
+// a different thumbprint, so the key moves and the memo misses.
+function heldAuthorityKey() {
+  log.debug("Entering heldAuthorityKey().");
+  const key = heldAuthorities().map(function (one) {
+    return one.scope + '/' + one.ca + '=' +
+           String((one.tier && (one.tier.thumbprint || one.tier.serialHex)) ||
+                  '');
+  }).join(',');
+  log.debug("Leaving heldAuthorityKey().");
+  return key;
+}
+
 // The authority this service holds that signed `cert`, or null.
 function localIssuerOf(cert) {
   log.debug("Entering localIssuerOf().");
@@ -4026,6 +4042,12 @@ module.exports = {
   CODE_REGISTERED: CODE_REGISTERED,
   decide: decide,
   fromSocket: fromSocket,
+  // The walk itself, for `common/tls_client_certificates.js`, which asks the
+  // same question about the same chain — which held authority signed each
+  // link — for a different reason: not whether it is revoked, but whether a
+  // certificate this service issued was issued to be a TLS client identity.
+  walk: walk,
+  heldAuthorityKey: heldAuthorityKey,
   annotateRequest: annotateRequest,
   requestVerdict: requestVerdict,
   codeOf: codeOf,

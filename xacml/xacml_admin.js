@@ -79,6 +79,10 @@ const alfa = require('./xacml_alfa');
 const pip = require('./xacml_pip');
 const peps = require('./xacml_pep_registry');
 const pepHttp = require('./xacml_pep_http');
+// A remote PEP's HTTPS listener certificate (2026-09-13). A LIBRARY over
+// `common/pki.js` and the register above, registering nothing.
+const pepTls = require('./xacml_pep_tls');
+const pki = require('../common/pki');
 const monitor = require('./xacml_monitor');
 
 const esc = admin.esc;
@@ -564,6 +568,17 @@ function pepsJson() {
     // about a PEP registered an hour ago. A stored verdict would have been
     // right when it was written and wrong from then on.
     view.notifyProblem = pepHttp.urlProblem(row.notifyUrl);
+    // THE LISTENER CERTIFICATE THIS REALM ISSUED IT, read from the
+    // certificate register rather than stored on the row — the register is
+    // where `pki.js` keeps what an Issuing CA certified, and a copy on
+    // `ou=peps` would be a second answer that went stale at the first
+    // reissue. Public only; the key was handed over once. The chain is left
+    // off because it is the realm's and `GET /admin-api/pki` has it.
+    const certificate = pepTls.certificateOf(row.name);
+    if (certificate) {
+      delete certificate.chainPem;
+    }
+    view.listenerCertificate = certificate;
     return view;
   });
   const json = {
@@ -586,6 +601,11 @@ function pepsJson() {
     // empties it is looking at. Empty on the ordinary service, where the
     // default realm is the only realm.
     elsewhere: peps.elsewhere(),
+    listenerCertificates: {
+      useCase: pepTls.USE_CASE,
+      keyAlgorithms: pki.TLS_SERVER_KEY_ALGS.slice(),
+      defaultKeyAlg: pki.DEFAULT_TLS_SERVER_KEY_ALG
+    },
     current: rows.filter(function (row) {
       return row.current;
     }).length,
@@ -682,6 +702,34 @@ app.get('/admin/xacml/peps', function (req, res) {
           : '')
       : '<span class="sub">none — never nudged, and it converges on its ' +
         'own poll anyway</span>';
+    // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
+    // and never whether the PEP is serving it: nothing on this page reaches
+    // into another process, and the PEP's own GET / is where that is said.
+    const held = row.listenerCertificate;
+    const listener = (held
+      ? '<code>' + esc(held.serialHex) + '</code>' +
+        '<div class="sub">' +
+        esc(held.dnsNames.concat(held.ipAddresses).join(', ')) + '</div>' +
+        '<div class="sub">' +
+        (held.expired ? '<strong>expired</strong> ' : '') +
+        'until ' + esc(held.notAfter) + '</div>'
+      : '<span class="sub">none issued</span>') +
+      (writable
+        ? '<form method="post" action="/admin/xacml/peps">' +
+          hidden('action', 'issue-pep-certificate') +
+          hidden('name', row.name) +
+          '<div class="sub">More DNS names <input name="dnsNames" ' +
+          'size="18" placeholder="pep.example.test"></div>' +
+          '<div class="sub">IP addresses <input name="ipAddresses" ' +
+          'size="14" placeholder="10.0.0.5"></div>' +
+          '<div class="sub">Key ' +
+          select('keyAlg', json.listenerCertificates.keyAlgorithms
+            .map(function (one) {
+              return { value: one, label: one };
+            }), json.listenerCertificates.defaultKeyAlg) + ' ' +
+          '<button type="submit">' + (held ? 'Reissue' : 'Issue') +
+          ' certificate</button></div></form>'
+        : '');
     const actions = writable
       ? '<form method="post" action="/admin/xacml/peps" ' +
         'style="display:inline">' +
@@ -707,9 +755,10 @@ app.get('/admin/xacml/peps', function (req, res) {
         ? '<div class="sub">' + row.undischargeable + ' of those refused for ' +
           'an obligation it could not discharge</div>'
         : '') +
-      '</td><td>' + notify + '</td><td>' + actions + '</td></tr>';
+      '</td><td>' + notify + '</td><td>' + listener + '</td><td>' + actions +
+      '</td></tr>';
   }).join('') ||
-    '<tr><td colspan="7">' + noPepsHere(json.elsewhere) + '</td></tr>';
+    '<tr><td colspan="8">' + noPepsHere(json.elsewhere) + '</td></tr>';
 
   const body = admin.note(
     '<p>A <strong>remote</strong> Policy Enforcement Point runs in another ' +
@@ -751,7 +800,23 @@ app.get('/admin/xacml/peps', function (req, res) {
         'safe to turn off.</p>') +
     '<table><tr><th>PEP</th><th>Certificate</th><th>State</th>' +
     '<th>Its bias</th><th>What it enforced</th><th>Notify</th>' +
+    '<th>HTTPS listener certificate</th>' +
     '<th>Actions</th></tr>' + rows + '</table>' +
+    admin.note(
+      '<p>A remote PEP answers its own clients, and the column above is the ' +
+      'certificate it answers them with. It is issued by the ' +
+      '<strong>Remote PEP listeners</strong> Issuing CA of <em>this</em> ' +
+      'realm &mdash; the realm the PEP registered to &mdash; so a client ' +
+      'that installed this service&rsquo;s Root CA verifies it, and the ' +
+      'chain still says which realm vouched for that front door. It names ' +
+      'the PEP&rsquo;s registered name and the host of its notify URL, plus ' +
+      'whatever you add.</p><p><strong>The private key is shown ' +
+      'once</strong>, on the page that answers the button, and this service ' +
+      'keeps no copy. Write the two blocks to the files the container reads ' +
+      '(<code>PEP_HTTPS_CERT</code> and <code>PEP_HTTPS_KEY</code>); it ' +
+      'picks up a pair written after it started, and reissuing supersedes ' +
+      'the certificate it replaces on the issuer&rsquo;s revocation list.</p>',
+      'The HTTPS listener certificate') +
     admin.note(
       '<p>The decision counts are the PEP&rsquo;s own, reported by it, ' +
       'cumulative in its process. This service did not see one of those ' +
@@ -1177,11 +1242,22 @@ app.get('/admin/xacml/monitor', function (req, res) {
 // ambiguous between a policy and a PEP — and the ambiguity would resolve
 // silently in favour of whichever list was tested first.
 // ---------------------------------------------------------------------------
-const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep'];
+// `issue-pep-certificate` (2026-09-13) is the fourth and the only one that is
+// ASYNCHRONOUS — generating a key pair and signing a certificate are both
+// promises — so `pepAction()` answers a PROMISE for it and a plain result for
+// the other three, and every caller settles it with `Promise.resolve()`. The
+// three synchronous ones stay synchronous because two in-process test files
+// call `combinedAction()` without awaiting.
+const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
+                     'issue-pep-certificate'];
 
 function pepAction(body) {
   log.debug('Entering pepAction(). action=' + (body || {}).action);
   const action = String((body || {}).action || '');
+  if (action === 'issue-pep-certificate') {
+    log.debug('Leaving pepAction(). Issuing a listener certificate.');
+    return pepTls.issue(body);
+  }
   const name = String((body || {}).name || '');
   if (!name) {
     log.debug('Leaving pepAction(). No name.');
@@ -1247,6 +1323,11 @@ app.post('/admin/xacml/peps', function (req, res) {
     log.debug('Leaving the admin XACML remote PEPs action. Read-only.');
     return;
   }
+  if (String(body.action || '') === 'issue-pep-certificate') {
+    issueFromConsole(req, res, body);
+    log.debug('Leaving the admin XACML remote PEPs action. Issuing.');
+    return;
+  }
   const result = pepAction(body);
   if (!result.ok) {
     errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0038');
@@ -1254,6 +1335,79 @@ app.post('/admin/xacml/peps', function (req, res) {
   admin.respondToAction(req, res, '/admin/xacml/peps', result);
   log.debug('Leaving the admin XACML remote PEPs action.');
 });
+
+// ---------------------------------------------------------------------------
+// THE ISSUE, ANSWERED AS A PAGE AND NOT AS A REDIRECT.
+//
+// Every other control on this page 303s back with its sentence on the query
+// string, which is `respondToAction()`'s shape. This one carries a PRIVATE KEY,
+// and a private key on a query string is a private key in the browser history,
+// the access log and the next request's `Referer` — so the reply is a 200 page
+// drawn once, `no-store`, which is what `/admin/pki/person` does for the same
+// reason. A JSON caller gets `respondToAction()`'s JSON, unchanged.
+// ---------------------------------------------------------------------------
+function issueFromConsole(req, res, body) {
+  log.debug('Entering issueFromConsole().');
+  Promise.resolve(pepAction(body)).then(function (result) {
+    if (!result.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0072');
+    }
+    if (/json/i.test(String(req.headers['content-type'] || ''))) {
+      admin.respondToAction(req, res, '/admin/xacml/peps', result);
+      log.debug('Leaving issueFromConsole(). Answered JSON.');
+      return;
+    }
+    const back = '<p><a class="btn" href="/admin/xacml/peps">Back to Remote ' +
+      'PEPs</a></p>';
+    if (!result.ok) {
+      admin.respond(req, res, { ok: false }, 'Listener certificate',
+                    '/admin/xacml/peps',
+                    admin.warn(esc(String(result.why || '')),
+                               'That was refused') + back, '/admin/xacml');
+      log.debug('Leaving issueFromConsole(). Refused.');
+      return;
+    }
+    res.set('Cache-Control', 'no-store');
+    const page = admin.note('<p>' + esc(result.what) + '</p>') +
+      '<table><tr><th>PEP</th><td><code>' + esc(result.pep) + '</code></td>' +
+      '</tr><tr><th>Realm</th><td><code>' + esc(result.realm) + '</code></td>' +
+      '</tr><tr><th>Serial</th><td><code>' + esc(result.serialHex) +
+      '</code></td></tr><tr><th>Names</th><td>' +
+      esc(result.dnsNames.concat(result.ipAddresses).join(', ')) +
+      '</td></tr><tr><th>Valid until</th><td>' + esc(result.notAfter) +
+      '</td></tr></table>' +
+      admin.warn(
+        '<p>This is the only time this service will show you this key. It ' +
+        'is not on the PEP&rsquo;s entry and nothing in this console or in ' +
+        '<code>/admin-api</code> opens it again. Save it as the file ' +
+        '<code>PEP_HTTPS_KEY</code> names.</p>' +
+        '<pre>' + esc(result.privateKeyPem) + '</pre>',
+        'The private key, once') +
+      '<p>The certificate followed by its chain (the Issuing CA and this ' +
+      'realm&rsquo;s Intermediate) &mdash; the file ' +
+      '<code>PEP_HTTPS_CERT</code> names:</p>' +
+      '<pre>' + esc(result.fullChainPem) + '</pre>' +
+      '<p>The anchor a client of that listener installs &mdash; this ' +
+      'service&rsquo;s Root CA, which the chain deliberately leaves out:</p>' +
+      '<pre>' + esc(result.anchorPem) + '</pre>' + back;
+    const json = Object.assign({}, result);
+    delete json.privateKeyPem;
+    admin.respond(req, res, json, 'Listener certificate', '/admin/xacml/peps',
+                  page, '/admin/xacml');
+    log.debug('Leaving issueFromConsole(). Issued.');
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-XACML-0072') + 'xacml: issuing a remote ' +
+              'PEP listener certificate threw: ' +
+              (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-XACML-0072');
+    admin.respond(req, res, { ok: false }, 'Listener certificate',
+                  '/admin/xacml/peps',
+                  admin.warn(esc('That failed: ' +
+                                 ((e && e.message) || e)),
+                             'That was refused'), '/admin/xacml');
+    log.debug('Leaving issueFromConsole(). It threw.');
+  });
+}
 
 // ---------------------------------------------------------------------------
 // THE ACTIONS BEHIND THAT PAGE.

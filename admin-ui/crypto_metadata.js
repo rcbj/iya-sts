@@ -171,6 +171,13 @@ const dpop = require('../oauth-oidc/dpop');
 const clientAuth = require('../oauth-oidc/client_auth');
 const mtls = require('../oauth-oidc/mtls');
 const oauth2 = require('../oauth-oidc/oauth2');
+// RFC 9701's lists, read off the library that signs and encrypts the JWT
+// introspection response rather than written out here.
+const introspectionJwt = require('../oauth-oidc/introspection_jwt');
+// RFC 9101's request object lists, read off the application registry, which
+// reads them off `common/crypto.js` — the tables `request_object.js` verifies
+// and decrypts against.
+const applicationRegistry = require('../common/applications');
 const tlsServer = require('../tls/tls_server');
 // A certificate's details in a dialog over this page (2026-09-13): the model's
 // fingerprint, and the one renderer `/admin/pki` draws the same dialog with.
@@ -576,8 +583,15 @@ const FAMILIES = [
            'the post-quantum and composite ones. A signed UserInfo response ' +
            'the same way, plus the HMAC family (signed with that client\'s ' +
            'own `client_secret`, which is why it needs no published key) and ' +
-           '`none`.',
-    verifies: 'DPoP proofs (RFC 9449), `private_key_jwt` and ' +
+           '`none`. **AND AN RFC 9701 JWT INTROSPECTION RESPONSE** ' +
+           '(2026-09-13), typed `token-introspection+jwt`, in RS256 or the ' +
+           '`introspection_signed_response_alg` the resource server ' +
+           'registered — the same table and the HMAC family, never `none`.',
+    verifies: 'A REQUEST OBJECT (RFC 9101, 2026-09-13), signed by the client ' +
+              'with a key it registered or with its secret, and DECRYPTS one ' +
+              'encrypted to this realm\'s published `use: "enc"` RSA or EC ' +
+              'key or to that secret. DPoP proofs (RFC 9449), ' +
+              '`private_key_jwt` and ' +
               '`client_secret_jwt` client assertions, and every access token ' +
               'it is handed at a protected endpoint — against its own JWKS, ' +
               'with `oauth2.clockSkewS` applied. **AND AN XML SIGNATURE**, ' +
@@ -592,8 +606,11 @@ const FAMILIES = [
               '7523 allows, because a chain proves the realm issued a key ' +
               'and says nothing about which application holds it.',
     encrypts: 'A UserInfo response for a client that registered ' +
-              '`userinfo_encrypted_response_alg`: JWE compact, RSA-OAEP or ' +
-              'ECDH-ES to the client\'s own key. **AND EVERY REFRESH TOKEN** ' +
+              '`userinfo_encrypted_response_alg`, and a JWT introspection ' +
+              'response for one that registered ' +
+              '`introspection_encrypted_response_alg`: JWE compact, RSA-OAEP ' +
+              'or ECDH-ES to the client\'s own key, a Nested JWT when ' +
+              'signed. **AND EVERY REFRESH TOKEN** ' +
               '(2026-09-12): the signed JWT is sealed as a nested JWT (`cty: ' +
               'JWT`, RFC 7519 section 11.2) to THIS REALM\'s own keys, under ' +
               '`oauth2.refreshTokenEncryptionAlg` and `…Enc` — any key ' +
@@ -623,6 +640,14 @@ const FAMILIES = [
         ['Tokens this service mints by default', ['RS256']],
         ['ID Token, when a client registers one', oauth2.ID_TOKEN_SIGNING_ALGS],
         ['UserInfo response', oauth2.USERINFO_SIGNING_ALGS],
+        ['JWT introspection response (RFC 9701)',
+         introspectionJwt.SIGNING_ALGS],
+        ['JWT introspection response encryption (RFC 9701)',
+         introspectionJwt.ENCRYPTION_ALGS],
+        ['Request object signature (RFC 9101)',
+         applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS],
+        ['Request object decryption (RFC 9101)',
+         applicationRegistry.REQUEST_OBJECT_ENCRYPTION_ALGS],
         ['DPoP proof', dpop.SIGNING_ALGS],
         ['Client assertion', clientAuth.SYMMETRIC_METHODS
           .concat(clientAuth.ASYMMETRIC_METHODS)],
@@ -1272,7 +1297,158 @@ const FAMILIES = [
         ['Wallet proof of possession', stsCrypto.JWS_ASYMMETRIC_ALGS],
         ['Disclosure digest', ['sha-256']]
       ];
-    } }
+    } },
+  // ===== ACME family (acme/) =====
+  // ACME (RFC 8555, 2026-09-13). The tables are read LAZILY from
+  // acme/acme_jws.js, which is the module that verifies with them, because
+  // acme/ is required at 23e and this file at 20a.
+  { name: 'ACME',
+    signs: 'Every certificate it hands out, with this realm\'s ACME Issuing ' +
+           'CA key, through common/pki.js\'s issueEnrolled(). Nothing else: ' +
+           'an ACME response is plain JSON over TLS, and a Replay-Nonce ' +
+           'carries an HMAC rather than a signature.',
+    verifies: 'Every request\'s flattened JWS, with the account key named ' +
+              'by jwk or kid and only the algorithm the header named ' +
+              '(through common/crypto.js\'s verifyCompactJws); a ' +
+              'key-change\'s inner JWS with the new key; an External ' +
+              'Account Binding\'s HMAC with the key issued under its kid, in constant time and ' +
+              'in every mode; and the CSR\'s proof of possession in ' +
+              'common/cert_enrollment.js.',
+    encrypts: 'The External Account Binding HMAC key, sealed with ' +
+              'AES-256-GCM under the key-encryption key onto the entry it ' +
+              'was issued for, wherever that key outlives the process.',
+    decrypts: 'That HMAC key, to verify a binding. Nothing on the wire.',
+    keys: 'One ACME Issuing CA key per trust realm under the realm ' +
+          'Intermediate; each account\'s public key (RSA of at least 2048 ' +
+          'bits, P-256/P-384/P-521 or Ed25519), kept as a public JWK and ' +
+          'found by its RFC 7638 thumbprint; the client\'s own key for every ' +
+          'certificate; and a per-run secret the Replay-Nonce MAC is derived ' +
+          'under, shared with forked request workers and never written down.',
+    hashes: 'SHA-256 for the account key thumbprint (RFC 7638), for the ' +
+            'Replay-Nonce MAC and for each certificate\'s thumbprint on the ' +
+            'entry record.',
+    whatItDoesNot: 'No private key is ever seen: ACME is CSR-only. A ' +
+                   'post-quantum account key is refused, because its key ' +
+                   'type has no RFC 7638 thumbprint and an account is found ' +
+                   'by its key. A KEM key cannot be certified, because it ' +
+                   'cannot sign the proof of possession. The JWS is the ' +
+                   'FLATTENED JSON serialization RFC 8555 requires, which ' +
+                   'this service reads only here.',
+    envelopes: ['jws', 'jwk', 'thumbprint', 'x509', 'tls'],
+    algorithms: function () {
+      log.debug("Entering algorithms().");
+      const acmeJws = require('../acme/acme_jws');
+      log.debug("Leaving algorithms().");
+      return [
+        ['Account key signatures', acmeJws.ACCOUNT_ALGS.slice()],
+        ['External Account Binding MACs', acmeJws.EAB_ALGS.slice()],
+        ['Revocation reasons accepted from a subscriber',
+         Object.keys(acmeJws.REVOCATION_REASONS).map(function (code) {
+           return code + ' ' + acmeJws.REVOCATION_REASONS[code];
+         })],
+        ['Certificate container', ['application/pem-certificate-chain']]
+      ];
+    } },
+  // ===== EST family (est/) =====
+  // EST (RFC 7030, 2026-09-13). The tables are read LAZILY from the modules
+  // that use them — est/est_codec.js for what csrattrs advertises, the vendored
+  // key-material module for what /serverkeygen generates — because est/ is
+  // required at 23f and this file at 20a.
+  { name: 'EST',
+    signs: 'Every certificate it hands out, with this realm\'s EST Issuing CA ' +
+           'key, through common/pki.js\'s issueEnrolled() — the same encoder ' +
+           'every other certificate here comes from. The certs-only CMS ' +
+           'messages it returns are DEGENERATE: a SignedData with ' +
+           'certificates and no signer, so they carry no signature of their ' +
+           'own and are trusted for the certificates inside them.',
+    verifies: 'The PKCS#10 proof of possession — the request\'s signature ' +
+              'with its own public key, classical and post-quantum, in ' +
+              'common/cert_enrollment.js — and, for certificate ' +
+              'authentication, the client certificate\'s path to this ' +
+              'realm\'s Intermediate and the service Root with revocation ' +
+              'consulted. A /serverkeygen template is not verified: its key ' +
+              'is replaced.',
+    encrypts: 'The private key of a server-generated key pair, sealed with ' +
+              'AES-256-GCM under the key-encryption key onto the entry, ' +
+              'wherever that key outlives the process. It is NOT encrypted ' +
+              'to the client (RFC 7030 section 4.4.1.2): a request asking for ' +
+              'that is refused, and the key travels inside TLS only.',
+    decrypts: 'Nothing on the wire.',
+    keys: 'One EST Issuing CA key per trust realm, under the realm ' +
+          'Intermediate; the client\'s own key for everything it enrolls; and ' +
+          'for /serverkeygen a key pair generated here in the template\'s ' +
+          'algorithm (ML-KEM included, for key-encipherment), returned once.',
+    hashes: 'SHA-256 for each certificate\'s thumbprint on the entry record.',
+    whatItDoesNot: 'Full CMC, tls-unique channel binding (TLS 1.3 has none) ' +
+                   'and an encrypted server-generated key. A KEM key cannot ' +
+                   'be enrolled with /simpleenroll, because it cannot sign ' +
+                   'the proof of possession.',
+    envelopes: ['x509', 'tls'],
+    algorithms: function () {
+      log.debug("Entering algorithms().");
+      const codec = require('../est/est_codec');
+      const keys = require('../common/vendored/key_material');
+      log.debug("Leaving algorithms().");
+      return [
+        ['CSR signature algorithms advertised by /csrattrs',
+         codec.SIGNATURE_ALGORITHMS.map(function (one) { return one.name; })],
+        ['Server-generated key algorithms', keys.keyAlgIds()],
+        ['Private key container', ['PKCS#8 (RFC 5958), base64']],
+        ['Certificate container', ['CMS SignedData, certs-only (RFC 5652)']]
+      ];
+    } },
+  // ===== SCEP family (scep/) =====
+  // SCEP (RFC 8894, 2026-09-13). Every table is read LAZILY from
+  // scep/scep_cms.js, which performs the algorithms, because scep/ is required
+  // at 23g and this file at 20a.
+  { name: 'SCEP',
+    signs: 'Every certificate it issues, with this realm\'s SCEP Issuing CA ' +
+           'key through common/pki.js\'s issueEnrolled(); and every CertRep, ' +
+           'with the RA key — CMS SignedData over DER-sorted signed ' +
+           'attributes, sha256WithRSAEncryption (SHA-384/512 when the ' +
+           'request used them).',
+    verifies: 'The requester\'s SignedData signature over its signed ' +
+              'attributes and the messageDigest of the content (SHA-256, ' +
+              'SHA-384, SHA-512; RSA or ECDSA signers are verified, and an ' +
+              'ECDSA one is then refused because no reply can be encrypted ' +
+              'to it); the PKCS#10 proof of possession; for RenewalReq, ' +
+              'GetCert and GetCRL the signer certificate\'s path to this ' +
+              'realm\'s Intermediate with revocation consulted; and the ' +
+              'challenge password, as a constant-time SHA-256 comparison.',
+    encrypts: 'A SUCCESS CertRep\'s certs-only content, to the requester\'s ' +
+              'signer certificate: RSAES-PKCS1-v1_5 key transport and the ' +
+              'AES-CBC key size the request used.',
+    decrypts: 'The pkcsPKIEnvelope with the RA private key: RSAES-PKCS1-v1_5 ' +
+              '(through node-forge, because node refuses PKCS#1 v1.5 private ' +
+              'decryption) or RSAES-OAEP, then AES-128/192/256-CBC. A failed ' +
+              'unwrap is replaced by random key bytes so a padding error and ' +
+              'a wrong key are one answer.',
+    keys: 'One SCEP Issuing CA key per trust realm, and one RA key pair per ' +
+          'realm — RSA of scep.raKeyAlgorithm, a leaf of that CA, kept in the ' +
+          'realm\'s PKI row (sealed with the hierarchy in product mode) and ' +
+          're-issued within thirty days of expiry. The requester\'s key is ' +
+          'never seen.',
+    hashes: 'SHA-256 of a challenge secret, of a CSR and of a signer key for ' +
+            'transaction idempotence; the message digest algorithms above.',
+    whatItDoesNot: 'SHA-1 or MD5 signatures, DES or 3DES content encryption ' +
+                   '(refused badAlg), a non-RSA requester key, ' +
+                   'KeyAgreeRecipientInfo, GetNextCACert and PENDING.',
+    envelopes: ['cms', 'x509'],
+    algorithms: function () {
+      log.debug("Entering algorithms().");
+      const table = require('../scep/scep_cms').algorithms();
+      log.debug("Leaving algorithms().");
+      return [
+        ['Request digests accepted', table.digests],
+        ['Request signatures verified', table.signatures],
+        ['Content ciphers accepted', table.ciphers],
+        ['Key transports accepted', table.keyTransports],
+        ['Refused digests', table.refusedDigests],
+        ['Refused ciphers', table.refusedCiphers],
+        ['CertRep signature', [table.replySignature]],
+        ['CertRep key transport', [table.replyKeyTransport]]
+      ];
+    } },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1309,10 +1485,13 @@ const STANDARDS = [
   { key: 'jws', name: 'JWS — JSON Web Signature',
     specs: ['RFC 7515', 'RFC 7518 (JWA)', 'RFC 8037 (EdDSA)',
             'RFC 8812 (ES256K)', 'RFC 9964 (AKP / ML-DSA)'],
-    coverage: 'full for the algorithms listed below, in compact ' +
-              'serialization only. JSON and flattened serializations are not ' +
-              'produced or read; nothing in any of these protocols asks for ' +
-              'one.',
+    coverage: 'full for the algorithms listed below. Compact ' +
+              'serialization is produced and read everywhere; the FLATTENED ' +
+              'JSON serialization is read by exactly one family, ACME, ' +
+              'because RFC 8555 section 6.2 requires it (each request is ' +
+              'recomposed into compact form and verified by the same ' +
+              'function). The general JSON serialization is neither produced ' +
+              'nor read; nothing here asks for one.',
     what: 'The envelope for every token this service mints and every ' +
           'assertion it is handed. ONE TABLE FOR THE WHOLE SERVICE — ' +
           '`common/crypto.js`\'s `JWS_ALGS` — because there were two once, ' +
@@ -1575,7 +1754,21 @@ const STANDARDS = [
     what: 'A public-key token a holder can attenuate OFFLINE, like a ' +
           'macaroon, but verifiable by anybody holding the root public key. ' +
           'Its authorization logic is Datalog carried inside the token, so ' +
-          'the verifier ALWAYS runs with time and iteration limits.' }
+          'the verifier ALWAYS runs with time and iteration limits.' },
+  // CMS (2026-09-13), for SCEP — the one family here whose messages are CMS
+  // signed and enveloped data rather than certs-only containers.
+  { key: 'cms', name: 'CMS — Cryptographic Message Syntax',
+    specs: ['RFC 5652', 'RFC 8894 section 3'],
+    coverage: 'partial: SignedData with one signer and signed attributes, ' +
+              'verified over the attribute bytes as received and written ' +
+              'DER-sorted; EnvelopedData with KeyTransRecipientInfo (RSA ' +
+              'PKCS#1 v1.5 and OAEP) and AES-CBC content; degenerate ' +
+              'certs-only SignedData with certificates and CRLs. No ' +
+              'KeyAgreeRecipientInfo, no authenticated or compressed data, no ' +
+              'countersignatures.',
+    what: 'The envelope SCEP (scep/scep_cms.js) reads and writes: a request ' +
+          'signed by the requester and encrypted to the RA, and a CertRep ' +
+          'signed by the RA whose certificate is encrypted to the requester.' }
 ];
 
 // ---------------------------------------------------------------------------

@@ -228,6 +228,37 @@ const SURFACES = {
     flowRealm: 'ambient',
     sessionRealm: 'ambient',
     scopes: ['openid', 'profile', 'email']
+  },
+  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the first surface that is
+  // NOT ON THIS SERVICE'S ORIGIN: it is served by `debugger/debugger_server.js`
+  // on a listener of its own. Two things follow and both are options rather
+  // than fields, because they are addresses a REQUEST decides:
+  //
+  //   * the redirect URI is on the debugger's origin and the authorization
+  //     endpoint is on the main port's, so `beginSignIn()` and
+  //     `handleCallback()` take `callbackBase` and `authorizationBase` where
+  //     the other two surfaces use one base for both;
+  //   * the back channel's Host header is the AUTHORIZATION base's, because
+  //     that is the issuer the browser was sent to.
+  //
+  // Both realms are the default realm's: the listener has no realm prefix, and
+  // the roster that decides who may use the debugger is the default realm's.
+  //
+  // THE FOURTH SCOPE IS THE DEBUGGER API'S PERMISSION, written out here for
+  // the reason `applications.js` writes it out — this library is read by every
+  // hosted surface and must not depend on a feature directory — and compared
+  // with `debugger/debugger_access.js` by `tests/debugger_access.js`. The
+  // authorization server takes it off the grant for anybody who is not a
+  // console administrator, and the debugger's gate reports that.
+  debugger: {
+    id: 'debugger',
+    clientId: 'sts-debugger-ui',
+    label: 'Protocol debugger',
+    callbackPath: '/_sts/callback',
+    cookie: 'sts_debugger',
+    flowRealm: 'default',
+    sessionRealm: 'default',
+    scopes: ['openid', 'profile', 'email', 'urn:sts:debugger-api:debugger']
   }
 };
 
@@ -734,8 +765,37 @@ function backChannel(options) {
     // unset and no header is added — so this is inert everywhere dispatching
     // is not in use.
     // -----------------------------------------------------------------------
+    //
+    // **AND IN A HOSTED-SURFACE WORKER ITS OWN PID IS THE WRONG ANSWER
+    // (2026-09-13).** With `workers.surfaceCount` set, this callback runs in a
+    // worker of the SECOND pool and the code is in a worker of the first, so
+    // naming itself names no protocol worker at all and the token request is
+    // routed by load. The front process knows which protocol worker holds this
+    // browser and says so on the request (`request_pool.js`'s
+    // PROTOCOL_WORKER_HEADER); `request_worker.js` puts it on `req`, and the
+    // caller passes `req` as `options.from`. No hint — a browser the protocol
+    // pool holds nothing for — means no cookie, which is the load-routed
+    // request this was before 2026-09-07 and is still correct under
+    // `workers.readYourWrite`, which a surface pool cannot start without.
     if (process.env.STS_REQUEST_WORKER) {
-      const pin = 'sts_pool=' + process.pid;
+      const inSurfacePool =
+        process.env.STS_REQUEST_WORKER_POOL === 'surfaces';
+      const target = inSurfacePool
+        ? (Number(options.from && options.from.stsProtocolWorker) || 0)
+        : process.pid;
+      if (target) {
+        const pin = 'sts_pool=' + target;
+        headers.cookie = headers.cookie ? (headers.cookie + '; ' + pin) : pin;
+      }
+    } else if (options.poolPin &&
+               /^[0-9]{1,10}$/.test(String(options.poolPin))) {
+      // THE SAME PIN FROM THE FRONT PROCESS (2026-09-13), for a surface that
+      // is served there rather than by a worker — the embedded debugger. Its
+      // browser holds the pool's routing cookie from the authorization
+      // endpoint on the main port (a cookie is scoped to a host, not a port),
+      // and that names the worker the code was minted in. Digits only: it
+      // selects a process and authorizes nothing.
+      const pin = 'sts_pool=' + String(options.poolPin);
       headers.cookie = headers.cookie ? (headers.cookie + '; ' + pin) : pin;
     }
     if (body) {
@@ -1064,7 +1124,7 @@ function beginSignIn(req, res, surfaceId, options) {
       return coded(errorCodes.codeOf(found) || 'STS-AUTHN-0112',
                    { ok: false, why: found.why, reason: 'no-client' }, res);
     }
-    const publicBase = publicBaseOf(req);
+    const publicBase = opts.callbackBase || publicBaseOf(req);
     const redirectUri = publicBase + surface.callbackPath;
     const registered = ensureRedirectUri(surface, found.client, redirectUri);
     if (!registered.ok) {
@@ -1125,7 +1185,8 @@ function beginSignIn(req, res, surfaceId, options) {
     if (opts.prompt) {
       query.set('prompt', String(opts.prompt));
     }
-    const to = publicBase + AUTHORIZE_PATH + '?' + query.toString();
+    const to = (opts.authorizationBase || publicBase) + AUTHORIZE_PATH + '?' +
+               query.toString();
     log.info('oidc_rp: sending a browser to the authorization endpoint for the ' +
              surface.label + ' (client_id ' + surface.clientId + ', state ' +
              state + '). It comes back to ' + redirectUri + '.');
@@ -1151,9 +1212,10 @@ function beginSignIn(req, res, surfaceId, options) {
 // refusal, because the console's shell and the portal's are different
 // applications and a page drawn here would belong to neither.
 // ---------------------------------------------------------------------------
-async function handleCallback(req, res, surfaceId) {
+async function handleCallback(req, res, surfaceId, options) {
   log.debug('Entering handleCallback(). surface=' + surfaceId);
   const surface = surfaceOf(surfaceId);
+  const opts = options || {};
   const query = req.query || {};
 
   // THE AUTHORIZATION SERVER'S OWN REFUSAL, first: `error` beats everything
@@ -1223,7 +1285,10 @@ async function handleCallback(req, res, surfaceId) {
                    { ok: false, why: found.why }, res);
     }
     const client = found.client;
-    const publicBase = publicBaseOf(req);
+    // The authorization server's base, which is the request's own for the
+    // console and the portal and the main port's for the debugger — see the
+    // surface table.
+    const publicBase = opts.authorizationBase || publicBaseOf(req);
     const host = hostHeaderFrom(publicBase);
 
     // ---------------------------------------------------------------------
@@ -1245,7 +1310,11 @@ async function handleCallback(req, res, surfaceId) {
       path: realms.currentPrefix() + TOKEN_PATH,
       host: host,
       headers: headers,
-      body: form.toString()
+      body: form.toString(),
+      poolPin: opts.poolPin,
+      // Which protocol worker redeems it when there are two pools; see
+      // backChannel().
+      from: req
     });
     if (!tokenAnswer.ok) {
       log.error(errorCodes.tag(errorCodes.codeOf(tokenAnswer) ||
@@ -1286,7 +1355,9 @@ async function handleCallback(req, res, surfaceId) {
     const jwksAnswer = await backChannel({
       method: 'GET',
       path: realms.currentPrefix() + JWKS_PATH,
-      host: host
+      host: host,
+      poolPin: opts.poolPin,
+      from: req
     });
     if (!jwksAnswer.ok || jwksAnswer.status !== 200 || !jwksAnswer.json) {
       return coded('STS-AUTHN-0128', { ok: false,
@@ -1555,7 +1626,8 @@ async function renewNow(req, res, surface, session, sessionRealmId) {
     path: realms.currentPrefix() + TOKEN_PATH,
     host: host,
     headers: headers,
-    body: form.toString()
+    body: form.toString(),
+    from: req
   });
   if (!tokenAnswer.ok) {
     log.debug("Leaving renewNow(). The back channel failed.");
@@ -1582,7 +1654,8 @@ async function renewNow(req, res, surface, session, sessionRealmId) {
     const jwksAnswer = await backChannel({
       method: 'GET',
       path: realms.currentPrefix() + JWKS_PATH,
-      host: host
+      host: host,
+      from: req
     });
     if (!jwksAnswer.ok || jwksAnswer.status !== 200 || !jwksAnswer.json) {
       log.debug("Leaving renewNow(). The JWKS could not be read.");

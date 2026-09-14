@@ -297,6 +297,9 @@ function theProtocolListIsHonest(doc, page) {
                     // reading one as the other fails here rather than passing
                     // for the wrong reason.
                     "PKI",
+                    // CERTIFICATE ENROLLMENT (2026-09-13), carded beside the
+                    // authority all three issue from.
+                    "ACME", "EST", "SCEP",
                     "SCIM", "LDAP", "PKI / X.509", "WebAuthn / CTAP",
                     // THE SECOND SECOND FACTOR (2026-09-10). Beside WebAuthn
                     // rather than under Protocols on its own, because both

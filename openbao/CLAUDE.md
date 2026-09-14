@@ -13,7 +13,7 @@ being things this stack wrote into files of its own.
 |---|---|
 | `bao.hcl` | The store's configuration: raft storage, a TLS listener, and `seal "static"` — a real auto-unseal, not dev mode. |
 | `generate-tls.js` | Mints the listener's certificate BEFORE the store starts, with this repository's own encoder. Runs in the image this repository builds. |
-| `seed.js` | One shot, idempotent: initialise, write the two secrets, build a CA inside the store, issue this service its client certificate, bind it to the policy — and then PROVE the policy by using it. |
+| `seed.js` | One shot, idempotent: initialise, write the two secrets (**the key is written once and never replaced** — everything sealed under it would be unreadable), build a CA inside the store, issue this service its client certificate, bind it to the policy — and then PROVE the policy by using it. |
 | `read-only.hcl` | What that identity may do: read two paths. Everything else is denied, because Vault denies by default. |
 
 ---

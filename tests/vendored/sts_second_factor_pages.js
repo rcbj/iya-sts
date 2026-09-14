@@ -257,16 +257,30 @@ async function theSettingsAreOnTheirPages() {
   log.debug("Entering theSettingsAreOnTheirPages().");
   log.info("=== the settings are drawn on the mechanism pages ===");
 
+  // THE ONE SETTING BOTH PAGES SHARE (2026-09-13). `authn.mfaRequired` is a
+  // POLICY either mechanism satisfies, and `SETTING_HOMES` files its group on
+  // `/admin/totp` AND `/admin/webauthn` — `saml.issuer`'s arrangement on the
+  // two SAML pages. So "every row is the mechanism's own" became "every row is
+  // the mechanism's own or that policy", and the policy's PRESENCE on both is
+  // asserted, because a reader of either page must see it is in force.
+  const SHARED_POLICY = "authn.mfaRequired";
+
   const totp = await get("/totp");
-  check("GET /admin-api/totp carries the eight totp.* settings", function () {
+  check("GET /admin-api/totp carries the eight totp.* settings and the " +
+        "second-factor requirement both mechanism pages draw", function () {
     assert.strictEqual(totp.status, 200,
       "it answered " + totp.status + " " + String(totp.raw).slice(0, 200));
     const keys = keysOf(totp.body);
-    assert.ok(keys.length >= 8,
-      "it drew " + keys.length + " setting(s): " + keys.join(", "));
-    assert.ok(keys.every(function (k) { return /^totp\./.test(k); }),
-      "and a setting that is not a totp.* row is drawn on it: " +
-      keys.join(", "));
+    const own = keys.filter(function (k) { return /^totp\./.test(k); });
+    assert.ok(own.length >= 8,
+      "it drew " + own.length + " totp.* setting(s): " + keys.join(", "));
+    assert.ok(keys.every(function (k) {
+      return /^totp\./.test(k) || k === SHARED_POLICY;
+    }),
+      "and a setting that is neither a totp.* row nor " + SHARED_POLICY +
+      " is drawn on it: " + keys.join(", "));
+    assert.ok(keys.indexOf(SHARED_POLICY) !== -1,
+      SHARED_POLICY + " is not drawn on it: " + keys.join(", "));
   });
 
   const web = await get("/webauthn");
@@ -276,11 +290,16 @@ async function theSettingsAreOnTheirPages() {
     assert.strictEqual(web.status, 200,
       "it answered " + web.status + " " + String(web.raw).slice(0, 200));
     const keys = keysOf(web.body);
-    assert.ok(keys.length >= 13,
-      "it drew " + keys.length + " setting(s): " + keys.join(", "));
-    assert.ok(keys.every(function (k) { return /^webauthn\./.test(k); }),
-      "and a setting that is not a webauthn.* row is drawn on it: " +
-      keys.join(", "));
+    const own = keys.filter(function (k) { return /^webauthn\./.test(k); });
+    assert.ok(own.length >= 13,
+      "it drew " + own.length + " webauthn.* setting(s): " + keys.join(", "));
+    assert.ok(keys.every(function (k) {
+      return /^webauthn\./.test(k) || k === SHARED_POLICY;
+    }),
+      "and a setting that is neither a webauthn.* row nor " + SHARED_POLICY +
+      " is drawn on it: " + keys.join(", "));
+    assert.ok(keys.indexOf(SHARED_POLICY) !== -1,
+      SHARED_POLICY + " is not drawn on it: " + keys.join(", "));
   });
 
   // THE PAGES THEMSELVES, in a browser's shape. The JSON above proves the

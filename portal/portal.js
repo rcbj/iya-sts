@@ -133,6 +133,10 @@ const inetOrgPerson = require('../common/inetorgperson');
 // grew an attribute.
 const pki = require('../common/pki');
 const personAssertions = require('../common/person_assertions');
+// THE THIRD CARD ON `/portal/signing-key` (2026-09-13): a TLS client
+// certificate. A LIBRARY (rule 3) over `common/pki.js` — it registers nothing,
+// so this require moves no route.
+const tlsClient = require('../common/tls_client_certificates');
 const websecurity = require('../common/websecurity');
 const authn = require('../authn/authn');
 // THE RELYING PARTY (2026-09-06). This portal authenticates through the
@@ -208,11 +212,18 @@ const version = require('../common/version');
 // Shared Signals surface ahead of the authorization server.
 // ---------------------------------------------------------------------------
 const signals = require('../ssf/ssf_receivers');
+// WHAT SPENDING A PASSWORD RESET LINK SAYS OVER CAEP (2026-09-13). A LIBRARY
+// that requires only the logger and reads `ssf/ssf.js` out of the require cache
+// when an event is due, so it moves no route from here — see its header.
+const accountSignals = require('../ssf/account_signals');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
 const BASE = '/portal';
 const ACTIVATE = BASE + '/activate';
+// A PASSWORD RESET LINK an administrator issued (2026-09-13). Unauthenticated,
+// like ACTIVATE, and for its reason: the token is the credential.
+const RESET_PASSWORD = BASE + '/reset-password';
 
 // ===========================================================================
 // THE DIRECTORY, THROUGH AN INVERTED HOOK — THE FIRST SLOT THIS APPLICATION
@@ -464,6 +475,21 @@ const CSS =
   // provenance rather than content, and this is the surface a person visits to
   // change their own password, not one they came to read a build number off.
   '.ver{color:#9a9aa6;font-size:.78em;text-align:center;margin:16px 0 0}' +
+  // THE TLS CLIENT CERTIFICATE CARD (2026-09-13). A select for the key
+  // algorithm and the revocation reason, drawn like the text inputs above it;
+  // download LINKS that look like buttons, because a `data:` link with
+  // `download` is how a file leaves a page with no script on it; and the
+  // install steps, one browser per fold.
+  'select{padding:8px;border:1px solid #c7c7d1;border-radius:6px;' +
+  'font:inherit;background:#fff}' +
+  'a.dl{display:inline-block;background:#2c5cc5;color:#fff;' +
+  'text-decoration:none;border-radius:6px;padding:9px 14px;' +
+  'margin:6px 8px 0 0;font-size:.9em}a.dl.secondary{background:#5a5a68}' +
+  'ol.steps{margin:6px 0 0 1.2em;padding:0;font-size:.9em}' +
+  'ol.steps li{margin:0 0 4px}' +
+  '.state-valid{color:#1b7a3a;font-weight:600}' +
+  '.state-revoked,.state-superseded{color:#b00020;font-weight:600}' +
+  '.state-expired{color:#8a8a96;font-weight:600}' +
   '.ver code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}';
 
 function page(title, inner, wide) {
@@ -574,7 +600,13 @@ const NAV = [
       // list of credentials, and moving the heading's meaning to fit one page
       // would misfile the other three.
       { path: BASE + '/signing-key', label: 'Signing keys',
-        heading: 'Your signing keys' }
+        heading: 'Your signing keys' },
+      // CERTIFICATE ENROLLMENT (2026-09-13), in this section for the signing
+      // keys' reason: an ACME account binding key and a SCEP challenge
+      // password are credentials on this person's own entry, and so are the
+      // certificates they obtain. Drawn by `portal_certificates.js`.
+      { path: BASE + '/certificates', label: 'Certificates',
+        heading: 'Your certificates' }
     ] }
 ];
 
@@ -1308,6 +1340,219 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
       : '') +
     '<p><a href="' + esc(next) + '">Sign in</a></p></div>'));
 }
+
+// ---------------------------------------------------------------------------
+// /portal/reset-password — SPENDING A PASSWORD RESET LINK (2026-09-13).
+//
+// An administrator pressed *Generate a password reset link* on this person's
+// /admin/users page (or called POST /admin-api/users/issue-password-reset):
+// their old password was removed, they were signed out of everything, and the
+// link is how they choose a new one. It is the activation link's arrangement
+// for somebody who already has an account, and it keeps every one of that
+// link's properties, argued at `/portal/activate` above:
+//
+//   * **UNAUTHENTICATED, AND THE TOKEN IS WHAT AUTHORISES IT.** It takes a
+//     username for that reason and no other.
+//   * **RATE LIMITED on the GET and the POST**, in a bucket of its own.
+//   * **ONE SENTENCE FOR EVERY FAILURE**, so nobody learns which usernames
+//     have a link outstanding.
+//   * **SPENT WHEN THE PASSWORD IS STORED**, not when the link is opened.
+//   * **IT SIGNS NOBODY IN.** The last step is the ordinary sign-in screen,
+//     reached through `/portal`, which is where a second factor they hold is
+//     asked for.
+//
+// It does ONE thing, where the activation form offers a key and an
+// authenticator as well: the person already has their second factors — an
+// administrator took only the password away — and a form offering to enrol
+// more on a link would be a way to add a second factor with nothing but the
+// link.
+//
+// **THE PASSWORD GOES THROUGH `credentials.setPassword()`**, so product mode
+// holds it to the realm's password policy and its history, which carries the
+// password the link removed. `pwdReset` is cleared: a password the person just
+// chose is not one they must change.
+//
+// **CAEP credential-change (`password`, `create`, initiated by the user)** is
+// said when it is stored, through `ssf/account_signals.js`.
+// ---------------------------------------------------------------------------
+const RESET_REFUSAL =
+  'This password reset link is not valid. It may have expired, it may ' +
+  'already have been used, or it may never have been issued. Ask whoever ' +
+  'manages your account for a new one.';
+
+const RESET_QUERY = vz.object({
+  user: vt.opt(vt.name),
+  token: vt.opt(vt.token)
+});
+
+const RESET_FORM = vz.object({
+  user: vt.opt(vt.name),
+  token: vt.opt(vt.token),
+  password: vz.string().max(1024).optional(),
+  confirm: vz.string().max(1024).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+function resetPasswordForm(base, username, token, error) {
+  log.debug("Entering resetPasswordForm().");
+  log.debug("Leaving resetPasswordForm().");
+  return page('Choose a new password',
+    '<div class="card">' +
+    '<h1>Choose a new password</h1>' +
+    '<p class="sub">You are choosing the password <strong>' + esc(username) +
+    '</strong> signs in to <code>' + esc(base) + '</code> with. Your old ' +
+    'password no longer works.</p>' +
+    (error ? '<div class="err">' + esc(error) + '</div>' : '') +
+    '<form method="post" action="' + RESET_PASSWORD + '">' +
+    // THE TOKEN RIDES IN THE FORM, for the activation form's reason: nobody is
+    // signed in, so there is no session to carry it on, and a POST keeps it out
+    // of a referer and an access log.
+    '<input type="hidden" name="user" value="' + esc(username) + '">' +
+    '<input type="hidden" name="token" value="' + esc(token) + '">' +
+    '<label for="password">New password</label><input type="password" ' +
+    'id="password" name="password" autocomplete="new-password">' +
+    '<label for="confirm">Type it again</label><input type="password" ' +
+    'id="confirm" name="confirm" autocomplete="new-password">' +
+    passwordRulesNote(username) +
+    '<button type="submit">Set my password</button>' +
+    '</form></div>');
+}
+
+function refuseResetLink(res, status, code) {
+  log.debug("Entering refuseResetLink(). " + code);
+  errorCodes.mark(res, code);
+  log.debug("Leaving refuseResetLink().");
+  return send(res, status, page('Password reset link',
+    '<div class="card"><h1>Password reset link</h1><div class="err">' +
+    esc(RESET_REFUSAL) + '</div></div>'));
+}
+
+app.get(RESET_PASSWORD, function (req, res) {
+  log.debug('Entering GET ' + RESET_PASSWORD + '.');
+  const asked = validation.check(req, 'query', RESET_QUERY);
+  if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
+    log.debug('Leaving GET ' + RESET_PASSWORD + '. Bad shape.');
+    return refuseShape(res, asked);
+  }
+  const username = String(asked.value.user || '').trim();
+  const token = String(asked.value.token || '');
+  const allowed = websecurity.attempt('password-reset', req, username);
+  if (!allowed.ok) {
+    errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0070');
+    log.debug('Leaving GET ' + RESET_PASSWORD + '. Rate limited.');
+    return send(res, 429, page('Too many attempts',
+      '<div class="card"><h1>Too many attempts</h1><p>' +
+      esc(allowed.detail) + '</p></div>'));
+  }
+  const checked = credentials.checkPasswordReset(username, token);
+  if (!checked.ok) {
+    log.info('portal: a password reset link was refused for "' + username +
+             '" (' + checked.reason + ').');
+    audit.record({
+      category: 'authentication', action: 'portal.password-reset.refused',
+      errorCode: innerCode(checked) || 'STS-PORTAL-0071',
+      actor: username, outcome: 'failure',
+      summary: 'a password reset link was refused',
+      detail: { reason: checked.reason, address: websecurity.addressOf(req) }
+    });
+    log.debug('Leaving GET ' + RESET_PASSWORD + '. Refused.');
+    return refuseResetLink(res, 400, innerCode(checked) || 'STS-PORTAL-0071');
+  }
+  log.debug('Leaving GET ' + RESET_PASSWORD + '. Drawing the form.');
+  return send(res, 200, resetPasswordForm(baseUrlOf(req), username, token,
+                                          null));
+});
+
+app.post(RESET_PASSWORD, function (req, res) {
+  log.debug('Entering POST ' + RESET_PASSWORD + '.');
+  const posted = validation.checkParsed(parseBody(req), 'body', RESET_FORM);
+  if (!posted.ok) {
+    errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. Bad shape.');
+    return refuseShape(res, posted);
+  }
+  const body = posted.value;
+  const username = String(body.user || '').trim();
+  const token = String(body.token || '');
+  const base = baseUrlOf(req);
+  const allowed = websecurity.attempt('password-reset', req, username);
+  if (!allowed.ok) {
+    errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0070');
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. Rate limited.');
+    return send(res, 429, page('Too many attempts',
+      '<div class="card"><h1>Too many attempts</h1><p>' +
+      esc(allowed.detail) + '</p></div>'));
+  }
+  // **CHECKED AGAIN ON THE POST**, for the activation form's reason: a form is
+  // markup, and a POST assembled by hand never met the GET.
+  const checked = credentials.checkPasswordReset(username, token);
+  if (!checked.ok) {
+    audit.record({
+      category: 'authentication', action: 'portal.password-reset.refused',
+      errorCode: innerCode(checked) || 'STS-PORTAL-0071',
+      actor: username, outcome: 'failure',
+      summary: 'a password reset link was refused',
+      detail: { reason: checked.reason, address: websecurity.addressOf(req) }
+    });
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. Refused.');
+    return refuseResetLink(res, 400, innerCode(checked) || 'STS-PORTAL-0071');
+  }
+  const password = String(body.password || '');
+  if (!password) {
+    errorCodes.mark(res, 'STS-PORTAL-0072');
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. No password.');
+    return send(res, 400, resetPasswordForm(base, username, token,
+      'Type a new password, twice.'));
+  }
+  if (password !== String(body.confirm || '')) {
+    errorCodes.mark(res, 'STS-PORTAL-0072');
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. They differ.');
+    return send(res, 400, resetPasswordForm(base, username, token,
+      'The two passwords do not match.'));
+  }
+  if (password === credentials.RESERVED_REFUSAL) {
+    errorCodes.mark(res, 'STS-PORTAL-0072');
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. The reserved password.');
+    return send(res, 400, resetPasswordForm(base, username, token,
+      'That password is reserved and is refused at every sign-in, so it ' +
+      'cannot be yours.'));
+  }
+  const set = credentials.setPassword(username, password);
+  if (!set.ok) {
+    errorCodes.mark(res, innerCode(set) || 'STS-PORTAL-0073');
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. The password was refused.');
+    return send(res, 400, resetPasswordForm(base, username, token,
+      (set.errors || ['The password could not be set.'])[0]));
+  }
+  credentials.consumePasswordReset(username);
+  credentials.setPasswordResetRequired(username, false);
+  websecurity.succeeded('password-reset', req, username);
+  audit.record({
+    category: 'authentication', action: 'portal.password-reset',
+    actor: username, target: username, outcome: 'success',
+    summary: username + ' chose a new password from a reset link',
+    detail: { address: websecurity.addressOf(req) }
+  });
+  accountSignals.credentialChanged({ username: username,
+    credentialType: 'password', changeType: 'create',
+    initiatingEntity: 'user', via: 'portal',
+    reasonAdmin: username + ' set a new password from a password reset link.',
+    reasonUser: 'You chose a new password.' });
+  log.info('portal: ' + username + ' set a new password from a reset link; ' +
+           'the link is spent.');
+  log.debug('Leaving POST ' + RESET_PASSWORD + '. Set.');
+  return send(res, 200, page('Password set',
+    '<div class="card"><h1>Your password is set</h1>' +
+    '<div class="ok">This reset link has now been used and will not work ' +
+    'again.</div>' +
+    '<p>Sign in with your new password. If your account has a second ' +
+    'factor, you will be asked for it as usual.</p>' +
+    // `/portal` and not the sign-in screen, for `finishActivation()`'s reason:
+    // `/authn/login` draws a form for a pending record, and `/portal` is what
+    // mints one when the link is pressed.
+    '<p><a href="' + esc(BASE) + '">Sign in</a></p></div>'));
+});
 
 // ---------------------------------------------------------------------------
 // THE AUTHENTICATED PORTAL.
@@ -2614,8 +2859,281 @@ function profileCard(profile, held, csrf, issuable, offered) {
     '</div>';
 }
 
+// ===========================================================================
+// A TLS CLIENT CERTIFICATE (2026-09-13): THE THIRD CARD ON THIS PAGE.
+//
+// The two cards above hand a person a key that signs a DOCUMENT. This one hands
+// them a key and a certificate that sign a TLS HANDSHAKE: installed in a
+// browser, presented to this service's TLS listeners, it signs them in as the
+// person it names, in the realm this page was reached in.
+// `common/tls_client_certificates.js` issues, packages, revokes and — for the
+// listeners and the main-port doors — decides what counts as an identity.
+//
+// **IT IS FILED HERE AND NOT ON A PAGE OF ITS OWN**, which is what rcbj asked
+// for and what the section's own description supports: the credentials on your
+// own entry that let something act as you. It shares the page's three
+// safeguards rather than growing its own — `pki.personSelfService`, the two
+// self-service rate limits (an RSA key generation costs the same CPU whatever
+// it certifies) and the page's CSRF token.
+//
+// **THE DOWNLOAD IS THE RESPONSE TO THE POST, AND NOTHING KEEPS IT.** The same
+// position the signing keys take, for their reason: a redirect has nowhere to
+// put a private key. The files go out as `data:` links with `download` on
+// them — the arrangement the console's keytab page already uses — so the page
+// that carries them also carries the install steps, and a person who closes it
+// without saving has to generate again. The PKCS#12 password is typed by the
+// person, used once to build the files, and not stored, logged or audited.
+// ===========================================================================
+
+// Where a certificate from here is used: the two TLS listeners, on the host
+// this page was reached at. The ports are the configured ones — this module is
+// required long before `tls/tls_server.js`, whose bound ports it cannot ask
+// for without moving its routes — and a deployment publishing them elsewhere
+// says so in `tls.port` and `tls.mutualPort`.
+function tlsListenerUrls(base) {
+  log.debug("Entering tlsListenerUrls().");
+  let host = 'localhost';
+  try {
+    host = new URL(String(base || 'https://localhost')).hostname || host;
+  } catch (e) {
+    log.debug("Caught in tlsListenerUrls(): " + ((e && e.message) || e));
+    host = 'localhost';
+  }
+  const hostPart = host.indexOf(':') >= 0 ? '[' + host + ']' : host;
+  log.debug("Leaving tlsListenerUrls().");
+  return {
+    mutual: 'https://' + hostPart + ':' + config.value('tls.mutualPort') + '/',
+    optional: 'https://' + hostPart + ':' + config.value('tls.port') + '/'
+  };
+}
+
+// The signed-in person's `mail`, read off their own entry, for the rfc822Name a
+// certificate picker shows beside the common name. Absent is fine.
+function mailOf(session) {
+  log.debug("Entering mailOf().");
+  const entry = entryFor(session);
+  const attributes = (entry && entry.attributes) || {};
+  const key = Object.keys(attributes).filter(function (one) {
+    return one.toLowerCase() === 'mail';
+  })[0];
+  const values = key ? [].concat(attributes[key]) : [];
+  log.debug("Leaving mailOf().");
+  return values.length ? String(values[0]) : '';
+}
+
+function tlsClientCard(session, csrf, issuable, offered, base) {
+  log.debug("Entering tlsClientCard().");
+  const username = session.user.username;
+  let held = [];
+  try {
+    held = tlsClient.listFor(undefined, username);
+  } catch (e) {
+    // A process with no certificate authority holds no register to read. The
+    // card says there is nothing, which is true.
+    log.debug("Caught in tlsClientCard(): " + ((e && e.message) || e));
+    held = [];
+  }
+  const report = tlsClient.report();
+  const active = held.filter(function (one) { return one.state === 'valid'; });
+  const urls = tlsListenerUrls(base);
+  const hidden = csrf;
+
+  const what =
+    '<p class="sub">A TLS client certificate signs you in <strong>with no ' +
+    'password typed</strong>: your browser presents it when a server asks, ' +
+    'and this identity provider recognises it as you. It is issued from this ' +
+    'realm&rsquo;s TLS client certificate authority, names you ' +
+    '(<code>CN=' + esc(username) + '</code> and <code>urn:sts:person:' +
+    esc(username) + '</code>), and carries <code>clientAuth</code>. You ' +
+    'download it once, as a password-protected <code>.p12</code>, and ' +
+    'install it in each browser or device you want to sign in from.</p>' +
+    '<p class="note">Where it works: <a href="' + esc(urls.mutual) + '">' +
+    esc(urls.mutual) + '</a> (a certificate is required) and <a href="' +
+    esc(urls.optional) + '">' + esc(urls.optional) + '</a> (a certificate ' +
+    'is asked for). Presenting it there starts a sign-on session for you ' +
+    'in this realm, and your other applications here then sign you in ' +
+    'without asking. Your browser will first ask you to trust this ' +
+    'service&rsquo;s server certificate if it does not already.</p>' +
+    (report.trusted
+      ? ''
+      : '<p class="note"><strong>The TLS listeners will not accept it at the ' +
+        'moment.</strong> ' + esc(report.note) + ' An administrator can ' +
+        'change that.</p>');
+
+  const rows = held.length
+    ? '<table class="grid"><tr><th>Name</th><th>Serial</th><th>Key</th>' +
+      '<th>Good until</th><th>State</th><th></th></tr>' +
+      held.map(function (one) {
+        const revokeForm = one.state === 'valid'
+          ? '<form method="post" action="' + BASE + '/signing-key">' + hidden +
+            '<input type="hidden" name="action" value="revoke-tls-client">' +
+            '<input type="hidden" name="serial" value="' +
+            esc(one.serialHex) + '">' +
+            '<select name="reason" aria-label="Why"><option ' +
+            'value="cessationOfOperation">I no longer use it</option>' +
+            '<option value="keyCompromise">Somebody else may have the key' +
+            '</option></select> <button class="danger">Revoke</button></form>'
+          : (one.revokedAt ? '<span class="note">revoked ' +
+            esc(String(one.revokedAt).slice(0, 10)) + '</span>' : '');
+        return '<tr><td>' + esc(one.label) + '</td><td><code>' +
+          esc(String(one.serialHex).slice(-16)) + '</code></td><td>' +
+          esc(one.keyAlg) + '</td><td>' +
+          esc(String(one.notAfter).slice(0, 10)) + '</td><td><span ' +
+          'class="state-' + esc(one.state) + '">' + esc(one.state) +
+          (one.reason && one.state === 'revoked'
+            ? ' (' + esc(one.reason) + ')' : '') +
+          '</span></td><td>' + revokeForm + '</td></tr>';
+      }).join('') + '</table>'
+    : '<p class="sub">You have no TLS client certificate.</p>';
+
+  let controls = '';
+  if (!issuable) {
+    controls = '';
+  } else if (!offered) {
+    controls = '';
+  } else if (active.length >= report.maxPerPerson) {
+    controls = '<p class="note"><strong>You hold ' + active.length + ' valid ' +
+      'TLS client certificates, which is the most this service issues to ' +
+      'one person.</strong> Revoke one you no longer use to make room.</p>';
+  } else {
+    controls =
+      '<form method="post" action="' + BASE + '/signing-key">' + hidden +
+      '<input type="hidden" name="action" value="generate-tls-client">' +
+      '<label for="tls-label">Name it after the browser or device ' +
+      '(optional)</label><input type="text" id="tls-label" name="label" ' +
+      'maxlength="40" placeholder="work laptop">' +
+      '<label for="tls-key-alg">Key</label><select id="tls-key-alg" ' +
+      'name="key_alg">' + tlsClient.KEY_ALGS.map(function (one) {
+        return '<option value="' + esc(one) + '"' +
+          (one === tlsClient.DEFAULT_KEY_ALG ? ' selected' : '') + '>' +
+          esc(one === 'rsa-2048' ? 'RSA 2048 (works everywhere)'
+            : one === 'rsa-3072' ? 'RSA 3072'
+            : one === 'ec-p256' ? 'ECDSA P-256' : 'ECDSA P-384') +
+          '</option>';
+      }).join('') + '</select>' +
+      '<label for="tls-p12-password">A password for the downloaded file' +
+      '</label><input type="password" id="tls-p12-password" ' +
+      'name="p12_password" minlength="' + tlsClient.PKCS12_PASSWORD_MIN +
+      '" autocomplete="new-password" required>' +
+      '<label for="tls-p12-confirm">The same password again</label>' +
+      '<input type="password" id="tls-p12-confirm" name="p12_confirm" ' +
+      'minlength="' + tlsClient.PKCS12_PASSWORD_MIN + '" ' +
+      'autocomplete="new-password" required>' +
+      '<p class="note">This password protects the private key inside the ' +
+      'file while it sits on your disk; your browser asks for it once, when ' +
+      'you import the file. It is not your account password, and this ' +
+      'service does not keep it.</p>' +
+      '<button>Generate and download my TLS client certificate</button>' +
+      '</form>';
+  }
+  log.debug("Leaving tlsClientCard(). " + held.length + " held.");
+  return '<div class="card"><h2 id="tls-client">TLS client certificate</h2>' +
+    what + rows + controls +
+    (active.length
+      ? '<p class="note"><strong>Revoking is revocation.</strong> The ' +
+        'certificate goes on this realm&rsquo;s certificate revocation ' +
+        'list, its OCSP responder answers <code>revoked</code>, and the TLS ' +
+        'listeners refuse it from then on. It cannot be undone; generate a ' +
+        'new one instead.</p>'
+      : '') + '</div>';
+}
+
+// The one-time card: the three files, and what to do with them.
+function tlsClientFreshCard(fresh, base) {
+  log.debug("Entering tlsClientFreshCard().");
+  const files = fresh.files;
+  const issued = fresh.issued;
+  const urls = tlsListenerUrls(base);
+  const dataUri = function (mime, base64) {
+    log.debug("Entering dataUri().");
+    log.debug("Leaving dataUri().");
+    return 'data:' + mime + ';base64,' + base64;
+  };
+  const b64 = function (text) {
+    log.debug("Entering b64().");
+    log.debug("Leaving b64().");
+    return Buffer.from(String(text), 'utf8').toString('base64');
+  };
+  const p12 = files.pkcs12.name;
+  const key = files.key.name;
+  const chain = files.chain.name;
+  const step = function (title, items) {
+    log.debug("Entering step().");
+    log.debug("Leaving step().");
+    return '<details><summary>' + title + '</summary><ol class="steps">' +
+      items.map(function (one) { return '<li>' + one + '</li>'; }).join('') +
+      '</ol></details>';
+  };
+  const html = '<div class="card"><h2>Save your TLS client certificate</h2>' +
+    '<p class="sub"><strong>This is the only time these files can be ' +
+    'downloaded.</strong> The private key is not kept by this service — ' +
+    'not on this page, not by an administrator. If you lose the files, ' +
+    'revoke this certificate below and generate a new one.</p>' +
+    '<p><a class="dl" download="' + esc(p12) + '" href="' +
+    esc(dataUri(files.pkcs12.mime, files.pkcs12.base64)) + '">Download ' +
+    esc(p12) + '</a><a class="dl secondary" download="' + esc(key) +
+    '" href="' + esc(dataUri(files.key.mime, b64(files.key.text))) +
+    '">Download ' + esc(key) + '</a><a class="dl secondary" download="' +
+    esc(chain) + '" href="' +
+    esc(dataUri(files.chain.mime, b64(files.chain.text))) + '">Download ' +
+    esc(chain) + '</a></p>' +
+    '<table><tr><th>Issued to</th><td><code>' + esc(issued.subject) +
+    '</code></td></tr><tr><th>Serial</th><td><code>' +
+    esc(issued.serialHex) + '</code></td></tr><tr><th>Key</th><td>' +
+    esc(issued.keyAlg) + '</td></tr><tr><th>Good until</th><td>' +
+    esc(String(issued.notAfter).slice(0, 10)) + '</td></tr></table>' +
+    '<p class="note">The <code>.p12</code> holds the private key, your ' +
+    'certificate and the two certificate authorities above it, protected by ' +
+    'the password you just chose. The <code>-key.pem</code> is the same key ' +
+    'encrypted under the same password, and <code>-chain.pem</code> is the ' +
+    'certificates alone — both for command-line tools.</p>' +
+    '<h3>Install it</h3>' +
+    step('Chrome or Edge on Windows', [
+      'Open the downloaded <code>' + esc(p12) + '</code>. The Certificate ' +
+      'Import Wizard starts.',
+      'Choose <em>Current User</em>, keep the file, and type the file ' +
+      'password.',
+      'Let Windows choose the store automatically, and finish.',
+      'Restart the browser.']) +
+    step('Chrome, Edge or Safari on macOS', [
+      'Open the downloaded <code>' + esc(p12) + '</code>. Keychain Access ' +
+      'offers to add it to the <em>login</em> keychain.',
+      'Type the file password.',
+      'Chrome, Edge and Safari all use that keychain.']) +
+    step('Firefox (any operating system)', [
+      'Open <em>Settings → Privacy &amp; Security</em> and scroll to ' +
+      '<em>Certificates</em>.',
+      'Press <em>View Certificates…</em>, open the <em>Your ' +
+      'Certificates</em> tab and press <em>Import…</em>.',
+      'Choose <code>' + esc(p12) + '</code> and type the file password.']) +
+    step('Chrome or Edge on Linux', [
+      'Open <code>chrome://certificate-manager</code> (or ' +
+      '<code>edge://certificate-manager</code>) and choose <em>Your ' +
+      'certificates</em>.',
+      'Press <em>Import</em>, choose <code>' + esc(p12) + '</code> and type ' +
+      'the file password.',
+      'On an older browser: <code>pk12util -d sql:$HOME/.pki/nssdb -i ' +
+      esc(p12) + '</code>.']) +
+    step('curl or openssl', [
+      '<code>curl --cert ' + esc(chain) + ' --key ' + esc(key) +
+      ' --pass &lt;file password&gt; ' + esc(urls.mutual) + 'tls/whoami</code>',
+      'If a macOS release older than your browser refuses the ' +
+      '<code>.p12</code> with a message about the password, rebuild it with ' +
+      'the older algorithms it expects: <code>openssl pkcs12 -export ' +
+      '-legacy -inkey ' + esc(key) + ' -in ' + esc(chain) + ' -out ' +
+      'legacy.p12</code>.']) +
+    '<h3>Use it</h3><p>Open <a href="' + esc(urls.mutual) + '">' +
+    esc(urls.mutual) + '</a> in the browser you installed it in and choose ' +
+    'this certificate when asked. The page that comes back says who it ' +
+    'signed in; then come back to <a href="' + BASE + '">your account</a>, ' +
+    'which will not ask you to sign in again.</p></div>';
+  log.debug("Leaving tlsClientFreshCard().");
+  return html;
+}
+
 // `fresh`, when it is set, carries `purpose`: which profile the key it holds
 // was just issued for, so the one-time card tells somebody what to do with IT.
+// A `fresh.kind` of `tls-client` is the third card's one-time answer instead.
 function signingKeyPage(session, message, error, fresh, base) {
   log.debug("Entering signingKeyPage().");
   const username = session.user.username;
@@ -2629,9 +3147,11 @@ function signingKeyPage(session, message, error, fresh, base) {
   // -----------------------------------------------------------------------
   // THE CARD THAT ONLY EXISTS FOR ONE RESPONSE: the key itself.
   // -----------------------------------------------------------------------
-  const freshProfile = fresh
+  const tlsFresh = !!(fresh && fresh.kind === 'tls-client');
+  const freshProfile = fresh && !tlsFresh
     ? (signingKeyProfile(fresh.purpose) || SIGNING_KEY_PROFILES[0]) : null;
-  const freshCard = (fresh && fresh.privateKeyPem)
+  const freshCard = tlsFresh ? tlsClientFreshCard(fresh, base)
+    : (fresh && fresh.privateKeyPem)
     ? '<div class="card"><h2>Save this ' + esc(freshProfile.rfc) +
       ' private key</h2><p ' +
       'class="sub"><strong>This is the only time it will be shown.</strong> ' +
@@ -2660,7 +3180,10 @@ function signingKeyPage(session, message, error, fresh, base) {
     'grant</em> signs a SAML assertion. A key issued for one is refused by ' +
     'the other. This service issues each key pair from its own certificate ' +
     'authority, keeps the public half on your entry to check signatures ' +
-    'with, and gives you the private half once.</p>';
+    'with, and gives you the private half once.</p><p class="note">The ' +
+    'third card is a different kind of key: a <a href="#tls-client">TLS ' +
+    'client certificate</a>, which signs you in from a browser rather than ' +
+    'letting a script act as you.</p>';
 
   // -----------------------------------------------------------------------
   // WHAT APPLIES TO BOTH: no entry, no certificate authority, or the feature
@@ -2690,7 +3213,8 @@ function signingKeyPage(session, message, error, fresh, base) {
     '<div class="card">' + what + shared + '</div>' +
     SIGNING_KEY_PROFILES.map(function (profile) {
       return profileCard(profile, held, csrf, issuable, offered);
-    }).join(''));
+    }).join('') +
+    tlsClientCard(session, csrf, issuable, offered, base));
   log.debug('Leaving signingKeyPage(). ' +
             (held && held.hasKeyPair ? 'A JWT key pair. ' : 'No JWT key ' +
              'pair. ') +
@@ -2746,7 +3270,20 @@ async function pendingEnrolmentFor(username, base) {
 // would let anybody signed in issue THEMSELVES a key pair on somebody else's
 // entry, which is a takeover rather than a leak.
 const SIGNING_KEY_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['generate', 'remove'])),
+  action: vt.opt(vt.oneOf(['generate', 'remove',
+                          // A TLS client certificate (2026-09-13).
+                          'generate-tls-client', 'revoke-tls-client'])),
+  // THE TLS CLIENT CERTIFICATE'S FIELDS (2026-09-13). What the person calls the
+  // device, the key algorithm from a closed list, the password protecting the
+  // PKCS#12 twice over, and — for a revocation — the serial and one of two
+  // reasons. Still NO NAME: the certificate is the session's person's, and the
+  // serial is looked up among their certificates only.
+  label: vz.string().max(80).optional(),
+  key_alg: vt.opt(vt.oneOf(tlsClient.KEY_ALGS)),
+  p12_password: vz.string().max(512).optional(),
+  p12_confirm: vz.string().max(512).optional(),
+  serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional(),
+  reason: vt.opt(vt.oneOf(tlsClient.REVOCATION_REASONS)),
   // WHICH PROFILE (2026-09-13): RFC 7523's JWT key pair or RFC 7522's SAML
   // one. Absent means `jwt`, which is what every form and client posted before
   // the second profile existed. A closed list, so anything else is refused at
@@ -3916,6 +4453,129 @@ app.post(BASE + '/signing-key', async function (req, res) {
                                          base));
   }
 
+  // -------------------------------------------------------------------------
+  // A TLS CLIENT CERTIFICATE (2026-09-13): revoke one of yours.
+  //
+  // The serial comes from the form, and it is looked up among THIS PERSON'S
+  // certificates in `tlsClient.revoke()` — one belonging to somebody else
+  // matches nothing, which is `/portal/remove-key`'s arrangement. A redirect,
+  // because nothing secret comes back.
+  // -------------------------------------------------------------------------
+  if (action === 'revoke-tls-client') {
+    const revoked = tlsClient.revoke(undefined, username,
+                                     String(body.serial || ''), body.reason);
+    if (!revoked.ok) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. Not revoked.');
+      errorCodes.mark(res, innerCode(revoked) || 'STS-PORTAL-0039');
+      return send(res, 400, signingKeyPage(session, null,
+        (revoked.errors || ['That certificate could not be revoked.'])[0],
+        null, base));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.tls-client.revoked',
+      actor: username, outcome: 'success',
+      summary: username + ' revoked their own TLS client certificate ' +
+               revoked.certificate.serialHex + ' (' + revoked.reason + ')',
+      detail: { serialHex: revoked.certificate.serialHex,
+                label: revoked.certificate.label, reason: revoked.reason,
+                already: !!revoked.already,
+                address: websecurity.addressOf(req) }
+    });
+    log.info('portal: ' + username + ' revoked their TLS client certificate ' +
+             revoked.certificate.serialHex + ' (' + revoked.reason + '). The ' +
+             'TLS listeners refuse it from now on.');
+    log.debug('Leaving POST ' + BASE + '/signing-key. TLS client revoked.');
+    res.status(303).set('Location', BASE + '/signing-key?done=' +
+      encodeURIComponent('That TLS client certificate is revoked. A browser ' +
+                         'presenting it is refused from now on.')).end();
+    return undefined;
+  }
+
+  // -------------------------------------------------------------------------
+  // A TLS CLIENT CERTIFICATE: generate one, and answer with the files.
+  //
+  // **RENDERED AND NOT REDIRECTED**, for `generate`'s reason below: the
+  // private key is in the response and nowhere else. The self-service switch
+  // and both rate limits are the signing keys' own, checked in the same order.
+  // -------------------------------------------------------------------------
+  if (action === 'generate-tls-client') {
+    if (config.value('pki.personSelfService') === false) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. Self-service is off.');
+      errorCodes.mark(res, 'STS-PORTAL-0028');
+      return send(res, 403, signingKeyPage(session, null,
+        'This service does not let people issue their own certificates. An ' +
+        'administrator can issue one to you.', null, base));
+    }
+    const passwordSaid = tlsClient.pkcs12PasswordProblem(body.p12_password,
+                                                         body.p12_confirm);
+    if (passwordSaid) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. File password.');
+      errorCodes.mark(res, 'STS-PORTAL-0040');
+      return send(res, 400, signingKeyPage(session, null, passwordSaid, null,
+                                           base));
+    }
+    const allowedTls = websecurity.attempt('portal-signing-key', req,
+                                           username, {
+      identity: config.value('pki.personSelfServicePerIdentity'),
+      address: config.value('pki.personSelfServicePerAddress')
+    });
+    if (!allowedTls.ok) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. Rate limited.');
+      errorCodes.mark(res, innerCode(allowedTls) || 'STS-PORTAL-0020');
+      return send(res, 429, signingKeyPage(session, null, allowedTls.detail,
+                                           null, base));
+    }
+    const made = await tlsClient.issue(undefined, {
+      username: username,
+      label: String(body.label || '').trim(),
+      keyAlg: body.key_alg,
+      email: mailOf(session)
+    });
+    if (!made.ok) {
+      log.debug('Leaving POST ' + BASE + '/signing-key. Not issued.');
+      errorCodes.mark(res, innerCode(made) || 'STS-PORTAL-0041');
+      return send(res, 400, signingKeyPage(session, null,
+        (made.errors || ['A TLS client certificate could not be issued.'])[0],
+        null, base));
+    }
+    let files;
+    try {
+      files = await tlsClient.bundle(made.issued, body.p12_password);
+    } catch (e) {
+      // THE CERTIFICATE EXISTS AND ITS KEY IS GONE. Revoked at once rather
+      // than left valid in the register: a certificate nobody can ever
+      // present is only a line on a list, and one nobody can revoke because
+      // nobody knows its key was lost is worse.
+      log.error(errorCodes.tag('STS-PORTAL-0042') + 'portal: a TLS client ' +
+                'certificate was issued to ' + username + ' and its files ' +
+                'could not be built, so it was revoked: ' + e.message);
+      tlsClient.revoke(undefined, username, made.issued.serialHex,
+                       'cessationOfOperation');
+      errorCodes.mark(res, 'STS-PORTAL-0042');
+      return send(res, 500, signingKeyPage(session, null,
+        'The certificate could not be packaged for download, so it was ' +
+        'revoked. Try again.', null, base));
+    }
+    audit.record({
+      category: 'authentication', action: 'portal.tls-client.issued',
+      actor: username, outcome: 'success',
+      summary: username + ' issued themselves a TLS client certificate, ' +
+               'serial ' + made.issued.serialHex,
+      detail: { serialHex: made.issued.serialHex, label: made.issued.label,
+                keyAlg: made.issued.keyAlg, notAfter: made.issued.notAfter,
+                realm: made.issued.scope,
+                address: websecurity.addressOf(req) }
+    });
+    log.info('portal: ' + username + ' issued themselves a TLS client ' +
+             'certificate, serial ' + made.issued.serialHex + ', valid until ' +
+             made.issued.notAfter + '. The private key went out once in the ' +
+             'response and is not readable again.');
+    log.debug('Leaving POST ' + BASE + '/signing-key. TLS client issued.');
+    return send(res, 200, signingKeyPage(session, null, null, {
+      kind: 'tls-client', issued: made.issued, files: files
+    }, base));
+  }
+
   if (action === 'remove') {
     // ONE PROFILE AT A TIME: taking the RFC 7522 key pair off leaves the
     // RFC 7523 one working, and the reverse.
@@ -4498,6 +5158,21 @@ log.info('The User Portal is at ' + BASE + ': a person\'s own account, in ' +
          'credential. Every form carries a CSRF token, every credential ' +
          'endpoint is rate limited, and no route here takes an identity from ' +
          'the request.');
+
+// ---------------------------------------------------------------------------
+// /portal/certificates (2026-09-13), registered here — after every other page
+// of the column, so the route order is the column's — by the file beside this
+// one, which is handed the pieces that make a page a portal page. See its
+// header for why this is a `register()` rather than a require that registers
+// at its top level.
+// ---------------------------------------------------------------------------
+require('./portal_certificates').register({
+  app: app, BASE: BASE, log: log, esc: esc, shell: shell, send: send,
+  requireSignIn: requireSignIn, refuseShape: refuseShape,
+  innerCode: innerCode, baseUrlOf: baseUrlOf, parseBody: parseBody,
+  validation: validation, websecurity: websecurity, accessGate: accessGate,
+  audit: audit, errorCodes: errorCodes, config: config
+});
 
 module.exports = {
   BASE: BASE,

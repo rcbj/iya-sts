@@ -655,6 +655,8 @@ function create(spec) {
     overrides: Object.assign(seededNames(id), (spec || {}).overrides || {})
   };
   realms.set(id, realm);
+  // A realm removed and defined again takes rows again. See acceptsRows().
+  retired.delete(id);
   log.info('realms: "' + id + '" defined; its endpoints are under ' +
            prefixOf(realm) + '/.');
   // AFTER the row is written, because a builder may want to read the realm
@@ -916,6 +918,9 @@ function changed(id, what, info) {
 // ---------------------------------------------------------------------------
 const purges = [];
 
+// The ids removed in this process and not defined again. See acceptsRows().
+const retired = new Set();
+
 function onRemove(fn) {
   log.debug("Entering onRemove().");
   purges.push(fn);
@@ -980,6 +985,9 @@ function remove(id) {
                            'STS-CORE-0013');
   }
   realms.delete(realm.id);
+  // Before the purges, so a replicated row arriving while they run is refused
+  // rather than rebuilding a partition they just emptied. See acceptsRows().
+  retired.add(realm.id);
   purges.forEach(function (purge) {
     try {
       purge(realm.id);
@@ -1232,11 +1240,44 @@ const MUTATORS = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort',
 // what a stored row carries for a shared store). Handing `''` to `per.of()`
 // therefore built a SECOND, empty partition beside the real one, and the dump
 // of a store somebody had just written to came back empty.
+//
+// **AN ID THIS PROCESS HAS NOT HEARD OF IS ITS OWN PARTITION, NOT THE DEFAULT
+// REALM'S (2026-09-14).** This read `(get(realmId) || DEFAULT_REALM).id`, which
+// normalised the empty string and ALSO sent every unknown id to the default
+// realm. In a dispatched service a replicated row is often applied before the
+// realm it belongs to has reached this process — a realm's stream, session or
+// token is minted milliseconds after the realm is created, and the change log
+// carries both — so `restore()` wrote it into the DEFAULT partition, the next
+// in-place edit there journalled it as a default-realm row, and every process
+// adopted it. Measured on a dispatch run: forty other realms' own Shared
+// Signals receiver streams in the default realm, so every default-realm event
+// was pushed forty-two times and forty of the pushes were refused and queued
+// for ever. Keyed by the raw id, the rows wait in the partition the realm will
+// use when it arrives.
 // ---------------------------------------------------------------------------
 function partitionId(realmId) {
   log.debug("Entering partitionId().");
+  const id = String(realmId || '');
   log.debug("Leaving partitionId().");
-  return (get(realmId) || DEFAULT_REALM).id;
+  return !id || id === DEFAULT_ID ? DEFAULT_ID : id;
+}
+
+// ---------------------------------------------------------------------------
+// WHETHER A STORED OR REPLICATED ROW MAY BE WRITTEN INTO A REALM'S PARTITION.
+//
+// False only for a realm this process REMOVED and has not defined again. A row
+// for it arriving after the purge — replication is behind the removal by up to
+// a poll interval — would otherwise rebuild the partition the purge emptied,
+// and a realm defined again under the same id would inherit it, which is the
+// one surprise `remove()`'s purges exist to prevent. An id this process has
+// never heard of is accepted: that is the realm that has not arrived yet.
+// `retired` itself is declared beside `purges`, above `create()` and
+// `remove()`.
+// ---------------------------------------------------------------------------
+function acceptsRows(realmId) {
+  log.debug("Entering acceptsRows().");
+  log.debug("Leaving acceptsRows().");
+  return !retired.has(partitionId(realmId));
 }
 
 function keyed(factory) {
@@ -1299,6 +1340,10 @@ function map(options) {
     // one thing that must not be written straight back into it.
     restore: function (realmId, k, v) {
       log.debug("Entering restore().");
+      if (!acceptsRows(realmId)) {
+        log.debug("Leaving restore(). The realm was removed here.");
+        return;
+      }
       per.of(partitionId(realmId)).set(k, v);
       log.debug("Leaving restore().");
     },
@@ -1499,6 +1544,10 @@ function arr(options) {
     },
     restore: function (realmId, key, value) {
       log.debug("Entering restore().");
+      if (!acceptsRows(realmId)) {
+        log.debug("Leaving restore(). The realm was removed here.");
+        return;
+      }
       const real = per.of(partitionId(realmId));
       real.length = 0;
       (Array.isArray(value) ? value : []).forEach(function (row) {
@@ -1634,6 +1683,10 @@ function obj(factory, options) {
     // and what would then arrive as NaN out of `nums.seq++`.
     restore: function (realmId, key, value) {
       log.debug("Entering restore().");
+      if (!acceptsRows(realmId)) {
+        log.debug("Leaving restore(). The realm was removed here.");
+        return;
+      }
       Object.assign(per.of(partitionId(realmId)), value || {});
       log.debug("Leaving restore().");
     },

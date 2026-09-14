@@ -239,10 +239,14 @@ async function mint(format, model, ctx) {
       refused.errorCode = valid.errorCode;
       throw errorCodes.mark(refused, valid.errorCode);
     }
+    // `gnap.accessTokenCertificateHeader` decides the `x5c` / `x5u`, on the
+    // JWS in both JWT formats — never on the JWE around jwt-encrypted, which
+    // is encrypted to a resource server's key or to a secret.
     const signed = helpers.signJwt(claimsOf(valid.model),
                                    { grant: 'gnap', setId: context.setId ||
                                        null,
-                                                           sessionId: context.sessionId || null });
+                                     sessionId: context.sessionId || null },
+                                   { certificateHeader: 'gnap-access-token' });
     if (typeof signed !== 'string' || signed.split('.').length !== 3) {
       log.debug("Leaving mint(). The signer produced no JWS.");
       throw new Error('the ' + format + ' access token could not be signed.');
@@ -440,8 +444,10 @@ function publicMaterial(base) {
   const raw = Buffer.from(keys.publicJwk.x, 'base64url');
   log.debug("Leaving publicMaterial().");
   return {
-    jwt: { jwks_uri: base + '/oauth2/jwks', alg: 'RS256', kid: STS.kid,
-           typ: JWT_TYP },
+    // The kid a jwt-signed token's header carries, which `keys.kidFormat`
+    // decides (common/jose_kid.js) — the one this document names has to be it.
+    jwt: { jwks_uri: base + '/oauth2/jwks', alg: 'RS256',
+           kid: helpers.publishedKidFor(STS.kid), typ: JWT_TYP },
     biscuit: { algorithm: 'ed25519',
                root_public_key: 'ed25519/' + raw.toString('hex'),
                jwk: keys.publicJwk },

@@ -341,6 +341,124 @@ function refusesUnknownRevocationStatus() {
   return isProduct();
 }
 
+// Must an ACME or EST request arrive over TLS (2026-09-13)? RFC 8555 section
+// 6.1 says ACME MUST be HTTPS and RFC 7030 section 3.2 puts EST on TLS by
+// definition, so product answers yes and refuses a request that reached the
+// main port as plain HTTP. Development answers, logs that it did, and is how a
+// client under test reaches a service started with STS_HTTPS=false. SCEP is
+// not asked: its messages are signed and encrypted CMS and RFC 8894 section
+// 2.1 runs it over plain HTTP on purpose.
+function requiresEnrollmentTls() {
+  log.debug("Entering requiresEnrollmentTls().");
+  log.debug("Leaving requiresEnrollmentTls().");
+  return isProduct();
+}
+
+// May a caller that does not authenticate introspect a token at
+// /oauth2/introspect (2026-09-13)? RFC 7662 section 2.1 says the endpoint MUST
+// require some form of authorization, and development answers yes anyway: the
+// suites and every client under test introspect with nothing but the token,
+// and a refusal there removes the case they run. Product answers no — an open
+// introspection endpoint tells anybody holding a token string who it belongs
+// to and what it may do.
+//
+// **AN RFC 9701 JWT RESPONSE IS NOT ASKED THIS**, and must not be: that
+// response names the resource server that asked in its `aud`, so it needs an
+// authenticated caller in every mode, and section 5 says to refuse one that is
+// not. `oauth-oidc/oauth2.js`'s `introspectEndpoint()` makes both decisions.
+function opensIntrospection() {
+  log.debug("Entering opensIntrospection().");
+  log.debug("Leaving opensIntrospection().");
+  return !isProduct();
+}
+
+// May a request object be UNSIGNED — `alg: none` — at the authorization
+// endpoint (2026-09-13)? RFC 9101 section 4 says a request object is signed, or
+// signed and then encrypted, and nothing else; OpenID Connect Core section 6.1
+// still allows `none`, and a great many clients send one. Development accepts
+// it — unless `oauth2.requireSignedRequestObject`, the client's
+// `oauthRequireSignedRequestObject` or the authorization server's profile says a
+// signed one is required, which RFC 9101 section 10.5 says turns `none` away —
+// because a client under test that has only met a strict server has never run
+// the code it is trying to debug. Product refuses it: an unsigned request
+// object is query parameters with extra steps, and anybody can write one.
+function acceptsUnsignedRequestObjects() {
+  log.debug("Entering acceptsUnsignedRequestObjects().");
+  log.debug("Leaving acceptsUnsignedRequestObjects().");
+  return !isProduct();
+}
+
+// May a registered `request_uri` be dialled over plain HTTP, or answer with a
+// media type other than `application/oauth-authz-req+jwt` or `application/jwt`
+// (2026-09-13)? RFC 9101 section 5.2 makes a request_uri HTTPS and section 10.4
+// asks the server to check what comes back. Development allows both, logged,
+// because a client under test commonly serves its request object from a local
+// listener with no certificate; product refuses both. What is fetched is ONLY
+// ever a URI the client REGISTERED — `oauth-oidc/request_object.js` argues that
+// half, and no mode changes it.
+function acceptsLooseRequestUris() {
+  log.debug("Entering acceptsLooseRequestUris().");
+  log.debug("Leaving acceptsLooseRequestUris().");
+  return !isProduct();
+}
+
+// Does this process embed the identity protocol debugger (2026-09-13)?
+// `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
+// is this predicate's own answer: yes in development, where the debugger is
+// the other half of what this service is for, and no in product, where an
+// operator should turn on a network relay deliberately rather than find one.
+// Read against the DEFAULT realm's mode, because the listener and the child
+// process belong to the process and not to a realm. See debugger/CLAUDE.md.
+function embedsProtocolDebugger() {
+  log.debug("Entering embedsProtocolDebugger().");
+  const asked = String(config.value('debugger.enabled') || 'auto');
+  if (asked === 'on' || asked === 'off') {
+    log.debug("Leaving embedsProtocolDebugger(). debugger.enabled=" + asked);
+    return asked === 'on';
+  }
+  log.debug("Leaving embedsProtocolDebugger(). auto.");
+  return isDevelopment();
+}
+
+// May the embedded debugger's api dial anything other than this service
+// (2026-09-13)? Development answers yes — the debugger's own address guard
+// still applies, with private networks allowed, which is how it reaches a
+// Keycloak or a KDC beside this stack. Product answers no: the api child is
+// handed an ALLOW-LIST of this service's own addresses plus
+// `debugger.allowedDestinations`, because a relay that dials a caller's URL
+// from inside an identity provider's network is the thing to not ship.
+function limitsDebuggerDestinations() {
+  log.debug("Entering limitsDebuggerDestinations().");
+  log.debug("Leaving limitsDebuggerDestinations().");
+  return isProduct();
+}
+
+// May a URL an ADMINISTRATOR names reach an address inside this service's own
+// network (2026-09-13)? The one caller is the RFC 9728 import on
+// /admin/applications/new, which fetches a protected resource's metadata
+// document. Development answers yes: a resource on localhost is the ordinary
+// thing to import there. Product answers no — the name is resolved once, every
+// address is checked against loopback, the private ranges, link-local and the
+// reserved blocks, and the connection is pinned to the address that was
+// checked. `oauth-oidc/protected_resource_metadata.js` argues it.
+function dialsInternalAddresses() {
+  log.debug("Entering dialsInternalAddresses().");
+  log.debug("Leaving dialsInternalAddresses().");
+  return !isProduct();
+}
+
+// Is an RFC 9728 protected resource metadata document that fails a MUST a
+// client applies accepted with a warning (2026-09-13)? Two of them: section
+// 3.3's `resource` matching the well-known URL the document was fetched from,
+// and section 2's https scheme for a resource identifier. Development warns
+// and imports; product refuses. A document that is MALFORMED — the wrong JSON
+// types, no `resource` — is refused in both, because shape is not a mode.
+function acceptsNonconformingResourceMetadata() {
+  log.debug("Entering acceptsNonconformingResourceMetadata().");
+  log.debug("Leaving acceptsNonconformingResourceMetadata().");
+  return !isProduct();
+}
+
 // Is the management API gated? See the note above on why it is not, in
 // development. **THIS IS THE ONLY GATE THE MODE TURNS ON**, because it is the
 // only one that was ever off.
@@ -434,6 +552,18 @@ const REQUIREMENTS = [
              'WS-Trust requires a credential, and accepts an assertion only ' +
              'when this realm signed it and it is inside its Conditions.',
     where: 'common/credentials.js, ws-trust/wstrust.js, oauth-oidc/oauth2.js' },
+  { id: 'resource-metadata-import',
+    what: 'An RFC 9728 protected resource metadata import is held to the ' +
+          'rules a client of the document follows',
+    development: 'A document fetched from a URL is imported with a warning ' +
+                 'when its `resource` does not match the well-known URL it ' +
+                 'came from (section 3.3) or is not https, and the URL may ' +
+                 'resolve to loopback or a private address.',
+    product: 'Both are refused, and a URL resolving to a loopback, private, ' +
+             'link-local or reserved address is not dialled — the name is ' +
+             'resolved once and the connection pinned to the address that ' +
+             'was checked. A malformed document is refused in both modes.',
+    where: 'oauth-oidc/protected_resource_metadata.js' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
     development: 'An assertion or token that should have been encrypted and ' +
@@ -470,6 +600,38 @@ const REQUIREMENTS = [
     product: 'Every application must hold a client secret and authenticate ' +
              'with it. There are no public clients.',
     where: 'oauth-oidc/client_auth.js' },
+  { id: 'introspection',
+    what: 'A caller of /oauth2/introspect authenticates',
+    development: 'An RFC 7662 JSON introspection answers anybody who holds ' +
+                 'the token string, with no client credential. An RFC 9701 ' +
+                 'JWT response (Accept: application/token-introspection+jwt) ' +
+                 'is the exception in both modes: its aud names the resource ' +
+                 'server that asked, so that caller must authenticate as a ' +
+                 'client with a credential on file, and is refused 400 ' +
+                 'invalid_client otherwise.',
+    product: 'Every introspection request must authenticate as a client ' +
+             'with a credential that verifies — client_secret_basic or post, ' +
+             'a client assertion, or an RFC 8705 certificate — and is ' +
+             'refused ' +
+             '401 invalid_client otherwise (400 for a JWT request, RFC 9701 ' +
+             'section 5).',
+    where: 'oauth-oidc/oauth2.js, oauth-oidc/introspection_jwt.js' },
+  { id: 'request-objects',
+    what: 'A JWT-secured authorization request is signed, and a request_uri ' +
+          'is HTTPS',
+    development: 'A request object signed with `none` (OpenID Connect Core ' +
+                 '6.1) is accepted unless a signed one is required — by ' +
+                 'oauth2.requireSignedRequestObject, the client\'s entry or ' +
+                 'the authorization server\'s profile. A registered ' +
+                 'request_uri may be plain http and may answer with any ' +
+                 'media type; both are logged.',
+    product: 'A request object must be signed (RFC 9101 section 4) and is ' +
+             'refused invalid_request_object otherwise. A registered ' +
+             'request_uri must be https and must answer ' +
+             'application/oauth-authz-req+jwt or application/jwt, or the ' +
+             'request is refused invalid_request_uri. In both modes a ' +
+             'request_uri is fetched only when the client registered it.',
+    where: 'oauth-oidc/request_object.js' },
   { id: 'management-api',
     what: '/admin-api requires a sign-in and a role',
     development: 'Open. It is what the tests drive and the way back in when ' +
@@ -486,6 +648,21 @@ const REQUIREMENTS = [
                  'holds a role.',
     product: 'Required, and the sign-in behind it verifies the credential.',
     where: 'admin-ui/admin.js' },
+  { id: 'certificate-enrollment',
+    what: 'ACME and EST require TLS; an enrollment credential is verified',
+    development: 'ACME (/enroll/acme) and EST (/.well-known/est) answer over ' +
+                 'plain HTTP as well and log that they did. An EST password ' +
+                 'is not checked (the credentials row) and an application\'s ' +
+                 'client secret is not required. An ACME External Account ' +
+                 'Binding MAC and a SCEP challenge password ARE verified, and ' +
+                 'who a certificate may be issued for is enforced exactly as ' +
+                 'in product: yourself, or anybody in the realm if you hold ' +
+                 'Admin Write.',
+    product: 'A request that did not arrive over TLS is refused ' +
+             '(STS-ENROLL-0060). EST verifies the directory password and ' +
+             'requires the client secret. Everything else is as in ' +
+             'development.',
+    where: 'common/cert_enrollment.js, acme/, est/, scep/' },
   { id: 'scim',
     what: '/scim/v2 requires a credential',
     development: 'Required in one of RFC 7644 section 2\'s six schemes — and ' +
@@ -562,7 +739,14 @@ const REQUIREMENTS = [
                  'the shared password.',
     product: 'Each is refused, or requires the credential its administrative ' +
              'equivalent already requires. A sign-out naming anybody but the ' +
-             'signed-in caller is refused whatever logout.anyUser says.',
+             'signed-in caller is refused whatever logout.anyUser says. ' +
+             'Dynamic client registration is refused unless ' +
+             'oauth2.openRegistration is on — or the registration carries a ' +
+             'software statement this realm trusts (it issued it, or an ' +
+             'application declares its issuer) and ' +
+             'oauth2.softwareStatementOpensRegistration is on, which is the ' +
+             'operator deciding who may register by deciding whose ' +
+             'statements to trust.',
     where: 'tls/tls_server.js, oauth-oidc/oauth2.js, kerberos/krb5_kdc.js, ' +
            'logout/logout.js, saml/saml11_sso.js, scim/scim_auth.js' },
   { id: 'directory-writes',
@@ -645,7 +829,22 @@ const REQUIREMENTS = [
              'pki.revocationRequireDistributionPoint is on.',
     where: 'common/revocation_status.js, tls/tls_server.js, ' +
            'oauth-oidc/mtls.js, oauth-oidc/client_auth.js, ' +
-           'scim/scim_auth.js, spiffe/spiffe_auth.js, common/pki.js' }
+           'scim/scim_auth.js, spiffe/spiffe_auth.js, common/pki.js' },
+  // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
+  // because it does not move: an access token carrying the debugger
+  // permission, issued only to a console administrator, in both modes.
+  { id: 'protocol-debugger',
+    what: 'The identity protocol debugger is embedded, and what its api may ' +
+          'dial',
+    development: 'ON (debugger.enabled=auto): its own listener ' +
+                 '(debugger.port) serves the debugger UI and forwards /api to ' +
+                 'a child process. The api dials whatever a signed-in ' +
+                 'administrator asks it to, including private networks.',
+    product: 'OFF unless debugger.enabled=on. When on, the api child is ' +
+             'handed an ALLOW-LIST — this service\'s own addresses and ' +
+             'debugger.allowedDestinations — and refuses every other ' +
+             'destination, raw sockets included.',
+    where: 'debugger/debugger_server.js, debugger/debugger_api_process.js' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -842,6 +1041,14 @@ module.exports = {
   limitsDirectoryBindFailures: limitsDirectoryBindFailures,
   sendsWeakerThanAsked: sendsWeakerThanAsked,
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
+  requiresEnrollmentTls: requiresEnrollmentTls,
+  opensIntrospection: opensIntrospection,
+  acceptsUnsignedRequestObjects: acceptsUnsignedRequestObjects,
+  acceptsLooseRequestUris: acceptsLooseRequestUris,
+  embedsProtocolDebugger: embedsProtocolDebugger,
+  limitsDebuggerDestinations: limitsDebuggerDestinations,
+  dialsInternalAddresses: dialsInternalAddresses,
+  acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,
   gatesScim: gatesScim,
   gatesSharedSignals: gatesSharedSignals,

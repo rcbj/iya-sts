@@ -134,6 +134,16 @@ const krb5Principals = require('../kerberos/krb5_principals');
 // `admin_actions.js` gives beside its own.
 const krb5PersonKeys = require('../kerberos/krb5_person_keys');
 const oauth2 = require('../oauth-oidc/oauth2');
+// RFC 7591 section 2.3 (2026-09-13): what a statement on an entry says, and the
+// settings that decide what one is worth. A library that registers no route.
+const softwareStatement = require('../oauth-oidc/software_statement');
+const assertionGrant = require('../oauth-oidc/assertion_grant');
+// RFC 8705 (2026-09-13): the TLS client certificates an application holds, the
+// five subject parameters it may register instead, and whether the main port
+// can bind a token at all. Three libraries that register no route.
+const tlsClientCertificates = require('../common/tls_client_certificates');
+const certificateSubject = require('../common/certificate_subject');
+const mtls = require('../oauth-oidc/mtls');
 // The two SAML profiles, for the artifact and pending-request counts their
 // pages publish.
 const saml2 = require('../saml/saml2_sso');
@@ -388,7 +398,10 @@ function gateStateFor(req) {
     roles: enforced ? held.roles : rbac.ROLE_IDS.slice(0),
     open: enforced && held.open,
     closed: enforced && held.empty && !held.open && !held.roles.length,
-    empty: held.empty
+    empty: held.empty,
+    // The bootstrap administrator (2026-09-13), for the banner that says whose
+    // arrival closes the open console. See admin_rbac.js's bootstrapState().
+    bootstrap: held.bootstrap || null
   };
   log.debug("Leaving gateStateFor(). enforced=" + enforced + ", read=" +
             state.read +
@@ -2330,6 +2343,11 @@ function queryOne(query, key) {
 // of the acts table four inches up the page is pasting the OTHER one about half
 // the time, and a search that answers "nothing matches" to a string printed on
 // the same page is worse than no search at all.
+// How many results a chooser pane shows at a time. One number for the console
+// (chooserPane()) and for the replies that page the same list, so a page and
+// its resource cannot come to show different twenties.
+const CHOOSER_HITS = 20;
+
 function chooserMatches(names, wanted) {
   log.debug("Entering chooserMatches().");
   if (!wanted) {
@@ -2654,10 +2672,15 @@ function kerberosPrincipalsJson(req) {
   const query = (req && req.query) || {};
   const people = krb5PersonKeys.listPeople();
   const services = krb5PersonKeys.listServices();
+  // `name` and NOT `param`: pagingOf() builds the parameter as `<name>Page`
+  // and reads no `param` option at all. This passed `param` until 2026-09-13,
+  // so both lists read the bare `?page=` while the page's links wrote
+  // `peoplePage` and `servicesPage` — every next and previous link on
+  // /admin/kerberos/principals reloaded the same first page.
   const peoplePage = pagedRows(query, people,
-                               { param: 'peoplePage', noun: 'people' });
+                               { name: 'people', noun: 'people' });
   const servicesPage = pagedRows(query, services,
-                                 { param: 'servicesPage', noun: 'service ' +
+                                 { name: 'services', noun: 'service ' +
                                      'principals' });
   const account = krb5Principals.serviceAccount();
   log.debug("Leaving kerberosPrincipalsJson(). " + people.length + " " +
@@ -2732,6 +2755,82 @@ function ssfJson(req) {
   report.settings = configSettingsJson('/admin/ssf');
   log.debug("Leaving ssfJson(). " + report.streamDetail.length + " stream(s).");
   return report;
+}
+
+// ---------------------------------------------------------------------------
+// MONITORING -> SHARED SIGNALS -> DEAD LETTERS (2026-09-14).
+//
+// What every dead-letter queue in the realm holds, counted, and the letters
+// themselves searched and paged. `ssf/ssf_dead_letter_report.js` computes the
+// report; this adds only the search and the slice, for both doors —
+// `/admin/ssf/dead-letters` and `GET /admin-api/ssf/dead-letters` — so the two
+// cannot disagree about what was filtered (rule 7).
+//
+// THREE NARROWINGS AND THEY COMBINE. `dlstream` and `dlcause` are EXACT: a
+// stream id and a cause id are what the page's own links carry, and a
+// substring of a stream id is not a stream. `dlq` is the box over everything a
+// reader arrives holding — a jti out of a receiver's log, an error code, an
+// event name, a status, a phrase from a reason. The counts above the list are
+// the WHOLE realm's whatever is narrowed, because "how many are there" and
+// "which ones am I looking at" are two questions, and `matched` answers the
+// second.
+// ---------------------------------------------------------------------------
+function ssfDeadLettersState(req, report) {
+  log.debug("Entering ssfDeadLettersState().");
+  const wanted = queryOne(req.query, 'dlq').trim().toLowerCase();
+  const stream = queryOne(req.query, 'dlstream').trim();
+  const cause = queryOne(req.query, 'dlcause').trim();
+  const rows = (report.letters || []).filter(function (row) {
+    if (stream && row.stream_id !== stream) {
+      return false;
+    }
+    if (cause && row.cause !== cause) {
+      return false;
+    }
+    if (!wanted) {
+      return true;
+    }
+    const event = row.event || { name: '', types: [], subject: '' };
+    return [row.jti, row.stream_id, row.reason, row.errorCode,
+            String(row.status), event.name, event.subject]
+      .concat(event.types)
+      .some(function (value) {
+        return String(value || '').toLowerCase().indexOf(wanted) >= 0;
+      });
+  });
+  const page = pagedRows(req.query, rows,
+    { name: 'letters', noun: 'dead letters' });
+  log.debug("Leaving ssfDeadLettersState(). " + rows.length + " match(es).");
+  return { wanted: wanted, stream: stream, cause: cause, rows: rows,
+           page: page };
+}
+
+function ssfDeadLettersJson(req) {
+  log.debug("Entering ssfDeadLettersJson().");
+  if (!signalsReporter || typeof signalsReporter.deadLetters !== 'function') {
+    log.debug("Leaving ssfDeadLettersJson(). Not installed.");
+    return { installed: false, enabled: false, letters: [], streams: [],
+             causes: [], byCode: [], byStatus: [], byEventType: [],
+             totals: { held: 0 }, matched: 0,
+             filter: { q: null, stream: null, cause: null },
+             paging: { letters: pagingJson(pagingOf(req.query, 0,
+               { name: 'letters', noun: 'dead letters' })) },
+             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
+                   'here can report on the Shared Signals dead-letter ' +
+                   'queues.' };
+  }
+  const report = signalsReporter.deadLetters();
+  const state = ssfDeadLettersState(req, report);
+  log.debug("Leaving ssfDeadLettersJson(). " + state.page.shown.length +
+            " of " + state.rows.length + " shown.");
+  return Object.assign({}, report, {
+    installed: true,
+    filter: { q: state.wanted || null, stream: state.stream || null,
+              cause: state.cause || null },
+    matched: state.rows.length,
+    letters: state.page.shown,
+    paging: { letters: pagingJson(state.page.paging) }
+  });
 }
 
 // The whole report, for both pages and for `GET /admin-api/caep`. ONE
@@ -3371,7 +3470,67 @@ function rbacListJson(req) {
                          per: req.query.per ? paging.perPage : '' };
   const knownKeys = knownUserKeys();
   const candidates = rbac.candidates(Object.keys(knownKeys));
-  log.debug("Leaving rbacListJson().");
+
+  // WHO CAN BE PICKED, SEARCHED AND PAGED (2026-09-13). This was a `<select>`
+  // holding every candidate, and a realm bulk loaded with thousands of people
+  // made it a control nobody could use — and made this reply thousands of
+  // rows long for a caller that wanted the roster. It is /admin/delegation's
+  // person chooser now: `personq` narrows, `personfrom` pages by
+  // CHOOSER_HITS, a stale offset is clamped rather than obeyed, and `person`
+  // is the one a result link picked. The page draws the pane from the same
+  // list with the same rule (chooserPane() in admin-ui/admin.js), so what the
+  // page shows and what `candidates` answers are the same twenty.
+  //
+  // `person` is RESOLVED against the candidates rather than echoed. The grant
+  // form it opens says "picked from the list", and a name typed into the URL
+  // that the list does not hold belongs on the typed form, which says what a
+  // dangling grant is.
+  const personWanted = queryOne(req.query, 'personq').trim();
+  const candidateMatched = candidates.filter(function (row) {
+    return chooserMatches([row.username], personWanted);
+  });
+  // PAGED THE WAY EVERY SECOND LIST IN A REPLY IS PAGED HERE: `candidatesPage`
+  // and a `candidatesPaging` object beside the array, with `per` shared with
+  // the grants — detailPagingParameters()'s naming, so a caller that can read
+  // the reply can write the request. Two things differ from a drill-down's
+  // lists and both are for the console's pane:
+  //
+  //   * the default page size is CHOOSER_HITS rather than DEFAULT_PER_PAGE,
+  //     because the pane shows twenty and a reply that defaulted to fifty
+  //     would be a second answer to "which people are on this page";
+  //   * `personfrom`, the pane's own OFFSET, is honoured when `candidatesPage`
+  //     is absent, as the page that offset falls on. chooserPane() pages by
+  //     offset for every chooser in this console, and the pane's links carry
+  //     one; `candidatesPage` wins when both are sent.
+  const candidateOptions = { name: 'candidates', defaultPer: CHOOSER_HITS,
+                             noun: 'people' };
+  let candidatePaging = pagingOf(req.query, candidateMatched.length,
+                                 candidateOptions);
+  const offsetAsked = parseInt(queryOne(req.query, 'personfrom'), 10);
+  if (queryOne(req.query, 'candidatesPage') === '' && isFinite(offsetAsked) &&
+      offsetAsked > 0 && offsetAsked < candidateMatched.length) {
+    const asPage = Object.assign({}, req.query, {
+      candidatesPage: String(Math.floor(offsetAsked /
+                                        candidatePaging.perPage) + 1)
+    });
+    candidatePaging = pagingOf(asPage, candidateMatched.length,
+                               candidateOptions);
+  }
+  const candidateShown = candidateMatched.slice(candidatePaging.offset,
+      candidatePaging.offset + candidatePaging.perPage);
+  const personAsked = queryOne(req.query, 'person').trim();
+  const picked = personAsked
+    ? (candidates.filter(function (row) {
+        return row.username.toLowerCase() === personAsked.toLowerCase();
+      })[0] || null)
+    : null;
+  // The grants table's own controls carry the search, so that paging or
+  // filtering the table does not clear the pane the reader is still using.
+  filterParams.personq = personWanted;
+  filterParams.personfrom = queryOne(req.query, 'personfrom');
+  filterParams.person = personAsked;
+  log.debug("Leaving rbacListJson(). " + candidateMatched.length + " of " +
+            candidates.length + " candidate(s) match.");
   return {
     // `an` and `bn` are NOT here: they are locals inside the sort comparator
     // above, and a first pass of this split lifted them as though they were
@@ -3380,11 +3539,17 @@ function rbacListJson(req) {
     wantedText: wantedText, needle: needle, wantedRole: wantedRole,
     filtered: filtered, paging: paging, shown: shown,
     filterParams: filterParams, knownKeys: knownKeys, candidates: candidates,
+    personWanted: personWanted, personAsked: personAsked, picked: picked,
+    candidateMatched: candidateMatched,
     json: (function () {
     return {
         enforced: info.enforced, openWhenEmpty: info.openWhenEmpty,
         openToAnyone: info.openToAnyone,
         closedToEveryone: info.closedToEveryone,
+        // THE BOOTSTRAP ADMINISTRATOR (2026-09-13): who it is, whether it was
+        // seeded, and when it first signed in to the console — the moment
+        // `openToAnyone` stopped being true. See admin_rbac.js.
+        bootstrap: info.bootstrap,
         available: info.available, groupsDn: info.groupsDn,
         usersDn: info.usersDn,
         grantCount: info.grantCount, matched: filtered.length,
@@ -3399,9 +3564,30 @@ function rbacListJson(req) {
         you: { username: state.username, roles: state.roles,
                read: state.read, write: state.write,
                viaEmptyRoster: state.open },
-        roles: info.roles,
+        // THE ROLES WITHOUT THEIR MEMBER LISTS (2026-09-13). `members` and
+        // `claimed` were every membership value of each role, unpaged, and
+        // they are the same rows `grants` carries — paged, and narrowed to one
+        // role by `?role=`. So a role here is what it is and how many hold
+        // it; who holds it is `grants`.
+        roles: info.roles.map(function (role) {
+          const out = Object.assign({}, role);
+          delete out.members;
+          delete out.claimed;
+          return out;
+        }),
         grants: shown,
-        candidates: candidates
+        // THE SLICE, NOT THE REGISTER — see the comment above. The paging
+        // object beside it says how much there is, so a caller can tell twenty
+        // of twenty from twenty of five thousand.
+        candidates: candidateShown,
+        candidatesPaging: pagingJson(candidatePaging),
+        candidateSearch: {
+          q: personWanted || null, total: candidates.length,
+          matched: candidateMatched.length
+        },
+        picked: personAsked
+          ? { asked: personAsked, candidate: picked }
+          : null
     };
     }())
   };
@@ -4072,12 +4258,14 @@ function applicationDetailJson(req, identifier) {
   const permissionState = applicationPermissionsState(req.query,
                                                       row.identifier);
   const credentialsState = applicationCredentialsState(row);
+  const softwareStatementState = applicationSoftwareStatementState(row);
   log.debug("Leaving applicationDetailJson().");
   return {
     row: row, attributeRows: attributeRows, paged: paged, paging: paging,
     observedPaged: observedPaged,
     permissionState: permissionState,
     credentialsState: credentialsState,
+    softwareStatementState: softwareStatementState,
     json: (function () {
     return Object.assign({ found: true }, row, {
         attributesShown: paged.shown,
@@ -4093,6 +4281,11 @@ function applicationDetailJson(req, identifier) {
         // party registered itself. No secret and no private key: see
         // applicationCredentialsState().
         credentials: credentialsState.json,
+        // THE SOFTWARE STATEMENTS SECTION, AS DATA (2026-09-13): the issuers
+        // this application vouches for as a publisher, the statement this realm
+        // issued it, and how it registered if a statement let it in. A
+        // statement is not a secret, so the issued one is here whole.
+        softwareStatements: softwareStatementState.json,
         // THE RESOLVED DELEGATED PERMISSIONS, because the page draws a section
         // of them and a reply that carried only the raw attribute would leave a
         // caller to compose `baseUri + name` for itself — which is the one
@@ -4279,7 +4472,8 @@ function applicationCredentialsState(row) {
       keyAlgorithms: pki.keyAlgorithms(),
       leafLifetimeDays: pki.leafLifetimeDays()
     },
-    sources: applications.KEY_SOURCES.slice()
+    sources: applications.KEY_SOURCES.slice(),
+    mtls: applicationMtlsState(row, one, chainAvailable)
   };
   state.json = {
     clientSecret: { held: state.clientSecret.held,
@@ -4296,9 +4490,124 @@ function applicationCredentialsState(row) {
     }),
     caAvailable: chainAvailable,
     oauthDeclared: oauthDeclared,
-    sources: state.sources
+    sources: state.sources,
+    mtls: state.mtls
   };
   log.debug("Leaving applicationCredentialsState().");
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// RFC 8705 ON AN APPLICATION'S PAGE (2026-09-13).
+//
+// What the token endpoint will accept from this application and do with its
+// tokens, read from the same places it reads them: the declared method, the
+// TLS client certificates this realm issued to it (the IMPLICIT mapping, whose
+// record `tls_client_certificates.stillHeld()` asks), the one subject
+// parameter it may register instead (the EXPLICIT one), the section 2.2
+// thumbprint, and the section 3.4 flag. Certificates it enrolled over ACME,
+// EST or SCEP authenticate it too and are listed on those protocols' pages,
+// not here — this section issues and lists its own.
+// ---------------------------------------------------------------------------
+function applicationMtlsState(row, one, caAvailable) {
+  log.debug("Entering applicationMtlsState().");
+  const identifier = String((row && row.identifier) || '');
+  let held = [];
+  try {
+    held = tlsClientCertificates.listFor(undefined, identifier, 'application')
+      .map(function (cert) {
+        return { serialHex: cert.serialHex, label: cert.label,
+                 subject: cert.subject, keyAlg: cert.keyAlg,
+                 notBefore: cert.notBefore, notAfter: cert.notAfter,
+                 thumbprint: cert.thumbprint, state: cert.state,
+                 reason: cert.reason, revokedAt: cert.revokedAt,
+                 certificatePem: cert.certificatePem };
+      });
+  } catch (e) {
+    // No certificate authority in this process: nothing issued, nothing held.
+    log.debug("Caught in applicationMtlsState(): " + ((e && e.message) || e));
+    held = [];
+  }
+  const subjects = certificateSubject.MEMBER_NAMES.map(function (member) {
+    const described = certificateSubject.MEMBERS[member];
+    return { member: member, attribute: described.attribute,
+             label: described.label, value: one(described.attribute) };
+  });
+  const method = one('oauthTokenEndpointAuthMethod');
+  log.debug("Leaving applicationMtlsState(). " + held.length + " held.");
+  return {
+    authMethod: method,
+    certificateMethod: mtls.CERTIFICATE_METHODS.indexOf(method) >= 0,
+    implicitName: tlsClientCertificates.APPLICATION_URN + identifier,
+    certificates: held,
+    active: held.filter(function (cert) {
+      return cert.state === 'valid';
+    }).length,
+    max: tlsClientCertificates.maxPerHolder('application'),
+    subjects: subjects,
+    registeredSubject: subjects.filter(function (s) {
+      return !!s.value;
+    }).map(function (s) {
+      return s.member;
+    }),
+    boundTokensAttribute: applications.TLS_BOUND_TOKENS_ATTRIBUTE,
+    boundTokens: one(applications.TLS_BOUND_TOKENS_ATTRIBUTE).toUpperCase() ===
+                 'TRUE',
+    selfSignedThumbprint: one('oauthTlsClientCertificateThumbprint'),
+    bindingAvailable: mtls.available(),
+    caAvailable: !!caAvailable,
+    keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),
+    defaultKeyAlg: tlsClientCertificates.DEFAULT_KEY_ALG,
+    revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
+    passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SOFTWARE STATEMENTS ON AN APPLICATION'S PAGE (RFC 7591 section 2.3,
+// 2026-09-13).
+//
+// Three facts from three places, read here so the page and
+// `GET /admin-api/applications?application=` cannot disagree about them:
+// `oauthSoftwareStatementIssuer` and whether the entry holds a key a statement
+// could verify under (the publisher half); `oauthIssuedSoftwareStatement`,
+// decoded and checked against the realm's key NOW (the issued half); and the
+// three `appSoftwareStatement*` facts a registration wrote (the client half).
+// ---------------------------------------------------------------------------
+function applicationSoftwareStatementState(row) {
+  log.debug("Entering applicationSoftwareStatementState().");
+  const fields = (row && row.fields) || {};
+  const issuers = [].concat(fields.oauthSoftwareStatementIssuer || [])
+    .map(String);
+  const keys = assertionGrant.keysForParty(fields, 'application');
+  const issuedToken = String([].concat(
+    fields.oauthIssuedSoftwareStatement || [])[0] || '');
+  const issued = issuedToken ? softwareStatement.describe(issuedToken) : null;
+  const registeredWith = row
+    ? applications.softwareStatementFactsOf(row.identifier) : null;
+  const settings = {
+    requireTrustedIssuer: softwareStatement.requiresTrustedIssuer(),
+    opensRegistration: softwareStatement.opensRegistration(),
+    required: softwareStatement.required(),
+    lifetimeSeconds: softwareStatement.issuedLifetimeSeconds()
+  };
+  const state = {
+    issuers: issuers,
+    usableKeys: keys.keys.length,
+    keyProblems: keys.problems,
+    issuedToken: issuedToken,
+    issued: issued,
+    registeredWith: registeredWith,
+    settings: settings
+  };
+  state.json = {
+    declaredIssuers: issuers,
+    usableKeys: keys.keys.length,
+    issued: issued ? Object.assign({ statement: issuedToken }, issued) : null,
+    registeredWith: registeredWith,
+    settings: settings
+  };
+  log.debug("Leaving applicationSoftwareStatementState().");
   return state;
 }
 
@@ -5209,6 +5518,15 @@ function mfaJson(key) {
     // caller asking who holds what, and this reply is already the largest on
     // the console.
     password: mech.password,
+    // WHAT AN ADMINISTRATOR HAS DECIDED ABOUT THEM (2026-09-13): whether the
+    // password must be changed at their next sign-in, a password reset link
+    // outstanding (an expiry, never a token), and whether a second factor is
+    // REQUIRED of them — by their own entry or by the realm — which is a
+    // different question from `mfaRequired` below, what they HOLD.
+    passwordChangeRequired: credentials.passwordResetRequired(key),
+    passwordResetLink: mech.passwordResetLink || null,
+    mfaRequirement: mech.mfaRequirement ||
+      { required: false, byUser: false, byRealm: false },
     usable: mech.usable,
     activated: mech.activated,
     mfaRequired: mech.mfaRequired,
@@ -5561,6 +5879,8 @@ module.exports = {
   setRiscReporter: setRiscReporter,
   signalsJson: signalsJson,
   signalsState: signalsState,
+  ssfDeadLettersJson: ssfDeadLettersJson,
+  ssfDeadLettersState: ssfDeadLettersState,
   ssfJson: ssfJson,
   caepJson: caepJson,
   caepSessionsState: caepSessionsState,
@@ -5588,6 +5908,7 @@ module.exports = {
   permissionGroupsView: permissionGroupsView,
   queryOne: queryOne,
   chooserMatches: chooserMatches,
+  CHOOSER_HITS: CHOOSER_HITS,
   claimsRequestPreview: claimsRequestPreview,
   claimsRequestJson: claimsRequestJson,
   userinfoClaimsJson: userinfoClaimsJson,

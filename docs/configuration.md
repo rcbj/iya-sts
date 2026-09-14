@@ -110,6 +110,24 @@ row, with `enforced` as `yes`, `detected`, `always`, `deployment` or `no` — tw
 requirements are `no` because they are the *client's* and nothing this server
 observes can tell a client that checks from one that does not.
 
+### `oauth2.oauth21` — OAuth 2.1, and it turns the mode above on
+
+Off by default. On, it enforces the OAuth 2.1 Authorization Framework
+(draft-ietf-oauth-v2-1-16, still a draft) — which means RFC 9700 mode plus what
+2.1 adds: PKCE for confidential clients too, a client that registered its own
+redirect URI (**`oauth2.redirectUris` is not read**), a presented credential
+that must verify, a JWT client assertion addressed to the issuer alone, no SAML
+client authentication, no repeated parameters and a ten-minute code.
+
+**It is not RFC 9700 mode renamed.** That mode requires `redirect_uri` at the
+token endpoint, which OAuth 2.1 removed, and requires it at the authorization
+endpoint even when the client registered one; a client written for 2.1 is
+refused there and answered here.
+
+Restart-only and settable on a trust realm, for exactly the reason above.
+`GET /oauth2/oauth21` lists every requirement it adds, which it inherits, and
+the grants it deliberately exempts.
+
 ### `oauth2.delegatedPermissionsEnforced` — the OTHER mode, and not part of the first
 
 Off by default, runtime, and settable on a trust realm.
@@ -376,19 +394,26 @@ reviewing by hand. See [what is not checked](what-is-not-checked.md).
 
 Each gate is explained under [what is not checked](what-is-not-checked.md).
 
-### `admin.readGroup`, `admin.writeGroup` and `admin.openWhenEmpty`
+### `admin.readGroup`, `admin.writeGroup`, `admin.openWhenEmpty` and `admin.bootstrapUsername`
 
 The console's two roles are two ordinary groups in the embedded directory —
 `cn=admin-read` and `cn=admin-write` by default — so `/admin/rbac`, `POST
 /admin-api/rbac/grant`, an `ldapmodify` and a SCIM `PATCH` all write the same
 membership. **Write implies read.**
 
-`admin.openWhenEmpty` is on and decides what happens while *neither* group has a
-member: anybody who signs in holds both roles, and every page says so. It is on
-because there is no password anywhere in this service to bootstrap an
-administrator with and the roster dies with the process — off, and a service
-started with an empty roster has a console no browser can reach. `/admin-api` is
-the way back out of that: it is gated by a credential of its own
+`admin.bootstrapUsername` (`admin`) names the default realm's bootstrap
+administrator. Startup creates it if it is absent and makes it a member of both
+groups. A newly created account must choose a new password at its first sign-in,
+and the account cannot be deleted or renamed. In development any password
+reaches that screen. In product mode the account gets the generated password
+that is logged once.
+
+`admin.openWhenEmpty` is on and keeps the console open to anybody who signs in
+until that account first signs in to `/admin`; every page says so while it
+lasts. Off, only members of the two groups may use the console from the start.
+A process that never seeded the bootstrap administrator keeps the older rule:
+open while *neither* group has a member. If the console is ever closed to
+everybody, `/admin-api` is the way back out: it is gated by a credential of its own
 (`adminApi.authRequired`, an OAuth 2.0 access token rather than a console
 session), so getting back in means holding that token — or turning that one
 setting off, which restores the open API this had until 2026-09-09.
@@ -636,6 +661,31 @@ switched off — the same contract `totp.enabled` keeps, and with a sharper edge
 for `primaryAllowed`, where the person's ONLY credential would be the one being
 switched off. Removing a key is on that person's own row under `/admin/users`,
 or `POST /admin-api/users/clear-key`.
+
+### `authn.mfaRequired` and `security.passwordResetTtlMinutes`
+
+**`authn.mfaRequired`** (off by default, runtime, per realm) requires a second
+factor of everybody who signs in at the realm's sign-in screen. Somebody who
+holds none is sent to `/authn/mfa-setup` after their password is accepted and
+chooses an authenticator app (the page shows the QR code and asks for a code)
+or a security key; no session exists until one is enrolled. A passwordless
+security-key sign-in is refused while it is on. An administrator can place the
+same requirement on one person with **Require MFA** on their `/admin/users`
+page, which writes `stsMfaRequired` on the entry.
+
+**It is enforced at the sign-in screen and nowhere else.** A federated
+assertion, a SPNEGO ticket, a TLS client certificate, the OAuth password grant,
+an LDAP bind, WS-Trust and SCIM Basic authenticate somebody without that screen,
+and a session that already exists is not ended. If both mechanisms are switched
+off (`totp.enabled`, and `webauthn.enabled` or `webauthn.mfaAllowed`), the
+screen refuses the sign-in and names those settings rather than silently not
+asking.
+
+**`security.passwordResetTtlMinutes`** (60) is how long a reset link issued with
+**Send a reset link** on a person's `/admin/users` page stays usable at
+`/portal/reset-password`. Issuing the link removes the current password and
+signs the person out everywhere, so an expired link leaves nothing to sign in
+with until an administrator issues another or resets the password.
 
 ### `oauth2.breakIdTokenNonce`
 

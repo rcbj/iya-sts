@@ -30,9 +30,10 @@
 // /admin/config reports as the default, with the OpenAPI document's `default`
 // property, and with README.md's table, all three of which read the table.
 //
-// THREE SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl and
-// krb5.serviceDomains are DERIVED from a neighbour (from oauth2.rfc9700, from
-// oid4vci.walletUrl and from krb5.realm respectively). A literal here would
+// FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
+// krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
+// oauth2.rfc9700, from oid4vci.walletUrl, from krb5.realm, and from the public
+// base URL or the listener's scheme, host and port). A literal here would
 // freeze the derivation at whatever it evaluated to the day this file was
 // written, so they resolve through their neighbour instead and are exempt from
 // the startup refusal for that reason.
@@ -50,15 +51,16 @@ var config = {
     host: "0.0.0.0",   // HTTP bind address; restart to apply
     port: 8081,        // HTTP port; restart to apply
     trustProxy: false, // Trust forwarded headers
-    publicBaseUrl: ""  // Public base URL
+    publicBaseUrl: "", // Public base URL
+    corsOrigins: ""    // Origins treated as this service's own
   },
 
   // --- Admin console ---------------------------------------------------
   admin: {
-    bootstrapUsername: "admin", // Product-mode bootstrap account; restart to apply
+    bootstrapUsername: "admin", // Bootstrap administrator account; restart to apply
     readGroup: "admin-read",    // Admin Read role
     writeGroup: "admin-write",  // Admin Write role
-    openWhenEmpty: true         // Open while no role has a member
+    openWhenEmpty: true         // Open until the bootstrap administrator signs in
   },
 
   // --- GNAP ------------------------------------------------------------
@@ -97,6 +99,7 @@ var config = {
     pushAllowedHosts: "",                                                  // Push host allowlist
     pushTimeoutMs: 5000,                                                   // Push timeout (ms)
     jweEnc: "A256GCM",                                                     // jwt-encrypted content encryption
+    accessTokenCertificateHeader: "x5u",                                   // JWT access token certificate header
     demoResourceServer: true,                                              // Run the demonstration resource server
     caepEvents: true,                                                      // Emit CAEP for grants and tokens
     scopedSignals: true                                                    // Scope a GNAP web application's streams
@@ -125,13 +128,14 @@ var config = {
 
   // --- Web security ----------------------------------------------------
   security: {
-    rateLimitWindowS: 60,       // Rate-limit window (seconds)
-    rateLimitPerIdentity: 5,    // Attempts per identity per window
-    rateLimitPerAddress: 20,    // Attempts per address per window
-    activationTtlMinutes: 1440, // Activation link lifetime (minutes)
-    passwordHashLogN: 15,       // Password hash cost (log2 of scrypt N)
-    passwordHashR: 8,           // Password hash block size (scrypt r)
-    passwordHashP: 1            // Password hash parallelism (scrypt p)
+    rateLimitWindowS: 60,        // Rate-limit window (seconds)
+    rateLimitPerIdentity: 5,     // Attempts per identity per window
+    rateLimitPerAddress: 20,     // Attempts per address per window
+    activationTtlMinutes: 1440,  // Activation link lifetime (minutes)
+    passwordResetTtlMinutes: 60, // Password reset link lifetime (minutes)
+    passwordHashLogN: 15,        // Password hash cost (log2 of scrypt N)
+    passwordHashR: 8,            // Password hash block size (scrypt r)
+    passwordHashP: 1             // Password hash parallelism (scrypt p)
   },
 
   // --- Web security ----------------------------------------------------
@@ -140,6 +144,7 @@ var config = {
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
+    mfaRequired: false,             // Require a second factor of everybody
     unauthenticatedSessions: false  // Offer "Continue without signing in"
   },
 
@@ -200,6 +205,7 @@ var config = {
     source: "auto",                  // Where signing keys come from; restart to apply
     plaintextRetention: "timed",     // How long a decrypted private key is kept
     plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
+    kidFormat: "internal",           // Signed token kid format
     kekProvider: "file",             // Key-encryption key provider; restart to apply
     kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
     kekRef: "",                      // Key-encryption key reference; restart to apply
@@ -217,14 +223,21 @@ var config = {
 
   // --- Global ----------------------------------------------------------
   workers: {
-    count: 5,                          // Worker processes
-    jobTimeoutS: 120,                  // Worker job timeout (seconds)
-    requestCount: 0,                   // Request worker processes; restart to apply
-    dispatch: "",                      // Handled in a request worker; restart to apply
-    fanout: "/scim,/xacml,/admin-api", // Dispatched paths with no session affinity; restart to apply
-    maxSockets: 64,                    // Connections per request worker; restart to apply
-    readYourWrite: false,              // Read-your-write across request workers
-    socketDir: ""                      // Request worker socket directory; restart to apply
+    count: 5,                                                      // Worker processes
+    jobTimeoutS: 120,                                              // Worker job timeout (seconds)
+    requestCount: 0,                                               // Request worker processes; restart to apply
+    dispatch: "",                                                  // Handled in a request worker; restart to apply
+    fanout: "/scim,/xacml,/admin-api",                             // Dispatched paths with no session affinity; restart to apply
+    surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
+    surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
+    batch: "/scim,/admin/signals/receive,/portal/signals/receive", // Batch traffic paths
+    batchWorkerShare: 50,                                          // Share of workers batch traffic may use (%)
+    batchConcurrency: 8,                                           // Batch requests in flight per lane worker
+    batchQueueLimit: 5000,                                         // Batch requests waiting
+    batchQueueTimeoutS: 60,                                        // Longest a batch request waits (seconds)
+    maxSockets: 64,                                                // Connections per request worker; restart to apply
+    readYourWrite: false,                                          // Read-your-write across request workers
+    socketDir: ""                                                  // Request worker socket directory; restart to apply
   },
 
   // --- Trust realms ----------------------------------------------------
@@ -237,6 +250,7 @@ var config = {
   oauth2: {
     issuer: "",                                  // Issuer identifier
     rfc9700: false,                              // RFC 9700 mode; restart to apply
+    oauth21: false,                              // OAuth 2.1 mode; restart to apply
     consentRequired: true,                       // Ask for consent
     delegatedPermissionsEnforced: false,         // Enforce delegated permissions
     tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
@@ -256,6 +270,10 @@ var config = {
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
     dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
     openRegistration: false,                     // Open dynamic client registration (product mode)
+    softwareStatementRequireTrustedIssuer: true, // Refuse a software statement from an undeclared issuer
+    softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint
+    softwareStatementRequired: false,            // Require a software statement on every registration
+    softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
     registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
     registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
@@ -264,6 +282,12 @@ var config = {
     maxPendingTransactions: 500,                 // RFC 9700: remembered transactions (per realm)
     maxRefreshTokenFamilies: 2000,               // RFC 9700: remembered refresh tokens (per realm)
     signedMetadataAlgorithm: "RS256",            // Algorithm signed_metadata is signed with
+    accessTokenCertificateHeader: "x5u",         // Access token certificate header
+    idTokenCertificateHeader: "x5u",             // ID Token certificate header
+    refreshTokenCertificateHeader: "x5u",        // Refresh token certificate header
+    userinfoCertificateHeader: "x5u",            // Signed UserInfo certificate header
+    introspectionCertificateHeader: "x5u",       // JWT introspection response certificate header
+    signedMetadataCertificateHeader: "x5u",      // signed_metadata certificate header
     signedMetadataCacheS: 60,                    // signed_metadata cache (s)
     maxSignedMetadataEntries: 64,                // signed_metadata cache entries
     basicAuthRealm: "sts",                       // Token endpoint Basic realm
@@ -279,6 +303,24 @@ var config = {
     refreshTokenEncryptionEnc: "A256GCM",        // Refresh token encryption: content (enc)
     refreshTokenEncryptionKeyBits: 2048,         // Refresh token encryption: RSA key size (bits)
     refreshTokenEncryptionCurve: "P-256",        // Refresh token encryption: EC curve
+    requireSignedRequestObject: false,           // Require a signed request object (RFC 9101)
+    authorizationDetailsMaxEntries: 20,          // Most authorization_details entries in one request (RFC 9396)
+    requestUriTimeoutMs: 5000,                   // request_uri fetch timeout (ms)
+    requestUriMaxBytes: 65536,                   // request_uri largest response (bytes)
+    requireRequestObjectType: false,             // Require typ oauth-authz-req+jwt on a request object
+    requireRequestObjectIssuerAudience: false,   // Require iss and aud in a request object
+    requestUriCacheS: 0,                         // request_uri content cache (s)
+    requestObjectEncryptionKeyBits: 2048,        // Request object encryption: RSA key size (bits)
+    requestObjectEncryptionCurve: "P-256",       // Request object encryption: EC curve
+    pushedAuthorizationRequests: true,           // Pushed authorization requests (RFC 9126)
+    requirePushedAuthorizationRequests: false,   // Require pushed authorization requests
+    parRequestUriLifetimeS: 60,                  // Pushed request_uri lifetime (seconds)
+    parMaxRequests: 10000,                       // Pushed requests held at once
+    parMaxBodyBytes: 65536,                      // Largest pushed authorization request (bytes)
+    parRequestsPerMinute: 600,                   // Pushed requests per client per window
+    parAllowUnregisteredRedirectUris: false,     // Pushed requests may name an unregistered redirect_uri
+    stepUpAcrValues: "",                         // Step-up: acr values this service's resource server requires
+    stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
     frontchannelLogout: true                     // OpenID Connect Front-Channel Logout
   },
 
@@ -303,6 +345,8 @@ var config = {
     maxStoredObjects: 200,                     // Certificates and keys the workbench store keeps, per realm
     personSelfServicePerIdentity: 5,           // Self-issued key pairs one person may ask for per window
     personSelfServicePerAddress: 5,            // Self-issued key pairs one address may ask for per window
+    personTlsClientCertificateMax: 5,          // TLS client certificates one person may hold
+    applicationTlsClientCertificateMax: 5,     // TLS client certificates one application may hold
     revocationCheck: "auto",                   // Revocation check on a presented certificate
     revocationRequireDistributionPoint: false, // Hard-fail refuses a certificate whose issuer names no CRL
     revocationFetchTimeoutMs: 3000,            // CRL fetch timeout (milliseconds)
@@ -317,14 +361,69 @@ var config = {
     revocationCrlIssuersFile: "",              // Certificates that may sign an indirect CRL
     revocationLdap: "ldaps",                   // LDAP revocation addresses
     revocationLdapCaFile: "",                  // CA certificates for ldaps revocation directories
-    revocationLdapDirectory: ""                // Directory for CRL names relative to their issuer
+    revocationLdapDirectory: "",               // Directory for CRL names relative to their issuer
+    enrollmentMaxCertificatesPerEntry: 20      // Enrolled certificates one entry may hold
+  },
+
+  // --- ACME ------------------------------------------------------------
+  acme: {
+    enabled: true,                                                                                                                                 // Run the ACME server
+    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon", // Certificate profiles ACME may issue
+    defaultProfile: "tls-client",                                                                                                                  // Profile when an order names none
+    certificateLifetimeDays: 90,                                                                                                                   // Certificate lifetime (days)
+    maxRequestBytes: 65536,                                                                                                                        // Largest request body (bytes)
+    attemptsPerIdentity: 30,                                                                                                                       // Failed requests per account a window
+    attemptsPerAddress: 120,                                                                                                                       // Failed requests per address a window
+    nonceLifetimeS: 300,                                                                                                                           // Replay nonce lifetime (seconds)
+    orderLifetimeS: 86400,                                                                                                                         // Order lifetime (seconds)
+    eabLifetimeS: 604800                                                                                                                           // External account binding key lifetime (seconds)
+  },
+
+  // --- EST -------------------------------------------------------------
+  est: {
+    enabled: true,                                                                                                                                 // Run the EST server
+    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon", // Certificate profiles EST may issue
+    defaultProfile: "tls-client",                                                                                                                  // Profile at the unlabelled path
+    certificateLifetimeDays: 365,                                                                                                                  // Certificate lifetime (days)
+    maxRequestBytes: 65536,                                                                                                                        // Largest request body (bytes)
+    attemptsPerIdentity: 10,                                                                                                                       // Failed requests per identity a window
+    attemptsPerAddress: 60,                                                                                                                        // Failed requests per address a window
+    basicAuthentication: true,                                                                                                                     // Accept HTTP Basic
+    certificateAuthentication: true,                                                                                                               // Accept a TLS client certificate
+    serverKeyGeneration: true                                                                                                                      // Offer /serverkeygen
+  },
+
+  // --- SCEP ------------------------------------------------------------
+  scep: {
+    enabled: true,                                                                                                                                 // Run the SCEP server
+    allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon", // Certificate profiles SCEP may issue
+    defaultProfile: "tls-client",                                                                                                                  // Profile a new challenge defaults to
+    certificateLifetimeDays: 365,                                                                                                                  // Certificate lifetime (days)
+    maxRequestBytes: 262144,                                                                                                                       // Largest PKIOperation message (bytes)
+    attemptsPerIdentity: 10,                                                                                                                       // Failed requests per challenge a window
+    attemptsPerAddress: 60,                                                                                                                        // Failed requests per address a window
+    challengeLifetimeS: 3600,                                                                                                                      // Challenge password lifetime (seconds)
+    raKeyAlgorithm: "rsa-2048"                                                                                                                     // RA certificate key algorithm
   },
 
   // --- Management API --------------------------------------------------
   adminApi: {
     authRequired: true, // Require an access token on /admin-api
-    clientSecret: "",   // The management API client's secret; restart to apply
-    audience: ""        // The audience an /admin-api token must carry
+    clientSecret: ""    // The management API client's secret; restart to apply
+  },
+
+  // --- Protocol debugger -----------------------------------------------
+  debugger: {
+    enabled: "auto",                       // Embed the protocol debugger; restart to apply
+    port: 8444,                            // Debugger listener port; restart to apply
+    publicBaseUrl: "",                     // Debugger public base URL; restart to apply
+    uiDirectory: "debugger/embedded/ui",   // Built debugger UI; restart to apply
+    apiDirectory: "debugger/embedded/api", // Built debugger api; restart to apply
+    allowedDestinations: "",               // Extra destinations the api may dial in product mode; restart to apply
+    startTimeoutS: 30,                     // Seconds the api process has to start
+    restartLimit: 5,                       // Failed starts before the api is given up on
+    proxyTimeoutS: 120,                    // Seconds an /api call may take
+    maxRequestBytes: 5242880               // Largest /api request body
   },
 
   // --- Applications ----------------------------------------------------
@@ -409,7 +508,8 @@ var config = {
     issuer: "urn:wstrust:mock:sts", // Token issuer
     tokenLifetimeMin: 60,           // Token lifetime (minutes)
     maxTokenLifetimeMin: 1440,      // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256"           // JWT signature algorithm
+    jwtAlgorithm: "RS256",          // JWT signature algorithm
+    jwtCertificateHeader: "x5u"     // JWT certificate header
   },
 
   // --- WS-Federation assertions ----------------------------------------
@@ -423,6 +523,7 @@ var config = {
   tls: {
     port: 8443,                                          // TLS port; restart to apply
     mutualPort: 9443,                                    // Mutual-TLS port; restart to apply
+    trustIssuedClientCertificates: true,                 // Trust TLS client certificates issued on the user portal; restart to apply
     hostnames: "localhost,sts,sts-mock,sts.example.com", // Certificate hostnames; restart to apply
     ips: "127.0.0.1",                                    // Certificate IP addresses; restart to apply
     certificateAlgorithms: "rsa",                        // Server certificate algorithms; restart to apply
@@ -457,6 +558,8 @@ var config = {
     responseEncryptionRequired: false,                     // Require encrypted credential responses
     credentialLifetimeS: 2592000,                          // Issued credential lifetime (s)
     credentialSigningAlgorithm: "RS256",                   // Algorithm credentials are signed with
+    credentialCertificateHeader: "x5u",                    // Credential certificate header
+    signedMetadataCertificateHeader: "x5u",                // Issuer signed_metadata certificate header
     proofIatWindowS: 600,                                  // Proof of possession iat window (s)
     cNonceTtlS: 300,                                       // c_nonce lifetime (s)
     issuerDisplayName: "IdP Tools Mock Credential Issuer", // Issuer display name
@@ -469,6 +572,7 @@ var config = {
   // --- OID4VP ----------------------------------------------------------
   oid4vp: {
     clientId: "sts-verifier",                          // Verifier client ID
+    requestObjectCertificateHeader: "x5u",             // Request Object certificate header
     kbMaxAgeS: 600,                                    // Key Binding max age (s)
     claims: "given_name,family_name",                  // Requested claims
     presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
@@ -559,6 +663,7 @@ var config = {
     enabled: true,                                                                                                                                        // SSF enabled
     issuer: "",                                                                                                                                           // Transmitter issuer identifier
     signingAlgorithm: "RS256",                                                                                                                            // Algorithm SETs are signed with
+    setCertificateHeader: "x5u",                                                                                                                          // SET certificate header
     deliveryMethods: "urn:ietf:rfc:8935,urn:ietf:rfc:8936",                                                                                               // Delivery methods offered
     defaultSubjects: "ALL",                                                                                                                               // What an empty subject list means
     streamStatusOnCreate: "enabled",                                                                                                                      // Status a new stream is created in
@@ -573,6 +678,12 @@ var config = {
     pushMaxResponseBytes: 65536,                                                                                                                          // Largest push response read (bytes)
     pushRetries: 0,                                                                                                                                       // Push retries
     pushRetryDelayMs: 1000,                                                                                                                               // Push retry delay (ms)
+    pushConcurrency: 8,                                                                                                                                   // Concurrent pushes
+    pushBacklog: 2000,                                                                                                                                    // Pushes waiting for a slot
+    deadStreamTimeoutS: 300,                                                                                                                              // Dead stream timeout (seconds)
+    deadLetterRetentionS: 3600,                                                                                                                           // Dead letters kept (seconds)
+    deadLetterMaxPerStream: 1000,                                                                                                                         // Dead letters per stream
+    deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
     internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
     maxStreams: 25,                                                                                                                                       // Streams per realm
@@ -593,7 +704,7 @@ var config = {
   caep: {
     enabled: true,                                                                                                                                                                    // CAEP enabled
     autoEmit: true,                                                                                                                                                                   // Emit events when something really happens
-    autoEmitTypes: "session-established,session-presented,session-revoked",                                                                                                           // Which acts emit automatically
+    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change",                                                                                         // Which acts emit automatically
     eventsSupported: "session-revoked,session-established,session-presented,token-claims-change,credential-change,assurance-level-change,device-compliance-change,risk-level-change", // CAEP event types offered
     assuranceNamespace: "NIST-AAL",                                                                                                                                                   // Assurance namespace
     defaultRiskLevel: "MEDIUM",                                                                                                                                                       // Default risk level
@@ -609,7 +720,7 @@ var config = {
   risc: {
     enabled: true,                                                                                                                                                                                                                                                                                    // RISC enabled
     autoEmit: true,                                                                                                                                                                                                                                                                                   // Emit events when the directory really changes
-    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed",                                                                                                                                                                                                              // Which acts emit automatically
+    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed,account-credential-change-required,recovery-information-changed",                                                                                                                                              // Which acts emit automatically
     eventsSupported: "account-credential-change-required,account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,credential-compromise,opt-in,opt-out-initiated,opt-out-cancelled,opt-out-effective,recovery-activated,recovery-information-changed,sessions-revoked", // RISC event types offered
     subjectFormat: "iss_sub",                                                                                                                                                                                                                                                                         // How an account subject is named
     honourOptOut: true,                                                                                                                                                                                                                                                                               // Stop sending about an account that opted out

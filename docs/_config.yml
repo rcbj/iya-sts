@@ -38,6 +38,9 @@ header_pages:
   - jwt-assertions.md
   - saml-assertions.md
   - pki.md
+  - acme.md
+  - est.md
+  - scep.md
   - trust-realms.md
   - signing-out.md
   - sessions.md

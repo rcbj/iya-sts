@@ -129,3 +129,9 @@ tests/report
 # every run but would still be there in `docker history` with whatever was in
 # the directory the day the image was built.
 data/
+
+# THE EMBEDDED DEBUGGER'S BUILT TREE, for the reason .gitignore gives: a local
+# build of the other project. The image takes it from that project's embedded
+# image (the Dockerfile's `debugger` stage), so a stale checkout copy must not
+# reach the build context and shadow it.
+debugger/embedded/

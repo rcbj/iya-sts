@@ -1331,6 +1331,11 @@ module.exports = {
   // For client_auth.js, which takes both from here rather than keeping a
   // second copy of either. See the header on why the require runs this way.
   keysFrom: keysFrom,
+  // For `software_statement.js` (2026-09-13), which verifies a statement from
+  // a declared application against the SAME keys an assertion from it is
+  // verified against — a second reader of `oauthJwks` and `oauthAssertionJwks`
+  // would be a second answer to "which of this party's keys may sign".
+  keysForParty: keysForParty,
   unwrapAssertion: unwrapAssertion,
   // The certificate-chain path, for section 2.2 as well. A client that was
   // issued a key pair from /admin/pki can present its certificate in the `x5c`

@@ -647,6 +647,70 @@ const DOCUMENTS = [
     } },
 
   // -- The TLS listeners' own certificate ----------------------------------
+  // -- Certificate enrollment (2026-09-13) ----------------------------------
+  // What each protocol's client reads BEFORE it holds anything: ACME's
+  // directory, EST's CA certificates, SCEP's capability list. All three are
+  // anonymous by specification — the credential each protocol uses is bound to
+  // an entry that the document says nothing about.
+  { family: "ACME", spec: "RFC 8555 section 7.1.1",
+    path: "/enroll/acme/directory",
+    type: JSON_TYPE, json: true, badCredential: "ignored",
+    must: function (d) {
+      log.debug("Entering must().");
+      const bad = [];
+      ["newNonce", "newAccount", "newOrder", "revokeCert", "keyChange"]
+        .forEach(function (member) {
+          if (typeof d[member] !== "string" ||
+              d[member].indexOf(base + "/enroll/acme/") !== 0) {
+            bad.push(member + " is " + d[member] + ", not an address under " +
+                     base + "/enroll/acme/");
+          }
+        });
+      if (!d.meta || d.meta.externalAccountRequired !== true) {
+        bad.push("meta.externalAccountRequired is not true, and every " +
+                 "account here is bound to a directory entry by one");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "EST", spec: "RFC 7030 section 4.1",
+    path: "/.well-known/est/cacerts",
+    type: /^application\/pkcs7-mime\b/, json: false,
+    badCredential: "ignored",
+    must: function (text) {
+      log.debug("Entering must().");
+      const bad = [];
+      const compact = String(text).replace(/\s+/g, "");
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
+        bad.push("the body is not base64 (RFC 7030 section 4.1.3)");
+      } else if (Buffer.from(compact, "base64")[0] !== 0x30) {
+        bad.push("the body does not decode to a DER SEQUENCE, so it is not a " +
+                 "certs-only CMS message");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+  { family: "SCEP", spec: "RFC 8894 section 3.5.2",
+    path: "/enroll/scep?operation=GetCACaps",
+    type: TEXT_TYPE, json: false, badCredential: "ignored",
+    // GetCACaps rather than GetCACert: the second is a binary CMS message this
+    // table's text reader would mangle, and the first is what a client asks
+    // for first anyway, to learn which the second may be encrypted with.
+    must: function (text) {
+      log.debug("Entering must().");
+      const caps = String(text).split(/\r?\n/).map(function (one) {
+        return one.trim();
+      }).filter(function (one) { return !!one; });
+      const bad = [];
+      ["POSTPKIOperation", "SHA-256", "AES"].forEach(function (cap) {
+        if (caps.indexOf(cap) < 0) {
+          bad.push("the capability " + cap + " is not advertised");
+        }
+      });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+
   { family: "PKI / X.509", spec: "RFC 5280", path: "/tls/server-certificate",
     type: TEXT_TYPE, json: false, badCredential: "ignored",
     // It is regenerated per start and signed by nobody, which /tls reports as

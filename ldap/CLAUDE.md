@@ -23,6 +23,17 @@ above it before adding an operation. `listen`, `close` and `address` are deliber
 not fanned out. There is no StartTLS to add instead: it is an extended operation,
 ldapjs implements none, and this repository does not patch that submodule.
 
+**Both listeners are started from `listen()` in `server.js`, not at require
+time** — requiring this module registers its HTTP views (the eight
+`/admin/ldap/*` pages) like everything else, but binding a port can fail, and a
+`require` that throws takes the whole service down where a route cannot. A
+failure to bind is RECORDED rather than thrown, and published (`listening` /
+`listenError` on `GET /admin/ldap/service`), because the HTTP view answers 200
+either way and there is otherwise no way to tell a running listener from one
+whose port was already taken — by the host's own slapd, or by a second copy of
+this service. The root `CLAUDE.md`'s *Socket owners start their listeners
+from `listen()`* is the rule this is an instance of.
+
 ---
 
 6. **`ldap_server.js` must stay after `admin.js` AND after `tls_server.js`, and it
@@ -271,6 +282,13 @@ ldapjs implements none, and this repository does not patch that submodule.
    two ways to put a group in this directory were an `ldapadd` on the socket
    and `POST /scim/v2/Groups`. Rule 7 could not have caught that; a parity
    check is satisfied when both sides are missing.
+
+   **The reason is worth keeping**: a parity check between the console and
+   the management API is SATISFIED EXACTLY WHEN BOTH SIDES ARE MISSING, so it
+   reports drift and is silent about absence. What found it was a test that could not be written —
+   `tests/vendored/sts_directory_bulk_load_api.js`, named "through the
+   management API", two of whose three sections would have had to reach for
+   SCIM.
 
    **IT IS A SLOT OF ITS OWN RATHER THAN A THIRD ARGUMENT TO
    `setDirectoryWriter()`.** That one carries ONE function and every caller of
@@ -1278,7 +1296,11 @@ differently:
   interval between those events and the push, and what it may never be is empty
   on a service that has connections. A request-and-wait instead of a mirror
   would mean making `boundConnections()` asynchronous, and with it
-  `terminate()` and all seven of its callers.
+  `terminate()` and all seven of its callers. **The snapshot is taken a TICK
+  after the bind handler** (`publishConnectionsSoon()`), and that looks like a
+  detail and is not: ldapjs sets the bound DN only once the handler chain has
+  returned, and a snapshot taken any earlier belongs to nobody.
+  `tests/ldap_logout.js` pins it.
 * **CLOSING one** is an ASK, and it goes out **on the response** rather than
   over the IPC channel beside it. Only the process holding the socket can close
   it; the worker names the identity in a header, and the front process closes
@@ -1312,12 +1334,22 @@ second setting, `workers.operations`, for three days; the distinction was
 artificial and the merge is argued in `common/request_pool.js`'s
 `dispatchList()`.
 
+**THE ROOT `CLAUDE.md` SAID IT "cannot be dispatched" FOR AN HOUR AND THAT WAS
+WRONG**: the front process holds the SOCKET, which is a reason for it to do the
+framing and not a reason for it to do the WORK. An OPERATION is the
+protocol-independent half — the front process accepts the connection, decodes
+the BER and writes the reply, and hands a `{ kind, args }` pair to a worker.
+
 **THE CHANNEL HAD EXISTED SINCE 2026-09-09 AND NOTHING FILLED IT.**
 `common/request_pool.js` offered `runOperation()`, `common/request_worker.js`
 offered `register()`, the root `CLAUDE.md` said the LDAP protocol fanned out —
 and no module in the tree called either function. Naming `ldap` in that setting
 dispatched nothing at all. The prose described a mechanism and there was no
-caller anywhere; this file is the caller.
+caller anywhere; this file is the caller. **What was actually true for three
+days is worth writing down, because it is the shape of drift the root
+`CLAUDE.md` is otherwise careful about**: every sentence there described a
+mechanism and none of them described a caller. `tests/ldap_operations.js` is
+what stops the table and the registrations drifting apart again.
 
 **WHAT THE OLD PROSE GAVE AS THE REASON WAS ALSO STALE**, and it is worth
 knowing which argument to stop repeating. `request_pool.js` said `ldap.*` must
@@ -1443,7 +1475,10 @@ log nor a credential-per-call covers:
 
 * **A client reads its own writes on its own connection.** Over HTTP a caller is
   a series of independent requests; on one socket an `ldapadd` and the
-  `ldapsearch` after it are one conversation.
+  `ldapsearch` after it are one conversation. So an `ldapadd` followed by an
+  `ldapsearch` down one socket is one conversation rather than two callers,
+  and answering the second from a worker that has not caught up is a directory
+  contradicting itself inside one conversation.
 * **Order within a connection is the client's to rely on.** Fanned out, two
   operations sent back to back can be answered by two workers in either order.
 
@@ -2126,3 +2161,18 @@ neither returns it on a search, lets a filter see it, nor answers a compare agai
 it. Nothing else here changed: the slot's `read()` walks
 `personAssertions.ATTRIBUTES`, which grew, and `write()` is one attribute at a time
 already. `common/CLAUDE.md` 3ab carries the design.
+
+## `stsMfaRequired` AND THE PASSWORD RESET LINK (2026-09-13)
+
+Three person flags, in `PERSON_FLAGS` and `OWN_NAMES`: `stsMfaRequired` (a
+second factor is required of this account), `stsPasswordResetToken` (a scrypt
+hash of a reset link's token — in `SECRET_ATTRIBUTES`, so never returned or
+matched over the socket) and `stsPasswordResetExpires`. The credentials slot
+gained `readMfaRequired`/`writeMfaRequired`, `readPasswordResetLink`/
+`writePasswordResetLink`, `personExists` (the create-and-reset doors need to
+know an entry is there, and `credentials.hasEntry()` deliberately answers false)
+and `clearPassword`, which is `clearStoredPassword()`: it deletes
+`userPassword`, writes the history `credentials.removePassword()` computed,
+stamps `pwdChangedTime` and calls `touchDirectory()`. **Removing the hash is
+also what retires the person's stored Kerberos keys**, because
+`krb5_person_keys.js` refuses keys whose password stamp no longer matches.

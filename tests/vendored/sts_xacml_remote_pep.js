@@ -577,7 +577,11 @@ function dockerQuiet(args) {
 // Everything the PEP container owns, so the teardown has one thing to take
 // down and every failure message has one thing to quote.
 var pep = { url: "", network: "", mode: "", pdpUrl: "", created: false,
-            dir: "", certDir: "", hostPort: 0, containerPort: 9090 };
+            dir: "", certDir: "", hostPort: 0, containerPort: 9090,
+            // The HTTPS listener (2026-09-13): where this job dials it, and the
+            // directory it writes the issued pair into — the PEP's
+            // `/certs/server`, as THIS process sees it.
+            httpsUrl: "", serverCertDir: "", httpsContainerPort: 9443 };
 
 // The last of the container's own log. Every failure message below ends with
 // this, because the interesting failures here are ones where the PEP said
@@ -771,6 +775,13 @@ async function attachToThePep() {
   pep.url = PROVIDED_URL;
   pep.mode = "provided";
   pep.network = "the launcher's stack";
+  // The HTTPS listener's two facts arrive from the launcher with the other
+  // three. Their absence is not asserted here, where it would stop every
+  // section: `theListenerServesARealmCertificate()` names the missing variable
+  // when it gets there.
+  pep.httpsUrl = String(process.env.XACML_PEP_HTTPS_URL || "")
+    .replace(/\/+$/, "");
+  pep.serverCertDir = String(process.env.XACML_PEP_SERVER_CERT_DIR || "");
   log.info("Driving the remote PEP container the launcher started: " +
            pep.url + ", registered as \"" + PEP_NAME + "\", polling the " +
            "realm \"" + REALM + "\" which this job creates below.");
@@ -917,10 +928,21 @@ async function startThePep() {
     // XACML_PEP_TLS_KEY onto the same names; here the mount below is /certs
     // for the same reason it is there.
     PEP_TLS_CERT: "/certs/pep.crt",
-    PEP_TLS_KEY: "/certs/pep.key"
+    PEP_TLS_KEY: "/certs/pep.key",
+    // THE HTTPS LISTENER'S PAIR (2026-09-13): two paths that are empty when the
+    // container starts, exactly as the launchers arrange it — the realm issues
+    // the pair only once the PEP has registered, and this job writes it.
+    PEP_HTTPS_CERT: "/certs/server/pep-server.crt",
+    PEP_HTTPS_KEY: "/certs/server/pep-server.key",
+    PEP_HTTPS_RELOAD_INTERVAL_MS: "1000"
   };
 
   pep.certDir = await mintTheContainersCredential();
+  pep.serverCertDir = path.join(pep.certDir, "server");
+  // World-writable for the reason the launchers give: the container is not
+  // this user, and nothing in it is a key worth more than one run.
+  fs.mkdirSync(pep.serverCertDir, { mode: 0o777 });
+  fs.chmodSync(pep.serverCertDir, 0o777);
 
   const create = ["create", "--name", PEP_NAME, "--hostname", PEP_NAME,
                   "--network", pep.network,
@@ -933,12 +955,15 @@ async function startThePep() {
     // the PEP from outside the network, and a fixed 9090 would collide with the
     // demonstration container `docker compose --profile xacml up` starts.
     create.push("--publish", "127.0.0.1::9090");
+    create.push("--publish", "127.0.0.1::9443");
     // The PDP dials this across the bridge by the container's own name.
     environment.PEP_NOTIFY_URL = "http://" + PEP_NAME + ":9090/notify";
   } else {
     pep.containerPort = await freePort();
     pep.hostPort = pep.containerPort;
     environment.PEP_PORT = String(pep.containerPort);
+    pep.httpsContainerPort = await freePort();
+    environment.PEP_HTTPS_PORT = String(pep.httpsContainerPort);
     // On the host network the service is a process on this same loopback, so
     // this is the address it dials — and it is still a real outbound request
     // made by the PDP to a listener it does not share a process with.
@@ -962,6 +987,14 @@ async function startThePep() {
     assert.ok(parsed, "docker port said \"" + mapped + "\", which carries no " +
               "port this job can dial");
     pep.hostPort = parsed[1];
+    const mappedHttps = docker(["port", PEP_NAME, "9443"],
+                               "reading the PEP's published HTTPS port");
+    const parsedHttps = /:(\d+)\s*$/.exec(mappedHttps.split("\n")[0] || "");
+    assert.ok(parsedHttps, "docker port said \"" + mappedHttps + "\" for " +
+              "9443, which carries no port this job can dial");
+    pep.httpsUrl = "https://localhost:" + parsedHttps[1];
+  } else {
+    pep.httpsUrl = "https://localhost:" + pep.httpsContainerPort;
   }
   pep.url = "http://127.0.0.1:" + pep.hostPort;
 
@@ -1488,6 +1521,217 @@ async function itRegistersAndPulls() {
            seen.holding.policyCount + " policy(ies) at token " +
            String(seen.holding.syncToken).slice(0, 12) + "…");
   log.debug("Leaving itRegistersAndPulls().");
+}
+
+// ===========================================================================
+// 1b. ITS HTTPS LISTENER, CERTIFIED BY THE REALM IT REGISTERED TO (2026-09-13).
+//
+// A remote PEP answers its own clients, and it answers them over HTTPS with a
+// key pair this service's realm issued it: the `pep-tls` Issuing CA under this
+// realm's Intermediate, reached through `POST /admin-api/xacml/
+// issue-pep-certificate`. The private key comes back ONCE, in that reply, and
+// this job does what an operator does with it — writes the pair to the two
+// files the container names — and then dials the container as a client that
+// holds nothing but the service Root.
+//
+// **WHAT IS ONLY TRUE OF THE DEPLOYMENT, which is why it is here and not only
+// in `tests/pep_listener_certificate.js`:** the container starts with no pair
+// (the realm did not exist, so it could not have one), finds the files after
+// they are written on a mount it does not own, starts a listener in the image
+// without a restart, and serves a chain a client verifies BY THE NAME IT
+// DIALLED — which is a different name in each launcher's stack.
+// ===========================================================================
+
+// A TLS request to the PEP's HTTPS listener, trusting ONLY `anchorPem`, with
+// hostname checking left on. Answers the status, the parsed body, and what
+// the handshake saw of the chain.
+function pepHttpsGet(p, anchorPem) {
+  log.debug("Entering pepHttpsGet(). path=" + p);
+  const target = new URL(pep.httpsUrl + p);
+  log.debug("Leaving pepHttpsGet().");
+  return new Promise(function (resolve) {
+    const request = https.request({
+      host: target.hostname, port: target.port, path: target.pathname +
+      target.search, method: "GET", ca: [anchorPem],
+      servername: target.hostname, agent: false
+    }, function (response) {
+      const peer = response.socket.getPeerCertificate(true);
+      let text = "";
+      response.on("data", function (chunk) {
+        text += chunk.toString("utf8");
+      });
+      response.on("end", function () {
+        let body = null;
+        try {
+          body = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in pepHttpsGet(): " + ((e && e.message) || e));
+          body = null;
+        }
+        resolve({ status: response.statusCode, body: body, text: text,
+                  authorized: response.socket.authorized,
+                  serialHex: String((peer && peer.serialNumber) || ""),
+                  issuerCn: peer && peer.issuerCertificate
+                    ? String(peer.issuerCertificate.subject.CN || "") : "",
+                  intermediateCn: peer && peer.issuerCertificate &&
+                    peer.issuerCertificate.issuerCertificate
+                    ? String(peer.issuerCertificate.issuerCertificate.subject
+                      .CN || "") : "" });
+      });
+    });
+    request.on("error", function (e) {
+      resolve({ status: 0, error: e.message, authorized: false });
+    });
+    request.end();
+  });
+}
+
+function sameSerial(a, b) {
+  log.debug("Entering sameSerial().");
+  const tidy = function (one) {
+    log.debug("Entering tidy().");
+    log.debug("Leaving tidy().");
+    return String(one || "").toLowerCase().replace(/[^0-9a-f]/g, "")
+      .replace(/^0+/, "");
+  };
+  log.debug("Leaving sameSerial().");
+  return !!tidy(a) && tidy(a) === tidy(b);
+}
+
+async function theListenerServesARealmCertificate() {
+  log.debug("Entering theListenerServesARealmCertificate().");
+  log.info("=== The PEP's HTTPS listener, certified by its realm ===");
+  assert.ok(pep.httpsUrl && pep.serverCertDir,
+    "the launcher started the PEP and did not say where its HTTPS listener " +
+    "is or where to write its certificate: XACML_PEP_HTTPS_URL=\"" +
+    pep.httpsUrl + "\" and XACML_PEP_SERVER_CERT_DIR=\"" + pep.serverCertDir +
+    "\". Both launchers export them beside XACML_PEP_URL; a stack brought up " +
+    "by hand needs them set to the published 9443 port and to the host path " +
+    "of the container's /certs/server.");
+
+  // BEFORE: configured, waiting, and saying why.
+  const waiting = await pepOverview();
+  check("before a pair is written the listener is configured and waiting",
+        function () {
+    assert.ok(waiting.https && waiting.https.configured === true &&
+              waiting.https.listening === false,
+      "GET / should report an HTTPS listener that is configured and not yet " +
+      "listening; it says " + JSON.stringify(waiting.https) + pepLog());
+    assert.ok(/does not exist/.test(String(waiting.https.problem || "")),
+      "and say the pair is not there yet; it says " +
+      JSON.stringify(waiting.https.problem));
+  });
+
+  // A NAME NOTHING REGISTERED IS REFUSED: the realm is decided by the row.
+  const stranger = await postJson(api("/xacml/issue-pep-certificate"),
+                                  { name: "no-such-pep-" + PEP_NAME });
+  check("a certificate for a PEP not registered in this realm is refused",
+        function () {
+    assert.strictEqual(stranger.status, 400,
+      "issuing for an unregistered name should answer 400; it answered " +
+      stranger.status + " " + String(stranger.text).slice(0, 300));
+    assert.ok(!stranger.text || stranger.text.indexOf("PRIVATE KEY") < 0,
+      "and hand back no key");
+  });
+
+  // THE ISSUE, naming the host this job dials the listener by.
+  const host = new URL(pep.httpsUrl).hostname;
+  const isIp = net.isIP(host) !== 0;
+  const issued = await postJson(api("/xacml/issue-pep-certificate"), {
+    name: PEP_NAME,
+    dnsNames: isIp ? [] : [host],
+    ipAddresses: isIp ? [host] : []
+  });
+  const got = issued.body || {};
+  check("the realm issues the PEP a listener certificate and its key, once",
+        function () {
+    assert.strictEqual(issued.status, 200,
+      "POST /admin-api/xacml/issue-pep-certificate answered " + issued.status +
+      " " + String(issued.text).slice(0, 400));
+    assert.ok(/BEGIN PRIVATE KEY/.test(String(got.privateKeyPem || "")),
+      "the reply carries the private key");
+    assert.ok((String(got.fullChainPem || "").match(/BEGIN CERTIFICATE/g) ||
+               []).length === 3,
+      "fullChainPem is the leaf, its Issuing CA and the realm Intermediate — " +
+      "three certificates, no Root; it holds " +
+      (String(got.fullChainPem || "").match(/BEGIN CERTIFICATE/g) || [])
+        .length);
+    assert.strictEqual(got.realm, REALM,
+      "it was issued by the realm the PEP registered to");
+    assert.ok(got.dnsNames.concat(got.ipAddresses).indexOf(host) >= 0 &&
+              got.dnsNames.indexOf(PEP_NAME) >= 0,
+      "it names the host this job dials (" + host + ") and the PEP's " +
+      "registered name; it names " +
+      JSON.stringify(got.dnsNames.concat(got.ipAddresses)));
+  });
+
+  const register = await get(api("/xacml/peps"));
+  check("the PDP's row records the certificate and not the key", function () {
+    const row = ((register.body || {}).peps || []).filter(function (one) {
+      return one.name === PEP_NAME;
+    })[0] || {};
+    assert.ok(row.listenerCertificate &&
+              row.listenerCertificate.serialHex === got.serialHex,
+      "GET /admin-api/xacml/peps should carry the issued serial on the " +
+      "PEP's row; it has " + JSON.stringify(row.listenerCertificate));
+    assert.ok(String(register.text).indexOf("PRIVATE KEY") < 0,
+      "and no private key anywhere in that reply");
+  });
+
+  // WHAT AN OPERATOR DOES WITH THE REPLY: two files on the container's mount.
+  fs.writeFileSync(path.join(pep.serverCertDir, "pep-server.crt"),
+                   got.fullChainPem, { mode: 0o644 });
+  fs.writeFileSync(path.join(pep.serverCertDir, "pep-server.key"),
+                   got.privateKeyPem, { mode: 0o644 });
+  log.info("Wrote the issued pair to " + pep.serverCertDir + "; waiting for " +
+           "the container to start its listener.");
+
+  await until("the PEP to start its HTTPS listener with the issued pair",
+              async function () {
+    const seen = await pepOverview();
+    const h = seen.https || {};
+    return { ok: h.listening === true && h.certificate &&
+                 sameSerial(h.certificate.serialHex, got.serialHex),
+             note: "listening=" + h.listening + ", problem=" + h.problem };
+  });
+
+  const overHttps = await pepHttpsGet("/", got.anchorPem);
+  check("a client holding only the service Root reaches it over HTTPS",
+        function () {
+    assert.ok(overHttps.status === 200 && overHttps.authorized,
+      "GET " + pep.httpsUrl + "/ trusting only the service Root answered " +
+      overHttps.status + " (" + (overHttps.error || "authorized=" +
+      overHttps.authorized) + ")" + pepLog());
+    assert.ok(sameSerial(overHttps.serialHex, got.serialHex),
+      "with the certificate the realm issued; it was served " +
+      overHttps.serialHex);
+    assert.ok(overHttps.body && overHttps.body.https &&
+              overHttps.body.https.listening === true,
+      "and it is the same PEP, reporting itself");
+  });
+  check("the chain runs through this realm's own Intermediate", function () {
+    assert.ok(/Remote PEP TLS Issuing CA/.test(overHttps.issuerCn),
+      "issued by the Remote PEP listeners Issuing CA; the issuer is " +
+      overHttps.issuerCn);
+    assert.ok(overHttps.intermediateCn.indexOf("(" + REALM + ")") >= 0,
+      "under " + REALM + "'s Intermediate; it is " + overHttps.intermediateCn);
+  });
+
+  const decided = await pepHttpsGet("/protected?subject=" + ADMIN_PERSON +
+                                    "&employeeType=admin&action=GET",
+                                    got.anchorPem);
+  check("the protected resource answers over HTTPS as it does over HTTP",
+        function () {
+    assert.ok(decided.status === 200 && decided.body &&
+              decided.body.decision === "Permit",
+      "GET /protected over HTTPS for an admin should be a Permit decided in " +
+      "the container; it answered " + decided.status + " " +
+      String(decided.text || decided.error).slice(0, 300));
+  });
+
+  log.info("[https] OK — serving " + got.serialHex + " from " + REALM +
+           "'s Remote PEP listeners Issuing CA at " + pep.httpsUrl + ".");
+  log.debug("Leaving theListenerServesARealmCertificate().");
 }
 
 // ===========================================================================
@@ -2608,6 +2852,7 @@ async function test() {
     try {
       await waitForItToFindTheRealm();
       await itRegistersAndPulls();
+      await theListenerServesARealmCertificate();
       await itDecidesInItsOwnProcess();
       await thePipReachesTheDirectory();
       const polledMs = await aDeployedPolicyConverges();

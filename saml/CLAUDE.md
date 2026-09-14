@@ -91,6 +91,9 @@ change was mostly a prose sweep.
   **in development mode; in product mode it must be registered on the entry**
   (see the 2026-09-12 section below) — and a service provider's logout return
   address has to be DECLARED or it is guessed.
+* **No service provider's metadata URL is dialled WHILE ISSUING** — the fetch is
+  an explicit action that writes the certificate onto the entry, so no sign-in
+  waits on somebody else's web server.
 * **No identity-provider-initiated SSO**, no ECP profile and its PAOS binding, no
   Name Identifier Management, and no Assertion Query and Request profile. PAOS is
   refused BY NAME rather than quietly answered over HTTP POST — a service

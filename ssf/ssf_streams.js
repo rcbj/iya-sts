@@ -63,6 +63,71 @@ const events = require('./ssf_events');
 // stream_id -> stream record, one partition per trust realm.
 const streams = realms.map({ persist: 'ssf_streams.streams' });
 
+// ---------------------------------------------------------------------------
+// THE QUEUE IS A STORE OF ITS OWN, ONE ROW PER SET, AND NOT AN ARRAY ON THE
+// RECORD (2026-09-13).
+//
+// It was `record.queue`, and two things were wrong with that in a service
+// whose request workers share what they mint through the store.
+//
+//   * **NOTHING WROTE IT DOWN.** `realms.map()` journals a `set()` and a
+//     `delete()`; `enqueue()` pushed onto an array already in the map and
+//     `poll()` filtered it, and neither called either. So a SET queued by the
+//     worker that handled `/admin-api/risc/emit` existed in that worker's
+//     memory alone, and an acknowledgement taken by another worker removed it
+//     from that other worker's copy alone. Measured in `dispatch` mode on
+//     2026-09-13: `sts_ssf_allowed_events` polled a control stream straight
+//     after an emission and got `[]`, and `sts_gnap_signals` acknowledged a
+//     SET and was handed it again (RFC 8936 section 2.4). Six parallel polls
+//     against the kept stack after one acknowledgement answered 0, 0, 1, 1,
+//     1, 1 — two workers had the ack and four had the SET.
+//   * **A `touch()` ON THE RECORD WOULD NOT HAVE BEEN ENOUGH**, and that is
+//     why this is a second store rather than the one-line fix `caep.js` got.
+//     A record is whole-valued: the later write wins. A SET is queued by a
+//     transmission that is often NOT inside the request that caused it — a
+//     GNAP revocation answers and then signs — so the worker queueing it may
+//     not yet have applied an acknowledgement another worker committed a
+//     moment earlier, and a whole-record write from it would PUT THE
+//     ACKNOWLEDGED SET BACK. The reverse race loses a SET outright. Both are
+//     a security event delivered twice or never, which is the one thing this
+//     family exists not to do.
+//
+// So each SET is a row keyed by its stream and its jti: queueing one is a new
+// key nobody else writes, acknowledging one is a DELETE of that key, and the
+// two cannot overwrite each other in any order. What stays on the record —
+// counters, the log, `eventCounts` — is still whole-valued and a concurrent
+// write can lose an increment or a line; that is a number on a console page,
+// and `touch()` below at least makes it reach the store at all.
+// ---------------------------------------------------------------------------
+const queued = realms.map({ persist: 'ssf_streams.queued' });
+
+// ---------------------------------------------------------------------------
+// THE DEAD-LETTER QUEUE (2026-09-14): SETs this transmitter could not deliver,
+// kept for inspection and then deleted.
+//
+// A push that failed used to stay on the live queue "until somebody asks for it
+// again", and nothing ever did. The live queue is scanned and sorted on every
+// event a stream is sent, so a receiver that refused everything made every
+// later event slower for as long as the process lived — on a dispatch run
+// forty streams each held 189 refused SETs and every one was re-scanned for
+// every default-realm event.
+//
+// **A STORE OF ITS OWN, ONE ROW PER SET, FOR `queued`'s REASON**: moving a SET
+// here is a delete of one key there and a set of one key here, so it cannot
+// race an acknowledgement or a queueing in another process. Keyed exactly like
+// `queued` — `<stream_id> <jti>` — so one stream's letters are a prefix scan.
+//
+// What goes in: a push that failed after `ssf.pushRetries`, a push that could
+// not wait for a slot (`ssf.pushBacklog`), everything waiting when a stream is
+// declared dead, and every SET sent to a dead stream — the last UNSIGNED, since
+// signing a document nothing will receive is the cost this exists to stop; a
+// probe signs it if it is ever pushed. Each carries the reason, the code and
+// the receiver's status. What comes out: `ssf.deadLetterRetentionS` after it
+// went in, the oldest past `ssf.deadLetterMaxPerStream`, a probe that
+// delivered it, and everything when its stream is deleted.
+// ---------------------------------------------------------------------------
+const deadLetters = realms.map({ persist: 'ssf_streams.deadLetters' });
+
 // What this service has RECEIVED, when the debugger is the transmitter and
 // this service is the receiver. Also per realm, and capped the same way.
 const received = realms.arr({ persist: 'ssf_streams.received', merge: 'own' });
@@ -208,7 +273,8 @@ function createStream(asked, context) {
     updatedAt: now,
     createdBy: String(ctx.principal || '(unauthenticated)'),
     subjects: [],
-    queue: [],
+    // NO `queue` MEMBER: the SETs waiting on this stream are rows in `queued`
+    // above, read through queueOf(). See the header on that store.
     log: [],
     counters: { queued: 0, delivered: 0, failed: 0, acknowledged: 0,
       pollCalls: 0, pushCalls: 0, receiverErrors: 0 },
@@ -278,6 +344,12 @@ function createStream(asked, context) {
 // `ssfReceiverId` values. `applications.js` is required lazily — it is a
 // library, and this file is loaded from places that never touch the registry.
 // ---------------------------------------------------------------------------
+// THE OWNER'S `ssfAllowedEvents`, read off the raw entry (2026-09-14). This
+// asked `applications.get()` and then `applications.list()` — a whole view of
+// every application in the realm, sealed keys opened — for every event on
+// every stream, which is what made a 2,412-session sweep block the process for
+// 58 seconds. `applications.ssfAllowedEventsFor()` does the same two matches
+// over the cached registry listing.
 function applicationFor(principal) {
   log.debug("Entering applicationFor().");
   const name = String(principal || '');
@@ -294,22 +366,14 @@ function applicationFor(principal) {
     // No registry in this process: nothing is restricted.
     return null;
   }
-  const direct = applications.get(name);
-  if (direct) {
-    log.debug("Leaving applicationFor().");
-    return direct;
-  }
   log.debug("Leaving applicationFor().");
-  return applications.list().filter(function (entry) {
-    return (((entry.attributes || {}).ssfReceiverId) || []).indexOf(name) >= 0;
-  })[0] || null;
+  return applications.ssfAllowedEventsFor(name);
 }
 
 function allowedEventsFor(principal) {
   log.debug("Entering allowedEventsFor().");
   const entry = applicationFor(principal);
-  const values = entry ? (((entry.attributes || {}).ssfAllowedEvents) || []) :
-                 [];
+  const values = entry ? entry.values : [];
   if (!values.length) {
     log.debug("Leaving allowedEventsFor().");
     return null;
@@ -556,9 +620,67 @@ function listStreams() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A RECORD EDITED IN PLACE, REPORTED TO THE JOURNAL — `caep.js`'s `touch()`,
+// for the same reason: every function below edits a record already in the
+// map, and `realms.map()` journals only a `set()`. Without it a stream's
+// status, subjects, agreement and counters reached the store as they were
+// CREATED and no other process ever saw a PATCH, a pause or a subject added.
+//
+// It re-sets the record only while it is still the one held. A record another
+// process's write has since REPLACED is a copy the store has let go of, and
+// writing it back would undo that write — so a caller that waited on something
+// asynchronous asks `liveRecord()` first and edits what that answers.
+// ---------------------------------------------------------------------------
+function touch(record) {
+  log.debug('Entering touch().');
+  if (!record || !record.stream_id) {
+    log.debug('Leaving touch(). No record.');
+    return false;
+  }
+  if (streams.get(record.stream_id) !== record) {
+    log.debug('Leaving touch(). Not the record held for ' + record.stream_id +
+              '.');
+    return false;
+  }
+  // A RECORD WRITTEN BY AN EARLIER BUILD carries the queue as a member. It is
+  // not migrated: nothing ever journalled a change to it, so what a stored one
+  // holds is whatever happened to be waiting when the record was first written
+  // — usually nothing — and adopting it could deliver a SET that was
+  // acknowledged long ago. It is dropped the first time the record is written.
+  if (Object.prototype.hasOwnProperty.call(record, 'queue')) {
+    delete record.queue;
+  }
+  streams.set(record.stream_id, record);
+  log.debug('Leaving touch(). ' + record.stream_id);
+  return true;
+}
+
+// The record held NOW for the stream `record` was read as, or `record` itself
+// when the stream has gone. What a caller that crossed an `await` edits: see
+// touch() above.
+function liveRecord(record) {
+  log.debug('Entering liveRecord().');
+  if (!record || !record.stream_id) {
+    log.debug('Leaving liveRecord(). No record.');
+    return record;
+  }
+  const held = streams.get(record.stream_id);
+  log.debug('Leaving liveRecord(). ' +
+            (held ? (held === record ? 'unchanged' : 'replaced') : 'gone'));
+  return held || record;
+}
+
 function removeStream(id) {
   log.debug('Entering removeStream(). ' + id);
-  const gone = streams.delete(String(id || ''));
+  const key = String(id || '');
+  // ITS SETS GO WITH IT, as rows. They were members of the record and died
+  // with it; as rows of their own they would otherwise outlive it in every
+  // process, counted by nothing and polled by nobody.
+  clearQueueFor(key);
+  // And its dead letters: evidence about a stream that no longer exists.
+  clearDeadLettersFor(key);
+  const gone = streams.delete(key);
   log.debug('Leaving removeStream(). ' + gone);
   return gone;
 }
@@ -631,6 +753,7 @@ function updateStream(id, asked, mode, context) {
   note(record, 'updated', (replace ? 'Replaced' : 'Merged') +
        ' — now delivering ' + record.events_delivered.length +
        ' event type(s) over ' + deliveryName(record.delivery.method) + '.');
+  touch(record);
   log.debug('Leaving updateStream(). Updated.');
   return { ok: true, stream: record, errors: [] };
 }
@@ -663,19 +786,21 @@ function setStatus(id, status, reason) {
   record.status = status;
   record.statusReason = String(reason || '');
   record.updatedAt = iso();
-  if (status === 'disabled' && record.queue.length) {
+  const waiting = queueOf(record).length;
+  if (status === 'disabled' && waiting) {
     // Deliberate, and the sentence above is why. A disabled stream is not a
     // paused one: what was waiting is dropped, and the count is reported so
     // that a reader can see it happen rather than discovering later that the
     // queue is empty.
-    note(record, 'status', 'Disabled — ' + record.queue.length +
+    note(record, 'status', 'Disabled — ' + waiting +
          ' queued event(s) were DROPPED. A paused stream would have kept ' +
          'them; that is the whole difference between the two.');
-    record.queue.length = 0;
+    clearQueueFor(record.stream_id);
   } else {
     note(record, 'status', before + ' -> ' + status +
          (reason ? ' (' + reason + ')' : ''));
   }
+  touch(record);
   log.debug('Leaving setStatus(). ' + before + ' -> ' + status);
   return { ok: true, stream: record, errors: [] };
 }
@@ -718,6 +843,7 @@ function addSubject(id, subject, verified, options) {
   if (existing) {
     existing.verified = verified !== false;
     existing.updatedAt = iso();
+    touch(record);
     log.debug('Leaving addSubject(). Already present.');
     return { ok: true, errors: [], added: false, subject: existing };
   }
@@ -742,6 +868,7 @@ function addSubject(id, subject, verified, options) {
   record.updatedAt = iso();
   note(record, 'subject', 'Added ' + subjects.describeSubject(subject) +
        (entry.verified ? '' : ' (unverified)'));
+  touch(record);
   log.debug('Leaving addSubject(). Added.');
   return { ok: true, errors: [], added: true, subject: entry };
 }
@@ -770,6 +897,7 @@ function removeSubject(id, subject) {
        subjects.describeSubject(subject) +
        (removed ? '' : ', which was not on this stream. SSF 1.0 says a ' +
         'remove is idempotent, so this is a 204 rather than a 404.'));
+  touch(record);
   log.debug('Leaving removeSubject(). ' + removed);
   return { ok: true, errors: [], removed: removed };
 }
@@ -893,7 +1021,105 @@ function streamCoversSubject(record, subject) {
 // there, `counters.failed` says what happened, and the console can show it.
 // A push implementation that signed and posted in one breath would lose the
 // event on the first refused connection with nothing to show for it.
+//
+// **THE QUEUE IS ROWS IN `queued`, ONE PER SET** — see the header on that
+// store for why it stopped being an array on the record. Everything here that
+// changes what is waiting does it with a `set()` of one SET's key or a
+// `delete()` of one, and never by writing the queue back whole.
 // ---------------------------------------------------------------------------
+
+// The row a SET is kept under. The stream comes first so that a receiver
+// acknowledging a jti can only ever remove a SET from ITS OWN stream: a jti is
+// random and unique, but a key that did not say whose it was would make that
+// a property of the generator rather than of this store.
+function queueKey(streamId, jti) {
+  log.debug('Entering queueKey().');
+  log.debug('Leaving queueKey().');
+  return String(streamId) + ' ' + String(jti);
+}
+
+// THE ORDER A SET WAS QUEUED IN, carried on the row. The rows of one realm are
+// one Map, and a Map's insertion order is the order THIS process happened to
+// learn of each row — which for a row another worker wrote is the order the
+// change log was applied in, not the order the events happened. So the order
+// is a member: the time it was queued, with a per-process counter to split a
+// millisecond, and the jti as the last word between two processes that queued
+// in the same one. RFC 8936 promises no order; a receiver reading a stream of
+// account events would still rather have them in the order they happened.
+let queueSequence = 0;
+
+function queueOrder() {
+  log.debug('Entering queueOrder().');
+  queueSequence = (queueSequence + 1) % 1000;
+  log.debug('Leaving queueOrder().');
+  return Date.now() * 1000 + queueSequence;
+}
+
+// What is waiting on a stream, oldest first. A SCAN of the realm's rows rather
+// than an index, because an index would be a second copy of this store that a
+// row applied from another process has to remember to update — and the scan
+// is bounded: `ssf.maxStreams` streams of `ssf.maxQueuedEvents` each.
+function queueOf(record) {
+  log.debug('Entering queueOf().');
+  if (!record || !record.stream_id) {
+    log.debug('Leaving queueOf(). No record.');
+    return [];
+  }
+  const prefix = queueKey(record.stream_id, '');
+  const out = [];
+  queued.forEach(function (entry, key) {
+    if (String(key).indexOf(prefix) === 0 && entry) {
+      out.push(entry);
+    }
+  });
+  out.sort(function (a, b) {
+    const left = Number(a.order) || 0;
+    const right = Number(b.order) || 0;
+    if (left !== right) {
+      return left - right;
+    }
+    return String(a.jti).localeCompare(String(b.jti));
+  });
+  log.debug('Leaving queueOf(). ' + out.length + ' waiting on ' +
+            record.stream_id + '.');
+  return out;
+}
+
+// One SET off a stream's queue — acknowledged, refused, or pushed. Answers
+// whether it was there, which is what `counters.acknowledged` counts. The
+// delete is journalled whether or not this process held the row, for
+// `realms.map()`'s reason: a row this process never learnt of may still be in
+// the store, and an acknowledgement that only removed the rows it could see
+// would leave that one to be delivered again.
+function dequeue(record, jti) {
+  log.debug('Entering dequeue(). ' + (record && record.stream_id));
+  if (!record || !record.stream_id) {
+    log.debug('Leaving dequeue(). No record.');
+    return false;
+  }
+  const gone = queued.delete(queueKey(record.stream_id, jti));
+  log.debug('Leaving dequeue(). ' + gone);
+  return gone;
+}
+
+// Everything waiting on a stream, dropped: a disable, and a removal. Returns
+// how many went.
+function clearQueueFor(streamId) {
+  log.debug('Entering clearQueueFor(). ' + streamId);
+  const prefix = queueKey(streamId, '');
+  const keys = [];
+  queued.forEach(function (entry, key) {
+    if (String(key).indexOf(prefix) === 0) {
+      keys.push(key);
+    }
+  });
+  keys.forEach(function (key) {
+    queued.delete(key);
+  });
+  log.debug('Leaving clearQueueFor(). ' + keys.length + ' dropped.');
+  return keys.length;
+}
+
 function enqueue(record, entry) {
   log.debug('Entering enqueue(). ' + record.stream_id);
   if (record.status === 'disabled') {
@@ -901,19 +1127,379 @@ function enqueue(record, entry) {
     return { ok: false, reason: 'the stream is disabled' };
   }
   const max = limit('ssf.maxQueuedEvents', 200);
-  if (record.queue.length >= max) {
+  const waiting = queueOf(record);
+  let over = waiting.length - max + 1;
+  while (over > 0 && waiting.length) {
     // The OLDEST goes, not the newest. A receiver that has stopped reading is
     // most likely to want what has happened LATELY, and a queue that refused
     // new events would make a transmitter stop recording because a receiver
     // stopped listening.
-    const dropped = record.queue.shift();
+    const dropped = waiting.shift();
+    dequeue(record, dropped.jti);
     note(record, 'queue', 'The queue was full (ssf.maxQueuedEvents=' + max +
          '), so the oldest event (' + dropped.jti + ') was dropped.');
+    over -= 1;
   }
-  record.queue.push(entry);
+  entry.stream_id = record.stream_id;
+  if (!entry.order) {
+    entry.order = queueOrder();
+  }
+  queued.set(queueKey(record.stream_id, entry.jti), entry);
   record.counters.queued += 1;
-  log.debug('Leaving enqueue(). ' + record.queue.length + ' waiting.');
+  touch(record);
+  log.debug('Leaving enqueue(). ' + (waiting.length + 1) + ' waiting.');
   return { ok: true, reason: '' };
+}
+
+// ---------------------------------------------------------------------------
+// DEAD LETTERS. See the header on `deadLetters` above.
+// ---------------------------------------------------------------------------
+
+// How many dead letters THIS PROCESS believes each stream holds, per realm, so
+// the per-stream cap is not a scan of every letter on every letter. It is an
+// estimate — a letter another process wrote reaches the store through
+// `restore` and not through here — and `sweepDeadLetters()` rebuilds it from a
+// scan each sweep, which is when the cap is enforced exactly.
+const deadCounts = realms.keyed(function () { return new Map(); });
+
+function deadLettersOf(record) {
+  log.debug('Entering deadLettersOf().');
+  if (!record || !record.stream_id) {
+    log.debug('Leaving deadLettersOf(). No record.');
+    return [];
+  }
+  const prefix = queueKey(record.stream_id, '');
+  const out = [];
+  deadLetters.forEach(function (letter, key) {
+    if (String(key).indexOf(prefix) === 0 && letter) {
+      out.push(letter);
+    }
+  });
+  out.sort(function (a, b) {
+    const left = Number(a.deadAtMs) || 0;
+    const right = Number(b.deadAtMs) || 0;
+    if (left !== right) {
+      return left - right;
+    }
+    return String(a.jti).localeCompare(String(b.jti));
+  });
+  log.debug('Leaving deadLettersOf(). ' + out.length + ' on ' +
+            record.stream_id + '.');
+  return out;
+}
+
+// EVERY DEAD LETTER IN THE AMBIENT REALM, in no particular order — what
+// Monitoring → Shared Signals → Dead letters counts (2026-09-14). One scan of
+// the realm's own partition: another realm's letters are not filtered out
+// here, they are in a different Map. The caller sorts and aggregates; this
+// hands back the rows exactly as they are held, token included, so a caller
+// drawing them must drop it (`ssf_dead_letter_report.js` does).
+function allDeadLetters() {
+  log.debug('Entering allDeadLetters().');
+  const out = [];
+  deadLetters.forEach(function (letter, key) {
+    if (letter) {
+      out.push(Object.assign({ stream_id: String(key).split(' ')[0] },
+                             letter));
+    }
+  });
+  log.debug('Leaving allDeadLetters(). ' + out.length + '.');
+  return out;
+}
+
+// Delete the oldest of one stream's letters until it holds `max`. Answers how
+// many went.
+function trimDeadLetters(streamId, max) {
+  log.debug('Entering trimDeadLetters(). ' + streamId);
+  const letters = deadLettersOf({ stream_id: streamId });
+  let dropped = 0;
+  while (letters.length > max) {
+    const oldest = letters.shift();
+    deadLetters.delete(queueKey(streamId, oldest.jti));
+    dropped += 1;
+  }
+  deadCounts().set(streamId, letters.length);
+  log.debug('Leaving trimDeadLetters(). ' + dropped + ' dropped.');
+  return dropped;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT WAS DEAD-LETTERED SINCE THE LAST SWEEP, per process and per realm —
+// what the sweep's ONE summary line reports. The user-visible rule is that an
+// undeliverable SET is never logged on its own: a receiver that refuses
+// everything would otherwise put a line per event in the log, which is what
+// buried everything else on the run this was built for (30,698 lines in one
+// second).
+// ---------------------------------------------------------------------------
+const tally = realms.keyed(function () {
+  return { letters: 0, byStream: new Map(), byCode: new Map(), trimmed: 0 };
+});
+
+function addDeadLetter(record, entry, why) {
+  log.debug('Entering addDeadLetter(). ' + (record && record.stream_id));
+  if (!record || !record.stream_id || !entry || !entry.jti) {
+    log.debug('Leaving addDeadLetter(). Nothing to add.');
+    return false;
+  }
+  const reason = why || {};
+  const now = Date.now();
+  const letter = {
+    stream_id: record.stream_id,
+    jti: entry.jti,
+    token: entry.token || '',
+    claims: entry.claims || null,
+    queuedAt: entry.queuedAt || '',
+    deadAt: new Date(now).toISOString(),
+    deadAtMs: now,
+    reason: String(reason.why || ''),
+    errorCode: String(reason.errorCode || ''),
+    status: Number(reason.status) || 0,
+    signed: !!entry.token
+  };
+  deadLetters.set(queueKey(record.stream_id, entry.jti), letter);
+  record.counters.deadLettered = (record.counters.deadLettered || 0) + 1;
+  const counts = deadCounts();
+  const held = (counts.get(record.stream_id) || 0) + 1;
+  counts.set(record.stream_id, held);
+  const max = limit('ssf.deadLetterMaxPerStream', 1000);
+  const seen = tally();
+  if (held > max) {
+    seen.trimmed += trimDeadLetters(record.stream_id, max);
+  }
+  seen.letters += 1;
+  seen.byStream.set(record.stream_id,
+                    (seen.byStream.get(record.stream_id) || 0) + 1);
+  if (letter.errorCode) {
+    seen.byCode.set(letter.errorCode,
+                    (seen.byCode.get(letter.errorCode) || 0) + 1);
+  }
+  // THE RECORD IS NOT WRITTEN HERE. `counters.deadLettered` rides along with
+  // the stream's next write; writing the whole record — its log included — for
+  // every letter to a dead stream would be the per-event write load dead
+  // streams exist to remove. The letter itself is written above.
+  log.debug('Leaving addDeadLetter(). ' + held + ' held.');
+  return true;
+}
+
+// Everything waiting on a stream, moved to its dead-letter queue — what a
+// stream being declared dead does. Answers how many moved.
+function moveQueueToDeadLetters(record, why) {
+  log.debug('Entering moveQueueToDeadLetters(). ' + record.stream_id);
+  const waiting = queueOf(record);
+  waiting.forEach(function (entry) {
+    addDeadLetter(record, entry, why);
+    dequeue(record, entry.jti);
+  });
+  log.debug('Leaving moveQueueToDeadLetters(). ' + waiting.length + '.');
+  return waiting.length;
+}
+
+function removeDeadLetter(record, jti) {
+  log.debug('Entering removeDeadLetter().');
+  const gone = deadLetters.delete(queueKey(record.stream_id, jti));
+  if (gone) {
+    const counts = deadCounts();
+    counts.set(record.stream_id,
+               Math.max(0, (counts.get(record.stream_id) || 1) - 1));
+  }
+  log.debug('Leaving removeDeadLetter(). ' + gone);
+  return gone;
+}
+
+function clearDeadLettersFor(streamId) {
+  log.debug('Entering clearDeadLettersFor(). ' + streamId);
+  const prefix = queueKey(streamId, '');
+  const keys = [];
+  deadLetters.forEach(function (letter, key) {
+    if (String(key).indexOf(prefix) === 0) {
+      keys.push(key);
+    }
+  });
+  keys.forEach(function (key) {
+    deadLetters.delete(key);
+  });
+  deadCounts().delete(String(streamId));
+  log.debug('Leaving clearDeadLettersFor(). ' + keys.length + ' dropped.');
+  return keys.length;
+}
+
+// ---------------------------------------------------------------------------
+// ONE SWEEP OF THE AMBIENT REALM'S DEAD LETTERS: delete what is older than
+// `ssf.deadLetterRetentionS` or belongs to no stream, enforce the per-stream
+// cap exactly, rebuild the counts, and hand back — and reset — what was
+// dead-lettered since the last sweep, for the caller's one summary line.
+// ---------------------------------------------------------------------------
+function sweepDeadLetters(nowMs) {
+  log.debug('Entering sweepDeadLetters().');
+  const now = Number(nowMs) || Date.now();
+  const keepMs = limit('ssf.deadLetterRetentionS', 3600) * 1000;
+  const expired = [];
+  const orphaned = [];
+  const perStream = new Map();
+  deadLetters.forEach(function (letter, key) {
+    const streamId = String(key).split(' ')[0];
+    if (!letter || !streams.has(streamId)) {
+      orphaned.push(key);
+      return;
+    }
+    if ((Number(letter.deadAtMs) || 0) + keepMs <= now) {
+      expired.push(key);
+      return;
+    }
+    perStream.set(streamId, (perStream.get(streamId) || 0) + 1);
+  });
+  expired.concat(orphaned).forEach(function (key) {
+    deadLetters.delete(key);
+  });
+  const max = limit('ssf.deadLetterMaxPerStream', 1000);
+  const seen = tally();
+  const counts = deadCounts();
+  counts.clear();
+  perStream.forEach(function (held, streamId) {
+    if (held > max) {
+      seen.trimmed += trimDeadLetters(streamId, max);
+    } else {
+      counts.set(streamId, held);
+    }
+  });
+  const out = { expired: expired.length, orphaned: orphaned.length,
+    held: Array.from(counts.values()).reduce(function (n, one) {
+      return n + one;
+    }, 0),
+    letters: seen.letters, trimmed: seen.trimmed,
+    byStream: Array.from(seen.byStream.entries()),
+    byCode: Array.from(seen.byCode.entries()) };
+  seen.letters = 0;
+  seen.trimmed = 0;
+  seen.byStream.clear();
+  seen.byCode.clear();
+  log.debug('Leaving sweepDeadLetters(). ' + out.expired + ' expired, ' +
+            out.letters + ' new.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// DEAD STREAMS (2026-09-14).
+//
+// A push stream whose pushes have ALL failed for `ssf.deadStreamTimeoutS` is
+// dead. The state is four members on the record, so it replicates with it:
+//
+//   failingSinceMs   the first failure after the last success; 0 while pushes
+//                    are succeeding
+//   deadSinceMs      when it was declared dead; 0 while it is alive
+//   nextProbeAtMs    when a sweep may next push one dead letter as a probe
+//   deadReason       the failure that pushed it over, for the page
+//
+// It is NOT an SSF status. `enabled`, `paused` and `disabled` are the
+// receiver's and the operator's words with meanings SSF 1.0 section 7.1.2
+// defines, and a transmitter that rewrote one because a receiver was down
+// would tell the receiver it had been paused by somebody. A dead stream is
+// still `enabled`; it is this transmitter that has stopped dialling it.
+// ---------------------------------------------------------------------------
+function deadTimeoutMs() {
+  log.debug('Entering deadTimeoutMs().');
+  const raw = Number(config.value('ssf.deadStreamTimeoutS'));
+  log.debug('Leaving deadTimeoutMs().');
+  return Number.isFinite(raw) && raw > 0 ? raw * 1000 : 0;
+}
+
+function isDead(record) {
+  log.debug('Entering isDead().');
+  log.debug('Leaving isDead().');
+  return !!(record && Number(record.deadSinceMs) > 0);
+}
+
+// A push failed. Answers `{ declaredDead, moved }`: whether this failure is
+// the one that declared the stream dead, and how many waiting SETs that moved
+// to the dead-letter queue.
+function notePushFailure(record, why, nowMs) {
+  log.debug('Entering notePushFailure(). ' + record.stream_id);
+  const now = Number(nowMs) || Date.now();
+  const timeout = deadTimeoutMs();
+  if (!(Number(record.failingSinceMs) > 0)) {
+    record.failingSinceMs = now;
+    // ONE LINE ON THE STREAM'S OWN LOG PER RUN OF FAILURES, not per failure:
+    // the failures themselves are the dead letters, each with its reason.
+    note(record, 'failing', 'Pushes are failing: ' +
+         String((why && why.why) || '?') + ' Undeliverable SETs go to the ' +
+         'dead-letter queue' + (timeout ? ', and if nothing is delivered for ' +
+         Math.round(timeout / 1000) + 's the stream is declared dead.' : '.'));
+  }
+  if (isDead(record) || !timeout || now - record.failingSinceMs < timeout) {
+    touch(record);
+    log.debug('Leaving notePushFailure(). Not declared dead.');
+    return { declaredDead: false, moved: 0 };
+  }
+  record.deadSinceMs = now;
+  record.nextProbeAtMs = now + timeout;
+  record.deadReason = String((why && why.why) || '');
+  const moved = moveQueueToDeadLetters(record, {
+    why: 'the stream was declared dead: ' + record.deadReason,
+    errorCode: 'STS-SSF-0093' });
+  note(record, 'dead', 'Declared DEAD after ' + Math.round(timeout / 1000) +
+       's of failed pushes (ssf.deadStreamTimeoutS). Nothing more is pushed ' +
+       'to it; ' + moved + ' waiting SET(s) and every later one go to its ' +
+       'dead-letter queue, and one is pushed as a probe every ' +
+       Math.round(timeout / 1000) + 's. Last failure: ' + record.deadReason);
+  log.debug('Leaving notePushFailure(). Declared dead; ' + moved + ' moved.');
+  return { declaredDead: true, moved: moved };
+}
+
+// A push succeeded. Answers whether that revived a dead stream.
+function notePushSuccess(record) {
+  log.debug('Entering notePushSuccess(). ' + record.stream_id);
+  const wasDead = isDead(record);
+  const wasFailing = Number(record.failingSinceMs) > 0;
+  record.failingSinceMs = 0;
+  if (!wasDead) {
+    if (wasFailing) {
+      touch(record);
+    }
+    log.debug('Leaving notePushSuccess(). It was alive.');
+    return false;
+  }
+  record.deadSinceMs = 0;
+  record.nextProbeAtMs = 0;
+  record.deadReason = '';
+  note(record, 'revived', 'A push was delivered, so the stream is alive ' +
+       'again and is pushed to as before. Its dead-letter queue is kept for ' +
+       'inspection until ssf.deadLetterRetentionS passes.');
+  log.debug('Leaving notePushSuccess(). Revived.');
+  return true;
+}
+
+// An operator reviving a stream by hand. It is alive at once; one more failure
+// before a success does not declare it dead again until the timeout has run
+// out afresh.
+function revive(record, reason) {
+  log.debug('Entering revive(). ' + record.stream_id);
+  if (!isDead(record)) {
+    log.debug('Leaving revive(). It is not dead.');
+    return false;
+  }
+  record.deadSinceMs = 0;
+  record.nextProbeAtMs = 0;
+  record.deadReason = '';
+  record.failingSinceMs = 0;
+  note(record, 'revived', 'Revived by hand' +
+       (reason ? ' (' + reason + ')' : '') + '. It is pushed to as before.');
+  log.debug('Leaving revive().');
+  return true;
+}
+
+// A sweep found no dead letter to probe with. HALF-OPEN: the stream is tried
+// again with its next SET, and failingSinceMs is set so that one failure
+// declares it dead again at once rather than after a fresh timeout.
+function halfOpen(record, nowMs) {
+  log.debug('Entering halfOpen(). ' + record.stream_id);
+  const now = Number(nowMs) || Date.now();
+  record.deadSinceMs = 0;
+  record.nextProbeAtMs = 0;
+  record.failingSinceMs = now - deadTimeoutMs();
+  note(record, 'half-open', 'Its dead letters have all expired, so there is ' +
+       'nothing to probe with: the next SET will be pushed, and a failure ' +
+       'declares the stream dead again at once.');
+  log.debug('Leaving halfOpen().');
 }
 
 // ONE MORE OF A TYPE HAS BEEN SAID TO THIS STREAM.
@@ -938,6 +1524,7 @@ function countEvent(record, uri) {
     record.eventCounts = {};
   }
   record.eventCounts[uri] = (record.eventCounts[uri] || 0) + 1;
+  touch(record);
   log.debug('Leaving countEvent(). ' + record.eventCounts[uri] + ' of that ' +
       'type.');
 }
@@ -955,19 +1542,13 @@ function poll(record, request) {
   const errs = (asked.setErrs && typeof asked.setErrs === 'object')
     ? asked.setErrs : {};
   acks.forEach(function (jti) {
-    const before = record.queue.length;
-    record.queue = record.queue.filter(function (one) {
-      return one.jti !== jti;
-    });
-    if (before !== record.queue.length) {
+    if (dequeue(record, jti)) {
       record.counters.acknowledged += 1;
     }
   });
   Object.keys(errs).forEach(function (jti) {
     const problem = errs[jti] || {};
-    record.queue = record.queue.filter(function (one) {
-      return one.jti !== jti;
-    });
+    dequeue(record, jti);
     record.counters.receiverErrors += 1;
     note(record, 'error', 'The receiver REFUSED ' + jti + ': ' +
          String(problem.err || '(no err)') + ' — ' +
@@ -975,6 +1556,7 @@ function poll(record, request) {
          'the queue: a receiver that could not process an event will not ' +
          'process it next time either, and redelivering would poll-loop.');
   });
+  touch(record);
 
   if (record.status !== 'enabled') {
     log.debug('Leaving poll(). The stream is ' + record.status + '.');
@@ -986,15 +1568,23 @@ function poll(record, request) {
   const take = (Number.isFinite(wanted) && wanted >= 0)
     ? Math.min(wanted, cap) : cap;
   const sets = {};
-  record.queue.slice(0, take).forEach(function (one) {
+  const waiting = queueOf(record);
+  waiting.slice(0, take).forEach(function (one) {
     sets[one.jti] = one.token;
-    one.deliveredAt = iso();
+    // THE FIRST DELIVERY IS WRITTEN AND A REDELIVERY IS NOT. `deliveredAt` is
+    // when the receiver was first handed it, and the row is re-set only then:
+    // a write of a SET's row is the one thing that could put back a SET
+    // another worker has just deleted on an acknowledgement, so a poll that
+    // hands out what it already handed out changes nothing and writes nothing.
     if (!one.counted) {
       one.counted = true;
+      one.deliveredAt = iso();
       record.counters.delivered += 1;
+      queued.set(queueKey(record.stream_id, one.jti), one);
     }
   });
-  const more = record.queue.length > take;
+  const more = waiting.length > take;
+  touch(record);
   log.debug('Leaving poll(). ' + Object.keys(sets).length + ' set(s), more=' +
             more);
   return { sets: sets, moreAvailable: more, status: record.status };
@@ -1010,6 +1600,7 @@ function note(record, kind, text) {
   if (record.log.length > max) {
     record.log.splice(0, record.log.length - max);
   }
+  touch(record);
   log.debug('Leaving note().');
 }
 
@@ -1111,6 +1702,22 @@ module.exports = {
   deliversEvent: deliversEvent,
   effectiveDelivered: effectiveDelivered,
   enqueue: enqueue,
+  queueOf: queueOf,
+  dequeue: dequeue,
+  deadLettersOf: deadLettersOf,
+  allDeadLetters: allDeadLetters,
+  deadTimeoutMs: deadTimeoutMs,
+  addDeadLetter: addDeadLetter,
+  removeDeadLetter: removeDeadLetter,
+  clearDeadLettersFor: clearDeadLettersFor,
+  sweepDeadLetters: sweepDeadLetters,
+  isDead: isDead,
+  notePushFailure: notePushFailure,
+  notePushSuccess: notePushSuccess,
+  revive: revive,
+  halfOpen: halfOpen,
+  touch: touch,
+  liveRecord: liveRecord,
   countEvent: countEvent,
   poll: poll,
   note: note,

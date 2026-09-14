@@ -86,6 +86,16 @@ const mode = require('./mode');
 // which requires this file: a failure logged here leads with
 // `errorCodes.tag()` rather than writing a row.
 const errorCodes = require('./error_codes');
+// WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES, per use case and per realm
+// (2026-09-13). It requires `config`, `realms` and `error_codes` and reaches
+// back into this file only lazily, inside a function, so this require closes
+// no cycle. `certificateHeaderFor()` below is the one caller.
+const certificateHeader = require('./jose_certificate_header');
+// WHICH `kid` A SIGNED TOKEN CARRIES — this service's own name for the key, or
+// its RFC 9278 thumbprint URI — per realm (2026-09-13). It requires `config`,
+// `crypto` and `error_codes` and nothing that requires it back.
+// `publishedKidFor()` and `kidNamesKey()` below are the callers.
+const joseKid = require('./jose_kid');
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
 // Registering it is what makes global.logLevel a setting rather than a claim:
@@ -357,6 +367,64 @@ function makeRefreshTokenEncryptionKeys() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE REQUEST OBJECT ENCRYPTION KEYS (2026-09-13).
+//
+// RFC 9101 section 6.1 lets a client ENCRYPT its request object to the
+// authorization server, and the key it encrypts to is one this server
+// PUBLISHES — so, unlike the refresh-token keys above, these two are in
+// `/oauth2/jwks`, marked `use: "enc"`. `oauth-oidc/request_object.js` decrypts
+// with them. An RSA pair for RSA-OAEP and RSA-OAEP-256, an EC pair for ECDH-ES
+// and its key-wrapping variants; the symmetric algorithms are keyed by the
+// client's own secret and need no key here.
+//
+// **A MEMBER OF THE KEY SET, NOT A KEY OF ITS OWN**, for the reason the
+// OpenID4VCI request-encryption key and the refresh-token keys are: the set is
+// the unit the key channel agrees, the keystore seals and a realm owns, so a
+// member made with it is per realm, persisted in product mode and the same in
+// every process by construction. **AND A DIFFERENT KEY FROM EACH OF THOSE
+// TWO**, deliberately: the OpenID4VCI key is published in another document for
+// another protocol, and the refresh-token keys are never published at all — a
+// key a client may encrypt to must not also open this service's own tokens.
+//
+// **PLAIN KEYS AND NOT PKI LEAVES**, `makeRequestEncryptionKey()`'s reason: a
+// client trusts them because it read them out of this server's JWKS over TLS,
+// and every certificate `pki.js` issues from a use case is a SIGNING one.
+// ---------------------------------------------------------------------------
+function requestObjectJwkOf(privateKey, kind) {
+  log.debug("Entering requestObjectJwkOf().");
+  const publicJwk = crypto.createPublicKey(privateKey)
+                          .export({ format: 'jwk' });
+  const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  log.debug("Leaving requestObjectJwkOf().");
+  return Object.assign({}, publicJwk, {
+    kid: 'sts-ro-' + kind + '-' + thumbprint,
+    use: 'enc'
+  });
+}
+
+function makeRequestObjectEncryptionKeys() {
+  log.debug("Entering makeRequestObjectEncryptionKeys().");
+  const bits = Number(config.value('oauth2.requestObjectEncryptionKeyBits')) ||
+               2048;
+  const curveName = String(config.value(
+    'oauth2.requestObjectEncryptionCurve') || 'P-256');
+  const curve = REFRESH_TOKEN_CURVES[curveName] ||
+                REFRESH_TOKEN_CURVES['P-256'];
+  const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const out = {
+    rsa: { privateKey: rsa.privateKey,
+           publicJwk: requestObjectJwkOf(rsa.privateKey, 'rsa') },
+    ec: { privateKey: ec.privateKey,
+          publicJwk: requestObjectJwkOf(ec.privateKey, 'ec') }
+  };
+  log.debug("Leaving makeRequestObjectEncryptionKeys(). rsa " + bits +
+            " bits, " + curveName + ", kids=" + out.rsa.publicJwk.kid + ", " +
+            out.ec.publicJwk.kid);
+  return out;
+}
+
 // --- STS signing key/cert (generated once at startup) ----------------------
 function makeStsKeys() {
   log.debug("Entering makeStsKeys().");
@@ -471,6 +539,9 @@ function makeStsKeys() {
     // THE REFRESH-TOKEN ENCRYPTION KEYS, made with the set for the same reason
     // as the request-encryption key: the set is what the key channel agrees.
     refreshTokenEncKeys: makeRefreshTokenEncryptionKeys(),
+    // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101), made with the set for the
+    // same reason — see makeRequestObjectEncryptionKeys().
+    requestObjectEncKeys: makeRequestObjectEncryptionKeys(),
     // A `kid` names a KEY, so it is derived from the key material rather than
     // hard-coded. This key is regenerated on every start, and the kid was
     // previously a constant — so two instances of this mock (a stale container
@@ -606,6 +677,12 @@ function plainKeySet(realmId, stored) {
   // this process would make its own and seal tokens no sibling can open.
   if (stored.refreshTokenEncKeys) {
     set.refreshTokenEncKeys = stored.refreshTokenEncKeys;
+  }
+  // AND THE REQUEST OBJECT ENCRYPTION KEYS, for the same reason: dropped here,
+  // this process would publish keys of its own and fail to open a request
+  // object a client encrypted to the JWKS a sibling served.
+  if (stored.requestObjectEncKeys) {
+    set.requestObjectEncKeys = stored.requestObjectEncKeys;
   }
   log.debug("Leaving plainKeySet(). kid=" + set.kid);
   return set;
@@ -1047,6 +1124,69 @@ function lazyKeySet(realmId, stored) {
       log.debug("Leaving set().");
     }
   });
+  // ---------------------------------------------------------------------
+  // **THE REQUEST OBJECT ENCRYPTION KEYS, PUBLIC HALVES RESIDENT AND BOTH
+  // PRIVATE KEYS GETTERS (2026-09-13)** — the refresh-token keys' arrangement,
+  // and for the reason it matters more here: these public halves are in
+  // `/oauth2/jwks`, which every client fetches, and publishing them must not
+  // cause a decrypt. Only the two public JWKs are read into locals.
+  // ---------------------------------------------------------------------
+  const roStored = stored.requestObjectEncKeys || null;
+  const roPublic = roStored && roStored.rsa && roStored.ec
+    ? { rsa: roStored.rsa.publicJwk, ec: roStored.ec.publicJwk }
+    : null;
+  let roGenerated = null;
+  const roHeld = function (part) {
+    log.debug("Entering roHeld().");
+    const held = keystore.privateMaterialFor(realmId);
+    if (!held || !held.ro) {
+      throw new Error('the "' + realmId +
+        '" realm\'s request object encryption ' + part + ' is held ' +
+        'encrypted and could not be decrypted; see the keystore errors ' +
+        'above.');
+    }
+    log.debug("Leaving roHeld().");
+    return held.ro;
+  };
+  Object.defineProperty(set, 'requestObjectEncKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (roGenerated) {
+        log.debug("Leaving get().");
+        return roGenerated;
+      }
+      if (!roPublic) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const view = { rsa: { publicJwk: roPublic.rsa },
+                     ec: { publicJwk: roPublic.ec } };
+      Object.defineProperty(view.rsa, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return roHeld('RSA key').rsa.privateKey;
+        }
+      });
+      Object.defineProperty(view.ec, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return roHeld('EC key').ec.privateKey;
+        }
+      });
+      log.debug("Leaving get().");
+      return view;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      roGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
   certifiedView(set, realmId, stored);
   log.debug("Leaving lazyKeySet(). " + set.extraKeys.length + " curve key(s).");
   return set;
@@ -1335,6 +1475,41 @@ function refreshTokenKeysFor(keySet) {
   return keys.refreshTokenEncKeys || made;
 }
 
+// ---------------------------------------------------------------------------
+// THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
+// WRITTEN BEFORE THEY EXISTED (2026-09-13). `refreshTokenKeysFor()` above, step
+// for step: ask whether some process already made them, make them in the set's
+// own realm if not, and hand them on as an enrichment of the set every other
+// process holds.
+// ---------------------------------------------------------------------------
+function requestObjectKeysFor(keySet) {
+  log.debug("Entering requestObjectKeysFor().");
+  const keys = keySet || stsKeysFor();
+  const present = keys.requestObjectEncKeys;
+  if (present && present.rsa && present.rsa.publicJwk) {
+    log.debug("Leaving requestObjectKeysFor(). On the set.");
+    return present;
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.requestObjectKeysHeldFor(realmId);
+  if (held) {
+    keys.requestObjectEncKeys = held;
+    log.debug("Leaving requestObjectKeysFor(). Already made by this service.");
+    return held;
+  }
+  const realm = realms.get(realmId) || realms.DEFAULT_REALM;
+  const made = realms.run(realm, makeRequestObjectEncryptionKeys);
+  keys.requestObjectEncKeys = made;
+  log.info('Request object encryption keys were added to the "' + realmId +
+           '" realm\'s key set, which was written by a build from before ' +
+           'they joined it: ' + made.rsa.publicJwk.kid + ', ' +
+           made.ec.publicJwk.kid + '.');
+  keystore.remember(realmId, keys);
+  keystore.publishShared(realmId, keys);
+  log.debug("Leaving requestObjectKeysFor(). Backfilled.");
+  return keys.requestObjectEncKeys || made;
+}
+
 // FORGET THE BUILT KEY SETS so the factory runs again, which is as close to a
 // restart as one process can get. `realms.keyed()` exposes its map as
 // `existing()`, which is the seam that makes this a clear rather than a
@@ -1582,11 +1757,124 @@ function parseBody(req) {
       return {};
     }
   }
+  // A FILE UPLOAD (2026-09-13). The one form in this service that sends one is
+  // the RFC 9728 import on /admin/applications/new, and a browser with no script
+  // can only send a file as multipart/form-data. Every part comes back under
+  // its field name as text — a file part as its content decoded as UTF-8 — so
+  // the console's CSRF check finds its token in an upload exactly as it does in
+  // a form, and a caller that needs the filename asks multipartParts().
+  if (/^multipart\/form-data/i.test(type)) {
+    const fields = {};
+    multipartParts(req).forEach(function (part) {
+      fields[part.name] = part.data.toString('utf8');
+    });
+    log.debug("Leaving parseBody(). Parsed a multipart body with " +
+              Object.keys(fields).length + " part(s).");
+    return fields;
+  }
   const out = {};
   new URLSearchParams(raw).forEach(function (v, k) { out[k] = v; });
   log.debug("Leaving parseBody(). Parsed a form-encoded body with " +
             Object.keys(out).length + " parameter(s).");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE PARTS OF A multipart/form-data BODY (RFC 7578), as
+// `[{ name, filename, contentType, data }]` with `data` a Buffer.
+//
+// Read off `req.rawBody` — the bytes app.js's text parser keeps beside the
+// string — because a file's bytes are not the string: a decode is not
+// reversible, and a boundary search over decoded text finds a boundary that
+// was never on the wire. It is deliberately small: the parts of one body, a
+// cap on how many, and no streaming, because the whole body has already been
+// read under the body parser's own size limit. A body with no boundary, or a
+// part with no name, yields nothing for that part rather than a guess.
+// ---------------------------------------------------------------------------
+const MULTIPART_MAX_PARTS = 200;
+
+function multipartParts(req) {
+  log.debug("Entering multipartParts().");
+  const type = String((req && req.headers && req.headers['content-type']) ||
+                      '');
+  const found = /;\s*boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(type);
+  if (!found) {
+    log.debug("Leaving multipartParts(). No boundary.");
+    return [];
+  }
+  const body = Buffer.isBuffer(req.rawBody)
+    ? req.rawBody
+    : Buffer.from(typeof req.body === 'string' ? req.body : '', 'utf8');
+  const delimiter = Buffer.from('--' + (found[1] || found[2]), 'utf8');
+  // RFC 2046 section 5.1.1: a delimiter STARTS A LINE and is followed by
+  // `--`, or by optional whitespace and a CRLF. A line of the content that
+  // merely begins with the boundary string is content, and a search that took
+  // the first byte match would cut a file in two there.
+  const delimiterAt = function (from) {
+    log.debug("Entering delimiterAt().");
+    let at = body.indexOf(delimiter, from);
+    while (at >= 0) {
+      const lineStart = at === 0 ||
+                        (body[at - 2] === 0x0d && body[at - 1] === 0x0a);
+      let after = at + delimiter.length;
+      while (body[after] === 0x20 || body[after] === 0x09) {
+        after += 1;
+      }
+      const lineEnd = (body[after] === 0x2d && body[after + 1] === 0x2d) ||
+                      (body[after] === 0x0d && body[after + 1] === 0x0a) ||
+                      after >= body.length;
+      if (lineStart && lineEnd) {
+        log.debug("Leaving delimiterAt().");
+        return at;
+      }
+      at = body.indexOf(delimiter, at + 1);
+    }
+    log.debug("Leaving delimiterAt().");
+    return -1;
+  };
+  const parts = [];
+  let at = delimiterAt(0);
+  while (at >= 0 && parts.length < MULTIPART_MAX_PARTS) {
+    let start = at + delimiter.length;
+    // The closing delimiter is the boundary followed by `--`.
+    if (body[start] === 0x2d && body[start + 1] === 0x2d) {
+      break;
+    }
+    while (body[start] === 0x20 || body[start] === 0x09) {
+      start += 1;
+    }
+    if (body[start] === 0x0d && body[start + 1] === 0x0a) {
+      start += 2;
+    }
+    const next = delimiterAt(start);
+    if (next < 0) {
+      break;
+    }
+    // The part's content ends at the CRLF that precedes the next delimiter.
+    let end = next;
+    if (body[end - 2] === 0x0d && body[end - 1] === 0x0a) {
+      end -= 2;
+    }
+    const split = body.indexOf('\r\n\r\n', start);
+    if (split >= 0 && split < end) {
+      const head = body.slice(start, split).toString('utf8');
+      const disposition = /content-disposition:([^\r\n]*)/i.exec(head);
+      const name = disposition &&
+                   /\bname="([^"]*)"/i.exec(disposition[1]);
+      const filename = disposition &&
+                       /\bfilename="([^"]*)"/i.exec(disposition[1]);
+      const contentType = /content-type:\s*([^\r\n]*)/i.exec(head);
+      if (name) {
+        parts.push({ name: name[1],
+                     filename: filename ? filename[1] : null,
+                     contentType: contentType ? contentType[1].trim() : '',
+                     data: body.slice(split + 4, end) });
+      }
+    }
+    at = next;
+  }
+  log.debug("Leaving multipartParts(). " + parts.length + " part(s).");
+  return parts;
 }
 
 // ---------------------------------------------------------------------------
@@ -1995,7 +2283,9 @@ function signingKeyWithoutList(alg) {
   }
   if (spec.family === 'rsa') {
     log.debug("Leaving signingKeyWithoutList(). The service RSA key.");
-    return { key: STS.privateKey, kid: STS.kid };
+    // `slot` is the name `pki.certifyKeySet()` files this key's certificate
+    // under — one RSA key signs every RS* and PS* algorithm, so it is one slot.
+    return { key: STS.privateKey, kid: STS.kid, slot: 'RS256' };
   }
   log.debug("Leaving signingKeyWithoutList(). The list decides.");
   return null;
@@ -2026,7 +2316,154 @@ function signingKeyFromList(alg, list) {
       'not in the request.');
   }
   log.debug("Leaving signingKeyFromList(). " + alg + ".");
-  return { key: found.privateKey, kid: found.publicJwk.kid };
+  return { key: found.privateKey, kid: found.publicJwk.kid,
+           slot: certificateSlotOf(found) };
+}
+
+// ---------------------------------------------------------------------------
+// THE REGISTER SLOT A KEY'S CERTIFICATE IS FILED UNDER, which is
+// `pki.certifyKeySet()`'s naming read back: a curve key is `<alg>:<crv>` —
+// the two EdDSA keys share an `alg` — and a post-quantum key, whose AKP JWK has
+// no curve, is its `alg`. Written once here so that a signer and the
+// certificate header cannot disagree about which certificate is whose.
+// ---------------------------------------------------------------------------
+function certificateSlotOf(entry) {
+  log.debug("Entering certificateSlotOf().");
+  const jwk = (entry && entry.publicJwk) || {};
+  log.debug("Leaving certificateSlotOf().");
+  return jwk.kty !== 'AKP' && jwk.crv ? entry.alg + ':' + jwk.crv : entry.alg;
+}
+
+// ---------------------------------------------------------------------------
+// `x5c` / `x5u` FOR ONE SIGNATURE (2026-09-13).
+//
+// `useCaseId` names a row of `common/jose_certificate_header.js`'s table; `alg`
+// and `kid` name the key that is about to sign. The answer is the header
+// members to merge — `{}` for an HMAC, for a key this realm does not hold, and
+// for whatever that module decides gets nothing. The policy is all over there;
+// what is here is the one thing only this file can answer, which of the
+// ambient realm's keys a `kid` is and what its public half looks like.
+//
+// **THE PUBLIC KEY IS READ WITHOUT TOUCHING A PRIVATE ONE.** The RSA key's
+// comes out of the certificate it was born with and the others' out of their
+// public JWKs, so in product mode a header costs no decrypt — the signature
+// beside it has already paid for one.
+//
+// Exported for the signers that call `stsCrypto.signJws()` directly —
+// `signPublishedDocument()`, the OpenID4VCI credential signers and the Domain
+// Linkage Credential — which merge it into their own `header`.
+// ---------------------------------------------------------------------------
+function certificateHeaderFor(useCaseId, alg, kid) {
+  log.debug("Entering certificateHeaderFor(). use=" + useCaseId +
+            ", alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!useCaseId || !spec || spec.family === 'hmac' || !kid) {
+    log.debug("Leaving certificateHeaderFor(). Nothing to name.");
+    return {};
+  }
+  const keys = stsKeysFor();
+  let signer = null;
+  if (kid === keys.kid) {
+    signer = {
+      realm: keys.realm, slot: 'RS256', kid: kid,
+      spkiPem: function () {
+        log.debug("Entering spkiPem().");
+        log.debug("Leaving spkiPem().");
+        return crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
+                     .export({ type: 'spki', format: 'pem' });
+      }
+    };
+  } else {
+    const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
+      .filter(function (one) {
+        return one && one.publicJwk && one.publicJwk.kid === kid;
+      })[0];
+    if (entry) {
+      const publicJwk = entry.publicJwk;
+      const entryAlg = entry.alg;
+      signer = {
+        realm: keys.realm, slot: certificateSlotOf(entry), kid: kid,
+        spkiPem: function () {
+          log.debug("Entering spkiPem().");
+          if (publicJwk.kty === 'AKP') {
+            log.debug("Leaving spkiPem(). Post-quantum.");
+            return require('./pki').pqSubjectPublicKeyPem(entryAlg, publicJwk);
+          }
+          log.debug("Leaving spkiPem().");
+          return crypto.createPublicKey({ key: publicJwk, format: 'jwk' })
+                       .export({ type: 'spki', format: 'pem' });
+        }
+      };
+    }
+  }
+  if (!signer) {
+    log.debug("Leaving certificateHeaderFor(). Not a key of this realm.");
+    return {};
+  }
+  log.debug("Leaving certificateHeaderFor().");
+  return certificateHeader.headerFor(useCaseId, signer);
+}
+
+// A caller's own header with the certificate members merged UNDER it — the
+// caller's wins, so a signer that already sets one (none does today) is not
+// overruled. `undefined` where there is nothing to merge, which keeps a
+// signature whose use case is `none` byte for byte what it was.
+function withCertificateHeader(header, useCaseId, alg, kid) {
+  log.debug("Entering withCertificateHeader().");
+  const extra = useCaseId ? certificateHeaderFor(useCaseId, alg, kid) : {};
+  if (!Object.keys(extra).length) {
+    log.debug("Leaving withCertificateHeader(). Nothing added.");
+    return header;
+  }
+  log.debug("Leaving withCertificateHeader().");
+  return Object.assign(extra, header || {});
+}
+
+// ---------------------------------------------------------------------------
+// THE PUBLIC JWK OF THE AMBIENT REALM'S KEY NAMED BY AN INTERNAL `kid`, or
+// null. The RSA key's comes out of the certificate it was born with and the
+// others' are their own public JWKs, so no private key is touched —
+// `certificateHeaderFor()`'s arrangement, and the same list it searches.
+// ---------------------------------------------------------------------------
+function publicJwkOfKid(kid) {
+  log.debug("Entering publicJwkOfKid().");
+  const keys = stsKeysFor();
+  if (kid && kid === keys.kid) {
+    const jwk = crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
+                      .export({ format: 'jwk' });
+    log.debug("Leaving publicJwkOfKid(). The RSA key.");
+    return jwk;
+  }
+  const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
+    .filter(function (one) {
+      return one && one.publicJwk && one.publicJwk.kid === kid;
+    })[0];
+  log.debug("Leaving publicJwkOfKid(). " + (entry ? 'Found.' : 'None.'));
+  return entry ? entry.publicJwk : null;
+}
+
+// The `kid` a header carries for the key with this internal `kid` —
+// `keys.kidFormat`'s answer, in `common/jose_kid.js`. Exported for the
+// signers that call `stsCrypto.signJws()` directly, which are the ones that
+// also call `certificateHeaderFor()`: that function still takes the INTERNAL
+// kid, because the internal kid is how a key is found in this service.
+function publishedKidFor(kid) {
+  log.debug("Entering publishedKidFor().");
+  log.debug("Leaving publishedKidFor().");
+  return joseKid.publishedKid(kid, function () {
+    return publicJwkOfKid(kid);
+  });
+}
+
+// Does a header's `kid` name the ambient realm's key with this internal kid,
+// under either spelling. For the verifiers here that find their own key by
+// `kid` (`ssf/ssf_events.js`, `oid4vc/vc_verifier.js`).
+function kidNamesKey(headerKid, internalKid) {
+  log.debug("Entering kidNamesKey().");
+  log.debug("Leaving kidNamesKey().");
+  return joseKid.names(headerKid, internalKid, function () {
+    return publicJwkOfKid(internalKid);
+  });
 }
 
 function signingKeyFor(alg) {
@@ -2071,6 +2508,11 @@ function signingKeyForAsync(alg) {
 // three of its signing paths since 2026-08-31; before that the two
 // hand-rolled ones ignored it, so the same call produced a different header
 // depending on which algorithm was chosen.
+//
+// `opts.certificateHeader` names the use case whose setting decides whether
+// the token carries `x5c` or `x5u` (2026-09-13) — see
+// `certificateHeaderFor()`. A caller that names none gets neither, and
+// `tests/jose_certificate_header.js` fails on a signing call that names none.
 function signJwtAs(payload, alg, secret, opts) {
   log.debug("Entering signJwtAs().");
   const options = opts || {};
@@ -2085,14 +2527,18 @@ function signJwtAs(payload, alg, secret, opts) {
     // No `kid`: the key is the client_secret, which is in no JWK Set, and a
     // kid pointing into the JWKS would send the client to the wrong key.
     log.debug("Leaving signJwtAs(). HMAC.");
+    // certificate-header: none — an HMAC key is a client's secret and has no
+    // certificate to name.
     return stsCrypto.signJws(payload, secret,
                              { algorithm: alg, header: options.header });
   }
   const signer = signingKeyFor(alg);
   log.debug("Leaving signJwtAs(). " + alg + ".");
   return stsCrypto.signJws(payload, signer.key,
-                           { algorithm: alg, keyid: signer.kid,
-                             header: options.header });
+                           { algorithm: alg,
+                             keyid: publishedKidFor(signer.kid),
+                             header: withCertificateHeader(options.header,
+                               options.certificateHeader, alg, signer.kid) });
 }
 
 // ---------------------------------------------------------------------------
@@ -2115,6 +2561,7 @@ function signJwtAsAsync(payload, alg, secret, opts) {
   const spec = stsCrypto.JWS_ALGS[alg];
   if (spec && spec.family === 'hmac') {
     try {
+      // certificate-header: none — an HMAC signature, which has no certificate.
       const signed = signJwtAs(payload, alg, secret,
                                { header: options.header });
       log.debug("Leaving signJwtAsAsync(). HMAC, in process.");
@@ -2127,18 +2574,38 @@ function signJwtAsAsync(payload, alg, secret, opts) {
   log.debug("Leaving signJwtAsAsync(). " + alg + ".");
   return signingKeyForAsync(alg).then(function (signer) {
     return stsCrypto.signJwsAsync(payload, signer.key,
-      { algorithm: alg, keyid: signer.kid, session: options.session,
-        header: options.header });
+      { algorithm: alg, keyid: publishedKidFor(signer.kid),
+        session: options.session,
+        header: withCertificateHeader(options.header,
+                                      options.certificateHeader, alg,
+                                      signer.kid) });
   });
 }
 
-function signJwt(payload, context) {
+// `opts.certificateHeader` is `signJwtAs()`'s, for the RS256 key. It is a
+// THIRD parameter rather than a member of `context`, because `context` is
+// handed to the token registry whole and a header decision is not a fact about
+// the token anybody should find recorded there.
+//
+// `opts.header` is merged into the protected header, `signJwtAs()`'s option
+// for the same reason: RFC 9068 section 2.1 gives a JWT access token
+// `typ: "at+jwt"`, and `oauth2.js`'s `accessToken()` is the caller that asks
+// for it (2026-09-13). The refresh token signed here names none and keeps
+// `typ: "JWT"`. `alg` and `kid` stay `crypto.js`'s to set.
+function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
+  const certificateHeaderMembers = withCertificateHeader(
+    (opts && opts.header) || undefined,
+    opts && opts.certificateHeader, 'RS256', STS.kid);
+  const kid = publishedKidFor(STS.kid);
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
       'signing',
-              { header: { alg: 'RS256', kid: STS.kid }, payload: payload });
+              { header: Object.assign({ alg: 'RS256', kid: kid },
+                                      certificateHeaderMembers || {}),
+                payload: payload });
   const signed = stsCrypto.signJws(payload, STS.privateKey,
-                                   { algorithm: 'RS256', keyid: STS.kid });
+                                   { algorithm: 'RS256', keyid: kid,
+                                     header: certificateHeaderMembers });
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'after ' +
       'signing', signed);
   // Every token this service issues passes through here, which is what makes
@@ -2603,6 +3070,9 @@ module.exports = {
   allSigningKeysAsync: allSigningKeysAsync,
   signJwtAs: signJwtAs,
   signJwtAsAsync: signJwtAsAsync,
+  certificateHeaderFor: certificateHeaderFor,
+  publishedKidFor: publishedKidFor,
+  kidNamesKey: kidNamesKey,
   warmPqKeys: warmPqKeys,
   log: log,
   logArtifact: logArtifact,
@@ -2633,6 +3103,7 @@ module.exports = {
   bbsKeyPair: bbsKeyPair,
   walletBaseUrl: walletBaseUrl,
   parseBody: parseBody,
+  multipartParts: multipartParts,
   // The repeated-parameter reader beside it. See its header for why parseBody()
   // is not the place.
   bodyValues: bodyValues,
@@ -2656,6 +3127,7 @@ module.exports = {
   // a key read back from a blob publishes exactly what a generated one does.
   requestEncryptionKeyFor: requestEncryptionKeyFor,
   refreshTokenKeysFor: refreshTokenKeysFor,
+  requestObjectKeysFor: requestObjectKeysFor,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
   requestEncryptionJwkOf: requestEncryptionJwkOf,
   VCI_REQUEST_ENC_ALG: VCI_REQUEST_ENC_ALG,

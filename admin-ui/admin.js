@@ -90,10 +90,19 @@ const { log, xmlEscape, baseUrlOf, parseBody, b64uDecode, userFor,
         // The count as a word, for the refusal sentence at the bottom of
         // applicationsAction() — which is built from its own table now rather
         // than typed, because a typed one was short by an action.
-        numberWord } = require('../common/helpers');
+        numberWord,
+        // The parts of an upload, for the RFC 9728 import's file field: the
+        // one place this console needs a FILENAME, which parseBody() does not
+        // keep.
+        multipartParts } = require('../common/helpers');
 // The error-code registry. A leaf: it records which failure condition a
 // response reports, on the response object and never in its bytes.
 const errorCodes = require('../common/error_codes');
+// RFC 9728 protected resource metadata, for /admin/applications/new's import:
+// the realm's authorization servers a document is compared with, the redraw of
+// a loaded document after a refused create, and the document the third tab
+// leaves. A library that registers nothing.
+const resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 
 // ---------------------------------------------------------------------------
 // THE ACTION LAYER (2026-09-12), AND WHY THESE NAMES ARE STILL IN SCOPE HERE.
@@ -133,6 +142,10 @@ const adminActions = require('../admin-core/admin_actions');
 // asking which pages this console has is asking the console about itself.
 // ---------------------------------------------------------------------------
 const adminViews = require('../admin-core/admin_views');
+// Which endpoints each Protocols page lists. It reads every route-registering
+// module out of `require.cache` and never loads one, so requiring it here
+// moves nothing; see its header and `respond()`.
+const protocolEndpoints = require('../admin-core/protocol_endpoints');
 const pagingOf = adminViews.pagingOf;
 const pagingJson = adminViews.pagingJson;
 const pagedRows = adminViews.pagedRows;
@@ -156,6 +169,7 @@ const userinfoClaimsJson = adminViews.userinfoClaimsJson;
 const signalsJson = adminViews.signalsJson;
 const signalsState = adminViews.signalsState;
 const ssfJson = adminViews.ssfJson;
+const ssfDeadLettersJson = adminViews.ssfDeadLettersJson;
 const caepJson = adminViews.caepJson;
 const caepSessionsState = adminViews.caepSessionsState;
 const caepApplicationsState = adminViews.caepApplicationsState;
@@ -872,8 +886,9 @@ const SECTIONS = [
           // configuration, which is what a reader who has not decided what
           // they are looking at yet wants first.
           { path: '/admin/oauth2', label: 'OAuth 2.0 / OIDC settings',
-            blurb: 'The thirteen appconfig rows behind the authorization ' +
-                   'server: the issuer identifier, RFC 9700 mode, the ' +
+            blurb: 'The appconfig rows behind the authorization ' +
+                   'server: the issuer identifier, RFC 9700 mode and OAuth ' +
+                   '2.1 mode, the ' +
                    'registered redirect URIs and how a loopback one is ' +
                    'matched, Front-Channel Logout, the refresh token\'s idle ' +
                    'timeout and whether a sign-out revokes it, the client ' +
@@ -1034,35 +1049,6 @@ const SECTIONS = [
                    'is then checked against — a claim asked for and not ' +
                    'presented fails by name.' }
         ] },
-      { title: 'SPIFFE',
-        what: 'Workload identity: the trust domain, the entries that decide ' +
-              'what a workload gets, and the agents that ask for it.',
-        items: [
-          { path: '/admin/spiffe', label: 'SPIFFE',
-            blurb: 'The trust domain, the signing authority behind every ' +
-                   'X509-SVID and JWT-SVID, the four sockets the Workload ' +
-                   'API and the SPIRE Server API answer on, and how a caller ' +
-                   'at the Workload API is identified — the ' +
-                   '<code>transport:</code>, <code>endpoint:</code> and ' +
-                   '<code>peer:</code> selectors, and whether an ASSERTED ' +
-                   'one is believed. This service attests no workload and no ' +
-                   'node; that is the one thing on this page that no setting ' +
-                   'turns on.' },
-          { path: '/admin/spiffe/entries', label: 'Registration entries',
-            blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
-                   'issued against that entry carries. The store is the ' +
-                   'embedded directory under ' +
-                   '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
-                   '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
-                   '<code>BatchUpdateEntry</code> are three doors onto one ' +
-                   'entry, and nothing caches it — a change takes effect on ' +
-                   'the next SVID.' },
-          { path: '/admin/spiffe/agents', label: 'Agents',
-            blurb: 'Every agent that has attested, with what it was given ' +
-                   'and when. These entries are a RECORD rather than ' +
-                   'configuration — this service wrote all of it when the ' +
-                   'agent attested — which is why nothing on an agent is ' +
-                   'editable and the ban is the only control.' } ] },
       // A GROUP OF FIVE, and the heading names more than any one page does —
       // which is the test the SAML group set and the one SCIM fails, so SCIM
       // is ungrouped one row below and this is not. XACML here is a decision
@@ -1330,30 +1316,39 @@ const SECTIONS = [
                'browser was asked about attestation, the resident key or the ' +
                'attachment. Who holds a key is on that person\'s row under ' +
                '<a href="/admin/users">Users</a>.' },
-      { path: '/admin/kerberos', label: 'Kerberos',
-        blurb: 'The KDC\'s own settings: the realm, the two raw ports, the ' +
-               'clock skew and the deliberate clock OFFSET, the one password ' +
-               'every user account shares, the names that stay unknown so a ' +
-               'client can be shown a real KDC error, the long-term keys ' +
-               'behind krbtgt and the inter-realm trust, and whether a ' +
-               'ticket presented at <code>/authn/spnego</code> may start a ' +
-               'browser session at all. Most of them are restart-only: the ' +
-               'principal database is built from them when the process ' +
-               'starts.' },
-      // THE STORED KERBEROS KEYS (2026-09-12), directly beneath the settings
-      // page and ungrouped, for `/admin/tls/trust`'s reason: a `Kerberos` group
-      // heading over `Kerberos` would say the label twice. It is under
-      // Protocols and not Directory because the question it answers is what
-      // the KDC holds a key for, which is configuration of that protocol —
-      // even though both halves of the store are directory entries.
-      { path: '/admin/kerberos/principals', label: 'Kerberos principals',
-        blurb: 'Who this KDC holds a stored long-term key for: the directory ' +
-               'people whose keys were derived from their own password ' +
-               '(product mode) with the kvno and enctypes and whether the ' +
-               'keys still match the password, and the SERVICE principals an ' +
-               'operator created here with a random key. A create or a ' +
-               'rotate hands over an MIT keytab ONCE; no page ever shows a ' +
-               'key. Delete and clear controls need Admin Write.' },
+      // A GROUP OF TWO SINCE 2026-09-13, asked for by rcbj. The two pages were
+      // flat siblings — `Kerberos` and `Kerberos principals` — on the argument
+      // that a `Kerberos` heading over a `Kerberos` page would say the label
+      // twice. That test is about the LABELS, and renaming the settings page
+      // `Kerberos settings` (the `XACML settings` and `OAuth 2.0 / OIDC
+      // settings` shape) answers it; the heading now names more than either
+      // page does, which is the test a group has to pass. The stored keys are
+      // under Protocols and not Directory because the question they answer is
+      // what the KDC holds a key for, which is configuration of that protocol
+      // — even though both halves of the store are directory entries.
+      { title: 'Kerberos',
+        what: 'The KDC: its settings, and the long-term keys it holds for ' +
+              'people and services.',
+        items: [
+          { path: '/admin/kerberos', label: 'Kerberos settings',
+            blurb: 'The KDC\'s own settings: the realm, the two raw ports, ' +
+                   'the clock skew and the deliberate clock OFFSET, the one ' +
+                   'password every user account shares, the names that stay ' +
+                   'unknown so a client can be shown a real KDC error, the ' +
+                   'long-term keys behind krbtgt and the inter-realm trust, ' +
+                   'and whether a ticket presented at ' +
+                   '<code>/authn/spnego</code> may start a browser session ' +
+                   'at all. Most of them are restart-only: the principal ' +
+                   'database is built from them when the process starts.' },
+          { path: '/admin/kerberos/principals', label: 'Principals',
+            blurb: 'Who this KDC holds a stored long-term key for: the ' +
+                   'directory people whose keys were derived from their own ' +
+                   'password (product mode) with the kvno and enctypes and ' +
+                   'whether the keys still match the password, and the ' +
+                   'SERVICE principals an operator created here with a ' +
+                   'random key. A create or a rotate hands over an MIT ' +
+                   'keytab ONCE; no page ever shows a key. Delete and clear ' +
+                   'controls need Admin Write.' } ] },
       { path: '/admin/ldap', label: 'LDAP / LDAPS',
         blurb: 'The embedded directory\'s two raw sockets and the store ' +
                'behind them: the ports, the base DN every realm\'s subtree ' +
@@ -1413,6 +1408,71 @@ const SECTIONS = [
                'project\'s own PKI code, vendored byte-identical, so a ' +
                'certificate issued here and one issued on its PKI / X.509 ' +
                'page are built by one encoder.' },
+      // CERTIFICATE ENROLLMENT (2026-09-13): the three protocols a device, a
+      // person or an application asks the certificate authority above for a
+      // certificate over. Grouped, because the three pages answer one
+      // question for three wire formats; each is drawn by its own family
+      // module (acme/, est/, scep/) and each has a Monitoring twin.
+      { title: 'Certificate enrollment',
+        what: 'ACME, EST and SCEP issue from this realm\'s certificate ' +
+              'authority to the person or application that authenticated — ' +
+              'or, for a holder of Admin Write, to any entry in the realm — ' +
+              'and keep every certificate on the entry it names.',
+        items: [
+          // ===== ACME section row (acme/acme_admin.js) =====
+          { path: '/admin/acme', label: 'ACME',
+            blurb: 'Automatic Certificate Management Environment (RFC 8555): ' +
+                   'the directory, accounts bound by External Account ' +
+                   'Binding, orders, pre-validated authorizations and ' +
+                   'revocation, issuing from this realm\'s ACME Issuing CA.' },
+          // ===== EST section row (est/est_admin.js) =====
+          { path: '/admin/est', label: 'EST',
+            blurb: 'Enrollment over Secure Transport (RFC 7030): cacerts, ' +
+                   'simpleenroll, simplereenroll, serverkeygen and csrattrs, ' +
+                   'authenticated by a password, a client secret or a ' +
+                   'certificate this realm issued.' },
+          // ===== SCEP section row (scep/scep_admin.js) =====
+          { path: '/admin/scep', label: 'SCEP',
+            blurb: 'Simple Certificate Enrolment Protocol (RFC 8894): ' +
+                   'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
+                   'certificate, and single-use challenge passwords issued ' +
+                   'for one entry and one profile.' }
+        ] },
+      // SPIFFE, BESIDE THE OTHER CERTIFICATE PROTOCOLS (moved 2026-09-13, at
+      // rcbj's ask, from between Verifiable Credentials and XACML). An
+      // X509-SVID is a certificate this realm's SPIFFE Issuing CA issues
+      // (common/pki.js), so the reader who has just read PKI and the three
+      // enrollment protocols is looking for the fourth way this service
+      // hands out a certificate, and the TLS pages below verify them.
+      { title: 'SPIFFE',
+        what: 'Workload identity: the trust domain, the entries that decide ' +
+              'what a workload gets, and the agents that ask for it.',
+        items: [
+          { path: '/admin/spiffe', label: 'SPIFFE',
+            blurb: 'The trust domain, the signing authority behind every ' +
+                   'X509-SVID and JWT-SVID, the four sockets the Workload ' +
+                   'API and the SPIRE Server API answer on, and how a caller ' +
+                   'at the Workload API is identified — the ' +
+                   '<code>transport:</code>, <code>endpoint:</code> and ' +
+                   '<code>peer:</code> selectors, and whether an ASSERTED ' +
+                   'one is believed. This service attests no workload and no ' +
+                   'node; that is the one thing on this page that no setting ' +
+                   'turns on.' },
+          { path: '/admin/spiffe/entries', label: 'Registration entries',
+            blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
+                   'issued against that entry carries. The store is the ' +
+                   'embedded directory under ' +
+                   '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
+                   '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
+                   '<code>BatchUpdateEntry</code> are three doors onto one ' +
+                   'entry, and nothing caches it — a change takes effect on ' +
+                   'the next SVID.' },
+          { path: '/admin/spiffe/agents', label: 'Agents',
+            blurb: 'Every agent that has attested, with what it was given ' +
+                   'and when. These entries are a RECORD rather than ' +
+                   'configuration — this service wrote all of it when the ' +
+                   'agent attested — which is why nothing on an agent is ' +
+                   'editable and the ban is the only control.' } ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The two HTTPS listeners of this service\'s own — 8443, and ' +
                '9443 which asks for a client certificate — and the ' +
@@ -1824,47 +1884,127 @@ const SECTIONS = [
                '<a href="/admin/delegation/map">The picture</a> draws the ' +
                'same acts as a graph, laid out on the SERVER because this ' +
                'console runs no script.' },
-      // Beside Delegation and for the reason Delegation is beside the tokens
-      // it points at: this is an OBSERVATION and not a configuration. The
-      // CAEP settings are at /admin/caep under Protocols, and putting the
-      // table there with them would have buried the one thing on it no other
-      // page in this console can show — a session this service NO LONGER
-      // HOLDS, and what was said about it on its way out.
-      { path: '/admin/caep-sessions', label: 'CAEP sessions',
-        blurb: 'One row per session this service has held, ' +
-               '<strong>including the ones it no longer holds</strong>, with ' +
-               'the CAEP state it is in &mdash; established, presented, ' +
-               'revoked &mdash; its assurance level, its device compliance, ' +
-               'its risk level, and a count of every CAEP event type sent ' +
-               'about it. The register outliving the session is the point: ' +
-               'the session store forgets one the moment it is signed out, ' +
-               'so a row saying <code>revoked</code> is the only remaining ' +
-               'evidence that it existed and was revoked. Beside it, which ' +
-               'streams would take a CAEP event at all &mdash; because a ' +
-               'count of zero almost always means nobody asked for that ' +
-               'type, and SSF gives a receiver no other notice of that.' },
+      // THE SHARED SIGNALS PAGES ARE A GROUP (2026-09-14), and the fourth is
+      // what made them one. CAEP sessions, RISC accounts and Signals received
+      // were three loose rows in this section, each argued into Monitoring on
+      // its own; a dead-letter page made four answers to one family's "what
+      // happened", and four rows a reader has to recognise as one family is
+      // what a group is for. The group is filed where the pages were, beside
+      // Delegation. Where each page is filed is still decided by the question
+      // it answers: Protocols → Shared Signals is what the streams are
+      // CONFIGURED to do and holds every control on them; everything here is
+      // what happened. The paths did not move, so nothing but this table
+      // changed for the three that were already here.
+      { title: 'Shared Signals',
+        what: 'What this service has said about sessions and accounts, what ' +
+              'its own console has been told, and what it could not deliver ' +
+              '— in the realm being read.',
+        items: [
+          // Beside Delegation and for the reason Delegation is beside the
+          // tokens it points at: this is an OBSERVATION and not a
+          // configuration. The CAEP settings are at /admin/caep under
+          // Protocols, and putting the table there with them would have buried
+          // the one thing on it no other page in this console can show — a
+          // session this service NO LONGER HOLDS, and what was said about it on
+          // its way out.
+          { path: '/admin/caep-sessions', label: 'CAEP sessions',
+            blurb: 'One row per session this service has held, ' +
+                   '<strong>including the ones it no longer holds</strong>, ' +
+                   'with the CAEP state it is in &mdash; established, ' +
+                   'presented, revoked &mdash; its assurance level, its ' +
+                   'device compliance, its risk level, and a count of every ' +
+                   'CAEP event type sent about it. The register outliving ' +
+                   'the session is the point: the session store forgets one ' +
+                   'the moment it is signed out, so a row saying ' +
+                   '<code>revoked</code> is the only remaining evidence ' +
+                   'that it existed and was revoked. Beside it, which ' +
+                   'streams would take a CAEP event at all &mdash; because ' +
+                   'a count of zero almost always means nobody asked for ' +
+                   'that type, and SSF gives a receiver no other notice of ' +
+                   'that.' },
 
-      // And the ACCOUNT register beside the session one. Two pages rather
-      // than two tables on one, because a session and an account are not the
-      // same kind of thing: a session begins, is used and ends and there are
-      // many per person, and an account IS the person and outlives every
-      // session on it. One page would have had a first column that was
-      // sometimes one and sometimes the other.
-      { path: '/admin/risc-accounts', label: 'RISC accounts',
-        blurb: 'One row per account this service has been told anything ' +
-               'about, <strong>including accounts that no longer ' +
-               'exist</strong>, with the three states RISC tracks: the ' +
-               'lifecycle (active, disabled, purged), the opt-out state, and ' +
-               'whether a credential has been reported compromised. They ' +
-               'move independently &mdash; an account can be opted out and ' +
-               'perfectly healthy &mdash; which is why they are three ' +
-               'columns rather than one word. The register outliving the ' +
-               'account is starker than the CAEP one outliving a session: a ' +
-               'purged account is gone from the directory entirely, so the ' +
-               'row is the only remaining evidence that anybody was told. ' +
-               'Beside the counts, the events this transmitter built and ' +
-               'deliberately did NOT send, because the account had opted ' +
-               'out.' },
+          // And the ACCOUNT register beside the session one. Two pages rather
+          // than two tables on one, because a session and an account are not
+          // the same kind of thing: a session begins, is used and ends and
+          // there are many per person, and an account IS the person and
+          // outlives every session on it. One page would have had a first
+          // column that was sometimes one and sometimes the other.
+          { path: '/admin/risc-accounts', label: 'RISC accounts',
+            blurb: 'One row per account this service has been told anything ' +
+                   'about, <strong>including accounts that no longer ' +
+                   'exist</strong>, with the three states RISC tracks: the ' +
+                   'lifecycle (active, disabled, purged), the opt-out ' +
+                   'state, and whether a credential has been reported ' +
+                   'compromised. They move independently &mdash; an account ' +
+                   'can be opted out and perfectly healthy &mdash; which is ' +
+                   'why they are three columns rather than one word. The ' +
+                   'register outliving the account is starker than the CAEP ' +
+                   'one outliving a session: a purged account is gone from ' +
+                   'the directory entirely, so the row is the only ' +
+                   'remaining evidence that anybody was told. Beside the ' +
+                   'counts, the events this transmitter built and ' +
+                   'deliberately did NOT send, because the account had ' +
+                   'opted out.' },
+
+          // THE RECEIVER'S PAGE, after the transmitter's two registers. The
+          // Shared Signals settings, the streams and every other receiver's
+          // stream are at Protocols → Shared Signals, which is where somebody
+          // goes to change what arrives here rather than to read it.
+          //
+          // **IT IS THE ONE PAGE IN THIS CONSOLE ABOUT SOMETHING THIS CONSOLE
+          // WAS SENT.** Every other page here reads a store this process
+          // holds; this one reads a queue that was delivered to it over HTTP,
+          // signed, addressed to it by name, which it verified. That is the
+          // whole difference between a console showing its own notes and an
+          // application that is a receiver.
+          { path: '/admin/signals', label: 'Signals received',
+            blurb: 'Every Security Event Token this console has been ' +
+                   'DELIVERED, in the realm being read. This console is a ' +
+                   'registered Shared Signals receiver with a stream of its ' +
+                   'own (<code>sts-admin-console</code>), seeded at ' +
+                   'startup, asking for every CAEP and every RISC event ' +
+                   'type — so what is on this page arrived over RFC 8935 ' +
+                   'push at <code>/admin/signals/receive</code>, carrying ' +
+                   'the stream\'s own bearer token, and was verified ' +
+                   'against this service\'s signing key before it was ' +
+                   'recorded. Each row opens out into the SET as it ' +
+                   'arrived. <strong>An empty page has five causes and only ' +
+                   'one of them is &ldquo;nothing has ' +
+                   'happened&rdquo;</strong>, so the ones that apply are ' +
+                   'named at the top rather than left to be guessed: the ' +
+                   'transmitter off, the receivers off, the stream deleted, ' +
+                   '<code>ssf.pushDelivery</code> off, or a vocabulary ' +
+                   'turned off under it. What a PERSON sees about ' +
+                   'themselves is the same delivery to a different ' +
+                   'receiver, at <a href="/portal/signals">the user ' +
+                   'portal</a>.' },
+
+          // LAST IN THE GROUP, because it is what the other three cannot show:
+          // every one of them is full and correct while a SET is failing to
+          // reach its receiver. Its own page rather than a table on
+          // /admin/ssf, which already draws each stream's letters in that
+          // stream's card: the questions somebody arrives with during an
+          // incident — how many, since when, why, which streams, still
+          // happening? — are counts over every stream at once. Read-only; the
+          // Revive and Drop controls stay on the stream's card, linked from
+          // each row. `ssf/ssf_dead_letter_report.js` computes it.
+          { path: '/admin/ssf/dead-letters', label: 'Dead letters',
+            blurb: 'Every Security Event Token this realm\'s transmitter ' +
+                   'could not deliver and is still holding, counted: how ' +
+                   'many, <strong>when</strong> (a timeline over ' +
+                   '<code>ssf.deadLetterRetentionS</code>), <strong>why' +
+                   '</strong> &mdash; a push that failed, the push backlog ' +
+                   'full, a stream declared dead, a SET sent to a dead ' +
+                   'stream &mdash; by error code, by the receiver\'s HTTP ' +
+                   'status and by event type, and which streams are dead, ' +
+                   'half-open or failing. Then the letters themselves, ' +
+                   'searched and paged, without their tokens. Two things on ' +
+                   'it are <strong>per process</strong> and say so: the push ' +
+                   'cap, which every realm shares, and the recent sweeps. ' +
+                   'Nothing here resends or drops anything; those controls ' +
+                   'are on each stream at ' +
+                   '<a href="/admin/ssf">Protocols &rarr; Shared Signals</a>.' }
+        ] },
 
       // Beside Delegation and not inside it, and the argument is the one both
       // of that page's pictures rest on: every row there is about two
@@ -1926,6 +2066,41 @@ const SECTIONS = [
                'revocations, failed key proofs, introspections and ' +
                'registrations, and the GNAP error codes it was answered ' +
                'with. No reset: the durable record is the Audit log.' },
+      // CERTIFICATE ENROLLMENT TRAFFIC (2026-09-13): filed here by the
+      // question each page answers, beside the other protocol traffic pages.
+      // ===== ACME monitoring row =====
+      { path: '/admin/acme/monitor', label: 'ACME enrollments',
+        blurb: 'What the ACME server has done in this realm: requests by ' +
+               'operation, certificates issued and revoked, refusals by ' +
+               'error code, the profiles asked for, the accounts and EAB ' +
+               'keys that asked, and the most recent requests.' },
+      // ===== EST monitoring row =====
+      { path: '/admin/est/monitor', label: 'EST enrollments',
+        blurb: 'What the EST server has done in this realm: requests by ' +
+               'operation, certificates issued (and server-generated keys), ' +
+               'refusals by error code, the profiles asked for, who ' +
+               'authenticated and how, and the most recent requests.' },
+      // ===== SCEP monitoring row =====
+      { path: '/admin/scep/monitor', label: 'SCEP enrollments',
+        blurb: 'What the SCEP server has done in this realm: GetCACaps, ' +
+               'GetCACert and PKIOperation counts, certificates issued, ' +
+               'challenges created and redeemed, refusals by error code and ' +
+               'failInfo, and the most recent requests.' },
+      // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
+      // not under Protocols beside `/admin/oauth2` for the XACML monitor's
+      // reason: that page is what the server is CONFIGURED to do and this is
+      // what it has DONE. Drawn by `oauth-oidc/oauth2_monitor_admin.js`; a
+      // console page is a `path` and a `label` in this table whoever builds
+      // the body. It is in SECTIONS, one per mechanism, so the next OAuth
+      // mechanism counted is a section of it rather than a row here.
+      { path: '/admin/oauth2/monitor', label: 'OAuth 2.0 / OIDC activity',
+        blurb: 'What the authorization server has done in this realm, one ' +
+               'section per mechanism. RFC 9126 pushed authorization ' +
+               'requests first: pushes and refusals, request_uris read, ' +
+               'spent, expired and refused at the authorization endpoint, ' +
+               'per client with the OAuth errors returned — and every ' +
+               'pushed request the store still holds, with a Withdraw ' +
+               'button on each. No reset.' },
       // AFTER THE XACML MONITOR AND BEFORE SIGN-OUT, and the pair either
       // side is the argument again: the page above it counts authorization
       // DECISIONS and this one counts PROVISIONING CALLS, and both are the
@@ -1971,41 +2146,6 @@ const SECTIONS = [
       // be filing it under the wrong one. It is an ACTION page in a section
       // whose heading says "what this service has done" — which /admin/tokens
       // already is, since revoking is a control and that page has four of them.
-      // AFTER THE SCIM METRICS AND BEFORE SIGN-OUT, and the neighbours are the
-      // argument a third time: the two pages above it count DECISIONS and
-      // PROVISIONING CALLS, and this one lists what this console was TOLD.
-      // All three are traffic rather than configuration, which is what this
-      // section's heading says — and the Shared Signals settings, the streams
-      // and every other receiver's stream are at
-      // <a href="/admin/ssf">Protocols &rarr; Shared Signals</a>, which is
-      // where somebody goes to change what arrives here rather than to read
-      // it.
-      //
-      // **IT IS THE ONE PAGE IN THIS CONSOLE ABOUT SOMETHING THIS CONSOLE
-      // WAS SENT.** Every other page here reads a store this process holds;
-      // this one reads a queue that was delivered to it over HTTP, signed,
-      // addressed to it by name, which it verified. That is the whole
-      // difference between a console showing its own notes and an
-      // application that is a receiver.
-      { path: '/admin/signals', label: 'Signals received',
-        blurb: 'Every Security Event Token this console has been DELIVERED, ' +
-               'in the realm being read. This console is a registered ' +
-               'Shared Signals receiver with a stream of its own ' +
-               '(<code>sts-admin-console</code>), seeded at startup, asking ' +
-               'for every CAEP and every RISC event type — so what is on ' +
-               'this page arrived over RFC 8935 push at ' +
-               '<code>/admin/signals/receive</code>, carrying the stream\'s ' +
-               'own bearer token, and was verified against this service\'s ' +
-               'signing key before it was recorded. Each row opens out into ' +
-               'the SET as it arrived. <strong>An empty page has five causes ' +
-               'and only one of them is &ldquo;nothing has ' +
-               'happened&rdquo;</strong>, so the ones that apply are named ' +
-               'at the top rather than left to be guessed: the transmitter ' +
-               'off, the receivers off, the stream deleted, ' +
-               '<code>ssf.pushDelivery</code> off, or a vocabulary turned ' +
-               'off under it. What a PERSON sees about themselves is the ' +
-               'same delivery to a different receiver, at ' +
-               '<a href="/portal/signals">the user portal</a>.' },
       { path: '/admin/logout', label: 'Sign-out',
         blurb: 'Name an identity to see everything this service is still ' +
                'holding for them — every browser sign-on session, every ' +
@@ -2180,6 +2320,22 @@ const SECTIONS = [
                '— which is the point, since a role no test can grant is a ' +
                'role no test can exercise. While NEITHER group has a member, ' +
                'anybody who signs in holds both.' },
+      // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), beside Admin roles and
+      // for the reason it is in this section at all: the question it answers
+      // is whether this service is set up to serve the debugger and to whom,
+      // and "to whom" is the two roles on the page above. `debugger/
+      // debugger_admin.js` draws it.
+      { path: '/admin/debugger', label: 'Protocol debugger',
+        blurb: 'The identity protocol debugger this service can serve on a ' +
+               'listener of its own: whether it is embedded, the port and ' +
+               'origin it answers on, the api process it forwards /api to ' +
+               'and what that process may dial, and its settings. It is ' +
+               'signed in to through this service\'s own authorization ' +
+               'server as <code>sts-debugger-ui</code>, and its api needs an ' +
+               'access token carrying ' +
+               '<code>urn:sts:debugger-api:debugger</code> — issued to ' +
+               'console administrators and nobody else. There is no setting ' +
+               'that opens it.' },
       { path: '/admin/sts-metadata', label: 'Service metadata',
         blurb: 'Every endpoint this process registered, read off the LIVE ' +
                'express router, with the specification each one claims and ' +
@@ -2364,6 +2520,11 @@ const SETTING_HOMES = [
   { group: 'Trust realms', pages: ['/admin/realms'] },
   { group: 'OAuth 2.0 / OIDC', pages: ['/admin/oauth2'] },
   { group: 'Admin console', pages: ['/admin/rbac'] },
+  // The embedded protocol debugger's rows are drawn on its own page, which is
+  // also where its listener and api process are reported: a setting like
+  // `debugger.port` beside the port it actually bound is the one reading that
+  // answers "why is it not where I set it".
+  { group: 'Protocol debugger', pages: ['/admin/debugger'] },
   // THE MANAGEMENT API'S THREE SETTINGS SIT BESIDE THE CONSOLE'S, and that is
   // an argument rather than a convenience. /admin/rbac is the page that
   // answers "who may reach the administrative surfaces of this service"; the
@@ -2482,6 +2643,10 @@ const SETTING_HOMES = [
   // ceremony, which had been literals in a string in `authn/authn.js`.
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
   { group: 'GNAP', pages: ['/admin/gnap'] },
+  // ===== certificate enrollment setting homes (2026-09-13) =====
+  { group: 'ACME', pages: ['/admin/acme'] },
+  { group: 'EST', pages: ['/admin/est'] },
+  { group: 'SCEP', pages: ['/admin/scep'] },
   { group: 'WebAuthn', pages: ['/admin/webauthn'] },
   // THE THIRD (2026-09-10), and it is a mechanism like the two above it rather
   // than a policy about them — which is why it gets a group and a page of its
@@ -2489,6 +2654,11 @@ const SETTING_HOMES = [
   // for EITHER of those two, so filing its settings under one of them would
   // put them where half the readers would not look.
   { group: 'Backup codes', pages: ['/admin/backup-codes'] },
+  // A POLICY ABOUT THE TWO MECHANISMS ABOVE (2026-09-13), and drawn on BOTH of
+  // their pages — `saml.issuer`'s arrangement — because either one satisfies
+  // it and a reader of either page must see that it is in force.
+  { group: 'Second-factor requirement',
+    pages: ['/admin/totp', '/admin/webauthn'] },
   { group: 'Group claim', pages: ['/admin/groups'] },
   { group: 'Audit log', pages: ['/admin/audit'] },
   { group: 'Delegation', pages: ['/admin/delegation'] },
@@ -2638,9 +2808,27 @@ const LIST_PARAMS = {
   // GNAP's two lists and the grant state filter (gnap/gnap_admin.js).
   '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage'],
   '/admin/gnap/monitor': ['per', 'page'],
+  // ===== certificate enrollment list params (2026-09-13) =====
+  '/admin/acme': ['per', 'certificatesPage', 'credentialsPage',
+                  'accountsPage', 'hostNamesPage'],
+  '/admin/acme/monitor': ['per', 'page'],
+  '/admin/est': ['per', 'certificatesPage'],
+  '/admin/est/monitor': ['per', 'page'],
+  '/admin/scep': ['per', 'certificatesPage', 'credentialsPage'],
+  '/admin/scep/monitor': ['per', 'page'],
+  // The pushed-request filter and both lists' paging (2026-09-13). The page
+  // rebuilds a Withdraw's `back` from its own copy of this list, because
+  // `listViewFromBack()` is not exported; the two must name the same keys.
+  '/admin/oauth2/monitor': ['state', 'client_id', 'per', 'page',
+                            'clientsPage'],
   '/admin/spiffe/entries': ['q', 'origin', 'per', 'page'],
   '/admin/spiffe/agents': ['q', 'per', 'page'],
-  '/admin/rbac': ['q', 'role', 'per', 'page'],
+  // `personq` and `personfrom` are the grant pane's search (2026-09-13), so a
+  // grant or a Revoke lands back on the results the reader was working
+  // through. `person` is deliberately NOT here: it is the one they picked, and
+  // carrying it through the grant it was picked FOR would redraw a grant form
+  // for somebody who already holds the role.
+  '/admin/rbac': ['q', 'role', 'personq', 'personfrom', 'per', 'page'],
   // `family` rather than `q`: this page's filter is a family and there are ten
   // of them, so it is chosen by clicking a row of the summary table rather than
   // typed. `user` is deliberately NOT here — it is the drill-down's own leaf,
@@ -2687,6 +2875,12 @@ const LIST_PARAMS = {
   // read what came back and pressed Clear should not be returned to an
   // unfiltered page 1 of a list that is now empty for two different reasons.
   '/admin/signals': ['sigq', 'per', 'receivedPage'],
+  // The dead letters' two exact narrowings, their search and their paging
+  // (2026-09-14). No control on that page posts, so what spends these is the
+  // links between its own tables — a stream row's letters, a cause's letters
+  // — each of which keeps the rest of the view as the reader left it.
+  '/admin/ssf/dead-letters': ['dlq', 'dlstream', 'dlcause', 'per',
+                              'lettersPage'],
   // The truststore's one list (2026-09-12). Spent by the Remove button's
   // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
   // last page there is — rather than on page 1.
@@ -3135,6 +3329,19 @@ function gateBanner(gate) {
   }
   const who = '<code>' + esc(info.username || '(nobody)') + '</code>';
   const elsewhere = foreignSessionNote(info);
+  if (info.open && info.bootstrap && info.bootstrap.seeded) {
+    log.debug("Leaving gateBanner(). Open until the bootstrap administrator " +
+              "signs in.");
+    return warn('<strong>Signed in as ' + who + ', and holding both roles ' +
+      'because <code>' + esc(info.bootstrap.username) + '</code> has not ' +
+      'signed in to this console yet.</strong> Until this service\'s ' +
+      'bootstrap administrator first signs in here, anyone who signs in has ' +
+      'the whole console (<code>admin.openWhenEmpty</code>). From that ' +
+      'moment only members of <code>' + esc(info.readGroup) + '</code> and ' +
+      '<code>' + esc(info.writeGroup) + '</code> may use it — so grant ' +
+      'yourself a role on <a href="/admin/rbac">Admin roles</a> first if you ' +
+      'will need one.' + elsewhere);
+  }
   if (info.open) {
     log.debug("Leaving gateBanner(). The roster is empty.");
     return warn('<strong>Signed in as ' + who + ', and holding both roles ' +
@@ -3155,7 +3362,11 @@ function gateBanner(gate) {
     // on the refusal page itself, which IS drawn.
     log.debug("Leaving gateBanner(). The roster is empty and closed.");
     return '<div class="err"><strong>Nobody can use this console.</strong> ' +
-      '<code>admin.openWhenEmpty</code> is off and no role has a member. ' +
+      'No role has a member, and ' +
+      (info.bootstrap && info.bootstrap.seeded && info.bootstrap.claimedAt
+        ? 'the bootstrap administrator has already signed in, which closed ' +
+          'the open window. '
+        : '<code>admin.openWhenEmpty</code> is off. ') +
       '<code>POST /admin-api/rbac/grant</code> is the way back in — it takes ' +
       'an access token carrying <code>admin:write</code> rather than this ' +
       'console\'s session, which is why it still works when this page ' +
@@ -3712,10 +3923,19 @@ function runtimeFacts() {
                                                      .split(','))
       .map(function (one) { return String(one).trim(); })
       .filter(Boolean);
-    facts.process = count > 0 && dispatch.length
+    // AND THE HOSTED-SURFACE POOL (2026-09-13), which is where this page is
+    // drawn from whenever there is one — so "this page from worker N" names
+    // which pool N is in, or it would read as a protocol worker.
+    const surfaceCount =
+      parseInt(config.value('workers.surfaceCount'), 10) || 0;
+    const pool = process.env.STS_REQUEST_WORKER_POOL === 'surfaces'
+      ? 'hosted-surface ' : '';
+    facts.process = (count > 0 || surfaceCount > 0) && dispatch.length
       ? 'dispatch (' + count + ' request worker' + (count === 1 ? '' : 's') +
+        (surfaceCount
+          ? ' + ' + surfaceCount + ' for the console and portal' : '') +
         (process.env.STS_REQUEST_WORKER
-          ? '; this page from worker ' + process.pid : '') + ')'
+          ? '; this page from ' + pool + 'worker ' + process.pid : '') + ')'
       : 'single process';
   } catch (e) {
     log.debug("Caught in runtimeFacts(): " + ((e && e.message) || e));
@@ -4049,7 +4269,16 @@ function page(title, active, inner, up, gate, req) {
     '14px;min-width:9rem;background:#fbfbfd}.tile ' +
     '.n{font-size:1.5em;font-weight:700;color:#12107c;line-height:1.1}.tile ' +
     '.l{font-size:.74em;color:#666;text-transform:uppercase;' +
-    'letter-spacing:.03em}table{border-collapse:collapse;width:100%;' +
+    'letter-spacing:.03em}' +
+    // THE FIRST CHART IN THIS CONSOLE (/admin/ssf/dead-letters, 2026-09-14).
+    // An inline SVG laid out on the server, so it needs no script; this only
+    // lets it shrink with the card, and lays its legend out as one wrapping
+    // row of swatch-and-label pairs whose text stays in ink.
+    '.chart svg{display:block;width:100%;height:auto;max-width:780px}' +
+    '.legend{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.8em;' +
+    'color:#333;margin:.3em 0 .9em}.legend span{display:inline-flex;' +
+    'align-items:center;gap:6px}code.ec{white-space:nowrap}' +
+    'table{border-collapse:collapse;width:100%;' +
     'margin:.4rem 0 .9rem;font-size:.8em}th,td{border:1px solid ' +
     '#e2e2ea;padding:.3rem .5rem;text-align:left;vertical-align:top}' +
     'th{background:#f0f0f5;font-weight:600}tr:nth-child(even) ' +
@@ -4505,7 +4734,44 @@ function page(title, active, inner, up, gate, req) {
     'form.newapp:has(input[name="protocol"]:checked) .pf-hint{display:none}}' +
     '.pf-hint{color:#555;font-size:.85em;background:#fbfbfd;border:1px ' +
     'dashed #d5d5dd;border-radius:8px;padding:10px 12px;margin:.6em ' +
-    '0}</style></head><body><div class="shell">' +
+    '0}' +
+    // ---------------------------------------------------------------------
+    // /admin/applications/new's RFC 9728 IMPORT (2026-09-13): a checkbox that
+    // shows the three ways to give a document, and a pane of three TABS over
+    // what was read. Neither needs a script, and neither needs `:has()`: both
+    // are the general sibling combinator, which every browser has, so there is
+    // no fallback to argue. The checkbox and the three radio buttons come
+    // FIRST in their containers precisely so that `~` can reach what follows.
+    //
+    // THE RADIO BUTTONS POST NOTHING. Each carries `form=` naming a form id no
+    // page has, so its form owner is null: the three still make one group,
+    // because a radio group is the name within one owner, and none of them is
+    // a field of the create form around it. A hidden panel's inputs ARE posted
+    // — `display:none` does not take a control out of a form — which is what
+    // lets the third tab be edited and then submitted from the first.
+    '.prm-source{display:none;margin:.6em 0}' +
+    '.prm-use:checked~.prm-source{display:block}' +
+    '.prm-tabs{margin:1em 0;border:1px solid #d5d5dd;border-radius:8px;' +
+    'background:#fff}' +
+    '.prm-tabs>input[type=radio]{position:absolute;opacity:0;width:1px;' +
+    'height:1px;margin:0}' +
+    '.prm-tablist{display:flex;flex-wrap:wrap;gap:4px;padding:6px 6px 0;' +
+    'border-bottom:1px solid #d5d5dd;background:#f6f6fa;' +
+    'border-radius:8px 8px 0 0}' +
+    '.prm-tablist label{padding:6px 14px;border:1px solid transparent;' +
+    'border-bottom:0;border-radius:6px 6px 0 0;cursor:pointer;color:#12107c}' +
+    '.prm-panel{display:none;padding:12px;overflow-x:auto}' +
+    '.prm-panel pre{white-space:pre-wrap;word-break:break-all;margin:0}' +
+    ['json', 'table', 'fields'].map(function (tab) {
+      return '#prm-tab-' + tab + ':checked~.prm-panel-' + tab +
+             '{display:block}' +
+             '#prm-tab-' + tab + ':checked~.prm-tablist label[for="prm-tab-' +
+             tab + '"]{background:#fff;border-color:#d5d5dd;font-weight:600;' +
+             'margin-bottom:-1px}' +
+             '#prm-tab-' + tab + ':focus-visible~.prm-tablist ' +
+             'label[for="prm-tab-' + tab + '"]{outline:2px solid #12107c}';
+    }).join('') +
+    '</style></head><body><div class="shell">' +
     sideColumn(active, up, req, gate) +
     '<div class="main"><div class="card">' +
     // THE HEAD ROW: the page's title, and the controls that are on every page
@@ -4597,9 +4863,101 @@ function withCsrf(req, html) {
                               function (whole) { return whole + field; });
 }
 
+// ---------------------------------------------------------------------------
+// THE ENDPOINTS OF THIS REALM, ON EVERY PROTOCOLS PAGE (2026-09-13).
+//
+// Drawn HERE, in the one function every page goes out through, rather than by
+// forty pages each remembering to: `admin-core/protocol_endpoints.js` says
+// which routes a page lists and this adds them to what the page answers. The
+// JSON gets `protocolEndpoints` and the HTML gets a section shaped like GNAP's,
+// which was the model — `mgmt-api/admin_api.js` adds the same member to the
+// operation mirroring the page, so the two surfaces answer alike.
+//
+// **ONLY WHERE THE REQUEST IS FOR THAT PAGE.** `active` names the tab, and a
+// page drawn under another page's tab (the keytab under Principals, a PEP's
+// listener certificate under Remote PEPs) has a path of its own; and a
+// drill-down (`up`) is about one thing on the page, so it keeps the member in
+// its JSON and goes without the section, which would push the thing it is
+// about below forty rows of the family's addresses.
+//
+// **PLACED BEFORE THE PAGE'S FIRST HEADING**, which is where GNAP's is: after
+// the lead notes and warnings that say what the page is, before the first
+// section of what it holds. A page with no heading gets it at the foot.
+// ---------------------------------------------------------------------------
+function endpointsSection(rows) {
+  log.debug("Entering endpointsSection(). rows=" + rows.length);
+  const body = rows.length ? rows.map(function (row) {
+    const how = row.methods.length ? row.methods.join(', ') :
+                (row.transport || '');
+    return '<tr><th>' + esc(row.name) + '</th><td><code>' + esc(row.url) +
+      '</code>' + (how ? ' <span class="sub">' + esc(how) + '</span>' : '') +
+      (row.registered === false ?
+       ' <span class="sub">— not registered in this process</span>' : '') +
+      (row.listening === false ?
+       ' <span class="sub">— not listening</span>' : '') + '</td></tr>';
+  }).join('') : '<tr><td class="sub">None in this realm right now — ' +
+                'nothing of this kind is configured or listening ' +
+                'here.</td></tr>';
+  log.debug("Leaving endpointsSection().");
+  return '<h2>Endpoints</h2><table class="kv">' + body + '</table>';
+}
+
+function withProtocolEndpoints(req, json, active, html, up) {
+  log.debug("Entering withProtocolEndpoints().");
+  const rows = req.path === active ?
+               protocolEndpoints.forPage(req, active) : null;
+  if (!rows || !json || typeof json !== 'object' || Array.isArray(json)) {
+    log.debug("Leaving withProtocolEndpoints(). Not a listed page.");
+    return { json: json, html: html };
+  }
+  const out = { json: Object.assign({}, json, { protocolEndpoints: rows }),
+                html: html };
+  // A drill-down's `up` is `upTo()`'s object. The four XACML sub-pages pass
+  // their section's path as a STRING on the page itself, which is not a
+  // drill-down and must not lose the section.
+  if (!up || typeof up !== 'object') {
+    const section = endpointsSection(rows);
+    const body = String(html || '');
+    const at = body.indexOf('<h2');
+    out.html = at < 0 ? body + section :
+               body.slice(0, at) + section + body.slice(at);
+  }
+  log.debug("Leaving withProtocolEndpoints(). " + rows.length + " row(s).");
+  return out;
+}
+
+// The two directions the table and `SECTIONS` can disagree in: a Protocols
+// page with neither a row nor an exemption, and a row or an exemption naming
+// a page that is not under Protocols (what a rename or a move leaves behind).
+// `tests/protocol_endpoints.js` fails on either; nothing else can see a page
+// appear.
+function protocolEndpointDrift() {
+  log.debug("Entering protocolEndpointDrift().");
+  const underProtocols = NAV.filter(function (row) {
+    return row.section === 'Protocols';
+  }).map(function (row) { return row.path; });
+  const listed = protocolEndpoints.pages()
+                                  .concat(Object.keys(
+                                      protocolEndpoints.exempt()));
+  const drift = {
+    unlisted: underProtocols.filter(function (path) {
+      return listed.indexOf(path) < 0;
+    }),
+    stray: listed.filter(function (path) {
+      return underProtocols.indexOf(path) < 0;
+    })
+  };
+  log.debug("Leaving protocolEndpointDrift(). " + drift.unlisted.length +
+            " unlisted, " + drift.stray.length + " stray.");
+  return drift;
+}
+
 function respond(req, res, json, title, active, html, up) {
   log.debug("Entering respond(). title=" + title);
   res.set('Cache-Control', 'no-store');
+  const listed = withProtocolEndpoints(req, json, active, html, up);
+  json = listed.json;
+  html = listed.html;
   if (String(req.query.format || '') === 'json') {
     res.status(200)
        .type('application/json')
@@ -5008,7 +5366,16 @@ app.use('/admin', function (req, res, next) {
     return;
   }
 
-  const state = gateStateFor(req);
+  let state = gateStateFor(req);
+  // THE BOOTSTRAP ADMINISTRATOR'S ARRIVAL (2026-09-13) closes the window in
+  // which every signed-in person may use this console — see admin_rbac.js's
+  // noteConsoleSignIn(). Asked before the decision below, so the request that
+  // closes it is already decided under the enforced roster.
+  if (state.session &&
+      rbac.noteConsoleSignIn(state.username, state.session,
+                             realms.DEFAULT_ID)) {
+    state = gateStateFor(req);
+  }
 
   if (!state.session) {
     if (wantsJson(req)) {
@@ -12630,7 +12997,9 @@ function delegationEdgeRow(edge, lookOf) {
 // the first twenty with the total beside them, which is what the select showed
 // in one line rather than in a column.
 // ---------------------------------------------------------------------------
-const CHOOSER_HITS = 20;
+// The number itself lives in admin-core/admin_views.js since 2026-09-13, so
+// that /admin-api/rbac's `candidates` pages by the same twenty the pane does.
+const CHOOSER_HITS = adminViews.CHOOSER_HITS;
 
 
 
@@ -16316,6 +16685,147 @@ function userCredentialsSection(key, state, gate, back) {
       : '');
 }
 
+// ---------------------------------------------------------------------------
+// RESET A PASSWORD, ISSUE A RESET LINK, DISABLE PASSKEYS, DISABLE OR REQUIRE
+// MFA — ON THE PERSON'S OWN PAGE (2026-09-13).
+//
+// Six controls over six actions on `usersAction()`
+// (`admin-core/admin_actions.js` argues each), posted to `/admin/users` with
+// `from=user` so the reader lands back here, and mirrored at
+// `POST /admin-api/users/{action}`.
+//
+// **A RESET ANSWERS WITH A PAGE**, because what it hands back exists once — see
+// the users action endpoint. **EVERY CONTROL IS DRAWN FOR ADMIN WRITE ONLY**,
+// the rule the two sections above follow: a button whose only outcome is the
+// gate's refusal is a control that can only fail. And a control that cannot do
+// anything for THIS person is not drawn at all — no Disable passkeys button for
+// somebody with no primary key — with a sentence saying why it is absent.
+// ---------------------------------------------------------------------------
+function userCredentialControlsSection(key, factors, gate, back) {
+  log.debug("Entering userCredentialControlsSection(). key=" + key);
+  const heading = '<h2 id="credential-controls">Password and second-factor ' +
+                  'controls</h2>';
+  if (!factors) {
+    log.debug("Leaving userCredentialControlsSection(). No store.");
+    return heading + note('No credential store is installed in this process, ' +
+      'so there is nothing here to reset.');
+  }
+  const requirement = factors.mfaRequirement ||
+    { required: false, byUser: false, byRealm: false };
+  const link = factors.passwordResetLink;
+  const holdsSecond = factors.totp || factors.mfaKeys > 0 ||
+    !!(factors.backupCodes && factors.backupCodes.present);
+  const state = '<table class="key"><tr><th>What</th><th>Now</th></tr>' +
+    '<tr><th>Password</th><td>' + (factors.password
+      ? '<span class="state-valid">set</span>'
+      : '<span class="state-none">none</span>') +
+    (factors.passwordChangeRequired
+      ? ' — <strong>must be changed at their next sign-in</strong>' : '') +
+    '</td></tr><tr><th>Password reset link</th><td>' + (link
+      ? (link.expired
+          ? '<span class="state-expired">issued and expired</span>'
+          : '<span class="state-valid">outstanding</span> until ' +
+            esc(new Date(link.expires).toISOString()))
+      : '<span class="state-none">none</span>') + '</td></tr>' +
+    '<tr><th>Passwordless sign-in</th><td>' + (factors.primaryKeys > 0
+      ? '<span class="state-valid">' + esc(String(factors.primaryKeys)) +
+        '</span> primary security key(s)'
+      : '<span class="state-none">none</span>') + '</td></tr>' +
+    '<tr><th>Second factor required</th><td>' + (requirement.required
+      ? '<strong>yes</strong> — ' + [requirement.byUser ? 'on this account'
+          : '', requirement.byRealm ? 'by the realm (<code>authn.mfaRequired' +
+          '</code>)' : ''].filter(Boolean).join(' and ') +
+        (factors.mfaRequired ? '; they hold one'
+          : '; <strong>they hold none, so their next sign-in asks them to ' +
+            'enrol one</strong>')
+      : '<span class="state-none">no</span>') + '</td></tr></table>';
+  const signalsNote = note('<strong>Every control below says what it did ' +
+    'over Shared Signals</strong>: a CAEP <code>credential-change</code> for ' +
+    'each credential set, revoked or removed; RISC ' +
+    '<code>account-credential-change-required</code> for a reset or a reset ' +
+    'link; RISC <code>recovery-information-changed</code> when recovery ' +
+    'codes go. Each goes to every stream that asked for the type and covers ' +
+    'this person, subject to <code>caep.autoEmitTypes</code>, ' +
+    '<code>risc.autoEmitTypes</code> and the RISC opt-out state.');
+  if (!gate.write) {
+    log.debug("Leaving userCredentialControlsSection(). Read only.");
+    return heading + state + signalsNote +
+      note('Resetting a password, disabling a credential or requiring a ' +
+           'second factor needs <strong>Admin Write</strong>.');
+  }
+  const form = function (action, label, title, danger) {
+    log.debug("Entering form(). " + action);
+    log.debug("Leaving form().");
+    return '<form method="post" action="/admin/users">' +
+      '<input type="hidden" name="action" value="' + esc(action) + '">' +
+      '<input type="hidden" name="user" value="' + esc(key) + '">' +
+      '<input type="hidden" name="from" value="user">' +
+      '<input type="hidden" name="back" value="' + esc(back) + '">' +
+      '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
+      ' title="' + esc(title) + '">' + label + '</button></div></form>';
+  };
+  const reset = '<h3>Reset the password</h3>' +
+    note('<strong>Reset password</strong> sets a generated password and ' +
+         'shows ' +
+    'it to you ONCE — note it and give it to them. They must choose their ' +
+    'own ' +
+    'at their next sign-in, and they are signed out of everything now. ' +
+    '<strong>Generate a reset link</strong> instead REMOVES the password ' +
+    'they ' +
+    'have, signs them out of everything, and shows you a single-use link to ' +
+    'send them, valid for <code>security.passwordResetTtlMinutes</code>; at ' +
+    'it they choose a new password under this realm\'s password policy.') +
+    form('reset-password', 'Reset password',
+         'A generated password, shown once; they change it at next sign-in; ' +
+         'they are signed out everywhere.', true) +
+    form('issue-password-reset', 'Generate a password reset link',
+         'Removes their current password, signs them out everywhere, and ' +
+         'shows a single-use link to send them.', true);
+  const passkeys = '<h3>Passwordless sign-in</h3>' + (factors.primaryKeys > 0
+    ? (factors.password
+        ? note('Removes all ' + esc(String(factors.primaryKeys)) + ' ' +
+               'primary security key(s), so a passkey no longer signs them ' +
+               'in ' +
+               'without a password. A key they hold as a second factor is ' +
+               'untouched.') +
+          form('disable-primary-keys',
+               'Disable passkeys as primary sign-in',
+               'Removes every primary-role security key.', true)
+        : warn('They have <strong>no password</strong>, so their primary ' +
+               'keys are the only way they can sign in and disabling them is ' +
+               'refused. Reset the password or issue a reset link first.'))
+    : note('They hold no primary security key, so there is no passwordless ' +
+           'sign-in to disable.'));
+  const mfa = '<h3>Second factors</h3>' + (holdsSecond
+    ? note('<strong>Disable all MFA</strong> removes their authenticator ' +
+           'app, every security key in the mfa role and their recovery ' +
+           'codes. It cannot lock them out — none of those is a way in. ' +
+           (requirement.required
+             ? 'A second factor is still required of them, so their next ' +
+               'sign-in asks them to enrol a new one.'
+             : 'A password alone signs them in afterwards.')) +
+      form('disable-mfa', 'Disable all MFA',
+           'Removes the authenticator app, mfa keys and recovery codes.', true)
+    : note('They hold no second factor, so there is nothing to disable.')) +
+    (requirement.byUser
+      ? note('A second factor is <strong>required</strong> of them on their ' +
+             'account.') +
+        form('stop-requiring-mfa', 'Stop requiring MFA for this person',
+             'Takes the per-account requirement off; a realm requirement is ' +
+             'unaffected.', false)
+      : note('<strong>Require MFA</strong> makes the sign-in screen ask them ' +
+             'for a second factor — and, while they hold none, to enrol an ' +
+             'authenticator app or a security key before it signs them in. ' +
+             'A passwordless sign-in is refused while it is required.' +
+             (requirement.byRealm ? ' The realm already requires it of ' +
+               'everybody (<code>authn.mfaRequired</code>).' : '')) +
+        form('require-mfa', 'Require MFA for this person',
+             'They must use a second factor, and enrol one at their next ' +
+             'sign-in if they hold none.', false));
+  log.debug("Leaving userCredentialControlsSection().");
+  return heading + state + signalsNote + reset + passkeys + mfa;
+}
+
 // The application section's sentences, said about a person: who holds the
 // private key is the one thing that changes.
 const PERSON_KEY_SOURCE_SENTENCES = {
@@ -16528,6 +17038,12 @@ function userDetailPage(req, key) {
     // with and before the buttons that end what they hold.
     userCredentialsSection(key, view.credentialsState, gateStateFor(req),
                            back) +
+
+    // WHAT AN ADMINISTRATOR CAN DO TO THEIR PASSWORD AND SECOND FACTORS
+    // (2026-09-13), before the sign-out buttons, which it partly subsumes: a
+    // reset signs the person out as well.
+    userCredentialControlsSection(key, view.mfa.json, gateStateFor(req),
+                                  back) +
 
     // ---------------------------------------------------------------------
     // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
@@ -17077,15 +17593,79 @@ app.post('/admin/users', function (req, res) {
   // clears on 2026-09-10, which are the actions on this resource that owe an
   // audit row naming who made them.
   const state = gateStateFor(req);
-  const result = usersAction(body, { via: 'console', actor: state.username });
+  const result = usersAction(body, { via: 'console', actor: state.username,
+                                     base: baseUrlOf(req) });
   // Back to the list carrying whatever filter and page the form came from, so
   // that creating somebody does not cost the reader their place — the rule
-  // every form on this console follows.
-  const back = '/admin/users' +
-               queryWith(listViewFromBack('/admin/users', body.back), {});
+  // every form on this console follows. A control drawn on a PERSON'S page
+  // (2026-09-13) carries `from=user` and goes back to that page, at the section
+  // it was pressed in.
+  const who = String(body.user || body.username || '').trim();
+  const back = String(body.from || '') === 'user' && who
+    ? userReturnTo(body, who, '#credential-controls')
+    : '/admin/users' +
+      queryWith(listViewFromBack('/admin/users', body.back), {});
+  // A ONE-TIME SECRET IS ANSWERED WITH A PAGE (2026-09-13): a reset password or
+  // a reset link exists once, and `respondToAction()` would put it in a
+  // redirect's query string — the browser history, every proxy log on the way,
+  // and the `Referer` of the next click. `/admin/users/new` made this argument
+  // first. A JSON caller still gets JSON.
+  const oneTime = result.ok && (result.password || result.resetUrl);
+  if (oneTime && !/json/i.test(String(req.headers['content-type'] || ''))) {
+    respond(req, res, result, 'Credential reset', '/admin/users',
+            credentialResetPage(result, back),
+            upTo('/admin/users', 'Credential reset',
+                 listViewFromBack('/admin/users', body.back)));
+    log.debug("Leaving the admin users action endpoint. A one-time page.");
+    return;
+  }
   respondToAction(req, res, back, result);
   log.debug("Leaving the admin users action endpoint.");
 });
+
+// THE PAGE A RESET ANSWERS WITH (2026-09-13): the generated password or the
+// reset link, once, and what else the reset did.
+function credentialResetPage(result, back) {
+  log.debug("Entering credentialResetPage().");
+  const who = esc(result.username);
+  const out = [];
+  if (result.password) {
+    out.push('<h2>The new password for ' + who + ', shown once</h2>' +
+      '<div class="secret">' + esc(result.password) + '</div>' +
+      warn('<strong>Note it now.</strong> This service stores a scrypt hash ' +
+      'and cannot show it again — not this console, not ' +
+      '<code>/admin-api</code>. ' + (result.forcedChange
+        ? 'It works ONCE, at the sign-in screen, where ' + who + ' is made ' +
+          'to ' +
+          'choose their own before anything is signed in.'
+        : 'The forced change could not be recorded, so it will go on ' +
+          'working until somebody changes it.')));
+  }
+  if (result.resetUrl) {
+    out.push('<h2>The password reset link for ' + who + ', shown once</h2>' +
+      '<div class="secret">' + esc(result.resetUrl) + '</div>' +
+      warn('<strong>Send it to ' + who + ' by a channel you trust. Valid ' +
+      'until ' + esc(result.expiresAt || 'it expires') + '.</strong> Anybody ' +
+      'holding it can set this person\'s password, so treat it as the ' +
+      'credential it is. It is spent when the new password is stored, not ' +
+      'when it is opened. ' + (result.passwordRevoked
+        ? 'Their old password was REMOVED, so until the link is used they ' +
+          'cannot sign in with a password.'
+        : 'They had no password to remove.')));
+  }
+  out.push('<h2>What else happened</h2>' +
+    note(esc(result.message || '')) +
+    note('<strong>Shared Signals</strong>: a CAEP credential-change and a ' +
+    'RISC account-credential-change-required went to every stream that ' +
+    'asked for those types and covers this person, and each session the ' +
+    'sign-out ended sent its own CAEP session-revoked. <a ' +
+    'href="/admin/caep">CAEP</a> and <a href="/admin/risc">RISC</a> show ' +
+    'what was delivered.'));
+  out.push(note('<a class="btn" href="' + esc(back) + '">Back to ' + who +
+                '</a>'));
+  log.debug("Leaving credentialResetPage().");
+  return out.join('');
+}
 
 // ---------------------------------------------------------------------------
 // GET /admin/users/new, POST /admin/users/new — CREATE A PERSON, ON A PAGE OF
@@ -18494,7 +19074,12 @@ function respondToApplicationAction(req, res, body, result) {
   const back = named
     ? '/admin/applications' + queryWith(listView, { application: named }) +
       // Back to the section the button was in, which is four screens down.
-      (String(body.action || '') === 'regenerate-secret' ? '#credentials' : '')
+      (String(body.action || '') === 'regenerate-secret' ? '#credentials'
+        : (String(body.action || '') === 'issue-software-statement'
+          ? '#software-statements'
+          : (String(body.action || '') === 'revoke-tls-client-certificate' ||
+             String(body.action || '') === 'issue-tls-client-certificate'
+            ? '#credentials-tls-client' : '')))
     : '/admin/applications' + queryWith(listView, {});
   respondToAction(req, res, back, result);
   log.debug("Leaving the admin applications action endpoint.");
@@ -18511,13 +19096,38 @@ app.post('/admin/applications', function (req, res) {
   // which is what listField() exists for.
   const protocols = listField(req, body, 'protocol').concat(
       listField(req, body, 'protocols'));
-  const result = applicationsAction(body, protocols);
+  // The realm's authorization servers, for `load-resource-metadata` — the one
+  // action that compares something against the address this request arrived
+  // on, and which every other action ignores.
+  const result = applicationsAction(body, protocols, {
+    authorizationServers: resourceMetadata.authorizationServersOf(req),
+    // The address this request arrived on, for `issue-software-statement`,
+    // whose statement names the issuer published there.
+    base: baseUrlOf(req)
+  });
   // `refresh-metadata` answers with a promise; everything else answers with the
   // object. Resolved here rather than making the whole function async, for the
   // reason that action's own comment gives.
   if (result && typeof result.then === 'function') {
     result.then(function (answer) {
+      // A TLS CLIENT CERTIFICATE THAT WAS ISSUED (RFC 8705, 2026-09-13) is
+      // answered with a PAGE and never a redirect: the reply carries the only
+      // copy of the private key, and a redirect carries a message on a query
+      // string. `/admin/pki/person`'s arrangement. A refusal redirects like
+      // every other action, because it carries no key.
+      if (answer && answer.ok && answer.files &&
+          String(body.action || '') === 'issue-tls-client-certificate') {
+        answerIssuedTlsClientCertificate(req, res, body, answer);
+        return;
+      }
       respondToApplicationAction(req, res, body, answer);
+    }).catch(function (e) {
+      log.error(errorCodes.tag('STS-ADMIN-0724') + 'admin: the applications ' +
+                'action "' + String(body.action || '') + '" failed: ' +
+                (e && e.stack ? e.stack : e));
+      errorCodes.mark(res, 'STS-ADMIN-0724');
+      respondToApplicationAction(req, res, body, { ok: false,
+        errors: ['That action failed: ' + (e && e.message ? e.message : e)] });
     });
     log.debug("Leaving the admin applications action endpoint. Awaiting a " +
               "metadata fetch.");
@@ -18525,6 +19135,81 @@ app.post('/admin/applications', function (req, res) {
   }
   respondToApplicationAction(req, res, body, result);
 });
+
+// ---------------------------------------------------------------------------
+// THE ONE-TIME ANSWER TO AN ISSUED APPLICATION TLS CLIENT CERTIFICATE
+// (RFC 8705, 2026-09-13).
+//
+// Three downloads — the PKCS#12, the encrypted PEM key and the chain — as
+// `data:` links, which is how `/portal/signing-key` hands a person theirs and
+// needs no script. `no-store`, for the rule every document here that carries
+// a key follows. What the application does with it is said beside it: present
+// it at the token endpoint with `token_endpoint_auth_method=tls_client_auth`,
+// and every access token it is issued is bound to it.
+// ---------------------------------------------------------------------------
+function answerIssuedTlsClientCertificate(req, res, body, answer) {
+  log.debug("Entering answerIssuedTlsClientCertificate().");
+  const files = answer.files;
+  const cert = answer.certificate;
+  const identifier = String((answer.application &&
+                             answer.application.identifier) ||
+                            body.application || '');
+  const dataUri = function (mime, base64) {
+    log.debug("Entering dataUri().");
+    log.debug("Leaving dataUri().");
+    return 'data:' + mime + ';base64,' + base64;
+  };
+  const b64 = function (text) {
+    log.debug("Entering b64().");
+    log.debug("Leaving b64().");
+    return Buffer.from(String(text), 'utf8').toString('base64');
+  };
+  const listView = listViewFromBack('/admin/applications', body.back);
+  const back = '/admin/applications' +
+    queryWith(listView, { application: identifier }) +
+    '#credentials-tls-client';
+  const html = warn('<p><strong>This is the only time these files can be ' +
+    'downloaded.</strong> The private key is not kept by this service — not ' +
+    'on the application&rsquo;s entry, not in the certificate register — and ' +
+    'nothing on this console or on <code>/admin-api</code> hands it out ' +
+    'again. If it is lost, revoke the certificate and issue another.</p>' +
+    '<p><a class="btn" download="' + esc(files.pkcs12.name) + '" href="' +
+    esc(dataUri(files.pkcs12.mime, files.pkcs12.base64)) + '">Download ' +
+    esc(files.pkcs12.name) + '</a> <a class="btn" download="' +
+    esc(files.key.name) + '" href="' +
+    esc(dataUri(files.key.mime, b64(files.key.text))) + '">Download ' +
+    esc(files.key.name) + '</a> <a class="btn" download="' +
+    esc(files.chain.name) + '" href="' +
+    esc(dataUri(files.chain.mime, b64(files.chain.text))) + '">Download ' +
+    esc(files.chain.name) + '</a></p>', 'The private key, once') +
+    '<table><tr><th>Issued to</th><td><code>' + esc(cert.subject) +
+    '</code><div class="sub">subjectAltName <code>' +
+    esc(cert.implicitName) + '</code></div></td></tr>' +
+    '<tr><th>Serial</th><td><code>' + esc(cert.serialHex) + '</code></td>' +
+    '</tr><tr><th>SHA-256 thumbprint</th><td><code>' +
+    esc(cert.thumbprint) + '</code></td></tr><tr><th>Key</th><td>' +
+    esc(cert.keyAlg) + '</td></tr><tr><th>Good until</th><td><code>' +
+    esc(cert.notAfter) + '</code></td></tr></table>' +
+    note('<strong>How the application uses it.</strong> Present it on the ' +
+    'TLS connection to the token endpoint with <code>client_id=' +
+    esc(identifier) + '</code> and a <code>token_endpoint_auth_method' +
+    '</code> of <code>tls_client_auth</code> on the entry: RFC 8705 section ' +
+    '2.1 authenticates it because this realm issued it to this application, ' +
+    'with nothing else registered. Every access token issued on that ' +
+    'connection carries <code>cnf["x5t#S256"]</code> of this certificate ' +
+    '(section 3), so the application presents the same certificate to the ' +
+    'resource servers. <code>curl --cert ' + esc(files.chain.name) +
+    ' --key ' + esc(files.key.name) + ' --pass &lt;file password&gt; ' +
+    '-d grant_type=client_credentials -d client_id=' + esc(identifier) +
+    ' &lt;base&gt;/oauth2/token</code>') +
+    '<p><a class="btn" href="' + esc(back) + '">Back to ' + esc(identifier) +
+    '</a></p>';
+  res.set('Cache-Control', 'no-store');
+  respond(req, res, { ok: true }, 'TLS client certificate',
+          '/admin/applications', html,
+          upTo('/admin/applications', 'TLS client certificate', listView));
+  log.debug("Leaving answerIssuedTlsClientCertificate().");
+}
 
 // One value off an application view's fields, whichever shape it is in. The
 // registry hands `multi` attributes back as arrays and `single` ones as
@@ -19233,7 +19918,8 @@ function userReturnTo(body, key, anchor) {
   const listView = listViewFromBack('/admin/users', body && body.back);
   log.debug("Leaving userReturnTo().");
   return '/admin/users' + queryWith(listView, { user: String(key) }) +
-         (anchor === '#credentials' ? anchor : '');
+         (['#credentials', '#credential-controls'].indexOf(anchor) >= 0
+           ? anchor : '');
 }
 
 // What each recorded provenance of a managed key pair means, in the words the
@@ -19523,7 +20209,310 @@ function applicationCredentialsSection(req, view, carryBack) {
     'manages beside the keys the application registered itself. The two ' +
     'profiles&rsquo; key pairs are separate on purpose &mdash; neither can ' +
     'sign for the other &mdash; so each has its own controls.') +
-    secretHtml + assertionHtml;
+    secretHtml + assertionHtml +
+    (state.oauthDeclared
+      ? applicationMtlsSection(state.mtls, id, carryBack)
+      : '');
+}
+
+// ---------------------------------------------------------------------------
+// MUTUAL TLS — RFC 8705, ON THE APPLICATION'S OWN PAGE (2026-09-13).
+//
+// Both halves of the RFC read off one model (`applicationMtlsState()` in
+// admin-core/admin_views.js): how the token endpoint will authenticate this
+// application by certificate, and whether its tokens are bound to one.
+//
+// **THE ISSUE CONTROL IS THE IMPLICIT MAPPING'S REGISTRATION.** A certificate
+// issued here names the application in its subjectAltName and is listed on the
+// application's record, and that is everything `tls_client_auth` needs — so the
+// subject parameters below are for a certificate from somebody ELSE's
+// authority, and are set with the attribute editor like every other attribute.
+// The issue answers with a page of downloads rather than a redirect; see
+// `answerIssuedTlsClientCertificate()`.
+//
+// **NO SCRIPT**: a form per certificate to revoke it, and two password fields.
+// ---------------------------------------------------------------------------
+function applicationMtlsSection(state, id, carryBack) {
+  log.debug("Entering applicationMtlsSection().");
+  const hidden = function (name, value) {
+    log.debug("Entering hidden().");
+    log.debug("Leaving hidden().");
+    return '<input type="hidden" name="' + name + '" value="' + esc(value) +
+           '">';
+  };
+  const methodSentence = state.certificateMethod
+    ? 'This application authenticates with <code>' + esc(state.authMethod) +
+      '</code>, and is held to it <strong>in every mode</strong>: a token ' +
+      'request from it that does not authenticate by certificate is refused ' +
+      '<code>invalid_client</code>.'
+    : 'This application&rsquo;s <code>oauthTokenEndpointAuthMethod</code> is ' +
+      (state.authMethod ? '<code>' + esc(state.authMethod) + '</code>'
+                        : 'not set') + ', so nothing here authenticates it ' +
+      'yet. Set it to <code>tls_client_auth</code> (or ' +
+      '<code>self_signed_tls_client_auth</code>) with the attribute editor ' +
+      'below to use a certificate in place of a secret.';
+  const rows = state.certificates.length
+    ? '<table><tr><th>Certificate</th><th>State</th><th></th></tr>' +
+      state.certificates.map(function (cert) {
+        const revokeForm = cert.state === 'valid'
+          ? '<form method="post" action="/admin/applications">' + carryBack +
+            hidden('action', 'revoke-tls-client-certificate') +
+            hidden('application', id) + hidden('serialHex', cert.serialHex) +
+            '<div class="formrow"><select name="reason" aria-label="Reason">' +
+            state.revocationReasons.map(function (reason) {
+              return '<option value="' + esc(reason) + '">' + esc(reason) +
+                     '</option>';
+            }).join('') + '</select><button type="submit" class="danger">' +
+            'Revoke</button></div></form>'
+          : '';
+        return '<tr><td><code>' + esc(cert.subject) + '</code><div ' +
+          'class="sub">' + (cert.label ? esc(cert.label) + ' &middot; ' : '') +
+          'serial <code>' + esc(cert.serialHex) + '</code> &middot; ' +
+          esc(cert.keyAlg) + ' &middot; valid until <code>' +
+          esc(cert.notAfter) + '</code><br>thumbprint <code>' +
+          esc(cert.thumbprint) + '</code></div></td><td><span class="state-' +
+          (cert.state === 'valid' ? 'valid' : 'revoked') + '">' +
+          esc(cert.state) + '</span>' + (cert.reason
+            ? '<div class="sub">' + esc(cert.reason) + '</div>' : '') +
+          '</td><td>' + revokeForm + '</td></tr>';
+      }).join('') + '</table>'
+    : '<p class="sub">This realm has issued this application no TLS client ' +
+      'certificate.</p>';
+  const issueForm = state.caAvailable
+    ? (state.active >= state.max
+      ? note('This application holds ' + state.active + ' valid TLS client ' +
+             'certificates, which is <code>' +
+             'pki.applicationTlsClientCertificateMax</code>. Revoke one to ' +
+             'issue another.')
+      : '<form method="post" action="/admin/applications">' + carryBack +
+        hidden('action', 'issue-tls-client-certificate') +
+        hidden('application', id) +
+        '<div class="formrow"><label for="mtls-label">Name it</label>' +
+        '<input id="mtls-label" name="label" maxlength="40" ' +
+        'placeholder="instance 1"><label for="mtls-alg">Key</label>' +
+        '<select id="mtls-alg" name="keyAlg">' +
+        state.keyAlgorithms.map(function (alg) {
+          return '<option value="' + esc(alg) + '"' +
+                 (alg === state.defaultKeyAlg ? ' selected' : '') + '>' +
+                 esc(alg) + '</option>';
+        }).join('') + '</select></div>' +
+        '<div class="formrow"><label for="mtls-password">File password' +
+        '</label><input type="password" id="mtls-password" name="password" ' +
+        'minlength="' + state.passwordMin + '" required autocomplete=' +
+        '"new-password"><label for="mtls-confirm">Again</label><input ' +
+        'type="password" id="mtls-confirm" name="confirm" minlength="' +
+        state.passwordMin + '" required autocomplete="new-password"></div>' +
+        '<div class="formrow"><button type="submit">Issue a TLS client ' +
+        'certificate from this realm&rsquo;s CA</button><span class="sub">' +
+        'The private key is shown once, as downloads, and is not kept.' +
+        '</span></div></form>')
+    : note('This realm has no certificate authority yet, so there is ' +
+           'nothing to issue a TLS client certificate from. <a ' +
+           'href="/admin/pki">Build one on the PKI page</a>.');
+  const subjectRows = '<table><tr><th>Parameter</th><th>Attribute</th>' +
+    '<th>Registered</th></tr>' + state.subjects.map(function (subject) {
+      return '<tr><td><code>' + esc(subject.member) + '</code><div ' +
+        'class="sub">' + esc(subject.label) + '</div></td><td><code>' +
+        esc(subject.attribute) + '</code></td><td>' + (subject.value
+          ? '<code>' + esc(subject.value) + '</code>'
+          : '<span class="state-none">none</span>') + '</td></tr>';
+    }).join('') + '</table>';
+  const html = '<h3 id="credentials-tls-client">Mutual TLS (RFC 8705)</h3>' +
+    note(methodSentence) +
+    '<h4>TLS client certificates this realm issued it</h4>' +
+    note('The <strong>implicit</strong> mapping for ' +
+    '<code>tls_client_auth</code>: a certificate from this realm&rsquo;s ' +
+    'TLS client Issuing CA naming <code>' + esc(state.implicitName) +
+    '</code>, still listed here, authenticates this application with ' +
+    'nothing registered. A certificate this service issued to anybody else ' +
+    'never authenticates it, whatever subject is registered below.') +
+    rows + issueForm +
+    '<h4>A certificate from another authority</h4>' +
+    note('The <strong>explicit</strong> mapping, RFC 8705 section 2.1.2: ' +
+    'register <strong>one</strong> of these five, and a certificate whose ' +
+    'chain verified against the client truststore (<a href="/tls/trust">' +
+    '/tls/trust</a>) and carries it authenticates this application. A DN is ' +
+    'compared as a name, not a string. <code>self_signed_tls_client_auth' +
+    '</code> instead matches <code>oauthTlsClientCertificateThumbprint</code>' +
+    (state.selfSignedThumbprint ? ' (<code>' +
+      esc(state.selfSignedThumbprint) + '</code>)' : ' (none)') + ' or a ' +
+    'key&rsquo;s <code>x5c</code> in its registered <code>jwks</code>.') +
+    subjectRows +
+    '<h4>Certificate-bound access tokens</h4>' +
+    note((state.bindingAvailable
+      ? 'The main port is TLS, so every access token and refresh token ' +
+        'issued on a connection that presented a client certificate carries ' +
+        '<code>cnf["x5t#S256"]</code>, and a resource server here refuses it ' +
+        'on a connection without that certificate. '
+      : 'The main port is <strong>not</strong> TLS ' +
+        '(<code>global.https</code>), so no token can be bound. ') +
+    '<code>' + esc(state.boundTokensAttribute) + '</code> is <code>' +
+    (state.boundTokens ? 'TRUE' : 'FALSE') + '</code>' + (state.boundTokens
+      ? ': this application declared bound tokens, so a token request from ' +
+        'it with no client certificate is refused in every mode.'
+      : ': a token request with no certificate gets an unbound token.'));
+  log.debug("Leaving applicationMtlsSection(). " +
+            state.certificates.length + " certificate(s).");
+  return html;
+}
+
+// ---------------------------------------------------------------------------
+// SOFTWARE STATEMENTS (RFC 7591 section 2.3), ON THE APPLICATION'S OWN PAGE
+// (2026-09-13).
+//
+// Three halves, each drawn only where it says something: the issuers this
+// application vouches for as a PUBLISHER, the statement this realm ISSUED for
+// it with the one control on the section, and — for a client that registered
+// with a statement — how that statement let it in. The declaration is an
+// ordinary attribute, set with the attribute editor further down; the issue is
+// `issue-software-statement` on `/admin/applications`, which
+// `POST /admin-api/applications/issue-software-statement` mirrors.
+//
+// **NO SCRIPT.** The statement is behind a `<details>`, and the metadata a new
+// one fixes is a textarea of JSON.
+// ---------------------------------------------------------------------------
+function applicationSoftwareStatementSection(req, view, carryBack) {
+  log.debug("Entering applicationSoftwareStatementSection().");
+  const row = view.row;
+  const state = view.softwareStatementState;
+  const settings = state.settings;
+  const hidden = function (name, value) {
+    log.debug("Entering hidden().");
+    log.debug("Leaving hidden().");
+    return '<input type="hidden" name="' + name + '" value="' + esc(value) +
+           '">';
+  };
+
+  const publisherHtml = '<h3 id="software-statements-publisher">As a ' +
+    'publisher</h3>' +
+    note('A statement whose <code>iss</code> is one of these is TRUSTED at ' +
+    '<code>POST /oauth2/register</code>, verified against this ' +
+    'application&rsquo;s <code>jwks</code> or its RFC 7523 key pair from ' +
+    '<em>Credentials</em> above. Add or remove an issuer with ' +
+    '<code>oauthSoftwareStatementIssuer</code> in the attribute editor below. ' +
+    'A statement this realm issued needs no declaration.') +
+    '<table><tr><th>Declared issuer</th><th>Keys a statement verifies ' +
+    'under</th></tr>' +
+    (state.issuers.length
+      ? state.issuers.map(function (iss) {
+          return '<tr><td><code>' + esc(iss) + '</code></td><td>' +
+            (state.usableKeys
+              ? '<span class="state-valid">' + state.usableKeys + ' key' +
+                (state.usableKeys === 1 ? '' : 's') + '</span>'
+              : '<span class="state-revoked">none &mdash; every statement ' +
+                'from this issuer is refused</span>') + '</td></tr>';
+        }).join('')
+      : '<tr><td colspan="2"><span class="state-none">none declared' +
+        '</span></td></tr>') + '</table>';
+
+  const issued = state.issued;
+  const issuedRows = issued
+    ? (issued.readable
+      ? '<table><tr><th>Fact</th><th>Value</th></tr>' +
+        '<tr><td>Issuer</td><td><code>' + esc(issued.issuer) +
+        '</code></td></tr>' +
+        '<tr><td>Issued</td><td><code>' + esc(whenText(issued.issuedAt)) +
+        '</code></td></tr>' +
+        '<tr><td>Expires</td><td><code>' +
+        esc(issued.expiresAt ? whenText(issued.expiresAt) : 'never') +
+        '</code></td></tr>' +
+        '<tr><td>Verifies now</td><td>' + (issued.verifies
+          ? '<span class="state-valid">yes, under this realm&rsquo;s key' +
+            '</span>'
+          : '<span class="state-revoked">no</span><div class="sub">' +
+            esc(issued.why) + ' &mdash; issue a new one.</div>') +
+        '</td></tr>' +
+        '<tr><td>Fixes</td><td><code>' +
+        esc(JSON.stringify(issued.metadata)) + '</code></td></tr>' +
+        '<tr><td>Statement</td><td><details class="fold"><summary>Show the ' +
+        'statement</summary><code>' + esc(state.issuedToken) +
+        '</code></details></td></tr></table>'
+      : warn(esc(issued.why), 'Unreadable'))
+    : '<p class="sub"><span class="state-none">This realm has issued no ' +
+      'statement for this application.</span></p>';
+
+  const issueForm = '<form method="post" action="/admin/applications">' +
+    carryBack + hidden('action', 'issue-software-statement') +
+    hidden('application', row.identifier) +
+    '<div class="formrow"><label for="software-statement-metadata">Client ' +
+    'metadata it fixes (JSON)</label><textarea ' +
+    'id="software-statement-metadata" name="metadata" rows="6" ' +
+    'placeholder="{&quot;redirect_uris&quot;: ' +
+    '[&quot;https://app.example/cb&quot;], &quot;grant_types&quot;: ' +
+    '[&quot;authorization_code&quot;]}"></textarea></div>' +
+    '<div class="formrow"><label for="software-statement-lifetime">Lifetime ' +
+    '(seconds, 0 for none)</label><input id="software-statement-lifetime" ' +
+    'name="lifetimeSeconds" type="number" min="0" placeholder="' +
+    esc(String(settings.lifetimeSeconds)) + '"></div>' +
+    '<div class="formrow"><button type="submit">' +
+    (issued ? 'Issue a new statement' : 'Issue a statement') + '</button>' +
+    '<span class="sub">' + (issued
+      ? 'Replaces the one shown. The earlier statement still verifies until ' +
+        'it expires.'
+      : 'Signed with this realm&rsquo;s key.') + '</span></div></form>';
+
+  const issuedHtml = '<h3 id="software-statements-issued">Issued by this ' +
+    'realm</h3>' +
+    note('Hand the statement to whoever ships the software. A client that ' +
+    'presents it is registered with the members it fixes, and they take ' +
+    'precedence over the registration&rsquo;s own JSON; <strong>whatever it ' +
+    'does not fix, the registering client chooses</strong> &mdash; so fix ' +
+    '<code>grant_types</code> and <code>redirect_uris</code> when those ' +
+    'matter. <code>software_id</code> defaults to this application&rsquo;s ' +
+    'identifier. The <code>iss</code> is the issuer published at the address ' +
+    'this page was reached on. It is not a secret, and it stops verifying ' +
+    'when the realm&rsquo;s signing key is replaced &mdash; in development ' +
+    'mode, every restart.') +
+    issuedRows + issueForm;
+
+  const facts = state.registeredWith;
+  const registeredHtml = facts
+    ? '<h3 id="software-statements-registered">How it registered</h3>' +
+      '<table><tr><th>Fact</th><th>Value</th></tr>' +
+      '<tr><td>Statement issuer<div class="sub"><code>' +
+      'appSoftwareStatementIssuer</code></div></td><td><code>' +
+      esc(facts.issuer) + '</code></td></tr>' +
+      '<tr><td>Trusted<div class="sub"><code>appSoftwareStatementTrusted' +
+      '</code></div></td><td>' + (facts.trusted
+        ? '<span class="state-valid">yes</span>'
+        : '<span class="state-revoked">no &mdash; accepted unverified' +
+          '</span>') + '</td></tr>' +
+      '<tr><td>Through<div class="sub"><code>appSoftwareStatementPublisher' +
+      '</code></div></td><td>' + (facts.publisher
+        ? '<a href="/admin/applications?application=' +
+          encodeURIComponent(facts.publisher) + '"><code>' +
+          esc(facts.publisher) + '</code></a>'
+        : '&mdash;') + '</td></tr></table>'
+    : '';
+
+  // AN OAUTH 2.0 CLIENT'S SECTION, for the Credentials section's reason: a
+  // statement is presented at POST /oauth2/register, so an application not
+  // declared for OAuth 2.0 or OpenID Connect gets a sentence rather than
+  // controls — unless it already carries something, which stays in effect.
+  if (!view.credentialsState.oauthDeclared && !state.issuers.length &&
+      !issued && !facts) {
+    log.debug("Leaving applicationSoftwareStatementSection(). Not an OAuth " +
+              "client.");
+    return '<h2 id="software-statements">Software statements</h2>' +
+      note('RFC 7591 software statements are presented at the OAuth 2.0 ' +
+      'registration endpoint, so this section is drawn for an application ' +
+      'declared as <strong>OAuth 2.0</strong> or <strong>OpenID ' +
+      'Connect</strong>. Declare one of those families under <em>Protocol ' +
+      'families</em> to issue a statement for it or name the issuers it ' +
+      'vouches for.');
+  }
+  log.debug("Leaving applicationSoftwareStatementSection().");
+  return '<h2 id="software-statements">Software statements</h2>' +
+    note('RFC 7591 section 2.3: a signed JWT of client metadata, presented ' +
+    'at registration. In this realm a statement from an undeclared issuer ' +
+    'is ' + (settings.requireTrustedIssuer ? '<strong>refused</strong>'
+      : '<strong>accepted unverified</strong>') + ', a trusted one ' +
+    (settings.opensRegistration ? '<strong>opens</strong>' : 'does not open') +
+    ' a registration endpoint closed to everybody else, and a registration ' +
+    (settings.required ? '<strong>must</strong>' : 'need not') + ' carry ' +
+    'one. Those are <code>oauth2.softwareStatement*</code> on ' +
+    '<a href="/admin/oauth2">/admin/oauth2</a>.') +
+    publisherHtml + issuedHtml + registeredHtml;
 }
 
 // The drill-down. Its one list is the ATTRIBUTE table, which is paged under a
@@ -19626,6 +20615,7 @@ function applicationDetailPage(req, identifier) {
     // THE CREDENTIALS, above the raw entry because they are what a reader
     // most often opens this page to find — see the section's header.
     applicationCredentialsSection(req, view, carryBack) +
+    applicationSoftwareStatementSection(req, view, carryBack) +
     '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
     'carries &mdash; the operational ones and <code>entryDN</code> included, ' +
     'which a SEARCH would return only when asked for by name (RFC 4511 ' +
@@ -19899,7 +20889,12 @@ app.get('/admin/applications', function (req, res) {
 // declaration is not a sighting (see createApplication()) — and a family with
 // no kind at all is marked, because the alternative is a reader wondering for
 // the third time why the LDAP row never fills that column in.
-function protocolChoiceRow(row) {
+// `checked` is the one argument this row did not have until the RFC 9728
+// import: a document describes an OAuth protected resource, so OAuth 2.0 comes
+// ticked, and a refused create redraws the boxes the reader had ticked. It is a
+// separate argument and not `Array.prototype.map`'s index, which a bare
+// `.map(protocolChoiceRow)` would have passed as a truthy number.
+function protocolChoiceRow(row, checked) {
   log.debug("Entering protocolChoiceRow().");
   const kindCell = row.kind
     ? '<code>' + esc(row.kind) + '</code>'
@@ -19912,7 +20907,8 @@ function protocolChoiceRow(row) {
   // from a keyboard and on a touch screen. See tip() for why nothing is ever
   // said only in a title attribute.
   return '<tr><td><input type="checkbox" id="proto-' + esc(row.id) + '" ' +
-    'name="protocol" value="' + esc(row.id) + '"' + tip(row.what) + '></td>' +
+    'name="protocol" value="' + esc(row.id) + '"' +
+    (checked === true ? ' checked' : '') + tip(row.what) + '></td>' +
     '<td><label for="proto-' + esc(row.id) + '"' + tip(row.what) + '>' +
     esc(row.label) + '</label></td>' +
     '<td><code>' + esc(row.id) + '</code></td>' +
@@ -20327,10 +21323,15 @@ function samlOverrideFieldsSection() {
 // "what is this application called" and "where does a response go back to" —
 // and the second only exists for the three families that send one through a
 // browser.
-function declarationFieldsSection(role, heading, intro) {
+// `omit` names attributes another part of the page already draws a box for —
+// the RFC 9728 pane draws `oauthClientId` — because two fields with one name in
+// one form post the name twice and `parseBody()` keeps whichever came LAST,
+// which would be the empty box below the one the reader filled in.
+function declarationFieldsSection(role, heading, intro, omit) {
   log.debug("Entering declarationFieldsSection(). role=" + role);
+  const skip = omit || [];
   const rows = applications.declarationAttributes().filter(function (one) {
-    return one.role === role;
+    return one.role === role && skip.indexOf(one.attribute) < 0;
   });
   if (!rows.length) {
     // Not reachable with the table as it stands, and drawn as nothing rather
@@ -20548,8 +21549,416 @@ const NEW_APPLICATION_NOTES =
       'href="/admin/persistence">Persistence</a> writes the directory down, ' +
       'and is off by default.'));
 
-function newApplicationPage(req) {
+// ---------------------------------------------------------------------------
+// CONFIGURE AN APPLICATION FROM ITS RFC 9728 METADATA (2026-09-13).
+//
+// A protected resource publishes a document saying what it is, and this page
+// can be handed one — pasted, uploaded, or fetched from a URL — and turn it
+// into the create form, filled in: the `resource` as the default name, the
+// permission base URI and the audience; `scopes_supported` as the permissions;
+// a client_id minted at random. `oauth-oidc/protected_resource_metadata.js` is
+// the reading and argues every rule; what is decided HERE is the page.
+//
+// **TWO ROUND TRIPS AND NO SCRIPT.** A file can only reach a server without a
+// script as multipart/form-data, and a document read on the server can only
+// reach the page as a page — so Load is a POST that answers with this page and
+// the pane on it, and Create is a second POST. Both go to
+// `/admin/applications/new`, which is why that path takes a POST now: a create
+// that was refused must come back HERE with the document still loaded and every
+// edit still in its box, and the list page's 303 would lose both. It is the
+// arrangement `/admin/users/new` argues for a refused create, and for its
+// reason.
+//
+// **THE TABS ARE CSS.** Three radio buttons and the sibling combinator, in the
+// console's one stylesheet — see `page()`. The third tab's boxes are fields of
+// the create form whichever tab is showing, so editing them and pressing Create
+// from the first tab submits what was edited.
+//
+// **IT IS NOT A SECOND DOOR EITHER.** Load is `load-resource-metadata` and
+// Create is `create`, both through `applicationsAction()` — the switch
+// `POST /admin/applications` and `POST /admin-api/applications/{action}`
+// dispatch on — so the page adds TRANSPORT and nothing it decides.
+// ---------------------------------------------------------------------------
+const RESOURCE_METADATA_OWNED = ['oauthClientId', 'oauthPermissionBaseUri',
+                                 'oauthAudience', 'oauthPermission',
+                                 'oauthAuthorizationDetailsType',
+                                 'oauthResourceMetadata',
+                                 'oauthResourceMetadataUrl'];
+
+// The form that gives the document. The checkbox shows the three sources; it
+// has no name, so it is never posted, and it is ticked whenever a document is
+// on the page or was just refused, so the reader is not left hunting for the
+// form their error is about.
+function resourceMetadataLoadSection(state) {
+  log.debug("Entering resourceMetadataLoadSection().");
+  const given = (state && state.loadInput) || {};
+  const open = !!(state && (state.loaded || state.loadError));
+  log.debug("Leaving resourceMetadataLoadSection().");
+  return '<h2>Configure it from OAuth 2.0 Protected Resource Metadata ' +
+    '(RFC 9728)</h2>' +
+    note('A protected resource publishes a JSON document describing itself ' +
+    '&mdash; at <code>' + esc(resourceMetadata.WELL_KNOWN) + '</code> under ' +
+    'its own host. Give this page that document and it fills in the form ' +
+    'below: the <code>resource</code> becomes the default NAME, the ' +
+    'permission base URI (<code>oauthPermissionBaseUri</code>) and the ' +
+    'AUDIENCE of tokens issued for it (<code>oauthAudience</code>); ' +
+    '<code>scopes_supported</code> becomes the permissions it exposes; a ' +
+    'client_id is generated at random; and OAuth 2.0 is ticked. Nothing is ' +
+    'created until you press Create, and every value can be changed first.') +
+    '<form method="post" action="/admin/applications/new" ' +
+    'enctype="multipart/form-data" class="prm-load">' +
+    '<input type="hidden" name="action" value="load-resource-metadata">' +
+    '<input type="checkbox" id="prm-use" class="prm-use"' +
+    (open ? ' checked' : '') + '> <label for="prm-use"><strong>Use a ' +
+    'protected resource metadata document</strong></label>' +
+    '<div class="prm-source">' +
+    note('Give it ONE way. A document fetched from a URL is held to RFC 9728 ' +
+    'section 3.3 &mdash; its <code>resource</code> must be the identifier ' +
+    'the well-known URL was built from &mdash; which ' +
+    (mode.acceptsNonconformingResourceMetadata()
+      ? 'this development-mode service reports and does not refuse'
+      : 'this product-mode service refuses') + '. The fetch follows the ' +
+    'federation outbound policy: no redirects, a size cap, a timeout, https ' +
+    'unless <code>federation.outboundAllowInsecure</code> is on' +
+    (mode.dialsInternalAddresses()
+      ? '.'
+      : ', and never to a loopback, private or link-local address.')) +
+    '<div class="formrow"><label for="prm-document">Paste it</label>' +
+    '<textarea id="prm-document" name="document" rows="8" cols="60" ' +
+    'placeholder="{&quot;resource&quot;: &quot;https://api.example.com&quot;, ' +
+    '&quot;scopes_supported&quot;: [&quot;read&quot;]}">' +
+    esc(String(given.document || '')) + '</textarea></div>' +
+    '<div class="formrow"><label for="prm-file">or upload it</label>' +
+    '<input type="file" id="prm-file" name="file" ' +
+    'accept="application/json,.json"></div>' +
+    '<div class="formrow"><label for="prm-url">or fetch it from</label>' +
+    '<input type="text" id="prm-url" name="url" size="60" value="' +
+    esc(String(given.url || '')) + '" placeholder="https://api.example.com' +
+    esc(resourceMetadata.WELL_KNOWN) + '"></div>' +
+    '<div class="formrow"><button type="submit">Load the document</button>' +
+    '</div></div></form>';
+}
+
+// What the third tab's boxes hold: the plan's defaults, or — on a redraw after
+// a refused create — what the reader had typed. A key present in the posted
+// body is what they typed, including an emptied box.
+function resourceMetadataValues(loaded, draft) {
+  log.debug("Entering resourceMetadataValues().");
+  const plan = loaded.plan;
+  const posted = draft || null;
+  const pick = function (key, fallback) {
+    log.debug("Entering pick().");
+    log.debug("Leaving pick().");
+    return posted && Object.prototype.hasOwnProperty.call(posted, key)
+      ? String(posted[key]) : fallback;
+  };
+  const members = {};
+  loaded.members.forEach(function (row) {
+    if (!row.known || row.type === 'jwt') {
+      return;
+    }
+    const fallback = Array.isArray(row.value) ? row.value.join('\n')
+                                              : String(row.value);
+    members[row.member] = pick('metadata.' + row.member, fallback);
+  });
+  log.debug("Leaving resourceMetadataValues().");
+  return {
+    identifier: pick('identifier', plan.identifier),
+    name: pick('name', plan.name),
+    clientId: pick('field.oauthClientId', plan.clientId),
+    baseUri: pick('field.oauthPermissionBaseUri', plan.baseUri),
+    audience: pick('field.oauthAudience', plan.audience),
+    permissions: pick('field.oauthPermission', plan.permissionLines.join('\n')),
+    detailsTypes: pick('field.oauthAuthorizationDetailsType',
+                       (plan.detailsTypeLines || []).join('\n')),
+    url: pick('field.oauthResourceMetadataUrl', loaded.url),
+    members: members
+  };
+}
+
+// One JSON value, readable in a table cell.
+function resourceMetadataValueCell(value) {
+  log.debug("Entering resourceMetadataValueCell().");
+  log.debug("Leaving resourceMetadataValueCell().");
+  if (Array.isArray(value)) {
+    return value.map(function (one) {
+      return '<code>' + esc(typeof one === 'string' ? one :
+                            JSON.stringify(one)) + '</code>';
+    }).join('<br>') || '<span class="state-none">(empty)</span>';
+  }
+  return '<code>' + esc(typeof value === 'string' ? value :
+                        JSON.stringify(value)) + '</code>';
+}
+
+// The banners above the tabs: the authorization-server comparison, section
+// 3.3, and every warning the reading produced. ABOVE the tabs rather than on
+// one of them, because a reader on the raw JSON tab must not miss that none of
+// the authorization servers is this realm's.
+function resourceMetadataBanners(loaded) {
+  log.debug("Entering resourceMetadataBanners().");
+  const servers = loaded.authorizationServers;
+  let html = '';
+  if (!servers.listed) {
+    html += note('<strong>The document names no authorization server.</strong> ' +
+      '<code>authorization_servers</code> is optional, so there is nothing ' +
+      'to compare with this realm\'s.');
+  } else if (servers.allMatched) {
+    html += '<div class="ok"><strong>Every authorization server it names is ' +
+      'one this trust realm publishes</strong> &mdash; ' +
+      servers.rows.map(function (row) {
+        return '<code>' + esc(row.issuer) + '</code> is <code>' +
+               esc(row.authorizationServer) + '</code>';
+      }).join(', ') + '.</div>';
+  } else {
+    const unmatched = servers.rows.filter(function (row) {
+      return !row.matched;
+    });
+    // NOT warn(), which folds prose longer than a line behind its opening
+    // sentence: the issuers that did not match ARE this banner, and a fold
+    // would put them where a reader skimming for the colour does not look.
+    html += '<div class="warn"><strong>' + unmatched.length + ' of the ' +
+      servers.listed +
+      ' authorization server(s) this document names ' +
+      (unmatched.length === 1 ? 'is' : 'are') + ' not one this trust realm ' +
+      'publishes:</strong> ' + unmatched.map(function (row) {
+        return '<code>' + esc(row.issuer) + '</code>';
+      }).join(', ') + '. The resource expects tokens from ' +
+      (unmatched.length === 1 ? 'an issuer' : 'issuers') + ' this service is ' +
+      'not, at the address this page was reached on. You can still create ' +
+      'the application; a token this realm issues for it will carry an ' +
+      '<code>iss</code> the resource was not told to trust. This realm ' +
+      'publishes ' + servers.realm.map(function (row) {
+        return '<code>' + esc(row.issuer) + '</code>';
+      }).join(', ') + '.</div>';
+  }
+  const check = loaded.resourceCheck;
+  if (check.checked && check.matches) {
+    html += '<div class="ok"><strong>RFC 9728 section 3.3:</strong> ' +
+            esc(check.why) + '</div>';
+  } else if (!check.checked) {
+    html += note('<strong>RFC 9728 section 3.3 was not checked.</strong> ' +
+                 esc(check.why));
+  }
+  if (loaded.warnings.length) {
+    html += '<div class="warn"><strong>' + loaded.warnings.length +
+      ' thing(s) to know before creating it:</strong><ul>' +
+      loaded.warnings.map(function (one) {
+        return '<li>' + esc(one) + '</li>';
+      }).join('') + '</ul></div>';
+  }
+  log.debug("Leaving resourceMetadataBanners().");
+  return html;
+}
+
+// THE THREE TABS. `tab` picks which one is open: the raw JSON on a fresh load,
+// and the editable fields when a refused create is redrawn, because those are
+// what the refusal is about.
+function resourceMetadataPane(loaded, draft, tab) {
+  log.debug("Entering resourceMetadataPane().");
+  const values = resourceMetadataValues(loaded, draft);
+  const open = tab || 'json';
+  const radio = function (id) {
+    log.debug("Entering radio().");
+    log.debug("Leaving radio().");
+    return '<input type="radio" name="prm-tab" id="prm-tab-' + id + '" ' +
+           'form="prm-tabs-not-a-form"' + (open === id ? ' checked' : '') +
+           '>';
+  };
+  const source = loaded.source === 'url'
+    ? 'fetched from <code>' + esc(loaded.url) + '</code>'
+    : (loaded.source === 'upload'
+      ? 'uploaded' + (loaded.filename ? ' as <code>' + esc(loaded.filename) +
+                      '</code>' : '')
+      : 'pasted');
+
+  const matchOf = {};
+  loaded.authorizationServers.rows.forEach(function (row) {
+    matchOf[row.issuer] = row;
+  });
+  const tableRows = loaded.members.map(function (row) {
+    let value = resourceMetadataValueCell(row.value);
+    if (row.member === 'authorization_servers' && Array.isArray(row.value)) {
+      value = row.value.map(function (issuer) {
+        const match = matchOf[issuer];
+        return '<code>' + esc(issuer) + '</code> ' + (match && match.matched
+          ? '<span class="state-valid">matches this realm\'s <code>' +
+            esc(match.authorizationServer) + '</code></span>'
+          : '<span class="state-expired">not an authorization server of ' +
+            'this realm</span>');
+      }).join('<br>');
+    }
+    return '<tr><td><code>' + esc(row.member) + '</code></td><td>' + value +
+      '</td><td>' + (row.known ? esc(row.type)
+                               : '<span class="state-none">extension</span>') +
+      '</td><td class="why">' + esc(row.maps || '') + '</td>' +
+      '<td class="why">' + note(esc(row.what)) + '</td></tr>';
+  }).join('');
+  const permissionRows = loaded.plan.permissions.map(function (one) {
+    return '<tr><td><code>' + esc(one.scope) + '</code></td><td><code>' +
+      esc(one.name) + '</code></td><td><code>' + esc(one.id) + '</code></td>' +
+      '<td>' + (one.problem
+        ? '<span class="state-expired">not usable</span>'
+        : (one.duplicate
+          ? '<span class="state-none">a duplicate</span>'
+          : (one.sameAsAdvertised
+            ? '<span class="state-valid">the scope as advertised</span>'
+            : '<span class="state-none">a client asks for the identifier, ' +
+              'not the scope</span>'))) + '</td></tr>';
+  }).join('');
+  const signed = loaded.signedMetadata
+    ? '<h3>signed_metadata, decoded and not verified</h3>' +
+      note('Shown so it can be read. This service holds no key for the ' +
+      'resource to verify it with, and none of its claims were applied.') +
+      '<pre><code>' + esc(JSON.stringify({
+        header: loaded.signedMetadata.header,
+        claims: loaded.signedMetadata.claims
+      }, null, 2)) + '</code></pre>'
+    : '';
+
+  const memberRows = loaded.members.filter(function (row) {
+    return row.known && row.type !== 'jwt';
+  }).map(function (row) {
+    const id = 'prm-member-' + row.member.replace(/[^A-Za-z0-9_-]/g, '_');
+    const name = 'metadata.' + row.member;
+    const current = values.members[row.member];
+    let control = '';
+    if (row.type === 'bool') {
+      control = '<select id="' + esc(id) + '" name="' + esc(name) + '">' +
+        ['true', 'false', ''].map(function (option) {
+          return '<option value="' + option + '"' +
+            (current === option ? ' selected' : '') + '>' +
+            (option || '(remove the member)') + '</option>';
+        }).join('') + '</select>';
+    } else if (row.type === 'string-list' || row.type === 'uri-list') {
+      control = '<textarea id="' + esc(id) + '" name="' + esc(name) + '" ' +
+        'rows="3" cols="50" placeholder="one per line; empty removes the ' +
+        'member">' + esc(current) + '</textarea>';
+    } else {
+      control = '<input type="text" id="' + esc(id) + '" name="' +
+        esc(name) + '" size="50" value="' + esc(current) + '" ' +
+        'placeholder="empty removes the member">';
+    }
+    return '<tr><td><label for="' + esc(id) + '"><code>' + esc(row.member) +
+      '</code></label></td><td>' + control + '</td><td class="why">' +
+      note(esc(row.what)) + '</td></tr>';
+  }).join('');
+
+  const field = function (id, name, label, value, what, multi) {
+    log.debug("Entering field().");
+    log.debug("Leaving field().");
+    return '<tr><td><label for="' + id + '">' + label + '</label></td><td>' +
+      (multi
+        ? '<textarea id="' + id + '" name="' + esc(name) + '" rows="4" ' +
+          'cols="50">' + esc(value) + '</textarea>'
+        : '<input type="text" id="' + id + '" name="' + esc(name) + '" ' +
+          'size="50" value="' + esc(value) + '">') +
+      '</td><td class="why">' + note(what) + '</td></tr>';
+  };
+
+  const html = resourceMetadataBanners(loaded) +
+    '<div class="prm-tabs">' +
+    radio('json') + radio('table') + radio('fields') +
+    '<div class="prm-tablist" role="tablist">' +
+    '<label for="prm-tab-json">Raw JSON</label>' +
+    '<label for="prm-tab-table">Table of values</label>' +
+    '<label for="prm-tab-fields">Editable fields</label></div>' +
+
+    '<div class="prm-panel prm-panel-json">' +
+    '<p class="sub">The document as it was read, ' + source + '.</p>' +
+    '<pre><code>' + esc(loaded.pretty) + '</code></pre></div>' +
+
+    '<div class="prm-panel prm-panel-table">' +
+    '<table><tr><th>Member</th><th>Value</th><th>Type</th>' +
+    '<th>Used for</th><th>What it is</th></tr>' + tableRows + '</table>' +
+    '<h3>The scopes, as permissions</h3>' +
+    (permissionRows
+      ? '<table><tr><th>Scope</th><th>Permission</th>' +
+        '<th>Identifier a client asks for</th><th></th></tr>' +
+        permissionRows + '</table>'
+      : note('The document names no <code>scopes_supported</code>, so the ' +
+             'application is created exposing no permissions.')) +
+    '<h3>This trust realm\'s authorization servers</h3>' +
+    '<table><tr><th>Authorization server</th><th>Issuer</th></tr>' +
+    loaded.authorizationServers.realm.map(function (row) {
+      return '<tr><td><code>' + esc(row.id) + '</code></td><td><code>' +
+             esc(row.issuer) + '</code></td></tr>';
+    }).join('') + '</table>' + signed + '</div>' +
+
+    '<div class="prm-panel prm-panel-fields">' +
+    note('These are fields of the form below, whichever tab is showing: edit ' +
+    'them here and press <strong>Create the application</strong> at the ' +
+    'foot of the page. Everything else on the page below still applies.') +
+    '<input type="hidden" name="metadata" value="' + esc(loaded.compact) +
+    '">' +
+    '<input type="hidden" name="metadataSource" value="' +
+    esc(loaded.source) + '">' +
+    '<input type="hidden" name="metadataFilename" value="' +
+    esc(loaded.filename) + '">' +
+    '<table><tr><th>Setting</th><th>Value</th><th>Where it came from</th>' +
+    '</tr>' +
+    field('prm-identifier', 'identifier', 'Identifier', values.identifier,
+          'The key this registry files the entry under. It defaults to the ' +
+          'generated client_id, which is what a protocol sighting would file ' +
+          'an OAuth client under.') +
+    field('prm-name', 'name', 'Name', values.name,
+          'What pages call it &mdash; the document\'s <code>resource</code>.') +
+    field('prm-client-id', 'field.oauthClientId',
+          '<code>oauthClientId</code>', values.clientId,
+          'Generated at random, in the shape a dynamic client registration ' +
+          'mints.') +
+    field('prm-base', 'field.oauthPermissionBaseUri',
+          '<code>oauthPermissionBaseUri</code>', values.baseUri,
+          'The document\'s <code>resource</code>. A permission is this ' +
+          'followed by its name.') +
+    field('prm-audience', 'field.oauthAudience',
+          '<code>oauthAudience</code>', values.audience,
+          'The document\'s <code>resource</code>: the audience a token for ' +
+          'this application carries. One per line.', true) +
+    field('prm-permissions', 'field.oauthPermission',
+          '<code>oauthPermission</code>', values.permissions,
+          'One per line, <code>name</code> or <code>name|description</code>, ' +
+          'from <code>scopes_supported</code> with the resource prefix taken ' +
+          'off. A scope that cannot be a permission is left out.', true) +
+    field('prm-details-types', 'field.oauthAuthorizationDetailsType',
+          '<code>oauthAuthorizationDetailsType</code>', values.detailsTypes,
+          'One per line, from <code>authorization_details_types_supported' +
+          '</code> (RFC 9396): the types a rich authorization request may ' +
+          'name for this API. A line may be a JSON definition with a ' +
+          '<code>schema</code>; <code>openid_credential</code> and a type ' +
+          'another application declares are left out.', true) +
+    (values.url
+      ? field('prm-url-field', 'field.oauthResourceMetadataUrl',
+              '<code>oauthResourceMetadataUrl</code>', values.url,
+              'Where the document was fetched from. Recorded, never fetched ' +
+              'again.')
+      : '') +
+    '</table>' +
+    '<h3>The document\'s members</h3>' +
+    note('What the document said, editable. The document stored on the ' +
+    'entry as <code>oauthResourceMetadata</code> is the one you loaded with ' +
+    'these edits applied; an emptied box removes that member. ' +
+    (loaded.extensions.length
+      ? 'Its ' + loaded.extensions.length + ' extension member(s) &mdash; ' +
+        loaded.extensions.map(function (one) {
+          return '<code>' + esc(one) + '</code>';
+        }).join(', ') + ' &mdash; are kept as they were. '
+      : '') +
+    'Changing a member here does not change the settings above: the name, ' +
+    'base URI and audience were filled in from <code>resource</code> when ' +
+    'the document was loaded.') +
+    (memberRows
+      ? '<table><tr><th>Member</th><th>Value</th><th>What it is</th></tr>' +
+        memberRows + '</table>'
+      : '') +
+    '</div></div>';
+  log.debug("Leaving resourceMetadataPane().");
+  return html;
+}
+
+function newApplicationPage(req, state) {
   log.debug("Entering newApplicationPage().");
+  const given = state || {};
+  const loaded = given.loaded || null;
   // WHAT THIS PAGE SHOWS IS WHAT /admin-api ANSWERS (2026-09-12). These four
   // facts used to be computed here and again, in the same shape, in the json
   // half at the bottom of this function; they come off ONE call now, so the
@@ -20575,32 +21984,10 @@ function newApplicationPage(req) {
     };
   }
 
-  const inner = messagesOf(req) +
-    '<div class="tiles">' +
-    tile(held, 'In the registry') +
-    tile(applications.PROTOCOLS.length, 'Protocol families') +
-    tile(applications.KINDS.length, 'Kinds') +
-    '</div>' +
-    note('<strong>The entry lands in this realm\'s directory, at <code>' +
-    esc(container) + '</code></strong>' +
-    (max ? ', which holds at most ' + esc(String(max)) +
-    ' application(s)' : '') + '. The console shows one trust realm at a time ' +
-    'and this form writes the one it is showing &mdash; ' +
-    '<strong>' + esc(realm ? realm.name : 'Default') +
-    '</strong> &mdash; because the realm is taken from the path this request ' +
-    'arrived on. Applications are NOT shared between realms: an ' +
-    '<code>ldapsearch</code> with that base DN is the same entry this ' +
-    'creates, and another realm\'s registry has never heard of it.') +
-    note('<strong>This is not a second door onto the registry.</strong> The ' +
-    'form below posts to <code>/admin/applications</code> with ' +
-    '<code>action=create</code> &mdash; the same action the list page\'s own ' +
-    '<em>Add an application</em> row posts, calling the same function in ' +
-    '<code>applications.js</code> that a protocol endpoint and an ' +
-    '<code>ldapmodify</code> reach. Two forms over one function are two ' +
-    'doors; there is one store behind them and nothing caches it.') +
-
-    '<form method="post" action="/admin/applications" class="newapp">' +
-    '<input type="hidden" name="action" value="create">' +
+  // The identifier and the name, as the form draws them with no document
+  // loaded. With one loaded they are on the pane's third tab instead, and
+  // drawing them here as well would post each name twice.
+  const calledSection =
     '<h2>What it is called</h2>' +
     '<div class="formrow">' +
     '<label for="identifier">Identifier</label>' +
@@ -20627,7 +22014,59 @@ function newApplicationPage(req) {
     'written when a protocol actually recognises the identifier, so choosing ' +
     'one here was a form asserting a sighting that had not happened. Tick ' +
     'the families instead; the kinds fill themselves in as this application ' +
-    'is used.') +
+    'is used.');
+  // The families ticked: the ones a refused create had ticked, or OAuth 2.0
+  // for a document describing an OAuth protected resource.
+  const ticked = given.protocols ||
+                 (loaded ? loaded.plan.protocols : []);
+
+  const inner = messagesOf(req) +
+    (given.error && given.error.length
+      ? '<div class="warn"><strong>' +
+        esc(given.errorTitle || 'That was refused.') + '</strong><ul>' +
+        given.error.map(function (one) {
+          return '<li>' + esc(one) + '</li>';
+        }).join('') + '</ul></div>'
+      : '') +
+    (loaded ? '<div class="ok">' + esc(loaded.message) + '</div>' : '') +
+    '<div class="tiles">' +
+    tile(held, 'In the registry') +
+    tile(applications.PROTOCOLS.length, 'Protocol families') +
+    tile(applications.KINDS.length, 'Kinds') +
+    '</div>' +
+    note('<strong>The entry lands in this realm\'s directory, at <code>' +
+    esc(container) + '</code></strong>' +
+    (max ? ', which holds at most ' + esc(String(max)) +
+    ' application(s)' : '') + '. The console shows one trust realm at a time ' +
+    'and this form writes the one it is showing &mdash; ' +
+    '<strong>' + esc(realm ? realm.name : 'Default') +
+    '</strong> &mdash; because the realm is taken from the path this request ' +
+    'arrived on. Applications are NOT shared between realms: an ' +
+    '<code>ldapsearch</code> with that base DN is the same entry this ' +
+    'creates, and another realm\'s registry has never heard of it.') +
+    note('<strong>This is not a second door onto the registry.</strong> The ' +
+    'form below posts to <code>/admin/applications</code> with ' +
+    '<code>action=create</code> &mdash; the same action the list page\'s own ' +
+    '<em>Add an application</em> row posts, calling the same function in ' +
+    '<code>applications.js</code> that a protocol endpoint and an ' +
+    '<code>ldapmodify</code> reach. Two forms over one function are two ' +
+    'doors; there is one store behind them and nothing caches it.') +
+
+    resourceMetadataLoadSection(given) +
+
+    '<form method="post" action="' +
+    (loaded ? '/admin/applications/new' : '/admin/applications') +
+    '" class="newapp">' +
+    '<input type="hidden" name="action" value="create">' +
+    (loaded
+      ? '<h2>The protected resource metadata that was loaded</h2>' +
+        resourceMetadataPane(loaded, given.draft, given.tab) +
+        '<h2>What it is called</h2>' +
+        note('<strong>The identifier, the name and the client_id are on the ' +
+        '<em>Editable fields</em> tab above</strong>, filled in from the ' +
+        'document: the name is its <code>resource</code> and the identifier ' +
+        'is the client_id generated for it.')
+      : calledSection) +
 
     '<h2>Protocol families it is declared for</h2>' +
     note('Tick as many as apply. The list is CLOSED &mdash; a value that is ' +
@@ -20636,7 +22075,9 @@ function newApplicationPage(req) {
     'declared for two spellings of one thing.') +
     '<table><tr><th>For</th><th>Family</th><th>Value</th>' +
     '<th>Recorded as, when it turns up</th><th>What it means</th></tr>' +
-    applications.PROTOCOLS.map(protocolChoiceRow).join('') +
+    applications.PROTOCOLS.map(function (row) {
+      return protocolChoiceRow(row, ticked.indexOf(row.id) >= 0);
+    }).join('') +
     '</table>' +
 
     // THE PROMPT THAT STANDS IN FOR THE HIDDEN FIELDS. It is inside the form so
@@ -20654,7 +22095,8 @@ function newApplicationPage(req) {
     'was posted and not what was visible.</div>' +
 
     declarationFieldsSection('identifier', 'What each protocol will call it',
-                             NEW_APPLICATION_IDENTIFIERS_INTRO) +
+                             NEW_APPLICATION_IDENTIFIERS_INTRO,
+                             loaded ? RESOURCE_METADATA_OWNED : []) +
     declarationFieldsSection('redirect', 'Where responses go back to',
                              NEW_APPLICATION_REDIRECTS_INTRO) +
     declarationFieldsSection('logout', 'Where a sign-out goes',
@@ -20680,13 +22122,16 @@ function newApplicationPage(req) {
             " protocol family/families offered.");
   return {
     inner: inner,
-    json: json
+    // The loaded document and what it was read as, beside the vocabulary the
+    // GET answers — `load-resource-metadata`'s reply, which is what an API
+    // caller of that action gets.
+    json: loaded ? Object.assign({}, json, { resourceMetadata: loaded }) : json
   };
 }
 
-function newApplicationView(req) {
+function newApplicationView(req, state) {
   log.debug("Entering newApplicationView().");
-  const built = newApplicationPage(req);
+  const built = newApplicationPage(req, state);
   log.debug("Leaving newApplicationView().");
   return { json: built.json, inner: built.inner, title: 'New application' };
 }
@@ -20697,11 +22142,12 @@ function newApplicationView(req) {
 // gives the trail its third crumb (`Admin console › Applications › New
 // application`).
 //
-// **ONE `respond()` RATHER THAN `/admin/users/new`'s SEVEN**, and no helper,
-// because there is exactly one response on this path. The form POSTs to
-// `/admin/applications` and that handler answers with the list page's 303 and a
-// message, so a refusal and a success are drawn over there — which is why this
-// page never needed the "every response keeps the trail" care that one did.
+// **THE FORM WITH NO DOCUMENT LOADED POSTS TO `/admin/applications`** and that
+// handler answers with the list page's 303 and a message, so a refusal and a
+// success of the ordinary create are drawn over there. The RFC 9728 import is
+// the exception and has a POST of its own below, because what it has to keep
+// across a refusal — a loaded document and every edit made to it — is not
+// something a 303 can carry.
 //
 // It carries NO LIST VIEW. The button that opens it is on the list page and
 // does not forward the filter (there is nothing typed here to come back to), so
@@ -20713,6 +22159,119 @@ app.get('/admin/applications/new', function (req, res) {
   respond(req, res, view.json, view.title, '/admin/applications', view.inner,
           upTo('/admin/applications', view.title));
   log.debug("Leaving the admin new-application page.");
+});
+
+// ---------------------------------------------------------------------------
+// POST /admin/applications/new — THE RFC 9728 IMPORT'S TWO ROUND TRIPS.
+//
+// `load-resource-metadata` answers with this page and the pane on it; `create`
+// creates through the same `applicationsAction()` the list page posts to,
+// lands on the entry it made, and on a refusal redraws THIS page with the
+// document still loaded and every box as the reader left it. Any other action
+// is handed to that switch and answered as `/admin/applications` answers it,
+// so the unknown-action sentence a caller meets here is the same one — which
+// is the sentence the parity checks read.
+//
+// A JSON caller gets JSON throughout, as everywhere on this console.
+// ---------------------------------------------------------------------------
+function newApplicationRedraw(req, res, state, code) {
+  log.debug("Entering newApplicationRedraw().");
+  if (code) {
+    errorCodes.mark(res, code);
+  }
+  const view = newApplicationView(req, state);
+  respond(req, res, view.json, view.title, '/admin/applications', view.inner,
+          upTo('/admin/applications', view.title));
+  log.debug("Leaving newApplicationRedraw().");
+}
+
+app.post('/admin/applications/new', function (req, res) {
+  log.debug("Entering the admin new-application action endpoint.");
+  const body = parseBody(req);
+  const action = String(body.action || '');
+  const wantsJson = /json/i.test(String(req.headers['content-type'] || ''));
+  const context = {
+    authorizationServers: resourceMetadata.authorizationServersOf(req)
+  };
+
+  if (action === 'load-resource-metadata') {
+    // THE FILE, with its name, off the multipart parts. `parseBody()` has put
+    // its content under `file` as text already; this adds the filename the
+    // page names it by, and ignores a file input left empty — a browser posts
+    // one with no filename and no bytes, which is not a document.
+    const input = Object.assign({}, body);
+    delete input.file;
+    const upload = multipartParts(req).filter(function (part) {
+      return part.name === 'file' && part.filename && part.data.length;
+    })[0];
+    if (upload) {
+      input.file = { name: upload.filename,
+                     text: upload.data.toString('utf8') };
+    }
+    applicationsAction(input, [], context).then(function (result) {
+      if (wantsJson) {
+        respondToAction(req, res, '/admin/applications/new', result);
+        log.debug("Leaving the admin new-application action endpoint. " +
+                  "Answered JSON.");
+        return;
+      }
+      if (!result.ok) {
+        newApplicationRedraw(req, res, {
+          loadError: true, error: result.errors,
+          errorTitle: 'The protected resource metadata was not loaded.',
+          loadInput: { document: body.document, url: body.url }
+        }, errorCodes.codeOf(result) || 'STS-ADMIN-0644');
+        log.debug("Leaving the admin new-application action endpoint. The " +
+                  "document was refused.");
+        return;
+      }
+      newApplicationRedraw(req, res, { loaded: result,
+                                       loadInput: { url: result.url } });
+      log.debug("Leaving the admin new-application action endpoint. Loaded.");
+    });
+    return;
+  }
+
+  const protocols = listField(req, body, 'protocol').concat(
+      listField(req, body, 'protocols'));
+  if (action === 'create' && body.metadata) {
+    // The document the third tab left, into the attribute the create writes.
+    const stored = resourceMetadata.documentFromForm(body);
+    if (stored) {
+      body['field.oauthResourceMetadata'] = stored;
+    }
+  }
+  const result = applicationsAction(body, protocols, context);
+  const answer = function (outcome) {
+    log.debug("Entering answer().");
+    if (action === 'create' && body.metadata && !outcome.ok && !wantsJson) {
+      // REDRAWN, with the ORIGINAL document read again for the pane — never
+      // fetched again — and the posted values in every box.
+      const loaded = resourceMetadata.analyse(String(body.metadata), {
+        source: String(body.metadataSource || 'pasted'),
+        url: String(body['field.oauthResourceMetadataUrl'] || ''),
+        filename: String(body.metadataFilename || '')
+      }, context);
+      if (loaded.ok) {
+        newApplicationRedraw(req, res, {
+          loaded: loaded, draft: body, protocols: protocols, tab: 'fields',
+          error: outcome.errors,
+          errorTitle: 'The application was not created.'
+        }, errorCodes.codeOf(outcome) || 'STS-ADMIN-0645');
+        log.debug("Leaving answer(). Redrawn.");
+        return;
+      }
+    }
+    respondToApplicationAction(req, res, body, outcome);
+    log.debug("Leaving answer().");
+  };
+  if (result && typeof result.then === 'function') {
+    result.then(answer);
+    log.debug("Leaving the admin new-application action endpoint. Awaiting.");
+    return;
+  }
+  answer(result);
+  log.debug("Leaving the admin new-application action endpoint.");
 });
 
 // ---------------------------------------------------------------------------
@@ -21736,6 +23295,17 @@ app.post('/admin/groups', function (req, res) {
 // a text box with a datalist, and the list would then look like a set of
 // options while silently accepting anything, which is a control that lies about
 // what it takes.
+//
+// **THE PICKING HALF STOPPED BEING A `<select>` ON 2026-09-13.** It held every
+// candidate, and once the default realm held thousands of people it could not
+// be used. It is a search with a paged results pane — chooserPane(), the
+// control /admin/delegation already uses for people and applications — whose
+// results are links that PICK a person, and picking opens the grant form for
+// them. The argument above survives intact, because the two halves are still
+// two forms: the picked form's username is a hidden input that can only hold
+// somebody the list offered (the view resolves `person` against the
+// candidates rather than echoing it), and the typed form is still the one that
+// takes anything.
 // ---------------------------------------------------------------------------
 
 // The caveat, on the page rather than only in a comment. It is the exact
@@ -21849,15 +23419,50 @@ function rbacListPage(req) {
   }).join('');
 
   // WHO CAN BE PICKED. `stats.userRows()` is who has authenticated and the
-  // directory is who has an entry; admin_rbac.js unions them, because a select
+  // directory is who has an entry; admin_rbac.js unions them, because a list
   // built from either alone would silently omit half the people somebody wants
   // to grant a role to.
-  const options = candidates.map(function (row) {
-    const where = row.inDirectory && row.seen ? 'directory, and has signed in'
+  //
+  // **IT WAS A `<select>` OF ALL OF THEM UNTIL 2026-09-13 AND IS A SEARCH
+  // NOW**, for the reason /admin/delegation's person chooser stopped being one:
+  // a default realm bulk loaded with thousands of people made the select a
+  // control nobody could scroll, find a name in, or load quickly. It is
+  // chooserPane() — the same search, the same twenty-at-a-time pane, the same
+  // clamped offset — and a RESULT IS A LINK that picks that person, which
+  // opens the grant form for them below the pane. So granting is search,
+  // click, choose the role, Grant: one step more than the select, and the one
+  // that makes the list usable at any size.
+  const whereFrom = function (row) {
+    log.debug("Entering whereFrom().");
+    log.debug("Leaving whereFrom().");
+    return row.inDirectory && row.seen ? 'directory, and has signed in'
       : (row.inDirectory ? 'in the directory' : 'has signed in');
-    return '<option value="' + esc(row.username) + '">' + esc(row.username) +
-           ' — ' + esc(where) + '</option>';
-  }).join('');
+  };
+  const pickCarry = pageParamsOf(req.query);
+  delete pickCarry.person;
+  const personPane = chooserPane({
+    here: { path: '/admin/rbac', query: req.query },
+    param: 'personq', fromParam: 'personfrom',
+    label: 'Find a person',
+    placeholder: 'part of a username',
+    entries: candidates.map(function (row) {
+      return {
+        key: row.username.toLowerCase(),
+        names: [row.username],
+        label: row.username,
+        detail: whereFrom(row),
+        href: '/admin/rbac' + queryWith(pickCarry, { person: row.username }) +
+              '#grant-picked'
+      };
+    }),
+    selectedKey: view.picked ? view.picked.username.toLowerCase() : '',
+    nothing: candidates.length
+      ? 'Nobody in the directory or among the people who have signed in ' +
+        'matches that. To grant a role to a name this service has never ' +
+        'seen, use the form below the results.'
+      : 'Nobody is in the directory and nobody has signed in yet, so there ' +
+        'is nobody to pick. The form below takes a typed name.'
+  });
   const roleOptions = rbac.ROLES.map(function (role) {
     return '<option value="' + esc(role.id) + '">' + esc(role.label) +
            '</option>';
@@ -21873,9 +23478,20 @@ function rbacListPage(req) {
   const status = info.closedToEveryone
     ? '<div class="err"><strong>Nobody can use this console.</strong> The ' +
       'gate is on, no role has a member, and ' +
-      '<code>admin.openWhenEmpty</code> is off. Anything you are reading ' +
+      (info.bootstrap && info.bootstrap.seeded && info.bootstrap.claimedAt
+        ? 'the bootstrap administrator has already signed in. '
+        : '<code>admin.openWhenEmpty</code> is off. ') +
+      'Anything you are reading ' +
       'here you are reading through <code>/admin-api</code> or with the gate ' +
       'off.</div>'
+    : (info.openToAnyone && info.bootstrap && info.bootstrap.seeded
+        ? warn('<strong><code>' + esc(info.bootstrap.username) + '</code> ' +
+          'has not signed in to this console yet, so anybody who signs in ' +
+          'has the whole console.</strong> This service\'s bootstrap ' +
+          'administrator holds both roles already; its first sign-in here ' +
+          'ends the open console — for everybody who holds no role. ' +
+          '<strong>Grant yourself a role now</strong> if you will need the ' +
+          'console after that.')
     : (info.openToAnyone
         ? warn('<strong>No role has a member, so anybody who signs in has ' +
           'the whole console.</strong> The first grant made on this page ' +
@@ -21891,7 +23507,7 @@ function rbacListPage(req) {
               'OFF, so the console is open to anybody who can reach this ' +
               'port and these roles decide nothing. They are still real ' +
               'directory groups and can be granted now. (UNREACHABLE since ' +
-              '2026-09-06: the gate is unconditional.)')));
+              '2026-09-06: the gate is unconditional.)'))));
 
   const noDirectory = info.available ? '' :
     '<div class="err">No LDAP directory is loaded in this process, so there ' +
@@ -21902,20 +23518,35 @@ function rbacListPage(req) {
     '<code>admin.openWhenEmpty</code> is on.</div>';
 
   const forms = state.write && info.available
-    ? '<h2>Grant a role</h2>' +
-      '<form method="post" action="/admin/rbac"><div class="formrow">' +
-      '<input type="hidden" name="action" value="grant">' + carryBack +
-      '<label for="username">Person</label>' +
-      '<select id="username" name="username">' +
-        (options || '<option value="">nobody yet</option>') + '</select>' +
-      '<label for="role">Role</label>' +
-      '<select id="role" name="role">' + roleOptions + '</select>' +
-      '<button type="submit">Grant</button>' +
-      '</div></form>' +
-      note('The list is everybody with an entry in the directory and ' +
-      'everybody this service has seen authenticate — two different sets, ' +
-      'which is why both are offered and why each row says which it came ' +
-      'from.') +
+    ? '<h2 id="grant">Grant a role</h2>' +
+      note('Search for the person, then pick them from the results. The ' +
+      'list is everybody with an entry in the directory and everybody this ' +
+      'service has seen authenticate — two different sets, which is why ' +
+      'both are searched and why each result says which it came from. An ' +
+      'empty search lists everybody, twenty at a time.') +
+      personPane +
+      (view.picked
+        ? '<form method="post" action="/admin/rbac" id="grant-picked">' +
+          '<div class="formrow">' +
+          '<input type="hidden" name="action" value="grant">' + carryBack +
+          '<input type="hidden" name="username" value="' +
+            esc(view.picked.username) + '">' +
+          '<span>Person: <strong>' + esc(view.picked.username) +
+            '</strong> <span class="state-none">' +
+            esc(whereFrom(view.picked)) + '</span></span>' +
+          '<label for="role">Role</label>' +
+          '<select id="role" name="role">' + roleOptions + '</select>' +
+          '<button type="submit">Grant</button>' +
+          ' <a href="' + esc('/admin/rbac' + queryWith(pickCarry, {})) +
+            '#find-personq">pick somebody else</a>' +
+          '</div></form>'
+        : (view.personAsked
+            ? '<div class="err" id="grant-picked"><strong>' +
+              esc(view.personAsked) + '</strong> is not in the directory and ' +
+              'has not signed in, so there is nobody by that name to pick. ' +
+              'Search again, or grant to the name as typed with the form ' +
+              'below.</div>'
+            : '')) +
       '<h3>Grant to a name that is not listed</h3>' +
       '<form method="post" action="/admin/rbac"><div class="formrow">' +
       '<input type="hidden" name="action" value="grant">' + carryBack +
@@ -21936,8 +23567,18 @@ function rbacListPage(req) {
           'table above is what you can see with <strong>Admin Read</strong>.')
         : '');
 
+  // The grant pane's search, carried through the table's filter form: a GET
+  // form posts its own fields and nothing else, so without these narrowing
+  // the table would clear the search the reader is still using below it.
+  const personCarry = ['personq', 'personfrom', 'person'].map(function (name) {
+    const value = queryOne(req.query, name);
+    return value === ''
+      ? ''
+      : '<input type="hidden" name="' + name + '" value="' + esc(value) + '">';
+  }).join('');
   const inner = messagesOf(req) + noDirectory + status + tiles +
     '<form method="get" action="/admin/rbac"><div class="formrow">' +
+    personCarry +
     '<label for="q">Person</label>' +
     '<input type="text" id="q" name="q" value="' + esc(wantedText) + '" ' +
     'size="22" placeholder="part of a name"><label ' +
@@ -22017,8 +23658,8 @@ function rbacListPage(req) {
     'members stay in the group they were put in, which stops granting ' +
     'anything the moment the name changes — and the new name grants nothing ' +
     'until somebody is put in it. <code>/admin-api</code> is not gated by ' +
-    'any of these four, on purpose: it is the way back in when the roster is ' +
-    'empty and <code>admin.openWhenEmpty</code> is off, and it is why ' +
+    'any of these four, on purpose: it is the way back in when nobody who ' +
+    'holds a role can sign in, and it is why ' +
     'turning the gate on does not break a test suite driving the management ' +
     'API.') +
     RBAC_CAVEAT;
@@ -26818,7 +28459,11 @@ app.get('/admin/scim', function (req, res) {
       : '') +
 
     (endpointRows
-      ? '<h2>Endpoints</h2><table><tr><th>Method</th><th>Path</th><th>' +
+      // NOT "Endpoints": that heading is the realm's addresses, which
+      // `respond()` draws at the top of every Protocols page. This table is
+      // what each operation DOES, by method and path under `/scim/v2`.
+      ? '<h2>What each operation does</h2><table><tr><th>Method</th>' +
+        '<th>Path</th><th>' +
         'What</th></tr>' + endpointRows + '</table>'
       : '') +
 
@@ -27481,6 +29126,603 @@ app.get('/admin/signals', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
+// MONITORING -> SHARED SIGNALS -> DEAD LETTERS (2026-09-14).
+//
+// What every dead-letter queue in the realm being read holds, counted, and the
+// letters themselves. `ssf/ssf_dead_letter_report.js` computes every number
+// and `admin-core/admin_views.js`'s `ssfDeadLettersJson()` searches and pages
+// the list, for this page and `GET /admin-api/ssf/dead-letters` alike; this
+// draws them.
+//
+// **READ-ONLY, AND THE CONTROLS ARE ONE LINK AWAY.** Revive and Drop its dead
+// letters act on ONE stream and live on that stream's card at /admin/ssf,
+// which every stream row here links to. A second copy of either here would be
+// a second door onto the same two actions for no reader who needs it — the
+// reason to come to this page is to find WHICH stream, and the next click is
+// that stream.
+//
+// **THE CHART IS THE FIRST IN THIS CONSOLE**, so its choices are written down
+// here rather than inherited. A stacked column per time bucket over the whole
+// retention window, one colour per CAUSE (not per error code — there are more
+// than a dozen of those, and four is what a reader acts on). The four colours
+// were checked with a colour-vision validator rather than chosen by eye: the
+// worst adjacent pair is ΔE 9.1 under protanopia and 22.9 in normal vision.
+// Two of them are under 3:1 against the white card, which is why no value is
+// ever carried by colour alone: the legend names each cause and its count in
+// text, every column's `<title>` gives its counts on hover, and the same
+// numbers are a table under it. There is no script, so the hover is the
+// browser's own tooltip on an SVG `<title>`, over a hit area the full height
+// of the plot so a one-letter column can still be pointed at.
+// ---------------------------------------------------------------------------
+const DEAD_LETTER_COLOURS = {
+  'push-failed': '#2a78d6',
+  'backlog-full': '#eb6834',
+  'declared-dead': '#1baf7a',
+  'dead-stream': '#eda100'
+};
+
+// A round step for the value axis: 1, 2 or 5 times a power of ten, never
+// below one letter, so the ticks read 0 / 5 / 10 rather than 0 / 3.25 / 6.5.
+function deadLetterAxisStep(peak) {
+  log.debug("Entering deadLetterAxisStep(). " + peak);
+  const rough = Math.max(1, peak / 4);
+  const power = Math.pow(10, Math.floor(Math.log10(rough)));
+  const step = [1, 2, 5, 10].map(function (m) {
+    return m * power;
+  }).filter(function (candidate) {
+    return candidate >= rough;
+  })[0];
+  log.debug("Leaving deadLetterAxisStep(). " + step);
+  return step;
+}
+
+// A window length for an axis label: `60m`, `12h`, `30d`.
+function deadLetterSpan(seconds) {
+  log.debug("Entering deadLetterSpan().");
+  let out = Math.round(seconds / 60) + 'm';
+  if (seconds >= 172800 && seconds % 86400 === 0) {
+    out = (seconds / 86400) + 'd';
+  } else if (seconds >= 7200) {
+    out = Math.round(seconds / 3600) + 'h';
+  }
+  log.debug("Leaving deadLetterSpan(). " + out);
+  return out;
+}
+
+function deadLetterSwatch(colour) {
+  log.debug("Entering deadLetterSwatch().");
+  log.debug("Leaving deadLetterSwatch().");
+  return '<svg width="12" height="12" viewBox="0 0 12 12" ' +
+    'aria-hidden="true"><rect x="0" y="0" width="12" height="12" rx="3" ' +
+    'fill="' + esc(colour) + '"/></svg>';
+}
+
+// One stacked column's segments, bottom up in the report's cause order, with
+// a 2px gap of the card's white between touching segments and the top one
+// rounded. `geometry` is the column's x, width, baseline and pixels per
+// letter.
+function deadLetterColumn(bucket, causes, geometry) {
+  log.debug("Entering deadLetterColumn().");
+  const present = causes.filter(function (cause) {
+    return bucket.counts[cause.id] > 0;
+  });
+  let base = geometry.baseline;
+  const parts = present.map(function (cause, index) {
+    const full = bucket.counts[cause.id] * geometry.perLetter;
+    const gap = index > 0 ? 2 : 0;
+    const height = Math.max(1, full - gap);
+    const bottom = base - gap;
+    const top = bottom - height;
+    base = base - full;
+    const colour = DEAD_LETTER_COLOURS[cause.id] || '#8a8a99';
+    const x = geometry.x;
+    const w = geometry.width;
+    if (index < present.length - 1) {
+      return '<rect x="' + x.toFixed(1) + '" y="' + top.toFixed(1) +
+        '" width="' + w.toFixed(1) + '" height="' + height.toFixed(1) +
+        '" fill="' + colour + '"/>';
+    }
+    const r = Math.min(4, height, w / 2);
+    return '<path d="M' + x.toFixed(1) + ' ' + bottom.toFixed(1) +
+      'V' + (top + r).toFixed(1) +
+      'Q' + x.toFixed(1) + ' ' + top.toFixed(1) + ' ' +
+      (x + r).toFixed(1) + ' ' + top.toFixed(1) +
+      'H' + (x + w - r).toFixed(1) +
+      'Q' + (x + w).toFixed(1) + ' ' + top.toFixed(1) + ' ' +
+      (x + w).toFixed(1) + ' ' + (top + r).toFixed(1) +
+      'V' + bottom.toFixed(1) + 'Z" fill="' + colour + '"/>';
+  });
+  log.debug("Leaving deadLetterColumn(). " + parts.length + " segment(s).");
+  return parts.join('');
+}
+
+// The whole timeline: axes, gridlines, one column per bucket, and the text a
+// reader who cannot see the colours still gets.
+function deadLetterTimeline(timeline, causes) {
+  log.debug("Entering deadLetterTimeline(). " + timeline.buckets.length +
+            " bucket(s).");
+  const W = 760;
+  const H = 230;
+  const left = 46;
+  const right = 14;
+  const top = 12;
+  const bottom = 34;
+  const plotW = W - left - right;
+  const plotH = H - top - bottom;
+  const baseline = top + plotH;
+  const n = timeline.buckets.length;
+  const band = plotW / n;
+  const width = Math.max(2, Math.min(24, band - 2));
+  const step = deadLetterAxisStep(timeline.peak);
+  const ceiling = Math.max(step, Math.ceil(timeline.peak / step) * step);
+  const perLetter = plotH / ceiling;
+
+  const grid = [];
+  for (let v = 0; v <= ceiling; v += step) {
+    const y = baseline - v * perLetter;
+    grid.push('<line x1="' + left + '" x2="' + (W - right) + '" y1="' +
+      y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="' +
+      (v === 0 ? '#c9c9d3' : '#ececf2') + '" stroke-width="1"/>' +
+      '<text x="' + (left - 8) + '" y="' + (y + 4).toFixed(1) +
+      '" text-anchor="end" font-size="11" fill="#666">' +
+      esc(v.toLocaleString('en-US')) + '</text>');
+  }
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(function (fraction) {
+    const x = left + plotW * fraction;
+    const ago = Math.round(timeline.windowS * (1 - fraction));
+    const anchor = fraction === 0 ? 'start' : (fraction === 1 ? 'end'
+                                                               : 'middle');
+    return '<text x="' + x.toFixed(1) + '" y="' + (baseline + 20) +
+      '" text-anchor="' + anchor + '" font-size="11" fill="#666">' +
+      esc(ago ? deadLetterSpan(ago) + ' ago' : 'now') + '</text>';
+  }).join('');
+
+  const columns = timeline.buckets.map(function (bucket, i) {
+    const x = left + i * band;
+    const from = Date.parse(bucket.start);
+    const until = from + timeline.bucketS * 1000;
+    const what = causes.filter(function (cause) {
+      return bucket.counts[cause.id] > 0;
+    }).map(function (cause) {
+      return cause.label + ' ' + bucket.counts[cause.id];
+    }).join(', ');
+    const title = whenText(from) + ' to ' + whenText(until) + ': ' +
+      (bucket.total
+        ? bucket.total + ' dead-lettered (' + what + ')'
+        : 'nothing dead-lettered');
+    return '<g><title>' + esc(title) + '</title>' +
+      '<rect x="' + x.toFixed(1) + '" y="' + top + '" width="' +
+      band.toFixed(1) + '" height="' + plotH + '" fill="#fff" ' +
+      'fill-opacity="0"/>' +
+      (bucket.total
+        ? deadLetterColumn(bucket, causes, { x: x + (band - width) / 2,
+            width: width, baseline: baseline, perLetter: perLetter })
+        : '') +
+      '</g>';
+  }).join('');
+
+  const empty = timeline.peak
+    ? ''
+    : '<text x="' + (left + plotW / 2) + '" y="' + (top + plotH / 2) +
+      '" text-anchor="middle" font-size="13" fill="#666">' +
+      'Nothing held was dead-lettered in this window.</text>';
+
+  const label = timeline.peak
+    ? 'Dead letters held, by when they were dead-lettered, in ' +
+      deadLetterSpan(timeline.bucketS) + ' columns over the last ' +
+      deadLetterSpan(timeline.windowS) + '; the busiest column holds ' +
+      timeline.peak + '. The same numbers are in the table below.'
+    : 'No dead letter held was dead-lettered in the last ' +
+      deadLetterSpan(timeline.windowS) + '.';
+  log.debug("Leaving deadLetterTimeline().");
+  return '<div class="chart"><svg xmlns="http://www.w3.org/2000/svg" ' +
+    'viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(label) +
+    '">' + grid.join('') + columns + ticks + empty + '</svg></div>';
+}
+
+// The letters list's rows. Called once per page load over at most one page.
+function deadLetterRows(json, causeById, listView) {
+  log.debug("Entering deadLetterRows(). " + json.letters.length + ".");
+  const rows = json.letters.map(function (row) {
+    const cause = causeById[row.cause] || { label: row.cause };
+    const event = row.event;
+    return '<tr>' +
+      '<td class="sub">' + esc(whenText(Date.parse(row.deadAt))) +
+      (row.ageS !== null
+        ? '<div>' + esc(durationText(row.ageS * 1000)) + ' ago</div>' : '') +
+      '</td>' +
+      '<td class="who"><a href="' + esc('/admin/ssf/dead-letters' +
+        queryWith(listView, { dlstream: row.stream_id, lettersPage: '' })) +
+      '#find-dlq"><code>' + esc(row.stream_id) + '</code></a>' +
+      (row.streamKnown
+        ? ''
+        : '<div class="sub">no such stream here</div>') + '</td>' +
+      '<td>' + (event
+        ? esc(event.name) + '<div class="sub"><code>' +
+          esc(event.types[0] || '') + '</code></div>' +
+          (event.subject
+            ? '<div class="sub">' + esc(event.subject) + '</div>' : '')
+        : '<span class="sub">unreadable</span>') + '</td>' +
+      '<td>' + deadLetterSwatch(DEAD_LETTER_COLOURS[row.cause] || '#8a8a99') +
+      ' ' + esc(cause.label) +
+      (row.errorCode
+        ? '<div><a href="/admin/error-codes#' + esc(row.errorCode) +
+          '"><code class="ec">' + esc(row.errorCode) + '</code></a></div>'
+        : '') + '</td>' +
+      '<td class="num">' + (row.status ? esc(String(row.status))
+        : '<span class="sub" title="' + esc('No HTTP answer: the push was ' +
+            'never made, or nothing answered it.') + '">&mdash;</span>') +
+      '</td>' +
+      '<td>' + esc(row.reason) + '</td>' +
+      '<td class="sub">' + (row.signed ? 'signed' : 'not signed') +
+      '<div><code>' + esc(row.jti) + '</code></div></td>' +
+      '</tr>';
+  }).join('');
+  log.debug("Leaving deadLetterRows().");
+  return rows;
+}
+
+app.get('/admin/ssf/dead-letters', function (req, res) {
+  log.debug("Entering the admin dead letters page.");
+  const json = ssfDeadLettersJson(req);
+  if (!json.installed) {
+    const missing = '<h1>Dead letters</h1><div class="err"><strong>Shared ' +
+      'Signals is not loaded in this process</strong>, so there are no ' +
+      'dead-letter queues to report on.</div>';
+    respond(req, res, json, 'Dead letters', '/admin/ssf/dead-letters',
+            missing);
+    log.debug("Leaving the admin dead letters page. Not installed.");
+    return;
+  }
+  const totals = json.totals;
+  const causeById = {};
+  json.causes.forEach(function (cause) {
+    causeById[cause.id] = cause;
+  });
+  const listView = listViewOf('/admin/ssf/dead-letters', req.query);
+  // A link to the letters narrowed, keeping the rest of the view and going
+  // back to the first page of what it narrows to.
+  const lettersOf = function (overrides) {
+    log.debug("Entering lettersOf().");
+    log.debug("Leaving lettersOf().");
+    return esc('/admin/ssf/dead-letters' + queryWith(listView,
+      Object.assign({ lettersPage: '' }, overrides))) + '#find-dlq';
+  };
+  const share = function (count) {
+    log.debug("Entering share().");
+    log.debug("Leaving share().");
+    return totals.held
+      ? Math.round(count * 100 / totals.held) + '%' : '&mdash;';
+  };
+
+  const tiles = '<div class="tiles">' +
+    tile(totals.held, 'dead letters held') +
+    tile(totals.streamsHolding, 'streams holding them') +
+    tile(totals.deadStreams, 'dead streams') +
+    tile(totals.halfOpenStreams, 'half-open') +
+    tile(totals.failingStreams, 'failing') +
+    tile(totals.unsigned, 'never signed') +
+    tile(totals.newestAgeS === null ? '—'
+      : durationText(totals.newestAgeS * 1000), 'since the newest') +
+    tile(totals.oldestAgeS === null ? '—'
+      : durationText(totals.oldestAgeS * 1000), 'since the oldest') +
+    '</div>';
+
+  const off = (!json.enabled
+    ? warn('<strong>Shared Signals is turned off</strong> ' +
+      '(<code>ssf.enabled</code>), so nothing new is sent or ' +
+      'dead-lettered. What is below is held until ' +
+      '<code>ssf.deadLetterRetentionS</code> passes.')
+    : '') +
+    (json.enabled && !json.pushDelivery
+      ? warn('<strong>Push delivery is off</strong> ' +
+        '(<code>ssf.pushDelivery</code>), so no push is made and none can ' +
+        'fail. Poll streams have no dead letters.')
+      : '');
+
+  // WHEN. The chart, its legend, and the same numbers as a table.
+  const timeline = json.timeline;
+  const legend = '<div class="legend">' + json.causes.map(function (cause) {
+    return '<span title="' + esc(cause.what) + '">' +
+      deadLetterSwatch(DEAD_LETTER_COLOURS[cause.id] || '#8a8a99') +
+      esc(cause.label) + ' ' + esc(String(cause.count)) + '</span>';
+  }).join('') + '</div>';
+  const busy = timeline.buckets.filter(function (bucket) {
+    return bucket.total > 0;
+  });
+  const timelineTable = busy.length
+    ? '<details><summary>The same as a table (' + busy.length + ' of ' +
+      timeline.buckets.length + ' columns hold anything)</summary>' +
+      wideTable('Dead letters by time', '<table><tr><th>From</th>' +
+      json.causes.map(function (cause) {
+        return '<th class="num">' + esc(cause.label) + '</th>';
+      }).join('') + '<th class="num">All</th></tr>' +
+      busy.map(function (bucket) {
+        return '<tr><td class="sub">' +
+          esc(whenText(Date.parse(bucket.start))) + '</td>' +
+          json.causes.map(function (cause) {
+            return '<td class="num">' + bucket.counts[cause.id] + '</td>';
+          }).join('') + '<td class="num">' + bucket.total + '</td></tr>';
+      }).join('') + '</table>') + '</details>'
+    : '';
+  const older = timeline.olderThanWindow
+    ? note(esc(String(timeline.olderThanWindow)) + ' letter(s) are older ' +
+      'than the window and are not drawn: the next sweep deletes them. That ' +
+      'happens when <code>ssf.deadLetterRetentionS</code> is shortened, and ' +
+      'before a process has swept since it started.')
+    : '';
+
+  // WHY.
+  const causeRows = json.causes.map(function (cause) {
+    return '<tr><td>' + deadLetterSwatch(DEAD_LETTER_COLOURS[cause.id]) +
+      ' ' + esc(cause.label) +
+      (cause.code
+        ? '<div><a href="/admin/error-codes#' + esc(cause.code) + '">' +
+          '<code class="ec">' + esc(cause.code) + '</code></a></div>'
+        : '') + '</td>' +
+      '<td>' + esc(cause.what) + '</td>' +
+      '<td class="num">' + (cause.count
+        ? '<a href="' + lettersOf({ dlcause: cause.id }) + '">' +
+          cause.count + '</a>'
+        : '0') + '</td>' +
+      '<td class="num">' + share(cause.count) + '</td></tr>';
+  }).join('');
+  const codeRows = json.byCode.map(function (row) {
+    const cause = causeById[row.cause] || { label: row.cause };
+    return '<tr><td>' + (row.errorCode
+        ? '<a href="/admin/error-codes#' + esc(row.errorCode) + '">' +
+          '<code class="ec">' + esc(row.errorCode) + '</code></a>'
+        : '<span class="sub">none recorded</span>') + '</td>' +
+      '<td>' + esc(cause.label) + '</td>' +
+      '<td>' + esc(row.summary) + '</td>' +
+      '<td class="num">' + (row.errorCode
+        ? '<a href="' + lettersOf({ dlq: row.errorCode }) + '">' +
+          row.count + '</a>'
+        : String(row.count)) + '</td></tr>';
+  }).join('') || '<tr><td colspan="4">Nothing held.</td></tr>';
+  const statusRows = json.byStatus.map(function (row) {
+    return '<tr><td>' + (row.status
+        ? 'HTTP ' + esc(String(row.status))
+        : '<span class="sub">no HTTP answer &mdash; not pushed, or nothing ' +
+          'answered</span>') + '</td>' +
+      '<td class="num">' + row.count + '</td>' +
+      '<td class="num">' + share(row.count) + '</td></tr>';
+  }).join('') || '<tr><td colspan="3">Nothing held.</td></tr>';
+  const typeRows = json.byEventType.map(function (row) {
+    return '<tr><td>' + esc(row.name || '(unreadable)') + '</td>' +
+      '<td class="sub"><code>' + esc(row.type || '') + '</code></td>' +
+      '<td class="num">' + (row.name
+        ? '<a href="' + lettersOf({ dlq: row.type || row.name }) + '">' +
+          row.count + '</a>'
+        : String(row.count)) + '</td>' +
+      '<td class="num">' + share(row.count) + '</td></tr>';
+  }).join('') || '<tr><td colspan="4">Nothing held.</td></tr>';
+
+  // WHICH STREAMS.
+  const stateText = {
+    dead: '<span class="state-revoked">dead</span>',
+    'half-open': '<span class="state-expired">half-open</span>',
+    failing: '<span class="state-expired">failing</span>',
+    healthy: '<span class="state-valid">delivering</span>',
+    poll: '<span class="sub">poll</span>',
+    unknown: '<span class="sub">not held here</span>'
+  };
+  const streamRows = json.streams.map(function (row) {
+    const when = row.state === 'dead'
+      ? 'dead since ' + whenText(Date.parse(row.deadSince)) +
+        (row.nextProbeAt
+          ? '; next probe ' + whenText(Date.parse(row.nextProbeAt)) : '')
+      : (row.failingSince
+        ? 'failing since ' + whenText(Date.parse(row.failingSince)) : '');
+    return '<tr><td class="who">' + (row.state === 'unknown'
+        ? '<code>' + esc(row.stream_id) + '</code>'
+        : '<a href="/admin/ssf#stream-' + esc(row.stream_id) + '" title="' +
+          esc('This stream\'s card on Protocols → Shared Signals, where ' +
+              'Revive and Drop its dead letters are.') + '"><code>' +
+          esc(row.stream_id) + '</code></a>') +
+      (row.aud
+        ? '<div class="sub">' + esc(Array.isArray(row.aud)
+          ? row.aud.join(', ') : String(row.aud)) + '</div>'
+        : '') + '</td>' +
+      '<td>' + (stateText[row.state] || esc(row.state)) +
+      (when ? '<div class="sub">' + esc(when) + '</div>' : '') + '</td>' +
+      '<td>' + esc(row.deadReason || row.lastPushError || '') + '</td>' +
+      '<td class="num">' + (row.held
+        ? '<a href="' + lettersOf({ dlstream: row.stream_id }) + '">' +
+          row.held + '</a>'
+        : '0') + '</td>' +
+      '<td class="sub">' + json.causes.filter(function (cause) {
+        return row.causes[cause.id] > 0;
+      }).map(function (cause) {
+        return esc(cause.label) + ' ' + row.causes[cause.id];
+      }).join('<br>') + '</td>' +
+      '<td class="num">' + row.deadLetteredEver + '</td></tr>';
+  }).join('') || '<tr><td colspan="6">Every push stream is delivering and ' +
+    'none holds a dead letter.</td></tr>';
+
+  // THE LETTERS.
+  const search = sectionSearchForm({
+    path: '/admin/ssf/dead-letters', param: 'dlq', pageParam: 'lettersPage',
+    query: req.query, label: 'Find',
+    placeholder: 'a jti, STS-SSF-0092, session-revoked, 503',
+    what: 'Over the jti, the stream, the reason, the error code, the ' +
+          'receiver\'s status, the event name and type URI and the subject. ' +
+          'The counts above are the whole realm\'s whatever is searched.' });
+  const narrowed = [];
+  if (json.filter.stream) {
+    narrowed.push('stream <code>' + esc(json.filter.stream) + '</code> ' +
+      '(<a href="' + lettersOf({ dlstream: '' }) + '">any stream</a>)');
+  }
+  if (json.filter.cause) {
+    narrowed.push('cause ' + esc((causeById[json.filter.cause] ||
+      { label: json.filter.cause }).label) + ' (<a href="' +
+      lettersOf({ dlcause: '' }) + '">any cause</a>)');
+  }
+  const nav = pageNavPair('/admin/ssf/dead-letters', pageParamsOf(req.query),
+    Object.assign({ param: 'lettersPage', noun: 'dead letters' },
+                  json.paging.letters));
+  const letterRows = deadLetterRows(json, causeById, listView) ||
+    '<tr><td colspan="7">' + (json.matched === 0 && totals.held
+      ? 'No dead letter matches.'
+      : 'No dead letters are held in this realm.') + '</td></tr>';
+
+  // THIS PROCESS.
+  const proc = json.process;
+  const pushes = proc.pushes || {};
+  const sweepRows = proc.sweeps.map(function (row) {
+    return '<tr><td class="sub">' + esc(whenText(Date.parse(row.at))) +
+      '</td><td class="num">' + row.letters + '</td>' +
+      '<td class="num">' + row.held + '</td>' +
+      '<td class="num">' + row.expired + '</td>' +
+      '<td class="num">' + row.trimmed + '</td>' +
+      '<td class="num">' + row.orphaned + '</td>' +
+      '<td class="num">' + row.deadStreams + '</td>' +
+      '<td class="num">' + row.probes + '</td></tr>';
+  }).join('') || '<tr><td colspan="8">This process has not swept this ' +
+    'realm yet. It sweeps every <code>ssf.deadLetterSweepS</code>.</td></tr>';
+  const since = proc.sinceStart;
+
+  const s = json.settings;
+  const settingRows = [
+    ['ssf.deadLetterRetentionS', s.retentionS, 'seconds a letter is kept'],
+    ['ssf.deadLetterMaxPerStream', s.maxPerStream,
+     'letters one stream keeps; past it the oldest go'],
+    ['ssf.deadStreamTimeoutS', s.deadStreamTimeoutS,
+     'seconds of failed pushes before a stream is dead (0: never)'],
+    ['ssf.deadLetterSweepS', s.sweepS, 'seconds between sweeps'],
+    ['ssf.pushConcurrency', s.pushConcurrency,
+     'pushes in flight per process (0: no cap)'],
+    ['ssf.pushBacklog', s.pushBacklog,
+     'pushes waiting per process before STS-SSF-0092'],
+    ['ssf.pushRetries', s.pushRetries, 'retries before a push has failed']
+  ].map(function (row) {
+    return '<tr><td><code>' + esc(row[0]) + '</code></td>' +
+      '<td class="num">' + esc(String(row[1])) + '</td>' +
+      '<td>' + esc(row[2]) + '</td></tr>';
+  }).join('');
+
+  const inner = '<h1>Dead letters</h1><p>Every Security Event Token the ' +
+    'transmitter <strong>could not deliver</strong> and is still holding, ' +
+    'in the &ldquo;' + esc(json.realm) + '&rdquo; realm &mdash; each ' +
+    'realm has dead-letter queues of its own. A letter is kept for ' +
+    '<code>ssf.deadLetterRetentionS</code> with the reason, and nothing ' +
+    'resends it except the probe that tries to revive a dead stream.</p>' +
+    off +
+    tiles +
+    note('<strong>This page reports; it changes nothing.</strong> Revive ' +
+    'a dead stream or drop its letters on that stream\'s card at ' +
+    '<a href="/admin/ssf">Protocols &rarr; Shared Signals</a> &mdash; ' +
+    'every stream below links to it. Counted ' +
+    esc(whenText(Date.parse(json.generatedAt))) + '.') +
+
+    '<h2>When</h2>' +
+    note('Held letters by when they were dead-lettered, in ' +
+    esc(deadLetterSpan(timeline.bucketS)) + ' columns over the last ' +
+    esc(deadLetterSpan(timeline.windowS)) + ' &mdash; the whole retention ' +
+    'window, so a letter that has aged out is gone from the chart as it is ' +
+    'from the queue. Point at a column for its counts.') +
+    legend +
+    deadLetterTimeline(timeline, json.causes) +
+    timelineTable +
+    older +
+
+    '<h2>Why</h2>' +
+    note('Four causes, each a different thing to do about it. Every other ' +
+    'code a failed push can carry is a push that failed, and is broken out ' +
+    'below.') +
+    '<table><tr><th>Cause</th><th>What it means</th>' +
+    '<th class="num">Held</th><th class="num">Share</th></tr>' +
+    causeRows + '</table>' +
+    '<h3>By error code</h3>' +
+    '<table><tr><th>Code</th><th>Cause</th><th>What the code means</th>' +
+    '<th class="num">Held</th></tr>' + codeRows + '</table>' +
+    '<h3>By the receiver\'s answer</h3>' +
+    '<table><tr><th>Status</th><th class="num">Held</th>' +
+    '<th class="num">Share</th></tr>' + statusRows + '</table>' +
+    '<h3>By event type</h3>' +
+    '<table><tr><th>Event</th><th>Type</th><th class="num">Held</th>' +
+    '<th class="num">Share</th></tr>' + typeRows + '</table>' +
+
+    '<h2>Streams</h2>' +
+    note('Every stream that holds a dead letter or is not delivering. ' +
+    '<strong>Dead</strong>: nothing is pushed to it and one letter is ' +
+    'pushed as a probe each <code>ssf.deadStreamTimeoutS</code>. ' +
+    '<strong>Half-open</strong>: failing for that long without being dead, ' +
+    'so the next failure kills it. <strong>Failing</strong>: younger than ' +
+    'that. <em>Ever</em> is the stream\'s own count of every letter it was ' +
+    'given, including the ones since deleted.') +
+    wideTable('Streams with dead letters', '<table><tr><th>Stream</th>' +
+    '<th>State</th><th>Last failure</th><th class="num">Held</th>' +
+    '<th>Held, by cause</th><th class="num">Ever</th></tr>' +
+    streamRows + '</table>') +
+
+    '<h2 id="letters">The letters</h2>' +
+    search +
+    (narrowed.length
+      ? '<p class="sub">Showing only ' + narrowed.join(' and ') + '.</p>'
+      : '') +
+    nav.head +
+    wideTable('Dead letters', '<table><tr><th>Dead-lettered</th>' +
+    '<th>Stream</th><th>Event</th><th>Cause</th>' +
+    '<th class="num">Status</th><th>Reason</th><th>SET</th></tr>' +
+    letterRows + '</table>') +
+    nav.foot +
+    note('No token is shown or returned: a SET is a signed statement ' +
+    'about somebody. <em>Not signed</em> is a SET for a dead stream, ' +
+    'kept as its claims because signing what nothing would receive is the ' +
+    'cost dead streams exist to stop.') +
+
+    '<h2>This process</h2>' +
+    warn('<strong>Everything in this section is process ' +
+    esc(String(proc.pid)) + '\'s alone</strong> (' + esc(proc.role) + '). ' +
+    'In a service with request workers the next refresh may be answered by ' +
+    'another process with different numbers, and the push cap is not ' +
+    'per realm: every realm\'s pushes from one process share it, so a ' +
+    'burst in one realm can dead-letter another\'s with ' +
+    '<code>STS-SSF-0092</code>.') +
+    '<div class="tiles">' +
+    tile(String(pushes.active || 0) + ' / ' +
+         (pushes.concurrency ? String(pushes.concurrency) : '∞'),
+         'pushes in flight') +
+    tile(String(pushes.waiting || 0) + ' / ' +
+         String(pushes.backlog || 0), 'pushes waiting') +
+    tile(since.sweeps, 'sweeps of this realm') +
+    tile(since.letters, 'dead-lettered here') +
+    tile(since.expired, 'expired') +
+    tile(since.trimmed, 'over the per-stream cap') +
+    tile(since.probes, 'probes') +
+    '</div>' +
+    '<h3>Recent sweeps</h3>' +
+    note('The last twenty sweeps of this realm by this process, newest ' +
+    'first. <em>New</em> counts the letters this process added since its ' +
+    'previous sweep; <em>held</em>, <em>expired</em>, <em>over cap</em> ' +
+    'and <em>orphaned</em> (a letter whose stream is gone) are the shared ' +
+    'store as this process found it.') +
+    wideTable('Recent sweeps', '<table><tr><th>When</th>' +
+    '<th class="num">New</th><th class="num">Held</th>' +
+    '<th class="num">Expired</th><th class="num">Over cap</th>' +
+    '<th class="num">Orphaned</th><th class="num">Dead streams</th>' +
+    '<th class="num">Probes</th></tr>' + sweepRows + '</table>') +
+
+    '<h2>Settings</h2>' +
+    note('What decides what is dead-lettered and for how long. Changed on ' +
+    '<a href="/admin/ssf">Protocols &rarr; Shared Signals</a>, with every ' +
+    'other <code>ssf.*</code> setting.') +
+    '<table><tr><th>Setting</th><th class="num">Value</th><th>Meaning</th>' +
+    '</tr>' + settingRows + '</table>' +
+
+    note('<a href="/admin/ssf/dead-letters?format=json">this page as ' +
+    'JSON</a> &middot; <a href="/admin-api/ssf/dead-letters">the same over ' +
+    'the management API</a> &middot; <a href="/admin/ssf">the streams and ' +
+    'their controls</a> &middot; <a href="/admin/error-codes">every error ' +
+    'code</a> &middot; <a href="/admin/audit">the audit log</a>');
+
+  respond(req, res, json, 'Dead letters', '/admin/ssf/dead-letters', inner);
+  log.debug("Leaving the admin dead letters page.");
+});
+
+// ---------------------------------------------------------------------------
 // THE EIGHTH SLOT, filled by `../ssf/ssf.js` at its own require time, and rule
 // 3e's test answers yes in both directions at once.
 //
@@ -27512,8 +29754,8 @@ let signalsReporter = null;
 
 function setSignalsReporter(reporter) {
   log.debug("Entering setSignalsReporter().");
-  const needed = ['report', 'action', 'actions', 'eventTypes', 'statuses',
-                  'subjectFormats'];
+  const needed = ['report', 'deadLetters', 'action', 'actions', 'eventTypes',
+                  'statuses', 'subjectFormats'];
   const missing = needed.filter(function (name) {
     return !reporter || reporter[name] === undefined;
   });
@@ -28058,10 +30300,36 @@ function ssfStreamCard(row) {
     return '<tr><td class="sub">' + esc(one.at) + '</td><td>' +
       esc(one.kind) + '</td><td>' + esc(one.text) + '</td></tr>';
   }).join('') || '<tr><td colspan="3">Nothing recorded yet.</td></tr>';
+  // THE DEAD-LETTER QUEUE (2026-09-14): what could not be delivered, newest
+  // first, with the reason. The first twenty-five; the JSON has them all.
+  const dead = row.deadLetters || [];
+  const deadRows = dead.length
+    ? dead.slice(0, 25).map(function (one) {
+        return '<tr><td><code>' + esc(one.jti) + '</code></td><td>' +
+          esc(one.summary ? one.summary.name : '') + '</td><td class="sub">' +
+          esc(one.deadAt) + '</td><td>' + esc(one.reason) +
+          (one.errorCode ? ' <code>' + esc(one.errorCode) + '</code>' : '') +
+          '</td><td class="sub">' + (one.signed ? 'signed' : 'not signed') +
+          '</td></tr>';
+      }).join('') + (dead.length > 25
+        ? '<tr><td colspan="5">&hellip; and ' + (dead.length - 25) +
+          ' more, in this page\'s JSON.</td></tr>' : '')
+    : '<tr><td colspan="5">Nothing undeliverable.</td></tr>';
 
   log.debug("Leaving ssfStreamCard().");
-  return '<h3><code>' + esc(row.stream_id) + '</code> &mdash; ' +
-    esc(row.status) + '</h3>' +
+  // The heading carries an id so Monitoring → Shared Signals → Dead letters
+  // can link each stream row straight to this card, where its controls are.
+  return '<h3 id="stream-' + esc(row.stream_id) + '"><code>' +
+    esc(row.stream_id) + '</code> &mdash; ' +
+    esc(row.status) + (row.dead
+      ? ' <span class="state-invalid">&mdash; DEAD</span>' : '') + '</h3>' +
+    (row.dead
+      ? '<p class="state-invalid">Declared dead at ' + esc(row.deadSince) +
+        ': its pushes all failed for <code>ssf.deadStreamTimeoutS</code>. ' +
+        'Nothing is pushed to it; its SETs go to the dead-letter queue, and ' +
+        'one is pushed as a probe at ' + esc(row.nextProbeAt || 'the next ' +
+        'sweep') + '. Last failure: ' + esc(row.deadReason) + '</p>'
+      : '') +
     '<table class="key">' +
     '<tr><th>Issuer</th><td><code>' + esc(row.iss) + '</code></td></tr>' +
     '<tr><th>Audience</th><td><code>' +
@@ -28094,9 +30362,33 @@ function ssfStreamCard(row) {
     '<h4>Waiting to be delivered</h4>' +
     '<table><tr><th>jti</th><th>Event</th><th>Queued</th><th>Delivered</th>' +
     '</tr>' + queue + '</table>' +
+    '<h4>Dead letters</h4>' +
+    note('SETs that could not be delivered, with the reason, kept for ' +
+         '<code>ssf.deadLetterRetentionS</code> and then deleted. Nothing ' +
+         'resends them. <a href="' + esc('/admin/ssf/dead-letters' +
+         queryWith({}, { dlstream: row.stream_id })) + '#find-dlq">Every ' +
+         'one, counted and searchable</a>.') +
+    '<table><tr><th>jti</th><th>Event</th><th>Dead since</th><th>Why</th>' +
+    '<th></th></tr>' + deadRows + '</table>' +
     '<h4>What has happened on this stream</h4>' +
     '<table><tr><th>When</th><th>What</th><th>Detail</th></tr>' + history +
     '</table>' +
+    (row.dead
+      ? '<form method="post" action="/admin/ssf"><div class="formrow">' +
+        '<input type="hidden" name="stream_id" value="' + esc(row.stream_id) +
+        '">' +
+        '<input type="hidden" name="action" value="revive">' +
+        '<button>Revive this stream</button>' +
+        '</div></form>'
+      : '') +
+    (dead.length
+      ? '<form method="post" action="/admin/ssf"><div class="formrow">' +
+        '<input type="hidden" name="stream_id" value="' + esc(row.stream_id) +
+        '">' +
+        '<input type="hidden" name="action" value="clear-dead-letters">' +
+        '<button class="secondary">Drop its dead letters</button>' +
+        '</div></form>'
+      : '') +
     '<form method="post" action="/admin/ssf"><div class="formrow">' +
     '<input type="hidden" name="stream_id" value="' + esc(row.stream_id) +
     '">' +
@@ -28155,6 +30447,12 @@ app.get('/admin/ssf', function (req, res) {
     tile((json.streamDetail || []).reduce(function (n, row) {
       return n + row.queue.length;
     }, 0), 'waiting') +
+    tile((json.streamDetail || []).filter(function (row) {
+      return row.dead;
+    }).length, 'dead streams') +
+    tile((json.streamDetail || []).reduce(function (n, row) {
+      return n + (row.deadLetters || []).length;
+    }, 0), 'dead letters') +
     tile((json.receivedDetail || []).length, 'received here') +
     '</div>';
 
@@ -31138,8 +33436,9 @@ const PROTOCOL_SETTINGS_PAGES = [
           'and from what a token CARRIES, which is ' +
           '<a href="/admin/claims">Custom claims</a> and ' +
           '<a href="/admin/userinfo-claims">UserInfo claims</a>.',
-    also: ['<strong><code>oauth2.rfc9700</code> is the one MODE this service ' +
-           'has</strong>, and it is off unless it is turned on. With it off ' +
+    also: ['<strong><code>oauth2.rfc9700</code> is a MODE, and so is ' +
+           '<code>oauth2.oauth21</code></strong>; both are off unless turned ' +
+           'on. With them off ' +
            'nothing below is enforced: no PKCE is required, no redirect URI ' +
            'is matched exactly, no client is authenticated. That is what ' +
            'this service is for — a client\'s error paths cannot be ' +
@@ -31149,6 +33448,17 @@ const PROTOCOL_SETTINGS_PAGES = [
            'and a listener\'s scheme is settled when the socket is bound; a ' +
            'TRUST REALM can be in the mode while the process is not, which ' +
            'is the way to have both at once.',
+           '<strong><code>oauth2.oauth21</code> is OAuth 2.1 ' +
+           '(draft-ietf-oauth-v2-1-16), and it turns RFC 9700 mode on</strong> ' +
+           '— everything that mode enforces is part of 2.1 — then adds the ' +
+           'rest: PKCE for confidential clients too, a client that has ' +
+           'registered its own redirect URI (<code>oauth2.redirectUris</code> ' +
+           'below is not read), a presented credential that must verify, a ' +
+           'JWT client assertion addressed to the issuer alone, and no SAML ' +
+           'client authentication. It also lets a token request leave out ' +
+           '<code>redirect_uri</code>, which RFC 9700 mode refuses — so a ' +
+           'client written for 2.1 is exercised in this mode and not in that ' +
+           'one. Restart-only and realm-settable for the same reason.',
            '<strong><code>oauth2.breakIdTokenNonce</code> makes this service ' +
            'wrong on purpose.</strong> Turn it on and every ID Token carries ' +
            'a <code>nonce</code> that is not the one the client sent, so a ' +
@@ -31158,7 +33468,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'permissive server is hard to write error handling against, so ' +
            'the errors have to be reachable deliberately.'],
     links: [['/.well-known/openid-configuration', 'the discovery document'],
-            ['/oauth2/rfc9700', 'what the mode enforces'],
+            ['/oauth2/rfc9700', 'what RFC 9700 mode enforces'],
+            ['/oauth2/oauth21', 'what OAuth 2.1 mode enforces'],
             ['/admin/token-lifetimes', 'how long what it issues lasts'],
             ['/admin/tokens', 'what has been issued']] },
 
@@ -31207,7 +33518,7 @@ const PROTOCOL_SETTINGS_PAGES = [
     links: [['/oid4vp/verifier', 'the verifier, for a person'],
             ['/admin/vc-verifier-config', 'what it asks for']] },
 
-  { path: '/admin/kerberos', title: 'Kerberos',
+  { path: '/admin/kerberos', title: 'Kerberos settings',
     lead: '<strong>The KDC on raw TCP and UDP 88, the same exchange over ' +
           'MS-KKDCP at <code>/KdcProxy</code>, the Kerberos-protected ' +
           'service, and SPNEGO over HTTP.</strong> Most of these settings ' +
@@ -33506,6 +35817,9 @@ module.exports = {
   // otherwise reimplement respond() badly. Neither decides anything: what that
   // page SAYS is entirely that module's.
   respond: respond,
+  // For `tests/protocol_endpoints.js`: which Protocols pages the endpoint
+  // table and `SECTIONS` disagree about. See above respond().
+  protocolEndpointDrift: protocolEndpointDrift,
   page: page,
   // AND FOR A SECOND MODULE SINCE THE XACML WORK: `xacml/xacml_admin.js`
   // draws the four /admin/xacml pages the way `ldap/ldap_server.js` draws its
@@ -33585,6 +35899,9 @@ module.exports = {
   clipped: clipped,
   clippedValues: clippedValues,
   pageNavPair: pageNavPair,
+  // For `admin-ui/pki_admin.js`, whose two key-pair tables share one `per`
+  // (2026-09-13) — the same control every multi-list page here draws.
+  perPageForm: perPageForm,
   perPageOptions: perPageOptions,
   queryWith: queryWith,
   // Filled by spiffe_server.js at its require time, for the reason beside the

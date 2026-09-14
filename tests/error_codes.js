@@ -80,11 +80,15 @@ const ROOT = path.join(__dirname, '..');
 // root, which tests/xacml_pep.js pins.
 //   xacml/conformance              the vendored OASIS suite's manifest
 //   env                            generated appconfig files
+//   debugger/embedded              the debugger project's BUILD OUTPUT, its
+//                                  node_modules included; gitignored, and its
+//                                  codes are that project's business
 // ---------------------------------------------------------------------------
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
                    'openbao', 'env', '.git', 'coverage', 'protos'];
 
-const SKIP_PATHS = ['common/vendored', 'xacml/conformance'];
+const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
+                    'debugger/embedded'];
 
 // kerberos/CLAUDE.md: the eight codec modules are vendored from the parent
 // project and not editable here, despite not living under common/vendored.
@@ -176,6 +180,24 @@ const FAILURE_PATTERNS = [
           '(RFC 9635 section 3.6)' },
   { re: /\binteractionError\(\s*res\b/, before: 4, after: 2,
     what: 'a GNAP interaction page refusing a link, a code or an answer' },
+  // ----- ACME / EST / SCEP (2026-09-13) ------------------
+  // ===== ACME patterns =====
+  { re: /\bacmeProblem\(\s*ctx\b/, before: 4, after: 4,
+    what: 'an ACME RFC 7807 problem document sent by acmeProblem(ctx, ' +
+          'status, type, code, detail) (RFC 8555 section 6.7)' },
+  { re: /\brefusal\(\s*'[A-Za-z]+'\s*,\s*[45]\d\d\b/, before: 1, after: 2,
+    what: 'an ACME refusal object built by acme_jws.refusal(type, status, ' +
+          'code, detail)' },
+  // ===== EST patterns =====
+  { re: /\bestError\(\s*req\s*,\s*res\b/, before: 3, after: 2,
+    what: 'an EST refusal written by estError(req, res, ctx, status, …), ' +
+          'whose code is marked on the line before it' },
+  // ===== SCEP patterns =====
+  { re: /\bscepError\(\s*res\b/, before: 4, after: 2,
+    what: 'the SCEP scepError(res, status, code, text) HTTP refusal ' +
+          '(scep/scep.js)' },
+  { re: /\breturn failed\(\s*'STS-/, before: 1, after: 1,
+    what: 'a SCEP CertRep FAILURE built by failed() (scep/scep.js)' },
   // ----- KRB -------------------------------------------
   { re: /\berrorReply\(\s*[\w.]+\s*,/, before: 1, after: 3,
     what: 'a Kerberos KRB-ERROR built by errorReply()' },

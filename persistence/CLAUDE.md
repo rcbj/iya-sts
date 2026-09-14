@@ -512,7 +512,8 @@ was — a nudge that wakes the poll early — and is allowed to be lossy.
 **THAT IS THE ARGUMENT `xacml-pep/` ALREADY MAKES ABOUT ITS OWN PULL**, and
 citing it is the point rather than a flourish: this repository has run that
 trade in production shape once already, in the one other place where the
-alternative was a push nobody could guarantee.
+alternative was a push nobody could guarantee. **`persistence.coordinate` turns
+it off.**
 
 **AN ORM WAS THE OBVIOUS ANSWER AND IT DOES NOT FIT**, for a reason about this
 service rather than about any ORM. The authority here is an IN-MEMORY MAP, read
@@ -580,6 +581,31 @@ throws applies nothing. `common/realms.js` argues the hook and
 back, because two processes with different settings would then exchange it for
 ever.
 
+### ONE FLUSH QUEUED BEHIND THE RUNNING ONE, NOT ONE PER CALLER (2026-09-13)
+
+`flush()` answered a caller that arrived while a flush was running with
+`flushing.then(flush)` — a waiter per caller. `schedule()` arms a zero-delay
+timer per write in postgres mode, so every write made during a transaction
+added one; when it settled all of them ran, one started the next flush and the
+rest chained themselves again. **Under a sustained load they never drained.**
+A sampling heap profile of a single-process postgres service during
+`sts_directory_bulk_load_ldap_50k` put over 3 GB of 6.6 GB allocated in fifteen
+seconds in that line; RSS went 1 GB → 4.2 GB with 2.6s and 5.3s GC stalls, one
+run ended in `JavaScript heap out of memory`, and the suite's `postgres` mode
+reported it as `fetch failed` on the read-back. Now the first caller during a
+flush creates ONE queued flush and every later caller is handed it; it takes
+the whole journal when it starts, so every write made before any of those calls
+is written when it resolves. The same load: 50.3s → 19.2s, 815 MB peak, worst
+healthcheck 33ms. **Look for it next time as RSS climbing during a write load
+and falling back when the load stops** — garbage, not a leak.
+
+**AND `changeRowsWritten()` COUNTS AT COMMIT.** `persistence_postgres.js`
+added a transaction's change rows to the counter when the INSERT was built, so
+an open transaction or one about to roll back had already moved it. A request
+worker reads it to say whether it `wrote` — since its LAST ANNOUNCEMENT now,
+not either side of one flush — and the front process reads it to mark workers
+stale. `tests/flush_waiters_and_commit_counts.js` pins both, four mutants caught.
+
 ### A FAILED MINTED FLUSH MUST NOT GROW, AND IT DID (2026-09-12)
 
 Three faults compounded on one dispatched run, and each is fixed where it was:
@@ -603,6 +629,55 @@ Three faults compounded on one dispatched run, and each is fixed where it was:
 pin the three. **What to look for next time**: `STS-STORE-0021` repeating on one
 pid while `STS-WORKER-0007` barrier timeouts pile up — the flush is failing, not
 slow.
+
+### ONE MINTED FLUSH AT A TIME PER PROCESS, OR THE OLDER VALUE CAN WIN (2026-09-13)
+
+**A flush READS a value when it takes the journal and WRITES it when its
+transaction commits.** `minted.flush()` had two callers that did not wait for
+each other — `persistence.js`'s scheduled flush and `request_worker.js`'s
+commit announcement (`flushMinted()`) — so two transactions from ONE process
+could be open at once, a key written between their journal takes was in both
+with two different values, and `ON CONFLICT DO UPDATE` kept whichever COMMITTED
+last. Sorting the statements (above) stops a deadlock; it does not stop a wait,
+and a wait is exactly what reverses the order.
+
+**It is the whole of `sts_global_logout`'s intermittent `dispatch` failure.** A
+browser arriving at `/wsfed` gets an ARRIVAL session (`anonymous`,
+`chosen: false`) and the sign-in upgrades the same row in place. On worker 34
+the arrival went out in a transaction that began at 15:00:44.079 and the
+upgrade in one that began at 15:00:44.267; the first waited on a lock the second
+held and committed after it. `sts_changes` shows it: the two rows for that
+session have their `seq` the opposite way round from their `at` (41715 at .267,
+41778 at .079). Every other process applied an anonymous row nobody had chosen,
+worker 34 held the signed-in session in memory, and the global sign-out —
+answered by worker 33 — listed seven sessions of eight, ended seven, and left
+the eighth authorising `prompt=none` at worker 34. **The read barrier worked**:
+worker 33 caught up correctly, to a store that was wrong. So neither a barrier
+change nor a sign-out that syncs first could have fixed it.
+
+`flush()` now keeps `flushInFlight`: a call made while one is in flight waits
+and then takes the journal itself, so within a process commit order is journal
+order. Waiters coalesce (the first takes everything written during the wait),
+`reset()` forgets a write in flight, and a waiter clears a marker left on a
+settled promise rather than spinning on it. **Two different processes writing
+one key is untouched** and is still last-writer-wins, as above.
+
+**`stop()` WAITS TOO, AND THAT MOVED A TEST ORDERING.**
+`appconfig_persistence.js` calls `persistence.stop()` without awaiting it, and
+`minted.stop()` marks the module stopped after its flush — so the mark can land
+inside a later file that shares the process. `tests/minted_flush_order.js` runs
+its assertions in a child for that reason. (`minted_persistence.js` run
+immediately after `appconfig_persistence.js` with `--only` fails section 3 the
+same way, with or without this change; in the full ordering files between them
+absorb it.)
+
+**What to look for next time**: the same minted key in `sts_changes` with `seq`
+and `at` in opposite orders from ONE origin — the query is
+`lag(at) over (partition by origin, kind, key order by seq) > at`. It found 18
+across a whole dispatched run, one of them a session.
+`tests/minted_flush_order.js` pins it with a store that commits when told to;
+four mutants caught, two recorded as equivalent (both clear the marker in a
+branch the waiter's own clear makes redundant).
 
 ### What still does not coordinate
 

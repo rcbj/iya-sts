@@ -7,6 +7,10 @@ seventeen operations under `/admin-api/xacml`, policies live in `ou=policies`
 in the embedded directory and registered remote enforcement points in
 `ou=peps`.
 
+**THE ONLY FAMILY HERE THAT ANSWERS A QUESTION ABOUT SOMEBODY ELSE'S
+BOUNDARY** — every other protocol authenticates or provisions somebody, and this
+one is handed a subject authenticated elsewhere and asked whether they may.
+
 **The remote PEP is a SECOND CONTAINER and it is not in this directory** — it
 is `xacml-pep/`, which has a `CLAUDE.md` of its own and is the only directory
 in this repository that is not part of the mock. What is here is the PDP's side
@@ -32,6 +36,7 @@ and the nudge.
 | `xacml_alfa.js` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
 | `xacml_pep_registry.js` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_http.js` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
+| `xacml_pep_tls.js` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.js` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
 | `xacml_admin.js` | The five `/admin/xacml` console pages and their actions. |
 | `conformance/` | The vendored OASIS suite. `PROVENANCE.md` is the argument, `MANIFEST.js` the drift check. **Not edited here, ever.** |
 
@@ -85,6 +90,32 @@ seeded one, live, while every other job in the run decided against it.
 
 `sts_xacml_editor.js` found the thirteenth defect on its first run and it is
 listed below with the twelve.
+
+## Where this family sits in the require order (23c)
+
+**After `admin-ui/admin`**, whose TENTH and ELEVENTH slots `xacml_admin.js` and
+`xacml_role_pep.js` fill and whose page shell, settings block and action
+responder it requires — so a require the other way would close a cycle, and one
+from `mgmt-api/admin_api.js` would move every `/xacml` route and all five
+`/admin/xacml*` pages ahead of the management API's own. It requires
+`xacml_admin.js` ITSELF rather than `server.js` doing it, so this family has ONE
+line in the require order; that module requires this one back LAZILY, inside
+the one function that needs it.
+
+**And after `ldap/ldap_server` (21) in effect** — not as an ordering
+constraint, since both registers take their directory across a slot that module
+fills, but because a process that loaded this one and not that has an empty
+repository and answers NotApplicable to everything. Since 2026-09-05 it also
+requires `oauth-oidc/mtls` for the remote PEP's client certificate, which is a
+LIBRARY (rule 3) and registers nothing, so it cannot move a route or join a
+cycle.
+
+**AND IT REQUIRES `xacml_role_pep.js`, WHICH IS WHAT ARMS EVERY ISSUANCE SITE IN
+THE SERVICE**: that module fills `common/issuance_gate.js`'s decider at require
+time, so from this line onward the nine `gate.check()` calls reach the engine
+and before it — in `npm test`, in the parent project's in-process Kerberos
+jobs, in the remote PEP container — they answer "allowed". See *AND SINCE
+2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below.
 
 ## The three `/xacml/pep` endpoints are GATED, and the chain has four links
 
@@ -205,6 +236,11 @@ times over under a rule that the argument must be *made* each time — the test
 being whether the page CANNOT work without one. An editor can. So every
 "pick the next valid element" dropdown is a `<select>` whose options were
 computed on the server by `xacml_editor.js`, and choosing one is a form POST.
+
+**Every page of this console but one is `script-src 'none'`** (the exception is
+`/admin/api-explorer`, which arrived on 2026-09-09 and argues itself); the
+editor's version of the claim is unaffected, because that page genuinely has no
+script.
 
 *What it costs*: a round trip per element — a five-rule policy built by hand is
 perhaps forty POSTs. The page says so; the templates are the answer.
@@ -410,7 +446,9 @@ policy system.
 ## Where it stands against the conformance suite
 
 **454 of 455 mandatory cases**, with the one exception recorded in
-`conformance/MANIFEST.js`'s `EXPECTED_FAILURES` and argued there.
+`conformance/MANIFEST.js`'s `EXPECTED_FAILURES` and argued there. The
+VENDORED OASIS conformance suite is **Apache-2.0 rather than this repository's
+MIT** and says so in `LICENSE.md`.
 
 ```
 IIA   attribute references     18 of 18
@@ -591,6 +629,8 @@ this is a normalisation rather than a no-op. It is called out where
 ---
 
 # Phase five: the remote PEP
+
+**THE REMOTE PEP LANDED 2026-09-05 and its container is `xacml-pep/`.**
 
 **THE PEP PULLS. THIS SERVICE DOES NOT PUSH.** Everything below follows from
 that sentence, and this section's predecessor assumed the opposite — the *What
@@ -972,6 +1012,44 @@ service dialling a PEP; it does not stop it enforcing, because it already holds
 the engine and the policy. "Forget" removes a row. **A control labelled
 "disable" that leaves the thing running is the single most misleading thing a
 console can do**, so every disabled row says so.
+
+## The remote PEP's HTTPS listener (2026-09-13)
+
+The fourth control on `/admin/xacml/peps`, and the only one that does something
+FOR the other process rather than about it: **Issue certificate** mints the key
+pair a PEP serves its own clients over HTTPS with. `xacml_pep_tls.js` is the
+module; `common/pki.js`'s `issueTlsServerKeyPair()` does the issuing, from the
+realm's `pep-tls` Issuing CA.
+
+* **THE REALM IS THE REGISTRATION'S.** The row is looked up in the ambient
+  realm's `ou=peps` and a PEP not registered there is refused
+  (`STS-XACML-0071`). That is not a permission on the PEP — registering is
+  still not what lets it pull — it is the only record that says which realm
+  this PEP belongs to, and it carries the notify URL the default name comes
+  from.
+* **THE NAMES** are the PEP's registered name (where it is a DNS name), the
+  host of its notify URL (an IP host becomes an IP subjectAltName), and what
+  the caller adds. Added, never replacing: the notify host is where this
+  service would dial the PEP.
+* **THE KEY IS IN ONE REPLY.** Nothing writes it onto the PEP's entry — this
+  service is never party to a handshake between the PEP and its clients, so a
+  copy would be a server key held by something with no use for it. The console
+  answers the POST as a `no-store` PAGE rather than a 303, for
+  `/admin/pki/person`'s reason: a private key on a query string is a private
+  key in the history, the log and the next `Referer`. JSON in, JSON out.
+* **THE ROW SHOWS WHAT WAS ISSUED, FROM THE CERTIFICATE REGISTER** (`pki.js`'s
+  slot for the PEP's name), not a copy on `ou=peps` that would go stale at the
+  first reissue. Whether the PEP is SERVING it is the PEP's own `GET /`.
+* **IT IS THE ONE ASYNCHRONOUS XACML ACTION.** `pepAction()` answers a PROMISE
+  for it and a plain result for the other three, and both callers
+  (`admin-core/admin_actions.js`'s `xacmlAction()` and the console handler)
+  settle it with `Promise.resolve()`. The other actions stay synchronous
+  because `tests/xacml_pap.js` and `tests/xacml_alfa.js` call
+  `combinedAction()` without awaiting.
+
+`xacml-pep/CLAUDE.md` argues the container's half — why the pair is re-read
+from disk rather than read once — and `tests/pep_listener_certificate.js` and
+section 1b of `tests/vendored/sts_xacml_remote_pep.js` pin both.
 
 ## What phase five cost outside this directory
 
@@ -1436,6 +1514,11 @@ where they run and in how this service learns their figures; they do not differ
 in what a reader wants from the row. Two tables would have been two renderers
 that could drift, and a reader comparing one against the other would have had to
 do it across a page break.
+
+It keeps two things apart that a single number would lose: **a decision is not
+an enforcement** (four decisions, two outcomes, and the PEP's bias in between),
+and **what this service SAW is not what it was TOLD** (a remote PEP's counts are
+reported by it and go down when it restarts).
 
 ### The two counting sites that were nearly wrong
 

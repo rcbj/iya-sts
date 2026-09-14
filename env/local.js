@@ -81,6 +81,11 @@ var config = {
     // GET /oauth2/rfc9700 lists what it does and does not enforce.
     rfc9700: false,
 
+    // OAuth 2.1 (draft-ietf-oauth-v2-1-16). OFF, for the reason above; it
+    // turns RFC 9700 mode on as well, and additionally refuses a client that
+    // has not registered its own redirect URI. GET /oauth2/oauth21 lists it.
+    oauth21: false,
+
     // OpenID Connect Front-Channel Logout 1.0: the two discovery members,
     // the `sid` claim on an ID Token issued on a browser session, and the
     // iframe fan-out every sign-out renders. ON, and turning it off restores
@@ -407,6 +412,23 @@ var config = {
     rateLimitPerIdentity: 100,
     rateLimitPerAddress: 500,
     activationTtlMinutes: 1440
+  },
+
+  // --- ACME's refusal throttle ----------------------------------------------
+  // THE SAME ONE-ADDRESS PROBLEM AS `security` ABOVE, ONE FAMILY ALONG
+  // (2026-09-13). `acme.attemptsPerAddress` counts REFUSED ACME requests from
+  // one address and ships at 120 a window. `tests/vendored/sts_route_inputs.js`
+  // sends every route a malformed request on purpose, and measured against one
+  // instance it leaves 132 refused ACME requests on the runner's address — so
+  // the next job to read `/enroll/acme/directory`, `sts_metadata_anonymous.js`,
+  // got 429 twelve seconds later about a document that was correct. EST and
+  // SCEP were 10 each against 60 and are left alone.
+  //
+  // 5000 is ~40× that peak. It is a LAYER for our own stacks, not the setting:
+  // `env/defaults.js` still ships 120, and the enrollment jobs that assert the
+  // throttle set their own limits inside the realms they create.
+  acme: {
+    attemptsPerAddress: 5000
   },
 
   // --- SPIFFE / SPIRE ------------------------------------------------------

@@ -127,9 +127,18 @@ const adminViews = require('../admin-core/admin_views');
 // registers only `/admin/pki`, which is already in the router by now. Compare
 // `admin-ui/crypto_metadata.js`, which is at 20a and therefore needed a slot.
 const pkiAdmin = require('../admin-ui/pki_admin');
+// The key algorithms a TLS listener certificate may be issued with, for the
+// `issue-pep-certificate` request schema's enum (2026-09-13) — read from the
+// module that refuses the others, so the document cannot offer one it would
+// refuse. A LIBRARY (rule 3): a cache hit, and it registers nothing.
+const pki = require('../common/pki');
 // The certificate catalogue and details model both certificate dialogs read
 // (2026-09-13). A LIBRARY in `admin-core/`, required at 19 like the two above.
 const certificateViews = require('../admin-core/certificate_views');
+// Which endpoints each Protocols page lists (2026-09-13). The console adds
+// them in `respond()`; this file adds the same member to the GET that
+// `mirrors` that page — see the registration loop and sendJson().
+const protocolEndpoints = require('../admin-core/protocol_endpoints');
 // 18b, required in the ORDINARY DIRECTION for the same reason as the line
 // above: it registers `/admin/encryption` at its own require time, which
 // `common/protocol_stack.js` reaches before this file, so this is a cache
@@ -138,6 +147,10 @@ const encryptionAdmin = require('../admin-ui/encryption_admin');
 // 18c, same ordinary-direction require and the same reason.
 const databaseAdmin = require('../admin-ui/database_admin');
 const secretsAdmin = require('../admin-ui/secrets_admin');
+// The embedded protocol debugger's report (2026-09-13). A page module required
+// at 18 like the one above, and it reads the listener's status lazily, so this
+// require moves no route.
+const debuggerAdmin = require('../debugger/debugger_admin');
 // The setting table, for the two narrow doors' request schemas: their
 // properties are BUILT from the keys those doors refuse against, and the
 // TYPE of each comes from the row config.js already holds for it. See
@@ -160,6 +173,10 @@ const stats = require('../common/admin_stats');
 // table the create VALIDATES against is what stops this document offering a
 // family that call would refuse.
 const applications = require('../common/applications');
+// RFC 9728, for `load-resource-metadata`: the realm's authorization servers the
+// document is compared with are addressed by the request, so this handler
+// computes them and hands them to the action. A library that registers nothing.
+const resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 const spec = require('./admin_api_spec');
 
 // ---------------------------------------------------------------------------
@@ -423,6 +440,15 @@ const docs = require('./admin_api_docs');
 // page in this service that builds its URLs in a script and therefore cannot
 // have its markup rewritten. See docs.page().
 const realms = require('../common/realms');
+// RFC 9068 (2026-09-13): what an access token's type and issuer must be, read
+// the way the other resource servers here read them. A library that registers
+// no route; `oauth2.js` already required it, so this is a cache hit.
+const jwtAccessToken = require('../oauth-oidc/jwt_access_token');
+// RFC 8705 section 3.1 (2026-09-13): a certificate-bound access token is
+// usable only on a connection made with its certificate — the check every
+// other resource server here makes through `dpop.presentedAccessToken()`. A
+// library that registers nothing; `oauth2.js` already required it.
+const mtls = require('../oauth-oidc/mtls');
 // THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
 // from this repository, so it cannot move a route or join a cycle.
 //
@@ -449,6 +475,15 @@ const mode = require('../common/mode');
 // line is unreadable in both.
 function sendJson(res, status, body) {
   log.debug("Entering sendJson(). status=" + status);
+  // The realm's endpoints for a Protocols page, when this is the GET that
+  // mirrors one: the registration loop computed them onto `res.locals`, and
+  // the member is added to a successful object answer the way the console's
+  // `respond()` adds it to the page's JSON. Every other answer is untouched.
+  const rows = res.locals && res.locals.protocolEndpoints;
+  if (rows && status === 200 && body && typeof body === 'object' &&
+      !Array.isArray(body)) {
+    body = Object.assign({}, body, { protocolEndpoints: rows });
+  }
   res.status(status).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify(body, null, 2));
   log.debug("Leaving sendJson().");
@@ -843,8 +878,10 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
   { path: '/oauth2', console: '/admin/oauth2', tag: 'OAuth 2.0 / OIDC',
     operationId: 'getOauth2Settings',
     summary: 'The authorization server\'s own settings',
-    description: 'The thirteen `oauth2.*` settings: the issuer identifier, ' +
-                 'RFC 9700 mode, the registered redirect URIs and the ' +
+    description: 'The `oauth2.*` settings: the issuer identifier, ' +
+                 'RFC 9700 mode, OAuth 2.1 mode (`oauth2.oauth21`, ' +
+                 'draft-ietf-oauth-v2-1-16, which implies RFC 9700 mode), ' +
+                 'the registered redirect URIs and the ' +
                  'loopback port wildcard, Front-Channel Logout, the refresh ' +
                  'token idle timeout, whether a sign-out revokes refresh ' +
                  'tokens, the client assertion clock skew, the four ' +
@@ -1594,6 +1631,54 @@ const ROUTES = [
     } },
 
   // ---------------------------------------------------------------------
+  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13). `debuggerAdmin.debuggerView()`
+  // and nothing else — rule 7 — and read-only: the debugger's settings are
+  // `config/set` like every other row, and who may USE it is the two console
+  // roles, granted at `rbac/grant`. Pinned to the front process, which is the
+  // only one holding the listener and the api child.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/debugger', tag: 'Service',
+    operationId: 'getDebugger',
+    summary: 'Whether the identity protocol debugger is embedded, where it ' +
+             'answers, and what its api process is doing',
+    description: 'The embedded identity protocol debugger: `embedded` and ' +
+                 'the setting and mode that decided it, the listener\'s ' +
+                 '`port` and whether it is `listening`, the client ' +
+                 '(`clientId`), the resource server (`resource`), the ' +
+                 'permission its api requires (`permission`) and the ' +
+                 'audience a token for it carries (`audience`), and under ' +
+                 '`api` the child process: its `state` (`starting`, ' +
+                 '`running`, `restarting`, `given-up`, `not-installed`, ' +
+                 '`stopped`), process id, socket, starts, consecutive ' +
+                 'failures, last exit and last error, and — in product mode ' +
+                 '— the `allowedRanges` it may dial. `settings` is the ' +
+                 '`Protocol debugger` group as `/admin/debugger` draws ' +
+                 'it.\n\nNothing here opens the debugger: its gate is the ' +
+                 'permission, which the authorization server issues to ' +
+                 'console administrators only.',
+    mirrors: 'GET /admin/debugger',
+    responseDescription: 'The debugger report.',
+    responseSchema: { type: 'object',
+      description: 'The debugger report: `embedded`, `setting`, `mode`, ' +
+                   '`started`, `startProblem`, `listening`, `port`, ' +
+                   '`listenError`, `scheme`, `publicBaseUrl`, ' +
+                   '`uiDirectory`, `clientId`, `resource`, `permission`, ' +
+                   '`audience`, `api` and `settings`.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API debugger report endpoint.");
+      try {
+        sendJson(res, 200, debuggerAdmin.debuggerView());
+      } catch (e) {
+        log.debug("Caught in handler(): " + ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-DBG-0023');
+        sendJson(res, 500, { ok: false, errors: [
+          'The debugger report could not be built: ' +
+          (e && e.message ? e.message : String(e))] });
+      }
+      log.debug("Leaving the management API debugger report endpoint.");
+    } },
+
+  // ---------------------------------------------------------------------
   // THE KEY PAIRS. Two operations, because LISTING what this process holds and
   // HANDING A KEY OVER are different acts and only the second is a write.
   // ---------------------------------------------------------------------
@@ -1999,7 +2084,10 @@ const ROUTES = [
       // caller keeps: this API authenticates a CLIENT rather than a person, so
       // an empty actor is the true answer rather than an inconvenient one.
       const result = adminActions.usersAction(withAction(req, body),
-                                       { via: 'api', actor: '' });
+                                       { via: 'api', actor: '',
+                                         // The address a password reset
+                                         // link is built on (2026-09-13).
+                                         base: baseUrlOf(req) });
       if (!result.ok) {
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
       }
@@ -2349,6 +2437,206 @@ const ROUTES = [
           additionalProperties: false
         },
         responseDescription: 'Whose set was cleared.' },
+
+      // -----------------------------------------------------------------
+      // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS (2026-09-13),
+      // mirroring the Password and second-factor controls on a person's
+      // /admin/users page. Every one says what it did over Shared Signals —
+      // a CAEP credential-change per credential, RISC
+      // account-credential-change-required for a reset, RISC
+      // recovery-information-changed for cleared recovery codes — to every
+      // stream that asked for the type and covers the person.
+      // -----------------------------------------------------------------
+      { action: 'reset-password', operationId: 'resetUserPassword',
+        summary: 'Reset somebody\'s password to a generated one, returned once',
+        description: 'Generates a password under this realm\'s password ' +
+                     'policy, sets it, and **returns it ONCE** in `password` ' +
+                     '— the entry holds a scrypt hash and nothing can show ' +
+                     'it ' +
+                     'again. Then three things the ordinary `set-password` ' +
+                     'does not do: `pwdReset` is set, so the person must ' +
+                     'choose their own password at the sign-in screen before ' +
+                     'anything is signed in; any password reset link ' +
+                     'outstanding is spent; and they are **signed out of ' +
+                     'everything** through the same function `POST ' +
+                     '/admin-api/logout/global` calls.\n\n**Shared ' +
+                     'Signals**: a CAEP `credential-change` (`password`, ' +
+                     '`update`) and a RISC ' +
+                     '`account-credential-change-required`, plus a CAEP ' +
+                     '`session-revoked` for each session the sign-out ends. ' +
+                     'They are sent after the reply, and ' +
+                     '`caep.autoEmitTypes` ' +
+                     'and `risc.autoEmitTypes` decide whether they go at all.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description:
+                      'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The generated password, ONCE, whether the ' +
+                             'forced change was recorded (`forcedChange`) ' +
+                             'and what the sign-out ended (`signedOut`).' },
+
+      { action: 'issue-password-reset', operationId: 'issuePasswordResetLink',
+        summary: 'Revoke somebody\'s password and issue a one-time reset link',
+        description: 'Mints a single-use link to `/portal/reset-password`, ' +
+                     '**returned ONCE** in `resetUrl` (absolute, on the ' +
+                     'address this request arrived at, realm prefix ' +
+                     'included), valid for ' +
+                     '`security.passwordResetTtlMinutes`. The token in it is ' +
+                     'stored as a hash; issuing another replaces it.\n\n' +
+                     '**The password the person had is REMOVED** and they ' +
+                     'are ' +
+                     '**signed out of everything**, so until the link is ' +
+                     'used ' +
+                     'they cannot sign in with a password. At the link they ' +
+                     'choose a new one under the realm\'s password policy; ' +
+                     'the removed password is in the history, so it cannot ' +
+                     'simply be chosen again where the history is ' +
+                     'enforced.\n\n**Shared Signals**: a CAEP ' +
+                     '`credential-change` (`password`, `revoke`) where a ' +
+                     'password was removed, a RISC ' +
+                     '`account-credential-change-required`, and a CAEP ' +
+                     '`credential-change` (`password`, `create`) when the ' +
+                     'link is spent.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description:
+                      'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The reset link, ONCE, when it expires, whether ' +
+                             'a password was removed (`passwordRevoked`) and ' +
+                             'what the sign-out ended.' },
+
+      { action: 'disable-primary-keys', operationId: 'disableUserPasskeys',
+        summary: 'Remove every primary security key, so a passkey no longer ' +
+                 'signs somebody in',
+        description: 'Removes every WebAuthn credential enrolled in the ' +
+                     '`primary` role — the ones that sign the person in with ' +
+                     'no password. A key in the `mfa` role is untouched.\n\n' +
+                     '**Refused where it would leave no way in**: a person ' +
+                     'with no password whose primary keys are their only ' +
+                     'credential. Reset their password or issue a reset link ' +
+                     'first. Refused too for somebody holding no primary ' +
+                     'key.\n\n**Shared Signals**: a CAEP ' +
+                     '`credential-change` (`fido2-roaming`, `delete`) per ' +
+                     'key, ' +
+                     'with its label as `friendly_name`.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description:
+                      'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The keys removed — id, role, label and when ' +
+                             'enrolled; never a public key.' },
+
+      { action: 'disable-mfa', operationId: 'disableUserSecondFactors',
+        summary: 'Remove every second factor somebody holds',
+        description: 'Removes the authenticator app enrolment, every ' +
+                     'security key in the `mfa` role and the recovery codes, ' +
+                     'in one act. It cannot lock anybody out, because none ' +
+                     'of ' +
+                     'those is a way in. If a second factor is still ' +
+                     'REQUIRED ' +
+                     'of the person — `require-mfa`, or ' +
+                     '`authn.mfaRequired` for the realm — their next sign-in ' +
+                     'asks them to enrol a new one, which is how to reset ' +
+                     'somebody\'s MFA.\n\nRefused for somebody who holds no ' +
+                     'second factor.\n\n**Shared Signals**: a CAEP ' +
+                     '`credential-change` (`delete`) for the authenticator ' +
+                     'app (`app`) and for each key (`fido2-roaming`), and a ' +
+                     'RISC `recovery-information-changed` where recovery ' +
+                     'codes were removed.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description:
+                      'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'What was removed, and whether a second factor ' +
+                             'is still required of them (`requirement`).' },
+
+      { action: 'require-mfa', operationId: 'requireUserSecondFactor',
+        summary: 'Require somebody to sign in with a second factor',
+        description: 'Sets `stsMfaRequired` on the person\'s entry. At the ' +
+                     'sign-in screen they are then asked for a second factor ' +
+                     '— and, while they hold none, shown a step to enrol an ' +
+                     'authenticator app or a security key before any session ' +
+                     'is started. A passwordless security-key sign-in is ' +
+                     'refused while it is required.\n\n**What it does not ' +
+                     'reach** is every sign-in that never meets that screen: ' +
+                     'federation, SPNEGO, a TLS client certificate, the ' +
+                     'OAuth ' +
+                     'password grant, an LDAP bind, WS-Trust and SCIM Basic. ' +
+                     '`authn.mfaRequired` is the same requirement for every ' +
+                     'person in the realm.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description:
+                      'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The requirement as it now stands, by account ' +
+                             'and by realm.' },
+
+      { action: 'stop-requiring-mfa',
+        operationId: 'stopRequiringUserSecondFactor',
+        summary: 'Take the per-account second-factor requirement off',
+        description: 'Clears `stsMfaRequired`. A realm requirement ' +
+                     '(`authn.mfaRequired`) is unaffected and the reply says ' +
+                     'whether one is in force. A second factor the person ' +
+                     'holds goes on being asked for, as it always is.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            user: { type: 'string',
+                    description:
+                      'The person, as /admin-api/users names them.' },
+            username: { type: 'string', description: 'Accepted for `user`.' }
+          },
+          required: ['user'],
+          examples: [{ user: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The requirement as it now stands.' },
 
       { action: 'clear-key', operationId: 'clearUserSecurityKey',
         summary: 'Remove one of somebody\'s security keys',
@@ -3261,18 +3549,30 @@ const ROUTES = [
                  'membership, and a grant made through any of them is ' +
                  'visible through all of them.\n\n**WRITE IMPLIES READ.** A ' +
                  'member of the write group does not also need the read ' +
-                 'group.\n\n**While NEITHER group has a member**, ' +
-                 '`openToAnyone` is true and anybody who signs in holds both ' +
-                 'roles — there is no password anywhere in this service to ' +
-                 'bootstrap an administrator with, so an empty roster opens ' +
-                 'rather than closes. `admin.openWhenEmpty` turns that off, ' +
-                 'and `closedToEveryone` reports the state it produces: a ' +
-                 'console no browser can reach, which is what this resource ' +
-                 'is the way out of.\n\n`enforced` reports whether the ' +
+                 'group.\n\n**The bootstrap administrator** ' +
+                 '(`admin.bootstrapUsername`, reported in `bootstrap`) is made ' +
+                 'a member of both groups at startup. Until it first signs ' +
+                 'in to `/admin` (`bootstrap.claimedAt`), `openToAnyone` is ' +
+                 'true and anybody who signs in holds both roles. A process ' +
+                 'that never seeded it (`bootstrap.seeded` false) keeps the ' +
+                 'older rule: open while NEITHER group has a member. ' +
+                 '`admin.openWhenEmpty` turns the open window off, and ' +
+                 '`closedToEveryone` reports a console no browser can reach, ' +
+                 'which is what this resource is the way out of.\n\n' +
+                 '`enforced` reports whether the ' +
                  'roster decides anything. It is always true now — the ' +
                  'console gate became unconditional on 2026-09-06 — and the ' +
                  'field is kept because a client reading it should not have ' +
-                 'to know that.',
+                 'to know that.\n\n**EVERY LIST IN THE REPLY IS PAGED.** ' +
+                 '`grants` by `page` and `per`, with `page`, `pages`, ' +
+                 '`perPage`, `firstRow`, `lastRow` and `matched` at the top ' +
+                 'level; `candidates` by `candidatesPage` and the same ' +
+                 '`per`, answered in `candidatesPaging`. `roles` carries ' +
+                 'each role\'s counts (`memberCount`, `presentCount`, ' +
+                 '`danglingCount`, `claimedCount`) and, since 2026-09-13, ' +
+                 'not its `members` and `claimed` lists: those were every ' +
+                 'membership unpaged, and they are the rows `grants` pages ' +
+                 '— `?role=read` narrows it to one role.',
     mirrors: 'GET /admin/rbac',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -3280,7 +3580,35 @@ const ROUTES = [
                      'membership value, case-insensitive.' },
       { name: 'role', in: 'query', required: false,
         schema: { type: 'string', enum: rbac.ROLE_IDS },
-        description: 'Only grants of this role.' }
+        description: 'Only grants of this role.' },
+      { name: 'personq', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'Narrows `candidates` — the people a role could be ' +
+                     'granted to, from the directory and from who has ' +
+                     'signed in — to usernames containing this, ' +
+                     'case-insensitive. `candidateSearch` says how many ' +
+                     'candidates there are in all and how many matched.' },
+      { name: 'candidatesPage', in: 'query', required: false,
+        schema: { type: 'integer', minimum: 1 },
+        description: 'Which page of the matching `candidates`, answered in ' +
+                     '`candidatesPaging`. Clamped like `page`. The page size ' +
+                     'is `per` when given — shared with `grants`, as on ' +
+                     'every reply here carrying two lists — and otherwise ' +
+                     'twenty, the size of the console\'s results pane. ' +
+                     '`candidates` was the whole list until 2026-09-13, ' +
+                     'which on a directory of thousands was thousands of ' +
+                     'rows on every read of the roster.' },
+      { name: 'personfrom', in: 'query', required: false,
+        schema: { type: 'integer', minimum: 0 },
+        description: 'The console results pane\'s OFFSET into the matching ' +
+                     'candidates, answered as the page it falls on. Ignored ' +
+                     'when `candidatesPage` is given, and when it is past ' +
+                     'the end.' },
+      { name: 'person', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'A username to look up among ALL the candidates, not ' +
+                     'only the page shown. `picked.candidate` is its row, ' +
+                     'or null when nobody by that name could be picked.' }
     ].concat(pagingParameters()),
     responseDescription: 'The roster, the settings, and who is asking.',
     handler: function (req, res) {
@@ -3365,9 +3693,12 @@ const ROUTES = [
                      'somebody does not hold answers 200 with `changed: ' +
                      'false`, and so does revoking from a group that does ' +
                      'not exist.\n\n**Taking away the LAST grant empties the ' +
-                     'roster**, which re-opens the console to anybody who ' +
-                     'signs in (or closes it to everybody, if ' +
-                     '`admin.openWhenEmpty` is off). The reply says which.',
+                     'roster.** Where no bootstrap administrator was seeded ' +
+                     'that re-opens the console to anybody who signs in (or ' +
+                     'closes it to everybody, if `admin.openWhenEmpty` is ' +
+                     'off); once the bootstrap administrator has signed in ' +
+                     'it closes the console to everybody. The reply says ' +
+                     'which.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -6046,7 +6377,11 @@ const ROUTES = [
     } },
 
   { method: 'POST', route: BASE + '/applications/:action', tag: 'Applications',
-    mirrors: 'POST /admin/applications',
+    // TWO CONSOLE PATHS REACH THIS SWITCH SINCE 2026-09-13: the list page, and
+    // /admin/applications/new's RFC 9728 import, whose load and create post to
+    // that page so a refusal can redraw it. The console suite reads this field
+    // to learn which console paths take a POST.
+    mirrors: 'POST /admin/applications and POST /admin/applications/new',
     handler: function (req, res) {
       log.debug("Entering the management API applications action endpoint.");
       const body = parseBody(req);
@@ -6060,7 +6395,12 @@ const ROUTES = [
       // validated.
       const protocols = namesOf(req, body, 'protocol', 'protocols');
       const result = adminActions.applicationsAction(withAction(req, body),
-                                                     protocols);
+                                                     protocols, {
+        authorizationServers: resourceMetadata.authorizationServersOf(req),
+        // For `issue-software-statement`: the issuer a statement names is the
+        // one published at the address this request arrived on.
+        base: baseUrlOf(req)
+      });
       // `refresh-metadata` is asynchronous — it dials the service provider's
       // metadata URL — and every other action is not. See that action's comment
       // in admin.js for why one promise is cheaper than forty awaits.
@@ -6432,6 +6772,148 @@ const ROUTES = [
                              'was replaced, and the application as it now ' +
                              'stands.' },
 
+      // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705, 2026-09-13).
+      { action: 'issue-tls-client-certificate',
+        operationId: 'issueApplicationTlsClientCertificate',
+        summary: 'Issue an application a TLS client certificate from this ' +
+                 'realm\'s CA',
+        description: 'Generates a key pair and certifies it from the ' +
+                     'realm\'s `tls-client` Issuing CA with `clientAuth`, ' +
+                     'the application\'s identifier as the common name and ' +
+                     '`urn:sts:application:<identifier>` as its ' +
+                     'subjectAltName — the name RFC 8705\'s IMPLICIT mapping ' +
+                     'reads, so the certificate authenticates the ' +
+                     'application under `tls_client_auth` with nothing ' +
+                     'registered, and every access token issued on a ' +
+                     'connection presenting it carries `cnf["x5t#S256"]`.\n\n' +
+                     '**THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** ' +
+                     '`files` holds a PKCS#12 (base64), an encrypted PKCS#8 ' +
+                     'PEM key and the PEM chain, all protected by ' +
+                     '`password`, which is neither stored nor audited. ' +
+                     'Refused past `pki.applicationTlsClientCertificateMax` ' +
+                     'valid certificates, for a key algorithm outside `' +
+                     'rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a ' +
+                     'realm with no certificate authority.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            application: { type: 'string' },
+            password: { type: 'string', minLength: 8, maxLength: 256 },
+            confirm: { type: 'string' },
+            keyAlg: { type: 'string',
+                      enum: ['rsa-2048', 'rsa-3072', 'ec-p256', 'ec-p384'] },
+            label: { type: 'string', maxLength: 40 },
+            days: { type: 'integer', minimum: 1 }
+          },
+          required: ['application', 'password'],
+          examples: [{ application: 'my-api-client',
+                       password: 'correct horse battery',
+                       keyAlg: 'ec-p256', label: 'instance 1' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The certificate (serial, subject, thumbprint, ' +
+                             'PEM and chain, the implicit name), the three ' +
+                             'files, and the application as it now stands.' },
+      { action: 'revoke-tls-client-certificate',
+        operationId: 'revokeApplicationTlsClientCertificate',
+        summary: 'Revoke one of an application\'s TLS client certificates',
+        description: 'Revokes a certificate `issue-tls-client-certificate` ' +
+                     'issued to THIS application — a serial belonging to ' +
+                     'anybody else matches nothing — onto the Issuing CA\'s ' +
+                     'CRL and OCSP responder. The certificate stops ' +
+                     'authenticating the application at the token endpoint ' +
+                     'at once. An access token already bound to it stays ' +
+                     'usable until it expires: a resource server checks the ' +
+                     'binding, not revocation (RFC 8705 section 6.2).',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            application: { type: 'string' },
+            serialHex: { type: 'string' },
+            reason: { type: 'string',
+                      enum: ['cessationOfOperation', 'keyCompromise'] }
+          },
+          required: ['application', 'serialHex'],
+          examples: [{ application: 'my-api-client', serialHex: '1a2b3c',
+                       reason: 'keyCompromise' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The revoked certificate, the reason, and the ' +
+                             'application as it now stands.' },
+
+      // THE SOFTWARE STATEMENTS SECTION'S CONTROL (RFC 7591 section 2.3,
+      // 2026-09-13).
+      { action: 'issue-software-statement',
+        operationId: 'issueApplicationSoftwareStatement',
+        summary: 'Sign a software statement for an application, as this realm',
+        description: 'Signs an RFC 7591 section 2.3 software statement with ' +
+                     'this realm\'s key and writes it onto the entry as ' +
+                     '`oauthIssuedSoftwareStatement`, replacing the one ' +
+                     'before. The application is the software PUBLISHER: ' +
+                     'hand the statement to whoever ships the software, and ' +
+                     'a client presenting it at `POST /oauth2/register` is ' +
+                     'registered with the members it fixes — they take ' +
+                     'precedence over the registration\'s own JSON ' +
+                     '(section 3.1.1), and whatever the statement does not ' +
+                     'fix, the client chooses.\n\n**WHAT IS SIGNED:** ' +
+                     '`metadata` (RFC 7591 client metadata, e.g. ' +
+                     '`redirect_uris`, `grant_types`, ' +
+                     '`token_endpoint_auth_method`), with `software_id` ' +
+                     'defaulting to the application\'s identifier; `iss` is ' +
+                     'the issuer this realm publishes at the address THIS ' +
+                     'REQUEST arrived on, `sub` the application, `iat`, a ' +
+                     '`jti`, and `exp` after `lifetimeSeconds` ' +
+                     '(`oauth2.softwareStatementLifetimeS` when omitted; 0 ' +
+                     'for none). The header is `typ: ' +
+                     'software-statement+jwt`, which is how this service ' +
+                     'tells its statements from its other JWTs. A JWT claim ' +
+                     'or a member only registration assigns (`client_id`, ' +
+                     'the secret, the registration access token) is ' +
+                     'refused, and so is an address a registration would ' +
+                     'refuse.\n\n**IT IS A TRUSTED STATEMENT EVERYWHERE IN ' +
+                     'THIS REALM**: nothing has to be declared for it, and ' +
+                     'where `oauth2.softwareStatementOpensRegistration` is ' +
+                     'on it admits a client to an endpoint closed to ' +
+                     'everybody else (product mode with ' +
+                     '`oauth2.openRegistration` off). It stops verifying ' +
+                     'when it expires or when the realm\'s signing key is ' +
+                     'replaced — in development mode, every restart. NOT A ' +
+                     'SECRET: a statement ships with the software.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            application: { type: 'string',
+                           description: 'The publisher\'s identifier, ' +
+                                        'exactly as the registry holds it.' },
+            metadata: { oneOf: [{ type: 'object' }, { type: 'string' }],
+                        description: 'The client metadata the statement ' +
+                                     'fixes, as an object or as JSON text.' },
+            lifetimeSeconds: { oneOf: [{ type: 'integer' },
+                                       { type: 'string' }],
+                               description: 'Seconds until `exp`; 0 for no ' +
+                                            'expiry. Defaults to ' +
+                                            'oauth2.softwareStatementLifetimeS' +
+                                            '.' }
+          },
+          required: ['application'],
+          examples: [{ application: 'acme-mobile',
+                       metadata: { software_id: 'acme-mobile-app',
+                                   software_version: '4.2',
+                                   redirect_uris: [
+                                     'com.acme.mobile:/oauth2/cb'],
+                                   grant_types: ['authorization_code',
+                                                 'refresh_token'],
+                                   token_endpoint_auth_method: 'none' },
+                       lifetimeSeconds: 31536000 }],
+          additionalProperties: false
+        },
+        responseDescription: 'The statement in `softwareStatement`, its ' +
+                             'signed `claims`, and the application as it now ' +
+                             'stands.' },
+
       { action: 'revoke-registration',
         operationId: 'revokeApplicationRegistration',
         summary: 'Withdraw an RFC 7591 registration, keeping the entry',
@@ -6500,6 +6982,71 @@ const ROUTES = [
         responseDescription: 'What the document said: its entityID, which ' +
                              'KeyDescriptor the certificate came from, and ' +
                              'the endpoints it describes.' },
+
+      { action: 'load-resource-metadata',
+        operationId: 'loadProtectedResourceMetadata',
+        summary: 'Read an RFC 9728 protected resource metadata document and ' +
+                 'answer with the application it describes',
+        description: 'Give ONE of `document` (the JSON, as text or as an ' +
+                     'object) or `url` (where it is published). It is ' +
+                     'parsed and checked, compared with this trust realm, ' +
+                     'and answered with `plan`: the application it ' +
+                     'describes — `name`, `oauthPermissionBaseUri` and ' +
+                     '`oauthAudience` from `resource`, one permission per ' +
+                     '`scopes_supported` value with the resource prefix ' +
+                     'taken off, a client_id generated at random, and ' +
+                     '`oauth2` as the declared family.\n\n**IT CREATES ' +
+                     'NOTHING.** Create the application with `create`, ' +
+                     'passing those values in `fields` together with ' +
+                     '`oauthResourceMetadata` (the document, as JSON) and, ' +
+                     'where it was fetched, `oauthResourceMetadataUrl`. ' +
+                     'Every value may be changed first — this answer is a ' +
+                     'proposal.\n\n`authorizationServers` compares the ' +
+                     'document\'s `authorization_servers` with the issuers ' +
+                     'this realm\'s authorization servers publish at the ' +
+                     'address this request arrived on: `allMatched` when ' +
+                     'every one is this realm\'s, `anyUnmatched` otherwise. ' +
+                     'A mismatch is reported and is NOT a refusal.\n\n' +
+                     '**A FETCH FOLLOWS THE OUTBOUND POLICY**: ' +
+                     '`federation.outbound` must be on, https unless ' +
+                     '`federation.outboundAllowInsecure`, no redirect ' +
+                     'followed, `federation.maxResponseBytes` and ' +
+                     '`federation.outboundTimeoutMs`. In product mode the ' +
+                     'host may not resolve to a loopback, private, ' +
+                     'link-local or reserved address, and a document whose ' +
+                     '`resource` is not the identifier its well-known URL ' +
+                     'was built from (RFC 9728 section 3.3), or is not ' +
+                     'https, is refused; development mode reports both in ' +
+                     '`warnings` and answers. A malformed document is ' +
+                     'refused in both modes.\n\nThe console\'s upload ' +
+                     'posts the document as a multipart `file`; a JSON ' +
+                     'caller sends `document` instead.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            document: { anyOf: [{ type: 'string' }, { type: 'object' }],
+                        description: 'The protected resource metadata ' +
+                                     'document, as JSON text or as a JSON ' +
+                                     'object.' },
+            url: { type: 'string',
+                   description: 'Where the document is published, ' +
+                                'usually `https://<host>' +
+                                resourceMetadata.WELL_KNOWN +
+                                '[/<path>]`.' }
+          },
+          examples: [{ document: {
+            resource: 'https://api.example.com',
+            authorization_servers: ['https://sts.example.com'],
+            scopes_supported: ['https://api.example.com/read',
+                               'https://api.example.com/write'],
+            bearer_methods_supported: ['header']
+          } }],
+          additionalProperties: false
+        },
+        responseDescription: 'The document, its members, the section 3.3 ' +
+                             'verdict, the authorization-server comparison ' +
+                             'and the proposed application in `plan`.' },
 
       { action: 'forget', operationId: 'deleteApplication',
         summary: 'Delete an application entry entirely',
@@ -6857,12 +7404,31 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API XACML action endpoint.");
       const body = parseBody(req);
-      const result = adminActions.xacmlAction(withAction(req, body));
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0051');
-      }
-      sendJson(res, result.ok ? 200 : 400, result);
-      log.debug("Leaving the management API XACML action endpoint.");
+      // SETTLED EITHER WAY: `issue-pep-certificate` answers a promise and the
+      // other actions answer a result (see `xacmlAction()`), and a rejection
+      // is a defect here rather than something a request can cause — so it is
+      // a 500 naming the message rather than an unhandled rejection that hangs
+      // the request.
+      Promise.resolve(adminActions.xacmlAction(withAction(req, body)))
+        .then(function (result) {
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0051');
+          }
+          // THE PRIVATE KEY IN AN ISSUE REPLY IS THE POINT OF THE CALL, handed
+          // over once — and `sendJson()` already answers `no-store`, which is
+          // what keeps it out of every cache between here and the caller.
+          sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API XACML action endpoint.");
+        }, function (e) {
+          log.error(errorCodes.tag('STS-XACML-0072') + 'admin_api: an XACML ' +
+                    'action threw: ' + ((e && e.stack) || e));
+          errorCodes.mark(res, 'STS-XACML-0072');
+          sendJson(res, 500, { ok: false,
+                               errors: ['That action failed: ' +
+                                        ((e && e.message) || e)] });
+          log.debug("Leaving the management API XACML action endpoint. " +
+                    "It threw.");
+        });
     },
     actions: [
       { action: 'create-from-template', operationId: 'createXacmlPolicy',
@@ -8412,6 +8978,82 @@ const ROUTES = [
             name: 'pep-1'
           }],
           additionalProperties: false
+        } },
+      { action: 'issue-pep-certificate',
+        operationId: 'issueXacmlPepCertificate',
+        summary: 'Issue a remote PEP the certificate and private key for its ' +
+                 'HTTPS listener',
+        description: 'Generates a key pair and certifies it from the Remote ' +
+                     'PEP listeners (`pep-tls`) Issuing CA of THE REALM THE ' +
+                     'PEP REGISTERED TO — the realm this call is made in, ' +
+                     'because ou=peps is per realm — so a client that ' +
+                     'installed this service\'s Root CA verifies the PEP, ' +
+                     'and ' +
+                     'the chain says which realm vouched for it. A realm ' +
+                     'whose branch was built before that Issuing CA existed ' +
+                     'gets it added under its existing Intermediate; nothing ' +
+                     'already issued is replaced.\n\nThe PEP must be ' +
+                     'REGISTERED: its row is the one record that it exists ' +
+                     'in this realm. That is not a permission check on the ' +
+                     'PEP — registering is still not what lets it pull or ' +
+                     'enforce.\n\nTHE CERTIFICATE NAMES the PEP\'s ' +
+                     'registered ' +
+                     'name (where that is a DNS name) and the host of its ' +
+                     'notify URL, plus any `dnsNames` and `ipAddresses` ' +
+                     'sent. ' +
+                     'It certifies `serverAuth` and nothing else.\n\n**THE ' +
+                     'PRIVATE KEY IS IN THIS REPLY AND NOWHERE ELSE.** This ' +
+                     'service records the certificate — its issuer\'s CRL ' +
+                     'and OCSP responder answer for it — and keeps no copy ' +
+                     'of the ' +
+                     'key, so nothing can read it back. To put the pair in ' +
+                     'the container, write `fullChainPem` (the leaf followed ' +
+                     'by its Issuing CA and the realm Intermediate) and ' +
+                     '`privateKeyPem` to the files `PEP_HTTPS_CERT` and ' +
+                     '`PEP_HTTPS_KEY` name; the PEP picks up a pair written ' +
+                     'after it started. `anchorPem` is the service Root a ' +
+                     'client of that listener installs.\n\nIssuing again ' +
+                     'REPLACES: the certificate it replaces goes on its ' +
+                     'issuer\'s revocation list as `superseded` ' +
+                     '(`replacedSerialHex`).',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            name: { type: 'string',
+                      description: 'The registered PEP\'s name, as GET ' +
+                                   '/admin-api/xacml/peps lists it.' },
+            dnsNames: { oneOf: [{ type: 'array', items: { type: 'string' } },
+                                { type: 'string' }],
+                      description: 'DNS names to ADD to the two derived from ' +
+                                   'the registration. An array, or one ' +
+                                   'string separated by commas or ' +
+                                   'whitespace. A `*.` wildcard is ' +
+                                   'accepted in the first label.' },
+            ipAddresses: { oneOf: [{ type: 'array',
+                                     items: { type: 'string' } },
+                                   { type: 'string' }],
+                      description: 'IPv4 or IPv6 addresses to add, in the ' +
+                                   'same two spellings.' },
+            keyAlg: { type: 'string',
+                      enum: pki.TLS_SERVER_KEY_ALGS.slice(),
+                      description: 'The key algorithm. Defaults to ' +
+                                   '`' + pki.DEFAULT_TLS_SERVER_KEY_ALG +
+                                   '`. Only the RSA and NIST-curve ECDSA ' +
+                                   'keys ' +
+                                   'a TLS stack serves are offered.' },
+            days: { type: 'integer', minimum: 1,
+                      description: 'The lifetime. Defaults to ' +
+                                   '`pki.leafLifetimeDays`, and is shortened ' +
+                                   'to the Issuing CA\'s own expiry.' }
+          },
+          required: ['name'],
+          examples: [{
+            name: 'pep-1',
+            dnsNames: ['pep-1.example.test'],
+            ipAddresses: ['127.0.0.1']
+          }],
+          additionalProperties: false
         } }
     ] },
 
@@ -8445,6 +9087,57 @@ const ROUTES = [
       log.debug("Entering the management API Shared Signals endpoint.");
       sendJson(res, 200, adminViews.ssfJson(req));
       log.debug("Leaving the management API Shared Signals endpoint.");
+    } },
+
+  // ---------------------------------------------------------------------
+  // WHAT COULD NOT BE DELIVERED, COUNTED (2026-09-14) — rule 7's half of
+  // Monitoring → Shared Signals → Dead letters. A GET beside the POST
+  // `/ssf/:action` below, which it cannot collide with: one method each.
+  // No POST of its own, because the page has no control; the two that act on
+  // dead letters are that operation's `revive` and `clear-dead-letters`.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/ssf/dead-letters', tag: 'Shared Signals',
+    operationId: 'getSsfDeadLetters',
+    summary: 'What the Shared Signals transmitter could not deliver, counted',
+    description: 'Everything /admin/ssf/dead-letters draws, as JSON: every ' +
+                 'Security Event Token held on a dead-letter queue in this ' +
+                 'realm, counted by cause, error code, the receiver\'s HTTP ' +
+                 'status and event type, over time across the retention ' +
+                 'window, and per stream with each push stream\'s delivery ' +
+                 'state — then the letters themselves, newest first, ' +
+                 'searched and paged, without their tokens.\n\n**THE COUNTS ' +
+                 'ARE THE WHOLE REALM\'S WHATEVER IS NARROWED.** `dlq`, ' +
+                 '`dlstream` and `dlcause` narrow `letters` and `matched` ' +
+                 'only.\n\n**`process` IS THE ANSWERING PROCESS\'S.** Its ' +
+                 'push cap is shared by every realm in that process, and ' +
+                 'its sweeps are its own; the rest is the shared store.',
+    mirrors: 'GET /admin/ssf/dead-letters',
+    parameters: [
+      { name: 'dlq', in: 'query', required: false,
+        schema: { type: 'string', maxLength: 256 },
+        description: 'Narrows the letters to those whose jti, stream, ' +
+                     'reason, error code, status, event name, type URI or ' +
+                     'subject contains this.' },
+      { name: 'dlstream', in: 'query', required: false,
+        schema: { type: 'string', maxLength: 256 },
+        description: 'Only this stream\'s letters. An exact stream id.' },
+      { name: 'dlcause', in: 'query', required: false,
+        schema: { type: 'string',
+                  enum: ['push-failed', 'backlog-full', 'declared-dead',
+                         'dead-stream'] },
+        description: 'Only letters of this cause.' },
+      { name: 'lettersPage', in: 'query', required: false,
+        schema: { type: 'integer', minimum: 1 },
+        description: 'Which page of the matched letters. Clamped, like every ' +
+                     'page parameter here.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The dead-letter queues of this realm, counted, and ' +
+                         'a page of their letters.',
+    responseSchema: { $ref: '#/components/schemas/SsfDeadLetters' },
+    handler: function (req, res) {
+      log.debug("Entering the management API dead letters endpoint.");
+      sendJson(res, 200, adminViews.ssfDeadLettersJson(req));
+      log.debug("Leaving the management API dead letters endpoint.");
     } },
 
   { method: 'POST', route: BASE + '/ssf/:action', tag: 'Shared Signals',
@@ -8591,6 +9284,49 @@ const ROUTES = [
           additionalProperties: false
         },
         responseDescription: 'Confirmation, or a refusal naming the ' +
+                             'stream_id.' },
+
+      { action: 'revive', operationId: 'reviveSsfStream',
+        summary: 'Revive a dead push stream',
+        description: 'A push stream whose pushes have all failed for ' +
+                     '`ssf.deadStreamTimeoutS` is declared DEAD: nothing ' +
+                     'more is pushed to it, its SETs go to its dead-letter ' +
+                     'queue, and a sweep pushes one as a probe every period. ' +
+                     'This revives it at once, so the next SET is pushed. ' +
+                     'Refused for a stream that is not dead. The dead ' +
+                     'letters are kept, and nothing resends them.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            stream_id: { type: 'string', description: 'The stream.' },
+            reason: { type: 'string',
+                      description: 'Optional; written on the stream\'s log.' }
+          },
+          required: ['stream_id'],
+          examples: [{ stream_id: 'ssf-0123456789ab' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Confirmation, or a refusal naming the ' +
+                             'stream_id or saying it is not dead.' },
+
+      { action: 'clear-dead-letters', operationId: 'clearSsfDeadLetters',
+        summary: 'Drop a stream\'s dead letters',
+        description: 'Empties the stream\'s dead-letter queue: SETs that ' +
+                     'could not be delivered, each kept with its reason for ' +
+                     '`ssf.deadLetterRetentionS`. Nothing is sent. GET ' +
+                     '/admin-api/ssf lists them per stream as `deadLetters`.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            stream_id: { type: 'string', description: 'The stream.' }
+          },
+          required: ['stream_id'],
+          examples: [{ stream_id: 'ssf-0123456789ab' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many were dropped, or a refusal naming the ' +
                              'stream_id.' },
 
       { action: 'clear-received', operationId: 'clearSsfReceived',
@@ -9240,9 +9976,32 @@ const ROUTES = [
                  'and `residency` are the durable statement of what each ' +
                  'means.',
     mirrors: 'GET /admin/pki',
+    // THE TWO KEY-PAIR TABLES ARE PAGED ON THE PAGE (2026-09-13), and the
+    // reply says which page each drew without slicing either list:
+    // `issued` and `persons` stay WHOLE, because every reader of this
+    // resource looks an application up in `issued` by identifier and a
+    // reply holding one page would answer "not there" about page two.
+    // `admin-ui/pki_admin.js`'s `keyPairPaging()` argues it.
+    parameters: pagingParameters().filter(function (one) {
+      return one.name === 'per';
+    }).concat(detailPagingParameters([
+      { name: 'issued',
+        description: 'The Applications table on /admin/pki, twenty-five ' +
+                     'rows by default. `issued` itself is the WHOLE list ' +
+                     'whatever page is asked for; `issuedPaging` says which ' +
+                     'rows the page drew.' },
+      { name: 'persons',
+        description: 'The People table on /admin/pki, paged by PERSON — a ' +
+                     'person holding both profiles is one member of ' +
+                     '`persons` and two rows on the page. `persons` is the ' +
+                     'WHOLE list; `personsPaging` says which people the ' +
+                     'page drew.' }
+    ])),
     responseDescription: 'The hierarchy, the algorithm vocabularies, the two ' +
                          'assertion profiles, and one row per application ' +
-                         'per profile for those holding an issued key pair.',
+                         'per profile for those holding an issued key pair, ' +
+                         'with `issuedPaging` and `personsPaging` beside ' +
+                         'the two lists.',
     handler: function (req, res) {
       log.debug("Entering the management API PKI endpoint.");
       sendJson(res, 200, pkiAdmin.pkiView(req));
@@ -10101,9 +10860,10 @@ const ROUTES = [
           properties: {
             scope: { type: 'string', description: 'A realm id or `*process`.' },
             useCase: { type: 'string',
-                       description: 'One of `jose`, `xml`, `assertions` (a ' +
-                                    'realm) or `tls`, `spiffe` (the ' +
-                                    'process). Asking for one in the wrong ' +
+                       description: 'One of `jose`, `xml`, `assertions`, ' +
+                                    '`spiffe`, `pep-tls` (a realm) or `tls` ' +
+                                    '(the process). Asking for one in the ' +
+                                    'wrong ' +
                                     'scope is refused and the refusal says ' +
                                     'which scope it belongs to.' }
           },
@@ -10705,7 +11465,17 @@ const ROUTES = [
                  'is the process\'s, so this answers the default trust ' +
                  'realm\'s principals under every realm prefix.',
     mirrors: 'GET /admin/kerberos/principals',
-    parameters: pagingParameters(),
+    // `per` and the two lists' own page parameters — NOT pagingParameters(),
+    // whose `page` this resource never reads.
+    parameters: pagingParameters().filter(function (one) {
+      return one.name === 'per';
+    }).concat(detailPagingParameters([
+      { name: 'people',
+        description: 'Directory people holding keys derived from their ' +
+                     'own password.' },
+      { name: 'services',
+        description: 'Service principals created with a random key.' }
+    ])),
     responseDescription: 'Both lists with their paging, whether this is a ' +
                          'product KDC, whether krb5.personKeys is on, the ' +
                          'enctypes and starting kvno, and the acceptor\'s SPN.',
@@ -12763,7 +13533,18 @@ const ROUTES = [
           additionalProperties: false
         },
         responseDescription: 'That it is forgotten.' }
-    ] }
+    ] },
+  // CERTIFICATE ENROLLMENT (2026-09-13). Each family's operations are declared
+  // beside the family, in a file that registers no route and requires its view
+  // model lazily inside each handler — so requiring it here, at 19, moves no
+  // route (rule 1), exactly as the GNAP rows above reach `gnap_console.js`.
+  ...require('../acme/acme_api').ROUTES,
+  ...require('../est/est_api').ROUTES,
+  ...require('../scep/scep_api').ROUTES,
+  // THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13), declared beside its
+  // family in the same shape: no route registered there, and its view model
+  // required lazily inside each handler.
+  ...require('../oauth-oidc/oauth2_monitor_api').ROUTES
 ];
 
 // Every operation, flattened, for the index. The same walk buildSpec() does,
@@ -12867,17 +13648,23 @@ function bearerOf(req) {
   return said.replace(/^bearer\s+/i, '').trim();
 }
 
-// What `aud` has to name. Empty configuration means this service's own
-// `/admin-api` under the host the request arrived on, which is exactly what a
-// client gets by asking `resource=<base>/admin-api` at the token endpoint.
-function wantedAudience(req) {
-  log.debug("Entering wantedAudience().");
+// What `aud` has to name. The CONFIGURED audience first — since 2026-09-13
+// `adminApi.audience` defaults to the base URL of this API
+// (`config.managementApiBaseUrl()`) rather than to the empty string — and,
+// while that row is still at its default or set empty, `/admin-api` under the
+// host the request arrived on as well, which is exactly what a client gets by
+// asking `resource=<base>/admin-api` at the token endpoint. A default cannot
+// see a request, so taking it as the only answer would refuse every token
+// minted under another name for this same process. An operator who sets a
+// value pins that one value, as before.
+function wantedAudiences(req) {
+  log.debug("Entering wantedAudiences().");
   const pinned = String(config.value('adminApi.audience') || '').trim();
-  if (pinned) {
-    log.debug("Leaving wantedAudience().");
-    return pinned;
+  const atDefault = config.sourceOf('adminApi.audience') === 'default';
+  if (pinned && !atDefault) {
+    log.debug("Leaving wantedAudiences().");
+    return [pinned];
   }
-  log.debug("Leaving wantedAudience().");
   // COMPUTED OUTSIDE ANY REALM, for the reason the signing key is taken from
   // the default realm below: this credential is service-wide. `baseUrlOf()`
   // glues on `realms.currentPrefix()`, so under `/realm/acme` it would answer
@@ -12885,18 +13672,81 @@ function wantedAudience(req) {
   // therefore a token per realm, which is exactly the per-realm administrator
   // this service refuses to have. Running in the default realm gives the empty
   // prefix and one audience everywhere.
-  return realms.run(realms.get(realms.DEFAULT_ID), function () {
+  const fromRequest = realms.run(realms.get(realms.DEFAULT_ID), function () {
     return baseUrlOf(req);
   }) + BASE;
+  const wanted = [pinned || config.managementApiBaseUrl()];
+  if (wanted.indexOf(fromRequest) < 0) {
+    wanted.push(fromRequest);
+  }
+  log.debug("Leaving wantedAudiences().");
+  return wanted;
+}
+
+// The one audience a refusal or a 401 names: the request-relative one where it
+// is accepted, because that is the `resource` the caller reading the message
+// can actually ask for under the name it used.
+function wantedAudience(req) {
+  log.debug("Entering wantedAudience().");
+  const wanted = wantedAudiences(req);
+  log.debug("Leaving wantedAudience().");
+  return wanted[wanted.length - 1];
 }
 
 function audienceAccepted(claims, req) {
   log.debug("Entering audienceAccepted().");
-  const wanted = wantedAudience(req);
+  const wanted = wantedAudiences(req);
   const held = Array.isArray(claims.aud) ? claims.aud
     : (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
   log.debug("Leaving audienceAccepted().");
-  return held.map(String).indexOf(wanted) >= 0;
+  return held.map(String).some(function (aud) {
+    return wanted.indexOf(aud) >= 0;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9068 SECTION 4 STEP 3 — WHO ISSUED IT (2026-09-13).
+//
+// The addresses this API answers under, as authorization-server bases: every
+// wanted audience that is `<base>/admin-api`, the request's own default-realm
+// base, and the configured base of this API. A token's `iss` must be an issuer
+// one of this service's authorization servers publishes at one of them — the
+// default one, or a named one beneath it — which is `jwt_access_token.js`'s
+// `isHostedIssuer()`, the same reading the other resource servers here make.
+//
+// SEVERAL BASES AND NOT ONE, for `wantedAudiences()`'s reason: this process
+// is reached under more than one name, and the suite mints a token at the
+// address it will call. A token minted under one of them names that one as
+// its issuer and its audience together, so accepting the issuers of exactly
+// the addresses whose audiences are accepted is what keeps the two checks
+// telling the same story. A pinned `adminApi.audience` names no base, which is
+// why the request's own and the configured one are always in the list.
+//
+// ASKED IN THE DEFAULT REALM, because that realm's key verified the token and
+// a pinned `oauth2.issuer` is read per realm.
+// ---------------------------------------------------------------------------
+function issuerAccepted(claims, req) {
+  log.debug("Entering issuerAccepted().");
+  const bases = [];
+  const addBase = function (url) {
+    const text = String(url || '');
+    if (text.length > BASE.length && text.slice(-BASE.length) === BASE) {
+      const base = text.slice(0, -BASE.length);
+      if (bases.indexOf(base) < 0) {
+        bases.push(base);
+      }
+    }
+  };
+  const accepted = realms.run(realms.get(realms.DEFAULT_ID), function () {
+    wantedAudiences(req).forEach(addBase);
+    addBase(baseUrlOf(req) + BASE);
+    addBase(config.managementApiBaseUrl());
+    return bases.some(function (base) {
+      return jwtAccessToken.isHostedIssuer(claims.iss, base);
+    });
+  });
+  log.debug("Leaving issuerAccepted(). accepted=" + accepted);
+  return accepted;
 }
 
 app.use(BASE, function (req, res, next) {
@@ -12963,13 +13813,57 @@ app.use(BASE, function (req, res, next) {
         'That access token expired at ' +
         new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
     }
+    // RFC 9068 SECTION 4, STEPS 1 AND 3, in its order: the TYPE before the
+    // issuer, and both before the audience. Every token this service signs is
+    // signed with this key, so without the header an ID Token audienced to a
+    // client named `…/admin-api` would be an administrative credential here.
+    const typ = jwtAccessToken.typOf(presented);
+    if (!jwtAccessToken.isAccessTokenType(typ)) {
+      errorCodes.mark(res, 'STS-API-0082');
+      res.set('WWW-Authenticate',
+              'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+      return sendJson(res, 401, { error: 'invalid_token', errors: [
+        'RFC 9068 section 4: a JWT access token\'s typ header must be ' +
+        '"at+jwt", and this token\'s is ' + (typ ? '"' + typ + '"' : 'absent') +
+        '. An ID Token or a refresh token is not an access token, and a ' +
+        'token minted before this service issued at+jwt is refused too; ask ' +
+        '/oauth2/token for a new one.'] });
+    }
+    if (!issuerAccepted(claims, req)) {
+      errorCodes.mark(res, 'STS-API-0083');
+      res.set('WWW-Authenticate',
+              'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+      return sendJson(res, 401, { error: 'invalid_token', errors: [
+        'RFC 9068 section 4: the iss claim must exactly match an issuer this ' +
+        'service publishes, and this token names ' +
+        JSON.stringify(claims.iss || null) + '. An issuer is an address, so ' +
+        'a token minted under one host name is refused under another; mint ' +
+        'it at the address you call this API at, or set ' +
+        'global.publicBaseUrl.'] });
+    }
     if (!audienceAccepted(claims, req)) {
       errorCodes.mark(res, 'STS-API-0004');
       return sendJson(res, 403, { error: 'forbidden', errors: [
         'That access token is for a different audience. It carries ' +
-        JSON.stringify(claims.aud || null) + ' and this API answers to "' +
-        wantedAudience(req) + '". A bearer token minted for another resource ' +
+        JSON.stringify(claims.aud || null) + ' and this API answers to ' +
+        wantedAudiences(req).map(function (aud) {
+          return '"' + aud + '"';
+        }).join(' or ') + '. A bearer token minted for another resource ' +
         'server must not be replayable here, which is what `aud` is for.'] });
+    }
+    // RFC 8705 SECTION 3.1 (2026-09-13). This gate verified a token's
+    // signature, type, issuer and audience and never looked at
+    // `cnf["x5t#S256"]`, so a certificate-bound administrative token was a
+    // bearer token here — the one resource server in the service where
+    // sender-constraining would matter most. 401 invalid_token, section 3's
+    // answer. `true`: the signature was verified above.
+    const certificateProblem = mtls.checkBinding(claims, req, true);
+    if (certificateProblem) {
+      errorCodes.mark(res, 'STS-API-0110');
+      res.set('WWW-Authenticate',
+              'Bearer error="invalid_token", scope="' + scopesWanted + '"');
+      return sendJson(res, 401, { error: 'invalid_token',
+                                  errors: [certificateProblem.description] });
     }
     const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
     const who = String(claims.client_id || claims.sub || '(a client)');
@@ -13117,7 +14011,23 @@ compileRequestSchemas();
 ROUTES.forEach(function (entry) {
   const path = entry.route || entry.path;
   if (entry.method === 'GET') {
-    app.get(path, entry.handler);
+    // A GET that `mirrors` exactly one Protocols page answers that page's
+    // endpoints as well, which is rule 7 for the section `respond()` draws
+    // there. `mirrors` is the join because it is already the column that
+    // says which page an operation is the machine's door to; one naming two
+    // pages is not a mirror of either and gets nothing.
+    const mirrored = /^GET (\/admin\S*)$/.exec(String(entry.mirrors || ''));
+    const page = mirrored &&
+                 protocolEndpoints.pages().indexOf(mirrored[1]) >= 0 ?
+                 mirrored[1] : null;
+    if (!page) {
+      app.get(path, entry.handler);
+      return;
+    }
+    app.get(path, function (req, res) {
+      res.locals.protocolEndpoints = protocolEndpoints.forPage(req, page);
+      return entry.handler(req, res);
+    });
     return;
   }
   app.post(path, function (req, res) {
@@ -13155,7 +14065,11 @@ log.info('The management API is at ' + BASE + ': ' +
          '/docs. ' +
          (config.value('adminApi.authRequired')
            ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
-             'audience ' + (config.value('adminApi.audience') || BASE) + ', ' +
+             'audience ' +
+             (config.sourceOf('adminApi.audience') === 'default'
+               ? config.value('adminApi.audience') + ' (or ' + BASE +
+                 ' under the host a request arrives on)'
+               : (config.value('adminApi.audience') || BASE)) + ', ' +
              'scope admin:read to read and admin:write to write, checked as ' +
              'a XACML access decision against the ADMIN_READ and ADMIN_WRITE ' +
              'roles. Get one from the client_credentials grant as the seeded ' +

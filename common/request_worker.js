@@ -209,6 +209,11 @@ const currentResponse = new AsyncLocalStorage();
 // and those two spellings must agree — the pool's copy carries the argument.
 const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 
+// The header the front process TELLS a hosted-surface worker on, at module
+// scope rather than beside the three in start() so that it can be exported and
+// compared with the pool's spelling, as LDAP_DROP_HEADER is.
+const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
+
 // ---------------------------------------------------------------------------
 // WHAT THIS WORKER KNOWS ABOUT DIRECTORY CONNECTIONS, AND WHAT IT ASKS FOR.
 //
@@ -414,6 +419,11 @@ function start(path) {
   let finishedCount = 0;
   let announcing = false;
   let again = false;
+  // The committed change-row count the last announcement reported up to. See
+  // announceWhenCommitted(). Starts at what the store had already committed
+  // when this worker came up, because that was written before the pool forked
+  // it and every other process has it.
+  let announcedWritten = persistence.changeRowsWritten();
   function announceWhenCommitted() {
     log.debug("Entering announceWhenCommitted().");
     if (announcing) {
@@ -442,12 +452,24 @@ function start(path) {
     //
     // The seq query that used to be here is gone with it: the front process
     // clears tickets by `through` and never read the sequence.
-    const wroteBefore = persistence.changeRowsWritten();
+    //
+    // **SINCE THE LAST ANNOUNCEMENT, NOT SINCE THIS FLUSH STARTED
+    // (2026-09-13).** Sampled either side of this flush, a commit made by a
+    // DIFFERENT flush in this process — the scheduled one `persistence.js`
+    // runs a tick after every write, which this one waits behind — could land
+    // before the first sample and be announced by nobody: this flush then
+    // found nothing new and reported `wrote: false`, and no other worker was
+    // ever marked stale for rows it had not fetched. The count is of rows
+    // COMMITTED (see `written` in persistence_postgres.js), so everything
+    // above the last announced value is something no other process has been
+    // told about.
     Promise.all([
       Promise.resolve().then(function () { return persistence.flush(); }),
       Promise.resolve().then(function () { return persistence.flushMinted(); })
     ]).then(function () {
-      const wrote = persistence.changeRowsWritten() > wroteBefore;
+      const committedNow = persistence.changeRowsWritten();
+      const wrote = committedNow > announcedWritten;
+      announcedWritten = Math.max(announcedWritten, committedNow);
       try {
         process.send({ committed: { wrote: wrote, through: through,
                                     tickets: covered } });
@@ -547,6 +569,13 @@ function start(path) {
     // handlers, so reading the header from there would find it already gone.
     req.stsPoolTicket = Number(req.headers[POOL_TICKET_HEADER]) || 0;
     delete req.headers[POOL_TICKET_HEADER];
+    // AND WHICH PROTOCOL WORKER THIS BROWSER IS HELD BY, which the front
+    // process sends a hosted-surface worker only: `common/oidc_rp.js`'s back
+    // channel reads it off the request to reach the worker holding the code.
+    // Stashed and stripped for the ticket's reasons. See `request_pool.js`'s
+    // PROTOCOL_WORKER_HEADER, whose spelling this must match.
+    req.stsProtocolWorker = Number(req.headers[PROTOCOL_WORKER_HEADER]) || 0;
+    delete req.headers[PROTOCOL_WORKER_HEADER];
     // -------------------------------------------------------------------
     // A WRITE IS ANNOUNCED WHEN IT COMMITS, AND THE ANSWER DOES NOT WAIT FOR
     // IT (2026-09-07).
@@ -1181,6 +1210,8 @@ module.exports = {
   // THE HEADER THIS WORKER ASKS THE FRONT PROCESS ON, exported to be compared
   // with `request_pool.js`'s copy — see that file's export of the same name.
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  // And the back-channel hint's, for the same comparison.
+  PROTOCOL_WORKER_HEADER: PROTOCOL_WORKER_HEADER,
   // Installing the directory mirror, exported so that a test can put this
   // process in the state a worker is in without forking one.
   installDirectoryMirror: installDirectoryMirror,

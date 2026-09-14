@@ -84,7 +84,14 @@ const subjects = require('./ssf_subjects');
 const AUTO_ACTS = {
   established: 'session-established',
   presented: 'session-presented',
-  revoked: 'session-revoked'
+  revoked: 'session-revoked',
+  // THE FOURTH (2026-09-13), and the first that is not about a session: an
+  // administrator changing somebody's credentials from their /admin/users page
+  // or /admin-api/users, or the person spending a password reset link. It goes
+  // out through `ssf.js`'s `emitCredentialChange()` rather than through
+  // `observe()` below, because there is no session row to hang it on — the
+  // subject names the PERSON — so `observe()` never sees this act.
+  credential: 'credential-change'
 };
 
 // How many events one row remembers. It is a RING and not a total — the total
@@ -188,7 +195,8 @@ function autoEmitActs() {
       ? name.slice(events.CAEP_PREFIX.length) : name;
     if (!names[short]) {
       log.warn('caep.autoEmitTypes names "' + name + '", which is not one ' +
-               'of the three acts this service can observe (' +
+               'of the ' + Object.keys(AUTO_ACTS).length + ' acts this ' +
+               'service can observe (' +
                Object.keys(AUTO_ACTS).map(function (act) {
                  return AUTO_ACTS[act];
                }).join(', ') + '). It is DROPPED — nothing here would ever ' +

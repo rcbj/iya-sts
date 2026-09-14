@@ -23,19 +23,14 @@
 // ---------------------------------------------------------------------------
 
 const express = require('express');
-const cors = require('cors');
-// For one decision only: whether CORS is withheld from the authorization
-// endpoint (RFC 9700 section 2.6). It registers no route and requires only
-// helpers.js and config.js, so requiring it from the module every protocol
-// module requires cannot create a cycle or reorder anything.
-const bcp = require('../oauth-oidc/oauth2_bcp');
 const bodyParser = require('body-parser');
 const { log, headersOf, bodyOf } = require('./helpers');
 // TRUST REALMS. Required here rather than anywhere else because the realm has
 // to be established BEFORE any other middleware runs — the call log records the
 // realm's statistics, the audit log records the realm's rows, and the CORS
-// decision asks oauth2_bcp.js which path is an authorization endpoint, which is
-// a question with a different answer in each realm. It requires config.js and
+// decision reads the realm's applications and asks oauth2_bcp.js which path is
+// an authorization endpoint — both questions with a different answer in each
+// realm. It requires config.js and
 // nothing else here, so it cannot join a cycle; helpers.js above has already
 // pulled it in anyway.
 const realms = require('./realms');
@@ -48,6 +43,12 @@ const realms = require('./realms');
 // in helpers.js for why that installation is a hook rather than a require in
 // the other direction.
 const stats = require('./admin_stats');
+// THE CORS ALLOWLIST. A library (rule 3) registering no route; it requires the
+// application registry, which `admin_stats.js` on the line above has just
+// loaded, and `oauth2_bcp.js` for RFC 9700 section 2.6 — neither of which
+// requires this file — so the require closes no cycle and moves no route.
+// Below the realm module because the registry it reads is the ambient realm's.
+const corsPolicy = require('./cors');
 // The service's account of WHAT HAPPENED, as against how much of it. Required
 // here for the same reason admin_stats.js is and with the same consequence: the
 // call log below is the single place every answered request passes through, so
@@ -58,6 +59,10 @@ const stats = require('./admin_stats');
 // only helpers.js and config.js, which is what keeps it out of the cycles rule
 // 2 exists to avoid.
 const audit = require('./audit');
+// Where a signed token's `x5u` points. A library (rule 3) that `helpers.js`
+// has already loaded, so this is a cache hit; the middleware below is its one
+// use here.
+const certificateHeader = require('./jose_certificate_header');
 
 // The input guard. A LEAF (rule 3) — it registers no route of its own and
 // requires only `config`, `bunyan` and zod, so requiring it here closes no
@@ -198,6 +203,20 @@ app.use(function (req, res, next) {
   realms.run(match.realm, next);
 });
 
+// ---------------------------------------------------------------------------
+// THE AMBIENT REQUEST, for the one thing a signer needs a request for and
+// cannot be handed one: the ORIGIN of the `x5u` address a signed token carries
+// (common/jose_certificate_header.js, 2026-09-13). Entered for the life of the
+// request exactly as the realm above is, and for the realm's reason — the
+// alternative is a request threaded through a dozen signers to build one URL.
+// It is BELOW the realm middleware, which nothing may be registered above.
+// ---------------------------------------------------------------------------
+app.use(function (req, res, next) {
+  log.debug("Entering the ambient-request middleware.");
+  log.debug("Leaving the ambient-request middleware.");
+  return certificateHeader.enterRequest(req, next);
+});
+
 // The rewrite itself. A function rather than an inline regex so that the ONE
 // pattern that decides what a link is has one home and one test: `="/` and not
 // `="//`, which is a protocol-relative URL to another host.
@@ -278,8 +297,9 @@ app.use(requestPool.middleware());
 
 // CORS preflight carrying Access-Control-Request-Private-Network and require
 // this header on the response. Answer it so the call isn't blocked. Registered
-// BEFORE cors() so the header is set before the preflight response is sent;
-// a no-op for the containerized suite (both sides on the same bridge network).
+// BEFORE the CORS preflight so the header is set before the preflight
+// response is sent; a no-op for the containerized suite (both sides on the
+// same bridge network).
 app.use(function (req, res, next) {
   if (req.headers['access-control-request-private-network']) {
     res.setHeader('Access-Control-Allow-Private-Network', 'true');
@@ -435,54 +455,25 @@ app.use(function (req, res, next) {
 });
 
 // ---------------------------------------------------------------------------
-// CORS, with one endpoint carved out of it in RFC 9700 mode.
+// CORS: AN ALLOWLIST ON EVERY PATH (2026-09-13), DECIDED IN `common/cors.js`.
 //
-// `origin: '*'` everywhere is right for a mock whose token, userinfo, metadata
-// and JWKS endpoints are fetched with XHR by in-browser clients — that is most
-// of what this service is for. RFC 9700 section 2.6 says CORS MUST NOT be
-// supported at the AUTHORIZATION endpoint, which is a different kind of
-// endpoint: a browser NAVIGATES to it, so nothing legitimate ever read those
-// headers there, and offering them only widens what a script on another origin
-// can do with it.
+// This was `origin: '*'` everywhere, with `/oauth2/authorize` carved out in
+// RFC 9700 mode. It is now the origins this service calls its own plus the
+// ones applications list in `appCorsOrigin` — per client where a request
+// names one, across the realm where it names none — and that module's header
+// argues every part of it. This file only installs it, in two places:
 //
-// The decision is `oauth2_bcp.js`'s rather than this file's, and that is not
-// ceremony: this module installs middleware and has no business knowing which
-// of this service's paths is an authorization endpoint. It asks. The require is
-// safe from here — that module registers no route and requires only helpers.js
-// and config.js, so it cannot join a cycle and cannot move anything in the
-// route order.
+//   * `cors.preflight()` HERE, for every OPTIONS request, and again as the
+//     `app.options('*')` route `/admin/sts-metadata` lists (GNAP's discovery is
+//     an OPTIONS request that must reach its route — see that module);
+//   * `cors.response()` BELOW THE BODY PARSERS, for everything else, because a
+//     `client_id` is usually in the body and nothing has read it up here.
 //
-// `origin: false` makes the cors package send no headers at all, which is what
-// "not supported" means. The same options function serves the preflight, or a
-// browser would be told by OPTIONS that a request is allowed and then find the
-// answer unreadable.
-const corsOptions = function (req, callback) {
-  log.debug("Entering corsOptions().");
-  if (bcp.corsForbidden(req)) {
-    callback(null, { origin: false });
-    log.debug("Leaving corsOptions().");
-    return;
-  }
-  // **GNAP'S DISCOVERY IS AN OPTIONS REQUEST (2026-09-12).** RFC 9635 section 9
-  // has a client "send an HTTP OPTIONS request to the grant request endpoint"
-  // and the AS "MUST respond with a JSON document". The `app.options('*')`
-  // below would otherwise answer every such request as a bare CORS preflight —
-  // 204, no body — before the GNAP route ever ran. `preflightContinue` keeps
-  // the CORS headers and hands the request on, and a browser's real preflight
-  // to the grant endpoint then receives the discovery document with those
-  // headers, which is a valid preflight answer as well.
-  if (/(^|\/)gnap$/.test(String(req.path || ''))) {
-    callback(null, { origin: '*', preflightContinue: true });
-    log.debug("Leaving corsOptions().");
-    return;
-  }
-  callback(null, { origin: '*' });
-  log.debug("Leaving corsOptions().");
-};
+// A preflight has no body, which is why it can be answered above them.
+// ---------------------------------------------------------------------------
+app.use(corsPolicy.preflight());
 
-app.use(cors(corsOptions));
-
-app.options('*', cors(corsOptions));
+app.options('*', corsPolicy.preflight());
 
 // ---------------------------------------------------------------------------
 // BINARY BODIES FIRST, AND THE TEXT PARSER BELOW TAKES EVERYTHING ELSE.
@@ -527,9 +518,21 @@ app.options('*', cors(corsOptions));
 //     spells it out.
 //
 // The handler reads `req.body` now, like every other endpoint here.
+// **`application/pkcs10` JOINED THEM ON 2026-09-13, FOR EST.** An EST body is
+// base64 text rather than DER (RFC 8951), so the text parser would not corrupt
+// it — but it would strip a byte-order mark and replace an invalid byte with
+// U+FFFD before `est/est.js` could refuse the body for containing one, which
+// turns a malformed request into a different malformed request. Taken raw, the
+// bytes EST checks are the bytes the client sent.
+// **`application/x-pki-message` JOINED THEM THE SAME DAY, FOR SCEP.** A
+// PKIOperation POST (RFC 8894 section 4.3) is a binary CMS SignedData, which
+// is the OCSP case exactly: the text parser would drain the stream and decode
+// DER as UTF-8, so `scep/scep.js` would verify a signature over bytes the
+// client never signed and refuse every correct request as badMessageCheck.
 app.use(bodyParser.raw({
   type: ['application/kerberos', 'application/octet-stream',
-         'application/ocsp-request'],
+         'application/ocsp-request', 'application/pkcs10',
+         'application/x-pki-message'],
   limit: '5mb'
 }));
 
@@ -565,6 +568,10 @@ app.use(bodyParser.text({
     log.debug("Leaving verify().");
   }
 }));
+
+// The CORS decision for every request that is not OPTIONS, now that a body has
+// been read. See `common/cors.js`; it refuses nothing, it decides a header.
+app.use(corsPolicy.response());
 
 // ---------------------------------------------------------------------------
 // A BODY THE PARSERS ABOVE REFUSED, WRITTEN DOWN — AND NOTHING ELSE ABOUT IT.

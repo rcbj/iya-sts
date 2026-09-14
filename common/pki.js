@@ -261,7 +261,71 @@ const USE_CASES = [
           'is the point: the bundle publishes the service Root, which every ' +
           'realm shares, so an SVID signed by any realm\'s authority ' +
           'verifies against one anchor while its chain still says which ' +
-          'realm issued it.' }
+          'realm issued it.' },
+  // **THE LISTENER CERTIFICATE OF A REMOTE XACML PEP (2026-09-13).** The only
+  // use case whose leaves are served by a process this service does not run,
+  // and the reason it is REALM-scoped rather than beside `tls`: a remote PEP
+  // registers against ONE realm's PDP and enforces that realm's policy, so the
+  // authority vouching for its front door is that realm's. `tls` is
+  // process-scoped because its sockets answer every realm; a PEP's answers
+  // one. A leaf from here certifies `serverAuth` and nothing else, and it is
+  // issued with `issueTlsServerKeyPair()` below — the one door in this module
+  // that hands a SERVER private key to something that is not this service.
+  { id: 'pep-tls', scope: 'realm', label: 'Remote PEP listeners',
+    cn: 'Remote PEP TLS Issuing CA',
+    what: 'The certificates a remote XACML Policy Enforcement Point serves ' +
+          'on its HTTPS listener. REALM-scoped because a remote PEP ' +
+          'registers against one realm and enforces that realm\'s policy, ' +
+          'so the authority vouching for its front door is that realm\'s. ' +
+          'Issued to a REGISTERED PEP from /admin/xacml/peps or POST ' +
+          '/admin-api/xacml/issue-pep-certificate; the private key is ' +
+          'handed over once and this service keeps no copy.' },
+  // **THE THREE ENROLLMENT PROTOCOLS (2026-09-13).** One Issuing CA per
+  // protocol rather than one for all three, for the reason `jose` and `xml`
+  // are two: a relying party that trusts what ACME issued has said nothing
+  // about what SCEP issued, and an operator who has to stop trusting one
+  // protocol's certificates wants a CA to distrust and a CRL to read rather
+  // than a filter over serials. What a certificate from any of them CONTAINS,
+  // and for whom it may be issued, is `common/cert_enrollment.js`'s and the
+  // same for all three; `issueEnrolled()` below is the door they sign through.
+  { id: 'acme', scope: 'realm', label: 'ACME enrollment',
+    cn: 'ACME Issuing CA',
+    what: 'Certificates issued over ACME (RFC 8555) at /enroll/acme, to a ' +
+          'person or application entry an External Account Binding key was ' +
+          'issued for. Every leaf names that entry in a urn:sts:person: or ' +
+          'urn:sts:application: subjectAltName.' },
+  { id: 'est', scope: 'realm', label: 'EST enrollment',
+    cn: 'EST Issuing CA',
+    what: 'Certificates issued over EST (RFC 7030) at /.well-known/est, to ' +
+          'the entry a password, client secret or realm-issued client ' +
+          'certificate authenticated, or — for an administrator — to the ' +
+          'entry the request names. The one enrollment path on which this ' +
+          'service may generate the key pair (/serverkeygen).' },
+  { id: 'scep', scope: 'realm', label: 'SCEP enrollment',
+    cn: 'SCEP Issuing CA',
+    what: 'Certificates issued over SCEP (RFC 8894) at /enroll/scep, to the ' +
+          'entry a single-use challenge password was issued for. The RA ' +
+          'certificate SCEP encrypts requests to is a leaf of this CA too, ' +
+          'with an RSA key because SCEP\'s key transport is RSA.' },
+  // **A PERSON'S TLS CLIENT CERTIFICATE (2026-09-13).** Issued on
+  // /portal/signing-key by the person it names, installed in a browser, and
+  // presented to the TLS listeners — which trust the service Root for client
+  // certificates since the same day and accept a chain through it as an
+  // identity ONLY when the leaf came from THIS use case's Issuing CA (see
+  // `common/tls_client_certificates.js`). That is why it is an authority of
+  // its own and not the `assertions` one: "issued here" stopped being a
+  // statement about identity the day the Root was trusted, and "issued by the
+  // TLS client Issuing CA" is the one that still is. REALM-scoped because the
+  // realm a certificate signs somebody in to is read off the authority that
+  // signed it — a socket has no path to carry one.
+  { id: 'tls-client', scope: 'realm', label: 'TLS client certificates',
+    cn: 'TLS Client Issuing CA',
+    what: 'The TLS client certificates people issue themselves on the user ' +
+          'portal: clientAuth, the person\'s urn:sts:person: name, and a ' +
+          'private key handed over once as a PKCS#12. A certificate from ' +
+          'this authority signs its holder in on the TLS listeners, in this ' +
+          'realm; a certificate from any other authority of this service ' +
+          'does not, although every one of them chains to the same Root.' }
 ];
 
 const USE_CASE_IDS = USE_CASES.map(function (one) { return one.id; });
@@ -3561,6 +3625,30 @@ async function certify(scopeId, useCaseId, spec) {
   // the branch was already worthless.
   // ---------------------------------------------------------------------
   if (!scopeChainsToRoot(id)) {
+    // -------------------------------------------------------------------
+    // **UNLESS THE CALLER IS WAITING FOR ANOTHER PROCESS'S BRANCH
+    // (2026-09-13).** `spec.repairBranch === false` is the front process of a
+    // dispatched service reconciling its listener after a Root arrived from a
+    // request worker. That worker is rebuilding every branch in the same act
+    // (`pki_admin.js`'s `rebuildEveryScope()`), so the process branch is a
+    // publish or two behind the Root — and rebuilding it HERE as well was two
+    // processes building one branch at once over a last-write-wins channel,
+    // which is the race "A BRANCH IS BUILT ONCE, IN ONE PROCESS" closed for a
+    // realm's branch and left open for this one. Refused rather than rebuilt;
+    // `tls_server.js` asks again when the branch arrives, and falls back to
+    // the repair if it never does.
+    // -------------------------------------------------------------------
+    if (spec && spec.repairBranch === false) {
+      log.info('pki: the "' + (id || 'default') + '" branch does not chain ' +
+               'to this service\'s Root yet and this caller asked not to ' +
+               'rebuild it, so "' + (spec.slot || '') + '" is not certified ' +
+               'now — the process that replaced the Root publishes the ' +
+               'branch next.');
+      log.debug('Leaving certify(). Waiting for the branch.');
+      return { ok: false, deferred: true,
+               errors: ['The "' + (id || 'default') + '" branch does not ' +
+                        'chain to this service\'s Root yet.'] };
+    }
     log.warn('pki: the "' + (id || 'default') + '" branch does not chain to ' +
              'this service\'s Root CA — a Root was replaced without its ' +
              'branches being rebuilt. Rebuilding the branch before issuing, ' +
@@ -3751,6 +3839,195 @@ function forgetCertificate(scopeId, useCaseId, slot) {
 }
 
 // ===========================================================================
+// A TLS SERVER KEY PAIR FOR SOMETHING THIS SERVICE DOES NOT RUN (2026-09-13):
+// `issueTlsServerKeyPair()`.
+//
+// **THE ONE DOOR IN THIS MODULE THAT HANDS A SERVER PRIVATE KEY OUTSIDE THIS
+// PROCESS.** Every other `serverAuth` certificate here is the listener's own,
+// certified over a key that never leaves `tls/tls_server.js`. This one is for
+// a remote XACML PEP's HTTPS listener (`pep-tls`, and `xacml/xacml_pep_tls.js`
+// is the caller): the key pair is GENERATED here, certified from the use
+// case's Issuing CA, handed back ONCE, and forgotten — `certify()` records the
+// certificate under a slot and no private key, exactly as it does for a key
+// this service holds.
+//
+// **WHY `certify()` AND NOT `issueUnder()`.** `issueUnder()` records nothing,
+// which is right for an X509-SVID re-minted every half-lifetime and wrong
+// here: a listener certificate lives for months, names this authority's CRL
+// and OCSP responder in `revocationExtensionsFor()`, and a responder with no
+// record of its serial answers `unknown` about a certificate that sends a
+// client there to ask. A slot per PEP is also what makes a reissue SUPERSEDE
+// the certificate it replaces rather than leaving two valid ones.
+//
+// **THE KEY ALGORITHMS ARE THE ONES A TLS STACK SERVES**, which is a narrower
+// list than `keyAlgorithms()`: node, and every client worth talking to, will
+// negotiate an RSA or a NIST-curve ECDSA server certificate, and the Edwards
+// and post-quantum keys this module can generate are either TLS 1.3-only in
+// practice or not in TLS at all. A listener that starts and then fails every
+// handshake is the worst version of this feature.
+//
+// **A CERTIFICATE WITH NO subjectAltName IS REFUSED** rather than issued with
+// the CN alone: RFC 6125 section 6.4.4 lets a client fall back to the CN and
+// node's `checkServerIdentity()` no longer does, so a SAN-less server
+// certificate is one this service would issue and nothing would accept.
+// ===========================================================================
+const TLS_SERVER_KEY_ALGS = ['ec-p256', 'ec-p384', 'ec-p521', 'rsa-2048',
+                             'rsa-3072', 'rsa-4096'];
+const DEFAULT_TLS_SERVER_KEY_ALG = 'ec-p256';
+
+// A DNS name a certificate may carry: labels of letters, digits and hyphens,
+// with a single leading `*.` allowed (RFC 6125 section 6.4.3). Checked here
+// rather than left to the encoder, which writes any string it is handed into an
+// IA5String and produces a certificate whose name matches nothing.
+function tlsDnsNameProblem(name) {
+  log.debug("Entering tlsDnsNameProblem().");
+  const text = String(name || '');
+  const bare = text.indexOf('*.') === 0 ? text.slice(2) : text;
+  const ok = bare.length > 0 && text.length <= 253 &&
+    bare.split('.').every(function (label) {
+      return /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label);
+    });
+  log.debug("Leaving tlsDnsNameProblem().");
+  return ok ? '' : '"' + text + '" is not a DNS name a certificate can ' +
+    'carry: labels of letters, digits and hyphens separated by dots, with ' +
+    'an optional leading "*.".';
+}
+
+async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
+  log.debug('Entering issueTlsServerKeyPair(). scope=' + scopeId + ' use=' +
+            useCaseId);
+  const net = require('net');
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug('Leaving issueTlsServerKeyPair(). Unknown use case.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + useCaseId + '" is not a use case this service ' +
+                      'issues for. They are ' + USE_CASE_IDS.join(', ') +
+                      '.'] }, 'STS-PKI-0022');
+  }
+  const id = uc.scope === 'process' ? PROCESS_SCOPE : realmIdOf(scopeId);
+  const s = spec || {};
+  const slot = String(s.slot || '').trim();
+  if (!slot) {
+    log.debug('Leaving issueTlsServerKeyPair(). No slot.');
+    return errorCodes.mark({ ok: false,
+             errors: ['A listener certificate is issued TO something. Name ' +
+                      'what it is for.'] }, 'STS-PKI-0165');
+  }
+  const unique = function (list) {
+    log.debug("Entering unique().");
+    const seen = Object.create(null);
+    log.debug("Leaving unique().");
+    return (list || []).map(function (one) {
+      return String(one || '').trim();
+    }).filter(function (one) {
+      if (!one || seen[one.toLowerCase()]) {
+        return false;
+      }
+      seen[one.toLowerCase()] = true;
+      return true;
+    });
+  };
+  const dnsNames = unique(s.dnsNames);
+  const ipAddresses = unique(s.ipAddresses);
+  const nameProblems = dnsNames.map(tlsDnsNameProblem).filter(Boolean)
+    .concat(ipAddresses.filter(function (one) {
+      return !net.isIP(one);
+    }).map(function (one) {
+      return '"' + one + '" is not an IPv4 or IPv6 address.';
+    }));
+  if (nameProblems.length) {
+    log.debug('Leaving issueTlsServerKeyPair(). A name was refused.');
+    return errorCodes.mark({ ok: false, errors: nameProblems },
+                           'STS-PKI-0166');
+  }
+  if (!dnsNames.length && !ipAddresses.length) {
+    log.debug('Leaving issueTlsServerKeyPair(). No subjectAltName.');
+    return errorCodes.mark({ ok: false,
+             errors: ['A server certificate needs at least one DNS name or ' +
+                      'IP address in its subjectAltName. A client checks ' +
+                      'the host it dialled against those and no longer ' +
+                      'against the common name, so a certificate without ' +
+                      'one would be issued and accepted by nothing.'] },
+                           'STS-PKI-0166');
+  }
+  const keyAlgId = String(s.keyAlg || DEFAULT_TLS_SERVER_KEY_ALG);
+  const keyDesc = keyMaterial.keyAlg(keyAlgId);
+  if (!keyDesc || TLS_SERVER_KEY_ALGS.indexOf(keyAlgId) < 0) {
+    log.debug('Leaving issueTlsServerKeyPair(). Key algorithm refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + keyAlgId + '" is not a key algorithm a TLS ' +
+                      'listener certificate is issued with here. It may be ' +
+                      TLS_SERVER_KEY_ALGS.join(', ') + '.'] }, 'STS-PKI-0167');
+  }
+
+  // THE BRANCH, AND THE ISSUING CA IN IT. `ensureScope()` builds a branch that
+  // is not there and tops up one built before this use case existed, so an
+  // operator never meets "that realm has no Remote PEP listeners CA" on a
+  // realm whose other authorities are working.
+  const branch = await ensureScope(id);
+  if (!branch.ok) {
+    log.debug('Leaving issueTlsServerKeyPair(). No branch.');
+    return branch;
+  }
+
+  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  const was = certificateFor(id, uc.id, slot);
+  const names = dnsNames.map(function (one) {
+    return { kind: 'dns', value: one };
+  }).concat(ipAddresses.map(function (one) {
+    return { kind: 'ip', value: one };
+  }));
+  const made = await certify(id, uc.id, {
+    slot: slot,
+    label: String(s.label || slot),
+    commonName: String(s.commonName || dnsNames[0] || slot),
+    keyAlg: keyAlgId,
+    publicKeyPem: pair.publicPem,
+    profile: 'tls-server',
+    days: s.days,
+    // keyEncipherment only where the key can do it: an RSA key transports a
+    // TLS 1.2 premaster secret, an EC key never does, and a KeyUsage asserting
+    // a use the key cannot perform is one a strict client refuses.
+    keyUsage: keyDesc.kind === 'rsa' ? ['digitalSignature', 'keyEncipherment']
+                                     : ['digitalSignature'],
+    extensions: {
+      extKeyUsage: { present: true, critical: false, usages: ['serverAuth'] },
+      subjectAltName: { present: true, critical: false, names: names }
+    }
+  });
+  if (!made.ok) {
+    log.debug('Leaving issueTlsServerKeyPair(). certify() refused.');
+    return made;
+  }
+  // THE CERTIFICATE THIS REPLACES IS SUPERSEDED — `supersede()`'s rule. A
+  // listener whose certificate was reissued because its key was lost must not
+  // leave the old one valid for the rest of its year.
+  if (was && normalSerialsDiffer(was.serialHex, made.record.serialHex)) {
+    supersede(id, uc.id, was, 'replaced by a new ' + uc.label +
+              ' certificate for "' + slot + '"');
+  }
+  const root = serviceRoot();
+  log.info('pki: a ' + keyDesc.label + ' ' + uc.label + ' certificate was ' +
+           'issued for "' + slot + '" in "' + (id || 'default') + '", naming ' +
+           names.map(function (one) { return one.value; }).join(', ') +
+           '; expires ' + made.record.notAfter + '. The private key was ' +
+           'handed to the caller and is not kept here.');
+  log.debug('Leaving issueTlsServerKeyPair().');
+  return { ok: true,
+           issued: Object.assign(describeCertificate(made.record), {
+             scope: id,
+             dnsNames: dnsNames,
+             ipAddresses: ipAddresses,
+             privateKeyPem: pair.privatePem,
+             // THE ANCHOR A CLIENT OF THIS LISTENER INSTALLS: the service
+             // Root, which the chain above deliberately leaves out.
+             anchorPem: root ? root.certificatePem : '',
+             replacedSerialHex: was ? was.serialHex : null
+           }) };
+}
+
+// ===========================================================================
 // ISSUING SOMETHING THIS MODULE DOES NOT KEEP (2026-09-11): `issueUnder()`.
 //
 // **EVERY OTHER DOOR IN HERE RECORDS WHAT IT ISSUED, AND THAT IS EXACTLY WHY
@@ -3882,6 +4159,118 @@ async function issueUnder(scopeId, useCaseId, spec) {
     issuerChainPem: chainPem,
     issuerChainDer: chainPem.map(pemToDer)
   };
+}
+
+// ===========================================================================
+// ISSUE ONE ENROLLED CERTIFICATE (2026-09-13) — ACME, EST AND SCEP SIGN HERE.
+//
+// `issueUnder()` above is the right shape — a certificate over a PRESENTED
+// public key, from one use case's Issuing CA — and the wrong bookkeeping: it
+// records nothing, because an SVID answers revocation with a short lifetime
+// instead. An enrolled certificate is the opposite case. It is handed to a
+// device or a person for a year, ACME can revoke it, and an operator can revoke
+// it from the console, so `/pki/ocsp` must be able to answer `good` about it
+// and the CRL must be able to list it. So this door is `issueUnder()` plus
+// three things:
+//
+//   * the profile's keyUsage, extKeyUsage and basicConstraints come from
+//     `x509.defaultExtensions(profile)`, which is exactly what /admin/pki's
+//     Apply the profile writes into the form — one table for both doors;
+//   * CDP and AIA name the family CA, as every other leaf here does;
+//   * the serial is RECORDED in `issuedKeyPairs` under the family's use case,
+//     the list `pki_revocation.issuedList()` reads, so OCSP knows it.
+//
+// **WHAT GOES INTO THE CERTIFICATE IS DECIDED BY THE CALLER AND NOT HERE.**
+// `common/cert_enrollment.js` builds the subject and the subjectAltName from
+// the directory entry and refuses a name the entry does not own; this module
+// signs what it is handed, over the key it is handed, and never reads a CSR.
+// That keeps the certificate authority ignorant of who a person is, which is
+// the split `issueSigningKeyPair()` already keeps with SUBJECT_KINDS.
+// ===========================================================================
+async function issueEnrolled(scopeId, useCaseId, spec) {
+  log.debug('Entering issueEnrolled(). scope=' + scopeId + ' use=' + useCaseId);
+  const id = realmIdOf(scopeId);
+  const uc = useCase(useCaseId);
+  if (!uc || uc.scope !== 'realm') {
+    log.debug('Leaving issueEnrolled(). Not a realm use case.');
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + useCaseId + '" is not a realm use case this ' +
+                      'service issues enrolled certificates from.'] },
+                           'STS-PKI-0022');
+  }
+  const asked = spec || {};
+  if (!asked.publicKeyPem || !asked.profile) {
+    log.debug('Leaving issueEnrolled(). No public key or profile.');
+    return errorCodes.mark({ ok: false,
+             errors: ['An enrolled certificate is issued over a public key ' +
+                      'and a profile, and one of them was not given.'] },
+                           'STS-PKI-0026');
+  }
+  if (!hasRoot()) {
+    log.debug('Leaving issueEnrolled(). No Root.');
+    return errorCodes.mark({ ok: false,
+             errors: ['This service has no Root CA, so nothing can be ' +
+                      'issued. Build the hierarchy on /admin/pki first.'] },
+                           'STS-PKI-0009');
+  }
+  // A branch built before this use case existed has every Issuing CA but this
+  // one. `ensureScope()` tops it up under the existing Intermediate rather
+  // than rebuilding — the realm's other certificates are untouched.
+  let row = rawRowFor(id);
+  if (!row || !row.intermediate || !row.issuing || !row.issuing[uc.id]) {
+    const ensured = await ensureScope(id);
+    if (!ensured || !ensured.ok) {
+      log.debug('Leaving issueEnrolled(). The branch could not be completed.');
+      return errorCodes.mark({ ok: false,
+               errors: (ensured && ensured.errors) ||
+                       ['The ' + uc.label + ' Issuing CA could not be made.'] },
+                             'STS-PKI-0023');
+    }
+    row = rawRowFor(id);
+  }
+  const issued = await issueUnder(id, uc.id, {
+    subject: asked.subject,
+    publicKeyPem: asked.publicKeyPem,
+    profile: asked.profile,
+    notAfter: Date.now() + Math.max(1, Number(asked.days)) * 86400000,
+    extensions: Object.assign({}, x509.defaultExtensions(asked.profile), {
+      subjectKeyIdentifier: { present: true, critical: false },
+      authorityKeyIdentifier: { present: true, critical: false,
+                                includeIssuerAndSerial: false },
+      subjectAltName: { present: !!(asked.subjectAltName || []).length,
+                        critical: false,
+                        names: (asked.subjectAltName || []).slice() }
+    }, revocationExtensionsFor(id, uc.id))
+  });
+  if (!issued.ok) {
+    log.debug('Leaving issueEnrolled(). issueUnder refused.');
+    return issued;
+  }
+  // Recorded where OCSP and the CRL look. `issueUnder()` may have REBUILT a
+  // stale branch before issuing, so the row is read again rather than reused.
+  const current = rawRowFor(id) || row;
+  const nowMs = Date.now();
+  current.issuedKeyPairs = (current.issuedKeyPairs || []).filter(
+    function (one) {
+      return one && new Date(one.notAfter).getTime() > nowMs;
+    }).concat([{
+      serialHex: issued.serialHex,
+      subject: issued.subject,
+      notAfter: issued.notAfter,
+      identifier: String(asked.identifier || ''),
+      subjectKind: String(asked.subjectKind || ''),
+      purpose: 'enrolled:' + String(asked.profile),
+      useCase: uc.id,
+      issuedAt: new Date(nowMs).toISOString()
+    }]);
+  current.issuedCount = (current.issuedCount || 0) + 1;
+  saveRow(id, current);
+  log.info('pki: a ' + asked.profile + ' certificate was issued from the "' +
+           (id || 'default') + '" realm\'s ' + uc.label + ' Issuing CA for "' +
+           String(asked.identifier || '') + '". serial=' + issued.serialHex +
+           ', expires ' + issued.notAfter + '.');
+  log.debug('Leaving issueEnrolled(). serial=' + issued.serialHex);
+  return issued;
 }
 
 // ---------------------------------------------------------------------------
@@ -5208,9 +5597,16 @@ function registerCertifiable(spec) {
 // Certify everything registered. Called from `start()`, before anything binds,
 // which is what lets the TLS listener open with a certificate that already
 // chains to this service's Root rather than swapping one in afterwards.
-async function certifyRegistered() {
+//
+// `opts.repairBranch === false` (2026-09-13) is handed to `certify()` for
+// every registration: a branch that no longer chains to the Root is then left
+// for the process rebuilding it rather than rebuilt here. See the block at the
+// top of `certify()`; `tls_server.js`'s `reconcileWithHierarchy()` is the one
+// caller that passes it.
+async function certifyRegistered(opts) {
   log.debug('Entering certifyRegistered(). ' + certifiable.length +
             ' registration(s).');
+  const repairBranch = !(opts && opts.repairBranch === false);
   let done = 0;
   for (let i = 0; i < certifiable.length; i++) {
     const one = certifiable[i];
@@ -5238,8 +5634,14 @@ async function certifyRegistered() {
       publicKeyPem: publicPem,
       profile: one.profile,
       keyUsage: one.keyUsage,
-      extensions: one.extensions
+      extensions: one.extensions,
+      repairBranch: repairBranch
     });
+    if (!made.ok && made.deferred) {
+      // Not a failure: `certify()` has said why at info, and the caller asks
+      // again when the branch it is waiting for arrives.
+      continue;
+    }
     if (!made.ok) {
       log.error(errorCodes.tag('STS-PKI-0046') + 'pki: the ' + one.useCase +
           ' ' +
@@ -5598,16 +6000,104 @@ async function ensureScope(scopeId, opts) {
   // queueing the build afterwards is the race it exists to remove.
   return oneBuildAtATime(String(scopeId), function () {
     const row = rawRowFor(scopeId);
+    const wanted = useCasesFor(scopeKindOf(String(scopeId)));
     if (row && row.intermediate && row.issuing &&
-        useCasesFor(scopeKindOf(String(scopeId))).every(function (uc) {
+        wanted.every(function (uc) {
           return !!row.issuing[uc.id];
         })) {
       return { ok: true, existing: true, scope: describeScope(scopeId) };
+    }
+    // -----------------------------------------------------------------------
+    // **A BRANCH MISSING ONLY A USE CASE ADDED SINCE IT WAS BUILT IS TOPPED
+    // UP, NOT REBUILT (2026-09-13).** This fell through to `buildScopeNow()`
+    // for any incomplete branch, which was right while "incomplete" could only
+    // mean a build that failed half way. It stopped being the only meaning the
+    // day a use case was added to `USE_CASES` (`pep-tls`): every branch already
+    // in a PRODUCT-mode store is then incomplete on the next start, and a
+    // rebuild replaces its Intermediate — superseding every Issuing CA under it
+    // and every certificate those issued, the realm's JOSE and XML signing
+    // certificates included — to add one authority nobody had used yet. That
+    // is a restart revoking a realm's published chain, which is the one thing
+    // this function's header says a restart must not do.
+    //
+    // **ONLY WHERE THE EXISTING INTERMEDIATE CAN SIGN WHAT IS MISSING.** A
+    // missing Issuing CA that carries `pathLen: 0` fits under any Intermediate
+    // this service has built (they are all at least 1); one needing room
+    // beneath it (the way `spiffe` does) may not fit the depth the stored
+    // Intermediate was issued with, and a CA it cannot sign is a chain every
+    // path builder refuses — so that case rebuilds, as it always did.
+    // -----------------------------------------------------------------------
+    const missing = wanted.filter(function (uc) {
+      return !(row && row.issuing && row.issuing[uc.id]);
+    });
+    if (row && row.intermediate && row.issuing && missing.length &&
+        missing.length < wanted.length &&
+        missing.every(function (uc) { return issuingPathLen(uc.id) === 0; })) {
+      return topUpScopeNow(String(scopeId), missing);
     }
     return buildScopeNow(scopeId, opts || {
       organisation: config.value('pki.organisation')
     });
   });
+}
+
+// The Issuing CAs a branch is missing, issued under the Intermediate it
+// already has — see `ensureScope()` for when. Nothing that exists is touched,
+// so nothing is superseded. A failure stores nothing and is reported whole,
+// because a branch topped up with two of three missing authorities is the
+// half-built state "a branch in one act, or none" exists to refuse.
+async function topUpScopeNow(scopeId, missing) {
+  log.debug('Entering topUpScopeNow(). scope=' + scopeId + ' missing=' +
+            missing.map(function (uc) { return uc.id; }).join(','));
+  const id = String(scopeId);
+  const row = rawRowFor(id);
+  const kind = scopeKindOf(id);
+  const organisation = row.organisation || DEFAULT_ORGANISATION;
+  const named = kind === 'process' ? 'Process' : (id || 'default');
+  const made = {};
+  for (let i = 0; i < missing.length; i++) {
+    const uc = missing[i];
+    // The branch's own algorithms, narrowed by the use case's preference the
+    // way a build narrows them — so a topped-up authority is the one a fresh
+    // build of this branch would have made.
+    const forThis = algorithmsForUseCase(uc,
+      { keyAlg: row.keyAlg, signatureAlg: row.signatureAlg }, {});
+    try {
+      made[uc.id] = await issueCaTier({
+        tier: 'issuing', profile: 'issuing-ca', label: uc.label + ' CA',
+        useCase: uc.id, scope: id,
+        cn: organisation + ' ' + uc.cn + ' (' + named + ')',
+        organisation: organisation, country: row.country || '',
+        keyAlg: forThis.keyAlg, signatureAlg: forThis.signatureAlg,
+        pathLen: issuingPathLen(uc.id),
+        years: tierYearsFrom(undefined, 'issuing'),
+        parent: row.intermediate
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PKI-0007') + 'pki: the "' +
+                (id || 'default') + '" branch was missing its ' + uc.label +
+                ' Issuing CA and it could not be added: ' + e.message +
+                '. Nothing was stored.');
+      log.debug('Leaving topUpScopeNow(). The ' + uc.id + ' CA failed.');
+      return errorCodes.mark({ ok: false,
+               errors: ['The ' + uc.label + ' Issuing CA could not be ' +
+                        'added to this branch: ' + e.message + '. Nothing ' +
+                        'was stored.'] }, 'STS-PKI-0007');
+    }
+  }
+  // Read again rather than written from `row`: issuing a tier awaits, and a
+  // certificate certified meanwhile under an authority this branch already had
+  // must not be overwritten by the copy read before the first await.
+  const fresh = rawRowFor(id);
+  fresh.issuing = Object.assign({}, fresh.issuing || {}, made);
+  saveRow(id, fresh);
+  log.info('pki: the "' + (id || 'default') + '" branch was built before ' +
+           Object.keys(made).length + ' use case(s) existed, so ' +
+           Object.keys(made).join(', ') + ' was added under its existing ' +
+           'Intermediate CA. Nothing already issued was replaced.');
+  log.debug('Leaving topUpScopeNow().');
+  return { ok: true, existing: true, toppedUp: Object.keys(made),
+           scope: describeScope(id) };
 }
 
 // ---------------------------------------------------------------------------
@@ -5704,6 +6194,10 @@ module.exports = {
   scopeKindOf: scopeKindOf,
   serviceRoot: serviceRoot,
   hasRoot: hasRoot,
+  // Whether a scope's Intermediate carries the current Root's signature, for
+  // `tls_server.js`'s reconcile (2026-09-13): the front process of a dispatched
+  // service waits for a branch that does not, rather than building one.
+  scopeChainsToRoot: scopeChainsToRoot,
   buildRoot: buildRoot,
   ensureRoot: ensureRoot,
   buildScope: buildScope,
@@ -5716,6 +6210,9 @@ module.exports = {
   // Issue WITHOUT recording, for a caller that owns what comes out — see
   // `issueUnder()`'s header. `spiffe/spiffe_ca.js` is the caller.
   issueUnder: issueUnder,
+  // The door ACME, EST and SCEP sign through — `issueUnder()` plus the
+  // profile's extensions, the family CA's CDP/AIA and a record OCSP reads.
+  issueEnrolled: issueEnrolled,
   describeIssuer: describeIssuer,
   certifyKeySet: certifyKeySet,
   // The eleven post-quantum keys per realm, under its JOSE Issuing CA
@@ -5739,6 +6236,9 @@ module.exports = {
   pinnedKeyFor: pinnedKeyFor,
   publishedCertificateFor: publishedCertificateFor,
   forgetCertificate: forgetCertificate,
+  issueTlsServerKeyPair: issueTlsServerKeyPair,
+  TLS_SERVER_KEY_ALGS: TLS_SERVER_KEY_ALGS,
+  DEFAULT_TLS_SERVER_KEY_ALG: DEFAULT_TLS_SERVER_KEY_ALG,
   // Startup. `server.js` and `common/service_state.js` call it after
   // `keystore.start()` and before anything binds.
   start: start,

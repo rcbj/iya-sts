@@ -409,6 +409,44 @@ function deserialiseRefreshTokenKeys(blob, nodeCryptoModule) {
   };
 }
 
+// THE REQUEST OBJECT ENCRYPTION KEYS (2026-09-13): an RSA pair and an EC pair,
+// the refresh-token shape without the secret. NULL rather than absent for the
+// refresh-token keys' reason, and read back as null from a blob that lacks
+// them, which `helpers.js`'s requestObjectKeysFor() backfills.
+function serialiseRequestObjectKeys(held) {
+  log.debug("Entering serialiseRequestObjectKeys().");
+  if (!held || !held.rsa || !held.ec) {
+    log.debug("Leaving serialiseRequestObjectKeys().");
+    return null;
+  }
+  log.debug("Leaving serialiseRequestObjectKeys().");
+  return {
+    rsa: { privateKeyPem: held.rsa.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
+           publicJwk: held.rsa.publicJwk },
+    ec: { privateKeyPem: held.ec.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
+          publicJwk: held.ec.publicJwk }
+  };
+}
+
+function deserialiseRequestObjectKeys(blob, nodeCryptoModule) {
+  log.debug("Entering deserialiseRequestObjectKeys().");
+  if (!blob || !blob.rsa || !blob.ec || !blob.rsa.privateKeyPem ||
+      !blob.ec.privateKeyPem) {
+    log.debug("Leaving deserialiseRequestObjectKeys().");
+    return null;
+  }
+  log.debug("Leaving deserialiseRequestObjectKeys().");
+  return {
+    rsa: { privateKey: nodeCryptoModule.createPrivateKey(
+        blob.rsa.privateKeyPem),
+           publicJwk: blob.rsa.publicJwk },
+    ec: { privateKey: nodeCryptoModule.createPrivateKey(blob.ec.privateKeyPem),
+          publicJwk: blob.ec.publicJwk }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // SERIALISING A KEY SET. PEM in, PEM out — `makeStsKeys()` already produces
 // PEM for the RSA pair, and node's `KeyObject.export()` gives it for the other
@@ -501,7 +539,13 @@ function serialise(keys) {
     // worker does not hold would mint a token nothing else can open. NULL
     // rather than absent for the same reason too; `helpers.js`'s
     // refreshTokenKeysFor() backfills a set written before it.
-    refreshTokenEncKeys: serialiseRefreshTokenKeys(keys.refreshTokenEncKeys)
+    refreshTokenEncKeys: serialiseRefreshTokenKeys(keys.refreshTokenEncKeys),
+    // **THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101, 2026-09-13)** — written
+    // down and shared exactly as the two members above are, and for a reason
+    // that is sharper here: these public halves are PUBLISHED, so a process
+    // holding keys of its own would serve a JWKS a client encrypts to and a
+    // sibling cannot open.
+    requestObjectEncKeys: serialiseRequestObjectKeys(keys.requestObjectEncKeys)
   };
   log.debug('Leaving serialise(). ' + out.extraKeys.length + ' extra key(s).');
   return out;
@@ -544,7 +588,9 @@ function deserialise(blob, nodeCrypto) {
         }
       : null,
     refreshTokenEncKeys: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys,
-                                                     nodeCrypto)
+                                                     nodeCrypto),
+    requestObjectEncKeys: deserialiseRequestObjectKeys(
+        blob.requestObjectEncKeys, nodeCrypto)
   };
   log.debug('Leaving deserialise(). ' + out.extraKeys.length +
             ' extra key(s).');
@@ -941,12 +987,17 @@ function enriches(candidate, held) {
   // unchanged: at least everything held has, and strictly more of something.
   const rtHere = candidate.refreshTokenEncKeys ? 1 : 0;
   const rtThere = held.refreshTokenEncKeys ? 1 : 0;
-  if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere) {
+  // And the request object encryption keys, the FOURTH (2026-09-13).
+  const roHere = candidate.requestObjectEncKeys ? 1 : 0;
+  const roThere = held.requestObjectEncKeys ? 1 : 0;
+  if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
+      roHere < roThere) {
     log.debug("Leaving enriches().");
     return false;
   }
   log.debug("Leaving enriches().");
-  return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere;
+  return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere ||
+         roHere > roThere;
 }
 
 // ---------------------------------------------------------------------------
@@ -993,6 +1044,23 @@ function refreshTokenKeysHeldFor(realmId) {
   log.debug("Leaving refreshTokenKeysHeldFor().");
   return deserialiseRefreshTokenKeys(blob && blob.refreshTokenEncKeys,
                                      nodeCrypto);
+}
+
+// ---------------------------------------------------------------------------
+// THE REQUEST OBJECT ENCRYPTION KEYS SOME PROCESS ALREADY MADE FOR THIS REALM,
+// deserialised, or null — `refreshTokenKeysHeldFor()` for the other member, in
+// the same order: stored, then shared. It READS and never makes.
+// ---------------------------------------------------------------------------
+function requestObjectKeysHeldFor(realmId) {
+  log.debug("Entering requestObjectKeysHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && fromStore.requestObjectEncKeys)
+    ? fromStore
+    : shared.get(id);
+  log.debug("Leaving requestObjectKeysHeldFor().");
+  return deserialiseRequestObjectKeys(blob && blob.requestObjectEncKeys,
+                                      nodeCrypto);
 }
 
 // Every realm this process holds keys for, for the fork-time seed.
@@ -1151,7 +1219,10 @@ function privateMaterialFor(realmId) {
     // parsed and purged on this record's timer. The secret is private material
     // exactly as a private key is: anybody holding it opens every refresh token
     // encrypted under a symmetric algorithm.
-    rt: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys, nodeCrypto)
+    rt: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys, nodeCrypto),
+    // THE REQUEST OBJECT ENCRYPTION KEYS — both private keys, parsed and
+    // purged on this record's timer. The public halves stay on the set.
+    ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys, nodeCrypto)
   };
   (blob.extraKeys || []).forEach(function (one) {
     parsed.extra.set(one.publicJwk && one.publicJwk.kid,
@@ -1759,6 +1830,7 @@ module.exports = {
   enriches: enriches,
   requestEncryptionKeyHeldFor: requestEncryptionKeyHeldFor,
   refreshTokenKeysHeldFor: refreshTokenKeysHeldFor,
+  requestObjectKeysHeldFor: requestObjectKeysHeldFor,
   reset: reset,
   setStore: setStore,
   persists: persists,

@@ -1080,7 +1080,9 @@ const JWS_ALGS = {
 // `kty: 'AKP'` is RFC 9964's key type for all of them, which is also why they
 // are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
 // oct and not for AKP, so a DPoP proof signed with one could not be bound to
-// anything. See oauth-oidc/dpop.js.
+// anything. See oauth-oidc/dpop.js. (RFC 9964 has since defined the
+// AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; DPoP still
+// refuses these algorithms by name.)
 pqJose.PQ_ALGS.forEach(function (alg) {
   JWS_ALGS[alg] = { family: 'pq', hash: null, kty: 'AKP', alg: alg,
                     ownSigner: true };
@@ -1406,7 +1408,13 @@ function prepareVerification(token, key, options) {
     spec: spec,
     payload: parts[1],
     signingInput: Buffer.from(parts[0] + '.' + parts[1], 'ascii'),
-    signature: Buffer.from(parts[2], 'base64url')
+    signature: Buffer.from(parts[2], 'base64url'),
+    // AN EMPTY PAYLOAD IS A MESSAGE, FOR ONE CALLER (2026-09-13). RFC 8555
+    // section 6.3's POST-as-GET is a JWS whose payload is the empty string,
+    // and it is signed exactly like any other. Only a caller that says so gets
+    // `claims: null` for it; every other caller still has an empty payload
+    // refused as unreadable, which is what it was before this existed.
+    emptyPayload: options.emptyPayload === true && parts[1] === ''
   };
   if (spec.family === 'pq') {
     // `key` is the AKP `pub` value — bytes, or the base64url of them off a
@@ -1467,6 +1475,10 @@ function finishVerification(prepared, ok) {
     log.debug('Leaving finishVerification(). It does not verify.');
     throw new Error('the ' + prepared.header.alg +
       ' signature does not verify.');
+  }
+  if (prepared.emptyPayload) {
+    log.debug('Leaving finishVerification(). An empty payload, as asked.');
+    return { header: prepared.header, claims: null };
   }
   let claims;
   try {
@@ -2867,8 +2879,18 @@ function stripPem(pem) {
 // key carrying `kid`, `alg`, `use` or Web Crypto's `key_ops`/`ext` must hash to
 // the same value as the same key without them, because the wallet sends its key
 // in every proof header and a stray member would silently break the binding.
+//
+// **`AKP` JOINED ON 2026-09-13**, for the RFC 9278 `kid` (see
+// `common/jose_kid.js`): RFC 9964 names `alg`, `kty` and `pub` as the
+// required members of an ML-DSA key's thumbprint, which is what the
+// eleven post-quantum and composite keys here are. `alg` is a member for AKP
+// where it is not for the other four, because the key bytes alone do not say
+// which algorithm they are for. Adding the row changes nothing for DPoP or
+// ACME: both refuse a post-quantum algorithm by NAME before a thumbprint is
+// asked for, though their comments still give the missing row as the reason.
 // ---------------------------------------------------------------------------
 const THUMBPRINT_MEMBERS = {
+  AKP: ['alg', 'kty', 'pub'],
   EC: ['crv', 'kty', 'x', 'y'],
   RSA: ['e', 'kty', 'n'],
   OKP: ['crv', 'kty', 'x'],
@@ -2913,6 +2935,19 @@ function jwkThumbprint(jwk, opts) {
     .update(canonicalJwk(jwk), 'utf8').digest('base64url');
   log.debug("Leaving jwkThumbprint().");
   return options.truncate ? digest.slice(0, options.truncate) : digest;
+}
+
+// RFC 9278 section 3: the JWK Thumbprint URI. Always SHA-256 and never
+// truncated — the URI is compared as a whole string, and a shortened digest
+// under a `sha-256` label would name a hash nobody can reproduce.
+const JWK_THUMBPRINT_URI_PREFIX =
+  'urn:ietf:params:oauth:jwk-thumbprint:sha-256:';
+
+function jwkThumbprintUri(jwk) {
+  log.debug("Entering jwkThumbprintUri().");
+  const uri = JWK_THUMBPRINT_URI_PREFIX + jwkThumbprint(jwk);
+  log.debug("Leaving jwkThumbprintUri().");
+  return uri;
 }
 
 // ---------------------------------------------------------------------------
@@ -3877,6 +3912,8 @@ module.exports = {
   stripPem: stripPem,
   canonicalJwk: canonicalJwk,
   jwkThumbprint: jwkThumbprint,
+  JWK_THUMBPRINT_URI_PREFIX: JWK_THUMBPRINT_URI_PREFIX,
+  jwkThumbprintUri: jwkThumbprintUri,
   certificateThumbprint: certificateThumbprint,
   constantTimeEquals: constantTimeEquals,
   // --- one-time passwords (RFC 4226 section 5.3) ---

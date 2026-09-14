@@ -12,6 +12,12 @@ test that file states is the reason: *a file lands there because more than one
 family needs it*. Nothing needs this one. It is also not a candidate for the
 package root, where there are exactly two modules and both earn it.
 
+## Its place in the require order (6a)
+
+No constraint. Two EXACT paths (`/` and `/logo.png`) and nothing but the app
+behind them; first among the route modules so that the page a person meets
+first heads the list on `/admin/sts-metadata`.
+
 ## What this page is for, and the one rule it must keep
 
 Until 2026-08-24 the root of this service was an unrouted path, so the answer to

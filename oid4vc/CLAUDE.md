@@ -17,7 +17,8 @@ DID Core with DIF domain linkage.
 code** — see rule 2 in the root `CLAUDE.md`. The credential configurations are
 read by both the issuer and the authorization server; the Credential Offer's
 pre-authorized codes are minted by the offer pages and redeemed at the token
-endpoint.
+endpoint. In `server.js` (positions 11–14), `vc_offers` is required before
+`vc_issuer`; both read `vc_configs`, which is why that module exists.
 
 **`vc_claims.js` is read from three different points of the require order and
 from four directories** — `vc_issuer.js` here, `../admin-ui/admin.js`,

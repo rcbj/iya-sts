@@ -75,7 +75,7 @@ blaming an anchor check that can no longer fail.
 
 ### An Issuing CA per use case
 
-Five of them, and the split is what makes an operator able to narrow one
+Six of them, and the split is what makes an operator able to narrow one
 surface without touching the rest:
 
 | Use case | Scope | What it certifies |
@@ -85,6 +85,14 @@ surface without touching the rest:
 | **Application assertions** | realm | The signing key pairs issued for RFC 7521 / 7523 — to applications, and since 2026-09-11 to PEOPLE as well (`target=person`, written onto the person's own entry as `stsAssertion*`; see [JWT assertions](jwt-assertions.md)). This is the Issuing CA this page had before the others existed. |
 | **TLS listeners** | **process** | The certificate served on 8443, 9443, LDAPS 636 and the main port. |
 | **SPIFFE authority** | realm | **Every X509-SVID minted in this realm** (2026-09-11 — it was self-signed and outside this tree before that). The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
+| **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** (2026-09-13) — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
+
+**A realm branch built before a use case existed gets that Issuing CA added**,
+under the Intermediate it already has, the next time the branch is asked for —
+on a restart in product mode, or the first time something issues from it.
+Nothing already issued is replaced or revoked to do it. (Before 2026-09-13 an
+incomplete branch was rebuilt whole, which on a restart would have superseded
+every certificate in the realm to add one authority.)
 
 **The RSA signing key is certified twice**, by the JOSE CA and by the XML CA. It
 signs JWTs and it signs XML documents, and those are two use cases: a relying
@@ -483,6 +491,43 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/revoke \
 profiles since 2026-09-13: a card each, with its own Generate and its own Take
 off, and the one-time page describing the grant the new key is for.
 
+## A TLS client certificate for your browser
+
+A third card on `/portal/signing-key` issues a **TLS client certificate** to the
+signed-in person, from the realm's own **TLS Client Issuing CA**:
+
+* it carries `clientAuth`, `CN=<username>`, a `urn:sts:person:<username>`
+  subjectAltName and, where the directory holds one, your email address;
+* you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384) and a
+  **file password**, typed twice;
+* the page that comes back offers three downloads, **once**: a `.p12` (the key,
+  the certificate and the two CAs above it, AES-256 protected by that password), an
+  encrypted `-key.pem` and a `-chain.pem`, with install steps for Windows, macOS,
+  Firefox, Chrome on Linux and curl. Nothing keeps the private key.
+
+**The TLS listeners trust this service's Root for client certificates**
+(`tls.trustIssuedClientCertificates`, on by default), so after importing the
+`.p12`, opening `https://<host>:9443/` (or `:8443`) and choosing the certificate
+signs you in, **in the realm whose portal issued it**. Your other applications on
+this service then sign you in without asking.
+
+Trusting the Root does not make every certificate this service issues a way in.
+A verified chain through the Root is an identity only for a leaf from a TLS client
+(or ACME, EST or SCEP enrollment) Issuing CA, with `clientAuth` and one
+`urn:sts:person:` or `urn:sts:application:` name; an application's assertion key
+pair or an SVID completes the handshake and is refused as an identity — a 403 on
+9443.
+
+You may hold up to `pki.personTlsClientCertificateMax` (5) valid certificates, one
+per device. Each has a **Revoke** button; revocation is real — the CRL, the OCSP
+responder, and the listeners refuse it.
+
+```bash
+curl --cert alice-laptop-tls-client-chain.pem \
+     --key alice-laptop-tls-client-key.pem --pass '<file password>' \
+     https://localhost:9443/tls/whoami
+```
+
 ## Revocation is published, and consulted
 
 **This section said *nothing is ever revoked* until 2026-09-11.** It read *this
@@ -597,6 +642,94 @@ control labelled *Take the key pair off*, and it is **not** revocation:
 The reply says exactly that, in those words. It is the same distinction the
 sign-out page draws about an assertion already issued: nothing consults this
 service when one is presented, and nothing can be made to.
+
+## A signed token names its certificate chain
+
+Every JWT this service signs with a certified key can carry the chain of that
+key in its header, so a relying party holding only the token can reach the CRL
+distribution points, OCSP responders and caIssuers addresses without first
+finding the JWKS. RFC 7515 gives two header parameters for it, and each kind of
+token has a setting of its own choosing between them:
+
+| Value | The header carries |
+|---|---|
+| `x5u` *(default)* | `https://<host>/pki/chain/<realm or default>/<sha256>.pem` — the chain in PEM, leaf first, the service Root last. About a hundred bytes. |
+| `x5c` | The same chain inline, base64 DER. Four certificates, several kilobytes on every token. |
+| `both` | Both. |
+| `none` | Neither — the header is exactly what it was before this existed. |
+
+| Setting | Page | Governs |
+|---|---|---|
+| `oauth2.accessTokenCertificateHeader` | OAuth 2.0 / OIDC | access tokens, every grant |
+| `oauth2.idTokenCertificateHeader` | OAuth 2.0 / OIDC | ID Tokens, in any algorithm |
+| `oauth2.refreshTokenCertificateHeader` | OAuth 2.0 / OIDC | the signed JWT inside a refresh token |
+| `oauth2.userinfoCertificateHeader` | OAuth 2.0 / OIDC | signed UserInfo responses |
+| `oauth2.introspectionCertificateHeader` | OAuth 2.0 / OIDC | RFC 9701 JWT introspection responses |
+| `oauth2.signedMetadataCertificateHeader` | OAuth 2.0 / OIDC | `signed_metadata` of both discovery documents |
+| `oid4vci.credentialCertificateHeader` | OID4VCI | dc+sd-jwt and jwt_vc_json credentials |
+| `oid4vci.signedMetadataCertificateHeader` | OID4VCI | the credential issuer's `signed_metadata` |
+| `oid4vp.requestObjectCertificateHeader` | OID4VP | the Verifier's Request Object |
+| `ssf.setCertificateHeader` | SSF | Security Event Tokens, CAEP and RISC included |
+| `wstrust.jwtCertificateHeader` | WS-Trust | a JWT issued in an RSTR |
+| `gnap.accessTokenCertificateHeader` | GNAP | jwt-signed and jwt-encrypted access tokens |
+
+Every one may be set per trust realm. Four things get neither header whatever
+is configured:
+
+* **an HMAC signature** — the key is a client's secret and has no certificate;
+* **a key not yet certified** — keys are certified shortly after they are made,
+  and not at all with `pki.autoBuild` off;
+* **a JWE** — every JWE here is encrypted either to somebody else's key or to
+  the refresh-token keys, which have no certificate; a nested refresh token
+  carries the header on the JWS inside it;
+* **the DIF Domain Linkage Credential**, whose specification allows only `alg`
+  and `kid` in its header, and the SPIFFE JWT-SVID, whose authority has no
+  certificate.
+
+The chain address is named by the leaf's SHA-256, so it names one certificate
+for ever: after a key is rotated, an old token's `x5u` answers 404 rather than a
+chain over a different key. RFC 7515 requires the `x5u` fetch to use TLS; with
+`global.https` off the address is `http://` and a strict verifier will not follow
+it.
+
+### The `kid` can be the key's thumbprint instead
+
+The `x5c` and `x5u` headers name the **certificate**. The `kid` beside them
+names the **key**, and by default it is this service's own name for it
+(`sts-1a2b3c4d5e6f`), which a verifier can only look up in the JWKS.
+`keys.kidFormat` on */admin/config* (*Key material*) can make it the key's
+RFC 9278 JWK Thumbprint URI instead, which anybody holding the public key can
+compute:
+
+```
+urn:ietf:params:oauth:jwk-thumbprint:sha-256:NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs
+```
+
+| Value | A signed token's `kid` |
+|---|---|
+| `internal` *(default)* | `sts-…` — every token exactly as before |
+| `jwk-thumbprint-uri` | the SHA-256 JWK Thumbprint URI of the signing key |
+
+It applies to every JWT the realm signs with one of its keys: all twelve kinds in
+the table above, plus software statements and the other tokens signed the same
+way. The post-quantum keys are covered too (RFC 9964 defines their thumbprint).
+It does not apply to:
+
+* **an HMAC signature**, which carries no `kid` at all;
+* **the SPIFFE JWT-SVID**, whose authority is a separate key published in
+  the SPIFFE bundle;
+* **the DIF Domain Linkage Credential and the credential `/did/generate`
+  returns**, whose `kid` names a DID verification method (`did:…#sts-…`), and
+  the DID document's verification methods themselves.
+
+**While it is on, `/oauth2/jwks` lists every signing key twice**: once under its
+`sts-…` name, in the same place as before (the RSA key is still first), and once
+more under its thumbprint URI, after the other signing keys and before the
+request-object encryption keys. A token signed before the setting was turned on
+still finds its key. Turning it off again removes the second entries, so a token
+signed while it was on names a key the JWKS no longer lists until that token
+expires. This service's own checks of its own tokens accept either name whatever
+the setting says. It can be set per realm.
 
 ## Where the CA private keys live
 

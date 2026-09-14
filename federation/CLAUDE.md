@@ -724,6 +724,12 @@ arrives is trusted** — this module returns parsed JSON and a status and makes 
 judgement, because a fetcher that also validated is where both halves of a check
 end up half-written.
 
+**IT IS THE FIRST OF THREE OUTBOUND REQUESTS in this repository**, in a module
+of its own that will not take a URL from anywhere but a relationship entry. It
+is the STRONGEST of the three and the other two each argue their own case rather
+than citing it — SSF's is `ssf/ssf_http.js` and XACML's nudge is
+`xacml/xacml_pep_http.js`.
+
 ---
 
 ## `federation_map.js`: THE OIDC HALF IS DERIVED, NOT WRITTEN

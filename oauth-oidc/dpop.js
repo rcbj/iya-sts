@@ -60,6 +60,11 @@ const errorCodes = require('../common/error_codes');
 // endpoints because presentedAccessToken() below is the single check they
 // share.
 const mtls = require('./mtls');
+// RFC 9068 — what an access token's header, issuer and audience must be. A
+// library that registers no route and requires only `common/` modules and
+// `authorization_servers.js`, none of which requires this one, so the no-cycle
+// property is unchanged. The resource-server check below is its reader.
+const jwtAccessToken = require('./jwt_access_token');
 // For one decision: whether to REFUSE an access token in a query string rather
 // than merely ignore it (RFC 9700 section 4.3.2). A library that registers no
 // route and requires only helpers.js, config.js and client_auth.js, so
@@ -74,6 +79,10 @@ const bcp = require('./oauth2_bcp');
 // them and not the fourth is a token that is alive at UserInfo and dead at the
 // credential endpoint, which reads as a wallet bug from both sides.
 const config = require('../common/config');
+// RFC 9470 (2026-09-13): whether the authentication behind a presented token
+// meets what the resource requires. A library requiring only `common/`
+// modules and `oauth2_monitor.js`, neither of which requires this file.
+const stepUp = require('./step_up');
 const log = helpers.log;
 const b64u = helpers.b64u;
 const jsonFromB64u = helpers.jsonFromB64u;
@@ -713,76 +722,26 @@ function forgetProofs() {
 // because a profile is a statement about somebody this server authenticated,
 // and there is nothing it can honestly say about the subject of a signature it
 // cannot check.
+//
+// **RFC 9470 IS THE LAST QUESTION, ASKED OF A TOKEN THAT PASSED EVERY OTHER**
+// (2026-09-13). Section 3's challenge says "the token is fine and the
+// authentication behind it is not", which would be a lie about a token that is
+// not fine — so it is asked after the binding and the proof, and a client is
+// never sent to step up for a token it would then be refused for anyway. The
+// requirement is `oauth2.stepUpAcrValues` / `oauth2.stepUpMaxAgeS` unless the
+// caller names one.
+//
+// `options`, which only RFC 9470's stand-in resource passes:
+//   audience        `{ names(audiences), label }` — RFC 9068 section 4 step
+//                   4 asked of a registered application instead of this
+//                   service (`jwt_access_token.resourceServerRefusal()`)
+//   requireVerified refuse a token this service cannot verify, rather than
+//                   reading its claims unverified
+//   stepUp          the requirement, in `step_up.js`'s shape
 // ---------------------------------------------------------------------------
-// The audiences a token issued here carries, as this service's own resource
-// server. `<base>/resource` is what accessToken() mints when nothing narrows
-// it; anything else on the token came from an RFC 8707 `resource` parameter and
-// names a resource server that is not this one.
-//
-// The path ENDS WITH `/resource` rather than equalling it, because this process
-// publishes several authorization servers and a named one issues for
-// `<base>/{id}/resource` — its own resource server, under its own name. Testing
-// for equality refused every token any named authorization server had ever
-// issued, at every protected endpoint, with a message about audience
-// restriction that was true and completely misleading.
-//
-// What it still refuses is what it was written for: an audience from a
-// `resource` parameter, which names somebody else's server and does not end
-// there.
-function isOwnResourceAudience(value) {
-  log.debug('Entering isOwnResourceAudience().');
-  const text = String(value || '');
-  if (!text) {
-    log.debug('Leaving isOwnResourceAudience().');
-    return false;
-  }
-  try {
-    const path = new URL(text).pathname;
-    log.debug('Leaving isOwnResourceAudience().');
-    return path === '/resource' || path.endsWith('/resource');
-  } catch (e) {
-    log.debug("Caught in isOwnResourceAudience(): " + ((e && e.message) || e));
-    // Not a URL. RFC 8707 requires an absolute URI, and the default audience is
-    // one — so an audience that does not parse was not minted by this service's
-    // own default and is not this resource server.
-    log.debug('Leaving isOwnResourceAudience().');
-    return false;
-  }
-  log.debug('Leaving isOwnResourceAudience().');
-}
-
-function audienceRefusal(claims, verified) {
-  log.debug("Entering audienceRefusal().");
-  if (!verified || !claims || claims.aud === undefined) {
-    log.debug("Leaving audienceRefusal(). Not ours, or it names no audience.");
-    return null;
-  }
-  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (audiences.some(isOwnResourceAudience)) {
-    log.debug("Leaving audienceRefusal(). This token is for this resource " +
-              "server.");
-    return null;
-  }
-  log.debug("Leaving audienceRefusal(). It names " + audiences.join(', ') +
-            ".");
-  return {
-    errorCode: 'STS-OAUTH-0114',
-    error: 'invalid_token',
-    description: 'RFC 9700 section 2.3: an access token is ' +
-                 'audience-restricted and a resource server must refuse one ' +
-                 'issued for a different audience. This token names ' +
-                 audiences.map(function (one) { return '"' + one + '"'; })
-                          .join(', ') +
-                 ', and the endpoints here are the resource server this ' +
-                 'service issues for. A token narrowed with the RFC 8707 ' +
-                 '`resource` parameter is usable at THAT resource server and ' +
-                 'nowhere else, which is the whole of what the restriction ' +
-                 'buys.'
-  };
-}
-
-function presentedAccessToken(req, res, where) {
+function presentedAccessToken(req, res, where, options) {
   log.debug("Entering presentedAccessToken(). where=" + where);
+  const opts = options || {};
   // RFC 9700 section 4.3.2 — an access token MUST NOT travel in a URI query
   // parameter. RFC 6750 section 2.3 defines a form that does, and this service
   // has never read it: the token comes from the Authorization header and
@@ -864,6 +823,55 @@ function presentedAccessToken(req, res, where) {
   }
   const boundTo = jktOf(claims);
 
+  // A resource answering for a registered application accepts only what it can
+  // verify: an unverified token's `aud`, `acr` and `auth_time` are strings its
+  // holder could have written, and those are exactly what it decides on.
+  if (!verified && opts.requireVerified) {
+    res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+    log.debug("Leaving presentedAccessToken(). Not a token this service can " +
+              "verify.");
+    errorCodes.mark(res, 'STS-OAUTH-0507');
+    vciError(res, 401, 'invalid_token',
+      'This resource accepts only access tokens issued by this service\'s ' +
+      'authorization servers, and this one did not verify against the ' +
+      'realm\'s signing key.');
+    log.debug("Leaving presentedAccessToken().");
+    return null;
+  }
+
+  // RFC 9068 SECTION 4 — THE TYPE, THE ISSUER AND THE AUDIENCE (2026-09-13),
+  // for a token this service VERIFIED, and before anything else is read off
+  // it: a token that is not an access token, or not one of this service's
+  // authorization servers', or not addressed here, has no binding worth
+  // checking. `jwt_access_token.js` is the one reading of all three, shared with
+  // the authorization server that mints the token.
+  //
+  // It REPLACED `audienceRefusal()`, which lived here and matched the aud's
+  // PATH — ending in `/resource` — so that a token minted at localhost and
+  // presented at 127.0.0.1 would pass. RFC 9068 does not allow that reading,
+  // and it admitted `https://api.partner.example/resource` as well: somebody
+  // else's resource server, narrowed to on purpose with RFC 8707. The audience
+  // is compared whole now, against the address this request arrived on.
+  //
+  // ONLY FOR A VERIFIED TOKEN, for the reason given about cnf below: the
+  // header, issuer and audience of a token signed by somebody else are
+  // strings this service has no configuration to check them against, and the
+  // OID4VCI credential endpoints accept such tokens by design.
+  if (verified) {
+    const profileProblem = jwtAccessToken.resourceServerRefusal(accessToken,
+      claims, helpers.baseUrlOf(req), { audience: opts.audience || null });
+    if (profileProblem) {
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+      log.debug("Leaving presentedAccessToken(). RFC 9068 section 4 refused " +
+                "it.");
+      errorCodes.mark(res, errorCodes.codeOf(profileProblem) ||
+                           'STS-OAUTH-0114');
+      vciError(res, 401, profileProblem.error, profileProblem.description);
+      log.debug("Leaving presentedAccessToken().");
+      return null;
+    }
+  }
+
   // RFC 8705 section 3.1 — the OTHER sender constraint, checked here for the
   // same reason the DPoP one is: this function is the single check the four
   // protected endpoints share, and a second one beside it would be a fourth
@@ -877,30 +885,6 @@ function presentedAccessToken(req, res, where) {
     errorCodes.mark(res, certificateProblem.errorCode || 'STS-OAUTH-0092');
     vciError(res, 401, certificateProblem.error,
              certificateProblem.description);
-    log.debug("Leaving presentedAccessToken().");
-    return null;
-  }
-
-  // RFC 9700 section 2.3 — an access token is audience-restricted, and a
-  // resource server MUST refuse one that names a different audience. Only for a
-  // token this service ISSUED, which is the same judgement made about cnf
-  // above: the `aud` of a token signed by somebody else is a string this
-  // service cannot check and was never the audience of anyway.
-  //
-  // What counts as "this resource server" is deliberately the PATH and not the
-  // whole URL. Every token issued here carries `<base>/resource`, and the base
-  // is whatever URL the request that minted it arrived on — so a token minted
-  // at localhost:8081 and presented at 127.0.0.1:8081 would fail a whole-URL
-  // comparison while being, in every sense that matters, a token for this
-  // service. What the check is FOR is a token narrowed to somebody else by an
-  // RFC 8707 `resource` parameter, and that always has a different path.
-  const audienceProblem = audienceRefusal(claims, verified);
-  if (audienceProblem) {
-    res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
-    log.debug("Leaving presentedAccessToken(). The audience is somebody " +
-              "else's.");
-    errorCodes.mark(res, audienceProblem.errorCode || 'STS-OAUTH-0114');
-    vciError(res, 401, audienceProblem.error, audienceProblem.description);
     log.debug("Leaving presentedAccessToken().");
     return null;
   }
@@ -925,6 +909,10 @@ function presentedAccessToken(req, res, where) {
 
   // No binding and no proof: a plain Bearer request, exactly as before.
   if (!boundTo && req.headers['dpop'] === undefined) {
+    if (stepUpChallenged(res, claims, 'Bearer', opts, where)) {
+      log.debug("Leaving presentedAccessToken(). Step-up is required.");
+      return null;
+    }
     log.debug("Leaving presentedAccessToken(). A Bearer request. verified=" +
               verified);
     return { accessToken: accessToken, claims: claims, scheme: scheme, jkt: '',
@@ -962,6 +950,10 @@ function presentedAccessToken(req, res, where) {
     log.debug("Leaving presentedAccessToken().");
     return null;
   }
+  if (stepUpChallenged(res, claims, 'DPoP', opts, where)) {
+    log.debug("Leaving presentedAccessToken(). Step-up is required.");
+    return null;
+  }
   log.debug("Leaving presentedAccessToken(). A valid DPoP request. jkt=" +
             checked.jkt +
             ", token verified=" + verified);
@@ -969,6 +961,31 @@ function presentedAccessToken(req, res, where) {
     accessToken: accessToken, claims: claims, scheme: scheme, jkt: checked.jkt,
     verified: verified, dpop: checked
   };
+}
+
+// RFC 9470 SECTION 3: answer the request with the challenge and return true
+// when the token's authentication does not meet the requirement. The scheme is
+// the one the token was presented under, so a DPoP-bound token is told to come
+// back as DPoP. Counted against the token's client_id.
+function stepUpChallenged(res, claims, scheme, opts, where) {
+  log.debug("Entering stepUpChallenged().");
+  const requirement = opts.stepUp || stepUp.ownResourceRequirement();
+  const refusal = stepUp.tokenRefusal(requirement, claims);
+  if (!refusal) {
+    log.debug("Leaving stepUpChallenged(). Met, or nothing required.");
+    return false;
+  }
+  res.set('WWW-Authenticate', stepUp.challengeHeader(scheme, requirement,
+                                                     refusal.description));
+  stepUp.record((claims && claims.client_id) || '', 'stepup.challenged',
+                { error: refusal.error });
+  log.info('RFC 9470: ' + (where || 'a protected endpoint') + ' challenged ' +
+           'a token for client "' + ((claims && claims.client_id) || '') +
+           '" (' + refusal.reason + '): ' + refusal.description);
+  errorCodes.mark(res, errorCodes.codeOf(refusal) || 'STS-OAUTH-0503');
+  vciError(res, 401, refusal.error, refusal.description);
+  log.debug("Leaving stepUpChallenged(). Challenged.");
+  return true;
 }
 
 module.exports = {

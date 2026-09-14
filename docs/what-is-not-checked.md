@@ -26,7 +26,10 @@ service can be told to be strict, it can.
 | Authorize an LDAP write — **in development mode** | Any connection, anonymous included, may add, modify, rename or delete any entry in any realm. **Product mode authorizes every write against the identity that bound**: an anonymous connection writes nothing, a connection bound as somebody holding Admin Write (in the default realm's directory) writes anything, and anybody else may modify only the attributes `ldap.selfWritableAttributes` names on their own entry — contact details and `userPassword` by default. A refusal is result code 50, `insufficientAccessRights`. Reads are the row above |
 | Verify an access token it did not issue | Except at `/oauth2/userinfo`, which answers "who did *you* authenticate" and so must |
 | Require DPoP | Nonce mode makes proofs fresher, not mandatory. A request with no `DPoP` header is a Bearer request. Nonce mode is `oauth2.dpopNonceRequired`, **per trust realm**; `POST /dpop/nonce-mode` writes it in development and is refused in product |
-| Register a client only for an administrator — **in development mode** | `POST /oauth2/register` (RFC 7591) answers anybody. **Product mode closes it** — 403, and `registration_endpoint` leaves the discovery documents — unless `oauth2.openRegistration` is on |
+| Require a credential to introspect a token as JSON — **in development mode** | `POST /oauth2/introspect` answers RFC 7662 JSON to anybody holding the token string. **Product mode requires the caller to authenticate as a client** and refuses one that does not with 401 `invalid_client`. **An RFC 9701 JWT response is checked in both modes**: a request whose `Accept` names `application/token-introspection+jwt` must authenticate, because the JWT's `aud` is the resource server that asked, and is refused 400 `invalid_client` otherwise. **Wherever the caller authenticated, it learns only about tokens meant for it** — its own, ones with the default audience, or ones whose `aud` names its application; anything else is `active: false` |
+| Require a request object to be signed — **in development mode** | An RFC 9101 request object with `alg: none` is accepted in development (OpenID Connect Core section 6.1) and **refused in product mode**, and refused in either wherever `oauth2.requireSignedRequestObject`, the client's `require_signed_request_object` or a named authorization server asks for a signed one. **A signed object is always verified**, and a `request_uri` is fetched only from an address the client registered, in both modes. A request object's `jti` is not remembered |
+| Refuse a pushed authorization request whose client credential did not verify — **in development mode** | `POST /oauth2/par` (RFC 9126) authenticates a client exactly as the token endpoint does: development OBSERVES the credential and accepts the push. **RFC 9700 mode, OAuth 2.1 mode and product mode refuse it 401.** What development never does is let an unverified client use what a verified one may: section 2.4's unregistered `redirect_uri` (`oauth2.parAllowUnregisteredRedirectUris`, off) needs a credential that VERIFIED, in every mode. The pushed request is always validated, the `request_uri` is always bound to its client and spent when a response is issued on it |
+| Register a client only for an administrator — **in development mode** | `POST /oauth2/register` (RFC 7591) answers anybody. **Product mode closes it** — 403 — unless `oauth2.openRegistration` is on, or the registration carries a software statement this realm trusts (it issued it, or an application declares its issuer) while `oauth2.softwareStatementOpensRegistration` is on; with neither, `registration_endpoint` leaves the discovery documents. **A software statement is verified in both modes**: an invalid one is `invalid_software_statement` and one from an undeclared issuer `unapproved_software_statement` |
 | Check the password on the OAuth 2.0 password grant — **in development mode** | Any password but `invalid` is accepted, exactly as at the sign-in screen. **Product mode verifies it** against the stored `userPassword`, rate-limits it with the sign-in screen, and refuses a person who holds a second factor, because the grant has nowhere to carry one |
 | Hold a new password to a policy — **in development mode** | Any password is SET, at every door. **Product mode enforces the realm's password policy** (Directory → Policies, `/admin/policies`): a minimum length, a symbol count, an uppercase letter, a number, and none of the current password or the last five — on the console, `/admin-api`, `/portal/password`, `/portal/activate` and an LDAP modify of `userPassword` alike. The history is recorded in both modes, and a generated password meets the policy in both. Passwords already stored are not re-checked |
 | Turn a verified client certificate into a login | No session, no token, no privilege. It *is* recorded — see below |
@@ -508,10 +511,12 @@ bound as somebody who already holds Admin Write, and a person cannot write
 `memberOf` onto their own entry.) A role no test can grant would be a role no
 test can exercise.
 
-**While neither group has a member, anybody who signs in holds both roles**, and
-every page says so. There is no password anywhere here to bootstrap an
-administrator with and the roster dies with the process, so an empty roster opens
-rather than closes; `admin.openWhenEmpty` turns that off.
+**Until the bootstrap administrator (`admin`) first signs in to the console,
+anybody who signs in holds both roles**, and every page says so. That account is
+made at startup in both groups, must choose a new password at its first sign-in,
+and cannot be deleted; its first console sign-in ends the open window.
+`admin.openWhenEmpty` turns the window off. Without a seeded bootstrap
+administrator the older rule holds: an empty roster opens rather than closes.
 
 **`/admin-api` takes an access token, and it is a DIFFERENT credential from the
 console's.** Not a session but an OAuth 2.0 access token audienced to that API,
@@ -612,3 +617,20 @@ row. Two rows say `enforced: no` because the requirement is the *client's* — i
 must validate the ID Token's nonce, and must not use a token before that succeeds
 — and nothing this server observes separates a client that checks from one that
 does not.
+
+## OAuth 2.1 mode
+
+`oauth2.oauth21` (draft-ietf-oauth-v2-1-16) turns RFC 9700 mode on, so
+everything above applies, and it checks more: **a credential a client presents
+must verify** against one on file — where RFC 9700 mode lets a secret from a
+public or unknown client through unchecked — and the client credentials grant
+requires a client that authenticated. A client must also have registered its
+own redirect URI, and a token request naming a client whose entry declares
+nothing is refused.
+
+What it still does not check: no end user's password in development mode, a
+client at `/oauth2/revoke`, or at `/oauth2/introspect` beyond what that endpoint
+checks in every mode — an RFC 9701 JWT request must authenticate, and a JSON one
+must in product mode — or the client of an
+OpenID4VCI pre-authorized code or an assertion grant that names none. `GET
+/oauth2/oauth21` says which requirements are enforced and which are inherited.

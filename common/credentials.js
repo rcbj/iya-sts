@@ -448,6 +448,86 @@ function verifyFinish(ok, name, via) {
         detail: 'the presented password does not match' });
 }
 
+// ---------------------------------------------------------------------------
+// A PASSWORD THAT MUST BE CHANGED BEFORE IT IS USED (2026-09-13).
+//
+// `pwdReset: TRUE` on the person's entry — draft-behera-ldap-password-policy's
+// name for exactly this — says the password in force was not chosen by the
+// person, and the bootstrap administrator is created with it: in product mode
+// its first password is the generated one printed in the log.
+//
+// **THE SIGN-IN SCREEN IS THE ONE DOOR THAT CAN ASK FOR A NEW ONE**, so it
+// passes `allowPasswordReset: true`, checks `passwordResetRequired()` itself
+// and draws the change step (`authn/authn.js`). Every other door that takes a
+// password — an LDAP bind, the OAuth password grant, a WS-Trust
+// UsernameToken, SCIM and EST Basic — has nowhere to put that question, so in
+// product mode a VERIFIED password flagged this way is refused there, and the
+// log says why. Otherwise the log's password would go on working at those
+// doors forever without ever being changed.
+//
+// **DEVELOPMENT MODE CHECKS NO PASSWORD AT THOSE DOORS**, so there is nothing
+// there to refuse; the sign-in screen still forces the change in both modes.
+// ---------------------------------------------------------------------------
+function passwordResetRequired(username) {
+  log.debug('Entering passwordResetRequired().');
+  const name = String(username == null ? '' : username).trim();
+  if (!name || !directory || typeof directory.readPasswordReset !== 'function') {
+    log.debug('Leaving passwordResetRequired(). Nothing to ask.');
+    return false;
+  }
+  let flagged = false;
+  try {
+    flagged = !!directory.readPasswordReset(name);
+  } catch (e) {
+    log.debug('Caught in passwordResetRequired(): ' +
+              ((e && e.message) || e));
+    flagged = false;
+  }
+  log.debug('Leaving passwordResetRequired(). ' + flagged);
+  return flagged;
+}
+
+function setPasswordResetRequired(username, required) {
+  log.debug('Entering setPasswordResetRequired(). required=' + !!required);
+  const name = String(username == null ? '' : username).trim();
+  if (!name || !directory ||
+      typeof directory.writePasswordReset !== 'function') {
+    log.debug('Leaving setPasswordResetRequired(). No store.');
+    return false;
+  }
+  let written = false;
+  try {
+    written = !!directory.writePasswordReset(name, !!required);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-AUTHN-0143') + 'credentials: pwdReset for ' +
+              name + ' could not be written: ' + e.message);
+    written = false;
+  }
+  log.debug('Leaving setPasswordResetRequired(). written=' + written);
+  return written;
+}
+
+// The refusal a non-interactive door gets for a verified password that must be
+// changed first. Null where the answer stands as it is.
+function resetRefusal(answer, name, opts) {
+  log.debug('Entering resetRefusal().');
+  if (!answer || !answer.ok || answer.reason !== 'verified' ||
+      (opts && opts.allowPasswordReset === true) ||
+      !passwordResetRequired(name)) {
+    log.debug('Leaving resetRefusal(). The answer stands.');
+    return null;
+  }
+  log.info('credentials: ' + name + ' presented the right password, and it ' +
+           'must be changed at the sign-in screen before it can be used ' +
+           'here (via ' + ((opts && opts.via) || 'unstated') + ').');
+  log.debug('Leaving resetRefusal(). Refused.');
+  return coded('STS-AUTHN-0142', { ok: false,
+    reason: 'password-reset-required',
+    detail: 'the password is right and must be changed first: pwdReset is ' +
+            'TRUE on this entry, so sign in at the sign-in screen, which ' +
+            'asks for a new one' });
+}
+
 function verify(username, password, opts) {
   log.debug('Entering verify().');
   const ready = verifyPrepare(username, password, opts);
@@ -456,7 +536,8 @@ function verify(username, password, opts) {
     return ready.done;
   }
   const ok = crypto.verifySecret(password, ready.stored);
-  const answer = verifyFinish(ok, ready.name, ready.via);
+  const finished = verifyFinish(ok, ready.name, ready.via);
+  const answer = resetRefusal(finished, ready.name, opts) || finished;
   if (answer.ok && answer.reason === 'verified') {
     // The plaintext was just CONFIRMED — see the password observer above.
     notifyPassword(ready.name, password, 'verified');
@@ -488,7 +569,8 @@ function verifyAsync(username, password, opts) {
   log.debug('Leaving verifyAsync(). Handed to the pool.');
   return crypto.verifySecretAsync(password, ready.stored, opts)
     .then(function (ok) {
-      const answer = verifyFinish(ok, ready.name, ready.via);
+      const finished = verifyFinish(ok, ready.name, ready.via);
+      const answer = resetRefusal(finished, ready.name, opts) || finished;
       if (answer.ok && answer.reason === 'verified') {
         notifyPassword(ready.name, password, 'verified');
       }
@@ -2815,7 +2897,15 @@ function mechanismsFor(username) {
     // service inventing urgency about a credential that is fine.
     recoveryAdvised: backupCodes.offered() &&
                      (mfaKeys.length > 0 || totpEnrolled) &&
-                     !backupCodesOf(name)
+                     !backupCodesOf(name),
+    // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
+    // hold one — by an administrator on their entry, or by the realm. It is
+    // NOT `mfaRequired` above, which is what they HOLD: somebody required to
+    // use a second factor who has none is exactly who the sign-in screen asks
+    // to enrol one.
+    mfaRequirement: mfaRequirementFor(name),
+    // A password reset link outstanding, as an expiry and never as a token.
+    passwordResetLink: passwordResetPending(name)
   };
 }
 
@@ -3322,6 +3412,403 @@ function activationPending(username) {
   }
 }
 
+// ===========================================================================
+// WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR /admin/users
+// PAGE (2026-09-13).
+//
+// Five acts, and each is here rather than in `admin-core/admin_actions.js`
+// because each is a question about the STORE: what a reset link is, which keys
+// count as a way in, what a second factor is. The action decides who asked and
+// what is said about it (the audit row, the Shared Signals events); this file
+// decides what happens to the entry.
+//
+//   * **`removePassword()`** takes the password off, for a reset link that
+//     revokes the one the person had. The removed hash goes on the front of the
+//     history, so the link cannot put the same password straight back in
+//     product mode, where the history is enforced.
+//   * **A PASSWORD RESET LINK** is the activation link's shape for a person who
+//     already has an account: 32 random bytes, hashed at rest, single use,
+//     `security.passwordResetTtlMinutes`, shown once. Its own attributes and
+//     not the activation token's, so issuing one does not throw away an
+//     activation somebody else is in the middle of.
+//   * **`removePrimaryKeys()`** takes every PRIMARY security key off, and
+//     refuses where that would leave no way in — `removeKey()`'s rule about
+//     the last way in, applied to all of them at once.
+//   * **`removeSecondFactors()`** takes every second factor off: the
+//     authenticator app, every `mfa` key and the recovery codes. It cannot lock
+//     anybody out, because none of those is a way in.
+//   * **`mfaRequirementFor()`** is whether a second factor is REQUIRED of
+//     somebody who may hold none: `stsMfaRequired` on their entry, or
+//     `authn.mfaRequired` for the realm. `mfaRequired` beside it in
+//     `mechanismsFor()` is still what they HOLD; the sign-in screen reads both.
+// ===========================================================================
+// Is there an entry for them? `hasEntry()` above deliberately always answers
+// false for the bootstrap's reason, so these actions ask the directory's own
+// `personExists()`; a store without it is treated as holding them, and the
+// write that follows is what refuses.
+function entryExists(name) {
+  log.debug("Entering entryExists().");
+  if (!directory || typeof directory.personExists !== 'function') {
+    log.debug("Leaving entryExists(). Cannot ask; assumed.");
+    return true;
+  }
+  let found = false;
+  try {
+    found = !!directory.personExists(name);
+  } catch (e) {
+    log.debug("Caught in entryExists(): " + ((e && e.message) || e));
+    found = false;
+  }
+  log.debug("Leaving entryExists(). " + found);
+  return found;
+}
+
+function passwordResetTtlMs() {
+  log.debug("Entering passwordResetTtlMs().");
+  log.debug("Leaving passwordResetTtlMs().");
+  return Math.max(1,
+                  Number(config.value('security.passwordResetTtlMinutes'))) *
+         60 * 1000;
+}
+
+function removePassword(username) {
+  log.debug("Entering removePassword().");
+  const name = String(username || '').trim();
+  if (!name || !directory || typeof directory.clearPassword !== 'function') {
+    log.debug("Leaving removePassword(). No store.");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed, so a password cannot ' +
+                                 'be removed.'] });
+  }
+  let current = '';
+  let history = [];
+  try {
+    current = String(directory.readPassword(name) || '');
+    history = (typeof directory.readPasswordHistory === 'function'
+      ? directory.readPasswordHistory(name) : []).map(String);
+  } catch (e) {
+    log.debug("Caught in removePassword(): " + ((e && e.message) || e));
+  }
+  if (!current) {
+    log.debug("Leaving removePassword(). There was none.");
+    return { ok: true, username: name, removed: false };
+  }
+  const profile = passwordPolicy.profileFor(name);
+  const next = current.indexOf('$scrypt$') === 0
+    ? [passwordPolicy.historyValue(current)] : [];
+  let written = false;
+  try {
+    written = directory.clearPassword(name, {
+      history: next.concat(history).slice(0, profile.history) });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-AUTHN-0169') + 'credentials: removing the ' +
+              'password of ' + name + ' threw: ' + e.message);
+    written = false;
+  }
+  if (!written) {
+    log.debug("Leaving removePassword(). Not written.");
+    return coded('STS-AUTHN-0169', { ok: false, errors: ['The password of ' +
+                                 name + ' could not be removed from their ' +
+                                 'entry.'] });
+  }
+  log.info('credentials: the password of ' + name + ' was removed. Nothing ' +
+           'verifies against their entry until a new one is set.');
+  log.debug("Leaving removePassword(). Removed.");
+  return { ok: true, username: name, removed: true };
+}
+
+// Mint a password reset link for somebody who is in the directory. The token
+// comes back IN THE CLEAR exactly once; what is stored is its hash.
+function issuePasswordReset(username) {
+  log.debug("Entering issuePasswordReset().");
+  const name = String(username || '').trim();
+  if (!name) {
+    log.debug("Leaving issuePasswordReset(). No name.");
+    return coded('STS-AUTHN-0058', { ok: false, errors: ['Name the person to ' +
+        'issue a password reset link for.'] });
+  }
+  if (!directory || typeof directory.writePasswordResetLink !== 'function') {
+    log.debug("Leaving issuePasswordReset(). No store.");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed, so a password reset ' +
+                                 'link cannot be issued.'] });
+  }
+  if (!entryExists(name)) {
+    log.debug("Leaving issuePasswordReset(). Nobody by that name.");
+    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" in this realm\'s directory.'] });
+  }
+  const token = require('crypto').randomBytes(32).toString('base64url');
+  const expires = Date.now() + passwordResetTtlMs();
+  let written = false;
+  try {
+    written = directory.writePasswordResetLink(name, crypto.hashSecret(token),
+                                               expires);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-AUTHN-0164') + 'credentials: writing a ' +
+              'password reset link for ' + name + ' threw: ' + e.message);
+    written = false;
+  }
+  if (!written) {
+    log.debug("Leaving issuePasswordReset(). Not written.");
+    return coded('STS-AUTHN-0164', { ok: false, errors: ['The password reset ' +
+        'link could not be written onto ' + name + '\'s entry.'] });
+  }
+  // **THE TOKEN IS NOT LOGGED**, for the activation link's reason.
+  log.info('credentials: a password reset link was issued for ' + name +
+           ', valid until ' + new Date(expires).toISOString() + '. It is ' +
+           'shown ONCE and stored only as a hash.');
+  log.debug("Leaving issuePasswordReset().");
+  return { ok: true, username: name, token: token, expires: expires,
+           expiresAt: new Date(expires).toISOString() };
+}
+
+// Is this token the one on that person's entry, and is it still alive? The
+// REASON is for the log; a page answers every failure with one sentence, so
+// nobody learns which usernames have a link outstanding.
+function checkPasswordReset(username, token) {
+  log.debug("Entering checkPasswordReset().");
+  const name = String(username || '').trim();
+  if (!name || !token) {
+    log.debug("Leaving checkPasswordReset(). Incomplete.");
+    return coded('STS-AUTHN-0168', { ok: false, reason: 'incomplete' });
+  }
+  if (!directory || typeof directory.readPasswordResetLink !== 'function') {
+    log.debug("Leaving checkPasswordReset(). No store.");
+    return coded('STS-AUTHN-0059', { ok: false, reason: 'no-store' });
+  }
+  let held = null;
+  try {
+    held = directory.readPasswordResetLink(name);
+  } catch (e) {
+    log.debug("Caught in checkPasswordReset(): " + ((e && e.message) || e));
+    held = null;
+  }
+  if (!held || !held.hash) {
+    log.debug("Leaving checkPasswordReset(). None issued.");
+    return coded('STS-AUTHN-0165', { ok: false, reason: 'none-issued' });
+  }
+  if (!held.expires || held.expires <= Date.now()) {
+    log.debug("Leaving checkPasswordReset(). Expired.");
+    return coded('STS-AUTHN-0166', { ok: false, reason: 'expired' });
+  }
+  if (!crypto.verifySecret(String(token), held.hash)) {
+    log.debug("Leaving checkPasswordReset(). Mismatch.");
+    return coded('STS-AUTHN-0167', { ok: false, reason: 'mismatch' });
+  }
+  log.debug("Leaving checkPasswordReset(). Valid.");
+  return { ok: true, reason: 'valid', expires: held.expires };
+}
+
+// Spend it — when the new password is STORED, not when the link is opened, for
+// the activation link's reason: a link burned by a mail scanner or a prefetch
+// would strand somebody whose password was removed when it was issued.
+function consumePasswordReset(username) {
+  log.debug("Entering consumePasswordReset().");
+  if (!directory || typeof directory.writePasswordResetLink !== 'function') {
+    log.debug("Leaving consumePasswordReset(). No store.");
+    return false;
+  }
+  let cleared = false;
+  try {
+    cleared = !!directory.writePasswordResetLink(String(username || '').trim(),
+                                                 '', 0);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-AUTHN-0164') + 'credentials: the password ' +
+              'reset link for ' + username + ' could not be cleared: ' +
+              e.message);
+    cleared = false;
+  }
+  log.debug("Leaving consumePasswordReset(). " + cleared);
+  return cleared;
+}
+
+function passwordResetPending(username) {
+  log.debug("Entering passwordResetPending().");
+  if (!directory || typeof directory.readPasswordResetLink !== 'function') {
+    log.debug("Leaving passwordResetPending(). No store.");
+    return null;
+  }
+  let held = null;
+  try {
+    held = directory.readPasswordResetLink(String(username || '').trim());
+  } catch (e) {
+    log.debug("Caught in passwordResetPending(): " + ((e && e.message) || e));
+    held = null;
+  }
+  log.debug("Leaving passwordResetPending().");
+  return held && held.hash
+    ? { expires: held.expires, expired: !(held.expires > Date.now()) }
+    : null;
+}
+
+// Is a second factor required of this person, and by whom? `byRealm` is the
+// setting as the AMBIENT realm reads it, which is the realm the sign-in screen
+// runs in.
+function mfaRequirementFor(username) {
+  log.debug("Entering mfaRequirementFor().");
+  const name = String(username || '').trim();
+  let byUser = false;
+  if (name && directory && typeof directory.readMfaRequired === 'function') {
+    try {
+      byUser = !!directory.readMfaRequired(name);
+    } catch (e) {
+      log.debug("Caught in mfaRequirementFor(): " + ((e && e.message) || e));
+      byUser = false;
+    }
+  }
+  const byRealm = !!config.value('authn.mfaRequired');
+  log.debug("Leaving mfaRequirementFor(). user=" + byUser + ", realm=" +
+            byRealm);
+  return { required: byUser || byRealm, byUser: byUser, byRealm: byRealm };
+}
+
+function setMfaRequired(username, required) {
+  log.debug("Entering setMfaRequired(). required=" + !!required);
+  const name = String(username || '').trim();
+  if (!name || !directory || typeof directory.writeMfaRequired !== 'function') {
+    log.debug("Leaving setMfaRequired(). No store.");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed.'] });
+  }
+  if (!entryExists(name)) {
+    log.debug("Leaving setMfaRequired(). Nobody by that name.");
+    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" in this realm\'s directory.'] });
+  }
+  let written = false;
+  try {
+    written = !!directory.writeMfaRequired(name, !!required);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-AUTHN-0170') + 'credentials: ' +
+              'stsMfaRequired for ' + name + ' could not be written: ' +
+              e.message);
+    written = false;
+  }
+  if (!written) {
+    log.debug("Leaving setMfaRequired(). Not written.");
+    return coded('STS-AUTHN-0170', { ok: false, errors: ['The second-factor ' +
+        'requirement could not be written onto ' + name + '\'s entry.'] });
+  }
+  log.info('credentials: a second factor is ' +
+           (required ? 'now REQUIRED of ' : 'no longer required of ') + name +
+           '.');
+  log.debug("Leaving setMfaRequired(). Written.");
+  return { ok: true, username: name, required: !!required };
+}
+
+// The keys that went, as a caller may describe them — never the public key.
+function keySummary(one) {
+  log.debug("Entering keySummary().");
+  log.debug("Leaving keySummary().");
+  return { credentialId: one.credentialId, role: one.role,
+           label: one.label || '', enrolledAt: one.enrolledAt || 0 };
+}
+
+function removePrimaryKeys(username) {
+  log.debug("Entering removePrimaryKeys().");
+  const name = String(username || '').trim();
+  if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    log.debug("Leaving removePrimaryKeys(). No store.");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+        'store is installed.'] });
+  }
+  const keys = keysOf(name);
+  const primary = keys.filter(function (one) {
+    return one.role === 'primary';
+  });
+  if (!primary.length) {
+    log.debug("Leaving removePrimaryKeys(). None held.");
+    return coded('STS-AUTHN-0160', { ok: false, errors: [name + ' holds no ' +
+        'security key in the primary role, so there is no passwordless ' +
+        'sign-in to disable.'] });
+  }
+  // THE LAST WAY IN, for every primary key at once. A person with no password
+  // whose primary keys all go cannot sign in, and an operator must not do what
+  // `removeKey()` refuses the owner.
+  if (!hasPassword(name)) {
+    log.debug("Leaving removePrimaryKeys(). They would have no way in.");
+    return coded('STS-AUTHN-0161', { ok: false, errors: [name + ' has no ' +
+        'password, so their primary security keys are the only way they can ' +
+        'sign in. Reset their password (or issue a reset link) first, then ' +
+        'disable the keys.'] });
+  }
+  try {
+    directory.replaceWebauthn(name, keys.filter(function (one) {
+      return one.role !== 'primary';
+    }).map(function (one) {
+      return JSON.stringify(one);
+    }));
+  } catch (e) {
+    log.error(errorCodes.tag('STS-AUTHN-0163') + 'credentials: removing the ' +
+              'primary security keys of ' + name + ' threw: ' + e.message);
+    log.debug("Leaving removePrimaryKeys(). The store threw.");
+    return coded('STS-AUTHN-0163', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' + e.message] });
+  }
+  log.info('credentials: ' + primary.length + ' primary security key(s) of ' +
+           name + ' were removed; they sign in with their password now.');
+  log.debug("Leaving removePrimaryKeys(). Removed " + primary.length + ".");
+  return { ok: true, username: name, removed: primary.map(keySummary) };
+}
+
+function removeSecondFactors(username) {
+  log.debug("Entering removeSecondFactors().");
+  const name = String(username || '').trim();
+  if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    log.debug("Leaving removeSecondFactors(). No store.");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+        'store is installed.'] });
+  }
+  const keys = keysOf(name);
+  const mfa = keys.filter(function (one) {
+    return one.role === 'mfa';
+  });
+  const hadTotp = !!totpOf(name);
+  const hadCodes = !!backupCodesOf(name);
+  if (!mfa.length && !hadTotp && !hadCodes) {
+    log.debug("Leaving removeSecondFactors(). None held.");
+    return coded('STS-AUTHN-0162', { ok: false, errors: [name + ' holds no ' +
+        'second factor — no authenticator app, no security key in the mfa ' +
+        'role and no recovery codes — so there is nothing to disable.'] });
+  }
+  const done = { totp: false, keys: [], backupCodes: false };
+  try {
+    if (mfa.length) {
+      directory.replaceWebauthn(name, keys.filter(function (one) {
+        return one.role !== 'mfa';
+      }).map(function (one) {
+        return JSON.stringify(one);
+      }));
+      done.keys = mfa.map(keySummary);
+    }
+    if (hadTotp) {
+      directory.writeTotp(name, null);
+      done.totp = true;
+    }
+    if (hadCodes) {
+      directory.writeBackupCodes(name, null);
+      done.backupCodes = true;
+    }
+  } catch (e) {
+    // WHAT WENT BEFORE THE THROW IS GONE AND IS REPORTED AS GONE, so a caller
+    // emitting an event about each removal says what really happened.
+    log.error(errorCodes.tag('STS-AUTHN-0163') + 'credentials: removing the ' +
+              'second factors of ' + name + ' threw part way: ' + e.message);
+    log.debug("Leaving removeSecondFactors(). The store threw.");
+    return coded('STS-AUTHN-0163', { ok: false, removed: done,
+             errors: ['The credential store refused a write part way ' +
+                      'through: ' + e.message +
+                      '. What was removed before it is listed.'] });
+  }
+  abandonTotpEnrolment(name);
+  log.info('credentials: every second factor of ' + name + ' was removed ' +
+           '(authenticator app: ' + done.totp + ', mfa keys: ' +
+           done.keys.length + ', recovery codes: ' + done.backupCodes + ').');
+  log.debug("Leaving removeSecondFactors(). Removed.");
+  return { ok: true, username: name, removed: done };
+}
+
 module.exports = {
   // --- the authenticator app (RFC 6238) ---
   TOTP_ATTRIBUTE: TOTP_ATTRIBUTE,
@@ -3382,6 +3869,9 @@ module.exports = {
   storable: storable,
   verify: verify,
   verifyAsync: verifyAsync,
+  // A PASSWORD THAT MUST BE CHANGED (2026-09-13) — see resetRefusal().
+  passwordResetRequired: passwordResetRequired,
+  setPasswordResetRequired: setPasswordResetRequired,
   setPassword: setPassword,
   generatePassword: generatePassword,
   // The password policy, for a door that wants to say so before it tries —
@@ -3393,5 +3883,16 @@ module.exports = {
   passwordRules: passwordRules,
   preparePassword: preparePassword,
   passwordWritten: passwordWritten,
-  hasPassword: hasPassword
+  hasPassword: hasPassword,
+  // WHAT AN ADMINISTRATOR DOES FROM A PERSON'S /admin/users PAGE (2026-09-13)
+  // — see the block above module.exports.
+  removePassword: removePassword,
+  issuePasswordReset: issuePasswordReset,
+  checkPasswordReset: checkPasswordReset,
+  consumePasswordReset: consumePasswordReset,
+  passwordResetPending: passwordResetPending,
+  mfaRequirementFor: mfaRequirementFor,
+  setMfaRequired: setMfaRequired,
+  removePrimaryKeys: removePrimaryKeys,
+  removeSecondFactors: removeSecondFactors
 };

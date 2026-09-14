@@ -312,6 +312,30 @@ require('../admin-ui/database_admin');
 // not.
 // ---------------------------------------------------------------------------
 require('../admin-ui/secrets_admin');
+// ---------------------------------------------------------------------------
+// 18e. THE EMBEDDED PROTOCOL DEBUGGER'S REPORT (2026-09-13). `/admin/debugger`
+// — the same placement as 18a to 18d, for their reason: it requires
+// `admin-ui/admin` for the shell and nothing that registers a route, and
+// `mgmt-api/admin_api.js` at 19 requires it in the ordinary direction. It reads
+// the listener's status LAZILY, because `debugger/debugger_server.js` requires
+// `tls/tls_server.js` at 20. See 23h for the listener itself.
+// ---------------------------------------------------------------------------
+require('../debugger/debugger_admin');
+// ---------------------------------------------------------------------------
+// 18f. THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13).
+// `/admin/oauth2/monitor` — what the authorization server has done, one
+// section per mechanism, RFC 9126's pushed authorization requests first.
+//
+// The same placement as 18a to 18e, for their reason: it requires
+// `admin-ui/admin` for the shell and, through `oauth2_monitor_console.js`,
+// `admin-core/admin_views.js`, `oauth-oidc/par.js` and
+// `oauth-oidc/oauth2_monitor.js` — libraries every one of which is loaded by
+// this line — so it moves no route. It cannot be required from `oauth2.js` at
+// 9, which would drag the whole console in front of the authorization server.
+// `mgmt-api/admin_api.js` at 19 reaches the model lazily through
+// `oauth-oidc/oauth2_monitor_api.js`.
+// ---------------------------------------------------------------------------
+require('../oauth-oidc/oauth2_monitor_admin');
 // The management API: everything that console shows and everything it can
 // change, at /admin-api, over JSON. It must come AFTER admin.js and the order
 // is a dependency rather than a preference — it requires that module for the
@@ -532,6 +556,24 @@ require('../xacml/xacml');
 // family has one line here.
 require('../gnap/gnap');
 
+// CERTIFICATE ENROLLMENT (2026-09-13) — 23e, 23f, 23g. ACME (RFC 8555), EST
+// (RFC 7030) and SCEP (RFC 8894). After the console at 18, whose shell each
+// family's `<family>_admin.js` draws its two pages with, and after `ldap` at
+// 21, whose slot `common/cert_enrollment.js` reads the entries through. Each
+// module requires its own `_admin.js`, so each family is one line here. No
+// constraint between the three.
+require('../acme/acme');
+require('../est/est');
+require('../scep/scep');
+
+// THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13) — 23h. A socket owner: requiring
+// it builds the debugger listener's OWN express app and registers nothing on
+// this one, and `server.js`'s `listen()` binds it and forks the api process.
+// After `authn` (8, its sessions), `oauth2` (9, whose scope rule it relies on),
+// `tls/tls_server` (20, the certificate it presents) and the console (18, whose
+// roster decides who may use it). No route here depends on its position.
+const debuggerServer = require('../debugger/debugger_server');
+
 require('../logout/logout');
 require('../sts_metadata');
 
@@ -540,5 +582,6 @@ module.exports = {
   krb5Service: krb5Service,
   tlsServer: tlsServer,
   ldapServer: ldapServer,
-  spiffeServer: spiffeServer
+  spiffeServer: spiffeServer,
+  debuggerServer: debuggerServer
 };

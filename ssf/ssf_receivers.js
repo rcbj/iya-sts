@@ -384,25 +384,57 @@ function internalStreamId(surface) {
 // no-op, and the alternative is a sweep that only happens in whichever process
 // somebody decided was special.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND ANOTHER REALM'S RECEIVER STREAM, WHICH IS A DIFFERENT DEFECT WITH THE
+// SAME COST (2026-09-14).
+//
+// `realms.js`'s `partitionId()` sent a replicated row for a realm this process
+// had not heard of yet into the DEFAULT partition, and a stream row is minted
+// milliseconds after the realm it belongs to. A dispatch run's default realm
+// held forty such streams — `ssf-internal-<other realm>-admin-console` and its
+// portal twin, one pair per realm a job created — so every default-realm event
+// was pushed forty-two times, and the forty pushed into another realm's
+// receiver were refused and queued for ever. The partition is fixed; this
+// removes what a store already holds.
+//
+// **BY ID, NOT BY ENDPOINT.** The endpoint names the other realm's prefix, so
+// it differs from this realm's by design, and the loopback origin may differ
+// between starts. A stream id beginning `ssf-internal-` is only ever set by
+// `seedStreams()` — `createStream()` takes it from the context and never from
+// a request body — so an id of that shape for this surface that is not this
+// realm's own is a leaked copy and nothing else.
+// ---------------------------------------------------------------------------
+function isOtherRealmsReceiver(record, surface, keep) {
+  log.debug("Entering isOtherRealmsReceiver().");
+  const id = String((record && record.stream_id) || '');
+  const out = id !== keep && id.indexOf('ssf-internal-') === 0 &&
+              id.length > ('ssf-internal--' + surface.id).length &&
+              id.slice(-(surface.id.length + 1)) === '-' + surface.id;
+  log.debug("Leaving isOtherRealmsReceiver(). " + out);
+  return out;
+}
+
 function sweepDuplicates(surface) {
   log.debug('Entering sweepDuplicates(). ' + surface.id);
   const keep = internalStreamId(surface);
   const endpoint = endpointFor(surface);
   const stale = streams.listStreams().filter(function (record) {
     return record.stream_id !== keep &&
-           record.delivery &&
-           record.delivery.method === streams.DELIVERY_PUSH &&
-           String(record.delivery.endpoint_url || '') === endpoint;
+           ((record.delivery &&
+             record.delivery.method === streams.DELIVERY_PUSH &&
+             String(record.delivery.endpoint_url || '') === endpoint) ||
+            isOtherRealmsReceiver(record, surface, keep));
   });
   stale.forEach(function (record) {
     streams.removeStream(record.stream_id);
     log.warn('ssf: removed ' + record.stream_id + ' (created ' +
-             record.createdAt + '), a DUPLICATE of this service\'s own ' +
-             surface.label + ' receiver in the "' + realms.currentId() +
-             '" realm. Before the stream id was derived, every process of ' +
-             'this service seeded one of these per start and a persisted ' +
-             'store kept them all — so one event was pushed to every copy. ' +
-             'The surviving stream is ' + keep + '.');
+             record.createdAt + ') from the "' + realms.currentId() +
+             '" realm: it is a copy of this service\'s own ' + surface.label +
+             ' receiver that does not belong here — a duplicate seeded ' +
+             'before the stream id was derived, or another realm\'s receiver ' +
+             'a replicated row put in this realm before it knew that realm. ' +
+             'Every event was pushed to every copy. The surviving stream is ' +
+             keep + '.');
   });
   if (stale.length) {
     audit.audit({ action: 'ssf.stream.swept', category: 'signals',
@@ -1071,7 +1103,7 @@ function status(surfaceId) {
       riscDelivered: record.events_delivered.filter(function (uri) {
         return events.RISC_EVENT_URIS.indexOf(uri) >= 0;
       }).length,
-      queued: record.queue.length,
+      queued: streams.queueOf(record).length,
       counters: Object.assign({}, record.counters),
       lastPushAt: record.lastPushAt,
       lastPushError: record.lastPushError

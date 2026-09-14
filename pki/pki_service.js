@@ -22,6 +22,11 @@
 //   GET  /pki/ocsp/{scope}/{ca}       the address as written, asking nothing
 //   GET  /pki/revocation              what this service publishes, as JSON
 //
+// and a seventh since 2026-09-13, which is not about revocation but exists so
+// that a relying party can REACH it:
+//
+//   GET  /pki/chain/{scope}/{sha256}.pem  the chain an `x5u` header names
+//
 // **AND ON TWO LISTENERS** since 2026-09-13: the main port, and the plain-HTTP
 // revocation listener at the foot of this file, which serves `/pki/` and
 // nothing else and is the address every certificate names.
@@ -52,6 +57,8 @@ const { log, parseBody } = require('../common/helpers');
 const config = require('../common/config');
 const pki = require('../common/pki');
 const revocation = require('../common/pki_revocation');
+// Which JOSE certificate an `x5u` names, and its chain. A library.
+const certificateHeader = require('../common/jose_certificate_header');
 // The error-code registry (a leaf). Every refusal below is `mark()`ed on the
 // response before it is sent and never written into it: a revocation client
 // is shown exactly the text and the OCSP status it was always shown.
@@ -193,6 +200,51 @@ function caCertificateFor(req, res, scopeSegment, caId) {
      .send(der);
   log.debug("Leaving caCertificateFor().");
 }
+
+// ---------------------------------------------------------------------------
+// GET /pki/chain/{scope}/{sha256}.pem — THE CHAIN AN `x5u` HEADER NAMES
+// (2026-09-13).
+//
+// A JWS this service signs with a certified key may carry `x5u` (RFC 7515
+// section 4.1.5) pointing HERE, per `common/jose_certificate_header.js`, so a
+// relying party holding only the token can fetch the certificate chain and
+// with it every CRL distribution point, OCSP responder and caIssuers address
+// the chain names. Leaf first, the service Root last, in PEM, as
+// `application/pem-certificate-chain` (RFC 8555 section 7.4.2 registered it,
+// and RFC 7515 asks for exactly this layout).
+//
+// **NAMED BY THE LEAF'S SHA-256, NOT BY A `kid` OR A SLOT.** The address is
+// written into a token that outlives the key that signed it, so it must name
+// one certificate for ever: a key rotated since is a 404, never a chain over a
+// different key. The value is matched against the register, not parsed.
+//
+// **`no-store`**, for the rule every document that publishes this service's
+// key material follows: in development mode the keys behind these
+// certificates die with the process, and a cached chain would outlive them.
+// Ungated, like every endpoint in this file — what it returns is already
+// inside every token whose header names it.
+// ---------------------------------------------------------------------------
+app.get('/pki/chain/:scope/:certificate', function (req, res) {
+  log.debug('Entering the certificate chain endpoint.');
+  const scopeSegment = String(req.params.scope);
+  const thumbprint = String(req.params.certificate).replace(/\.pem$/, '');
+  const pem = certificateHeader.chainPemFor(
+    revocation.scopeFromSegment(scopeSegment), thumbprint);
+  if (!pem) {
+    errorCodes.mark(res, 'STS-PKI-0162');
+    refuse(res, 404,
+           'There is no JOSE signing certificate with that SHA-256 in the "' +
+           scopeSegment + '" scope of this service. A certificate replaced ' +
+           'since a token named it is no longer published here.');
+    log.debug("Leaving the certificate chain endpoint. Not found.");
+    return;
+  }
+  res.status(200)
+     .set('Content-Type', 'application/pem-certificate-chain')
+     .set('Cache-Control', 'no-store')
+     .send(pem);
+  log.debug("Leaving the certificate chain endpoint.");
+});
 
 // ---------------------------------------------------------------------------
 // OCSP, both transports RFC 6960 appendix A.1 defines.
@@ -453,8 +505,10 @@ app.get('/pki/revocation', function (req, res) {
 log.info('The PKI revocation endpoints are registered: a CRL at ' +
          'GET /pki/crl/{scope}/{ca}.crl, an OCSP responder at ' +
          'GET|POST /pki/ocsp/{scope}/{ca}, the issuing certificate at ' +
-         'GET /pki/ca/{scope}/{ca}.cer, and an index of all of them at ' +
-         'GET /pki/revocation. Every certificate this service issues names ' +
+         'GET /pki/ca/{scope}/{ca}.cer, an index of all of them at ' +
+         'GET /pki/revocation, and the chain a signed token\'s x5u names at ' +
+         'GET /pki/chain/{scope}/{sha256}.pem. Every certificate this ' +
+         'service issues names ' +
          'its CRL over http and ldap, its OCSP responder and its issuer\'s ' +
          'certificate over http.');
 

@@ -1483,6 +1483,28 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
   const as = await common.httpJson(base +
       "/.well-known/oauth-authorization-server");
   assert.ok(as.ok, "the RFC 8414 metadata should answer 200; got " + as.status);
+  assert.deepStrictEqual(listNamed("JWT introspection response (RFC 9701)"),
+    as.body.introspection_signing_alg_values_supported,
+    "and the RFC 9701 introspection response's signing list must be the one " +
+    "RFC 8414 advertises as introspection_signing_alg_values_supported. It " +
+    "is the ID Token's table WITHOUT `none` and WITH the HMAC family, which " +
+    "is neither of the two lists above, so it is compared on its own.");
+  assert.deepStrictEqual(
+    listNamed("JWT introspection response encryption (RFC 9701)"),
+    as.body.introspection_encryption_alg_values_supported,
+    "and its encryption list must be introspection_encryption_alg_values_" +
+    "supported.");
+  assert.deepStrictEqual(listNamed("Request object signature (RFC 9101)"),
+    as.body.request_object_signing_alg_values_supported.filter(function (alg) {
+      return alg !== "none";
+    }),
+    "and the RFC 9101 request object signing list must be the one RFC 8414 " +
+    "advertises, less `none` — which is advertised only where an unsigned " +
+    "request object is accepted and is not a signature this page lists.");
+  assert.deepStrictEqual(listNamed("Request object decryption (RFC 9101)"),
+    as.body.request_object_encryption_alg_values_supported,
+    "and the request object decryption list must be " +
+    "request_object_encryption_alg_values_supported.");
   assert.deepStrictEqual(listNamed("DPoP proof"),
     as.body.dpop_signing_alg_values_supported,
     "and the DPoP list must be the one RFC 8414 advertises. It is a FILTER " +

@@ -746,8 +746,21 @@ function documentedActions(doc) {
 //                    every later run to meet as "already holds a stored key".
 //                    Exercised in theKerberosPrincipalsRoundTrip(), with an SPN
 //                    carrying this run's realm id, created and deleted.
+//   * `pki/build-root` (2026-09-13) — it replaces the service Root AND the
+//                    leaf the main port is serving, so every TLS handshake
+//                    this process opens after it is judged against an anchor
+//                    NODE_EXTRA_CA_CERTS no longer holds. This file used to
+//                    replay it in the middle and PASSED ONLY BECAUSE undici
+//                    went on reusing a connection opened before the swap: the
+//                    day the rebuild took long enough for that connection to be
+//                    replaced (three more Issuing CAs per realm, for ACME, EST
+//                    and SCEP), the very next read failed with `unable to get
+//                    local issuer certificate`. Driven LAST now, in
+//                    theRootIsReplacedLast(), whose read-back trusts the new
+//                    anchor explicitly.
 const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
-                          /^\/tls\/trust\//, /^\/kerberos\/principals\//];
+                          /^\/tls\/trust\//, /^\/kerberos\/principals\//,
+                          /^\/pki\/build-root$/];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
@@ -858,6 +871,77 @@ async function theResourceReadsBack(path, operationId) {
     "answering JSON: httpJson gave back " + typeof reply.body + " — " +
     String(reply.raw).slice(0, 200));
   log.debug("Leaving theResourceReadsBack().");
+}
+
+// ---------------------------------------------------------------------------
+// THE ROOT IS REPLACED LAST (2026-09-13). See the `pki/build-root` note above
+// REPLAY_HELD_BACK. The documented example is posted with the trust this run
+// started with — the handshake happens before anything is replaced — and the
+// read-back that the ledger requires is made over a connection that trusts
+// the certificate the service serves AFTERWARDS, fetched the way
+// `tools/trust.js` fetches it for every job. Nothing runs after this section
+// but the two ledger checks, which make no request.
+// ---------------------------------------------------------------------------
+function getTrusting(path, anchorPem) {
+  log.debug("Entering getTrusting(). path=" + path);
+  const target = new URL(api + path);
+  return new Promise(function (resolve, reject) {
+    const req = require("https").get({
+      host: target.hostname, port: target.port || 443,
+      path: target.pathname + target.search, ca: anchorPem,
+      agent: false,
+      headers: process.env.STS_ADMIN_API_TOKEN
+        ? { Authorization: "Bearer " + process.env.STS_ADMIN_API_TOKEN } : {}
+    }, function (res) {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", function (chunk) {
+        raw += chunk;
+      });
+      res.on("end", function () {
+        let body = raw;
+        try {
+          body = JSON.parse(raw);
+        } catch (e) {
+          log.debug("Caught in getTrusting(): " + ((e && e.message) || e));
+          // A non-JSON answer is reported by the caller's assertion.
+        }
+        record("GET", path, false, res.statusCode === 200);
+        log.debug("Leaving getTrusting(). status=" + res.statusCode);
+        resolve({ status: res.statusCode, body: body, raw: raw });
+      });
+    });
+    req.on("error", reject);
+  });
+}
+
+async function theRootIsReplacedLast(doc) {
+  log.debug("Entering theRootIsReplacedLast().");
+  log.info("=== The service Root, replaced last ===");
+  const operation = doc.paths["/admin-api/pki/build-root"] &&
+                    doc.paths["/admin-api/pki/build-root"].post;
+  const schema = operation && operation.requestBody &&
+    operation.requestBody.content["application/json"].schema;
+  const example = (schema && schema.examples && schema.examples[0]) || {};
+  const replaced = await post("/pki/build-root", example);
+  assert.ok(replaced.status === 200 && replaced.body &&
+            replaced.body.ok !== false,
+    "POST /pki/build-root with the document's own example should replace " +
+    "the Root; it answered " + replaced.status + " " +
+    JSON.stringify(replaced.body).slice(0, 300));
+  const trust = require(require("path").join(__dirname, "..", "tools",
+                                             "trust.js"));
+  const anchor = await trust.fetchCertificate(base);
+  const reply = await getTrusting("/pki", anchor);
+  assert.strictEqual(reply.status, 200,
+    "GET /pki after the Root was replaced answered " + reply.status + " " +
+    String(reply.raw).slice(0, 200));
+  assert.strictEqual(typeof reply.body, "object",
+    "GET /pki after the Root was replaced stopped answering JSON");
+  log.info("[root] OK — the Root was replaced with the document's example " +
+           "and the resource read back over a connection trusting the " +
+           "anchor the service serves afterwards.");
+  log.debug("Leaving theRootIsReplacedLast().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1098,9 +1182,55 @@ async function theApplicationsRegistryRoundTrips() {
   // it goes stale in the file that is supposed to catch the schema changing.
   // The whole block is skipped, saying so, if nothing is family-scoped — which
   // is the honest answer when the last such row is removed.
-  const scoped = editable.filter(function (row) {
-    return row.families && row.families.length;
-  })[0];
+  //
+  // **THE ROW IS THE FIRST ONE THAT ACCEPTS THE PROBE VALUE, NOT THE FIRST ROW
+  // (2026-09-13).** This took `[0]` until RFC 9701 put three
+  // family-scoped attributes whose VALUES are checked ahead of
+  // `oauthTokenExchangeRefreshToken` in the table, and `always` is not a JWS
+  // algorithm — so the round trip below failed on the value, and the two
+  // refusals before it passed on the VALUE's refusal rather than the family's,
+  // because both sentences name the attribute. The probe is made on an entry
+  // declared for every family any scoped row names, so the only thing that
+  // can refuse it is the value; the first row that takes `always` is the one
+  // this block drives, and no attribute name is typed here.
+  const PROBE_VALUE = "always";
+  const scopedRows = editable.filter(function (row) {
+    return row.families && row.families.length && row.mode === "set" &&
+      !row.sensitive;
+  });
+  let scoped = null;
+  if (scopedRows.length) {
+    const probeId = identifier + "-scope-probe";
+    const probeFamilies = scopedRows.reduce(function (all, row) {
+      row.families.forEach(function (id) {
+        if (all.indexOf(id) < 0 && families.indexOf(id) >= 0) {
+          all.push(id);
+        }
+      });
+      return all;
+    }, []);
+    await ok("/applications/create",
+             { identifier: probeId, protocols: probeFamilies },
+             "created an entry declared for " + probeFamilies.join(", ") +
+             " to find a family-scoped attribute that takes `" +
+             PROBE_VALUE + "`");
+    for (const row of scopedRows) {
+      const r = await post("/applications/set",
+        { application: probeId, attribute: row.name, value: PROBE_VALUE });
+      if (r.status === 200 && r.body && r.body.ok !== false) {
+        scoped = row;
+        break;
+      }
+    }
+    await ok("/applications/forget", { application: probeId },
+             "forgot the scope probe");
+    assert.ok(scoped,
+      "none of the " + scopedRows.length + " family-scoped attributes (" +
+      scopedRows.map(function (row) { return row.name; }).join(", ") +
+      ") accepted `" + PROBE_VALUE + "` on an entry declared for their " +
+      "families, so the family-scope checks below have no attribute to " +
+      "drive. Either a value rule changed or PROBE_VALUE needs a companion.");
+  }
   if (!scoped) {
     log.info("[applications] no attribute in the published `editable` table " +
              "is scoped to a protocol family, so the family-scope checks " +
@@ -1112,6 +1242,10 @@ async function theApplicationsRegistryRoundTrips() {
       return scoped.families.indexOf(id) < 0;
     })[0];
     const right = scoped.families[0];
+    // familyRefusal()'s own opening in common/applications.js. The attribute
+    // NAME alone is not enough: a refusal of the VALUE names it too, and that
+    // is how both refusals below passed for the wrong reason once.
+    const familyRefusal = new RegExp('"' + scoped.name + '" applies to the');
     assert.ok(wrong,
       "every protocol family this service has is one `" + scoped.name + "` " +
       "applies to, so there is no entry the refusal could be provoked on. " +
@@ -1127,10 +1261,10 @@ async function theApplicationsRegistryRoundTrips() {
       { identifier: wrongId, protocols: [wrong],
         fields: (function () {
           const f = {};
-          f[scoped.name] = "always";
+          f[scoped.name] = PROBE_VALUE;
           return f;
         })() },
-      new RegExp(scoped.name),
+      familyRefusal,
       "a create putting " + scoped.name + " on an entry declared for " + wrong);
     assert.strictEqual((await application(wrongId)).found, false,
       "the refused create must have made NO entry: `" + wrongId + "` is in " +
@@ -1142,8 +1276,8 @@ async function theApplicationsRegistryRoundTrips() {
              { identifier: wrongId, protocols: [wrong] },
              "created an application declared for " + wrong + " alone");
     await refused("/applications/set",
-      { application: wrongId, attribute: scoped.name, value: "always" },
-      new RegExp(scoped.name),
+      { application: wrongId, attribute: scoped.name, value: PROBE_VALUE },
+      familyRefusal,
       "setting " + scoped.name + " on an entry declared for " + wrong);
     assert.deepStrictEqual(fieldValues(await application(wrongId), scoped.name),
       [],
@@ -1166,10 +1300,10 @@ async function theApplicationsRegistryRoundTrips() {
       { application: wrongId, attribute: "appAllowedProtocol", value: right },
       "declared " + right + " on it");
     await ok("/applications/set",
-      { application: wrongId, attribute: scoped.name, value: "always" },
+      { application: wrongId, attribute: scoped.name, value: PROBE_VALUE },
       "set " + scoped.name + " now that " + right + " is declared");
     assert.deepStrictEqual(fieldValues(await application(wrongId), scoped.name),
-      ["always"],
+      [PROBE_VALUE],
       "and it must be readable back off the entry: the refusal is about the " +
       "FAMILY and not about the attribute, so declaring the family has to be " +
       "the whole of what was missing.");
@@ -2255,8 +2389,10 @@ async function mintPermissionToken(client, wanted) {
 
 // The `aud` as ONE value. RFC 7519 section 4.1.3 allows a string or an array,
 // and this service sends an array when a token is addressed to more than one
-// party — which an `openid` token asking for a permission is. The permission's
-// base URI is the one being asserted about, so the others are not an error.
+// party — several RFC 8707 resources, for instance. (An `openid` token asking
+// for a permission was one until 2026-09-13; RFC 9068 made it a token for the
+// permission's API alone.) The permission's base URI is the one being asserted
+// about, so any others are not an error.
 function audienceOf(jwt) {
   log.debug("Entering audienceOf().");
   const aud = claimOf(jwt, "aud");
@@ -3786,6 +3922,30 @@ async function theAdminRolesRoundTrip() {
     "roster would let anybody who can create a realm administer the whole " +
     "service. It named " + before.body.groupsDn);
 
+  // EVERY LIST IN THE REPLY IS PAGED (2026-09-13). A directory of thousands
+  // made `candidates` thousands of rows and `roles[].members` every
+  // membership, on every read of the roster.
+  const paged = await get("/rbac?per=1&candidatesPage=999999");
+  assert.strictEqual(paged.status, 200, "GET /rbac?per=1 should answer 200.");
+  const cp = paged.body.candidatesPaging || {};
+  assert.ok(Array.isArray(paged.body.candidates) &&
+            paged.body.candidates.length <= 1 && cp.perPage === 1,
+    "`candidates` should be paged by the shared `per`, answered in " +
+    "`candidatesPaging`; with per=1 it answered " +
+    paged.body.candidates.length + " row(s) and " + JSON.stringify(cp));
+  assert.ok(cp.page === cp.pages && cp.page >= 1,
+    "a `candidatesPage` past the end should be CLAMPED to the last page, " +
+    "as `page` is; it answered " + JSON.stringify(cp));
+  assert.strictEqual((paged.body.candidateSearch || {}).matched, cp.total,
+    "`candidatesPaging.total` should be how many candidates matched.");
+  assert.ok((paged.body.grants || []).length <= 1 && paged.body.perPage === 1,
+    "`grants` should be paged by the same `per`.");
+  assert.ok((paged.body.roles || []).every(function (r) {
+    return r.members === undefined && r.claimed === undefined &&
+           typeof r.memberCount === "number";
+  }), "`roles` should carry each role's counts and NOT its unpaged " +
+      "`members` / `claimed` lists, which are the rows `grants` pages.");
+
   const grantedBefore = before.body.grantCount;
   const subject = names.usernameFor("stsapi-role");
   const granted = await ok("/rbac/grant",
@@ -4768,6 +4928,7 @@ async function test() {
     await theKerberosPrincipalsRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
     await theConfigurationChangeReachesTheStore(candidate);
+    await theRootIsReplacedLast(doc);
     everyDocumentedOperationWasDriven(doc);
     everyAcceptedWriteWasReadBack();
   } finally {

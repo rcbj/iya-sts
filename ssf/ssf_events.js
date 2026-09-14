@@ -80,7 +80,7 @@
 
 const nodeCrypto = require('crypto');
 const { log, signJwtAs, signJwtAsAsync, randomId, nowSec, allSigningKeys,
-  STS } = require('../common/helpers');
+  STS, kidNamesKey } = require('../common/helpers');
 const config = require('../common/config');
 // THE ONE PLACE THIS SERVICE VERIFIES A SIGNATURE (2026-09-10). `verifySet()`
 // below is what reads a SET back, and it goes through `common/crypto.js` like
@@ -1493,7 +1493,9 @@ function signSet(claims, options) {
     // HERE rather than being a default in the signer, because everything
     // else this service mints is an ordinary JWT and would be wrong to
     // relabel.
-    header: { typ: SET_MEDIA_TYPE } })
+    header: { typ: SET_MEDIA_TYPE },
+    // `ssf.setCertificateHeader` decides the `x5c` / `x5u`.
+    certificateHeader: 'ssf-set' })
     .then(function (token) {
       if (!config.value('ssf.breakSetSignature')) {
         log.debug('Leaving signSet(). Signed with ' + alg + '.');
@@ -1543,7 +1545,8 @@ function signSetSync(claims, options) {
   const settings = options || {};
   const alg = settings.algorithm || signingAlgorithm();
   const token = signJwtAs(claims, alg, null,
-                          { header: { typ: SET_MEDIA_TYPE } });
+                          { header: { typ: SET_MEDIA_TYPE },
+                            certificateHeader: 'ssf-set' });
   log.debug('Leaving signSetSync(). ' + alg);
   return token;
 }
@@ -1624,7 +1627,11 @@ function publicKeyForHeader(header) {
   // SET that names no kid is still tried against the RSA key, because that is
   // the only key it could be claiming.
   // ---------------------------------------------------------------------
-  if (kid ? kid === STS.kid : alg === 'RS256') {
+  // **EITHER SPELLING OF THE `kid` (2026-09-13)**: this service's own name
+  // for the key, or its RFC 9278 thumbprint URI, which is what a SET carries
+  // under `keys.kidFormat: jwk-thumbprint-uri` — whatever the setting says now
+  // (common/jose_kid.js).
+  if (kid ? kidNamesKey(kid, STS.kid) : alg === 'RS256') {
     // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,
     // where eight modules already read it — so it is resolved separately from
     // the certificate this service publishes for it.
@@ -1639,7 +1646,7 @@ function publicKeyForHeader(header) {
   }
   const list = allSigningKeys();
   const found = list.filter(function (one) {
-    return kid ? one.publicJwk.kid === kid : one.alg === alg;
+    return kid ? kidNamesKey(kid, one.publicJwk.kid) : one.alg === alg;
   })[0];
   if (!found) {
     log.debug('Leaving publicKeyForHeader(). No key of ours matches.');

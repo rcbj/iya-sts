@@ -83,6 +83,7 @@ them can drift from what the service does:
 | `GET /.well-known/openid-configuration` | The OpenID Provider Configuration |
 | `GET /.well-known/oauth-authorization-server` | The RFC 8414 document |
 | `GET /oauth2/rfc9700` | Every Security BCP requirement, with what is and is not enforced |
+| `GET /oauth2/oauth21` | Every OAuth 2.1 requirement the mode adds, which it inherits from RFC 9700 mode, and what it exempts |
 | `GET /admin-api/openapi.json` | The management API, generated from its operation table |
 | `GET /admin/api-explorer` | The same, in a small explorer that also shows the `curl` line. A page of the **admin console** since 2026-09-09, behind its session and roles — it was `GET /admin-api/docs` until that API began requiring an access token a browser cannot carry |
 | `GET /spiffe` | The trust domain, every socket this process has bound — the default realm's four and two more for each realm whose SPIFFE is turned on, each row naming its realm — and all 42 SPIRE methods with a reason for each of the six that are unimplemented. Reached under a realm prefix it is that realm's answer |

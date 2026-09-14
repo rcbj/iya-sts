@@ -81,8 +81,7 @@
 // It used to mean "this document lies about this service". That cannot happen
 // any more for the members that drive behaviour — the document IS the
 // behaviour. What it means now is narrower and more useful: **a member this
-// service cannot honour**. `require_pushed_authorization_requests: true` when
-// there is no PAR endpoint; `id_token_signing_alg_values_supported: ["ES256"]`
+// service cannot honour**. `id_token_signing_alg_values_supported: ["ES256"]`
 // when this service signs RS256 and nothing else; a `token_endpoint` pointing
 // at another host. Those are still publishable, because producing a
 // misconfigured document on purpose is a thing a client author needs, and they
@@ -159,6 +158,93 @@ const MEMBERS = [
     what: 'Which of the six this server will verify. RFC 9700 section 2.5 ' +
           'RECOMMENDS the asymmetric ones, so a profile that advertises only ' +
           'private_key_jwt is how you find out whether a client can do it.' },
+  // RFC 7662 and RFC 9701 (2026-09-13). Four members `/oauth2/introspect`
+  // READS for the authorization server a request selected, so narrowing one in
+  // a profile narrows what that server's introspection endpoint does — the same
+  // contract as the token endpoint's row above. A removed member means the
+  // check does not run, as everywhere in this table.
+  { name: 'introspection_endpoint_auth_methods_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which client authentication methods the ' +
+                            'introspection endpoint accepts',
+    what: 'The token endpoint\'s list, asked of a resource server calling ' +
+          '/oauth2/introspect wherever it must authenticate — an RFC 9701 ' +
+          'JWT request in every mode, a JSON one in product mode. A client ' +
+          'whose entry declares a method not listed here is refused before its ' +
+          'credential is read.' },
+  { name: 'introspection_signing_alg_values_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which algorithms an RFC 9701 JWT introspection ' +
+                            'response is signed with',
+    what: 'RFC 9701 section 7. A resource server whose registered ' +
+          'introspection_signed_response_alg — RS256 when it registered ' +
+          'none — is not listed is refused rather than answered in an ' +
+          'algorithm it did not choose. Publish ["PS256"] to see whether a ' +
+          'resource server registers what the document says or assumes the ' +
+          'default.' },
+  { name: 'introspection_encryption_alg_values_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which key management algorithms an RFC 9701 JWT ' +
+                            'introspection response is encrypted with',
+    what: 'RFC 9701 section 7. Only asked of a resource server that ' +
+          'registered introspection_encrypted_response_alg; one that did not ' +
+          'gets a signed response whatever this lists.' },
+  { name: 'introspection_encryption_enc_values_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which content encryption algorithms an RFC 9701 ' +
+                            'JWT introspection response uses',
+    what: 'RFC 9701 section 7, read against the registered ' +
+          'introspection_encrypted_response_enc — A128CBC-HS256 when a ' +
+          'resource server registered an alg and no enc.' },
+  // RFC 9101 (2026-09-13). Six members `/oauth2/authorize` READS for the
+  // authorization server a request selected — see `request_object.js`. A
+  // removed member means the check does not run.
+  { name: 'request_parameter_supported', group: 'Security capabilities',
+    kind: 'boolean', enforces: 'whether the authorization endpoint accepts a ' +
+                               'request object by value',
+    what: 'RFC 9101 section 5.1 / OpenID Connect Discovery. FALSE refuses ' +
+          '`request` with request_not_supported. Publish it false to see ' +
+          'whether a client falls back to plain parameters or to ' +
+          'request_uri.' },
+  { name: 'request_uri_parameter_supported', group: 'Security capabilities',
+    kind: 'boolean', enforces: 'whether the authorization endpoint accepts a ' +
+                               'request object by reference',
+    what: 'RFC 9101 section 5.2. FALSE refuses `request_uri` with ' +
+          'request_uri_not_supported.' },
+  { name: 'require_signed_request_object', group: 'Security capabilities',
+    kind: 'boolean', enforces: 'whether every authorization request must be ' +
+                               'a signed request object',
+    what: 'RFC 9101 section 10.5. TRUE refuses a request with no request ' +
+          'object, and one signed with `none`, with invalid_request — for ' +
+          'this authorization server alone, where ' +
+          'oauth2.requireSignedRequestObject does it for all of them.' },
+  { name: 'request_object_signing_alg_values_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which algorithms a request object may be signed ' +
+                            'with',
+    what: 'A request object signed with an algorithm not listed is refused. ' +
+          'Take `none` off to refuse an unsigned request object in ' +
+          'development mode for this authorization server only.' },
+  { name: 'request_object_encryption_alg_values_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which key management algorithms an encrypted ' +
+                            'request object may use',
+    what: 'RFC 9101 section 6.1. Only asked of a request object that is ' +
+          'encrypted; a signed one is not refused for what this lists.' },
+  { name: 'request_object_encryption_enc_values_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which content encryption an encrypted request ' +
+                            'object may use',
+    what: 'The content encryption half of the list above.' },
+  { name: 'authorization_details_types_supported', group: 'Security ' +
+      'capabilities',
+    kind: 'list', enforces: 'which RFC 9396 authorization_details types the ' +
+                            'authorization, token and pushed authorization ' +
+                            'request endpoints accept',
+    what: 'RFC 9396 section 10. openid_credential and every type an ' +
+          'application in this realm declares; a narrower list refuses a ' +
+          'detail of any other type with invalid_authorization_details. ' +
+          'Removing the member leaves every supported type accepted.' },
   { name: 'tls_client_certificate_bound_access_tokens', group: 'Security ' +
       'capabilities',
     kind: 'boolean',
@@ -172,13 +258,20 @@ const MEMBERS = [
           'metadata says the server sends it. Setting this false while the ' +
           'responses still carry iss is a way to test the client\'s side of ' +
           'that.' },
+  // RFC 9126 (2026-09-13). /oauth2/authorize READS it for the authorization
+  // server a request selected — see `pushedRequestPolicyRefusal()` in
+  // `oauth2.js`. A removed member means the check does not run.
   { name: 'require_pushed_authorization_requests', group: 'Security ' +
       'capabilities',
-    kind: 'boolean',
-    what: 'RFC 9126. NOT IMPLEMENTED HERE — there is no PAR endpoint — so ' +
-          'setting it true publishes a requirement this server cannot ' +
-          'satisfy, which is exactly the misconfiguration a client\'s error ' +
-          'path should survive.' },
+    kind: 'boolean', enforces: 'whether the authorization endpoint accepts ' +
+                               'only a request_uri issued at /oauth2/par',
+    what: 'RFC 9126 section 5. TRUE refuses, with invalid_request, every ' +
+          'authorization request at this authorization server that was not ' +
+          'pushed first — for this authorization server alone, where ' +
+          'oauth2.requirePushedAuthorizationRequests does it for all of ' +
+          'them. Publish it to see whether a client reads the requirement ' +
+          'and pushes, or sends the browser with plain parameters and meets ' +
+          'the refusal.' },
   { name: 'response_types_supported', group: 'Security capabilities',
     kind: 'list',
     enforces: 'which response_type values the authorization endpoint answers',
@@ -226,6 +319,13 @@ const MEMBERS = [
   { name: 'revocation_endpoint', group: 'Endpoints', kind: 'string',
     what: 'RFC ' +
       '7009.' },
+  { name: 'pushed_authorization_request_endpoint', group: 'Endpoints',
+    kind: 'string',
+    what: 'RFC 9126 section 5. Its presence is how a client learns it may ' +
+          'push at all. Remove it to see whether a client falls back to a ' +
+          'plain authorization request; the endpoint itself still answers, ' +
+          'and a request_uri it issued is usable "regardless of other ' +
+          'authorization server metadata".' },
   { name: 'registration_endpoint', group: 'Endpoints', kind: 'string',
     what: 'RFC ' +
       '7591.' },
@@ -875,6 +975,10 @@ function list() {
 module.exports = {
   documentOf: documentOf,
   DEFAULT_ID: DEFAULT_ID,
+  // For `jwt_access_token.js`, which recognises an issuer or an audience under
+  // `<base>/<id>` as a named authorization server's only if the id is one this
+  // module would have accepted — the same shape, not a second regex.
+  ID_SHAPE: ID_SHAPE,
   get MAX_PROFILES() {
     log.debug("Entering MAX_PROFILES().");
     log.debug("Leaving MAX_PROFILES().");

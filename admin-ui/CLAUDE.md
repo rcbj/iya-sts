@@ -101,12 +101,15 @@ It also reads the SESSION store, which `../authn/authn.js` owns.
    **PROTOCOLS HAS A THIRD LEVEL AND NOTHING ELSE DOES.** An item in a section's
    `items` is either a page (`path` + `label`) or a GROUP (`title` + `what` +
    `items`), and `isNavGroup()` is the single predicate that decides which.
-   There are four groups, all under Protocols — **OAuth2 / OIDC** (authorization
+   Under Protocols the groups are **OAuth2 / OIDC** (authorization
    servers, token lifetimes, custom claims), **SAML** (SAML 2.0 identity
    provider, SAML 1.1 identity provider, custom SAML attributes),
    **Verifiable Credentials** (credential
-   claims, verifier request) and **SPIFFE** (SPIFFE, registration entries,
-   agents) — with SCIM left ungrouped beside them. **SAML USED TO BE THE
+   claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
+   agents), **XACML**, and — since 2026-09-13 — **Kerberos** (Kerberos
+   settings, principals; the settings page was renamed from `Kerberos` so the
+   heading does not say its label twice) — with SCIM left ungrouped beside
+   them. **SAML USED TO BE THE
    EXCEPTION HERE and no longer is**: it held ONE page, and the argument for
    keeping the heading anyway was that it names a protocol family this service
    speaks in two versions and two profiles while the page under it configured
@@ -529,7 +532,12 @@ Three things about them:
   families answers on paths this file would have to keep in step by hand, and
   `/admin/sts-metadata` already derives exactly that list from the running
   router. A table here would be the drift that page exists to catch, on a page
-  nothing can check.
+  nothing can check. **REVERSED 2026-09-13, AND THE ARGUMENT IS WHAT SHAPED
+  THE REVERSAL**: rcbj asked for every Protocols page to list its realm's
+  concrete endpoints, as `/admin/gnap` did. So the list is not in this file
+  and not hand-kept: see *Every Protocols page lists its realm's endpoints*
+  at the foot, where the table names ROUTES, the names and methods come from
+  `sts_metadata.js` and the router, and a test fails on both drifts.
 
 **Where the two grouped families' pages went in the sidebar** is argued in
 `SECTIONS` beside the rows: the OAuth 2.0 / OIDC settings page is FIRST in its
@@ -1356,6 +1364,14 @@ back through the codec's own `etypeName()` (those modules are VENDORED and
 cannot be edited to export a list), the SPIFFE key types are `spiffeCa.KEY_TYPES`,
 and so on for eleven modules.
 
+**`crypto_metadata.js` is required at 20a, after `tls/tls_server`, and that is
+the constraint that decides the line.** It reads an algorithm table out of
+eleven modules — `common/crypto`, `pq_jose`, the vendored `xmldsig`,
+`krb5_crypto`, `webauthn`, `oauth2`/`dpop`/`client_auth`/`mtls`, `spiffe_ca`,
+`scim_auth` and `tls_server` — and requiring one it has not yet loaded would
+REGISTER ITS ROUTES THERE (rule 1). At 20a every one of them is a cache hit.
+Also after `admin-ui/admin` for the shell and the gate.
+
 **Only two things on the page are written by hand, and both are things no table
 can hold**: the per-family prose in `FAMILIES` (what each identity service signs,
 and why) and `STANDARDS` (which document an envelope comes from, and how much of
@@ -1462,6 +1478,14 @@ what this service advertises in its own discovery documents. That last check is
 the one that makes "every table is derived" mean something: reading the report
 on its own says nothing, because a hand-written list is well-formed too. All
 three assertions were mutation-tested before they were committed.
+
+**The nineteenth family is PKI (2026-09-10)** and it paid all three;
+what it also owed, and what nothing checks, is a row in `admin-ui/admin.js`'s
+`SETTING_HOMES` — `checkSettingHomes()` refuses a settings GROUP with no page,
+so a `pki.*` group with no `/admin/pki` row would have been reported at startup
+and drawn nowhere. **`ssf/CLAUDE.md` carries the full
+list of what adding the seventeenth family actually cost, which was nine files
+rather than three** — it is the record of one family, where this is the rule.
 
 ## `/admin/keys` IS THE ONE PAGE HERE WHERE READING IS TAKING (2026-08-30)
 
@@ -1703,6 +1727,32 @@ matches a presented `<ds:KeyInfo>` against what is registered is a thumbprint.
 `admin-ui/pki_admin.js`'s `PURPOSE_WRITES` is the one table that says which
 attributes each profile writes; `oauth-oidc/CLAUDE.md` 3z argues why the two
 sets may never be merged.
+
+### THE TWO KEY-PAIR TABLES ARE PAGED (2026-09-13)
+
+*Applications* and *People* drew every row they had. They page now, separately,
+on `issuedPage` and `personsPage` with one shared `per` (twenty-five by default,
+not the console's fifty, because this page carries eight sections), with one
+*Rows per table* control under the Applications heading. `keyPairPaging()` in
+`pki_admin.js` is the one slice both the page and the JSON use.
+
+* **THE NAMES ARE THE JSON MEMBERS'** — `issued` and `persons` with `Page` on
+  the end, answered by `issuedPaging` and `personsPaging` — which is
+  `/admin-api`'s one-name-per-list rule rather than the table headings.
+* **APPLICATIONS PAGES ROWS AND PEOPLE PAGES PEOPLE.** `issued` is already a row
+  per application per profile; `persons` is a member per person with the SAML
+  key pair nested, drawn as up to two rows. Paging drawn rows there would give
+  `personsPaging` numbers that index into nothing the reply holds.
+* **THE REPLY KEEPS BOTH LISTS WHOLE**, `/admin/delegation`'s rule: the tiles
+  count them, and `sts_jwt_bearer_grant.js` looks its client up in `issued` by
+  identifier.
+* **EVERY TAKE-OFF BUTTON CARRIES BOTH TABLES' STATE AS `back`**, and
+  `pkiReturnTo()` rebuilds it — the three names, positive integers only — into a
+  303 to the same pages at `#pki-applications` or `#pki-people`. A control that
+  carries no `back` (Build, the pane, the revocation pane) still gets the bare
+  page.
+
+`tests/pki_key_pair_paging.js` pins all of it.
 
 ### Two limits, drawn as a `warn()` rather than left as absences
 
@@ -3218,13 +3268,38 @@ refuses a partial object with an error naming what was missing.
 asks from. A role that could post a form to a page it could not see would be a
 trap rather than a permission.
 
-**THE EMPTY ROSTER OPENS.** While NEITHER group has a member, anybody who signs
-in holds both roles. This service has no password anywhere and the roster dies
-with the process, so there is no bootstrap administrator and no way to make one
-out of band: a service started with the gate on and an empty roster would
-otherwise have a console no browser could ever reach. `admin.openWhenEmpty` turns
-it off for somebody who wants the locked case, and `/admin-api` is the way back
-out of it. **"No members" and "no group at all" are deliberately the same state** —
+**THE CONSOLE IS OPEN UNTIL THE BOOTSTRAP ADMINISTRATOR SIGNS IN (2026-09-13).**
+This rule replaced *the empty roster opens*. That rule had a trap: the first
+grant closed the console for everybody. Somebody who granted themselves only
+Admin Read then had a console on which they could change nothing. rcbj's
+design:
+
+* `seedBootstrapAdministrator()` runs from `server.js` inside the default realm,
+  before `credentials.bootstrap()`. It creates `admin.bootstrapUsername` if
+  absent, marks it `stsBootstrapAdministrator`, and grants both roles
+  (`via: 'bootstrap'`). It sets `pwdReset: TRUE` **only on an account it
+  created**, so a restart does not force a password change again, and neither
+  does an existing `admin`.
+* **The window is open until `stsConsoleClaimedAt` is written**, which
+  `noteConsoleSignIn()` does at that account's first console sign-in, from a
+  session derived in the default realm. It is a directory attribute and not a
+  process flag, so it persists wherever the directory does.
+* **A roster that already named somebody else closes the window at seed time.**
+  An upgraded deployment with administrators already in place must not re-open.
+* **Undeletable, not un-demotable.** `deletePerson()` and the LDAP delete and
+  modifyDN handlers refuse that entry (`STS-LDAP-0077`), and SCIM turns the
+  refusal into a 403. Revoking its roles is still allowed. The account is the
+  way in, and the roster stays an operator's to edit.
+* **`rolesOf()` keeps the older rule where nothing was seeded**
+  (`bootstrap.seeded` false), which is every in-process test that never runs
+  `server.js`. Those tests still see *an empty roster opens*.
+
+Why this and not "the first person to sign in gets both roles": every
+development test job signs in under a random username. The first of them would
+have become the administrator, and the next job would have been refused. No job
+signs in as `admin`, so the window stays open for the whole suite.
+`tests/admin_bootstrap.js` holds it (`authn/CLAUDE.md` has the forced password
+change). **"No members" and "no group at all" are deliberately the same state** —
 the group is created by the first grant, and treating the empty group a revoke
 leaves behind as *closed* would mean the console locking itself the moment
 somebody tidied up.
@@ -4695,6 +4770,11 @@ So the one page in this service whose entire purpose is to be opened in a
 browser became the one page a browser could not open — this console linked to
 it, and the link answered 401.
 
+**So "this console is `script-src 'none'`" is now "every page of this console
+except one"** — the claim is qualified wherever it is made, and the XACML
+editor's version of it is unaffected because that page genuinely has no script
+and would still not have one if this page had never moved.
+
 **THE MOVE IS A STRONGER GATE AND NOT A WEAKER ONE**, which is worth saying
 because "we moved it out of the authenticated API" reads the other way round.
 Before: no credential at all. After: a sign-on session, plus Admin Read or Admin
@@ -5004,6 +5084,43 @@ deliberate: it is a person's own account page, narrowed to them by their
 session, and an administrative door onto "what was alice shown" would be a
 second answer to a question `/admin/signals` already answers completely.
 
+## MONITORING → SHARED SIGNALS: A GROUP, AND `/admin/ssf/dead-letters` (2026-09-14)
+
+**THE FIRST GROUP UNDER MONITORING.** CAEP sessions, RISC accounts and Signals
+received were three loose rows, each filed there on its own argument; a
+dead-letter page made four answers to one family's *what happened*, and rcbj
+asked for it as Monitoring → SSF, which did not exist. So `SECTIONS` grew a
+`Shared Signals` group where the first two were, beside Delegation, and Signals
+received moved into it from after SCIM metrics. **No path moved** — `NAV` is
+derived, so nothing but that table changed for the three pages. The filing rule
+is untouched: Protocols → Shared Signals is what the streams are configured to
+do and holds every control; the group is what happened.
+
+**`/admin/ssf/dead-letters` IS READ-ONLY** (rcbj's choice). Revive and Drop its
+dead letters act on one stream and stay on that stream's card, which every
+stream row links to at `/admin/ssf#stream-<id>` — the card's `<h3>` carries that
+id now, and its dead-letter note links back filtered to the stream. Rule 7 is
+`GET /admin-api/ssf/dead-letters` with no POST beside it. `ssf/CLAUDE.md` argues
+the numbers.
+
+**IT DRAWS THE FIRST CHART IN THIS CONSOLE**, and three choices were made rather
+than inherited:
+
+* **A stacked column per time bucket, one colour per CAUSE** (four), not per
+  error code (more than a dozen). The colours were checked with a colour-vision
+  validator: worst adjacent pair ΔE 9.1 under protanopia, 22.9 in normal vision.
+  Two are under 3:1 against the white card, so no value is carried by colour
+  alone — the legend names each cause and count in text, and the same numbers
+  are a table under the chart.
+* **No script, so the hover is an SVG `<title>`** on a hit area the full height
+  of the plot, and the SVG has `role="img"` with a sentence for `aria-label`.
+* **Laid out on the server** like the delegation and federation pictures; the
+  stylesheet gained only `.chart`, `.legend` and `code.ec` (an error code that
+  never breaks inside itself).
+
+The page's own `LIST_PARAMS` row carries `dlq`, `dlstream`, `dlcause`, `per` and
+`lettersPage`, spent by its links between tables.
+
 ## `/admin/backup-codes`: THE THIRD MECHANISM PAGE, AND THE ONLY ONE ON THIS CONSOLE THAT IMPLEMENTS NO SPECIFICATION (2026-09-10)
 
 Recovery codes — the way back in when the second factor is not to hand. A page
@@ -5135,7 +5252,11 @@ Under Protocols, directly beside `/admin/kerberos`, and **Admin Write** for its
 controls. Two tables — directory people whose keys were derived from their own
 password, and service principals created here with a random key — each paged on
 a parameter of its own (`peoplePage`, `servicesPage`) because one `page` cannot
-page two lists. A row carries enctypes, kvno, salt and when; **never a key**.
+page two lists. **Until 2026-09-13 neither was read**: the view passed
+`pagedRows()` a `param` option, which `pagingOf()` does not read (it builds the
+name from `name`), so both lists followed a bare `?page=` while the links wrote
+the other two, and every next link reloaded page 1
+(`tests/kerberos_principals_paging.js`). A row carries enctypes, kvno, salt and when; **never a key**.
 `kerberos/CLAUDE.md` argues the feature; three decisions are this page's.
 
 * **A CREATE OR A ROTATE ANSWERS WITH A PAGE AND NOT A DOWNLOAD.** The keytab is
@@ -5187,6 +5308,17 @@ console's.
   so `/admin-api/pki/{issue,revoke,upload-certificate}` mirror all three with no
   second operation. The Issue control is not drawn where the realm has no CA,
   because its only outcome there is a refusal; Upload still is.
+* **MUTUAL TLS (RFC 8705) IS THE THIRD SUBSECTION** (2026-09-13),
+  `applicationMtlsSection()` over `adminViews.applicationMtlsState()` (JSON as
+  `credentials.mtls`): the declared method, the TLS client certificates this
+  realm issued the application with a Revoke form each, the Issue form, the five
+  subject parameters and the bound-tokens flag. Drawn only where `oauthDeclared`,
+  for the assertion profiles' reason. **An ISSUE is answered with a PAGE and
+  never a redirect** — `answerIssuedTlsClientCertificate()`, three `data:`
+  downloads under `no-store` — because the reply carries the only copy of the
+  private key; the route catches the promise and redirects a refusal as every
+  other action does (`STS-ADMIN-0724` for a throw). `oauth-oidc/CLAUDE.md` 3an
+  argues the feature.
 * **THE SECRET IS REGENERATED THROUGH THE APPLICATIONS HANDLER** —
   `regenerate-secret`, an arm of `applicationsAction()` over
   `applications.regenerateClientSecret()` — and the redirect carries the
@@ -5345,3 +5477,166 @@ page's.
 * **IT SAYS WHETHER THE HISTORY SURVIVES A RESTART**, as a note where it does
   and a warning where it does not — the one thing an operator reading a list of
   spent assertions most needs to know about the list.
+
+## `/admin/rbac`'s PERSON PICKER IS A SEARCH, NOT A `<select>` (2026-09-13)
+
+The *Grant a role* form picked the person from a `<select>` holding every
+candidate — everybody in the default realm's directory unioned with everybody
+who has signed in (`admin_rbac.candidates()`). Once that directory held
+thousands of people the control could not be used. It is `chooserPane()` now,
+the search and paged results pane `/admin/delegation` uses for people and
+applications: `personq` searches, `personfrom` pages twenty at a time with a
+stale offset clamped, and **a result is a link that picks** — `person=<name>`,
+which opens a grant form (`#grant-picked`) for that person with the name in a
+hidden input and a role select beside it. The typed-name form below it is
+unchanged, and the header comment's two-forms argument is unchanged with it.
+
+Three things are decisions:
+
+* **`person` is resolved against the candidates, never echoed.** A name the
+  list does not hold gets a sentence pointing at the typed form, because the
+  picked form's whole promise is that it names somebody the list offered.
+* **`personq` and `personfrom` are in `LIST_PARAMS`; `person` is not.** A grant
+  or a Revoke lands back on the results the reader was working through, and
+  not on a grant form for somebody who now holds the role. The grants table's
+  filter form and its pager carry all three, so narrowing the table does not
+  clear the search.
+* **`GET /admin-api/rbac`'s `candidates` is paged**, by `candidatesPage` and
+  the shared `per`, answered in `candidatesPaging` — twenty by default, the
+  pane's size, so without `per` the reply and the pane show the same people;
+  `personfrom` is honoured as the page it falls on. `candidateSearch` (total,
+  matched) and `picked` sit beside it. It was the whole list, which on a large
+  directory was thousands of rows on every read of the roster. `CHOOSER_HITS`
+  moved to `admin-core/admin_views.js` so the pane and the reply share one
+  number. **`roles` lost `members` and `claimed` in the same change**: every
+  membership, unpaged, and the same rows `grants` pages (`?role=` narrows it).
+
+`tests/vendored/sts_admin_console.js` searches for the person on the pane's own
+form, clicks the result, and grants on the form that opens.
+
+## EVERY PROTOCOLS PAGE LISTS ITS REALM'S ENDPOINTS (2026-09-13)
+
+rcbj asked that each page under Protocols list the concrete endpoints the
+current trust realm answers on for that protocol, using `/admin/gnap`'s
+*Endpoints* table as the model. Thirty-seven pages have one now; GNAP keeps its
+own, which `gnap/gnap_console.js` writes.
+
+**THE TABLE IS `admin-core/protocol_endpoints.js` AND NOT THIS FILE**, which is
+how the paragraph that refused an endpoint list (under *The eight new pages*)
+was answered rather than ignored. A row names Express ROUTES; the name comes
+from `sts_metadata.js`'s `ENDPOINTS`, the methods from the router, the URL from
+`baseUrlOf(req)` so it carries the realm prefix. Sockets the router cannot see
+(KDC, Kerberos service, LDAP/LDAPS at the realm's base DN, 8443/9443, SPIFFE's
+gRPC bindings for this realm) are built from their settings. `:param` is shown
+as `{param}`, and a named authorization server's routes are repeated per server
+by id.
+
+Four decisions belong to this file:
+
+* **IT IS DRAWN IN `respond()`, NOT BY FORTY PAGES.** `withProtocolEndpoints()`
+  adds `protocolEndpoints` to the JSON of any page the table names and splices
+  the section in before the page's first `<h2>` — GNAP's place, after the lead
+  notes. A page added to the table needs no edit of its own.
+* **ONLY WHEN `req.path` IS THE PAGE.** A page drawn under another page's tab
+  with a path of its own (the keytab, a PEP's listener certificate) gets
+  nothing.
+* **A DRILL-DOWN KEEPS THE JSON AND LOSES THE SECTION**, where a drill-down is
+  `up` as `upTo()`'s OBJECT. The XACML sub-pages pass a path STRING as `up` on
+  the page itself (the latent defect recorded under *THE XACML MONITOR*), and
+  must not lose the section for it.
+* **`/admin/scim`'S OWN TABLE IS "What each operation does" NOW.** It was also
+  headed *Endpoints*, and it describes operations by path under `/scim/v2`
+  rather than the realm's addresses.
+
+`protocolEndpointDrift()` is exported for `tests/protocol_endpoints.js`, which
+fails on a Protocols page with neither a row nor an exemption and on a row
+naming a page not under Protocols. **A new page under Protocols therefore owes
+a row in that table**, or an entry in its `EXEMPT` with the reason.
+
+## `/admin/applications/new` IMPORTS RFC 9728 PROTECTED RESOURCE METADATA (2026-09-13)
+
+A checkbox reveals three ways to give a protected resource's metadata document
+— paste, upload, URL — and Load answers with the page redrawn: the document in
+three tabs (raw JSON, a table of values, the fields read from it, editable) and
+the create form filled in from `oauth-oidc/protected_resource_metadata.js`'s
+plan. The `resource` is the default name, `oauthPermissionBaseUri` and
+`oauthAudience`; `scopes_supported` becomes `oauthPermission` with the resource
+prefix taken off; `oauthClientId` and the identifier are a random client_id in
+the registration shape; OAuth 2.0 is ticked. rcbj chose all four recommended
+answers: Admin Write plus the outbound policy with internal addresses refused in
+product, section 3.3 refused in product and warned in development, the document
+kept on the entry (`oauthResourceMetadata`, `oauthResourceMetadataUrl`), and
+the prefix stripped.
+
+Five decisions are this file's:
+
+* **THE PATH TAKES A POST NOW.** Load and the create from a loaded document both
+  post to `/admin/applications/new`, because a refused create has to come back
+  HERE with the document and every edit kept, which the list page's 303 cannot
+  carry. The ordinary form with nothing loaded still posts to
+  `/admin/applications`. Both reach `applicationsAction()`, whose third argument
+  (`context`: the realm's authorization servers, computed by the route from the
+  request) is the one thing the load needs that a body cannot carry.
+* **THE UPLOAD IS multipart/form-data AND `helpers.parseBody()` READS IT**, so
+  the gate's CSRF check finds the token in an upload; `multipartParts()` gives
+  the route the filename.
+* **THE TABS ARE CSS AND THE RADIOS POST NOTHING.** Three radios carry
+  `form="prm-tabs-not-a-form"` (no form owner, still one group) and the general
+  sibling combinator shows a panel — no `:has()`, so no fallback. The third
+  tab's boxes are fields of the create form whichever tab shows; a redraw after
+  a refusal opens that tab.
+* **THE PANE OWNS SIX ATTRIBUTES** (`RESOURCE_METADATA_OWNED`), and the
+  declarations section omits `oauthClientId` while it is drawn: two boxes with
+  one name post twice and `parseBody()` keeps the last, the empty one.
+* **THE BANNERS ARE NOT `warn()`.** The authorization-server comparison, the
+  section 3.3 verdict and the warnings are plain `div.warn`/`div.ok`, because a
+  fold would hide the unmatched issuers behind a summary. A matching issuer is
+  green in the table (`state-valid`), a foreign one amber, and a mismatch never
+  refuses the create.
+
+The third tab edits only members the document carried; `documentFromForm()`
+rebuilds the stored document from the original plus those boxes, keeps
+extension members and never touches `signed_metadata`.
+
+`POST /admin-api/applications/load-resource-metadata` mirrors Load (rule 7),
+and that resource's `mirrors` names both console paths.
+`tests/protected_resource_metadata.js` holds the library, the fetch policy in
+both modes against a local server, multipart parsing and the create-time
+checks (13 mutants, 12 caught, 1 equivalent). **No owned over-HTTP job presses
+the import yet**: it was driven end to end by hand against a throwaway
+instance (API paste and URL, console sign-in, upload, refused and accepted
+create, read-back) and the tab states were checked by screenshot.
+
+## `/admin/users?user=…` HAS A *PASSWORD AND SECOND FACTORS* SECTION (2026-09-13)
+
+Asked for as a reset-password button whose password the administrator notes, an
+option to generate a reset link to send to the person, buttons to disable
+passkeys as a primary mechanism, to disable all MFA and to force enrolment, and
+the CAEP and RISC signals each owes. `userCredentialControlsSection()` draws it
+after the Credentials section; the six actions are `usersAction()`'s and
+`admin-core/admin_actions.js`'s `credentialAdminAction()` argues each. Four
+things are this console's.
+
+* **A STATE TABLE COMES FIRST AND THE CONTROLS ARE CONDITIONAL ON IT.** Whether
+  a password is held, whether it must be changed, whether a reset link is
+  outstanding (and until when), how many keys can sign in on their own, and
+  whether a second factor is required (by the account, by the realm, or both).
+  **Disable passkeys** is drawn only while the person holds a primary key AND a
+  password — without the password it would lock them out, so the section warns
+  instead; **Disable all MFA** only while a second factor is held; **Require**
+  and **Stop requiring** swap on the account flag. Everything is for Admin
+  Write only, the rule the two sections above follow.
+* **A RESET AND A RESET LINK ANSWER WITH A PAGE.** `credentialResetPage()`, from
+  the `POST /admin/users` handler, whenever the result carries `password` or
+  `resetUrl` and the request is not JSON — `/admin/users/new`'s argument: a
+  generated password and a reset link exist once, and a 303's query string is
+  the browser history and every log on the way. A JSON caller gets the result.
+* **`from=user` BRINGS EVERY OTHER CONTROL BACK TO THE PERSON**, through
+  `userReturnTo(body, who, '#credential-controls')`, which gained that anchor
+  (and `#credentials`) beside the ones it already allowed.
+* **`base: baseUrlOf(req)` IS HANDED TO THE ACTION**, so the reset link names
+  the address the administrator is using. `mgmt-api/admin_api.js` passes the
+  same, which is what keeps the link realm-prefixed from both doors.
+
+`tests/admin_credential_controls.js` drives the actions, the portal page and the
+enrolment step in a child process; no owned browser job presses the section yet.

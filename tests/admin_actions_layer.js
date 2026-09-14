@@ -402,6 +402,22 @@ function checkNothingRequiresItEarly(t) {
                    // so the require is a cache hit — the same position
                    // ldap_server.js argues.
                    'gnap/gnap_console.js',
+                   // Certificate enrollment's three view/action layers
+                   // (2026-09-13), loaded at 23e-g from each family's
+                   // `_admin.js` and lazily from the management API.
+                   'acme/acme_console.js', 'est/est_console.js',
+                   'scep/scep_console.js',
+                   // The OAuth 2.0 / OIDC monitoring page's view/action
+                   // layer (2026-09-13), for `adminViews`' paging and the
+                   // console actor only. Loaded at 18f from
+                   // `oauth2_monitor_admin.js` and lazily from the management
+                   // API, so the require is a cache hit and moves no route.
+                   'oauth-oidc/oauth2_monitor_console.js',
+                   // The PKI page (2026-09-13), for `adminViews`' paging
+                   // only — its Applications and People tables. It is
+                   // required at 18a, immediately after the console, so the
+                   // require is a cache hit and moves no route.
+                   'admin-ui/pki_admin.js',
                    'tests/admin_actions_layer.js'];
   const offenders = [];
   function walk(dir) {

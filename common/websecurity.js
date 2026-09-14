@@ -295,6 +295,17 @@ function attempt(what, req, identity, limit) {
       return;
     }
     row.count += 1;
+    // SET AGAIN, NOT ONLY EDITED IN PLACE (2026-09-14). `buckets` journals a
+    // `set()` and a `delete()`, and an increment made on the row alone was
+    // never written down — so in the request-worker pool only a bucket's FIRST
+    // failure reached the other workers, each kept its own count, and a
+    // caller spreading its guesses across three workers was never refused.
+    // `sts_est_enrollment` met it in `dispatch` mode: three wrong passwords in
+    // a row, 401, 401, 401 where the third must be 429. Written down, the
+    // read barrier makes the next request see the count. Two concurrent
+    // attempts can still both read the older count, so the limit is a limit
+    // to within the concurrency of one caller, not an exact one.
+    buckets.set(check.key, row);
     if (row.count > check.limit && !refusal) {
       refusal = { kind: check.kind, limit: check.limit,
                   retryAfterS: Math.ceil((row.until - now) / 1000) };

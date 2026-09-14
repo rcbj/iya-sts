@@ -118,6 +118,9 @@ what to present:**
 * **`?encrypt=1` that cannot encrypt** (`opensTestControls()` — the flag is a
   non-spec test control and its plaintext fallback is the lenient half);
 * no subject is invented: `saml-subject` and `delegated-subject` are development's.
+* **a presented password is verified against `userPassword`** — WS-Trust had
+  been checking only the reserved string `invalid` in both modes until
+  2026-09-12.
 
 **Fixed in both modes:**
 

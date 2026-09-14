@@ -49,8 +49,10 @@ makes all of them reachable — and reports them rather than hiding them.
 | `POST /notify` | the PDP's nudge, meaning *pull now*. Answers 204 and pulls afterwards |
 | `GET /healthcheck` | liveness. It deliberately does **not** ask whether the policy is current |
 
-They are plain HTTP on port 9090. Nothing about this container is a credential
-store, so it holds no key of its own.
+They are plain HTTP on port 9090 — and the same four over **HTTPS on 9443**
+once the PEP has been given a certificate by the realm it registered to, which
+is the section below. The container generates no key of its own: both key pairs
+it can hold, the client certificate and the listener's, are handed to it.
 
 ## The quickest look
 
@@ -317,6 +319,70 @@ change made during an outage is not enforced here until the next successful
 pull.** The alternative, a PDP outage denying everything everywhere, is the
 failure mode that makes people remove authorization services.
 
+## An HTTPS listener, certified by the realm it registered to
+
+A PEP answers its own clients, and it can answer them over HTTPS with a
+certificate **this service issues it**. Every trust realm has a **Remote PEP
+listeners** Issuing CA (`pep-tls`) under its own Intermediate, beside the JOSE,
+XML, assertion and SPIFFE authorities — you can see it on `/admin/pki`. A
+certificate from it chains to the service Root, so a client that installed that
+one anchor verifies the PEP, and the chain still says which realm vouched for
+it.
+
+**The PEP has to be registered first**: the certificate comes from the realm it
+registered to, and its row in that realm is how this service knows which one
+that is. So the order is always the same:
+
+1. Start the PEP with `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` naming two paths that
+   **do not exist yet**. It registers, and `GET /` says it is waiting:
+
+   ```bash
+   curl -s http://localhost:9090/ | jq .https
+   # { "configured": true, "listening": false,
+   #   "problem": "no HTTPS listener yet: /certs/server/pep-server.crt does not exist. …" }
+   ```
+
+2. Issue the pair through the management API, **in the PEP's realm**, naming
+   the host your clients will dial. The certificate always names the PEP's
+   registered name and the host of its notify URL too:
+
+   ```bash
+   curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"name":"remote-pep-1","dnsNames":["pep.example.test"]}' \
+     https://localhost:8081/realm/acme/admin-api/xacml/issue-pep-certificate > issued.json
+   ```
+
+   The same button is on each row of `/admin/xacml/peps` in the console. Either
+   way **the private key is in that reply and nowhere else** — this service
+   keeps the certificate (its issuer's CRL and OCSP responder answer for it)
+   and no copy of the key.
+
+3. Write the two halves where the PEP looks, on its mount:
+
+   ```bash
+   jq -r .fullChainPem  issued.json > certs/server/pep-server.crt   # leaf + Issuing CA + Intermediate
+   jq -r .privateKeyPem issued.json > certs/server/pep-server.key
+   jq -r .anchorPem     issued.json > service-root.pem              # what a client trusts
+   ```
+
+   Within `PEP_HTTPS_RELOAD_INTERVAL_MS` the listener starts — **no restart** —
+   and `GET /` reports the certificate it is serving:
+
+   ```bash
+   curl --cacert service-root.pem https://pep.example.test:9444/protected?subject=alice
+   ```
+
+**Reissuing replaces.** Issue again and write the new pair: the listener swaps
+it in and the old certificate goes on its issuer's revocation list as
+`superseded`. A pair whose two files disagree — the moment between writing one
+and the other — is never used, and a listener already serving keeps the pair it
+has.
+
+**Plain HTTP stays on 9090.** The container's healthcheck uses it, and turning it
+off is a decision for your network edge. `/admin/xacml/peps` says which
+certificate the realm *issued*; only the PEP's `GET /` can say which one it is
+*serving*.
+
 ## Reading `GET /` when something is wrong
 
 | What you see | What it means |
@@ -327,6 +393,7 @@ failure mode that makes people remove authorization services.
 | `holding.refused` | documents the PDP sent that **this** engine would not accept. The two policy counts then disagree, which is what the console column is for |
 | `registration.registered: false` | it is not on the PDP's console and will not be nudged. It is retried on every poll, and `registration.attempts` says how many it took |
 | `pip.credentialed: false` | no client certificate, so the PIP query is refused and only what the request asserts decides |
+| `https.listening: false` | no usable listener pair yet. `https.problem` says whether the files are missing (issue one) or refused (the key is not the certificate's, or a file will not parse) |
 
 **The two ends can disagree about staleness, and that is deliberate**: this PEP
 counts missed *polls* and the PDP counts missed *heartbeats*. A PEP pulling
@@ -358,6 +425,9 @@ and a PEP has none.
 | `PEP_POLL_INTERVAL_MS` | `15000` | **the contract**, and the interval a failed registration is retried on |
 | `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | |
 | `PEP_PORT` | `9090` | |
+| `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | the **listener's** pair, issued by the PEP's realm: the leaf followed by its chain, and the key. Both or neither. They may not exist yet when the container starts |
+| `PEP_HTTPS_PORT` | `9443` | published on 9444 by `docker-compose.yml` |
+| `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read |
 | `PEP_RESOURCE` | | the resource id used when a request names none |
 | `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
 
@@ -389,7 +459,14 @@ change anything here:
 - **`tests/vendored/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the mock's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is
-  taken away.
+  taken away — and, since 2026-09-13, being issued its listener certificate,
+  picking it up without a restart, and answering a client that trusts only the
+  service Root.
+- **`tests/pep_listener_certificate.js`** holds the listener certificate's
+  rules in process: a realm branch built before the Issuing CA existed gets it
+  added rather than rebuilt, the certificate verifies through the realm's own
+  Intermediate, a reissue supersedes, and the container's reload never replaces
+  a good pair with a bad one.
 
 ## See also
 

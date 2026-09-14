@@ -440,6 +440,8 @@ XACML_PEP_REALM="${XACML_PEP_REALM:-pep-e2e}"
 # leave a registered PEP that no pull ever touched.
 XACML_PEP_NAME=""
 XACML_PEP_HOST_PORT=""
+# Its HTTPS listener's published port (2026-09-13), picked beside the one above.
+XACML_PEP_HTTPS_HOST_PORT=""
 # ---------------------------------------------------------------------------
 # THE PEP'S CLIENT CERTIFICATE (2026-09-06).
 #
@@ -910,6 +912,11 @@ composePepUp()
   export XACML_PEP_URL="http://localhost:${XACML_PEP_HOST_PORT}"
   export XACML_PEP_NAME
   export XACML_PEP_REALM
+  # AND ITS HTTPS LISTENER (2026-09-13): where the job dials it, and where the
+  # job writes the pair it issues. `localhost` is the name the job asks the
+  # certificate to carry, because it is the name this host dials it by.
+  export XACML_PEP_HTTPS_URL="https://localhost:${XACML_PEP_HTTPS_HOST_PORT}"
+  export XACML_PEP_SERVER_CERT_DIR="${XACML_PEP_CERT_DIR}/server"
   # AND THE ROOT CA, AS TEXT, SO THE JOB CAN PUT IT BACK.
   #
   # This anchor is posted to /tls/trust once, here, before the container
@@ -961,6 +968,16 @@ composeUp()
     echo "No free host port could be found above 19090 for the remote PEP."
     return 1
   fi
+  # AND ITS HTTPS LISTENER'S (2026-09-13), searched from one above the HTTP
+  # port for the reason the revocation listener's search below gives:
+  # freePort() binds nothing, so two searches from one start answer one port.
+  XACML_PEP_HTTPS_HOST_PORT="$(freePort "$((XACML_PEP_HOST_PORT + 1))")"
+  if [ -z "${XACML_PEP_HTTPS_HOST_PORT}" ];
+  then
+    echo "No free host port could be found above ${XACML_PEP_HOST_PORT} for"
+    echo "the remote PEP's HTTPS listener."
+    return 1
+  fi
 
   # THE DIRECTORY'S SOCKET, picked the same way and for two reasons rather than
   # one: two runs on this machine must not collide with each other, and NEITHER
@@ -998,6 +1015,9 @@ composeUp()
   XACML_PEP_CERT_DIR="${CURRENT_DIR}/tests/report/pep-credential"
   rm -rf "${XACML_PEP_CERT_DIR}"
   mkdir -p "${XACML_PEP_CERT_DIR}"
+  # Where sts_xacml_remote_pep.js writes the HTTPS listener's pair once it has
+  # issued one (2026-09-13). Made now, because the container mounts its parent.
+  mkdir -p "${XACML_PEP_CERT_DIR}/server"
 
   # ---------------------------------------------------------------------------
   # THE STACK'S OWN SUBNET, PICKED THE WAY THE THREE PORTS ABOVE ARE
@@ -1105,6 +1125,7 @@ composeUp()
     "STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}"
     "STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}"
     "STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}"
+    "STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}"
     "STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}"
     "STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}"
     # THE KEYSTORE, AND THEREFORE THE SECRET STORE (2026-09-12). `persisted`
@@ -1151,6 +1172,14 @@ composeUp()
     "XACML_PEP_CERT_DIR=${XACML_PEP_CERT_DIR}"
     "XACML_PEP_TLS_CERT=/certs/pep.crt"
     "XACML_PEP_TLS_KEY=/certs/pep.key"
+    # THE HTTPS LISTENER'S PAIR (2026-09-13): two paths under that mount that
+    # are EMPTY when the container starts. sts_xacml_remote_pep.js issues the
+    # pair once the PEP has registered in the realm it creates, and writes it
+    # into ${XACML_PEP_CERT_DIR}/server, which is this directory on the host.
+    "XACML_PEP_HTTPS_HOST_PORT=${XACML_PEP_HTTPS_HOST_PORT}"
+    "XACML_PEP_HTTPS_CERT=/certs/server/pep-server.crt"
+    "XACML_PEP_HTTPS_KEY=/certs/server/pep-server.key"
+    "XACML_PEP_HTTPS_RELOAD_INTERVAL_MS=1000"
   )
   # Only when it HAS a value: an empty STS_LOG_LEVEL makes bunyan throw
   # `unknown level name: ""` while this service is still loading its modules,
@@ -1839,6 +1868,13 @@ do
   # up with different settings.
   if [ "${MODE_INDEX}" -lt "${MODE_COUNT}" ] && [ "${STACK_UP}" = "1" ];
   then
+    # THE SERVICE LOG FIRST (2026-09-14). The `down` below removes the
+    # container and its log with it, and the only other capture is the LAST
+    # mode's, after the loop — so every mode but the last had no
+    # 00-mock-sts-service.log, and a postgres-mode failure
+    # (sts_directory_bulk_load_ldap, one modify timing out) had nothing on the
+    # service side to read. runLogPath() puts it in this mode's report.
+    captureContainerLog "${MODE}"
     # NOT `stackTeardown`, which honours --keep-stack and would therefore
     # PRINT rather than remove — leaving the next mode's composeUp to collide
     # with this mode's containers on the same compose project. Between modes

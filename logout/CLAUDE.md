@@ -118,6 +118,18 @@ single most misleading thing this endpoint could do. They are rows with no
 checkbox and a sentence — the same decision `/admin/sts-metadata` makes about
 coverage notes.
 
+**THIS SERVICE DOES NOT RECALL ANYTHING IT HAS ALREADY ISSUED** — a SAML
+assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED
+since 2026-09-05: it now DISOWNS them.** A sign-out marks each revoked in this
+service's own record, which is a different claim from recalling one and must
+never be drawn as the same — the credential still verifies, still decrypts,
+still chains, because nothing consults this service when it is presented and
+nothing can be made to. What the mark buys is that a sign-out can say what it
+disowned, that CAEP can carry it to a receiver that subscribed, and that SAML
+Single Logout can carry it for an assertion from a browser profile.
+`revocationReach` on every row of the issued list is the field that keeps the
+two apart.
+
 **THE DEFAULT IS GLOBAL.** A POST that selects nothing ends everything.
 `/admin/logout`'s `end` action is the ONE place that differs — an empty
 selection there is refused — and the difference is intent: an empty form is a

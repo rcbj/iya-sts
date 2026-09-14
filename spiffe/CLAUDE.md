@@ -18,6 +18,14 @@ a unique IP will be used … a realm should be spun up without the SPIFFE
 protocol enabled … make the trust domain configurable per realm … and issue
 join tokens that are scoped per realm.*
 
+**SPIFFE LEFT THE ROOT `CLAUDE.md`'s LIST OF SHARED SOCKET FAMILIES THAT DAY,
+AND THE SENTENCE IT LEFT BEHIND IS WORTH KEEPING**: it read *SPIFFE's sockets
+are still shared and its X.509 authority is not, since 2026-09-11, and the two
+facts are compatible for exactly one reason — the trust ANCHOR is the service
+Root, which no realm owns … a realm still gets no trust domain, no bundle
+endpoint of its own in any meaningful sense, and no socket.* Every clause was
+true and the last one is what changed.
+
 **THE DISCRIMINATOR IS THE ENDPOINT ADDRESS, AND IT COULD NOT HAVE BEEN
 ANYTHING ELSE.** Every other family in this service is told which realm it is
 in by a segment at the front of the path. gRPC has a path and it is the METHOD:

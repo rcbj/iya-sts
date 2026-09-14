@@ -178,6 +178,9 @@ function checkMarker(t) {
   // none of the six was consumed at any startup.
   const EXPECTED_REALM_RUNTIME = [
     'oauth2.rfc9700',
+    // OAuth 2.1 mode (2026-09-13). It implies RFC 9700 mode and moves the
+    // socket for the same one reason, argued at its row in config.js.
+    'oauth2.oauth21',
     'spiffe.trustDomain',
     'spiffe.x509KeyType',
     'spiffe.jwtKeyType',

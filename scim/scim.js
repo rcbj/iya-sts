@@ -359,11 +359,31 @@ function coded(code, error) {
 
 function sendScimError(req, res, info, ex) {
   log.debug("Entering sendScimError(). status=" + (ex && ex.status));
-  const error = (ex instanceof SCIMMY.Types.Error) ? ex
+  let error = (ex instanceof SCIMMY.Types.Error) ? ex
     : coded('STS-SCIM-0020',
             new SCIMMY.Types.Error(500, null,
                                    String((ex && ex.message) || ex)));
-  const body = new SCIMMY.Messages.ErrorResponse(error);
+  // THIS FUNCTION MUST NOT THROW (2026-09-13). ErrorResponse refuses any status
+  // outside RFC 7644 section 3.12's list and any scimType that status does not
+  // allow, and this is called from a promise's `.catch()` — so a throw here is
+  // an unhandled rejection and node ends the PROCESS. A directory write
+  // answered 507 did exactly that: one full directory took every protocol on
+  // every socket down. A status the section does not list is this service's
+  // defect, so it goes out as 500 with the same detail and its own code.
+  let body = null;
+  try {
+    body = new SCIMMY.Messages.ErrorResponse(error);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SCIM-0075') + 'scim: a SCIM error with ' +
+              'status ' + error.status + ' and scimType ' +
+              (error.scimType || '(none)') + ' (raised as ' +
+              (errorCodes.codeOf(error) || 'no code') + ') is not one ' +
+              'RFC 7644 section 3.12 allows, and was sent as 500: ' +
+              ((e && e.message) || e));
+    const detail = String(error.message || '');
+    error = coded('STS-SCIM-0075', new SCIMMY.Types.Error(500, null, detail));
+    body = new SCIMMY.Messages.ErrorResponse(error);
+  }
   const text = JSON.stringify(body, null, 2);
   stats.recordScim({ operation: info.operation, resourceType: info.resourceType,
                      status: error.status, ok: false, scimType: error.scimType,
@@ -989,8 +1009,10 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
 
     const written = directory.writePerson(dn, converted.attributes);
     if (!written.ok) {
+      // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
+      // no 507, and scimmy refuses to build an error it does not list.
       throw coded(errorCodes.codeOf(written) || 'STS-SCIM-0011',
-        new SCIMMY.Types.Error(written.reason === 'full' ? 507 : 400,
+        new SCIMMY.Types.Error(written.reason === 'full' ? 500 : 400,
           written.reason === 'full' ? null : 'invalidValue',
           written.reason === 'full'
             ? 'The directory holds its maximum of ' + directory.maxEntries() +
@@ -1039,6 +1061,17 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
   .degress(function (resource, ctx) {
     log.debug("Entering the SCIM User degress handler. id=" + resource.id);
     const removed = directory.deletePerson(resource.id);
+    if (!removed.ok && removed.reason === 'protected') {
+      // THE DEFAULT REALM'S BOOTSTRAP ADMINISTRATOR (2026-09-13), which no door
+      // may delete — see ldap_server.js's isBootstrapAdministratorEntry(). RFC
+      // 7644 section 3.12 lists 403 for a request the server refuses to perform
+      // on an otherwise valid resource.
+      throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
+        new SCIMMY.Types.Error(403, null,
+          'The entry at ' + resource.id + ' is this service\'s bootstrap ' +
+          'administrator (admin.bootstrapUsername) in the default realm, and ' +
+          'it cannot be deleted.'));
+    }
     if (!removed.ok) {
       throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
         new SCIMMY.Types.Error(removed.reason === 'notLeaf' ? 400 : 404,
@@ -1179,8 +1212,10 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
 
     const written = directory.writeGroupEntry(dn, converted.attributes);
     if (!written.ok) {
+      // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
+      // no 507, and scimmy refuses to build an error it does not list.
       throw coded(errorCodes.codeOf(written) || 'STS-SCIM-0011',
-        new SCIMMY.Types.Error(written.reason === 'full' ? 507 : 400,
+        new SCIMMY.Types.Error(written.reason === 'full' ? 500 : 400,
           written.reason === 'full' ? null : 'invalidValue',
           written.reason === 'full'
             ? 'The directory holds its maximum of ' + directory.maxEntries() +

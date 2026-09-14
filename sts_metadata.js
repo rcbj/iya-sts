@@ -1135,7 +1135,23 @@ const SPECS = [
   { id: 'rfc7591', name: 'RFC 7591 — Dynamic Client Registration',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7591',
     coverage: 'full: registers a client, returns its credentials and a ' +
-              'registration access token.' },
+              'registration access token; a software statement (section ' +
+              '2.3) is verified against this realm\'s key or a declared ' +
+              'publisher\'s, its claims take precedence and it is returned ' +
+              'unmodified, both section 3.2.2 statement errors are ' +
+              'returned, and the console and /admin-api issue statements ' +
+              'as this realm. An initial access token (section 3) is not ' +
+              'issued; a trusted software statement is this service\'s ' +
+              'answer to a closed endpoint.' },
+  { id: 'rfc9728', name: 'RFC 9728 — OAuth 2.0 Protected Resource Metadata',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9728',
+    coverage: 'partial: CONSUMED, not published. /admin/applications/new ' +
+              'reads a protected resource\'s metadata document — pasted, ' +
+              'uploaded or fetched from a URL — checks every section 2 member ' +
+              'and section 3.3\'s resource match, and creates an application ' +
+              'from it. This service publishes no protected resource metadata ' +
+              'of its own, does not read a WWW-Authenticate resource_metadata ' +
+              'parameter (section 5), and does not verify signed_metadata.' },
   { id: 'rfc7592', name: 'RFC 7592 — Dynamic Client Registration Management',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7592',
     coverage: 'full for the three operations: read, update and delete a ' +
@@ -1148,7 +1164,101 @@ const SPECS = [
   { id: 'rfc7662', name: 'RFC 7662 — Token Introspection',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7662',
     coverage: 'full: honest active/inactive, with the claims of the token ' +
-              'presented.' },
+              'presented. The caller authenticates as a client in product ' +
+              'mode (section 2.1) and need not in development.' },
+  { id: 'rfc9701', name: 'RFC 9701 — JWT Response for OAuth Token ' +
+      'Introspection',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9701',
+    coverage: 'full: Accept: application/token-introspection+jwt answers a ' +
+              'JWT typed token-introspection+jwt carrying iss, aud (the ' +
+              'authenticated resource server), iat and token_introspection, ' +
+              'with no sub or exp; active:false alone for an inactive token; ' +
+              'signed with the registered introspection_signed_response_alg ' +
+              '(RS256 by default, any JWS algorithm this service holds, HMAC ' +
+              'keyed by the client secret) and, where registered, encrypted ' +
+              'as a Nested JWT to the client\'s inline jwks; the three client ' +
+              'metadata members at registration, on the console and at ' +
+              '/admin-api; the three metadata members; and an ' +
+              'unauthenticated caller refused 400 in every mode. A token not ' +
+              'intended for the authenticated caller (not its own, not the ' +
+              'default resource, and no aud naming its entry) is ' +
+              'active:false; a named authorization server\'s profile ' +
+              'narrows the auth methods and the three algorithm lists. Not ' +
+              'done: section 9\'s legal basis for releasing data is the ' +
+              'deployment\'s.' },
+  { id: 'rfc9126', name: 'RFC 9126 — OAuth 2.0 Pushed Authorization ' +
+      'Requests',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9126',
+    coverage: 'full: POST /oauth2/par at every authorization server, ' +
+              'authenticating the client exactly as the token endpoint ' +
+              'does (so enforced in RFC 9700, OAuth 2.1 and product mode ' +
+              'and observed in development), accepting the issuer, token ' +
+              'endpoint and PAR endpoint as a client assertion audience; ' +
+              'request_uri refused in a push; the pushed request validated ' +
+              'by the authorization endpoint\'s own checks; a `request` ' +
+              'object verified as RFC 9101 requires, bound to the ' +
+              'authenticated client, and a plain push refused where a ' +
+              'signed object is required; 201 with a 256-bit ' +
+              'urn:ietf:params:oauth:request_uri: reference bound to the ' +
+              'client and the authorization server, expires_in from ' +
+              'oauth2.parRequestUriLifetimeS; 405, 413 and 429; section ' +
+              '2.4\'s unregistered redirect_uri for an AUTHENTICATED client ' +
+              'behind a setting (off); a request_uri usable across the ' +
+              'sign-in and consent passes and spent when an authorization ' +
+              'response is issued, expired and replayed ones refused ' +
+              'invalid_request_uri; the require policy globally, per client ' +
+              '(require_pushed_authorization_requests at registration, on ' +
+              'the console and at /admin-api) and per authorization server; ' +
+              'both metadata members; client policy asked again when the ' +
+              'request_uri is used; and a DPoP proof at the push binding the ' +
+              'code (RFC 9449 section 10.1). Counted and listed on ' +
+              '/admin/oauth2/monitor.' },
+  { id: 'rfc9470', name: 'RFC 9470 — OAuth 2.0 Step Up Authentication ' +
+      'Challenge Protocol',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9470',
+    coverage: 'full: the authorization endpoint honours acr_values and ' +
+              'max_age in every mode and with or without openid — a session ' +
+              'that does not meet them sends the person to sign in again ' +
+              'once (a demand for two factors forcing the second-factor ' +
+              'step), prompt=none answers login_required, and a requirement ' +
+              'still unmet after that sign-in is refused ' +
+              'unmet_authentication_requirements (section 5); acr values are ' +
+              'ordered 0 < 1 < mfa and the code, ID Token and access token ' +
+              'carry the most preferred REQUESTED value met; ' +
+              'acr_values_supported in both discovery documents; acr and ' +
+              'auth_time in the JWT access token (section 6.1) and in ' +
+              'introspection (section 6.2); and section 3\'s 401 ' +
+              'insufficient_user_authentication challenge with acr_values ' +
+              'and max_age, sent by this service\'s own resource server ' +
+              '(UserInfo, the OpenID4VCI endpoints, SCIM, SSF) against ' +
+              'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS and by ' +
+              '/oauth2/step-up/resource/{application} against a resource ' +
+              'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge. ' +
+              'Mock: this service\'s sign-in produces three context classes; ' +
+              'any other acr value is met only by a federated sign-in ' +
+              'reporting exactly that acr. Counted on /admin/oauth2/monitor.' },
+  { id: 'rfc9101', name: 'RFC 9101 — JWT-Secured Authorization Request ' +
+      '(JAR)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9101',
+    coverage: 'full: `request` by value and `request_uri` by reference at ' +
+              'both authorization endpoints, the object\'s parameters ' +
+              'replacing the query\'s (section 6.3, client_id identical); ' +
+              'every JWS algorithm this service verifies, keyed by the ' +
+              'client\'s registered keys or its secret, the kid rule, and ' +
+              'the certificate chain and revocation of the key that ' +
+              'verified; signed-then-encrypted objects to a per-realm RSA ' +
+              'or EC key published with use "enc", or to the client secret ' +
+              '(OpenID Connect Core 10.2); iss, aud, exp and nbf; the typ ' +
+              'rule of section 10.8 and an optional required type; ' +
+              'require_signed_request_object for the service, the client ' +
+              'and a named authorization server (section 10.5); a ' +
+              'request_uri fetched ONLY when the client registered it ' +
+              '(require_request_uri_registration true), with no redirects, ' +
+              'a timeout, a size cap, the media type checked in product, ' +
+              'the OIDC 6.2 SHA-256 fragment and an optional cache; the five ' +
+              'client metadata members; and the four error codes. Unsigned ' +
+              'objects are accepted in development and refused in product. ' +
+              'A request object\'s jti is not remembered.' },
   { id: 'rfc7800', name: 'RFC 7800 — Proof-of-Possession Key Semantics',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7800',
     coverage: 'full for the use made of it: cnf.jwk binds an issued ' +
@@ -1163,8 +1273,9 @@ const SPECS = [
               'WWW-Authenticate at a protected one. Nonces are off until ' +
               'oauth2.dpopNonceRequired (per realm; /dpop/nonce-mode writes ' +
               'it in development) turns them on. Not implemented: the ' +
-              'authorization-code binding via PAR, and mTLS-bound tokens ' +
-              '(RFC 8705), which are the other way to sender-constrain. Note ' +
+              'mTLS-bound tokens (RFC 8705), which are the other way to ' +
+              'sender-constrain; a proof sent to /oauth2/par binds the ' +
+              'authorization code to its key (section 10.1). Note ' +
               'a foreign access token\'s cnf cannot be trusted here, since ' +
               'this issuer does not verify a token the separate ' +
               'authorization server signed — the check is real only for ' +
@@ -1180,13 +1291,25 @@ const SPECS = [
               'subject token becomes the identity in the issued token.' },
   { id: 'rfc9396', name: 'RFC 9396 — Rich Authorization Requests',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9396',
-    coverage: 'partial: authorization_details of type openid_credential, ' +
-              'which is how OID4VCI asks for a credential without a scope, ' +
-              'with its optional claims member (a subset of the claims the ' +
-              'metadata advertises) honoured by the credential endpoint. ' +
-              'Accepted at the token endpoint too, which is the only place ' +
-              'the pre-authorized code flow can ask. Granted details come ' +
-              'back on the token response.' },
+    coverage: 'full: authorization_details at the authorization, token and ' +
+              'pushed authorization request endpoints and inside a request ' +
+              'object; OID4VCI\'s openid_credential built in, and every ' +
+              'other type DECLARED by the resource application that ' +
+              'understands it (oauthAuthorizationDetailsType), with an ' +
+              'optional JSON Schema and the locations a detail may name; an ' +
+              'unknown or non-conforming detail refused ' +
+              'invalid_authorization_details in every mode (section 5); the ' +
+              'common data fields checked for shape; the access token ' +
+              'addressed to the type\'s resource and one resource per token ' +
+              '(RFC 9068); the consent screen drawing every detail and ' +
+              'asking every time; section 6\'s subset at the token endpoint ' +
+              'for codes and refresh tokens, the refresh token keeping the ' +
+              'whole grant; the claim in the access token (9.1), the token ' +
+              'response and introspection (9.2); ' +
+              'authorization_details_types_supported per realm and per named ' +
+              'authorization server; and a client\'s registered ' +
+              'authorization_details_types (section 10). Enrichment (section ' +
+              '7) is done for openid_credential only.' },
   { id: 'rfc9207',
     name: 'RFC 9207 — Authorization Server Issuer Identification',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9207',
@@ -1197,20 +1320,27 @@ const SPECS = [
   { id: 'rfc8705', name: 'RFC 8705 — Mutual-TLS Client Authentication and ' +
                          'Certificate-Bound Access Tokens',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8705',
-    coverage: 'partial, and the split is the point: SECTION 3 — ' +
-              'certificate-bound access tokens — is implemented and section ' +
-              '2 — mutual-TLS client authentication, where the certificate ' +
-              'replaces the client_secret — is not. A Token Request made ' +
-              'over a connection carrying a client certificate is answered ' +
-              'with cnf["x5t#S256"] on the access AND refresh tokens, the ' +
-              'base64url SHA-256 of the certificate\'s DER, and the four ' +
-              'protected endpoints thumbprint the connection\'s certificate ' +
-              'and compare. An UNVERIFIED certificate still binds, which ' +
-              'section 3 permits explicitly — the proof is that the same key ' +
-              'completed the handshake, not that a CA vouched for it. Only ' +
-              'available where the main port is TLS (global.https), since ' +
-              'that is where the token endpoint is, and advertised as ' +
-              'tls_client_certificate_bound_access_tokens only there.' },
+    coverage: 'partial — sections 2, 3 and 4 in full, section 5\'s ' +
+              'mtls_endpoint_aliases not published. SECTION 2: ' +
+              'tls_client_auth authenticates a certificate whose chain ' +
+              'verified, issued by this realm to the application ' +
+              '(urn:sts:application:) or carrying the one of the five ' +
+              'registered subject parameters (subject_dn compared as a ' +
+              'name, san_dns, san_uri, san_ip, san_email); ' +
+              'self_signed_tls_client_auth matches a jwks x5c or a ' +
+              'thumbprint; a declared method is held to in every mode, at ' +
+              'the token and PAR endpoints. SECTION 3: cnf["x5t#S256"] on ' +
+              'the access and refresh tokens for any request carrying a ' +
+              'certificate, checked at every protected endpoint and ' +
+              '/admin-api, reported at introspection; a client registering ' +
+              'tls_client_certificate_bound_access_tokens is refused without ' +
+              'a certificate. SECTIONS 4 and 7.1: a public client\'s refresh ' +
+              'token is certificate-bound, a certificate-authenticated ' +
+              'client refreshes with a new certificate. An UNVERIFIED ' +
+              'certificate still binds, as section 3 permits. Only where the ' +
+              'main port is TLS (global.https), and advertised as ' +
+              'tls_client_certificate_bound_access_tokens only there. No ' +
+              'certificate is read from a proxy header.' },
   { id: 'rfc8707', name: 'RFC 8707 — Resource Indicators for OAuth 2.0',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8707',
     coverage: 'full for the authorization code flow: `resource` is read at ' +
@@ -1223,6 +1353,22 @@ const SPECS = [
               'token issued for another audience. Not implemented: the ' +
               'parameter on the other grants, and there is no metadata ' +
               'member for it to advertise — the RFC defines none.' },
+  { id: 'rfc9068', name: 'RFC 9068 — JSON Web Token (JWT) Profile for OAuth ' +
+                         '2.0 Access Tokens',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9068',
+    coverage: 'full, in every mode: every access token carries typ at+jwt, ' +
+              'the seven required claims, scope only when granted, ' +
+              'preferred_username for a person and auth_time/amr/acr where ' +
+              'an authentication event is behind it. A scope naming two ' +
+              'resources, or a resource the request did not address, is ' +
+              'invalid_scope, and several resources with a scope tied to none ' +
+              'of them is invalid_target (section 3); a token for an API ' +
+              'carries no OpenID Connect scope. Every resource server here — ' +
+              'UserInfo, the credential endpoints, SCIM, SSF, /admin-api — ' +
+              'checks section 4\'s type, issuer and audience for a token this ' +
+              'service issued. Not implemented: encrypted access tokens, and ' +
+              'the roles and entitlements claims; a foreign token at the ' +
+              'credential endpoints is still accepted unverified.' },
   { id: 'oauth-form-post', name: 'OAuth 2.0 Form Post Response Mode',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html',
@@ -1417,11 +1563,34 @@ const SPECS = [
               'that succeeds, neither of which this server can observe; ' +
               'oauth2.breakIdTokenNonce spoils the nonce on purpose so a ' +
               'client author can find out whether their own code checks it. ' +
-              'NOT covered: Pushed Authorization Requests (RFC 9126) and ' +
-              'Resource Indicators (RFC 8707), which are features this ' +
-              'service does not have rather than constraints it declines to ' +
-              'enforce. GET /oauth2/rfc9700 lists every requirement with ' +
+              'Pushed Authorization Requests (RFC 9126) and Resource ' +
+              'Indicators (RFC 8707) are features of their own, in every ' +
+              'mode, rather than constraints this mode enforces. GET /oauth2/rfc9700 lists every requirement with ' +
               'which of those it is.' },
+  { id: 'oauth21', name: 'The OAuth 2.1 Authorization Framework ' +
+                         '(draft-ietf-oauth-v2-1-16)',
+    where: 'IETF', url: 'https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/16/',
+    coverage: 'partial, AND OFF BY DEFAULT — a DRAFT, and a MODE ' +
+              '(oauth2.oauth21) that turns RFC 9700 mode on and adds what ' +
+              'OAuth 2.1 requires beyond it: PKCE for confidential clients ' +
+              'too (bar the OpenID Connect nonce exemption), ' +
+              'code_challenge_method required, a client that must have ' +
+              'registered its own redirect URI, a token request naming an ' +
+              'undeclared client refused, a presented credential that must ' +
+              'verify, one authentication method per request, client ' +
+              'credentials for authenticated clients only, a JWT client ' +
+              'assertion addressed to the issuer alone ' +
+              '(draft-ietf-oauth-rfc7523bis-11), no SAML client ' +
+              'authentication, no repeated parameters, a ten-minute code and ' +
+              'error_description\'s character set — and it lets a token ' +
+              'request omit redirect_uri (section 10.2) and an authorization ' +
+              'request omit it when one is registered, which RFC 9700 mode ' +
+              'refuses. Private-use redirect schemes and a rotated refresh ' +
+              'token keeping its scope are true in every mode. NOT covered: ' +
+              'the OpenID4VCI pre-authorized code grant and the assertion ' +
+              'grants are exempt from the registered-client rule, and ' +
+              'introspection and revocation still authenticate no client. ' +
+              'GET /oauth2/oauth21 lists every requirement.' },
   { id: 'webauthn', name: 'Web Authentication (WebAuthn) Level 3',
     where: 'W3C',
     url: 'https://www.w3.org/TR/webauthn-3/',
@@ -1486,7 +1655,8 @@ const SPECS = [
               '5.2 language tags. What it does NOT do there is enforce ' +
               '`value`/`values` or treat `essential` as more than a hint, ' +
               'which section 5.5.1 permits and /admin/userinfo-claims states ' +
-              'out loud. Still no request object and no request_uri.' },
+              'out loud. Section 6\'s request object and request_uri are ' +
+              'RFC 9101\'s row.' },
   { id: 'oidc-fclogout', name: 'OpenID Connect Front-Channel Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-frontchannel-1_0.html',
@@ -1585,7 +1755,97 @@ const SPECS = [
     url: 'https://identity.foundation/well-known-did-configuration/resources/did-configuration/',
     coverage: 'full in the JWT form: a Domain Linkage Credential proving ' +
               'this origin and this DID are the same entity. The Linked Data ' +
-              'Proof form is not served.' }
+              'Proof form is not served.' },
+  // ===== ACME specs (acme/) =====
+  { id: 'rfc8555', name: 'Automatic Certificate Management Environment ' +
+                         '(ACME, RFC 8555)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8555',
+    coverage: 'partial: the directory, Replay-Nonce, the flattened JWS ' +
+              'request with jwk or kid, accounts (create, find by key, ' +
+              'update, deactivate, orders list), External Account Binding ' +
+              '(REQUIRED here), key roll-over, orders, authorizations, ' +
+              'finalize, certificate download as ' +
+              'application/pem-certificate-chain, and revocation by the ' +
+              'account or by the certificate key. Missing on purpose: the ' +
+              'http-01, dns-01 and tls-alpn-01 challenges (section 8) — no ' +
+              'challenge dials out; an identifier is authorized by the ' +
+              'directory entry the account is bound to, with one ' +
+              'sts-entry-binding-01 challenge already valid — and ' +
+              'notBefore/notAfter in an order, terms of service, ' +
+              'certificate alternate chains and pre-authorization ' +
+              '(newAuthz).' },
+  { id: 'rfc9773', name: 'ACME Renewal Information (ARI, RFC 9773)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9773',
+    coverage: 'full: renewalInfo in the directory, the certificate ' +
+              'identifier, a suggested window (the last third of the ' +
+              'validity, or in the past for a revoked certificate) with ' +
+              'Retry-After, and the replaces member of newOrder with ' +
+              'alreadyReplaced.' },
+  { id: 'rfc8738', name: 'ACME IP Identifier Validation Extension (RFC 8738)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8738',
+    coverage: 'partial: the ip identifier type and the iPAddress ' +
+              'subjectAltName. The tls-alpn-01 and http-01 validation of an ' +
+              'address is not performed; an address is authorized when it is ' +
+              'registered on the entry.' },
+  { id: 'rfc8823', name: 'Extensions to ACME for End-User S/MIME ' +
+                         'Certificates (RFC 8823)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8823',
+    coverage: 'partial: the email identifier type and the email profile. The ' +
+              'email-reply-00 challenge is not performed (nothing is sent to ' +
+              'the address); the address is authorized when it is the ' +
+              'person\'s own mail attribute.' },
+  { id: 'acme-profiles', name: 'ACME Profiles (draft-ietf-acme-profiles)',
+    where: 'IETF (draft)',
+    url: 'https://datatracker.ietf.org/doc/draft-ietf-acme-profiles/',
+    coverage: 'full: meta.profiles in the directory (the allowed ones of ' +
+              'the nine /admin/pki leaf profiles, with a description), the ' +
+              'profile member of newOrder and of the order, and ' +
+              'invalidProfile for one this server does not issue.' },
+  { id: 'acme-device-attest', name: 'ACME Device Attestation Extension ' +
+                                    '(draft-ietf-acme-device-attest)',
+    where: 'IETF (draft)',
+    url: 'https://datatracker.ietf.org/doc/draft-ietf-acme-device-attest/',
+    coverage: 'mock: only the permanent-identifier identifier type, which ' +
+              'here names the account\'s own directory entry and becomes its ' +
+              'urn:sts: subjectAltName. The device-attest-01 challenge and ' +
+              'the WebAuthn attestation statement are not implemented.' },
+  // ===== EST specs (est/) =====
+  { id: 'rfc7030', name: 'Enrollment over Secure Transport (RFC 7030)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7030',
+    coverage: 'partial: /cacerts, /simpleenroll, /simplereenroll, ' +
+              '/serverkeygen and /csrattrs, at the unlabelled path and under ' +
+              'a label per certificate profile, authenticated by HTTP Basic ' +
+              'or a TLS client certificate this realm issued. Missing: Full ' +
+              'CMC (section 4.3, answers 501), tls-unique channel binding ' +
+              '(section 3.5; TLS 1.3 has no tls-unique), an encrypted ' +
+              'server-generated private key (section 4.4.1.2, refused 501) ' +
+              'and the 202 Retry-After deferral (section 4.2.3).' },
+  { id: 'rfc8951', name: 'Clarification of Enrollment over Secure ' +
+                         'Transport (RFC 8951)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8951',
+    coverage: 'full for what it clarifies: every body is base64 with ' +
+              'Content-Transfer-Encoding: base64 on each response and each ' +
+              'multipart part, whitespace in a request body is tolerated and ' +
+              'any other non-alphabet byte is refused.' },
+  { id: 'rfc5967', name: 'The application/pkcs10 Media Type (RFC 5967)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc5967',
+    coverage: 'full: an EST enrollment body must be sent as ' +
+              'application/pkcs10 and anything else is refused 415. The ' +
+              'PKCS#10 request inside it is verified, proof of possession ' +
+              'included, by common/cert_enrollment.js.' },
+  // ===== SCEP specs (scep/) =====
+  { id: 'rfc8894', name: 'Simple Certificate Enrolment Protocol (RFC 8894)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8894',
+    coverage: 'partial: GetCACaps, GetCACert (the RA certificate and the ' +
+              'SCEP Issuing CA chain) and PKIOperation over POST and GET, ' +
+              'with PKCSReq authorized by a single-use challenge password, ' +
+              'RenewalReq signed by a certificate this realm issued, ' +
+              'CertPoll, GetCert and GetCRL; CMS SignedData and ' +
+              'EnvelopedData (RFC 5652) with SHA-256/384/512, AES-CBC and ' +
+              'RSA key transport (PKCS#1 v1.5 and OAEP). Missing: ' +
+              'GetNextCACert (501), PENDING (nothing is approved by hand), ' +
+              'a non-RSA requester key (the reply is RSA-encrypted to it), ' +
+              'SHA-1/MD5 and DES/3DES (refused badAlg).' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2166,7 +2426,9 @@ const ENDPOINTS = [
           'the same reason. The encoder is common/vendored/x509.js — the ' +
           'parent project\'s own PKI code, byte-identical, the same one ' +
           'behind its PKI / X.509 workflow page — so a certificate issued ' +
-          'here and one issued there are built by ONE encoder. Add ' +
+          'here and one issued there are built by ONE encoder. The ' +
+          'Applications and People tables are paged separately ' +
+          '(?issuedPage=, ?personsPage= and one ?per=, 25 by default). Add ' +
           '?format=json, or drive it at /admin-api/pki.' },
   { path: '/admin/pki/certificate', group: 'PKI',
     name: 'The Certificate & Key Configuration pane',
@@ -2238,8 +2500,9 @@ const ENDPOINTS = [
           'list per realm would be a document with no valid issuer. {scope} ' +
           'is `default`, a realm id, `service` (the Root) or `process` (the ' +
           'branch TLS and SPIFFE hang off); {ca} is `root`, `intermediate` ' +
-          'or a use case \u2014 `jose`, `xml`, `assertions`, `tls`, ' +
-          '`spiffe`. A `.crl` suffix is accepted and ignored. THE SCOPE IS ' +
+          'or a use case \u2014 `jose`, `xml`, `assertions`, `spiffe`, ' +
+          '`pep-tls`, `tls`. A `.crl` suffix is accepted and ignored. THE ' +
+          'SCOPE IS ' +
           'IN THE PATH AND NOT TAKEN FROM THE REALM PREFIX, which is the one ' +
           'routing decision here: these addresses go INSIDE certificates and ' +
           'are fetched by clients that know nothing about this service\'s ' +
@@ -2308,6 +2571,29 @@ const ENDPOINTS = [
           'changed would be a different authority with a different name ' +
           '\u2014 and the `caIssuers` fetch is meant to happen once. No ' +
           'private key is reachable through it in any scope.' },
+  { path: '/pki/chain/:scope/:certificate', group: 'PKI',
+    name: 'The certificate chain a signed token\'s x5u names',
+    specs: ['rfc7515', 'rfc5280'],
+    what: 'RFC 7515 section 4.1.5: the X.509 chain of the key that signed a ' +
+          'JWS, in PEM, leaf first and the service Root last, as ' +
+          '`application/pem-certificate-chain`. Every JWT this service signs ' +
+          'with a certified key — access tokens, ID Tokens, the JWS inside a ' +
+          'refresh token, signed UserInfo, both signed_metadata documents, ' +
+          'OpenID4VCI credentials, OpenID4VP Request Objects, Security ' +
+          'Event Tokens, WS-Trust JWTs and GNAP JWT access tokens — may ' +
+          'carry an `x5u` pointing here, per a ' +
+          'setting of its own on its protocol\'s page (`x5u` by default, or ' +
+          '`x5c` inline, `both` or `none`), so a relying party holding only ' +
+          'the token can reach every CRL distribution point, OCSP responder ' +
+          'and caIssuers address the chain names. {scope} is `default` or a ' +
+          'realm id, in the path for the reason the CRL\'s is; {certificate} ' +
+          'is the leaf\'s SHA-256 in hex, with an optional `.pem` suffix, ' +
+          'matched against the register rather than parsed. NAMED BY THE ' +
+          'CERTIFICATE AND NOT BY THE KEY, so a URL names one certificate ' +
+          'for ever: a key rotated since the token was signed is a 404 ' +
+          'rather than a chain over a different key. `no-store`, like every ' +
+          'document publishing this service\'s key material. Ungated, ' +
+          'because what it returns is already named by the token.' },
   { path: '/pki/revocation', group: 'PKI',
     name: 'Every CRL and OCSP responder this service publishes',
     specs: ['rfc5280', 'rfc6960'],
@@ -2824,15 +3110,17 @@ const ENDPOINTS = [
     specs: ['rfc8414'], what: 'What op_policy_uri points at.' },
   { path: '/tos', group: 'Service', name: 'Terms of service',
     specs: ['rfc8414'], what: 'What op_tos_uri points at.' },
-  // Registered by app.options('*', cors(...)) rather than by a protocol module,
+  // Registered by app.options('*', ...) rather than by a protocol module,
   // and listed because it IS callable and the page's first duty is to be a true
   // list of what is. It was the first thing the drift check caught: a route
   // that exists and is described nowhere.
   { path: '*', group: 'Service', name: 'CORS preflight',
-    specs: [], what: 'Answers the preflight for every path, and sets ' +
-                     'Access-Control-Allow-Private-Network so a page on an ' +
-                     'https origin can call this service on loopback (Chrome ' +
-                     'Private Network Access).' },
+    specs: [], what: 'Answers the preflight for every path — with CORS ' +
+                     'headers only for this service\'s own origins and those ' +
+                     'an application in the realm lists in appCorsOrigin — ' +
+                     'and sets Access-Control-Allow-Private-Network so a page ' +
+                     'on an https origin can call this service on loopback ' +
+                     '(Chrome Private Network Access).' },
 
   // --- Admin ---
   //
@@ -3169,8 +3457,9 @@ const ENDPOINTS = [
     // The same three as the page above it, for the same three reasons: rfc4511
     // because what it writes is a directory entry, rfc4519 because
     // applicationProcess is that specification's, rfc7591 because the entry it
-    // creates is the shape a dynamic client registration lands in.
-    specs: ['rfc4511', 'rfc4519', 'rfc7591'],
+    // creates is the shape a dynamic client registration lands in. And rfc9728
+    // since 2026-09-13, because it imports a protected resource's metadata.
+    specs: ['rfc4511', 'rfc4519', 'rfc7591', 'rfc9728'],
     what: 'NON-SPEC console page. THE CREATE FORM for /admin/applications, ' +
           'on a page of its own — a DRILL-DOWN of that page rather than a ' +
           'section of the console, so it has no row in the sidebar and none ' +
@@ -3200,7 +3489,17 @@ const ENDPOINTS = [
           'drill-down. What DOES take effect is the configuration underneath ' +
           '— the redirect URIs, the grant types and the secret, which RFC ' +
           '9700 mode reads and which are set from the Applications page. Add ' +
-          '?format=json for the two vocabularies and the container DN.' },
+          '?format=json for the two vocabularies and the container DN. ' +
+          'IT TAKES A POST SINCE 2026-09-13, for its RFC 9728 import: ' +
+          'action=load-resource-metadata reads a protected resource ' +
+          'metadata document — pasted, uploaded as multipart/form-data, or ' +
+          'fetched from a URL under the federation outbound policy — and ' +
+          'redraws the page with it in three tabs and the form filled in ' +
+          '(resource as the name, permission base URI and audience; ' +
+          'scopes_supported as permissions; a random client_id), comparing ' +
+          'its authorization_servers with this realm\'s; action=create then ' +
+          'creates through the same function and redraws this page on a ' +
+          'refusal with the document still loaded.' },
   { path: '/admin/spiffe', group: 'Admin', name: 'SPIFFE',
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
             'spiffe-jwt-svid'],
@@ -3372,12 +3671,15 @@ const ENDPOINTS = [
           'THE ONLY GROUPS IN THIS SERVICE THAT GRANT ANYTHING, and what ' +
           'they grant is this console and nothing else — no token, ' +
           'assertion, ticket, PAC or credential is changed by holding one, ' +
-          'and no protocol endpoint reads them. While NEITHER group has a ' +
-          'member, anybody who signs in holds both roles and every page says ' +
-          'so: this service has no password anywhere to bootstrap an ' +
-          'administrator with, so an empty roster OPENS ' +
-          '(admin.openWhenEmpty, which can be turned off — and /admin-api, ' +
-          'which is NOT gated, is then the only way back in). The gate ' +
+          'and no protocol endpoint reads them. THE BOOTSTRAP ADMINISTRATOR ' +
+          '(2026-09-13): startup makes admin.bootstrapUsername in the default ' +
+          'realm a member of both groups, forces a password change at its ' +
+          'first sign-in, and refuses its deletion; until that account first ' +
+          'signs in to /admin, anybody who signs in holds both roles and ' +
+          'every page says so (admin.openWhenEmpty, which can be turned off). ' +
+          'A process that never seeded it keeps the older rule: an empty ' +
+          'roster opens. /admin-api, gated by its own access token, is the ' +
+          'way back in if the console is ever closed to everybody. The gate ' +
           'itself is unconditional — admin.authRequired was removed on ' +
           '2026-09-06. Add ?format=json.' },
   { path: '/admin/scim', group: 'Admin', name: 'SCIM',
@@ -3495,6 +3797,22 @@ const ENDPOINTS = [
           'is the pipe and CAEP and RISC are the vocabularies, and CAEP — ' +
           'which DOES generate events by itself, at /admin/caep — is the one ' +
           'place in this service that does. Add ?format=json.' },
+  { path: '/admin/ssf/dead-letters', group: 'Admin', name: 'Dead letters',
+    specs: ['ssf', 'rfc8417', 'rfc8935'],
+    what: 'NON-SPEC PAGE (2026-09-14), under Monitoring → Shared Signals: ' +
+          'every Security Event Token this realm\'s transmitter could not ' +
+          'deliver and is still holding on a dead-letter queue, COUNTED — by ' +
+          'cause (a push that failed, the push backlog full, a stream ' +
+          'declared dead, a SET sent to a dead stream), by error code, by ' +
+          'the receiver\'s HTTP status and by event type; over time, as a ' +
+          'server-drawn chart across ssf.deadLetterRetentionS with the same ' +
+          'numbers as a table; and per stream, with each push stream\'s ' +
+          'state (dead, half-open, failing). Then the letters, searched and ' +
+          'paged (?dlq=, ?dlstream=, ?dlcause=, ?lettersPage=, ?per=), with ' +
+          'no token. PER REALM, because the queues are; the push cap and the ' +
+          'recent sweeps are the answering PROCESS\'s and the page says so. ' +
+          'Read-only: Revive and Drop its dead letters are on each stream\'s ' +
+          'card at /admin/ssf, which every row links to. Add ?format=json.' },
   { path: '/admin/caep', group: 'Admin', name: 'CAEP',
     specs: ['caep', 'ssf', 'rfc8417', 'rfc9493'],
     what: 'THE VOCABULARY: CAEP\'s eight session event types with every ' +
@@ -3702,6 +4020,25 @@ const ENDPOINTS = [
           'form carries a CSRF token, changing a password requires the ' +
           'current one even though the person is signed in, and both are ' +
           'rate limited.' },
+  { path: '/portal/reset-password', group: 'User portal',
+    name: 'Spend a password reset link and choose a new password',
+    specs: [],
+    effect: 'sets a new password, clears pwdReset and spends the link',
+    what: 'NON-SPEC. THE SECOND UNAUTHENTICATED PAGE OF THE PORTAL ' +
+          '(2026-09-13), and like /portal/activate it takes a username ' +
+          'because nobody is signed in and what authorises it is the TOKEN. ' +
+          'An administrator issued the link from the person\'s /admin/users ' +
+          'page or POST /admin-api/users/issue-password-reset, which removed ' +
+          'the password they had and signed them out of everything. The link ' +
+          'is hashed at rest, single use, valid for ' +
+          'security.passwordResetTtlMinutes, rate limited on the GET and the ' +
+          'POST, and answers every failure with one sentence. The new ' +
+          'password goes through credentials.setPassword(), so the realm\'s ' +
+          'password policy and history apply in product mode; it is spent ' +
+          'when the password is stored, and a CAEP credential-change ' +
+          '(password, create) is sent. It signs nobody in: the page links to ' +
+          '/portal, whose sign-in asks for any second factor as usual.'
+  },
   { path: '/portal/activate', group: 'User portal',
     name: 'Spend an activation link and set up a credential',
     specs: [],
@@ -3888,6 +4225,17 @@ const ENDPOINTS = [
           'username read from this body would let anybody signed in enrol ' +
           'THEIR OWN app as somebody else\'s second factor, which is a ' +
           'takeover rather than a leak.' },
+  { path: '/portal/certificates', group: 'User portal',
+    name: 'Your certificates: ACME and SCEP credentials, enrolled certificates',
+    specs: ['rfc8555', 'rfc7030', 'rfc8894'],
+    effect: 'makes, deletes and revokes the signed-in person\'s own ' +
+            'enrollment credentials and certificates',
+    what: 'NON-SPEC page. Where a person makes an ACME External Account ' +
+          'Binding key (RFC 8555 section 7.3.4) or a SCEP challenge password ' +
+          '(RFC 8894 section 2.2) FOR THEMSELVES — each bound to their own ' +
+          'directory entry, shown once on a 200 page — lists the certificates ' +
+          'ACME, EST and SCEP issued them, and revokes one. The identity is ' +
+          'the session\'s; nothing on the form names a person.' },
   { path: '/portal/signing-key', group: 'User portal',
     name: 'Your own RFC 7523 signing key',
     specs: ['rfc7521', 'rfc7523', 'rfc5280'],
@@ -4414,6 +4762,31 @@ const ENDPOINTS = [
           'settings and reads the same on a service that started a second ' +
           'ago, and everything here can be broken while every one of those ' +
           'rows is right.' },
+  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13). Its own listener is NOT on
+  // this router — it is an express app of its own on `debugger.port`, the
+  // blind spot the KDC's and the directory's sockets are — so it is described
+  // here, in the row for the page that reports it.
+  { path: '/admin/debugger', group: 'Admin',
+    name: 'The embedded identity protocol debugger, its listener and its api ' +
+          'process',
+    specs: [],
+    what: 'NON-SPEC. Whether this process embeds the identity protocol ' +
+          'debugger (debugger.enabled; on in development and off in product ' +
+          'by default), and what it did about it. **THE DEBUGGER ITSELF IS ' +
+          'ON A LISTENER OF ITS OWN** — debugger.port, 8444, in the main ' +
+          'port\'s scheme and with its certificate — and this router cannot ' +
+          'see it: it serves the debugger\'s built static site, its own ' +
+          'sign-in callback at /_sts/callback, the OAuth landing /callback, ' +
+          'and /api/*, which it forwards to the debugger\'s api running as a ' +
+          'CHILD PROCESS on a unix socket. Every request there needs an ' +
+          'access token audienced to urn:sts:debugger-api: and carrying the ' +
+          'debugger permission — issued to console administrators only — or ' +
+          'the debugger client\'s session holding one; four landing paths ' +
+          'where a flow the debugger started comes back are the exception. ' +
+          'The page reports the port bound, the api process\'s state, ' +
+          'restarts and last failure, and in product mode the address ranges ' +
+          'it may dial, and draws the Protocol debugger settings. ' +
+          '?format=json is what /admin-api/debugger answers.' },
   { path: '/admin/database', group: 'Admin',
     name: 'What PostgreSQL reports about itself, and this service\'s schema ' +
           'in it',
@@ -4807,13 +5180,14 @@ const ENDPOINTS = [
   // this console.
   // ---------------------------------------------------------------------------
   { path: '/admin/oauth2', group: 'Admin', name: 'OAuth 2.0 / OIDC settings',
-    specs: ['rfc6749', 'oidc', 'rfc9700', 'oidc-fclogout', 'rfc7523',
-            'rfc7522'],
+    specs: ['rfc6749', 'oidc', 'rfc9700', 'oauth21', 'oidc-fclogout',
+            'rfc7523', 'rfc7522'],
     effect: 'changes what the authorization server will accept and what it ' +
             'puts into what it issues',
-    what: 'NON-SPEC. The thirteen oauth2.* settings, on the page for the ' +
+    what: 'NON-SPEC. The oauth2.* settings, on the page for the ' +
           'family rather than among a hundred and fifty-four rows on ' +
-          '/admin/config: the issuer identifier, RFC 9700 mode, the ' +
+          '/admin/config: the issuer identifier, RFC 9700 mode and OAuth 2.1 ' +
+          'mode, the ' +
           'registered redirect URIs and the loopback port wildcard, ' +
           'Front-Channel Logout, the refresh token idle timeout and whether ' +
           'a sign-out revokes refresh tokens, the client assertion clock ' +
@@ -5113,6 +5487,24 @@ const ENDPOINTS = [
           'stsAssertion* and may only assert about themselves. Mirrors POST ' +
           '/admin/pki, POST /admin/pki/certificate and POST ' +
           '/admin/pki/person.' },
+  { path: '/admin-api/certificates', group: 'Management API',
+    name: 'Every certificate this realm holds, or one of them in full',
+    specs: ['rfc5280'],
+    what: 'NON-SPEC. What the certificate details dialog on /admin/pki and ' +
+          '/admin/crypto-metadata opens, as JSON, from the same view layer ' +
+          '(admin-core/certificate_views.js) — so a certificate cannot be ' +
+          'openable on one door and unknown on the other. Without ' +
+          '`certificate` it is the LIST: one row per certificate with every ' +
+          'place it appears, which is where a caller finds the SHA-256 ' +
+          'fingerprint. With `certificate=<SHA-256>` it is that certificate ' +
+          'WHOLE — every tbsCertificate field in RFC 5280 section 4.1\'s ' +
+          'order, every extension decoded, both fingerprints — and `chain`, ' +
+          'a path BUILT from what this service holds by matching names AND ' +
+          'verifying signatures, with `chainStatus` saying where a path ' +
+          'stopped. A certificate is NAMED by fingerprint and looked up in a ' +
+          'per-realm catalogue, never parsed from the request, so a ' +
+          'fingerprint of anything else is refused. PER REALM. Mirrors ' +
+          '?certificate= on GET /admin/pki and GET /admin/crypto-metadata.' },
   { path: '/admin-api/secrets', group: 'Management API',
     name: 'The secret store, and whether this process read from it', specs: [],
     what: 'NON-SPEC. Everything /admin/secrets draws, as JSON: `secrets` — ' +
@@ -5130,6 +5522,19 @@ const ENDPOINTS = [
           'member names from whatever a provider answers before it leaves ' +
           'that module. admin:read, and there is deliberately no write ' +
           'beside it. Mirrors GET /admin/secrets.' },
+  { path: '/admin-api/debugger', group: 'Management API',
+    name: 'The embedded protocol debugger\'s listener and api process',
+    specs: [],
+    what: 'NON-SPEC. Everything /admin/debugger draws, as JSON: `embedded` ' +
+          'and the setting and mode that decided it, the listener\'s `port` ' +
+          'and whether it is `listening`, the client, the resource server, ' +
+          'the permission and its audience, and under `api` the child ' +
+          'process — state, pid, socket, starts, failures, last exit and ' +
+          'last error, and the allowed address ranges in product mode. ' +
+          'admin:read and read-only: the settings are config/set, and who ' +
+          'may use the debugger is the two console roles. Answered by the ' +
+          'front process, which is the only one holding the listener. ' +
+          'Mirrors GET /admin/debugger.' },
   { path: '/admin-api/database', group: 'Management API',
     name: 'PostgreSQL metrics and schema statistics', specs: [],
     what: 'NON-SPEC. Everything /admin/database draws, as JSON. **IT IS THE ' +
@@ -5344,9 +5749,9 @@ const ENDPOINTS = [
     what: 'NON-SPEC. Two URLs behind one pattern: grant and revoke. IT TAKES ' +
           'A DIFFERENT CREDENTIAL FROM THE CONSOLE IT GRANTS — an access ' +
           'token carrying admin:write rather than a console session — which ' +
-          'is what makes it the way back in when the roster is empty and ' +
-          'admin.openWhenEmpty is off, a state from which no browser can ' +
-          'reach the console at all. IT WAS UNGATED ENTIRELY until ' +
+          'is what makes it the way back in when nobody holding a role can ' +
+          'sign in, a state from which no browser can reach the console at ' +
+          'all. IT WAS UNGATED ENTIRELY until ' +
           '2026-09-09, and the consequence was worth stating and is now ' +
           'closed: anybody who could reach this port could grant themselves ' +
           'both roles. Granting a role somebody already holds, or revoking ' +
@@ -5613,6 +6018,16 @@ const ENDPOINTS = [
           'Token in the reply carries a credential — a SET is signed and its ' +
           '`aud` is the stream, which is the whole of what makes it safe to ' +
           'publish here.' },
+  { path: '/admin-api/ssf/dead-letters', group: 'Management API',
+    name: 'Dead letters', specs: ['openapi', 'ssf', 'rfc8935'],
+    what: 'GET /admin/ssf/dead-letters over JSON: this realm\'s dead-letter ' +
+          'queues counted by cause, error code, receiver status, event type, ' +
+          'time and stream, and the letters narrowed by ?dlq=, ?dlstream= ' +
+          'and ?dlcause= and paged by ?lettersPage= — the counts stay the ' +
+          'whole realm\'s whatever is narrowed. `process` is the answering ' +
+          'process\'s push cap and sweeps. No token is returned. Read-only; ' +
+          'POST /admin-api/ssf/revive and /clear-dead-letters are the ' +
+          'controls.' },
   { path: '/admin-api/signals', group: 'Management API',
     name: 'Signals received', specs: ['openapi', 'ssf', 'caep', 'risc'],
     what: 'GET /admin/signals over JSON: every Security Event Token ' +
@@ -6044,8 +6459,8 @@ const ENDPOINTS = [
   // ---------------------------------------------------------------------------
   { path: '/admin-api/oauth2', group: 'Management API',
     name: 'OAuth 2.0 / OIDC settings',
-    specs: ['rfc6749', 'oidc', 'rfc9700', 'openapi'],
-    what: 'GET /admin/oauth2 over JSON: the thirteen oauth2.* settings ' +
+    specs: ['rfc6749', 'oidc', 'rfc9700', 'oauth21', 'openapi'],
+    what: 'GET /admin/oauth2 over JSON: the oauth2.* settings ' +
           'described — value, source, whether it can be changed while the ' +
           'service runs — and the prose and caveats the page carries, ' +
           'including that oauth2.breakIdTokenNonce makes this service wrong ' +
@@ -6892,10 +7307,14 @@ const ENDPOINTS = [
     name: 'Authorization ' +
       'endpoint',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207',
-            'rfc9700'], effect: 'needs ' +
+            'rfc9700', 'rfc9101', 'rfc9126', 'rfc9470'], effect: 'needs ' +
         'client_id and redirect_uri — answers 400 when followed bare, then ' +
         'redirects to the sign-in screen once they are supplied',
-    what: 'Redirects to the authentication service when there is no session, ' +
+    what: 'Redirects to the authentication service when there is no ' +
+          'session — or, since RFC 9470, when the session does not meet the ' +
+          'request\'s acr_values or max_age, refusing ' +
+          'unmet_authentication_requirements if the sign-in did not meet ' +
+          'them either — ' +
           'and is entered a second time when the person comes back signed in ' +
           '— the same request over again, which is why this endpoint keeps ' +
           'no state between the two. Then issues a code, token and/or ' +
@@ -6915,9 +7334,12 @@ const ENDPOINTS = [
           'malformed one HERE with invalid_request (which is the last point ' +
           'at which the client is still being talked to), carries it on the ' +
           'authorization code and INSIDE the access token, and answers it ' +
-          'from the person\'s entry under ou=users. What it still does not ' +
-          'accept is a `request` object or a `request_uri`; the three ' +
-          'booleans in the discovery document say which is which. In RFC ' +
+          'from the person\'s entry under ou=users. SINCE 2026-09-13 it ' +
+          'accepts RFC 9101 request objects — `request` by value, ' +
+          '`request_uri` fetched only from an address the client ' +
+          'registered, signed and optionally encrypted — and verifies one ' +
+          'BEFORE any other check, so every check below runs on the signed ' +
+          'parameters rather than the query\'s. In RFC ' +
           '9700 mode (oauth2.rfc9700, off by default) it also refuses what ' +
           'that BCP says to refuse: a redirect_uri that is not registered — ' +
           'answered HERE as a 400 rather than redirected, since redirecting ' +
@@ -7105,6 +7527,47 @@ const ENDPOINTS = [
           'enrolling a second factor, once, in common/credentials.js. This ' +
           'page has NO SCRIPT: a person reads a string off paper and types ' +
           'it.' },
+  { path: '/authn/password-change', group: 'Authentication',
+    name: 'Forced password change step',
+    specs: ['oidc'],
+    effect: 'stores a new password and resumes the sign-in',
+    what: 'THE FORCED PASSWORD CHANGE (2026-09-13). A password step that ' +
+          'succeeded for somebody whose entry carries pwdReset TRUE — the ' +
+          'draft-behera attribute, set on the bootstrap administrator the ' +
+          'service creates in the default realm — lands here instead of ' +
+          'being signed in, and this endpoint asks for a new password twice. ' +
+          'The new password goes through credentials.setPassword(), so the ' +
+          'password policy and its history apply in product mode; on success ' +
+          'pwdReset is cleared, an authn.password.changed audit row is ' +
+          'written and the sign-in continues exactly as the password step ' +
+          'would have, second factor included. Needs a ?change= id minted by ' +
+          'that step, so following it bare answers 400. Every other door ' +
+          'that verifies a password refuses such an account in product mode ' +
+          '(STS-AUTHN-0142) until the change is made here'
+  },
+  { path: '/authn/mfa-setup', group: 'Authentication',
+    name: 'Required second factor set-up step',
+    specs: ['rfc6238', 'oidc'],
+    effect: 'enrols an authenticator app or starts a security-key ' +
+            'registration, then establishes the sign-on session',
+    what: 'A SECOND FACTOR REQUIRED OF SOMEBODY WHO HOLDS NONE (2026-09-13). ' +
+          'A password step that succeeded for a person of whom a second ' +
+          'factor is required — stsMfaRequired on their entry, set from ' +
+          'their ' +
+          '/admin/users page, or authn.mfaRequired for the realm — and who ' +
+          'holds neither an authenticator app nor an mfa-role security key ' +
+          'lands here instead of being signed in. They choose one: an ' +
+          'authenticator app is enrolled on this page (a QR code this server ' +
+          'draws and a code typed back, confirmed through ' +
+          'credentials.confirmTotpEnrolment(), session amr ["pwd","otp"], ' +
+          'acr ' +
+          '"mfa"), and a security key goes to the ordinary /authn/webauthn ' +
+          'registration. The step refuses anybody who already holds a second ' +
+          'factor, because enrolling a second one at a sign-in is the bypass ' +
+          'the security-key box is reserved against. Needs an ?mfa= id ' +
+          'minted ' +
+          'by the password step, so following it bare answers 400. No script.'
+  },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
     specs: ['rfc6238', 'rfc4226', 'oidc'],
@@ -7165,7 +7628,7 @@ const ENDPOINTS = [
   { path: '/oauth2/token', group: 'OAuth 2.0 / OIDC', name: 'Token endpoint',
     specs: ['rfc6749', 'oidc', 'rfc8693', 'rfc9396', 'oid4vci', 'rfc9449',
             'rfc7800', 'rfc9700',
-            'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522'],
+            'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
           'token-exchange, and OID4VCI\'s pre-authorized_code with tx_code ' +
           'enforcement. An RFC 8693 exchange can come back with a REFRESH ' +
@@ -7268,7 +7731,7 @@ const ENDPOINTS = [
   { path: '/:as/oauth2/authorize', group: 'OAuth 2.0 / OIDC',
     name: 'Authorization endpoint (a named authorization server)',
     specs: ['rfc6749', 'oidc', 'rfc7636', 'rfc9396', 'rfc9207', 'rfc9700',
-            'rfc8414'],
+            'rfc8414', 'rfc9101', 'rfc9126', 'rfc9470'],
     effect: 'needs client_id and redirect_uri, like the unprefixed one',
     what: 'ONE ROUTE, AS MANY AUTHORIZATION SERVERS AS HAVE BEEN NAMED. The ' +
           'path component selects one and CREATES it on first sight with the ' +
@@ -7296,7 +7759,8 @@ const ENDPOINTS = [
     what: 'The same endpoint under a named authorization server\'s own path, ' +
           'which is what its OpenID Provider Configuration advertises.' },
   { path: '/:as/oauth2/introspect', group: 'OAuth 2.0 / OIDC',
-    name: 'Introspection (a named authorization server)', specs: ['rfc7662'],
+    name: 'Introspection (a named authorization server)',
+    specs: ['rfc7662', 'rfc9701', 'rfc9396', 'rfc9470'],
     what: 'The same honest active/inactive the unprefixed endpoint gives, ' +
           'under a named authorization server\'s own path. The REVOCATION ' +
           'SET is one set across every authorization server in this process, ' +
@@ -7304,6 +7768,13 @@ const ENDPOINTS = [
           'a token revoked at any of them. That is deliberately unlike a ' +
           'credential, which does not cross between them: a code issued by ' +
           'one is refused at another\'s token endpoint.' },
+  { path: '/:as/oauth2/par', group: 'OAuth 2.0 / OIDC',
+    name: 'Pushed authorization requests (a named authorization server)',
+    specs: ['rfc9126', 'rfc9101', 'rfc9449'],
+    what: 'The same PAR endpoint under a named authorization server\'s own ' +
+          'path, validating a push against that server\'s capabilities. A ' +
+          'request_uri it issues is bound to it and refused at any other ' +
+          'authorization server\'s authorization endpoint.' },
   { path: '/:as/oauth2/revoke', group: 'OAuth 2.0 / OIDC',
     name: 'Revocation (a named authorization server)', specs: ['rfc7009'],
     what: 'Revocation that takes effect, under a named authorization ' +
@@ -7341,9 +7812,19 @@ const ENDPOINTS = [
           'enforced with the reason attached. Read-only: the mode is the ' +
           'oauth2.rfc9700 setting, so it is turned on at /admin/oauth2 or ' +
           'through POST /admin-api/config like everything else configurable.' },
+  { path: '/oauth2/oauth21', group: 'OAuth 2.0 / OIDC',
+    name: 'OAuth 2.1 mode report (not a spec endpoint)', specs: ['oauth21'],
+    what: 'NON-SPEC, for the RFC 9700 report\'s reason beside it: OAuth 2.1 ' +
+          'defines no discovery member saying a server follows it. Every ' +
+          'requirement the mode adds, citing draft-ietf-oauth-v2-1-16 by ' +
+          'section, whether it is enforced, true in every mode, or inherited ' +
+          'from RFC 9700 mode (which this mode turns on), and the grants it ' +
+          'deliberately exempts. It says the draft is a draft. Read-only: ' +
+          'the mode is the oauth2.oauth21 setting.' },
   { path: '/oauth2/userinfo', group: 'OAuth 2.0 / OIDC', name: 'UserInfo ' +
       'endpoint',
-    specs: ['oidc', 'rfc6750', 'rfc9449', 'rfc7591', 'rfc8705', 'rfc8707'],
+    specs: ['oidc', 'rfc6750', 'rfc9449', 'rfc7591', 'rfc8705', 'rfc8707',
+            'rfc9068', 'rfc9470'],
     effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
             'bare — it is a protected resource and needs the access token ' +
             'from an OIDC flow',
@@ -7376,8 +7857,71 @@ const ENDPOINTS = [
   { path: '/oauth2/introspect', group: 'OAuth 2.0 / OIDC',
     name: 'Introspection ' +
       'endpoint',
-    specs: ['rfc7662'], what: 'Honest active/inactive with the presented ' +
-                              'token\'s claims.' },
+    specs: ['rfc7662', 'rfc9701', 'rfc9396', 'rfc9470'],
+    what: 'Honest active/inactive with the presented token\'s claims — acr ' +
+          'and auth_time among them (RFC 9470 section 6.2) — as ' +
+          'RFC 7662 JSON, or, when the Accept header names ' +
+          'application/token-introspection+jwt, as an RFC 9701 JWT signed ' +
+          '(and optionally encrypted) for the resource server that asked, ' +
+          'with the algorithms it registered. A JWT request must ' +
+          'authenticate as a client in every mode and is refused 400 ' +
+          'invalid_client otherwise; a JSON request must authenticate in ' +
+          'product mode (401) and need not in development.' },
+  { path: '/oauth2/par', group: 'OAuth 2.0 / OIDC',
+    name: 'Pushed authorization request endpoint',
+    specs: ['rfc9126', 'rfc9101', 'rfc9449'],
+    what: 'POST the parameters of an authorization request, authenticated ' +
+          'as at the token endpoint, and get 201 { request_uri, expires_in } ' +
+          'to send the browser to /oauth2/authorize with. The push is ' +
+          'validated as an authorization request would be and refused as ' +
+          'JSON; a `request` object may carry the parameters; a DPoP proof ' +
+          'binds the code. Every other method is 405.' },
+  { path: '/oauth2/step-up/resource/:application', group: 'OAuth 2.0 / OIDC',
+    name: 'Step-up stand-in resource',
+    specs: ['rfc9470', 'rfc9068', 'rfc6750', 'rfc9449'],
+    effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
+            'bare, and 404 for an application the realm has no entry for',
+    what: 'NON-SPEC: a protected resource answering FOR a registered ' +
+          'application, on GET and POST, so a client can be driven through ' +
+          'RFC 9470 without deploying the API. The access token must ' +
+          'verify, be an at+jwt from an authorization server this service ' +
+          'publishes, and name the application in its aud; then the ' +
+          'application\'s oauthStepUpAcrValues and oauthStepUpMaxAge are ' +
+          'asked of its acr and auth_time, and a token that does not meet ' +
+          'them is answered 401 insufficient_user_authentication with ' +
+          'acr_values and max_age in the challenge. A token that does gets ' +
+          '200 and the requirement and the authentication it met. Holds ' +
+          'no data.' },
+  // The authorization server's monitoring page and its two management API
+  // operations (2026-09-13), `/admin/acme/monitor`'s arrangement: the page,
+  // the same view over JSON, and the one control as an action.
+  { path: '/admin/oauth2/monitor', group: 'OAuth 2.0 / OIDC',
+    name: 'OAuth 2.0 / OIDC activity',
+    specs: ['rfc9126', 'rfc9470'],
+    effect: 'POST withdraws a pushed authorization request',
+    what: 'Monitoring > OAuth 2.0 / OIDC activity, in one section per ' +
+          'mechanism. RFC 9126 first: pushes, refusals, request_uris read, ' +
+          'spent, expired and refused at the authorization endpoint, per ' +
+          'client with the OAuth errors returned, and every pushed request ' +
+          'still held (paged, filtered by state and client_id) with a ' +
+          'Withdraw form that posts back here. RFC 9470 second: ' +
+          'requirements met by a session or by a sign-in, people sent to ' +
+          'sign in again for max_age or acr_values, unmet and login_required ' +
+          'refusals, and resource-server challenges, per client. No reset. ' +
+          'Add ?format=json.' },
+  { path: '/admin-api/oauth2/monitor', group: 'OAuth 2.0 / OIDC',
+    name: 'OAuth 2.0 / OIDC activity over JSON',
+    specs: ['rfc9126', 'rfc9470'],
+    what: 'What GET /admin/oauth2/monitor draws, out of the same view ' +
+          'function; the pushed requests paged by offset and limit as well ' +
+          'as page and per.' },
+  { path: '/admin-api/oauth2/monitor/:action', group: 'OAuth 2.0 / OIDC',
+    name: 'The OAuth 2.0 / OIDC monitoring action',
+    specs: ['rfc9126'],
+    effect: 'withdraws a pushed authorization request',
+    what: 'delete-pushed-request: a request_uri removed from the realm\'s ' +
+          'store and refused invalid_request_uri at the authorization ' +
+          'endpoint afterwards, through the same function as the console.' },
   { path: '/oauth2/revoke', group: 'OAuth 2.0 / OIDC', name: 'Revocation ' +
       'endpoint',
     specs: ['rfc7009'], what: 'Revocation that takes effect: introspection ' +
@@ -7395,16 +7939,29 @@ const ENDPOINTS = [
           'the loopback (2.6), each with invalid_client_metadata and the ' +
           'section. Recording a permission the token endpoint will always ' +
           'refuse is the discovery document\'s promise broken in the other ' +
-          'direction. PRODUCT MODE CLOSES IT (403, and registration_endpoint ' +
-          'leaves both discovery documents) unless oauth2.openRegistration ' +
-          'is on; an application is then created on /admin or /admin-api. ' +
-          'The client_id prefix, the random sizes and ' +
+          'direction. PRODUCT MODE CLOSES IT (403) unless ' +
+          'oauth2.openRegistration is on — or the registration carries a ' +
+          'software statement this realm trusts and ' +
+          'oauth2.softwareStatementOpensRegistration is on, in which case ' +
+          'registration_endpoint stays advertised; with neither, it leaves ' +
+          'both discovery documents and an application is created on /admin ' +
+          'or /admin-api. A SOFTWARE STATEMENT (RFC 7591 section 2.3) is ' +
+          'verified before any other check of the metadata: issued by this ' +
+          'realm (typed software-statement+jwt) or by an application ' +
+          'declaring the issuer in oauthSoftwareStatementIssuer; a trusted ' +
+          'one\'s claims take precedence and it is echoed unmodified; ' +
+          'otherwise invalid_software_statement or ' +
+          'unapproved_software_statement. The client_id prefix, the random ' +
+          'sizes and ' +
           'client_secret_expires_at are settings ' +
           '(oauth2.registeredClientIdPrefix and its neighbours).' },
   { path: '/oauth2/register/:client_id', group: 'OAuth 2.0 / OIDC',
     name: 'Registered client management', specs: ['rfc7592', 'rfc6750'],
     what: 'Read, update or delete a registered client, guarded by its ' +
-          'registration access token.' },
+          'registration access token. An update applies a software ' +
+          'statement as registration does, and a client admitted by a ' +
+          'trusted statement at an otherwise closed endpoint must present a ' +
+          'trusted statement from the same issuer with every update.' },
 
   // --- OID4VCI ---
   { path: '/.well-known/openid-credential-issuer', group: 'VC Issuance ' +
@@ -7550,7 +8107,275 @@ const ENDPOINTS = [
     name: 'Presentation ' +
       'complete page',
     specs: ['oid4vp'], what: 'Where the End-User lands after a cross-device ' +
-                             'presentation.' }
+                             'presentation.' },
+  // ===== ACME endpoints (acme/) =====
+  { path: '/enroll/acme/directory', group: 'ACME', name: 'The ACME directory',
+    specs: ['rfc8555', 'acme-profiles', 'rfc9773'],
+    what: 'RFC 8555 section 7.1.1: the URLs of every resource, and meta ' +
+          'with externalAccountRequired true, the website and the allowed ' +
+          'certificate profiles (draft-ietf-acme-profiles). A POST answers ' +
+          '405.' },
+  { path: '/enroll/acme/new-nonce', group: 'ACME', name: 'A fresh Replay-Nonce',
+    specs: ['rfc8555'],
+    what: 'Section 7.2: HEAD answers 200 and GET 204, each with a ' +
+          'Replay-Nonce that is single-use, expires after ' +
+          'acme.nonceLifetimeS, and carries its own MAC so any process of ' +
+          'this service can check it.' },
+  { path: '/enroll/acme/new-account', group: 'ACME',
+    name: 'Create or find an account',
+    specs: ['rfc8555', 'rfc7515'],
+    effect: 'creates an account and spends an EAB key',
+    what: 'Section 7.3: a JWS with jwk; an existing key answers 200 with ' +
+          'its account, onlyReturnExisting finds without creating, and a ' +
+          'new account REQUIRES an External Account Binding (section ' +
+          '7.3.4) whose MAC is verified in every mode and whose key binds ' +
+          'the account for life to the entry it was issued for.' },
+  { path: '/enroll/acme/account/:id', group: 'ACME', name: 'An account',
+    specs: ['rfc8555'],
+    what: 'Section 7.3.2 and 7.3.6: POST-as-GET reads it, a payload ' +
+          'updates the contact or deactivates it. Signed by that account ' +
+          'only.' },
+  { path: '/enroll/acme/account/:id/orders', group: 'ACME',
+    name: 'An account\'s orders',
+    specs: ['rfc8555'],
+    what: 'Section 7.1.2.1: the URLs of the account\'s orders that are not ' +
+          'invalid, a page at a time with a Link rel next.' },
+  { path: '/enroll/acme/new-order', group: 'ACME', name: 'Create an order',
+    specs: ['rfc8555', 'rfc8738', 'rfc8823',
+            'acme-profiles', 'acme-device-attest', 'rfc9773'],
+    what: 'Section 7.4: identifiers of type dns, ip (RFC 8738), email (RFC ' +
+          '8823) or permanent-identifier, an optional profile and replaces ' +
+          '(RFC 9773). Every identifier the bound entry owns is authorized ' +
+          'at once; one it does not own refuses the order ' +
+          'rejectedIdentifier.' },
+  { path: '/enroll/acme/order/:id', group: 'ACME', name: 'An order',
+    specs: ['rfc8555'],
+    what: 'POST-as-GET: the order, its authorizations, its finalize URL ' +
+          'and, once valid, its certificate URL. The status is derived on ' +
+          'read.' },
+  { path: '/enroll/acme/order/:id/finalize', group: 'ACME',
+    name: 'Finalize an order',
+    specs: ['rfc8555', 'rfc5280'],
+    effect: 'issues a certificate and writes it onto the entry',
+    what: 'Section 7.4: a CSR naming exactly the order\'s identifiers, ' +
+          'verified for proof of possession, issued through ' +
+          'common/cert_enrollment.js from the realm\'s ACME Issuing CA and ' +
+          'written onto the entry. A second finalize answers ' +
+          'orderNotReady.' },
+  { path: '/enroll/acme/authz/:id', group: 'ACME', name: 'An authorization',
+    specs: ['rfc8555'],
+    what: 'Section 7.5: an identifier the entry owns, valid, with one ' +
+          'sts-entry-binding-01 challenge; a payload of status deactivated ' +
+          'deactivates it (section 7.5.2).' },
+  { path: '/enroll/acme/challenge/:id', group: 'ACME', name: 'A challenge',
+    specs: ['rfc8555'],
+    what: 'Section 7.5.1: the sts-entry-binding-01 challenge, already ' +
+          'valid because the identifier was authorized from the directory ' +
+          'rather than by fetching anything. Posting {} answers it.' },
+  { path: '/enroll/acme/cert/:id', group: 'ACME',
+    name: 'Download a certificate',
+    specs: ['rfc8555', 'rfc5280'],
+    what: 'Section 7.4.2: POST-as-GET by the account that ordered it, ' +
+          'answered application/pem-certificate-chain — the certificate, ' +
+          'the ACME Issuing CA and the realm Intermediate, never the Root.' },
+  { path: '/enroll/acme/revoke-cert', group: 'ACME',
+    name: 'Revoke a certificate',
+    specs: ['rfc8555', 'rfc5280'],
+    effect: 'revokes a certificate',
+    what: 'Section 7.6: signed by an account bound to the certificate\'s ' +
+          'entry or by the certificate\'s own key, with a subscriber ' +
+          'reason code; the serial goes on the ACME Issuing CA\'s CRL.' },
+  { path: '/enroll/acme/key-change', group: 'ACME',
+    name: 'Roll an account over to a new key',
+    specs: ['rfc8555'],
+    effect: 'replaces the account key',
+    what: 'Section 7.3.5: an inner JWS signed by the new key naming the ' +
+          'account and the old key; a key already bound to another account ' +
+          'answers 409.' },
+  { path: '/enroll/acme/renewal-info/:id', group: 'ACME',
+    name: 'Renewal information',
+    specs: ['rfc9773'],
+    what: 'RFC 9773 section 4: GET with a certificate identifier, answered ' +
+          'with a suggested renewal window and Retry-After.' },
+  { path: '/admin/acme', group: 'ACME', name: 'The ACME console page',
+    specs: ['rfc8555'],
+    what: 'Protocols > ACME: the directory and endpoints, the ACME Issuing ' +
+          'CA, the profile table with the five never issued, the External ' +
+          'Account Binding keys with Create and Delete, the accounts with ' +
+          'Deactivate, the certificates with Revoke, the registered host ' +
+          'names with Register and Remove, the mode note and every acme.* ' +
+          'setting.' },
+  { path: '/admin/acme/monitor', group: 'ACME', name: 'ACME enrollments',
+    specs: ['rfc8555'],
+    what: 'Monitoring > ACME enrollments: requests by operation, profile, ' +
+          'principal, error code and status, certificates issued and ' +
+          'revoked, accounts bound, and the recent requests.' },
+  { path: '/admin-api/acme', group: 'ACME',
+    name: 'The ACME console page over JSON',
+    specs: ['rfc8555'],
+    what: 'What GET /admin/acme draws, out of the same view function.' },
+  { path: '/admin-api/acme/monitor', group: 'ACME',
+    name: 'ACME enrollments over JSON',
+    specs: ['rfc8555'],
+    what: 'What GET /admin/acme/monitor draws, out of the same view ' +
+          'function.' },
+  { path: '/admin-api/acme/:action', group: 'ACME',
+    name: 'The ACME console actions',
+    specs: ['rfc8555'],
+    what: 'create-eab (the HMAC key answered once), delete-eab, ' +
+          'deactivate-account, revoke-certificate, add-host-name and ' +
+          'remove-host-name, through the same functions as the console.' },
+  // ===== EST endpoints (est/) =====
+  { path: '/.well-known/est/cacerts', group: 'EST', name: 'CA certificates',
+    specs: ['rfc7030', 'rfc8951', 'rfc5280'],
+    what: 'Unauthenticated (RFC 7030 section 4.1): the EST Issuing CA, this ' +
+          'realm\'s Intermediate and the service Root as a certs-only CMS ' +
+          'message, base64. 503 in a realm with no hierarchy.' },
+  { path: '/.well-known/est/simpleenroll', group: 'EST',
+    name: 'Simple enrollment',
+    specs: ['rfc7030', 'rfc8951', 'rfc5967', 'rfc7617'],
+    effect: 'issues a certificate and writes it onto the entry it names',
+    what: 'A base64 application/pkcs10 request, authenticated by HTTP Basic ' +
+          '(a person\'s password or an application\'s client secret) or a ' +
+          'TLS client certificate this realm issued, answered with the ' +
+          'certificate for est.defaultProfile. A person may enroll only for ' +
+          'themselves; an Admin Write holder for anybody in the realm.' },
+  { path: '/.well-known/est/simplereenroll', group: 'EST',
+    name: 'Simple re-enrollment',
+    specs: ['rfc7030', 'rfc8951', 'rfc5967'],
+    effect: 'issues a certificate and supersedes the one it renews',
+    what: 'Renews a certificate whose subject and subjectAltName the request ' +
+          'repeats (section 4.2.2): the TLS client certificate presented, or ' +
+          'with Basic the matching EST certificate on the entry. The renewed ' +
+          'one goes on the EST CRL as superseded.' },
+  { path: '/.well-known/est/serverkeygen', group: 'EST',
+    name: 'Server-side key generation',
+    specs: ['rfc7030', 'rfc8951'],
+    effect: 'generates a key pair, issues a certificate, keeps a sealed copy ' +
+            'of the key on the entry',
+    what: 'The request is a template (section 4.4); the key pair is ' +
+          'generated here in the template\'s algorithm and returned once as ' +
+          'multipart/mixed: the PKCS#8 private key and a certs-only ' +
+          'certificate. An encrypted private key is not offered (501).' },
+  { path: '/.well-known/est/csrattrs', group: 'EST', name: 'CSR attributes',
+    specs: ['rfc7030', 'rfc8951'],
+    what: 'Unauthenticated (section 4.5): the signature algorithms a request ' +
+          'may be signed with, the extensionRequest attribute, the ' +
+          'profile\'s extended key usages and, where it needs one, the kind ' +
+          'of subjectAltName it expects.' },
+  { path: '/.well-known/est/fullcmc', group: 'EST', name: 'Full CMC',
+    specs: ['rfc7030'],
+    what: 'Registered so that a client asking gets 501 Not Implemented ' +
+          'rather than a 404: Full CMC (section 4.3) is optional and not ' +
+          'implemented here.' },
+  { path: '/.well-known/est/:label/cacerts', group: 'EST',
+    name: 'CA certificates (labelled)', specs: ['rfc7030', 'rfc8951'],
+    what: 'The same as /cacerts. The label is a certificate profile id; an ' +
+          'unknown one is 404 and a refused or disallowed one 403.' },
+  { path: '/.well-known/est/:label/simpleenroll', group: 'EST',
+    name: 'Simple enrollment (labelled)',
+    specs: ['rfc7030', 'rfc8951', 'rfc5967'],
+    effect: 'issues a certificate and writes it onto the entry it names',
+    what: 'Simple enrollment for the profile the label names, which must be ' +
+          'one of the nine est.allowedProfiles permits.' },
+  { path: '/.well-known/est/:label/simplereenroll', group: 'EST',
+    name: 'Simple re-enrollment (labelled)',
+    specs: ['rfc7030', 'rfc8951', 'rfc5967'],
+    effect: 'issues a certificate and supersedes the one it renews',
+    what: 'Re-enrollment into the labelled profile; unlabelled, a renewal ' +
+          'keeps the profile the renewed certificate was issued for.' },
+  { path: '/.well-known/est/:label/serverkeygen', group: 'EST',
+    name: 'Server-side key generation (labelled)',
+    specs: ['rfc7030', 'rfc8951'],
+    effect: 'generates a key pair, issues a certificate, keeps a sealed copy ' +
+            'of the key on the entry',
+    what: 'Server-side key generation for the labelled profile. An ML-KEM ' +
+          'template is certified for key-encipherment only.' },
+  { path: '/.well-known/est/:label/csrattrs', group: 'EST',
+    name: 'CSR attributes (labelled)', specs: ['rfc7030', 'rfc8951'],
+    what: 'What a request for the labelled profile should carry: its ' +
+          'extended key usages and the subjectAltName kind it needs.' },
+  { path: '/.well-known/est/:label/fullcmc', group: 'EST',
+    name: 'Full CMC (labelled)', specs: ['rfc7030'],
+    what: 'Answers 501 under a label as it does without one.' },
+  { path: '/admin/est', group: 'EST', name: 'The EST console page',
+    specs: ['rfc7030'],
+    what: 'Protocols > EST: the endpoints and the labelled URL of every ' +
+          'profile, the EST Issuing CA, the profiles and the five never ' +
+          'issued, the credentials EST accepts, issuing with a ' +
+          'server-generated key, certificate host names, the enrolled ' +
+          'certificates with a Revoke on each, and every est.* setting.' },
+  { path: '/admin/est/monitor', group: 'EST', name: 'EST enrollments',
+    specs: ['rfc7030'],
+    what: 'Monitoring > EST enrollments: requests, issuances, refusals and ' +
+          'revocations by operation, profile, principal, error code and ' +
+          'status, and the most recent requests.' },
+  { path: '/admin-api/est', group: 'EST', name: 'The EST console page over ' +
+                                                'JSON',
+    specs: ['rfc7030'],
+    what: 'What GET /admin/est draws, out of the same view function.' },
+  { path: '/admin-api/est/monitor', group: 'EST',
+    name: 'EST enrollments over JSON', specs: ['rfc7030'],
+    what: 'What GET /admin/est/monitor draws, out of the same view function.' },
+  { path: '/admin-api/est/:action', group: 'EST',
+    name: 'Issue with a server key, revoke, or change host names',
+    specs: ['rfc7030', 'rfc5280'],
+    what: 'The four controls on /admin/est as one action resource: ' +
+          'issue-server-key (the private key returned once), ' +
+          'revoke-certificate, add-host-name and remove-host-name.' },
+  // ===== SCEP endpoints (scep/) =====
+  { path: '/enroll/scep', group: 'SCEP', name: 'The SCEP server',
+    specs: ['rfc8894'],
+    effect: 'PKIOperation issues a certificate and writes it onto the entry ' +
+            'the challenge names',
+    what: 'GET and POST, ?operation=GetCACaps | GetCACert | GetNextCACert | ' +
+          'PKIOperation. A pkiMessage is a CMS SignedData signed by the ' +
+          'requester and encrypted to the RA; the reply is a CertRep signed ' +
+          'by the RA. Refusals after the message is read are CertRep FAILURE ' +
+          'with a failInfo; not refused over plain HTTP in either mode, ' +
+          'because the security is the CMS envelope (RFC 8894 section 2.1).' },
+  { path: '/enroll/scep/pkiclient.exe', group: 'SCEP',
+    name: 'The SCEP server (CGI name)', specs: ['rfc8894'],
+    effect: 'as /enroll/scep',
+    what: 'The same server under the pkiclient.exe name older clients ' +
+          'append to every SCEP URL.' },
+  { path: '/enroll/scep/:profile/pkiclient.exe', group: 'SCEP',
+    name: 'The SCEP server for one profile (CGI name)', specs: ['rfc8894'],
+    effect: 'as /enroll/scep',
+    what: 'The profile URL below under the pkiclient.exe name.' },
+  { path: '/enroll/scep/:profile', group: 'SCEP',
+    name: 'The SCEP server for one profile', specs: ['rfc8894'],
+    effect: 'as /enroll/scep',
+    what: 'The same server with a certificate profile named in the path; a ' +
+          'PKIOperation whose challenge (or renewed certificate) is for ' +
+          'another profile is refused badRequest.' },
+  { path: '/admin/scep', group: 'SCEP', name: 'The SCEP console page',
+    specs: ['rfc8894'],
+    what: 'Protocols > SCEP: the endpoints, the SCEP Issuing CA and the RA ' +
+          'certificate (with Re-issue), the profile table with each ' +
+          'profile\'s SCEP URL and the five refused, the challenge passwords ' +
+          '(Create, shown once; Delete), registered host names, the ' +
+          'certificates issued over SCEP (Revoke), the exceptions, the mode ' +
+          'and every scep.* setting.' },
+  { path: '/admin/scep/monitor', group: 'SCEP', name: 'SCEP enrollments',
+    specs: ['rfc8894'],
+    what: 'Monitoring > SCEP enrollments: requests, issuances and refusals ' +
+          'by operation, by failInfo, by error code, by profile and by ' +
+          'principal, and the recent requests.' },
+  { path: '/admin-api/scep', group: 'SCEP',
+    name: 'The SCEP console page over JSON', specs: ['rfc8894'],
+    what: 'What GET /admin/scep draws, out of the same view function.' },
+  { path: '/admin-api/scep/monitor', group: 'SCEP',
+    name: 'SCEP enrollments over JSON', specs: ['rfc8894'],
+    what: 'What GET /admin/scep/monitor draws, out of the same view ' +
+          'function.' },
+  { path: '/admin-api/scep/:action', group: 'SCEP',
+    name: 'Challenges, the RA certificate, revocation and host names',
+    specs: ['rfc8894'],
+    what: 'The controls on /admin/scep as one action resource: ' +
+          'create-challenge (the challenge in the reply once), ' +
+          'delete-challenge, reissue-ra, revoke-certificate, add-host-name ' +
+          'and remove-host-name.' },
 ];
 
 const SPEC_BY_ID = {};
@@ -7590,12 +8415,13 @@ SPECS.forEach(function (s) { SPEC_BY_ID[s.id] = s; });
 // ---------------------------------------------------------------------------
 const PROTOCOLS = [
   { name: 'OAuth2 / OIDC', groups: ['OAuth 2.0 / OIDC'],
-    specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700'],
+    specs: ['rfc6749', 'oidc', 'rfc8414', 'rfc9700', 'oauth21'],
     what: 'A mock authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +
           'authorization servers as have been asked for. RFC 9700 mode ' +
-          'turns the BCP\'s refusals on.' },
+          'turns the BCP\'s refusals on, and OAuth 2.1 mode ' +
+          '(draft-ietf-oauth-v2-1-16) turns those on and adds its own.' },
   { name: 'User portal', groups: ['User portal'],
     specs: [],
     // **THE ONE CARD ON THIS PAGE THAT IMPLEMENTS NO SPECIFICATION, AND IT
@@ -7794,6 +8620,38 @@ const PROTOCOLS = [
           'not this service — SPIFFE issues SVIDs and TLS issues its own ' +
           'listener certificate — and it revokes nothing, ever: no CRL, no ' +
           'OCSP, and the page says so.' },
+  // ===== ACME card (acme/) =====
+  { name: 'ACME', groups: ['ACME'],
+    specs: ['rfc8555', 'rfc9773', 'rfc8738', 'rfc8823', 'acme-profiles',
+            'acme-device-attest'],
+    what: 'An ACME server per trust realm at /enroll/acme: an account bound ' +
+          'for life to one person or application by an External Account ' +
+          'Binding key, orders for dns, ip, email and permanent-identifier ' +
+          'identifiers that entry owns — authorized from the directory with ' +
+          'no challenge dialling out — finalized with a CSR into a ' +
+          'certificate from the realm\'s ACME Issuing CA, with revocation, ' +
+          'key roll-over and renewal information.' },
+  // ===== EST card (est/) =====
+  { name: 'EST', groups: ['EST'],
+    specs: ['rfc7030', 'rfc8951', 'rfc5967'],
+    what: 'Enrollment over Secure Transport: a device or a person holding a ' +
+          'password, a client secret or a certificate this realm issued sends ' +
+          'a base64 PKCS#10 request and is handed a certificate from the ' +
+          'realm\'s EST Issuing CA — for itself, or, as an administrator, for ' +
+          'any entry — under a label per certificate profile, with ' +
+          're-enrollment, server-side key generation and CSR attributes. ' +
+          'Full CMC and tls-unique channel binding are not implemented.' },
+  // ===== SCEP card (scep/) =====
+  { name: 'SCEP', groups: ['SCEP'],
+    specs: ['rfc8894', 'rfc5280', 'rfc6960'],
+    what: 'The Simple Certificate Enrolment Protocol: a device holding a ' +
+          'single-use challenge password issued for one person or ' +
+          'application and one profile sends a signed, encrypted PKCS#10 ' +
+          'request and is handed a certificate from the realm\'s SCEP ' +
+          'Issuing CA, as that entry — with renewal signed by the ' +
+          'certificate it renews, CertPoll, GetCert and GetCRL. RSA keys ' +
+          'only, because the reply is RSA-encrypted to the requester; ' +
+          'GetNextCACert and PENDING are not implemented.' },
   { name: 'SCIM', groups: ['SCIM'],
     specs: ['rfc7642', 'rfc7643', 'rfc7644'],
     what: 'Provisioning, with no store of its own: a POST /scim/v2/Users and ' +

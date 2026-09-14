@@ -115,11 +115,25 @@ const saml11 = require('../saml/saml11_sso');
 const authorizationServers = require('../oauth-oidc/authorization_servers');
 // The refresh-token JWE, so a pasted refresh token can be revoked by its jti.
 const refreshTokenCrypto = require('../oauth-oidc/refresh_token_crypto');
+// RFC 9728 protected resource metadata, for `load-resource-metadata`. A
+// library: it registers nothing and requires nothing that reaches back here.
+const resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
+// RFC 7591 SECTION 2.3 (2026-09-13): a LIBRARY (rule 3) registering no route,
+// which signs a software statement as this realm and writes it onto the entry.
+const softwareStatement = require('../oauth-oidc/software_statement');
+// RFC 8705 (2026-09-13): a TLS client certificate issued TO an application,
+// packaged once, and revoked among that application's own. A LIBRARY (rule 3)
+// that registers no route.
+const tlsClientCertificates = require('../common/tls_client_certificates');
 const federation = require('../federation/federation');
 const spiffeCa = require('../spiffe/spiffe_ca');
 const spiffeRegistry = require('../spiffe/spiffe_registry');
 const spiffeIdLib = require('../spiffe/spiffe_id');
 const signals = require('../ssf/ssf_receivers');
+// WHAT A CREDENTIAL CHANGE SAYS OVER CAEP AND RISC (2026-09-13). A LIBRARY that
+// requires only the logger and reads `ssf/ssf.js` out of the require cache when
+// an event is due, so requiring it here moves no route — see its header.
+const accountSignals = require('../ssf/account_signals');
 const oauth2 = require('../oauth-oidc/oauth2');
 const appPermissions = require('../common/app_permissions');
 const consent = require('../common/consent');
@@ -969,14 +983,30 @@ function xacmlAction(body) {
     return refused('STS-ADMIN-0501',
                    { ok: false, errors: [noXacml().message] });
   }
-  const result = xacmlPages.action(body);
-  if (!result.ok && !result.errors && result.why) {
-    log.debug('Leaving xacmlAction(). Refused.');
-    return refused(innerCode(result) || 'STS-ADMIN-0517',
-                   Object.assign({}, result, { errors: [result.why] }));
+  const answered = xacmlPages.action(body);
+  // `issue-pep-certificate` (2026-09-13) answers a PROMISE — a key pair and a
+  // certificate are both asynchronous — and every other XACML action answers a
+  // result. Settled here rather than by making every action asynchronous, so
+  // that the in-process tests calling `combinedAction()` without awaiting are
+  // unaffected; the caller of THIS function settles either shape with
+  // `Promise.resolve()`.
+  if (answered && typeof answered.then === 'function') {
+    log.debug('Leaving xacmlAction(). Asynchronous.');
+    return answered.then(converted);
   }
-  log.debug('Leaving xacmlAction(). ok=' + result.ok);
-  return refusedBy('STS-ADMIN-0517', result);
+  log.debug('Leaving xacmlAction().');
+  return converted(answered);
+
+  function converted(result) {
+    log.debug("Entering converted().");
+    if (!result.ok && !result.errors && result.why) {
+      log.debug('Leaving converted(). Refused.');
+      return refused(innerCode(result) || 'STS-ADMIN-0517',
+                     Object.assign({}, result, { errors: [result.why] }));
+    }
+    log.debug('Leaving converted(). ok=' + result.ok);
+    return refusedBy('STS-ADMIN-0517', result);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1076,7 +1106,292 @@ function truthy(value) {
 // refusal sentence to discover what to check for, so a list that is short by
 // one turns the parity check off for that action.
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
-                       'clear-totp', 'clear-key', 'clear-backup-codes'];
+                       'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // What an administrator does to somebody's
+                       // credentials from their page (2026-09-13).
+                       'reset-password', 'issue-password-reset',
+                       'disable-primary-keys', 'disable-mfa',
+                       'require-mfa', 'stop-requiring-mfa'];
+
+// ---------------------------------------------------------------------------
+// WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
+// (2026-09-13): six actions on the Users resource, drawn on a person's
+// /admin/users page and mirrored at POST /admin-api/users/{action}.
+//
+//   reset-password         a generated password, returned ONCE; the person
+//                          must change it at their next sign-in (pwdReset);
+//                          they are signed out of everything.
+//   issue-password-reset   a single-use link, returned ONCE; the password they
+//                          had is REMOVED and they are signed out of
+//                          everything, so the link is their way back.
+//   disable-primary-keys   every PRIMARY security key off, so passkeys no
+//                          longer sign them in; refused where that leaves no
+//                          way in.
+//   disable-mfa            every second factor off: authenticator app, `mfa`
+//                          keys, recovery codes.
+//   require-mfa            a second factor required of them at the sign-in
+//   stop-requiring-mfa     screen, and the requirement taken away.
+//
+// **EACH SAYS WHAT HAPPENED OVER SHARED SIGNALS**, through
+// `ssf/account_signals.js`: a CAEP credential-change for every credential that
+// changed, RISC account-credential-change-required for a reset, RISC
+// recovery-information-changed for cleared recovery codes. The sign-out's own
+// sessions each say session-revoked through `dropSession()`, as every sign-out
+// does. Nothing waits for any of it.
+//
+// **THE STORE DECIDES WHAT HAPPENS TO THE ENTRY** (`common/credentials.js`);
+// this decides who asked, what is audited and what is said. Answers null for
+// an action that is not one of the six, so `usersAction()` carries on.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
+  'disable-primary-keys', 'disable-mfa', 'require-mfa', 'stop-requiring-mfa'];
+
+// Sign somebody out of everything, through the same `terminate()`
+// `/admin/logout`'s global button calls. A process without the logout module is
+// reported rather than refused: the credential change has happened either way.
+function signOutEverywhere(who, ctx, why) {
+  log.debug("Entering signOutEverywhere(). who=" + who);
+  if (!logoutReader) {
+    log.debug("Leaving signOutEverywhere(). No logout module.");
+    return { ended: false, terminated: 0,
+             message: 'No sign-out module is loaded in this process, so no ' +
+                      'session was ended.' };
+  }
+  const result = logoutReader.terminate(stats.identityKeyOf(who), [], {
+    actor: ctx.actor || who, channel: ctx.via,
+    by: why + ' (' + (ctx.via === 'api' ? '/admin-api/users'
+                                         : 'the admin console') + ')'
+  });
+  log.debug("Leaving signOutEverywhere(). Ended " +
+            (result.terminated || []).length + ".");
+  return { ended: true, terminated: (result.terminated || []).length,
+           message: result.message };
+}
+
+function credentialAdminAction(action, body, ctx) {
+  log.debug("Entering credentialAdminAction(). action=" + action);
+  if (CREDENTIAL_ADMIN_ACTIONS.indexOf(action) < 0) {
+    log.debug("Leaving credentialAdminAction(). Not one of them.");
+    return null;
+  }
+  const who = String(body.user || body.username || '').trim();
+  if (!who) {
+    log.debug("Leaving credentialAdminAction(). No person named.");
+    return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the person ' +
+        'in `user`.'] });
+  }
+  const audited = function (name, summary, detail, outcome) {
+    log.debug("Entering audited().");
+    auditLog.record({ category: 'admin', action: name, actor: ctx.actor,
+      target: who, outcome: outcome || 'success', summary: summary,
+      detail: Object.assign({ username: who, via: ctx.via }, detail || {}) });
+    log.debug("Leaving audited().");
+  };
+
+  if (action === 'reset-password') {
+    const password = credentials.generatePassword(who);
+    const set = credentials.setPassword(who, password, { generated: true });
+    if (!set.ok) {
+      log.debug("Leaving credentialAdminAction(). The password was refused.");
+      return refusedBy('STS-ADMIN-0780', set);
+    }
+    const forced = credentials.setPasswordResetRequired(who, true);
+    // A LINK OUTSTANDING IS SPENT BY THIS: the administrator has just decided
+    // what the password is, and a link left behind would let whoever holds it
+    // replace that decision.
+    credentials.consumePasswordReset(who);
+    const signedOut = signOutEverywhere(who, ctx, 'a password reset');
+    audited('admin.password.reset',
+            'an administrator reset the password of ' + who,
+            { forcedChange: forced, sessionsEnded: signedOut.terminated });
+    accountSignals.credentialChanged({ username: who,
+      credentialType: 'password', changeType: 'update', via: ctx.via,
+      reasonAdmin: 'An administrator reset the password of ' + who + '.',
+      reasonUser: 'Your password was reset by an administrator and must be ' +
+                  'changed when you next sign in.' });
+    accountSignals.credentialChangeRequired({ username: who,
+      reasonAdmin: 'An administrator reset the password of ' + who + '.' });
+    log.info('admin: the password of "' + who + '" was reset by ' +
+             (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
+    log.debug("Leaving credentialAdminAction(). reset-password.");
+    return { ok: true, username: who, password: password,
+             forcedChange: forced, signedOut: signedOut,
+             message: 'The password of ' + who + ' was reset. IT IS SHOWN ' +
+                      'ONCE — this service stores a scrypt hash and cannot ' +
+                      'produce it again. Give it to them by a channel you ' +
+                      'trust. ' + (forced
+                        ? 'They must choose their own at their next sign-in. '
+                        : 'The forced change could NOT be recorded, so they ' +
+                          'will not be asked to choose their own. ') +
+                      'They were signed out of everything: ' +
+                      signedOut.message };
+  }
+
+  if (action === 'issue-password-reset') {
+    const issued = credentials.issuePasswordReset(who);
+    if (!issued.ok) {
+      log.debug("Leaving credentialAdminAction(). The link was refused.");
+      return refusedBy('STS-ADMIN-0781', issued);
+    }
+    const removed = credentials.removePassword(who);
+    if (!removed.ok) {
+      // THE LINK IS WITHDRAWN AGAIN: a link issued beside a password that is
+      // still there is not what was asked for, and the administrator is told.
+      credentials.consumePasswordReset(who);
+      log.debug("Leaving credentialAdminAction(). The password stayed.");
+      return refusedBy('STS-ADMIN-0782', removed);
+    }
+    // A password they no longer hold cannot be one they must change.
+    credentials.setPasswordResetRequired(who, false);
+    const signedOut = signOutEverywhere(who, ctx, 'a password reset link');
+    const path = '/portal/reset-password?user=' + encodeURIComponent(who) +
+                 '&token=' + encodeURIComponent(issued.token);
+    audited('admin.password.reset-link',
+            'an administrator issued a password reset link for ' + who,
+            { expiresAt: issued.expiresAt, passwordRemoved: removed.removed,
+              sessionsEnded: signedOut.terminated });
+    if (removed.removed) {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: 'password', changeType: 'revoke', via: ctx.via,
+        reasonAdmin: 'An administrator revoked the password of ' + who +
+                     ' and issued a reset link.',
+        reasonUser: 'Your password was revoked. Use the reset link you were ' +
+                    'sent to choose a new one.' });
+    }
+    accountSignals.credentialChangeRequired({ username: who,
+      reasonAdmin: 'An administrator issued a password reset link for ' + who +
+                   '.' });
+    log.info('admin: a password reset link was issued for "' + who + '" by ' +
+             (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
+    log.debug("Leaving credentialAdminAction(). issue-password-reset.");
+    return { ok: true, username: who,
+             resetUrl: (ctx.base || '') + path, expiresAt: issued.expiresAt,
+             passwordRevoked: removed.removed, signedOut: signedOut,
+             message: 'A password reset link for ' + who + ' is valid until ' +
+                      issued.expiresAt + '. IT IS SHOWN ONCE — this service ' +
+                      'stores only a hash. Send it to them by a channel you ' +
+                      'trust: anybody holding it can set their password. ' +
+                      (removed.removed ? 'Their old password was removed, ' +
+                        'so until the link is used they cannot sign in with ' +
+                        'a password. ' : '') +
+                      'They were signed out of everything: ' +
+                      signedOut.message };
+  }
+
+  if (action === 'disable-primary-keys') {
+    const result = credentials.removePrimaryKeys(who);
+    audited('admin.mfa.primary-keys.removed',
+            (result.ok ? 'removed' : 'could not remove') + ' the primary ' +
+            'security keys of ' + who,
+            { removed: (result.removed || []).length,
+              errors: result.ok ? undefined : (result.errors || []) },
+            result.ok ? 'success' : 'failure');
+    if (!result.ok) {
+      log.debug("Leaving credentialAdminAction(). Keys refused.");
+      return refusedBy('STS-ADMIN-0783', result);
+    }
+    result.removed.forEach(function (one) {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+        changeType: 'delete', friendlyName: one.label, via: ctx.via,
+        reasonAdmin: 'An administrator disabled passwordless sign-in for ' +
+                     who + '.',
+        reasonUser: 'A security key that signed you in without a password ' +
+                    'was removed from your account.' });
+    });
+    log.debug("Leaving credentialAdminAction(). disable-primary-keys.");
+    return { ok: true, username: who, removed: result.removed,
+             message: result.removed.length + ' primary security key(s) of ' +
+                      who + ' removed. They sign in with their password now; ' +
+                      'a key they hold as a second factor is untouched.' };
+  }
+
+  if (action === 'disable-mfa') {
+    const result = credentials.removeSecondFactors(who);
+    const removed = result.removed || { totp: false, keys: [],
+                                        backupCodes: false };
+    audited('admin.mfa.disabled',
+            (result.ok ? 'disabled' : 'could not disable') + ' every second ' +
+            'factor of ' + who,
+            { totp: removed.totp, keys: removed.keys.length,
+              backupCodes: removed.backupCodes,
+              errors: result.ok ? undefined : (result.errors || []) },
+            result.ok ? 'success' : 'failure');
+    // SAID FOR WHATEVER WENT, even on a write that failed part way: those
+    // credentials are gone, and a receiver not told would go on trusting them.
+    if (removed.totp) {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
+        changeType: 'delete', via: ctx.via,
+        reasonAdmin: 'An administrator disabled every second factor of ' +
+                     who + '.',
+        reasonUser: 'Your authenticator app was removed from your account.' });
+    }
+    removed.keys.forEach(function (one) {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+        changeType: 'delete', friendlyName: one.label, via: ctx.via,
+        reasonAdmin: 'An administrator disabled every second factor of ' +
+                     who + '.',
+        reasonUser: 'A security key was removed from your account.' });
+    });
+    if (removed.backupCodes) {
+      accountSignals.recoveryInformationChanged({ username: who,
+        reasonAdmin: 'An administrator disabled every second factor of ' +
+                     who + ', recovery codes included.' });
+    }
+    if (!result.ok) {
+      log.debug("Leaving credentialAdminAction(). Second factors refused.");
+      return refusedBy('STS-ADMIN-0784', result);
+    }
+    const requirement = credentials.mfaRequirementFor(who);
+    log.debug("Leaving credentialAdminAction(). disable-mfa.");
+    return { ok: true, username: who, removed: removed,
+             requirement: requirement,
+             message: 'Every second factor of ' + who + ' was removed (' +
+                      'authenticator app: ' + (removed.totp ? 'yes' : 'no') +
+                      ', security keys: ' + removed.keys.length +
+                      ', recovery codes: ' +
+                      (removed.backupCodes ? 'yes' : 'no') + '). ' +
+                      (requirement.required
+                        ? 'A second factor is still REQUIRED of them (' +
+                          (requirement.byUser ? 'on their account'
+                            : 'by the realm') +
+                          '), so their next sign-in asks them to enrol ' +
+                          'a new one.'
+                        : 'A password alone signs them in now.') };
+  }
+
+  // require-mfa and stop-requiring-mfa
+  const wanted = action === 'require-mfa';
+  const result = credentials.setMfaRequired(who, wanted);
+  audited(wanted ? 'admin.mfa.required' : 'admin.mfa.unrequired',
+          (result.ok ? '' : 'could not ') +
+          (wanted ? 'required a second factor of ' : 'stopped requiring a ' +
+                    'second factor of ') + who, {
+            errors: result.ok ? undefined : (result.errors || []) },
+          result.ok ? 'success' : 'failure');
+  if (!result.ok) {
+    log.debug("Leaving credentialAdminAction(). The requirement was refused.");
+    return refusedBy('STS-ADMIN-0785', result);
+  }
+  const mech = credentials.mechanismsFor(who);
+  log.debug("Leaving credentialAdminAction(). " + action + ".");
+  return { ok: true, username: who, required: wanted,
+           requirement: mech.mfaRequirement,
+           message: wanted
+             ? 'A second factor is now required of ' + who + '. ' +
+               (mech.mfaRequired
+                 ? 'They already hold one, so nothing changes at their next ' +
+                   'sign-in.'
+                 : 'They hold none, so their next sign-in at the sign-in ' +
+                   'screen asks them to enrol an authenticator app or a ' +
+                   'security key before it continues.')
+             : 'A second factor is no longer required of ' + who + ' on ' +
+               'their account.' + (mech.mfaRequirement.byRealm
+                 ? ' The REALM still requires one (authn.mfaRequired).' : '')
+  };
+}
 
 function usersAction(body, context) {
   log.debug("Entering usersAction(). action=" + (body.action || '(none)'));
@@ -1085,8 +1400,18 @@ function usersAction(body, context) {
   // caller rather than from a cookie in here, because the management API calls
   // this same function with an actor of its own — a function that reached for a
   // session would only work from one of the two doors. `via` is the door.
+  // `base` (2026-09-13) is the address the request arrived on, realm prefix
+  // included, so a password reset link can be handed back WHOLE — the one
+  // thing an administrator does with it is send it to somebody.
   const ctx = { via: (context || {}).via || 'console',
-                actor: (context || {}).actor || String(body.actor || '') };
+                actor: (context || {}).actor || String(body.actor || ''),
+                base: String((context || {}).base || '') };
+
+  const credentialAnswer = credentialAdminAction(action, body, ctx);
+  if (credentialAnswer) {
+    log.debug("Leaving usersAction(). A credential action answered.");
+    return credentialAnswer;
+  }
 
   // ISSUE AN ACTIVATION LINK (2026-09-06). How somebody provisioned through
   // /admin-api, SCIM or an LDAP add comes to have a way in.
@@ -1179,6 +1504,12 @@ function usersAction(body, context) {
                 errors: result.ok ? undefined : (result.errors || []) }
     });
     if (result.ok) {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
+        changeType: 'delete', via: ctx.via,
+        reasonAdmin: 'An administrator cleared the authenticator app of ' +
+                     who + '.',
+        reasonUser: 'Your authenticator app was removed from your account.' });
       log.info('admin: the authenticator app for "' + who +
                '" was cleared by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). ' +
@@ -1236,6 +1567,9 @@ function usersAction(body, context) {
                 errors: result.ok ? undefined : (result.errors || []) }
     });
     if (result.ok) {
+      accountSignals.recoveryInformationChanged({ username: who,
+        reasonAdmin: 'An administrator cleared the recovery codes of ' + who +
+                     '.' });
       log.info('admin: the recovery codes for "' + who + '" were cleared by ' +
                (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). The ' +
                'next second factor they enrol issues a new set.');
@@ -1255,7 +1589,20 @@ function usersAction(body, context) {
     }
     // THROUGH `removeKey()` AND NOT A WRITE OF ITS OWN — see the header: that
     // function carries the refusal that matters.
+    const going = credentials.keysOf(who).filter(function (one) {
+      return one.credentialId === String(body.credentialId || '');
+    })[0];
     const result = credentials.removeKey(who, String(body.credentialId || ''));
+    if (result.ok) {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.KEY_CREDENTIAL_TYPE,
+        changeType: 'delete', via: ctx.via,
+        friendlyName: going ? String(going.label || '') : '',
+        reasonAdmin: 'An administrator removed a ' +
+                     (going ? going.role : '') + ' security key of ' + who +
+                     '.',
+        reasonUser: 'A security key was removed from your account.' });
+    }
     auditLog.record({
       category: 'authentication', action: 'admin.mfa.key.cleared',
       actor: ctx.actor, target: who, outcome: result.ok ? 'success' : 'failure',
@@ -1316,6 +1663,10 @@ function usersAction(body, context) {
       log.debug("Leaving usersAction(). The password was refused.");
       return refusedBy('STS-ADMIN-0525', set);
     }
+    accountSignals.credentialChanged({ username: who,
+      credentialType: 'password', changeType: 'update', via: ctx.via,
+      reasonAdmin: 'An administrator set the password of ' + who + '.',
+      reasonUser: 'Your password was changed by an administrator.' });
     auditLog.record({
       category: 'authentication', action: 'password.set',
       actor: (body.actor || ''), target: who, outcome: 'success',
@@ -1709,17 +2060,28 @@ function applicationFieldsFrom(body) {
 // ../mgmt-api/CLAUDE.md, which is the rule that sentence serves.
 const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'confirm-address', 'discard-address',
-                             'regenerate-secret',
+                             'regenerate-secret', 'issue-software-statement',
+                             'issue-tls-client-certificate',
+                             'revoke-tls-client-certificate',
                              'revoke-registration', 'refresh-metadata',
-                             'forget'];
+                             'load-resource-metadata', 'forget'];
 
-function applicationsAction(body, protocols) {
+// `context` is what an action may not derive from a parsed body: the
+// authorization servers of the realm the request arrived in, which
+// `load-resource-metadata` compares a document against and which are addressed
+// by the base URL of the REQUEST. The route computes it and hands it down —
+// `listField()`'s arrangement one argument along — so this function still never
+// sees `req`.
+function applicationsAction(body, protocols, context) {
   log.debug("Entering applicationsAction(). action=" +
             (body.action || '(none)'));
   const action = String(body.action || '');
   const identifier = String(body.application || '').trim();
   const needsOne = ['set', 'add', 'remove', 'confirm-address',
                     'discard-address', 'regenerate-secret',
+                    'issue-software-statement',
+                    'issue-tls-client-certificate',
+                    'revoke-tls-client-certificate',
                     'revoke-registration', 'forget'];
   if (needsOne.indexOf(action) >= 0 && !identifier) {
     log.debug("Leaving applicationsAction(). No application named.");
@@ -1789,7 +2151,8 @@ function applicationsAction(body, protocols) {
                           'Give it the ones it is allowed and RFC 9700 mode ' +
                           'will judge it against them; without them a ' +
                           'redirect_uri is judged against the ' +
-                          'oauth2.redirectUris setting instead.') };
+                          'oauth2.redirectUris setting instead — and in ' +
+                          'OAuth 2.1 mode it is refused.') };
   }
 
   if (action === 'set' || action === 'add' || action === 'remove') {
@@ -1846,6 +2209,27 @@ function applicationsAction(body, protocols) {
   }
 
   // ---------------------------------------------------------------------
+  // A SOFTWARE STATEMENT, SIGNED AS THIS REALM (RFC 7591 section 2.3,
+  // 2026-09-13), from the Software statements section of the application's
+  // own page. `software_statement.issue()` decides everything about it —
+  // what it may fix, its lifetime, its `iss` — and this action decides only
+  // that the base URL comes from the REQUEST's context and never the body,
+  // because the `iss` it names is the issuer a registration must then match.
+  // The reply carries the statement, which is not a secret.
+  if (action === 'issue-software-statement') {
+    const ctx = context || {};
+    const result = softwareStatement.issue({
+      identifier: identifier,
+      metadata: body.metadata,
+      lifetimeSeconds: body.lifetimeSeconds,
+      base: ctx.base || ''
+    });
+    log.debug("Leaving applicationsAction(). issue-software-statement " +
+              (result.ok ? 'ok' : 'refused') + ".");
+    return refusedBy('STS-ADMIN-0649', result);
+  }
+
+  // ---------------------------------------------------------------------
   // THE ONE ACTION HERE THAT IS ASYNCHRONOUS, and the only one in this console
   // that makes an outbound request.
   //
@@ -1866,6 +2250,122 @@ function applicationsAction(body, protocols) {
     return spMetadata.refresh(identifier).then(function (result) {
       return refusedBy('STS-ADMIN-0532', result);
     });
+  }
+
+  // RFC 9728 (2026-09-13): READ a protected resource's metadata document —
+  // pasted in `document`, uploaded as `file`, or fetched from `url` — and
+  // answer with the application it describes. IT CREATES NOTHING; the create is
+  // `create`, with the fields this answer proposes. It is an action and not a
+  // view because the fetch is an outbound request an administrator causes, and
+  // both admin surfaces gate a POST behind Admin Write. A promise, like
+  // `refresh-metadata`, for that action's reason.
+  if (action === 'load-resource-metadata') {
+    const ctx = context || {};
+    const file = body.file && typeof body.file === 'object'
+      ? body.file
+      : (body.file ? { name: String(body.filename || ''),
+                       text: String(body.file) } : null);
+    log.debug("Leaving applicationsAction(). Loading RFC 9728 metadata.");
+    return resourceMetadata.load({ document: body.document, url: body.url,
+                                   file: file },
+                                 { authorizationServers:
+                                     ctx.authorizationServers || [],
+                                   actor: ctx.actor || body.actor || '' })
+      .then(function (result) {
+        return refusedBy('STS-ADMIN-0644', result);
+      });
+  }
+
+  // ---------------------------------------------------------------------
+  // A TLS CLIENT CERTIFICATE FOR THE APPLICATION (RFC 8705, 2026-09-13), from
+  // the Credentials section of its own page. `tls_client_certificates.issue()`
+  // decides everything about the certificate — the realm's `tls-client`
+  // Issuing CA, clientAuth, the urn:sts:application: name the token endpoint's
+  // implicit mapping reads, the cap — and packages it; this action decides
+  // that the application exists and that the file password is one. A PROMISE,
+  // for `refresh-metadata`'s reason: generating the key and exporting the
+  // PKCS#12 are asynchronous.
+  //
+  // **THE REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** Nothing keeps it — not
+  // the entry, not the certificate register — so the console draws the reply
+  // as a page of downloads rather than redirecting, and `/admin-api` hands the
+  // files back in the JSON. The password protecting them is neither stored
+  // nor audited.
+  if (action === 'issue-tls-client-certificate') {
+    const target = applications.get(identifier);
+    if (!target) {
+      log.debug("Leaving applicationsAction(). No such application.");
+      return refused('STS-ADMIN-0722', { ok: false, errors: ['There is no ' +
+          'application called "' + identifier + '" here.'] });
+    }
+    const passwordSaid = tlsClientCertificates.pkcs12PasswordProblem(
+      body.password, body.confirm === undefined ? undefined : body.confirm);
+    if (passwordSaid) {
+      log.debug("Leaving applicationsAction(). The file password.");
+      return refused('STS-ADMIN-0721', { ok: false, errors: [passwordSaid] });
+    }
+    const holder = String(target.identifier);
+    return tlsClientCertificates.issue(undefined, {
+      kind: 'application', application: holder,
+      keyAlg: body.keyAlg || undefined, label: body.label || '',
+      days: body.days ? Number(body.days) : undefined
+    }).then(function (made) {
+      if (!made.ok) {
+        log.debug("Leaving applicationsAction(). The issue was refused.");
+        return refusedBy('STS-ADMIN-0720', made);
+      }
+      const issued = made.issued;
+      return tlsClientCertificates.bundle(issued, String(body.password))
+        .then(function (files) {
+          log.debug("Leaving applicationsAction(). A TLS client certificate " +
+                    "was issued to " + holder + ".");
+          return {
+            ok: true,
+            message: 'A TLS client certificate was issued to "' + holder +
+                     '" (serial ' + issued.serialHex + '). This is the only ' +
+                     'time its private key can be downloaded.',
+            application: applications.get(holder),
+            certificate: {
+              serialHex: issued.serialHex, subject: issued.subject,
+              keyAlg: issued.keyAlg, label: issued.label,
+              notBefore: issued.notBefore, notAfter: issued.notAfter,
+              thumbprint: issued.thumbprint,
+              certificatePem: issued.certificatePem,
+              chainPem: issued.chainPem,
+              implicitName: tlsClientCertificates.APPLICATION_URN + holder
+            },
+            files: files
+          };
+        });
+    });
+  }
+
+  // Revoked among THIS application's certificates only, which is
+  // `tls_client_certificates.revoke()`'s rule: a serial belonging to anybody
+  // else matches nothing.
+  if (action === 'revoke-tls-client-certificate') {
+    const target = applications.get(identifier);
+    if (!target) {
+      log.debug("Leaving applicationsAction(). No such application.");
+      return refused('STS-ADMIN-0722', { ok: false, errors: ['There is no ' +
+          'application called "' + identifier + '" here.'] });
+    }
+    const done = tlsClientCertificates.revoke(undefined,
+      String(target.identifier), String(body.serialHex || ''),
+      String(body.reason || ''), 'application');
+    if (done.ok) {
+      done.message = 'The TLS client certificate ' +
+        done.certificate.serialHex + ' of "' + target.identifier + '" was ' +
+        'revoked (' + done.reason + '). It no longer authenticates the ' +
+        'application at the token endpoint. An access token already bound ' +
+        'to it stays usable until it expires: a resource server checks the ' +
+        'binding and not the certificate\'s revocation (RFC 8705 section ' +
+        '6.2).';
+      done.application = applications.get(String(target.identifier));
+    }
+    log.debug("Leaving applicationsAction(). revoke-tls-client-certificate " +
+              (done.ok ? 'ok' : 'refused') + ".");
+    return refusedBy('STS-ADMIN-0723', done);
   }
 
   if (action === 'revoke-registration') {
@@ -1899,9 +2399,11 @@ function applicationsAction(body, protocols) {
                       'everything it had recorded — losing that this ' +
                       'application was ever here because its registration ' +
                       'was withdrawn would be losing the fact rather than ' +
-                      'the configuration. RFC 9700 mode now treats it as an ' +
-                      'unregistered, public client and judges its ' +
-                      'redirect_uri against the oauth2.redirectUris setting.' };
+                      'the configuration. The redirect URIs it registered ' +
+                      'stay on the entry and are still what a redirect_uri ' +
+                      'is matched against; with its secret gone, a ' +
+                      'confidential method on the entry has nothing to ' +
+                      'check.' };
   }
 
   if (action === 'forget') {

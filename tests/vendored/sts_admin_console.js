@@ -5703,21 +5703,26 @@ async function theRolesArePressedAndEnforced(driver, created) {
     //    this run inside the console.
     await open(driver, root("/admin/rbac"));
     const forms = await driver.executeScript(`
-      const out = { picker: -1, typed: -1 };
+      const out = { finder: -1, typed: -1, select: false };
       const forms = Array.from(document.forms);
       for (let i = 0; i < forms.length; i += 1) {
+        if (forms[i].id === 'find-personq') { out.finder = i; continue; }
         const action = forms[i].elements['action'];
         const username = forms[i].elements['username'];
         if (!action || action.value !== 'grant' || !username) { continue; }
-        if (username.tagName.toLowerCase() === 'select') { out.picker = i; }
-        else { out.typed = i; }
+        if (username.tagName.toLowerCase() === 'select') { out.select = true; }
+        else if (username.type === 'text') { out.typed = i; }
       }
       return out;
     `);
     check("the roster page draws both ways of naming somebody", function () {
-      assert.ok(forms.picker >= 0,
-        "/admin/rbac should draw a grant form that PICKS a name out of the " +
-        "directory; it draws none.");
+      assert.ok(forms.finder >= 0,
+        "/admin/rbac should draw a SEARCH over the people a role can be " +
+        "granted to (form #find-personq); it draws none.");
+      assert.ok(!forms.select,
+        "and no grant form should be a <select> of every candidate: that is " +
+        "the control a directory of thousands made unusable, which the " +
+        "search replaced.");
       assert.ok(forms.typed >= 0,
         "and one that takes a TYPED name, for somebody who has never signed " +
         "in — a roster that can only name people the directory already knows " +
@@ -5805,69 +5810,111 @@ async function theRolesArePressedAndEnforced(driver, created) {
   log.debug("Leaving theRolesArePressedAndEnforced().");
 }
 
+// The results of the grant pane's search, as the names its links carry. An
+// empty search lists everybody twenty at a time, so this is the first twenty
+// unless a search was submitted.
+const PICKER_HITS_SCRIPT = `
+  const pane = document.getElementById('find-personq');
+  const box = pane ? pane.nextElementSibling : null;
+  if (!box || !box.classList.contains('chooser')) { return []; }
+  return Array.from(box.querySelectorAll('ul.hits a')).map(function (a) {
+    return { name: a.textContent, href: a.getAttribute('href') };
+  });
+`;
+
 // A name the picker really offers, other than this run's own session. Chosen
 // from the control rather than invented, because the picker's list IS the
 // default realm's directory and this run cannot know it from outside.
+//
+// **NEVER THE BOOTSTRAP ADMINISTRATOR, AND NOBODY ALREADY ON THE ROSTER
+// (2026-09-13).** Since `admin` is seeded into both role groups at startup it
+// is the first name the picker offers, and the caller SIGNS IN as whoever this
+// returns — and that account's first console sign-in closes the open console
+// for every later job in the run (`admin-ui/admin_rbac.js`'s
+// noteConsoleSignIn()). A holder of a role is left out as well, because the
+// grant below asserts the reader then holds `read` and nothing else.
 async function somebodyThePickerOffers(driver, notThisOne) {
   log.debug("Entering somebodyThePickerOffers().");
+  const roster = await apiJson("/admin-api/rbac");
+  const bootstrap = String((roster.body && roster.body.bootstrap &&
+                            roster.body.bootstrap.username) || "");
+  const holders = ((roster.body && roster.body.grants) || [])
+    .map(function (grant) { return grant.username; });
   await open(driver, root("/admin/rbac"));
-  const offered = await driver.executeScript(`
-    const forms = Array.from(document.forms);
-    for (let i = 0; i < forms.length; i += 1) {
-      const action = forms[i].elements['action'];
-      const username = forms[i].elements['username'];
-      if (!action || action.value !== 'grant' || !username) { continue; }
-      if (username.tagName.toLowerCase() !== 'select') { continue; }
-      return Array.from(username.options).map(function (o) { return o.value; });
-    }
-    return [];
-  `);
+  const offered = (await driver.executeScript(PICKER_HITS_SCRIPT))
+    .map(function (hit) { return hit.name; });
   const chosen = offered.filter(function (one) {
-    return one && one !== notThisOne;
+    return one && one !== notThisOne &&
+      one.toLowerCase() !== bootstrap.toLowerCase() &&
+      holders.indexOf(one) < 0;
   })[0];
   assert.ok(chosen,
     "the roster's picker should offer at least one name other than this " +
-    "run's own session, so that a READER can be somebody else; it offers " +
-    JSON.stringify(offered));
+    "run's own session, the bootstrap administrator (" + bootstrap + ") and " +
+    "the people already holding a role, so that a READER can be somebody " +
+    "else; it offers " + JSON.stringify(offered));
   log.debug("Leaving somebodyThePickerOffers(). " + chosen);
   return chosen;
 }
 
 async function grantOnThePicker(driver, person, role) {
   log.debug("Entering grantOnThePicker(). person=" + person);
+  // 1. SEARCH for them, on the pane's own form — a directory of thousands
+  //    puts almost everybody past the first twenty, so this is how a person
+  //    reaches a name, and it is the control under test.
   await open(driver, root("/admin/rbac"));
+  const finder = await driver.executeScript(`
+    return Array.from(document.forms).findIndex(function (f) {
+      return f.id === 'find-personq';
+    });
+  `);
+  check("the picker draws a search", function () {
+    assert.ok(finder >= 0,
+      "/admin/rbac should draw a search over the people a role can be " +
+      "granted to (form #find-personq); it draws none.");
+  });
+  await fillAndPress(driver, finder, { personq: person });
+  const hits = await driver.executeScript(PICKER_HITS_SCRIPT);
+  const hit = hits.filter(function (one) { return one.name === person; })[0];
+
+  check("the picker's search finds people the directory knows", function () {
+    assert.ok(hit,
+      "searching for " + person + ", who is in this service's directory, " +
+      "should list them — the picker's whole purpose is naming somebody " +
+      "without typing them in full, and a search that cannot see the " +
+      "directory is a control that can only ever grant to the wrong " +
+      "person. It lists " + JSON.stringify(hits.map(function (one) {
+        return one.name;
+      })));
+  });
+
+  // 2. PICK them, by clicking the result — a result is a link and the link
+  //    is the selection — and 3. grant on the form that opens.
+  const link = await driver.findElement(By.css(
+      "form#find-personq + .chooser ul.hits a[href=\"" +
+      hit.href.replace(/"/g, '\\"') + "\"]"));
+  await link.click();
+  await driver.wait(async function () {
+    return (await driver.getCurrentUrl()).indexOf("person=") >= 0;
+  }, 10000);
   const picker = await driver.executeScript(`
     const person = arguments[0];
     const forms = Array.from(document.forms);
     for (let i = 0; i < forms.length; i += 1) {
-      const action = forms[i].elements['action'];
+      if (forms[i].id !== 'grant-picked') { continue; }
       const username = forms[i].elements['username'];
-      if (!action || action.value !== 'grant' || !username) { continue; }
-      if (username.tagName.toLowerCase() !== 'select') { continue; }
-      const has = Array.from(username.options).some(function (o) {
-        return o.value === person;
-      });
-      return { form: i, has: has,
-               options: Array.from(username.options).map(function (o) {
-                 return o.value;
-               }).slice(0, 20) };
+      return { form: i, username: username ? username.value : null };
     }
     return null;
   `, person);
-
-  check("the picker offers people the directory knows", function () {
-    assert.ok(picker,
-      "/admin/rbac should draw a grant form picking a name out of the " +
-      "directory; it draws none.");
-    assert.ok(picker.has,
-      "and it should offer " + person + ", who is in this service's " +
-      "directory — the picker's whole purpose is naming somebody without " +
-      "typing them, and a picker that cannot see the directory is a control " +
-      "that can only ever grant to the wrong person. It offers " +
-      JSON.stringify(picker.options));
+  check("picking a result opens a grant form for that person", function () {
+    assert.ok(picker && picker.username === person,
+      "clicking " + person + " in the results should open a grant form " +
+      "(#grant-picked) carrying their name; it drew " +
+      JSON.stringify(picker));
   });
 
-  await fillAndPress(driver, picker.form, { username: person, role: role });
+  await fillAndPress(driver, picker.form, { role: role });
   const landed = await driver.getCurrentUrl();
   check("the picker's grant was accepted", function () {
     assert.strictEqual(outcomeOf(landed, "error"), "",

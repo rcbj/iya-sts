@@ -53,6 +53,12 @@ codec (a byte-identical copy of the parent project's `common/krb5/krb5_spnego.js
 kept honest by `tests/krb5_codec_sync.js` there), and `spnego.js` is this repo's own.
 Do not merge the two — one of them is somebody else's file.
 
+**`spnego_authn.js` must stay after `spnego.js` AND after `authn/authn.js` in the
+require order.** It draws with `spnego.js`'s page shell and negotiates through
+`spnego_exchange.js`; and it calls `authn.startSession()`, which is why the
+endpoint is HERE and not in `authn/` — a require the other way would drag the
+KDC's routes ahead of `oauth2.js` and close a cycle.
+
 ---
 
 ## SPNEGO IS THREE FILES SINCE 2026-08-26, BECAUSE THERE ARE TWO DOORS
@@ -318,6 +324,16 @@ three reach a new `require()`, and `tests/Dockerfile` needs a COPY line in the
 commit that bumps the `sts/` gitlink across the change, or the four jobs die at
 load with `Cannot find module` naming a file nobody edited. See
 `docs/parent-project-migration.md`.
+
+**AND IT IS OWED AGAIN AS OF 2026-09-12: `common/error_codes.js`.** The error
+code registry is required by `common/audit.js`, `config.js`, `helpers.js`,
+`realms.js`, `crypto.js`, `worker_pool.js`, `worker.js`, `krb5_kdc.js`,
+`krb5_service.js` and `spnego_exchange.js` — all inside that closure — so the
+commit that bumps the `sts/` pin across it needs `COPY
+sts/common/error_codes.js ./sts/common/` in the parent's `tests/Dockerfile`, or
+the four in-process Kerberos jobs die at load with `Cannot find module
+'./error_codes'`. It is a leaf and requires nothing, so it is one line and no
+more.
 
 `MOCK_STS_DIR=/path/to/mock-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and

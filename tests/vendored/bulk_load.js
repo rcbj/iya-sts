@@ -431,8 +431,36 @@ function httpFor(base, log) {
   async function timed(url, options) {
     log.debug("Entering timed(). url=" + url);
     const started = process.hrtime.bigint();
-    const r = await fetch(url, options || {});
-    const text = await r.text();
+    let r;
+    let text;
+    try {
+      r = await fetch(url, options || {});
+      text = await r.text();
+    } catch (e) {
+      // ---------------------------------------------------------------------
+      // `fetch failed` NAMES NOTHING, AND IT ENDED TWO RUNS (2026-09-13).
+      //
+      // undici puts the reason on `e.cause` — a connect timeout, a socket the
+      // service closed, a headers timeout — and the message says only that the
+      // fetch failed. `sts_directory_bulk_load_scim` in `dispatch` and the 50k
+      // LDAP job in `postgres` both died on that sentence alone, one after ten
+      // minutes and one after forty-one seconds, which are two different
+      // failures that read identically. So the rethrow says which request,
+      // after how long, and what undici actually saw.
+      // ---------------------------------------------------------------------
+      log.debug("Caught in timed(): " + ((e && e.message) || e));
+      const took = Number(process.hrtime.bigint() - started) / 1e6;
+      const cause = e && e.cause;
+      const why = cause
+        ? [cause.code, cause.name, cause.message].filter(Boolean).join(" ")
+        : "(no cause given)";
+      const wrapped = new Error(((e && e.message) || String(e)) + ": " +
+        ((options && options.method) || "GET") + " " + url + " after " +
+        took.toFixed(0) + "ms — " + why);
+      wrapped.cause = e;
+      log.debug("Leaving timed(). It failed.");
+      throw wrapped;
+    }
     const took = Number(process.hrtime.bigint() - started) / 1e6;
     let body;
     try {
@@ -551,8 +579,34 @@ async function preflight(options) {
   log.info("The default realm's directory holds " + held + " entry(ies) " +
            "before this job writes anything.");
 
+  // THE CEILING IS SIZED FROM THE PROCESS'S COUNT, NOT THE REALM'S
+  // (2026-09-13). `held` above is the default realm's, and the cap is checked
+  // against every realm's entries together — so it was right only while the
+  // realms this suite leaves standing were small. When the ACME, EST, SCEP and
+  // other realm-creating jobs arrived, the SCIM job raised the cap to 6497,
+  // created its five thousand people and was refused the first group as full.
+  // That refusal was a 507 scimmy would not build, so the service died, and the
+  // two jobs after it failed on ECONNREFUSED. `limits.currentEntriesEverywhere`
+  // is the count the cap is compared with, on the directory's own service view.
+  const service = await http.get(http.api("/ldap/service"));
+  const everywhere = service.status === 200 && service.body &&
+    service.body.limits &&
+    typeof service.body.limits.currentEntriesEverywhere === "number"
+    ? service.body.limits.currentEntriesEverywhere : null;
+  check("the directory reports how many entries the whole process holds",
+    function () {
+      assert.notStrictEqual(everywhere, null,
+        "GET /admin-api/ldap/service answered " + service.status + " without " +
+        "limits.currentEntriesEverywhere. ldap.maxEntries is checked against " +
+        "that number, so without it the ceiling below would be sized from " +
+        "one realm and refuse these writes partway through.");
+    });
+  log.info("The whole process holds " + everywhere + " entry(ies) across " +
+           "every realm, which is what ldap.maxEntries is compared with.");
+
   const wanted = Math.max(2000,
-      Math.ceil((held + SIZES.USERS + SIZES.GROUPS + SIZES.SAMPLE + 50) * 1.2));
+      Math.ceil((Math.max(held, everywhere) + SIZES.USERS + SIZES.GROUPS +
+                 SIZES.SAMPLE + 50) * 1.2));
   const raised = await http.postJson(http.api("/config/set"),
                                      { key: "ldap.maxEntries", value: wanted });
   check("the entry ceiling was raised", function () {

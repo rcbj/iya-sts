@@ -448,6 +448,26 @@ somebody might have zeroed, and the audit log — which is the durable record of
 what SCIM was ASKED to do, with the actor and the target — cannot be reset
 either.
 
+## A FULL DIRECTORY TOOK THE WHOLE PROCESS DOWN (2026-09-13)
+
+A User or Group write refused as `full` (`ldap.maxEntries`) was raised as a
+SCIM error with status **507**. RFC 7644 section 3.12 lists no 507, scimmy's
+`ErrorResponse` refuses to build an error whose status the section does not
+list, and `sendScimError()` is called from a promise's `.catch()` — so the throw
+was an unhandled rejection and node exited. One `POST /scim/v2/Groups` ended
+every protocol on every socket; the suite saw it as the SCIM bulk load dying on
+`other side closed` and the next two jobs on ECONNREFUSED. Two changes:
+
+* **a full directory is 500**, the listed status for a server-side failure, with
+  the directory's own sentence and `STS-LDAP-0007` kept;
+* **`sendScimError()` cannot throw on an off-list status or scimType**: it logs
+  `STS-SCIM-0075` naming the status and the code it was raised with, and sends
+  500 with the same detail. Checked by putting 507 back on the group path —
+  500, the log line, the service still answering.
+
+The HOBA registration's 507 is unaffected: that route answers plain JSON and
+never builds an `ErrorResponse`.
+
 ## THE 2026-09-12 AUDIT OF HARD-CODED VALUES, AND WHAT IT CHANGED HERE
 
 `tests/ssf_spiffe_scim_hardening.js` holds every item below.

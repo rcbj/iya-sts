@@ -107,12 +107,18 @@ async function run(t) {
       tree.scopes.filter(function (one) { return one.scope === REALM_B; })[0];
 
   t.equal(a.issuing.map(function (one) { return one.id; }).join(','),
-          'jose,xml,assertions,spiffe',
-          'a REALM carries the four use cases whose keys belong to a realm. ' +
+          'jose,xml,assertions,spiffe,pep-tls,acme,est,scep,tls-client',
+          'a REALM carries the nine use cases whose keys belong to a realm. ' +
+          'The ninth arrived 2026-09-13 too: the TLS client certificates a ' +
+          'person issues themselves on the user portal. ' +
+          'The last three arrived 2026-09-13, one Issuing CA per enrollment ' +
+          'protocol (ACME, EST, SCEP). ' +
           'It was three until 2026-09-11, when the SPIFFE authority moved ' +
           'here from the process branch — a realm signs its own SVIDs now, ' +
           'and what keeps that coherent with four SHARED sockets is that the ' +
-          'anchor is the service Root and no realm\'s');
+          'anchor is the service Root and no realm\'s — and four until ' +
+          '2026-09-13, when a remote XACML PEP\'s HTTPS listener was given ' +
+          'an authority of its realm\'s own');
   t.equal(process.issuing.map(function (one) { return one.id; }).join(','),
           'tls',
           'and the PROCESS branch carries the one whose key is shared by ' +

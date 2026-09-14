@@ -49,6 +49,8 @@
 // assertions below are written to fail if it ever stops doing so.
 // ===========================================================================
 
+const fs = require('fs');
+const path = require('path');
 const pool = require('../common/request_pool');
 const config = require('../common/config');
 
@@ -520,6 +522,233 @@ function checkOperations(t) {
   log.debug("Leaving checkOperations().");
 }
 
+// Any set of environment variables, saved and restored in a `finally` — the
+// surface pool is three settings more than withSettings() above takes.
+function withEnv(values, fn) {
+  log.debug("Entering withEnv().");
+  const had = {};
+  Object.keys(values).forEach(function (name) {
+    had[name] = process.env[name];
+    if (values[name] === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = values[name];
+    }
+  });
+  try {
+    log.debug("Leaving withEnv().");
+    return fn();
+  } finally {
+    Object.keys(had).forEach(function (name) {
+      if (had[name] === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = had[name];
+      }
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE SECOND POOL: THE CONSOLE AND THE PORTAL ON WORKERS OF THEIR OWN
+// (2026-09-13).
+//
+// Four decisions, each a pure function of settings and a request, asserted
+// without forking anything:
+//
+//   * WHICH POOL a dispatched path goes to — and that `/admin` does not take
+//     `/admin-api`, which is the bug the section above was written for, in a
+//     second list that could make it again;
+//   * that a POOL OF NONE sends the surfaces to the protocol pool, which is the
+//     whole of why the feature is off by default without being absent;
+//   * that each pool reads ITS OWN routing cookie while sharing the session
+//     cookies, because one value cannot name a worker in two pools;
+//   * and what REFUSES or IDLES the surface pool at startup.
+//
+// Plus, as SOURCE, the three files that must agree on the back-channel hint:
+// the two processes share no memory, so nothing at runtime can compare them.
+// ---------------------------------------------------------------------------
+function checkTheSurfacePool(t) {
+  log.debug("Entering checkTheSurfacePool().");
+  t.log.info('=== the hosted surfaces have a pool of their own ===');
+  const P = pool.PROTOCOL_POOL;
+  const S = pool.SURFACE_POOL;
+  const base = { STS_WORKERS_DISPATCH: '*',
+                 STS_WORKERS_FANOUT: '/scim,/xacml,/admin-api',
+                 STS_WORKERS_SURFACES: undefined,
+                 STS_WORKERS_READ_YOUR_WRITE: 'true' };
+
+  withEnv(Object.assign({}, base, { STS_WORKERS_SURFACE_COUNT: undefined }),
+          function () {
+    ['/admin', '/admin/users', '/portal'].forEach(function (url) {
+      t.check(pool.poolFor(url) === P,
+              'with workers.surfaceCount at its default of 0, ' + url +
+              ' goes to the PROTOCOL pool — exactly where it went before ' +
+              'there were two', pool.poolFor(url));
+    });
+    t.check(pool.surfacePoolProblem() === null,
+            'and there is nothing to refuse or warn about',
+            JSON.stringify(pool.surfacePoolProblem()));
+  });
+
+  withEnv(Object.assign({}, base, { STS_WORKERS_SURFACE_COUNT: '2' }),
+          function () {
+    [['/admin', 'the console itself'],
+     ['/admin/users', 'every page under it'],
+     ['/admin/ldap/directory', 'the directory pages, which are the console'],
+     ['/admin/callback?code=x&state=y', 'the console\'s OIDC callback'],
+     ['/admin/signals/receive', 'the console\'s own SSF receiver'],
+     ['/portal', 'the user portal'],
+     ['/portal/keys', 'every portal page'],
+     ['/realm/acme/admin/users', 'a realmed console page'],
+     ['/realm/acme/portal', 'a realmed portal']].forEach(function (one) {
+      t.check(pool.poolFor(one[0]) === S,
+              'SURFACE POOL: ' + one[0] + ' — ' + one[1],
+              pool.poolFor(one[0]));
+    });
+    [['/admin-api/config', 'AND NOT THE MANAGEMENT API. A bare prefix ' +
+      'match would take it with /admin, so a bulk load through it would ' +
+      'hold the console — the opposite of what the pool is for'],
+     ['/admin-api', 'nor its bare path'],
+     ['/administrator', 'nor a path that merely starts with the letters'],
+     ['/portalx', 'on the portal\'s side as well'],
+     ['/oauth2/authorize', 'the sign-in hops stay with the protocols'],
+     ['/oauth2/token', 'including the token endpoint the back channel dials'],
+     ['/authn/login', 'and the sign-in screen'],
+     ['/scim/v2/Users', 'and every protocol family']].forEach(function (one) {
+      t.check(pool.poolFor(one[0]) === P,
+              'PROTOCOL POOL: ' + one[0] + ' — ' + one[1],
+              pool.poolFor(one[0]));
+    });
+    t.check(pool.fansOut('/admin/users') === false &&
+            pool.fansOut('/scim/v2/Users') === true,
+            'and the pool does not change the routing policy WITHIN it: the ' +
+            'console still holds affinity and SCIM still fans out',
+            pool.fansOut('/admin/users') + '/' +
+            pool.fansOut('/scim/v2/Users'));
+    t.check(pool.surfacePoolProblem() === null,
+            'dispatched and with read-your-write on, nothing is wrong',
+            JSON.stringify(pool.surfacePoolProblem()));
+  });
+
+  withEnv(Object.assign({}, base, { STS_WORKERS_SURFACE_COUNT: '1',
+                                    STS_WORKERS_SURFACES: '/admin' }),
+          function () {
+    t.check(pool.poolFor('/admin/users') === S &&
+            pool.poolFor('/portal') === P,
+            'workers.surfaces is the list: naming /admin alone leaves the ' +
+            'portal with the protocols',
+            pool.poolFor('/admin/users') + '/' + pool.poolFor('/portal'));
+  });
+
+  // ---------------------------------------------------------------------
+  // ONE ROUTING COOKIE PER POOL, THE SESSION COOKIES SHARED. A browser holds a
+  // worker in each pool, so each pool must read its own pin; and a session
+  // cookie still outranks either, because it resolves by lookup in the map of
+  // the pool being asked.
+  // ---------------------------------------------------------------------
+  const pinned = { headers: { cookie: pool.POOL_COOKIE + '=11; ' +
+                              pool.SURFACE_POOL_COOKIE + '=22' },
+                   url: '/admin', originalUrl: '/admin' };
+  t.check(pool.affinityKeyOf(pinned, P) === 'p:11',
+          'the protocol pool reads its own pin', pool.affinityKeyOf(pinned, P));
+  t.check(pool.affinityKeyOf(pinned, S) === 'p:22',
+          'and the surface pool reads ITS OWN — one cookie could name a ' +
+          'worker in one pool only, and every browser pinned to one surface ' +
+          'worker would share one key in the protocol pool\'s map',
+          pool.affinityKeyOf(pinned, S));
+  t.check(pool.affinityKeyOf(pinned) === 'p:11',
+          'with no pool named, the protocol pool — which is what every ' +
+          'caller written before the second pool means', pool.affinityKeyOf(pinned));
+  t.check(pool.POOL_COOKIE === 'sts_pool',
+          'and the protocol pool\'s cookie kept its name, so a browser or a ' +
+          'back channel already carrying sts_pool means what it meant',
+          pool.POOL_COOKIE);
+  const onlyOther = { headers: { cookie: pool.POOL_COOKIE + '=11' },
+                      url: '/admin', originalUrl: '/admin' };
+  t.check(pool.affinityKeyOf(onlyOther, S) === '',
+          'the OTHER pool\'s pin is no key here', JSON.stringify(
+            pool.affinityKeyOf(onlyOther, S)));
+  const withSession = { headers: { cookie: 'sts_session=SESS9; ' +
+                                   pool.SURFACE_POOL_COOKIE + '=22' },
+                        url: '/admin', originalUrl: '/admin' };
+  t.check(pool.affinityKeyOf(withSession, S) === 's:SESS9' &&
+          pool.affinityKeyOf(withSession, P) === 's:SESS9',
+          'and the sign-on session is the key in BOTH pools',
+          pool.affinityKeyOf(withSession, S) + '/' +
+          pool.affinityKeyOf(withSession, P));
+
+  // ---------------------------------------------------------------------
+  // WHAT REFUSES THE SURFACE POOL AND WHAT MERELY IDLES IT. See
+  // surfacePoolProblem(): nothing dispatched is waste and warns; read-your-
+  // write off is silent wrongness and is fatal.
+  // ---------------------------------------------------------------------
+  withEnv(Object.assign({}, base, { STS_WORKERS_SURFACE_COUNT: '2',
+                                    STS_WORKERS_DISPATCH: '/scim' }),
+          function () {
+    const found = pool.surfacePoolProblem() || {};
+    t.check(found.code === 'STS-WORKER-0039' && found.fatal === false,
+            'a surface pool nothing is dispatched to is a WARNING, and is ' +
+            'not forked', JSON.stringify(found));
+  });
+  withEnv(Object.assign({}, base, { STS_WORKERS_SURFACE_COUNT: '2',
+                                    STS_WORKERS_DISPATCH: '/admin/users' }),
+          function () {
+    t.check(pool.surfacePoolProblem() === null,
+            'while a dispatched path NARROWER than a surface prefix still ' +
+            'reaches the pool — an unforked pool would answer it 503',
+            JSON.stringify(pool.surfacePoolProblem()));
+  });
+  withEnv(Object.assign({}, base, { STS_WORKERS_SURFACE_COUNT: '2',
+                                    STS_WORKERS_READ_YOUR_WRITE: 'false' }),
+          function () {
+    const found = pool.surfacePoolProblem() || {};
+    t.check(found.code === 'STS-WORKER-0038' && found.fatal === true,
+            'and a surface pool WITHOUT read-your-write is FATAL: the ' +
+            'console\'s sign-in crosses the two pools and would read a ' +
+            'session that has not arrived, intermittently',
+            JSON.stringify(found));
+    t.check(/workers\.readYourWrite/.test(found.message || '') &&
+            /workers\.surfaceCount/.test(found.message || ''),
+            'naming both ways out', found.message);
+  });
+
+  // ---------------------------------------------------------------------
+  // THE BACK-CHANNEL HINT, AS SOURCE. The front process names the protocol
+  // worker in a header, the worker puts it on the request, and oidc_rp.js
+  // reads it off the request only in a surface worker. A rename or a dropped
+  // `from: req` in any of the three is silent in all three: the token request
+  // is simply routed by load.
+  // ---------------------------------------------------------------------
+  const read = function (rel) {
+    log.debug("Entering read().");
+    log.debug("Leaving read().");
+    return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  };
+  const workerSource = read('common/request_worker.js');
+  const found = /const PROTOCOL_WORKER_HEADER = '([^']+)'/.exec(workerSource);
+  t.check(!!found && found[1] === pool.PROTOCOL_WORKER_HEADER,
+          'the worker spells the hint header as the pool does',
+          'pool=' + pool.PROTOCOL_WORKER_HEADER + ', worker=' +
+          (found && found[1]));
+  t.check(/req\.stsProtocolWorker\s*=/.test(workerSource) &&
+          /delete req\.headers\[PROTOCOL_WORKER_HEADER\]/.test(workerSource),
+          'and puts it on the request and strips it', 'request_worker.js');
+  const rpSource = read('common/oidc_rp.js');
+  t.check(/STS_REQUEST_WORKER_POOL === 'surfaces'/.test(rpSource) &&
+          /options\.from && options\.from\.stsProtocolWorker/.test(rpSource),
+          'oidc_rp.js pins the back channel to the hinted worker in a ' +
+          'surface worker', 'oidc_rp.js');
+  const calls = rpSource.match(/await backChannel\(\{[\s\S]*?\}\);/g) || [];
+  t.check(calls.length >= 4 && calls.every(function (one) {
+    return /from: req/.test(one);
+  }), 'and every one of its ' + calls.length + ' back-channel calls passes ' +
+          'the request it is serving', calls.filter(function (one) {
+    return !/from: req/.test(one);
+  }).join('\n'));
+  log.debug("Leaving checkTheSurfacePool().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   checkTheDefaultIsInert(t);
@@ -529,6 +758,7 @@ function run(t) {
   checkTheRealmIsTransparent(t);
   checkTheAffinityKey(t);
   checkOperations(t);
+  checkTheSurfacePool(t);
   log.debug("Leaving run().");
 }
 

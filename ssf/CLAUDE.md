@@ -9,7 +9,7 @@ family here and the first one that TALKS BACK.
 | `ssf.js` | The routes. The metadata document, the stream management API, status, subjects, verification, poll delivery, and the two endpoints that are not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, which are this service acting as a RECEIVER so that a client can be the transmitter. |
 | `ssf_subjects.js` | **RFC 9493** subject identifiers: the eight formats with their CLOSED member sets, SSF's complex subject, and the nesting ban. A LIBRARY. |
 | `ssf_events.js` | The event vocabulary — SSF's two — and the **RFC 8417** Security Event Token they travel in. A LIBRARY. |
-| `ssf_streams.js` | The streams, their subjects and their queues, per trust realm. A LIBRARY. |
+| `ssf_streams.js` | The streams, their subjects and their queues, per trust realm — the queue as a row per SET since 2026-09-13. A LIBRARY. |
 | `ssf_http.js` | **THE SECOND OUTBOUND REQUEST IN THIS REPOSITORY.** RFC 8935 push delivery. A LIBRARY. |
 | `ssf_auth.js` | Who may drive a stream: two schemes and two scopes. A LIBRARY. |
 | `caep.js` | **CAEP's session register**: what state CAEP believes each session is in, and how many events of which type have been sent about it. A LIBRARY, and one of the two files here that are not vocabulary. |
@@ -103,6 +103,55 @@ happens: a process that never set the marker, a legacy duplicate delivering to
 the same path, and the per-run secret rotated under it. Three mutants, all
 caught.
 
+
+## THE QUEUE IS ONE ROW PER SET, AND A STREAM RECORD IS TOUCHED (2026-09-13)
+
+**A stream's queue was an array on the record, and nothing that changed it was
+ever written down.** `realms.map()` journals a `set()` and a `delete()`;
+`enqueue()` pushed onto `record.queue` and `poll()` filtered it, and neither
+called either — nor did a PATCH, a status change or a subject added. In one
+process that is invisible. In `dispatch` mode it made the queue PER WORKER:
+`sts_ssf_allowed_events` emitted through `/admin-api/risc/emit` (one worker),
+polled a control stream (another) and got `[]`; `sts_gnap_signals` acknowledged
+a SET on one worker and was handed it again by the next, which RFC 8936 section
+2.4 forbids. Both green in the two single-process modes, red in the last three
+dispatch runs. **Six parallel polls against the kept stack after one
+acknowledgement answered 0, 0, 1, 1, 1, 1** — two workers had the ack and four
+had the SET. Sequential polls from an idle client all landed on one worker and
+passed, which is why re-running either job alone never reproduced it.
+
+**THE FIX IS TWO THINGS AND THE SECOND IS THE ONE THAT NEEDED ARGUING.**
+
+* **`touch()` on the record**, `caep.js`'s precedent, at every in-place edit —
+  and `liveRecord()` beside it for the two places in `transmit()` that cross an
+  `await` (the signature, the push), because a record another worker's write
+  has REPLACED in the meantime is a copy `touch()` refuses to write back.
+* **The queue moved to `ssf_streams.queued`, a store of its own keyed
+  `<stream_id> <jti>`.** A `touch()` alone would have made the queue replicate
+  and left it WRONG: a record is whole-valued, the later write wins, and a SET
+  is often queued by a transmission that runs AFTER its request answered (a
+  GNAP revocation answers and then signs) on a worker that has not yet applied
+  an acknowledgement committed a moment earlier — so its whole-record write
+  puts the acknowledged SET back, and the reverse race loses one outright.
+  With a row per SET, queueing is a new key nobody else writes and an
+  acknowledgement is a DELETE of one key, and the two cannot overwrite each
+  other in either order. **A poll writes a SET's row only on its FIRST
+  delivery**, because a row write is the one thing that could resurrect a SET
+  another worker has just deleted.
+
+**What is still whole-valued** is the rest of the record — counters, the log,
+`eventCounts`, the agreement — so a concurrent write can still lose an
+increment or revert a field another process changed in the same instant. That
+is a number on a console page rather than a security event delivered twice.
+**Nothing reads `record.queue` any more**: `queueOf()` is the reader,
+`tests/ssf_queue_rows.js` fails on the member coming back, and a record an
+earlier build wrote has it dropped at its first `touch()` rather than adopted —
+nothing ever journalled a change to it, so what a stored one holds is whatever
+was waiting at creation.
+
+`tests/ssf_queue_rows.js` holds it by making "another worker wrote this" the
+two accessor calls `persistence_minted.js`'s `applyLocally()` makes, in a child
+process with a real persist observer. Four mutants, all caught.
 
 ## THE ONE PARAGRAPH TO READ FIRST: SSF IS THE PIPE AND NOT THE VOCABULARY
 
@@ -568,11 +617,132 @@ like a client that works. A deployment is the other case, and
 (no connection, a timeout, a 5xx, a 429) and never a 400 refusal, with a linear
 `ssf.pushRetryDelayMs` between attempts.
 
-The failure is recorded on the stream's own log, the event stays on the queue,
-and `POST /admin-api/ssf/transmit` sends another when somebody asks. It is on
-`GET /ssf`'s *what it deliberately does not do* list in those words.
+~~The failure is recorded on the stream's own log, the event stays on the queue,
+and `POST /admin-api/ssf/transmit` sends another when somebody asks.~~ **Since
+2026-09-14 a final failure goes to the stream's DEAD-LETTER QUEUE**, with the
+reason, for inspection — see the next section. Nothing resends it; `POST
+/admin-api/ssf/transmit` still sends another when somebody asks.
 
 ---
+
+## UNDELIVERABLE SETs, DEAD STREAMS AND THE PUSH CAP (2026-09-14)
+
+**What asked for it.** A `dispatch` run's SCIM bulk load emitted two events per
+directory write to forty-two push streams — forty of them other realms' console
+and portal receivers, put in the default realm by the partition leak
+`common/CLAUDE.md` records under `realms.js` — all at once through
+`emitProtocolEvent()`'s `Promise.all()`. Every refused SET stayed on the live
+queue for ever (`queueOf()` is a scan and a sort on every event sent), wrote an
+`ssf.event.refused` audit row whose code put a line in the log (30,698 in one
+second when a session sweep revoked 1,398 sessions), and the pushes back into
+this service's own receivers filled every worker. The service answered nothing
+for fourteen minutes. rcbj chose all four answers below.
+
+**THE PUSH CAP** (`ssf_http.js`'s `pushSetGated()`): `ssf.pushConcurrency` (8)
+pushes in flight per PROCESS, the rest waiting in order, at most
+`ssf.pushBacklog` (2000) of them; past that the push is not made and the SET is
+dead-lettered with `STS-SSF-0092`. A retry waits for a slot of its own. The
+dispatcher's batch lane (`common/CLAUDE.md`, `request_pool.js`) is the other
+half: the receive endpoints are batch paths.
+
+**THE DEAD-LETTER QUEUE** (`ssf_streams.deadLetters`, a store of its own keyed
+`<stream_id> <jti>` for `queued`'s reason). In: a push that failed after
+`ssf.pushRetries`, a push over the backlog, everything waiting when a stream is
+declared dead, and every SET sent to a dead stream — the last UNSIGNED, because
+signing what nothing will receive is the cost this exists to stop. Each letter
+keeps the claims, the token if signed, the reason, the code and the receiver's
+status. Out: after `ssf.deadLetterRetentionS` (3600), the oldest past
+`ssf.deadLetterMaxPerStream` (1000), a delivered probe, a deleted stream, or
+`clear-dead-letters`. **Nothing resends a dead letter** except a probe.
+
+**DEAD STREAMS** (`notePushFailure()` / `notePushSuccess()`). A push stream whose
+pushes have all failed for `ssf.deadStreamTimeoutS` (300; 0 off) is DEAD —
+four members on the record (`failingSinceMs`, `deadSinceMs`, `nextProbeAtMs`,
+`deadReason`) so the state replicates with it. **It is not an SSF status**: the
+stream stays `enabled`, because `paused`/`disabled` are the receiver's and the
+operator's words and rewriting one would tell a receiver somebody paused it. A
+dead stream is not pushed to; once per timeout the SWEEP pushes its oldest dead
+letter (signing it if it was not) and a success revives it. With no letter left
+it goes HALF-OPEN: the next SET is pushed and one failure kills it again. A
+`verification` event is pushed to a dead stream anyway — a receiver asking to
+verify is the probe it asked for. `revive` by hand refuses a live stream
+(`STS-SSF-0095`).
+
+**LOGGING IS PER STREAM OR PER SWEEP, NEVER PER SET** — rcbj's rule, "do not log
+every undeliverable signal". One audit row and log line when a stream is
+declared dead (`ssf.stream.dead`, `STS-SSF-0093`) and one when it revives
+(`ssf.stream.revived`); one line per realm per sweep
+(`ssf.deadLetterSweepS`, 60) counting what was dead-lettered since the last,
+by stream and by code (`STS-SSF-0094`); and on the stream's own log one line
+when a run of failures STARTS, not per failure. `ssf.event.refused` is no longer
+written by a push. **Every process sweeps**: deletes are idempotent, the counts
+summarised are each process's own, and `nextProbeAtMs` is set before a probe so
+processes rarely probe one stream twice in a period.
+
+**Where to look**: `/admin/ssf` (a DEAD marker, the dead letters, *Revive* and
+*Drop its dead letters*), `GET /admin-api/ssf` (`streamDetail[].dead`,
+`deadLetters`, and `deadLetters.pushes` — this process's cap), and `POST
+/admin-api/ssf/revive` / `/clear-dead-letters`. `tests/ssf_dead_letters.js`
+holds it, eight mutants caught. **The counts over every stream at once are
+Monitoring → Shared Signals → Dead letters** — the next section.
+
+**AND THE SEEDER SWEEPS ANOTHER REALM'S RECEIVER STREAMS**:
+`ssf_receivers.js`'s `sweepDuplicates()` also removes a stream whose id is
+`ssf-internal-<other realm>-<surface>`, so a store that already holds the leaked
+copies heals at the next start or realm creation. By id, because the endpoint of
+a leaked copy names the other realm's prefix. `tests/ssf_receivers.js` B3.
+
+## MONITORING → SHARED SIGNALS → DEAD LETTERS (2026-09-14)
+
+`/admin/ssf/dead-letters` and `GET /admin-api/ssf/dead-letters`: every held
+dead letter in the ambient realm COUNTED — by cause, error code, the receiver's
+HTTP status, event type, time and stream — and the letters searched
+(`dlq`, exact `dlstream` and `dlcause`) and paged (`lettersPage`). rcbj asked
+for it as a new section of Monitoring → SSF; Monitoring had no such group, so
+the three Shared Signals pages already there became one (`admin-ui/CLAUDE.md`).
+rcbj chose: the group, all four sets of numbers, read-only with the controls a
+link away on each stream's card, and the ambient realm only.
+
+**`ssf_dead_letter_report.js` IS THE ONE PLACE THE NUMBERS ARE COMPUTED**, a
+library registering nothing, reached through a `deadLetters` member of
+`setSignalsReporter()` rather than a slot of its own — rule 3e's test for a
+new slot is a new cycle or a moved route, and a second reader of one family
+through one require adds neither. `admin-core/admin_views.js`'s
+`ssfDeadLettersJson()` adds only the narrowing and the slice, for both doors.
+
+* **THE QUEUE IS PER REALM, NOT A GLOBAL QUEUE WITH A REALM ON EACH ROW.**
+  `deadLetters` is a `realms.map()` — one Map per realm partition; in
+  PostgreSQL the rows share `sts_minted` with the realm in the primary key.
+  rcbj asked for that to be confirmed, and it is what the page's first
+  sentence says.
+* **FOUR CAUSES, NOT ONE PER CODE.** `STS-SSF-0092` (backlog full), `-0093`
+  (waiting when declared dead) and `-0096` (sent to a dead stream) say this
+  service decided not to push; every other code is a push that FAILED, and the
+  code is still on every row and in `byCode`. The cause is what an operator
+  acts on differently.
+* **THREE THINGS ARE PER PROCESS AND SAY SO**: the push cap — per process and
+  SHARED BY EVERY REALM, the one limit here that is not per realm, so a storm
+  in one realm dead-letters another's with 0092 — the recent-sweep history, and
+  the since-start totals. In a dispatched service the console is answered by a
+  SURFACE worker whose push gate is not the protocol workers', which is why the
+  reply names the pid and the role. A sweep's *held*, *expired* and *orphaned*
+  are the shared store; its *new* is its own process's pushes.
+  `sweepSignalsRealm()` calls `noteSweep()` before the probes run.
+* **NO TOKEN LEAVES**, as on `/admin/ssf`; a row says whether it was signed.
+* **STREAM STATES ARE FOUR WORDS**: `dead` (`isDead()`), `half-open` (failing
+  for at least `ssf.deadStreamTimeoutS` without being dead — what `halfOpen()`
+  leaves, and one more failure kills it), `failing`, and — for letters whose
+  stream this process does not hold — `unknown`. A delivering stream with no
+  letters is not a row.
+* **THE TIMELINE** is the retention window in round buckets (sixty at most,
+  epoch-aligned); a letter older than the window is counted beside it as
+  `olderThanWindow`, not piled into the first bucket.
+
+`tests/ssf_dead_letter_report.js` holds the report and the narrowing, five
+mutants caught. Verified over HTTP by hand against an isolated instance: real
+refused and 503 pushes, a stream declared dead and sent to, and
+`sts_metadata.js`, `admin_api.js`, `sts_admin_api_operations.js` and
+`sts_admin_console.js` passing with the page and operation in their lists.
 
 ## THE THREE OUTCOMES OF A PUSH ARE THREE AND NOT TWO
 
@@ -724,6 +894,21 @@ was tightened.
 
 ---
 
+## THE OWNER LOOKUP IS CHEAP AND CACHED (2026-09-14), AND IT WAS A 58-SECOND STALL
+
+`deliversEvent()` asks `allowedEventsFor()` for every event on every stream, and
+it called `applications.get()` then `applications.list()` — a whole view of every
+application, sealed keys opened — to read one attribute. The console's and
+portal's own streams are owned by `internal`, which names no application, so
+every call walked the registry. A postgres-mode session sweep that expired 2,412
+sessions (a session-revoked each, to two streams) blocked the one process for 58
+seconds and an LDAP modify in `sts_directory_bulk_load_ldap` timed out.
+`applications.ssfAllowedEventsFor()` reads raw attributes and keeps its answer
+per realm until the directory's `applicationsVersion()` — the `ou=applications`
+subtree clock — moves: 2,400 expiries with 300 applications registered take
+344ms. `tests/ssf_allowed_events_cache.js` asserts every change is seen at once,
+the LDAP modify handler's unlocated touch included; two mutants caught.
+
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO
 
 Each of these is on `GET /ssf` in the same words, because a mock's omissions are
@@ -772,7 +957,8 @@ the half a reader cannot discover from a protocol trace.
   the signing key is regenerated there, so a queue restored from disk would be
   tokens nothing can verify. In product mode on postgres `ssf_streams.streams`
   persists with the rest — and so, since 2026-09-12, do the CAEP and RISC
-  registers (below).
+  registers (below), and since 2026-09-13 the queue, as rows of its own (see
+  *THE QUEUE IS ONE ROW PER SET* below).
 
 ---
 
@@ -854,7 +1040,9 @@ management API's own and of ldap, scim and spiffe.
 
 The slot carries ONE object, validated whole, because a filler that installed
 the reader without the action would leave that page able to LIST streams and
-unable to change any of them.
+unable to change any of them. **It carries `deadLetters` since 2026-09-14**, the
+dead-letter report for Monitoring's page — a member and not a ninth slot, see
+the section on that page above.
 
 **`action` returns a PROMISE and it is the only slot here that does.** Every
 other action function in that console answers from memory; transmitting a
@@ -1189,3 +1377,46 @@ above it.
 client ids and the routes the surfaces register; deriving them from
 `common/oidc_rp.js`'s table would put a require from this directory into a
 module at 8b for two strings that change only with those files.
+
+## CREDENTIAL CHANGES FROM THE ADMIN DOORS: `account_signals.js` (2026-09-13)
+
+A person's `/admin/users` page gained controls that reset passwords, issue
+reset links and remove second factors, and each owes a signal. The acts are:
+
+| Door | CAEP `credential-change` | RISC |
+|---|---|---|
+| reset-password, set-password | `password`, `update` | reset only: `account-credential-change-required` |
+| issue-password-reset | `password`, `revoke` (if one was removed) | `account-credential-change-required` |
+| `/portal/reset-password` completed | `password`, `create`, initiated by `user` | — |
+| disable-primary-keys, clear-key | `fido2-roaming`, `delete`, per key, label as `friendly_name` | — |
+| disable-mfa | `app` and `fido2-roaming`, `delete`, per credential | `recovery-information-changed` if codes went |
+| clear-totp | `app`, `delete` | — |
+| clear-backup-codes | — | `recovery-information-changed` |
+
+**`ssf/account_signals.js` IS A LIBRARY THAT READS `ssf.js` OUT OF
+`require.cache`**, because the doors are at 18 (the actions layer) and 8b (the
+portal) and a require of `ssf.js` from either would register every `/ssf` route
+ahead of theirs and close a cycle through the console. Not a slot: there is no
+require at all, only a cache lookup — `admin-core/protocol_endpoints.js`'s
+arrangement. A process that never loaded SSF gets a no-op that says so. Nothing
+in it throws and callers do not await it: a slow receiver must not hold a page,
+and a failed emission must not undo a credential change already written.
+
+**`ssf.js` gained `emitCredentialChange()` and `emitRiscAccountAct()`**
+(`STS-SSF-0090`, `-0091`). The first builds the SET through `caep.buildPayload`
+and sends it with a complex user subject (`issuer_subject_id`) to the streams
+that asked for the type and cover the person; it obeys `caep.autoEmitTypes`
+through `caep.autoEmitActs()`, which gained `credential`. The second goes
+through `risc.observeAct()` — `observe()`'s loop extracted into `dueForActs()`,
+so an admin act meets the same `risc.autoEmitTypes` switch and the same opt-out
+gate a directory write does — and `sendOneRiscEvent()`. `risc.js`'s
+`applyActLocally()`, `reasonFor()` and `reasonForUser()` know the two new acts.
+**Both `autoEmitTypes` defaults name the new types**, so an unedited service
+sends them; a deployment that pinned the old list sends none.
+
+**The key credential type is `fido2-roaming` for every key**, because a stored
+key records no authenticator attachment, and the label goes out as
+`friendly_name` so two keys can be told apart. **The portal's own credential
+pages and the LDAP socket emit nothing**, which is the scope that was asked for
+(the admin user-page doors and the reset link), not a claim that nothing else
+changes a credential.

@@ -430,6 +430,16 @@ Four things about a relying-party session:
   two handlers are the only callers that end a parent on purpose;
   `admin-ui/CLAUDE.md` and `portal/CLAUDE.md` argue them.
 
+**A CONSOLE SESSION'S PARENT IS IN A DIFFERENT PARTITION FROM THE SESSION
+ITSELF (2026-09-11).** The console's code flow runs in the AMBIENT realm while
+its own session lives in the DEFAULT realm, so everything in `authn.js` that
+learnt that is here: `derivedFromRealm` is the field, `relyingPartySessionOf()`
+looks the parent up where it lives, and `dropSession()`'s cascade walks the
+default partition as well as the parent's own — without which a sign-out ends
+the sign-on session and leaves the console session it issued working, which is
+the defect that cascade exists to prevent. `tests/cross_surface_sso.js` pins all
+of it in process and `common/oidc_rp.js`'s surface table argues the split.
+
 ## `clearSessionCookie()` TAKES A NAME AND APPENDS (2026-09-06)
 
 Two changes to four lines, and the first was a live bug found by writing the
@@ -465,6 +475,24 @@ One password IS rejected, here and in three other places:
 * **One password is rejected** — the literal string `invalid` on the password grant,
   on WS-Trust and at the WS-Federation sign-in screen — so a negative test has
   something to fail on in every protocol here.
+
+**No end user's password is checked, in any protocol, IN DEVELOPMENT MODE** —
+product mode verifies every presented password against `userPassword`, and
+since 2026-09-12 that list includes the OAuth 2.0 password grant, SSF Basic and
+WS-Trust, which had been checking only the reserved string `invalid` in both
+modes — **with THREE exceptions in development, and they are the same argument
+three times**. A Kerberos ticket presented at `/authn/spnego` is verified
+against a real long-term key (2026-08-26), and **an RFC 6238 one-time code
+presented at `/authn/totp` is verified against the shared secret and the clock
+(2026-09-10)**, in BOTH modes. Neither is a lapse: a permissive Kerberos
+acceptor is a broken acceptor and a permissive TOTP verifier is a broken
+verifier — there is nothing left of either specification once the comparison
+goes, and no artifact for a client author to test against. **And a single-use
+RECOVERY CODE presented at `/authn/backup-code` is compared against the set on
+that person's entry and SPENT (2026-09-10)**, for the third reading of the same
+argument: there is nothing left of a one-time credential once the comparison
+goes. What stays permissive is everything AROUND them: the KDC's account policy,
+and the password in front of the code.
 
 ## `beginAuthentication()` does not always answer with this module's screen
 
@@ -859,6 +887,16 @@ secret, so it has to happen somewhere the person is already authenticated
 sign-in screen that handed out a shared secret to whoever typed a password would
 be a second factor anybody could set up for themselves.
 
+### It has NO SCRIPT, and it had to argue that beside a page that does
+
+The one-time code screen at `/authn/totp` sits directly beside a page that DOES
+relax the policy and still had to argue its own case. A WebAuthn ceremony is a
+browser API call and cannot happen without script; a person reading six digits
+off a phone and typing them into an input needs none, and the QR code that
+enrols the app is an SVG this server rendered. Copying `sendWebauthnPage()`
+because it was next door would have added a seventh scripted page to the root
+`CLAUDE.md`'s inventory for a page with no script on it.
+
 ---
 
 ## A SESSION THAT RAN OUT USED TO SAY NOTHING (2026-09-04)
@@ -1233,3 +1271,83 @@ arrived at:
 
 **`/portal/keys` asks both functions**, so the two ceremonies cannot accept
 different origins. `tests/webauthn_addresses.js` pins it.
+
+## `/authn/password-change`: A FORCED PASSWORD CHANGE AT THE SIGN-IN SCREEN (2026-09-13)
+
+**`pwdReset: TRUE` on a person's entry means the password must be changed
+before it can be used.** The attribute comes from
+draft-behera-ldap-password-policy, and the bootstrap administrator is its first
+writer (`admin-ui/CLAUDE.md`, 8a). `common/credentials.js` reads and writes it
+through two functions on the directory's credentials slot:
+`passwordResetRequired()` and `setPasswordResetRequired()`.
+
+**Only the sign-in screen can clear it.** The rules:
+
+* **The screen verifies with `allowPasswordReset: true`.** If the password was
+  right and `pwdReset` is set, it mints a step in `pendingPasswordChange`, a
+  per-realm persisted store. It then draws the change form instead of starting
+  a session. The step id rides as `change_id` and `?change=`. A missing,
+  expired or spent id is `STS-AUTHN-0144`.
+* **Every other door that verifies a password refuses the account**: the
+  password grant, LDAP bind, WS-Trust, SCIM Basic and the rest.
+  `resetRefusal()` returns `STS-AUTHN-0142` with reason
+  `password-reset-required`. It acts only on a `verified` answer, which is
+  product mode's. **In development nothing is verified, so no door refuses**,
+  and the forced change happens at the sign-in screen only.
+* **The new password goes through `setPassword()`**, so the password policy and
+  its history apply. A refusal redraws the form and names the rule it broke
+  (`STS-AUTHN-0146`, like a mismatch or an empty field). `invalid` is refused
+  in every mode: it is the one password development mode treats as wrong, so
+  choosing it would lock the account out.
+* **On success**: `pwdReset` is cleared (`STS-AUTHN-0143` warns if that write
+  fails, and the sign-in still goes on), then the `authn.password.changed`
+  audit row is written. After that, `finishPasswordSignIn()` runs the same tail
+  the password step would have run, **second factor included**. That tail was
+  moved out of the login POST handler so that the two could not drift apart.
+* **A passwordless sign-in is not asked.** It never presented the password that
+  must be changed.
+
+The route is described in `sts_metadata.js`. `tests/admin_bootstrap.js`
+section 7 drives the flow over HTTP in a child process. It checks that the form
+is drawn in place of a session, and that a mismatch and the reserved password
+are refused. It checks that a good change sets a session cookie, redirects on
+to the authorization endpoint and clears the flag, and that the step is spent.
+In product mode it checks that a wrong password never reaches the step and that
+the policy refuses a weak new password. Section 6 checks the refusal at a door
+that cannot ask. **Nothing asserts the audit row or a second factor after the
+change.**
+
+## A SECOND FACTOR MAY BE REQUIRED, AND `/authn/mfa-setup` ENROLS ONE (2026-09-13)
+
+`credentials.mfaRequirementFor(username)` answers `{ required, byUser, byRealm }`
+— `stsMfaRequired` on the entry, set by **Require MFA** on the person's console
+page, or `authn.mfaRequired` for the realm. `finishPasswordSignIn()` asks it
+after computing `factor`:
+
+* **A passwordless sign-in under the requirement is refused** on the login page
+  (`STS-AUTHN-0171`): a key on its own is one factor, `amr ["hwk"]`, and the
+  requirement is two.
+* **A requirement with no factor held mints a `pendingMfa` step with factor
+  `enrol`** and draws `mfaSetupPage()` — buttons for an authenticator app and a
+  security key, whichever `enrolmentOffered()` finds (`totp.offered()`;
+  `webauthnPolicy.offered()` with the `mfa` role allowed). Offered neither, the
+  sign-in is refused naming the settings (`STS-AUTHN-0172`) rather than a
+  required factor silently not being asked for.
+* **`/authn/mfa-setup`** takes the step id. `webauthn` hands the step to
+  `webauthnPage()` as an ordinary `mfa` enrolment; `totp` begins an enrolment,
+  moves the step to `enrol-totp` and draws the QR code and the typed secret;
+  `confirm-totp` confirms the code (rate limited on the `mfa-code` bucket) and
+  only then calls `startSession(['pwd','otp'], 'mfa')` and returns to the
+  caller. A wrong code keeps the step. Anybody who already holds a factor is
+  refused there (`STS-AUTHN-0175`), which is what keeps this door the same
+  exception the security-key box's enrol-on-first-use is: **a person holding no
+  second factor may add one at sign-in, because there is none an attacker with
+  the password could be bypassing.**
+
+**IT IS ENFORCED AT THIS SCREEN AND NOWHERE ELSE**, and the setting's
+description says which doors it does not reach: a federated assertion, SPNEGO,
+a TLS client certificate, the OAuth password grant, an LDAP bind, WS-Trust and
+SCIM Basic. A session that already exists is not ended. **The enrolment emits
+no CAEP event**, because the signals the request asked for are the ADMIN doors'
+(`admin-core/admin_actions.js`); the portal's own enrolment pages do not emit
+either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.

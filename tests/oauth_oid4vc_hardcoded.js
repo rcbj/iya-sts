@@ -296,6 +296,11 @@ function childMain() {
          readNoToken.status);
 
     config.setOverride('global.mode', 'product');
+    // A TRUSTED SOFTWARE STATEMENT IS THE SECOND DOOR THROUGH A CLOSED
+    // ENDPOINT (2026-09-13), and while it may open one the endpoint stays
+    // advertised — so the closed-and-unadvertised claim below is made with
+    // that door shut. tests/software_statement.js holds the open door.
+    config.setOverride('oauth2.softwareStatementOpensRegistration', false);
     r = await request(port, 'POST', '/oauth2/register',
       { json: { redirect_uris: ['https://rp.hc.example/cb'] } });
     note(r.status === 403 && /oauth2\.openRegistration/.test(r.text),
@@ -318,6 +323,7 @@ function childMain() {
          'and is advertised',
          r.status + ' ' + r.text.slice(0, 120));
     config.clearOverride('oauth2.openRegistration');
+    config.clearOverride('oauth2.softwareStatementOpensRegistration');
     config.clearOverride('global.mode');
 
     // ======================================================================

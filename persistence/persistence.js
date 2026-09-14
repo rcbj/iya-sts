@@ -294,6 +294,9 @@ let configDirty = false;
 // The pending flush, and the promise anybody waiting on it holds.
 let timer = null;
 let flushing = null;
+// The ONE flush queued behind `flushing`, shared by every caller that arrives
+// while it runs. See flush().
+let flushQueued = null;
 
 // True while start() is loading. Every changed() call is a no-op then: restore
 // writes into the live stores through the same functions an operator does, and
@@ -745,8 +748,47 @@ function flush() {
     return Promise.resolve({ written: false });
   }
   if (flushing) {
+    // -----------------------------------------------------------------------
+    // ONE FLUSH QUEUED BEHIND THE RUNNING ONE, SHARED BY EVERY CALLER
+    // (2026-09-13).
+    //
+    // This was `return flushing.then(flush)` per caller, and in postgres mode
+    // there is a caller per WRITE: `schedule()` arms a zero-delay timer, the
+    // timer calls this, and a write that lands while a transaction is open
+    // arms the next one. So every write made during a flush added a waiter;
+    // when it settled ALL of them ran, one started the next flush, and every
+    // other one chained itself again. The waiters therefore never drained
+    // while the writes went on — fifty thousand LDAP adds were fifty thousand
+    // waiters re-chained on every commit, a promise, a closure and two debug
+    // calls each.
+    //
+    // **MEASURED, AND IT IS WHAT FAILED THE 50k JOB IN `postgres` MODE.** A
+    // sampling heap profile of a single-process postgres service during that
+    // load put over 3 GB of 6.6 GB allocated in fifteen seconds in this one
+    // line and the promise machinery under it. RSS went from 1 GB to 4.2 GB,
+    // GC stalls of 2.6s and 5.3s stopped the process — the one group create
+    // after the load took 3.3s — and at the END of a whole suite, on a heap
+    // already carrying every job before it, the same stalls outlast undici's
+    // ten-second connect timeout: `fetch failed` on the read-back, 41s after
+    // the last add.
+    //
+    // A caller that arrives while a flush is running needs a flush that starts
+    // AFTER it, and one such flush serves every caller that arrived before it
+    // starts — it takes the whole journal at that moment. So there is one
+    // queued flush, created by the first caller to need it and returned to the
+    // rest.
+    // -----------------------------------------------------------------------
+    if (!flushQueued) {
+      const queued = flushing.then(function () {
+        if (flushQueued === queued) {
+          flushQueued = null;
+        }
+        return flush();
+      });
+      flushQueued = queued;
+    }
     log.debug('Leaving flush(). One is already running; waiting for it.');
-    return flushing.then(function () { return flush(); });
+    return flushQueued;
   }
   if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty()) {
     log.debug('Leaving flush(). Nothing is dirty.');
@@ -1616,6 +1658,24 @@ function applyKeysChange(change) {
   // across processes is a rolling restart, which is what it is everywhere
   // else, and pretending otherwise here would be the most dangerous kind of
   // half-feature: tokens signed by a key this process has stopped publishing.
+  //
+  // **A `pki:` ROW IS NOT A SIGNING KEY (2026-09-13)**, and this line used to
+  // call it one: `common/keystore.js` keeps each certificate authority in
+  // `sts_keys` under `pki:<realm>`, and `pki.js` saves that row once per
+  // certificate it records — so one realm build printed "the pki:acme realm's
+  // signing keys were changed … NOT ADOPTED" a dozen times in every other
+  // process, which reads as a key-agreement fault while debugging one. Inside a
+  // dispatched service the request pool's PKI channel has already carried the
+  // row; across separate services it is read back at the next start, as
+  // before. Said once, at debug, and named for what it is.
+  if (String(change.realm || '').indexOf('pki:') === 0) {
+    log.debug('persistence: the certificate authority row "' + change.realm +
+              '" was changed by another process. It is not read back from ' +
+              'the store here; within one dispatched service the request ' +
+              'pool\'s PKI channel carries it.');
+    log.debug("Leaving applyKeysChange().");
+    return Promise.resolve(false);
+  }
   log.info('persistence: the "' + (change.realm || 'default') + '" realm\'s ' +
            'signing keys were changed by another process. THEY ARE NOT ' +
            'ADOPTED HERE: this process holds the keys it read at startup, ' +

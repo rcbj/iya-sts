@@ -78,6 +78,10 @@ const { log, xmlEscape } = require('../common/helpers');
 const app = require('../common/app');
 const config = require('../common/config');
 const applications = require('../common/applications');
+// The one question asked of a stored URI before it is framed. `validation.js`
+// requires config.js, error_codes.js and npm packages and nothing here.
+const validation = require('../common/validation');
+const errorCodes = require('../common/error_codes');
 
 // Is the feature on at all? Read per call rather than captured at require time,
 // which is what `runtime: true` on the setting claims — a `const` here is the
@@ -155,7 +159,22 @@ function notificationsFor(session, issuer) {
   const sid = (session && session.id) || '';
   const rows = clientsOf(session).map(function (clientId) {
     const client = applications.clientConfigOf(clientId);
-    const uri = String((client && client.frontchannel_logout_uri) || '');
+    const stored = String((client && client.frontchannel_logout_uri) || '');
+    // THE SAME RULE REGISTRATION APPLIES, APPLIED AGAIN WHEN IT IS READ
+    // (2026-09-13). Registration, the console and `/admin-api` refuse anything
+    // but http or https here now, and `ldapmodify` reaches this attribute
+    // without passing any of them — and until that date none of the three
+    // checked it either. What is stored here is loaded in an IFRAME and printed
+    // as a LINK on the sign-out page, so a `javascript:` value put here by
+    // either route is skipped and reported rather than drawn.
+    const storedProblem = stored ? validation.frontchannelUriProblem(stored) :
+                          null;
+    if (storedProblem) {
+      log.warn(errorCodes.tag('STS-OAUTH-0288') + 'front-channel logout: ' +
+               clientId + '\'s stored frontchannel_logout_uri is not ' +
+               'notified, because it ' + storedProblem + '.');
+    }
+    const uri = storedProblem ? '' : stored;
     const wantsSession = !!(client &&
                             client.frontchannel_logout_session_required);
     let url = '';
@@ -181,6 +200,10 @@ function notificationsFor(session, issuer) {
       // Why this client will not be notified, in words, or '' when it will be.
       // Stated here rather than worked out again by each renderer.
       why: uri ? ''
+                : storedProblem
+                ? 'the frontchannel_logout_uri stored for this client cannot ' +
+                  'be framed — it ' + storedProblem + ' — so it is not ' +
+                  'notified. Correct oauthFrontchannelLogoutUri on its entry.'
                 : (client && client.known
                     ? 'this client has registered no ' +
                       'frontchannel_logout_uri, so there is nowhere to tell ' +

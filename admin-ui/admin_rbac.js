@@ -380,6 +380,215 @@ function roster() {
 // somebody who has never authenticated is a value naming an entry that is not
 // there yet, and it is still a grant — treating it as empty would mean granting
 // a role to a future colleague quietly leaving the door open.
+// ---------------------------------------------------------------------------
+// THE BOOTSTRAP ADMINISTRATOR (2026-09-13).
+//
+// A new instance has ONE account that administers it: `admin.bootstrapUsername`
+// (default `admin`) in the DEFAULT realm, a member of both console roles, whose
+// password must be changed at its first sign-in (`pwdReset`, enforced by
+// `authn/authn.js`). Development accepts any password for it, as for anybody;
+// product mode's first password is the generated one `credentials.bootstrap()`
+// prints once.
+//
+// **UNTIL THAT ACCOUNT FIRST SIGNS IN TO THE CONSOLE, EVERY SIGNED-IN PERSON
+// MAY USE THE CONSOLE** — the window the empty roster used to open, kept open by
+// something that cannot happen by accident. It replaced "open while nobody
+// holds a role" because that rule closed on the FIRST GRANT: an operator who
+// granted themselves only Admin Read locked themselves out of every write, with
+// nobody left who could undo it from the console. Seeding both roles onto one
+// named account and closing on THAT account's arrival means the first thing to
+// close the door is the administrator walking through it.
+//
+// Three facts, all on the account's own entry (`ldap_server.js`'s
+// readPersonFlags()), so they persist and replicate with it:
+// `stsBootstrapAdministrator` says it was seeded, `stsConsoleClaimedAt` says the
+// window is closed, and `pwdReset` is the password rule.
+// ---------------------------------------------------------------------------
+function bootstrapName() {
+  log.debug("Entering bootstrapName().");
+  log.debug("Leaving bootstrapName().");
+  return String(config.value('admin.bootstrapUsername') || '').trim();
+}
+
+function bootstrapState() {
+  log.debug("Entering bootstrapState().");
+  const name = bootstrapName();
+  const out = { username: name, seeded: false, claimedAt: '', dn: '' };
+  if (!directory || !name || typeof directory.readPersonFlags !== 'function') {
+    log.debug("Leaving bootstrapState(). Nothing to read.");
+    return out;
+  }
+  let flags = null;
+  try {
+    flags = directory.readPersonFlags(name);
+  } catch (e) {
+    log.debug("Caught in bootstrapState(): " + ((e && e.message) || e));
+    flags = null;
+  }
+  if (flags) {
+    out.seeded = !!flags.bootstrapAdministrator;
+    out.claimedAt = String(flags.consoleClaimedAt || '');
+    out.dn = flags.dn;
+  }
+  log.debug("Leaving bootstrapState(). seeded=" + out.seeded +
+            ", claimed=" + !!out.claimedAt);
+  return out;
+}
+
+function nowGeneralized() {
+  log.debug("Entering nowGeneralized().");
+  log.debug("Leaving nowGeneralized().");
+  return new Date().toISOString().replace(/[-:T]/g, '').replace(/\.\d+Z$/,
+                                                                 'Z');
+}
+
+// ---------------------------------------------------------------------------
+// MAKE IT, ONCE, AT STARTUP. `server.js` calls this after the persistence store
+// has been restored and before `credentials.bootstrap()` gives the account its
+// generated password in product mode.
+//
+// **IT NEVER UNDOES AN OPERATOR.** An account whose window has closed is left
+// exactly as it is, including if somebody took its roles away. And a roster
+// that already names somebody ELSE when the account is first marked is a
+// service that was already administered before this existed: the account is
+// made and given both roles, as asked, and the window is recorded as closed at
+// once rather than re-opening the console to everybody on an upgrade.
+//
+// `pwdReset` is set only on an account this call CREATED — an existing entry
+// was somebody's before, and forcing a change on it is not this step's call.
+// ---------------------------------------------------------------------------
+function seedBootstrapAdministrator() {
+  log.debug("Entering seedBootstrapAdministrator().");
+  const name = bootstrapName();
+  if (!directory || !name ||
+      typeof directory.readPersonFlags !== 'function' ||
+      typeof directory.writePersonFlag !== 'function' ||
+      typeof directory.createPerson !== 'function') {
+    log.debug("Leaving seedBootstrapAdministrator(). No directory to seed.");
+    return { ran: false, why: 'no directory offers the bootstrap functions' };
+  }
+  let flags = directory.readPersonFlags(name);
+  if (flags && flags.bootstrapAdministrator && flags.consoleClaimedAt) {
+    log.debug("Leaving seedBootstrapAdministrator(). Already claimed.");
+    return { ran: false, why: 'the bootstrap administrator has already ' +
+                              'signed in to the console', username: name };
+  }
+  const administeredBy = roster().reduce(function (names, row) {
+    row.members.concat(row.claimed || []).forEach(function (member) {
+      const who = String(member.username || '');
+      if (who && who.toLowerCase() !== name.toLowerCase() &&
+          names.indexOf(who) < 0) {
+        names.push(who);
+      }
+    });
+    return names;
+  }, []);
+  let created = false;
+  if (!flags) {
+    const made = directory.createPerson(name);
+    if (!made || made.ok === false) {
+      log.error(errorCodes.tag('STS-ADMIN-0706') + 'admin_rbac: the ' +
+                'bootstrap administrator "' + name + '" could not be ' +
+                'created in the default realm: ' +
+                ((made && (made.errors || []).join(' ')) || 'no reason'));
+      log.debug("Leaving seedBootstrapAdministrator(). Not created.");
+      return { ran: false, why: 'the account could not be created',
+               username: name };
+    }
+    created = true;
+    flags = directory.readPersonFlags(name);
+  }
+  if (!flags.bootstrapAdministrator) {
+    directory.writePersonFlag(name, 'stsBootstrapAdministrator', true);
+  }
+  if (created) {
+    directory.writePersonFlag(name, 'pwdReset', true);
+  }
+  const granted = ROLE_IDS.map(function (id) {
+    return grant(name, id, { via: 'bootstrap', actor: 'bootstrap' });
+  });
+  const failed = granted.filter(function (one) { return !one.ok; });
+  if (failed.length) {
+    log.error(errorCodes.tag('STS-ADMIN-0706') + 'admin_rbac: the ' +
+              'bootstrap administrator "' + name + '" could not be given ' +
+              'both console roles: ' + failed.map(function (one) {
+                return (one.errors || []).join(' ');
+              }).join(' '));
+  }
+  const closedAtOnce = administeredBy.length > 0;
+  if (closedAtOnce) {
+    directory.writePersonFlag(name, 'stsConsoleClaimedAt', nowGeneralized());
+  }
+  audit.record({
+    action: 'admin.console.bootstrap', outcome: 'success', actor: 'bootstrap',
+    target: flags.dn, channel: 'internal',
+    summary: 'The bootstrap administrator "' + name + '" was ' +
+             (created ? 'created and ' : '') + 'given both console roles' +
+             (closedAtOnce ? '; the console was already administered, so it ' +
+                             'is not opened to everybody' : ''),
+    detail: { event: 'seeded', username: name, created: created,
+              passwordResetRequired: created,
+              administeredBy: administeredBy.slice(0, 20),
+              windowClosed: closedAtOnce }
+  });
+  log.info('admin_rbac: "' + name + '" in the default realm holds Admin Read ' +
+           'and Admin Write' + (created ? ', and must change its password at ' +
+           'its first sign-in' : '') + '. ' + (closedAtOnce
+             ? 'The roster already named ' + administeredBy.join(', ') +
+               ', so the console stays enforced.'
+             : 'Until it first signs in to /admin, every signed-in person may ' +
+               'use the console.'));
+  log.debug("Leaving seedBootstrapAdministrator().");
+  return { ran: true, username: name, created: created,
+           windowClosed: closedAtOnce };
+}
+
+// ---------------------------------------------------------------------------
+// THE WINDOW CLOSES WHEN THE BOOTSTRAP ADMINISTRATOR ARRIVES. Called by the
+// console gate for every signed-in request, so the common answer — not that
+// account, or already closed — is one flag read and no write.
+//
+// **ONLY A DEFAULT-REALM SIGN-IN COUNTS.** The console's code flow runs in the
+// realm it was reached in and the roster is matched by NAME, so a trust
+// realm's own `admin` signing in must not close a window that belongs to the
+// default realm's account. The password has already been changed by then:
+// `authn.js` asks for it before any session exists.
+// ---------------------------------------------------------------------------
+function noteConsoleSignIn(username, session, defaultRealmId) {
+  log.debug("Entering noteConsoleSignIn().");
+  const name = String(username || '').trim();
+  const wanted = bootstrapName();
+  if (!name || !wanted || name.toLowerCase() !== wanted.toLowerCase()) {
+    log.debug("Leaving noteConsoleSignIn(). Not the bootstrap administrator.");
+    return false;
+  }
+  const fromRealm = String((session && session.derivedFromRealm) ||
+                           defaultRealmId);
+  if (fromRealm !== String(defaultRealmId)) {
+    log.debug("Leaving noteConsoleSignIn(). Signed in through another realm.");
+    return false;
+  }
+  const state = bootstrapState();
+  if (!state.seeded || state.claimedAt) {
+    log.debug("Leaving noteConsoleSignIn(). Nothing to close.");
+    return false;
+  }
+  const at = nowGeneralized();
+  directory.writePersonFlag(wanted, 'stsConsoleClaimedAt', at);
+  audit.record({
+    action: 'admin.console.bootstrap', outcome: 'success', actor: name,
+    target: state.dn, channel: 'internal',
+    summary: 'The bootstrap administrator "' + name + '" signed in to the ' +
+             'console; it is enforced from now on',
+    detail: { event: 'claimed', username: name, at: at }
+  });
+  log.info('admin_rbac: the bootstrap administrator "' + name + '" signed in ' +
+           'to the console. The roster is enforced from now on: only members ' +
+           'of the two role groups may use it.');
+  log.debug("Leaving noteConsoleSignIn(). Closed.");
+  return true;
+}
+
 function rosterEmpty() {
   log.debug("Entering rosterEmpty().");
   log.debug("Leaving rosterEmpty().");
@@ -439,10 +648,23 @@ function rolesOf(username) {
   });
 
   out.empty = rosterEmpty();
-  // THE EMPTY-ROSTER RULE, and it is applied here rather than at the guard so
+  // THE OPEN-CONSOLE RULE, and it is applied here rather than at the guard so
   // that the console's own banner, the management API's answer and the refusal
   // itself cannot come to disagree about whether the door is open.
-  if (out.empty && !Object.keys(held).length) {
+  //
+  // **SINCE 2026-09-13 IT IS ABOUT THE BOOTSTRAP ADMINISTRATOR, NOT THE EMPTY
+  // ROSTER, wherever one was seeded.** `seedBootstrapAdministrator()` puts
+  // `admin.bootstrapUsername` in both groups at startup, so the roster is never
+  // empty on a service started through server.js — and the console stays open
+  // to every signed-in person until THAT account first signs in to it
+  // (`noteConsoleSignIn()`), after which the roster is enforced for good. A
+  // directory with no seeded account (an in-process test, a process that never
+  // ran the startup step) keeps the old rule: open while the roster is empty.
+  const bootstrap = bootstrapState();
+  out.bootstrap = { username: bootstrap.username, seeded: bootstrap.seeded,
+                    claimedAt: bootstrap.claimedAt };
+  const unclaimed = bootstrap.seeded ? !bootstrap.claimedAt : out.empty;
+  if (unclaimed && !Object.keys(held).length) {
     out.openable = true;
     if (config.value('admin.openWhenEmpty')) {
       out.open = true;
@@ -778,6 +1000,11 @@ function revoke(username, roleId, context) {
               rosterNowEmpty: nowEmpty }
   });
 
+  // A seeded bootstrap administrator who has signed in has CLOSED the open
+  // window for good, so an empty roster no longer opens the console.
+  const boot = nowEmpty ? bootstrapState() : null;
+  const reopens = nowEmpty && config.value('admin.openWhenEmpty') &&
+                  !(boot.seeded && boot.claimedAt);
   log.debug("Leaving revoke(). " + name + " no longer holds " + role.id + ".");
   return { ok: true, changed: true, role: role.id, username: name, dn: dn,
            removed: removed.length,
@@ -787,11 +1014,10 @@ function revoke(username, roleId, context) {
                     (nowEmpty
                       ? ' THAT WAS THE LAST GRANT ON THIS SERVICE. The ' +
                         'roster is empty again, so ' +
-                        (config.value('admin.openWhenEmpty')
+                        (reopens
                           ? 'this console is open to anybody who signs in ' +
                             'until somebody is granted a role.'
-                          : 'nobody can use this console at all — ' +
-                            'admin.openWhenEmpty is off. POST ' +
+                          : 'nobody can use this console at all. POST ' +
                             '/admin-api/rbac/grant is the way back in.')
                       : '') };
 }
@@ -902,12 +1128,19 @@ function describe() {
                             0)
   };
   out.empty = out.grantCount === 0;
+  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13) — see bootstrapState(). Where one
+  // was seeded, the console is open until it signs in; otherwise, while the
+  // roster is empty, as before.
+  const bootstrap = bootstrapState();
+  out.bootstrap = { username: bootstrap.username, seeded: bootstrap.seeded,
+                    claimedAt: bootstrap.claimedAt };
+  const unclaimed = bootstrap.seeded ? !bootstrap.claimedAt : out.empty;
   // Said as one flag rather than left to the caller to compute from three,
   // because it is the sentence every surface has to render and three of them
   // computing it separately is three chances to say the door is shut while it
   // is open.
-  out.openToAnyone = out.enforced && out.empty && out.openWhenEmpty;
-  out.closedToEveryone = out.enforced && out.empty && !out.openWhenEmpty;
+  out.openToAnyone = out.enforced && unclaimed && out.openWhenEmpty;
+  out.closedToEveryone = out.enforced && out.empty && !out.openToAnyone;
   log.debug("Leaving describe(). " + out.grantCount + " grant(s).");
   return out;
 }
@@ -921,6 +1154,10 @@ module.exports = {
   roster: roster,
   rosterFor: rosterFor,
   rosterEmpty: rosterEmpty,
+  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13).
+  seedBootstrapAdministrator: seedBootstrapAdministrator,
+  noteConsoleSignIn: noteConsoleSignIn,
+  bootstrapState: bootstrapState,
   rolesOf: rolesOf,
   grant: grant,
   revoke: revoke,

@@ -185,6 +185,7 @@ const krb5Service = stack.krb5Service;
 const tlsServer = stack.tlsServer;
 const ldapServer = stack.ldapServer;
 const spiffeServer = stack.spiffeServer;
+const debuggerServer = stack.debuggerServer;
 
 // ---------------------------------------------------------------------------
 // THE MAIN LISTENER, and the one decision made about it before it binds.
@@ -272,8 +273,10 @@ function announce() {
            '); POST SOAP RST to /sts');
   if (useHttps) {
     log.info('This port is HTTPS (global.https' +
-             (config.value('oauth2.rfc9700') ?
-              ', which RFC 9700 mode turned on' : '') +
+             (config.value('oauth2.oauth21') ?
+              ', which OAuth 2.1 mode turned on' :
+              (config.value('oauth2.rfc9700') ?
+               ', which RFC 9700 mode turned on' : '')) +
              '), served with the same certificate 8443, 9443 and ' +
              'LDAPS 636 use. It is ' + tlsServer.certificateProvenance() +
              '. Fetch it from /tls/server-certificate and trust it — and ' +
@@ -431,6 +434,20 @@ function announce() {
               'Every http:// CRL and OCSP address in this service\'s ' +
               'certificates will answer nothing.');
   });
+  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): its own listener, then its
+  // api child. Recorded rather than thrown like every socket here — and a
+  // debugger that is not embedded, or not installed, says why on
+  // /admin/debugger and costs the rest of the service nothing.
+  debuggerServer.listen().whenReady.then(function (ready) {
+    if (ready.port) {
+      log.info('debugger: the identity protocol debugger is on port ' +
+               ready.port + ', for console administrators signed in ' +
+               'through this service. /admin/debugger reports it.');
+    }
+  }).catch(function (err) {
+    log.error(errorCodes.tag('STS-DBG-0016') + 'debugger: the listener ' +
+              'could not start: ' + err.message);
+  });
   const tlsListeners = tlsServer.listen();
   tlsListeners.whenReady.then(function (ready) {
     log.info('tls: an HTTPS endpoint that reports the connection back to ' +
@@ -501,7 +518,13 @@ function shutdown(signal) {
   // that pool first would fail the job the request is blocked on and turn a
   // clean shutdown into a truncated answer.
   // ---------------------------------------------------------------------
-  requestPool.stop().then(function (drained) {
+  // The debugger's api child first: it is not a worker of either pool and
+  // holds nothing worth draining, and an orphan would keep its socket.
+  debuggerServer.close().catch(function (e) {
+    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  }).then(function () {
+    return requestPool.stop();
+  }).then(function (drained) {
     if (drained.stopped || drained.killed) {
       log.info('sts: ' + drained.stopped + ' request worker(s) finished and ' +
                drained.killed + ' had to be killed.');
@@ -584,6 +607,10 @@ process.on('SIGINT', function () { shutdown('SIGINT'); });
 // The credential verifier, for the product-mode bootstrap below. A LEAF
 // (rule 3) that registers no route, so this require adds nothing to the router.
 const credentials = require('./common/credentials');
+// The console roles, for the bootstrap administrator below. A LIBRARY (rule 3)
+// that the protocol stack has already loaded, so this is a cache hit that
+// registers no route.
+const adminRbac = require('./admin-ui/admin_rbac');
 // The keystore, for the product-mode key material. A LEAF (rule 3).
 const keystore = require('./common/keystore');
 // The four startup steps, shared with a request worker. See that file.
@@ -639,6 +666,14 @@ serviceState.start().then(function (both) {
   //
   // It does nothing in development mode and nothing in a realm where somebody
   // already holds a credential; see credentials.bootstrap().
+  // THE BOOTSTRAP ADMINISTRATOR FIRST (2026-09-13): `admin.bootstrapUsername`
+  // in the default realm, made if absent, in both console roles, and forced to
+  // change its password at its first sign-in. `credentials.bootstrap()` below
+  // then gives that account its generated password in product mode. See
+  // admin-ui/admin_rbac.js's seedBootstrapAdministrator().
+  realms.run(realms.DEFAULT_REALM, function () {
+    return adminRbac.seedBootstrapAdministrator();
+  });
   credentials.bootstrap({ username: config.value('admin.bootstrapUsername') });
 
   // ---------------------------------------------------------------------
@@ -698,6 +733,15 @@ serviceState.start().then(function (both) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +
                  'worker(s) are serving' +
+                 // Per pool, when the hosted surfaces have workers of their
+                 // own — see common/request_pool.js's two-pools block.
+                 ((pool.pools || []).some(function (one) {
+                   return one.pool !== 'protocol' && one.wanted;
+                 })
+                   ? ' (' + pool.pools.map(function (one) {
+                     return one.started + ' of ' + one.wanted + ' ' + one.pool;
+                   }).join(', ') + ')'
+                   : '') +
                  (requestPool.dispatchPrefixes().length
                    ? '; dispatching ' +
                      requestPool.dispatchPrefixes().join(', ')

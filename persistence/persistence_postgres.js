@@ -859,7 +859,19 @@ function create(options) {
   // query: `common/request_worker.js` needs to know whether its flush actually
   // wrote anything, and asking the database that after every request is a round
   // trip for a question this process already knows the answer to.
+  //
+  // **COUNTED AT COMMIT, NOT AT INSERT (2026-09-13).** It was `written +=
+  // rows.length` here, before the INSERT was even sent — so a transaction
+  // still open, or one about to roll back, had already moved the count. Two
+  // readers depend on it meaning COMMITTED and both were wrong by it: a worker
+  // reads it either side of its flush to say whether it `wrote`, and one that
+  // waited on another transaction's commit could find the count already moved
+  // before it sampled and report `wrote: false` for a write it had just
+  // waited for; and `request_pool.js`'s noteLocalWrites() moved the read
+  // generation for rows no other process could fetch yet. So a transaction's
+  // rows are held against its CLIENT and added only once COMMIT has returned.
   let written = 0;
+  const uncommittedRows = new WeakMap();
 
   function recordChanges(client, rows) {
     log.debug("Entering recordChanges().");
@@ -867,7 +879,13 @@ function create(options) {
       log.debug("Leaving recordChanges().");
       return Promise.resolve();
     }
-    written += rows.length;
+    if (uncommittedRows.has(client)) {
+      uncommittedRows.set(client, uncommittedRows.get(client) + rows.length);
+    } else {
+      // Not inside withTransaction(): every caller today is, and a statement
+      // outside one commits as it runs, so it is counted as it is sent.
+      written += rows.length;
+    }
     // ONE STATEMENT PER CHUNK. A directory flush can carry hundreds of moved
     // entries and a round trip each would make the log more expensive than
     // the write it describes.
@@ -968,16 +986,26 @@ function create(options) {
     log.debug("Leaving withTransaction().");
     return pool.connect().then(function (client) {
       const unguard = guardClient(client, 'a transaction');
+      // THE CHANGE ROWS THIS TRANSACTION RECORDS, held until COMMIT returns —
+      // see `written` above. Keyed by the client, which is what
+      // recordChanges() is handed, and removed on both endings so that a
+      // client the pool hands to the next transaction starts at nothing.
+      uncommittedRows.set(client, 0);
       return client.query('BEGIN').then(function () {
         return fn(client);
       }).then(function (result) {
         return client.query('COMMIT').then(function () {
+          written += uncommittedRows.get(client) || 0;
+          uncommittedRows.delete(client);
           unguard();
           client.release();
           log.debug('Leaving withTransaction(). Committed.');
           return result;
         });
       }).catch(function (err) {
+        // NOTHING THIS TRANSACTION RECORDED WAS COMMITTED, so none of it is
+        // counted — including a COMMIT that itself failed.
+        uncommittedRows.delete(client);
         return client.query('ROLLBACK').catch(function (rollbackErr) {
           // The rollback itself failed, which means the connection is gone.
           // Logged and swallowed: the original error is the one worth

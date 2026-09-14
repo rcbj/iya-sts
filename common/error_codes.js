@@ -124,10 +124,12 @@ const CODE_IN_TEXT = /STS-[A-Z][A-Z0-9]{1,9}-[0-9]{4}/g;
 // ---------------------------------------------------------------------------
 const SUBSYSTEMS = [
   { id: 'HTTP', label: 'HTTP front door',
-    where: 'common/app.js, common/validation.js, common/websecurity.js',
+    where: 'common/app.js, common/cors.js, common/validation.js, ' +
+           'common/websecurity.js',
     what: 'Every HTTP request passes through here before it reaches a ' +
-          'protocol: the security headers, the body parsers, the validation ' +
-          'guard, the rate limiter, and the call-log funnel that records the ' +
+          'protocol: the security headers, the CORS allowlist, the body ' +
+          'parsers, the validation guard, the rate limiter, and the call-log ' +
+          'funnel that records the ' +
           'answer. The three generic codes below are what that funnel ' +
           'records for a failed response nothing more specific claimed.' },
   { id: 'CORE', label: 'Service core',
@@ -158,6 +160,34 @@ const SUBSYSTEMS = [
     what: 'The Root, Intermediate and Issuing CAs, certificate authoring, ' +
           'the CRL and OCSP responders, and the revocation check a presented ' +
           'certificate is held to.' },
+  // CERTIFICATE ENROLLMENT (2026-09-13): the shared core the three enrollment
+  // protocols issue through, and the three protocols. Four subsystems rather
+  // than one because an operator reading `STS-SCEP-0012` on an audit row wants
+  // the protocol a failing client spoke, and `STS-ENROLL-*` is the half none of
+  // them owns — who may have a certificate for whom, and what goes in it.
+  { id: 'ENROLL', label: 'Certificate enrollment core',
+    where: 'common/cert_enrollment.js, common/enrollment_monitor.js',
+    what: 'Who may be issued a certificate for which directory entry, what ' +
+          'a certificate issued over ACME, EST or SCEP contains, the PKCS#10 ' +
+          'proof of possession, the enrolled certificates and credentials ' +
+          'kept on a person or application entry, and their revocation.' },
+  { id: 'ACME', label: 'ACME (RFC 8555)',
+    where: 'acme/',
+    what: 'The ACME server: the directory, nonces, JWS request ' +
+          'authentication, accounts bound by External Account Binding, ' +
+          'orders, pre-validated authorizations, finalize, certificate ' +
+          'download, revocation, key change, renewal information, and its ' +
+          'console pages.' },
+  { id: 'EST', label: 'EST (RFC 7030)',
+    where: 'est/',
+    what: 'Enrollment over Secure Transport: cacerts, simpleenroll, ' +
+          'simplereenroll, serverkeygen and csrattrs, HTTP Basic and TLS ' +
+          'client certificate authentication, and its console pages.' },
+  { id: 'SCEP', label: 'SCEP (RFC 8894)',
+    where: 'scep/',
+    what: 'The Simple Certificate Enrolment Protocol: GetCACaps, GetCACert, ' +
+          'GetNextCACert and PKIOperation, the CMS envelope, the RA ' +
+          'certificate, challenge passwords, and its console pages.' },
   { id: 'AUTHN', label: 'Sign-in, second factors and sessions',
     where: 'authn/, common/credentials.js, common/totp.js, ' +
            'common/backup_codes.js, common/password_policy.js, ' +
@@ -264,7 +294,13 @@ const SUBSYSTEMS = [
            'common/user_graph.js, common/credential_graph.js, ' +
            'common/inetorgperson.js',
     what: 'The application registry, consent, delegated permissions, the ' +
-          'delegation register, the statistics and the claim configuration.' }
+          'delegation register, the statistics and the claim configuration.' },
+  { id: 'DBG', label: 'Protocol debugger',
+    where: 'debugger/, and the debugger scope rule in ' +
+           'oauth-oidc/oauth2.js',
+    what: 'The embedded identity protocol debugger: its listener, its ' +
+          'sign-in, the access token its api requires, the permission that ' +
+          'token carries, and the api process it forwards to.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -351,6 +387,39 @@ const CODES = [
       'window passes.',
     spec: 'the refusal the calling surface renders, in its own protocol\'s ' +
       'words' },
+  // CORS (2026-09-13): the allowlist common/cors.js holds every response to.
+  // The preflight is the one of the four that is a RESPONSE refused; the
+  // other three are recorded in a log line, because the request they belong
+  // to is answered and a browser simply may not read the answer.
+  { code: 'STS-HTTP-0019',
+    summary: 'A CORS preflight came from an origin that is not this ' +
+      'service\'s own and that no application in the realm lists in ' +
+      'appCorsOrigin, so it was answered with no CORS headers.',
+    spec: 'HTTP 204 with no Access-Control-Allow-Origin; the browser does ' +
+      'not send the request' },
+  { code: 'STS-HTTP-0020',
+    summary: 'A cross-origin request named no client, and its origin is not ' +
+      'this service\'s own and is listed by no application in the realm, ' +
+      'so its answer carried no Access-Control-Allow-Origin.',
+    spec: 'none — the endpoint answers; the browser withholds the answer ' +
+      'from the page' },
+  { code: 'STS-HTTP-0021',
+    summary: 'A cross-origin request named a client this realm has no ' +
+      'application for (a client_id, Basic user name, client assertion or ' +
+      'access token client_id), so its answer carried no ' +
+      'Access-Control-Allow-Origin.',
+    spec: 'none — the endpoint answers; the browser withholds the answer ' +
+      'from the page (a CORS error in place of the protocol\'s own error)' },
+  { code: 'STS-HTTP-0022',
+    summary: 'A cross-origin request named a client whose appCorsOrigin does ' +
+      'not list the request\'s origin, so its answer carried no ' +
+      'Access-Control-Allow-Origin.',
+    spec: 'none — the endpoint answers; the browser withholds the answer ' +
+      'from the page' },
+  { code: 'STS-HTTP-0023',
+    summary: 'A value of global.corsOrigins is not an origin, and was ' +
+      'ignored rather than widened.',
+    spec: '' },
   // ===== CORE ==============================================================
   { code: 'STS-CORE-0001',
     summary: 'The appconfig file CONFIG_FILE names could not be loaded, so ' +
@@ -703,6 +772,25 @@ const CODES = [
       'to a request worker beside the leaf, so the worker saw the leaf alone ' +
       'and could not verify a foreign CRL about it.',
     spec: '' },
+  { code: 'STS-WORKER-0038',
+    summary: 'The service refused to start: workers.surfaceCount gives the ' +
+      'admin console and the user portal request workers of their own and ' +
+      'workers.readYourWrite is off, so a sign-in crossing the two pools ' +
+      'would intermittently read a session that had not yet arrived.',
+    spec: '' },
+  { code: 'STS-WORKER-0039',
+    summary: 'workers.surfaceCount is set and workers.dispatch names none of ' +
+      'workers.surfaces, so the hosted-surface workers were not started.',
+    spec: '' },
+  { code: 'STS-WORKER-0040',
+    summary: 'A batch request (workers.batch) was refused because ' +
+      'workers.batchQueueLimit batch requests were already waiting for the ' +
+      'pool\'s batch lane.',
+    spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-WORKER-0041',
+    summary: 'A batch request (workers.batch) waited ' +
+      'workers.batchQueueTimeoutS for the pool\'s batch lane and was refused.',
+    spec: 'HTTP 503 with Retry-After' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
@@ -1124,6 +1212,11 @@ const CODES = [
   { code: 'STS-KEYS-0054',
     summary: 'The file holding a secret is readable by group or other.',
     spec: '' },
+  { code: 'STS-KEYS-0055',
+    summary: 'keys.kidFormat asks for an RFC 9278 JWK Thumbprint URI and ' +
+      'none could be computed for a signing key, so its tokens carry the ' +
+      'internal kid. Logged once per key.',
+    spec: 'none — the token is signed under its internal kid' },
   // ===== PKI ===============================================================
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -1894,6 +1987,633 @@ const CODES = [
       'in its registered chain, could not be read.',
     spec: 'invalid_grant at the grant, invalid_client at client ' +
       'authentication' },
+  { code: 'STS-PKI-0162',
+    summary: 'The certificate chain an x5u header names was requested for a ' +
+      'SHA-256 that is not a JOSE signing certificate in that scope — a ' +
+      'mistyped address, or a certificate replaced since the token was ' +
+      'signed.',
+    spec: 'HTTP 404 text/plain' },
+  { code: 'STS-PKI-0163',
+    summary: 'The certificate the register holds for a signing key\'s slot ' +
+      'is over a different key, so tokens signed with that key carry no ' +
+      'x5c or x5u until it is certified again. Logged once per certificate.',
+    spec: 'none — the token is issued without the header' },
+  { code: 'STS-PKI-0164',
+    summary: 'The x5c or x5u header for a signed token could not be built; ' +
+      'the token was signed without it.',
+    spec: 'none — the token is issued without the header' },
+  { code: 'STS-PKI-0165',
+    summary: 'A TLS listener certificate was asked for without naming what ' +
+      'it is for (no slot).',
+    spec: 'the caller\'s refusal: console page or /admin-api HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-PKI-0166',
+    summary: 'A TLS listener certificate was refused its subjectAltName: a ' +
+      'name that is not a DNS name or IP address, or no name at all.',
+    spec: 'the caller\'s refusal: console page or /admin-api HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-PKI-0167',
+    summary: 'A TLS listener certificate was asked for with a key algorithm ' +
+      'a TLS stack does not serve (only RSA and NIST-curve ECDSA are ' +
+      'issued).',
+    spec: 'the caller\'s refusal: console page or /admin-api HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-PKI-0168',
+    summary: 'A TLS client certificate was asked for with no holder named.',
+    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page' },
+  { code: 'STS-PKI-0169',
+    summary: 'A TLS client certificate was asked for with a key algorithm a ' +
+      'browser does not present (RSA 2048/3072, ECDSA P-256/P-384 only), or ' +
+      'with a name that is not a short label.',
+    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page' },
+  { code: 'STS-PKI-0170',
+    summary: 'A person already holds pki.personTlsClientCertificateMax valid ' +
+      'TLS client certificates, so another was not issued.',
+    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page' },
+  { code: 'STS-PKI-0171',
+    summary: 'A TLS client certificate revocation named a serial the signed-in ' +
+      'person holds no certificate under.',
+    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page' },
+  { code: 'STS-PKI-0180',
+    summary: 'An application already holds ' +
+      'pki.applicationTlsClientCertificateMax valid TLS client certificates, ' +
+      'so another was not issued.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0181',
+    summary: 'A TLS client certificate revocation named a serial the ' +
+      'application holds no certificate under.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  // ===== ENROLL ============================================================
+  { code: 'STS-ENROLL-0001',
+    summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
+    spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
+  { code: 'STS-ENROLL-0002',
+    summary: 'A certificate request named a CA, OCSP Responder or Kerberos KDC profile, which is never issued over an enrollment protocol.',
+    spec: 'the protocol\'s refusal: ACME unauthorized, EST HTTP 403, SCEP failInfo badRequest' },
+  { code: 'STS-ENROLL-0003',
+    summary: 'A certificate request named a profile that is not in the family\'s allowedProfiles setting in this realm.',
+    spec: 'the protocol\'s refusal: ACME unauthorized, EST HTTP 403, SCEP failInfo badRequest' },
+  { code: 'STS-ENROLL-0004',
+    summary: 'A certificate was asked of the enrollment core for a family that is not ACME, EST or SCEP.',
+    spec: 'HTTP 500 (a defect in the caller)' },
+  { code: 'STS-ENROLL-0010',
+    summary: 'A person or application was named by a malformed identifier.',
+    spec: 'the protocol\'s refusal (HTTP 400)' },
+  { code: 'STS-ENROLL-0011',
+    summary: 'No directory is loaded in this process, so there is no entry a certificate could be issued for or kept on.',
+    spec: 'HTTP 503' },
+  { code: 'STS-ENROLL-0012',
+    summary: 'The person or application a certificate was asked for has no entry in this realm.',
+    spec: 'the protocol\'s refusal (HTTP 404 / ACME unauthorized / SCEP badRequest)' },
+  { code: 'STS-ENROLL-0013',
+    summary: 'An enrollment authentication named no username or client_id.',
+    spec: 'HTTP 401' },
+  { code: 'STS-ENROLL-0014',
+    summary: 'An enrollment password was not accepted for a person who has an entry in this realm.',
+    spec: 'HTTP 401' },
+  { code: 'STS-ENROLL-0015',
+    summary: 'An enrollment password was offered for a name with no entry in this realm and no administrator standing.',
+    spec: 'HTTP 401' },
+  { code: 'STS-ENROLL-0016',
+    summary: 'Enrollment client credentials were not accepted: an unknown client_id, or (in product mode) a missing or wrong client secret.',
+    spec: 'HTTP 401' },
+  { code: 'STS-ENROLL-0017',
+    summary: 'Enrollment certificate authentication was attempted with no TLS client certificate on the connection.',
+    spec: 'HTTP 401' },
+  { code: 'STS-ENROLL-0018',
+    summary: 'An enrollment client certificate did not verify to this realm\'s certificate authority (another realm, another authority, expired or revoked).',
+    spec: 'HTTP 401' },
+  { code: 'STS-ENROLL-0019',
+    summary: 'An enrollment client certificate verified but does not certify clientAuth, names no single entry, or is not an unrevoked certificate that entry holds.',
+    spec: 'HTTP 401' },
+  { code: 'STS-ENROLL-0020',
+    summary: 'An enrollment authorization was asked about with no authenticated principal or no target entry.',
+    spec: 'HTTP 403' },
+  { code: 'STS-ENROLL-0021',
+    summary: 'A certificate was asked for an entry other than the one that authenticated, by a principal that does not hold Admin Write.',
+    spec: 'the protocol\'s refusal: ACME unauthorized, EST HTTP 403, SCEP badRequest' },
+  { code: 'STS-ENROLL-0022',
+    summary: 'A certificate request named more than one person or application in its subjectAltName.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ENROLL-0023',
+    summary: 'An administrator with no entry of their own in this realm sent a request that named no entry.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ENROLL-0030',
+    summary: 'A certificate request was empty or is not a readable PKCS#10 CertificationRequest.',
+    spec: 'ACME badCSR, EST HTTP 400, SCEP badRequest' },
+  { code: 'STS-ENROLL-0031',
+    summary: 'A certificate request carries a public key this certificate authority cannot certify.',
+    spec: 'ACME badCSR / badPublicKey, EST HTTP 400' },
+  { code: 'STS-ENROLL-0032',
+    summary: 'A certificate request carries a key-encapsulation key, which cannot prove possession by signing.',
+    spec: 'ACME badCSR, EST HTTP 400' },
+  { code: 'STS-ENROLL-0033',
+    summary: 'A certificate request\'s signature does not verify with the key it carries (no proof of possession).',
+    spec: 'ACME badCSR, EST HTTP 400, SCEP badMessageCheck' },
+  { code: 'STS-ENROLL-0034',
+    summary: 'A certificate request\'s subject or requested extensions could not be read.',
+    spec: 'ACME badCSR, EST HTTP 400' },
+  { code: 'STS-ENROLL-0035',
+    summary: 'A server-generated key pair was asked for an unknown key algorithm, or could not be generated.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ENROLL-0040',
+    summary: 'A certificate was refused because the entry already holds pki.enrollmentMaxCertificatesPerEntry unexpired enrolled certificates.',
+    spec: 'HTTP 409 / ACME rejectedIdentifier' },
+  { code: 'STS-ENROLL-0041',
+    summary: 'An enrolled certificate, private key or credential could not be written onto its directory entry.',
+    spec: 'HTTP 503' },
+  { code: 'STS-ENROLL-0042',
+    summary: 'The family\'s Issuing CA could not issue an enrolled certificate.',
+    spec: 'HTTP 503 / ACME serverInternal' },
+  { code: 'STS-ENROLL-0043',
+    summary: 'A server-generated private key or an EAB key could not be sealed for storage.',
+    spec: 'HTTP 503' },
+  { code: 'STS-ENROLL-0044',
+    summary: 'An entry already holds the most unused EAB keys or SCEP challenges it may.',
+    spec: 'HTTP 409 on the console or /admin-api' },
+  { code: 'STS-ENROLL-0050',
+    summary: 'A certificate request asked for a URI (or another name form) the entry does not own.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
+  { code: 'STS-ENROLL-0051',
+    summary: 'A certificate request asked for a DNS name or IP address not registered on the entry.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
+  { code: 'STS-ENROLL-0052',
+    summary: 'A certificate request asked for an email address that is not the entry\'s mail attribute.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
+  { code: 'STS-ENROLL-0053',
+    summary: 'A certificate request asked for a user principal name that is neither the entry\'s userPrincipalName nor its mail.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
+  { code: 'STS-ENROLL-0054',
+    summary: 'A TLS server certificate was asked for with no host name in the request.',
+    spec: 'ACME malformed, EST HTTP 400, SCEP badRequest' },
+  { code: 'STS-ENROLL-0055',
+    summary: 'An S/MIME certificate was asked for an entry with no mail attribute.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ENROLL-0056',
+    summary: 'A smartcard logon certificate was asked for an entry with neither userPrincipalName nor mail.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ENROLL-0057',
+    summary: 'An administrator tried to register something that is not a DNS name or an IP address as a certificate host name.',
+    spec: 'HTTP 400 on the console or /admin-api' },
+  { code: 'STS-ENROLL-0058',
+    summary: 'An administrator tried to remove a certificate host name the entry does not have.',
+    spec: 'HTTP 404 on the console or /admin-api' },
+  { code: 'STS-ENROLL-0060',
+    summary: 'An ACME or EST request arrived over plain HTTP in product mode.',
+    spec: 'HTTP 403 (ACME: an RFC 7807 unauthorized problem)' },
+  { code: 'STS-ENROLL-0061',
+    summary: 'A client was throttled after too many refused enrollment requests in one web-security window.',
+    spec: 'HTTP 429 with Retry-After (ACME rateLimited)' },
+  { code: 'STS-ENROLL-0070',
+    summary: 'A revocation named a serial no enrollment protocol issued in this realm.',
+    spec: 'HTTP 404 (ACME malformed)' },
+  { code: 'STS-ENROLL-0071',
+    summary: 'A revocation named a certificate that does not belong to the entry asking.',
+    spec: 'HTTP 403 (ACME unauthorized)' },
+  { code: 'STS-ENROLL-0072',
+    summary: 'The certificate authority refused an enrolled certificate\'s revocation.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ENROLL-0080',
+    summary: 'An External Account Binding key id is not known in this realm.',
+    spec: 'ACME unauthorized / externalAccountRequired' },
+  { code: 'STS-ENROLL-0081',
+    summary: 'An External Account Binding key that already bound one account was presented for another.',
+    spec: 'ACME unauthorized' },
+  { code: 'STS-ENROLL-0082',
+    summary: 'An External Account Binding key was presented after it expired.',
+    spec: 'ACME unauthorized' },
+  { code: 'STS-ENROLL-0083',
+    summary: 'A SCEP challenge password was not accepted (unknown id or wrong secret).',
+    spec: 'SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0084',
+    summary: 'A SCEP challenge password that had already been redeemed was presented again.',
+    spec: 'SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0085',
+    summary: 'A SCEP challenge password was presented after it expired.',
+    spec: 'SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-ENROLL-0090',
+    summary: 'An enrollment monitor counter could not be recorded (the request it counted is unaffected).',
+    spec: 'none (log only)' },
+  // ===== ACME ==============================================================
+  { code: 'STS-ACME-0001',
+    summary: 'ACME is turned off in this realm (acme.enabled is false).',
+    spec: 'HTTP 503, ACME serverInternal problem' },
+  { code: 'STS-ACME-0002',
+    summary: 'An ACME request was refused by the transport rule and the core gave no code of its own (fallback for STS-ENROLL-0060).',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0003',
+    summary: 'An ACME request was throttled and the core gave no code of its own (fallback for STS-ENROLL-0061).',
+    spec: 'HTTP 429 with Retry-After, ACME rateLimited problem' },
+  { code: 'STS-ACME-0010',
+    summary: 'An ACME POST did not carry Content-Type application/jose+json (RFC 8555 section 6.2).',
+    spec: 'HTTP 415, ACME malformed problem' },
+  { code: 'STS-ACME-0011',
+    summary: 'An ACME request body was larger than acme.maxRequestBytes.',
+    spec: 'HTTP 413, ACME malformed problem' },
+  { code: 'STS-ACME-0012',
+    summary: 'An ACME request body (or an external account binding) is not a flattened JWS JSON object with exactly protected, payload and signature.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0013',
+    summary: 'A member of an ACME flattened JWS is not strict base64url.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0014',
+    summary: 'An ACME JWS protected header is unreadable, fails its schema, or carries crit, b64, jku, x5u or x5c.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0015',
+    summary: 'An ACME JWS is signed with an algorithm this server does not accept for an account key.',
+    spec: 'HTTP 400, ACME badSignatureAlgorithm problem with algorithms' },
+  { code: 'STS-ACME-0016',
+    summary: 'An ACME request carried no Replay-Nonce, or one this server did not issue in this realm.',
+    spec: 'HTTP 400, ACME badNonce problem with a fresh Replay-Nonce' },
+  { code: 'STS-ACME-0017',
+    summary: 'An ACME request carried an expired Replay-Nonce.',
+    spec: 'HTTP 400, ACME badNonce problem with a fresh Replay-Nonce' },
+  { code: 'STS-ACME-0018',
+    summary: 'An ACME request carried a Replay-Nonce that had already been used.',
+    spec: 'HTTP 400, ACME badNonce problem with a fresh Replay-Nonce' },
+  { code: 'STS-ACME-0019',
+    summary: 'An ACME JWS protected header url is not the URL the request was sent to (RFC 8555 section 6.4).',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0020',
+    summary: 'An ACME JWS carried both jwk and kid, neither, or the one the resource does not take.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0021',
+    summary: 'An ACME account key (jwk) is malformed, carries a private member, does not fit alg, is an RSA key under 2048 bits, or does not load.',
+    spec: 'HTTP 400, ACME badPublicKey or malformed problem' },
+  { code: 'STS-ACME-0022',
+    summary: 'An ACME kid is not the URL of an account on this server in this realm.',
+    spec: 'HTTP 400, ACME accountDoesNotExist problem' },
+  { code: 'STS-ACME-0023',
+    summary: 'An ACME request was signed by a deactivated account.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0024',
+    summary: 'An ACME JWS signature does not verify with the account key.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0025',
+    summary: 'An ACME JWS payload is unreadable, missing where one is required, present where POST-as-GET is required, or fails the resource schema.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0026',
+    summary: 'An ACME resource was requested with a method it does not answer (a GET on a POST-as-GET resource, a POST on the directory or renewal information).',
+    spec: 'HTTP 405 with Allow, ACME malformed problem' },
+  { code: 'STS-ACME-0027',
+    summary: 'An ACME resource (account, order, authorization, certificate) belongs to a different account from the one that signed the request.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0028',
+    summary: 'An ACME order, authorization or certificate id names nothing in this realm.',
+    spec: 'HTTP 404, ACME malformed problem' },
+  { code: 'STS-ACME-0030',
+    summary: 'An ACME newAccount with onlyReturnExisting found no account for the key.',
+    spec: 'HTTP 400, ACME accountDoesNotExist problem' },
+  { code: 'STS-ACME-0031',
+    summary: 'An ACME newAccount carried no externalAccountBinding, which this server requires.',
+    spec: 'HTTP 403, ACME externalAccountRequired problem' },
+  { code: 'STS-ACME-0032',
+    summary: 'An ACME externalAccountBinding is malformed: its header is not exactly alg, kid and url, its alg is not a MAC, its url is not the newAccount URL, or its payload is not the account key.',
+    spec: 'HTTP 400, ACME malformed or badSignatureAlgorithm problem' },
+  { code: 'STS-ACME-0033',
+    summary: 'An ACME externalAccountBinding names a key id that is not known in this realm.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0034',
+    summary: 'An ACME externalAccountBinding MAC does not verify with the key issued under its key id.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0035',
+    summary: 'An ACME externalAccountBinding key has expired before binding an account.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0036',
+    summary: 'An ACME externalAccountBinding key could not bind the account and the core gave no code of its own.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0037',
+    summary: 'An ACME account contact is not a single mailto: address.',
+    spec: 'HTTP 400, ACME invalidContact or unsupportedContact problem' },
+  { code: 'STS-ACME-0038',
+    summary: 'An ACME account update asked for a status other than deactivated.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0040',
+    summary: 'An ACME newOrder named an identifier type this server does not issue for.',
+    spec: 'HTTP 400, ACME unsupportedIdentifier problem with subproblems' },
+  { code: 'STS-ACME-0041',
+    summary: 'An ACME newOrder identifier value is not well formed for its type.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0042',
+    summary: 'An ACME newOrder named an identifier the account\'s bound entry does not own (an unregistered host name, somebody else\'s mail, another entry).',
+    spec: 'HTTP 400, ACME rejectedIdentifier problem with subproblems' },
+  { code: 'STS-ACME-0043',
+    summary: 'An ACME newOrder carried notBefore or notAfter, which this server does not accept.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0044',
+    summary: 'An ACME newOrder named a profile that is unknown, never issued over an enrollment protocol, or not in acme.allowedProfiles.',
+    spec: 'HTTP 400, ACME invalidProfile problem' },
+  { code: 'STS-ACME-0045',
+    summary: 'An ACME newOrder profile needs an identifier or attribute the order or entry lacks (a server profile with no host, email with no email identifier, smartcard logon with no UPN).',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0046',
+    summary: 'An ACME newOrder named one identifier twice.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0047',
+    summary: 'An ACME newOrder replaces member names no certificate this account\'s entry was issued over ACME in this realm (RFC 9773 section 5).',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0048',
+    summary: 'The directory entry an ACME account or EAB key is bound to no longer exists in this realm.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0049',
+    summary: 'An ACME newOrder replaces a certificate that another order already replaced (RFC 9773 section 5).',
+    spec: 'HTTP 409, ACME alreadyReplaced problem' },
+  { code: 'STS-ACME-0050',
+    summary: 'An ACME finalize was sent for an order that is not ready (already valid, processing or invalid).',
+    spec: 'HTTP 403, ACME orderNotReady problem' },
+  { code: 'STS-ACME-0051',
+    summary: 'An ACME finalize csr is not strict base64url.',
+    spec: 'HTTP 400, ACME badCSR problem' },
+  { code: 'STS-ACME-0052',
+    summary: 'An ACME finalize CSR could not be read and the core gave no code of its own.',
+    spec: 'HTTP 400, ACME badCSR problem' },
+  { code: 'STS-ACME-0053',
+    summary: 'An ACME finalize CSR does not name exactly the order\'s identifiers (RFC 8555 section 7.4).',
+    spec: 'HTTP 400, ACME badCSR problem' },
+  { code: 'STS-ACME-0054',
+    summary: 'An ACME finalize issuance failed and the core gave no code of its own.',
+    spec: 'HTTP 500, ACME serverInternal problem' },
+  { code: 'STS-ACME-0055',
+    summary: 'An ACME authorization update was not {"status": "deactivated"}.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0056',
+    summary: 'An ACME challenge response was not the empty object.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0060',
+    summary: 'An ACME revokeCert certificate is not base64url DER of one certificate.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0061',
+    summary: 'An ACME revokeCert certificate was not issued over ACME in this realm.',
+    spec: 'HTTP 404, ACME malformed problem' },
+  { code: 'STS-ACME-0062',
+    summary: 'An ACME revokeCert reason is not one this server accepts from a subscriber (0, 1, 3, 4, 5 or 9).',
+    spec: 'HTTP 400, ACME badRevocationReason problem' },
+  { code: 'STS-ACME-0063',
+    summary: 'An ACME revokeCert was signed neither by an account bound to the certificate\'s entry nor by the certificate\'s own key.',
+    spec: 'HTTP 403, ACME unauthorized problem' },
+  { code: 'STS-ACME-0064',
+    summary: 'An ACME revokeCert named a certificate that is already revoked.',
+    spec: 'HTTP 400, ACME alreadyRevoked problem' },
+  { code: 'STS-ACME-0065',
+    summary: 'Revoking a certificate issued over ACME failed and the core gave no code of its own.',
+    spec: 'HTTP 500, ACME serverInternal problem; console error notice' },
+  { code: 'STS-ACME-0070',
+    summary: 'An ACME keyChange inner JWS is malformed, unverifiable or carries an unreadable payload.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0071',
+    summary: 'An ACME keyChange inner JWS breaks section 7.3.5: no jwk, a kid or nonce, a different url, or an account that is not the signer.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0072',
+    summary: 'An ACME keyChange oldKey is not the account\'s current key.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0073',
+    summary: 'An ACME keyChange new key is already the key of another account.',
+    spec: 'HTTP 409 with Location, ACME malformed problem' },
+  { code: 'STS-ACME-0074',
+    summary: 'An ACME keyChange new key is the account\'s current key.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0080',
+    summary: 'An ACME renewalInfo certificate identifier is malformed (RFC 9773 section 4.1).',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0081',
+    summary: 'An ACME renewalInfo certificate identifier names no certificate issued over ACME in this realm.',
+    spec: 'HTTP 404, ACME malformed problem' },
+  { code: 'STS-ACME-0082',
+    summary: 'The query string of an ACME orders list failed validation.',
+    spec: 'HTTP 400, ACME malformed problem' },
+  { code: 'STS-ACME-0090',
+    summary: 'An ACME console or management API action is not one of the six.',
+    spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
+  { code: 'STS-ACME-0091',
+    summary: 'An ACME console or management API action body failed validation.',
+    spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
+  { code: 'STS-ACME-0092',
+    summary: 'An ACME console or management API deactivate-account named no account in this realm.',
+    spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
+  { code: 'STS-ACME-0093',
+    summary: 'An ACME console or management API revoke-certificate named no certificate issued over ACME in this realm.',
+    spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
+  { code: 'STS-ACME-0094',
+    summary: 'An ACME console or management API EAB or host name action was refused by the core with no code of its own.',
+    spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
+  { code: 'STS-ACME-0095',
+    summary: 'An ACME endpoint, console action or management API action threw unexpectedly.',
+    spec: 'HTTP 500, ACME serverInternal problem; console error notice' },
+  { code: 'STS-ACME-0096',
+    summary: 'An ACME console or management API revoke-certificate named a certificate that is already revoked.',
+    spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
+  { code: 'STS-ACME-0097',
+    summary: 'The query string of an ACME console page failed validation.',
+    spec: 'HTTP 400 text/plain' },
+  // ===== EST ===============================================================
+  { code: 'STS-EST-0001',
+    summary: 'An EST request reached a realm whose est.enabled is off.',
+    spec: 'HTTP 503 with a text/plain sentence' },
+  { code: 'STS-EST-0002',
+    summary: 'An EST path named a label that is not a certificate profile (RFC 7030 section 3.2.2).',
+    spec: 'HTTP 404 with a text/plain sentence' },
+  { code: 'STS-EST-0003',
+    summary: 'An EST operation was asked with a method it does not answer.',
+    spec: 'HTTP 405 with an Allow header' },
+  { code: 'STS-EST-0004',
+    summary: 'A client asked /fullcmc, which this server does not implement (RFC 7030 section 4.3 is optional).',
+    spec: 'HTTP 501' },
+  { code: 'STS-EST-0005',
+    summary: 'A client asked /serverkeygen in a realm whose est.serverKeyGeneration is off.',
+    spec: 'HTTP 501' },
+  { code: 'STS-EST-0006',
+    summary: 'An EST enrollment body was not sent as application/pkcs10.',
+    spec: 'HTTP 415' },
+  { code: 'STS-EST-0007',
+    summary: 'An EST enrollment body was larger than est.maxRequestBytes.',
+    spec: 'HTTP 413' },
+  { code: 'STS-EST-0008',
+    summary: 'An EST enrollment body was empty, or was not base64 (RFC 8951: only the base64 alphabet, padding and whitespace).',
+    spec: 'HTTP 400' },
+  { code: 'STS-EST-0009',
+    summary: 'An EST request that must be authenticated carried no credential.',
+    spec: 'HTTP 401 with WWW-Authenticate: Basic realm="EST"' },
+  { code: 'STS-EST-0010',
+    summary: 'An EST request carried HTTP Basic in a realm whose est.basicAuthentication is off.',
+    spec: 'HTTP 401' },
+  { code: 'STS-EST-0011',
+    summary: 'An EST request carried a malformed HTTP Basic credential (not base64, no colon, or an unusable username).',
+    spec: 'HTTP 401' },
+  { code: 'STS-EST-0012',
+    summary: 'An EST request authenticated only by a TLS client certificate in a realm whose est.certificateAuthentication is off.',
+    spec: 'HTTP 401' },
+  { code: 'STS-EST-0013',
+    summary: 'An EST request carried an Authorization scheme other than Basic.',
+    spec: 'HTTP 401 with WWW-Authenticate: Basic realm="EST"' },
+  { code: 'STS-EST-0014',
+    summary: 'EST /cacerts was asked in a realm with no certificate hierarchy, so there is no CA certificate to return.',
+    spec: 'HTTP 503' },
+  { code: 'STS-EST-0015',
+    summary: 'A /simplereenroll named no certificate this entry holds whose subject and subjectAltName the request repeats (RFC 7030 section 4.2.2).',
+    spec: 'HTTP 400' },
+  { code: 'STS-EST-0016',
+    summary: 'A /simplereenroll request\'s subject or subjectAltName differs from the TLS client certificate being renewed (RFC 7030 section 4.2.2).',
+    spec: 'HTTP 400' },
+  { code: 'STS-EST-0017',
+    summary: 'A /serverkeygen template asked for a key this service cannot generate for that profile (a KEM key outside key-encipherment).',
+    spec: 'HTTP 400' },
+  { code: 'STS-EST-0018',
+    summary: 'A /serverkeygen template asked for the private key to be encrypted (DecryptKeyIdentifier or AsymmetricDecryptKeyIdentifier), which this server does not implement.',
+    spec: 'HTTP 501' },
+  { code: 'STS-EST-0019',
+    summary: 'An EST request carried a query string; no EST operation takes one.',
+    spec: 'HTTP 400' },
+  { code: 'STS-EST-0020',
+    summary: 'An EST handler failed unexpectedly; the client is told nothing about why.',
+    spec: 'HTTP 500 with a generic sentence' },
+  { code: 'STS-EST-0021',
+    summary: 'A /simplereenroll named a certificate that has expired or been revoked.',
+    spec: 'HTTP 400' },
+  { code: 'STS-EST-0030',
+    summary: 'A query string on /admin/est or /admin/est/monitor failed validation.',
+    spec: 'HTTP 400 on the console' },
+  { code: 'STS-EST-0031',
+    summary: 'An EST console or /admin-api action body failed validation.',
+    spec: 'HTTP 400 on the console or /admin-api' },
+  { code: 'STS-EST-0032',
+    summary: 'An EST console or /admin-api action named an action that does not exist.',
+    spec: 'HTTP 400 on the console or /admin-api' },
+  { code: 'STS-EST-0033',
+    summary: 'An EST /admin-api action was refused and carried no more specific code.',
+    spec: 'HTTP 400 on /admin-api' },
+  // ===== SCEP ==============================================================
+  { code: 'STS-SCEP-0001',
+    summary: 'A SCEP request reached a realm where scep.enabled is off.',
+    spec: 'HTTP 503 text/plain' },
+  { code: 'STS-SCEP-0002',
+    summary: 'A SCEP request named no operation, an operation RFC 8894 does not define, or a malformed or repeated query parameter.',
+    spec: 'HTTP 400 text/plain' },
+  { code: 'STS-SCEP-0003',
+    summary: 'A SCEP operation other than PKIOperation was sent as a POST.',
+    spec: 'HTTP 405 text/plain' },
+  { code: 'STS-SCEP-0004',
+    summary: 'GetNextCACert was asked for; this server does not pre-announce a CA rollover.',
+    spec: 'HTTP 501 text/plain' },
+  { code: 'STS-SCEP-0005',
+    summary: 'GetCACert or PKIOperation was asked of a realm with no certificate authority, so there is no SCEP Issuing CA or RA certificate.',
+    spec: 'HTTP 503 text/plain' },
+  { code: 'STS-SCEP-0006',
+    summary: 'The SCEP RA certificate could not be issued or its replacement could not be recorded.',
+    spec: 'HTTP 503 text/plain, or the console/API refusal' },
+  { code: 'STS-SCEP-0007',
+    summary: 'A PKIOperation POST did not carry Content-Type application/x-pki-message.',
+    spec: 'HTTP 415 text/plain' },
+  { code: 'STS-SCEP-0008',
+    summary: 'A pkiMessage was larger than scep.maxRequestBytes.',
+    spec: 'HTTP 413 text/plain' },
+  { code: 'STS-SCEP-0009',
+    summary: 'A GET PKIOperation carried no message parameter, or one that is not strict base64.',
+    spec: 'HTTP 400 text/plain' },
+  { code: 'STS-SCEP-0010',
+    summary: 'A pkiMessage is not one complete CMS ContentInfo carrying a well-formed SignedData.',
+    spec: 'HTTP 400 text/plain (no CertRep can be built)' },
+  { code: 'STS-SCEP-0011',
+    summary: 'A pkiMessage does not have exactly one signer whose certificate is in the SignedData.',
+    spec: 'HTTP 400, or CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0012',
+    summary: 'A pkiMessage lacks signed attributes, or its transactionID or senderNonce is missing or malformed.',
+    spec: 'HTTP 400 text/plain (no CertRep can be built)' },
+  { code: 'STS-SCEP-0013',
+    summary: 'The profile segment of a /enroll/scep URL is not a profile identifier.',
+    spec: 'HTTP 400 text/plain' },
+  { code: 'STS-SCEP-0020',
+    summary: 'A pkiMessage is signed over a digest this server does not accept (SHA-1, MD5 or unknown).',
+    spec: 'CertRep FAILURE badAlg' },
+  { code: 'STS-SCEP-0021',
+    summary: 'A pkiMessage names a signature algorithm this server does not verify, or one that disagrees with its digest or the signer key.',
+    spec: 'CertRep FAILURE badAlg' },
+  { code: 'STS-SCEP-0022',
+    summary: 'The messageDigest signed attribute is not the digest of the encapsulated content.',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0023',
+    summary: 'The signature over a pkiMessage\'s signed attributes does not verify with its signer certificate.',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0024',
+    summary: 'The contentType signed attribute is missing or does not agree with the encapsulated content.',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0025',
+    summary: 'A pkiMessage signer certificate carries a key that is not RSA, so no reply can be encrypted to it.',
+    spec: 'CertRep FAILURE badAlg (unencrypted)' },
+  { code: 'STS-SCEP-0026',
+    summary: 'The pkcsPKIEnvelope is not a readable CMS EnvelopedData.',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0027',
+    summary: 'The pkcsPKIEnvelope is not encrypted to this realm\'s current RA certificate.',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0028',
+    summary: 'The pkcsPKIEnvelope transports its content key with an algorithm other than RSAES-PKCS1-v1_5 or RSAES-OAEP.',
+    spec: 'CertRep FAILURE badAlg' },
+  { code: 'STS-SCEP-0029',
+    summary: 'The pkcsPKIEnvelope content is encrypted with a cipher other than AES-CBC (DES-EDE3-CBC is refused).',
+    spec: 'CertRep FAILURE badAlg' },
+  { code: 'STS-SCEP-0030',
+    summary: 'The pkcsPKIEnvelope content did not decrypt with the RA key (a wrong key or bad padding, deliberately not told apart).',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0031',
+    summary: 'A pkiMessage carried a messageType this server does not answer.',
+    spec: 'CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0032',
+    summary: 'A PKCSReq or RenewalReq envelope did not hold a PKCS#10 request, or a CertPoll, GetCert or GetCRL envelope did not hold its structure.',
+    spec: 'CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0033',
+    summary: 'A SCEP certificate request carries a key that is not RSA; SCEP encrypts its reply with RSA key transport.',
+    spec: 'CertRep FAILURE badAlg' },
+  { code: 'STS-SCEP-0034',
+    summary: 'A PKCSReq was signed by a certificate whose key is not the key in the PKCS#10 request (RFC 8894 section 2.3).',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0035',
+    summary: 'A PKCSReq carried no challengePassword attribute.',
+    spec: 'CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0036',
+    summary: 'The profile named in the /enroll/scep URL is not the profile the challenge or the renewed certificate is for.',
+    spec: 'CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0037',
+    summary: 'A transactionID that already completed was sent again with a different request.',
+    spec: 'CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0038',
+    summary: 'A CertPoll (GetCertInitial) named a transactionID this realm holds no result for.',
+    spec: 'CertRep FAILURE badCertId' },
+  { code: 'STS-SCEP-0039',
+    summary: 'A CertPoll or a retried request for a completed transaction was signed with a different key from the request that completed it.',
+    spec: 'CertRep FAILURE badCertId' },
+  { code: 'STS-SCEP-0040',
+    summary: 'A RenewalReq, GetCert or GetCRL was not signed by a certificate this realm issued to an entry that still holds it.',
+    spec: 'CertRep FAILURE badMessageCheck' },
+  { code: 'STS-SCEP-0041',
+    summary: 'A GetCert named a certificate that is not one the signer\'s entry holds.',
+    spec: 'CertRep FAILURE badCertId' },
+  { code: 'STS-SCEP-0042',
+    summary: 'A GetCRL named an issuer that is not this realm\'s SCEP Issuing CA.',
+    spec: 'CertRep FAILURE badCertId' },
+  { code: 'STS-SCEP-0043',
+    summary: 'The SCEP Issuing CA\'s CRL could not be built for a GetCRL.',
+    spec: 'CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0044',
+    summary: 'A CertRep could not be built or signed (an internal failure).',
+    spec: 'HTTP 500 text/plain' },
+  { code: 'STS-SCEP-0045',
+    summary: 'The certificate authority refused a SCEP certificate for a reason the enrollment core did not code.',
+    spec: 'CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0046',
+    summary: 'A pkiMessage signer certificate is outside its validity period.',
+    spec: 'CertRep FAILURE badTime' },
+  { code: 'STS-SCEP-0060',
+    summary: 'A /admin/scep or /admin-api/scep query string failed input validation.',
+    spec: 'HTTP 400 text/plain or { ok: false, errors }' },
+  { code: 'STS-SCEP-0061',
+    summary: 'A /admin/scep or /admin-api/scep action body failed input validation.',
+    spec: 'the console redirect with error=, or HTTP 400 { ok: false, errors }' },
+  { code: 'STS-SCEP-0062',
+    summary: 'A /admin/scep or /admin-api/scep action named no action, or one that does not exist.',
+    spec: 'the console redirect with error=, or HTTP 400 { ok: false, errors }' },
+  { code: 'STS-SCEP-0063',
+    summary: 'A SCEP certificate revocation from the console or /admin-api named an unknown RFC 5280 reason.',
+    spec: 'the console redirect with error=, or HTTP 400 { ok: false, errors }' },
   // ===== AUTHN =============================================================
   { code: 'STS-AUTHN-0001',
     summary: 'A request to the sign-in screen or the federation chooser ' +
@@ -2491,6 +3211,104 @@ const CODES = [
       'it could renew them in (the refresh token\'s lifetime from the ' +
       'sign-in) had closed; the session was ended.',
     spec: 'none — the next page runs the authorization code flow again' },
+  { code: 'STS-AUTHN-0142',
+    summary: 'A correct password was refused at a door that cannot ask for ' +
+      'a new one (an LDAP bind, the password grant, WS-Trust, SCIM or EST ' +
+      'Basic) because pwdReset is TRUE on the entry; in product mode only.',
+    spec: 'that protocol\'s own authentication failure' },
+  { code: 'STS-AUTHN-0143',
+    summary: 'pwdReset could not be written on a person\'s entry.',
+    spec: 'none — logged' },
+  { code: 'STS-AUTHN-0144',
+    summary: 'A forced password change named a step that does not exist or ' +
+      'has expired.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-AUTHN-0145',
+    summary: 'A forced password change request was refused by the input ' +
+      'validator.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-AUTHN-0146',
+    summary: 'A forced password change was refused: no new password, two ' +
+      'that differ, the reserved refusal password, or one the password ' +
+      'policy refused; the page is drawn again with the reason.',
+    spec: 'the change page again with the reason' },
+  // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS, AND THE SIGN-IN
+  // ENROLMENT A REQUIRED SECOND FACTOR ASKS FOR (2026-09-13).
+  { code: 'STS-AUTHN-0160',
+    summary: 'Disabling somebody\'s passwordless sign-in was refused: they ' +
+      'hold no security key in the primary role.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-AUTHN-0161',
+    summary: 'Disabling somebody\'s passwordless sign-in was refused: they ' +
+      'have no password, so their primary security keys are their only way ' +
+      'in.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-AUTHN-0162',
+    summary: 'Disabling somebody\'s second factors was refused: they hold no ' +
+      'authenticator app, no mfa-role security key and no recovery codes.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-AUTHN-0163',
+    summary: 'The credential store refused a write while security keys or ' +
+      'second factors were being removed; what went before it is reported.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-AUTHN-0164',
+    summary: 'A password reset link could not be written onto, or cleared ' +
+      'from, the person\'s entry.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-AUTHN-0165',
+    summary: 'A password reset link was presented for somebody with none ' +
+      'outstanding (never issued, or already spent).',
+    spec: 'the reset page\'s one refusal sentence, HTTP 400' },
+  { code: 'STS-AUTHN-0166',
+    summary: 'A password reset link was presented after it expired ' +
+      '(security.passwordResetTtlMinutes).',
+    spec: 'the reset page\'s one refusal sentence, HTTP 400' },
+  { code: 'STS-AUTHN-0167',
+    summary: 'A password reset link was presented whose token does not match ' +
+      'the hash on the entry.',
+    spec: 'the reset page\'s one refusal sentence, HTTP 400' },
+  { code: 'STS-AUTHN-0168',
+    summary: 'A password reset link was presented with no username or no ' +
+      'token.',
+    spec: 'the reset page\'s one refusal sentence, HTTP 400' },
+  { code: 'STS-AUTHN-0169',
+    summary: 'The password could not be removed from somebody\'s entry while ' +
+      'a password reset link was being issued, so the link was withdrawn.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-AUTHN-0170',
+    summary: 'The per-account second-factor requirement (stsMfaRequired) ' +
+      'could not be written.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-AUTHN-0171',
+    summary: 'A passwordless security-key sign-in was refused because a ' +
+      'second factor is required of the person (their account or the ' +
+      'realm\'s authn.mfaRequired).',
+    spec: 'the sign-in screen again with the reason' },
+  { code: 'STS-AUTHN-0172',
+    summary: 'A sign-in was refused: a second factor is required of the ' +
+      'person, they hold none, and neither an authenticator app nor a ' +
+      'security key can be enrolled in the realm.',
+    spec: 'the sign-in screen again with the reason' },
+  { code: 'STS-AUTHN-0173',
+    summary: 'The second-factor set-up step named by the request is expired, ' +
+      'unknown, or not a set-up step.',
+    spec: 'OAuth-style invalid_request page, HTTP 400' },
+  { code: 'STS-AUTHN-0174',
+    summary: 'A request to the second-factor set-up step was malformed, or ' +
+      'asked to confirm a code before an authenticator app was chosen.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-AUTHN-0175',
+    summary: 'A second-factor set-up choice was refused: the mechanism is ' +
+      'switched off in the realm, or the person holds a second factor ' +
+      'already.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-AUTHN-0176',
+    summary: 'An authenticator app enrolment at sign-in could not be started.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-AUTHN-0177',
+    summary: 'The code confirming an authenticator app enrolled at sign-in ' +
+      'was refused; the same secret is drawn again.',
+    spec: 'HTTP 400 page' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -2560,14 +3378,19 @@ const CODES = [
       'whose thumbprint is not the registered one (RFC 8705 section ' +
       '2.2).',
     spec: 'invalid_client (HTTP 401)' },
+  // RETIRED 2026-09-13: a tls_client_auth client needs no subject DN (a
+  // certificate this realm issued to it authenticates it) — STS-OAUTH-0486 is
+  // the refusal for an external certificate with nothing registered — and a
+  // DN is compared as a name alongside four other subject parameters, which
+  // is STS-OAUTH-0485.
   { code: 'STS-OAUTH-0017',
     summary: 'A tls_client_auth client has no subject DN registered to ' +
       'compare against.',
-    spec: 'invalid_client (HTTP 401)' },
+    spec: 'invalid_client (HTTP 401)', retired: true },
   { code: 'STS-OAUTH-0018',
     summary: 'A tls_client_auth client presented a certificate whose subject ' +
       'DN is not the registered one (RFC 8705 section 2.1.2).',
-    spec: 'invalid_client (HTTP 401)' },
+    spec: 'invalid_client (HTTP 401)', retired: true },
   { code: 'STS-OAUTH-0019',
     summary: 'A client_secret_basic or client_secret_post client presented ' +
       'no client_secret.',
@@ -2947,8 +3770,10 @@ const CODES = [
       'other than the one in its cnf.jkt.',
     spec: 'invalid_dpop_proof (HTTP 401)' },
   { code: 'STS-OAUTH-0114',
-    summary: 'An access token this service issued names another resource ' +
-      'server as its audience (RFC 9700 section 2.3).',
+    summary: 'An access token this service issued does not name this ' +
+      'resource server as its audience — compared whole against the address ' +
+      'the request arrived on since 2026-09-13 (RFC 9068 section 4, RFC 9700 ' +
+      'section 2.3).',
     spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-OAUTH-0115',
     summary: 'In RFC 9700 mode, an access token was sent in the URI query ' +
@@ -3141,8 +3966,9 @@ const CODES = [
       'refused it); answered here rather than redirected.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0160',
-    summary: 'The authorization request has no usable absolute redirect_uri, ' +
-      'so the error cannot be redirected.',
+    summary: 'The authorization request has no redirect_uri, so the error ' +
+      'cannot be redirected. (What is usable is the schema\'s question since ' +
+      '2026-09-13; a value it refuses is STS-OAUTH-0159.)',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0161',
     summary: 'The authorization request named no client_id.',
@@ -3478,6 +4304,661 @@ const CODES = [
       'refused: an assertion this service cannot prove unused is not one it ' +
       'accepts.',
     spec: 'invalid_client (HTTP 401) or invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0244',
+    summary: 'RFC 9068 section 3: the scope named more than one resource (two ' +
+      'applications, or delegated permissions of two APIs), so a JWT access ' +
+      'token would carry scopes whose resource is ambiguous; no token or ' +
+      'code was issued.',
+    spec: 'invalid_scope (redirected error, or HTTP 400 at the token ' +
+      'endpoint)' },
+  { code: 'STS-OAUTH-0245',
+    summary: 'RFC 9068 section 2.2.3: the request addressed one set of ' +
+      'resources (resource, audience, or what a refresh token remembers) ' +
+      'while its scope named a different application or API.',
+    spec: 'invalid_scope (redirected error, or HTTP 400 at the token ' +
+      'endpoint)' },
+  { code: 'STS-OAUTH-0246',
+    summary: 'RFC 9068 section 3: the request addressed several resources and ' +
+      'carried a scope that cannot be tied to exactly one of them (neither a ' +
+      'delegated permission of one, nor an OpenID Connect scope with this ' +
+      'service among them).',
+    spec: 'invalid_target (redirected error, or HTTP 400 at the token ' +
+      'endpoint)' },
+  { code: 'STS-OAUTH-0247',
+    summary: 'RFC 9068 section 4: a token this service signed was presented ' +
+      'to one of its resource servers (UserInfo, the OID4VCI credential ' +
+      'endpoints, SCIM, SSF) with a typ header that is not at+jwt — an ID ' +
+      'Token, another JWT, or an access token minted before at+jwt.',
+    spec: 'invalid_token (HTTP 401), or the surface\'s own 401' },
+  { code: 'STS-OAUTH-0248',
+    summary: 'RFC 9068 section 4: a token this service signed names an iss ' +
+      'that is not an issuer this service publishes at the address the ' +
+      'request arrived on (the default authorization server or a named one).',
+    spec: 'invalid_token (HTTP 401), or the surface\'s own 401' },
+  // ----- OAuth 2.1 mode, private-use redirects, the secret limit (2026-09-13)
+  // Reserved block STS-OAUTH-0270..0299 — see oauth-oidc/oauth21.js.
+  { code: 'STS-OAUTH-0270',
+    summary: 'An authorization request asked for response_mode=form_post at ' +
+      'a native application\'s private-use redirect URI, which a protocol ' +
+      'handler can never receive a POST body at, so it was answered here ' +
+      'rather than redirected (every mode).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0271',
+    summary: 'OAuth 2.1 mode: the authorization request names a client with ' +
+      'no redirect URI of its own (section 2.3.1); oauth2.redirectUris is ' +
+      'not read in that mode.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0272',
+    summary: 'OAuth 2.1 mode: the client\'s only redirect URIs are addresses ' +
+      'development observed and nobody confirmed, which product mode ' +
+      'withholds.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0273',
+    summary: 'OAuth 2.1 mode: the authorization request named no ' +
+      'redirect_uri and the client has registered more than one, so the ' +
+      'parameter is required (section 4.1.1).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0274',
+    summary: 'OAuth 2.1 mode: the authorization request named no ' +
+      'redirect_uri and the one URI registered for the client is not a ' +
+      'usable redirect URI (it was put on the entry without passing any ' +
+      'check).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0275',
+    summary: 'OAuth 2.1 mode: an authorization request issuing a code ' +
+      'carried no code_challenge and does not meet the OpenID Connect nonce ' +
+      'exemption (a confidential client with a credential on file, openid, a ' +
+      'nonce) — section 7.5.1.1.',
+    spec: 'invalid_request (HTTP 400, redirected once the redirect_uri is ' +
+      'validated)' },
+  { code: 'STS-OAUTH-0276',
+    summary: 'OAuth 2.1 mode: code_challenge was sent with no ' +
+      'code_challenge_method, which that specification makes REQUIRED.',
+    spec: 'invalid_request (HTTP 400, redirected)' },
+  { code: 'STS-OAUTH-0277',
+    summary: 'OAuth 2.1 mode: an authorization code with no code_challenge ' +
+      'was presented — either not issued under the nonce exemption, or ' +
+      'issued under it and redeemed without client authentication (section ' +
+      '4.1.3).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0278',
+    summary: 'OAuth 2.1 mode: a token request names a client whose entry ' +
+      'declares nothing — never registered, or only ever sighted.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0279',
+    summary: 'OAuth 2.1 mode: the client credentials grant was asked for by ' +
+      'a client that did not authenticate (section 4.2).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0280',
+    summary: 'OAuth 2.1 mode: the token request included client ' +
+      'authentication that did not verify against anything on file — a ' +
+      'public or unknown client sending a secret, or a credential that ' +
+      'failed (section 3.2.2).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0281',
+    summary: 'OAuth 2.1 mode: a token or introspection request carried more ' +
+      'than one client authentication method (section 2.4).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0282',
+    summary: 'OAuth 2.1 mode: SAML bearer client authentication, which ' +
+      'draft-ietf-oauth-rfc7523bis-11 says must not be used for client ' +
+      'authentication.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0283',
+    summary: 'OAuth 2.1 mode: a JWT client assertion does not name the ' +
+      'issuer identifier as its sole audience ' +
+      '(draft-ietf-oauth-rfc7523bis-11).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0284',
+    summary: 'Too many failed client-secret authentications for one client ' +
+      'from one address in this realm, so the token request was refused ' +
+      'before the secret was checked (wherever secrets are checked).',
+    spec: 'invalid_client (HTTP 429, Retry-After)' },
+  { code: 'STS-OAUTH-0285',
+    summary: 'OAuth 2.1 mode: a request parameter was repeated at the ' +
+      'authorization or token endpoint (sections 3.1 and 3.2).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0286',
+    summary: 'OAuth 2.1 mode: a post_logout_redirect_uri was given for a ' +
+      'client that registered none of its own; oauth2.redirectUris is not ' +
+      'read in that mode.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0287',
+    summary: 'OAuth 2.1 mode: a client registration asked for ' +
+      'token_endpoint_auth_method=saml2_bearer.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-OAUTH-0288',
+    summary: 'A stored frontchannel_logout_uri is not an http or https URL, ' +
+      'so the client was not notified and the value was not framed.',
+    spec: 'none — the client is listed as not notified' },
+  { code: 'STS-OAUTH-0289',
+    summary: 'OAuth 2.1 mode: a client registration asked for the client ' +
+      'credentials grant with token_endpoint_auth_method=none.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-OAUTH-0290',
+    summary: 'RFC 9700 or OAuth 2.1 mode: a private-use ' +
+      'post_logout_redirect_uri was given and the client the request names ' +
+      'has not registered it.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0291',
+    summary: 'An RFC 9701 JWT introspection request (Accept: ' +
+      'application/token-introspection+jwt) did not authenticate the ' +
+      'resource server: no credential, an unknown or public client, nothing ' +
+      'on file to verify, or a credential that did not verify. Refused in ' +
+      'every mode, because the response is addressed to the caller.',
+    spec: 'invalid_client (HTTP 400, RFC 9701 section 5)' },
+  { code: 'STS-OAUTH-0292',
+    summary: 'Product mode: an RFC 7662 introspection request did not ' +
+      'authenticate the caller as a client with a credential that verified.',
+    spec: 'invalid_client (HTTP 401, RFC 7662 section 2.3)' },
+  { code: 'STS-OAUTH-0293',
+    summary: 'The JWT introspection response a client registered could not ' +
+      'be produced: an algorithm this service does not have (set by ' +
+      'ldapmodify), an enc with no alg, no usable key in its jwks, or the ' +
+      'signature failed.',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0294',
+    summary: 'The introspection endpoint failed with an unexpected error ' +
+      'outside every refusal it makes.',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0295',
+    summary: 'A client authenticating at the introspection endpoint declares ' +
+      'a token_endpoint_auth_method the selected authorization server does ' +
+      'not list in introspection_endpoint_auth_methods_supported.',
+    spec: 'invalid_client (HTTP 400 for a JWT request, 401 for JSON)' },
+  { code: 'STS-OAUTH-0296',
+    summary: 'A resource server\'s registered (or default) RFC 9701 ' +
+      'introspection response algorithm is not one the selected ' +
+      'authorization server advertises in its introspection_*_values_' +
+      'supported members.',
+    spec: 'invalid_client (HTTP 400)' },
+  // SOFTWARE STATEMENTS (RFC 7591 section 2.3), 2026-09-13. After the OAuth 2.1
+  // block reserved at 0270..0299.
+  { code: 'STS-OAUTH-0300',
+    summary: 'A software statement (RFC 7591 section 2.3) presented at ' +
+      'registration is not a string holding a compact JWS — it is missing ' +
+      'its three segments, or it is a JWE.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0301',
+    summary: 'A software statement\'s JOSE header or claims are not JSON ' +
+      'objects.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0302',
+    summary: 'A software statement says alg "none" (RFC 7591 section 2.3 ' +
+      'requires it to be signed or MACed).',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0303',
+    summary: 'A software statement is signed with an algorithm this service ' +
+      'does not verify statements with — an HMAC, for which no shared key ' +
+      'exists, or an unknown one.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0304',
+    summary: 'A software statement carries no `iss` claim (RFC 7591 section ' +
+      '2.3).',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0305',
+    summary: 'A software statement names an issuer this authorization server ' +
+      'publishes and is not typed software-statement+jwt, so it is one of ' +
+      'this service\'s other tokens.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0306',
+    summary: 'A software statement from a declared publisher carries an x5c ' +
+      'certificate that chains to this realm and was issued to somebody ' +
+      'other than that publisher.',
+    spec: 'unapproved_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0307',
+    summary: 'A software statement\'s issuer is declared by an application ' +
+      'that holds no key a statement can be verified with (no usable jwks, ' +
+      'no key pair from /admin/pki).',
+    spec: 'unapproved_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0308',
+    summary: 'A software statement\'s issuer is not declared in any ' +
+      'application\'s oauthSoftwareStatementIssuer, and ' +
+      'oauth2.softwareStatementRequireTrustedIssuer is on.',
+    spec: 'unapproved_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0309',
+    summary: 'A software statement\'s signature did not verify under any of ' +
+      'its issuer\'s keys, or it has expired or is not yet valid.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0310',
+    summary: 'The registered certificate of the key that verified a software ' +
+      'statement has a trust chain that does not hold.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0311',
+    summary: 'A software statement\'s `iat` is in the future beyond ' +
+      'oauth2.clientAssertionSkewS.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0312',
+    summary: 'A software statement carries an `aud` that names neither this ' +
+      'authorization server\'s issuer nor its registration endpoint.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0313',
+    summary: 'A verified software statement\'s claims were refused by the ' +
+      'input validator.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0314',
+    summary: 'A registration carried no software statement while ' +
+      'oauth2.softwareStatementRequired is on.',
+    spec: 'invalid_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0315',
+    summary: 'An RFC 7592 update of a client that registered on the strength ' +
+      'of a trusted software statement, at an endpoint otherwise closed, did ' +
+      'not carry a trusted statement from the same issuer.',
+    spec: 'unapproved_software_statement (HTTP 400)' },
+  { code: 'STS-OAUTH-0340',
+    summary: 'An authorization request carried no request object where a ' +
+      'signed one is required (oauth2.requireSignedRequestObject, ' +
+      'the client\'s require_signed_request_object, or the ' +
+      'authorization server\'s profile; RFC 9101 section 10.5).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0341',
+    summary: 'An authorization request carried both request and ' +
+      'request_uri, or repeated one of them (RFC 9101 section 5).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0342',
+    summary: 'A request object was sent by value to an authorization ' +
+      'server whose metadata says request_parameter_supported ' +
+      'false.',
+    spec: 'request_not_supported (HTTP 400)' },
+  { code: 'STS-OAUTH-0343',
+    summary: 'A request object was sent by reference to an authorization ' +
+      'server whose metadata says request_uri_parameter_supported ' +
+      'false.',
+    spec: 'request_uri_not_supported (HTTP 400)' },
+  { code: 'STS-OAUTH-0344',
+    summary: 'An authorization request carried a request object and no ' +
+      'client_id query parameter (RFC 9101 section 5).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0345',
+    summary: 'A request_uri is not one the client registered in ' +
+      'request_uris, so it was refused and never fetched (RFC 9101 ' +
+      'section 10.4).',
+    spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-0346',
+    summary: 'A registered request_uri may not be fetched in this mode: ' +
+      'plain http in product mode, or otherwise unusable.',
+    spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-0347',
+    summary: 'A registered request_uri could not be fetched: a non-200 ' +
+      'answer (a redirect included, which is not followed), a ' +
+      'timeout, a network error, or more than ' +
+      'oauth2.requestUriMaxBytes.',
+    spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-0348',
+    summary: 'A registered request_uri answered with a media type other ' +
+      'than application/oauth-authz-req+jwt or application/jwt, in ' +
+      'product mode.',
+    spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-0349',
+    summary: 'A request_uri\'s fragment is a SHA-256 of different content ' +
+      'from what it answered with (OpenID Connect Core section ' +
+      '6.2).',
+    spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-0350',
+    summary: 'A request object\'s encryption is not what the client ' +
+      'registered: unencrypted where request_object_encryption_alg ' +
+      'is registered, or a different alg or enc.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0351',
+    summary: 'A request object is encrypted with an algorithm or content ' +
+      'encryption the selected authorization server does not ' +
+      'decrypt.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0352',
+    summary: 'An encrypted request object has no key here to open it: a ' +
+      'symmetric algorithm for a client with no secret, or a kid ' +
+      'that is not this realm\'s request object encryption key.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0353',
+    summary: 'An encrypted request object could not be decrypted, or its ' +
+      'JWE header is unreadable.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0354',
+    summary: 'An encrypted request object decrypted to something that is ' +
+      'not a JWS (RFC 9101 section 4: signed, then encrypted).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0355',
+    summary: 'A request object is not a compact JWT, or its header is ' +
+      'unreadable.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0356',
+    summary: 'A request object is typed as another kind of JWT (RFC 9101 ' +
+      'section 10.8).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0357',
+    summary: 'An unsigned request object (alg none) was refused: product ' +
+      'mode, or a signed request object is required.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0358',
+    summary: 'A request object is signed with an algorithm other than the ' +
+      'client\'s registered request_object_signing_alg.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0359',
+    summary: 'A request object is signed with an algorithm the selected ' +
+      'authorization server does not list in ' +
+      'request_object_signing_alg_values_supported.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0360',
+    summary: 'A request object names a signing algorithm this service does ' +
+      'not verify.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0361',
+    summary: 'A request object cannot be verified: the client holds no key ' +
+      'for it (no jwks, only a jwks_uri, or no client secret for ' +
+      'HMAC).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0362',
+    summary: 'A request object\'s signature did not verify with any of the ' +
+      'client\'s keys, or it is expired or not yet valid.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0363',
+    summary: 'The certificate of the key that verified a request object ' +
+      'does not have a valid trust chain.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0364',
+    summary: 'An unsigned request object\'s claims are refused: not a JSON ' +
+      'object, expired or not yet valid.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0365',
+    summary: 'A request object\'s iss is not the client that sent it.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0366',
+    summary: 'A request object\'s aud does not name this authorization ' +
+      'server (its issuer or its authorization endpoint).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0367',
+    summary: 'A request object\'s client_id claim differs from the ' +
+      'client_id query parameter (RFC 9101 section 6.3).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0368',
+    summary: 'A request object is not explicitly typed oauth-authz-req+jwt ' +
+      'and oauth2.requireRequestObjectType requires it.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0369',
+    summary: 'A request object lacks iss or aud and ' +
+      'oauth2.requireRequestObjectIssuerAudience requires both.',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0370',
+    summary: 'A request object\'s kid names none of the client\'s keys (RFC ' +
+      '9101 section 6.2).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0371',
+    summary: 'A response_type duplicated in the query differs from the ' +
+      'request object\'s (OpenID Connect Core section 6.1).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0372',
+    summary: 'A request_uri is a pushed authorization request URN and ' +
+      'there is no pushed authorization request here to resolve it, ' +
+      'or it resolved to nothing.',
+    spec: 'request_uri_not_supported or invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-0373',
+    summary: 'The authorization endpoint failed with an unexpected error ' +
+      'while resolving a request object.',
+    spec: 'server_error (HTTP 500)' },
+  // PUSHED AUTHORIZATION REQUESTS (RFC 9126), 2026-09-13. Block 0400..0449;
+  // oauth-oidc/par.js and the PAR endpoint in oauth-oidc/oauth2.js.
+  { code: 'STS-OAUTH-0400',
+    summary: 'A pushed authorization request arrived while ' +
+      'oauth2.pushedAuthorizationRequests is off.',
+    spec: 'invalid_request (HTTP 404)' },
+  { code: 'STS-OAUTH-0401',
+    summary: 'The pushed authorization request endpoint was called with a ' +
+      'method other than POST.',
+    spec: 'HTTP 405 with Allow: POST (RFC 9126 section 2.3)' },
+  { code: 'STS-OAUTH-0402',
+    summary: 'A pushed authorization request was larger than ' +
+      'oauth2.parMaxBodyBytes.',
+    spec: 'HTTP 413 (RFC 9126 section 2.3)' },
+  { code: 'STS-OAUTH-0403',
+    summary: 'A pushed authorization request was not a form body, was ' +
+      'malformed, or repeated a parameter that may not repeat.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0404',
+    summary: 'A pushed authorization request carried request_uri, which ' +
+      'RFC 9126 section 2.1 says MUST NOT be provided.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0405',
+    summary: 'A pushed authorization request named no client — no ' +
+      'client_id, no Basic header and no client assertion.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0406',
+    summary: 'A pushed authorization request named one client_id in its ' +
+      'body and authenticated as another.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0407',
+    summary: 'A client pushed more authorization requests from one address ' +
+      'in one window than oauth2.parRequestsPerMinute allows.',
+    spec: 'HTTP 429 with Retry-After (RFC 9126 section 2.3)' },
+  { code: 'STS-OAUTH-0408',
+    summary: 'A push was refused because the realm already holds ' +
+      'oauth2.parMaxRequests live pushed requests.',
+    spec: 'temporarily_unavailable (HTTP 503)' },
+  { code: 'STS-OAUTH-0409',
+    summary: 'A push carrying a request object also carried authorization ' +
+      'request parameters in the form body (RFC 9126 section 3).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0410',
+    summary: 'A request_uri at the authorization endpoint is not one this ' +
+      'authorization server issued at /oauth2/par, or it was swept.',
+    spec: 'invalid_request_uri (HTTP 400 on this server)' },
+  { code: 'STS-OAUTH-0411',
+    summary: 'A pushed request_uri was used after it expired ' +
+      '(oauth2.parRequestUriLifetimeS).',
+    spec: 'invalid_request_uri (HTTP 400 on this server)' },
+  { code: 'STS-OAUTH-0412',
+    summary: 'A pushed request_uri was used again after an authorization ' +
+      'response had been issued on it.',
+    spec: 'invalid_request_uri (HTTP 400 on this server)' },
+  { code: 'STS-OAUTH-0413',
+    summary: 'A pushed request_uri was used with a client_id other than the ' +
+      'client that pushed it.',
+    spec: 'invalid_request_uri (HTTP 400 on this server)' },
+  { code: 'STS-OAUTH-0414',
+    summary: 'A pushed request_uri was used at a different authorization ' +
+      'server from the one it was pushed at.',
+    spec: 'invalid_request_uri (HTTP 400 on this server)' },
+  { code: 'STS-OAUTH-0415',
+    summary: 'A push carried plain parameters where a signed request object ' +
+      'is required (RFC 9126 section 2.3, RFC 9101 section 10.5).',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0416',
+    summary: 'The DPoP proof sent with a pushed authorization request was ' +
+      'refused, or a nonce was required.',
+    spec: 'invalid_dpop_proof or use_dpop_nonce (HTTP 400)' },
+  { code: 'STS-OAUTH-0417',
+    summary: 'A push carried a DPoP proof and a dpop_jkt naming a different ' +
+      'key (RFC 9449 section 10.1).',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0419',
+    summary: 'An authorization request was not pushed, and the setting, the ' +
+      'client or the authorization server requires pushed authorization ' +
+      'requests (RFC 9126 section 4).',
+    spec: 'invalid_request (HTTP 400 on this server)' },
+  { code: 'STS-OAUTH-0420',
+    summary: 'The pushed authorization request endpoint failed with an ' +
+      'unexpected error.',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0421',
+    summary: 'A client pushed an authorization request while configured for ' +
+      'an authentication method the selected authorization server does not ' +
+      'list in token_endpoint_auth_methods_supported.',
+    spec: 'invalid_client (HTTP 400)' },
+  { code: 'STS-OAUTH-0422',
+    summary: 'RFC 9700 mode refused a client\'s authentication at the pushed ' +
+      'authorization request endpoint and named no more specific code.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0423',
+    summary: 'Product mode refused an unauthenticated client at the pushed ' +
+      'authorization request endpoint.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0424',
+    summary: 'An authenticated client pushed a request object that carries ' +
+      'no client_id claim (RFC 9126 section 3).',
+    spec: 'invalid_request_object (HTTP 400)' },
+  { code: 'STS-OAUTH-0426',
+    summary: 'A request_uri pushed as plain parameters was used after a ' +
+      'signed request object became required (RFC 9126 section 7.4).',
+    spec: 'invalid_request (HTTP 400 on this server)' },
+  { code: 'STS-OAUTH-0427',
+    summary: 'An OAuth monitoring counter (/admin/oauth2/monitor) threw or ' +
+      'was asked for an event outside its vocabulary; nothing else was ' +
+      'affected.',
+    spec: 'none — logged only' },
+  // RICH AUTHORIZATION REQUESTS (RFC 9396)
+  { code: 'STS-OAUTH-0450',
+    summary: 'authorization_details is not readable JSON, not an array, or ' +
+      'carries more entries than oauth2.authorizationDetailsMaxEntries.',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0451',
+    summary: 'An authorization_details entry is not a JSON object, or has ' +
+      'no string type (RFC 9396 section 2).',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0452',
+    summary: 'An authorization_details entry\'s common data field ' +
+      '(locations, actions, datatypes, identifier, privileges) has the ' +
+      'wrong shape (RFC 9396 section 2.2).',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0453',
+    summary: 'An authorization_details entry is of a type no application in ' +
+      'the realm declares and this service does not understand (RFC 9396 ' +
+      'section 5).',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0454',
+    summary: 'An authorization_details entry is of a type outside the ' +
+      'client\'s registered authorization_details_types (RFC 9396 section ' +
+      '10).',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0455',
+    summary: 'An authorization_details entry is of a type the named ' +
+      'authorization server does not publish in ' +
+      'authorization_details_types_supported.',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0456',
+    summary: 'An authorization_details entry does not conform to the JSON ' +
+      'Schema its type\'s definition declares (RFC 9396 section 5).',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0457',
+    summary: 'An authorization_details entry names a location the resource ' +
+      'declaring its type does not answer to.',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0458',
+    summary: 'A token request\'s authorization_details asks for more than ' +
+      'the grant authorized (RFC 9396 section 6).',
+    spec: 'invalid_authorization_details (HTTP 400)' },
+  { code: 'STS-OAUTH-0459',
+    summary: 'A request\'s authorization_details address more than one ' +
+      'resource server, which one JWT access token cannot carry ' +
+      'unambiguously (RFC 9068 section 3).',
+    spec: 'invalid_authorization_details (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0460',
+    summary: 'A request names a resource or a scope for a different API ' +
+      'from the one its authorization_details address.',
+    spec: 'invalid_target or invalid_scope (HTTP 400, or redirected)' },
+  { code: 'STS-OAUTH-0461',
+    summary: 'An application declares an oauthAuthorizationDetailsType value ' +
+      'that cannot be read as a definition; it is ignored.',
+    spec: 'none — logged only' },
+  { code: 'STS-OAUTH-0462',
+    summary: 'Two applications declare the same authorization_details type; ' +
+      'the first in identifier order answers for it.',
+    spec: 'none — logged only' },
+  // RFC 8705 (2026-09-13): mutual-TLS client authentication and certificate-
+  // bound access tokens. Block reserved at 0480..0499.
+  { code: 'STS-OAUTH-0480',
+    summary: 'A tls_client_auth client presented a TLS client certificate ' +
+      'whose chain did not verify against the client truststore (RFC 8705 ' +
+      'section 2.1).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0481',
+    summary: 'A tls_client_auth client presented a certificate that chains to ' +
+      'this service\'s own Root and is not a TLS client identity in this ' +
+      'realm (another realm\'s, or a key pair issued for another purpose).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0482',
+    summary: 'A tls_client_auth client\'s entry registers more than one of ' +
+      'RFC 8705 section 2.1.2\'s five certificate subject parameters.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0483',
+    summary: 'A tls_client_auth client presented a certificate this realm ' +
+      'issued to it that its record no longer lists (taken off or replaced).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0484',
+    summary: 'A tls_client_auth client presented a certificate this realm ' +
+      'issued as the identity of another application or of a person.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0485',
+    summary: 'A tls_client_auth client presented a verified certificate that ' +
+      'does not carry the subject DN or subjectAltName it registered (RFC ' +
+      '8705 section 2.1.2).',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0486',
+    summary: 'A tls_client_auth client presented a verified certificate this ' +
+      'realm did not issue to it, and registers no certificate subject to ' +
+      'match it against.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0487',
+    summary: 'A client that registered tls_client_certificate_bound_access_' +
+      'tokens made a token request on a connection with no client ' +
+      'certificate (RFC 8705 section 3.4), refused in every mode.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0488',
+    summary: 'A client declaring an RFC 8705 certificate authentication ' +
+      'method did not authenticate by certificate and no more specific ' +
+      'reason was recorded; refused in every mode.',
+    spec: 'invalid_client (HTTP 401)' },
+  // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.js`
+  // decides; the authorization endpoint, `dpop.presentedAccessToken()` and the
+  // stand-in resource answer. Block reserved at 0500..0529.
+  { code: 'STS-OAUTH-0500',
+    summary: 'An authorization request\'s acr_values were not met by the ' +
+      'authentication performed after the person was sent to sign in again ' +
+      '(RFC 9470 section 5); refused in every mode.',
+    spec: 'unmet_authentication_requirements (redirected error)' },
+  { code: 'STS-OAUTH-0501',
+    summary: 'An authorization request\'s max_age was still not met on the ' +
+      'return from the sign-in it was sent to — the sign-in did not start a ' +
+      'new authentication.',
+    spec: 'unmet_authentication_requirements (redirected error)' },
+  { code: 'STS-OAUTH-0502',
+    summary: 'The session did not meet an authorization request\'s ' +
+      'acr_values or max_age, and prompt=none forbids sending the person to ' +
+      'sign in again.',
+    spec: 'login_required (redirected error)' },
+  { code: 'STS-OAUTH-0503',
+    summary: 'A resource server here challenged an access token whose acr ' +
+      'meets none of the acr values the resource requires (RFC 9470 section ' +
+      '3).',
+    spec: 'insufficient_user_authentication (HTTP 401, WWW-Authenticate ' +
+      'challenge with acr_values)' },
+  { code: 'STS-OAUTH-0504',
+    summary: 'A resource server here challenged an access token whose ' +
+      'auth_time is older than the max_age the resource requires, or absent ' +
+      '(RFC 9470 section 3).',
+    spec: 'insufficient_user_authentication (HTTP 401, WWW-Authenticate ' +
+      'challenge with max_age)' },
+  { code: 'STS-OAUTH-0505',
+    summary: 'The step-up stand-in resource was asked for an application ' +
+      'this realm has no entry for.',
+    spec: 'invalid_request (HTTP 404)' },
+  { code: 'STS-OAUTH-0506',
+    summary: 'An access token presented at the step-up stand-in resource ' +
+      'does not name that application in its aud (RFC 9068 section 4 step ' +
+      '4).',
+    spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
+  { code: 'STS-OAUTH-0507',
+    summary: 'An access token presented at the step-up stand-in resource ' +
+      'did not verify against this realm\'s signing key.',
+    spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
+  { code: 'STS-OAUTH-0508',
+    summary: 'A configured step-up requirement (oauth2.stepUpAcrValues, or ' +
+      'an application\'s oauthStepUpAcrValues or oauthStepUpMaxAge written ' +
+      'by hand) holds a value that cannot be one, and it was ignored.',
+    spec: 'none — logged only' },
+  { code: 'STS-OAUTH-0509',
+    summary: 'An authorization request\'s acr_values carries a value that ' +
+      'cannot be an acr value (a double quote, a backslash or a control ' +
+      'character).',
+    spec: 'invalid_request (redirected error)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -4899,6 +6380,16 @@ const CODES = [
     summary: 'In product mode, an add or modify named createTimestamp, ' +
       'modifyTimestamp or entryDN, which the directory maintains itself.',
     spec: 'LDAP result code 19, constraintViolation' },
+  { code: 'STS-LDAP-0077',
+    summary: 'A delete or rename of the default realm\'s bootstrap ' +
+      'administrator (admin.bootstrapUsername) was refused — over LDAP or ' +
+      'SCIM — because that account cannot be removed.',
+    spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
+  { code: 'STS-LDAP-0078',
+    summary: 'A flag of the bootstrap administrator (pwdReset, ' +
+      'stsBootstrapAdministrator or stsConsoleClaimedAt) could not be ' +
+      'written because the account has no entry in this realm.',
+    spec: 'none — logged' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
@@ -4943,7 +6434,7 @@ const CODES = [
   { code: 'STS-SCIM-0011',
     summary: 'The directory refused a SCIM User or Group write for a reason ' +
       'it did not name with a code of its own.',
-    spec: 'HTTP 507, or SCIM invalidValue (HTTP 400)' },
+    spec: 'HTTP 500, or SCIM invalidValue (HTTP 400)' },
   { code: 'STS-SCIM-0012',
     summary: 'The directory refused a SCIM User or Group delete for a reason ' +
       'it did not name with a code of its own.',
@@ -5169,6 +6660,11 @@ const CODES = [
       'entry, for a reason the directory did not name with a code of ' +
       'its own.',
     spec: 'HTTP 507 or 400 JSON' },
+  { code: 'STS-SCIM-0075',
+    summary: 'A SCIM error carried an HTTP status or scimType RFC 7644 ' +
+      'section 3.12 does not allow, which is a defect in this service; it ' +
+      'was sent as 500 rather than ending the process.',
+    spec: 'HTTP 500 (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
@@ -5586,6 +7082,12 @@ const CODES = [
     summary: 'The stored trust anchors could not be read; the truststore was ' +
       'left as it was.',
     spec: '' },
+  { code: 'STS-TLS-0031',
+    summary: 'The required-client-certificate listener refused a verified ' +
+      'certificate this service issued that is not a TLS client identity ' +
+      '(not from a TLS client or enrollment Issuing CA, no clientAuth, or no ' +
+      'single urn:sts:person:/application: name).',
+    spec: 'HTTP 403 with the connection report' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
@@ -6147,6 +7649,42 @@ const CODES = [
     summary: 'A Security Event Token was not transmitted because the ' +
       'application that owns the stream is not allowed that event type ' +
       '(ssfAllowedEvents on its entry).',
+    spec: '' },
+  // WHAT AN ADMINISTRATOR DID TO SOMEBODY'S CREDENTIALS (2026-09-13).
+  { code: 'STS-SSF-0090',
+    summary: 'A RISC event about an administrator\'s act on an account ' +
+      '(account-credential-change-required, recovery-information-changed) ' +
+      'could not be built or delivered.',
+    spec: '' },
+  { code: 'STS-SSF-0091',
+    summary: 'A CAEP credential-change about a person could not be built, ' +
+      'was not a valid event, or could not be delivered.',
+    spec: '' },
+  { code: 'STS-SSF-0092',
+    summary: 'A push was not made because ssf.pushBacklog pushes were already ' +
+      'waiting for one of ssf.pushConcurrency slots; the SET was put on the ' +
+      'stream\'s dead-letter queue.',
+    spec: '' },
+  { code: 'STS-SSF-0093',
+    summary: 'A push stream was declared dead: its pushes all failed for ' +
+      'ssf.deadStreamTimeoutS. Nothing more is pushed to it until a probe ' +
+      'or an operator revives it.',
+    spec: '' },
+  { code: 'STS-SSF-0094',
+    summary: 'Security Event Tokens could not be delivered since the last ' +
+      'dead-letter sweep and are on dead-letter queues (one summary line per ' +
+      'realm per sweep, never one per SET).',
+    spec: '' },
+  { code: 'STS-SSF-0095',
+    summary: 'A stream was asked to be revived and is not dead.',
+    spec: 'HTTP 400 on /admin-api/ssf/revive' },
+  { code: 'STS-SSF-0096',
+    summary: 'A SET for a dead push stream was put on its dead-letter queue ' +
+      'unsigned instead of being pushed.',
+    spec: '' },
+  { code: 'STS-SSF-0097',
+    summary: 'The dead-letter sweep failed in a realm; it is tried again at ' +
+      'the next interval.',
     spec: '' },
   // ===== GNAP ==============================================================
   { code: 'STS-GNAP-0001',
@@ -7632,6 +9170,16 @@ const CODES = [
     summary: 'A change nudge could not be delivered because the connection ' +
       'to the PEP\'s notify endpoint failed.',
     spec: '' },
+  { code: 'STS-XACML-0071',
+    summary: 'An HTTPS listener certificate was asked for a PEP that is not ' +
+      'registered in this realm, so there is no realm to issue it from.',
+    spec: 'console: a page saying so; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }' },
+  { code: 'STS-XACML-0072',
+    summary: 'A remote PEP\'s HTTPS listener certificate could not be ' +
+      'issued: the certificate authority refused it, or issuing threw.',
+    spec: 'console: a page saying so; /admin-api: HTTP 400 ' +
+      '{ ok: false, errors }, or 500 when issuing threw' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -7773,6 +9321,23 @@ const CODES = [
     summary: 'The PIP returned a value that is not valid at the datatype the ' +
       'policy\'s designator declares; the value is dropped rather ' +
       'than making the decision Indeterminate.',
+    spec: '' },
+  { code: 'STS-XPEP-0029',
+    summary: 'Only one of PEP_HTTPS_CERT and PEP_HTTPS_KEY is set, so the ' +
+      'PEP has no HTTPS listener. Plain HTTP is unaffected.',
+    spec: '' },
+  { code: 'STS-XPEP-0030',
+    summary: 'The HTTPS certificate and key files could not be read, are not ' +
+      'PEM, or do not belong together. A listener already serving keeps ' +
+      'the pair it has; one not yet started waits for a usable pair.',
+    spec: '' },
+  { code: 'STS-XPEP-0031',
+    summary: 'The HTTPS listener could not bind its port (commonly the port ' +
+      'is taken). Plain HTTP and enforcement are unaffected.',
+    spec: '' },
+  { code: 'STS-XPEP-0032',
+    summary: 'The certificate the HTTPS listener is serving is expired or ' +
+      'not yet valid, so clients that check will refuse the handshake.',
     spec: '' },
   // ===== ADMIN =============================================================
   { code: 'STS-ADMIN-0001',
@@ -8319,6 +9884,116 @@ const CODES = [
     summary: 'The used-assertion history page could not be drawn, because ' +
       'the store holding the history could not be read.',
     spec: 'the page with a warning saying so' },
+  { code: 'STS-ADMIN-0644',
+    summary: 'An RFC 9728 protected resource metadata import was refused ' +
+      '(load-resource-metadata), where the library named no code of its own.',
+    spec: 'HTTP 400 (API), or /admin/applications/new redrawn with the reason' },
+  { code: 'STS-ADMIN-0645',
+    summary: 'A create from an imported RFC 9728 document was refused on ' +
+      '/admin/applications/new, where the create named no code of its own, ' +
+      'and the page was redrawn with the reason.',
+    spec: '/admin/applications/new redrawn with the reason' },
+  { code: 'STS-ADMIN-0646',
+    summary: 'A software statement was asked to be issued for an application ' +
+      'that is not in the registry.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0647',
+    summary: 'The client metadata given for a software statement to issue is ' +
+      'not a JSON object, or the input validator refused it.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0648',
+    summary: 'The client metadata given for a software statement to issue ' +
+      'names a JWT claim or a member only registration assigns.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0649',
+    summary: 'A software statement for an application could not be signed or ' +
+      'written onto its entry.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0650',
+    summary: 'A software statement could not be issued because there was no ' +
+      'issuer to name: no request address reached the action and ' +
+      'oauth2.issuer is not set.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  // ----- the OAuth 2.0 / OIDC monitoring page (2026-09-13) -----------------
+  { code: 'STS-ADMIN-0700',
+    summary: 'The query string of /admin/oauth2/monitor did not match the ' +
+      'shape the page accepts (state, client_id, page, per, clientsPage, ' +
+      'offset, limit, format) and was refused before anything was read.',
+    spec: 'HTTP 400 text/plain' },
+  { code: 'STS-ADMIN-0701',
+    summary: 'An OAuth 2.0 monitoring action named an action the page does ' +
+      'not have; the refusal names the one it does.',
+    spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
+      '{ ok: false, errors } on /admin-api)' },
+  { code: 'STS-ADMIN-0702',
+    summary: 'A withdrawal of a pushed authorization request carried no ' +
+      'request_uri, or one longer than the store could ever hold.',
+    spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
+      '{ ok: false, errors } on /admin-api)' },
+  { code: 'STS-ADMIN-0703',
+    summary: 'A withdrawal of a pushed authorization request named a value ' +
+      'that is not in the urn:ietf:params:oauth:request_uri: namespace this ' +
+      'service issues pushed request_uris from (RFC 9126 section 2.2).',
+    spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
+      '{ ok: false, errors } on /admin-api)' },
+  { code: 'STS-ADMIN-0704',
+    summary: 'A withdrawal named a request_uri this realm does not hold: it ' +
+      'was never pushed here, it expired and was swept, or it was already ' +
+      'withdrawn.',
+    spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
+      '{ ok: false, errors } on /admin-api)' },
+  { code: 'STS-ADMIN-0705',
+    summary: 'An OAuth 2.0 monitoring console action threw; nothing is known ' +
+      'to have changed and the log line carries the stack.',
+    spec: 'a 303 back to /admin/oauth2/monitor with error=' },
+  { code: 'STS-ADMIN-0706',
+    summary: 'The bootstrap administrator could not be created in the ' +
+      'default realm, or could not be given both console roles, at startup.',
+    spec: 'none — logged' },
+  { code: 'STS-ADMIN-0720',
+    summary: 'Issuing an application a TLS client certificate was refused ' +
+      'with no more specific code (the key algorithm, the label or the ' +
+      'realm\'s certificate authority).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0721',
+    summary: 'An application TLS client certificate\'s file password was ' +
+      'too short, too long, or not the same twice.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0722',
+    summary: 'An application TLS client certificate action named an ' +
+      'application the registry does not hold.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0723',
+    summary: 'Revoking an application\'s TLS client certificate was refused ' +
+      'with no more specific code.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0724',
+    summary: 'An asynchronous applications action on the console threw; ' +
+      'nothing is known to have changed and the log line carries the stack.',
+    spec: 'the console\'s refusal (a redirect with the error)' },
+  // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13).
+  { code: 'STS-ADMIN-0780',
+    summary: 'Resetting somebody\'s password was refused by the password ' +
+      'policy or the store.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0781',
+    summary: 'Issuing somebody a password reset link was refused (nobody by ' +
+      'that name, or no store).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0782',
+    summary: 'A password reset link was issued and the person\'s password ' +
+      'could not be removed, so the link was withdrawn.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0783',
+    summary: 'Disabling somebody\'s primary security keys was refused.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0784',
+    summary: 'Disabling somebody\'s second factors was refused.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0785',
+    summary: 'Requiring, or no longer requiring, a second factor of somebody ' +
+      'was refused.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   // ===== API ===============================================================
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
@@ -8596,6 +10271,37 @@ const CODES = [
       'GET /admin-api/used-assertions, because the store holding it could ' +
       'not be queried.',
     spec: 'HTTP 500 { ok: false, errors }' },
+  { code: 'STS-API-0082',
+    summary: 'A management API access token verified and its JOSE typ header ' +
+      'is not at+jwt (RFC 9068 section 4): an ID Token, another JWT, or an ' +
+      'access token minted before at+jwt.',
+    spec: 'HTTP 401 invalid_token, WWW-Authenticate: Bearer ' +
+      'error="invalid_token"' },
+  { code: 'STS-API-0083',
+    summary: 'A management API access token names an iss that is not an ' +
+      'issuer this service publishes at any address this API answers under ' +
+      '(RFC 9068 section 4).',
+    spec: 'HTTP 401 invalid_token, WWW-Authenticate: Bearer ' +
+      'error="invalid_token"' },
+  // ----- GET/POST /admin-api/oauth2/monitor (2026-09-13) --------------------
+  { code: 'STS-API-0100',
+    summary: 'The query string of GET /admin-api/oauth2/monitor did not ' +
+      'match the shape the operation accepts (offset, limit, state, client_id, ' +
+      'page, per, clientsPage) and was refused before anything was read.',
+    spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-API-0101',
+    summary: 'An /admin-api/oauth2/monitor action was refused and the action ' +
+      'layer attached no more specific code.',
+    spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-API-0102',
+    summary: 'An /admin-api/oauth2/monitor action threw; nothing is known to ' +
+      'have changed and the log line carries the stack.',
+    spec: 'HTTP 500 { ok: false, errors }' },
+  { code: 'STS-API-0110',
+    summary: 'An /admin-api access token bound to a client certificate (RFC ' +
+      '8705 cnf x5t#S256) was presented on a connection without that ' +
+      'certificate.',
+    spec: 'invalid_token (HTTP 401)' },
   // ===== PORTAL ============================================================
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
@@ -8758,6 +10464,55 @@ const CODES = [
       'no stream, wrong bearer token, empty or malformed token, wrong ' +
       'audience, or an unverified signature).',
     spec: 'SSF error JSON (HTTP 400, 401, 404, 500 or 501)' },
+  { code: 'STS-PORTAL-0039',
+    summary: 'A person\'s revocation of their own TLS client certificate ' +
+      'was refused (a serial they hold no certificate under, or the ' +
+      'revocation register refused it).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0040',
+    summary: 'A TLS client certificate was asked for with a file password ' +
+      'that is too short, too long, or not the same twice.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0041',
+    summary: 'A self-service TLS client certificate could not be issued ' +
+      '(no certificate authority, a refused key algorithm or label, or the ' +
+      'cap reached).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0042',
+    summary: 'A TLS client certificate was issued and its PKCS#12 and PEM ' +
+      'files could not be built; the certificate was revoked at once.',
+    spec: 'HTTP 500 page' },
+  { code: 'STS-PORTAL-0047',
+    summary: 'A person\'s own ACME account binding key or SCEP challenge password was not made on /portal/certificates (the enrollment core refused it; its own code is on the monitor row).',
+    spec: 'HTTP 4xx page' },
+  { code: 'STS-PORTAL-0048',
+    summary: 'A person asked /portal/certificates to delete an account binding key or challenge password they do not hold.',
+    spec: 'HTTP 404 page' },
+  { code: 'STS-PORTAL-0049',
+    summary: 'A person asked /portal/certificates to revoke a certificate they do not hold, or the revocation was refused.',
+    spec: 'HTTP 404 or 400 page' },
+  { code: 'STS-PORTAL-0050',
+    summary: 'A person asked /portal/certificates for an ACME or SCEP credential while that protocol is turned off in the realm.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-PORTAL-0051',
+    summary: 'A POST to /portal/certificates named no action the page performs.',
+    spec: 'HTTP 400 page' },
+  // /portal/reset-password (2026-09-13).
+  { code: 'STS-PORTAL-0070',
+    summary: 'A password reset link was refused by the rate limit.',
+    spec: 'HTTP 429 page' },
+  { code: 'STS-PORTAL-0071',
+    summary: 'A password reset link did not verify; the page answers one ' +
+      'sentence for every reason.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0072',
+    summary: 'A new password from a reset link was refused before it was ' +
+      'tried: missing, not typed twice alike, or the reserved password.',
+    spec: 'the reset form again, HTTP 400' },
+  { code: 'STS-PORTAL-0073',
+    summary: 'A new password from a reset link was refused by the password ' +
+      'policy or the store.',
+    spec: 'the reset form again, HTTP 400' },
   // ===== LOGOUT ============================================================
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
@@ -9021,7 +10776,285 @@ const CODES = [
   { code: 'STS-REG-0061',
     summary: 'Regenerating the client secret of sts-management-api was ' +
       'refused because adminApi.clientSecret pins it.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' }
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  // Reserved block STS-REG-0070..0079 (2026-09-13).
+  { code: 'STS-REG-0070',
+    summary: 'A client registration (RFC 7591 or 7592) named a redirect_uri, ' +
+      'post_logout_redirect_uri or frontchannel_logout_uri that is not a ' +
+      'usable address — not http(s) with a host, not a private-use scheme ' +
+      'named for a domain, or (for the front-channel URI) not http(s).',
+    spec: 'invalid_redirect_uri or invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0071',
+    summary: 'A console or /admin-api write put an unusable address on ' +
+      'oauthRedirectUri, oauthPostLogoutRedirectUri or ' +
+      'oauthFrontchannelLogoutUri.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0072',
+    summary: 'An RFC 7591 registration or RFC 7592 update named an RFC 9701 ' +
+      'introspection_signed_response_alg, ' +
+      'introspection_encrypted_response_alg or ' +
+      'introspection_encrypted_response_enc this service cannot honour, ' +
+      'or an enc with no alg.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0073',
+    summary: 'A console or /admin-api write put an unusable RFC 9701 ' +
+      'algorithm on oauthIntrospectionSignedResponseAlg, ' +
+      'oauthIntrospectionEncryptedResponseAlg or ' +
+      'oauthIntrospectionEncryptedResponseEnc, or an enc on an entry with no ' +
+      'alg.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0074',
+    summary: 'An RFC 9728 protected resource metadata import named no ' +
+      'document: nothing pasted, nothing uploaded and no URL.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0075',
+    summary: 'An RFC 9728 import gave the document more than one way ' +
+      '(pasted, uploaded and a URL are exclusive).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0076',
+    summary: 'An RFC 9728 document was empty, too large ' +
+      '(federation.maxResponseBytes), not JSON, not a JSON object, or refused ' +
+      'by the JSON document walk.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0077',
+    summary: 'An RFC 9728 document is malformed: `resource` missing, not a ' +
+      'URL or carrying a fragment, or a member of the wrong JSON type.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0078',
+    summary: 'An RFC 9728 document was to be fetched by URL and ' +
+      'federation.outbound is off.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0079',
+    summary: 'The URL an RFC 9728 document was to be fetched from is not a ' +
+      'URL, or not https while federation.outboundAllowInsecure is off.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0080',
+    summary: 'In product mode, the host of an RFC 9728 document URL resolves ' +
+      'to a loopback, private, link-local or reserved address.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0081',
+    summary: 'The host of an RFC 9728 document URL could not be resolved.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0082',
+    summary: 'The RFC 9728 document URL answered with a redirect, which is ' +
+      'not followed.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0083',
+    summary: 'The RFC 9728 document URL answered a status other than 200.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0084',
+    summary: 'The RFC 9728 document fetched by URL was larger than ' +
+      'federation.maxResponseBytes.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0085',
+    summary: 'The RFC 9728 document URL did not answer within ' +
+      'federation.outboundTimeoutMs.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0086',
+    summary: 'The request for an RFC 9728 document failed at the connection ' +
+      '(refused, reset, a certificate this service does not trust).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0087',
+    summary: 'In product mode, a fetched RFC 9728 document\'s `resource` is ' +
+      'not the identifier its well-known URL was built from (section 3.3).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0088',
+    summary: 'In product mode, an RFC 9728 document\'s `resource` is not an ' +
+      'https URL (section 2).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0089',
+    summary: 'A console or /admin-api write put an unusable value on ' +
+      'oauthResourceMetadata (not a JSON object with a `resource`) or ' +
+      'oauthResourceMetadataUrl (not an http or https URL).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0100',
+    summary: 'An RFC 7591 registration or RFC 7592 update named ' +
+      'request_uris, request_object_signing_alg, ' +
+      'request_object_encryption_alg, request_object_encryption_enc ' +
+      'or require_signed_request_object this service cannot honour.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0101',
+    summary: 'A console or /admin-api write put an unusable value on ' +
+      'oauthRequestUri, oauthRequestObjectSigningAlg, ' +
+      'oauthRequestObjectEncryptionAlg, ' +
+      'oauthRequestObjectEncryptionEnc or ' +
+      'oauthRequireSignedRequestObject.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0110',
+    summary: 'An RFC 7591 registration or RFC 7592 update gave ' +
+      'authorization_details_types a value that is not an array of type ' +
+      'names (RFC 9396 section 10).',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0111',
+    summary: 'A console or /admin-api write put a value on ' +
+      'oauthAuthorizationDetailsTypes that is not a type name.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0112',
+    summary: 'A console or /admin-api write put an unusable ' +
+      'authorization_details type definition on ' +
+      'oauthAuthorizationDetailsType: not a name or a JSON object, a stray ' +
+      'member, a location that is not an absolute URI, a schema that does ' +
+      'not compile, or the built-in openid_credential.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0120',
+    summary: 'An RFC 7591 registration or RFC 7592 update gave ' +
+      'require_pushed_authorization_requests a value that is not a boolean.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0121',
+    summary: 'A console or /admin-api write put a value other than TRUE or ' +
+      'FALSE on oauthRequirePushedAuthorizationRequests.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0130',
+    summary: 'A registration gave an RFC 8705 certificate subject parameter a ' +
+      'value that is not what it names (a DN, host name, URI, IP address or ' +
+      'mailbox).',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0131',
+    summary: 'A registration gave more than one of RFC 8705 section 2.1.2\'s ' +
+      'five certificate subject parameters.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0132',
+    summary: 'A registration gave tls_client_certificate_bound_access_tokens ' +
+      'a value that is not a boolean.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0133',
+    summary: 'A registration asked for certificate-bound access tokens while ' +
+      'the main port is not TLS, so no token could be bound.',
+    spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-REG-0134',
+    summary: 'A console or /admin-api write gave an RFC 8705 certificate ' +
+      'subject attribute a value that is not what it names.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0135',
+    summary: 'A console or /admin-api write set a second RFC 8705 ' +
+      'certificate subject attribute beside the one the entry holds.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0136',
+    summary: 'A console or /admin-api write put a value other than TRUE or ' +
+      'FALSE on oauthTlsClientCertificateBoundAccessTokens.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  // RFC 9470 (2026-09-13): what a resource application requires.
+  { code: 'STS-REG-0140',
+    summary: 'A console or /admin-api write put a value on ' +
+      'oauthStepUpAcrValues that cannot be an acr value.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0141',
+    summary: 'A console or /admin-api write put a value on oauthStepUpMaxAge ' +
+      'that is not a whole number of seconds.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  // CORS (2026-09-13): what an application's allowlist may hold.
+  { code: 'STS-REG-0150',
+    summary: 'A console or /admin-api write put a value on appCorsOrigin ' +
+      'that is not an exact origin — a path, a wildcard, null, a user name, ' +
+      'or no host.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-DBG-0001',
+    summary: 'The debugger permission was asked for by somebody who may ' +
+      'not hold it — not a person, not signed in, not in the ' +
+      'default realm, or not a console administrator — and was left ' +
+      'off the token.',
+    spec: 'none — the token is issued without that scope (RFC 6749 ' +
+      'section 3.3)' },
+  { code: 'STS-DBG-0002',
+    summary: 'A request to the debugger carried no debugger session and no ' +
+      'bearer token, and was not a page a browser could be sent to ' +
+      'sign in from.',
+    spec: 'HTTP 401 with WWW-Authenticate: Bearer' },
+  { code: 'STS-DBG-0003',
+    summary: 'A debugger access token did not verify against the default ' +
+      'realm\'s signing key, or could not be read.',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-DBG-0004',
+    summary: 'A debugger access token had expired.',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-DBG-0005',
+    summary: 'A token presented to the debugger was not a JWT access token ' +
+      '(typ at+jwt).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-DBG-0006',
+    summary: 'A debugger access token was issued by somebody other than ' +
+      'this service\'s default authorization server.',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-DBG-0007',
+    summary: 'A debugger access token was addressed to a different ' +
+      'audience.',
+    spec: 'HTTP 403 insufficient_scope' },
+  { code: 'STS-DBG-0008',
+    summary: 'A debugger access token did not carry the debugger ' +
+      'permission.',
+    spec: 'HTTP 403 insufficient_scope' },
+  { code: 'STS-DBG-0009',
+    summary: 'The access policy refused the debugger to the token\'s ' +
+      'subject — ordinarily because they no longer hold a console ' +
+      'role.',
+    spec: 'HTTP 403 page or JSON' },
+  { code: 'STS-DBG-0010',
+    summary: 'The debugger\'s api process is not running, so an /api call ' +
+      'could not be forwarded.',
+    spec: 'HTTP 502' },
+  { code: 'STS-DBG-0011',
+    summary: 'Forwarding an /api call to the debugger\'s api process ' +
+      'failed or timed out.',
+    spec: 'HTTP 502 or 504' },
+  { code: 'STS-DBG-0012',
+    summary: 'An /api request body was larger than ' +
+      'debugger.maxRequestBytes.',
+    spec: 'HTTP 413' },
+  { code: 'STS-DBG-0013',
+    summary: 'The debugger\'s api process exited or did not report that it ' +
+      'was listening in time.',
+    spec: 'none — logged; it is forked again' },
+  { code: 'STS-DBG-0014',
+    summary: 'The debugger\'s api process failed to start ' +
+      'debugger.restartLimit times in a row and was given up on.',
+    spec: 'none — logged; /api answers 502' },
+  { code: 'STS-DBG-0015',
+    summary: 'The debugger was enabled and its built UI or api was not ' +
+      'where debugger.uiDirectory or debugger.apiDirectory says, so ' +
+      'it was not started.',
+    spec: 'none — logged and shown on /admin/debugger' },
+  { code: 'STS-DBG-0016',
+    summary: 'The debugger listener could not bind its port.',
+    spec: 'none — logged and shown on /admin/debugger' },
+  { code: 'STS-DBG-0017',
+    summary: 'The debugger could not start a sign-in: its client is ' +
+      'missing from the registry, or the address it was reached at ' +
+      'is not a registered redirect URI in product mode.',
+    spec: 'HTTP page (500 or 403)' },
+  { code: 'STS-DBG-0018',
+    summary: 'The debugger\'s sign-in callback refused what the ' +
+      'authorization server sent back.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-DBG-0019',
+    summary: 'A signed-in administrator asked the debugger for a path it ' +
+      'does not serve.',
+    spec: 'HTTP 404' },
+  { code: 'STS-DBG-0020',
+    summary: 'An entry in debugger.allowedDestinations is not a CIDR range ' +
+      'and was left out of the allow-list.',
+    spec: 'none — logged at startup' },
+  { code: 'STS-DBG-0021',
+    summary: 'A sign-out from the debugger did not carry the session\'s ' +
+      'CSRF token.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-DBG-0022',
+    summary: 'A method other than GET or HEAD was sent to the debugger\'s ' +
+      'static pages.',
+    spec: 'HTTP 405' },
+  { code: 'STS-DBG-0023',
+    summary: 'The /admin/debugger page or GET /admin-api/debugger could not ' +
+      'build its report.',
+    spec: 'HTTP 500 page or JSON' },
+  { code: 'STS-DBG-0024',
+    summary: 'The debugger permission was refused because neither console ' +
+      'role group has a member: the empty-roster rule that opens the ' +
+      'console to everybody does not open the debugger.',
+    spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
+      'debugger' },
+  { code: 'STS-DBG-0030',
+    summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
+      'presented to the debugger on a connection without that certificate.',
+    spec: 'invalid_token (HTTP 401)' }
   // ===== END ===============================================================
 ];
 

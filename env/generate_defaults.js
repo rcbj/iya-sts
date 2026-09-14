@@ -28,7 +28,7 @@
 // on in production, and then the rule the service is meant to enforce is one
 // environment variable away from not existing.
 //
-// THREE SETTINGS ARE SKIPPED — the `derived` ones. See env/defaults.js's own
+// FOUR SETTINGS ARE SKIPPED — the `derived` ones. See env/defaults.js's own
 // header, and common/config.js's.
 // ---------------------------------------------------------------------------
 'use strict';
@@ -88,9 +88,10 @@ const header = `// File: env/defaults.js
 // /admin/config reports as the default, with the OpenAPI document's \`default\`
 // property, and with README.md's table, all three of which read the table.
 //
-// THREE SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl and
-// krb5.serviceDomains are DERIVED from a neighbour (from oauth2.rfc9700, from
-// oid4vci.walletUrl and from krb5.realm respectively). A literal here would
+// FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
+// krb5.serviceDomains and adminApi.audience are DERIVED from a neighbour (from
+// oauth2.rfc9700, from oid4vci.walletUrl, from krb5.realm, and from the public
+// base URL or the listener's scheme, host and port). A literal here would
 // freeze the derivation at whatever it evaluated to the day this file was
 // written, so they resolve through their neighbour instead and are exempt from
 // the startup refusal for that reason.

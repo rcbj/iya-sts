@@ -178,7 +178,9 @@ function buildJwt(subject, audience, lifetimeMin) {
   if (audience) claims.aud = audience;
   logArtifact('WS-Trust JWT', 'before signing',
               { header: { alg: alg }, payload: claims });
-  const signed = signJwtAs(claims, alg, null);
+  // `wstrust.jwtCertificateHeader` decides the `x5c` / `x5u`.
+  const signed = signJwtAs(claims, alg, null,
+                           { certificateHeader: 'wstrust-jwt' });
   logArtifact('WS-Trust JWT', 'after signing', signed);
   log.debug("Leaving buildJwt(). " + alg + ", jti=" + claims.jti + ".");
   return { token: signed, jti: claims.jti };

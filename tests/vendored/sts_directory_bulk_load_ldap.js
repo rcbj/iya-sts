@@ -888,7 +888,38 @@ if (program.opts().ldapUrl) {
   process.env.STS_LDAP_URL = String(program.opts().ldapUrl);
 }
 
-test().catch(function (e) {
+// ---------------------------------------------------------------------------
+// A RUN THAT NEVER FINISHED IS A FAILURE, EVEN WHEN NOTHING THREW (2026-09-13).
+//
+// The service this job drives was killed by the heap underneath it — `FATAL
+// ERROR: … JavaScript heap out of memory`, reproduced against a postgres-mode
+// service during the fifty-thousand-entry load — and this job EXITED 0. With
+// `reconnect: false` ldapjs drops the socket and never calls back the `add`
+// that was in flight; nothing else holds the event loop open, so node ran out
+// of work with `test()` still pending, and a pending promise is not a
+// rejection. The last line in the log was `48500/50000 added` and the report
+// would have read green.
+//
+// `beforeExit` is emitted exactly when the loop has emptied, which is the one
+// state a job that completed cannot be in before `finished` is set.
+// ---------------------------------------------------------------------------
+let finished = false;
+process.on("beforeExit", function () {
+  if (finished) {
+    return;
+  }
+  finished = true;
+  log.error("THIS JOB STOPPED WITHOUT FINISHING: the event loop emptied with " +
+            "the test still pending, which is what an LDAP operation looks " +
+            "like when the connection under it is gone and no callback will " +
+            "ever come — most often because the service itself stopped. " +
+            "Read the service log for why before reading anything here.");
+  process.exitCode = 1;
+});
+
+test().then(function () {
+  finished = true;
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

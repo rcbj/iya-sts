@@ -37,6 +37,10 @@
 // unchanged. `ok` is the only member that is always present; the rest depends
 // on what was asked, which is why this schema is open rather than closed.
 const { log } = require('../common/helpers');
+// Which console pages list their realm's endpoints, so a GET mirroring one
+// can say that its reply carries them (2026-09-13). A library that requires
+// nothing route-registering; see its header.
+const protocolEndpoints = require('../admin-core/protocol_endpoints');
 
 const ACTION_RESULT = {
   type: 'object',
@@ -3351,8 +3355,41 @@ const SCHEMAS = {
                        'enforcement outcome that looks like a bug from the ' +
                        'client side and is the specification working.' },
         current: { type: 'boolean' },
-        stale: { type: 'boolean' }
-      }) }
+        stale: { type: 'boolean' },
+        listenerCertificate: {
+          type: ['object', 'null'],
+          description: 'The HTTPS LISTENER CERTIFICATE this realm issued to ' +
+                       'the PEP from its Remote PEP listeners Issuing CA ' +
+                       '(POST /admin-api/xacml/issue-pep-certificate), or ' +
+                       'null when none has been. PUBLIC ONLY: the private ' +
+                       'key was handed over once when it was issued and ' +
+                       'this service keeps no copy. Whether the PEP is ' +
+                       'actually SERVING it is on the PEP\'s own GET /, ' +
+                       'which this service cannot see.',
+          properties: {
+            subject: { type: 'string' },
+            serialHex: { type: 'string' },
+            notBefore: { type: 'string' },
+            notAfter: { type: 'string' },
+            expired: { type: 'boolean' },
+            thumbprint: { type: 'string' },
+            keyAlg: { type: 'string' },
+            dnsNames: { type: 'array', items: { type: 'string' } },
+            ipAddresses: { type: 'array', items: { type: 'string' } },
+            issuedAt: { type: 'string' },
+            certificatePem: { type: 'string' }
+          } }
+      }) },
+      listenerCertificates: openObject(
+        'How a PEP\'s HTTPS listener certificate is issued here.', {
+          useCase: { type: 'string',
+            description: 'The use case whose Issuing CA signs them — ' +
+                         '`pep-tls`, one per realm, drawn on /admin/pki.' },
+          keyAlgorithms: { type: 'array', items: { type: 'string' },
+            description: 'The key algorithms a listener certificate may be ' +
+                         'issued with: the ones a TLS stack serves.' },
+          defaultKeyAlg: { type: 'string' }
+        })
     }),
 
   Ssf: openObject(
@@ -3401,12 +3438,25 @@ const SCHEMAS = {
       streamDetail: {
         type: 'array',
         description: 'One entry per stream: its configuration, its subjects, ' +
-                     'what is queued, its counters and its own log. The ' +
+                     'what is queued, its counters and its own log — and ' +
+                     'whether it is `dead` (with `deadSince`, `deadReason`, ' +
+                     '`nextProbeAt`) and its `deadLetters`: SETs that could ' +
+                     'not be delivered, newest first, each with `reason`, ' +
+                     '`errorCode`, `status` and whether it was `signed`, never ' +
+                     'the token. The ' +
                      'receiver\'s `authorization_header` is NEVER in it — it ' +
                      'is a credential belonging to somebody else\'s ' +
                      'endpoint, and this resource is not the door it goes ' +
                      'back through.',
         items: { type: 'object' }
+      },
+      deadLetters: {
+        type: 'object',
+        description: 'The dead-letter and push-cap settings in force, and ' +
+                     '`pushes`: this PROCESS\'s push cap right now — ' +
+                     '`active`, `waiting`, `concurrency`, `backlog`. A ' +
+                     'dispatched service has one per process, and this is ' +
+                     'the one that answered.'
       },
       receivedDetail: {
         type: 'array',
@@ -4052,6 +4102,92 @@ const SCHEMAS = {
                             'the Clear on the console would drop.' },
       filter: openObject('The search this reply was narrowed by, or null.', {}),
       paging: openObject('Where in the list this page is.', {})
+    }),
+
+  // WHAT THE TRANSMITTER COULD NOT DELIVER, COUNTED (2026-09-14). A resource
+  // of its own rather than a member of `Ssf` for the reason `Signals` is one:
+  // `Ssf` is each stream's configuration with its first letters, and this is
+  // counts over every stream at once plus the letters searched and paged —
+  // the view somebody takes during an incident rather than while setting a
+  // stream up.
+  SsfDeadLetters: openObject(
+    'Every Security Event Token the Shared Signals transmitter could not ' +
+    'deliver and is still holding, in the realm the request was made in, ' +
+    'counted — and the letters themselves, searched and paged. Mirrors ' +
+    '/admin/ssf/dead-letters.\n\n**PER REALM.** Each realm has dead-letter ' +
+    'queues of its own; nothing here is another realm\'s.\n\n**`process` ' +
+    'IS ONE PROCESS\'S.** The push cap it reports is per process and shared ' +
+    'by every realm, and the sweeps are the ones THIS process ran; in a ' +
+    'service with request workers two calls can be answered by two ' +
+    'processes. Everything else is the shared store.\n\n**NO TOKEN IS ' +
+    'RETURNED.** A row says whether its SET was `signed`; the SET itself is ' +
+    'a signed statement about somebody and is not handed out.\n\nRead-only: ' +
+    'POST /admin-api/ssf/revive and /clear-dead-letters are the controls.',
+    {
+      installed: { type: 'boolean',
+        description: 'Whether ssf/ssf.js is loaded in this process at all.' },
+      realm: { type: 'string', description: 'The realm counted.' },
+      generatedAt: { type: 'string', format: 'date-time',
+        description: 'When the store was read. Every number in the reply ' +
+                     'comes from that one read.' },
+      enabled: { type: 'boolean', description: 'The `ssf.enabled` setting.' },
+      pushDelivery: { type: 'boolean',
+        description: 'The `ssf.pushDelivery` setting. With it off no push is ' +
+                     'made and none can fail.' },
+      causes: { type: 'array',
+        description: 'The four causes, in the order the console stacks ' +
+                     'them: `push-failed` (a push was made and did not ' +
+                     'deliver; the code says why), `backlog-full` ' +
+                     '(STS-SSF-0092), `declared-dead` (STS-SSF-0093) and ' +
+                     '`dead-stream` (STS-SSF-0096), each with its count.',
+        items: openObject('A cause: `id`, `label`, `code`, `what`, `count`.',
+                          {}) },
+      totals: openObject(
+        'Letters held, streams holding them, signed and unsigned, dead, ' +
+        'half-open and failing push streams, the oldest and newest letter ' +
+        'with their ages in seconds (null when nothing is held), and ' +
+        '`deadLetteredEver`, the streams\' own counts of every letter ' +
+        'including deleted ones.', {}),
+      timeline: openObject(
+        'The held letters by when they were dead-lettered, over the ' +
+        'retention window ending now: `bucketS`, `windowS`, `from`, `to`, ' +
+        '`peak`, `olderThanWindow` (held but due to be swept) and `buckets`, ' +
+        'each with its `start`, `total` and `counts` per cause.', {}),
+      byCode: { type: 'array',
+        description: 'Held letters per error code, biggest first, with the ' +
+                     'code\'s cause and summary.',
+        items: openObject('`errorCode`, `cause`, `summary`, `count`.', {}) },
+      byStatus: { type: 'array',
+        description: 'Held letters per HTTP status the receiver answered; ' +
+                     '`0` is no answer — not pushed, or nothing answered.',
+        items: openObject('`status`, `count`.', {}) },
+      byEventType: { type: 'array',
+        description: 'Held letters per event type URI.',
+        items: openObject('`type`, `name`, `count`.', {}) },
+      streams: { type: 'array',
+        description: 'Every stream holding a letter or not delivering, dead ' +
+                     'first: `state` is `dead`, `half-open`, `failing`, ' +
+                     '`healthy`, `poll` or `unknown` (letters for a stream ' +
+                     'this process does not hold), with its letters by ' +
+                     'cause and its dead or failing times.',
+        items: openObject('One stream.', {}) },
+      letters: { type: 'array',
+        description: 'Held letters, newest first, narrowed by `dlq`, ' +
+                     '`dlstream` and `dlcause` and paged by `lettersPage`. ' +
+                     'No token.',
+        items: openObject('One dead letter.', {}) },
+      matched: { type: 'integer',
+        description: 'How many letters the narrowing matched, before paging.' },
+      filter: openObject('`q`, `stream` and `cause`, each null when not ' +
+                         'narrowed.', {}),
+      paging: openObject('`letters`: where in the matched list this page is.',
+                         {}),
+      settings: openObject('The seven `ssf.*` settings that decide what is ' +
+                           'dead-lettered and for how long.', {}),
+      process: openObject(
+        'The answering process: `pid`, `role`, `pushes` (its push cap: ' +
+        '`active`, `waiting`, `concurrency`, `backlog`), `sweeps` (its last ' +
+        'twenty sweeps of this realm) and `sinceStart`.', {})
     }),
 
   ScimMonitor: openObject(
@@ -5018,6 +5154,18 @@ function operationOf(entry, action) {
   if (mirrors) {
     parts.push('\n\n**Mirrors** `' + mirrors + '` on the admin console.');
   }
+  // THE ONE MEMBER NO VIEW ADDS: `mgmt-api/admin_api.js`'s `sendJson()` puts
+  // it on the reply of a GET mirroring exactly one Protocols page, so it is
+  // said here from the same test rather than in forty descriptions.
+  const mirroredPage = /^GET (\/admin\S*)$/.exec(String(mirrors));
+  if (!action && entry.method === 'GET' && mirroredPage &&
+      protocolEndpoints.pages().indexOf(mirroredPage[1]) >= 0) {
+    parts.push('\n\nThe reply also carries `protocolEndpoints`: every ' +
+               'endpoint of this family in the realm the call arrived in, ' +
+               'as `{ name, methods, url }` (plus `route` for an HTTP ' +
+               'endpoint, `transport` for a socket, and `registered: false` ' +
+               'for a route the router no longer has).');
+  }
   const operation = {
     operationId: source.operationId,
     summary: source.summary,
@@ -5168,6 +5316,10 @@ function buildSpec(routes, options) {
 
 const TAG_DESCRIPTIONS = {
   Service: 'What this API is, its document, and the explorer that calls it.',
+  SCEP: 'The Simple Certificate Enrolment Protocol (RFC 8894) server of this ' +
+        'realm: its Issuing CA and RA certificate, the single-use challenge ' +
+        'passwords that authorize an enrollment, registered host names, the ' +
+        'certificates issued over it, and what it has done.',
   GNAP: 'The Grant Negotiation and Authorization Protocol (RFC 9635) and its ' +
         'resource server connections (RFC 9767): the authorization server of ' +
         'this realm, what the applications using it have done, and the two ' +

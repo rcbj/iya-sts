@@ -96,6 +96,10 @@ const certificateDialog = require('./certificate_dialog');
 // (2026-09-13) — the same pair `/admin/keys` draws with. See pqc_badge.js.
 const pqcSupport = require('../common/pqc_support');
 const pqcBadge = require('./pqc_badge');
+// The paging arithmetic every console list uses (`pagedRows()`,
+// `pagingJson()`). A LIBRARY that registers nothing, and `admin.js` above has
+// already loaded it, so this require is a cache hit that moves no route.
+const adminViews = require('../admin-core/admin_views');
 
 // RFC 4517 GeneralizedTime, which is how every timestamp in this directory is
 // spelled. Written here rather than imported because `applications.js` keeps
@@ -117,6 +121,109 @@ function generalizedTime(when) {
 }
 
 const esc = admin.esc;
+
+// ---------------------------------------------------------------------------
+// THE TWO KEY-PAIR TABLES ARE PAGED (2026-09-13).
+//
+// *Applications* and *People* drew every row they had, and each grows by one
+// row per profile per holder — so a realm that had issued key pairs to a few
+// hundred applications put the People table, the revocation pane and the
+// certificate pane several thousand pixels below the controls above them.
+//
+// **TWO LISTS ON ONE PAGE, SO EACH HAS A PAGE PARAMETER OF ITS OWN AND THEY
+// SHARE ONE `per`** — `issuedPage` and `personsPage`, which is
+// `pagingOf()`'s `options.name` and the arrangement `/admin/consent` and
+// `/admin/kerberos/principals` already have. A single `page` would mean
+// `next ›` under People silently advancing the Applications table. The names
+// are the JSON members' own with `Page` on the end, answered by `issuedPaging`
+// and `personsPaging`, which is `/admin-api`'s one-name-per-list rule
+// (`detailPagingParameters()` in `mgmt-api/admin_api.js`): a caller that can
+// read the reply can write the request without a table between the two.
+//
+// **The Applications table pages its ROWS and the People table pages PEOPLE.**
+// That is not an inconsistency: `issued` is already one row per application
+// per profile, so its rows ARE its units, while `persons` is one member per
+// person with the RFC 7522 key pair nested, and the page draws up to two rows
+// for each. Paging the drawn rows there would give `personsPaging` numbers
+// that index into nothing the JSON holds.
+//
+// **`?format=json` AND `GET /admin-api/pki` STILL CARRY BOTH LISTS WHOLE**,
+// with `issuedPaging` and `personsPaging` beside them saying what the page
+// drew — `/admin/delegation`'s rule. The tiles above the tables count the
+// whole lists, and every existing reader of `issued` looks an application up
+// in it by identifier; a reply that silently held one page would answer
+// "not there" about an application on page two.
+//
+// Twenty-five rows rather than the console's fifty because this page carries
+// eight sections, and fifty rows apiece puts the People heading out of reach
+// of anything but the scrollbar. `?per=` overrides it for both.
+// ---------------------------------------------------------------------------
+const KEY_PAIR_PER_PAGE = 25;
+const KEY_PAIR_LIST_PARAMS = ['per', 'issuedPage', 'personsPage'];
+
+// The two tables' paging state out of a query, and ONLY those names: what comes
+// out of here is put into every paging link and every Take-off button's `back`,
+// so the set of names is one this file wrote. A repeated parameter is its first
+// value, and a value that is not a positive integer is dropped rather than
+// carried — `pagingOf()` would clamp it anyway, and a link has no business
+// repeating it.
+function keyPairListView(query) {
+  log.debug("Entering keyPairListView().");
+  const out = {};
+  KEY_PAIR_LIST_PARAMS.forEach(function (name) {
+    const raw = (query || {})[name];
+    const first = Array.isArray(raw) ? raw[0] : raw;
+    const value = first == null ? '' : String(first);
+    if (/^[1-9][0-9]{0,5}$/.test(value)) {
+      out[name] = value;
+    }
+  });
+  log.debug("Leaving keyPairListView(). " + Object.keys(out).length +
+            " parameter(s).");
+  return out;
+}
+
+// The same thing out of a Take-off button's `back` field, which is a query
+// string a browser sent rather than one this page is looking at. REBUILT and
+// never echoed, for `listViewFromBack()`'s reason in `admin.js`: it ends up
+// in a `Location` header, and the worst a hand-written one can reach is
+// another page of these two tables.
+function keyPairListViewFromBack(raw) {
+  log.debug("Entering keyPairListViewFromBack().");
+  const query = {};
+  try {
+    new URLSearchParams(String(raw || '').replace(/^\?/, ''))
+      .forEach(function (value, key) {
+        if (!Object.prototype.hasOwnProperty.call(query, key)) {
+          query[key] = value;
+        }
+      });
+  } catch (e) {
+    // Unparseable: the first page of each table, which is what a form carrying
+    // no `back` at all gets too.
+    log.debug("Caught in keyPairListViewFromBack(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving keyPairListViewFromBack().");
+  return keyPairListView(query);
+}
+
+// Both tables' slices and paging, from one query. Called by `pkiJson()` for the
+// two paging members and by `renderPki()` for the rows, over the same two
+// arrays, so the page and `personsPaging` cannot describe different slices.
+function keyPairPaging(query, json) {
+  log.debug("Entering keyPairPaging().");
+  const q = query || {};
+  const out = {
+    applications: adminViews.pagedRows(q, json.issued || [],
+      { name: 'issued', noun: 'application rows',
+        defaultPer: KEY_PAIR_PER_PAGE }),
+    people: adminViews.pagedRows(q, json.persons || [],
+      { name: 'persons', noun: 'people', defaultPer: KEY_PAIR_PER_PAGE })
+  };
+  log.debug("Leaving keyPairPaging().");
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // WHICH ATTRIBUTES AN ISSUE WRITES, PER PROFILE.
@@ -598,6 +705,11 @@ function pkiJson(req, draft) {
     settings: admin.configSettingsJson
       ? admin.configSettingsJson('/admin/pki') : null
   };
+  // What the two tables on the page drew, beside the whole lists — see
+  // `keyPairPaging()` above for why the lists themselves are not sliced.
+  const paged = keyPairPaging(req && req.query, json);
+  json.issuedPaging = adminViews.pagingJson(paged.applications.paging);
+  json.personsPaging = adminViews.pagingJson(paged.people.paging);
   log.debug('Leaving pkiJson(). ' + json.issued.length + ' application(s).');
   return json;
 }
@@ -3492,6 +3604,17 @@ function renderPki(req, res, draft, banner, extra, certificate) {
   }
   const chain = json.chain;
   const keyAlg = config.value('pki.keyAlgorithm');
+  // The two key-pair tables' pages. Every paging link carries both tables'
+  // state, and every Take-off button carries it as `back`, so moving or
+  // changing one table leaves the other where the reader left it.
+  const paged = keyPairPaging(req.query, json);
+  const listView = keyPairListView(req.query);
+  const applicationsNav = admin.pageNavPair('/admin/pki', listView,
+                                            paged.applications.paging);
+  const peopleNav = admin.pageNavPair('/admin/pki', listView,
+                                      paged.people.paging);
+  const carryBack = '<input type="hidden" name="back" value="' +
+    esc(adminViews.queryWith(listView, {})) + '">';
 
   const tiles = '<div class="tiles">' +
     admin.tile(chain ? 'yes' : 'no', 'hierarchy built') +
@@ -3719,10 +3842,11 @@ function renderPki(req, res, draft, banner, extra, certificate) {
       // A ROW PER PROFILE A PERSON HOLDS OR DECLARES (2026-09-13), for the
       // applications table's reason: every fact on the row — the handle, the
       // expiry, the declared issuer and the Take-off button — is per profile.
-      ? '<table><thead><tr><th>Person</th><th>Profile</th>' +
+      ? peopleNav.head +
+        '<table><thead><tr><th>Person</th><th>Profile</th>' +
         '<th>Key handle</th><th>Source</th><th>Expires</th>' +
         '<th>Asserts as</th><th></th></tr></thead><tbody>' +
-        json.persons.reduce(function (rows, one) {
+        paged.people.shown.reduce(function (rows, one) {
           [{ id: 'jwt', label: 'RFC 7523 (JWT)', handleLabel: 'kid',
              fact: one, handle: one.kid },
            { id: 'saml', label: 'RFC 7522 (SAML 2.0)',
@@ -3753,22 +3877,23 @@ function renderPki(req, res, draft, banner, extra, certificate) {
                   '<input type="hidden" name="target" value="person">' +
                   '<input type="hidden" name="purpose" value="' + p.id + '">' +
                   '<input type="hidden" name="identifier" value="' +
-                    esc(one.username) + '">' +
+                    esc(one.username) + '">' + carryBack +
                   '<button type="submit">Take this key pair off</button>' +
                   '</form>'
                 : '') + '</td>' +
               '</tr>');
           });
           return rows;
-        }, []).join('') + '</tbody></table>'
+        }, []).join('') + '</tbody></table>' + peopleNav.foot
       : '<p>Nobody in this realm holds an assertion key pair.</p>');
 
   const issuedRows = json.issued.length
-    ? '<table><thead><tr><th>Application</th><th>Profile</th>' +
+    ? applicationsNav.head +
+      '<table><thead><tr><th>Application</th><th>Profile</th>' +
       '<th>Key handle</th><th>Expires</th>' +
       '<th>Declared issuer</th><th>Own keys</th><th></th></tr>' +
       '</thead><tbody>' +
-      json.issued.map(function (one) {
+      paged.applications.shown.map(function (one) {
         return '<tr>' +
           '<td><a href="/admin/applications?application=' +
             encodeURIComponent(one.identifier) + '">' +
@@ -3793,11 +3918,11 @@ function renderPki(req, res, draft, banner, extra, certificate) {
               '<input type="hidden" name="identifier" value="' +
                 esc(one.identifier) + '">' +
               '<input type="hidden" name="purpose" value="' +
-                esc(one.purpose) + '">' +
+                esc(one.purpose) + '">' + carryBack +
               '<button type="submit">Take this key pair off</button></form>'
             : '') + '</td>' +
           '</tr>';
-      }).join('') + '</tbody></table>'
+      }).join('') + '</tbody></table>' + applicationsNav.foot
     : '<p>No application in this realm holds a key pair issued here, and ' +
       'none declares an assertion issuer.</p>';
 
@@ -3895,9 +4020,15 @@ function renderPki(req, res, draft, banner, extra, certificate) {
                          chainTable(chain) +
                          pemBlocks(chain) : '') +
                 buildForm + issueForm +
-                '<h3>Applications</h3>' + twoActs + issuedRows +
+                '<h3 id="pki-applications">Applications</h3>' + twoActs +
+                (json.issued.length || json.persons.length
+                  ? admin.perPageForm('/admin/pki', 'issuedPage', '1',
+                      paged.applications.paging.perPage,
+                      'That is this table and the People table below it.')
+                  : '') +
+                issuedRows +
                 personForm +
-                '<h3>People</h3>' + personRows +
+                '<h3 id="pki-people">People</h3>' + personRows +
                 revocationPane(json) +
                 certificatePane(json, json.workbench.draft) +
                 admin.configFormsFor('/admin/pki') +
@@ -4085,6 +4216,18 @@ function pkiReturnTo(body) {
       identifier && typeof admin.userReturnTo === 'function') {
     log.debug("Leaving pkiReturnTo(). The person's page.");
     return admin.userReturnTo(body, identifier, '#credentials');
+  }
+  // A TAKE-OFF BUTTON IN ONE OF THIS PAGE'S TWO PAGED TABLES (2026-09-13),
+  // which carries `back` so the reader lands on the page of the table they
+  // pressed it in rather than on page 1 of both, several screens above it. Only
+  // those buttons carry the field; every other control here posts without it
+  // and gets the bare page, as before.
+  if (body && Object.prototype.hasOwnProperty.call(body, 'back')) {
+    log.debug("Leaving pkiReturnTo(). This page, at a key-pair table.");
+    return '/admin/pki' +
+           adminViews.queryWith(keyPairListViewFromBack(body.back), {}) +
+           (String(body.target || '') === 'person' ? '#pki-people'
+                                                   : '#pki-applications');
   }
   log.debug("Leaving pkiReturnTo(). This page.");
   return '/admin/pki';
@@ -4279,5 +4422,10 @@ module.exports = {
   // drawn and never parsed is a control that does nothing. Neither shows up as
   // an error anywhere. So the test renders the pane and compares the two
   // lists, which it cannot do without this.
-  paneHtml: certificatePane
+  paneHtml: certificatePane,
+  // For `tests/pki_key_pair_paging.js` ONLY. Where a Take-off button in one of
+  // the two paged tables sends the browser is a `Location` header built out
+  // of a request body, so the test holds the rebuild — the page kept, anything
+  // else dropped — rather than trusting that a redirect nobody reads is right.
+  returnTo: pkiReturnTo
 };

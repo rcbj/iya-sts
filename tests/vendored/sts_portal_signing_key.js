@@ -791,10 +791,168 @@ async function test() {
           assert.strictEqual(thumbprintOn(nothingLeft.text), "");
         });
 
+  // -------------------------------------------------------------------------
+  // 9. A TLS CLIENT CERTIFICATE (2026-09-13), the third card on this page.
+  //
+  //    What is asserted here is the PORTAL: the files arrive once, on the
+  //    response to the POST, and are what they say they are; a mismatched file
+  //    password and a missing CSRF token issue nothing; one person cannot
+  //    revoke another's certificate by naming its serial; the holder can. The
+  //    HANDSHAKE — 9443 signing the holder in, in their realm, and refusing the
+  //    certificate once it is revoked — is `tests/tls_client_certificates.js`,
+  //    because no launcher here publishes 9443 to a job.
+  // -------------------------------------------------------------------------
+  log.info("=== 9. a TLS client certificate ===");
+  const FILE_PASSWORD = "file password " + jti().slice(0, 8);
+  const dataLink = function (text, suffix, mime) {
+    log.debug("Entering dataLink().");
+    const pattern = new RegExp('download="([^"]*' + suffix.replace(/\./g,
+      "\\.") + ')" href="data:' + mime.replace(/[/+.]/g, "\\$&") +
+      ';base64,([A-Za-z0-9+/=]+)"');
+    const found = pattern.exec(String(text || ""));
+    log.debug("Leaving dataLink().");
+    return found ? { name: found[1],
+                     bytes: Buffer.from(found[2], "base64") } : null;
+  };
+  const tlsPage = await b.go("GET", "/portal/signing-key");
+  check("the page carries a TLS client certificate card with a generate form " +
+        "asking for a file password twice", function () {
+          assert.ok(/id="tls-client"/.test(tlsPage.text),
+            "no TLS client certificate card on the page");
+          assert.ok(/name="action" value="generate-tls-client"/.test(
+            tlsPage.text) && /name="p12_password"/.test(tlsPage.text) &&
+            /name="p12_confirm"/.test(tlsPage.text),
+            "the generate form is not on the page");
+          assert.ok(/You have no TLS client certificate/.test(tlsPage.text),
+            "the card does not say none is held");
+        });
+  const mismatched = await b.go("POST", "/portal/signing-key",
+    formBody({ action: "generate-tls-client", label: "laptop",
+               p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD + "x",
+               csrf_token: csrfOf(tlsPage.text) }));
+  check("two different file passwords are refused 400 and nothing is issued",
+        function () {
+          assert.strictEqual(mismatched.status, 400,
+            "it answered " + mismatched.status);
+          assert.ok(!dataLink(mismatched.text, ".p12", "application/x-pkcs12"),
+            "a PKCS#12 came back for a mismatched password");
+          assert.ok(/You have no TLS client certificate/.test(mismatched.text),
+            "a certificate was issued anyway");
+        });
+  const noCsrfTls = await b.go("POST", "/portal/signing-key",
+    formBody({ action: "generate-tls-client", p12_password: FILE_PASSWORD,
+               p12_confirm: FILE_PASSWORD }));
+  check("a generate with no CSRF token is refused 403 and issues nothing",
+        function () {
+          assert.strictEqual(noCsrfTls.status, 403,
+            "it answered " + noCsrfTls.status);
+          assert.ok(!dataLink(noCsrfTls.text, ".p12", "application/x-pkcs12"));
+        });
+  const tlsIssued = await b.go("POST", "/portal/signing-key",
+    formBody({ action: "generate-tls-client", label: "laptop",
+               key_alg: "ec-p256", p12_password: FILE_PASSWORD,
+               p12_confirm: FILE_PASSWORD,
+               csrf_token: csrfOf(mismatched.text) }));
+  const p12 = dataLink(tlsIssued.text, ".p12", "application/x-pkcs12");
+  const keyFile = dataLink(tlsIssued.text, "-key.pem",
+                           "application/x-pem-file");
+  const chainFile = dataLink(tlsIssued.text, "-chain.pem",
+                             "application/x-pem-file");
+  check("**THE POST ANSWERS WITH THE THREE FILES**, no-store, as download " +
+        "links on the page that also says how to install them", function () {
+          assert.strictEqual(tlsIssued.status, 200,
+            "it answered " + tlsIssued.status + " " +
+            String(tlsIssued.text).slice(0, 400));
+          assert.ok(p12 && keyFile && chainFile,
+            "the three download links are not all on the page");
+          assert.ok(/no-store/.test(
+            String(tlsIssued.headers.get("cache-control") || "")));
+          assert.ok(/Firefox/.test(tlsIssued.text) &&
+                    /Keychain Access/.test(tlsIssued.text),
+            "the page carries no install steps");
+          assert.ok(/only time these files can be downloaded/.test(
+            tlsIssued.text), "the page does not say the files are shown once");
+        });
+  const chainText = chainFile ? chainFile.bytes.toString("utf8") : "";
+  const leafPem = (/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/
+    .exec(chainText) || [""])[0];
+  const tlsLeaf = leafPem ? new nodeCrypto.X509Certificate(leafPem) : null;
+  check("the chain file's leaf is a TLS client certificate for this person " +
+        "and nobody else: clientAuth, their CN and their urn:sts:person: name",
+        function () {
+          assert.ok(tlsLeaf, "the chain file holds no certificate");
+          assert.ok((tlsLeaf.keyUsage || []).indexOf("1.3.6.1.5.5.7.3.2") >= 0,
+            "no clientAuth: " + JSON.stringify(tlsLeaf.keyUsage));
+          assert.ok(new RegExp("(^|\\n)CN=" + OWNER + "(\\n|$)")
+            .test(tlsLeaf.subject), tlsLeaf.subject);
+          assert.ok(String(tlsLeaf.subjectAltName).indexOf(
+            "URI:urn:sts:person:" + OWNER) >= 0, tlsLeaf.subjectAltName);
+          assert.strictEqual(chainText.split("BEGIN CERTIFICATE").length - 1,
+                             3,
+                             "the chain file is not the leaf and two " +
+                             "issuers");
+        });
+  check("the key file is ENCRYPTED, opens with the file password, and holds " +
+        "the certificate's key; the PKCS#12 is DER", function () {
+          const keyText = keyFile.bytes.toString("utf8");
+          assert.ok(/ENCRYPTED PRIVATE KEY/.test(keyText),
+            "the key file is not an encrypted PKCS#8 block");
+          const opened = nodeCrypto.createPrivateKey({ key: keyText,
+            format: "pem", passphrase: FILE_PASSWORD });
+          assert.ok(nodeCrypto.createPublicKey(opened)
+            .export({ type: "spki", format: "der" })
+            .equals(tlsLeaf.publicKey.export({ type: "spki", format: "der" })),
+            "the key in the file is not the certificate's");
+          assert.ok(p12.bytes[0] === 0x30 && p12.bytes.length > 500,
+            "the .p12 is not a DER SEQUENCE");
+        });
+  const tlsSerial = tlsLeaf ? String(tlsLeaf.serialNumber).toLowerCase() : "";
+  const tlsListed = await b.go("GET", "/portal/signing-key");
+  check("afterwards the page lists it as valid and offers the files NO MORE",
+        function () {
+          assert.ok(tlsListed.text.toLowerCase()
+                      .indexOf(tlsSerial.slice(-16)) >= 0,
+                    "the serial is not listed");
+          assert.ok(/class="state-valid">valid/.test(tlsListed.text),
+            "it is not listed as valid");
+          assert.ok(!dataLink(tlsListed.text, ".p12", "application/x-pkcs12"),
+            "the PKCS#12 is still on the page");
+        });
+  const otherBrowser = await signIn("/portal/signing-key", OTHER);
+  const otherPage = await otherBrowser.go("GET", "/portal/signing-key");
+  const otherRevoke = await otherBrowser.go("POST", "/portal/signing-key",
+    formBody({ action: "revoke-tls-client", serial: tlsSerial,
+               reason: "keyCompromise", csrf_token: csrfOf(otherPage.text) }));
+  const ownerStill = await b.go("GET", "/portal/signing-key");
+  check("**ANOTHER PERSON NAMING THE SERIAL REVOKES NOTHING** — refused 400, " +
+        "and the holder's certificate is still valid", function () {
+          assert.ok(otherPage.text.toLowerCase().indexOf(tlsSerial.slice(-16)) <
+                    0, "the other person's page lists the owner's certificate");
+          assert.strictEqual(otherRevoke.status, 400,
+            "it answered " + otherRevoke.status);
+          assert.ok(/class="state-valid">valid/.test(ownerStill.text),
+            "the owner's certificate is no longer valid");
+        });
+  const ownRevoke = await b.go("POST", "/portal/signing-key",
+    formBody({ action: "revoke-tls-client", serial: tlsSerial,
+               reason: "cessationOfOperation",
+               csrf_token: csrfOf(ownerStill.text) }));
+  const afterRevoke = await b.go("GET", "/portal/signing-key");
+  check("the holder revokes it: a 303 saying so, and the page lists it as " +
+        "revoked with no Revoke button left on it", function () {
+          assert.strictEqual(ownRevoke.status, 303,
+            "it answered " + ownRevoke.status + " " +
+            String(ownRevoke.text).slice(0, 300));
+          assert.ok(/class="state-revoked">revoked/.test(afterRevoke.text),
+            "it is not listed as revoked");
+          assert.ok(!/name="action" value="revoke-tls-client"/.test(
+            afterRevoke.text), "a Revoke button is still drawn");
+        });
+
   // A FLOOR ON THE CHECK COUNT, for `sts_roles.js`'s reason: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure a suite cannot report about itself.
-  assert.ok(checks >= 31,
+  assert.ok(checks >= 40,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -811,7 +969,10 @@ program
       "token is refused, a username in the body changes nothing, generating " +
       "replaces and taking it off stops it being accepted; and the same " +
       "for an RFC 7522 key pair beside it, which signs no JWT, is signed " +
-      "for by no JWT key, and comes off alone.")
+      "for by no JWT key, and comes off alone; and a TLS client certificate " +
+      "downloaded once as a PKCS#12 and PEM files, refused on a mismatched " +
+      "file password or no CSRF token, revocable by its holder and by nobody " +
+      "else.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

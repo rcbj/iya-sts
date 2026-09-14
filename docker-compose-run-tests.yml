@@ -373,6 +373,7 @@ services:
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
+      - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}
       # WHERE THE TWO PERSISTING MODES DIAL, and it is `sts_app` rather than
@@ -473,7 +474,7 @@ services:
       # config.js does rather than assuming http. `rejectUnauthorized: false`
       # because the certificate is regenerated on every start and nothing can
       # have an anchor for it: liveness is this check's question, not trust.
-      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&process.env.STS_OAUTH2_RFC9700==='true');var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
       interval: 5s
       timeout: 5s
       retries: 24
@@ -556,6 +557,16 @@ services:
       # is refused, which is what a `docker compose -f this up` by hand gets.
       - PEP_TLS_CERT=${XACML_PEP_TLS_CERT:-}
       - PEP_TLS_KEY=${XACML_PEP_TLS_KEY:-}
+      # THE HTTPS LISTENER'S PAIR (2026-09-13). The files do not exist when this
+      # container starts: sts_xacml_remote_pep.js issues the pair through
+      # /admin-api/xacml/issue-pep-certificate once this PEP has registered in
+      # the realm the job creates, and writes it into `server/` under the
+      # mounted directory — which the tests container sees too, under
+      # tests/report — and the PEP picks it up on its reload interval.
+      - PEP_HTTPS_CERT=${XACML_PEP_HTTPS_CERT:-}
+      - PEP_HTTPS_KEY=${XACML_PEP_HTTPS_KEY:-}
+      - PEP_HTTPS_PORT=9443
+      - PEP_HTTPS_RELOAD_INTERVAL_MS=1000
       # The service regenerates and self-signs its key on every start, so there
       # is no anchor any image could hold. `pep.js` logs this on every start
       # rather than once, for federation_http.js's reason.
@@ -664,6 +675,17 @@ services:
       # publishes anything, and the tests container is on the bridge with it.
       # ---------------------------------------------------------------------
       - XACML_PEP_URL=${XACML_PEP_URL:-http://xacml-pep:9090}
+      # ---------------------------------------------------------------------
+      # AND ITS HTTPS LISTENER (2026-09-13): where the job dials it once it
+      # has issued the pair, and where it writes that pair. The directory is
+      # the PEP's `/certs/server` seen from HERE — ./tests/report is mounted
+      # below and the launcher's credential directory is inside it — which is
+      # the only way a file this container writes reaches that one. Empty in
+      # a stack with no launcher, and the job then says why it is skipping
+      # the section rather than failing it.
+      # ---------------------------------------------------------------------
+      - XACML_PEP_HTTPS_URL=${XACML_PEP_HTTPS_URL:-}
+      - XACML_PEP_SERVER_CERT_DIR=${XACML_PEP_SERVER_CERT_DIR:-}
       # ---------------------------------------------------------------------
       # WHERE THE SERVICE DIALS BACK INTO THIS CONTAINER (2026-09-12).
       # `sts_gnap_core` runs a listener in the job and has the authorization

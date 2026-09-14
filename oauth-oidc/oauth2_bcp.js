@@ -100,9 +100,10 @@
 // (client authentication) and 2.6 (the other recommendations) all have rows in
 // the table, including the ones this server already satisfied.
 //
-// NOT here: Pushed Authorization Requests (RFC 9126) and Resource Indicators
-// (RFC 8707), which are FEATURES this service does not implement rather than
-// constraints it declines to enforce — `resource` is not read anywhere, so
+// NOT here: Pushed Authorization Requests (RFC 9126, `par.js`, 2026-09-13) and
+// Resource Indicators (RFC 8707), which are FEATURES in every mode rather than
+// constraints this mode enforces. (What follows about 8707 predates it being
+// read — see oauth-oidc/CLAUDE.md 3f — and is kept as written.) — `resource` is not read anywhere, so
 // there is nothing to restrict an audience by beyond the single resource server
 // every access token here is already restricted to. Client authentication at
 // `/oauth2/introspect` and `/oauth2/revoke` is likewise not enforced: those are
@@ -131,6 +132,17 @@ const config = require('../common/config');
 // revoke-on-logout.
 const applications = require('../common/applications');
 const clientAuth = require('./client_auth');
+// OAUTH 2.1 MODE, which IMPLIES this one (2026-09-13). A LEAF requiring only
+// helpers.js and config.js, so this require closes no cycle — and it is here
+// for the two places this mode has to step aside for a client that follows
+// OAuth 2.1 to the letter (the token request's redirect_uri, and the fallback
+// to oauth2.redirectUris), plus the refusals 2.1 adds at the checks already
+// in this file. `oauth-oidc/CLAUDE.md` rule 3ah.
+const oauth21 = require('./oauth21');
+// The redirect allowlist's one question this file needs answered — is a URI a
+// native app's private-use one. validation.js requires config.js, zod and
+// error_codes.js and nothing here, so this closes no cycle.
+const validation = require('../common/validation');
 
 // ---------------------------------------------------------------------------
 // THE TABLE.
@@ -287,7 +299,8 @@ const REQUIREMENTS = [
       log.debug("Entering response-over-tls.note().");
       if (mainPortIsTls()) {
         log.debug("Leaving response-over-tls.note().");
-        return 'The redirect TARGET must be https (see http-scheme-refused), ' +
+        return 'The redirect TARGET must not be http off the loopback (see ' +
+               'http-scheme-refused), ' +
                'and the connection the response goes out over is TLS: ' +
                'global.https is on, so the main port is an HTTPS listener ' +
                'serving the same self-signed certificate 8443, 9443 and ' +
@@ -299,8 +312,9 @@ const REQUIREMENTS = [
       }
       log.debug("Leaving response-over-tls.note().");
       return 'HALF ENFORCED, and the half that is not has been turned off ' +
-             'deliberately: the redirect TARGET must be https (see ' +
-             'http-scheme-refused), but global.https is off, so ' +
+             'deliberately: the redirect TARGET must not be http off the ' +
+             'loopback (see http-scheme-refused), but global.https is off, ' +
+             'so ' +
              '/oauth2/authorize is reachable over plain http and an ' +
              'authorization response goes back over an unencrypted ' +
              'connection. That is a reachable case on purpose — a client ' +
@@ -395,11 +409,16 @@ const REQUIREMENTS = [
     appliesTo: 'authorization server', enforced: 'yes',
     title: 'Do not allow an http redirect URI except for a native-app ' +
            'loopback redirect',
-    note: 'https everywhere else. A private-use URI scheme (RFC 8252 section ' +
-          '7.1, com.example.app:/cb) is refused by this endpoint whether the ' +
-          'mode is on or off — it requires an absolute http(s) URI — which ' +
-          'is a limitation of the mock rather than a position on the ' +
-          'specification.' },
+    note: 'https everywhere else — or a native application\'s PRIVATE-USE ' +
+          'scheme (RFC 8252 section 7.1, com.example.app:/cb), which this ' +
+          'endpoint accepts in every mode since 2026-09-13 and matches by ' +
+          'exact string like any other registered URI. A scheme with no ' +
+          'period in it is refused in every mode (common/validation.js ' +
+          'redirectUriProblem()): it is not named for a domain, and it is ' +
+          'what localhost:3000/cb typed without http:// parses as. Until ' +
+          'that date this note said a private-use scheme was refused whether ' +
+          'the mode was on or off, which was a limitation of the mock rather ' +
+          'than a position on the specification.' },
 
   // --- section 2.1.1 — the authorization code grant -----------------------
   { id: 'pkce-public-clients', section: '2.1.1', level: 'MUST',
@@ -699,7 +718,13 @@ const REQUIREMENTS = [
           'grant widening itself by being renewed. The refresh token now ' +
           'carries `resources`, the refreshed access token takes its ' +
           'audience from them, and a refresh asking for one the grant does ' +
-          'not carry is refused with invalid_target.' },
+          'not carry is refused with invalid_target. A NARROWED refresh ' +
+          'narrows the ACCESS token only: the rotated refresh token carries ' +
+          'the scope and resources of the one presented (RFC 6749 section 6, ' +
+          'in both modes since 2026-09-13), so narrowing once does not ' +
+          'shrink the grant for good. Without the mode a refresh may still ' +
+          'WIDEN the access token\'s scope — the check that refuses it is ' +
+          'this mode\'s.' },
 
   { id: 'refresh-idle-timeout', section: '2.2.2', level: 'SHOULD',
     appliesTo: 'authorization server', enforced: 'yes',
@@ -837,6 +862,20 @@ const REQUIREMENTS = [
           'never seen. Note what none of it extends to: no password of any ' +
           'END USER is checked here, in this mode or any other.' },
 
+  { id: 'client-secret-brute-force', section: '2.5', level: 'MUST',
+    appliesTo: 'authorization server', enforced: 'always',
+    title: 'A client secret that is checked is not checked unthrottled',
+    note: 'OAuth 2.1 section 2.4.1 says it outright and this mode is where a ' +
+          'secret starts being checked, so it is reported here too. Since ' +
+          '2026-09-13, wherever the token endpoint REFUSES a client secret ' +
+          '(this mode, OAuth 2.1 mode, product mode) the failure is counted ' +
+          'per realm, per client_id AND client address together — so nobody ' +
+          'elsewhere can lock a client out — and past ' +
+          'security.rateLimitPerIdentity failures in ' +
+          'security.rateLimitWindowS the request is answered 429 with ' +
+          'Retry-After before the secret is looked at. A success is never ' +
+          'counted.' },
+
   { id: 'client-credential-issuance', section: '2.5', level: 'SHOULD',
     appliesTo: 'authorization server', enforced: 'always',
     title: 'Have a process for issuing client credentials',
@@ -878,11 +917,12 @@ const REQUIREMENTS = [
   { id: 'no-cors-at-authorize', section: '2.6', level: 'MUST NOT',
     appliesTo: 'authorization server', enforced: 'yes',
     title: 'CORS must not be supported at the authorization endpoint',
-    note: 'This service sends Access-Control-Allow-Origin: * on every ' +
-          'response, which is right for the token, userinfo and metadata ' +
-          'endpoints an in-browser client fetches and wrong at the ' +
-          'authorization endpoint, which a browser NAVIGATES to. In this ' +
-          'mode the headers are withheld from /oauth2/authorize alone. ' +
+    note: 'This service sends CORS headers to the origins it calls its ' +
+          'own and to those an application lists in appCorsOrigin, which ' +
+          'is right for the token, userinfo and metadata endpoints an ' +
+          'in-browser client fetches and wrong at the authorization ' +
+          'endpoint, which a browser NAVIGATES to. In this mode the headers ' +
+          'are withheld from /oauth2/authorize for every origin. ' +
           'Nothing legitimate breaks: a navigation is not a cross-origin ' +
           'fetch and never carried them.' },
 
@@ -1299,16 +1339,23 @@ const REQUIREMENTS = [
 // config.js): a `const` here is the one thing /admin/config could not change,
 // and it would fail in the direction that looks like the console is broken.
 // ---------------------------------------------------------------------------
+// ON FOR EITHER FLAG. `oauth2.oauth21` implies this mode: OAuth 2.1 is OAuth
+// 2.0 with the best current practices applied, and every row in REQUIREMENTS
+// is one of those. So a realm carrying only `oauth2.oauth21` gets every check
+// here as well as oauth21.js's own, and `state()` says which flag did it.
 function enabled() {
   log.debug("Entering enabled().");
   log.debug("Leaving enabled().");
-  return !!config.value('oauth2.rfc9700');
+  return !!config.value('oauth2.rfc9700') || oauth21.enabled();
 }
 
+// OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
+// setting that can turn it off — see oauth21.js's `loopback-any-port` row.
 function loopbackPortWildcard() {
   log.debug("Entering loopbackPortWildcard().");
   log.debug("Leaving loopbackPortWildcard().");
-  return !!config.value('oauth2.loopbackPortWildcard');
+  return !!config.value('oauth2.loopbackPortWildcard') ||
+         oauth21.loopbackAnyPort();
 }
 
 // Whether the port `/oauth2/authorize` answers on is a TLS listener. Read from
@@ -1353,6 +1400,14 @@ function registeredUrisFor(client) {
     return { list: client.redirect_uris.map(String),
              source: 'this client\'s own entry in the application registry ' +
                      '(ou=applications, attribute oauthRedirectUri)' };
+  }
+  // OAuth 2.1 section 2.3.1: a client registers ITS OWN complete redirect URI,
+  // and a list every client may use is the opposite of that — so that mode
+  // answers with nothing to match and `checkRedirectUri()` refuses by name.
+  if (oauth21.enabled()) {
+    log.debug("Leaving registeredUrisFor(). OAuth 2.1 mode reads no fallback.");
+    return { list: [], source: 'this client\'s own entry (OAuth 2.1 mode ' +
+                               'does not read oauth2.redirectUris)' };
   }
   const list = configuredRedirectUris();
   log.debug("Leaving registeredUrisFor(). " + list.length + " URI(s) from " +
@@ -1494,6 +1549,13 @@ function checkRedirectUri(opts) {
                           '"' + presented + '" is neither.' };
   }
   const registered = registeredUrisFor(opts.client);
+  if (!registered.list.length && oauth21.enabled()) {
+    const unregistered = oauth21.registeredClientRefusal(opts.client,
+                                                         opts.clientId);
+    log.debug("Leaving checkRedirectUri(). OAuth 2.1 mode: no redirect URI " +
+              "of the client's own.");
+    return unregistered;
+  }
   if (!registered.list.length) {
     log.debug("Leaving checkRedirectUri(). Nothing is registered to compare " +
               "against.");
@@ -1547,10 +1609,43 @@ function checkPostLogoutRedirectUri(opts) {
   const client = opts.client;
   const declared = client && Array.isArray(client.post_logout_redirect_uris)
     ? client.post_logout_redirect_uris.map(String) : [];
+  const presented = String(opts.target || '');
+  // A PRIVATE-USE ADDRESS IS BELIEVED ONLY WHEN A CLIENT VOUCHES FOR IT
+  // (2026-09-13). Sign-out needs no client at all, so a service-wide list that
+  // admitted a protocol handler would be a redirector to it with nobody
+  // accountable for the entry; the address has to be on the entry of the client
+  // this request names. OAuth 2.1 mode goes further and reads no service-wide
+  // list for ANY address, for the reason registeredUrisFor() gives.
+  const privateUse = validation.isPrivateUseRedirect(presented);
+  if (!declared.length && (privateUse || oauth21.enabled())) {
+    log.debug("Leaving checkPostLogoutRedirectUri(). No client vouches for " +
+              "it.");
+    return privateUse
+      ? { ok: false, errorCode: 'STS-OAUTH-0290', error: 'invalid_request',
+          requirement: 'no-open-redirector',
+          description: 'RFC 9700 section 2.1: "' + presented + '" is a ' +
+                       'native application\'s private-use address, and one ' +
+                       'is followed after a sign-out only when the client ' +
+                       'this request names (client_id) registered it as a ' +
+                       'post_logout_redirect_uri. ' +
+                       (client && client.known
+                         ? 'That client has registered none.'
+                         : 'This request names no client this service ' +
+                           'holds.') }
+      : { ok: false, errorCode: 'STS-OAUTH-0286', error: 'invalid_request',
+          requirement: 'registered-client-required',
+          description: 'OAuth 2.1 (' + oauth21.DRAFT + ') section 2.3.1: a ' +
+                       'post_logout_redirect_uri is followed only when the ' +
+                       'client this request names registered it, and ' +
+                       (client && client.known
+                         ? 'that client has registered none'
+                         : 'this request names no client this service ' +
+                           'holds') + '. The service-wide ' +
+                       'oauth2.redirectUris list is not read in this mode.' };
+  }
   // Same rule as the redirect URIs: the attribute is the list, however it got
   // onto the entry.
   const list = declared.length ? declared : configuredRedirectUris();
-  const presented = String(opts.target || '');
   const found = list.some(function (uri) {
     return uriMatches(uri, presented).ok;
   });
@@ -1794,10 +1889,29 @@ function checkAuthorizationRequest(opts) {
                            ' or code id_token' : '') + '.' };
   }
 
+  // OAUTH 2.1 — PKCE FOR CONFIDENTIAL CLIENTS TOO, and the method REQUIRED.
+  // Asked FIRST and only in that mode, because it is stricter than the block
+  // below in both directions: section 7.5.1.1 makes PKCE a MUST whatever the
+  // client is, bar a confidential one relying on the OpenID Connect nonce —
+  // and "confidential" there means a credential this service can CHECK, not a
+  // method declared with nothing behind it. See oauth21.js's pkceDecision().
+  if (oauth21.enabled()) {
+    const pkce = oauth21.pkceDecision({
+      query: query, types: types,
+      confidential: isConfidential(client) && !!credentialOnFile(client)
+    });
+    if (!pkce.ok) {
+      log.debug("Leaving checkAuthorizationRequest(). OAuth 2.1 PKCE (" +
+                pkce.requirement + ").");
+      return pkce;
+    }
+  }
+
   // Section 2.1.1 — PKCE. Required of every client this server cannot see to be
   // confidential; a SHOULD, and therefore a log line rather than a refusal, for
-  // the ones it can.
-  if (types.indexOf('code') >= 0 && !query.code_challenge) {
+  // the ones it can. Not asked in OAuth 2.1 mode, which answered above.
+  if (types.indexOf('code') >= 0 && !query.code_challenge &&
+      !oauth21.enabled()) {
     if (!isConfidential(client)) {
       log.debug("Leaving checkAuthorizationRequest(). A public client sent " +
                 "no code_challenge.");
@@ -1975,6 +2089,14 @@ function checkClientRegistration(metadata) {
                           'access token from that endpoint and are ' +
                           'registrable.' };
   }
+  // OAuth 2.1's own registration mirrors — SAML client authentication and a
+  // public client asking for client_credentials.
+  const stricter = oauth21.registrationRefusal(meta);
+  if (stricter) {
+    log.debug("Leaving checkClientRegistration(). OAuth 2.1 (" +
+              stricter.requirement + ").");
+    return stricter;
+  }
   const uris = Array.isArray(meta.redirect_uris) ?
                meta.redirect_uris.map(String) : [];
   for (let i = 0; i < uris.length; i++) {
@@ -2091,6 +2213,45 @@ function checkClientRegistration(metadata) {
 // about to mint several — and the alternative was a third state, "we did not
 // look", which every caller would have had to decide what to do about.
 // ---------------------------------------------------------------------------
+// WHETHER A CONFIDENTIAL CLIENT HAS ANYTHING ON FILE TO CHECK ITS METHOD
+// AGAINST. One function, because the policy below, the observation above it and
+// OAuth 2.1's PKCE exemption all ask it — and they were two inline copies of
+// one expression until 2026-09-13, which is the shape that disagrees the first
+// time a method is added.
+function credentialOnFile(registered) {
+  log.debug("Entering credentialOnFile().");
+  if (!registered || !isConfidential(registered)) {
+    log.debug("Leaving credentialOnFile(). Not a confidential client.");
+    return false;
+  }
+  const method = String(registered.token_endpoint_auth_method).trim();
+  const have =
+    (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 &&
+     registered.client_secret) ||
+    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri ||
+                                      registered.assertion_jwks)) ||
+    // RFC 7522 section 2.2. The two SAML attributes and NEITHER of the three
+    // above: a client holding a JWT key pair and no SAML certificate has
+    // nothing on file for this method, which is the whole point of the two
+    // sets being separate.
+    (method === 'saml2_bearer' && (registered.saml_signing_certificate ||
+                                   registered.saml_assertion_certificate)) ||
+    // RFC 8705 section 2.1 ALWAYS has something to check since 2026-09-13:
+    // a certificate this realm issued to the application needs nothing
+    // registered, so a `tls_client_auth` client is never "confidential with
+    // nothing on file" — which is what let one through unauthenticated in
+    // RFC 9700 mode when it had no subject DN.
+    method === 'tls_client_auth' ||
+    // Section 2.2 as well: a client that DECLARED a certificate method is held
+    // to it (`mtls.declaredRefusal()`), so "nothing on file" must not be the
+    // quiet pass it is for a half-configured secret client — `client_auth.js`
+    // refuses it by name (STS-OAUTH-0015), which is the sentence that says
+    // what to register.
+    method === 'self_signed_tls_client_auth';
+  log.debug("Leaving credentialOnFile().");
+  return !!have;
+}
+
 async function observeClientAuthentication(opts) {
   log.debug("Entering observeClientAuthentication(). client=" +
             (opts.clientId || '?'));
@@ -2110,20 +2271,7 @@ async function observeClientAuthentication(opts) {
                   'correct.' };
   }
   const method = String(registered.token_endpoint_auth_method).trim();
-  const haveCredential =
-    (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 &&
-     registered.client_secret) ||
-    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri ||
-                                      registered.assertion_jwks)) ||
-    // RFC 7522 section 2.2. The two SAML attributes and NEITHER of the three
-    // above: a client holding a JWT key pair and no SAML certificate has
-    // nothing on file for this method, which is the whole point of the two
-    // sets being separate.
-    (method === 'saml2_bearer' && (registered.saml_signing_certificate ||
-                                   registered.saml_assertion_certificate)) ||
-    (method === 'tls_client_auth' && registered.tls_client_auth_subject_dn) ||
-    (method === 'self_signed_tls_client_auth' &&
-     registered.certificate_thumbprint);
+  const haveCredential = credentialOnFile(registered);
   if (!haveCredential) {
     log.debug("Leaving observeClientAuthentication(). Confidential with " +
               "nothing on file.");
@@ -2138,6 +2286,8 @@ async function observeClientAuthentication(opts) {
     clientId: opts.clientId,
     request: opts.request,
     audiences: opts.audiences || [],
+    // OAuth 2.1 mode's issuer-as-sole-audience rule — the issuer, or empty.
+    strictAudience: opts.strictAudience || '',
     presentedSecret: opts.clientSecret,
     assertion: opts.assertion,
     assertionType: opts.assertionType,
@@ -2156,6 +2306,10 @@ async function observeClientAuthentication(opts) {
     samlAssertionCertificate: registered.saml_assertion_certificate,
     samlAssertionCertificateChain: registered.saml_assertion_certificate_chain,
     subjectDn: registered.tls_client_auth_subject_dn,
+    // RFC 8705 section 2.1.2's five, read off the config by member name, and
+    // the entry's identifier for the implicit mapping (2026-09-13).
+    tlsSubjects: registered,
+    applicationIdentifier: registered.identifier,
     certificateThumbprint: registered.certificate_thumbprint
   });
   if (!checked.ok) {
@@ -2190,20 +2344,7 @@ async function checkClientAuthentication(opts) {
   // seen alone. It happens for an application created by hand and given a
   // method but no credential, which is a half-configured client rather than a
   // wrong one, and the log line says which.
-  const haveCredential =
-    (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 &&
-     registered.client_secret) ||
-    (method === 'private_key_jwt' && (registered.jwks || registered.jwks_uri ||
-                                      registered.assertion_jwks)) ||
-    // RFC 7522 section 2.2. The two SAML attributes and NEITHER of the three
-    // above: a client holding a JWT key pair and no SAML certificate has
-    // nothing on file for this method, which is the whole point of the two
-    // sets being separate.
-    (method === 'saml2_bearer' && (registered.saml_signing_certificate ||
-                                   registered.saml_assertion_certificate)) ||
-    (method === 'tls_client_auth' && registered.tls_client_auth_subject_dn) ||
-    (method === 'self_signed_tls_client_auth' &&
-     registered.certificate_thumbprint);
+  const haveCredential = credentialOnFile(registered);
   if (!haveCredential) {
     log.warn('RFC 9700 section 2.5: client "' + (opts.clientId || '(unnamed)') +
              '" ' +
@@ -2228,6 +2369,8 @@ async function checkClientAuthentication(opts) {
     clientId: opts.clientId,
     request: opts.request,
     audiences: opts.audiences || [],
+    // OAuth 2.1 mode's issuer-as-sole-audience rule — the issuer, or empty.
+    strictAudience: opts.strictAudience || '',
     presentedSecret: opts.clientSecret,
     assertion: opts.assertion,
     assertionType: opts.assertionType,
@@ -2246,6 +2389,10 @@ async function checkClientAuthentication(opts) {
     samlAssertionCertificate: registered.saml_assertion_certificate,
     samlAssertionCertificateChain: registered.saml_assertion_certificate_chain,
     subjectDn: registered.tls_client_auth_subject_dn,
+    // RFC 8705 section 2.1.2's five, read off the config by member name, and
+    // the entry's identifier for the implicit mapping (2026-09-13).
+    tlsSubjects: registered,
+    applicationIdentifier: registered.identifier,
     certificateThumbprint: registered.certificate_thumbprint
   });
   if (!checked.ok) {
@@ -2901,7 +3048,7 @@ function checkClientIdPresent(clientId) {
 }
 
 // Section 2.6: CORS must not be supported at the authorization endpoint. Asked
-// by app.js, which installs the cors middleware and has no business knowing
+// by common/cors.js, which decides CORS and has no business knowing
 // which of this service's paths is an authorization endpoint — that knowledge
 // belongs to the OAuth side, which is here.
 //
@@ -2972,7 +3119,13 @@ function checkTokenRequest(opts) {
   // RFC 6749 section 4.1.3 makes redirect_uri REQUIRED at the token endpoint
   // when it was in the authorization request, which it always is here. Without
   // the mode this service compares it only when the client bothered to send it.
-  if (record.redirect_uri && !body.redirect_uri) {
+  // OAUTH 2.1 REMOVED IT (section 10.2): PKCE binds the code instead, so a
+  // client following 2.1 alone never sends one, and that mode asks for it only
+  // of a code minted under the OpenID Connect nonce exemption — which has no
+  // PKCE and for which this is still the binding. When it IS sent it must
+  // still be identical, which oauth2.js checks in every mode.
+  if (record.redirect_uri && !body.redirect_uri &&
+      oauth21.tokenRedirectUriRequired(record)) {
     log.debug("Leaving checkTokenRequest(). No redirect_uri came with the " +
               "code.");
     return { ok: false, errorCode: 'STS-OAUTH-0147', error: 'invalid_grant',
@@ -3022,6 +3175,9 @@ function applyToMetadata(metadata) {
   // also the member RFC 9700 section 2.1.1 names as how a client detects PKCE
   // support at all, so it must not be emptied — only narrowed.
   metadata.code_challenge_methods_supported = ['S256'];
+  // And what OAuth 2.1 mode refuses on top — saml2_bearer client
+  // authentication. A no-op unless that mode is on.
+  oauth21.applyToMetadata(metadata);
   log.debug("Leaving applyToMetadata(). The mode narrowed three members.");
   return metadata;
 }
@@ -3045,8 +3201,14 @@ function state() {
       : 'Nothing below is being enforced. This service behaves as the ' +
         'permissive mock it is, which is the default. Set oauth2.rfc9700 to ' +
         'turn the mode on.',
+    // WHICH FLAG turned it on. `oauth2.oauth21` implies this mode, and without
+    // this member a realm carrying only that one would read here as enforcing
+    // everything with `oauth2.rfc9700: false` beside it.
+    enabled_by: !on ? '' : (config.value('oauth2.rfc9700') ? 'oauth2.rfc9700'
+                                                           : 'oauth2.oauth21'),
     settings: {
-      'oauth2.rfc9700': on,
+      'oauth2.rfc9700': !!config.value('oauth2.rfc9700'),
+      'oauth2.oauth21': oauth21.enabled(),
       'oauth2.redirectUris': configuredRedirectUris(),
       'oauth2.loopbackPortWildcard': loopbackPortWildcard(),
       'global.https': mainPortIsTls(),
@@ -3062,8 +3224,8 @@ function state() {
     authorization_endpoint_scheme: mainPortIsTls() ? 'https' : 'http',
     scope: 'Section 2.1 (redirect-based flows), 2.1.1 (authorization code ' +
            'grant) and 2.1.2 (implicit grant). Pushed Authorization ' +
-           'Requests, refresh token rotation, resource indicators and the ' +
-           'rest of section 2 are not covered by this mode.',
+           'Requests (RFC 9126) and resource indicators are features in ' +
+           'every mode rather than rows of this one.',
     transactions_remembered: transactions.size,
     client_assertions_remembered: clientAuth.assertionsRemembered(),
     client_authentication_methods_verified: clientAuth.METHODS,
@@ -3095,6 +3257,7 @@ module.exports = {
   REQUIREMENTS: REQUIREMENTS,
   enabled: enabled,
   isConfidential: isConfidential,
+  credentialOnFile: credentialOnFile,
   checkGrantType: checkGrantType,
   checkClientAuthentication: checkClientAuthentication,
   observeClientAuthentication: observeClientAuthentication,

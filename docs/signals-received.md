@@ -65,6 +65,38 @@ The console's copy of this names the settings. The portal's does not — somebod
 reading their own account page cannot change any of them, so it says the portal
 is not being told everything and points at the console.
 
+## An event that was sent and not delivered
+
+A push that fails does not disappear. After `ssf.pushRetries` it goes to the
+stream's **dead-letter queue**, with the reason, the error code and whatever the
+receiver answered, and it is kept for `ssf.deadLetterRetentionS` (an hour by
+default). Every trust realm has dead-letter queues of its own. A stream whose
+pushes have all failed for `ssf.deadStreamTimeoutS` is declared **dead**:
+nothing more is pushed to it, and one letter is pushed as a probe each period
+until a delivery revives it.
+
+**Monitoring → Shared Signals → Dead letters** (`/admin/ssf/dead-letters`)
+counts them for the realm you are reading:
+
+| Section | What it answers |
+|---|---|
+| When | a chart of letters over the retention window, with the same numbers as a table |
+| Why | the four causes — *push failed*, *backlog full* (`STS-SSF-0092`), *waiting when declared dead* (`STS-SSF-0093`), *sent to a dead stream* (`STS-SSF-0096`) — then by error code, by the receiver's HTTP status and by event type |
+| Streams | which streams are dead, half-open (one more failure kills them) or failing, and how many letters each holds |
+| The letters | every letter, searchable by jti, code, event, status or reason; no token is shown |
+| This process | the push cap and the recent sweeps of the process that answered |
+
+Two numbers on it belong to **one process**, and the page says which. The push
+cap (`ssf.pushConcurrency` in flight, `ssf.pushBacklog` waiting) is per process
+and shared by every realm, so a burst in one realm can dead-letter another
+realm's events with `STS-SSF-0092`. With request workers turned on, two refreshes
+can be answered by two processes.
+
+The page changes nothing. To revive a dead stream or drop its letters, follow
+the stream's link to its card at `/admin/ssf`. `GET
+/admin-api/ssf/dead-letters` answers the same thing as JSON, narrowed by `dlq`,
+`dlstream` and `dlcause` and paged by `lettersPage`.
+
 ## What a person sees, and what they do not
 
 `/portal/signals` shows a person their own security activity: a session

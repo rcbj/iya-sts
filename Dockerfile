@@ -2,6 +2,36 @@
 #
 # Pinned to Node 24.16.0 via nvm rather than an official node image, which is what
 # the project this was extracted from does for all of its services.
+
+# ---------------------------------------------------------------------------
+# THE EMBEDDED PROTOCOL DEBUGGER'S BUILT TREE (2026-09-13), TAKEN FROM AN IMAGE
+# AND NEVER BUILT HERE.
+#
+# The debugger project builds its client and api for embedding with
+# `embedded/Dockerfile`, into an image whose only content is `/debugger/ui`,
+# `/debugger/api` (with its own node_modules) and `/debugger/common`. This
+# build copies that tree to `debugger/embedded/` and nothing else, so this
+# image's dependency tree and that one's never meet — `debugger/CLAUDE.md`
+# argues why that is the whole of the design.
+#
+# **AN IMAGE AND NOT A SECOND BUILD CONTEXT OR A SUBMODULE.** This machine's
+# docker has no BuildKit, so `--build-context` is not available; and this
+# repository is already a submodule of the debugger project, so the reverse
+# would be a cycle. `COPY --from` an image works with the classic builder.
+#
+# **DEFAULTS TO A STAGE WITH AN EMPTY TREE**, so a build that names no
+# debugger image succeeds exactly as it did before: the listener then reports
+# the debugger as not installed on /admin/debugger and the rest of the service
+# is unaffected. Pass
+#   --build-arg DEBUGGER_IMAGE=rcbj/id-proto-debugger-embedded:<tag>
+# to embed one. The indirection through a stage name is what lets the default
+# be "nothing" under the classic builder, which cannot make a COPY optional.
+# ---------------------------------------------------------------------------
+ARG DEBUGGER_IMAGE=debugger-none
+FROM ubuntu:latest AS debugger-none
+RUN mkdir -p /debugger
+FROM ${DEBUGGER_IMAGE} AS debugger
+
 FROM ubuntu:latest
 
 # replace shell with bash so we can source files
@@ -216,6 +246,11 @@ ENV NODE_PATH=/opt/sts-sdk/node_modules
 # rest of `.github` is still excluded and nothing here reads any of it.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
            ./.github
+
+# The debugger's built tree — see the stage at the top of this file. After the
+# `rm` above and before the version stamp, and into the directory
+# `debugger.uiDirectory` and `debugger.apiDirectory` default to.
+COPY --from=debugger /debugger/ ./debugger/embedded/
 # ---------------------------------------------------------------------------
 # FIX THIS IMAGE'S BUILD NUMBER (M.N.O) AND SHIP IT IN version.json.
 #
@@ -306,4 +341,7 @@ EXPOSE 8888
 # client pointed at `tcp://host:8092` explicitly.
 EXPOSE 8092
 EXPOSE 8181
+# The embedded protocol debugger's listener (debugger.port), when it is
+# embedded and installed. See debugger/CLAUDE.md.
+EXPOSE 8444
 CMD [ "node", "server.js" ]

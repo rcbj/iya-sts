@@ -256,6 +256,10 @@ const ACTIONS = [
     label: 'An activation link was refused' },
   { action: 'portal.password.changed', category: 'authentication',
     label: 'Somebody changed their own password' },
+  // AT SIGN-IN, BECAUSE THEY HAD TO (2026-09-13): `pwdReset` on the entry.
+  { action: 'authn.password.changed', category: 'authentication',
+    label: 'Somebody changed a password they were required to change at ' +
+           'sign-in' },
   { action: 'portal.password.refused', category: 'authentication',
     label: 'A password change was refused' },
   { action: 'portal.password.csrf', category: 'authentication',
@@ -272,8 +276,30 @@ const ACTIONS = [
     label: 'Somebody enrolled a security key on their own account' },
   { action: 'portal.key.removed', category: 'authentication',
     label: 'Somebody removed a security key from their own account' },
+  // A PERSON'S OWN TLS CLIENT CERTIFICATE (2026-09-13), on
+  // /portal/signing-key. `issued` is the moment a private key left this
+  // service, which is the row somebody investigating a certificate sign-in
+  // they did not expect goes looking for; `revoked` is the person putting one
+  // on their issuer's list.
+  { action: 'portal.tls-client.issued', category: 'authentication',
+    label: 'Somebody issued themselves a TLS client certificate' },
+  { action: 'portal.tls-client.revoked', category: 'authentication',
+    label: 'Somebody revoked one of their own TLS client certificates' },
   { action: 'activation.issued', category: 'authentication',
     label: 'An administrator issued an activation link' },
+  // A PASSWORD RESET LINK SPENT, AND A SECOND FACTOR ENROLLED AT SIGN-IN
+  // BECAUSE ONE IS REQUIRED (2026-09-13). The refusal beside the success for
+  // the reason the password rows above give.
+  { action: 'portal.password-reset', category: 'authentication',
+    label: 'Somebody set a new password from a password reset link' },
+  { action: 'portal.password-reset.refused', category: 'authentication',
+    label: 'A password reset link was refused' },
+  { action: 'authn.mfa.enrolment.required', category: 'authentication',
+    label: 'A sign-in was asked to set up a required second factor' },
+  { action: 'authn.mfa.enrolment.started', category: 'authentication',
+    label: 'An authenticator app secret was shown at sign-in' },
+  { action: 'authn.mfa.enrolled', category: 'authentication',
+    label: 'Somebody set up a required second factor at sign-in' },
 
   // ---------------------------------------------------------------------
   // THE AUTHENTICATOR APP (RFC 6238), 2026-09-10. Five rows for what is one
@@ -448,6 +474,12 @@ const ACTIONS = [
   // was made an administrator would be worth nothing.
   { action: 'admin.role.change', category: 'admin',
     label: 'An admin console role was granted or taken away' },
+  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13): seeded at startup with both
+  // roles, and its first console sign-in, which ends the window in which every
+  // signed-in person may use the console. `detail.event` says which.
+  { action: 'admin.console.bootstrap', category: 'admin',
+    label: 'The bootstrap administrator was seeded, or first signed in to ' +
+           'the console' },
 
   // CLEARING SOMEBODY ELSE'S SECOND FACTOR (2026-09-10). `admin` rather than
   // `authentication`, which is the distinction the portal rows above establish:
@@ -463,6 +495,21 @@ const ACTIONS = [
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
     label: 'An operator removed somebody\'s security key' },
+  // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
+  // each one ACT with who performed it. The sessions a reset's sign-out ends
+  // write their own `session.end` rows, so these do not count them again.
+  { action: 'admin.password.reset', category: 'admin',
+    label: 'An operator reset somebody\'s password' },
+  { action: 'admin.password.reset-link', category: 'admin',
+    label: 'An operator issued somebody a password reset link' },
+  { action: 'admin.mfa.primary-keys.removed', category: 'admin',
+    label: 'An operator disabled somebody\'s passwordless sign-in' },
+  { action: 'admin.mfa.disabled', category: 'admin',
+    label: 'An operator removed every second factor somebody held' },
+  { action: 'admin.mfa.required', category: 'admin',
+    label: 'An operator required a second factor of somebody' },
+  { action: 'admin.mfa.unrequired', category: 'admin',
+    label: 'An operator stopped requiring a second factor of somebody' },
 
   // A PASSWORD POLICY PROFILE WAS SAVED OR PUT BACK (2026-09-12). The SUBSTANCE
   // of the change, for `claims.change`'s reason: the `admin.change` row says a
@@ -606,6 +653,10 @@ const ACTIONS = [
   // and the person who wants to find it is investigating that decision.
   { action: 'xacml.pep.register', category: 'authorization',
     label: 'A remote Policy Enforcement Point registered' },
+  // A remote PEP's HTTPS listener certificate was issued (2026-09-13). The
+  // row names the serial, the names and the expiry, and never the key.
+  { action: 'xacml.pep.certificate', category: 'authorization',
+    label: 'A remote PEP was issued an HTTPS listener certificate' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 
@@ -647,6 +698,12 @@ const ACTIONS = [
     label: 'A Security Event Token was delivered to a receiver' },
   { action: 'ssf.event.refused', category: 'signals',
     label: 'A receiver refused a Security Event Token' },
+  { action: 'ssf.stream.dead', category: 'signals',
+    label: 'A push stream was declared dead after only failed pushes' },
+  { action: 'ssf.stream.revived', category: 'signals',
+    label: 'A dead push stream was revived' },
+  { action: 'ssf.deadletter.clear', category: 'signals',
+    label: 'A stream\'s dead-letter queue was emptied by hand' },
   { action: 'ssf.event.receive', category: 'signals',
     label: 'A Security Event Token was pushed AT this service' },
 

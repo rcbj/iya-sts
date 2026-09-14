@@ -88,6 +88,9 @@ const vz = validation.z;
 // is required AFTER authn.js in server.js, so this moves no route; and that
 // module does not require this one, so there is no cycle.
 const authn = require('../authn/authn');
+// RFC 9396: what an authorization_details row says, and the one-time Allow.
+// A library that registers nothing, so requiring it here moves no route.
+const authorizationDetails = require('./authorization_details');
 
 const CONSENT_PATH = '/oauth2/consent';
 
@@ -173,6 +176,12 @@ function beginConsent(opts) {
     // comes back with one line on it.
     already: Array.isArray(info.already) ? info.already : [],
     details: Array.isArray(info.details) ? info.details : [],
+    // RFC 9396's rows, as `authorization_details.describe()` drew them, and
+    // the digest Allow is recorded against. Asked EVERY time and never
+    // remembered — see that module's header.
+    authorizationDetails: Array.isArray(info.authorizationDetails)
+      ? info.authorizationDetails : [],
+    detailsDigest: String(info.detailsDigest || ''),
     protocol: String(info.protocol || 'OAuth 2.0 / OIDC'),
     expires: Date.now() + consentTtlMs()
   };
@@ -184,7 +193,10 @@ function beginConsent(opts) {
   });
   log.info('consent: "' + record.username + '" is being asked whether "' +
            record.clientId + '" may have ' +
-           record.scopes.map(function (one) { return one.scope; }).join(', ') +
+           record.scopes.map(function (one) { return one.scope; })
+             .concat(record.authorizationDetails.map(function (one) {
+               return 'authorization_details of type ' + one.type;
+             })).join(', ') +
            ' on their behalf. Nothing is issued until they answer; ' +
            returnTo +
            ' is where they come back to.');
@@ -285,6 +297,24 @@ function consentPage(base, record) {
           'and will put it on the token\'s scope claim as it stands</span>') +
       '</li>';
   }).join('');
+  // RFC 9396 section 11.2's SHOULD: every detail is shown, member by member,
+  // because the person is agreeing to THIS payment or THIS account access and
+  // a type name alone says nothing about the amount.
+  const detailRows = record.authorizationDetails.map(function (one) {
+    return '<li class="detail"><code>' + xmlEscape(one.type) + '</code>' +
+      '<span>' + (one.description ? xmlEscape(one.description) + ' — '
+                                  : '') +
+      'understood by <code>' + xmlEscape(one.resourceName || one.resource) +
+      '</code>, and the access token will be addressed to <code>' +
+      xmlEscape(one.audience) + '</code></span>' +
+      (one.members.length
+        ? '<dl>' + one.members.map(function (member) {
+          return '<dt>' + xmlEscape(member.name) + '</dt><dd><code>' +
+            xmlEscape(member.value) + '</code></dd>';
+        }).join('') + '</dl>'
+        : '') +
+      '</li>';
+  }).join('');
   const already = record.already.length
     ? '<details><summary>' + record.already.length + ' scope(s) you have ' +
       'already agreed to for this application</summary><ul class="scopes">' +
@@ -309,7 +339,14 @@ function consentPage(base, record) {
     'asking for access on your behalf.' +
     (record.clientName === record.clientId ? ''
       : '<br><code>' + xmlEscape(record.clientId) + '</code>') + '</p>' +
-    '<ul class="scopes">' + rows + '</ul>' +
+    '<ul class="scopes">' + rows + detailRows + '</ul>' +
+    (record.authorizationDetails.length
+      ? '<p class="app">This request carries <strong>' +
+        record.authorizationDetails.length + ' authorization detail' +
+        (record.authorizationDetails.length === 1 ? '' : 's') +
+        '</strong> (RFC 9396). You are asked about them every time: Allow ' +
+        'agrees to exactly what is listed, for this one request.</p>'
+      : '') +
     already +
     '<form method="post" action="' + CONSENT_PATH + '">' +
     '<input type="hidden" name="consent_id" value="' + xmlEscape(record.id) +
@@ -346,6 +383,9 @@ const CONSENT_CSS =
   'li{padding:8px 10px;margin:6px 0;border:1px solid ' +
   '#e3e3ea;border-radius:6px;background:#fafafd;font-size:.85em}ul.scopes li ' +
   'span{display:block;color:#666;font-size:.9em;margin-top:3px}' +
+  'ul.scopes li dl{margin:6px 0 0;display:grid;grid-template-columns:auto ' +
+  '1fr;gap:2px 8px}ul.scopes li dt{color:#555}ul.scopes li dd{margin:0;' +
+  'overflow-wrap:anywhere}' +
   'details{margin:10px 0 0;font-size:.8em;color:#555}details ' +
   'summary{cursor:pointer}';
 
@@ -461,7 +501,10 @@ app.post(CONSENT_PATH, function (req, res) {
   }
   pending.delete(record.id);
 
-  const names = record.scopes.map(function (one) { return one.scope; });
+  const names = record.scopes.map(function (one) { return one.scope; })
+    .concat(record.authorizationDetails.map(function (one) {
+      return 'authorization_details:' + one.type;
+    }));
   if (String(body.action || '') !== 'allow') {
     audit.record({
       action: 'consent.deny', actor: record.username, target: record.clientId,
@@ -478,7 +521,15 @@ app.post(CONSENT_PATH, function (req, res) {
       'The user did not consent to ' + names.join(' ') + '.');
   }
 
-  const written = consent.record(record.username, record.clientId, names);
+  // RFC 9396: Allow on details is ONE answer for ONE request, recorded here and
+  // spent by the authorization endpoint's second pass. The scopes are written
+  // down as they always were; the details never are.
+  if (record.detailsDigest) {
+    authorizationDetails.noteConsented(record.username, record.clientId,
+                                       record.detailsDigest);
+  }
+  const written = consent.record(record.username, record.clientId,
+    record.scopes.map(function (one) { return one.scope; }));
   audit.record({
     action: 'consent.grant', actor: record.username, target: record.clientId,
     protocol: 'OAuth 2.0 / OIDC', channel: 'http',

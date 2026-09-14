@@ -141,6 +141,10 @@
 // ===========================================================================
 
 const crypto = require('crypto');
+// For three TABLES only — the JWS and JWE algorithms RFC 9701's client metadata
+// may name (introspectionResponseProblem()). A leaf `helpers.js` already
+// requires, so this adds nothing to the load path and closes no cycle.
+const stsCrypto = require('./crypto');
 const config = require('./config');
 // The mode. A LEAF (rule 3) requiring only `config`, which is already required
 // here — so it can neither move a route nor close a cycle.
@@ -174,6 +178,19 @@ const roles = require('./roles');
 // `common/credentials.js` seals an authenticator's shared secret with. See
 // SEALED_FIELDS below for why an application's issued signing key joins them.
 const keystore = require('./keystore');
+
+// THE REDIRECT ALLOWLIST (2026-09-13), for the three attributes that are
+// addresses a browser is sent to or a page frames. `validation.js` requires
+// `config.js`, `error_codes.js` and npm packages and nothing from this file, so
+// the require closes no cycle and moves no route.
+const validation = require('./validation');
+
+// RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS (2026-09-13):
+// what a value of each may be, read by the schema rows, the registration door
+// and the console's writes here and by the verifier in
+// `oauth-oidc/client_auth.js`. A leaf over `helpers.js`, so the require closes
+// no cycle and moves no route.
+const certificateSubject = require('./certificate_subject');
 
 // ---------------------------------------------------------------------------
 // THE KINDS. One per way an application can present itself to this service.
@@ -265,10 +282,13 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // page already makes about the entry as a whole ("an entry here grants
 // nothing") narrowed to one attribute.
 //
-// **TWO ATTRIBUTES DO MORE THAN DECLARE, AND BOTH ARE FAMILY-SCOPED.**
-// `oauthTokenExchangeRefreshToken` changes what the token endpoint issues, and
+// **FIVE ATTRIBUTES DO MORE THAN DECLARE, AND ALL FIVE ARE FAMILY-SCOPED.**
+// `oauthTokenExchangeRefreshToken` changes what the token endpoint issues;
 // since 2026-09-12 `ssfAllowedEvents` LIMITS which Shared Signals event types a
-// stream owned by the application is sent. The declaration itself is still a
+// stream owned by the application is sent; and since 2026-09-13 RFC 9701's
+// three `oauthIntrospection*` attributes decide how /oauth2/introspect signs
+// and encrypts the JWT response it gives the application. The declaration
+// itself is still a
 // declaration; what changed is that each of those attributes may only be
 // written onto an entry that makes it.
 //
@@ -334,13 +354,12 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // answers to two client_ids, two entityIDs or two SPNs here — one per
 // environment being exercised — so these accumulate like the redirect URIs
 // beside them. The exception is `oauthTlsClientAuthSubjectDn`, which mutual TLS
-// names: it is SINGLE-valued because `client_auth.js` compares it to the
-// certificate's subject by exact string equality for RFC 8705 section 2.1, and
-// a list arriving there would stringify to `dn1,dn2` and match nothing. It is
-// the one attribute in this group that something ENFORCES, which is exactly why
-// it is the one that cannot be widened without deciding what "any of these"
-// means to a security check. Stated here and on the form rather than left as an
-// inconsistency somebody re-derives.
+// names: it is SINGLE-valued because RFC 8705 section 2.1 matches a certificate
+// against "the single expected subject", and since 2026-09-13 a client holds at
+// most one of the five subject parameters it is one of (`mtlsAttributeProblem()`
+// below). It is the one attribute in this group that something ENFORCES, which
+// is exactly why it is the one that cannot be widened without deciding what
+// "any of these" means to a security check.
 //
 // **DECLARING ONE STILL GRANTS NOTHING**, the same as ticking the family does.
 // The five families this service records no identifier for — LDAP, SCIM,
@@ -443,13 +462,15 @@ const PROTOCOLS = [
   { id: 'mtls', label: 'TLS / mutual TLS', kind: '',
     kinds: [],
     identifierAttribute: 'oauthTlsClientAuthSubjectDn', redirectAttribute: '',
-    what: 'A client presenting a certificate on 8443 or 9443, or ' +
-          'authenticating to the token endpoint under RFC 8705. The two ' +
-          'attributes that make the second REAL are on this entry and are ' +
-          'genuinely read — oauthTlsClientAuthSubjectDn for section 2.1 and ' +
-          'oauthTlsClientCertificateThumbprint for section 2.2 — so ticking ' +
-          'this box is the note to self, and those two are the ' +
-          'configuration.' },
+    what: 'A client authenticating to the token endpoint under RFC 8705. ' +
+          'A TLS client certificate issued to the application from its ' +
+          'Credentials section authenticates it under tls_client_auth with ' +
+          'nothing registered; a certificate from another authority needs ' +
+          'ONE of the five subject parameters (oauthTlsClientAuthSubjectDn ' +
+          'and the four oauthTlsClientAuthSan* attributes), and ' +
+          'self_signed_tls_client_auth reads the jwks x5c or ' +
+          'oauthTlsClientCertificateThumbprint — so ticking this box is ' +
+          'the note to self, and those are the configuration.' },
   // THE FIFTEENTH FAMILY, AND THE FIRST ONE WHOSE APPLICATION IS SOMETHING
   // THIS SERVICE CALLS RATHER THAN SOMETHING THAT CALLS IT. Every other row
   // above names a client: a client_id at the token endpoint, an entityID on
@@ -697,6 +718,47 @@ const SCHEMA = {
             'address. DECLARED and never derived — the redirect URIs beside ' +
             'it are callbacks and not front doors, so nothing computes this ' +
             'from them. http or https only, because it becomes an href.' },
+    // ---------------------------------------------------------------------
+    // THE ORIGINS A BROWSER PAGE MAY CALL THIS SERVICE FROM ON THIS
+    // APPLICATION'S BEHALF (2026-09-13).
+    //
+    // Until this date every response here carried `Access-Control-Allow-Origin:
+    // *`, so a script on ANY origin could read any answer this service gave a
+    // non-credentialed request. `common/cors.js` now echoes an origin only when
+    // it is this service's own or is listed here — and WHICH entry's list is
+    // asked is decided by the request: one that names a client (a `client_id`,
+    // a Basic credential, a client assertion, an access token's `client_id`)
+    // is judged against THAT entry's list alone, and one that names nobody
+    // (discovery, a JWKS, a DID document, every preflight) against every entry
+    // in the realm. That module's header argues both halves.
+    //
+    // **AN EMPTY LIST ALLOWS NO THIRD-PARTY ORIGIN, IN BOTH MODES.** That is
+    // the rule as it was asked for and it is not mode-gated: a CORS header is
+    // not a refusal a client under test learns anything from, it is what a
+    // browser uses to decide whether a page may read an answer.
+    //
+    // It is an attribute of THIS REGISTRY rather than of the OAuth families
+    // because every family's endpoints are behind the same decision — SCIM,
+    // GNAP and the management API included — so it carries no `families`.
+    // Values are normalised to the serialisation a browser sends when written
+    // through this module (`validation.normaliseOrigin()`); `ldapmodify` is
+    // not normalised, which is why the reader normalises again.
+    // ---------------------------------------------------------------------
+    { name: 'appCorsOrigin', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'THE ORIGINS A BROWSER PAGE MAY CALL THIS SERVICE FROM FOR THIS ' +
+            'APPLICATION — `https://app.example.com`, one exact origin per ' +
+            'value, with no path and no wildcard. A request that names this ' +
+            'application as its client (a client_id, a Basic credential, a ' +
+            'client assertion, or an access token issued to it) is answered ' +
+            'with Access-Control-Allow-Origin only when its Origin is listed ' +
+            'here; a request that names no client at all — discovery, a ' +
+            'JWKS, a DID document, a CORS preflight — is answered for an ' +
+            'origin listed on ANY application in the realm. EMPTY ALLOWS NO ' +
+            'THIRD-PARTY ORIGIN, in both modes. This service\'s own origins ' +
+            '(its listeners, global.publicBaseUrl, the embedded debugger, ' +
+            'and global.corsOrigins) never need listing. Normalised when ' +
+            'written: scheme and host lower-cased, a default port dropped.' },
     { name: 'appKind', kind: 'multi', from: 'every protocol',
       what: 'What this application IS, one value per role it has been seen ' +
             'in. Several is the ordinary case and is the point: an OAuth ' +
@@ -766,10 +828,13 @@ const SCHEMA = {
     { name: 'appRegistered', kind: 'single', from: 'POST /oauth2/register',
       what: 'TRUE when this application went through dynamic client ' +
             'registration here, FALSE when it is simply a client_id that ' +
-            'turned up. The distinction is what RFC 9700 mode reads: a ' +
-            'registered client is judged against its OWN redirect URIs and ' +
-            'can be confidential, and an unregistered one is judged against ' +
-            'the oauth2.redirectUris setting and is treated as public.' },
+            'turned up. It records HOW the application got here and not ' +
+            'what counts: RFC 9700 mode judges a client against its own ' +
+            'oauthRedirectUri whenever the entry holds one, however it got ' +
+            'there, and against the oauth2.redirectUris setting only when ' +
+            'it holds none — which OAuth 2.1 mode refuses instead. An ' +
+            'omitted token_endpoint_auth_method means client_secret_basic ' +
+            'for a registered client and nothing for one made by hand.' },
     { name: 'oauthClientId', kind: 'multi', from: 'OAuth 2.0 / OIDC / ' +
                                                   'OpenID4VCI',
       identifier: true,
@@ -956,6 +1021,34 @@ const SCHEMA = {
             'It is checked on the GRANT and not here: this attribute is the ' +
             'definition, and a definition nobody has used yet is the ' +
             'ordinary first step rather than a mistake.' },
+    // THE RFC 9728 DOCUMENT THIS APPLICATION WAS CREATED FROM (2026-09-13).
+    // /admin/applications/new can be handed a protected resource's metadata
+    // document and turn it into an entry; the members with an attribute of
+    // their own are written to those attributes, and this keeps the whole
+    // document beside them — `samlSpMetadata`'s arrangement, for its reason: a
+    // setting with the document it came from missing is a value nobody can
+    // check. DECLARATION ONLY: nothing in this service reads it back.
+    { name: 'oauthResourceMetadata', kind: 'single',
+      from: 'an RFC 9728 import, the console, the management API, or by hand',
+      what: 'THE PROTECTED RESOURCE METADATA DOCUMENT (RFC 9728) THIS ' +
+            'APPLICATION WAS CONFIGURED FROM, as compact JSON. Its ' +
+            '`resource` is the default name, `oauthPermissionBaseUri` and ' +
+            '`oauthAudience` of an entry created from it, and its ' +
+            '`scopes_supported` the permissions; every other member — ' +
+            '`authorization_servers`, `jwks_uri`, `bearer_methods_supported`, ' +
+            'the DPoP members — is recorded here and nowhere else.\n\nIt is ' +
+            'DECLARATION ONLY: nothing reads it back, nothing re-fetches it, ' +
+            'and changing it changes none of the attributes it filled in. A ' +
+            'value written through this module must be a JSON object with a ' +
+            '`resource`; an `ldapmodify` is not checked.' },
+    { name: 'oauthResourceMetadataUrl', kind: 'single',
+      from: 'an RFC 9728 import, the console, the management API, or by hand',
+      what: 'WHERE THE PROTECTED RESOURCE METADATA DOCUMENT WAS FETCHED FROM, ' +
+            'when it was fetched rather than pasted or uploaded. Recorded and ' +
+            'never dialled again: the fetch is an administrator\'s act on ' +
+            '/admin/applications/new or POST ' +
+            '/admin-api/applications/load-resource-metadata, and nothing ' +
+            'refreshes it.' },
     { name: 'oauthDelegatedPermission', kind: 'multi',
       from: 'the console, the management API, or by hand',
       what: 'A PERMISSION THIS APPLICATION HAS BEEN GRANTED ON ANOTHER ONE — ' +
@@ -1040,6 +1133,238 @@ const SCHEMA = {
             'attached — the same refusal WS-Federation\'s wreqptr gets. A ' +
             'client that registers only this is told to register `jwks` ' +
             'instead, by name, when it tries to authenticate.' },
+    // -------------------------------------------------------------------
+    // RFC 9701 (2026-09-13). THE THREE CLIENT METADATA MEMBERS OF SECTION 6,
+    // each an attribute of its own, and they are READ: `/oauth2/introspect`
+    // signs — and where asked, encrypts — the JWT response it gives THIS
+    // client as a resource server with what they say.
+    //
+    // `single`, for the override attributes' reason: an algorithm has one
+    // answer and a list has no rule for which one signs. Family-scoped like
+    // `oauthTokenExchangeRefreshToken`, because what they change is what an
+    // OAuth endpoint sends one client_id, and on an entry no introspection
+    // request can name they would read like a registration in force. The
+    // VALUES are checked on every write door by introspectionResponseProblem()
+    // below — the list is `common/crypto.js`'s own, so a value this service
+    // cannot sign or encrypt with cannot be stored.
+    { name: 'oauthIntrospectionSignedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides how /oauth2/introspect signs the JWT response ' +
+        'it gives this client, so on an entry declared for neither OAuth ' +
+        'family it would sit there reading like a registration in force.',
+      what: 'RFC 9701 section 6 `introspection_signed_response_alg`: the JWS ' +
+            'algorithm of the JWT introspection response this application ' +
+            'receives when it asks /oauth2/introspect with `Accept: ' +
+            'application/token-introspection+jwt`. EMPTY MEANS RS256, the ' +
+            'section\'s default. Any algorithm in ' +
+            '`introspection_signing_alg_values_supported` — every asymmetric ' +
+            'one this service holds a key for, and HS256/384/512 keyed with ' +
+            'this application\'s own client_secret. `none` is refused: ' +
+            'section 5 says the response MUST be cryptographically secured.' },
+    { name: 'oauthIntrospectionEncryptedResponseAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides whether /oauth2/introspect encrypts the JWT ' +
+        'response it gives this client, so on an entry declared for neither ' +
+        'OAuth family it would sit there reading like a registration in ' +
+        'force.',
+      what: 'RFC 9701 section 6 `introspection_encrypted_response_alg`: the ' +
+            'JWE key management algorithm the signed introspection response ' +
+            'is ENCRYPTED to this application with, making it a Nested JWT. ' +
+            'EMPTY MEANS NOT ENCRYPTED. One of the asymmetric algorithms ' +
+            '(RSA-OAEP, RSA-OAEP-256, ECDH-ES and its key-wrap variants), ' +
+            'and ' +
+            'the key is taken from this entry\'s `oauthJwks` — a `jwks_uri` ' +
+            'is never fetched. The symmetric families are refused: they are ' +
+            'for a document encrypted TO this service.' },
+    { name: 'oauthIntrospectionEncryptedResponseEnc', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides how /oauth2/introspect encrypts the JWT ' +
+        'response it gives this client, so on an entry declared for neither ' +
+        'OAuth family it would sit there reading like a registration in ' +
+        'force.',
+      what: 'RFC 9701 section 6 `introspection_encrypted_response_enc`: the ' +
+            'JWE content encryption algorithm. EMPTY MEANS A128CBC-HS256 ' +
+            'once ' +
+            '`oauthIntrospectionEncryptedResponseAlg` is set. It MUST NOT be ' +
+            'set without that attribute, and a write that tries is refused; ' +
+            'an entry left holding one alone (by `ldapmodify`, or by ' +
+            'clearing ' +
+            'the algorithm) makes the JWT introspection response fail with ' +
+            'the reason rather than go out unencrypted.' },
+    // -------------------------------------------------------------------
+    // RFC 9101 AND OPENID CONNECT DYNAMIC CLIENT REGISTRATION (2026-09-13).
+    // FIVE MEMBERS a client registers about the REQUEST OBJECTS it sends to
+    // the authorization endpoint, each an attribute, and all five READ by
+    // `oauth-oidc/request_object.js`. Family-scoped for the introspection
+    // attributes' reason.
+    //
+    // `oauthRequestUri` IS THE ONE THAT MATTERS MOST, because it is the whole
+    // of what makes fetching a request_uri defensible: this service dials a
+    // request_uri ONLY when it is one of these values, exactly, so the URL a
+    // request names was declared on the client's entry beforehand rather than
+    // chosen by whoever sent the request. `multi`, because a client serving
+    // request objects from several places is one client.
+    { name: 'oauthRequestUri', kind: 'multi',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is the list of request_uri values /oauth2/authorize ' +
+        'will fetch for this client, so on an entry declared for neither ' +
+        'OAuth family it would sit there reading like a permission to dial ' +
+        'those URLs.',
+      what: 'OpenID Connect Registration `request_uris`: the request_uri ' +
+            'values (RFC 9101 section 5.2) this client may send, one per ' +
+            'line. THE AUTHORIZATION ENDPOINT FETCHES A request_uri ONLY ' +
+            'WHEN IT IS ONE OF THESE, compared exactly once any #fragment is ' +
+            'removed — a request_uri nobody registered is refused ' +
+            'invalid_request_uri and never dialled, which is what keeps the ' +
+            'fetch from being a server-side request forgery. https, or http ' +
+            'in development mode only.' },
+    { name: 'oauthRequestObjectSigningAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides which request objects /oauth2/authorize accepts ' +
+        'from this client, so on an entry declared for neither OAuth family ' +
+        'it would read like a restriction in force.',
+      what: 'OpenID Connect Registration `request_object_signing_alg`: the ' +
+            'ONLY JWS algorithm a request object from this client is ' +
+            'accepted in. EMPTY MEANS ANY algorithm in ' +
+            'request_object_signing_alg_values_supported. `none` may be ' +
+            'registered only where an unsigned request object is accepted at ' +
+            'all — development mode, with no signed one required.' },
+    { name: 'oauthRequestObjectEncryptionAlg', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides which request objects /oauth2/authorize accepts ' +
+        'from this client, so on an entry declared for neither OAuth family ' +
+        'it would read like a restriction in force.',
+      what: 'OpenID Connect Registration `request_object_encryption_alg`: ' +
+            'when set, a request object from this client MUST be encrypted ' +
+            '(RFC 9101 section 6.1) with this JWE key management algorithm — ' +
+            'to this realm\'s request object key published in /oauth2/jwks ' +
+            '(use: enc) for RSA-OAEP and ECDH-ES, or to this client\'s own ' +
+            'client_secret for the symmetric families. EMPTY MEANS ' +
+            'encryption is optional.' },
+    { name: 'oauthRequestObjectEncryptionEnc', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides which request objects /oauth2/authorize accepts ' +
+        'from this client, so on an entry declared for neither OAuth family ' +
+        'it would read like a restriction in force.',
+      what: 'OpenID Connect Registration `request_object_encryption_enc`: ' +
+            'the JWE content encryption a request object from this client ' +
+            'must use. EMPTY MEANS A128CBC-HS256 once ' +
+            '`oauthRequestObjectEncryptionAlg` is set; it may not be set ' +
+            'without that attribute.' },
+    { name: 'oauthRequireSignedRequestObject', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides whether /oauth2/authorize refuses a plain ' +
+        'request from this client, so on an entry declared for neither OAuth ' +
+        'family it would read like a requirement in force.',
+      what: 'RFC 9101 section 10.5 `require_signed_request_object`, for ' +
+            'this client alone: TRUE refuses an authorization request from ' +
+            'it that carries no `request` or `request_uri`, and a request ' +
+            'object signed with `none`, with invalid_request. FALSE or ' +
+            'empty defers to oauth2.requireSignedRequestObject.' },
+    // RFC 9126 SECTION 6 (2026-09-13). ONE MEMBER a client registers about
+    // HOW it sends an authorization request: pushed, or not at all. READ by
+    // `oauth-oidc/oauth2.js`'s `pushedRequestPolicyRefusal()`. Family-scoped for
+    // the introspection attributes' reason.
+    { name: 'oauthRequirePushedAuthorizationRequests', kind: 'single',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It decides whether /oauth2/authorize refuses a request ' +
+        'from this client that was not pushed, so on an entry declared for ' +
+        'neither OAuth family it would read like a requirement in force.',
+      what: 'RFC 9126 section 6 `require_pushed_authorization_requests`, ' +
+            'for this client alone: TRUE refuses an authorization request ' +
+            'from it that does not carry a request_uri issued at ' +
+            '/oauth2/par, with invalid_request. FALSE or empty defers to ' +
+            'oauth2.requirePushedAuthorizationRequests.' },
+    // -------------------------------------------------------------------
+    // RFC 9396, RICH AUTHORIZATION REQUESTS (2026-09-13). TWO ATTRIBUTES, and
+    // they sit on DIFFERENT KINDS OF ENTRY, which is the design rcbj chose:
+    // a RESOURCE declares the authorization_details types it understands (a
+    // type selects its resource server the way a delegated permission does),
+    // and a CLIENT may register the types it will use (RFC 9396 section 10's
+    // `authorization_details_types`). READ by
+    // `oauth-oidc/authorization_details.js`. Family-scoped for the
+    // introspection attributes' reason.
+    { name: 'oauthAuthorizationDetailsType', kind: 'multi',
+      from: 'the console, the management API, the RFC 9728 import, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is a type /oauth2/authorize and /oauth2/token accept ' +
+        'and address tokens to this application for, so on an entry ' +
+        'declared for neither OAuth family it would read like an API in ' +
+        'service.',
+      what: 'An RFC 9396 authorization_details TYPE this application, as a ' +
+            'resource server, understands — one per value. A bare type ' +
+            'name, or a JSON object {"type", "description", "locations", ' +
+            '"schema"}: `locations` are the addresses a detail of this type ' +
+            'may name (the permission base URI and oauthAudience always ' +
+            'count), and `schema` is a JSON Schema every detail of this type ' +
+            'must satisfy. A detail whose type no application declares is ' +
+            'refused invalid_authorization_details, and a token carrying one ' +
+            'is addressed to the application that declares it.' },
+    { name: 'oauthAuthorizationDetailsTypes', kind: 'multi',
+      from: 'POST /oauth2/register, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It narrows what /oauth2/authorize and /oauth2/token accept ' +
+        'from this client, so on an entry declared for neither OAuth family ' +
+        'it would read like a restriction in force.',
+      what: 'RFC 9396 section 10 `authorization_details_types`: the ONLY ' +
+            'authorization_details types this client may use, one per ' +
+            'value. EMPTY MEANS any type this authorization server ' +
+            'supports.' },
+    // -------------------------------------------------------------------
+    // RFC 9470, STEP-UP AUTHENTICATION (2026-09-13). TWO ATTRIBUTES ON A
+    // RESOURCE: what it requires of the authentication behind an access token
+    // addressed to it. RFC 9470 defines no registration or metadata member for
+    // either — section 3 is a challenge a resource server sends — so they are
+    // written by an operator, never by a registration. ENFORCED by the stand-in
+    // resource `/oauth2/step-up/resource/{identifier}`, which answers for this
+    // application; READ through `stepUpRequirementOf()` below, whose grammar is
+    // `oauth-oidc/step_up.js`'s header's. Family-scoped for the introspection
+    // attributes' reason.
+    { name: 'oauthStepUpAcrValues', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is a requirement on OAuth access tokens addressed to ' +
+        'this application, so on an entry declared for neither OAuth family ' +
+        'it would read like a requirement in force.',
+      what: 'RFC 9470 section 3: the acr values this application, as a ' +
+            'resource server, requires of the authentication behind an ' +
+            'access token — space-separated, most preferred first. A token ' +
+            'whose acr meets none is challenged 401 ' +
+            'insufficient_user_authentication with these as acr_values. The ' +
+            'levels 0 < 1 < mfa are ordered; hwk, phr and phrh are met by a ' +
+            'password with a security key; any other value only by that ' +
+            'exact acr. EMPTY requires nothing.' },
+    { name: 'oauthStepUpMaxAge', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is a requirement on OAuth access tokens addressed to ' +
+        'this application, so on an entry declared for neither OAuth family ' +
+        'it would read like a requirement in force.',
+      what: 'RFC 9470 section 3\'s max_age: the oldest authentication, in ' +
+            'whole seconds, this application accepts behind an access token. ' +
+            'A token whose auth_time is older, or absent, is challenged 401 ' +
+            'insufficient_user_authentication with max_age. 0 means an ' +
+            'authentication this second. EMPTY requires nothing.' },
     // -------------------------------------------------------------------
     // RFC 7521 / RFC 7523 (2026-09-10). SEVEN ATTRIBUTES, and the split
     // between them is the split between what an OPERATOR says and what this
@@ -1264,33 +1589,124 @@ const SCHEMA = {
             'attribute from the JWT one because the two key pairs are ' +
             'separate — one may be issued here while the other is somebody ' +
             'else\'s certificate.' },
+    // -------------------------------------------------------------------
+    // RFC 7591 SECTION 2.3 — SOFTWARE STATEMENTS (2026-09-13). Two kinds of
+    // row, and `oauth-oidc/software_statement.js` argues both: on a PUBLISHER,
+    // the declaration and the statement this realm issued it; on a client that
+    // REGISTERED with a statement, three facts about how it got in. The keys a
+    // declared publisher signs with are the ones above — `oauthJwks` and the
+    // RFC 7523 key pair — because a key is the party's and the declaration is
+    // the decision.
+    // -------------------------------------------------------------------
+    { name: 'oauthSoftwareStatementIssuer', kind: 'multi', from: 'by hand',
+      identifier: true,
+      identifierName: 'software statement iss',
+      what: 'THE `iss` VALUES WHOSE SOFTWARE STATEMENTS THIS APPLICATION ' +
+            'VOUCHES FOR at POST /oauth2/register (RFC 7591 section 2.3) — ' +
+            'the application is the software PUBLISHER, and a statement ' +
+            'naming one of these issuers is verified against its `jwks` or ' +
+            'its RFC 7523 key pair from /admin/pki, or an x5c this realm ' +
+            'issued to it. It is READ: a statement from an issuer nobody ' +
+            'declares is refused unapproved_software_statement while ' +
+            '`oauth2.softwareStatementRequireTrustedIssuer` is on, and a ' +
+            'trusted one fixes the registered metadata and may open a ' +
+            'closed registration endpoint.\n\nA SEPARATE attribute from ' +
+            '`oauthAssertionIssuer`: a party trusted to say who a person is ' +
+            'has not thereby been trusted to say what software may register ' +
+            'as. A statement this realm issued itself needs no declaration. ' +
+            'It accumulates, for the reason the assertion issuers do.' },
+    { name: 'oauthIssuedSoftwareStatement', kind: 'single',
+      from: 'the application\'s own page, or POST ' +
+            '/admin-api/applications/issue-software-statement',
+      what: 'THE SOFTWARE STATEMENT THIS REALM LAST ISSUED FOR THIS ' +
+            'APPLICATION, as the compact JWS, typed ' +
+            '`software-statement+jwt`, with `sub` naming this application. ' +
+            'A client presenting it at POST /oauth2/register is registered ' +
+            'with the members it fixes. NOT A SECRET — RFC 7591 section 2.3 ' +
+            'expects a statement to ship with every copy of the software — ' +
+            'and not a record of every statement issued: issuing again ' +
+            'replaces this value, and the earlier statement still verifies ' +
+            'until it expires or the realm\'s signing key changes.' },
+    { name: 'appSoftwareStatementIssuer', kind: 'single',
+      from: 'POST /oauth2/register',
+      what: 'The `iss` of the software statement this client REGISTERED ' +
+            'with, or absent when it presented none. Cleared by an RFC 7592 ' +
+            'update that carries none, and by the registration being ' +
+            'deleted.' },
+    { name: 'appSoftwareStatementTrusted', kind: 'single',
+      from: 'POST /oauth2/register',
+      what: 'TRUE when that statement was verified against an issuer this ' +
+            'realm trusts, FALSE when it was accepted unverified because ' +
+            '`oauth2.softwareStatementRequireTrustedIssuer` was off. A ' +
+            'client registered on a TRUE statement at an endpoint otherwise ' +
+            'closed must present a trusted statement from the same issuer ' +
+            'with every update.' },
+    { name: 'appSoftwareStatementPublisher', kind: 'single',
+      from: 'POST /oauth2/register',
+      what: 'The application the trust came through: the one declaring the ' +
+            'issuer, or — for a statement this realm issued — the ' +
+            'application it was issued for.' },
     { name: 'oauthTlsClientAuthSubjectDn', kind: 'single', from: 'by hand',
       identifier: true,
       identifierName: 'subject DN',
       what: 'RFC 8705 section 2.1.2 `tls_client_auth_subject_dn`: the ' +
             'subject DN of the PKI certificate this client authenticates ' +
-            'with, in RFC 4514 form — the same spelling /admin/users files a ' +
-            'verified certificate under, so one DN has one spelling across ' +
-            'this service. IT IS ALSO THE IDENTIFIER ATTRIBUTE OF THE `mtls` ' +
-            'FAMILY, and it is THE ONE THAT IS STILL SINGLE-VALUED while ' +
-            'every other identifier here accumulates. The reason is that ' +
-            'something ENFORCES it: client_auth.js compares this string to ' +
-            'the certificate\'s subject by exact equality, so a second value ' +
-            'would stringify to "dn1,dn2" and match nothing — widening it ' +
-            'means first deciding what "any of these" should mean to a ' +
-            'security check, which is a different change from giving a form ' +
-            'a field. Said here and on /admin/applications/new rather than ' +
-            'left as an inconsistency somebody re-derives.' },
+            'with, in RFC 4514 form. Compared as a NAME since 2026-09-13 ' +
+            '(common/certificate_subject.js: attribute types folded, values ' +
+            'caseIgnoreMatch, the AVAs of a multi-valued RDN in any order) ' +
+            'and only against a certificate whose chain VERIFIED. One of the ' +
+            'FIVE subject parameters, and a client registers at most one — ' +
+            'a second is refused (STS-REG-0131, STS-REG-0135). With none, ' +
+            'tls_client_auth still authenticates a certificate this realm ' +
+            'issued to THIS application. IT IS ALSO THE IDENTIFIER ATTRIBUTE ' +
+            'OF THE `mtls` FAMILY, and it is SINGLE-VALUED while every other ' +
+            'identifier here accumulates, because RFC 8705 says the ' +
+            'certificate matches "the single expected subject".' },
+    { name: 'oauthTlsClientAuthSanDns', kind: 'single',
+      from: 'by hand / POST /oauth2/register',
+      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_dns`: a dNSName ' +
+            'the certificate this client authenticates with must carry, ' +
+            'compared without regard to case or a trailing dot, never as a ' +
+            'wildcard. One of the five subject parameters; see ' +
+            'oauthTlsClientAuthSubjectDn.' },
+    { name: 'oauthTlsClientAuthSanUri', kind: 'single',
+      from: 'by hand / POST /oauth2/register',
+      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_uri`: a ' +
+            'uniformResourceIdentifier the certificate must carry, compared ' +
+            'exactly. One of the five subject parameters.' },
+    { name: 'oauthTlsClientAuthSanIp', kind: 'single',
+      from: 'by hand / POST /oauth2/register',
+      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_ip`: an iPAddress ' +
+            'the certificate must carry, IPv4 or IPv6, compared as the ' +
+            'address rather than its spelling. One of the five subject ' +
+            'parameters.' },
+    { name: 'oauthTlsClientAuthSanEmail', kind: 'single',
+      from: 'by hand / POST /oauth2/register',
+      what: 'RFC 8705 section 2.1.2 `tls_client_auth_san_email`: an ' +
+            'rfc822Name the certificate must carry, the domain compared ' +
+            'without regard to case and the local part exactly (RFC 5280 ' +
+            'section 7.5). One of the five subject parameters.' },
+    { name: 'oauthTlsClientCertificateBoundAccessTokens', kind: 'single',
+      from: 'by hand / POST /oauth2/register',
+      what: 'RFC 8705 section 3.4 ' +
+            '`tls_client_certificate_bound_access_tokens`, TRUE or FALSE. ' +
+            'TRUE is this client DECLARING that its tokens are ' +
+            'certificate-bound, and it is held to that in EVERY mode: a ' +
+            'token request from it over a connection with no client ' +
+            'certificate is refused (STS-OAUTH-0487) rather than answered ' +
+            'with an unbound token, which section 3.4 leaves to the ' +
+            'authorization server. FALSE or absent changes nothing — a ' +
+            'client presenting a certificate still gets a bound token.' },
     { name: 'oauthTlsClientCertificateThumbprint', kind: 'single', from: 'by ' +
         'hand',
       what: 'For RFC 8705 section 2.2 self_signed_tls_client_auth: the ' +
             'base64url SHA-256 of the DER of the certificate this client ' +
-            'authenticates with. THIS SERVICE\'S OWN NAME — the RFC matches ' +
-            'a self-signed certificate against the client\'s registered ' +
-            'jwks, and a thumbprint is the same check with far less to get ' +
-            'wrong on a mock. Fetch a certificate\'s with GET /tls/whoami, ' +
-            'or compute it: openssl x509 -outform DER | openssl dgst -sha256 ' +
-            '-binary | base64url.' },
+            'authenticates with. THIS SERVICE\'S OWN NAME, kept beside ' +
+            'what the RFC names: since 2026-09-13 a certificate also ' +
+            'authenticates the client when it is the x5c[0] of a key in the ' +
+            'jwks it registered (section 2.2.2). Fetch a certificate\'s ' +
+            'thumbprint with GET /tls/whoami, or compute it: openssl x509 ' +
+            '-outform DER | openssl dgst -sha256 -binary | base64url.' },
     { name: 'oauthConfidential', kind: 'single', from: 'this registry',
       what: 'TRUE/FALSE, the determination RFC 9700 mode makes about it — ' +
             'and therefore whether PKCE is required of it and whether its ' +
@@ -1852,6 +2268,47 @@ const SCHEMA = {
             'enctypes, when the keys were made and whether they are sealed. ' +
             'Written in the same act as the keys, so the two cannot describe ' +
             'different generations.' },
+    // CERTIFICATE ENROLLMENT (2026-09-13): what ACME, EST and SCEP issued to
+    // this application, the credentials that let it ask, and the host names
+    // an administrator registered for it. `common/cert_enrollment.js` is the
+    // one reader and writer; the attributes are schema rows so that a sighting
+    // rewriting this entry from its record does not erase them.
+    { name: 'appEnrolledCertificate', kind: 'multi',
+      from: '/enroll/acme, /.well-known/est, /enroll/scep',
+      what: 'One JSON record per certificate issued to this application over ' +
+            'an enrollment protocol: serial, protocol, profile, subject, ' +
+            'names, validity, who asked, whether the key was generated here, ' +
+            'the certificate and its issuing chain, and a revocation mark. ' +
+            'Public material. Written by common/cert_enrollment.js only.' },
+    { name: 'appEnrolledPrivateKey', kind: 'multi',
+      from: '/.well-known/est/serverkeygen',
+      secret: true,
+      what: 'A private key THIS SERVICE generated for one of the certificates ' +
+            'above (EST server-side key generation, or the console\'s ' +
+            'server-generated key pair), as `<serial>:<PEM>`, sealed wherever ' +
+            'the key-encryption key outlives the process. WITHHELD from every ' +
+            'page and /admin-api reply; it is handed over once, at issuance.' },
+    { name: 'appAcmeEabKey', kind: 'multi',
+      from: '/admin/acme',
+      secret: true,
+      what: 'ACME External Account Binding keys issued for this application, ' +
+            'one JSON record each: the key id, the sealed HMAC key, its ' +
+            'expiry and the account it bound. A working credential, WITHHELD ' +
+            'from every page and /admin-api reply.' },
+    { name: 'appScepChallenge', kind: 'multi',
+      from: '/admin/scep',
+      secret: true,
+      what: 'SCEP challenge passwords issued for this application, one JSON ' +
+            'record each: the id, a SHA-256 digest of the secret, the profile, ' +
+            'the expiry and when it was redeemed. WITHHELD from every page and ' +
+            '/admin-api reply.' },
+    { name: 'appCertificateHostName', kind: 'multi',
+      from: '/admin/acme, /admin/est, /admin/scep',
+      what: 'A DNS name or IP address this application may be issued a ' +
+            'certificate for over ACME, EST or SCEP. Registering one is the ' +
+            'whole proof of control: this service never dials a name to ' +
+            'validate it. Set by an administrator; read by ' +
+            'common/cert_enrollment.js.' },
     { name: 'appRegistrationJson', kind: 'single',
       from: 'POST /oauth2/register',
       what: 'THE RFC 7591 REGISTRATION VERBATIM, as JSON on one attribute. ' +
@@ -2315,6 +2772,28 @@ const EDITABLE = {
   oauthTokenEndpointAuthMethod: 'set',
   oauthJwks: 'set',
   oauthJwksUri: 'set',
+  // RFC 9701's three. `set`, because each holds one algorithm.
+  oauthIntrospectionSignedResponseAlg: 'set',
+  oauthIntrospectionEncryptedResponseAlg: 'set',
+  oauthIntrospectionEncryptedResponseEnc: 'set',
+  // RFC 9101's five. The request URIs accumulate, like redirect URIs; the
+  // other four hold one answer each.
+  oauthRequestUri: 'multi',
+  oauthRequestObjectSigningAlg: 'set',
+  oauthRequestObjectEncryptionAlg: 'set',
+  oauthRequestObjectEncryptionEnc: 'set',
+  oauthRequireSignedRequestObject: 'set',
+  // RFC 9126's one. It holds one answer.
+  oauthRequirePushedAuthorizationRequests: 'set',
+  // RFC 9396's two. Both accumulate: a resource understands several types, and
+  // a client uses several.
+  oauthAuthorizationDetailsType: 'multi',
+  oauthAuthorizationDetailsTypes: 'multi',
+  // RFC 9470's two. Each holds one answer: the acr values are one ordered
+  // list in one value, because a directory's multi-valued attribute has no
+  // order and the order is the preference.
+  oauthStepUpAcrValues: 'set',
+  oauthStepUpMaxAge: 'set',
   // RFC 7521 / RFC 7523. The declaration is `multi` like every other
   // identifier attribute here — one application legitimately asserts under a
   // per-environment issuer name, and a `set` would replace the list with one
@@ -2348,7 +2827,20 @@ const EDITABLE = {
   oauthSamlAssertionThumbprint: 'set',
   oauthSamlAssertionExpiresAt: 'set',
   oauthSamlAssertionKeySource: 'set',
+  // RFC 7591 section 2.3 (2026-09-13). The declaration accumulates like every
+  // issuer declaration here; the issued statement is ONE value, replaced by
+  // the next issue. The three `appSoftwareStatement*` facts are what a
+  // registration recorded and are not here.
+  oauthSoftwareStatementIssuer: 'multi',
+  oauthIssuedSoftwareStatement: 'set',
   oauthTlsClientAuthSubjectDn: 'set',
+  // RFC 8705's other four subject parameters and the section 3.4 flag
+  // (2026-09-13). Checked on the way in by mtlsAttributeProblem().
+  oauthTlsClientAuthSanDns: 'set',
+  oauthTlsClientAuthSanUri: 'set',
+  oauthTlsClientAuthSanIp: 'set',
+  oauthTlsClientAuthSanEmail: 'set',
+  oauthTlsClientCertificateBoundAccessTokens: 'set',
   oauthTlsClientCertificateThumbprint: 'set',
   oauthConfidential: 'set',
   appRegistrationAccessToken: 'set',
@@ -2431,6 +2923,10 @@ const EDITABLE = {
   // same arrangement oauthRedirectUri has — a registration states it, and an
   // entry nobody registered has no other way to acquire one.
   appHomePageUrl: 'set',
+  // The CORS allowlist, `multi` because an application is served from several
+  // origins as an ordinary matter — a per-environment host, a local
+  // development server beside the deployed one.
+  appCorsOrigin: 'multi',
   ldapBindDn: 'multi',
   scimClientId: 'multi',
   spiffeWorkloadId: 'multi',
@@ -2492,6 +2988,10 @@ const EDITABLE = {
   oauthPermission: 'multi',
   oauthDelegatedPermission: 'multi',
   oauthGlobalConsent: 'multi',
+  // The RFC 9728 document an entry was created from, and where it came from.
+  // Declared and not read; see the two SCHEMA rows.
+  oauthResourceMetadata: 'set',
+  oauthResourceMetadataUrl: 'set',
   samlAssertionConsumerService: 'multi',
   // WS-Federation's return address, which used to be recorded in the attribute
   // above. Its own row says why the two were split.
@@ -2525,10 +3025,12 @@ function editableAttributes(mode) {
 // AN ATTRIBUTE THAT ONLY MEANS SOMETHING TO SOME FAMILIES, AND THE TWO
 // FUNCTIONS THAT ARE THE WHOLE MECHANISM.
 //
-// A SCHEMA row may carry `families: ['oauth2', 'oidc']`. Two do today —
+// A SCHEMA row may carry `families: ['oauth2', 'oidc']`. Five do today —
 // `oauthTokenExchangeRefreshToken`, whose own block argues why it is the first,
-// and `ssfAllowedEvents` (2026-09-12), which carries its own `familyWhy` so the
-// refusal names what IT does rather than the token endpoint — and the rule it
+// `ssfAllowedEvents` (2026-09-12), which carries its own `familyWhy` so the
+// refusal names what IT does rather than the token endpoint, and RFC 9701's
+// three `oauthIntrospection*` attributes (2026-09-13), each with its own — and
+// the rule it
 // declares is that the attribute may be WRITTEN only onto an entry declared for
 // at least one of those families.
 //
@@ -2835,6 +3337,67 @@ function ssfAllowedEventProblem(value) {
              'an account event.';
 }
 
+// ---------------------------------------------------------------------------
+// THE TWO RFC 9728 ATTRIBUTES, CHECKED WHERE THEY ARE WRITTEN (2026-09-13).
+//
+// The document is held to the one thing that makes it the document it claims
+// to be — a JSON object carrying a `resource` string — and no further: the
+// member-by-member reading is `oauth-oidc/protected_resource_metadata.js`'s,
+// which this module cannot require (it requires this one), and a declaration
+// nothing reads is not the place for a second opinion about RFC 9728.
+// ---------------------------------------------------------------------------
+function resourceMetadataProblem(value) {
+  log.debug("Entering resourceMetadataProblem().");
+  const text = String(value == null ? '' : value).trim();
+  if (!text) {
+    log.debug("Leaving resourceMetadataProblem().");
+    return '';
+  }
+  let document = null;
+  try {
+    document = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in resourceMetadataProblem(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving resourceMetadataProblem().");
+    return '`oauthResourceMetadata` is not JSON (' + e.message + '). It ' +
+           'holds an RFC 9728 protected resource metadata document, which ' +
+           'is a JSON object.';
+  }
+  if (!document || typeof document !== 'object' || Array.isArray(document) ||
+      typeof document.resource !== 'string' || !document.resource.trim()) {
+    log.debug("Leaving resourceMetadataProblem().");
+    return '`oauthResourceMetadata` must be a JSON object carrying a ' +
+           '`resource` string — the one member RFC 9728 section 2 makes ' +
+           'REQUIRED.';
+  }
+  log.debug("Leaving resourceMetadataProblem().");
+  return '';
+}
+
+function resourceMetadataUrlProblem(value) {
+  log.debug("Entering resourceMetadataUrlProblem().");
+  const text = String(value == null ? '' : value).trim();
+  if (!text) {
+    log.debug("Leaving resourceMetadataUrlProblem().");
+    return '';
+  }
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      log.debug("Leaving resourceMetadataUrlProblem().");
+      return '';
+    }
+  } catch (e) {
+    log.debug("Caught in resourceMetadataUrlProblem(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving resourceMetadataUrlProblem().");
+  return '"' + text + '" is not an http or https URL, and ' +
+         '`oauthResourceMetadataUrl` records where an RFC 9728 document was ' +
+         'fetched from.';
+}
+
 function homePageProblem(value) {
   log.debug("Entering homePageProblem().");
   const text = String(value == null ? '' : value).trim();
@@ -2890,6 +3453,197 @@ function homePageOf(source) {
   }
   log.debug("Leaving homePageOf().");
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// THE CORS ORIGINS, WRITTEN AND READ (2026-09-13).
+//
+// The grammar is `common/validation.js`'s — `originProblem()` and
+// `normaliseOrigin()` from one parse — and this is the registry's half: the
+// sentence a write door refuses with, and the two readers `common/cors.js`
+// asks. See the `appCorsOrigin` row for what the attribute means.
+//
+// **THE READERS WALK THE DIRECTORY'S ENTRIES AND NOT `list()`**, and that is
+// the point of them rather than a shortcut. They run for every browser request
+// whose Origin is not this service's own, and `list()` builds a `view()` of
+// every entry — which OPENS the sealed signing key on each one that holds one.
+// A CORS decision that decrypted every application's private key per request
+// would be the most expensive header this service sends. So they read the one
+// or two attributes they need off `allApplications()`, whose listing the
+// directory keeps until something under ou=applications is written.
+//
+// **A VALUE THAT IS NOT AN ORIGIN IS DROPPED ON THE WAY OUT**, and normalised
+// otherwise: `ldapmodify` reaches this attribute unchecked, and a stored
+// `https://App.Example.com` should match the header a browser sends for it
+// rather than silently never matching.
+// ---------------------------------------------------------------------------
+function corsOriginWriteProblem(value) {
+  log.debug("Entering corsOriginWriteProblem().");
+  const problem = validation.originProblem(String(value == null ? ''
+                                                                : value));
+  log.debug("Leaving corsOriginWriteProblem().");
+  return problem ? '"' + value + '" cannot be appCorsOrigin: it ' + problem +
+                   '.' : null;
+}
+
+function readableOrigins(values) {
+  log.debug("Entering readableOrigins().");
+  const out = [];
+  valuesOf(values).forEach(function (one) {
+    const origin = validation.normaliseOrigin(String(one));
+    if (origin && out.indexOf(origin) < 0) {
+      out.push(origin);
+    }
+  });
+  log.debug("Leaving readableOrigins().");
+  return out;
+}
+
+// The origins one application lists, from a view(), a record or its fields.
+function corsOriginsOf(source) {
+  log.debug("Entering corsOriginsOf().");
+  const holder = source || {};
+  const fields = holder.fields || holder;
+  log.debug("Leaving corsOriginsOf().");
+  return readableOrigins(fields.appCorsOrigin);
+}
+
+// THE APPLICATION A REQUEST NAMED, and the origins it lists.
+//
+// `name` is the string the request presented and `attributes` the identifier
+// attributes that kind of name is looked for in — `common/cors.js` decides
+// which, because it is the module that knows whether the name came out of a
+// `client_id` or a GNAP instance reference. The match is exact and not
+// case-folded, `forClientId()`'s rule for its reason: a client_id is
+// case-sensitive. Answers `{ known: false }` when no entry carries the name,
+// which the caller reads as a request naming a client this realm does not
+// have. Two entries claiming one name are forClientId()'s configuration
+// mistake; the first is taken, as it is there.
+function corsOriginsForClient(name, attributes) {
+  log.debug("Entering corsOriginsForClient(). name=" + name);
+  const wanted = String(name == null ? '' : name).trim();
+  const backing = wanted ? store() : null;
+  if (!backing) {
+    log.debug("Leaving corsOriginsForClient(). Nothing to look in.");
+    return { known: false, identifier: '', origins: [] };
+  }
+  const names = (attributes && attributes.length ? attributes
+                                                 : ['oauthClientId'])
+    .map(function (one) { return String(one).toLowerCase(); });
+  const entries = backing.allApplications();
+  for (let i = 0; i < entries.length; i++) {
+    const indexed = byLowerName(entries[i].attributes);
+    const matched = names.some(function (attribute) {
+      return valuesOf(indexed[attribute]).indexOf(wanted) >= 0;
+    });
+    if (matched) {
+      const identifier = firstValue(indexed, 'appIdentifier') ||
+                         firstValue(indexed, 'cn');
+      log.debug("Leaving corsOriginsForClient(). " + identifier + ".");
+      return { known: true, identifier: identifier,
+               origins: readableOrigins(indexed.appcorsorigin) };
+    }
+  }
+  log.debug("Leaving corsOriginsForClient(). No application carries it.");
+  return { known: false, identifier: '', origins: [] };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A SHARED SIGNALS STREAM'S OWNER IS ALLOWED, WITHOUT BUILDING A VIEW
+// (2026-09-14). `ssf/ssf_streams.js` asks this for every event on every stream,
+// and it used `get()` and then `list()` — a whole `view()` of EVERY application
+// in the realm, sealed signing keys opened, to read one attribute. A session
+// sweep that expired 2,412 sessions sent a session-revoked for each, and on a
+// realm holding a suite's worth of applications that was 58 seconds with the
+// event loop blocked: an LDAP modify sent in that minute timed out.
+//
+// The same two matches in the same order: the owner's application identifier
+// (what `readApplication()` resolves), then an entry listing the name among its
+// `ssfReceiverId` values. Raw attributes, as the CORS readers above read them.
+// ---------------------------------------------------------------------------
+// **AND THE ANSWER IS KEPT UNTIL ou=applications CHANGES.** The owner of this
+// service's own console and portal streams is `internal`, which names no
+// application, so every lookup fell through to reading every entry — 4ms a
+// session with 300 applications registered. Per realm, keyed on the store's
+// `applicationsVersion()`; a store without that hook is asked every time.
+const ssfAllowedCache = realms.keyed(function () {
+  return { version: -1, answers: new Map() };
+});
+
+function ssfAllowedEventsFor(principal) {
+  log.debug("Entering ssfAllowedEventsFor().");
+  const wanted = String(principal == null ? '' : principal);
+  const backing = wanted ? store() : null;
+  if (!backing) {
+    log.debug("Leaving ssfAllowedEventsFor(). Nothing to look in.");
+    return null;
+  }
+  const version = typeof backing.applicationsVersion === 'function'
+    ? backing.applicationsVersion() : null;
+  const cache = version === null ? null : ssfAllowedCache();
+  if (cache) {
+    if (cache.version !== version) {
+      cache.version = version;
+      cache.answers.clear();
+    }
+    if (cache.answers.has(wanted)) {
+      log.debug("Leaving ssfAllowedEventsFor(). Cached.");
+      return cache.answers.get(wanted);
+    }
+  }
+  const found = findSsfOwner(backing, wanted);
+  if (cache) {
+    cache.answers.set(wanted, found);
+  }
+  log.debug("Leaving ssfAllowedEventsFor().");
+  return found;
+}
+
+function findSsfOwner(backing, wanted) {
+  log.debug("Entering findSsfOwner().");
+  const answer = function (entry) {
+    const indexed = byLowerName(entry.attributes);
+    return { identifier: firstValue(indexed, 'appIdentifier') ||
+                         firstValue(indexed, 'cn') || wanted,
+             values: valuesOf(indexed.ssfallowedevents) };
+  };
+  const direct = backing.readApplication(wanted);
+  if (direct) {
+    log.debug("Leaving findSsfOwner(). By identifier.");
+    return answer(direct);
+  }
+  const entries = backing.allApplications();
+  for (let i = 0; i < entries.length; i++) {
+    const indexed = byLowerName(entries[i].attributes);
+    if (valuesOf(indexed.ssfreceiverid).indexOf(wanted) >= 0) {
+      log.debug("Leaving findSsfOwner(). By ssfReceiverId.");
+      return answer(entries[i]);
+    }
+  }
+  log.debug("Leaving findSsfOwner(). No application.");
+  return null;
+}
+
+// Every origin any application in the ambient realm lists — what a request
+// that names no client is judged against.
+function corsOriginsOfRealm() {
+  log.debug("Entering corsOriginsOfRealm().");
+  const backing = store();
+  if (!backing) {
+    log.debug("Leaving corsOriginsOfRealm(). No directory.");
+    return [];
+  }
+  const out = [];
+  backing.allApplications().forEach(function (entry) {
+    readableOrigins(byLowerName(entry.attributes).appcorsorigin)
+      .forEach(function (origin) {
+        if (out.indexOf(origin) < 0) {
+          out.push(origin);
+        }
+      });
+  });
+  log.debug("Leaving corsOriginsOfRealm(). " + out.length + " origin(s).");
+  return out;
 }
 
 // ===========================================================================
@@ -2998,7 +3752,11 @@ function sealLabelOf(name) {
 // back. The ENTRY still holds it; that is what the KDC reads, through the
 // directory and not through here.
 // ---------------------------------------------------------------------------
-const WITHHELD_FIELDS = ['krb5ServiceKeys'];
+const WITHHELD_FIELDS = ['krb5ServiceKeys',
+                         // Certificate enrollment (2026-09-13): a private key
+                         // this service generated, and two working credentials.
+                         'appEnrolledPrivateKey', 'appAcmeEabKey',
+                         'appScepChallenge'];
 
 // ---------------------------------------------------------------------------
 // WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
@@ -3164,6 +3922,975 @@ function openSealedFields(fields, identifier) {
 // check compares by exact string — where quietly keeping one is precisely the
 // wrong answer.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// WHICH ADDRESSES AN OAUTH ENTRY MAY HOLD (2026-09-13).
+//
+// `oauthRedirectUri` and `oauthPostLogoutRedirectUri` are addresses a browser
+// is SENT to, and `oauthFrontchannelLogoutUri` is one a sign-out page FRAMES.
+// Until this date none of the three was checked on the way in — at
+// registration, at a console `add` or at `/admin-api` — so `javascript:` could
+// be stored in all of them. The two redirect attributes were caught again at
+// the endpoints, which type what a request presents; the front-channel one was
+// not, and is drawn as an iframe and a link.
+//
+// One function, so the create walk, the update door and both RFC 7591 routes
+// ask the same question: `validation.redirectUriProblem()` for the redirect
+// pair (http or https with a host, or a private-use scheme named for a domain
+// in reverse), and `frontchannelUriProblem()` — http or https only — for the
+// framed one. A private-use post-logout address may be held; the logout
+// endpoint decides when one is followed.
+//
+// `ldapmodify` still reaches all three, which is why the endpoints keep their
+// own checks and `frontchannel_logout.js` checks again when it reads.
+// ---------------------------------------------------------------------------
+const ADDRESS_ATTRIBUTES = {
+  oauthRedirectUri: 'redirect',
+  oauthPostLogoutRedirectUri: 'redirect',
+  oauthFrontchannelLogoutUri: 'frontchannel'
+};
+
+function addressProblem(attribute, value) {
+  log.debug("Entering addressProblem(). attribute=" + attribute);
+  const kind = ADDRESS_ATTRIBUTES[attribute];
+  if (!kind) {
+    log.debug("Leaving addressProblem(). Not an address attribute.");
+    return null;
+  }
+  const problem = kind === 'frontchannel'
+    ? validation.frontchannelUriProblem(String(value))
+    : validation.redirectUriProblem(String(value));
+  log.debug("Leaving addressProblem().");
+  return problem ? '"' + value + '" cannot be ' + attribute + ': it ' +
+                   problem + '.' : null;
+}
+
+// The same question about an RFC 7591 document, before any of it is written.
+// Answers null or `{ errorCode, error, description }` in RFC 7591 section
+// 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
+// `invalid_client_metadata` for the other two.
+function registrationUriProblem(metadata) {
+  log.debug("Entering registrationUriProblem().");
+  const meta = metadata || {};
+  const members = [
+    ['redirect_uris', 'oauthRedirectUri', 'invalid_redirect_uri'],
+    ['post_logout_redirect_uris', 'oauthPostLogoutRedirectUri',
+     'invalid_client_metadata'],
+    ['frontchannel_logout_uri', 'oauthFrontchannelLogoutUri',
+     'invalid_client_metadata']
+  ];
+  for (let i = 0; i < members.length; i++) {
+    const values = valuesOf(meta[members[i][0]]);
+    for (let j = 0; j < values.length; j++) {
+      const problem = addressProblem(members[i][1], values[j]);
+      if (problem) {
+        log.debug("Leaving registrationUriProblem(). " + members[i][0] + ".");
+        return { errorCode: 'STS-REG-0070', error: members[i][2],
+                 description: members[i][0] + ': ' + problem };
+      }
+    }
+  }
+  log.debug("Leaving registrationUriProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9701 SECTION 6: WHAT THE THREE INTROSPECTION RESPONSE MEMBERS MAY HOLD.
+//
+// Here, because this module owns what a value of one of its attributes may be
+// — `consent.js` delegates the scope grammar here for the same reason — and
+// because every write door comes through here: RFC 7591 registration and RFC
+// 7592 update (`register()`, `updateRegistration()`, and the endpoint's own 400
+// in front of them), the console's create and set, and `/admin-api`.
+// `oauth-oidc/introspection_jwt.js` asks the same function when it answers, for
+// a value an `ldapmodify` put on the entry.
+//
+// **THE LISTS ARE `common/crypto.js`'s**, so a value this service cannot sign
+// or encrypt with cannot be stored and the metadata cannot advertise one it
+// would refuse. Signing is every algorithm in the JWS table — which has no `none`,
+// and section 5 says the response MUST be cryptographically secured. Encryption
+// is the ASYMMETRIC list only, for the UserInfo response's reason: the key is
+// the one the client registered, and a symmetric family there would be a key
+// derived from the JSON of a public key.
+//
+// Answers null, or `{ errorCode, error, description }` in RFC 7591 section
+// 3.2.2's vocabulary. `values` holds any of the three members by their
+// REGISTRATION names; an absent or empty member is "not registered".
+// ---------------------------------------------------------------------------
+const INTROSPECTION_DEFAULT_SIGNING_ALG = 'RS256';
+
+const INTROSPECTION_DEFAULT_ENC = 'A128CBC-HS256';
+
+const INTROSPECTION_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS.slice(0);
+
+const INTROSPECTION_ENCRYPTION_ALGS = stsCrypto.JWE_ASYMMETRIC_ALGS.slice(0);
+
+const INTROSPECTION_ENCRYPTION_ENCS = Object.keys(stsCrypto.JWE_ENCS);
+
+// The attribute each member is stored in, in section 6's order.
+const INTROSPECTION_ATTRIBUTES = {
+  introspection_signed_response_alg: 'oauthIntrospectionSignedResponseAlg',
+  introspection_encrypted_response_alg:
+    'oauthIntrospectionEncryptedResponseAlg',
+  introspection_encrypted_response_enc:
+    'oauthIntrospectionEncryptedResponseEnc'
+};
+
+function introspectionResponseProblem(values) {
+  log.debug("Entering introspectionResponseProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0072', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  const text = {};
+  const names = Object.keys(INTROSPECTION_ATTRIBUTES);
+  for (let i = 0; i < names.length; i++) {
+    const value = asked[names[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving introspectionResponseProblem(). Not a string.");
+      return refusal(names[i], 'must be a string naming one algorithm.');
+    }
+    text[names[i]] = String(value || '').trim();
+  }
+  const sign = text.introspection_signed_response_alg;
+  const alg = text.introspection_encrypted_response_alg;
+  const enc = text.introspection_encrypted_response_enc;
+  if (sign && INTROSPECTION_SIGNING_ALGS.indexOf(sign) < 0) {
+    log.debug("Leaving introspectionResponseProblem(). Signing alg.");
+    return refusal('introspection_signed_response_alg', '"' + sign + '" ' +
+      (sign.toLowerCase() === 'none'
+        ? 'is refused: RFC 9701 section 5 says an introspection response ' +
+          'MUST be cryptographically secured, so there is no unsigned one.'
+        : 'is not an algorithm this service signs with. It signs with ' +
+          INTROSPECTION_SIGNING_ALGS.join(', ') + ' (see ' +
+          'introspection_signing_alg_values_supported).'));
+  }
+  if (alg && INTROSPECTION_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving introspectionResponseProblem(). Encryption alg.");
+    return refusal('introspection_encrypted_response_alg', '"' + alg + '" is ' +
+      'not an algorithm this service encrypts a response with. It encrypts ' +
+      'with ' + INTROSPECTION_ENCRYPTION_ALGS.join(', ') + ' (see ' +
+      'introspection_encryption_alg_values_supported). The symmetric ' +
+      'families are for a document encrypted TO this service; a response is ' +
+      'encrypted to the key you registered.');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving introspectionResponseProblem(). enc without alg.");
+    return refusal('introspection_encrypted_response_enc', 'RFC 9701 section ' +
+      '6 says it MUST NOT be specified without ' +
+      'introspection_encrypted_response_alg, and none is registered.');
+  }
+  if (enc && INTROSPECTION_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving introspectionResponseProblem(). Content encryption.");
+    return refusal('introspection_encrypted_response_enc', '"' + enc + '" is ' +
+      'not a content encryption algorithm this service has. It has ' +
+      INTROSPECTION_ENCRYPTION_ENCS.join(', ') + ' (see ' +
+      'introspection_encryption_enc_values_supported).');
+  }
+  log.debug("Leaving introspectionResponseProblem(). Nothing refused.");
+  return null;
+}
+
+// The same question about ONE attribute written through the console or
+// `/admin-api`, with the entry's (or the create's) other two attributes read
+// beside it — the enc-without-alg rule is about the pair. A CLEAR is never
+// refused, which is every check in updateApplication()'s rule: an entry left
+// holding an `enc` alone is refused where it is read, by name.
+function introspectionAttributeProblem(attribute, value, fields) {
+  log.debug("Entering introspectionAttributeProblem(). attribute=" +
+            attribute);
+  const members = Object.keys(INTROSPECTION_ATTRIBUTES);
+  const member = members.filter(function (name) {
+    return INTROSPECTION_ATTRIBUTES[name] === attribute;
+  })[0];
+  if (!member || !String(value || '').trim()) {
+    log.debug("Leaving introspectionAttributeProblem(). Not asked.");
+    return '';
+  }
+  const beside = fields || {};
+  const values = {};
+  members.forEach(function (name) {
+    const held = valuesOf(beside[INTROSPECTION_ATTRIBUTES[name]])[0];
+    values[name] = held === undefined ? '' : String(held);
+  });
+  values[member] = String(value);
+  const problem = introspectionResponseProblem(values);
+  log.debug("Leaving introspectionAttributeProblem().");
+  return problem
+    ? problem.description.replace(problem.member,
+                                  INTROSPECTION_ATTRIBUTES[problem.member])
+    : '';
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9101 AND OPENID CONNECT REGISTRATION: WHAT A CLIENT MAY REGISTER ABOUT
+// ITS REQUEST OBJECTS (2026-09-13).
+//
+// The introspection check's shape, for its reason — this module owns what a
+// value of one of its attributes may be, and every write door comes through
+// here. `oauth-oidc/request_object.js` reads the same tables when it verifies.
+//
+//   request_uris                   absolute URLs, https — or http where
+//                                  `mode.acceptsLooseRequestUris()` — with no
+//                                  credentials in them, at most 2048 characters
+//   request_object_signing_alg     a JWS algorithm this service verifies, or
+//                                  `none` where an unsigned object is accepted
+//   request_object_encryption_alg  a JWE algorithm this service DECRYPTS: the
+//                                  asymmetric ones to this realm's published
+//                                  key, the symmetric ones to the client secret
+//   request_object_encryption_enc  a content encryption; not without an alg
+//   require_signed_request_object  a boolean
+// ---------------------------------------------------------------------------
+const REQUEST_OBJECT_DEFAULT_ENC = 'A128CBC-HS256';
+
+const REQUEST_OBJECT_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS.slice(0);
+
+const REQUEST_OBJECT_ENCRYPTION_ALGS = stsCrypto.JWE_DECRYPT_ALGS.slice(0);
+
+const REQUEST_OBJECT_ENCRYPTION_ENCS = Object.keys(stsCrypto.JWE_ENCS);
+
+const REQUEST_OBJECT_ATTRIBUTES = {
+  request_uris: 'oauthRequestUri',
+  request_object_signing_alg: 'oauthRequestObjectSigningAlg',
+  request_object_encryption_alg: 'oauthRequestObjectEncryptionAlg',
+  request_object_encryption_enc: 'oauthRequestObjectEncryptionEnc',
+  require_signed_request_object: 'oauthRequireSignedRequestObject'
+};
+
+// One registered request_uri, as a sentence naming what is wrong, or ''.
+function requestUriProblem(value) {
+  log.debug("Entering requestUriProblem().");
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!text) {
+    log.debug("Leaving requestUriProblem(). Empty.");
+    return 'a request_uri is empty';
+  }
+  if (text.length > 2048) {
+    log.debug("Leaving requestUriProblem(). Too long.");
+    return 'a request_uri is ' + text.length + ' characters, and RFC 9101 ' +
+           'section 5.2 says one SHOULD NOT exceed 512 (2048 is the most this ' +
+           'service stores)';
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(text);
+  } catch (e) {
+    log.debug("Caught in requestUriProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving requestUriProblem(). Not a URL.");
+    return '"' + text + '" is not an absolute URL';
+  }
+  if (parsed.username || parsed.password) {
+    log.debug("Leaving requestUriProblem(). Credentials in it.");
+    return '"' + text + '" carries a user name or password, which this ' +
+           'service will not send anywhere';
+  }
+  if (parsed.protocol === 'https:') {
+    log.debug("Leaving requestUriProblem(). https.");
+    return '';
+  }
+  if (parsed.protocol === 'http:' && mode.acceptsLooseRequestUris()) {
+    log.debug("Leaving requestUriProblem(). http, development.");
+    return '';
+  }
+  log.debug("Leaving requestUriProblem(). Wrong scheme.");
+  return '"' + text + '" is ' + parsed.protocol.replace(':', '') + ', and ' +
+         'RFC 9101 section 5.2 makes a request_uri https' +
+         (parsed.protocol === 'http:'
+           ? ' — plain http is accepted in development mode only' : '');
+}
+
+function requestObjectMetadataProblem(values) {
+  log.debug("Entering requestObjectMetadataProblem().");
+  const asked = values || {};
+  const refusal = function (member, description) {
+    log.debug("Entering refusal(). member=" + member);
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0100', error: 'invalid_client_metadata',
+             member: member, description: member + ': ' + description };
+  };
+  if (asked.request_uris !== undefined && asked.request_uris !== null) {
+    if (!Array.isArray(asked.request_uris)) {
+      log.debug("Leaving requestObjectMetadataProblem(). Not an array.");
+      return refusal('request_uris', 'must be an array of URLs.');
+    }
+    for (let i = 0; i < asked.request_uris.length; i++) {
+      if (typeof asked.request_uris[i] !== 'string') {
+        log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
+        return refusal('request_uris', 'every member must be a string.');
+      }
+      const problem = requestUriProblem(asked.request_uris[i]);
+      if (problem) {
+        log.debug("Leaving requestObjectMetadataProblem(). A request_uri.");
+        return refusal('request_uris', problem + '.');
+      }
+    }
+  }
+  const text = {};
+  const strings = ['request_object_signing_alg',
+                   'request_object_encryption_alg',
+                   'request_object_encryption_enc'];
+  for (let i = 0; i < strings.length; i++) {
+    const value = asked[strings[i]];
+    if (value !== undefined && value !== null && typeof value !== 'string') {
+      log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
+      return refusal(strings[i], 'must be a string naming one algorithm.');
+    }
+    text[strings[i]] = String(value || '').trim();
+  }
+  const required = asked.require_signed_request_object;
+  if (required !== undefined && required !== null &&
+      typeof required !== 'boolean') {
+    log.debug("Leaving requestObjectMetadataProblem(). Not a boolean.");
+    return refusal('require_signed_request_object', 'must be true or false.');
+  }
+  const sign = text.request_object_signing_alg;
+  if (sign === 'none') {
+    if (!mode.acceptsUnsignedRequestObjects() || required === true) {
+      log.debug("Leaving requestObjectMetadataProblem(). none refused.");
+      return refusal('request_object_signing_alg', '`none` is refused: ' +
+        (required === true
+          ? 'this registration also sets require_signed_request_object'
+          : 'this realm is in product mode, where RFC 9101 section 4\'s ' +
+            'signed request object is required') + '.');
+    }
+  } else if (sign && REQUEST_OBJECT_SIGNING_ALGS.indexOf(sign) < 0) {
+    log.debug("Leaving requestObjectMetadataProblem(). Signing alg.");
+    return refusal('request_object_signing_alg', '"' + sign + '" is not an ' +
+      'algorithm this service verifies. It verifies ' +
+      REQUEST_OBJECT_SIGNING_ALGS.join(', ') + ' (see ' +
+      'request_object_signing_alg_values_supported).');
+  }
+  const alg = text.request_object_encryption_alg;
+  const enc = text.request_object_encryption_enc;
+  if (alg && REQUEST_OBJECT_ENCRYPTION_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving requestObjectMetadataProblem(). Encryption alg.");
+    return refusal('request_object_encryption_alg', '"' + alg + '" is not an ' +
+      'algorithm this service decrypts a request object with. It decrypts ' +
+      REQUEST_OBJECT_ENCRYPTION_ALGS.join(', ') + ' (see ' +
+      'request_object_encryption_alg_values_supported).');
+  }
+  if (enc && !alg) {
+    log.debug("Leaving requestObjectMetadataProblem(). enc without alg.");
+    return refusal('request_object_encryption_enc', 'it may not be ' +
+      'registered without request_object_encryption_alg, and none is.');
+  }
+  if (enc && REQUEST_OBJECT_ENCRYPTION_ENCS.indexOf(enc) < 0) {
+    log.debug("Leaving requestObjectMetadataProblem(). Content encryption.");
+    return refusal('request_object_encryption_enc', '"' + enc + '" is not a ' +
+      'content encryption algorithm this service has. It has ' +
+      REQUEST_OBJECT_ENCRYPTION_ENCS.join(', ') + '.');
+  }
+  log.debug("Leaving requestObjectMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// The same question about ONE attribute written through the console or
+// `/admin-api`, with the entry's other attributes beside it. A request URI is
+// checked alone (an `add` or a create's value); the boolean holds TRUE or
+// FALSE, the directory's spelling; the algorithms are read as the registration
+// members they are. A CLEAR is never refused.
+function requestObjectAttributeProblem(attribute, value, fields) {
+  log.debug("Entering requestObjectAttributeProblem(). attribute=" +
+            attribute);
+  const member = Object.keys(REQUEST_OBJECT_ATTRIBUTES).filter(function (name) {
+    return REQUEST_OBJECT_ATTRIBUTES[name] === attribute;
+  })[0];
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!member || !text) {
+    log.debug("Leaving requestObjectAttributeProblem(). Not asked.");
+    return '';
+  }
+  if (member === 'request_uris') {
+    const uri = requestUriProblem(text);
+    log.debug("Leaving requestObjectAttributeProblem(). A request URI.");
+    return uri ? attribute + ': ' + uri + '.' : '';
+  }
+  const beside = fields || {};
+  const heldOf = function (name) {
+    log.debug("Entering heldOf().");
+    const held = valuesOf(beside[REQUEST_OBJECT_ATTRIBUTES[name]])[0];
+    log.debug("Leaving heldOf().");
+    return held === undefined ? '' : String(held);
+  };
+  if (member === 'require_signed_request_object' &&
+      ['TRUE', 'FALSE'].indexOf(text.toUpperCase()) < 0) {
+    log.debug("Leaving requestObjectAttributeProblem(). Not a boolean.");
+    return attribute + ': "' + text + '" is not TRUE or FALSE.';
+  }
+  const values = {
+    request_object_signing_alg: heldOf('request_object_signing_alg'),
+    request_object_encryption_alg: heldOf('request_object_encryption_alg'),
+    request_object_encryption_enc: heldOf('request_object_encryption_enc'),
+    require_signed_request_object: heldOf('require_signed_request_object')
+      .toUpperCase() === 'TRUE'
+  };
+  values[member] = member === 'require_signed_request_object'
+    ? text.toUpperCase() === 'TRUE' : text;
+  const problem = requestObjectMetadataProblem(values);
+  log.debug("Leaving requestObjectAttributeProblem().");
+  return problem
+    ? problem.description.replace(problem.member,
+                                  REQUEST_OBJECT_ATTRIBUTES[problem.member])
+    : '';
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9126 SECTION 6: WHAT A CLIENT MAY REGISTER ABOUT PUSHING (2026-09-13).
+//
+// One member, a boolean, and the one check is that it IS one — a string
+// "true" in a registration document is refused rather than read, because a
+// client that thinks it registered a requirement and did not is a client whose
+// authorization requests are quietly not held to it. Asked by the registration
+// endpoint (`STS-REG-0120`, RFC 7591's invalid_client_metadata) and, for a
+// console or `/admin-api` write, by `pushedAuthorizationAttributeProblem()`
+// (`STS-REG-0121`).
+// ---------------------------------------------------------------------------
+function pushedAuthorizationMetadataProblem(values) {
+  log.debug("Entering pushedAuthorizationMetadataProblem().");
+  const asked = values || {};
+  const value = asked.require_pushed_authorization_requests;
+  if (value !== undefined && value !== null && typeof value !== 'boolean') {
+    log.debug("Leaving pushedAuthorizationMetadataProblem(). Not a boolean.");
+    return { errorCode: 'STS-REG-0120', error: 'invalid_client_metadata',
+             member: 'require_pushed_authorization_requests',
+             description: 'require_pushed_authorization_requests must be ' +
+               'true or false (RFC 9126 section 6), and this registration ' +
+               'gives ' + JSON.stringify(value) + '.' };
+  }
+  log.debug("Leaving pushedAuthorizationMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// The same question about the attribute, written through the console or
+// `/admin-api`: TRUE or FALSE, the directory's spelling. A CLEAR is never
+// refused.
+function pushedAuthorizationAttributeProblem(attribute, value) {
+  log.debug("Entering pushedAuthorizationAttributeProblem().");
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'oauthRequirePushedAuthorizationRequests' || !text) {
+    log.debug("Leaving pushedAuthorizationAttributeProblem(). Not asked.");
+    return '';
+  }
+  if (['TRUE', 'FALSE'].indexOf(text.toUpperCase()) < 0) {
+    log.debug("Leaving pushedAuthorizationAttributeProblem(). Not a boolean.");
+    return attribute + ': "' + text + '" is not TRUE or FALSE.';
+  }
+  log.debug("Leaving pushedAuthorizationAttributeProblem(). Nothing refused.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// RFC 8705: WHAT A CLIENT MAY REGISTER ABOUT ITS CERTIFICATE (2026-09-13).
+//
+// Section 2.1.2's five subject parameters, of which a `tls_client_auth` client
+// uses "exactly one", and section 3.4's
+// `tls_client_certificate_bound_access_tokens`. **AT MOST ONE, NOT EXACTLY
+// ONE**, and that is a decision rather than a leniency: a client with none is
+// authenticated here by a certificate this realm issued to THIS application
+// (the implicit mapping `client_auth.js` argues), so none is a registration
+// with a meaning. Two is a client that does not know which subject it will
+// present, and the check it would get is "any of these", which the RFC does
+// not describe — so it is refused rather than chosen between.
+//
+// The grammar of each value is `certificate_subject.js`'s, so a spelling the
+// verifier cannot match is refused where it is written.
+//
+//   STS-REG-0130  a value is not what its member says it is
+//   STS-REG-0131  more than one subject parameter
+//   STS-REG-0132  the section 3.4 flag is not a boolean
+//
+// and the console's and `/admin-api`'s writes of the attributes, through
+// `mtlsAttributeProblem()`: 0134 for a value, 0135 for a second parameter and
+// 0136 for a flag that is not TRUE or FALSE. 0133 is the registration
+// endpoint's — a client asking for bound tokens from a service whose main port
+// is not TLS — and is decided in `oauth-oidc/oauth2.js`, which knows the port.
+// ---------------------------------------------------------------------------
+const TLS_SUBJECT_ATTRIBUTES = certificateSubject.MEMBER_NAMES.map(
+  function (member) {
+    return certificateSubject.MEMBERS[member].attribute;
+  });
+const TLS_BOUND_TOKENS_ATTRIBUTE =
+  'oauthTlsClientCertificateBoundAccessTokens';
+
+function mtlsMetadataProblem(values) {
+  log.debug("Entering mtlsMetadataProblem().");
+  const asked = values || {};
+  const present = certificateSubject.MEMBER_NAMES.filter(function (member) {
+    return asked[member] !== undefined && asked[member] !== null;
+  });
+  for (let i = 0; i < present.length; i++) {
+    const said = certificateSubject.valueProblem(present[i], asked[present[i]]);
+    if (said) {
+      log.debug("Leaving mtlsMetadataProblem(). A value.");
+      return { errorCode: 'STS-REG-0130', error: 'invalid_client_metadata',
+               member: present[i], description: 'RFC 8705 section 2.1.2: ' +
+                 said };
+    }
+  }
+  if (present.length > 1) {
+    log.debug("Leaving mtlsMetadataProblem(). More than one.");
+    return { errorCode: 'STS-REG-0131', error: 'invalid_client_metadata',
+             member: present[1],
+             description: 'RFC 8705 section 2.1.2: a client uses exactly ' +
+               'one certificate subject parameter, and this registration ' +
+               'gives ' + present.length + ' (' + present.join(', ') + '). ' +
+               'Register the one subject the certificate will carry.' };
+  }
+  const flag = asked.tls_client_certificate_bound_access_tokens;
+  if (flag !== undefined && flag !== null && typeof flag !== 'boolean') {
+    log.debug("Leaving mtlsMetadataProblem(). Not a boolean.");
+    return { errorCode: 'STS-REG-0132', error: 'invalid_client_metadata',
+             member: 'tls_client_certificate_bound_access_tokens',
+             description: 'tls_client_certificate_bound_access_tokens must ' +
+               'be true or false (RFC 8705 section 3.4), and this ' +
+               'registration gives ' + JSON.stringify(flag) + '.' };
+  }
+  log.debug("Leaving mtlsMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// The same questions about an attribute written through the console or
+// `/admin-api`, read against what the entry already holds. A CLEAR is never
+// refused, and a SET of the parameter already held replaces it — only a
+// DIFFERENT second parameter is refused, with the one to take off named.
+// Answers `{ code, message }` or null.
+function mtlsAttributeProblem(attribute, value, fields) {
+  log.debug("Entering mtlsAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!text) {
+    log.debug("Leaving mtlsAttributeProblem(). Not asked.");
+    return null;
+  }
+  if (attribute === TLS_BOUND_TOKENS_ATTRIBUTE) {
+    if (['TRUE', 'FALSE'].indexOf(text.toUpperCase()) < 0) {
+      log.debug("Leaving mtlsAttributeProblem(). Not a boolean.");
+      return { code: 'STS-REG-0136',
+               message: attribute + ': "' + text + '" is not TRUE or FALSE.' };
+    }
+    log.debug("Leaving mtlsAttributeProblem(). A usable flag.");
+    return null;
+  }
+  const index = TLS_SUBJECT_ATTRIBUTES.indexOf(attribute);
+  if (index < 0) {
+    log.debug("Leaving mtlsAttributeProblem(). Not an RFC 8705 attribute.");
+    return null;
+  }
+  const member = certificateSubject.MEMBER_NAMES[index];
+  const said = certificateSubject.valueProblem(member, text);
+  if (said) {
+    log.debug("Leaving mtlsAttributeProblem(). A value.");
+    return { code: 'STS-REG-0134',
+             message: attribute + ': ' + said.replace(member + ' ', '') };
+  }
+  const beside = fields || {};
+  const other = TLS_SUBJECT_ATTRIBUTES.filter(function (name) {
+    return name !== attribute && valuesOf(beside[name]).some(function (one) {
+      return String(one).trim() !== '';
+    });
+  })[0];
+  if (other) {
+    log.debug("Leaving mtlsAttributeProblem(). A second parameter.");
+    return { code: 'STS-REG-0135',
+             message: attribute + ': this application already registers ' +
+               other + ', and RFC 8705 section 2.1.2 gives a client exactly ' +
+               'one certificate subject parameter. Clear ' + other +
+               ' first.' };
+  }
+  log.debug("Leaving mtlsAttributeProblem(). Nothing refused.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9396: WHAT AN ENTRY MAY SAY ABOUT authorization_details (2026-09-13).
+//
+// This module owns what a value of its attributes may be, for the introspection
+// check's reason, so the TYPE DEFINITION a resource writes is read here — and
+// `oauth-oidc/authorization_details.js` reads it back through
+// `authorizationDetailsTypeOf()` rather than parsing it a second way.
+//
+//   a type name                    1 to 512 printable characters with no
+//                                  space; `openid_credential` is OpenID4VCI's
+//                                  and is built in, so no entry may declare it
+//   a definition                   the name alone, or a JSON object of `type`
+//                                  (required), `description` (a string),
+//                                  `locations` (absolute URIs, no fragment)
+//                                  and `schema` (a JSON Schema that COMPILES) —
+//                                  nothing else, so a misspelt member is
+//                                  refused rather than ignored
+//   authorization_details_types    a client's registration member: an array of
+//                                  type names
+// ---------------------------------------------------------------------------
+const AUTHORIZATION_DETAILS_BUILT_IN = ['openid_credential'];
+
+const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
+                                                  'locations', 'schema'];
+
+// The largest definition an entry may hold: a schema is data a person wrote,
+// and every authorization request carrying the type compiles it once.
+const AUTHORIZATION_DETAILS_DEFINITION_MAX = 65536;
+
+let authorizationDetailsAjv = null;
+
+// One Ajv for every definition this process reads, made on first use so that a
+// process that never meets a rich authorization request never loads it. Not
+// strict, because a schema is somebody else's document and Ajv's strict mode
+// refuses keywords that are merely unusual; the draft is 2020-12.
+function authorizationDetailsSchemaCompiler() {
+  log.debug("Entering authorizationDetailsSchemaCompiler().");
+  if (!authorizationDetailsAjv) {
+    const Ajv2020 = require('ajv/dist/2020');
+    authorizationDetailsAjv = new Ajv2020({ strict: false, allErrors: false,
+                                            coerceTypes: false });
+    require('ajv-formats')(authorizationDetailsAjv);
+  }
+  log.debug("Leaving authorizationDetailsSchemaCompiler().");
+  return authorizationDetailsAjv;
+}
+
+// A type NAME, as a sentence naming what is wrong, or ''.
+function authorizationDetailsTypeNameProblem(value) {
+  log.debug("Entering authorizationDetailsTypeNameProblem().");
+  const text = typeof value === 'string' ? value : '';
+  if (!text) {
+    log.debug("Leaving authorizationDetailsTypeNameProblem(). Empty.");
+    return 'a type is not a non-empty string';
+  }
+  if (text.length > 512 || !/^[\x21-\x7e]+$/.test(text)) {
+    log.debug("Leaving authorizationDetailsTypeNameProblem(). Shape.");
+    return '"' + text.slice(0, 80) + '" is not a type name: 1 to 512 ' +
+           'printable ASCII characters with no space';
+  }
+  log.debug("Leaving authorizationDetailsTypeNameProblem().");
+  return '';
+}
+
+// One `oauthAuthorizationDetailsType` value read as a definition:
+// `{ type, description, locations, schema, validate, problem }`. `problem` is ''
+// for a usable one; `validate` is the compiled schema, or null where there is
+// none. NEVER throws.
+function authorizationDetailsTypeOf(value) {
+  log.debug("Entering authorizationDetailsTypeOf().");
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  const out = { type: '', description: '', locations: [], schema: null,
+                validate: null, problem: '' };
+  if (!text) {
+    out.problem = 'the definition is empty';
+    log.debug("Leaving authorizationDetailsTypeOf(). Empty.");
+    return out;
+  }
+  if (text.length > AUTHORIZATION_DETAILS_DEFINITION_MAX) {
+    out.problem = 'the definition is ' + text.length + ' characters, and at ' +
+      'most ' + AUTHORIZATION_DETAILS_DEFINITION_MAX + ' are stored';
+    log.debug("Leaving authorizationDetailsTypeOf(). Too long.");
+    return out;
+  }
+  let definition = null;
+  if (text.charAt(0) === '{') {
+    try {
+      definition = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in authorizationDetailsTypeOf(): " +
+                ((e && e.message) || e));
+      out.problem = 'the definition starts with "{" and is not readable ' +
+                    'JSON: ' + e.message;
+      log.debug("Leaving authorizationDetailsTypeOf(). Not JSON.");
+      return out;
+    }
+  } else {
+    definition = { type: text };
+  }
+  if (!definition || typeof definition !== 'object' ||
+      Array.isArray(definition)) {
+    out.problem = 'the definition is not a JSON object';
+    log.debug("Leaving authorizationDetailsTypeOf(). Not an object.");
+    return out;
+  }
+  const stray = Object.keys(definition).filter(function (name) {
+    return AUTHORIZATION_DETAILS_DEFINITION_MEMBERS.indexOf(name) < 0;
+  });
+  if (stray.length) {
+    out.problem = 'the definition carries ' + stray.join(', ') + ', and a ' +
+      'definition holds only ' +
+      AUTHORIZATION_DETAILS_DEFINITION_MEMBERS.join(', ');
+    log.debug("Leaving authorizationDetailsTypeOf(). A stray member.");
+    return out;
+  }
+  const nameProblem = authorizationDetailsTypeNameProblem(definition.type);
+  if (nameProblem) {
+    out.problem = nameProblem;
+    log.debug("Leaving authorizationDetailsTypeOf(). The type name.");
+    return out;
+  }
+  out.type = definition.type;
+  if (AUTHORIZATION_DETAILS_BUILT_IN.indexOf(out.type) >= 0) {
+    out.problem = '"' + out.type + '" is OpenID4VCI\'s type, which this ' +
+      'service understands itself and no application may declare';
+    log.debug("Leaving authorizationDetailsTypeOf(). Built in.");
+    return out;
+  }
+  if (definition.description !== undefined &&
+      typeof definition.description !== 'string') {
+    out.problem = 'description must be a string';
+    log.debug("Leaving authorizationDetailsTypeOf(). description.");
+    return out;
+  }
+  out.description = definition.description || '';
+  if (definition.locations !== undefined) {
+    if (!Array.isArray(definition.locations)) {
+      out.problem = 'locations must be an array of absolute URIs';
+      log.debug("Leaving authorizationDetailsTypeOf(). locations.");
+      return out;
+    }
+    for (let i = 0; i < definition.locations.length; i++) {
+      const location = authorizationDetailsLocationProblem(
+        definition.locations[i]);
+      if (location) {
+        out.problem = 'locations: ' + location;
+        log.debug("Leaving authorizationDetailsTypeOf(). A location.");
+        return out;
+      }
+    }
+    out.locations = definition.locations.slice(0);
+  }
+  if (definition.schema !== undefined) {
+    if (!definition.schema || typeof definition.schema !== 'object' ||
+        Array.isArray(definition.schema)) {
+      out.problem = 'schema must be a JSON Schema object';
+      log.debug("Leaving authorizationDetailsTypeOf(). schema shape.");
+      return out;
+    }
+    try {
+      out.validate = authorizationDetailsSchemaCompiler()
+        .compile(definition.schema);
+    } catch (e) {
+      log.debug("Caught in authorizationDetailsTypeOf(): " +
+                ((e && e.message) || e));
+      out.problem = 'schema does not compile as a JSON Schema: ' + e.message;
+      log.debug("Leaving authorizationDetailsTypeOf(). schema compile.");
+      return out;
+    }
+    out.schema = definition.schema;
+  }
+  log.debug("Leaving authorizationDetailsTypeOf(). " + out.type + ".");
+  return out;
+}
+
+// One location, as RFC 9396 section 2.2 describes one: an absolute URI with no
+// fragment. As a sentence, or ''.
+function authorizationDetailsLocationProblem(value) {
+  log.debug("Entering authorizationDetailsLocationProblem().");
+  if (typeof value !== 'string' || !value) {
+    log.debug("Leaving authorizationDetailsLocationProblem(). Not a string.");
+    return 'a location is not a non-empty string';
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(value);
+  } catch (e) {
+    log.debug("Caught in authorizationDetailsLocationProblem(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving authorizationDetailsLocationProblem(). Not a URI.");
+    return '"' + value.slice(0, 200) + '" is not an absolute URI';
+  }
+  if (parsed.hash || value.indexOf('#') >= 0) {
+    log.debug("Leaving authorizationDetailsLocationProblem(). A fragment.");
+    return '"' + value.slice(0, 200) + '" carries a fragment';
+  }
+  log.debug("Leaving authorizationDetailsLocationProblem().");
+  return '';
+}
+
+// A registration's `authorization_details_types`, as an RFC 7591 refusal or
+// null (`STS-REG-0110`).
+function authorizationDetailsMetadataProblem(values) {
+  log.debug("Entering authorizationDetailsMetadataProblem().");
+  const asked = values || {};
+  const types = asked.authorization_details_types;
+  if (types === undefined || types === null) {
+    log.debug("Leaving authorizationDetailsMetadataProblem(). Not asked.");
+    return null;
+  }
+  const refusal = function (description) {
+    log.debug("Entering refusal().");
+    log.debug("Leaving refusal().");
+    return { errorCode: 'STS-REG-0110', error: 'invalid_client_metadata',
+             member: 'authorization_details_types',
+             description: 'authorization_details_types: ' + description };
+  };
+  if (!Array.isArray(types)) {
+    log.debug("Leaving authorizationDetailsMetadataProblem(). Not an array.");
+    return refusal('must be an array of type names (RFC 9396 section 10).');
+  }
+  for (let i = 0; i < types.length; i++) {
+    const problem = authorizationDetailsTypeNameProblem(types[i]);
+    if (problem) {
+      log.debug("Leaving authorizationDetailsMetadataProblem(). A name.");
+      return refusal(problem + '.');
+    }
+  }
+  log.debug("Leaving authorizationDetailsMetadataProblem(). Nothing refused.");
+  return null;
+}
+
+// The same questions about ONE attribute value written through the console or
+// `/admin-api`: a type name for a client's list (`STS-REG-0111`), a definition
+// for a resource's (`STS-REG-0112`). As `{ code, message }`, or null. A CLEAR
+// is never refused.
+function authorizationDetailsAttributeProblem(attribute, value) {
+  log.debug("Entering authorizationDetailsAttributeProblem(). attribute=" +
+            attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!text) {
+    log.debug("Leaving authorizationDetailsAttributeProblem(). A clear.");
+    return null;
+  }
+  if (attribute === 'oauthAuthorizationDetailsTypes') {
+    const problem = authorizationDetailsTypeNameProblem(text);
+    log.debug("Leaving authorizationDetailsAttributeProblem(). A name.");
+    return problem ? { code: 'STS-REG-0111',
+                       message: attribute + ': ' + problem + '.' } : null;
+  }
+  if (attribute === 'oauthAuthorizationDetailsType') {
+    const definition = authorizationDetailsTypeOf(text);
+    log.debug("Leaving authorizationDetailsAttributeProblem(). A definition.");
+    return definition.problem
+      ? { code: 'STS-REG-0112',
+          message: attribute + ': ' + definition.problem + '.' }
+      : null;
+  }
+  log.debug("Leaving authorizationDetailsAttributeProblem(). Not asked.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9470: WHAT A RESOURCE MAY REQUIRE (2026-09-13).
+//
+// The grammar of the two attributes, here because this module owns them (the
+// rule `authorizationDetailsTypeOf()` keeps). `oauth-oidc/step_up.js` holds
+// the same acr pattern for what arrives in a request, and cannot be required
+// from here without `common/` reaching into a protocol directory, so the
+// pattern is repeated and `tests/rfc9470_step_up.js` holds the two equal.
+// ---------------------------------------------------------------------------
+const STEP_UP_ACR_VALUE = /^[\x21\x23-\x5B\x5D-\x7E]{1,256}$/;
+
+const STEP_UP_MAX_AGE_LIMIT = 315360000;
+
+// One attribute value written through the console or `/admin-api`, as
+// `{ code, message }` or null. A CLEAR is never refused.
+function stepUpAttributeProblem(attribute, value) {
+  log.debug("Entering stepUpAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (!text) {
+    log.debug("Leaving stepUpAttributeProblem(). A clear.");
+    return null;
+  }
+  if (attribute === 'oauthStepUpAcrValues') {
+    const bad = text.split(/\s+/).filter(function (one) {
+      return !STEP_UP_ACR_VALUE.test(one);
+    });
+    log.debug("Leaving stepUpAttributeProblem(). acr values.");
+    return bad.length
+      ? { code: 'STS-REG-0140',
+          message: attribute + ': ' + bad.map(function (one) {
+            return JSON.stringify(one.slice(0, 60));
+          }).join(', ') + ' cannot be an acr value. A value is printable ' +
+          'ASCII with no double quote or backslash, because it is repeated ' +
+          'in a WWW-Authenticate challenge (RFC 9470 section 3).' }
+      : null;
+  }
+  if (attribute === 'oauthStepUpMaxAge') {
+    const ok = /^\d{1,9}$/.test(text) && Number(text) <= STEP_UP_MAX_AGE_LIMIT;
+    log.debug("Leaving stepUpAttributeProblem(). max age.");
+    return ok ? null
+      : { code: 'STS-REG-0141',
+          message: attribute + ': "' + text.slice(0, 60) + '" is not a ' +
+          'whole number of seconds between 0 and ' + STEP_UP_MAX_AGE_LIMIT +
+          '.' };
+  }
+  log.debug("Leaving stepUpAttributeProblem(). Not asked.");
+  return null;
+}
+
+// What an entry requires, in `step_up.js`'s shape. A value an `ldapmodify`
+// left that the grammar refuses is dropped with a warning rather than
+// enforced: a requirement no token could meet would lock the resource with
+// nothing on its page to say why.
+function stepUpRequirementOf(entry) {
+  log.debug("Entering stepUpRequirementOf().");
+  const fields = (entry && entry.fields) || {};
+  const acrText = String(valuesOf(fields.oauthStepUpAcrValues)[0] || '');
+  const acrValues = [];
+  acrText.split(/\s+/).forEach(function (one) {
+    if (!one) {
+      return;
+    }
+    if (!STEP_UP_ACR_VALUE.test(one)) {
+      log.warn(errorCodes.tag('STS-OAUTH-0508') + 'applications: "' +
+               (entry && entry.identifier) + '" holds ' +
+               JSON.stringify(one.slice(0, 60)) + ' in oauthStepUpAcrValues, ' +
+               'which cannot be an acr value; it is ignored.');
+      return;
+    }
+    if (acrValues.indexOf(one) < 0) {
+      acrValues.push(one);
+    }
+  });
+  const ageText = String(valuesOf(fields.oauthStepUpMaxAge)[0] || '').trim();
+  let maxAge = null;
+  if (ageText) {
+    if (/^\d{1,9}$/.test(ageText) &&
+        Number(ageText) <= STEP_UP_MAX_AGE_LIMIT) {
+      maxAge = Number(ageText);
+    } else {
+      log.warn(errorCodes.tag('STS-OAUTH-0508') + 'applications: "' +
+               (entry && entry.identifier) + '" holds "' +
+               ageText.slice(0, 60) + '" in oauthStepUpMaxAge, which is not ' +
+               'a whole number of seconds; it is ignored.');
+    }
+  }
+  log.debug("Leaving stepUpRequirementOf().");
+  return { acrValues: acrValues, maxAge: maxAge,
+           present: acrValues.length > 0 || maxAge !== null };
+}
+
+// WHETHER AN ACCESS TOKEN'S `aud` NAMES THIS ENTRY AS A RESOURCE: its
+// identifier, an `oauthClientId`, an `oauthAudience`, or its permission base
+// URI normalised on both sides — the four spellings `accessTokenPlan()`
+// addresses a token to an application by, and the ones RFC 9701's
+// "intended for" check in `introspection_jwt.js` reads.
+function audienceNamesEntry(entry, aud) {
+  log.debug("Entering audienceNamesEntry().");
+  if (!entry) {
+    log.debug("Leaving audienceNamesEntry(). No entry.");
+    return false;
+  }
+  const fields = entry.fields || {};
+  const audiences = (Array.isArray(aud) ? aud : [aud])
+    .filter(function (one) {
+      return one !== undefined && one !== null && String(one) !== '';
+    }).map(String);
+  const names = [String(entry.identifier)]
+    .concat(valuesOf(fields.oauthClientId).map(String))
+    .concat(valuesOf(fields.oauthAudience).map(String));
+  const base = permissionBaseOf(valuesOf(fields.oauthPermissionBaseUri)[0] ||
+                                '');
+  const named = audiences.some(function (one) {
+    return names.indexOf(one) >= 0 ||
+           (!!base && permissionBaseOf(one) === base);
+  });
+  log.debug("Leaving audienceNamesEntry(). " + named);
+  return named;
+}
+
 function normaliseFields(value) {
   log.debug("Entering normaliseFields().");
   const asked = (value && typeof value === 'object') ? value : {};
@@ -3212,6 +4939,64 @@ function normaliseFields(value) {
     // would sit there looking configured while /portal/applications drew it
     // greyed out, which is the silent half-success this whole function exists
     // to refuse.
+    //
+    // THE PERMISSION ATTRIBUTES, CHECKED HERE AS WELL AS IN
+    // updateApplication() (2026-09-13). A create never reached that function,
+    // so a create carrying `oauthPermission` wrote names no `scope` could carry
+    // and duplicates `permissionsOf()` lists twice — which an RFC 9728 import,
+    // which creates an entry WITH its permissions, would have done for any
+    // document naming an unusable scope. The same rules and the same codes as
+    // the update: the base absolute, each name a scope token, no name twice,
+    // and no permission on an entry with no base to identify it by.
+    if (name === 'oauthPermissionBaseUri') {
+      const problem = permissionBaseProblem(values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0012';
+        return;
+      }
+    }
+    if (name === 'oauthPermission') {
+      const names = {};
+      const permissionProblems = [];
+      values.forEach(function (one) {
+        const parsed = parsePermissionValue(one);
+        const problem = permissionNameProblem(parsed.name);
+        if (problem) {
+          permissionProblems.push(problem);
+          code = code || 'STS-REG-0013';
+        } else if (names[parsed.name]) {
+          permissionProblems.push('The permission "' + parsed.name + '" is ' +
+                                  'given twice. A permission has one ' +
+                                  'description, so give it once.');
+          code = code || 'STS-REG-0014';
+        }
+        names[parsed.name] = true;
+      });
+      if (!permissionProblems.length &&
+          !permissionBaseOf(valuesOf(asked.oauthPermissionBaseUri)[0])) {
+        permissionProblems.push('A permission is named by the base URI ' +
+                                'followed by its name, and this create ' +
+                                'carries no `oauthPermissionBaseUri` — give ' +
+                                'one with the permissions.');
+        code = code || 'STS-REG-0015';
+      }
+      if (permissionProblems.length) {
+        permissionProblems.forEach(function (one) { errors.push(one); });
+        return;
+      }
+    }
+    if (name === 'oauthResourceMetadata' ||
+        name === 'oauthResourceMetadataUrl') {
+      const problem = name === 'oauthResourceMetadata'
+        ? resourceMetadataProblem(values[0])
+        : resourceMetadataUrlProblem(values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0089';
+        return;
+      }
+    }
     if (name === 'appHomePageUrl') {
       const problem = homePageProblem(values[0]);
       if (problem) {
@@ -3219,6 +5004,38 @@ function normaliseFields(value) {
         code = code || 'STS-REG-0011';
         return;
       }
+    }
+    // The addresses, every value, because a create adds every one of them.
+    if (ADDRESS_ATTRIBUTES[name]) {
+      const addressProblems = values.map(function (one) {
+        return addressProblem(name, one);
+      }).filter(function (one) {
+        return !!one;
+      });
+      if (addressProblems.length) {
+        addressProblems.forEach(function (one) { errors.push(one); });
+        code = code || 'STS-REG-0071';
+        return;
+      }
+    }
+    // The CORS origins, every value, and STORED NORMALISED — see
+    // corsOriginWriteProblem(). A create with one value that is not an origin
+    // is refused whole rather than written with the rest.
+    if (name === 'appCorsOrigin') {
+      const originProblems = values.map(corsOriginWriteProblem)
+                                   .filter(function (one) {
+        return !!one;
+      });
+      if (originProblems.length) {
+        originProblems.forEach(function (one) { errors.push(one); });
+        code = code || 'STS-REG-0150';
+        return;
+      }
+      fields[name] = values.map(validation.normaliseOrigin)
+                           .filter(function (one, index, all) {
+        return all.indexOf(one) === index;
+      });
+      return;
     }
     if (name === 'ssfAllowedEvents') {
       const problems = values.map(ssfAllowedEventProblem)
@@ -3230,6 +5047,61 @@ function normaliseFields(value) {
         code = code || 'STS-REG-0053';
         return;
       }
+    }
+    // RFC 9701's three, read against the create's OTHER two, because a create
+    // may carry the `enc` and the `alg` together and the rule is about the
+    // pair.
+    const introspectionProblem = introspectionAttributeProblem(name,
+                                                               values[0],
+                                                               asked);
+    if (introspectionProblem) {
+      errors.push(introspectionProblem);
+      code = code || 'STS-REG-0073';
+      return;
+    }
+    // RFC 9101's five, every value — a create may carry several request URIs.
+    const requestObjectProblems = values.map(function (one) {
+      return requestObjectAttributeProblem(name, one, asked);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (requestObjectProblems.length) {
+      requestObjectProblems.forEach(function (one) { errors.push(one); });
+      code = code || 'STS-REG-0101';
+      return;
+    }
+    // RFC 9126's one.
+    const pushedProblem = pushedAuthorizationAttributeProblem(name, values[0]);
+    if (pushedProblem) {
+      errors.push(pushedProblem);
+      code = code || 'STS-REG-0121';
+      return;
+    }
+    // RFC 8705's six, read against the create's OTHER subject parameters,
+    // because a create may carry two at once and the rule is about the set.
+    const mtlsProblem = mtlsAttributeProblem(name, values[0], asked);
+    if (mtlsProblem) {
+      errors.push(mtlsProblem.message);
+      code = code || mtlsProblem.code;
+      return;
+    }
+    // RFC 9470's two.
+    const stepUpProblem = stepUpAttributeProblem(name, values[0]);
+    if (stepUpProblem) {
+      errors.push(stepUpProblem.message);
+      code = code || stepUpProblem.code;
+      return;
+    }
+    // RFC 9396's two, every value.
+    const detailsProblems = values.map(function (one) {
+      return authorizationDetailsAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (detailsProblems.length) {
+      detailsProblems.forEach(function (one) { errors.push(one.message); });
+      code = code || detailsProblems[0].code;
+      return;
     }
     if (row.kind !== 'multi' && SEALED_FIELDS.indexOf(name) >= 0) {
       // PRIVATE KEY MATERIAL. Sealed here as well as in updateApplication()
@@ -4064,9 +5936,23 @@ function seen(detail) {
 // have attributes are written to them as well, because those attributes are
 // what the checks read and what an operator edits.
 // ---------------------------------------------------------------------------
-function applyRegistrationFields(record, registration) {
+function applyRegistrationFields(record, registration, statement) {
   log.debug("Entering applyRegistrationFields().");
   const meta = registration || {};
+  // HOW A SOFTWARE STATEMENT LET IT IN (RFC 7591 section 2.3, 2026-09-13), as
+  // three facts `oauth-oidc/software_statement.js` verified — never read off
+  // the document, whose `software_statement` member is only the string the
+  // client sent. An ABSENT statement CLEARS all three, for RFC 9701's reason
+  // below: RFC 7592 section 2.2 replaces the whole registration.
+  softwareStatementFactNames().forEach(function (name) {
+    delete record.fields[name];
+  });
+  if (statement && statement.issuer) {
+    setField(record, 'appSoftwareStatementIssuer', statement.issuer);
+    setField(record, 'appSoftwareStatementTrusted',
+             statement.trusted ? 'TRUE' : 'FALSE');
+    setField(record, 'appSoftwareStatementPublisher', statement.publisher);
+  }
   setField(record, 'appRegistrationJson', JSON.stringify(meta));
   setField(record, 'appRegistrationAccessToken',
            meta.registration_access_token);
@@ -4081,8 +5967,79 @@ function applyRegistrationFields(record, registration) {
              JSON.stringify(meta.jwks));
   }
   setField(record, 'oauthJwksUri', meta.jwks_uri);
-  setField(record, 'oauthTlsClientAuthSubjectDn',
-           meta.tls_client_auth_subject_dn);
+  // RFC 8705 section 2.1.2's five subject parameters and section 3.4's flag,
+  // and an ABSENT member is CLEARED — the RFC 9701 rule below, for its reason:
+  // RFC 7592 section 2.2 replaces the whole registration, and a client that
+  // moved from one subject parameter to another must not end up holding both,
+  // which `mtlsMetadataProblem()` refuses and the verifier refuses again.
+  certificateSubject.MEMBER_NAMES.forEach(function (member) {
+    const attribute = certificateSubject.MEMBERS[member].attribute;
+    delete record.fields[attribute];
+    if (typeof meta[member] === 'string' && meta[member].trim()) {
+      setField(record, attribute, meta[member].trim());
+    }
+  });
+  if (typeof meta.tls_client_certificate_bound_access_tokens === 'boolean') {
+    setField(record, TLS_BOUND_TOKENS_ATTRIBUTE,
+             meta.tls_client_certificate_bound_access_tokens ? 'TRUE' :
+                                                              'FALSE');
+  } else {
+    delete record.fields[TLS_BOUND_TOKENS_ATTRIBUTE];
+  }
+  // RFC 9701 section 6's three, and an ABSENT member is CLEARED rather than
+  // left alone — unlike the members above, and on purpose. RFC 7592 section
+  // 2.2 replaces the whole registration, so a client that updates without
+  // `introspection_encrypted_response_alg` has withdrawn it; keeping the stored
+  // one would go on encrypting responses to a key the client may have retired,
+  // which it would see as introspection having stopped working.
+  Object.keys(INTROSPECTION_ATTRIBUTES).forEach(function (member) {
+    const attribute = INTROSPECTION_ATTRIBUTES[member];
+    const value = String(meta[member] || '').trim();
+    if (value) {
+      setField(record, attribute, value);
+    } else {
+      delete record.fields[attribute];
+    }
+  });
+  // RFC 9101's five, CLEARED when absent for the introspection members'
+  // reason: an RFC 7592 update replaces the registration, and a request_uri
+  // the client withdrew must stop being one this service will fetch.
+  delete record.fields.oauthRequestUri;
+  if (Array.isArray(meta.request_uris) && meta.request_uris.length) {
+    setField(record, 'oauthRequestUri', meta.request_uris.map(function (one) {
+      return String(one).trim();
+    }));
+  }
+  ['request_object_signing_alg', 'request_object_encryption_alg',
+   'request_object_encryption_enc'].forEach(function (member) {
+    const attribute = REQUEST_OBJECT_ATTRIBUTES[member];
+    const value = String(meta[member] || '').trim();
+    if (value) {
+      setField(record, attribute, value);
+    } else {
+      delete record.fields[attribute];
+    }
+  });
+  if (typeof meta.require_signed_request_object === 'boolean') {
+    setField(record, 'oauthRequireSignedRequestObject',
+             meta.require_signed_request_object ? 'TRUE' : 'FALSE');
+  } else {
+    delete record.fields.oauthRequireSignedRequestObject;
+  }
+  // RFC 9126 section 6, the same way: an update that omits it clears it.
+  if (typeof meta.require_pushed_authorization_requests === 'boolean') {
+    setField(record, 'oauthRequirePushedAuthorizationRequests',
+             meta.require_pushed_authorization_requests ? 'TRUE' : 'FALSE');
+  } else {
+    delete record.fields.oauthRequirePushedAuthorizationRequests;
+  }
+  // RFC 9396 section 10, the same way: an update that omits it clears it.
+  delete record.fields.oauthAuthorizationDetailsTypes;
+  if (Array.isArray(meta.authorization_details_types) &&
+      meta.authorization_details_types.length) {
+    setField(record, 'oauthAuthorizationDetailsTypes',
+             meta.authorization_details_types.map(String));
+  }
   setField(record, 'oauthRedirectUri', meta.redirect_uris);
   // A REGISTRATION IS AN EXPLICIT STATEMENT, so a redirect URI it names is
   // registered however it first got onto the entry — the same rule an
@@ -4128,8 +6085,26 @@ function applyRegistrationFields(record, registration) {
   log.debug("Leaving applyRegistrationFields().");
 }
 
-function register(clientId, registration) {
+// `options.softwareStatement` is `software_statement.resolve()`'s account of a
+// statement the registration carried — see applyRegistrationFields().
+function register(clientId, registration, options) {
   log.debug("Entering register(). client_id=" + clientId);
+  // THE BACKSTOP. The registration endpoint asks registrationUriProblem() and
+  // introspectionResponseProblem() and answers 400 before calling this; a
+  // caller that did not is refused here rather than writing an address or an
+  // algorithm nothing would then check.
+  const uriProblem = registrationUriProblem(registration) ||
+                     introspectionResponseProblem(registration) ||
+                     requestObjectMetadataProblem(registration) ||
+                     pushedAuthorizationMetadataProblem(registration) ||
+                     mtlsMetadataProblem(registration) ||
+                     authorizationDetailsMetadataProblem(registration);
+  if (uriProblem) {
+    log.warn(errorCodes.tag(uriProblem.errorCode) + 'applications: client "' +
+             clientId + '" was not registered: ' + uriProblem.description);
+    log.debug("Leaving register(). An unusable address.");
+    return null;
+  }
   const loaded = load(clientId);
   const record = loaded.record;
   const now = Date.now();
@@ -4141,7 +6116,8 @@ function register(clientId, registration) {
   addTo(record.descriptions, 'registered through RFC 7591 dynamic client ' +
                              'registration');
   if (registration.client_name) record.name = String(registration.client_name);
-  applyRegistrationFields(record, registration);
+  applyRegistrationFields(record, registration,
+                          (options || {}).softwareStatement);
   const written = save(record);
   audit.audit({
     action: loaded.known ? 'application.update' : 'application.create',
@@ -4164,8 +6140,21 @@ function register(clientId, registration) {
   return record;
 }
 
-function updateRegistration(clientId, registration) {
+function updateRegistration(clientId, registration, options) {
   log.debug("Entering updateRegistration(). client_id=" + clientId);
+  // The same backstop as register().
+  const uriProblem = registrationUriProblem(registration) ||
+                     introspectionResponseProblem(registration) ||
+                     requestObjectMetadataProblem(registration) ||
+                     pushedAuthorizationMetadataProblem(registration) ||
+                     mtlsMetadataProblem(registration) ||
+                     authorizationDetailsMetadataProblem(registration);
+  if (uriProblem) {
+    log.warn(errorCodes.tag(uriProblem.errorCode) + 'applications: client "' +
+             clientId + '" was not updated: ' + uriProblem.description);
+    log.debug("Leaving updateRegistration(). An unusable address.");
+    return null;
+  }
   const loaded = load(clientId);
   if (!loaded.known) {
     log.debug("Leaving updateRegistration(). No such application.");
@@ -4174,7 +6163,8 @@ function updateRegistration(clientId, registration) {
   const record = loaded.record;
   record.lastAt = Date.now();
   if (registration.client_name) record.name = String(registration.client_name);
-  applyRegistrationFields(record, registration);
+  applyRegistrationFields(record, registration,
+                          (options || {}).softwareStatement);
   save(record);
   log.debug("Leaving updateRegistration().");
   return record;
@@ -4184,10 +6174,10 @@ function updateRegistration(clientId, registration) {
 // `appRegistered` back to FALSE. That is not a half-measure — this registry
 // records what this service has SEEN, and deleting the history of an
 // application because its registration was withdrawn would lose the fact that
-// it was ever here. It is also what RFC 9700 mode needs to be right about the
-// client afterwards: an unregistered client_id is judged against the
-// oauth2.redirectUris setting and treated as public, which is exactly what it
-// now is.
+// it was ever here. What RFC 9700 mode reads afterwards is the ATTRIBUTES, not
+// this flag: the redirect URIs the registration wrote stay on the entry and
+// are still what the client is judged against, and with the secret gone an
+// entry declaring a confidential method has nothing on file to check.
 //
 // The secret and the registration access token are REMOVED with it rather than
 // left on the entry: they are credentials for a registration that no longer
@@ -4205,6 +6195,11 @@ function forgetRegistration(clientId) {
   delete record.fields.appRegistrationJson;
   delete record.fields.appRegistrationAccessToken;
   delete record.fields.oauthClientSecret;
+  // How a software statement let the registration in is a fact about the
+  // registration, and goes with it.
+  softwareStatementFactNames().forEach(function (name) {
+    delete record.fields[name];
+  });
   setField(record, 'oauthConfidential', 'FALSE');
   addTo(record.descriptions, 'its RFC 7592 registration was deleted');
   record.lastAt = Date.now();
@@ -4212,6 +6207,42 @@ function forgetRegistration(clientId) {
   log.debug("Leaving forgetRegistration(). The registration is gone; the " +
             "entry stays.");
   return true;
+}
+
+// The three attributes applyRegistrationFields() writes about a software
+// statement, named once.
+function softwareStatementFactNames() {
+  log.debug("Entering softwareStatementFactNames().");
+  log.debug("Leaving softwareStatementFactNames().");
+  return ['appSoftwareStatementIssuer', 'appSoftwareStatementTrusted',
+          'appSoftwareStatementPublisher'];
+}
+
+// ---------------------------------------------------------------------------
+// HOW A REGISTERED CLIENT GOT IN, as far as a software statement goes, or null
+// when it presented none. `oauth2.js` asks it before an RFC 7592 update, which
+// must carry a statement from the same issuer where the endpoint is closed
+// (`software_statement.updateProblem()`), and the application's page draws it.
+// ---------------------------------------------------------------------------
+function softwareStatementFactsOf(clientId) {
+  log.debug("Entering softwareStatementFactsOf().");
+  const loaded = load(clientId);
+  const fields = loaded.known ? (loaded.record.fields || {}) : {};
+  const one = function (name) {
+    log.debug("Entering one().");
+    const values = valuesOf(fields[name]);
+    log.debug("Leaving one().");
+    return values.length ? String(values[0]) : '';
+  };
+  const issuer = one('appSoftwareStatementIssuer');
+  if (!issuer) {
+    log.debug("Leaving softwareStatementFactsOf(). None.");
+    return null;
+  }
+  log.debug("Leaving softwareStatementFactsOf().");
+  return { issuer: issuer,
+           trusted: one('appSoftwareStatementTrusted') === 'TRUE',
+           publisher: one('appSoftwareStatementPublisher') };
 }
 
 // What oauth2.js's `registeredClients.get(id)` used to answer: the RFC 7591
@@ -4276,6 +6307,71 @@ function registrationOf(clientId) {
   if (fields.oauthTokenEndpointAuthMethod !== undefined) {
     document.token_endpoint_auth_method = fields.oauthTokenEndpointAuthMethod;
   }
+  // RFC 9701's three, from the attributes, so an operator's edit is what RFC
+  // 7592's read hands back — and an attribute cleared on the console is a
+  // member the document no longer carries.
+  Object.keys(INTROSPECTION_ATTRIBUTES).forEach(function (member) {
+    const held = fields[INTROSPECTION_ATTRIBUTES[member]];
+    if (held !== undefined && String(held).trim()) {
+      document[member] = String(held);
+    } else {
+      delete document[member];
+    }
+  });
+  // And RFC 9101's five, the same way.
+  const requestUris = valuesOf(fields.oauthRequestUri).map(String);
+  if (requestUris.length) {
+    document.request_uris = requestUris;
+  } else {
+    delete document.request_uris;
+  }
+  ['request_object_signing_alg', 'request_object_encryption_alg',
+   'request_object_encryption_enc'].forEach(function (member) {
+    const held = fields[REQUEST_OBJECT_ATTRIBUTES[member]];
+    if (held !== undefined && String(held).trim()) {
+      document[member] = String(held);
+    } else {
+      delete document[member];
+    }
+  });
+  if (fields.oauthRequireSignedRequestObject !== undefined &&
+      String(fields.oauthRequireSignedRequestObject).trim()) {
+    document.require_signed_request_object =
+      String(fields.oauthRequireSignedRequestObject).toUpperCase() === 'TRUE';
+  } else {
+    delete document.require_signed_request_object;
+  }
+  if (fields.oauthRequirePushedAuthorizationRequests !== undefined &&
+      String(fields.oauthRequirePushedAuthorizationRequests).trim()) {
+    document.require_pushed_authorization_requests =
+      String(fields.oauthRequirePushedAuthorizationRequests).toUpperCase() ===
+      'TRUE';
+  } else {
+    delete document.require_pushed_authorization_requests;
+  }
+  // And RFC 8705's six, the same way (2026-09-13).
+  certificateSubject.MEMBER_NAMES.forEach(function (member) {
+    const held = fields[certificateSubject.MEMBERS[member].attribute];
+    if (held !== undefined && String(held).trim()) {
+      document[member] = String(held);
+    } else {
+      delete document[member];
+    }
+  });
+  if (fields[TLS_BOUND_TOKENS_ATTRIBUTE] !== undefined &&
+      String(fields[TLS_BOUND_TOKENS_ATTRIBUTE]).trim()) {
+    document.tls_client_certificate_bound_access_tokens =
+      String(fields[TLS_BOUND_TOKENS_ATTRIBUTE]).toUpperCase() === 'TRUE';
+  } else {
+    delete document.tls_client_certificate_bound_access_tokens;
+  }
+  const detailsTypes = valuesOf(fields.oauthAuthorizationDetailsTypes)
+    .map(String);
+  if (detailsTypes.length) {
+    document.authorization_details_types = detailsTypes;
+  } else {
+    delete document.authorization_details_types;
+  }
   document.client_id = record.identifier;
   log.debug("Leaving registrationOf().");
   return document;
@@ -4303,12 +6399,34 @@ function registrationOf(clientId) {
 // to the `oauth2.redirectUris` setting, the second is a client somebody has
 // begun configuring and has not finished.
 // ---------------------------------------------------------------------------
+function declaredClient(record, fields, redirectCount) {
+  log.debug("Entering declaredClient().");
+  const has = function (name) {
+    return valuesOf(fields[name]).some(function (one) {
+      return String(one).trim() !== '';
+    });
+  };
+  const allowed = valuesOf(fields.appAllowedProtocol).map(String);
+  const declared = !!record.registered || redirectCount > 0 ||
+    ['oauthTokenEndpointAuthMethod', 'oauthClientSecret', 'oauthJwks',
+     'oauthJwksUri', 'oauthAssertionJwks', 'oauthAssertionIssuer',
+     'oauthSamlAssertionIssuer', 'oauthSamlAssertionSigningCertificate',
+     'oauthSamlAssertionCertificate',
+     'oauthTlsClientCertificateThumbprint', TLS_BOUND_TOKENS_ATTRIBUTE]
+      .concat(TLS_SUBJECT_ATTRIBUTES).some(has) ||
+    allowed.indexOf('oauth2') >= 0 || allowed.indexOf('oidc') >= 0 ||
+    allowed.indexOf('oid4vci') >= 0;
+  log.debug("Leaving declaredClient(). " + declared);
+  return declared;
+}
+
 function clientConfigOf(identifier) {
   log.debug("Entering clientConfigOf(). identifier=" + identifier);
   const loaded = load(identifier);
   if (!loaded.known) {
     log.debug("Leaving clientConfigOf(). Never seen.");
-    return { known: false, registered: false, redirect_uris: [],
+    return { known: false, registered: false, declared: false,
+             redirect_uris: [],
              post_logout_redirect_uris: [], token_endpoint_auth_method: '',
              frontchannel_logout_uri: '',
              frontchannel_logout_session_required: false,
@@ -4334,6 +6452,19 @@ function clientConfigOf(identifier) {
   const config = {
     known: true,
     registered: loaded.record.registered,
+    // WHETHER ANYTHING ON THE ENTRY WAS DECLARED rather than SIGHTED
+    // (2026-09-13). OAuth 2.1 mode refuses a token request from a client that
+    // declares nothing, and "has an entry" cannot be the test: every client_id
+    // that ever reached an endpoint here has one, written by `seen()`. What a
+    // sighting writes for OAuth is `oauthClientId`, `appAuthorizationServer`,
+    // `oauthScope`, `oauthResponseType`, `oauthGrantType` and
+    // `appRedirectUriObserved` — so declared is anything else that says what
+    // this client IS: a registration, a redirect URI of its own, an
+    // authentication method, a credential, an assertion issuer, or a declared
+    // OAuth protocol family.
+    declared: declaredClient(loaded.record, fields,
+                             redirects.registered.length +
+                             redirects.unconfirmed.length),
     redirect_uris: redirects.registered.slice(0),
     // Not an RFC 7591 member, and spelled like one only so that it sits beside
     // the member it qualifies. Nothing serialises this object to a client.
@@ -4387,9 +6518,64 @@ function clientConfigOf(identifier) {
       ? '' : String(fields.oauthSamlAssertionCertificateChain),
     tls_client_auth_subject_dn: fields.oauthTlsClientAuthSubjectDn === undefined
       ? '' : String(fields.oauthTlsClientAuthSubjectDn),
+    // RFC 8705 section 2.1.2's other four, spelled as the registration members
+    // because `certificate_subject.registeredOf()` reads them by those names.
+    tls_client_auth_san_dns: fields.oauthTlsClientAuthSanDns === undefined
+      ? '' : String(fields.oauthTlsClientAuthSanDns),
+    tls_client_auth_san_uri: fields.oauthTlsClientAuthSanUri === undefined
+      ? '' : String(fields.oauthTlsClientAuthSanUri),
+    tls_client_auth_san_ip: fields.oauthTlsClientAuthSanIp === undefined
+      ? '' : String(fields.oauthTlsClientAuthSanIp),
+    tls_client_auth_san_email: fields.oauthTlsClientAuthSanEmail === undefined
+      ? '' : String(fields.oauthTlsClientAuthSanEmail),
+    // RFC 8705 section 3.4. RFC 7591 section 2's rule for an omitted boolean:
+    // FALSE.
+    tls_client_certificate_bound_access_tokens:
+      String(fields[TLS_BOUND_TOKENS_ATTRIBUTE] || '').toUpperCase() ===
+      'TRUE',
+    // THE ENTRY'S OWN NAME (2026-09-13), for RFC 8705's implicit mapping: a
+    // certificate this realm issued names an application by the identifier the
+    // registry holds, which need not be the client_id this request presented —
+    // an application answers to several.
+    identifier: String(loaded.record.identifier || ''),
     certificate_thumbprint:
       fields.oauthTlsClientCertificateThumbprint === undefined
-      ? '' : String(fields.oauthTlsClientCertificateThumbprint)
+      ? '' : String(fields.oauthTlsClientCertificateThumbprint),
+    // RFC 9701 section 6, spelled as the registration members because
+    // `oauth-oidc/introspection_jwt.js` reads them by those names. Empty is
+    // "not registered", and that file applies the section's defaults.
+    introspection_signed_response_alg:
+      fields.oauthIntrospectionSignedResponseAlg === undefined
+      ? '' : String(fields.oauthIntrospectionSignedResponseAlg),
+    introspection_encrypted_response_alg:
+      fields.oauthIntrospectionEncryptedResponseAlg === undefined
+      ? '' : String(fields.oauthIntrospectionEncryptedResponseAlg),
+    introspection_encrypted_response_enc:
+      fields.oauthIntrospectionEncryptedResponseEnc === undefined
+      ? '' : String(fields.oauthIntrospectionEncryptedResponseEnc),
+    // RFC 9101 / OpenID Connect Registration, spelled as the registration
+    // members because `oauth-oidc/request_object.js` reads them by those names.
+    request_uris: valuesOf(fields.oauthRequestUri).map(String),
+    request_object_signing_alg:
+      fields.oauthRequestObjectSigningAlg === undefined
+      ? '' : String(fields.oauthRequestObjectSigningAlg),
+    request_object_encryption_alg:
+      fields.oauthRequestObjectEncryptionAlg === undefined
+      ? '' : String(fields.oauthRequestObjectEncryptionAlg),
+    request_object_encryption_enc:
+      fields.oauthRequestObjectEncryptionEnc === undefined
+      ? '' : String(fields.oauthRequestObjectEncryptionEnc),
+    require_signed_request_object:
+      String(fields.oauthRequireSignedRequestObject || '').toUpperCase() ===
+      'TRUE',
+    // RFC 9126 section 6, read by `pushedRequestPolicyRefusal()`.
+    require_pushed_authorization_requests:
+      String(fields.oauthRequirePushedAuthorizationRequests || '')
+        .toUpperCase() === 'TRUE',
+    // RFC 9396 section 10, read by `oauth-oidc/authorization_details.js`.
+    // Empty is "any type this authorization server supports".
+    authorization_details_types:
+      valuesOf(fields.oauthAuthorizationDetailsTypes).map(String)
   };
   log.debug("Leaving clientConfigOf(). " + config.redirect_uris.length +
             " redirect URI(s), method=" + (method || '(unstated)') + ".");
@@ -4849,6 +7035,66 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0053');
     }
   }
+  // RFC 9701's three: an algorithm this service can sign or encrypt with, and
+  // no `enc` onto an entry with no `alg`. A clear is never refused.
+  if (mode === 'set' && value) {
+    const problem = introspectionAttributeProblem(attribute, value,
+                                                  loaded.record.fields);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable introspection " +
+                "response algorithm.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0073');
+    }
+  }
+  // RFC 9101's five, on an ADD or a SET that carries a value.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = requestObjectAttributeProblem(attribute, value,
+                                                  loaded.record.fields);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable request object " +
+                "setting.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0101');
+    }
+  }
+  // RFC 9126's one, on a SET that carries a value.
+  if (mode === 'set' && value) {
+    const problem = pushedAuthorizationAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not TRUE or FALSE.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0121');
+    }
+  }
+  // RFC 8705's six, on a SET that carries a value: the value's grammar, and no
+  // second certificate subject parameter beside the one the entry holds.
+  if (mode === 'set' && value) {
+    const problem = mtlsAttributeProblem(attribute, value,
+                                         loaded.record.fields);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable RFC 8705 value.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
+  // RFC 9396's two, on an ADD or a SET that carries a value.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = authorizationDetailsAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable authorization " +
+                "details value.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
+  // RFC 9470's two, on a SET that carries a value.
+  if (mode === 'set' && value) {
+    const problem = stepUpAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable step-up " +
+                "requirement.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
   if (KEY_SOURCE_ATTRIBUTES.indexOf(attribute) >= 0 && mode === 'set' &&
       value && KEY_SOURCES.indexOf(value) < 0) {
     log.debug("Leaving updateApplication(). Not a key source.");
@@ -4856,6 +7102,47 @@ function updateApplication(identifier, change) {
                              'key source. `' + attribute + '` records where ' +
                              'a key pair came from and holds one of ' +
                              KEY_SOURCES.join(', ') + '.'] }, 'STS-REG-0060');
+  }
+  // THE ADDRESSES, on an ADD or a SET that carries a value — and for a SET only
+  // a value not already on the entry, so an address an `ldapmodify` put there
+  // before this check existed does not block every later edit of the list.
+  // A remove and a clear are never refused (the rule every check here keeps).
+  if (ADDRESS_ATTRIBUTES[attribute] && value &&
+      (mode === 'add' || mode === 'set') &&
+      valuesOf(loaded.record.fields[attribute]).indexOf(value) < 0) {
+    const problem = addressProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable address.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0071');
+    }
+  }
+  if ((attribute === 'oauthResourceMetadata' ||
+       attribute === 'oauthResourceMetadataUrl') && mode === 'set' && value) {
+    const problem = attribute === 'oauthResourceMetadata'
+      ? resourceMetadataProblem(value) : resourceMetadataUrlProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable RFC 9728 value.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0089');
+    }
+  }
+  // THE CORS ORIGINS. An ADD is checked and the value it stores is the
+  // normalised one, so `HTTPS://App.Example.com/` and `https://app.example.com`
+  // are one value rather than two that look different and match the same
+  // header. A REMOVE is never refused, and removes the value as typed or, when
+  // that is not on the entry, its normalised spelling — so an origin an
+  // `ldapmodify` wrote in another case can still be taken off.
+  if (attribute === 'appCorsOrigin' && mode === 'add') {
+    const problem = corsOriginWriteProblem(value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable origin.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0150');
+    }
+    value = validation.normaliseOrigin(value);
+  }
+  if (attribute === 'appCorsOrigin' && mode === 'remove' &&
+      valuesOf(loaded.record.fields[attribute]).indexOf(value) < 0 &&
+      validation.normaliseOrigin(value)) {
+    value = validation.normaliseOrigin(value);
   }
   if (attribute === 'appHomePageUrl' && mode === 'set' && value) {
     const problem = homePageProblem(value);
@@ -6468,6 +8755,121 @@ function internalBaseUrl() {
   return base;
 }
 
+// ---------------------------------------------------------------------------
+// THE EMBEDDED PROTOCOL DEBUGGER'S TWO ENTRIES (2026-09-13), seeded only in a
+// process that embeds it (`mode.embedsProtocolDebugger()`), in the default
+// realm only — its listener has no realm prefix, and the console roster that
+// decides who may use it is the default realm's.
+//
+// **TWO ENTRIES AND NOT ONE, BECAUSE THEY ARE TWO PARTIES.** `sts-debugger-api`
+// is a RESOURCE SERVER: it exposes one delegated permission and signs nobody
+// in. `sts-debugger-ui` is the CLIENT a person signs in through, and it holds
+// a grant of that permission — the mapping from an application to a
+// permission another application exposes, in Microsoft Entra ID's shape
+// (`common/app_permissions.js`). The api row comes first because a permission
+// is defined before it is granted.
+//
+// The identifiers and the permission are `debugger/debugger_access.js`'s and
+// are written out here rather than required: this file is a registry every
+// module reads, and a require from it into a feature directory would make the
+// registry depend on the feature. `tests/debugger_access.js` compares them.
+//
+// **THE PERMISSION CARRIES GLOBAL CONSENT** beside the three OpenID Connect
+// scopes, for the reason the console's entry carries them: the person signing
+// in to their own debugger would otherwise be asked whether they consent to
+// it, which has one sensible answer.
+// ---------------------------------------------------------------------------
+function debuggerBaseUrl() {
+  log.debug("Entering debuggerBaseUrl().");
+  const pinned = String(config.value('debugger.publicBaseUrl') || '').trim()
+    .replace(/\/+$/, '');
+  if (pinned) {
+    log.debug("Leaving debuggerBaseUrl(). base=" + pinned + " (pinned)");
+    return pinned;
+  }
+  const scheme = config.value('global.https') ? 'https' : 'http';
+  const base = scheme + '://localhost:' + config.value('debugger.port');
+  log.debug("Leaving debuggerBaseUrl(). base=" + base);
+  return base;
+}
+
+function debuggerApplications() {
+  log.debug("Entering debuggerApplications().");
+  if (!mode.embedsProtocolDebugger()) {
+    log.debug("Leaving debuggerApplications(). The debugger is not embedded.");
+    return [];
+  }
+  const base = debuggerBaseUrl();
+  const issued = nowSec();
+  const permission = 'urn:sts:debugger-api:debugger';
+  log.debug("Leaving debuggerApplications().");
+  return [
+    { identifier: 'sts-debugger-api',
+      name: 'Protocol debugger api',
+      kinds: ['oauth2-client'],
+      protocols: ['OAuth 2.0'],
+      realmScope: 'default',
+      description: 'seeded at startup: the embedded protocol debugger\'s ' +
+                   'api, the resource server behind ' + base + '/api ' +
+                   '(debugger.enabled)',
+      attributes: {
+        oauthPermissionBaseUri: 'urn:sts:debugger-api:',
+        oauthPermission: ['debugger|Use the identity protocol debugger and ' +
+                          'its api']
+      },
+      // A resource server authenticates at no endpoint here, so the
+      // registration names no grant and no redirect: the row exists to
+      // DEFINE the permission, which is what makes the UI's grant of it a
+      // grant of something.
+      registration: {
+        client_id: 'sts-debugger-api',
+        client_name: 'Protocol debugger api',
+        client_id_issued_at: issued,
+        client_secret: randomId(24),
+        client_secret_expires_at: 0,
+        registration_access_token: randomId(24),
+        registration_client_uri: internalBaseUrl() +
+                                 '/oauth2/register/sts-debugger-api',
+        client_uri: base + '/api',
+        application_type: 'web',
+        redirect_uris: [],
+        grant_types: [],
+        response_types: [],
+        scope: '',
+        token_endpoint_auth_method: 'client_secret_basic'
+      } },
+    { identifier: 'sts-debugger-ui',
+      name: 'Protocol debugger',
+      kinds: ['oauth2-client', 'oidc-relying-party'],
+      protocols: ['OAuth 2.0 / OIDC'],
+      realmScope: 'default',
+      description: 'seeded at startup: the embedded identity protocol ' +
+                   'debugger at ' + base + ' (debugger.enabled)',
+      attributes: {
+        oauthDelegatedPermission: [permission],
+        oauthGlobalConsent: ['openid', 'profile', 'email', permission]
+      },
+      registration: {
+        client_id: 'sts-debugger-ui',
+        client_name: 'Protocol debugger',
+        client_id_issued_at: issued,
+        client_secret: randomId(24),
+        client_secret_expires_at: 0,
+        registration_access_token: randomId(24),
+        registration_client_uri: internalBaseUrl() +
+                                 '/oauth2/register/sts-debugger-ui',
+        client_uri: base + '/',
+        application_type: 'web',
+        redirect_uris: [base + '/_sts/callback'],
+        post_logout_redirect_uris: [base + '/'],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: 'openid profile email ' + permission,
+        token_endpoint_auth_method: 'client_secret_basic'
+      } }
+  ];
+}
+
 // The two, built fresh on each call because each carries two credentials that
 // are generated rather than declared.
 function internalApplications() {
@@ -6604,7 +9006,7 @@ function internalApplications() {
         scope: 'admin:read admin:write',
         token_endpoint_auth_method: 'client_secret_basic'
       } }
-  ];
+  ].concat(debuggerApplications());
   log.debug("Leaving internalApplications(). " + rows.length + " row(s).");
   return rows;
 }
@@ -6746,6 +9148,12 @@ module.exports = {
   // this module exists to prevent.
   homePageOf: homePageOf,
   homePageProblem: homePageProblem,
+  // THE CORS ORIGINS (2026-09-13): the one entry's list, the entry a request
+  // named, and the realm's union — the three questions `common/cors.js` asks.
+  corsOriginsOf: corsOriginsOf,
+  corsOriginsForClient: corsOriginsForClient,
+  ssfAllowedEventsFor: ssfAllowedEventsFor,
+  corsOriginsOfRealm: corsOriginsOfRealm,
   ssfAllowedEventProblem: ssfAllowedEventProblem,
   // THE SEALED ATTRIBUTE AND THE PREFIX TEST THAT RECOGNISES ONE. Exported for
   // `admin-ui/admin.js`, whose application page dumps `attributes` — the entry
@@ -6764,9 +9172,47 @@ module.exports = {
   seen: seen,
   register: register,
   updateRegistration: updateRegistration,
+  softwareStatementFactsOf: softwareStatementFactsOf,
   forgetRegistration: forgetRegistration,
   registrationOf: registrationOf,
   clientConfigOf: clientConfigOf,
+  registrationUriProblem: registrationUriProblem,
+  // RFC 9701 section 6 — the check, the tables it checks against, and which
+  // attribute holds which member. `oauth-oidc/introspection_jwt.js` and the
+  // registration endpoint read them; nothing else should keep a copy.
+  introspectionResponseProblem: introspectionResponseProblem,
+  INTROSPECTION_ATTRIBUTES: INTROSPECTION_ATTRIBUTES,
+  INTROSPECTION_DEFAULT_SIGNING_ALG: INTROSPECTION_DEFAULT_SIGNING_ALG,
+  INTROSPECTION_DEFAULT_ENC: INTROSPECTION_DEFAULT_ENC,
+  INTROSPECTION_SIGNING_ALGS: INTROSPECTION_SIGNING_ALGS,
+  INTROSPECTION_ENCRYPTION_ALGS: INTROSPECTION_ENCRYPTION_ALGS,
+  INTROSPECTION_ENCRYPTION_ENCS: INTROSPECTION_ENCRYPTION_ENCS,
+  // RFC 9101 — the check, its tables, and which attribute holds which member.
+  // `oauth-oidc/request_object.js` and the registration endpoint read them.
+  requestObjectMetadataProblem: requestObjectMetadataProblem,
+  pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,
+  pushedAuthorizationAttributeProblem: pushedAuthorizationAttributeProblem,
+  mtlsMetadataProblem: mtlsMetadataProblem,
+  mtlsAttributeProblem: mtlsAttributeProblem,
+  TLS_SUBJECT_ATTRIBUTES: TLS_SUBJECT_ATTRIBUTES,
+  TLS_BOUND_TOKENS_ATTRIBUTE: TLS_BOUND_TOKENS_ATTRIBUTE,
+  // RFC 9396 — what an entry may say about authorization_details, and the
+  // definition reader `oauth-oidc/authorization_details.js` uses.
+  AUTHORIZATION_DETAILS_BUILT_IN: AUTHORIZATION_DETAILS_BUILT_IN,
+  authorizationDetailsTypeOf: authorizationDetailsTypeOf,
+  authorizationDetailsLocationProblem: authorizationDetailsLocationProblem,
+  authorizationDetailsTypeNameProblem: authorizationDetailsTypeNameProblem,
+  authorizationDetailsMetadataProblem: authorizationDetailsMetadataProblem,
+  authorizationDetailsAttributeProblem: authorizationDetailsAttributeProblem,
+  stepUpAttributeProblem: stepUpAttributeProblem,
+  stepUpRequirementOf: stepUpRequirementOf,
+  audienceNamesEntry: audienceNamesEntry,
+  requestUriProblem: requestUriProblem,
+  REQUEST_OBJECT_ATTRIBUTES: REQUEST_OBJECT_ATTRIBUTES,
+  REQUEST_OBJECT_DEFAULT_ENC: REQUEST_OBJECT_DEFAULT_ENC,
+  REQUEST_OBJECT_SIGNING_ALGS: REQUEST_OBJECT_SIGNING_ALGS,
+  REQUEST_OBJECT_ENCRYPTION_ALGS: REQUEST_OBJECT_ENCRYPTION_ALGS,
+  REQUEST_OBJECT_ENCRYPTION_ENCS: REQUEST_OBJECT_ENCRYPTION_ENCS,
   recordAuthentication: recordAuthentication,
   setDirectory: setDirectory,
   // For a test that stubs the slot and has to put back what was there. See

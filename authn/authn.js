@@ -159,6 +159,13 @@ const WEBAUTHN_PATH = '/authn/webauthn';
 // asks for first. `credentials.mechanismsFor()` deliberately leaves the
 // recovery codes off `secondFactor` for exactly that reason.
 const BACKUP_CODE_PATH = '/authn/backup-code';
+// THE FORCED PASSWORD CHANGE (2026-09-13): drawn after a password is accepted
+// for an entry carrying `pwdReset: TRUE`, before any session exists.
+const PASSWORD_CHANGE_PATH = '/authn/password-change';
+// A SECOND FACTOR ENROLLED BECAUSE ONE IS REQUIRED (2026-09-13) — see the
+// block above `MFA_SETUP_FORM` for why a sign-in may now enrol an authenticator
+// app where it never used to.
+const MFA_SETUP_PATH = '/authn/mfa-setup';
 // ---------------------------------------------------------------------------
 // WHERE A PERSON SIGNS IN WITH A KERBEROS TICKET, and the reason the constant
 // is HERE while the endpoint is in `kerberos/spnego_authn.js`.
@@ -369,6 +376,11 @@ const webauthnVerifier = require('./webauthn');
 // cross-implementation test, and a `require('../common/config')` in there would
 // end that silently. See `authn/webauthn_policy.js`'s header.
 const webauthnPolicy = require('./webauthn_policy');
+// THE AUTHENTICATOR APP'S MECHANISM (2026-09-13), for the enrolment a required
+// second factor asks for: the otpauth URI, the QR code and the grouped secret.
+// A LEAF requiring `config`, `crypto`, `helpers` and `realms`, none of which
+// reaches back here.
+const totp = require('../common/totp');
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
@@ -413,6 +425,13 @@ const webauthnPolicy = require('./webauthn_policy');
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const pendingMfa = realms.map({ persist: 'authn.pendingMfa' });
+// change id -> { authn, username, secondFactor, expires }. A password that must
+// be changed before the sign-in it opened goes any further (2026-09-13). A
+// store of its own rather than a `factor` on the one above: that register is
+// "a sign-in waiting for a SECOND FACTOR", and a new password is not one — the
+// person has presented one factor and is being asked to replace it.
+const pendingPasswordChange = realms.map({
+  persist: 'authn.pendingPasswordChange' });
 // How long a second-factor step waits. `authn.mfaStepTtlS` since 2026-09-12;
 // this is its default.
 const MFA_TTL_MS = 5 * 60 * 1000;
@@ -3848,6 +3867,273 @@ app.get(LOGIN_PATH, function (req, res) {
 // The form target. Everything that can go wrong here re-renders the screen with
 // a message rather than redirecting: the person is mid-authentication and the
 // request they interrupted is still waiting.
+// ---------------------------------------------------------------------------
+// EVERYTHING A SIGN-IN DOES AFTER ITS FIRST FACTOR IS ACCEPTED — the role
+// gate, the second factor, the session — as one function (2026-09-13), because
+// it has two callers: the password screen, and the forced password change,
+// which resumes exactly here once the new password is stored. Two copies would
+// be two answers to what a sign-in requires, and the second factor is the half
+// a copy would forget.
+// ---------------------------------------------------------------------------
+function finishPasswordSignIn(req, res, base, record, username, passwordless,
+                              secondFactor) {
+  log.debug("Entering finishPasswordSignIn(). username=" + username);
+
+  // THE ROLE GATE, AND IT IS ASKED BEFORE THE SECOND FACTOR RATHER THAN AFTER
+  // IT. A person who holds none of the roles this application requires is not
+  // going to be signed in whatever their security key says, and asking them to
+  // perform a ceremony first would be a screen that takes a credential it has
+  // already decided to ignore.
+  //
+  // THE SUBJECT **IS** AUTHENTICATED HERE, AND THIS SAID THE OPPOSITE UNTIL
+  // 2026-09-05. The old comment read "the subject is not authenticated yet,
+  // and `authenticated: false` says so rather than flattering the request",
+  // which sounds careful and was wrong — not about the wording, about the
+  // fact.
+  //
+  // **LOOK AT WHERE THIS RUNS.** The reserved password has already been
+  // refused twelve lines up. Everything this mock does by way of checking a
+  // credential has therefore already happened, and this request is the act of
+  // authenticating somebody. What has not happened yet is the SESSION, and
+  // "the session does not exist yet" is a different sentence from "nobody has
+  // authenticated" — the old code collapsed them.
+  //
+  // **WHAT IT COST WAS THE ROLE ITSELF.** An application whose
+  // `appRequiredRole` is `ALL_AUTHENTICATED_USERS` refused EVERY sign-in at
+  // this screen, because at this screen nobody had authenticated by that
+  // reading — so the one role most likely to be configured could never be
+  // satisfied by anybody, and the refusal named the person and the role and
+  // looked entirely deliberate. It survived because the test that narrows an
+  // application narrows it to a CONFIGURED role, which the register answers
+  // the same either way; only a built-in role can see the difference.
+  //
+  // **AND THE DISTINCTION THE OLD COMMENT WANTED IS REAL NOW, ELSEWHERE.**
+  // ALL_UNAUTHENTICATED_USERS is held by the anonymous session minted a few
+  // hundred lines up, where nobody authenticated and the flag says so. That is
+  // the honest version of what this line was reaching for: a party that did
+  // not authenticate, rather than a party in the middle of doing so.
+  //
+  // A REFUSAL IS THIS PAGE AGAIN WITH THE REASON ON IT, because there is
+  // nowhere else to send them: `record.returnTo` is a path on THIS service
+  // belonging to the protocol module that started the sign-in, and bouncing
+  // somebody back into an authorization endpoint that would refuse them a
+  // second time is a loop. The protocol's own refusal happens at its own door
+  // — `access_denied` at /oauth2/authorize — for a session that already exists.
+  const roleAnswer = gate.check({
+    application: String(record.application || ''),
+    kind: gate.ISSUANCE.SESSION,
+    subject: { kind: 'user', name: username, authenticated: true },
+    claims: null
+  });
+  if (!roleAnswer.allowed) {
+    log.info('authn: the issuance policy refused a session for "' + username +
+             '" at "' + String(record.application) + '". ' + roleAnswer.why);
+    log.debug("Leaving the authentication endpoint. The issuance policy " +
+              "refused the session.");
+    errorCodes.mark(res, 'STS-AUTHN-0009');
+    log.debug("Leaving finishPasswordSignIn().");
+    return sendLoginPage(res, loginPage(base, record, roleAnswer.why));
+  }
+
+  // The security key, in whichever role. On the second-factor path the password
+  // step has succeeded and the session is NOT created yet, because a session
+  // created here and upgraded later would be a valid single-factor session in
+  // the window between — and a request arriving in that window would be
+  // answered with tokens that claim one factor's worth of assurance and carry
+  // none of the second's. On the passwordless path there is nothing to upgrade
+  // FROM, and the rule holds for the same reason: nothing has been
+  // authenticated until the ceremony verifies.
+  // ---------------------------------------------------------------------
+  // WHICH SECOND FACTOR, AND THE ANSWER IS THE PERSON'S RATHER THAN THE
+  // FORM'S (2026-09-10).
+  //
+  // **THIS IS THE CHANGE THAT MAKES `mfaRequired` MEAN ANYTHING.** That flag
+  // has been on `credentials.mechanismsFor()` since the portal was written,
+  // it is drawn on `/portal/keys` as *a password alone will not sign you in*,
+  // and **nothing read it at this door** — so it was a sentence on a page
+  // rather than a rule. A person who had enrolled a second factor signed in
+  // with a password and an unticked checkbox, exactly as somebody who had
+  // enrolled nothing.
+  //
+  // So the order below is: the passwordless path first (it is a PRIMARY
+  // credential and not a second factor at all), then WHAT THIS PERSON IS
+  // CONFIGURED FOR, and only then the checkbox.
+  //
+  // **THE CHECKBOX CANNOT OVERRIDE AN ENROLMENT**, which is
+  // `record.forcePasswordless`'s argument read a second time: a configured
+  // mechanism a client can opt out of is not a mechanism. It matters more
+  // here than there, because opting out would be a real bypass — the
+  // security-key page ENROLS on first use, so a person who knows a TOTP
+  // user's password could otherwise tick the box, register a brand new
+  // authenticator, and be signed in having never met the second factor the
+  // account is configured for.
+  //
+  // What that costs is worth stating rather than discovering: **somebody who
+  // already holds a second factor cannot enrol a SECURITY KEY at this
+  // screen.** The box is what enrolment goes through, and it is now reserved
+  // for people who hold no second factor yet. The other two doors are
+  // unaffected — an activation link enrols one, and `/portal/mfa` enrols an
+  // authenticator app — and that person's row under `/admin/users` is where
+  // an operator clears a factor
+  // so that somebody can enrol a different one.
+  //
+  // **A PERSON WHO HOLDS BOTH IS ASKED FOR THE SECURITY KEY**, with a link to
+  // use a code instead. `mechanismsFor().secondFactor` decides, and it prefers
+  // the key because the ceremony is bound to this origin and the code is not;
+  // the link exists because the commonest reason to hold both is standing at
+  // a machine the key is not plugged into.
+  const enrolled = credentials.mechanismsFor(username);
+  const configuredFactor = enrolled.mfaRequired ? enrolled.secondFactor : '';
+  const factor = passwordless
+    ? 'webauthn'
+    : (configuredFactor || (secondFactor ? 'webauthn' : ''));
+
+  // ---------------------------------------------------------------------
+  // A SECOND FACTOR REQUIRED OF THIS PERSON (2026-09-13) — by their own entry
+  // (`stsMfaRequired`, set from /admin/users) or by the realm
+  // (`authn.mfaRequired`).
+  //
+  // **A PASSWORDLESS SIGN-IN IS REFUSED UNDER IT**, before any ceremony: a
+  // security key on its own is ONE factor — `amr ["hwk"]` — and a requirement
+  // for two that a passkey answered would be the requirement not asked.
+  //
+  // **SOMEBODY WHO HOLDS NO SECOND FACTOR IS ASKED TO ENROL ONE** before any
+  // session exists, on `MFA_SETUP_PATH`. Somebody who already holds one is
+  // asked for it by `factor` above as always, and somebody who ticked the
+  // security-key box enrols a key through the ordinary ceremony — both satisfy
+  // it, so neither meets the set-up step.
+  const requirement = credentials.mfaRequirementFor(username);
+  if (requirement.required && passwordless) {
+    log.info('authn: a passwordless sign-in for "' + username + '" was ' +
+             'refused — a second factor is required of them (' +
+             (requirement.byUser ? 'account' : 'realm') + ').');
+    errorCodes.mark(res, 'STS-AUTHN-0171');
+    log.debug("Leaving finishPasswordSignIn(). Passwordless under a " +
+              "requirement.");
+    return sendLoginPage(res, loginPage(base, record,
+      'A second factor is required ' + (requirement.byUser
+        ? 'for this account' : 'in this realm') + ', and a security key on ' +
+      'its own is one factor. Sign in with your password; you will be asked ' +
+      'for your second factor, or to set one up.'));
+  }
+  if (requirement.required && !factor) {
+    const offered = enrolmentOffered();
+    if (!offered.totp && !offered.webauthn) {
+      log.warn(errorCodes.tag('STS-AUTHN-0172') + 'authn: a second factor is ' +
+               'required of "' + username + '", who holds none, and neither ' +
+               'mechanism can be enrolled in this realm (totp.enabled, ' +
+               'webauthn.enabled, webauthn.mfaAllowed). The sign-in is ' +
+               'REFUSED rather than let through on one factor.');
+      errorCodes.mark(res, 'STS-AUTHN-0172');
+      log.debug("Leaving finishPasswordSignIn(). Nothing can be enrolled.");
+      return sendLoginPage(res, loginPage(base, record,
+        'A second factor is required for this account and none can be set ' +
+        'up here: authenticator apps and security keys are both switched ' +
+        'off in this realm. Ask an administrator.'));
+    }
+    pending.delete(record.id);
+    const setupId = randomId(24);
+    pendingMfa.set(setupId, {
+      authn: record, username: username,
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      // `enrol` until a mechanism is chosen; `enrol-totp` once an
+      // authenticator app's secret has been shown; `webauthn` once a security
+      // key is chosen, which is then the ordinary ceremony — it registers a key
+      // in the `mfa` role for somebody who holds none.
+      factor: 'enrol', alternate: '', backup: false, passwordless: false,
+      requiredBy: requirement.byUser ? 'account' : 'realm',
+      expires: Date.now() + mfaStepTtlMs()
+    });
+    audit.audit({
+      action: 'authn.mfa.enrolment.required', outcome: 'success',
+      actor: username, target: username, channel: 'http',
+      protocol: record.protocol,
+      summary: username + ' holds no second factor and one is required; ' +
+               'asked to set one up before signing in',
+      detail: { requiredBy: requirement.byUser ? 'account' : 'realm' }
+    });
+    log.info('authn: "' + username + '" holds no second factor and one is ' +
+             'required; asking them to set one up.');
+    log.debug("Leaving finishPasswordSignIn(). Enrolment step.");
+    return sendMfaSetupPage(res, mfaSetupPage(setupId, username, offered, ''));
+  }
+
+  if (factor) {
+    pending.delete(record.id);
+    const mfaId = randomId(24);
+    pendingMfa.set(mfaId, {
+      authn: record, username: username,
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      // WHICH MECHANISM IS BEING ASKED FOR. On the record for the reason
+      // `passwordless` is on it: the POST at the other end is an answer and
+      // says nothing about what was asked. It is ONE register for both
+      // mechanisms rather than a second map beside it — rule 3m, read as it is
+      // everywhere else here: a second store would be a second answer to "is
+      // there a sign-in waiting for a second factor".
+      factor: factor,
+      // The OTHER mechanism this person holds, if they hold one. It is what
+      // the *use a code instead* link is drawn from, and it is resolved HERE
+      // rather than at the page so that the link cannot offer a factor the
+      // person does not have.
+      alternate: (factor === 'webauthn' && enrolled.totp) ? 'totp'
+        : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : ''),
+      // THE WAY OUT WHEN NEITHER MECHANISM IS TO HAND (2026-09-10). Resolved
+      // HERE, when the step is minted, for `alternate`'s reason and with a
+      // sharper edge: this link must not be drawn for somebody who holds no
+      // unspent recovery code, because a screen that asks for a credential
+      // that cannot exist looks exactly like a service that has lost it.
+      //
+      // **IT IS NOT ON `alternate`** even though it is drawn beside it. That
+      // field names the OTHER MECHANISM THIS PERSON IS CONFIGURED FOR and the
+      // two screens swap between them; a recovery code is configured for
+      // nobody and stands in for whichever of the two they cannot produce. One
+      // field carrying both would make *what is this person's second factor* a
+      // question with a wrong answer.
+      backup: enrolled.backupCodes ? enrolled.backupCodes.remaining > 0 : false,
+      // Which role, carried on the pending record rather than re-read from the
+      // POST at the other end: that POST is the browser's ceremony result and
+      // nothing in it says what the person chose a screen ago. Everything the
+      // session then claims — amr, acr, and whether the directory entry is
+      // flagged as multi-factor — is decided from this one boolean.
+      passwordless: passwordless,
+      expires: Date.now() + mfaStepTtlMs()
+    });
+    pendingMfa.forEach(function (v, k) {
+      if (v.expires < Date.now()) pendingMfa.delete(k);
+    });
+    if (factor === 'totp') {
+      log.debug("Leaving the authentication endpoint. " + username +
+                " passed the password step; asking for the one-time code.");
+      log.debug("Leaving finishPasswordSignIn().");
+      return sendTotpPage(res, totpPage(base, mfaId, username, '', ''));
+    }
+    log.debug("Leaving the authentication endpoint. " + username +
+              (passwordless ? " asked for a passwordless sign-in; asking for " +
+                              "the security key."
+                            : " passed the password step; asking for the " +
+                              "security key."));
+    log.debug("Leaving finishPasswordSignIn().");
+    return sendWebauthnPage(res, webauthnPage(base, mfaId, username, ''));
+  }
+
+  pending.delete(record.id);
+  // One factor, and the tokens will say so.
+  // `gated: true` — the role gate ran above, before this screen was redrawn,
+  // so that a refusal is a screen with a reason on it. Asking again inside
+  // startSession() would be one refusal reported in two shapes.
+  startSession(res, username, ['pwd'], '1', record.protocol,
+               { request: req, gated: true });
+
+  // Back to whatever sent them here, with its own original request — which now
+  // runs a second time, sees the session cookie, and completes.
+  returnToCaller(res, record, null, null);
+  log.debug("Leaving the authentication endpoint. " + username + " is signed " +
+      "in; back to " +
+            record.returnTo + ".");
+  log.debug("Leaving finishPasswordSignIn().");
+  return undefined;
+}
+
 app.post(LOGIN_PATH, function (req, res) {
   log.debug("Entering the authentication endpoint.");
   const base = baseUrlOf(req);
@@ -3972,7 +4258,15 @@ app.post(LOGIN_PATH, function (req, res) {
   // mechanism, so the record decides and the markup only shows.
   const passwordless = !!record.forcePasswordless ||
                        String(body.webauthn_only || '') === '1';
-  const secondFactor = !passwordless && String(body.use_webauthn || '') === '1';
+  // `record.forceMfa` for `forcePasswordless`'s reason one line up (RFC 9470,
+  // 2026-09-13): the hidden `use_webauthn` the screen posts under a demand for
+  // two factors is a suggestion too, and a POST without it signed in with one.
+  // The authorization endpoint would refuse that session on the way back; this
+  // makes the screen ask for the factor instead of letting a sign-in finish
+  // that was always going to be refused.
+  const secondFactor = !passwordless &&
+                       (!!record.forceMfa ||
+                        String(body.use_webauthn || '') === '1');
 
   // ---------------------------------------------------------------------
   // THE POLICY, CHECKED HERE AND NOT ONLY ON THE SCREEN (2026-09-10).
@@ -4067,8 +4361,12 @@ app.post(LOGIN_PATH, function (req, res) {
       errorCodes.mark(res, 'STS-AUTHN-0008');
       return sendLoginPage(res, loginPage(base, record, allowed.detail));
     }
+    // `allowPasswordReset`: this is the one door that can ask for a new
+    // password, so a password flagged `pwdReset` is accepted HERE and the
+    // change step below is drawn instead of a session. See credentials.js.
     const credential = credentials.verify(username, String(body.password || ''),
-                                          { via: 'the sign-in screen' });
+                                          { via: 'the sign-in screen',
+                                            allowPasswordReset: true });
     if (!credential.ok) {
       log.info('authn: the sign-in for "' + username + '" was refused (' +
                credential.reason + '): ' + credential.detail);
@@ -4084,184 +4382,575 @@ app.post(LOGIN_PATH, function (req, res) {
     websecurity.succeeded('sign-in', req, username);
   }
 
-  // THE ROLE GATE, AND IT IS ASKED BEFORE THE SECOND FACTOR RATHER THAN AFTER
-  // IT. A person who holds none of the roles this application requires is not
-  // going to be signed in whatever their security key says, and asking them to
-  // perform a ceremony first would be a screen that takes a credential it has
-  // already decided to ignore.
-  //
-  // THE SUBJECT **IS** AUTHENTICATED HERE, AND THIS SAID THE OPPOSITE UNTIL
-  // 2026-09-05. The old comment read "the subject is not authenticated yet,
-  // and `authenticated: false` says so rather than flattering the request",
-  // which sounds careful and was wrong — not about the wording, about the
-  // fact.
-  //
-  // **LOOK AT WHERE THIS RUNS.** The reserved password has already been
-  // refused twelve lines up. Everything this mock does by way of checking a
-  // credential has therefore already happened, and this request is the act of
-  // authenticating somebody. What has not happened yet is the SESSION, and
-  // "the session does not exist yet" is a different sentence from "nobody has
-  // authenticated" — the old code collapsed them.
-  //
-  // **WHAT IT COST WAS THE ROLE ITSELF.** An application whose
-  // `appRequiredRole` is `ALL_AUTHENTICATED_USERS` refused EVERY sign-in at
-  // this screen, because at this screen nobody had authenticated by that
-  // reading — so the one role most likely to be configured could never be
-  // satisfied by anybody, and the refusal named the person and the role and
-  // looked entirely deliberate. It survived because the test that narrows an
-  // application narrows it to a CONFIGURED role, which the register answers
-  // the same either way; only a built-in role can see the difference.
-  //
-  // **AND THE DISTINCTION THE OLD COMMENT WANTED IS REAL NOW, ELSEWHERE.**
-  // ALL_UNAUTHENTICATED_USERS is held by the anonymous session minted a few
-  // hundred lines up, where nobody authenticated and the flag says so. That is
-  // the honest version of what this line was reaching for: a party that did
-  // not authenticate, rather than a party in the middle of doing so.
-  //
-  // A REFUSAL IS THIS PAGE AGAIN WITH THE REASON ON IT, because there is
-  // nowhere else to send them: `record.returnTo` is a path on THIS service
-  // belonging to the protocol module that started the sign-in, and bouncing
-  // somebody back into an authorization endpoint that would refuse them a
-  // second time is a loop. The protocol's own refusal happens at its own door
-  // — `access_denied` at /oauth2/authorize — for a session that already exists.
-  const roleAnswer = gate.check({
-    application: String(record.application || ''),
-    kind: gate.ISSUANCE.SESSION,
-    subject: { kind: 'user', name: username, authenticated: true },
-    claims: null
-  });
-  if (!roleAnswer.allowed) {
-    log.info('authn: the issuance policy refused a session for "' + username +
-             '" at "' + String(record.application) + '". ' + roleAnswer.why);
-    log.debug("Leaving the authentication endpoint. The issuance policy " +
-              "refused the session.");
-    errorCodes.mark(res, 'STS-AUTHN-0009');
-    return sendLoginPage(res, loginPage(base, record, roleAnswer.why));
-  }
-
-  // The security key, in whichever role. On the second-factor path the password
-  // step has succeeded and the session is NOT created yet, because a session
-  // created here and upgraded later would be a valid single-factor session in
-  // the window between — and a request arriving in that window would be
-  // answered with tokens that claim one factor's worth of assurance and carry
-  // none of the second's. On the passwordless path there is nothing to upgrade
-  // FROM, and the rule holds for the same reason: nothing has been
-  // authenticated until the ceremony verifies.
   // ---------------------------------------------------------------------
-  // WHICH SECOND FACTOR, AND THE ANSWER IS THE PERSON'S RATHER THAN THE
-  // FORM'S (2026-09-10).
+  // A PASSWORD THAT MUST BE CHANGED (2026-09-13), in both modes.
   //
-  // **THIS IS THE CHANGE THAT MAKES `mfaRequired` MEAN ANYTHING.** That flag
-  // has been on `credentials.mechanismsFor()` since the portal was written,
-  // it is drawn on `/portal/keys` as *a password alone will not sign you in*,
-  // and **nothing read it at this door** — so it was a sentence on a page
-  // rather than a rule. A person who had enrolled a second factor signed in
-  // with a password and an unticked checkbox, exactly as somebody who had
-  // enrolled nothing.
-  //
-  // So the order below is: the passwordless path first (it is a PRIMARY
-  // credential and not a second factor at all), then WHAT THIS PERSON IS
-  // CONFIGURED FOR, and only then the checkbox.
-  //
-  // **THE CHECKBOX CANNOT OVERRIDE AN ENROLMENT**, which is
-  // `record.forcePasswordless`'s argument read a second time: a configured
-  // mechanism a client can opt out of is not a mechanism. It matters more
-  // here than there, because opting out would be a real bypass — the
-  // security-key page ENROLS on first use, so a person who knows a TOTP
-  // user's password could otherwise tick the box, register a brand new
-  // authenticator, and be signed in having never met the second factor the
-  // account is configured for.
-  //
-  // What that costs is worth stating rather than discovering: **somebody who
-  // already holds a second factor cannot enrol a SECURITY KEY at this
-  // screen.** The box is what enrolment goes through, and it is now reserved
-  // for people who hold no second factor yet. The other two doors are
-  // unaffected — an activation link enrols one, and `/portal/mfa` enrols an
-  // authenticator app — and that person's row under `/admin/users` is where
-  // an operator clears a factor
-  // so that somebody can enrol a different one.
-  //
-  // **A PERSON WHO HOLDS BOTH IS ASKED FOR THE SECURITY KEY**, with a link to
-  // use a code instead. `mechanismsFor().secondFactor` decides, and it prefers
-  // the key because the ceremony is bound to this origin and the code is not;
-  // the link exists because the commonest reason to hold both is standing at
-  // a machine the key is not plugged into.
-  const enrolled = credentials.mechanismsFor(username);
-  const configuredFactor = enrolled.mfaRequired ? enrolled.secondFactor : '';
-  const factor = passwordless
-    ? 'webauthn'
-    : (configuredFactor || (secondFactor ? 'webauthn' : ''));
-
-  if (factor) {
+  // `pwdReset: TRUE` on the entry — the bootstrap administrator is created with
+  // it — means the password just accepted was not chosen by this person. No
+  // session, no second factor and no role decision happen until a new one is
+  // stored: the change step holds the pending record, and
+  // finishPasswordSignIn() resumes the sign-in from there. Only the PASSWORD
+  // path is stopped; a passwordless security-key sign-in presented no password
+  // to replace.
+  if (!passwordless && credentials.passwordResetRequired(username)) {
     pending.delete(record.id);
-    const mfaId = randomId(24);
-    pendingMfa.set(mfaId, {
-      authn: record, username: username,
-      challenge: crypto.randomBytes(32).toString('base64url'),
-      // WHICH MECHANISM IS BEING ASKED FOR. On the record for the reason
-      // `passwordless` is on it: the POST at the other end is an answer and
-      // says nothing about what was asked. It is ONE register for both
-      // mechanisms rather than a second map beside it — rule 3m, read as it is
-      // everywhere else here: a second store would be a second answer to "is
-      // there a sign-in waiting for a second factor".
-      factor: factor,
-      // The OTHER mechanism this person holds, if they hold one. It is what
-      // the *use a code instead* link is drawn from, and it is resolved HERE
-      // rather than at the page so that the link cannot offer a factor the
-      // person does not have.
-      alternate: (factor === 'webauthn' && enrolled.totp) ? 'totp'
-        : ((factor === 'totp' && enrolled.mfaKeys > 0) ? 'webauthn' : ''),
-      // THE WAY OUT WHEN NEITHER MECHANISM IS TO HAND (2026-09-10). Resolved
-      // HERE, when the step is minted, for `alternate`'s reason and with a
-      // sharper edge: this link must not be drawn for somebody who holds no
-      // unspent recovery code, because a screen that asks for a credential
-      // that cannot exist looks exactly like a service that has lost it.
-      //
-      // **IT IS NOT ON `alternate`** even though it is drawn beside it. That
-      // field names the OTHER MECHANISM THIS PERSON IS CONFIGURED FOR and the
-      // two screens swap between them; a recovery code is configured for
-      // nobody and stands in for whichever of the two they cannot produce. One
-      // field carrying both would make *what is this person's second factor* a
-      // question with a wrong answer.
-      backup: enrolled.backupCodes ? enrolled.backupCodes.remaining > 0 : false,
-      // Which role, carried on the pending record rather than re-read from the
-      // POST at the other end: that POST is the browser's ceremony result and
-      // nothing in it says what the person chose a screen ago. Everything the
-      // session then claims — amr, acr, and whether the directory entry is
-      // flagged as multi-factor — is decided from this one boolean.
-      passwordless: passwordless,
+    const changeId = randomId(24);
+    pendingPasswordChange.set(changeId, {
+      authn: record, username: username, secondFactor: secondFactor,
       expires: Date.now() + mfaStepTtlMs()
     });
-    pendingMfa.forEach(function (v, k) {
-      if (v.expires < Date.now()) pendingMfa.delete(k);
+    pendingPasswordChange.forEach(function (v, k) {
+      if (v.expires < Date.now()) {
+        pendingPasswordChange.delete(k);
+      }
     });
-    if (factor === 'totp') {
-      log.debug("Leaving the authentication endpoint. " + username +
-                " passed the password step; asking for the one-time code.");
-      return sendTotpPage(res, totpPage(base, mfaId, username, '', ''));
-    }
-    log.debug("Leaving the authentication endpoint. " + username +
-              (passwordless ? " asked for a passwordless sign-in; asking for " +
-                              "the security key."
-                            : " passed the password step; asking for the " +
-                              "security key."));
-    return sendWebauthnPage(res, webauthnPage(base, mfaId, username, ''));
+    log.info('authn: "' + username + '" must change their password before ' +
+             'this sign-in continues (pwdReset).');
+    log.debug("Leaving the authentication endpoint. Asking for a new " +
+              "password.");
+    return sendPasswordChangePage(res,
+      passwordChangePage(changeId, username, ''));
   }
 
-  pending.delete(record.id);
-  // One factor, and the tokens will say so.
-  // `gated: true` — the role gate ran above, before this screen was redrawn,
-  // so that a refusal is a screen with a reason on it. Asking again inside
-  // startSession() would be one refusal reported in two shapes.
-  startSession(res, username, ['pwd'], '1', record.protocol,
-               { request: req, gated: true });
+  finishPasswordSignIn(req, res, base, record, username, passwordless,
+                       secondFactor);
+  log.debug("Leaving the authentication endpoint.");
+  return undefined;
+});
 
-  // Back to whatever sent them here, with its own original request — which now
-  // runs a second time, sees the session cookie, and completes.
-  returnToCaller(res, record, null, null);
-  log.debug("Leaving the authentication endpoint. " + username + " is signed " +
-      "in; back to " +
-            record.returnTo + ".");
+// ---------------------------------------------------------------------------
+// THE FORCED PASSWORD CHANGE (2026-09-13).
+//
+// Drawn by the password screen for an entry with `pwdReset: TRUE`, and the
+// only way past it is a new password this service stores. Three things about
+// it are deliberate:
+//
+//   * **NO SESSION EXISTS UNTIL IT IS DONE.** The step carries the pending
+//     sign-in record; finishPasswordSignIn() resumes that sign-in afterwards —
+//     role gate, second factor, session — exactly as if the new password had
+//     been typed on the first screen.
+//   * **THE NEW PASSWORD GOES THROUGH `credentials.setPassword()`**, so product
+//     mode holds it to the realm's password policy and history — which refuses
+//     the generated password being set again — and development mode, as at
+//     every other door, does not. The reserved refusal password is refused
+//     here in both modes, because it could never sign anybody in afterwards.
+//   * **IT HAS NO SCRIPT.** Two password fields and a button; the root
+//     CLAUDE.md's rule is that a scripted page argues its case, and this one
+//     has none to argue.
+// ---------------------------------------------------------------------------
+function passwordChangePage(changeId, username, error) {
+  log.debug('Entering passwordChangePage(). username=' + username);
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    'charset="utf-8"><title>Choose a new password — mock authentication ' +
+    'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+    'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:28px 32px;width:420px;box-shadow:0 ' +
+    '6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 ' +
+    '4px}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
+    '18px}label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
+    'input{width:100%;box-sizing:border-box;padding:9px 11px;border:1px ' +
+    'solid #c8c8d0;border-radius:5px;font-size:.95em;margin-bottom:14px}' +
+    'button{padding:9px 12px;border-radius:5px;border:1px solid #12107c;' +
+    'background:#12107c;color:#fff;font-size:.95em;cursor:pointer;width:100%}' +
+    '.err{background:#fdecea;border:1px solid ' +
+    '#f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;' +
+    'padding-top:14px;border-top:1px solid ' +
+    '#eee;font-size:.75em;color:#777}code{font-family:ui-monospace,' +
+    'SFMono-Regular,Menlo,monospace}</style></head><body><div class="card">' +
+    '<h1>Choose a new password</h1><p class="sub">The password for <code>' +
+    xmlEscape(username) + '</code> was set for you and must be changed ' +
+    'before you continue.</p>' +
+    (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+    '<form method="post" action="' + PASSWORD_CHANGE_PATH + '">' +
+    '<input type="hidden" name="change_id" value="' + xmlEscape(changeId) +
+    '">' +
+    '<label for="new_password">New password</label><input type="password" ' +
+    'id="new_password" name="new_password" autocomplete="new-password" ' +
+    'autofocus>' +
+    '<label for="confirm_password">Type it again</label><input ' +
+    'type="password" id="confirm_password" name="confirm_password" ' +
+    'autocomplete="new-password">' +
+    '<button type="submit" id="password-change-submit">Change password and ' +
+    'continue</button></form>' +
+    '<div class="meta">Nothing has been signed in yet. The sign-in you started ' +
+    'continues as soon as the new password is stored.</div>' +
+    '</div></body></html>\n';
+  log.debug('Leaving passwordChangePage().');
+  return html;
+}
+
+function sendPasswordChangePage(res, html) {
+  log.debug('Entering sendPasswordChangePage().');
+  res.status(200).type('text/html').set('Cache-Control', 'no-store').send(html);
+  log.debug('Leaving sendPasswordChangePage().');
+}
+
+const PASSWORD_CHANGE_FORM = vz.object({
+  change_id: vt.opt(vt.base64url),
+  new_password: vz.string().max(1024).optional(),
+  confirm_password: vz.string().max(1024).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+const PASSWORD_CHANGE_QUERY = vz.object({
+  change: vt.opt(vt.base64url)
+});
+
+// The step, or null with the refusal already sent.
+function passwordChangeStep(res, changeId) {
+  log.debug('Entering passwordChangeStep().');
+  const step = pendingPasswordChange.get(changeId);
+  if (!step || step.expires < Date.now()) {
+    pendingPasswordChange.delete(changeId);
+    errorCodes.mark(res, 'STS-AUTHN-0144');
+    oauthError(res, 400, 'invalid_request',
+      'This password change has expired. Start the request again from the ' +
+      'application that sent you here.');
+    log.debug('Leaving passwordChangeStep(). Expired.');
+    return null;
+  }
+  log.debug('Leaving passwordChangeStep().');
+  return step;
+}
+
+// GET — redraws the step (a reload of the page the password screen drew). It
+// changes nothing.
+app.get(PASSWORD_CHANGE_PATH, function (req, res) {
+  log.debug('Entering the password change screen.');
+  const asked = validation.check(req, 'query', PASSWORD_CHANGE_QUERY);
+  if (!asked.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0145');
+    return refuseInvalid(res, asked);
+  }
+  const changeId = String(asked.value.change || '');
+  const step = passwordChangeStep(res, changeId);
+  if (!step) {
+    log.debug('Leaving the password change screen. No step.');
+    return undefined;
+  }
+  log.debug('Leaving the password change screen.');
+  return sendPasswordChangePage(res,
+    passwordChangePage(changeId, step.username, ''));
+});
+
+app.post(PASSWORD_CHANGE_PATH, function (req, res) {
+  log.debug('Entering the password change endpoint.');
+  const base = baseUrlOf(req);
+  const posted = validation.checkParsed(parseBody(req), 'body',
+                                        PASSWORD_CHANGE_FORM);
+  if (!posted.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0145');
+    return refuseInvalid(res, posted);
+  }
+  const body = posted.value;
+  const changeId = String(body.change_id || '');
+  const step = passwordChangeStep(res, changeId);
+  if (!step) {
+    log.debug('Leaving the password change endpoint. No step.');
+    return undefined;
+  }
+  const chosen = String(body.new_password || '');
+  const again = String(body.confirm_password || '');
+  let problem = '';
+  if (!chosen) {
+    problem = 'Enter a new password.';
+  } else if (chosen !== again) {
+    problem = 'The two passwords are not the same.';
+  } else if (chosen === credentials.RESERVED_REFUSAL) {
+    problem = 'That password is reserved and is refused at every sign-in, ' +
+              'so it cannot be yours.';
+  }
+  if (problem) {
+    errorCodes.mark(res, 'STS-AUTHN-0146');
+    log.debug('Leaving the password change endpoint. ' + problem);
+    return sendPasswordChangePage(res,
+      passwordChangePage(changeId, step.username, problem));
+  }
+  const written = credentials.setPassword(step.username, chosen,
+                                          { via: 'the forced password change' });
+  if (!written.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(written) || 'STS-AUTHN-0146');
+    log.debug('Leaving the password change endpoint. The store refused it.');
+    return sendPasswordChangePage(res,
+      passwordChangePage(changeId, step.username,
+                         (written.errors || []).join(' ') ||
+                         'The new password was not accepted.'));
+  }
+  if (!credentials.setPasswordResetRequired(step.username, false)) {
+    // The password IS changed. Carrying on would leave pwdReset on the entry
+    // and ask again at the next sign-in, which is a nuisance and not a hole;
+    // refusing here would throw away a password the person has just chosen.
+    log.warn(errorCodes.tag('STS-AUTHN-0143') + 'authn: the password for "' +
+             step.username + '" was changed and pwdReset could not be ' +
+             'cleared, so it will be asked for again.');
+  }
+  pendingPasswordChange.delete(changeId);
+  audit.audit({
+    action: 'authn.password.changed', outcome: 'success',
+    actor: step.username, target: step.username, channel: 'http',
+    protocol: step.authn && step.authn.protocol,
+    summary: step.username + ' changed a password they were required to ' +
+             'change at sign-in',
+    detail: { forced: true }
+  });
+  log.info('authn: "' + step.username + '" chose a new password; the sign-in ' +
+           'continues.');
+  finishPasswordSignIn(req, res, base, step.authn, step.username, false,
+                       !!step.secondFactor);
+  log.debug('Leaving the password change endpoint.');
+  return undefined;
+});
+
+// ---------------------------------------------------------------------------
+// /authn/mfa-setup — ENROLLING A SECOND FACTOR AT SIGN-IN, BECAUSE ONE IS
+// REQUIRED (2026-09-13).
+//
+// Reached only from `finishPasswordSignIn()`, for somebody whose password step
+// succeeded, who holds no second factor, and of whom one is required — by
+// their entry or by the realm. No session exists until they finish.
+//
+// **THIS SCREEN ENROLS AN AUTHENTICATOR APP, AND `authn/CLAUDE.md` SAYS A
+// SIGN-IN SCREEN MUST NOT**, so the argument is made again rather than waved
+// through. That rule stops a sign-in handing a shared secret to whoever typed a
+// password, because for a person who ALREADY holds a second factor that would
+// be a bypass: register your own app, never meet the one the account is
+// configured for. It is the same rule that reserves the security-key box for
+// people holding nothing. Here the person holds nothing — the step is refused
+// to anybody else — so there is no factor to bypass, and what the requirement
+// asks is exactly that they come to hold one. It is the security-key box's
+// enrol-on-first-use, extended to the other mechanism, and only while a second
+// factor is required.
+//
+// **WHAT IT DOES NOT CHANGE**: a password alone still reaches this step, as it
+// reaches the security-key box, so whoever knows the password of somebody who
+// holds no second factor can enrol the first. That was true before of the key,
+// and it is what "the first second factor" means anywhere; an activation link,
+// or an administrator watching, is the stronger door.
+//
+// No script: a choice of two buttons, a QR code this server draws, and six
+// digits. A security key is the ordinary `/authn/webauthn` ceremony, which
+// carries its own script.
+// ---------------------------------------------------------------------------
+function enrolmentOffered() {
+  log.debug('Entering enrolmentOffered().');
+  const out = {
+    totp: totp.offered(),
+    webauthn: webauthnPolicy.offered() && webauthnPolicy.roleAllowed('mfa').ok
+  };
+  log.debug('Leaving enrolmentOffered(). totp=' + out.totp + ', webauthn=' +
+            out.webauthn);
+  return out;
+}
+
+const MFA_SETUP_STYLE = '<style>body{font-family:system-ui,-apple-system,' +
+  '"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+  'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+  '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;' +
+  'padding:28px 32px;width:440px;box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
+  'h1{font-size:1.25em;margin:0 0 4px}h2{font-size:1em;margin:18px 0 6px}' +
+  'p.sub{color:#666;font-size:.85em;margin:0 0 18px}p{font-size:.9em}' +
+  'label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
+  'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px ' +
+  'solid #c8c8d0;border-radius:5px;font-size:1.3em;letter-spacing:.3em;' +
+  'text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,' +
+  'monospace;margin-bottom:14px}button{padding:9px 12px;border-radius:5px;' +
+  'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.95em;' +
+  'cursor:pointer;width:100%;margin:4px 0}.err{background:#fdecea;border:' +
+  '1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+  'font-size:.85em;margin-bottom:12px}code{font-family:ui-monospace,' +
+  'SFMono-Regular,Menlo,monospace}.meta{margin-top:20px;padding-top:14px;' +
+  'border-top:1px solid #eee;font-size:.75em;color:#777}</style>';
+
+function mfaSetupShell(title, body) {
+  log.debug('Entering mfaSetupShell().');
+  log.debug('Leaving mfaSetupShell().');
+  return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    '<title>' + xmlEscape(title) + ' — mock authentication service</title>' +
+    MFA_SETUP_STYLE + '</head><body><div class="card">' + body +
+    '</div></body></html>\n';
+}
+
+// The choice: an authenticator app or a security key, whichever this realm
+// offers.
+function mfaSetupPage(setupId, username, offered, error) {
+  log.debug('Entering mfaSetupPage(). username=' + username);
+  const button = function (action, label) {
+    log.debug('Entering button(). ' + action);
+    log.debug('Leaving button().');
+    return '<form method="post" action="' + MFA_SETUP_PATH + '">' +
+      '<input type="hidden" name="mfa_id" value="' + xmlEscape(setupId) +
+      '"><input type="hidden" name="action" value="' + action + '">' +
+      '<button type="submit" id="mfa-setup-' + action + '">' + label +
+      '</button></form>';
+  };
+  const html = mfaSetupShell('Set up a second factor',
+    '<h1>Set up a second factor</h1><p class="sub">A second factor is ' +
+    'required for <code>' + xmlEscape(username) + '</code>, and you do not ' +
+    'have one yet. Nothing is signed in until one is set up.</p>' +
+    (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+    (offered.totp
+      ? '<h2>An authenticator app</h2><p>A six-digit code from an app ' +
+        'such as Google Authenticator, Microsoft Authenticator, 1Password or ' +
+        'any other RFC 6238 app.</p>' +
+        button('totp', 'Set up an authenticator app')
+      : '') +
+    (offered.webauthn
+      ? '<h2>A security key</h2><p>A hardware key or a passkey on this ' +
+        'device, used after your password.</p>' +
+        button('webauthn', 'Set up a security key')
+      : '') +
+    '<div class="meta">This step expires in a few minutes; if it does, sign ' +
+    'in again from the application that sent you here.</div>');
+  log.debug('Leaving mfaSetupPage().');
+  return html;
+}
+
+// The authenticator app's secret, as a QR code and typed, and the code that
+// confirms it.
+async function mfaSetupTotpPage(base, setupId, username, error) {
+  log.debug('Entering mfaSetupTotpPage(). username=' + username);
+  const held = credentials.pendingTotpFor(username);
+  if (!held) {
+    log.debug('Leaving mfaSetupTotpPage(). Nothing pending.');
+    return null;
+  }
+  const issuer = totp.issuerFor(base);
+  const uri = totp.otpauthUri({ issuer: issuer, account: username,
+    secret: held.secret, algorithm: held.algorithm, digits: held.digits,
+    period: held.period });
+  let qr = '';
+  try {
+    qr = await totp.qrSvgDataUri(uri);
+  } catch (e) {
+    // Not fatal: the typed secret below is the whole credential.
+    log.debug('Caught in mfaSetupTotpPage(): ' + ((e && e.message) || e));
+    qr = '';
+  }
+  const html = mfaSetupShell('Set up your authenticator app',
+    '<h1>Scan this with your authenticator app</h1><p class="sub">For ' +
+    '<code>' + xmlEscape(username) + '</code>. Nothing is stored until the ' +
+    'code below checks out.</p>' +
+    (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
+    (qr ? '<p><img src="' + xmlEscape(qr) + '" width="220" height="220" ' +
+          'alt="QR code carrying this account\'s otpauth setup URI"></p>'
+        : '') +
+    '<p>Or type it in: <code>' + xmlEscape(totp.grouped(held.secret)) +
+    '</code> (' + xmlEscape('HMAC-' +
+      String(held.algorithm).replace(/^SHA/, 'SHA-') + ', ' + held.digits +
+      ' digits, every ' + held.period + ' seconds') + ')</p>' +
+    '<form method="post" action="' + MFA_SETUP_PATH + '">' +
+    '<input type="hidden" name="mfa_id" value="' + xmlEscape(setupId) + '">' +
+    '<input type="hidden" name="action" value="confirm-totp">' +
+    '<label for="code">The ' + held.digits + '-digit code your app shows ' +
+    'now</label><input type="text" id="code" name="code" ' +
+    'autocomplete="one-time-code" inputmode="numeric" maxlength="' +
+    held.digits + '" autofocus>' +
+    '<button type="submit" id="mfa-setup-confirm">Finish and sign in</button>' +
+    '</form>');
+  log.debug('Leaving mfaSetupTotpPage().');
+  return html;
+}
+
+function sendMfaSetupPage(res, html, status) {
+  log.debug('Entering sendMfaSetupPage().');
+  res.status(status || 200).type('text/html').set('Cache-Control', 'no-store')
+     .send(html);
+  log.debug('Leaving sendMfaSetupPage().');
+}
+
+const MFA_SETUP_FORM = vz.object({
+  mfa_id: vt.opt(vt.base64url),
+  action: vt.opt(vt.oneOf(['totp', 'webauthn', 'confirm-totp'])),
+  code: vz.string().max(32).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+// The step, or null with the refusal already sent. Only a step minted as an
+// enrolment is answered here: an ordinary second-factor step is somebody who
+// HOLDS a factor, and enrolling for them is the bypass the header refuses.
+function mfaSetupStep(res, setupId) {
+  log.debug('Entering mfaSetupStep().');
+  const step = pendingMfa.get(setupId);
+  if (!step || step.expires < Date.now() ||
+      ['enrol', 'enrol-totp'].indexOf(step.factor) < 0) {
+    if (step && step.expires < Date.now()) {
+      pendingMfa.delete(setupId);
+    }
+    errorCodes.mark(res, 'STS-AUTHN-0173');
+    oauthError(res, 400, 'invalid_request',
+      'This second-factor set-up has expired or does not exist. Start the ' +
+      'request again from the application that sent you here.');
+    log.debug('Leaving mfaSetupStep(). No step.');
+    return null;
+  }
+  log.debug('Leaving mfaSetupStep().');
+  return step;
+}
+
+app.get(MFA_SETUP_PATH, async function (req, res) {
+  log.debug('Entering the second-factor set-up screen.');
+  const asked = validation.check(req, 'query', MFA_STEP_QUERY);
+  if (!asked.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0174');
+    log.debug('Leaving the second-factor set-up screen. Bad shape.');
+    return refuseInvalid(res, asked);
+  }
+  const setupId = String(asked.value.mfa || '');
+  const step = mfaSetupStep(res, setupId);
+  if (!step) {
+    log.debug('Leaving the second-factor set-up screen. No step.');
+    return undefined;
+  }
+  if (step.factor === 'enrol-totp') {
+    const drawn = await mfaSetupTotpPage(baseUrlOf(req), setupId,
+                                         step.username, '');
+    if (drawn) {
+      log.debug('Leaving the second-factor set-up screen. The secret.');
+      return sendMfaSetupPage(res, drawn);
+    }
+  }
+  log.debug('Leaving the second-factor set-up screen. The choice.');
+  return sendMfaSetupPage(res, mfaSetupPage(setupId, step.username,
+                                            enrolmentOffered(), ''));
+});
+
+app.post(MFA_SETUP_PATH, async function (req, res) {
+  log.debug('Entering the second-factor set-up endpoint.');
+  const base = baseUrlOf(req);
+  const posted = validation.checkParsed(parseBody(req), 'body',
+                                        MFA_SETUP_FORM);
+  if (!posted.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0174');
+    log.debug('Leaving the second-factor set-up endpoint. Bad shape.');
+    return refuseInvalid(res, posted);
+  }
+  const body = posted.value;
+  const setupId = String(body.mfa_id || '');
+  const step = mfaSetupStep(res, setupId);
+  if (!step) {
+    log.debug('Leaving the second-factor set-up endpoint. No step.');
+    return undefined;
+  }
+  const offered = enrolmentOffered();
+  const action = String(body.action || '');
+  // THE PERSON MUST STILL HOLD NOTHING. A factor enrolled in another tab since
+  // the step was minted makes this an ordinary sign-in again, and enrolling a
+  // second one here would be the bypass the header refuses.
+  if (credentials.mechanismsFor(step.username).mfaRequired) {
+    pendingMfa.delete(setupId);
+    errorCodes.mark(res, 'STS-AUTHN-0175');
+    log.debug('Leaving the second-factor set-up endpoint. They hold one now.');
+    return oauthError(res, 400, 'invalid_request',
+      'A second factor is already set up for this account. Start the ' +
+      'request again from the application that sent you here and sign in ' +
+      'with it.');
+  }
+
+  if (action === 'webauthn') {
+    if (!offered.webauthn) {
+      errorCodes.mark(res, 'STS-AUTHN-0175');
+      log.debug('Leaving the second-factor set-up endpoint. Keys are off.');
+      return sendMfaSetupPage(res, mfaSetupPage(setupId, step.username,
+        offered, 'Security keys cannot be set up in this realm.'), 400);
+    }
+    // THE ORDINARY CEREMONY FROM HERE: a step asking for `webauthn` for a
+    // person who holds no `mfa` key draws the registration, and a verified one
+    // enrols the key and starts the session exactly as the security-key box
+    // does.
+    step.factor = 'webauthn';
+    pendingMfa.set(setupId, step);
+    log.debug('Leaving the second-factor set-up endpoint. The key ceremony.');
+    return sendWebauthnPage(res, webauthnPage(base, setupId, step.username,
+                                              rpIdProblem(base)));
+  }
+
+  if (action === 'totp') {
+    if (!offered.totp) {
+      errorCodes.mark(res, 'STS-AUTHN-0175');
+      log.debug('Leaving the second-factor set-up endpoint. TOTP is off.');
+      return sendMfaSetupPage(res, mfaSetupPage(setupId, step.username,
+        offered, 'Authenticator apps cannot be set up in this realm.'), 400);
+    }
+    const begun = credentials.beginTotpEnrolment(step.username,
+                                                 { base: base });
+    const drawn = begun.ok
+      ? await mfaSetupTotpPage(base, setupId, step.username, '') : null;
+    if (!drawn) {
+      errorCodes.mark(res, errorCodes.codeOf(begun) || 'STS-AUTHN-0176');
+      log.debug('Leaving the second-factor set-up endpoint. Not started.');
+      return sendMfaSetupPage(res, mfaSetupPage(setupId, step.username,
+        offered, ((begun.errors || [])[0]) ||
+        'The authenticator app could not be set up.'), 400);
+    }
+    step.factor = 'enrol-totp';
+    pendingMfa.set(setupId, step);
+    audit.audit({
+      action: 'authn.mfa.enrolment.started', outcome: 'success',
+      actor: step.username, target: step.username, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: 'an authenticator app secret was shown to ' + step.username +
+               ' at sign-in, because a second factor is required',
+      detail: { requiredBy: step.requiredBy || '' }
+    });
+    log.debug('Leaving the second-factor set-up endpoint. The secret.');
+    return sendMfaSetupPage(res, drawn);
+  }
+
+  // confirm-totp
+  if (step.factor !== 'enrol-totp') {
+    errorCodes.mark(res, 'STS-AUTHN-0174');
+    log.debug('Leaving the second-factor set-up endpoint. Nothing to confirm.');
+    return sendMfaSetupPage(res, mfaSetupPage(setupId, step.username, offered,
+      'Choose a second factor to set up first.'), 400);
+  }
+  const allowed = websecurity.attempt('mfa-code', req, step.username);
+  if (!allowed.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0040');
+    log.debug('Leaving the second-factor set-up endpoint. Rate limited.');
+    const again = await mfaSetupTotpPage(base, setupId, step.username,
+                                         allowed.detail);
+    return sendMfaSetupPage(res, again || mfaSetupPage(setupId, step.username,
+      offered, allowed.detail), 429);
+  }
+  const confirmed = credentials.confirmTotpEnrolment(step.username,
+                                                     String(body.code || ''));
+  if (!confirmed.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(confirmed) || 'STS-AUTHN-0177');
+    const reason = (confirmed.errors || ['That code is not right.'])[0];
+    // THE SAME SECRET IS REDRAWN: mistyping six digits must not mean scanning
+    // again. An enrolment that expired meanwhile goes back to the choice.
+    const again = await mfaSetupTotpPage(base, setupId, step.username, reason);
+    if (!again) {
+      step.factor = 'enrol';
+      pendingMfa.set(setupId, step);
+    }
+    log.debug('Leaving the second-factor set-up endpoint. Not confirmed.');
+    return sendMfaSetupPage(res, again || mfaSetupPage(setupId, step.username,
+      offered, 'That set-up expired before it was confirmed. Start it again.'),
+      400);
+  }
+  websecurity.succeeded('mfa-code', req, step.username);
+  pendingMfa.delete(setupId);
+  audit.audit({
+    action: 'authn.mfa.enrolled', outcome: 'success',
+    actor: step.username, target: step.username, channel: 'http',
+    protocol: step.authn && step.authn.protocol,
+    summary: step.username + ' set up an authenticator app at sign-in, ' +
+             'because a second factor is required',
+    detail: { requiredBy: step.requiredBy || '' }
+  });
+  log.info('authn: "' + step.username + '" enrolled an authenticator app at ' +
+           'sign-in; signing them in with two factors.');
+  // Two factors really were presented: the password, and a code from the app
+  // enrolled a moment ago. `otp` and `mfa`, as at `/authn/totp`.
+  startSession(res, step.username, ['pwd', 'otp'], 'mfa', step.authn.protocol,
+               { request: req });
+  returnToCaller(res, step.authn, null, null);
+  log.debug('Leaving the second-factor set-up endpoint. Signed in.');
+  return undefined;
 });
 
 // The security-key screen, and it is ONE screen for both roles. It performs the
@@ -5975,6 +6664,7 @@ audit.setActorResolver(auditActorOf);
 // ---------------------------------------------------------------------------
 module.exports = {
   LOGIN_PATH: LOGIN_PATH,
+  MFA_SETUP_PATH: MFA_SETUP_PATH,
   // WHICH ENROLLED KEY AN ASSERTION IS CHECKED AGAINST, exported for
   // `tests/webauthn_policy.js` and for no caller. The state that makes it
   // worth asserting — one person, two keys — cannot be built through any door

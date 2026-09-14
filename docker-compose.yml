@@ -520,6 +520,11 @@ services:
       args:
         BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
+        # THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): an image built by the
+        # debugger project's embedded/Dockerfile. Empty selects the
+        # Dockerfile's own empty stage, and the debugger then reports itself
+        # not installed — see debugger/CLAUDE.md.
+        DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-debugger-none}"
     # A published port rather than the parent's `network_mode: "host"`. Host
     # networking is what that stack needs and is Linux-only; publishing works on
     # Docker Desktop too, and nothing in this repo has to share a loopback with
@@ -555,6 +560,13 @@ services:
       # one fetch of GET /tls/server-certificate whichever of the three you use.
       # - "8443:8443"
       # - "9443:9443"
+      # The embedded protocol debugger (debugger.port), unpublished by default
+      # like the two above. It is ON in development mode when the image carries
+      # the debugger's built tree; publish it to open it in a browser. The host
+      # and container ports have to be the same number, because the debugger's
+      # own sign-in sends the browser to this service's main port on the host
+      # name it used.
+      # - "8444:8444"
     # The database must be ACCEPTING CONNECTIONS, not merely started — see the
     # healthcheck above for what goes wrong otherwise. This is the one thing in
     # this file that needs compose format 2.4's `condition:`, which is also the
@@ -716,6 +728,15 @@ services:
       - STS_MODE=${STS_MODE:-product}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-3}
+      # The console and the portal on workers of their own, so that neither
+      # queues behind protocol traffic. It needs read-your-write, which the
+      # line below turns on — see common/request_pool.js's surfacePoolProblem().
+      # TWO since 2026-09-13 (it was one): with one, a console page walking the
+      # directory held the only worker every portal page and every console
+      # sign-in callback was waiting on, and a worker that died left both
+      # surfaces on the protocol pool until it was re-forked. Each is a whole
+      # copy of the service, so raise it with the memory to match.
+      - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-2}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-*}
       - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
@@ -853,7 +874,8 @@ services:
     # lost feature but a MODULE_NOT_FOUND before anything listens.
     #
     # IT PICKS ITS OWN SCHEME, and that is not defensiveness. STS_HTTPS — and
-    # STS_OAUTH2_RFC9700, which is its default — turn 8081 into an HTTPS
+    # STS_OAUTH2_RFC9700 or STS_OAUTH2_OAUTH21, either of which is its default
+    # — turn 8081 into an HTTPS
     # listener, and a probe that spoke http at it would fail on every poll: the
     # container would go `unhealthy` while the service answered every request
     # perfectly, which is the worst shape a healthcheck failure can take. The
@@ -862,7 +884,7 @@ services:
     # verify against until somebody fetches it. This probe asks whether the
     # process is alive, not whether its certificate is trustworthy.
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&process.env.STS_OAUTH2_RFC9700==='true');var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -927,6 +949,12 @@ services:
         GIT_COMMIT: "${GIT_COMMIT:-}"
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
+      # THE HTTPS LISTENER (2026-09-13), which answers nothing until a pair is
+      # written where PEP_HTTPS_CERT and PEP_HTTPS_KEY below point. Published
+      # on 9444 rather than 9443 by default because 9443 is the mock's own
+      # mutual-TLS listener, which a reader of the sts service above may have
+      # uncommented.
+      - "${XACML_PEP_HTTPS_HOST_PORT:-9444}:9443"
     volumes:
       # WHERE A LAUNCHER PUTS THE CLIENT CREDENTIAL. It defaults to this
       # directory — which exists, contains no key, and mounts harmlessly — so
@@ -975,6 +1003,26 @@ services:
       # default and says so on /admin/xacml/peps.
       - PEP_TLS_CERT=${XACML_PEP_TLS_CERT:-}
       - PEP_TLS_KEY=${XACML_PEP_TLS_KEY:-}
+      # THE HTTPS LISTENER'S PAIR (2026-09-13), which is a different thing from
+      # the client certificate above and comes from a different place: the
+      # realm this PEP REGISTERED to issues it, from its Remote PEP listeners
+      # Issuing CA, to a PEP that has already registered —
+      #
+      #   curl -sk -H "Authorization: Bearer $TOKEN" \
+      #     -H 'Content-Type: application/json' -d '{"name":"<pep name>"}' \
+      #     https://localhost:8081/realm/<realm>/admin-api/xacml/issue-pep-certificate \
+      #   | tee >(jq -r .fullChainPem > certs/server/pep-server.crt) \
+      #   | jq -r .privateKeyPem > certs/server/pep-server.key
+      #
+      # — so the files normally do NOT exist when this container starts, and
+      # the PEP re-reads these two paths until they do. EMPTY BY DEFAULT: the
+      # default mount above is xacml-pep/common in this checkout, and a
+      # default pointing into it would invite writing a private key into the
+      # source tree. A launcher points them at a directory of its own.
+      - PEP_HTTPS_CERT=${XACML_PEP_HTTPS_CERT:-}
+      - PEP_HTTPS_KEY=${XACML_PEP_HTTPS_KEY:-}
+      - PEP_HTTPS_PORT=9443
+      - PEP_HTTPS_RELOAD_INTERVAL_MS=${XACML_PEP_HTTPS_RELOAD_INTERVAL_MS:-5000}
       # The mock regenerates its key on every start and signs it itself, so
       # there is no anchor to verify against. `pep.js` logs this on every
       # start rather than once, for federation_http.js's reason: a

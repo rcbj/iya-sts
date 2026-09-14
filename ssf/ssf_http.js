@@ -68,9 +68,10 @@
 // failed push and this service does not, because a mock that retried would
 // make a receiver's ONE-SHOT failure invisible: a client under test that
 // answers 500 to the first push and 202 to the second looks, from its own
-// logs, like a client that works. The failure is recorded on the stream, the
-// event stays on the queue, and `POST /admin-api/ssf/redeliver` sends it
-// again when somebody asks. Deliberate rather than unfinished, and
+// logs, like a client that works. The failed SET goes to the stream's
+// dead-letter queue with the reason (2026-09-14; it stayed on the live queue
+// before, and the `redeliver` operation this comment named never existed).
+// `ssf.pushRetries` turns retries on. Deliberate rather than unfinished, and
 // `ssf/CLAUDE.md` lists it under what this family does not do.
 //
 // ---------------------------------------------------------------------------
@@ -97,7 +98,9 @@ const USER_AGENT = require('../common/version').userAgent('ssf-transmitter');
 
 // THE ERROR CODES (common/error_codes.js). Every way a push can fail carries
 // its code on the result as `errorCode`, which `ssf.js`'s transmit() puts on
-// the `ssf.event.refused` audit row. That result is read field by field there
+// the SET's dead letter, and the sweep counts by code in its one summary line
+// (2026-09-14; it was an audit row per failure). That result is read field by
+// field there
 // and never serialised to anybody, so the code reaches no receiver and no
 // caller — which is why this file needs no require of the registry at all.
 
@@ -612,6 +615,104 @@ function pushSet(url, token, options) {
 // attempt number — and every attempt's result is returned in `attempts`, so the
 // stream's log says how many were made rather than only how the last one went.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PUSH CAP (2026-09-14): at most `ssf.pushConcurrency` pushes in flight in
+// this process, the rest waiting in order, at most `ssf.pushBacklog` of them.
+//
+// `emitProtocolEvent()` fans one event out to every stream that takes it with
+// `Promise.all()`, and a directory write is two events — so a SCIM bulk load
+// against forty-two push streams asked for eighty-four pushes per person, all
+// at once. Most were to this service's OWN receivers, which is a request back
+// into the worker pool, so the burst was load on the service itself and it
+// stopped answering. The cap makes that fan-out a queue.
+//
+// **A PUSH THAT CANNOT WAIT IS NOT MADE**, and says so with a code: the SET is
+// dead-lettered by `transmit()`, which is where the bound on memory comes from.
+// **A RETRY WAITS FOR A SLOT OF ITS OWN**, and gives its slot back during the
+// delay, so a receiver being retried does not hold a slot it is not using.
+// **THE CAP IS PER PROCESS**: the four processes of a dispatched service have
+// four, which is the arithmetic a per-process setting states rather than
+// hides.
+// ---------------------------------------------------------------------------
+let pushesActive = 0;
+const pushesWaiting = [];
+
+function pushConcurrency() {
+  log.debug("Entering pushConcurrency().");
+  const raw = Number(config.value('ssf.pushConcurrency'));
+  log.debug("Leaving pushConcurrency().");
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
+function pushBacklog() {
+  log.debug("Entering pushBacklog().");
+  const raw = Number(config.value('ssf.pushBacklog'));
+  log.debug("Leaving pushBacklog().");
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2000;
+}
+
+// Resolves with a release function once a slot is free, or with null when the
+// backlog is full.
+function acquirePushSlot() {
+  log.debug("Entering acquirePushSlot().");
+  const cap = pushConcurrency();
+  const release = function () {
+    log.debug("Entering release().");
+    pushesActive = Math.max(0, pushesActive - 1);
+    while (pushesWaiting.length && (!pushConcurrency() ||
+           pushesActive < pushConcurrency())) {
+      pushesActive += 1;
+      pushesWaiting.shift()(release);
+    }
+    log.debug("Leaving release().");
+  };
+  if (!cap || pushesActive < cap) {
+    pushesActive += 1;
+    log.debug("Leaving acquirePushSlot(). A slot at once.");
+    return Promise.resolve(release);
+  }
+  if (pushesWaiting.length >= pushBacklog()) {
+    log.debug("Leaving acquirePushSlot(). The backlog is full.");
+    return Promise.resolve(null);
+  }
+  log.debug("Leaving acquirePushSlot(). Waiting behind " +
+            pushesWaiting.length + ".");
+  return new Promise(function (resolve) {
+    pushesWaiting.push(resolve);
+  });
+}
+
+// One push, inside a slot. What every push this module makes goes through.
+function pushSetGated(url, token, options) {
+  log.debug("Entering pushSetGated().");
+  log.debug("Leaving pushSetGated().");
+  return acquirePushSlot().then(function (release) {
+    if (!release) {
+      return { ok: false, status: 0, err: '', description: '',
+        retryable: false, errorCode: 'STS-SSF-0092',
+        why: 'the push was not made: ' + pushesWaiting.length + ' pushes ' +
+             'were already waiting for one of ' + pushConcurrency() +
+             ' slots (ssf.pushConcurrency, ssf.pushBacklog)' };
+    }
+    return pushSet(url, token, options).then(function (result) {
+      release();
+      return result;
+    }, function (e) {
+      log.debug("Caught in pushSetGated(): " + ((e && e.message) || e));
+      release();
+      throw e;
+    });
+  });
+}
+
+// For a report: how busy the cap is in this process right now.
+function pushGateState() {
+  log.debug("Entering pushGateState().");
+  log.debug("Leaving pushGateState().");
+  return { active: pushesActive, waiting: pushesWaiting.length,
+           concurrency: pushConcurrency(), backlog: pushBacklog() };
+}
+
 function pushSetWithRetries(url, token, options) {
   log.debug('Entering pushSetWithRetries().');
   const retries = config.value('ssf.pushRetries');
@@ -620,7 +721,7 @@ function pushSetWithRetries(url, token, options) {
   function attempt(n) {
     log.debug("Entering attempt().");
     log.debug("Leaving attempt().");
-    return pushSet(url, token, options).then(function (result) {
+    return pushSetGated(url, token, options).then(function (result) {
       attempts.push({ status: result.status, why: result.why });
       if (result.ok || !result.retryable || n >= retries) {
         log.debug('pushSetWithRetries() finished after ' + (n + 1) +
@@ -643,6 +744,8 @@ function pushSetWithRetries(url, token, options) {
 
 module.exports = {
   pushSetWithRetries: pushSetWithRetries,
+  pushSetGated: pushSetGated,
+  pushGateState: pushGateState,
   loopbackOrigin: loopbackOrigin,
   ownBaseUrl: ownBaseUrl,
   transmitterIssuer: transmitterIssuer,

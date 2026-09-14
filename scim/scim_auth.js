@@ -1629,6 +1629,29 @@ function attemptClientCertificate(req, ctx) {
     log.debug("Leaving attemptClientCertificate(). Refused on revocation.");
     return null;
   }
+  // NOT EVERY CHAIN TO THIS SERVICE'S OWN ROOT IS A CREDENTIAL (2026-09-13).
+  // The listeners trust that Root for the TLS client certificates the user
+  // portal issues, and every key pair this service ever issued chains to it;
+  // `common/tls_client_certificates.js` says which of them is an identity, and
+  // in which realm. One that is not is NOT THIS CREDENTIAL, for the reason an
+  // unverified one above is not — the request may still authenticate under
+  // another scheme. Required lazily, like `mtls.peerVerified()` does.
+  let gate = null;
+  try {
+    gate = require('../common/tls_client_certificates').checkSocket(socket);
+  } catch (e) {
+    // No certificate authority in this process, so nothing here was issued by
+    // one and there is nothing to refuse.
+    log.debug("Caught in attemptClientCertificate(): " +
+              ((e && e.message) || e));
+    gate = null;
+  }
+  if (gate && !gate.ok) {
+    log.info('scim: a verified client certificate was not taken as a SCIM ' +
+             'credential: ' + gate.why + '.');
+    log.debug("Leaving attemptClientCertificate(). Not an identity here.");
+    return null;
+  }
   const certificate = socket.getPeerCertificate();
   if (!certificate || !certificate.subject) {
     log.debug("Leaving attemptClientCertificate(). There is no peer " +

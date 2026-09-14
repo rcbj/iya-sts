@@ -73,7 +73,7 @@ const { log, logArtifact, STS, baseUrlOf, b64u, b64uDecode, jsonFromB64u,
         nowSec,
         randomId, xmlEscape, bbsKeyPair, parseBody, oauthError, signJwt,
         walletBaseUrl, signingKeyFor,
-        stsKeysFor } = require('../common/helpers');
+        stsKeysFor, kidNamesKey } = require('../common/helpers');
 const config = require('../common/config');
 // THE MODE (2026-09-12), for one question: may a response go to an address the
 // request named — the `wallet` query parameter. A LEAF requiring only `config`.
@@ -208,7 +208,7 @@ function verifyIssuerSignature(token) {
   } else {
     (stsKeysFor().extraKeys || []).forEach(function (one) {
       if (one.publicJwk && one.alg === alg &&
-          (!header.kid || one.publicJwk.kid === header.kid)) {
+          (!header.kid || kidNamesKey(header.kid, one.publicJwk.kid))) {
         candidates.push({ label: 'this issuer\'s ' + alg + ' key',
                           key: crypto.createPublicKey(
                               { key: one.publicJwk, format: 'jwk' }) });
@@ -454,8 +454,10 @@ function buildVpRequest(req, opts) {
       iat: nowSec(),
       exp: nowSec() + Math.floor(vpTtlMs() / 1000)
     }, request);
+    // `oid4vp.requestObjectCertificateHeader` decides the `x5c` / `x5u`.
     record.requestObject = signJwt(Object.assign({ typ: 'oauth-authz-req+jwt' },
-                                                 payload));
+                                                 payload), null,
+                                   { certificateHeader: 'vp-request-object' });
     logArtifact('OID4VP Request Object', 'after signing', record.requestObject);
     vpRequests.set(id, state);
   }
@@ -1537,6 +1539,8 @@ app.post('/oid4vp/response', async function (req, res) {
 // Not in the spec: the verdict, so the wallet's own page (and the test suite)
 // can show what this Verifier decided and why. A real Verifier tells the
 // End-User in its own UI; this makes the same information machine-readable.
+// Its CORS header is `common/cors.js`'s decision (2026-09-13) — the `*` this
+// route set for itself would have let any page read a presentation's verdict.
 app.get('/oid4vp/result/:state', function (req, res) {
   log.debug("Entering the presentation result endpoint. state=" +
             req.params.state);
@@ -1546,7 +1550,6 @@ app.get('/oid4vp/result/:state', function (req, res) {
     errorCodes.mark(res, 'STS-VC-0042');
     return oauthError(res, 404, 'invalid_request', 'No such presentation.');
   }
-  res.set('Access-Control-Allow-Origin', '*');
   res.status(200).type('application/json').send(JSON.stringify({
     state: record.state,
     nonce: record.nonce,

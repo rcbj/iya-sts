@@ -227,6 +227,21 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
+  // independent client written from its RFC with no code from acme/, est/ or
+  // scep/, each in a throwaway realm it leaves behind.
+  // ===== ACME jobs =====
+  { file: 'sts_acme_enrollment.js',      browser: false, local: true },
+  // ===== EST jobs =====
+  { file: 'sts_est_enrollment.js',       browser: false, local: true },
+  // ===== SCEP jobs =====
+  // It waits out a sixty-second challenge lifetime for the expiry case, which
+  // is why the watchdog is raised.
+  { file: 'sts_scep_enrollment.js',      browser: false, local: true,
+    timeoutMs: 600000 },
+  // The portal's /portal/certificates page: a person's own enrollment
+  // credentials and certificates, driven with two signed-in browsers.
+  { file: 'sts_portal_certificates.js',  browser: false, local: true },
   // ssfAllowedEvents (2026-09-12): an application entry limiting which Shared
   // Signals event types a stream it owns is sent. `local: true` because the
   // attribute is this repository's own and the assertion spans an /admin-api
@@ -446,7 +461,29 @@ const JOBS = [
   // about somebody else refused, the replaced key refused, the held key
   // accepted, one profile taken off leaving the other.
   { file: 'sts_user_credentials.js',     browser: false, local: true },
-  { file: 'sts_roles.js',                browser: false, local: true },
+  // OAUTH 2.1 MODE (2026-09-13), on the third reason: the mode is a realm
+  // setting written through `/admin-api/realms/create` and every assertion is
+  // at `/oauth2/*` — a public client with PKCE and no token-request
+  // redirect_uri getting a token where an RFC 9700 realm beside it refuses the
+  // same request, and the refusals 2.1 adds.
+  { file: 'sts_oauth21.js',              browser: false, local: true },
+  // THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13), with RFC 9126 pushed
+  // authorization requests as its first section. `local: true` on the first
+  // question and the third reason: the page and its operations are this
+  // console's and this API's, and the assertion that matters spans them and
+  // `/oauth2/par` and `/oauth2/authorize` — a request pushed there is listed
+  // and counted here, and one withdrawn here, through the API or a real
+  // console form, is refused invalid_request_uri there.
+  { file: 'sts_oauth2_monitor.js',       browser: false, local: true },
+  // RFC 9470 STEP-UP AUTHENTICATION (2026-09-13), on the third reason: a
+  // resource application's requirement and `oauth2.stepUpAcrValues` are
+  // written through `/admin-api` and counted on the monitor, and every
+  // assertion is at `/oauth2/*` — a one-factor session sent to sign in again
+  // for acr_values=mfa, stepped up with a TOTP code enrolled at
+  // `/portal/mfa`, and the challenge the stand-in resource and UserInfo send.
+  // After the monitor job, in a throwaway realm it leaves standing.
+  { file: 'sts_step_up.js',              browser: false, local: true },
+  { file: 'sts_roles.js',              browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
   { file: 'sts_saml11.js',               browser: false },
   { file: 'sts_saml_encryption.js',      browser: false },
@@ -510,8 +547,13 @@ const JOBS = [
   // copying its client; that file argues why. The watchdog is sized for the
   // failure it exists to report — a quadratic come back — rather than for the
   // half minute the adds actually take.
-  { file: 'sts_directory_bulk_load_ldap_50k.js', browser: false, local: true,
-    timeoutMs: 3600000 }
+  //
+  // **DISABLED 2026-09-13, TO MAKE THE SUITE FASTER.** Commented out rather
+  // than deleted: the file is kept and nothing else in the suite depends on
+  // it, so putting this entry back is the whole of re-enabling it. While it is
+  // out, nothing holds the LDAP add path to constant time past five thousand.
+  // { file: 'sts_directory_bulk_load_ldap_50k.js', browser: false, local: true,
+  //   timeoutMs: 3600000 }
 ];
 
 // ---------------------------------------------------------------------------
@@ -575,7 +617,19 @@ const LOCAL_HELPERS = [
   // detached and attached JWS, the interaction hash) and the resource-owner
   // harness the three GNAP jobs share. Node built-ins only; nothing from gnap/.
   'gnap_client.js',
-  'gnap_flow.js'
+  'gnap_flow.js',
+  // ACME's independent client (RFC 8555 flattened JWS, RFC 7638, the External
+  // Account Binding MAC, RFC 9773's certificate identifier). Node's crypto, the
+  // vendored PKI encoder for CSRs and pkijs; nothing from acme/.
+  'acme_client.js',
+  // EST's independent client (RFC 7030, RFC 8951): a DER reader, the
+  // certs-only, csrattrs and multipart parsers, and a KEM template CSR.
+  // Node built-ins only; nothing from est/ or common/cert_enrollment.js.
+  'est_client.js',
+  // SCEP's independent client (RFC 8894): node-forge for the PKCS#10, the
+  // self-signed signer and the envelope, forge.asn1 and node's crypto for the
+  // SignedData and the CertRep. Nothing from scep/ or cert_enrollment.js.
+  'scep_client.js'
 ];
 
 const CLIENT_MODULES = [

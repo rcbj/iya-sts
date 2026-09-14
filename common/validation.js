@@ -954,11 +954,259 @@ const uri = z.string().min(1).max(CAP.URI).refine(function (value) {
   return DANGEROUS_SCHEMES.indexOf(parsed.protocol.toLowerCase()) < 0;
 }, 'must be an absolute URI with a scheme that is not executable');
 
-// A redirection endpoint. RFC 6749 section 3.1.2: absolute, and MUST NOT
-// contain a fragment — the fragment is where the response goes.
-const redirectUri = uri.refine(function (value) {
-  return value.indexOf('#') < 0;
-}, 'must not contain a fragment (RFC 6749 section 3.1.2)');
+// ---------------------------------------------------------------------------
+// A REDIRECTION ENDPOINT IS AN ALLOWLIST, NOT `uri` WITH A FRAGMENT RULE
+// (2026-09-13).
+//
+// `uri` above refuses the five schemes that EXECUTE and accepts every other
+// one, which was harmless while `/oauth2/authorize` and `/oauth2/logout` also
+// demanded `^https?://` at the call site. Native applications need a
+// PRIVATE-USE scheme there (RFC 8252 section 7.1, OAuth 2.1 section 8.4.3 in
+// draft-ietf-oauth-v2-1-16), and removing that regex on top of a blocklist
+// would turn both endpoints into redirectors to every protocol handler an
+// operating system registers — `ms-msdt:`, `search-ms:`, `intent:` — none of
+// which is on any list and each of which has had its day. So the rule is
+// written the other way round, as the two shapes a redirection endpoint may
+// have:
+//
+//   * http or https, WITH A HOST. `https:/cb` parses (the URL parser supplies
+//     the missing slashes) and is nobody's callback.
+//   * a private-use scheme NAMED FOR A DOMAIN IN REVERSE ORDER — which is to
+//     say, containing a period. RFC 8252 section 7.1 makes that a MUST for the
+//     app and OAuth 2.1 section 2.3.1 says a server SHOULD refuse a scheme with
+//     no period, and it is also the rule that catches the commonest mistake:
+//     `localhost:3000/cb`, typed without `http://`, parses as the scheme
+//     `localhost:` and would otherwise be a perfectly valid redirect.
+//
+// And never a fragment (RFC 6749 section 3.1.2): the fragment is where a
+// response goes.
+//
+// `uri` itself is deliberately NOT narrowed: OID4VC's `wallet` parameter reads
+// it, and a wallet's own scheme (`openid-credential-offer:`) has no period in
+// it by specification.
+// ---------------------------------------------------------------------------
+const PRIVATE_USE_SCHEME = /^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$/;
+
+// The reason a value may not be a redirection endpoint, or null. A FUNCTION as
+// well as the zod type below, because three callers have no schema to hand:
+// registration (RFC 7591), the application register's own writes, and a URI
+// read back out of the directory, where an `ldapmodify` put it without passing
+// any of the other two. `privateUse: false` is the http(s)-only reading, which
+// is what a sign-out return address gets while no client vouches for it.
+function redirectUriProblem(value, options) {
+  log.debug("Entering redirectUriProblem().");
+  const opts = options || {};
+  const allowPrivateUse = opts.privateUse !== false;
+  const text = typeof value === 'string' ? value : '';
+  if (!text) {
+    log.debug("Leaving redirectUriProblem(). Empty.");
+    return 'is empty';
+  }
+  if (text.length > CAP.URI) {
+    log.debug("Leaving redirectUriProblem(). Too long.");
+    return 'is longer than ' + CAP.URI + ' characters';
+  }
+  if (text.indexOf('#') >= 0) {
+    log.debug("Leaving redirectUriProblem(). A fragment.");
+    return 'must not contain a fragment (RFC 6749 section 3.1.2)';
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(text);
+  } catch (e) {
+    log.debug("Caught in redirectUriProblem(): " + ((e && e.message) || e));
+    // Not an absolute URI. The refusal below is the whole answer; the parser's
+    // own message names nothing a caller can act on.
+    log.debug("Leaving redirectUriProblem(). Does not parse.");
+    return 'is not an absolute URI';
+  }
+  const scheme = parsed.protocol.toLowerCase().replace(/:$/, '');
+  if (scheme === 'http' || scheme === 'https') {
+    // The TEXT, not the parse: the URL parser supplies missing slashes for a
+    // special scheme, so `https:/cb` comes back with the host `cb` — and the
+    // value compared, stored and sent in a Location header is the text.
+    if (!/^https?:\/\/[^/]/i.test(text) || !parsed.hostname) {
+      log.debug("Leaving redirectUriProblem(). http(s) with no host.");
+      return 'is an ' + scheme + ' URL with no host';
+    }
+    log.debug("Leaving redirectUriProblem(). http(s).");
+    return null;
+  }
+  if (allowPrivateUse && PRIVATE_USE_SCHEME.test(scheme)) {
+    log.debug("Leaving redirectUriProblem(). A private-use scheme.");
+    return null;
+  }
+  log.debug("Leaving redirectUriProblem(). Scheme " + scheme + " refused.");
+  return allowPrivateUse
+    ? 'must be an http or https URL, or a native application\'s private-use ' +
+      'scheme named for a domain in reverse order, such as ' +
+      'com.example.app:/callback (RFC 8252 section 7.1; a scheme with no ' +
+      'period, like "' + scheme + ':", is refused)'
+    : 'must be an http or https URL';
+}
+
+// Whether a value that passed redirectUriProblem() is a private-use one. The
+// authorization endpoint needs the distinction for exactly one decision —
+// `response_mode=form_post` cannot deliver to a protocol handler, which is
+// handed a URL and never a request body — and the sign-out endpoint for
+// another, so it is answered here rather than re-parsed at two call sites.
+function isPrivateUseRedirect(value) {
+  log.debug("Entering isPrivateUseRedirect().");
+  let parsed = null;
+  try {
+    parsed = new URL(String(value || ''));
+  } catch (e) {
+    log.debug("Caught in isPrivateUseRedirect(): " + ((e && e.message) || e));
+    // Not a URI, so not a private-use one; the schema has refused it already.
+    log.debug("Leaving isPrivateUseRedirect(). Does not parse.");
+    return false;
+  }
+  const scheme = parsed.protocol.toLowerCase();
+  log.debug("Leaving isPrivateUseRedirect().");
+  return scheme !== 'http:' && scheme !== 'https:';
+}
+
+// OpenID Connect Front-Channel Logout 1.0's `frontchannel_logout_uri`. It is
+// loaded in an IFRAME on the sign-out page and named in that page's CSP
+// `frame-src`, so http(s) is not a preference here: a browser will not frame a
+// protocol handler, and a value that is not an origin makes the header itself
+// malformed.
+function frontchannelUriProblem(value) {
+  log.debug("Entering frontchannelUriProblem().");
+  const problem = redirectUriProblem(value, { privateUse: false });
+  log.debug("Leaving frontchannelUriProblem().");
+  return problem;
+}
+
+// ---------------------------------------------------------------------------
+// AN ORIGIN, AS CORS COMPARES ONE (2026-09-13).
+//
+// `appCorsOrigin` on an application holds the origins a browser page may call
+// this service from, and `global.corsOrigins` the ones a deployment names as
+// its own. `common/cors.js` compares each with the `Origin` header a browser
+// sent, BY STRING, because that is what the Fetch standard does with
+// `Access-Control-Allow-Origin`: the value echoed must be byte-for-byte the
+// serialised origin (RFC 6454 section 6.1) the browser sent. So a value is
+// held in that serialisation, and two things follow.
+//
+//   * **IT IS NORMALISED WHEN IT IS WRITTEN.** `HTTPS://App.Example.com:443/`
+//     is the origin `https://app.example.com`, and a stored copy in the first
+//     spelling would never match a header in the second. The URL parser does
+//     the work for http and https — case, the default port, an IDN host in its
+//     ASCII form, an IPv6 literal in brackets — and one trailing `/` is
+//     forgiven because it is what a person copying an address out of a
+//     browser's bar pastes.
+//   * **NOTHING BUT AN ORIGIN IS ACCEPTED.** A path, a query, a fragment or a
+//     user name would be silently discarded by the comparison, so an operator
+//     who wrote `https://app.example.com/spa` and believed it meant only that
+//     page would be wrong — refused instead, with the origin it would have
+//     been. A WILDCARD is refused for the same reason: `*` is the value this
+//     rule exists to replace, and `https://*.example.com` is not an origin any
+//     browser sends. And `null` is refused because it is the origin of EVERY
+//     sandboxed frame, `data:` document and local file at once, so allowing it
+//     would allow all of them.
+//
+// A scheme other than http or https is allowed with a host — a browser
+// extension calls from `chrome-extension://<id>` or `moz-extension://<uuid>` —
+// and is lower-cased rather than parsed, because the URL parser gives a
+// non-special scheme the opaque origin `null`.
+// ---------------------------------------------------------------------------
+const ORIGIN_SHAPE = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#\s]+)\/?$/;
+
+// `{ origin, problem }`: the serialised origin, or '' and the reason it is not
+// one. Both halves from one parse, so the refusal and the normalisation cannot
+// disagree about what a value is.
+function readOrigin(value) {
+  log.debug("Entering readOrigin().");
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) {
+    log.debug("Leaving readOrigin(). Empty.");
+    return { origin: '', problem: 'is empty' };
+  }
+  if (text.length > CAP.URI) {
+    log.debug("Leaving readOrigin(). Too long.");
+    return { origin: '', problem: 'is longer than ' + CAP.URI + ' characters' };
+  }
+  if (text.indexOf('*') >= 0) {
+    log.debug("Leaving readOrigin(). A wildcard.");
+    return { origin: '', problem: 'is a wildcard, and CORS here is an ' +
+             'allowlist of exact origins — list each origin a page is ' +
+             'served from' };
+  }
+  if (text.toLowerCase() === 'null') {
+    log.debug("Leaving readOrigin(). The opaque origin.");
+    return { origin: '', problem: 'is the opaque origin, which every ' +
+             'sandboxed frame, data: document and local file shares — ' +
+             'allowing it would allow all of them' };
+  }
+  const shape = ORIGIN_SHAPE.exec(text);
+  if (!shape) {
+    log.debug("Leaving readOrigin(). Not scheme://host[:port].");
+    return { origin: '', problem: 'is not an origin: it must be ' +
+             'scheme://host or scheme://host:port with no path, query or ' +
+             'fragment, such as https://app.example.com' };
+  }
+  if (shape[2].indexOf('@') >= 0) {
+    log.debug("Leaving readOrigin(). A user name.");
+    return { origin: '', problem: 'carries a user name, which an origin ' +
+             'never does' };
+  }
+  const scheme = shape[1].toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') {
+    log.debug("Leaving readOrigin(). A non-special scheme.");
+    return { origin: scheme + '://' + shape[2].toLowerCase(), problem: null };
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(text);
+  } catch (e) {
+    log.debug("Caught in readOrigin(): " + ((e && e.message) || e));
+    // The shape matched and the host did not parse — a bad port or an illegal
+    // character. The refusal is the whole answer.
+    log.debug("Leaving readOrigin(). Does not parse.");
+    return { origin: '', problem: 'is not an origin: its host or port does ' +
+             'not parse' };
+  }
+  if (!parsed.hostname || parsed.origin === 'null') {
+    log.debug("Leaving readOrigin(). No host.");
+    return { origin: '', problem: 'is an ' + scheme + ' origin with no host' };
+  }
+  log.debug("Leaving readOrigin(). origin=" + parsed.origin);
+  return { origin: parsed.origin, problem: null };
+}
+
+// The reason a value may not be held as a CORS origin, or null.
+function originProblem(value) {
+  log.debug("Entering originProblem().");
+  const read = readOrigin(value);
+  log.debug("Leaving originProblem().");
+  return read.problem;
+}
+
+// The value in the serialisation a browser sends, or '' if it is not an
+// origin. What a write stores and what `common/cors.js` compares.
+function normaliseOrigin(value) {
+  log.debug("Entering normaliseOrigin().");
+  const read = readOrigin(value);
+  log.debug("Leaving normaliseOrigin().");
+  return read.problem ? '' : read.origin;
+}
+
+// The zod types over those functions, so an endpoint's schema says it in one
+// word. `superRefine` rather than `refine`, so the refusal carries the reason
+// the function gave instead of one sentence for every way to be wrong.
+function redirectType(options) {
+  log.debug("Entering redirectType().");
+  log.debug("Leaving redirectType().");
+  return z.string().min(1).max(CAP.URI).superRefine(function (value, ctx) {
+    const problem = redirectUriProblem(value, options);
+    if (problem) {
+      ctx.addIssue({ code: 'custom', message: problem });
+    }
+  });
+}
+
+const redirectUri = redirectType({ privateUse: true });
 
 // An http(s) URL this service will DIAL. Narrower than `uri` on purpose: the
 // three outbound requests in this repository (a federation partner, an SSF push
@@ -1104,6 +1352,12 @@ module.exports = {
   refusal: refusal,
   guard: guard,
   report: report,
+  redirectUriProblem: redirectUriProblem,
+  isPrivateUseRedirect: isPrivateUseRedirect,
+  frontchannelUriProblem: frontchannelUriProblem,
+  // CORS origins: the refusal and the serialisation, from one parse.
+  originProblem: originProblem,
+  normaliseOrigin: normaliseOrigin,
 
   // The shared types.
   types: {

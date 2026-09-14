@@ -5,7 +5,9 @@ IN THIS REPOSITORY THAT IS NOT PART OF THE MOCK.**
 
 Everything else here is required by `server.js` and runs in the identity
 service's process. This is a **second container**: five files, three npm
-packages, no express, no config table, no directory, no key of any kind. It
+packages, no express, no config table, no directory, and no key it generates —
+the two pairs it can hold, its client certificate and (since 2026-09-13) its
+HTTPS listener's, are both handed to it. It
 holds its own copy of the XACML engine, PULLS the policy repository from the
 mock's PDP and decides locally.
 
@@ -24,7 +26,7 @@ curl "http://localhost:9090/protected?subject=alice&employeeType=staff&action=GE
 | `common/helpers.js` | **THE SHIM, AND THE POINT OF THE CONTAINER.** `log` and `xmlEscape`, thirty lines. |
 | `sync.js` | The PDP client: register, pull, heartbeat. Holds what this PEP is enforcing. |
 | `pip.js` | **The PDP's Policy Information Point, over HTTP (2026-09-06).** Walks the policy for every access-subject designator, asks `POST /xacml/pip` for all of them in ONE query, and hands `pep.js` a SYNCHRONOUS resolver over what came back — because the engine's resolver is synchronous and an HTTP request is not. It never rejects: every failure is a resolver answering empty bags, which is what this container did before it existed. |
-| `pep.js` | The service: four endpoints, the enforcement rule, the poll and heartbeat timers. |
+| `pep.js` | The service: four endpoints, the enforcement rule, the poll and heartbeat timers — and, since 2026-09-13, the same four over an HTTPS listener whose pair it re-reads from disk. |
 | `Dockerfile` | Build context is the REPOSITORY ROOT — the engine is copied out of `xacml/` at build time. |
 | `package.json` | `@xmldom/xmldom`, `bunyan`. Nothing else. |
 
@@ -39,6 +41,11 @@ live under `tests/`, with everything else:
 The split is worth keeping straight when either is edited: the first can never
 see a bug in the register/pull/heartbeat client, and the second can never see
 the engine quietly growing a dependency on the identity service.
+
+**A THIRD SINCE 2026-09-13, `tests/pep_listener_certificate.js`**, holds the
+HTTPS listener's reload rules in a child that requires `pep.js` and starts no
+PDP client — see *The HTTPS listener* below — beside the certificate authority
+half it depends on.
 
 **THE LAUNCHERS OWN THAT CONTAINER AND THE JOB DRIVES IT**, which is a
 constraint rather than a preference: `./docker-run-tests.sh` runs the suite
@@ -379,6 +386,10 @@ that emptied the holding on a failed pull is caught there: a PEP that stopped
 deciding would have satisfied any test that only checked a refusal. `GET /` reports `stale` and how long since the last successful pull;
 `/admin/xacml/peps` reports the same thing from the other side.
 
+**The PDP is taken away underneath it by `xacml.remotePeps` off in its realm,
+which was a realm REMOVAL until 2026-09-06**, when this suite stopped removing
+the realms it creates so that a failed run can be read afterwards.
+
 **A PEP that has NEVER pulled successfully is a different state**, reported as
 `loaded: false`. There is no policy, every decision is NotApplicable, and the
 bias decides — which for the default deny-biased PEP means refusing everything.
@@ -407,6 +418,9 @@ console.
 | `PEP_POLL_INTERVAL_MS` | `15000` | **The contract**, and since 2026-09-06 also the interval a FAILED REGISTRATION is retried on. |
 | `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | |
 | `PEP_PORT` | `9090` | |
+| `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | **PATHS, re-read on an interval** — the listener's pair, issued by the PDP's realm. Unlike `PEP_TLS_CERT`, which is read once, because this pair normally does not exist when the container starts. See *The HTTPS listener*. |
+| `PEP_HTTPS_PORT` | `9443` | |
+| `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
 
 **The compose service ships with no certificate**, so out of the box it
@@ -518,7 +532,9 @@ stamps each with the instant it was built, and passing one `BUILD_NUMBER` to
 both is how you say they are one release. `GET /`'s `build.what` says this on
 the page, because the question that page gets opened for is whether this PEP is
 the same release as the PDP, and two timestamps four seconds apart do not
-answer it.
+answer it. A difference in the build number is the ordinary case — and a PEP
+left behind across a release is exactly what that console column exists to make
+visible.
 
 **Both halves are tested and on the usual line.** `tests/xacml_pep.js` holds
 the SOURCE — that the Dockerfile copies and stamps, that `./common/` stays one
@@ -560,3 +576,74 @@ written into the thrown message as a literal for that reason.
 **ONE CODE IS SHARED ACROSS BOTH CONTAINERS BY CONSTRUCTION**, which is why
 there is one table and not two: an operator searching two containers' logs for
 a code must never meet one number meaning two things.
+
+
+## THE HTTPS LISTENER (2026-09-13)
+
+**A remote PEP answers its CLIENTS — whoever calls `/protected` — and until this
+date it answered them in plain http**, because a certificate had to come from
+somewhere and the paragraph above about the client certificate explains why
+this directory will not mint one. The answer is the same shape as that one: the
+PDP's realm issues the pair and something outside the container puts it on the
+mount. What differs is WHO issues it — this service, rather than a launcher's
+private CA — and WHEN it can exist.
+
+**IT IS ISSUED BY THE REALM THE PEP REGISTERED TO**, from that realm's
+`pep-tls` Issuing CA (`common/pki.js`, argued in `common/CLAUDE.md`), through
+`POST /admin-api/xacml/issue-pep-certificate` or the control on
+`/admin/xacml/peps` (`xacml/xacml_pep_tls.js`). The PEP's row in `ou=peps` is
+what decides the realm and what supplies the default names, so an unregistered
+PEP is refused. The private key is in that one reply and nowhere else.
+
+### The files are watched because the order of events requires it
+
+The certificate needs the registration, the registration needs this process
+running, and the launchers point this container at a realm the suite creates
+minutes later — so **the pair cannot exist when the container starts**, and a
+listener that read its files once, as `PEP_TLS_CERT` is read, would never get
+one. `reloadListenerPair()` re-reads both paths every
+`PEP_HTTPS_RELOAD_INTERVAL_MS`: a missing file is logged once at `info` (it is
+the ordinary state), the listener starts the first time a usable pair appears,
+and a pair that changes afterwards goes in through `setSecureContext()`, which
+is also what a renewal needs.
+
+**A BAD PAIR NEVER REPLACES A GOOD ONE.** Files are written one at a time, so
+between the writes the certificate and key disagree. A pair is checked whole —
+node parses both, `x509.checkPrivateKey()` holds, `tls.createSecureContext()`
+accepts them — before it is used; a listener already serving keeps its pair,
+and one not yet started waits. `tests/pep_listener_certificate.js` section F
+writes exactly that intermediate state.
+
+**The digest of the two files is the change test**, not their mtimes: a mount
+can report a new mtime for identical bytes, and a copy can keep an old one.
+
+### What is deliberately not done
+
+* **Plain HTTP is not turned off.** The image's healthcheck uses it, a container
+  with no pair is still a PEP that enforces, and closing it is a decision for
+  the network edge rather than this process.
+* **The PDP's nudge still dials `PEP_NOTIFY_URL` as it always did.** An `https`
+  notify URL at this listener would need the PDP to trust its own realm's
+  hierarchy for an outbound request, and trusting the service Root there would
+  accept ANY leaf this service issued under a matching name — so it would also
+  need the chain checked for the `pep-tls` Issuing CA. That is a change to
+  `xacml/xacml_pep_http.js`'s verification, argued there if it is made, not a
+  consequence of this listener existing.
+* **Nothing reports the served certificate back to the PDP.** The row on
+  `/admin/xacml/peps` shows what the realm ISSUED; `GET /` here shows what is
+  SERVED. The heartbeat could carry the second, and does not yet.
+
+### The one handler
+
+`handle()` is shared by both listeners, so the four endpoints are decided by one
+function whatever the transport — two listeners that answered differently would
+be two enforcement points in one process. No Entering/Leaving pair on it: it is
+the hot path, and the code style's exception says so above the function.
+
+### Error codes
+
+`STS-XPEP-0029` (only one of the two paths set), `-0030` (a pair missing,
+unreadable or refused), `-0031` (the port would not bind), `-0032` (the served
+certificate is outside its validity). The PDP side is `STS-XACML-0071` (the PEP
+is not registered in this realm) and `-0072` (the issue failed), and the
+certificate authority's are `STS-PKI-0165` to `-0167`.

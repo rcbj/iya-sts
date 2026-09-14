@@ -57,6 +57,13 @@ after XACML and before logout), which requires `gnap_interact.js` (the
 resource-owner pages) and `gnap_admin.js` (the two console pages), then installs
 the SSF scope.
 
+**After `admin-ui/admin`** and after `ssf/ssf` — it requires `gnap_admin.js`,
+which draws two console pages in the shell, and installs its subject scope on
+`ssf/ssf_streams.js` at require time. `mgmt-api/admin_api.js` reaches its view
+layer (`gnap_console.js`) lazily, inside the three operations, so the management
+API does not move `/gnap` ahead of itself. Requires `gnap_interact.js` and
+`gnap_admin.js` itself, so the family is ONE line in the require order.
+
 ## Things that cost real time, and would again
 
 * **`macaroon@3`'s `exportBinary()` is broken for V2.** `token_macaroon.js`
@@ -102,8 +109,8 @@ the SSF scope.
   `insufficient_scope`; deciding on the sentence made nearly every format
   refusal a 403, because they begin "the access token …".
 * **`req.rawBody`.** A proof covers the exact bytes, so `common/app.js`'s text
-  parser keeps them (`verify`), and `/gnap` paths get CORS with
-  `preflightContinue` so `OPTIONS /gnap` reaches the discovery handler.
+  parser keeps them (`verify`), and `common/cors.js` lets `OPTIONS /gnap`
+  continue to the discovery handler whatever it decides about the origin.
 * **`/:as/gnap` matches `/admin/gnap`.** Reserved first segments fall through
   (`RESERVED_AS_NAMES`); the console route is registered later and still wins.
 

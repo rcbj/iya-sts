@@ -1735,6 +1735,8 @@ async function mintJwtSvid(id, audiences, options) {
     iat: issuedAt,
     jti: b64u(crypto.randomBytes(12))
   };
+  // certificate-header: none — the JWT authority has no certificate and no
+  // hierarchy to hang from (common/jose_certificate_header.js).
   const token = stsCrypto.signJws(payload, authority.privateKeyPem, {
     algorithm: authority.alg,
     keyid: authority.id,

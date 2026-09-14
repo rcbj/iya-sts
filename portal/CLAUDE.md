@@ -15,6 +15,7 @@ somebody came for is below the fold of a page about something else.
 | Route | Who | What |
 |---|---|---|
 | `/portal/activate` | **unauthenticated** | spending a single-use activation link to set up a credential |
+| `/portal/reset-password` | **unauthenticated** | spending a password reset link an administrator issued (2026-09-13) |
 | `/portal` | authenticated | **Overview** — who they are, this session, a summary of how they sign in, and the wider sign-out |
 | `/portal/applications` | authenticated | **Applications** — where this identity provider will sign them in |
 | `/portal/password` | authenticated | **Password** — the form, and the POST that answers it |
@@ -332,6 +333,9 @@ request to the browser like every other ceremony option.
 
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
+It arrived 2026-09-10, in a directory whose own file said every page of it was
+`script-src 'none'`.
+
 `app.js` sets `script-src 'none'` everywhere and the rule is that a page gets an
 exception only when it CANNOT work without one — four candidates have been
 refused on it, `/authn/totp` among them, which sits next door to a scripted page
@@ -347,7 +351,10 @@ was granted its exception on, made again rather than cited.
 parameters off a `wa-data` element, so this page emits that element and points
 at that URL — one implementation of the ceremony in the browser, and a second
 copy would be a second place for the base64url handling to go wrong, which has
-happened once in that file's history already.
+happened once in that file's history already. **That is not a precedent for
+skipping the argument** — the argument above is why the page may have a script
+at all; sharing the resource is only how. It is the one entry in the root
+`CLAUDE.md`'s table of scripted pages that names a script already there.
 
 **The relaxation goes through `app.contentSecurityPolicy()`** and never a
 hand-written header, which is the root `CLAUDE.md`'s rule and the reason it
@@ -1010,6 +1017,47 @@ considered and refused: it is an argument about the section's TITLE rather than
 about what the section holds, and moving the heading's meaning to fit one page
 would misfile the other three.
 
+## A TLS CLIENT CERTIFICATE, THE THIRD CARD ON `/portal/signing-key` (2026-09-13)
+
+Asked for by rcbj beside the RFC 7523 and RFC 7522 key pairs: a person generates
+a TLS client certificate that maps to their identity and installs it in their
+browser. `common/tls_client_certificates.js` issues, packages and revokes;
+`common/CLAUDE.md` 3ag argues the gate that makes the listeners' trust in the
+service Root safe, and `tls/CLAUDE.md` the listeners. What is this page's:
+
+* **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
+  one-time card with three `data:` links carrying `download` — the `.p12`, an
+  encrypted `-key.pem`, the `-chain.pem` — which is the console keytab page's
+  arrangement and the only way a file leaves a page with `script-src 'none'`.
+  Nothing keeps the private key; the page says so, and the install steps
+  (Windows, macOS, Firefox, Linux Chrome, curl) are folds on the same card.
+* **THE FILE PASSWORD IS TYPED TWICE, CHECKED, USED ONCE AND NOT KEPT** — not
+  audited, not logged. A mismatch is 400 `STS-PORTAL-0040` before any key is
+  generated.
+* **IT SHARES THE PAGE'S SAFEGUARDS RATHER THAN GROWING ITS OWN**:
+  `pki.personSelfService`, the two self-service rate limits (an RSA key
+  generation costs the same CPU whatever it certifies), the CSRF token. The one
+  number of its own is the cap, `pki.personTlsClientCertificateMax`, counting
+  valid certificates only.
+* **A LIST WITH A REVOKE PER VALID ROW**, and the serial in that form is looked
+  up among the signed-in person's own certificates, so another person naming it
+  gets 400 `STS-PKI-0171` — `/portal/remove-key`'s arrangement. Revoking is real
+  revocation (the CRL, OCSP, the listeners refusing it), with two reasons a person
+  can honestly give: `cessationOfOperation` and `keyCompromise`.
+* **A PACKAGING FAILURE REVOKES THE CERTIFICATE AT ONCE** (`STS-PORTAL-0042`): its
+  key is gone, and a valid certificate nobody can present or knows to revoke is
+  worse than a line on a list.
+* **WHERE IT WORKS** is drawn from `tls.port` and `tls.mutualPort` on the host the
+  page was reached at, because this module is required long before
+  `tls/tls_server.js` and cannot ask for the bound ports without moving routes.
+
+**NO `/admin-api` MIRROR**, for this page's standing reason: the answer is
+per-person. An operator revokes one on `/admin/pki`'s revocation pane, where it
+is listed like every other leaf of the `tls-client` authority.
+`tests/vendored/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
+handshake is `tests/tls_client_certificates.js`, because no launcher publishes
+9443 to a job.
+
 ## THE SIGN-IN CAN BE REFUSED FOR A SECOND REASON, AND THE 503 SAYS WHICH (2026-09-12)
 
 `oidcRp.beginSignIn()` used to fail for one reason — `sts-user-portal` gone or
@@ -1036,3 +1084,63 @@ nobody applies. **An activation link still sets up somebody provisioned with no
 credential**: `/admin-api/users/create` generates a password by default since the
 same day, so a caller that means to send a link creates with
 `credential: "activation"` or `"none"`.
+
+## `/portal/certificates`: A PERSON'S OWN ENROLLMENT CREDENTIALS AND CERTIFICATES (2026-09-13)
+
+ACME and SCEP authenticate with a credential bound to ONE directory entry — an
+External Account Binding key and a single-use challenge password
+(`common/cert_enrollment.js`, rule 3ag). An administrator makes one for anybody
+on `/admin/acme` and `/admin/scep`; this page is where a person makes one for
+THEMSELVES, lists the certificates ACME, EST and SCEP issued them, and revokes
+one. EST needs nothing made first — the person's username and password are its
+credential — so its card only lists the labelled addresses.
+
+* **THE IDENTITY IS THE SESSION'S.** Every credential is created for
+  `{ kind: 'person', id: session.user.username }`; the form has no name field.
+  A delete is checked against THIS person's credentials before anything is
+  deleted, and a revocation passes `{ entry }` to the core — so a kid, a
+  challenge id or a serial belonging to somebody else is answered exactly as one
+  that does not exist (`STS-PORTAL-0048`, `-0049`), and the page is not an
+  oracle for what other people hold.
+* **A SECRET RENDERS AND NEVER REDIRECTS**, `/portal/signing-key`'s rule: the
+  HMAC key and the challenge password are on the 200 that made them, with
+  `no-store`, once.
+* **IT SHARES THE SELF-SERVICE LIMITS** (`pki.personSelfServicePerIdentity` and
+  `…PerAddress`) under its own bucket name, `portal-enrollment`; a protocol
+  turned off in the realm is refused at the door as well as hidden on the page
+  (`STS-PORTAL-0050`).
+* **IT IS A FILE BESIDE `portal.js` REGISTERED THROUGH `register(context)`**:
+  the shell, the sign-in, the CSRF field and the escaping are private to
+  `portal.js`, which hands them over at the foot of its own routes. That keeps
+  the route order the column's and the new file to what is new.
+
+**THE TLS CLIENT CERTIFICATES THIS PORTAL ISSUES DIRECTLY are
+`/portal/signing-key`'s third card and are NOT listed here** — they come from
+the `tls-client` authority, these from `acme`, `est` and `scep` — and this page
+links to that one.
+
+## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
+
+**Send a reset link** on a person's `/admin/users` page stores a hash of a
+32-byte token and an expiry on the entry (`stsPasswordResetToken`,
+`stsPasswordResetExpires`, `security.passwordResetTtlMinutes`), REMOVES the
+current password into the history, signs the person out everywhere, and hands
+the administrator `…/portal/reset-password?user=<name>&token=<token>` once.
+This page spends it. It is `/portal/activate`'s shape and for its reasons, with
+three differences:
+
+* **GET checks the link before drawing the form** (rate limited on
+  `password-reset`, `STS-PORTAL-0070`) and answers ONE sentence for every way a
+  link is wrong — none issued, expired, mismatched, incomplete — with the real
+  reason on the audit row (`portal.password-reset.refused`, `STS-PORTAL-0071`).
+  Telling them apart to the requester would say which usernames have a link
+  outstanding.
+* **POST checks it again**, then refuses a mismatch and the reserved password
+  (`STS-PORTAL-0072`) and whatever `credentials.setPassword()` refuses —
+  the policy and the history (`STS-PORTAL-0073`) — with the form redrawn.
+* **On success it spends the link, clears `pwdReset`, clears the rate-limit
+  bucket, audits `portal.password-reset`, and sends a CAEP `credential-change`
+  (password, create, initiated by the user)** through
+  `ssf/account_signals.js`. It signs nobody in: the page links to `/portal`,
+  where the ordinary sign-in happens with the new password, for
+  `/portal/activate`'s magic-link argument.

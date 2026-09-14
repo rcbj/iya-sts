@@ -72,10 +72,16 @@ const jwt = require('jsonwebtoken');
 const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const { log, logArtifact, STS, baseUrlOf, b64u, jsonFromB64u, nowSec, randomId,
-        xmlEscape, parseBody, bodyValues, oauthError, signJwt, signJwtAs,
+        xmlEscape, parseBody, bodyValues, oauthError: plainOauthError,
+        signJwt, signJwtAs,
         allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
-        hasScope, signingKeyFor } = require('../common/helpers');
+        hasScope, signingKeyFor,
+        certificateHeaderFor,
+        publishedKidFor } = require('../common/helpers');
 const dpop = require('./dpop');
+// WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
+// `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
+const joseKid = require('../common/jose_kid');
 // RFC 8705 — certificate-bound access tokens, the other mechanism RFC 9700
 // section 2.2 names. A library like dpop.js, and read here for one thing: the
 // confirmation claim that goes on a token issued over a connection that carried
@@ -92,6 +98,10 @@ const clientAuth = require('./client_auth');
 // document format used for a different purpose; that module requires this one
 // and never the reverse.
 const assertionGrant = require('./assertion_grant');
+// RFC 7591 SECTION 2.3 (2026-09-13). A LIBRARY (rule 3) that registers no
+// route: it decides whether a software statement is trusted and what it fixes,
+// and the registration endpoint below answers.
+const softwareStatement = require('./software_statement');
 // RFC 7522 — the SAML 2.0 profile of the SAME framework, in a module of
 // its own rather than a format flag on the one above. A LIBRARY (rule 3);
 // it requires nothing that requires it back, and it deliberately does not
@@ -135,6 +145,26 @@ const { sessionOf, endSession } = authn;
 // the difference between honouring section 2.1 and being the open redirector it
 // forbids. Every call below is a no-op while `oauth2.rfc9700` is off.
 const bcp = require('./oauth2_bcp');
+// OAuth 2.1 (draft-ietf-oauth-v2-1-16) as a mode, which implies the one above —
+// the difference between the two. A LEAF (rule 3, `oauth-oidc/CLAUDE.md` rule
+// 3ah): it requires helpers.js and config.js, decides, and never touches `res`.
+// Every call below is a no-op while `oauth2.oauth21` is off.
+const oauth21 = require('./oauth21');
+
+// EVERY OAUTH ERROR BODY THIS MODULE WRITES GOES THROUGH HERE, so OAuth 2.1
+// mode's one rule about what an error SAYS — section 3.2.4's character set for
+// `error_description` — is applied in one place rather than at two hundred.
+// The helper's own behaviour is untouched and every other module that uses it
+// is unaffected; outside that mode the description is passed as written.
+function oauthError(res, status, error, description) {
+  // error-code: none — the wrapper's trace line, not a call to it.
+  log.debug("Entering oauthError(). (oauth2.js)");
+  // error-code: none — the wrapper's trace line, not a call to it.
+  log.debug("Leaving oauthError(). (oauth2.js)");
+  // error-code: none — every caller marks its own condition first.
+  return plainOauthError(res, status, error,
+                         oauth21.sanitizeDescription(description));
+}
 // OpenID Connect Front-Channel Logout 1.0 — the `sid` claim below, the two
 // metadata members, the list of relying parties a session has signed into, and
 // the iframe fan-out /oauth2/logout renders. A library (rule 3): it registers
@@ -165,6 +195,36 @@ const errorCodes = require('../common/error_codes');
 // registers no route — refreshToken() seals through it, and everything below
 // that reads a refresh token opens through it first.
 const refreshTokenCrypto = require('./refresh_token_crypto');
+// RFC 9068, THE JWT ACCESS TOKEN PROFILE (2026-09-13). A LIBRARY that registers
+// no route: accessToken() takes its header from it, tokenSet() and the
+// authorization endpoint take the audience and scope decision from it, and
+// issuerOf() is its issuerFor() — shared with the resource-server check in
+// dpop.js, which could not otherwise have asked the same question.
+const jwtAccessToken = require('./jwt_access_token');
+// RFC 9701, THE JWT RESPONSE FOR TOKEN INTROSPECTION (2026-09-13). A LIBRARY
+// that registers no route: introspectEndpoint() asks it whether a request wants
+// a JWT and has it build and protect one, the metadata publishes its algorithm
+// lists, and the UserInfo response takes its recipient-key reading from it.
+const introspectionJwt = require('./introspection_jwt');
+// RFC 9470 (2026-09-13): step-up authentication. A library (rule 3) — what an
+// authorization request's acr_values and max_age ask of a session, what meets
+// them, and the refusal when nothing can. See `step_up.js`.
+const stepUp = require('./step_up');
+// RFC 9101, THE JWT-SECURED AUTHORIZATION REQUEST (2026-09-13). A LIBRARY that
+// registers no route: authorizeEndpoint() hands it the query before anything
+// else is read, and runs on the parameters it answers. `requestObjectKeysFor()`
+// is the realm's published request object encryption key pair.
+const requestObject = require('./request_object');
+// RFC 9396's types, checks, audience and consent — see its header.
+const richAuthorization = require('./authorization_details');
+const requestObjectKeysFor = require('../common/helpers').requestObjectKeysFor;
+// RFC 9126, PUSHED AUTHORIZATION REQUESTS (2026-09-13). Two LIBRARIES that
+// register no route: `par.js` holds a pushed request behind its request_uri,
+// and `oauth2_monitor.js` counts what happens to it for /admin/oauth2/monitor.
+// The endpoint is `parEndpoint()` below; the validation of what is pushed is
+// this module's own `vetAuthorizationRequest()`.
+const par = require('./par');
+const oauthMonitor = require('./oauth2_monitor');
 const vt = validation.types;
 const vz = validation.z;
 // The delegation register (/admin/delegation). Exactly ONE thing this module
@@ -203,6 +263,11 @@ const claimAttributes = require('../common/claim_attributes');
 // this line, which is exactly why the gate exists rather than this file
 // requiring the PEP. See `common/issuance_gate.js`.
 const gate = require('../common/issuance_gate');
+// WHO MAY BE GRANTED THE EMBEDDED DEBUGGER'S PERMISSION (2026-09-13). A
+// library (rule 3) that registers nothing and requires only libraries —
+// `admin-ui/admin_rbac.js`, `common/access_gate.js`, `common/audit.js` — so it
+// cannot move a route or close a cycle. See `debugger/debugger_access.js`.
+const debuggerAccess = require('../debugger/debugger_access');
 // THE ONE PLACE A PRESENTED PASSWORD IS CHECKED, for the RFC 6749 section 4.3
 // password grant (2026-09-12). A library (rule 3): it registers no route, and
 // `authn/authn.js` — required at 8, above this module — already requires it,
@@ -270,26 +335,18 @@ const websecurity = require('../common/websecurity');
 // The upgrade is logged every time rather than done quietly, because a value
 // that comes back out of /admin/config differently from how it went in is worth
 // a line somebody can find.
+//
+// **THE BODY MOVED TO `jwt_access_token.js`'s `issuerFor()` ON 2026-09-13**,
+// and this function is kept, by name, as the call every site here and
+// `gnap/gnap_grants.js` already make. It moved because RFC 9068 section 4 has
+// the RESOURCE SERVER compare `iss` against this same identifier, and the
+// resource-server check lives in `dpop.js`, which cannot require this module —
+// a second copy there would be two answers to what this service's issuer is.
 // ---------------------------------------------------------------------------
 function issuerOf(base) {
   log.debug("Entering issuerOf().");
-  const pinned = config.value('oauth2.issuer');
-  if (!pinned) {
-    log.debug("Leaving issuerOf().");
-    return base;
-  }
-  if (config.value('global.https') && /^http:\/\//i.test(pinned)) {
-    const upgraded = pinned.replace(/^http:\/\//i, 'https://');
-    log.info('oauth2.issuer is pinned to ' + pinned + ', and this port is an ' +
-             'HTTPS listener (global.https), so the issuer identifier is ' +
-             'served as ' + upgraded + '. A client MUST reject a document ' +
-             'whose issuer is not the identifier it fetched from, and the ' +
-             'scheme is part of that identifier.');
-    log.debug("Leaving issuerOf().");
-    return upgraded;
-  }
   log.debug("Leaving issuerOf().");
-  return pinned;
+  return jwtAccessToken.issuerFor(base);
 }
 
 // `raw` is set by capabilitiesFor() above and means "build the document this
@@ -419,9 +476,11 @@ function asMetadata(req, raw) {
     // `oauth-oidc/assertion_grant.js`'s `unwrapAssertion()`.
     assertion_encryption_alg_values_supported: stsCrypto.JWE_DECRYPT_ALGS,
     assertion_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
-    // RFC 9396. OID4VCI's other way of saying which credential is wanted:
-    // authorization_details of type openid_credential, instead of a scope.
-    authorization_details_types_supported: ['openid_credential'],
+    // RFC 9396. OID4VCI's openid_credential — its other way of saying which
+    // credential is wanted — and every type an application in this realm
+    // declares as a resource server (`oauthAuthorizationDetailsType`).
+    authorization_details_types_supported:
+      richAuthorization.typesSupported(),
     // Built from the list `client_auth.js` can actually VERIFY, rather than
     // written out here. It used to name private_key_jwt while nothing looked at
     // an assertion, which is the worst shape a metadata member can have: a
@@ -454,12 +513,67 @@ function asMetadata(req, raw) {
     revocation_endpoint_auth_signing_alg_values_supported:
       stsCrypto.JWS_SIGNING_ALGS,
     introspection_endpoint: at + '/oauth2/introspect',
-    introspection_endpoint_auth_methods_supported: ['client_secret_basic',
-                                                    'client_secret_post',
-                                                    'private_key_jwt'],
+    // THE METHODS THE INTROSPECTION ENDPOINT CAN VERIFY, which since RFC 9701
+    // (2026-09-13) is every method the token endpoint can, through the same
+    // `bcp.observeClientAuthentication()`. It named three while nothing
+    // authenticated a caller there at all.
+    introspection_endpoint_auth_methods_supported: clientAuth.METHODS.filter(
+        function (method) {
+      return mtls.available() || method.indexOf('tls_client_auth') < 0;
+    }),
     introspection_endpoint_auth_signing_alg_values_supported:
       stsCrypto.JWS_SIGNING_ALGS,
+    // RFC 9701 section 7. What a resource server may register as
+    // introspection_signed_response_alg, _encrypted_response_alg and
+    // _encrypted_response_enc — the application registry's own lists, which
+    // are `common/crypto.js`'s tables, so nothing is advertised that the
+    // registration would refuse or the endpoint could not produce.
+    introspection_signing_alg_values_supported:
+      introspectionJwt.SIGNING_ALGS,
+    introspection_encryption_alg_values_supported:
+      introspectionJwt.ENCRYPTION_ALGS,
+    introspection_encryption_enc_values_supported:
+      introspectionJwt.ENCRYPTION_ENCS,
+    // RFC 9101 AND OPENID CONNECT DISCOVERY (2026-09-13). A request object by
+    // value and by reference; a request_uri fetched only when the client
+    // registered it, which is exactly what require_request_uri_registration
+    // TRUE promises; `none` advertised only where an unsigned object would be
+    // accepted; the decryption lists are what `request_object.js` opens — the
+    // asymmetric families to this realm's published `use: "enc"` keys and the
+    // symmetric ones to the client's secret. A named authorization server's
+    // profile may narrow any of it, and the endpoint follows the document.
+    request_parameter_supported: true,
+    request_uri_parameter_supported: true,
+    require_request_uri_registration: true,
+    require_signed_request_object:
+      !!config.value('oauth2.requireSignedRequestObject'),
+    request_object_signing_alg_values_supported:
+      applications.REQUEST_OBJECT_SIGNING_ALGS.concat(
+        mode.acceptsUnsignedRequestObjects() &&
+        !config.value('oauth2.requireSignedRequestObject') ? ['none'] : []),
+    request_object_encryption_alg_values_supported:
+      applications.REQUEST_OBJECT_ENCRYPTION_ALGS,
+    request_object_encryption_enc_values_supported:
+      applications.REQUEST_OBJECT_ENCRYPTION_ENCS,
+    // RFC 9126 SECTION 5 (2026-09-13). The endpoint, and the global policy.
+    // `pushed_authorization_request_endpoint` is removed below where
+    // `oauth2.pushedAuthorizationRequests` is off, because the endpoint then
+    // answers 404; a client's policy is its own registration member and the
+    // selected authorization server's profile may publish the requirement
+    // for itself.
+    pushed_authorization_request_endpoint: at + '/oauth2/par',
+    require_pushed_authorization_requests:
+      !!config.value('oauth2.requirePushedAuthorizationRequests'),
     code_challenge_methods_supported: ['S256', 'plain'],
+    // RFC 9470 (2026-09-13). The context classes this service's own sign-in
+    // produces, ordered weakest first, so a client building a step-up request
+    // out of a resource server's challenge can see which it may ask for. A
+    // Discovery member RFC 8414 section 7.1.2 registered for OAuth too, and in
+    // this document rather than only the OpenID one because RFC 9470 is an
+    // OAuth protocol — a request need not carry `openid` to step up. The three
+    // RFC 8176 method names still accepted in acr_values are not listed: they
+    // are not context classes. See `step_up.js`.
+    acr_values_supported: stepUp.SUPPORTED.slice(),
     // RFC 9207. redirectBack() puts `iss` on every authorization response this
     // server sends, success and error alike, so this is simply true — and it
     // was true and unadvertised, which is the half that buys a client nothing:
@@ -488,8 +602,16 @@ function asMetadata(req, raw) {
   // member is a promise a client acts on: publishing an endpoint that refuses
   // every caller would send every client that reads this document into a
   // refusal it could have been spared. Development is unchanged.
-  if (!registrationOpen()) {
+  // A TRUSTED SOFTWARE STATEMENT IS A SECOND DOOR (2026-09-13): where it opens
+  // the endpoint, the endpoint is advertised — see registrationReachable().
+  if (!registrationReachable()) {
     delete metadata.registration_endpoint;
+  }
+  // RFC 9126: NO PAR ENDPOINT IS ADVERTISED WHERE IT IS SWITCHED OFF, for the
+  // registration endpoint's reason one block up. Section 5 makes the member's
+  // presence the whole of how a client learns it may push.
+  if (!config.value('oauth2.pushedAuthorizationRequests')) {
+    delete metadata.pushed_authorization_request_endpoint;
   }
   // RFC 9700 mode, when it is on, narrows three of the members above:
   // response_types_supported loses everything that would issue an access token
@@ -705,15 +827,21 @@ function maxSignedMetadata() {
 //
 // Exported, because the OID4VCI issuer metadata's `signed_metadata` is the
 // same RFC 8414 construct and must be signed the same way.
+//
+// `useCase` names whose `x5c` / `x5u` setting applies —
+// `oauth-signed-metadata` here, `vci-signed-metadata` for the credential
+// issuer's — because the two documents are fetched by different clients
+// (common/jose_certificate_header.js).
 // ---------------------------------------------------------------------------
-function signPublishedDocument(claims, issuer, lifetimeS) {
+function signPublishedDocument(claims, issuer, lifetimeS, useCase) {
   log.debug("Entering signPublishedDocument().");
   const alg = String(config.value('oauth2.signedMetadataAlgorithm') || 'RS256');
   if (alg === 'RS256') {
     log.debug("Leaving signPublishedDocument(). RS256.");
     return stsCrypto.signJws(claims, STS.privateKey,
       { algorithm: 'RS256', issuer: issuer, expiresIn: lifetimeS,
-        keyid: STS.kid });
+        keyid: publishedKidFor(STS.kid),
+        header: certificateHeaderFor(useCase, 'RS256', STS.kid) });
   }
   const signer = signingKeyFor(alg);
   const iat = nowSec();
@@ -722,7 +850,10 @@ function signPublishedDocument(claims, issuer, lifetimeS) {
                                   exp: iat + lifetimeS });
   log.debug("Leaving signPublishedDocument(). " + alg + ".");
   return stsCrypto.signJws(payload, signer.key,
-                           { algorithm: alg, keyid: signer.kid });
+                           { algorithm: alg,
+                             keyid: publishedKidFor(signer.kid),
+                             header: certificateHeaderFor(useCase, alg,
+                                                         signer.kid) });
 }
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -746,8 +877,20 @@ const signedMetadataCache = realms.map();
 function signedMetadata(meta) {
   log.debug("Entering signedMetadata().");
   const claims = Object.assign({}, meta, { sub: meta.issuer });
+  // THE CERTIFICATE HEADER'S SETTING IS PART OF THE KEY TOO (2026-09-13), for
+  // the algorithm's reason below: the same claims with and without an `x5c`
+  // are two artefacts, and without it a changed setting would go unseen for
+  // the life of the cache entry. The `x5u` origin needs no place of its own —
+  // it is the request's, and so is the issuer inside the claims.
+  //
+  // **AND SO IS `keys.kidFormat`**, for the same reason: the header names the
+  // key by one of two names, and a document signed under the internal kid
+  // would otherwise go on being served for a minute after the realm switched
+  // to the RFC 9278 URI (common/jose_kid.js).
   const key = String(config.value('oauth2.signedMetadataAlgorithm') ||
                      'RS256') + ' ' +
+              config.value('oauth2.signedMetadataCertificateHeader') + ' ' +
+              joseKid.formatFor() + ' ' +
               JSON.stringify(claims);
   const now = Date.now();
   const held = signedMetadataCache.get(key);
@@ -761,7 +904,8 @@ function signedMetadata(meta) {
   }
   logArtifact('RFC 8414 signed_metadata', 'before signing', claims);
   try {
-    const signed = signPublishedDocument(claims, meta.issuer, 3600);
+    const signed = signPublishedDocument(claims, meta.issuer, 3600,
+                                         'oauth-signed-metadata');
     logArtifact('RFC 8414 signed_metadata', 'after signing', signed);
     // THE ALGORITHM IS PART OF THE KEY, because the claims alone are not what
     // was signed: a document signed RS256 a moment before the setting moved to
@@ -828,10 +972,12 @@ app.get('/.well-known/oauth-authorization-server/*', function (req, res) {
 //
 // What is DELIBERATELY ABSENT, since a discovery document is read as a promise:
 //
-//   * `acr_values_supported`, `display_values_supported`, the id_token and
-//     userinfo ENCRYPTION members, `check_session_iframe`: none are
-//     implemented, and an empty or invented value for any of them is worse than
-//     the member's absence, which says exactly the right thing.
+//   * `display_values_supported`, the id_token and userinfo ENCRYPTION
+//     members, `check_session_iframe`: none are implemented, and an empty or
+//     invented value for any of them is worse than the member's absence, which
+//     says exactly the right thing. (`acr_values_supported` left this list on
+//     2026-09-13, when RFC 9470 made acr_values something the authorization
+//     endpoint honours; asMetadata() publishes it.)
 //   * WebFinger (section 2). Issuer discovery from an e-mail address is a
 //     separate endpoint (/.well-known/webfinger) and this service does not have
 //     one; the issuer is expected to be known already.
@@ -935,17 +1081,13 @@ function oidcMetadata(req, issuer) {
     // resolved against the person's entry under ou=users. What it still does
     // not do is enforce `value`/`values` or treat `essential` as anything but a
     // hint, which section 5.5.1 permits and which /admin/userinfo-claims states
-    // out loud. A request object is still not accepted, so the two booleans
-    // below are still false — which is what /admin/sts-metadata's coverage note
-    // says in prose.
+    // out loud. A REQUEST OBJECT IS ACCEPTED SINCE 2026-09-13 (RFC 9101): the
+    // request members — request_parameter_supported,
+    // request_uri_parameter_supported, require_request_uri_registration and
+    // the algorithm lists — are RFC 8414 members too, so they are set in
+    // asMetadata() and this document inherits them rather than overwriting.
     prompt_values_supported: ['none', 'login'],
     claims_parameter_supported: true,
-    request_parameter_supported: false,
-    request_uri_parameter_supported: false,
-    // Moot while request_uri_parameter_supported is false, and stated anyway:
-    // the member's default is true, so leaving it out would have this server
-    // promising to enforce a registration requirement it has no code for.
-    require_request_uri_registration: false,
     // OpenID Connect RP-Initiated Logout 1.0. /oauth2/logout drops the session
     // cookie and returns to post_logout_redirect_uri — but it neither requires
     // nor checks id_token_hint, and it does not validate the redirect target
@@ -1146,12 +1288,19 @@ function sendJwks(req, res, signingKeys) {
       // EC key would fail those in a way that names the signature rather than
       // the ordering. New keys go on the END.
       //
+      // **AND UNDER `keys.kidFormat: jwk-thumbprint-uri` EACH SIGNING KEY IS
+      // THERE TWICE (2026-09-13)**: the entries below under their internal
+      // kids, unchanged and in the same order, then the same entries under
+      // their RFC 9278 thumbprint URIs — which is what a token's header names
+      // while the setting is on. A token signed before it was turned on
+      // still finds its key. `common/jose_kid.js` argues it.
+      //
       // The others exist so that ES256/384/512 and EdDSA are things a client
       // can actually VERIFY, not merely things this service can sign. A signing
       // algorithm advertised with no published key to check it against is worse
       // than one not offered at all: the client gets a signature it cannot
       // verify and reports a broken issuer.
-      keys: [{
+      keys: joseKid.withThumbprintUriEntries([{
         kty: 'RSA', use: 'sig', kid: STS.kid,
         n: b64u(pub.n.toString(16)), e: b64u(pub.e.toString(16)),
         // **THE CHAIN AND NOT ONLY THE LEAF, SINCE 2026-09-11.** RFC 7517
@@ -1171,7 +1320,15 @@ function sendJwks(req, res, signingKeys) {
       // after it free. Publishing them lazily one at a time would be worse: a
       // client that cached the JWKS before a key existed would be missing
       // exactly the key it later needs.
-      }].concat(signingKeys.map(function (k) { return k.publicJwk; }))
+      }].concat(signingKeys.map(function (k) { return k.publicJwk; })))
+      // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101 section 6.1, 2026-09-13),
+      // LAST — after every signing key, for the ordering rule above — and
+      // marked `use: "enc"`, which is what tells a client these are the keys to
+      // encrypt a request object TO rather than keys that verify anything.
+        .concat((function () {
+          const encKeys = requestObjectKeysFor();
+          return [encKeys.rsa.publicJwk, encKeys.ec.publicJwk];
+        })())
     }, null, 2));
     log.debug("Leaving sendJwks().");
   } catch (e) {
@@ -1300,8 +1457,9 @@ function authCodeTtlMs() {
   log.debug("Entering authCodeTtlMs().");
   const seconds = Number(config.value('oauth2.authorizationCodeTtlS'));
   log.debug("Leaving authCodeTtlMs().");
-  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 :
-         AUTH_CODE_TTL_MS;
+  // OAuth 2.1 mode caps it at ten minutes (section 4.1.2); a no-op otherwise.
+  return oauth21.codeTtlMs(isFinite(seconds) && seconds > 0 ?
+                           Math.floor(seconds) * 1000 : AUTH_CODE_TTL_MS);
 }
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -1556,14 +1714,47 @@ function accessToken(base, opts) {
   log.debug("Entering accessToken().");
   const iat = nowSec();
   const user = opts.user || userFor(opts.username);
+  // RFC 9068 section 2.2's seven REQUIRED claims are the first seven below,
+  // and `aud`'s default is the default resource indicator section 3 requires —
+  // spelt by `jwt_access_token.js`, which the resource-server check reads too.
+  //
+  // `typ: 'Bearer'` is NOT RFC 9068's type and never was: it is this service's
+  // own claim, older than the header, and SCIM, SSF, UserInfo and the token
+  // registry all still read it. The JOSE header below is what the profile
+  // defines, and the claim is kept beside it rather than removed from under
+  // four readers.
   const payload = {
     iss: issuerOf(base), sub: opts.sub || user.sub,
-    aud: opts.audience || base + '/resource',
-    client_id: opts.client_id, scope: opts.scope || '', typ: 'Bearer',
+    aud: opts.audience || jwtAccessToken.defaultAudienceFor(base),
+    client_id: opts.client_id, typ: 'Bearer',
     jti: randomId(16), iat: iat, nbf: iat,
     exp: iat + accessTokenTtl(opts.client_id),
     username: user.username
   };
+  // Section 2.2.3: the scope claim describes what was granted, so a token
+  // granted nothing carries no claim — not `scope: ""`, a member every reader
+  // had to learn meant the same as its absence.
+  if (opts.scope) {
+    payload.scope = opts.scope;
+  }
+  // Section 2.2.2: an identity attribute goes under its REGISTERED name where
+  // one exists, and `preferred_username` is OpenID Connect's for exactly what
+  // `username` holds. `username` stays — the token registry, SCIM's principal
+  // and the audit log read it. Not on a client_credentials token, where
+  // `username` is the client_id and there is no end user to have a name.
+  if (opts.grant !== 'client_credentials' && user.preferred_username) {
+    payload.preferred_username = user.preferred_username;
+  }
+  // Section 2.2.1: WHEN the resource owner authenticated, and HOW. Only where
+  // an authentication event is behind the grant — a session, carried on the
+  // code, the refresh token or the implicit response — and never invented,
+  // since a resource server stepping a user up (RFC 9470) reads their absence
+  // as "not known".
+  if (opts.auth_time) {
+    payload.auth_time = opts.auth_time;
+    if (opts.amr) payload.amr = opts.amr;
+    if (opts.acr) payload.acr = opts.acr;
+  }
   if (opts.act) payload.act = opts.act;
   // RFC 9449 section 6.1: a DPoP-bound access token names the key it is bound
   // to in the `cnf.jkt` confirmation claim (RFC 7800's `cnf`, with RFC 9449's
@@ -1626,7 +1817,21 @@ function accessToken(base, opts) {
   const payloadWithCustom = Object.assign(
     stats.jwtClaims('access_token', customClaimContext(base, payload, user)),
     opts.assertionClaims || {}, payload);
-  const token = signJwt(payloadWithCustom, issuanceContext(opts));
+  // A token granted no scope carries no scope claim, and the merge above is
+  // the one way a layer beneath the protocol's could supply one: the protocol
+  // layer wins by OVERWRITING, and a claim it deliberately left out has nothing
+  // to overwrite with. Both layers already refuse the name; this is the third
+  // defence for the one claim that is now sometimes absent on purpose.
+  if (payload.scope === undefined) {
+    delete payloadWithCustom.scope;
+  }
+  // `oauth2.accessTokenCertificateHeader` decides the `x5c` / `x5u` — see
+  // common/jose_certificate_header.js. The `typ` is RFC 9068 section 2.1's,
+  // and it is passed as a header member rather than set by signJwt() because
+  // signJwt() also signs the refresh token, which is not an access token.
+  const token = signJwt(payloadWithCustom, issuanceContext(opts),
+                        { certificateHeader: 'access-token',
+                          header: jwtAccessToken.header() });
   log.debug("Leaving accessToken().");
   return token;
 }
@@ -1701,8 +1906,12 @@ function refreshToken(base, opts) {
   // SIGNED, THEN ENCRYPTED (2026-09-12): the JWS is what `signJwt()` records
   // and what the refresh grant verifies once it has decrypted; the JWE around
   // it is what leaves this service. See `refresh_token_crypto.js`.
+  // The certificate header goes on the JWS, not on the JWE: the JWE is
+  // encrypted to a key of this realm that has no certificate at all.
   const token = refreshTokenCrypto.seal(signJwt(payload,
-                                                issuanceContext(opts)));
+                                                issuanceContext(opts),
+                                                { certificateHeader:
+                                                    'refresh-token' }));
   // RFC 9700 section 2.2.2. `parent_refresh_jti` is set only by the refresh
   // grant, so an empty one means this token is the root of its own family: an
   // authorization code or a pre-authorized code redeemed for the first time.
@@ -1864,11 +2073,13 @@ async function idToken(base, opts) {
   const token = idAlg === 'RS256'
     // The default keeps going through signJwt(), which is what records the
     // token in the admin console's count — see the note on that function.
-    ? signJwt(payloadWithCustom, issuanceContext(opts))
+    ? signJwt(payloadWithCustom, issuanceContext(opts),
+              { certificateHeader: 'id-token' })
     // `session` is the pool's routing hint — this person's `sub`, so that one
     // session's signatures queue behind each other rather than across the pool.
     : await signJwtAsAsync(payloadWithCustom, idAlg, registered.client_secret,
-                           { session: opts.user && opts.user.sub });
+                           { session: opts.user && opts.user.sub,
+                             certificateHeader: 'id-token' });
   log.debug("Leaving idToken(). alg=" + idAlg);
   return token;
 }
@@ -2027,6 +2238,18 @@ async function tokenSet(base, opts) {
   // generations is `parent_refresh_jti`, which is a different relation and is
   // drawn as one at /admin/tokens/credential.
   opts = Object.assign({}, opts, { set_id: randomId(12) });
+  // THE EMBEDDED DEBUGGER'S PERMISSION IS A CONSOLE ADMINISTRATOR'S AND
+  // NOBODY ELSE'S (2026-09-13). Here, the one function every grant mints
+  // through, so no grant — a refresh after a role was revoked, a token
+  // exchange, a client_credentials request naming the scope — can carry it for
+  // somebody who may not hold it. The authorization endpoint narrows first;
+  // this is the backstop. A no-op for every scope that does not name it. See
+  // `debugger/debugger_access.js`.
+  if (debuggerAccess.asksForPermission(opts.scope)) {
+    opts.scope = debuggerAccess.narrowScope(opts.scope,
+      issuanceSubjectOf(opts),
+      { clientId: opts.client_id, grant: opts.grant });
+  }
   // A SCOPE NAMING ANOTHER APPLICATION BECOMES THE AUDIENCE — see
   // audienceScopes(). Here rather than inside accessToken(), because the
   // decision changes three things and only one of them is the access token: the
@@ -2041,32 +2264,35 @@ async function tokenSet(base, opts) {
   // exchange's `audience` is RFC 8693 section 2.1's parameter, and a refresh
   // carries forward what its grant was authorized for. Deriving a second
   // audience beside any of those would WIDEN a set the two narrowing checks at
-  // the token endpoint exist to stop widening.
-  const named = audienceScopes(opts.scope, opts.client_id);
-  const derived = (opts.audience === undefined || opts.audience === null ||
-                   opts.audience === '') && named.audiences.length;
-  // See withOwnResource(): an OIDC token is addressed to the API AND to this
-  // service's own UserInfo endpoint, or the flag would take UserInfo away from
-  // every client that ever wrote an API's name in a scope list.
-  const addressed = derived ?
-                    withOwnResource(base, named.audiences, named.scope) : [];
-  const issuing = named.audiences.length
-    ? Object.assign({}, opts, {
-        scope: named.scope,
-        audience: derived ? audienceClaim(addressed) : opts.audience,
-        // Onto the refresh token as well, for the reason the RFC 8707 call
-        // sites give: a grant cannot widen itself by being renewed, and the
-        // refresh grant reads the audience of what it mints off this list.
-        // The APPLICATIONS only, not this service's own resource server: what a
-        // refresh must not widen is which parties the grant reaches, and the
-        // UserInfo endpoint is re-derived from the scope on every renewal
-        // anyway. Putting the default in here would put it in the RFC 8707
-        // narrowing check, where a client asking to narrow to the API it
-        // already had would be told it was asking for something new.
-        resources: derived && !(opts.resources && opts.resources.length)
-          ? named.audiences.slice(0) : opts.resources
-      })
-    : opts;
+  // the token endpoint exist to stop widening — and since 2026-09-13 a scope
+  // naming a DIFFERENT one is refused rather than dropped (RFC 9068 section
+  // 2.2.3; see accessTokenPlan()).
+  //
+  // THIS IS THE BACKSTOP AND NOT THE USUAL PLACE A REQUEST IS REFUSED. The
+  // authorization endpoint and the token endpoint ask the same plan before
+  // anything is spent; what reaches a refusal here is a grant carrying its
+  // scope from earlier — a refresh token minted before the rule existed — and
+  // a token must not be issued ambiguous because the grant is old.
+  const explicit = audienceList(opts.audience);
+  const plan = accessTokenPlan(base, opts.scope, opts.client_id, explicit,
+                               opts.authorization_details);
+  if (plan.refusal) {
+    log.debug("Leaving tokenSet(). RFC 9068 refused the audience.");
+    throw new AccessTokenRefused(plan.refusal);
+  }
+  const derived = !explicit.length && plan.derived.length > 0;
+  const issuing = Object.assign({}, opts, {
+    scope: plan.scope,
+    audience: audienceClaim(plan.audiences),
+    // Onto the refresh token as well, for the reason the RFC 8707 call sites
+    // give: a grant cannot widen itself by being renewed, and the refresh grant
+    // reads the audience of what it mints off this list. The APPLICATIONS only,
+    // not this service's own resource server: putting the default in here would
+    // put it in the RFC 8707 narrowing check, where a client asking to narrow
+    // to the API it already had would be told it was asking for something new.
+    resources: derived && !(opts.resources && opts.resources.length)
+      ? plan.derived.slice(0) : opts.resources
+  });
   const access = accessToken(base, issuing);
   // RFC 9700 section 2.2, and it refuses nothing: whether a token is
   // sender-constrained is the CLIENT's decision, since it binds by sending a
@@ -2106,12 +2332,41 @@ async function tokenSet(base, opts) {
     // two halves of a grant deliberately disagree. The access token's scope
     // claim is what the token can do; the refresh token's is what was
     // AUTHORIZED, which is what RFC 9700 section 2.2.2 binds it to and what
-    // oauth2_bcp.js's `refresh-not-wider-than-grant` compares a refresh request
-    // against. Strip it here as well and a client that refreshes with the scope
-    // list it originally sent — the ordinary thing to do — is refused for
-    // asking for a scope its own grant supposedly never carried.
+    // oauth2_bcp.js's `scope-not-widened` compares a refresh request against.
+    // Strip it here as well and a client that refreshes with the scope list it
+    // originally sent — the ordinary thing to do — is refused for asking for a
+    // scope its own grant supposedly never carried.
+    //
+    // AND A REFRESH HANDS ON THE GRANT IT WAS GIVEN, NOT THE ONE IT ASKED FOR
+    // (2026-09-13, in both modes). RFC 6749 section 6 and OAuth 2.1 section
+    // 4.3.3 (draft-ietf-oauth-v2-1-16) say the same sentence: a new refresh
+    // token's scope MUST be identical to that of the refresh token presented.
+    // The refresh grant narrows `scope` and `resources` for the ACCESS token it
+    // mints, and until this date the rotated refresh token was minted from the
+    // same narrowed values — so one narrow refresh shrank the grant for good,
+    // and the next refresh asking for the original scope was refused as a
+    // widening in RFC 9700 mode. `grantScope` / `grantResources` are what the
+    // presented refresh token carried; they are OWN-PROPERTY tests rather than
+    // `||`, because a grant with an empty scope is a value and must not fall
+    // back to the narrowed request. Every other grant passes neither, so what
+    // they mint is what it always was.
+    const hasGrantScope =
+        Object.prototype.hasOwnProperty.call(opts, 'grantScope');
+    const hasGrantResources =
+        Object.prototype.hasOwnProperty.call(opts, 'grantResources');
+    // RFC 9396 section 6 the same way: a token request that asked for a
+    // subset of the authorized details narrows the ACCESS token, and the
+    // refresh token keeps what the grant authorized.
+    const hasGrantDetails =
+        Object.prototype.hasOwnProperty.call(opts, 'grantAuthorizationDetails');
     body.refresh_token = refreshToken(base,
-      Object.assign({}, issuing, { scope: opts.scope || '' }));
+      Object.assign({}, issuing, {
+        scope: hasGrantScope ? String(opts.grantScope || '') :
+               (opts.scope || ''),
+        resources: hasGrantResources ? opts.grantResources : issuing.resources,
+        authorization_details: hasGrantDetails
+          ? opts.grantAuthorizationDetails : issuing.authorization_details
+      }));
   }
   if (hasScope(opts.scope, 'openid')) {
     // From `opts` and not from `issuing`: an ID Token carries no scope claim
@@ -2744,54 +2999,71 @@ function requestedClaimsOf(request, member, username, user) {
   return out;
 }
 
-function parseAuthorizationDetails(raw) {
+// ONE openid_credential detail (OID4VCI section 5.1.1), as the built-in half of
+// `authorization_details.parse()`: it names a credential_configuration_id this
+// issuer offers, and its `claims` selection is one the metadata advertises.
+// `{ entry }`, or a refusal carrying STS-OAUTH-0153.
+function vciAuthorizationDetail(d) {
+  log.debug("Entering vciAuthorizationDetail().");
+  const configId = d.credential_configuration_id;
+  if (configId && !VCI_CONFIGS[configId]) {
+    log.debug("Leaving vciAuthorizationDetail(). Unknown configuration: " +
+              configId);
+    return errorCodes.mark({ error: 'credential_configuration_id "' +
+      configId + '" is not one this issuer offers.' }, 'STS-OAUTH-0153');
+  }
+  const entry = { type: 'openid_credential',
+                  credential_configuration_id: configId || VCI_CONFIG_ID };
+  const claims = parseClaimsDescriptions(d.claims,
+                                         entry.credential_configuration_id);
+  if (claims.error) {
+    log.debug("Leaving vciAuthorizationDetail(). " + claims.error);
+    return errorCodes.mark({ error: claims.error }, 'STS-OAUTH-0153');
+  }
+  if (claims.claims) {
+    entry.claims = claims.claims;
+  }
+  log.debug("Leaving vciAuthorizationDetail().");
+  return { entry: entry };
+}
+
+// RFC 9396's authorization_details, wherever a request carries them: the
+// authorization endpoint, the token endpoint and the pushed authorization
+// request endpoint. `context` is `{ clientId, req }`, and both are optional:
+// the client narrows the TYPES to its registered authorization_details_types,
+// and the request selects the authorization server whose published
+// authorization_details_types_supported narrows them again.
+//
+// Answers `{ details }` — null where none were sent — or `{ error }` MARKED
+// with its code (`errorCodes.codeOf()`), the sentence for
+// invalid_authorization_details. Unreadable JSON is not silently dropped, for
+// the reason the type check is not: a client that sent nonsense should be told.
+function parseAuthorizationDetails(raw, context) {
   log.debug("Entering parseAuthorizationDetails().");
-  if (!raw) {
+  if (raw === undefined || raw === null || raw === '') {
+    // The ordinary request, answered before the metadata document and the
+    // registry are read for a narrowing nothing needs.
     log.debug("Leaving parseAuthorizationDetails(). None were sent.");
     return { details: null };
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(String(raw));
-  } catch (e) {
-    log.debug("Leaving parseAuthorizationDetails(). Not JSON: " + e.message);
-    return { error: 'authorization_details is not readable JSON: ' +
-                    e.message };
+  const ctx = context || {};
+  const client = ctx.clientId
+    ? applications.clientConfigOf(String(ctx.clientId)) : {};
+  const profileTypes = ctx.req
+    ? capabilityFor(ctx.req, 'authorization_details_types_supported') : null;
+  const parsed = richAuthorization.parse(raw, {
+    clientTypes: client.authorization_details_types || [],
+    profileTypes: Array.isArray(profileTypes) ? profileTypes : null,
+    builtIn: vciAuthorizationDetail
+  });
+  if (!parsed.ok) {
+    log.debug("Leaving parseAuthorizationDetails(). " + parsed.error);
+    return errorCodes.mark({ error: parsed.error },
+                           errorCodes.codeOf(parsed) || 'STS-OAUTH-0153');
   }
-  if (!Array.isArray(parsed)) {
-    log.debug("Leaving parseAuthorizationDetails(). Not an array.");
-    return { error: 'authorization_details must be a JSON array.' };
-  }
-  const wanted = [];
-  for (let i = 0; i < parsed.length; i++) {
-    const d = parsed[i] || {};
-    if (d.type !== 'openid_credential') {
-      log.debug("Leaving parseAuthorizationDetails(). Unsupported type: " +
-                d.type);
-      return { error: 'authorization_details type "' + d.type + '" is not ' +
-                      'supported; this issuer understands openid_credential.' };
-    }
-    const configId = d.credential_configuration_id;
-    if (configId && !VCI_CONFIGS[configId]) {
-      log.debug("Leaving parseAuthorizationDetails(). Unknown configuration: " +
-                configId);
-      return { error: 'credential_configuration_id "' + configId + '" is not ' +
-          'one this issuer offers.' };
-    }
-    const entry = { type: 'openid_credential',
-                    credential_configuration_id: configId || VCI_CONFIG_ID };
-    const claims = parseClaimsDescriptions(d.claims,
-                                           entry.credential_configuration_id);
-    if (claims.error) {
-      log.debug("Leaving parseAuthorizationDetails(). " + claims.error);
-      return { error: claims.error };
-    }
-    if (claims.claims) entry.claims = claims.claims;
-    wanted.push(entry);
-  }
-  log.debug("Leaving parseAuthorizationDetails(). " + wanted.length + " " +
-      "detail(s).");
-  return { details: wanted.length ? wanted : null };
+  log.debug("Leaving parseAuthorizationDetails(). " +
+            (parsed.details ? parsed.details.length : 0) + " detail(s).");
+  return { details: parsed.details };
 }
 
 // ---------------------------------------------------------------------------
@@ -3226,66 +3498,136 @@ function audienceClaim(list) {
 }
 
 // ---------------------------------------------------------------------------
-// AN `openid` TOKEN IS FOR THIS SERVICE AS WELL, AND THIS IS THE ONE PLACE THAT
-// HAD TO BE SAID OUT LOUD.
+// AN `openid` TOKEN WAS FOR THIS SERVICE AS WELL — UNTIL 2026-09-13, AND THE
+// REVERSAL IS RFC 9068's.
 //
-// `audienceScopes()` above readdresses an access token to the API named in its
-// scope list, and the FIRST version of it broke OpenID Connect doing so. The
-// protected endpoints here refuse a token whose `aud` is somebody else —
-// `audienceRefusal()` in `dpop.js`, in both modes, RFC 9700 section 2.3 — and
-// `/oauth2/userinfo` is one of them. So `scope=openid email profile apigw1`,
-// the exact request this feature was written for, produced a token that could
-// not call UserInfo: the audience restriction was correct, the OIDC flow was
-// broken, and nothing said which had happened.
+// This block held `withOwnResource()`, which APPENDED this service's own
+// resource indicator beside an API a scope had named, so that
+// `scope=openid email profile apigw1` produced a token that could still call
+// UserInfo. Its argument was sound for RFC 9700 section 2.3, which allows "a
+// small set of resource servers", and it is kept here because the reason for
+// reversing it is a different RFC rather than a mistake in it: RFC 9068
+// section 2.2.3 says every scope on a JWT access token MUST have meaning for
+// the resources in its aud, and section 5 that each must "unambiguously
+// correlate" to one. `apigw1` handed `openid email profile` cannot tell which
+// of those are its own. rcbj chose (2026-09-13) the Entra ID answer over
+// refusing the request and over keeping both: the token is for the API alone,
+// and the OIDC scopes stay GRANTED — the ID Token is minted, the refresh token
+// keeps the whole scope — without riding on a token for somebody else. A
+// client that wants UserInfo asks for a token without the API in it.
 //
-// The answer is that BOTH statements are true at once and the token should make
-// both. A client holding one access token from an OIDC sign-on legitimately has
-// something addressed to the API it asked for AND to this authorization
-// server's own UserInfo endpoint — which is exactly the "small set of resource
-// servers" RFC 9700 section 2.3 allows where one is impractical, and exactly
-// the array RFC 7519 section 4.1.3 exists for. So the default audience is
-// APPENDED, and the `openid` scope is what decides it: that scope IS the
-// request for the UserInfo endpoint, and without it there is nothing here for
-// the token to be presented back to.
-//
-// **RFC 8707's `resource` IS DELIBERATELY NOT GIVEN THIS**, and the difference
-// is the whole reason this is a separate function rather than a line in
-// `accessToken()`. A client that sent `resource` narrowed its token on purpose
-// and losing UserInfo is what it asked for; a client that wrote a scope did not
-// ask for anything of the sort, and would have had a working flow taken away by
-// a feature it never opted into. Same claim, two meanings, because one of them
-// was a deliberate act and the other is this service reading a hint.
+// `accessTokenPlan()` is what replaced it, and it is ONE decision where there
+// were two: which audiences an access token names AND which scopes it may
+// carry for them, made by `jwt_access_token.js`'s `audiencePlan()` from a
+// classification only this module can make — which scope values name an
+// application or a delegated permission is the registry's answer, through
+// `audienceScopes()`. It is asked in four places and they are the four the
+// audience derivation was already asked in: `tokenSet()` for every grant, the
+// authorization endpoint's implicit and hybrid mint, and — so that a client is
+// told while it can still be talked to — the authorization endpoint before a
+// code is minted and the token endpoint above the grant switch.
 // ---------------------------------------------------------------------------
-function withOwnResource(base, audiences, scope) {
-  log.debug("Entering withOwnResource().");
-  if (!audiences.length || !hasScope(scope, 'openid')) {
-    log.debug("Leaving withOwnResource(). Nothing derived, or no openid " +
-              "scope.");
-    return audiences;
+
+// An `aud`-shaped value — undefined, one string, or a list — as a list.
+function audienceList(value) {
+  log.debug("Entering audienceList().");
+  if (value === undefined || value === null || value === '') {
+    log.debug("Leaving audienceList(). None.");
+    return [];
   }
-  // The same expression accessToken() uses for the default, so the two
-  // spellings cannot drift — `isOwnResourceAudience()` matches on the path and
-  // a base that differed by a segment would be refused with a message about
-  // somebody else's resource server.
-  const own = base + '/resource';
-  if (audiences.indexOf(own) >= 0) {
-    log.debug("Leaving withOwnResource(). Already named.");
-    return audiences;
-  }
-  log.debug("Leaving withOwnResource(). Added " + own + ".");
-  return audiences.concat([own]);
+  log.debug("Leaving audienceList().");
+  return (Array.isArray(value) ? value : [value]).map(String);
 }
+
+function accessTokenPlan(base, scope, clientId, explicit, details) {
+  log.debug("Entering accessTokenPlan(). scope=" + (scope || '(none)'));
+  const named = audienceScopes(scope, clientId);
+  const permissionOf = {};
+  named.permissions.forEach(function (one) {
+    permissionOf[one.scope] = one;
+  });
+  // The client_ids a scope named, which are the `matched` rows that are not
+  // permissions: audienceScopes() writes both into one list.
+  const applicationScopes = named.matched.filter(function (one) {
+    return !one.permission;
+  }).map(function (one) {
+    return one.scope;
+  });
+  const seen = [];
+  const scopes = [];
+  String(scope || '').split(/\s+/).filter(Boolean).forEach(function (one) {
+    if (seen.indexOf(one) >= 0) {
+      return;
+    }
+    seen.push(one);
+    const permission = permissionOf[one];
+    if (permission) {
+      scopes.push({ value: one, kind: 'permission',
+                    name: permission.permission,
+                    audience: permission.audience });
+      return;
+    }
+    if (applicationScopes.indexOf(one) >= 0) {
+      scopes.push({ value: one, kind: 'audience' });
+      return;
+    }
+    scopes.push({ value: one,
+                  kind: jwtAccessToken.OIDC_SCOPES.indexOf(one) >= 0 ?
+                        'oidc' : 'ordinary' });
+  });
+  const plan = jwtAccessToken.audiencePlan({
+    ownResource: jwtAccessToken.defaultAudienceFor(base),
+    explicit: audienceList(explicit),
+    scopes: scopes,
+    // RFC 9396: the resource server the details' types belong to.
+    details: richAuthorization.audienceFor(details)
+  });
+  // What the scope list named, for the refresh token's `resources` — see
+  // tokenSet().
+  plan.derived = named.audiences.slice(0);
+  if (plan.stripped.length) {
+    log.info('RFC 9068 section 2.2.3: the access token for client "' +
+             String(clientId || '(unnamed)') + '" is addressed to ' +
+             plan.audiences.join(', ') + ', which is not this service\'s ' +
+             'own resource server, so the OpenID Connect scope(s) ' +
+             plan.stripped.join(', ') + ' are not on its scope claim. They ' +
+             'are still granted: the ID Token and the refresh token carry ' +
+             'them, and a token without the API in its request is the one ' +
+             'UserInfo accepts.');
+  }
+  log.debug("Leaving accessTokenPlan(). " +
+            (plan.refusal ? 'Refused.' : plan.audiences.length +
+                                         ' audience(s).'));
+  return plan;
+}
+
+// A refusal accessTokenPlan() made at the point a token was about to be
+// minted, carried out of tokenSet() to the token endpoint the way
+// IssuanceRefused carries the role gate's: every grant mints through issue(),
+// and that is where one catch can answer all of them.
+function AccessTokenRefused(refusal) {
+  log.debug("Entering AccessTokenRefused().");
+  this.name = 'AccessTokenRefused';
+  this.refusal = refusal;
+  this.message = refusal.description;
+  log.debug("Leaving AccessTokenRefused().");
+}
+AccessTokenRefused.prototype = Object.create(Error.prototype);
 
 // ASYNCHRONOUS BECAUSE idToken() IS — the implicit and hybrid flows mint one
 // here rather than at the token endpoint, and a client may have registered a
 // post-quantum `id_token_signed_response_alg` for either.
+//
+// `issuedAcr` is RFC 9470 section 5's: the requested acr value the session
+// met, which is what the code, the ID Token and the access token carry in
+// place of the session's own. Absent where nothing was requested.
 async function issueAuthorizationResponse(req, res, query, user, authTime,
-                                          authInfo) {
+                                          authInfo, issuedAcr) {
   log.debug("Entering issueAuthorizationResponse().");
   // Everything minted below is this authorization server's, so the base it is
   // built from is this authorization server's.
   const amr = (authInfo && authInfo.amr) || null;
-  const acr = (authInfo && authInfo.acr) || null;
+  const acr = issuedAcr || (authInfo && authInfo.acr) || null;
   // The session this response is being issued ON. Every path into this function
   // has one — an unauthenticated request is shown the login screen instead — so
   // an empty id here would mean a session object arrived from somewhere that
@@ -3298,13 +3640,19 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   const base = asBaseOf(req);
   const redirectUri = String(query.redirect_uri);
   const types = String(query.response_type || '').split(/\s+/).filter(Boolean);
-  const scope = String(query.scope || 'openid');
+  // The debugger permission comes off here for anybody who may not hold it,
+  // before a code carries it — see `debugger/debugger_access.js`, and the
+  // backstop in tokenSet().
+  const scope = debuggerAccess.narrowScope(String(query.scope || 'openid'),
+    { kind: 'user', name: user.username,
+      authenticated: !authInfo || authInfo.authenticated !== false },
+    { clientId: query.client_id, grant: 'authorization_code' });
   const out = {};
-  const parsedDetails = parseAuthorizationDetails(query.authorization_details);
+  const parsedDetails = parseAuthorizationDetails(query.authorization_details,
+    { clientId: query.client_id, req: req });
   if (parsedDetails.error) {
     log.debug("Leaving issueAuthorizationResponse(). " + parsedDetails.error);
-    log.debug("Leaving issueAuthorizationResponse().");
-    errorCodes.mark(res, 'STS-OAUTH-0153');
+    errorCodes.mark(res, errorCodes.codeOf(parsedDetails) || 'STS-OAUTH-0153');
     log.debug("Leaving issueAuthorizationResponse().");
     return redirectBack(res, base, redirectUri, query.state,
       { error: 'invalid_authorization_details',
@@ -3352,6 +3700,26 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
     log.debug("Leaving issueAuthorizationResponse().");
     return redirectBack(res, base, redirectUri, query.state,
       { error: 'invalid_scope', error_description: permissionProblem },
+      types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+  }
+
+  // RFC 9068 SECTION 3, refused here for the reason the two blocks above are:
+  // a code for a request whose access token could never be issued unambiguously
+  // is a code the client will spend for an error it cannot connect to this
+  // request. The same plan mints the implicit and hybrid token below, and
+  // tokenSet() asks it again when the code is redeemed. In every mode — see
+  // `jwt_access_token.js`'s header.
+  const audiencePlan = accessTokenPlan(base, scope, query.client_id,
+                                       resources, authorizationDetails);
+  if (audiencePlan.refusal) {
+    log.debug("Leaving issueAuthorizationResponse(). RFC 9068 refused the " +
+              "audience.");
+    errorCodes.mark(res, errorCodes.codeOf(audiencePlan.refusal) ||
+                         'STS-OAUTH-0244');
+    log.debug("Leaving issueAuthorizationResponse().");
+    return redirectBack(res, base, redirectUri, query.state,
+      { error: audiencePlan.refusal.error,
+        error_description: audiencePlan.refusal.description },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
   }
 
@@ -3442,6 +3810,16 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
       { error: transactionCheck.error,
         error_description: transactionCheck.description },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
+  }
+
+  // RFC 9126: A PUSHED REQUEST_URI IS SPENT HERE, where something is issued on
+  // it, and not where it was first read — the browser reads it before the
+  // sign-in screen and again after, and both are this one request (`par.js`,
+  // decision 2). Below every refusal above, so a request refused for its
+  // audience or its role is not also a request_uri thrown away; above the
+  // minting, so a replay racing this response finds it spent.
+  if (req.stsJar && req.stsJar.source === 'par' && req.stsJar.pushed) {
+    par.spend(req.stsJar.pushed.requestUri);
   }
 
   // THE APPLICATION. Recorded here and not at the authentication funnel,
@@ -3539,6 +3917,11 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
       // browser, so this is the only route between the request that was made
       // and the tokens it is redeemed for.
       claims: claimsRequest,
+      // OAUTH 2.1: whether this code was issued without PKCE under section
+      // 7.5.1.1's OpenID Connect nonce exemption. The token endpoint then
+      // requires the client to authenticate and still requires redirect_uri.
+      // Empty outside that mode.
+      pkce_exempt: oauth21.codeRecordFields(query, types).pkce_exempt || '',
       ttlMs: authCodeTtlMs(),
       expires: Date.now() + authCodeTtlMs()
     });
@@ -3571,19 +3954,21 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
     // all: implicit and hybrid mint it on the spot, and leaving this out would
     // mean one flow's token said `apigw1` and another's said `<base>/resource`
     // for the same request. `resources` still wins, for the reason given there.
-    const named = audienceScopes(scope, String(query.client_id));
+    // The plan is the one asked above, before anything was minted.
     out.access_token = accessToken(base,
                                    { user: user,
                                            client_id: String(query.client_id),
-                                           scope: named.scope,
-                                           audience: resources.length
-                                             ? (resources.length === 1 ?
-                                                resources[0] : resources)
-                                             : audienceClaim(withOwnResource(
-                                                 base, named.audiences,
-                                                 named.scope)),
+                                           scope: audiencePlan.scope,
+                                           audience: audienceClaim(
+                                             audiencePlan.audiences),
                                            session_id: sessionId, grant: flow,
                                            set_id: setId,
+                                           // RFC 9068 section 2.2.1: the
+                                           // authentication event behind this
+                                           // token, as the ID Token beside it
+                                           // states it.
+                                           auth_time: authTime, amr: amr,
+                                           acr: acr,
                                            // The claims request travels on the
                                            // token minted HERE too, or a client
                                            // using the implicit flow would send
@@ -3597,7 +3982,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
     // through section 4.2.2 — and the code beside it in a hybrid response is
     // unaffected: `authzCodes` above holds the scope as AUTHORIZED, so
     // redeeming it derives the same audience again at the token endpoint.
-    out.scope = named.scope;
+    out.scope = audiencePlan.scope;
   }
   if (types.indexOf('id_token') >= 0) {
     out.id_token = await idToken(base, {
@@ -3740,7 +4125,10 @@ function redirectTarget(base, redirectUri, state, params) {
   const usp = new URLSearchParams();
   Object.keys(params)
         .forEach(function (k) {
-          if (params[k] !== undefined) usp.set(k, params[k]);
+          if (params[k] !== undefined) {
+            usp.set(k, k === 'error_description'
+              ? oauth21.sanitizeDescription(params[k]) : params[k]);
+          }
         });
   if (state !== undefined) usp.set('state', state);
   usp.set('iss', base);
@@ -3808,7 +4196,11 @@ function redirectBack(res, base, redirectUri, state, params, fragment, mode) {
   const fields = {};
   Object.keys(params)
         .forEach(function (k) {
-          if (params[k] !== undefined) fields[k] = params[k];
+          if (params[k] !== undefined) {
+            // OAuth 2.1 section 4.1.2.1's character set, in that mode only.
+            fields[k] = k === 'error_description'
+              ? oauth21.sanitizeDescription(params[k]) : params[k];
+          }
         });
   if (state !== undefined) fields.state = state;
   // RFC 9207 on every response, in every mode: a form POST is still an
@@ -3903,14 +4295,226 @@ const AUTHORIZE_QUERY = vz.looseObject({
   authn_error: vz.string().max(256).optional(),
   authn_error_description: vz.string().max(1024).optional(),
   consent_error: vz.string().max(256).optional(),
-  consent_error_description: vz.string().max(1024).optional()
+  consent_error_description: vz.string().max(1024).optional(),
+  // RFC 9101 (2026-09-13): the request object's `prompt` was honoured on the
+  // first pass — see `authorizationReturnQuery()`.
+  jar_prompt_honoured: vz.string().max(8).optional(),
+  // RFC 9470 (2026-09-13): the sign-in this request was sent to for its
+  // acr_values or max_age has happened — see `step_up.js`'s header.
+  step_up_honoured: vz.string().max(8).optional(),
+  // And the two ways a request object arrives. Bounded here too, so a request
+  // that is not resolved still has them held to a size.
+  request: vz.string().max(validation.CAP.TEXT).optional(),
+  request_uri: vz.string().max(2048).optional()
 });
 
+// ---------------------------------------------------------------------------
+// RFC 9101: THE AUTHORIZATION ENDPOINT RESOLVES A REQUEST OBJECT FIRST
+// (2026-09-13), AND THE ENDPOINT BELOW RUNS ON WHAT IT ANSWERS.
+//
+// `request` or `request_uri` on the query makes this a JWT-secured request,
+// and `request_object.js` turns it into the parameters it carries — verified,
+// decrypted, and ASSEMBLED as section 6.3 says: only the request object's
+// parameters are used, even where the query repeats one. So the request's
+// query is REPLACED with them before `authorizeRequest()` reads anything, and
+// every check below it — RFC 9700 mode, OAuth 2.1, PKCE, the redirect URI —
+// runs on the request the client signed. That is one line of replacement rather
+// than a second copy of eight hundred lines of checks.
+//
+// A REFUSAL IS A 400 ON THIS SERVER, NEVER A REDIRECT: the redirect_uri is
+// inside the object, and an address from a document that did not verify is the
+// open redirector `authorizeRequest()`'s shape check refuses to become.
+//
+// A request that is NOT JWT-secured, and that nothing requires to be, goes
+// straight through, synchronously, exactly as it did before this existed.
+// `req.stsJar` records how the request arrived, which is what the two
+// round-trip URLs are rebuilt from (see `authorizationReturnQuery()`) and what
+// the sign-in and consent screens show (section 11.1).
+// ---------------------------------------------------------------------------
+function authorizationProfileOf(req) {
+  log.debug("Entering authorizationProfileOf().");
+  const caps = capabilitiesFor(req);
+  log.debug("Leaving authorizationProfileOf().");
+  return {
+    requestSupported: caps.request_parameter_supported,
+    requestUriSupported: caps.request_uri_parameter_supported,
+    requireSigned: caps.require_signed_request_object,
+    signingAlgs: capabilityFor(req,
+                               'request_object_signing_alg_values_supported'),
+    encryptionAlgs: capabilityFor(req,
+      'request_object_encryption_alg_values_supported'),
+    encryptionEncs: capabilityFor(req,
+      'request_object_encryption_enc_values_supported')
+  };
+}
+
 function authorizeEndpoint(req, res) {
-  log.debug("Entering the authorization endpoint.");
-  // This authorization server's own base, so the RFC 9207 `iss` on the response
-  // and every token minted below name the server the client is talking to.
+  log.debug("Entering authorizeEndpoint().");
+  const outer = Object.assign({}, req.query || {});
+  const client = applications.clientConfigOf(outer.client_id);
+  const jwtSecured = (outer.request !== undefined && outer.request !== '') ||
+                     (outer.request_uri !== undefined &&
+                      outer.request_uri !== '');
+  if (!jwtSecured && !config.value('oauth2.requireSignedRequestObject') &&
+      !client.require_signed_request_object &&
+      capabilitiesFor(req).require_signed_request_object !== true) {
+    log.debug("Leaving authorizeEndpoint(). Not a JWT-secured request.");
+    return authorizeRequest(req, res);
+  }
   const base = asBaseOf(req);
+  requestObject.resolve({
+    query: outer, client: client, issuer: issuerOf(base), asBase: base,
+    profile: authorizationProfileOf(req), keySet: STS,
+    authorizationServer: profileOf(req), req: req
+  }).then(function (result) {
+    res.set('Cache-Control', 'no-store');
+    if (!result.ok) {
+      log.info('oauth2: an authorization request from "' +
+               (outer.client_id || '(no client_id)') + '" was refused (' +
+               result.error + '): ' + result.description);
+      log.debug("Leaving authorizeEndpoint(). The request object is refused.");
+      errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-OAUTH-0340');
+      return oauthError(res, 400, result.error, result.description);
+    }
+    if (result.used) {
+      req.stsJar = { outer: outer, source: result.source, alg: result.alg,
+                     encrypted: result.encrypted || '',
+                     pushed: result.pushed || null };
+      Object.defineProperty(req, 'query', { value: result.params,
+                                            writable: true,
+                                            configurable: true,
+                                            enumerable: true });
+    }
+    log.debug("Leaving authorizeEndpoint(). Resolved.");
+    return authorizeRequest(req, res);
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-OAUTH-0373') + 'the authorization ' +
+              'endpoint failed while resolving a request object: ' +
+              (e && e.stack ? e.stack : e));
+    if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-OAUTH-0373');
+      oauthError(res, 500, 'server_error', String((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving authorizeEndpoint(). Resolving a request object.");
+}
+
+// THE QUERY THE SIGN-IN AND CONSENT HOPS RETURN TO. For a plain request it is
+// the request with `prompt` dropped, as it always was. For a JWT-secured one it
+// is NOT the resolved parameters — putting those back in the URL would turn a
+// signed request into an unsigned one on the second pass — but the request
+// object again, as it arrived (`request` or `request_uri`, with `client_id`),
+// so the second pass verifies it a second time. `prompt` is inside the signed
+// object and cannot be dropped from it, so `jar_prompt_honoured` tells the
+// second pass the first one honoured it, or `prompt=login` would ask for ever.
+//
+// AND A REQUEST WITH acr_values OR max_age CARRIES `step_up_honoured=1`
+// BACK (RFC 9470, 2026-09-13), so the second pass refuses a requirement the
+// sign-in did not meet rather than sending the person round again. For a
+// request object it rides beside the object, as `jar_prompt_honoured` does.
+function authorizationReturnQuery(req, q) {
+  log.debug("Entering authorizationReturnQuery().");
+  const jar = req.stsJar;
+  const stepping = stepUp.requirementOf(q).present;
+  if (!jar) {
+    log.debug("Leaving authorizationReturnQuery(). A plain request.");
+    return queryString(stepping
+      ? Object.assign({}, q, { step_up_honoured: '1' }) : q, ['prompt']);
+  }
+  const back = { client_id: String(jar.outer.client_id || '') };
+  if (jar.outer.request !== undefined) {
+    back.request = jar.outer.request;
+  }
+  if (jar.outer.request_uri !== undefined) {
+    back.request_uri = jar.outer.request_uri;
+  }
+  if (q.prompt !== undefined || jar.outer.jar_prompt_honoured !== undefined) {
+    back.jar_prompt_honoured = '1';
+  }
+  if (stepping) {
+    back.step_up_honoured = '1';
+  }
+  log.debug("Leaving authorizationReturnQuery(). A request object.");
+  return queryString(back, []);
+}
+
+// What the sign-in and consent screens show about HOW the request arrived —
+// RFC 9101 section 11.1: the consent screen "SHOULD indicate that the request
+// has been vetted". Nothing for a plain request.
+function requestObjectDetail(req) {
+  log.debug("Entering requestObjectDetail().");
+  const jar = req.stsJar;
+  if (!jar) {
+    log.debug("Leaving requestObjectDetail(). A plain request.");
+    return [];
+  }
+  const signed = jar.alg && jar.alg !== 'none';
+  if (jar.source === 'par' && !jar.alg) {
+    // A push of plain form parameters is not a request object at all, and
+    // calling it an unsigned one would read as a warning about nothing.
+    log.debug("Leaving requestObjectDetail(). A plain pushed request.");
+    return [{
+      label: 'request',
+      value: 'pushed over the back channel (RFC 9126)' +
+             (jar.encrypted ? ', encrypted (' + jar.encrypted + ')' : ''),
+      note: 'sent by the client directly to this server'
+    }];
+  }
+  log.debug("Leaving requestObjectDetail().");
+  return [{
+    label: 'request',
+    value: (signed ? 'a signed request object (' + jar.alg + ')'
+                   : 'an UNSIGNED request object') +
+           (jar.encrypted ? ', encrypted (' + jar.encrypted + ')' : '') +
+           (jar.source === 'request_uri' ? ', fetched from its registered ' +
+            'request_uri' : jar.source === 'par' ? ', pushed' : ''),
+    note: signed
+      ? 'verified with this application\'s registered key (RFC 9101)'
+      : 'NOT verified: anybody could have written these parameters'
+  }];
+}
+
+// ---------------------------------------------------------------------------
+// THE REQUEST-LEVEL CHECKS OF AN AUTHORIZATION REQUEST, AS ONE FUNCTION
+// (2026-09-13).
+//
+// Everything the authorization endpoint decides about the REQUEST before it
+// asks who is answering it — the shape, OAuth 2.1's client and default
+// redirect_uri, the redirect_uri itself, the response type, mode and PKCE
+// method this authorization server advertises, and RFC 9700 mode's own list —
+// in the order it always ran and with the codes it always had. It became a
+// function because RFC 9126 section 2.1 says a PUSHED authorization request is
+// validated "as it would an authorization request sent to the authorization
+// endpoint", and a second copy of these checks at `/oauth2/par` would be a
+// second opinion about what a valid authorization request is, which is the one
+// fact the two endpoints must never disagree on.
+//
+// **IT DECIDES; EACH CALLER ANSWERS.** `authorizeRequest()` turns a refusal into
+// a 400 on this server or into `fail()`'s redirect, as it did before; the PAR
+// endpoint turns every refusal into RFC 9126 section 2.3's JSON error. So an
+// answer says only whether it MAY be redirected (`redirect`), and never touches
+// `res`.
+//
+//   options.input         an object to validate instead of `req.query` (the
+//                         pushed parameters)
+//   options.where         the label the validator reports it under
+//   options.repeated      the names repeated in the raw request, for OAuth 2.1
+//   options.relaxRedirect RFC 9126 section 2.4: an authenticated client's
+//                         pushed redirect_uri need not be registered
+//
+// Answers `{ ok: true, q, types, registeredClient, redirectUri, relaxed }`,
+// `{ ok: false, redirect: false, status, error, description, code }`, or
+// `{ ok: false, redirect: true, error, description, code, q, redirectUri }`.
+// ---------------------------------------------------------------------------
+function vetAuthorizationRequest(req, options) {
+  log.debug("Entering vetAuthorizationRequest().");
+  const opts = options || {};
+  const refuse = function (code, error, description) {
+    log.debug("Entering refuse(). " + code);
+    log.debug("Leaving refuse().");
+    return { ok: false, redirect: false, status: 400, error: error,
+             description: description, code: code };
+  };
 
   // --- SHAPE FIRST, AND ANSWERED HERE RATHER THAN REDIRECTED ----------------
   //
@@ -3925,26 +4529,81 @@ function authorizeEndpoint(req, res) {
   //
   // The schema passes unknown parameters through (see AUTHORIZE_QUERY), so
   // nothing a client sent is lost across the consent round trip.
-  const asked = validation.check(req, 'query', AUTHORIZE_QUERY);
+  const asked = opts.input
+    ? validation.checkParsed(opts.input, opts.where || 'body', AUTHORIZE_QUERY)
+    : validation.check(req, 'query', AUTHORIZE_QUERY);
   if (!asked.ok) {
-    log.debug("Leaving the authorization endpoint. The request is malformed: " +
+    log.debug("Leaving vetAuthorizationRequest(). The request is malformed: " +
               asked.code + " on \"" + asked.field + "\".");
-    errorCodes.mark(res, 'STS-OAUTH-0159');
-    log.debug("Leaving authorizeEndpoint().");
-    return oauthError(res, 400, 'invalid_request', asked.detail);
+    return refuse('STS-OAUTH-0159', 'invalid_request', asked.detail);
   }
   const q = asked.value;
+
+  // --- OAUTH 2.1: THE CLIENT FIRST, AND A DEFAULT redirect_uri -------------
+  //
+  // In that mode a client must have registered its own redirect URI (section
+  // 2.3.1), and a request may OMIT redirect_uri when exactly one is registered
+  // (section 4.1.1) — so the client's entry is needed before the URI is known,
+  // and a missing client_id has to be answered first or it would be reported
+  // as an unregistered client. Both refusals are answered HERE, as a 400, for
+  // the reason the block below gives: there is no validated address yet.
+  //
+  // The DEFAULT is checked against the same allowlist a presented URI was
+  // checked against by the schema, because it comes off the entry and an
+  // `ldapmodify` reaches the entry without passing any check at all.
+  const registeredClient = applications.clientConfigOf(q.client_id);
+  if (oauth21.enabled()) {
+    const repeated = oauth21.repeatedParameterRefusal(
+        opts.repeated || oauth21.repeatedNames(req.query),
+        opts.what || 'authorization request');
+    if (repeated) {
+      log.debug("Leaving vetAuthorizationRequest(). OAuth 2.1: a repeated " +
+                "parameter.");
+      return refuse(repeated.errorCode || 'STS-OAUTH-0285', repeated.error,
+                    repeated.description);
+    }
+    const idCheck = bcp.checkClientIdPresent(q.client_id);
+    if (!idCheck.ok) {
+      log.debug("Leaving vetAuthorizationRequest(). OAuth 2.1: no client_id.");
+      return refuse(idCheck.errorCode || 'STS-OAUTH-0158', idCheck.error,
+                    idCheck.description);
+    }
+    if (!q.redirect_uri) {
+      const chosen = oauth21.defaultRedirectUri(registeredClient,
+                                                String(q.client_id));
+      if (!chosen.ok) {
+        log.debug("Leaving vetAuthorizationRequest(). OAuth 2.1: no " +
+                  "redirect_uri to default to (" + chosen.requirement + ").");
+        return refuse(chosen.errorCode || 'STS-OAUTH-0273', chosen.error,
+                      chosen.description);
+      }
+      const storedProblem = validation.redirectUriProblem(chosen.uri);
+      if (storedProblem) {
+        log.debug("Leaving vetAuthorizationRequest(). OAuth 2.1: the one " +
+                  "registered redirect URI is not usable.");
+        return refuse('STS-OAUTH-0274', 'invalid_request',
+          'OAuth 2.1 (' + oauth21.DRAFT + ') section 4.1.1: this request ' +
+          'named no redirect_uri, and the one client "' + q.client_id + '" ' +
+          'has registered cannot be used — it ' + storedProblem + '. Correct ' +
+          'the entry on /admin/applications.');
+      }
+      q.redirect_uri = chosen.uri;
+      log.debug("OAuth 2.1: redirect_uri defaulted to the one registered.");
+    }
+  }
   const redirectUri = String(q.redirect_uri || '');
 
   // Without a usable redirect_uri there is nowhere to report an error TO, so it
-  // is reported here instead (OAuth 2.0 section 4.1.2.1).
-  if (!redirectUri || !/^https?:\/\//i.test(redirectUri)) {
-    log.debug("Leaving the authorization endpoint. There is no usable " +
+  // is reported here instead (OAuth 2.0 section 4.1.2.1). WHAT IS USABLE is the
+  // schema's question since 2026-09-13 — AUTHORIZE_QUERY types it with
+  // `vt.redirectUri`, which accepts http(s) and a private-use scheme named for
+  // a domain and refuses everything else — so what is left here is its
+  // absence.
+  if (!redirectUri) {
+    log.debug("Leaving vetAuthorizationRequest(). There is no usable " +
               "redirect_uri to report to.");
-    errorCodes.mark(res, 'STS-OAUTH-0160');
-    log.debug("Leaving authorizeEndpoint().");
-    return oauthError(res, 400, 'invalid_request', 'A valid absolute ' +
-                                                   'redirect_uri is required.');
+    return refuse('STS-OAUTH-0160', 'invalid_request',
+                  'A valid absolute redirect_uri is required.');
   }
 
   // --- RFC 9700 section 2.1, and it has to be FIRST --------------------------
@@ -3969,21 +4628,327 @@ function authorizeEndpoint(req, res) {
   // behind it, and this check wants what the client is ALLOWED to do rather
   // than what it once registered. `clientConfigOf()` reads the attributes, so
   // an ldapmodify, a console form and a registration all reach it alike.
-  const registeredClient = applications.clientConfigOf(q.client_id);
+  //
+  // RFC 9126 SECTION 2.4 IS THE ONE WAY PAST IT, and only for a pushed request
+  // whose client AUTHENTICATED at the push, with
+  // `oauth2.parAllowUnregisteredRedirectUris` on — the caller decides both and
+  // passes `relaxRedirect`. The URI has still been refused above for its SHAPE,
+  // which section 2.4's "restrictions on supplied redirect_uri values" leaves
+  // to this server, and it is recorded (`relaxed`) so the authorization
+  // endpoint can ask the setting again when the request_uri is used.
+  let relaxed = false;
   const redirectCheck = bcp.checkRedirectUri({ redirectUri: redirectUri,
-                                               client: registeredClient });
-  if (!redirectCheck.ok) {
-    log.debug("Leaving the authorization endpoint. RFC 9700 mode refused the " +
-              "redirect_uri (" +
-              redirectCheck.requirement + "), so nothing is redirected " +
-                                          "anywhere.");
-    errorCodes.mark(res, redirectCheck.errorCode || 'STS-OAUTH-0158');
-    log.debug("Leaving authorizeEndpoint().");
-    return oauthError(res, 400, redirectCheck.error, redirectCheck.description);
+                                               client: registeredClient,
+                                               clientId: q.client_id });
+  if (!redirectCheck.ok && opts.relaxRedirect) {
+    relaxed = true;
+    log.info('oauth2: client "' + q.client_id + '" pushed the unregistered ' +
+             'redirect_uri "' + redirectUri + '" after authenticating, which ' +
+             'oauth2.parAllowUnregisteredRedirectUris accepts (RFC 9126 ' +
+             'section 2.4) where ' + redirectCheck.requirement + ' would ' +
+             'have refused it.');
+  } else if (!redirectCheck.ok) {
+    log.debug("Leaving vetAuthorizationRequest(). RFC 9700 mode refused the " +
+              "redirect_uri (" + redirectCheck.requirement + "), so nothing " +
+              "is redirected anywhere.");
+    return refuse(redirectCheck.errorCode || 'STS-OAUTH-0158',
+                  redirectCheck.error, redirectCheck.description);
   }
   if (redirectCheck.how) {
     log.debug("The redirect_uri was accepted by " + redirectCheck.how + ".");
   }
+
+  // A FORM POST CANNOT REACH A PROTOCOL HANDLER (2026-09-13, every mode). An
+  // operating system hands a native app the URL a browser was sent to and never
+  // a request body, so `response_mode=form_post` at a private-use redirect URI
+  // would deliver the code nowhere, with the failure at the client and nothing
+  // here pointing at it. Answered HERE, before `fail` exists, because every
+  // refusal made through `fail` honours the response mode and would itself be
+  // a form nobody receives.
+  if (String(q.response_mode || '') === 'form_post' &&
+      validation.isPrivateUseRedirect(redirectUri)) {
+    log.debug("Leaving vetAuthorizationRequest(). form_post to a " +
+              "private-use redirect URI.");
+    return refuse('STS-OAUTH-0270', 'invalid_request',
+      'response_mode=form_post cannot be answered at "' + redirectUri + '": ' +
+      'it is a native application\'s private-use URI, and an operating ' +
+      'system hands a protocol handler the URL and never a request body. Use ' +
+      'response_mode=query (or fragment).');
+  }
+
+  // From here a refusal may be REPORTED TO THE CLIENT — the address is known —
+  // and the caller decides how (`fail()` at the authorization endpoint).
+  const redirectable = function (code, error, description) {
+    log.debug("Entering redirectable(). " + code);
+    log.debug("Leaving redirectable().");
+    return { ok: false, redirect: true, error: error,
+             description: description, code: code, q: q,
+             redirectUri: redirectUri };
+  };
+
+  // RFC 6749 section 4.1.2.1, cited by section 4.11.2: an invalid combination
+  // of client_id and redirect_uri must not be redirected. A missing client_id
+  // is the plainest one, and this used to be reported BY redirecting to the URI
+  // — which is the thing that paragraph forbids. Answered here instead, ABOVE
+  // the `fail` closure's first use so there is no path where it is reported the
+  // old way.
+  const clientIdCheck = bcp.checkClientIdPresent(q.client_id);
+  if (!clientIdCheck.ok) {
+    log.debug("Leaving vetAuthorizationRequest(). " +
+              clientIdCheck.requirement + ".");
+    return refuse(clientIdCheck.errorCode || 'STS-OAUTH-0158',
+                  clientIdCheck.error, clientIdCheck.description);
+  }
+  if (!q.client_id) {
+    log.debug("Leaving vetAuthorizationRequest(). No client_id.");
+    return redirectable('STS-OAUTH-0161', 'invalid_request',
+                        'client_id is required.');
+  }
+  const types = String(q.response_type || '').split(/\s+/).filter(Boolean);
+  const known = ['code', 'token', 'id_token'];
+  if (!types.length ||
+      types.some(function (t) { return known.indexOf(t) < 0; })) {
+    log.debug("Leaving vetAuthorizationRequest(). Unsupported response_type.");
+    return redirectable('STS-OAUTH-0162', 'unsupported_response_type',
+                        'response_type "' + (q.response_type || '') + '" ' +
+                        'is not supported.');
+  }
+  // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported` in
+  // the document a client read is the list this endpoint answers — the document
+  // is not a description of the server, it IS the server, so a value outside it
+  // is refused here rather than accepted by an endpoint that never read its own
+  // metadata. The comparison is on the whole space-separated value because that
+  // is how the member is defined: `code id_token` is one entry, not two.
+  const advertisedTypes = capabilityFor(req, 'response_types_supported');
+  if (advertisedTypes) {
+    const sorted = types.slice(0).sort().join(' ');
+    const offered = advertisedTypes.some(function (one) {
+      return String(one).split(/\s+/)
+                        .filter(Boolean)
+                        .sort()
+                        .join(' ') === sorted;
+    });
+    if (!offered) {
+      log.debug("Leaving vetAuthorizationRequest(). " + profileOf(req) +
+                " does not advertise that response type.");
+      return redirectable('STS-OAUTH-0163', 'unsupported_response_type',
+        'The "' + profileOf(req) + '" authorization server advertises ' +
+        'response_types_supported ' + JSON.stringify(advertisedTypes) + ' ' +
+        'and this request asks for ' +
+        '"' + (q.response_type || '') + '". What its metadata says ' +
+        'is what it does — the document is this authorization server rather ' +
+        'than a description of one.');
+    }
+  }
+  // ---------------------------------------------------------------------
+  // WHICH RESPONSE MODES THIS AUTHORIZATION SERVER ANSWERS, and why an
+  // unrecognised one has to be refused rather than ignored.
+  //
+  // `redirectBack()` answers `form_post` with a form and everything else with a
+  // redirect. That "everything else" was the hole: a client asking for
+  // `web_message` — the postMessage mode SPAs use for silent renewal, and the
+  // subject of RFC 9700's in-browser communication section — got a 302 and sat
+  // waiting for a message that never arrived. It is the same silent failure
+  // `form_post` itself had while it was advertised and missing, and the same
+  // reason that one was worth fixing: the failure is at the CLIENT end, with
+  // nothing anywhere pointing back at this service.
+  //
+  // Checked against what this authorization server ADVERTISES rather than
+  // against a list here, so the document and the endpoint cannot disagree — and
+  // so a server configured to offer only `form_post` refuses the other two at
+  // its own endpoint. Not gated on RFC 9700 mode, like the other capability
+  // checks: the default document advertises everything this service does, so a
+  // request that would have worked still works.
+  // ---------------------------------------------------------------------
+  if (q.response_mode !== undefined && String(q.response_mode) !== '') {
+    const advertisedModes = capabilityFor(req, 'response_modes_supported');
+    if (advertisedModes &&
+        advertisedModes.indexOf(String(q.response_mode)) < 0) {
+      log.debug("Leaving vetAuthorizationRequest(). response_mode " +
+                q.response_mode +
+                " is not one " + profileOf(req) + " advertises.");
+      return redirectable('STS-OAUTH-0164', 'invalid_request',
+        'The "' + profileOf(req) + '" authorization server advertises ' +
+        'response_modes_supported ' + JSON.stringify(advertisedModes) + ' ' +
+        'and this request asks for ' +
+        '"' + q.response_mode + '". It is refused rather than ' +
+        'answered with a redirect, because a client that asked for a mode ' +
+        'this server does not perform would otherwise wait for a response ' +
+        'that never arrives — which is a failure with nothing at this end to ' +
+        'point at.' +
+        (String(q.response_mode) === 'web_message'
+          ? ' `web_message` in particular is postMessage-based, and this ' +
+            'service has no browser messaging of any kind: no page here ' +
+            'posts a message, receives one, or frames anything.'
+          : ''));
+    }
+  }
+
+  // The same for the PKCE methods. A server advertising S256 alone refuses
+  // `plain` HERE, whatever the other authorization servers in this process do.
+  if (q.code_challenge_method) {
+    const advertisedPkce = capabilityFor(req,
+                                         'code_challenge_methods_supported');
+    if (advertisedPkce &&
+        advertisedPkce.indexOf(String(q.code_challenge_method)) < 0) {
+      log.debug("Leaving vetAuthorizationRequest(). " + profileOf(req) +
+                " does not advertise that code_challenge_method.");
+      return redirectable('STS-OAUTH-0165', 'invalid_request',
+        'The "' + profileOf(req) + '" authorization server advertises ' +
+        'code_challenge_methods_supported ' + JSON.stringify(advertisedPkce) +
+        ' ' +
+        'and this request asks for "' + q.code_challenge_method + '".');
+    }
+  }
+
+  // The rest of what RFC 9700 mode has to say about this request: no response
+  // type that issues an access token here (section 2.1.2), PKCE from any client
+  // this server cannot see to be confidential and S256 when there is one
+  // (section 2.1.1), and a nonce with any id_token. These CAN be reported to
+  // the client, because redirect_uri has been validated above — and they are,
+  // rather than answered as a 400, because a client that asked for something
+  // this server will not do has a protocol error handler and no reason to be
+  // looking at this server's own output.
+  //
+  // Note where this sits: above the session check, so it is answered on the
+  // first pass and the person is never sent to sign in for a request that was
+  // going to be refused when they came back.
+  // RFC 9470: an acr value is repeated in a WWW-Authenticate challenge and
+  // compared as a string, so one outside RFC 6749's NQCHAR (less the quote and
+  // backslash a quoted-string cannot carry) is refused by name rather than
+  // dropped — a request asking for less than it wrote would be met by an
+  // authentication it never asked for. Redirected: the redirect_uri is
+  // validated above.
+  const acrAsked = stepUp.parseAcrValues(q.acr_values);
+  if (acrAsked.invalid.length) {
+    log.debug("Leaving vetAuthorizationRequest(). An unusable acr value.");
+    return redirectable('STS-OAUTH-0509', 'invalid_request',
+      'acr_values: ' + acrAsked.invalid.map(function (one) {
+        return JSON.stringify(one.slice(0, 60));
+      }).join(', ') + ' cannot be an acr value — a value is printable ASCII ' +
+      'with no double quote or backslash.');
+  }
+  const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
+                                                       client:
+                                                         registeredClient });
+  if (!requestCheck.ok) {
+    log.debug("Leaving vetAuthorizationRequest(). RFC 9700 mode refused the " +
+              "authorization request (" + requestCheck.requirement + ").");
+    return redirectable(requestCheck.errorCode || 'STS-OAUTH-0158',
+                        requestCheck.error, requestCheck.description);
+  }
+  log.debug("Leaving vetAuthorizationRequest(). Vetted.");
+  return { ok: true, q: q, types: types, registeredClient: registeredClient,
+           redirectUri: redirectUri, relaxed: relaxed };
+}
+
+// ---------------------------------------------------------------------------
+// RFC 9126 AT THE AUTHORIZATION ENDPOINT: THE TWO QUESTIONS ASKED BEFORE A
+// REQUEST IS VETTED (2026-09-13).
+//
+// **MUST THIS REQUEST HAVE BEEN PUSHED?** Section 4's "authorization server
+// policy MAY dictate, either globally or on a per-client basis, that PAR be the
+// only means", answered `invalid_request` — and here ON THIS SERVER as a 400,
+// because the redirect_uri of a request that should never have been sent this
+// way is not one to trust with an error. Three sources, ORed: the setting, the
+// client's `require_pushed_authorization_requests`, and the selected
+// authorization server's profile publishing it.
+//
+// **WAS IT PUSHED PLAIN WHILE A SIGNED OBJECT IS NOW REQUIRED?** RFC 9126
+// section 2.3 refuses a plain push where RFC 9101 section 10.5 requires a
+// signed request object, and section 7.4 asks for the client's policy to be
+// checked again when the request_uri is used — so a request pushed plain
+// before the requirement was switched on is refused rather than honoured.
+// ---------------------------------------------------------------------------
+function pushedRequestPolicyRefusal(req) {
+  log.debug("Entering pushedRequestPolicyRefusal().");
+  const jar = req.stsJar || null;
+  const pushed = !!(jar && jar.source === 'par');
+  const clientId = String((req.query || {}).client_id || '');
+  const client = applications.clientConfigOf(clientId);
+  const caps = capabilitiesFor(req);
+  const requiredBy = [
+    config.value('oauth2.requirePushedAuthorizationRequests')
+      ? 'oauth2.requirePushedAuthorizationRequests' : '',
+    client.require_pushed_authorization_requests
+      ? 'client "' + clientId + '"\'s require_pushed_authorization_requests'
+      : '',
+    caps.require_pushed_authorization_requests === true
+      ? 'the "' + profileOf(req) + '" authorization server\'s ' +
+        'require_pushed_authorization_requests' : ''
+  ].filter(Boolean);
+  if (!pushed && requiredBy.length) {
+    oauthMonitor.record(clientId, 'par.required_refused',
+                      { error: 'invalid_request' });
+    log.debug("Leaving pushedRequestPolicyRefusal(). PAR is required.");
+    return errorCodes.mark({ error: 'invalid_request',
+      description: 'this authorization request was not pushed, and ' +
+        requiredBy.join(' and ') + ' says pushed authorization requests are ' +
+        'the only means of sending one here (RFC 9126 section 4). POST the ' +
+        'parameters to ' + asBaseOf(req) + '/oauth2/par first and send the ' +
+        'request_uri it answers with.' }, 'STS-OAUTH-0419');
+  }
+  if (pushed && !jar.alg &&
+      requestObject.signedRequired(client, authorizationProfileOf(req))) {
+    log.debug("Leaving pushedRequestPolicyRefusal(). Pushed plain, and a " +
+              "signed request object is now required.");
+    return errorCodes.mark({ error: 'invalid_request',
+      description: 'this request_uri was pushed as plain parameters, and a ' +
+        'signed request object is required here now (RFC 9101 section 10.5, ' +
+        'RFC 9126 sections 2.3 and 7.4). Push the request again as a signed ' +
+        '`request`.' }, 'STS-OAUTH-0426');
+  }
+  log.debug("Leaving pushedRequestPolicyRefusal(). Nothing refused.");
+  return null;
+}
+
+// Whether RFC 9126 section 2.4 lets a pushed request's redirect_uri past the
+// registration check at the authorization endpoint: it was let through at the
+// push on the strength of a VERIFIED credential, and the setting still says so.
+function pushedRedirectRelaxed(req) {
+  log.debug("Entering pushedRedirectRelaxed().");
+  const jar = req.stsJar || null;
+  const pushed = jar && jar.source === 'par' ? (jar.pushed || {}) : null;
+  const relaxed = !!(pushed && pushed.clientAuthenticated &&
+                     pushed.redirectUriAuthenticated &&
+                     config.value('oauth2.parAllowUnregisteredRedirectUris'));
+  log.debug("Leaving pushedRedirectRelaxed(). " + relaxed);
+  return relaxed;
+}
+
+function authorizeRequest(req, res) {
+  log.debug("Entering the authorization endpoint.");
+  // This authorization server's own base, so the RFC 9207 `iss` on the response
+  // and every token minted below name the server the client is talking to.
+  const base = asBaseOf(req);
+
+  // RFC 9126's two policies, before anything in the request is believed. See
+  // pushedRequestPolicyRefusal().
+  const policy = pushedRequestPolicyRefusal(req);
+  if (policy) {
+    log.debug("Leaving the authorization endpoint. " + policy.description);
+    errorCodes.mark(res, errorCodes.codeOf(policy) || 'STS-OAUTH-0419');
+    log.debug("Leaving authorizeRequest().");
+    return oauthError(res, 400, policy.error, policy.description);
+  }
+
+  // The request-level checks, in `vetAuthorizationRequest()` so that the PAR
+  // endpoint asks the same ones of a pushed request. A refusal it says may not
+  // be redirected is answered here as a 400; the rest go through `fail()`
+  // below, which needs the vetted redirect_uri to exist first.
+  const vetted = vetAuthorizationRequest(req, {
+    relaxRedirect: pushedRedirectRelaxed(req)
+  });
+  if (!vetted.ok && !vetted.redirect) {
+    log.debug("Leaving the authorization endpoint. Refused on this server (" +
+              vetted.code + ").");
+    errorCodes.mark(res, vetted.code);
+    log.debug("Leaving authorizeRequest().");
+    // error-code: none — the code is vetAuthorizationRequest()'s, marked above
+    return oauthError(res, vetted.status, vetted.error, vetted.description);
+  }
+  const q = vetted.q;
+  const redirectUri = vetted.redirectUri;
 
   const fail = function (error, description) {
     log.debug("Entering fail().");
@@ -4029,150 +4994,13 @@ function authorizeEndpoint(req, res) {
                  false, q.response_mode);
     log.debug("Leaving fail().");
   };
-  // RFC 6749 section 4.1.2.1, cited by section 4.11.2: an invalid combination
-  // of client_id and redirect_uri must not be redirected. A missing client_id
-  // is the plainest one, and this used to be reported BY redirecting to the URI
-  // — which is the thing that paragraph forbids. Answered here instead, ABOVE
-  // the `fail` closure's first use so there is no path where it is reported the
-  // old way.
-  const clientIdCheck = bcp.checkClientIdPresent(q.client_id);
-  if (!clientIdCheck.ok) {
-    log.debug("Leaving the authorization endpoint. " +
-              clientIdCheck.requirement + ".");
-    errorCodes.mark(res, clientIdCheck.errorCode || 'STS-OAUTH-0158');
-    log.debug("Leaving authorizeEndpoint().");
-    return oauthError(res, 400, clientIdCheck.error, clientIdCheck.description);
-  }
-  if (!q.client_id) {
-    errorCodes.mark(res, 'STS-OAUTH-0161');
-    log.debug("Leaving authorizeEndpoint().");
-    return fail('invalid_request', 'client_id is required.');
-  }
-  const types = String(q.response_type || '').split(/\s+/).filter(Boolean);
-  const known = ['code', 'token', 'id_token'];
-  if (!types.length ||
-      types.some(function (t) { return known.indexOf(t) < 0; })) {
-    errorCodes.mark(res, 'STS-OAUTH-0162');
-    log.debug("Leaving authorizeEndpoint().");
-    return fail('unsupported_response_type',
-                'response_type "' + (q.response_type || '') + '" ' +
-        'is not supported.');
-  }
-  // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported` in
-  // the document a client read is the list this endpoint answers — the document
-  // is not a description of the server, it IS the server, so a value outside it
-  // is refused here rather than accepted by an endpoint that never read its own
-  // metadata. The comparison is on the whole space-separated value because that
-  // is how the member is defined: `code id_token` is one entry, not two.
-  const advertisedTypes = capabilityFor(req, 'response_types_supported');
-  if (advertisedTypes) {
-    const asked = types.slice(0).sort().join(' ');
-    const offered = advertisedTypes.some(function (one) {
-      return String(one).split(/\s+/)
-                        .filter(Boolean)
-                        .sort()
-                        .join(' ') === asked;
-    });
-    if (!offered) {
-      log.debug("Leaving the authorization endpoint. " + profileOf(req) +
-                " does not advertise that response type.");
-      errorCodes.mark(res, 'STS-OAUTH-0163');
-      log.debug("Leaving authorizeEndpoint().");
-      return fail('unsupported_response_type',
-        'The "' + profileOf(req) + '" authorization server advertises ' +
-        'response_types_supported ' + JSON.stringify(advertisedTypes) + ' ' +
-        'and this request asks for ' +
-        '"' + (q.response_type || '') + '". What its metadata says ' +
-        'is what it does — the document is this authorization server rather ' +
-        'than a description of one.');
-    }
-  }
-  // ---------------------------------------------------------------------
-  // WHICH RESPONSE MODES THIS AUTHORIZATION SERVER ANSWERS, and why an
-  // unrecognised one has to be refused rather than ignored.
-  //
-  // `redirectBack()` answers `form_post` with a form and everything else with a
-  // redirect. That "everything else" was the hole: a client asking for
-  // `web_message` — the postMessage mode SPAs use for silent renewal, and the
-  // subject of RFC 9700's in-browser communication section — got a 302 and sat
-  // waiting for a message that never arrived. It is the same silent failure
-  // `form_post` itself had while it was advertised and missing, and the same
-  // reason that one was worth fixing: the failure is at the CLIENT end, with
-  // nothing anywhere pointing back at this service.
-  //
-  // Checked against what this authorization server ADVERTISES rather than
-  // against a list here, so the document and the endpoint cannot disagree — and
-  // so a server configured to offer only `form_post` refuses the other two at
-  // its own endpoint. Not gated on RFC 9700 mode, like the other capability
-  // checks: the default document advertises everything this service does, so a
-  // request that would have worked still works.
-  // ---------------------------------------------------------------------
-  if (q.response_mode !== undefined && String(q.response_mode) !== '') {
-    const advertisedModes = capabilityFor(req, 'response_modes_supported');
-    if (advertisedModes &&
-        advertisedModes.indexOf(String(q.response_mode)) < 0) {
-      log.debug("Leaving the authorization endpoint. response_mode " +
-                q.response_mode +
-                " is not one " + profileOf(req) + " advertises.");
-      errorCodes.mark(res, 'STS-OAUTH-0164');
-      log.debug("Leaving authorizeEndpoint().");
-      return fail('invalid_request',
-        'The "' + profileOf(req) + '" authorization server advertises ' +
-        'response_modes_supported ' + JSON.stringify(advertisedModes) + ' ' +
-        'and this request asks for ' +
-        '"' + q.response_mode + '". It is refused rather than ' +
-        'answered with a redirect, because a client that asked for a mode ' +
-        'this server does not perform would otherwise wait for a response ' +
-        'that never arrives — which is a failure with nothing at this end to ' +
-        'point at.' +
-        (String(q.response_mode) === 'web_message'
-          ? ' `web_message` in particular is postMessage-based, and this ' +
-            'service has no browser messaging of any kind: no page here ' +
-            'posts a message, receives one, or frames anything.'
-          : ''));
-    }
-  }
-
-  // The same for the PKCE methods. A server advertising S256 alone refuses
-  // `plain` HERE, whatever the other authorization servers in this process do.
-  if (q.code_challenge_method) {
-    const advertisedPkce = capabilityFor(req,
-                                         'code_challenge_methods_supported');
-    if (advertisedPkce &&
-        advertisedPkce.indexOf(String(q.code_challenge_method)) < 0) {
-      log.debug("Leaving the authorization endpoint. " + profileOf(req) +
-                " does not advertise that code_challenge_method.");
-      errorCodes.mark(res, 'STS-OAUTH-0165');
-      log.debug("Leaving authorizeEndpoint().");
-      return fail('invalid_request',
-        'The "' + profileOf(req) + '" authorization server advertises ' +
-        'code_challenge_methods_supported ' + JSON.stringify(advertisedPkce) +
-        ' ' +
-        'and this request asks for "' + q.code_challenge_method + '".');
-    }
-  }
-
-  // The rest of what RFC 9700 mode has to say about this request: no response
-  // type that issues an access token here (section 2.1.2), PKCE from any client
-  // this server cannot see to be confidential and S256 when there is one
-  // (section 2.1.1), and a nonce with any id_token. These CAN be reported to
-  // the client, because redirect_uri has been validated above — and they are,
-  // rather than answered as a 400, because a client that asked for something
-  // this server will not do has a protocol error handler and no reason to be
-  // looking at this server's own output.
-  //
-  // Note where this sits: above the session check, so it is answered on the
-  // first pass and the person is never sent to sign in for a request that was
-  // going to be refused when they came back.
-  const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
-                                                       client:
-                                                         registeredClient });
-  if (!requestCheck.ok) {
-    log.debug("RFC 9700 mode refused the authorization request (" +
-              requestCheck.requirement + ").");
-    errorCodes.mark(res, requestCheck.errorCode || 'STS-OAUTH-0158');
-    log.debug("Leaving authorizeEndpoint().");
-    return fail(requestCheck.error, requestCheck.description);
+  if (!vetted.ok) {
+    log.debug("Leaving the authorization endpoint. Reporting a refusal to " +
+              "the client (" + vetted.code + ").");
+    errorCodes.mark(res, vetted.code);
+    log.debug("Leaving authorizeRequest().");
+    // error-code: none — the code is vetAuthorizationRequest()'s, marked above
+    return fail(vetted.error, vetted.description);
   }
 
   // issuer_state (OID4VCI section 4.1.1): if this request came from a
@@ -4244,7 +5072,47 @@ function authorizeEndpoint(req, res) {
   // response goes out now.
   const session = sessionOf(req);
   const forcePrompt = String(q.prompt || '').split(/\s+/).indexOf('login') >= 0;
-  if (session && !forcePrompt) {
+  // -------------------------------------------------------------------------
+  // RFC 9470 AND OPENID CONNECT CORE 3.1.2.1: A SESSION IS NOT AN ANSWER TO A
+  // REQUEST IT DOES NOT MEET (2026-09-13).
+  //
+  // Until this block a session was answered from whatever it was, so a client
+  // stepping up with `acr_values=mfa` on a password session was handed the
+  // password session's token — the resource server challenged it again, and
+  // the loop never closed. Now the session is ASSESSED first: met, it is
+  // answered and the token carries the most preferred requested acr it met; not
+  // met, the person is sent to sign in again, once; not met on the way back
+  // from that sign-in, the request is refused `unmet_authentication_
+  // requirements` in every mode. `prompt=none` cannot send anybody anywhere and
+  // is answered `login_required`. `step_up.js` decides all four.
+  // -------------------------------------------------------------------------
+  const stepUpNeed = stepUp.requirementOf(q);
+  const stepUpHonoured = String(((req.stsJar && req.stsJar.outer) || q)
+    .step_up_honoured || '') === '1';
+  const promptNone = String(q.prompt || '').split(/\s+/).indexOf('none') >= 0;
+  let stepUpAssessed = null;
+  if (session && !forcePrompt && stepUpNeed.present) {
+    stepUpAssessed = stepUp.assessSession(stepUpNeed, session, {
+      honoured: stepUpHonoured,
+      windowS: Math.floor(authn.pendingTtlMs() / 1000)
+    });
+    if (!stepUpAssessed.met && (promptNone || !stepUpAssessed.retry)) {
+      const unmet = stepUp.unmetRefusal(stepUpNeed, stepUpAssessed, promptNone);
+      stepUp.record(q.client_id, promptNone ? 'stepup.login_required'
+                                            : 'stepup.unmet',
+                    { error: unmet.error });
+      log.info('oauth2: RFC 9470: an authorization request from "' +
+               (q.client_id || '') + '" was refused ' + unmet.error + ': ' +
+               unmet.description);
+      errorCodes.mark(res, errorCodes.codeOf(unmet) || 'STS-OAUTH-0500');
+      log.debug("Leaving authorizeRequest(). The step-up requirement was " +
+                "not met.");
+      // error-code: none — marked on the line above from the refusal's code
+      return fail(unmet.error, unmet.description);
+    }
+  }
+  const stepUpReauth = !!(stepUpAssessed && !stepUpAssessed.met);
+  if (session && !forcePrompt && !stepUpReauth) {
     // -------------------------------------------------------------------
     // SINGLE SIGN-ON JUST HAPPENED, AND THIS IS THE ONLY PLACE THAT KNOWS IT.
     //
@@ -4291,7 +5159,28 @@ function authorizeEndpoint(req, res) {
                               clientId: q.client_id,
                               scope: q.scope, all: wantsConsent })
       : { outstanding: [], scopes: [] };
-    if (decision.outstanding.length) {
+    // RFC 9396: details of a declared type are asked about EVERY time, and an
+    // Allow is spent here, on the pass that follows it — see
+    // `authorization_details.js`'s header. Unusable details are left for
+    // issueAuthorizationResponse() to refuse, rather than asked about.
+    const consentDetails = consent.required()
+      ? parseAuthorizationDetails(q.authorization_details,
+                                  { clientId: q.client_id, req: req })
+      : { details: null };
+    // Nor are details the audience rule will refuse (two APIs, or a resource
+    // or scope naming another): asking somebody to agree to a request that is
+    // then refused is a question with no answer.
+    const detailsPlannable = !!consentDetails.details &&
+      !accessTokenPlan(asBaseOf(req), String(q.scope || ''), q.client_id,
+                       parseResourceIndicators(q.resource).resources || [],
+                       consentDetails.details).refusal;
+    const detailsDigest = detailsPlannable &&
+      richAuthorization.needsConsent(consentDetails.details)
+      ? richAuthorization.digestOf(consentDetails.details) : '';
+    const detailsOutstanding = !!detailsDigest &&
+      !richAuthorization.consumeConsented((session.user || {}).username,
+                                          q.client_id, detailsDigest);
+    if (decision.outstanding.length || detailsOutstanding) {
       // prompt=none FORBIDS ANY UI, and OIDC Core section 3.1.2.6 gives this
       // exact case its own error code. Answering `interaction_required` — the
       // general one — would be true and less useful: a client that gets
@@ -4306,7 +5195,10 @@ function authorizeEndpoint(req, res) {
         return fail('consent_required',
           '"' + ((session.user || {}).username || '') + '" has not consented ' +
           decision.names.map(function (one) { return '"' + one + '"'; })
-                        .join(', ') +
+            .concat(detailsOutstanding
+              ? ['this request\'s authorization_details (RFC 9396), which ' +
+                 'are asked about every time'] : [])
+            .join(', ') +
           ' for the client "' + (q.client_id || '') + '", and prompt=none ' +
           'forbids showing the consent screen. Retry without prompt=none, or ' +
           'consent the scope for every user of this application at ' +
@@ -4320,7 +5212,7 @@ function authorizeEndpoint(req, res) {
       // ever. Everything else goes back untouched, because the second pass has
       // to be the request the client actually made.
       const consentReturnTo = asPathOf(req) + '/oauth2/authorize?' +
-                              queryString(q, ['prompt']);
+                              authorizationReturnQuery(req, q);
       // -----------------------------------------------------------------
       // THE APPLICATION IS RECORDED HERE AS WELL, AND IT HAS TO BE.
       //
@@ -4359,7 +5251,8 @@ function authorizeEndpoint(req, res) {
       const entry = applications.get(String(q.client_id || ''));
       log.debug("Leaving the authorization endpoint. " +
                 decision.outstanding.length +
-                " scope(s) need consent first.");
+                " scope(s) need consent first" +
+                (detailsOutstanding ? ", and authorization_details." : "."));
       return res.redirect(302, consentScreen.beginConsent({
         returnTo: consentReturnTo,
         // THE TYPED NAME AND NOT THE CLAIMS OBJECT. `session.user` is what
@@ -4370,6 +5263,9 @@ function authorizeEndpoint(req, res) {
         clientId: String(q.client_id || ''),
         clientName: (entry && entry.name) || String(q.client_id || ''),
         scopes: decision.outstanding,
+        authorizationDetails: detailsOutstanding
+          ? richAuthorization.describe(consentDetails.details) : [],
+        detailsDigest: detailsOutstanding ? detailsDigest : '',
         already: decision.scopes.filter(function (one) {
           return decision.outstanding.indexOf(one) < 0;
         }),
@@ -4378,7 +5274,7 @@ function authorizeEndpoint(req, res) {
           { label: 'client_id', value: q.client_id || '' },
           { label: 'scope', value: q.scope || '(none requested)' },
           { label: 'redirect_uri', value: q.redirect_uri || '' }
-        ]
+        ].concat(requestObjectDetail(req))
       }));
     }
     log.debug("Leaving the authorization endpoint. The session stands, so " +
@@ -4389,8 +5285,14 @@ function authorizeEndpoint(req, res) {
     // request that hangs where a throw used to be a 500, so the rejection is
     // turned back into an answer here. Everything else in this handler still
     // throws synchronously, which express still catches.
+    if (stepUpAssessed) {
+      stepUp.record(q.client_id, stepUpHonoured ? 'stepup.met_after_sign_in'
+                                                : 'stepup.met_by_session');
+    }
     return issueAuthorizationResponse(req, res, q, session.user,
-                                      session.authTime, session)
+                                      session.authTime, session,
+                                      stepUpAssessed ? stepUpAssessed.acr
+                                                     : null)
       .catch(function (e) {
         log.error(errorCodes.tag('STS-OAUTH-0169') + 'the authorization ' +
                                                      'response could not be ' +
@@ -4425,12 +5327,24 @@ function authorizeEndpoint(req, res) {
   // somebody else, which is the kind of bug that only shows up as a refusal two
   // steps later.
   const returnTo = asPathOf(req) + '/oauth2/authorize?' +
-                   queryString(q, ['prompt']);
-  // acr_values is how a relying party demands a second factor. Anything naming
-  // mfa or a hardware key forces the WebAuthn step and disables the opt-out, so
-  // the checkbox cannot be used to answer a request for step-up with a
-  // password.
-  const forceMfa = /\b(mfa|hwk|phr|phrh)\b/i.test(String(q.acr_values || ''));
+                   authorizationReturnQuery(req, q);
+  // acr_values is how a relying party demands a second factor. A request whose
+  // every producible value needs two — `mfa`, or a hardware key named by its
+  // RFC 8176 method — forces the second-factor step and disables the opt-out,
+  // so the checkbox cannot be used to answer a request for step-up with a
+  // password. SINCE RFC 9470 (2026-09-13) the values are read as the ordered
+  // preference list they are: `mfa 1` accepts one factor and does not force a
+  // second, and a value is matched whole and case-sensitively, where a regex
+  // used to find `mfa` inside any word.
+  const forceMfa = stepUp.demandsSecondFactor(stepUpNeed.acrValues);
+  if (stepUpReauth) {
+    stepUp.record(q.client_id, 'stepup.reauth_' + stepUpAssessed.reason);
+    log.info('oauth2: RFC 9470: the session does not meet the request from "' +
+             (q.client_id || '') + '" (' + stepUpAssessed.reason + '), so ' +
+             'the person is sent to sign in again.');
+  } else if (stepUpNeed.present) {
+    stepUp.record(q.client_id, 'stepup.sign_in');
+  }
   // What the screen tells the person they are signing in FOR. Written here
   // because these are OAuth's parameters and only this module knows what they
   // mean — the issuer_state note in particular, which says whether the request
@@ -4439,7 +5353,7 @@ function authorizeEndpoint(req, res) {
     { label: 'client_id', value: q.client_id || '' },
     { label: 'scope', value: q.scope || '(none requested)' },
     { label: 'redirect_uri', value: q.redirect_uri || '' }
-  ];
+  ].concat(requestObjectDetail(req));
   if (q.issuer_state) {
     details.push({ label: 'issuer_state', value: q.issuer_state,
                    note: issuerStates.has(String(q.issuer_state))
@@ -4482,6 +5396,18 @@ app.get('/oauth2/authorize', authorizeEndpoint);
 // Read-only, so there is no console control here and therefore nothing for
 // rule 7 in CLAUDE.md to require of the management API.
 // ---------------------------------------------------------------------------
+// OAuth 2.1 mode's report, beside RFC 9700 mode's and for its reasons: what the
+// mode enforces is published rather than left to be read out of the code, and a
+// test reads `enabled` rather than inferring the mode from a refusal. The rows
+// cite draft-ietf-oauth-v2-1-16 by revision, and the report says the draft is a
+// draft.
+app.get('/oauth2/oauth21', function (req, res) {
+  log.debug("Entering the OAuth 2.1 mode report.");
+  res.status(200).type('application/json').set('Cache-Control', 'no-store')
+     .send(JSON.stringify(oauth21.state(), null, 2));
+  log.debug("Leaving the OAuth 2.1 mode report. enabled=" + oauth21.enabled());
+});
+
 app.get('/oauth2/rfc9700', function (req, res) {
   log.debug("Entering the RFC 9700 mode report.");
   res.status(200).type('application/json').set('Cache-Control', 'no-store')
@@ -4511,6 +5437,29 @@ function logoutPage(inner) {
     '#ddd;vertical-align:top}code{background:#f4f4f4;padding:.05rem ' +
     '.25rem;border-radius:3px;word-break:break-all}</style></head><body>' +
     inner + '</body></html>';
+}
+
+// WHETHER A post_logout_redirect_uri IS ONE THIS ENDPOINT WILL CONSIDER
+// FOLLOWING AT ALL (2026-09-13). http and https in every mode, as before. A
+// native application's PRIVATE-USE address only in RFC 9700 or OAuth 2.1 mode,
+// where `bcp.checkPostLogoutRedirectUri()` then believes one only when the
+// client the request names registered it: with the mode off this endpoint
+// forwards a browser with no client involved at all, and extending that to
+// every protocol handler an operating system registers is a redirector nobody
+// is accountable for. Anything else was refused by the schema already.
+function logoutTargetConsidered(target) {
+  log.debug("Entering logoutTargetConsidered().");
+  const text = String(target || '');
+  if (!text) {
+    log.debug("Leaving logoutTargetConsidered(). None.");
+    return false;
+  }
+  if (/^https?:\/\//i.test(text)) {
+    log.debug("Leaving logoutTargetConsidered(). http(s).");
+    return true;
+  }
+  log.debug("Leaving logoutTargetConsidered().");
+  return bcp.enabled() && validation.isPrivateUseRedirect(text);
 }
 
 function logoutEndpoint(req, res) {
@@ -4550,8 +5499,7 @@ function logoutEndpoint(req, res) {
   }
   const target = askedLogout.value.post_logout_redirect_uri;
   if (notifiable.length) {
-    let checked = target && /^https?:\/\//i.test(String(target)) ?
-                  String(target) : '';
+    let checked = logoutTargetConsidered(target) ? String(target) : '';
     if (checked) {
       // The same check the redirect below makes, made before the URL is drawn
       // as a link rather than followed. A link is not a redirect and RFC 9700
@@ -4592,7 +5540,7 @@ function logoutEndpoint(req, res) {
               (notifiable.length === 1 ? 'y was' : 'ies were') + " notified.");
     return;
   }
-  if (target && /^https?:\/\//i.test(String(target))) {
+  if (logoutTargetConsidered(target)) {
     // Without RFC 9700 mode this is the plainest open redirector in the
     // service: any absolute http(s) URL in a query parameter, forwarded, with
     // no client and no session involved. In the mode it is matched the same way
@@ -4973,43 +5921,11 @@ const USERINFO_SIGNING_ALGS = USERINFO_RSA_ALGS
 // whole purpose is to be verified.
 const ID_TOKEN_SIGNING_ALGS = stsCrypto.JWS_SIGNING_ALGS;
 
-// The recipient's encryption key, out of the registration document. Inline
-// `jwks` only: a `jwks_uri` would have this service make an outbound HTTPS call
-// to a URL the client chose, at the moment it answers a request, and a mock
-// that can be made to fetch arbitrary URLs is a mock somebody will point at
-// something interesting. The refusal below says so and says what to send
-// instead, because "no key" with no reason reads as a bug here.
-function recipientEncryptionKey(registered, alg) {
-  log.debug("Entering recipientEncryptionKey(). alg=" + alg);
-  if (!registered.jwks || !Array.isArray(registered.jwks.keys) ||
-      !registered.jwks.keys.length) {
-    log.debug("Leaving recipientEncryptionKey(). No inline jwks.");
-    throw new Error(registered.jwks_uri
-      ? 'This client registered a jwks_uri, and this service reads an INLINE ' +
-        '"jwks" member only — it will not fetch a URL a client chose while ' +
-        'answering that client\'s request. Re-register with the key material ' +
-        'in a "jwks" member.'
-      : 'This client registered userinfo_encrypted_response_alg="' + alg +
-        '" and no "jwks" member, so there is no key to encrypt to.');
-  }
-  // A key marked for encryption if there is one, otherwise the first key of the
-  // right type — `use` is optional, and a client that published one key for
-  // both purposes has still told us which key it holds.
-  const wantEc = alg.indexOf('ECDH') === 0;
-  const candidates = registered.jwks.keys.filter(function (key) {
-    if (key.use && key.use !== 'enc') return false;
-    return wantEc ? key.kty === 'EC' : key.kty === 'RSA';
-  });
-  if (!candidates.length) {
-    log.debug("Leaving recipientEncryptionKey(). No usable key.");
-    throw new Error('This client registered userinfo_encrypted_response_alg="' +
-      alg + '", which needs ' + (wantEc ? 'an EC' : 'an RSA') + ' key, and ' +
-      'its jwks has none that can be used for encryption.');
-  }
-  log.debug("Leaving recipientEncryptionKey(). kid=" +
-            (candidates[0].kid || '(none)'));
-  return candidates[0];
-}
+// The recipient's encryption key is `introspectionJwt.recipientKey()` since
+// 2026-09-13 — it was written here for this response and MOVED when RFC 9701's
+// introspection response became the second one a client may ask to have
+// encrypted to its own key. The sentences it refuses with are the ones this
+// endpoint always sent, with the member named by the caller.
 
 // ASYNCHRONOUS, AND THIS IS ONE OF THE TWO CALL SITES THE WORKER POOL WAS
 // BUILT FOR. `userinfo_signed_response_alg` is a CLIENT'S choice out of
@@ -5032,7 +5948,8 @@ async function signUserinfo(body, alg, registered, base, claims) {
   // `session` is the pool's routing hint: this token's own `sub`, so that one
   // person's signatures queue behind each other rather than across the pool.
   const signed = await signJwtAsAsync(payload, alg, registered.client_secret,
-                                      { session: claims.sub });
+                                      { session: claims.sub,
+                                        certificateHeader: 'userinfo' });
   log.debug("Leaving signUserinfo().");
   return signed;
 }
@@ -5098,7 +6015,8 @@ async function protectUserinfo(body, registered, base, claims) {
   const jwe = stsCrypto.encryptJweCompact(inner, {
     alg: encAlg,
     enc: encEnc,
-    jwk: recipientEncryptionKey(registered, encAlg),
+    jwk: introspectionJwt.recipientKey(registered, encAlg,
+                                       'userinfo_encrypted_response_alg'),
     // RFC 7519 section 5.2: the outer header announces a JWS inside with
     // cty:"JWT". Without it a recipient that decrypts finds a dot-separated
     // string where it expected a claims object, and has to guess.
@@ -5332,6 +6250,90 @@ function userinfoResponse(req, res) {
 app.get('/oauth2/userinfo', userinfoResponse);
 
 app.post('/oauth2/userinfo', userinfoResponse);
+
+// ---------------------------------------------------------------------------
+// GET|POST /oauth2/step-up/resource/{application} — RFC 9470's STAND-IN
+// RESOURCE (2026-09-13).
+//
+// NON-SPEC, AND IT IS THE RESOURCE SERVER HALF OF A SPECIFICATION WHOSE OTHER
+// HALF IS HERE. A registered API declares what it requires of the
+// authentication behind a token (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`)
+// and this answers FOR it: the token must verify, be an `at+jwt` from an
+// authorization server this service publishes, and be addressed to that
+// application (RFC 9068 section 4, with step 4 asked of the application);
+// then section 3's question, whose "no" is the 401 challenge a client turns
+// into an authorization request. Its "yes" is 200 and what it decided on.
+//
+// It exists because the real API is somebody else's process: a client
+// developer testing a step-up flow against this service needs a resource that
+// challenges, and an operator configuring a requirement on an entry needs to
+// see what that requirement does to a token without deploying the API. It
+// holds no data and grants nothing — the body is the token's own claims about
+// authentication, read back to the person who presented it.
+//
+// **THE APPLICATION IS NAMED BY ITS REGISTRY IDENTIFIER OR ITS client_id**,
+// the two spellings `/admin/applications` shows. One that names no entry is
+// 404; an entry requiring nothing answers every valid token 200, and says so.
+// ---------------------------------------------------------------------------
+function stepUpResource(req, res) {
+  log.debug("Entering stepUpResource().");
+  res.set('Cache-Control', 'no-store');
+  const id = String(req.params.application || '');
+  const entry = applications.get(id) || applications.forClientId(id);
+  if (!entry) {
+    log.debug("Leaving stepUpResource(). No such application.");
+    errorCodes.mark(res, 'STS-OAUTH-0505');
+    return oauthError(res, 404, 'invalid_request', 'No application "' +
+      id.slice(0, 200) + '" is registered in this realm, so there is no ' +
+      'resource here to answer for it. The path names an application by its ' +
+      'identifier or client_id, as /admin/applications lists it.');
+  }
+  const requirement = applications.stepUpRequirementOf(entry);
+  const presented = dpop.presentedAccessToken(req, res, 'the step-up ' +
+    'resource for "' + entry.identifier + '"', {
+    requireVerified: true,
+    audience: {
+      label: 'the application "' + entry.identifier + '"',
+      names: function (audiences) {
+        log.debug("Entering names().");
+        log.debug("Leaving names().");
+        return applications.audienceNamesEntry(entry, audiences);
+      }
+    },
+    stepUp: requirement
+  });
+  if (!presented) {
+    log.debug("Leaving stepUpResource(). The token was refused or " +
+              "challenged.");
+    return undefined;
+  }
+  const claims = presented.claims || {};
+  const now = Math.floor(Date.now() / 1000);
+  res.status(200).type('application/json').send(JSON.stringify({
+    resource: entry.identifier,
+    requirement: {
+      acr_values: requirement.acrValues.join(' ') || null,
+      max_age: requirement.maxAge
+    },
+    met: true,
+    token: {
+      client_id: claims.client_id || null,
+      sub: claims.sub || null,
+      acr: claims.acr || null,
+      amr: claims.amr || null,
+      auth_time: claims.auth_time || null,
+      authenticated_seconds_ago: claims.auth_time
+        ? now - Number(claims.auth_time) : null,
+      scheme: presented.scheme
+    }
+  }, null, 2));
+  log.debug("Leaving stepUpResource(). Met.");
+  return undefined;
+}
+
+app.get('/oauth2/step-up/resource/:application', stepUpResource);
+
+app.post('/oauth2/step-up/resource/:application', stepUpResource);
 
 // --- token endpoint ---------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -5654,6 +6656,16 @@ async function tokenEndpoint(req, res) {
       log.debug("Leaving tokenEndpoint().");
       return oauthError(res, 400, 'access_denied', e.message);
     }
+    // RFC 9068's refusal at the point of minting — see tokenSet() — answered
+    // with the error the plan chose (`invalid_scope` or `invalid_target`),
+    // here for the reason above: two registrations, one wrapper.
+    if (e && e.name === 'AccessTokenRefused') {
+      log.debug("Leaving the token endpoint's refusal wrapper. RFC 9068 " +
+                "refused the audience.");
+      errorCodes.mark(res, errorCodes.codeOf(e.refusal) || 'STS-OAUTH-0244');
+      log.debug("Leaving tokenEndpoint().");
+      return oauthError(res, 400, e.refusal.error, e.refusal.description);
+    }
     log.debug("Leaving the token endpoint's refusal wrapper. Rethrowing.");
     throw e;
   }
@@ -5740,6 +6752,92 @@ const LOGOUT_QUERY = vz.looseObject({
   ui_locales: vz.string().max(256).optional()
 });
 
+// WHICH CLIENT AUTHENTICATION A TOKEN REQUEST CARRIED, read off the request
+// rather than out of `clientFrom()` — which answers with ONE method, preferring
+// a Basic header, and so cannot say that a request carried two. OAuth 2.1
+// section 2.4 refuses that, and the secret rate limit below counts only
+// requests that carried a secret.
+// The Basic challenge an invalid_client answer carries when the client used
+// Basic (RFC 6749 section 5.2). The realm is `oauth2.basicAuthRealm`
+// (2026-09-12), for `scim.authRealm`'s reason: it is what a browser prints in
+// its credential prompt, and a deployment names itself there. Quotes and
+// backslashes are escaped per RFC 7230's quoted-string. One function since
+// 2026-09-13, because three refusals send it now.
+function basicChallenge() {
+  log.debug("Entering basicChallenge().");
+  log.debug("Leaving basicChallenge().");
+  return 'Basic realm="' +
+    String(config.value('oauth2.basicAuthRealm') || '').replace(/(["\\])/g,
+                                                                '\\$1') +
+    '"';
+}
+
+function presentedClientAuthentication(req, body) {
+  log.debug("Entering presentedClientAuthentication().");
+  const presented = {
+    basic: /^Basic\s+/i.test(String(req.headers['authorization'] || '')),
+    bodySecret: !!(body && body.client_secret),
+    assertion: !!(body && body.client_assertion),
+    samlAssertion: String((body && body.client_assertion_type) || '') ===
+                   clientAuth.SAML_ASSERTION_TYPE
+  };
+  log.debug("Leaving presentedClientAuthentication().");
+  return presented;
+}
+
+// ---------------------------------------------------------------------------
+// A CLIENT SECRET IS NOT CHECKED UNTHROTTLED (2026-09-13). OAuth 2.1 section
+// 2.4.1: "the authorization server MUST protect any endpoint utilizing it
+// against brute force attacks." Applied WHEREVER this service refuses a
+// secret — RFC 9700 mode, OAuth 2.1 mode, product mode — because an
+// unthrottled secret is the same weakness in each; a mode that checks no
+// secret refuses none and counts nothing.
+//
+// THREE DECISIONS, and each is the difference between a limit and a denial of
+// service:
+//
+//   * ONLY A FAILURE IS COUNTED, and a success clears the client's bucket. This
+//     suite, and any real deployment behind one proxy, is one address making
+//     thousands of legitimate token requests.
+//   * THE IDENTITY BUCKET IS THE CLIENT_ID AND THE ADDRESS TOGETHER. Keyed on
+//     the client_id alone, anybody who can reach this port could lock
+//     `sts-admin-console` or `sts-user-portal` out — which is the console's and
+//     the portal's own sign-in — by sending it five wrong secrets a minute.
+//   * THE REALM IS IN THE BUCKET NAME. The limiter's map is shared by the
+//     process, so without it a client_id failing in one realm would lock the
+//     same name out of every other.
+//
+// `websecurity.js`'s LDAP-bind pattern: `blocked()` before anything is
+// verified, `attempt()` on a refusal, `succeeded(keepAddress)` on success.
+// ---------------------------------------------------------------------------
+function secretLimitKey(req, clientId) {
+  log.debug("Entering secretLimitKey().");
+  log.debug("Leaving secretLimitKey().");
+  return { what: 'token-client-secret:' + (realms.currentId() || 'default'),
+           identity: String(clientId || '') + '|' +
+                     websecurity.addressOf(req) };
+}
+
+function secretPresented(presented, registered) {
+  log.debug("Entering secretPresented().");
+  const method = String((registered && registered.token_endpoint_auth_method) ||
+                        '');
+  log.debug("Leaving secretPresented().");
+  return !!(presented.basic || presented.bodySecret ||
+            (presented.assertion && method === 'client_secret_jwt'));
+}
+
+function countSecretFailure(req, clientId, presented, registered) {
+  log.debug("Entering countSecretFailure().");
+  if (!clientId || !secretPresented(presented, registered)) {
+    log.debug("Leaving countSecretFailure(). No secret was presented.");
+    return;
+  }
+  const key = secretLimitKey(req, clientId);
+  websecurity.attempt(key.what, req, key.identity);
+  log.debug("Leaving countSecretFailure().");
+}
+
 async function tokenGrant(req, res) {
   log.debug("Entering the token endpoint.");
   const base = asBaseOf(req);
@@ -5759,6 +6857,47 @@ async function tokenGrant(req, res) {
   const client = clientFrom(req, body);
   const grant = String(body.grant_type || '');
   res.set('Cache-Control', 'no-store');
+  const presented = presentedClientAuthentication(req, body);
+  const registeredClient = applications.clientConfigOf(client.client_id);
+
+  // OAUTH 2.1 — two refusals about the SHAPE of the request, before anything
+  // in it is believed: a repeated parameter (sections 3.1 and 3.2) and more
+  // than one client authentication method (section 2.4).
+  if (oauth21.enabled()) {
+    const repeated = oauth21.repeatedParameterRefusal(
+        oauth21.repeatedNames(null, typeof req.body === 'string' ? req.body :
+                                    ''), 'token request');
+    if (repeated) {
+      log.debug("Leaving the token endpoint. OAuth 2.1: a repeated parameter.");
+      errorCodes.mark(res, repeated.errorCode || 'STS-OAUTH-0285');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, repeated.error, repeated.description);
+    }
+    const several = oauth21.multipleMethodsRefusal(presented);
+    if (several) {
+      log.debug("Leaving the token endpoint. OAuth 2.1: several client " +
+                "authentication methods.");
+      errorCodes.mark(res, several.errorCode || 'STS-OAUTH-0281');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, several.error, several.description);
+    }
+  }
+
+  // THE SECRET RATE LIMIT'S FIRST HALF: a client and address past the limit
+  // is answered before its secret is looked at. See secretLimitKey().
+  if (client.client_id && secretPresented(presented, registeredClient)) {
+    const key = secretLimitKey(req, client.client_id);
+    const lockedOut = websecurity.blocked(key.what, req, key.identity);
+    if (lockedOut) {
+      res.set('Retry-After', String(lockedOut.retryAfterS));
+      log.debug("Leaving the token endpoint. Too many failed client secrets.");
+      errorCodes.mark(res, 'STS-OAUTH-0284');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 429, 'invalid_client',
+        'Too many failed client authentications for client "' +
+        client.client_id + '" from this address. ' + lockedOut.detail);
+    }
+  }
 
   // --- DPoP (RFC 9449 section 5) -------------------------------------------
   // Optional, and checked before any grant is considered so that every grant
@@ -5860,6 +6999,21 @@ async function tokenGrant(req, res) {
   // was about to ask for. 401 rather than 400: invalid_client is the one OAuth
   // error RFC 6749 section 5.2 gives that status, and a client_secret_basic
   // caller needs the WWW-Authenticate header to know what to retry with.
+  // WHAT A CLIENT ASSERTION MAY NAME AS ITS AUDIENCE, decided ONCE for the
+  // policy below and the observation after it. They must be handed the same
+  // list: `client_auth.js` verifies one document once per request and keeps
+  // the answer, so two calls with two lists would have the first silently
+  // decide both — which is why the strictness is in that cache's key too.
+  //
+  // RFC 7523 section 3 says the token endpoint; OpenID Connect Core section 9
+  // says the ISSUER, and deployments differ — so both are accepted for the
+  // SIGNATURE, rather than one being picked and half the client libraries in
+  // the world being refused. OAuth 2.1 mode then requires the issuer as the
+  // SOLE value (draft-ietf-oauth-rfc7523bis-11), which `client_auth.js`
+  // checks after the signature so that the refusal names the audience.
+  const assertionAudiences = [base + '/oauth2/token', issuerOf(base), base];
+  const strictAudience = oauth21.strictClientAssertionAudience() ?
+                         issuerOf(base) : '';
   const clientAuth = await bcp.checkClientAuthentication({
     clientId: String(client.client_id || ''),
     clientSecret: client.client_secret,
@@ -5868,31 +7022,40 @@ async function tokenGrant(req, res) {
     // The connection, for the two RFC 8705 methods — the certificate that
     // authenticates the client is the one this request arrived with.
     request: req,
-    // What a client assertion may name as its audience. RFC 7523 section 3 says
-    // the token endpoint; OpenID Connect Core section 9 says the ISSUER, and
-    // deployments differ — so both are accepted rather than one being picked
-    // and half the client libraries in the world being refused. The `aud` of an
-    // assertion is about which server it was minted for, and both values name
-    // this one.
-    audiences: [base + '/oauth2/token', issuerOf(base), base],
-    registered: applications.clientConfigOf(client.client_id)
+    // What a client assertion may name as its audience — see above.
+    audiences: assertionAudiences,
+    strictAudience: strictAudience,
+    registered: registeredClient
   });
   if (!clientAuth.ok) {
     if (/^Basic\s+/i.test(req.headers['authorization'] || '')) {
-      // The realm is `oauth2.basicAuthRealm` (2026-09-12), for
-      // `scim.authRealm`'s reason: it is what a browser prints in its
-      // credential prompt, and a deployment names itself there. Quotes and
-      // backslashes are escaped per RFC 7230's quoted-string.
-      res.set('WWW-Authenticate', 'Basic realm="' +
-        String(config.value('oauth2.basicAuthRealm') || '').replace(/(["\\])/g,
-                                                                    '\\$1') +
-        '"');
+      res.set('WWW-Authenticate', basicChallenge());
     }
+    countSecretFailure(req, client.client_id, presented, registeredClient);
     log.debug("Leaving the token endpoint. RFC 9700 mode refused the client (" +
               clientAuth.requirement + ").");
     errorCodes.mark(res, clientAuth.errorCode || 'STS-OAUTH-0137');
     log.debug("Leaving tokenGrant().");
     return oauthError(res, 401, clientAuth.error, clientAuth.description);
+  }
+
+  // OAUTH 2.1 — THE CLIENT'S ENTRY, before this request is recorded against
+  // it: a refusal for being unregistered must not be the thing that creates
+  // the entry. SAML client authentication, and a client_id whose entry
+  // declares nothing a sighting would not have written.
+  const declaration = oauth21.tokenClientDeclarationRefusal({
+    grant: grant, clientId: client.client_id, registered: registeredClient,
+    presented: presented
+  });
+  if (declaration) {
+    if (presented.basic) {
+      res.set('WWW-Authenticate', basicChallenge());
+    }
+    log.debug("Leaving the token endpoint. OAuth 2.1 refused the client (" +
+              declaration.requirement + ").");
+    errorCodes.mark(res, declaration.errorCode || 'STS-OAUTH-0278');
+    log.debug("Leaving tokenGrant().");
+    return oauthError(res, 401, declaration.error, declaration.description);
   }
 
   // The application again, and NOT counted again: redeeming a code is the same
@@ -5962,8 +7125,9 @@ async function tokenGrant(req, res) {
   //     grants can make.
   //
   // **A GRANT THAT NARROWS ITSELF OUT OF THIS SERVICE IS THE CLIENT'S
-  // DECISION.** `audienceRefusal()` in `dpop.js` refuses a token addressed
-  // elsewhere at every protected endpoint here, so `resource` on the
+  // DECISION.** `presentedAccessToken()` in `dpop.js` refuses a token addressed
+  // elsewhere at every protected endpoint here (RFC 9068 section 4, through
+  // `jwt_access_token.js` since 2026-09-13), so `resource` on the
   // pre-authorized code grant produces a token the CREDENTIAL endpoint will not
   // accept, exactly as it does for UserInfo. That was already reachable through
   // the authorization code flow and is what the parameter means; the
@@ -5988,6 +7152,30 @@ async function tokenGrant(req, res) {
   if (requestedResources.length) {
     logArtifact('RFC 8707 resource indicators', 'on the Token Request',
                 requestedResources);
+  }
+
+  // RFC 9396 SECTION 6, once above every grant for the reason the block above
+  // is: every grant may carry `authorization_details` — to NARROW what a code
+  // or a refresh token authorized, or to ask a direct grant for them outright.
+  // The pre-authorized code grant is the exception and reads its own below,
+  // because what bounds it is the Credential Offer rather than a grant.
+  const askedDetails =
+    grant === 'urn:ietf:params:oauth:grant-type:pre-authorized_code'
+      ? { details: null }
+      : parseAuthorizationDetails(body.authorization_details,
+          { clientId: (client && client.client_id) || body.client_id,
+            req: req });
+  if (askedDetails.error) {
+    log.debug("Leaving the token endpoint. " + askedDetails.error);
+    errorCodes.mark(res, errorCodes.codeOf(askedDetails) || 'STS-OAUTH-0153');
+    log.debug("Leaving tokenGrant().");
+    return oauthError(res, 400, 'invalid_authorization_details',
+                      askedDetails.error);
+  }
+  const requestedDetails = askedDetails.details;
+  if (requestedDetails) {
+    logArtifact('RFC 9396 authorization_details', 'on the Token Request',
+                requestedDetails);
   }
 
   // DELEGATED PERMISSIONS, once above every grant and for the same reason the
@@ -6018,6 +7206,34 @@ async function tokenGrant(req, res) {
     }
   }
 
+  // RFC 9068 SECTION 3, once above every grant and for the block above's
+  // reason — and asked BEFORE anything a grant spends: a code redeemed, a
+  // refresh token rotated. It reads what the client is asking for NOW, the
+  // `scope` and the `resource` values on this request, and nothing a grant
+  // carries from earlier; tokenSet() asks the same plan again with the grant's
+  // own audience, which is the backstop for that. It is never stricter than
+  // the backstop: the resources here are a subset of any grant's.
+  //
+  // NOT FOR THE TOKEN EXCHANGE, whose audience is RFC 8693's `audience` unioned
+  // with the resources and is assembled inside its branch. Nothing that branch
+  // does before issuing can be spent, so the backstop is the whole of its
+  // check. In every mode.
+  if (grant !== 'urn:ietf:params:oauth:grant-type:token-exchange' &&
+      (String(body.scope || '') !== '' || requestedResources.length ||
+       requestedDetails)) {
+    const earlyPlan = accessTokenPlan(base, String(body.scope || ''),
+      (client && client.client_id) || body.client_id, requestedResources,
+      requestedDetails);
+    if (earlyPlan.refusal) {
+      log.debug("Leaving the token endpoint. RFC 9068 refused the audience.");
+      errorCodes.mark(res, errorCodes.codeOf(earlyPlan.refusal) ||
+                           'STS-OAUTH-0244');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, earlyPlan.refusal.error,
+                        earlyPlan.refusal.description);
+    }
+  }
+
   // WHAT THIS REQUEST DEMONSTRATED ABOUT THE CLIENT, observed once and reused.
   //
   // An OBSERVATION rather than a check — `checkClientAuthentication()` above
@@ -6037,9 +7253,57 @@ async function tokenGrant(req, res) {
     assertion: client.assertion,
     assertionType: client.assertionType,
     request: req,
-    audiences: [base + '/oauth2/token', issuerOf(base), base],
-    registered: applications.clientConfigOf(client.client_id)
+    audiences: assertionAudiences,
+    strictAudience: strictAudience,
+    registered: registeredClient
   });
+  // THE SECRET RATE LIMIT'S LAST HALF: a success clears this client's bucket
+  // at this address, and leaves the address bucket alone.
+  if (clientObservation.authenticated && client.client_id &&
+      secretPresented(presented, registeredClient)) {
+    const key = secretLimitKey(req, client.client_id);
+    websecurity.succeeded(key.what, req, key.identity, { keepAddress: true });
+  }
+
+  // OAUTH 2.1 — WHAT THE CLIENT PRESENTED. A credential that was included must
+  // have verified (section 3.2.2), and the client credentials grant needs an
+  // authenticated client (section 4.2).
+  const authentication = oauth21.tokenClientAuthenticationRefusal({
+    grant: grant, observation: clientObservation, presented: presented
+  });
+  if (authentication) {
+    countSecretFailure(req, client.client_id, presented, registeredClient);
+    if (presented.basic) {
+      res.set('WWW-Authenticate', basicChallenge());
+    }
+    log.debug("Leaving the token endpoint. OAuth 2.1 refused the client (" +
+              authentication.requirement + ").");
+    errorCodes.mark(res, authentication.errorCode ||
+                         'STS-OAUTH-0280');
+    log.debug("Leaving tokenGrant().");
+    return oauthError(res, 401, authentication.error,
+                      authentication.description);
+  }
+
+  // RFC 8705 — WHAT THE CLIENT DECLARED, IN EVERY MODE (2026-09-13). A client
+  // whose entry names a certificate authentication method must have
+  // authenticated with it, and one that registered
+  // tls_client_certificate_bound_access_tokens must have presented a
+  // certificate to bind to. `mtls.declaredRefusal()` argues why these two
+  // refusals do not wait for a mode; it reads the observation above, so the
+  // certificate is not verified a second time.
+  const declared = mtls.declaredRefusal({
+    registered: registeredClient, observation: clientObservation, request: req
+  });
+  if (declared) {
+    log.debug("Leaving the token endpoint. RFC 8705: the client's " +
+              "declaration was not met.");
+    errorCodes.mark(res, declared.errorCode);
+    log.debug("Leaving tokenGrant().");
+    // error-code: none — marked above with mtls.declaredRefusal()'s code
+    return oauthError(res, declared.status, declared.error,
+                      declared.description);
+  }
 
   // ---------------------------------------------------------------------
   // PRODUCT MODE: THERE ARE NO PUBLIC CLIENTS (2026-09-06).
@@ -6065,12 +7329,19 @@ async function tokenGrant(req, res) {
     log.info('oauth2: product mode refused the token request from "' +
              String(client.client_id || '(unnamed)') + '": ' +
              clientObservation.why);
+    countSecretFailure(req, client.client_id, presented, registeredClient);
+    // RFC 6749 section 5.2's challenge when the client used Basic, which this
+    // refusal did not send until 2026-09-13.
+    if (presented.basic) {
+      res.set('WWW-Authenticate', basicChallenge());
+    }
     errorCodes.mark(res, clientObservation.errorCode || 'STS-OAUTH-0192');
     res.status(401).type('application/json').send(JSON.stringify({
       error: 'invalid_client',
-      error_description: 'This service is in product mode, where every ' +
-        'application must hold a client secret and authenticate with it — ' +
-        'there are no public clients. ' + clientObservation.why
+      error_description: oauth21.sanitizeDescription('This service is in ' +
+        'product mode, where every application must hold a client secret and ' +
+        'authenticate with it — there are no public clients. ' +
+        clientObservation.why)
     }));
     log.debug("Leaving the token endpoint. Product mode refused an " +
               "unauthenticated client.");
@@ -6123,6 +7394,15 @@ async function tokenGrant(req, res) {
     }
     log.debug("Leaving grantIdentifiers().");
     return details.map(function (d) {
+      // A type an application declared is granted as it was asked for: section
+      // 7's enrichment is the resource's business, and nothing here knows it.
+      if (d.type !== 'openid_credential') {
+        return d;
+      }
+      if (Array.isArray(d.credential_identifiers)) {
+        // Already enriched — a refresh token's own copy handed back.
+        return d;
+      }
       const granted = {
         type: 'openid_credential',
         credential_configuration_id: d.credential_configuration_id,
@@ -6218,6 +7498,19 @@ async function tokenGrant(req, res) {
       log.debug("Leaving tokenGrant().");
       return oauthError(res, 400, bcpCheck.error, bcpCheck.description);
     }
+    // OAUTH 2.1 section 4.1.3: a code with no challenge is refused unless it
+    // was issued under the OpenID Connect nonce exemption, and one that was is
+    // redeemed only by a client that authenticated on this request.
+    const codePkce = oauth21.tokenCodeRefusal({
+      record: record, authenticated: clientObservation.authenticated
+    });
+    if (codePkce) {
+      log.debug("Leaving the token endpoint. OAuth 2.1 refused the code (" +
+                codePkce.requirement + ").");
+      errorCodes.mark(res, codePkce.errorCode || 'STS-OAUTH-0277');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, codePkce.error, codePkce.description);
+    }
     if (record.code_challenge) {
       const verifier = String(body.code_verifier || '');
       if (!verifier) {
@@ -6295,6 +7588,20 @@ async function tokenGrant(req, res) {
         'and the request asks additionally for: ' + extra.join(', ') + '.');
     }
     const forResources = narrowed.length ? narrowed : granted;
+    // RFC 9396 section 6: details on the Token Request may narrow what the
+    // authorization request authorized and may not add to it.
+    const detailsProblem = requestedDetails
+      ? richAuthorization.coveredProblem(requestedDetails,
+                                         record.authorization_details)
+      : '';
+    if (detailsProblem) {
+      log.debug("Leaving the token endpoint. The Token Request's details are " +
+                "not covered by the code.");
+      errorCodes.mark(res, 'STS-OAUTH-0458');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, 'invalid_authorization_details',
+                        detailsProblem);
+    }
     const issued = await issue({
       jkt: dpopJkt,
       // One value where there is one, an array where the client asked for the
@@ -6322,8 +7629,13 @@ async function tokenGrant(req, res) {
       // an older process — one whose records have no such field — meaning what
       // it meant, which is that somebody authenticated.
       sessionAuthenticated: record.session_authenticated !== false,
-      authorization_details: grantIdentifiers(record.authorization_details,
-                                              record.user),
+      authorization_details: grantIdentifiers(requestedDetails
+        ? richAuthorization.narrow(requestedDetails,
+                                   record.authorization_details)
+        : record.authorization_details, record.user),
+      // The whole grant onto the refresh token, where the request narrowed.
+      grantAuthorizationDetails: grantIdentifiers(record.authorization_details,
+                                                  record.user),
       // Off the code as well. What the client asked for at the authorization
       // endpoint is what the UserInfo endpoint honours, and the access token is
       // the only thing that reaches it.
@@ -6458,7 +7770,7 @@ async function tokenGrant(req, res) {
       // RFC 8707 on an OpenID4VCI Token Request, which OID4VCI section 6.1
       // inherits from RFC 6749 along with everything else about this endpoint.
       // A wallet that sends it gets a token the CREDENTIAL endpoint will refuse
-      // — `audienceRefusal()` guards that endpoint too — and that is the
+      // — `presentedAccessToken()` guards that endpoint too — and that is the
       // parameter working rather than failing: the same is already true of the
       // authorization code flow, and a grant that read the parameter and threw
       // it away would be the bug this closes.
@@ -6562,8 +7874,26 @@ async function tokenGrant(req, res) {
     // holds it — worse than not binding at all, because the cnf on what it
     // mints would imply a guarantee nobody checked. `true` because the token's
     // signature was verified two lines above.
-    const certificateProblem = mtls.checkBinding(claims, req, true, 'refresh ' +
-        'token');
+    //
+    // EXCEPT FOR A CLIENT THAT AUTHENTICATED BY CERTIFICATE ON THIS REQUEST
+    // (2026-09-13). RFC 8705 section 7.1: its refresh token is bound through
+    // that authentication, so it may present a NEW certificate — the one its
+    // old one expired into (section 6.3) — and the tokens minted below bind to
+    // the new one. `mtls.refreshBindingApplies()` is the rule.
+    const refreshBound = mtls.refreshBindingApplies(
+      clientObservation, claims, String(client.client_id || ''));
+    const certificateProblem = refreshBound
+      ? mtls.checkBinding(claims, req, true, 'refresh token')
+      : null;
+    if (!refreshBound && mtls.boundThumbprintOf(claims)) {
+      log.info('RFC 8705 section 7.1: the refresh token is bound to ' +
+               'certificate ' + mtls.boundThumbprintOf(claims) + ' and client ' +
+               '"' + String(client.client_id || '') + '" authenticated by ' +
+               clientObservation.method + ' on this request, so the binding ' +
+               'is through that authentication and the certificate on this ' +
+               'connection (' + (mtls.presentedThumbprint(req) || 'none') +
+               ') is what the new tokens are bound to.');
+    }
     if (certificateProblem) {
       log.debug("Leaving the token endpoint. The refresh token's certificate " +
                 "binding did not hold.");
@@ -6598,6 +7928,20 @@ async function tokenGrant(req, res) {
     }
     const refreshResources = requestedResources.length
       ? requestedResources : grantedResources;
+    // RFC 9396 section 6, one grant later: a refresh may narrow the details
+    // the refresh token carries and may not add to them.
+    const refreshDetailsProblem = requestedDetails
+      ? richAuthorization.coveredProblem(requestedDetails,
+                                         claims.authorization_details)
+      : '';
+    if (refreshDetailsProblem) {
+      log.debug("Leaving the token endpoint. The refresh asked for details " +
+                "the grant does not carry.");
+      errorCodes.mark(res, 'STS-OAUTH-0458');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, 'invalid_authorization_details',
+                        refreshDetailsProblem);
+    }
 
     const refreshed = await issue({
       // The presented token's jti, so the one it mints belongs to the same
@@ -6617,7 +7961,11 @@ async function tokenGrant(req, res) {
       // token that dropped them would refuse the very Credential Request the
       // section 14.5 refresh on step 4 exists to make — naming a
       // credential_identifier "that was not granted".
-      authorization_details: claims.authorization_details,
+      authorization_details: requestedDetails
+        ? richAuthorization.narrow(requestedDetails,
+                                   claims.authorization_details)
+        : claims.authorization_details,
+      grantAuthorizationDetails: claims.authorization_details,
       // And the same for OIDC Core 5.5's claims request, for exactly the reason
       // above it: it was authorized by the authorization request this refresh
       // token descends from, so an access token that dropped it would make the
@@ -6629,6 +7977,11 @@ async function tokenGrant(req, res) {
       jkt: boundTo || dpopJkt,
       user: userFor(claims.username), client_id: claims.client_id,
       scope: body.scope ? String(body.scope) : claims.scope,
+      // What the PRESENTED refresh token carried, for the refresh token this
+      // grant mints: the two values above narrow the access token only. See the
+      // paragraph on refreshToken() in tokenSet() — RFC 6749 section 6.
+      grantScope: claims.scope || '',
+      grantResources: grantedResources,
       // The session the REFRESHED token came from, looked up by the refresh
       // token's own jti. Nothing on the wire carries it — a refresh token names
       // no session — so without this every second-generation token would show
@@ -6730,6 +8083,10 @@ async function tokenGrant(req, res) {
       // grant issues no refresh token: that field exists so a renewal cannot
       // widen, and nothing here can be renewed.
       audience: audienceClaim(requestedResources),
+      // RFC 9396: nothing preceded this request either, so the details asked
+      // for are the details granted.
+      authorization_details: grantIdentifiers(requestedDetails,
+                                              userFor(client.client_id)),
       grant: 'client_credentials',
       user: Object.assign(userFor(client.client_id), { sub: clientSubject })
     }));
@@ -6856,6 +8213,8 @@ async function tokenGrant(req, res) {
       // grant wrote it.
       audience: audienceClaim(requestedResources),
       resources: requestedResources,
+      authorization_details: grantIdentifiers(requestedDetails,
+                                              userFor(username)),
       grant: 'password'
     }));
   }
@@ -6950,6 +8309,7 @@ async function tokenGrant(req, res) {
       audience: audienceClaim(requestedResources),
       resources: requestedResources,
       assertionClaims: carried,
+      authorization_details: grantIdentifiers(requestedDetails, subject),
       grant: assertionGrant.GRANT_TYPE
     });
     // THE ACT IS RECORDED AS A DELEGATION, because that is exactly what it is:
@@ -7124,6 +8484,7 @@ async function tokenGrant(req, res) {
       audience: audienceClaim(requestedResources),
       resources: requestedResources,
       assertionClaims: carried,
+      authorization_details: grantIdentifiers(requestedDetails, subject),
       grant: samlAssertionGrant.GRANT_TYPE
     });
     // THE ACT IS RECORDED AS A DELEGATION, for the JWT grant's reason: one
@@ -7402,6 +8763,10 @@ async function tokenGrant(req, res) {
       client_id: client.client_id,
       scope: String(body.scope || subject.scope || ''),
       audience: audienceClaim(exchangeAudiences), act: act,
+      // RFC 9396 on an exchange: the details asked for, as for a direct grant.
+      // The audience rule is tokenSet()'s backstop, as the header above says.
+      authorization_details: grantIdentifiers(requestedDetails,
+                                              userFor(subject.username)),
       // Section 2.2.1's `refresh_token` member — and this flag is the ONLY
       // thing this branch decides about it. It is minted by the same
       // refreshToken(), through the same tokenSet(), as the token every other
@@ -7649,6 +9014,543 @@ app.post('/oauth2/token', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
+// POST /oauth2/par — RFC 9126, THE PUSHED AUTHORIZATION REQUEST ENDPOINT
+// (2026-09-13).
+//
+// `oauth-oidc/par.js` argues the design and holds the store; this is the
+// response. The order below is the section's own, and each step says why it is
+// where it is:
+//
+//   1. WHAT KIND OF REQUEST: switched off (404), too large (section 2.3's 413),
+//      not a form, malformed — before anything in it is read;
+//   2. WHOSE REQUEST: a client_id (section 2.1 "similarly required"), the
+//      per-client push limit (section 2.3's 429) and the secret lockout;
+//   3. A DPoP PROOF, where one is sent (RFC 9449 section 10.1): it binds the
+//      authorization code to its key, and a `dpop_jkt` naming another key is
+//      refused;
+//   4. CLIENT AUTHENTICATION "in the same way as at the token endpoint"
+//      (section 2.1 step 1) — the token endpoint's own sequence and its own
+//      libraries: the advertised methods, RFC 9700 mode's policy, OAuth 2.1's
+//      declaration and presented-credential rules, the observation every mode
+//      makes, and product mode's refusal of a public client. rcbj chose this
+//      reading over "every mode" (`par.js`, decision 1);
+//   5. `request_uri` REFUSED (step 2), and a `request` object verified by
+//      `request_object.js` with its client bound to the authenticated one
+//      (section 3), or refused where a signed one is required and none came
+//      (section 2.3);
+//   6. VALIDATED AS AN AUTHORIZATION REQUEST (step 3) — by
+//      `vetAuthorizationRequest()`, the authorization endpoint's own checks,
+//      and the five parsers `issueAuthorizationResponse()` asks before it
+//      mints, so a request that could never be answered is refused here, where
+//      the client can still be told, rather than after a person has signed in;
+//   7. KEPT, and answered 201 `{ request_uri, expires_in }` (section 2.2).
+//
+// EVERY REFUSAL IS SECTION 2.3's JSON — the token endpoint's error format —
+// and none is redirected: there is no browser here. Each is counted on
+// /admin/oauth2/monitor.
+// ---------------------------------------------------------------------------
+const PAR_FORM = vz.looseObject({
+  client_id: vt.opt(vt.identifier),
+  client_secret: vz.string().max(1024).optional(),
+  client_assertion: vz.string().max(validation.CAP.TEXT).optional(),
+  client_assertion_type: vt.opt(vt.uri),
+  // Section 3: a request object pushed by value.
+  request: vz.string().max(validation.CAP.TEXT).optional(),
+  // Section 2.1: "MUST NOT be provided" — bounded so the refusal can quote it.
+  request_uri: vz.string().max(validation.CAP.URI).optional()
+});
+
+// What a push carries that is NOT the authorization request: the client's
+// credential, and this service's own round-trip markers, which only its sign-in
+// and consent screens may put on a request and a client must not be able to
+// pre-load into one.
+const PAR_NOT_PARAMETERS = ['client_secret', 'client_assertion',
+                            'client_assertion_type'];
+
+const PAR_PRIVATE_FIELDS = ['authn_error', 'authn_error_description',
+                            'consent_error', 'consent_error_description',
+                            'jar_prompt_honoured', 'step_up_honoured'];
+
+// The parameters that may repeat in a push: RFC 8707's `resource` and this
+// service's own `claim`, exactly as at the authorization endpoint.
+const PAR_REPEATABLE = ['resource', 'claim'];
+
+function parEndpoint(req, res) {
+  log.debug("Entering the pushed authorization request endpoint.");
+  parRequest(req, res).catch(function (e) {
+    log.error(errorCodes.tag('STS-OAUTH-0420') + 'the pushed authorization ' +
+              'request endpoint failed: ' + (e && e.stack ? e.stack : e));
+    if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-OAUTH-0420');
+      oauthError(res, 500, 'server_error', String((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving the pushed authorization request endpoint.");
+}
+
+// Section 2's endpoint "accepts HTTP POST requests"; section 2.3's 405 for
+// every other method, with the Allow header RFC 9110 section 15.5.6 requires.
+function parMethodNotAllowed(req, res) {
+  log.debug("Entering parMethodNotAllowed(). method=" + req.method);
+  res.set('Allow', 'POST');
+  res.set('Cache-Control', 'no-store');
+  errorCodes.mark(res, 'STS-OAUTH-0401');
+  oauthMonitor.record(String((req.query || {}).client_id || ''),
+                      'par.refused', { error: 'method_not_allowed' });
+  log.debug("Leaving parMethodNotAllowed().");
+  return oauthError(res, 405, 'invalid_request',
+    'The pushed authorization request endpoint accepts POST only (RFC 9126 ' +
+    'section 2), with the authorization request in an ' +
+    'application/x-www-form-urlencoded body.');
+}
+
+async function parRequest(req, res) {
+  log.debug("Entering parRequest().");
+  res.set('Cache-Control', 'no-store');
+  const base = asBaseOf(req);
+  let countedClient = '';
+  // One refusal shape for the whole endpoint: marked, counted and answered.
+  const refuse = function (status, error, description, code, headers) {
+    log.debug("Entering refuse(). " + code);
+    Object.keys(headers || {}).forEach(function (name) {
+      res.set(name, headers[name]);
+    });
+    errorCodes.mark(res, code);
+    oauthMonitor.record(countedClient, 'par.refused', { error: error });
+    log.info('par: a push from "' + (countedClient || '(no client_id)') +
+             '" was refused ' + status + ' ' + error + ': ' + description);
+    log.debug("Leaving refuse().");
+    // error-code: none — every caller of refuse() passes its own code
+    return oauthError(res, status, error, description);
+  };
+
+  // --- 1. WHAT KIND OF REQUEST ---------------------------------------------
+  if (!config.value('oauth2.pushedAuthorizationRequests')) {
+    log.debug("Leaving parRequest(). Switched off.");
+    return refuse(404, 'invalid_request', 'This authorization server does ' +
+      'not offer pushed authorization requests (oauth2.pushedAuthorizationRe' +
+      'quests is off), and its metadata carries no ' +
+      'pushed_authorization_request_endpoint. Send the authorization request ' +
+      'to the authorization endpoint instead.', 'STS-OAUTH-0400');
+  }
+  const raw = typeof req.body === 'string' ? req.body : '';
+  const maxBytes = Number(config.value('oauth2.parMaxBodyBytes'));
+  if (isFinite(maxBytes) && Buffer.byteLength(raw, 'utf8') > maxBytes) {
+    log.debug("Leaving parRequest(). Too large.");
+    return refuse(413, 'invalid_request', 'The pushed authorization request ' +
+      'is ' + Buffer.byteLength(raw, 'utf8') + ' bytes, and this ' +
+      'authorization server accepts at most ' + maxBytes + ' ' +
+      '(oauth2.parMaxBodyBytes; RFC 9126 section 2.3).', 'STS-OAUTH-0402');
+  }
+  const type = String(req.headers['content-type'] || '').split(';')[0].trim()
+    .toLowerCase();
+  if (type !== 'application/x-www-form-urlencoded') {
+    log.debug("Leaving parRequest(). Not a form.");
+    return refuse(400, 'invalid_request', 'A pushed authorization request is ' +
+      'sent as application/x-www-form-urlencoded (RFC 9126 section 2), and ' +
+      'this one is "' + (type || '(no Content-Type)') + '".',
+      'STS-OAUTH-0403');
+  }
+  const posted = validation.checkParsed(parseBody(req), 'body', PAR_FORM);
+  if (!posted.ok) {
+    log.debug("Leaving parRequest(). Malformed: " + posted.code + " on \"" +
+              posted.field + "\".");
+    return refuse(400, 'invalid_request', posted.detail, 'STS-OAUTH-0403');
+  }
+  const body = posted.value;
+
+  // --- 2. WHOSE REQUEST -----------------------------------------------------
+  const presented = presentedClientAuthentication(req, body);
+  const client = clientFrom(req, body);
+  const clientId = String(client.client_id || '');
+  countedClient = clientId || String(body.client_id || '');
+  if (body.client_id && clientId && String(body.client_id) !== clientId) {
+    log.debug("Leaving parRequest(). Two client_ids.");
+    return refuse(400, 'invalid_request', 'The pushed request names ' +
+      'client_id "' + body.client_id + '" and its client authentication ' +
+      'names "' + clientId + '". A pushed authorization request is bound to ' +
+      'the client that authenticated (RFC 9126 section 2.2), so the two must ' +
+      'be the same client.', 'STS-OAUTH-0406');
+  }
+  if (!clientId) {
+    log.debug("Leaving parRequest(). No client_id.");
+    return refuse(400, 'invalid_request', 'A pushed authorization request ' +
+      'requires client_id (RFC 9126 section 2.1: "as a required ' +
+      'authorization request parameter, it is similarly required in a pushed ' +
+      'authorization request"), and this one carries none — no client_id ' +
+      'parameter, no Authorization: Basic header and no client assertion.',
+      'STS-OAUTH-0405');
+  }
+  const registered = applications.clientConfigOf(clientId);
+
+  // OAuth 2.1's two refusals about the SHAPE, as at the token endpoint.
+  const repeatedInBody = oauth21.repeatedNames(null, raw);
+  if (oauth21.enabled()) {
+    const several = oauth21.multipleMethodsRefusal(presented);
+    if (several) {
+      log.debug("Leaving parRequest(). OAuth 2.1: several methods.");
+      return refuse(400, several.error, several.description,
+                    several.errorCode || 'STS-OAUTH-0281');
+    }
+  }
+  // A parameter other than the two repeatable ones given twice is refused in
+  // every mode, as the authorization endpoint's schema refuses one: a pushed
+  // request is read into one object, and "the last value wins" would be this
+  // server choosing between two answers on the client's behalf.
+  const repeatedHere = repeatedInBody.filter(function (name) {
+    return PAR_REPEATABLE.indexOf(name) < 0;
+  });
+  if (repeatedHere.length) {
+    log.debug("Leaving parRequest(). A repeated parameter.");
+    return refuse(400, 'invalid_request', 'This pushed authorization request ' +
+      'repeats ' + repeatedHere.join(', ') + '. Only resource (RFC 8707) and ' +
+      'claim may be given more than once.', 'STS-OAUTH-0403');
+  }
+
+  // THE PUSH LIMIT, section 2.3's 429: every push is counted, successful or
+  // not, because every one that succeeds holds a row. Per client_id and
+  // address, in the limiter every other door here uses; the address bucket is
+  // ten times the client's so one address serving several clients is not one
+  // client's allowance.
+  const perClient = Math.max(1, Math.floor(Number(
+    config.value('oauth2.parRequestsPerMinute')) || 1));
+  const limited = websecurity.attempt(
+    'par-push:' + (realms.currentId() || 'default'), req,
+    clientId + '|' + websecurity.addressOf(req),
+    { identity: perClient, address: perClient * 10 });
+  if (!limited.ok) {
+    log.debug("Leaving parRequest(). Too many pushes.");
+    return refuse(429, 'invalid_request', 'Too many pushed authorization ' +
+      'requests from client "' + clientId + '" at this address ' +
+      '(oauth2.parRequestsPerMinute; RFC 9126 section 2.3). ' + limited.detail,
+      'STS-OAUTH-0407', { 'Retry-After': String(limited.retryAfterS) });
+  }
+  if (secretPresented(presented, registered)) {
+    const key = secretLimitKey(req, clientId);
+    const lockedOut = websecurity.blocked(key.what, req, key.identity);
+    if (lockedOut) {
+      log.debug("Leaving parRequest(). Too many failed client secrets.");
+      return refuse(429, 'invalid_client', 'Too many failed client ' +
+        'authentications for client "' + clientId + '" from this address. ' +
+        lockedOut.detail, 'STS-OAUTH-0284',
+        { 'Retry-After': String(lockedOut.retryAfterS) });
+    }
+  }
+
+  // --- 3. A DPoP PROOF ------------------------------------------------------
+  // RFC 9449 section 10.1: a proof sent with the push binds the authorization
+  // code to its key exactly as `dpop_jkt` does, and where both are sent they
+  // must name the same key. Checked against THIS endpoint's URL and method.
+  let dpopJkt = '';
+  if (req.headers['dpop'] !== undefined) {
+    const checked = dpop.verifyProof(req.headers['dpop'], {
+      htm: req.method, htu: dpop.htuOf(req)
+    });
+    if (!checked.ok) {
+      if (checked.needNonce) {
+        log.debug("Leaving parRequest(). Asking for a DPoP nonce.");
+        return refuse(400, 'use_dpop_nonce', 'Authorization server requires ' +
+          'nonce in DPoP proof', checked.errorCode || 'STS-OAUTH-0416',
+          { 'DPoP-Nonce': dpop.issueNonce() });
+      }
+      log.debug("Leaving parRequest(). The DPoP proof was refused.");
+      return refuse(400, 'invalid_dpop_proof', checked.description,
+                    checked.errorCode || 'STS-OAUTH-0416');
+    }
+    dpopJkt = checked.jkt;
+  }
+
+  // --- 4. CLIENT AUTHENTICATION, AS AT THE TOKEN ENDPOINT -------------------
+  const advertisedAuth = capabilityFor(req,
+                                       'token_endpoint_auth_methods_supported');
+  const declaredMethod = String(registered.token_endpoint_auth_method || '');
+  if (declaredMethod && advertisedAuth &&
+      advertisedAuth.indexOf(declaredMethod) < 0) {
+    log.debug("Leaving parRequest(). " + profileOf(req) + " does not " +
+              "advertise " + declaredMethod + ".");
+    return refuse(400, 'invalid_client', 'The "' + profileOf(req) + '" ' +
+      'authorization server advertises token_endpoint_auth_methods_supported ' +
+      JSON.stringify(advertisedAuth) + ', and this client is configured for "' +
+      declaredMethod + '". The pushed authorization request endpoint ' +
+      'authenticates a client as the token endpoint does (RFC 9126 section ' +
+      '2).', 'STS-OAUTH-0421');
+  }
+  // Section 2: the authorization server "MUST accept its issuer identifier,
+  // token endpoint URL, or pushed authorization request endpoint URL" as a
+  // client assertion's audience. OAuth 2.1 mode's sole-issuer rule still wins
+  // where that mode is on, as at the token endpoint.
+  const assertionAudiences = [issuerOf(base), base + '/oauth2/token',
+                              base + '/oauth2/par', base];
+  const strictAudience = oauth21.strictClientAssertionAudience() ?
+                         issuerOf(base) : '';
+  const authentication = {
+    clientId: clientId,
+    clientSecret: client.client_secret,
+    assertion: client.assertion,
+    assertionType: client.assertionType,
+    request: req,
+    audiences: assertionAudiences,
+    strictAudience: strictAudience,
+    registered: registered
+  };
+  const policy = await bcp.checkClientAuthentication(authentication);
+  if (!policy.ok) {
+    countSecretFailure(req, clientId, presented, registered);
+    log.debug("Leaving parRequest(). RFC 9700 mode refused the client.");
+    return refuse(401, policy.error, policy.description,
+                  policy.errorCode || 'STS-OAUTH-0422',
+                  presented.basic ? { 'WWW-Authenticate': basicChallenge() }
+                                  : null);
+  }
+  const declaration = oauth21.tokenClientDeclarationRefusal({
+    grant: 'authorization_code', clientId: clientId, registered: registered,
+    presented: presented
+  });
+  if (declaration) {
+    log.debug("Leaving parRequest(). OAuth 2.1 refused the client.");
+    return refuse(401, declaration.error, declaration.description,
+                  declaration.errorCode || 'STS-OAUTH-0278',
+                  presented.basic ? { 'WWW-Authenticate': basicChallenge() }
+                                  : null);
+  }
+  const observation = await bcp.observeClientAuthentication(authentication);
+  if (observation.authenticated && secretPresented(presented, registered)) {
+    const key = secretLimitKey(req, clientId);
+    websecurity.succeeded(key.what, req, key.identity, { keepAddress: true });
+  }
+  const presentedRefusal = oauth21.tokenClientAuthenticationRefusal({
+    grant: 'authorization_code', observation: observation,
+    presented: presented
+  });
+  if (presentedRefusal) {
+    countSecretFailure(req, clientId, presented, registered);
+    log.debug("Leaving parRequest(). OAuth 2.1 refused the credential.");
+    return refuse(401, presentedRefusal.error, presentedRefusal.description,
+                  presentedRefusal.errorCode || 'STS-OAUTH-0280',
+                  presented.basic ? { 'WWW-Authenticate': basicChallenge() }
+                                  : null);
+  }
+  // RFC 8705 — a declared certificate method, in every mode, as at the token
+  // endpoint (RFC 9126 section 2 authenticates a client as that endpoint
+  // does). The bound-tokens half is the token endpoint's: nothing is issued
+  // here.
+  const declared = mtls.declaredRefusal({
+    registered: registered, observation: observation, request: req
+  });
+  if (declared && declared.error === 'invalid_client') {
+    log.debug("Leaving parRequest(). RFC 8705: the declared method did not " +
+              "authenticate.");
+    return refuse(401, declared.error, declared.description,
+                  declared.errorCode, null);
+  }
+  if (mode.requiresClientSecret() && !observation.authenticated) {
+    countSecretFailure(req, clientId, presented, registered);
+    log.debug("Leaving parRequest(). Product mode refused a public client.");
+    return refuse(401, 'invalid_client', 'This service is in product mode, ' +
+      'where every application must authenticate — at the pushed ' +
+      'authorization request endpoint as at the token endpoint (RFC 9126 ' +
+      'section 2). ' + (observation.why || ''),
+      observation.errorCode || 'STS-OAUTH-0423',
+      presented.basic ? { 'WWW-Authenticate': basicChallenge() } : null);
+  }
+
+  // --- 5. request_uri REFUSED; A request OBJECT VERIFIED --------------------
+  if (body.request_uri !== undefined && String(body.request_uri) !== '') {
+    log.debug("Leaving parRequest(). A request_uri in a push.");
+    return refuse(400, 'invalid_request', 'A pushed authorization request ' +
+      'may not carry request_uri (RFC 9126 section 2.1: "it MUST NOT be ' +
+      'provided") — the request_uri is what this endpoint answers with.',
+      'STS-OAUTH-0404');
+  }
+  const profile = authorizationProfileOf(req);
+  let params = {};
+  let source = 'form';
+  let objectAlg = '';
+  let objectEncrypted = '';
+  if (body.request !== undefined && String(body.request) !== '') {
+    // Section 3: the form carries the client's authentication and `request`,
+    // and "all other request parameters ... MUST appear as claims of the JWT".
+    const outside = Object.keys(body).filter(function (name) {
+      return ['request', 'client_id'].concat(PAR_NOT_PARAMETERS)
+        .indexOf(name) < 0;
+    });
+    if (outside.length) {
+      log.debug("Leaving parRequest(). Parameters beside a request object.");
+      return refuse(400, 'invalid_request', 'This push carries a request ' +
+        'object and also ' + outside.join(', ') + '. RFC 9126 section 3: ' +
+        'beside `request`, the form body holds only what client ' +
+        'authentication needs, and every authorization request parameter ' +
+        'MUST be a claim of the request object.', 'STS-OAUTH-0409');
+    }
+    const verified = await requestObject.verifyObject({
+      jwt: String(body.request), client: registered, clientId: clientId,
+      issuer: issuerOf(base), asBase: base, profile: profile, keySet: STS
+    });
+    if (!verified.ok) {
+      log.debug("Leaving parRequest(). The request object is refused.");
+      return refuse(400, verified.error, verified.description,
+                    errorCodes.codeOf(verified) || 'STS-OAUTH-0409');
+    }
+    // Section 3 step 3: a client with credentials established must be the
+    // client the object names. `verifyObject()` has refused a `client_id`
+    // claim naming anybody else; one with NO client_id claim is refused here,
+    // because "does not match the client_id claim" cannot be satisfied by an
+    // object that makes no claim.
+    if (observation.authenticated && verified.claims &&
+        verified.claims.client_id === undefined) {
+      log.debug("Leaving parRequest(). No client_id claim.");
+      return refuse(400, 'invalid_request_object', 'The pushed request ' +
+        'object carries no client_id claim, and client "' + clientId + '" ' +
+        'authenticated: RFC 9126 section 3 requires the authenticated ' +
+        'client_id to match the client_id claim of the request object.',
+        'STS-OAUTH-0424');
+    }
+    params = Object.assign({}, verified.params);
+    source = 'request';
+    objectAlg = String(verified.alg || '');
+    objectEncrypted = String(verified.encrypted || '');
+  } else {
+    if (requestObject.signedRequired(registered, profile)) {
+      log.debug("Leaving parRequest(). A signed request object is required.");
+      return refuse(400, 'invalid_request', 'This push carries plain ' +
+        'parameters, and a signed request object is required here (RFC 9101 ' +
+        'section 10.5 — oauth2.requireSignedRequestObject, this client\'s ' +
+        'require_signed_request_object or this authorization server\'s ' +
+        'metadata). RFC 9126 section 2.3: such a client "MUST" push a ' +
+        '`request` object.', 'STS-OAUTH-0415');
+    }
+    Object.keys(body).forEach(function (name) {
+      if (PAR_NOT_PARAMETERS.indexOf(name) < 0 && name !== 'request') {
+        params[name] = body[name];
+      }
+    });
+    // The two parameters that may repeat, read off the raw body — the parsed
+    // object kept only the last of each.
+    PAR_REPEATABLE.forEach(function (name) {
+      const values = bodyValues(req, body, name);
+      if (values.length > 1) {
+        params[name] = values;
+      }
+    });
+  }
+  PAR_PRIVATE_FIELDS.forEach(function (name) {
+    delete params[name];
+  });
+  params.client_id = clientId;
+  if (dpopJkt) {
+    if (params.dpop_jkt !== undefined && String(params.dpop_jkt) !== '' &&
+        String(params.dpop_jkt) !== dpopJkt) {
+      log.debug("Leaving parRequest(). dpop_jkt names another key.");
+      return refuse(400, 'invalid_dpop_proof', 'The push carries a DPoP ' +
+        'proof for the key ' + dpopJkt + ' and dpop_jkt "' + params.dpop_jkt +
+        '". RFC 9449 section 10.1: where both are sent they must name the ' +
+        'same key.', 'STS-OAUTH-0417');
+    }
+    params.dpop_jkt = dpopJkt;
+  }
+
+  // --- 6. VALIDATED AS AN AUTHORIZATION REQUEST -----------------------------
+  const allowRelaxed = !!(observation.authenticated &&
+    config.value('oauth2.parAllowUnregisteredRedirectUris'));
+  const vetted = vetAuthorizationRequest(req, {
+    input: params, where: 'body', repeated: repeatedInBody,
+    what: 'pushed authorization request', relaxRedirect: allowRelaxed
+  });
+  if (!vetted.ok) {
+    log.debug("Leaving parRequest(). The authorization request is refused (" +
+              vetted.code + ").");
+    return refuse(400, vetted.error, vetted.description, vetted.code);
+  }
+  const q = vetted.q;
+  const scope = String(q.scope || 'openid');
+  // RFC 9396's client and profile narrowing, when that parser takes them.
+  const details = parseAuthorizationDetails(q.authorization_details,
+                                            { clientId: clientId, req: req });
+  if (details.error) {
+    log.debug("Leaving parRequest(). authorization_details.");
+    return refuse(400, 'invalid_authorization_details', details.error,
+                  errorCodes.codeOf(details) || 'STS-OAUTH-0153');
+  }
+  const resources = parseResourceIndicators(q.resource);
+  if (resources.error) {
+    log.debug("Leaving parRequest(). resource.");
+    return refuse(400, 'invalid_target', resources.error, 'STS-OAUTH-0154');
+  }
+  const permissionProblem = permissionRefusal(scope, clientId);
+  if (permissionProblem) {
+    log.debug("Leaving parRequest(). An ungranted permission.");
+    return refuse(400, 'invalid_scope', permissionProblem, 'STS-OAUTH-0155');
+  }
+  // RFC 9396: details whose type belongs to one API beside a scope or resource
+  // naming another are refused here, at the push, rather than when the
+  // request_uri is used.
+  const plan = accessTokenPlan(base, scope, clientId, resources.resources,
+                               details.details);
+  if (plan.refusal) {
+    log.debug("Leaving parRequest(). RFC 9068 refused the audience.");
+    return refuse(400, plan.refusal.error, plan.refusal.description,
+                  errorCodes.codeOf(plan.refusal) || 'STS-OAUTH-0244');
+  }
+  const claimsProblem = parseClaimsRequest(q.claims);
+  if (claimsProblem.error) {
+    log.debug("Leaving parRequest(). The claims request.");
+    return refuse(400, 'invalid_request', claimsProblem.error,
+                  'STS-OAUTH-0157');
+  }
+
+  // --- 7. KEPT, AND ANSWERED ------------------------------------------------
+  const kept = par.push({
+    clientId: clientId,
+    authorizationServer: profileOf(req),
+    params: q,
+    clientAuthenticated: !!observation.authenticated,
+    method: observation.authenticated ? String(observation.method || '') : '',
+    source: source,
+    alg: objectAlg,
+    encrypted: objectEncrypted,
+    dpopJkt: dpopJkt,
+    redirectRelaxed: !!vetted.relaxed
+  });
+  if (!kept.ok) {
+    log.debug("Leaving parRequest(). The store refused it.");
+    return refuse(503, kept.error, kept.description,
+                  errorCodes.codeOf(kept) || 'STS-OAUTH-0408');
+  }
+  applications.seen({
+    identifier: clientId,
+    kind: hasScope(scope, 'openid') ? 'oidc-relying-party' : 'oauth2-client',
+    protocol: 'OAuth 2.0 / OIDC',
+    counts: false,
+    note: 'pushed an authorization request',
+    fields: { oauthClientId: clientId, appAuthorizationServer: profileOf(req) }
+  });
+  res.status(201).type('application/json').send(JSON.stringify({
+    request_uri: kept.requestUri,
+    expires_in: kept.expiresIn
+  }));
+  log.debug("Leaving parRequest(). Pushed, " + kept.expiresIn + "s.");
+  return undefined;
+}
+
+app.post('/oauth2/par', parEndpoint);
+
+// SECTION 2.3's 405 IS MIDDLEWARE AND NOT A ROUTE, for /admin/sts-metadata's
+// reason: that page lists the methods the ROUTER holds for a path, and
+// `tests/vendored/sts_metadata.js` calls every one and fails on a 405 — so an
+// `app.all()` would advertise ACL, PROPFIND and the rest as methods this
+// endpoint has, which is the opposite of what the 405 says. A path-mounted
+// middleware answers every method but POST at exactly these two paths (and not
+// at anything beneath them) and lists nothing. It sits after the POST route,
+// which has already answered a POST, and it is the one handler here the router
+// reading cannot see — named in the ENDPOINTS row's own sentence instead.
+app.use(['/oauth2/par', '/:as/oauth2/par'], function (req, res, next) {
+  if (req.method === 'POST' || (req.path !== '/' && req.path !== '')) {
+    return next();
+  }
+  return parMethodNotAllowed(req, res);
+});
+
+// ---------------------------------------------------------------------------
 // THE SAME ENDPOINTS, UNDER EVERY AUTHORIZATION SERVER'S OWN NAME.
 //
 // Registered here, in one block, so that the set cannot drift from the set
@@ -7663,6 +9565,7 @@ app.post('/oauth2/token', function (req, res) {
 [
   ['get', '/:as/oauth2/authorize', authorizeEndpoint],
   ['post', '/:as/oauth2/token', tokenEndpoint],
+  ['post', '/:as/oauth2/par', parEndpoint],
   ['get', '/:as/oauth2/logout', logoutEndpoint],
   ['get', '/:as/oauth2/userinfo', userinfoResponse],
   ['post', '/:as/oauth2/userinfo', userinfoResponse],
@@ -7674,30 +9577,62 @@ app.post('/oauth2/token', function (req, res) {
   app[route[0]](route[1], forProfile(route[2]));
 });
 
-// --- introspection (RFC 7662) ------------------------------------------------
+// --- introspection (RFC 7662, and RFC 9701's JWT response) -------------------
+// ---------------------------------------------------------------------------
+// WHAT THE INTROSPECTION ENDPOINT DOES SINCE 2026-09-13, WHICH IS TWO THINGS.
+//
+// **RFC 7662 AS IT WAS**: a JSON object saying whether the token is active and,
+// if it is, what its claims are. Development answers anybody who holds the
+// token string, as it always did — every suite and client under test
+// introspects that way. PRODUCT MODE requires the caller to authenticate as a
+// client (`mode.opensIntrospection()`), which RFC 7662 section 2.1's "MUST
+// require some form of authorization" reads as, and answers one that does not
+// with section 2.3's 401 invalid_client.
+//
+// **RFC 9701 WHEN IT IS ASKED FOR**: a request whose Accept header names
+// `application/token-introspection+jwt` gets the same answer as a signed JWT,
+// addressed to the resource server that asked. That caller must authenticate
+// IN EVERY MODE, and is refused 400 when it does not — section 5's own status,
+// deliberately not RFC 6749's 401 — because a response whose `aud` is "whoever
+// sent this" is a signed statement addressed to nobody. The mode does not move
+// it: it is not a hardening on top of the feature, it is what the feature is.
+//
+// **ONE AUTHENTICATION, THE TOKEN ENDPOINT'S.**
+// `bcp.observeClientAuthentication()` is the fact the token endpoint's role gate already uses — all six methods,
+// the used-assertion history, the revocation check on a certificate — and the
+// secret rate limit is the same bucket, so a secret cannot be guessed at this
+// endpoint that is throttled at that one. A credential presented to a mode that
+// does not require one is NOT checked, which is what development did before.
+//
+// **A PROMISE CHAIN BEHIND A SYNCHRONOUS HANDLER**, for the UserInfo response's
+// reason: express 4 does not look at what a handler returns, and both routes —
+// `/oauth2/introspect` and `/:as/oauth2/introspect` through `forProfile()` —
+// call `introspectEndpoint()`, so the catch is here once rather than on one of
+// the two.
+// ---------------------------------------------------------------------------
 function introspectEndpoint(req, res) {
   log.debug("Entering the introspection endpoint.");
-  const posted = validation.checkParsed(parseBody(req), 'body',
-                                        TOKEN_QUERY_FORM);
-  res.set('Cache-Control', 'no-store');
-  if (!posted.ok) {
-    log.debug("Leaving the introspection endpoint. The request is malformed.");
-    errorCodes.mark(res, 'STS-OAUTH-0229');
-    log.debug("Leaving introspectEndpoint().");
-    return oauthError(res, 400, 'invalid_request', posted.detail);
-  }
-  const body = posted.value;
-  const inactive = function () {
-    log.debug("Entering inactive().");
-    res.status(200)
-       .type('application/json')
-       .send(JSON.stringify({ active: false }));
-    log.debug("Leaving the introspection endpoint. The token is not active.");
-  };
-  const token = String(body.token || '');
+  introspectRequest(req, res).catch(function (e) {
+    log.error(errorCodes.tag('STS-OAUTH-0294') + 'the introspection endpoint ' +
+              'failed: ' + (e && e.stack ? e.stack : e));
+    if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-OAUTH-0294');
+      oauthError(res, 500, 'server_error', String((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving introspectEndpoint().");
+}
+
+// The RFC 7662 answer for one token, as the object the response carries.
+// `{ active: false }` and nothing else for a token that is not active — which
+// RFC 7662 section 2.2 permits and RFC 9701 section 5 REQUIRES of the JWT, so
+// the one function serves both shapes of response.
+function introspectionOf(token) {
+  log.debug("Entering introspectionOf().");
+  const inactive = { active: false };
   if (!token) {
-    log.debug("Leaving introspectEndpoint().");
-    return inactive();
+    log.debug("Leaving introspectionOf(). No token.");
+    return inactive;
   }
   // An encrypted token is a refresh token: opened first, then verified like
   // everything else. One that will not open is simply not active — RFC 7662
@@ -7707,10 +9642,10 @@ function introspectEndpoint(req, res) {
     try {
       jws = refreshTokenCrypto.open(token);
     } catch (e) {
-      log.debug("Introspection: the token does not open (" + e.message + "), " +
-          "so it is inactive.");
-      log.debug("Leaving introspectEndpoint().");
-      return inactive();
+      log.debug("Caught in introspectionOf(): the token does not open (" +
+                e.message + "), so it is inactive.");
+      log.debug("Leaving introspectionOf().");
+      return inactive;
     }
   }
   let claims;
@@ -7718,25 +9653,27 @@ function introspectEndpoint(req, res) {
     claims = stsCrypto.verifyJws(jws, STS.certPem);
   } catch (e) {
     // Expired, forged, or simply not one of ours.
-    log.debug("Introspection: the token does not verify (" + e.message + "), " +
-        "so it is inactive.");
-    log.debug("Leaving introspectEndpoint().");
-    return inactive();
+    log.debug("Caught in introspectionOf(): the token does not verify (" +
+              e.message + "), so it is inactive.");
+    log.debug("Leaving introspectionOf().");
+    return inactive;
   }
   // AN UNENCRYPTED REFRESH TOKEN IS NOT ACTIVE, and neither is a JWE that
   // opened to anything but one: the refresh grant refuses both, and an
   // introspection that called one active would contradict the grant.
   if ((claims.typ === 'Refresh') !== (jws !== token)) {
-    log.debug("Introspection: a refresh token that is not encrypted, or a " +
-              "JWE that is not a refresh token.");
-    log.debug("Leaving introspectEndpoint().");
-    return inactive();
+    log.debug("Leaving introspectionOf(). A refresh token that is not " +
+              "encrypted, or a JWE that is not a refresh token.");
+    return inactive;
   }
   if (stats.isRevoked(claims.jti)) {
-    log.debug("Leaving introspectEndpoint().");
-    return inactive();
+    log.debug("Leaving introspectionOf(). Revoked.");
+    return inactive;
   }
-  res.status(200).type('application/json').send(JSON.stringify({
+  // JSON drops the members that are undefined, exactly as the response always
+  // did; the JWT's claims are serialised the same way, so both shapes carry
+  // the same members.
+  const answer = JSON.parse(JSON.stringify({
     active: true,
     scope: claims.scope || '',
     client_id: claims.client_id,
@@ -7749,10 +9686,219 @@ function introspectEndpoint(req, res) {
     // RFC 9449 section 6.1 / RFC 7662: the confirmation travels to the resource
     // server so it can check the binding itself.
     cnf: claims.cnf,
+    // RFC 9396 section 9.2: the resource server learns what the token
+    // authorizes in detail the same way it learns its scope.
+    authorization_details: claims.authorization_details,
+    // RFC 9470 section 6.2: WHEN the person behind the token authenticated and
+    // to what level, so a resource server that introspects rather than reading
+    // a JWT can make the same step-up decision. Absent where the token has no
+    // authentication behind it, for RFC 9068 section 2.2.1's reason.
+    acr: claims.acr, auth_time: claims.auth_time,
     exp: claims.exp, iat: claims.iat, nbf: claims.nbf,
     sub: claims.sub, aud: claims.aud, iss: claims.iss, jti: claims.jti
   }));
-  log.debug("Leaving the introspection endpoint. The token is active.");
+  log.debug("Leaving introspectionOf(). Active.");
+  return answer;
+}
+
+async function introspectRequest(req, res) {
+  log.debug("Entering introspectRequest().");
+  const posted = validation.checkParsed(parseBody(req), 'body',
+                                        TOKEN_QUERY_FORM);
+  res.set('Cache-Control', 'no-store');
+  // The answer depends on the Accept header, so a cache that ignored it would
+  // hand one resource server's JWT to a JSON client. `no-store` already keeps
+  // shared caches out; this says why the two answers differ.
+  res.set('Vary', 'Accept');
+  if (!posted.ok) {
+    log.debug("Leaving introspectRequest(). The request is malformed.");
+    errorCodes.mark(res, 'STS-OAUTH-0229');
+    return oauthError(res, 400, 'invalid_request', posted.detail);
+  }
+  const body = posted.value;
+  const wantsJwt = introspectionJwt.wantsJwt(req.headers['accept']);
+  const client = clientFrom(req, body);
+  const clientId = String(client.client_id || '');
+  const registered = applications.clientConfigOf(clientId);
+  const presented = presentedClientAuthentication(req, body);
+
+  // OAUTH 2.1 SECTION 2.4 — "The client MUST NOT use more than one
+  // authentication method in each request" — is a rule about a REQUEST, and it
+  // was asked at the token endpoint alone. Asked here before anything is
+  // verified, and whether or not this request had to authenticate: a request
+  // carrying two credentials is malformed whichever of them would be read.
+  const several = oauth21.multipleMethodsRefusal(presented);
+  if (several) {
+    log.debug("Leaving introspectRequest(). OAuth 2.1: several client " +
+              "authentication methods.");
+    errorCodes.mark(res, several.errorCode || 'STS-OAUTH-0281');
+    return oauthError(res, 400, several.error, several.description);
+  }
+
+  // Whether the caller PROVED who it is, which is what section 5's "intended
+  // for the resource server" rule is then asked of. False for a development
+  // JSON request, which authenticates nobody and so cannot be compared.
+  let authenticated = false;
+  if (wantsJwt || !mode.opensIntrospection()) {
+    // THE SECRET RATE LIMIT, the token endpoint's bucket: a client and address
+    // past the limit is answered before its secret is looked at.
+    if (clientId && secretPresented(presented, registered)) {
+      const key = secretLimitKey(req, clientId);
+      const lockedOut = websecurity.blocked(key.what, req, key.identity);
+      if (lockedOut) {
+        res.set('Retry-After', String(lockedOut.retryAfterS));
+        log.debug("Leaving introspectRequest(). Too many failed client " +
+                  "secrets.");
+        errorCodes.mark(res, 'STS-OAUTH-0284');
+        return oauthError(res, 429, 'invalid_client',
+          'Too many failed client authentications for client "' + clientId +
+          '" from this address. ' + lockedOut.detail);
+      }
+    }
+    // WHAT THIS AUTHORIZATION SERVER SAYS IT ACCEPTS, the token endpoint's
+    // rule: a client whose entry declares a method the selected server does
+    // not advertise is refused before its credential is read, so the sentence
+    // is about the server's capabilities rather than about the credential. A
+    // removed member means the check does not run.
+    const advertisedAuth = capabilityFor(req,
+      'introspection_endpoint_auth_methods_supported');
+    const declaredMethod = String(registered.token_endpoint_auth_method || '');
+    if (declaredMethod && advertisedAuth &&
+        advertisedAuth.indexOf(declaredMethod) < 0) {
+      log.debug("Leaving introspectRequest(). " + profileOf(req) + " does " +
+                "not advertise " + declaredMethod + " for introspection.");
+      errorCodes.mark(res, 'STS-OAUTH-0295');
+      return oauthError(res, wantsJwt ? 400 : 401, 'invalid_client',
+        'The "' + profileOf(req) + '" authorization server advertises ' +
+        'introspection_endpoint_auth_methods_supported ' +
+        JSON.stringify(advertisedAuth) + ', and this client is configured ' +
+        'for "' + declaredMethod + '". A client may use any authorization ' +
+        'server here, but only in a way that server offers.');
+    }
+    const base = asBaseOf(req);
+    // What a client assertion may name as its audience: this endpoint, and
+    // what the token endpoint accepts — the token endpoint URL, the issuer and
+    // the base — because RFC 7523 section 3 says "the authorization server"
+    // and a client library signs one assertion shape for every endpoint.
+    const observed = await bcp.observeClientAuthentication({
+      clientId: clientId,
+      clientSecret: client.client_secret,
+      assertion: client.assertion,
+      assertionType: client.assertionType,
+      request: req,
+      audiences: [base + '/oauth2/introspect', base + '/oauth2/token',
+                  issuerOf(base), base],
+      strictAudience: oauth21.strictClientAssertionAudience() ?
+                      issuerOf(base) : '',
+      registered: registered
+    });
+    if (!observed.authenticated) {
+      countSecretFailure(req, clientId, presented, registered);
+      const code = wantsJwt ? 'STS-OAUTH-0291' : 'STS-OAUTH-0292';
+      const why = clientId ? observed.why
+        : 'the request carried no client credential — no Authorization: ' +
+          'Basic header, no client_id and client_secret, and no client ' +
+          'assertion.';
+      log.info(errorCodes.tag(code) + 'introspection: client "' +
+               (clientId || '(none)') + '" did not authenticate (' +
+               (observed.errorCode || 'no credential') + '): ' + why);
+      if (!wantsJwt) {
+        // RFC 7662 section 2.3 answers as RFC 6749 section 5.2 does, and a
+        // client_secret_basic caller needs the challenge to know what to retry.
+        if (presented.basic) {
+          res.set('WWW-Authenticate', basicChallenge());
+        }
+        log.debug("Leaving introspectRequest(). Product mode refused an " +
+                  "unauthenticated caller.");
+        errorCodes.mark(res, 'STS-OAUTH-0292');
+        return oauthError(res, 401, 'invalid_client',
+          'This realm is in product mode, where introspection requires the ' +
+          'caller to authenticate as a client (RFC 7662 section 2.1) — and ' +
+          why);
+      }
+      log.debug("Leaving introspectRequest(). RFC 9701 refused an " +
+                "unauthenticated caller.");
+      errorCodes.mark(res, 'STS-OAUTH-0291');
+      return oauthError(res, 400, 'invalid_client',
+        'RFC 9701 section 5: a JWT introspection response is addressed to ' +
+        'the resource server that asks for it, so the caller must ' +
+        'authenticate as a client — and ' + why);
+    }
+    if (secretPresented(presented, registered)) {
+      const key = secretLimitKey(req, clientId);
+      websecurity.succeeded(key.what, req, key.identity, { keepAddress: true });
+    }
+    authenticated = true;
+    log.debug("introspectRequest(): client " + clientId + " authenticated " +
+              "with " + observed.method + ".");
+  }
+
+  // SECTION 5's "not intended to be introspected by the resource server",
+  // asked of every caller that authenticated — see `intendedFor()` for the
+  // rule rcbj chose. A token that is not the caller's is answered exactly as
+  // an invalid one, so the two cannot be told apart.
+  let answer = introspectionOf(String(body.token || ''));
+  if (authenticated && answer.active === true &&
+      !introspectionJwt.intendedFor(answer, clientId, baseUrlOf(req))) {
+    log.info('introspection: client "' + clientId + '" asked about a token ' +
+             'not intended for it (client_id ' + answer.client_id + ', aud ' +
+             JSON.stringify(answer.aud) + '), answered as inactive.');
+    answer = { active: false };
+  }
+  if (!wantsJwt) {
+    res.status(200).type('application/json').send(JSON.stringify(answer));
+    log.debug("Leaving introspectRequest(). JSON, active=" + answer.active +
+              ".");
+    return undefined;
+  }
+  // WHAT THE SELECTED AUTHORIZATION SERVER PUBLISHES, which a profile may
+  // narrow (`authorization_servers.js`). A registration outside it is the
+  // client's refusal, answered before anything is signed; one this service
+  // cannot honour at all is the 500 below.
+  const resourceServer = Object.assign({}, registered,
+                                       { client_id: clientId });
+  const advertised = {
+    signing: capabilityFor(req, 'introspection_signing_alg_values_supported'),
+    encryption: capabilityFor(req,
+      'introspection_encryption_alg_values_supported'),
+    enc: capabilityFor(req, 'introspection_encryption_enc_values_supported')
+  };
+  const protection = introspectionJwt.protectionFor(resourceServer,
+                                                    advertised);
+  if (!protection.ok && protection.notAdvertised) {
+    log.debug("Leaving introspectRequest(). " + profileOf(req) + " does not " +
+              "advertise what this client registered.");
+    errorCodes.mark(res, errorCodes.codeOf(protection) || 'STS-OAUTH-0296');
+    return oauthError(res, 400, 'invalid_client', protection.description);
+  }
+  let out;
+  try {
+    out = await introspectionJwt.respond({
+      introspection: answer,
+      issuer: issuerOf(asBaseOf(req)),
+      client: resourceServer,
+      advertised: advertised
+    });
+  } catch (e) {
+    // Every sentence respond() rejects with is about what this client
+    // registered, so it goes back as the description — the UserInfo
+    // response's reasoning, and its 500: the registration was accepted, or an
+    // ldapmodify wrote it, and it cannot now be honoured.
+    log.error(errorCodes.tag('STS-OAUTH-0293') + 'introspection: the JWT ' +
+              'response registered by client "' + clientId + '" could not be ' +
+              'produced: ' + e.message);
+    errorCodes.mark(res, 'STS-OAUTH-0293');
+    log.debug("Leaving introspectRequest(). The JWT could not be produced.");
+    return oauthError(res, 500, 'server_error', e.message);
+  }
+  // A BUFFER, so express sends the media type exactly as section 5 names it
+  // rather than appending a charset parameter to a type that has none.
+  res.status(200).set('Content-Type', out.contentType)
+     .send(Buffer.from(out.body, 'utf8'));
+  log.debug("Leaving introspectRequest(). JWT for " + clientId + ", alg=" +
+            out.alg + (out.enc ? ', encrypted ' + out.enc : '') +
+            ", active=" + answer.active + ".");
+  return undefined;
 }
 
 app.post('/oauth2/introspect', introspectEndpoint);
@@ -7819,6 +9965,19 @@ function registrationOpen() {
          config.value('oauth2.openRegistration') === true;
 }
 
+// ---------------------------------------------------------------------------
+// MAY ANYBODY REGISTER AT ALL? Open, or closed with a door a trusted software
+// statement goes through (`oauth2.softwareStatementOpensRegistration`). The
+// discovery documents read THIS, so an endpoint that admits a client carrying
+// a statement is still advertised — RFC 7591 section 3 is exactly that client
+// finding the endpoint in the metadata and bringing its statement.
+// ---------------------------------------------------------------------------
+function registrationReachable() {
+  log.debug("Entering registrationReachable().");
+  log.debug("Leaving registrationReachable().");
+  return registrationOpen() || softwareStatement.opensRegistration();
+}
+
 // The lifetime `client_secret_expires_at` publishes, as an absolute time or 0.
 // RFC 7591 section 3.2.1: 0 means the secret does not expire, which is the
 // default and what this service always said.
@@ -7845,16 +10004,68 @@ function clientRecord(base, metadata, clientId, secret, token) {
   return record;
 }
 
+// THE WRAPPER, because the endpoint below is asynchronous since software
+// statements (2026-09-13) — verifying one may consult a foreign OCSP responder
+// — and both routes, `/oauth2/register` and `/:as/oauth2/register`, call a
+// function that returns nothing. The token endpoint's arrangement.
 function registerEndpoint(req, res) {
+  log.debug("Entering registerEndpoint().");
+  registerClient(req, res).catch(function (e) {
+    log.error(errorCodes.tag('STS-OAUTH-0228') + 'the registration endpoint ' +
+              'failed: ' + (e && e.stack ? e.stack : e));
+    if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-OAUTH-0228');
+      oauthError(res, 500, 'server_error', e.message);
+    }
+  });
+  log.debug("Leaving registerEndpoint().");
+}
+
+// RFC 8705 SECTION 3.4 AT REGISTRATION (2026-09-13): a client asking for
+// certificate-bound access tokens from a service whose main port is not TLS is
+// asking for something this server will refuse at every token request — the
+// declaration is held to in every mode (`mtls.declaredRefusal()`) and there is
+// no certificate to bind to — so it is refused here, where section 3.2.2 can
+// still say so, and `tls_client_certificate_bound_access_tokens` is `false` in
+// the metadata it read. 3f's mirror rule. The grammar of the member is
+// `applications.mtlsMetadataProblem()`'s; this knows the port.
+function mtlsRegistrationProblem(metadata) {
+  log.debug("Entering mtlsRegistrationProblem().");
+  if ((metadata || {}).tls_client_certificate_bound_access_tokens === true &&
+      !mtls.available()) {
+    log.debug("Leaving mtlsRegistrationProblem(). No TLS listener to bind on.");
+    return { errorCode: 'STS-REG-0133', error: 'invalid_client_metadata',
+             description: 'tls_client_certificate_bound_access_tokens is ' +
+               'true, and this authorization server\'s token endpoint is not ' +
+               'on a TLS listener (global.https is off), so there is no ' +
+               'client certificate to bind a token to. Its metadata ' +
+               'advertises tls_client_certificate_bound_access_tokens: ' +
+               'false.' };
+  }
+  log.debug("Leaving mtlsRegistrationProblem().");
+  return null;
+}
+
+// A refusal `software_statement.js` decided, answered. Both of RFC 7591
+// section 3.2.2's statement errors are a 400.
+function statementRefused(res, refusal) {
+  log.debug("Entering statementRefused(). code=" + refusal.errorCode);
+  errorCodes.mark(res, refusal.errorCode || 'STS-OAUTH-0309');
+  log.debug("Leaving statementRefused().");
+  return oauthError(res, 400, refusal.error, refusal.description);
+}
+
+async function registerClient(req, res) {
   log.debug("Entering the client registration endpoint.");
   const base = baseUrlOf(req);
-  if (!registrationOpen()) {
+  const open = registrationOpen();
+  if (!open && !softwareStatement.opensRegistration()) {
     log.warn('oauth2: a dynamic client registration was refused — this realm ' +
              'is in product mode and oauth2.openRegistration is off.');
     log.debug("Leaving the client registration endpoint. Registration is " +
               "closed.");
     errorCodes.mark(res, 'STS-OAUTH-0231');
-    log.debug("Leaving registerEndpoint().");
+    log.debug("Leaving registerClient().");
     return oauthError(res, 403, 'access_denied',
       'Dynamic client registration is closed: this realm is in product mode, ' +
       'where an application is created by an administrator — on ' +
@@ -7886,15 +10097,86 @@ function registerEndpoint(req, res) {
               "refused: " +
               document.code + ".");
     errorCodes.mark(res, 'STS-OAUTH-0232');
-    log.debug("Leaving registerEndpoint().");
+    log.debug("Leaving registerClient().");
     return oauthError(res, 400, 'invalid_client_metadata', document.detail);
   }
-  const metadata = document.value;
+  // ---------------------------------------------------------------------
+  // THE SOFTWARE STATEMENT, BEFORE ANY OTHER CHECK OF THE METADATA, because
+  // a TRUSTED one decides what the metadata IS (RFC 7591 section 3.1.1: its
+  // claims take precedence) — every check below runs on the merged document,
+  // so a statement cannot fix a `javascript:` redirect URI or a grant RFC
+  // 9700 mode refuses any more than the JSON can.
+  //
+  // AND IT IS THE SECOND DOOR THROUGH A CLOSED ENDPOINT. Where registration
+  // is not open to everybody, only a statement this realm TRUSTS admits the
+  // client; an untrusted one — accepted unverified with the issuer refusal
+  // off — does not, and neither does none.
+  // ---------------------------------------------------------------------
+  const resolved = await softwareStatement.resolve(document.value,
+                                                   { base: base });
+  if (!open && !(resolved.ok && resolved.statement &&
+                 resolved.statement.trusted)) {
+    if (!resolved.ok && document.value.software_statement !== undefined) {
+      log.debug("Leaving the client registration endpoint. Closed, and the " +
+                "statement that could have opened it was refused.");
+      log.debug("Leaving registerClient().");
+      return statementRefused(res, resolved);
+    }
+    log.warn('oauth2: a dynamic client registration was refused — this realm ' +
+             'is in product mode, oauth2.openRegistration is off, and the ' +
+             'registration carried no trusted software statement.');
+    errorCodes.mark(res, 'STS-OAUTH-0231');
+    log.debug("Leaving registerClient().");
+    return oauthError(res, 403, 'access_denied',
+      'Dynamic client registration is closed to a registration without a ' +
+      'trusted software statement: this realm is in product mode, where an ' +
+      'application is created by an administrator — on ' +
+      '/admin/applications/new or with POST /admin-api/applications/create — ' +
+      'or registers with a software statement this realm trusts (RFC 7591 ' +
+      'section 2.3). Set oauth2.openRegistration to let anybody who can ' +
+      'reach this endpoint register a client.');
+  }
+  if (!resolved.ok) {
+    log.debug("Leaving the client registration endpoint. The software " +
+              "statement was refused.");
+    log.debug("Leaving registerClient().");
+    return statementRefused(res, resolved);
+  }
+  const metadata = resolved.metadata;
   if (metadata.redirect_uris && !Array.isArray(metadata.redirect_uris)) {
     errorCodes.mark(res, 'STS-OAUTH-0233');
-    log.debug("Leaving registerEndpoint().");
+    log.debug("Leaving registerClient().");
     return oauthError(res, 400, 'invalid_redirect_uri', 'redirect_uris must ' +
                                                         'be an array.');
+  }
+  // THE ADDRESSES, IN EVERY MODE (2026-09-13). Until this date the elements of
+  // redirect_uris were never looked at, and neither were
+  // post_logout_redirect_uris or frontchannel_logout_uri — so `javascript:`
+  // registered in all three, and the last is framed on the sign-out page. The
+  // rule is the application register's, asked here so the answer is RFC 7591
+  // section 3.2.2's error rather than a registration that silently did not
+  // store.
+  // RFC 9701 section 6's three members are checked beside the addresses, for
+  // the same reason: a registration naming an algorithm this service cannot
+  // sign or encrypt with would be accepted and then fail at every JWT
+  // introspection response, which is the client finding out at the wrong
+  // endpoint.
+  const addressProblem = applications.registrationUriProblem(metadata) ||
+                         applications.introspectionResponseProblem(metadata) ||
+                         applications.requestObjectMetadataProblem(metadata) ||
+                         applications.pushedAuthorizationMetadataProblem(
+                           metadata) ||
+                         applications.mtlsMetadataProblem(metadata) ||
+                         mtlsRegistrationProblem(metadata) ||
+                         applications.authorizationDetailsMetadataProblem(
+                           metadata);
+  if (addressProblem) {
+    log.debug("Leaving the client registration endpoint. An unusable " +
+              "address or introspection response algorithm.");
+    errorCodes.mark(res, addressProblem.errorCode || 'STS-REG-0070');
+    log.debug("Leaving registerClient().");
+    return oauthError(res, 400, addressProblem.error,
+                      addressProblem.description);
   }
   // RFC 9700 mode: this endpoint will not register a client for something the
   // other endpoints refuse. A registration is a document the client keeps and
@@ -7908,7 +10190,7 @@ function registerEndpoint(req, res) {
               "refused the metadata (" +
               registrationCheck.requirement + ").");
     errorCodes.mark(res, registrationCheck.errorCode || 'STS-OAUTH-0158');
-    log.debug("Leaving registerEndpoint().");
+    log.debug("Leaving registerClient().");
     return oauthError(res, 400, registrationCheck.error,
                       registrationCheck.description);
   }
@@ -7925,11 +10207,13 @@ function registerEndpoint(req, res) {
   // Into the directory, under ou=applications. The response below is composed
   // from `record` rather than read back, because the two are the same object
   // and a read-back would only be able to differ.
-  applications.register(clientId, record);
+  applications.register(clientId, record,
+                        { softwareStatement: resolved.statement });
   res.status(201).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify(record, null, 2));
   log.debug("Leaving the client registration endpoint. Registered " + clientId +
             ".");
+  log.debug("Leaving registerClient().");
 }
 
 app.post('/oauth2/register', registerEndpoint);
@@ -7990,8 +10274,12 @@ function withRegisteredClient(req, res, handler) {
 app.get('/oauth2/register/:client_id', function (req, res) {
   log.debug("Entering the client read endpoint.");
   withRegisteredClient(req, res, function (record) {
+    // `no-store`: the document carries the client_secret and the registration
+    // access token (RFC 7592 section 2.1), which the POST that minted them
+    // already sent with this header and these two did not until 2026-09-13.
     res.status(200)
        .type('application/json')
+       .set('Cache-Control', 'no-store')
        .send(JSON.stringify(record, null, 2));
   });
   log.debug("Leaving the client read endpoint.");
@@ -8000,21 +10288,106 @@ app.get('/oauth2/register/:client_id', function (req, res) {
 app.put('/oauth2/register/:client_id', function (req, res) {
   log.debug("Entering the client update endpoint.");
   withRegisteredClient(req, res, function (record) {
-    const updated = Object.assign({}, parseBody(req), {
-      client_id: record.client_id,
-      client_id_issued_at: record.client_id_issued_at,
-      client_secret: record.client_secret,
-      client_secret_expires_at: record.client_secret_expires_at,
-      registration_access_token: record.registration_access_token,
-      registration_client_uri: record.registration_client_uri
+    updateClient(req, res, record).catch(function (e) {
+      log.error(errorCodes.tag('STS-OAUTH-0228') + 'the client update ' +
+                'endpoint failed: ' + (e && e.stack ? e.stack : e));
+      if (!res.headersSent) {
+        errorCodes.mark(res, 'STS-OAUTH-0228');
+        oauthError(res, 500, 'server_error', e.message);
+      }
     });
-    applications.updateRegistration(record.client_id, updated);
-    res.status(200)
-       .type('application/json')
-       .send(JSON.stringify(updated, null, 2));
   });
   log.debug("Leaving the client update endpoint.");
 });
+
+// RFC 7592 section 2.2, after the registration access token has matched.
+async function updateClient(req, res, record) {
+  log.debug("Entering updateClient(). client_id=" + record.client_id);
+  // THE SAME CHECKS THE POST MAKES (2026-09-13). An update is a registration
+  // too — RFC 7592 section 2.2 replaces the whole document — and it went
+  // straight to the directory: no pollution check, no address check, and not
+  // RFC 9700 mode's refusal of what the other endpoints refuse, so a client
+  // registered clean could PUT the password grant or a `javascript:` URI
+  // onto itself. `oauth-oidc/CLAUDE.md` 3f's rule — a refusal at an
+  // endpoint needs the matching refusal at registration — had a second door.
+  const parsed = validation.checkDocument(parseBody(req), 'registration');
+  if (!parsed.ok) {
+    log.debug("Leaving the client update endpoint. The document is " +
+              "refused: " + parsed.code + ".");
+    errorCodes.mark(res, 'STS-OAUTH-0232');
+    log.debug("Leaving updateClient().");
+    return oauthError(res, 400, 'invalid_client_metadata', parsed.detail);
+  }
+  // THE STATEMENT, as the POST applies it — and the one rule the POST does
+  // not have: a client let in by a trusted statement where nobody else may
+  // register cannot PUT away what that statement fixed.
+  const resolved = await softwareStatement.resolve(parsed.value,
+                                                   { base: baseUrlOf(req) });
+  if (!resolved.ok) {
+    log.debug("Leaving the client update endpoint. The software " +
+              "statement was refused.");
+    log.debug("Leaving updateClient().");
+    return statementRefused(res, resolved);
+  }
+  const bound = softwareStatement.updateProblem(
+    applications.softwareStatementFactsOf(record.client_id), resolved,
+    registrationOpen());
+  if (bound) {
+    log.debug("Leaving the client update endpoint. The statement that " +
+              "admitted this client is not vouched for again.");
+    log.debug("Leaving updateClient().");
+    return statementRefused(res, bound);
+  }
+  const metadata = resolved.metadata;
+  if (metadata.redirect_uris && !Array.isArray(metadata.redirect_uris)) {
+    log.debug("Leaving the client update endpoint. redirect_uris is not an " +
+              "array.");
+    errorCodes.mark(res, 'STS-OAUTH-0233');
+    log.debug("Leaving updateClient().");
+    return oauthError(res, 400, 'invalid_redirect_uri',
+                      'redirect_uris must be an array.');
+  }
+  const addressProblem = applications.registrationUriProblem(metadata) ||
+                         applications.introspectionResponseProblem(metadata) ||
+                         applications.requestObjectMetadataProblem(metadata) ||
+                         applications.pushedAuthorizationMetadataProblem(
+                           metadata) ||
+                         applications.mtlsMetadataProblem(metadata) ||
+                         mtlsRegistrationProblem(metadata) ||
+                         applications.authorizationDetailsMetadataProblem(
+                           metadata);
+  if (addressProblem) {
+    log.debug("Leaving the client update endpoint. An unusable address.");
+    errorCodes.mark(res, addressProblem.errorCode || 'STS-REG-0070');
+    log.debug("Leaving updateClient().");
+    return oauthError(res, 400, addressProblem.error,
+                      addressProblem.description);
+  }
+  const registrationCheck = bcp.checkClientRegistration(metadata);
+  if (!registrationCheck.ok) {
+    log.debug("Leaving the client update endpoint. RFC 9700 mode refused " +
+              "the metadata (" + registrationCheck.requirement + ").");
+    errorCodes.mark(res, registrationCheck.errorCode || 'STS-OAUTH-0158');
+    log.debug("Leaving updateClient().");
+    return oauthError(res, 400, registrationCheck.error,
+                      registrationCheck.description);
+  }
+  const updated = Object.assign({}, metadata, {
+    client_id: record.client_id,
+    client_id_issued_at: record.client_id_issued_at,
+    client_secret: record.client_secret,
+    client_secret_expires_at: record.client_secret_expires_at,
+    registration_access_token: record.registration_access_token,
+    registration_client_uri: record.registration_client_uri
+  });
+  applications.updateRegistration(record.client_id, updated,
+                                  { softwareStatement: resolved.statement });
+  res.status(200)
+     .type('application/json')
+     .set('Cache-Control', 'no-store')
+     .send(JSON.stringify(updated, null, 2));
+  log.debug("Leaving updateClient().");
+}
 
 app.delete('/oauth2/register/:client_id', function (req, res) {
   log.debug("Entering the client delete endpoint.");
@@ -8122,7 +10495,8 @@ module.exports = {
   // copy of the same construct. See its header.
   signPublishedDocument: signPublishedDocument,
   authCodeTtlMs: authCodeTtlMs,
-  registrationOpen: registrationOpen
+  registrationOpen: registrationOpen,
+  registrationReachable: registrationReachable
   // `registeredClients` used to be exported from here. It is not a Map in this
   // module any more — the registrations are entries under ou=applications, and
   // `applications.registrationOf()` is how anything reads one. Re-exporting a

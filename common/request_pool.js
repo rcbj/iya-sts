@@ -168,36 +168,86 @@ let ticketWaiters = [];
 // every write that had ALREADY BEEN ANSWERED when the reader arrived. A ticket
 // counts once its response has finished — and until then it is somebody else's
 // business.
+//
+// ---------------------------------------------------------------------------
+// **AND IT WALKS THE FINISHED SET, NOT THE OUTSTANDING ONE (2026-09-13).**
+//
+// Only a finished ticket can block, so walking `outstanding` to find them was
+// walking every request IN FLIGHT to find the few that were answered. Under
+// the loopback push storm a session sweep sets off, that was 8,000 in flight
+// against 67 finished — and this function is called once per WAITER on every
+// release, which is where the quadratic lived. See releaseTicketWaiters().
+// ---------------------------------------------------------------------------
 function blockedBelow(need, servedBy) {
   log.debug("Entering blockedBelow().");
-  let blocked = false;
-  outstanding.forEach(function (t) {
-    if (t <= need && finishedTickets.has(t)) {
-      // ------------------------------------------------------------------
-      // A WRITE THIS WORKER ANSWERED DOES NOT BLOCK A READ IT IS ABOUT TO
-      // ANSWER (2026-09-08).
-      //
-      // The wait exists so that a reader cannot be told it is current before
-      // a write somebody else answered has reached the store. That reasoning
-      // does not apply to the worker's OWN outstanding writes: those are in
-      // its memory already, and the request is going to that same worker, so
-      // it will see them whether or not they have been flushed.
-      //
-      // Waiting for them anyway is what made a sequential client pay a full
-      // commit round trip per request. Measured on SCIM creates: 16.2ms each
-      // with the barrier, 5.1ms with it switched off entirely — so about
-      // eleven of those sixteen milliseconds were a client waiting for its
-      // own previous write to be written down.
-      // ------------------------------------------------------------------
-      if (servedBy && servedBy.tickets && servedBy.tickets.has(t)) {
-        return;
-      }
-      blocked = true;
-    }
-  });
   log.debug("Leaving blockedBelow().");
-  return blocked;
+  return lowestBlocking(servedBy) <= need;
 }
+
+// The lowest ticket that blocks a reader about to be served by `servedBy`, or
+// Infinity. A reader is blocked exactly when this is at or below the number it
+// arrived at, so one walk answers every waiter served by the same worker.
+function lowestBlocking(servedBy) {
+  log.debug("Entering lowestBlocking().");
+  let lowest = Infinity;
+  finishedTickets.forEach(function (t) {
+    if (t >= lowest || !outstanding.has(t)) {
+      return;
+    }
+    // --------------------------------------------------------------------
+    // A WRITE THIS WORKER ANSWERED DOES NOT BLOCK A READ IT IS ABOUT TO
+    // ANSWER (2026-09-08).
+    //
+    // The wait exists so that a reader cannot be told it is current before
+    // a write somebody else answered has reached the store. That reasoning
+    // does not apply to the worker's OWN outstanding writes: those are in
+    // its memory already, and the request is going to that same worker, so
+    // it will see them whether or not they have been flushed.
+    //
+    // Waiting for them anyway is what made a sequential client pay a full
+    // commit round trip per request. Measured on SCIM creates: 16.2ms each
+    // with the barrier, 5.1ms with it switched off entirely — so about
+    // eleven of those sixteen milliseconds were a client waiting for its
+    // own previous write to be written down.
+    // --------------------------------------------------------------------
+    if (servedBy && servedBy.tickets && servedBy.tickets.has(t)) {
+      return;
+    }
+    lowest = t;
+  });
+  log.debug("Leaving lowestBlocking().");
+  return lowest;
+}
+
+// ---------------------------------------------------------------------------
+// A WAITER THAT TIMED OUT LEFT THE LIST ONLY WHEN IT STOPPED BEING BLOCKED,
+// AND THAT WEDGED THE FRONT PROCESS FOR MINUTES (2026-09-13).
+//
+// The filter below removed a waiter when its tickets had cleared, and the
+// 2,000ms timeout in awaitCommitConfirmations() RESOLVED a waiter without
+// removing it. A reader that timed out is a reader whose tickets had not
+// cleared, so it stayed in the list for as long as they did — and every
+// release walked it again, calling blockedBelow() for it, which walked the
+// whole outstanding set. O(waiters × outstanding) per commit announcement.
+//
+// **IT IS A CLIFF AND IT FEEDS ITSELF.** Measured in process: 10,000 waiters
+// timed out against 6,000 outstanding tickets made ONE receiveCommitted() take
+// 980ms of synchronous CPU. Announcements arrive from every worker many times
+// a second, so the event loop stops being free; every proxied request, every
+// timer and every other announcement queues behind it; the queue produces
+// more waiters. Measured on the `--modes=dispatch` run of 2026-09-13: a
+// session sweep's CAEP storm put 5,752 requests in flight, the front process
+// logged nothing for three minutes, one SCIM create went unanswered for 300s
+// (undici's headers timeout) and 6,479 loopback pushes died together at the
+// server's 300s request timeout. `sts_directory_bulk_load_scim` reported it as
+// `fetch failed` after 290 of 5,000 creates.
+//
+// So a settled waiter is DROPPED here whatever its tickets say, the lowest
+// blocking ticket is computed ONCE per worker rather than once per waiter, and
+// `settledWaiters` lets the timeout compact the list without a walk per
+// timeout. `tests/request_barrier.js` section 6 pins all three.
+// ---------------------------------------------------------------------------
+let settledWaiters = 0;
 
 function releaseTicketWaiters() {
   log.debug("Entering releaseTicketWaiters().");
@@ -205,14 +255,41 @@ function releaseTicketWaiters() {
     log.debug("Leaving releaseTicketWaiters().");
     return;
   }
+  const lowest = new Map();
   ticketWaiters = ticketWaiters.filter(function (w) {
-    if (!blockedBelow(w.need, w.servedBy)) {
+    if (w.settled) {
+      return false;
+    }
+    const key = w.servedBy || null;
+    if (!lowest.has(key)) {
+      lowest.set(key, lowestBlocking(key));
+    }
+    if (lowest.get(key) > w.need) {
       w.resolve();
       return false;
     }
     return true;
   });
+  settledWaiters = 0;
   log.debug("Leaving releaseTicketWaiters().");
+}
+
+// A waiter that gave up, taken out of the list rather than left in it to be
+// walked by every later release. Compacted only once settled waiters are half
+// the list, so a burst of timeouts costs a walk per doubling rather than one
+// per timeout.
+function dropSettledWaiter() {
+  log.debug("Entering dropSettledWaiter().");
+  settledWaiters++;
+  if (settledWaiters * 2 < ticketWaiters.length) {
+    log.debug("Leaving dropSettledWaiter(). Left for the next compaction.");
+    return;
+  }
+  ticketWaiters = ticketWaiters.filter(function (w) {
+    return !w.settled;
+  });
+  settledWaiters = 0;
+  log.debug("Leaving dropSettledWaiter(). Compacted.");
 }
 
 // A ticket for a request about to be sent to `entry`. Cleared when that worker
@@ -338,8 +415,11 @@ function reapStuckTickets(need, clock) {
   log.debug('Entering reapStuckTickets(). need=' + need);
   const now = clock || Date.now();
   const gone = [];
-  outstanding.forEach(function (t) {
-    if (t > need || !finishedTickets.has(t)) {
+  // THE FINISHED SET AND NOT THE OUTSTANDING ONE: this runs on every timeout,
+  // and only a finished ticket can be reaped. See blockedBelow() for what
+  // walking every request in flight cost under a storm.
+  finishedTickets.forEach(function (t) {
+    if (t > need || !outstanding.has(t)) {
       return;
     }
     const armedAt = finishedAt.get(t);
@@ -395,6 +475,41 @@ function reapStuckTickets(need, clock) {
   log.debug('Leaving reapStuckTickets(). ' + gone.length + ' dropped.');
 }
 
+// ---------------------------------------------------------------------------
+// ONE LINE A SECOND PER CODE FOR THE TWO BARRIER TIMEOUTS (2026-09-13).
+//
+// Both are written once per READER, and a storm is thousands of readers: the
+// 2026-09-13 dispatch run wrote 29,504 `STS-WORKER-0007` lines and 6,307
+// `STS-WORKER-0027`, 14,246 of them in one minute, every one a synchronous
+// write to a pipe from the process whose event loop was the thing in short
+// supply. What a reader of the log needs is that it happened, how often, and
+// the state at the time — so the first in each second is written whole and the
+// next one written says how many were not.
+//
+// Nothing else reads these lines: the counts an operator can rely on are
+// `stats().tickets`, and no audit row was ever written for either code.
+// ---------------------------------------------------------------------------
+const WARN_WINDOW_MS = 1000;
+const sparedWarnings = new Map();
+
+function warnSparingly(code, message) {
+  log.debug("Entering warnSparingly(). " + code);
+  const now = Date.now();
+  const held = sparedWarnings.get(code);
+  if (held && (now - held.at) < WARN_WINDOW_MS) {
+    held.suppressed += 1;
+    log.debug("Leaving warnSparingly(). Counted, not written.");
+    return;
+  }
+  const more = (held && held.suppressed)
+    ? ' (' + held.suppressed + ' more like this since the last one written ' +
+      'were counted and not logged)'
+    : '';
+  sparedWarnings.set(code, { at: now, suppressed: 0 });
+  log.warn(errorCodes.tag(code) + message + more);
+  log.debug("Leaving warnSparingly().");
+}
+
 function awaitCommitConfirmations(servedBy) {
   log.debug("Entering awaitCommitConfirmations().");
   if (!readYourWrite()) {
@@ -422,16 +537,22 @@ function awaitCommitConfirmations(servedBy) {
     ticketWaiters.push(waiter);
     setTimeout(function () {
       if (!done) {
-        log.warn(errorCodes.tag('STS-WORKER-0007') +
-                 'request_pool: a write answered before this read was not ' +
-                 'reported committed within 2000ms (waiting below ticket ' +
-                 need + '; ' + outstanding.size + ' outstanding, ' +
-                 finishedTickets.size + ' of them finished); serving ' +
-                 'without it.');
+        // SETTLED BEFORE ANYTHING ELSE, so that the release reapStuckTickets()
+        // may run below drops it rather than walking it — see
+        // releaseTicketWaiters() for what keeping it cost.
+        waiter.settled = true;
+        warnSparingly('STS-WORKER-0007',
+                      'request_pool: a write answered before this read was ' +
+                      'not reported committed within 2000ms (waiting below ' +
+                      'ticket ' + need + '; ' + outstanding.size +
+                      ' outstanding, ' + finishedTickets.size + ' of them ' +
+                      'finished, ' + (ticketWaiters.length - settledWaiters) +
+                      ' reader(s) still held); serving without it.');
         // WHAT THIS READER WAS JUST SERVED WITHOUT, taken out so that the next
         // one does not wait the bound to be served without it too. See
         // reapStuckTickets(); it only reaps what is long past explaining.
         reapStuckTickets(need);
+        dropSettledWaiter();
       }
       waiter.resolve();
     }, 2000);
@@ -530,6 +651,33 @@ const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 // caller says about it may be believed.
 const POOL_TICKET_HEADER = 'x-sts-pool-ticket';
 const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
+
+// ---------------------------------------------------------------------------
+// AND THE ONE THAT TELLS A HOSTED-SURFACE WORKER WHERE ITS BACK CHANNEL GOES
+// (2026-09-13).
+//
+// The console and the portal redeem their authorization code over a real HTTP
+// request to this service's own token endpoint (`common/oidc_rp.js`), and the
+// code lives in the memory of the worker that ran `/oauth2/authorize` until
+// replication carries it anywhere else. With one pool that worker was the one
+// running `/admin/callback` too — the browser's session held both to it — so
+// the back channel named ITS OWN pid in the protocol pool's cookie and landed
+// where the code was.
+//
+// With a surface pool the callback runs in a surface worker, whose own pid is
+// no protocol worker at all. The browser's request to the callback still
+// carries the session cookie the protocol pool bound, and ONLY THIS PROCESS
+// holds that binding — so it looks the worker up and says which, on the
+// request, before a byte reaches the surface worker. The worker hands it to
+// the back channel as the value of that cookie.
+//
+// **A ROUTING HINT, NOT A CREDENTIAL**, for exactly the reason the pool cookie
+// is not one: it selects which of N identical processes answers, and the worst
+// a forged one achieves is choosing that. It is STRIPPED from what the client
+// sent anyway, like every header here that this process writes, so that no
+// handler ever sees a value that did not come from the pool.
+// ---------------------------------------------------------------------------
+const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
 // What the front process saw of this connection, in a shape that survives a
 // header. `raw` is a Buffer and is the only field that needs care; everything
@@ -691,29 +839,77 @@ const QUICK_EXIT_LIMIT = 3;
 // request and loses nothing, because correctness was never in the routing.
 const AFFINITY_MAX = 5000;
 
-// The live workers. Each is
-//   { child, pid, socket, ready, inFlight, served, startedAt, retiring }
+// ---------------------------------------------------------------------------
+// TWO POOLS, ONE TABLE OF WORKERS (2026-09-13).
+//
+// `protocol` is the pool this file always had: `workers.requestCount` workers
+// running every protocol family. `surfaces` is `workers.surfaceCount` workers
+// kept for this service's OWN two hosted surfaces, the console and the portal
+// (`workers.surfaces`), so that a page a person is waiting on never queues
+// behind a SCIM bulk load or a CAEP storm on the same worker — and a console
+// page walking the directory never holds a protocol worker.
+//
+// **WHAT IS PER POOL IS ROUTING, AND NOTHING ELSE.** A worker in either pool
+// loads the same stack, runs the same four startup steps and is one more
+// process against the same store, so everything that exists to keep PROCESSES
+// agreeing stays global and walks the one `workers` array: the read barrier's
+// generation and tickets (a write answered in one pool must make every worker
+// in BOTH stale — that is the whole of why the console can sign in through a
+// protocol worker at all), the signing keys, the certificate authority, the
+// listener certificate and the directory's connection list. What each pool has
+// of its own is what decides WHICH worker answers: its size, its affinity map,
+// its routing cookie and whether it has given up.
+//
+// **THE AFFINITY MAPS HAVE TO BE TWO.** One browser holds a worker in each
+// pool, under the SAME session cookie. With one map, `s:<id>` would name the
+// protocol worker on the way to `/oauth2/authorize`, fail to name a surface
+// worker on the way to `/admin`, be re-bound there, and then fail the other
+// way on the next protocol hop — every request flipping the binding the last
+// one made.
+//
+// **AND SO DO THE ROUTING COOKIES**, for the reason read the other way: the
+// pin's value names a worker and is honoured directly, so one cookie could name
+// a worker in only one pool, and every browser pinned to a given surface worker
+// would share ONE key in the protocol pool's map — every such browser sent to
+// the same protocol worker. That is not a locality loss; it is a funnel.
+// ---------------------------------------------------------------------------
+const PROTOCOL_POOL = 'protocol';
+const SURFACE_POOL = 'surfaces';
+const POOLS = [PROTOCOL_POOL, SURFACE_POOL];
+
+// The live workers of BOTH pools. Each is
+//   { child, pid, pool, socket, ready, inFlight, served, startedAt, retiring }
 let workers = [];
 
-// session id -> pid. Insertion-ordered, which makes the cap a
+// session id -> pid, one map per pool. Insertion-ordered, which makes the cap a
 // least-recently-added eviction without a second structure.
-const affinity = new Map();
+const affinities = {};
+affinities[PROTOCOL_POOL] = new Map();
+affinities[SURFACE_POOL] = new Map();
 
 let socketDir = '';
 let nextSocket = 1;
-let quickExits = 0;
-let givenUp = false;
+const quickExits = {};
+quickExits[PROTOCOL_POOL] = 0;
+quickExits[SURFACE_POOL] = 0;
+const givenUp = {};
+givenUp[PROTOCOL_POOL] = false;
+givenUp[SURFACE_POOL] = false;
 let stopped = false;
 let starting = null;
 
 // ---------------------------------------------------------------------------
 // The configured size and the configured allow-list.
 // ---------------------------------------------------------------------------
-function size() {
+// `pool` defaults to the protocol pool, which is what every caller written
+// before the second pool existed means by "the pool".
+function size(pool) {
   log.debug('Entering size().');
+  const key = pool === SURFACE_POOL ? 'workers.surfaceCount'
+                                    : 'workers.requestCount';
   let wanted = 0;
   try {
-    wanted = parseInt(config.value('workers.requestCount'), 10);
+    wanted = parseInt(config.value(key), 10);
   } catch (e) {
     log.debug("Caught in size(): " + ((e && e.message) || e));
     // A module loaded with no configuration at all — which is how the parent
@@ -864,6 +1060,314 @@ function fansOut(url) {
   return matchesAny(url, fanoutPrefixes());
 }
 
+// ---------------------------------------------------------------------------
+// THE BATCH LANE (2026-09-14): batch traffic may use a SHARE of a pool's
+// workers and a number of requests in flight, and waits in this process for
+// the rest.
+//
+// What it is for, measured: a dispatch run's SCIM bulk load wrote one person at
+// a time, and every write emitted two Shared Signals events to forty-two push
+// streams — forty of them another realm's receivers by a replication defect
+// since fixed, but the shape is what matters — so each create became eighty-
+// four pushes, most of them back into this service's own receive endpoints.
+// Every worker filled, the read barrier waited on workers that could not
+// answer, and nothing at all was answered for fourteen minutes. A batch client
+// deserves throughput; it does not deserve every worker.
+//
+// **TWO LIMITS, BECAUSE ONE CANNOT DO BOTH JOBS.** The SHARE confines batch
+// traffic to some workers, so the others are free for everything else — which
+// is the whole point with a pool of several. The CONCURRENCY cap bounds how
+// much of that share is in flight, which is the whole point with a pool of one
+// (the surface pool in the suite's dispatch mode), where the share cannot leave
+// anything free.
+//
+// **A BOUND REQUEST KEEPS ITS WORKER.** `mutationKeyOf()` sends every write to
+// one SCIM resource to one worker so two read-modify-writes cannot lose an
+// update, and a credential or session binding is locality the caller is
+// relying on. The lane decides only where an UNBOUND batch request goes, and
+// the cap queues rather than reroutes, so no binding is broken by it.
+//
+// **WHAT WAITS IS PIPED LATER, NOT BUFFERED.** A queued request's body stays
+// in its socket until it is dispatched; what this process holds is a closure.
+// The queue is bounded (`workers.batchQueueLimit`) and so is the wait
+// (`workers.batchQueueTimeoutS`), and both answer 503 with Retry-After — a
+// refusal a batch client is built to handle, where a request held for ever is
+// not. A client that goes away while waiting is dropped from the queue.
+// ---------------------------------------------------------------------------
+function batchPrefixes() {
+  log.debug("Entering batchPrefixes().");
+  let raw;
+  try {
+    raw = config.value('workers.batch');
+  } catch (e) {
+    log.debug("Caught in batchPrefixes(): " + ((e && e.message) || e));
+    log.debug("Leaving batchPrefixes().");
+    return [];
+  }
+  const list = Array.isArray(raw) ? raw : String(raw || '').split(',');
+  log.debug("Leaving batchPrefixes().");
+  return list.map(function (one) {
+    return String(one).trim();
+  }).filter(function (one) {
+    return one.charAt(0) === '/';
+  });
+}
+
+function isBatch(url) {
+  log.debug("Entering isBatch().");
+  log.debug("Leaving isBatch().");
+  return matchesAny(url, batchPrefixes());
+}
+
+function batchNumber(key, fallback) {
+  log.debug("Entering batchNumber(). " + key);
+  let raw;
+  try {
+    raw = Number(config.value(key));
+  } catch (e) {
+    log.debug("Caught in batchNumber(): " + ((e && e.message) || e));
+    raw = NaN;
+  }
+  log.debug("Leaving batchNumber().");
+  return Number.isFinite(raw) ? raw : fallback;
+}
+
+// How many of `count` workers batch traffic may use. At least one; one fewer
+// than the pool unless the pool has one worker or the share is 100.
+function laneSize(count, share) {
+  log.debug("Entering laneSize().");
+  if (count <= 1) {
+    log.debug("Leaving laneSize(). One worker.");
+    return count;
+  }
+  const pct = Math.min(100, Math.max(1, Number(share) || 50));
+  // Below 100% the floor is always fewer than `count`, so a worker is left.
+  const n = Math.max(1, Math.floor(count * pct / 100));
+  log.debug("Leaving laneSize(). " + n + " of " + count + ".");
+  return n;
+}
+
+// The ready workers of a pool batch traffic may be routed to. The FIRST ones
+// by fork order, so the lane is stable across requests and a batch client's
+// binding lands on a worker the lane will keep.
+function laneOf(ready) {
+  log.debug("Entering laneOf().");
+  const live = (ready || []).slice().sort(function (a, b) {
+    return (a.startedAt || 0) - (b.startedAt || 0) || a.pid - b.pid;
+  });
+  const out = live.slice(0, laneSize(live.length,
+    batchNumber('workers.batchWorkerShare', 50)));
+  log.debug("Leaving laneOf(). " + out.length + ".");
+  return out;
+}
+
+function laneWorkers(pool) {
+  log.debug("Entering laneWorkers().");
+  log.debug("Leaving laneWorkers().");
+  return laneOf(readyWorkers(pool));
+}
+
+// Per pool: how many batch requests are in flight, and who is waiting.
+const batchState = new Map();
+
+function batchStateOf(pool) {
+  log.debug("Entering batchStateOf().");
+  const which = pool || PROTOCOL_POOL;
+  if (!batchState.has(which)) {
+    batchState.set(which, { inFlight: 0, waiting: [], refused: 0,
+                            timedOut: 0, queuedEver: 0 });
+  }
+  log.debug("Leaving batchStateOf().");
+  return batchState.get(which);
+}
+
+function batchCap(pool) {
+  log.debug("Entering batchCap().");
+  const per = batchNumber('workers.batchConcurrency', 8);
+  if (!(per > 0)) {
+    log.debug("Leaving batchCap(). Uncapped.");
+    return 0;
+  }
+  log.debug("Leaving batchCap().");
+  return Math.max(1, laneWorkers(pool).length) * Math.floor(per);
+}
+
+function refuseBatch(res, code, why) {
+  log.debug("Entering refuseBatch(). " + code);
+  if (res.headersSent || res.writableEnded) {
+    log.debug("Leaving refuseBatch(). Already answered.");
+    return;
+  }
+  errorCodes.mark(res, code);
+  // error-code: none — the caller names STS-WORKER-0040 or -0041, marked above
+  res.status(503);
+  res.set('Retry-After', '5');
+  res.type('text/plain');
+  res.send('This service is busy with batch traffic (' + why + '). Try ' +
+           'again after the Retry-After interval.\n');
+  log.debug("Leaving refuseBatch().");
+}
+
+// Run `dispatch(release)` when the pool's lane has room, or queue it. `release`
+// must be called exactly once when the dispatched request is finished.
+function admitBatch(pool, req, res, dispatch) {
+  log.debug("Entering admitBatch().");
+  const state = batchStateOf(pool);
+  let released = false;
+  const release = function () {
+    log.debug("Entering release().");
+    if (released) {
+      log.debug("Leaving release(). Twice.");
+      return;
+    }
+    released = true;
+    state.inFlight = Math.max(0, state.inFlight - 1);
+    drainBatch(pool);
+    log.debug("Leaving release().");
+  };
+  const cap = batchCap(pool);
+  if (!cap || state.inFlight < cap) {
+    state.inFlight += 1;
+    log.debug("Leaving admitBatch(). Dispatched at once.");
+    dispatch(release);
+    return;
+  }
+  const limit = Math.max(1, batchNumber('workers.batchQueueLimit', 5000));
+  if (state.waiting.length >= limit) {
+    state.refused += 1;
+    warnSparingly('STS-WORKER-0040', 'request_pool: the ' + pool + ' pool\'s ' +
+                  'batch lane is full — ' + state.inFlight + ' in flight, ' +
+                  state.waiting.length + ' waiting (workers.batchQueueLimit=' +
+                  limit + ') — so a batch request was answered 503.');
+    refuseBatch(res, 'STS-WORKER-0040', state.waiting.length +
+                ' batch requests are already waiting');
+    log.debug("Leaving admitBatch(). Refused; the queue is full.");
+    return;
+  }
+  const entry = { at: Date.now(), dispatch: dispatch, release: release,
+                  gone: false, res: res };
+  const timeoutS = Math.max(1, batchNumber('workers.batchQueueTimeoutS', 60));
+  entry.timer = setTimeout(function () {
+    const at = state.waiting.indexOf(entry);
+    if (at < 0) {
+      return;
+    }
+    state.waiting.splice(at, 1);
+    state.timedOut += 1;
+    warnSparingly('STS-WORKER-0041', 'request_pool: a batch request waited ' +
+                  timeoutS + 's for the ' + pool + ' pool\'s batch lane ' +
+                  '(workers.batchQueueTimeoutS) and was answered 503; ' +
+                  state.waiting.length + ' still waiting.');
+    refuseBatch(res, 'STS-WORKER-0041', 'it waited ' + timeoutS + 's');
+  }, timeoutS * 1000);
+  if (entry.timer.unref) {
+    entry.timer.unref();
+  }
+  // A client that goes away while waiting leaves the queue.
+  res.on('close', function () {
+    if (!res.writableEnded && state.waiting.indexOf(entry) >= 0) {
+      state.waiting.splice(state.waiting.indexOf(entry), 1);
+      clearTimeout(entry.timer);
+    }
+  });
+  state.waiting.push(entry);
+  state.queuedEver += 1;
+  log.debug("Leaving admitBatch(). Queued behind " +
+            (state.waiting.length - 1) + ".");
+}
+
+function drainBatch(pool) {
+  log.debug("Entering drainBatch().");
+  const state = batchStateOf(pool);
+  let started = 0;
+  while (state.waiting.length) {
+    const cap = batchCap(pool);
+    if (cap && state.inFlight >= cap) {
+      break;
+    }
+    const next = state.waiting.shift();
+    clearTimeout(next.timer);
+    if (next.res.writableEnded || next.res.destroyed) {
+      continue;
+    }
+    state.inFlight += 1;
+    started += 1;
+    next.dispatch(next.release);
+  }
+  log.debug("Leaving drainBatch(). " + started + " started.");
+}
+
+// For stats(): each pool's lane, as numbers.
+function batchStats() {
+  log.debug("Entering batchStats().");
+  const out = {};
+  [PROTOCOL_POOL, SURFACE_POOL].forEach(function (pool) {
+    const state = batchStateOf(pool);
+    out[pool] = { inFlight: state.inFlight, waiting: state.waiting.length,
+      cap: batchCap(pool), laneWorkers: laneWorkers(pool).map(function (one) {
+        return one.pid;
+      }), queuedEver: state.queuedEver, refused: state.refused,
+      timedOut: state.timedOut };
+  });
+  log.debug("Leaving batchStats().");
+  return out;
+}
+
+// The prefixes the hosted-surface pool answers. Read the way the fanout list
+// is, for the same reasons; see the `workers.surfaces` row for why the default
+// stops at `/admin` and `/portal` and does not take `/admin-api`.
+function surfacePrefixes() {
+  log.debug("Entering surfacePrefixes().");
+  let raw;
+  try {
+    raw = config.value('workers.surfaces');
+  } catch (e) {
+    log.debug("Caught in surfacePrefixes(): " + ((e && e.message) || e));
+    log.debug("Leaving surfacePrefixes().");
+    return [];
+  }
+  if (!raw) {
+    log.debug("Leaving surfacePrefixes().");
+    return [];
+  }
+  const list = Array.isArray(raw) ? raw : String(raw).split(',');
+  log.debug("Leaving surfacePrefixes().");
+  return list.map(function (one) {
+    return String(one).trim();
+  }).filter(function (one) {
+    return one.charAt(0) === '/';
+  });
+}
+
+// ---------------------------------------------------------------------------
+// WHICH POOL A DISPATCHED REQUEST GOES TO.
+//
+// A question asked only AFTER `dispatched()` has said yes: the one list still
+// decides whether a path leaves the front process, and this decides where it
+// lands. The same `matchesAny()` as every other prefix here, so the realm
+// segment is removed and a prefix ends at a segment boundary — `/admin` does
+// not take `/admin-api`, which is the bug `tests/request_routing.js` was
+// written for, met a second time in a second list.
+//
+// **A POOL OF NONE IS NOT A POOL.** With `workers.surfaceCount` at 0 the
+// surfaces go to the protocol pool, which is where they always went. And a
+// surface pool that GAVE UP — workers that could not start — hands them back
+// to the protocol pool too, rather than refusing them for the life of the
+// process: it is a decision taken once, logged loudly at `STS-WORKER-0023`,
+// and stable from then on, so it is not the timing-dependent half-dispatch the
+// header at the top of this file refuses.
+// ---------------------------------------------------------------------------
+function poolFor(url) {
+  log.debug("Entering poolFor().");
+  if (size(SURFACE_POOL) > 0 && !givenUp[SURFACE_POOL] &&
+      matchesAny(url, surfacePrefixes())) {
+    log.debug("Leaving poolFor(). " + SURFACE_POOL);
+    return SURFACE_POOL;
+  }
+  log.debug("Leaving poolFor(). " + PROTOCOL_POOL);
+  return PROTOCOL_POOL;
+}
+
 // Whether this request is one the pool handles. The REALM PREFIX is stripped
 // before the comparison, because a prefix names a protocol surface and
 // `/realm/acme/scim/v2` is the same surface as `/scim/v2` — the whole point of
@@ -950,8 +1454,16 @@ function fansOut(url) {
 // What it costs is that those two pages take the front process's affinity
 // rather than the console's: their session is read out of the store, where a
 // console session minted by a worker arrives by replication.
+//
+// **THE EMBEDDED DEBUGGER'S STATUS IS THE SAME SHAPE OF FACT (2026-09-13).**
+// Its listener and its api child are held by the front process only
+// (`debugger/debugger_api_process.js`), so `/admin/debugger` and
+// `GET /admin-api/debugger` answered by a worker would report a listener that
+// never bound and a child that was never forked. Pinned for that reason; the
+// settings drawn on that page are ordinary configuration either way.
 // ---------------------------------------------------------------------------
-const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust'];
+const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
+                          '/admin/debugger', '/admin-api/debugger'];
 
 function dispatched(url) {
   log.debug("Entering dispatched().");
@@ -1061,9 +1573,22 @@ function receiveCommitted(entry, committed) {
   // request that wrote nothing marks every other worker stale and sends the
   // next request to each of them through a barrier with nothing to apply —
   // which, once every request began announcing, was nearly every request.
+  //
+  // **AND THE ANNOUNCER IS MOVED FORWARD ONLY IF IT WAS ALREADY CURRENT
+  // (2026-09-13).** It has its OWN write in memory; it does not have a write
+  // another worker announced that it was never synced for. Stamping it with the
+  // new generation regardless marked it current for those too, so its next
+  // read went out without a barrier — and a worker that answers most of the
+  // writes (every `/admin-api` call carrying one shared token lands on one)
+  // is exactly the worker whose reads were then never synced. Found by the
+  // `sts_global_logout` investigation: a sign-out answered by that worker read
+  // a session store missing a sign-in another worker had committed.
   if ((committed || {}).wrote) {
+    const wasCurrent = entry.generation >= generation;
     generation++;
-    entry.generation = generation;
+    if (wasCurrent) {
+      entry.generation = generation;
+    }
   }
   // EVERY TICKET THIS WORKER OWED IS SATISFIED: it has just told us the
   // sequence its flush reached, and its flush covers everything it had
@@ -1313,17 +1838,111 @@ function receivePublishedPki(entry, published) {
 // hierarchy is already shared, and what this adds is a certificate — a worker
 // that is handed the new one a few milliseconds late pins the old one for those
 // milliseconds, which is the state it was in before this existed.
-function reconcileTheListener() {
+//
+// ---------------------------------------------------------------------------
+// **ONE PASS AT A TIME, AND IT WAITS FOR A BRANCH RATHER THAN BUILDING ONE
+// (2026-09-13).** Two things were wrong with calling the reconcile bare on
+// every publish, and `tests/listener_branch_adoption.js` pins both.
+//
+//   * **PASSES OVERLAPPED.** A worker publishes a scope's row once per save —
+//     a realm build is a dozen — and each started a pass. A pass issuing from
+//     the branch it read while a newer branch was adopted underneath it could
+//     finish AFTER the pass for the newer one, and put the older leaf back on
+//     the socket with nothing left to trigger another. So a call while a pass
+//     is running asks for ONE more after it, which re-reads what is held.
+//   * **A ROOT ARRIVES AHEAD OF ITS BRANCHES.** `build-root` on a worker
+//     publishes the Root, then rebuilds and publishes each branch. The
+//     reconcile used to rebuild the process branch here as soon as the Root
+//     landed — the same branch that worker was building — and the service
+//     ended up serving one Intermediate CA (Process) and publishing another.
+//     So a publish-triggered pass passes `buildBranch: false`, and where the
+//     listener is left waiting a FALLBACK pass that may build is armed for
+//     `LISTENER_BRANCH_GRACE_MS`, for the case where the branch never comes
+//     (a worker whose branch rebuild failed logs `STS-PKI-0104` and moves on).
+//     A pass that finds the listener current disarms it.
+// ---------------------------------------------------------------------------
+// Long enough for a worker to build a branch under the slowest key algorithm
+// `/admin/pki` offers, and short next to leaving a listener stale for good.
+const LISTENER_BRANCH_GRACE_MS = 30000;
+let listenerPass = null;          // the pass running now, or null
+let listenerPassAgain = null;     // null, or { repair } for the pass after it
+let listenerRepairTimer = null;
+
+function reconcileTheListener(options) {
   log.debug("Entering reconcileTheListener().");
+  const repair = !!(options && options.repair);
+  if (listenerPass) {
+    // A pass is running; one more after it, and a repair if either asked.
+    listenerPassAgain = { repair: repair ||
+                                  !!(listenerPassAgain &&
+                                     listenerPassAgain.repair) };
+    log.debug("Leaving reconcileTheListener(). Queued behind the running " +
+              "pass.");
+    return listenerPass;
+  }
+  listenerPass = runListenerPass(repair).then(function () {
+    listenerPass = null;
+    const next = listenerPassAgain;
+    listenerPassAgain = null;
+    if (next) {
+      return reconcileTheListener(next);
+    }
+    return null;
+  });
+  log.debug("Leaving reconcileTheListener().");
+  return listenerPass;
+}
+
+function armListenerRepair(armed) {
+  log.debug("Entering armListenerRepair(). " + armed);
+  if (!armed) {
+    if (listenerRepairTimer) {
+      clearTimeout(listenerRepairTimer);
+      listenerRepairTimer = null;
+    }
+    log.debug("Leaving armListenerRepair(). Disarmed.");
+    return;
+  }
+  if (listenerRepairTimer) {
+    log.debug("Leaving armListenerRepair(). Already armed.");
+    return;
+  }
+  listenerRepairTimer = setTimeout(function () {
+    listenerRepairTimer = null;
+    log.warn('request_pool: the process branch under this service\'s Root ' +
+             'did not arrive from the process that replaced the Root within ' +
+             (LISTENER_BRANCH_GRACE_MS / 1000) + 's, so the listener ' +
+             'certificate is repaired here, rebuilding that branch.');
+    reconcileTheListener({ repair: true });
+  }, LISTENER_BRANCH_GRACE_MS);
+  if (typeof listenerRepairTimer.unref === 'function') {
+    listenerRepairTimer.unref();
+  }
+  log.debug("Leaving armListenerRepair(). Armed.");
+}
+
+// Whether the fallback above is armed — for the test, which cannot wait for it.
+function listenerRepairArmed() {
+  log.debug("Entering listenerRepairArmed().");
+  log.debug("Leaving listenerRepairArmed().");
+  return !!listenerRepairTimer;
+}
+
+function runListenerPass(repair) {
+  log.debug("Entering runListenerPass(). repair=" + repair);
   // **LAZILY, AND THAT IS RULE 1 RATHER THAN TASTE.** `server.js` requires this
   // module at 122 and the protocol stack — `tls/tls_server.js` with it — at
   // 176, so a require at the top of this file would register `/tls`'s three
   // views from HERE, ahead of every protocol module. Inside a function that
   // cannot run until a worker has published something, it is a cache hit.
   const tls = require('../tls/tls_server');
-  Promise.resolve()
-    .then(function () { return tls.reconcileWithHierarchy(); })
+  log.debug("Leaving runListenerPass().");
+  return Promise.resolve()
+    .then(function () {
+      return tls.reconcileWithHierarchy({ buildBranch: repair });
+    })
     .then(function (changed) {
+      armListenerRepair(!repair && tls.listenerAwaitsBranch());
       if (!changed) {
         return;
       }
@@ -1357,7 +1976,6 @@ function reconcileTheListener() {
                 'request_pool: the listener certificate could not be ' +
                 'reconciled with the rebuilt hierarchy: ' + e.message);
     });
-  log.debug("Leaving reconcileTheListener().");
 }
 
 function broadcastPki(realmId, chain, except) {
@@ -1407,9 +2025,14 @@ function maxSocketsPerWorker() {
   return (n > 0) ? n : 64;
 }
 
-function fork() {
-  log.debug('Entering fork().');
-  const socket = path.join(ensureSocketDir(), 'w' + (nextSocket++) + '.sock');
+function fork(pool) {
+  log.debug('Entering fork(). pool=' + (pool || PROTOCOL_POOL));
+  const which = pool === SURFACE_POOL ? SURFACE_POOL : PROTOCOL_POOL;
+  // `s` for a surface worker's socket, so that a directory listing — and the
+  // 502 that names a socket path — says which pool a worker was in.
+  const socket = path.join(ensureSocketDir(),
+                           (which === SURFACE_POOL ? 's' : 'w') +
+                           (nextSocket++) + '.sock');
   const child = child_process.fork(WORKER_MODULE, [socket], {
     // stdout and stderr are the front process's, so a worker's bunyan lines
     // land in the same stream as everything else. They carry the pid.
@@ -1444,9 +2067,16 @@ function fork() {
     serialization: 'advanced',
     // THE MARKER THAT STOPS A WORKER PROXYING TO ITSELF. See the constant at
     // the top of this file for what happens without it.
-    env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1' })
+    //
+    // AND WHICH POOL IT IS IN. One thing in a worker reads it: the OpenID
+    // Connect back channel in `common/oidc_rp.js`, which names the worker that
+    // should redeem a code and has to know whether that can be itself — see
+    // PROTOCOL_WORKER_HEADER.
+    env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1',
+                                          STS_REQUEST_WORKER_POOL: which })
   });
-  const entry = { child: child, pid: child.pid, socket: socket, ready: false,
+  const entry = { child: child, pid: child.pid, pool: which, socket: socket,
+                  ready: false,
                   // -------------------------------------------------------
                   // ONE AGENT PER WORKER, AND IT IS A BOUND RATHER THAN A
                   // CACHE (2026-09-12).
@@ -1533,9 +2163,10 @@ function fork() {
     child.on('message', function (message) {
       if (message && message.ready) {
         entry.ready = true;
-        quickExits = 0;
-        log.info('request_pool: worker ' + entry.pid + ' is ready on ' +
-                 entry.socket + '. ' + readyWorkers().length + ' of ' + size() +
+        quickExits[entry.pool] = 0;
+        log.info('request_pool: ' + entry.pool + ' worker ' + entry.pid +
+                 ' is ready on ' + entry.socket + '. ' +
+                 readyWorkers(entry.pool).length + ' of ' + size(entry.pool) +
                  ' serving.');
         resolve(entry);
         return;
@@ -1602,6 +2233,7 @@ function reap(entry, code, signal) {
   if (entry.agent && typeof entry.agent.destroy === 'function') {
     entry.agent.destroy();
   }
+  const affinity = affinities[entry.pool] || affinities[PROTOCOL_POOL];
   affinity.forEach(function (pid, session) {
     if (pid === entry.pid) {
       affinity.delete(session);
@@ -1653,36 +2285,52 @@ function reap(entry, code, signal) {
   const how = signal ? 'was killed with ' + signal : 'exited with code ' + code;
   const shortLived = (Date.now() - entry.startedAt) < QUICK_EXIT_MS &&
                      entry.served === 0;
+  const pool = entry.pool || PROTOCOL_POOL;
   if (shortLived && !stopped) {
-    quickExits++;
+    quickExits[pool]++;
   }
   if (entry.inFlight) {
     log.warn(errorCodes.tag('STS-WORKER-0022') +
-             'request_pool: worker ' + entry.pid + ' ' + how + ' with ' +
-             entry.inFlight + ' request(s) in flight; each is answered 502.');
+             'request_pool: ' + pool + ' worker ' + entry.pid + ' ' + how +
+             ' with ' + entry.inFlight + ' request(s) in flight; each is ' +
+             'answered 502.');
   } else {
-    log.info('request_pool: worker ' + entry.pid + ' ' + how + '.');
+    log.info('request_pool: ' + pool + ' worker ' + entry.pid + ' ' + how +
+             '.');
   }
-  if (quickExits >= QUICK_EXIT_LIMIT && !givenUp && !stopped) {
-    givenUp = true;
+  if (quickExits[pool] >= QUICK_EXIT_LIMIT && !givenUp[pool] && !stopped) {
+    givenUp[pool] = true;
+    // WHERE THE WORK GOES NOW IS THE ONE THING THE TWO POOLS SAY DIFFERENTLY:
+    // the protocol pool's paths come back to this process, which is what
+    // workers.requestCount=0 means; the surface pool's go to the protocol
+    // pool, which is what workers.surfaceCount=0 means. See poolFor().
     log.error(errorCodes.tag('STS-WORKER-0023') +
-      'request_pool: ' + quickExits + ' request workers in a row ' +
-      'exited within ' + QUICK_EXIT_MS + 'ms without serving anything, so ' +
-      'this service has STOPPED FORKING THEM and is handling every request ' +
-      'in the process that holds the sockets — which is what ' +
-      'workers.requestCount=0 means: correct, and on one thread. A worker ' +
-      'that cannot start is usually a CONFIG_FILE it cannot read, a port a ' +
-      'protocol module tried to bind, or a machine out of memory; ' +
-      WORKER_MODULE + ' run by hand with a socket path says which.');
+      'request_pool: ' + quickExits[pool] + ' ' + pool + ' workers in a ' +
+      'row exited within ' + QUICK_EXIT_MS + 'ms without serving anything, ' +
+      'so this service has STOPPED FORKING THEM and ' +
+      (pool === SURFACE_POOL
+        ? 'is sending the hosted surfaces to the protocol workers — which ' +
+          'is what workers.surfaceCount=0 means'
+        : 'is handling every request in the process that holds the sockets ' +
+          '— which is what workers.requestCount=0 means: correct, and on ' +
+          'one thread') +
+      '. A worker that cannot start is usually a CONFIG_FILE it cannot ' +
+      'read, a port a protocol module tried to bind, or a machine out of ' +
+      'memory; ' + WORKER_MODULE + ' run by hand with a socket path says ' +
+      'which.');
   }
   log.debug('Leaving reap().');
 }
 
-function readyWorkers() {
+// The ready workers of ONE pool — the protocol pool when none is named. Every
+// ROUTING decision goes through here; the broadcasts above walk `workers`
+// whole, because agreement is between processes and not between pools.
+function readyWorkers(pool) {
   log.debug("Entering readyWorkers().");
+  const which = pool || PROTOCOL_POOL;
   log.debug("Leaving readyWorkers().");
   return workers.filter(function (one) {
-    return one.ready && !one.retiring;
+    return one.ready && !one.retiring && (one.pool || PROTOCOL_POOL) === which;
   });
 }
 
@@ -1690,9 +2338,10 @@ function readyWorkers() {
 // pool uses, and for the same reason: the first keeps a slow request from being
 // queued behind another, and the second stops a burst landing on whichever
 // child was forked first.
-function leastLoaded() {
+// `among`, when given, narrows the choice to those workers — the batch lane.
+function leastLoaded(pool, among) {
   log.debug("Entering leastLoaded().");
-  const live = readyWorkers();
+  const live = among || readyWorkers(pool);
   if (!live.length) {
     log.debug("Leaving leastLoaded().");
     return null;
@@ -1773,6 +2422,22 @@ const FLOW_PARAMS = ['authn', 'consent', 'device_code', 'SAMLart'];
 //     recovery every other affinity key gets.
 // ---------------------------------------------------------------------------
 const POOL_COOKIE = 'sts_pool';
+
+// AND THE SURFACE POOL'S, a second name for the reason the two-pools block at
+// the top of the worker table gives: a value can name a worker in one pool
+// only. The protocol pool keeps the old name, so every browser and every
+// back channel that already carries `sts_pool` means what it meant.
+//
+// `tests/vendored/sts_metadata_anonymous.js` reads POOL_COOKIE's spelling out
+// of this file to exempt it on metadata documents; this one needs no such
+// exemption, because no metadata document is under a surface prefix.
+const SURFACE_POOL_COOKIE = 'sts_pool_surfaces';
+
+function poolCookieFor(pool) {
+  log.debug("Entering poolCookieFor().");
+  log.debug("Leaving poolCookieFor().");
+  return pool === SURFACE_POOL ? SURFACE_POOL_COOKIE : POOL_COOKIE;
+}
 
 // ---------------------------------------------------------------------------
 // A WRITE TO ONE RESOURCE GOES TO ONE WORKER, EVEN ON A FANOUT PATH
@@ -1869,8 +2534,13 @@ function mutationKeyOf(req, url) {
   return credentialKeyOf(req);
 }
 
-function affinityKeyOf(req) {
+// `pool` decides which routing cookie is read — see SURFACE_POOL_COOKIE — and
+// defaults to the protocol pool. Everything else about the key is the same in
+// both pools: the session cookies are the browser's, and which pool holds a
+// binding for them is a question for that pool's map.
+function affinityKeyOf(req, pool) {
   log.debug("Entering affinityKeyOf().");
+  const POOL_COOKIE = poolCookieFor(pool);
   const header = req.headers && req.headers.cookie;
   if (header) {
     const parts = String(header).split(';');
@@ -2015,8 +2685,11 @@ function learn(entry, answer) {
   log.debug('Leaving learn().');
 }
 
+// Bound in the map of the pool the worker is IN, which is what keeps one
+// browser's two bindings — one per pool — from overwriting each other.
 function remember(key, entry) {
   log.debug("Entering remember().");
+  const affinity = affinities[entry.pool] || affinities[PROTOCOL_POOL];
   if (affinity.get(key) === entry.pid) {
     log.debug("Leaving remember().");
     return;
@@ -2034,17 +2707,51 @@ function remember(key, entry) {
 // The worker this request goes to. A session holds affinity; everything else
 // fans out. A session whose worker has gone gets a new one, which is the whole
 // of the recovery story — see the header on why that is safe.
-function workerFor(key) {
+// `among` narrows a NEW choice to those workers — the batch lane — and never
+// overrides a binding the key already holds. See the batch lane's header.
+function workerFor(key, pool, among) {
   log.debug('Entering workerFor(). key=' +
-            (key ? key.split(':')[0] : '(none)'));
+            (key ? key.split(':')[0] : '(none)') + ' pool=' +
+            (pool || PROTOCOL_POOL));
+  const candidates = among && among.length ? among : null;
   if (!key) {
     // Either this path fans out by policy, or it is the first hop of a flow and
     // has nothing to be stuck to yet. Both are the same routing decision, and
     // learn() binds whatever the chosen worker mints.
-    const any = leastLoaded();
+    const any = leastLoaded(pool, candidates);
     log.debug('Leaving workerFor(). Fanout to ' + (any ? any.pid : '(none)'));
     return any;
   }
+  const held = heldWorker(key, pool);
+  if (held) {
+    log.debug('Leaving workerFor(). Held affinity to ' + held.pid + '.');
+    return held;
+  }
+  const chosen = leastLoaded(pool, candidates);
+  if (chosen) {
+    // A key we have not seen, or one whose worker has gone. Either way it is
+    // bound to whoever answers now — which is the whole of the recovery story,
+    // and is safe for the reason the header gives: affinity is locality and
+    // never correctness.
+    remember(key, chosen);
+  }
+  log.debug('Leaving workerFor(). New affinity to ' +
+            (chosen ? chosen.pid : '(none)') + '.');
+  return chosen;
+}
+
+// The ready worker of `pool` that `key` is ALREADY bound to, or null — with no
+// fallback and nothing remembered. Split out of workerFor() for the one caller
+// that must not bind anything: proxy() asking, on a surface request, which
+// protocol worker this browser is held by. Binding there would pin a browser to
+// a protocol worker chosen by load for a request no protocol worker answers.
+function heldWorker(key, pool) {
+  log.debug("Entering heldWorker().");
+  if (!key) {
+    log.debug("Leaving heldWorker(). No key.");
+    return null;
+  }
+  const affinity = affinities[pool] || affinities[PROTOCOL_POOL];
   // ---------------------------------------------------------------------
   // THE POOL COOKIE NAMES ITS WORKER, so it is honoured directly rather than
   // being looked up. The first version bound it in the affinity map when it
@@ -2063,24 +2770,87 @@ function workerFor(key) {
       pid = named;
     }
   }
-  const held = pid ? readyWorkers().filter(function (one) {
+  // A pid from the OTHER pool is no worker here, which is what the filter on
+  // readyWorkers(pool) says without a second test.
+  const held = pid ? readyWorkers(pool).filter(function (one) {
     return one.pid === pid;
   })[0] : null;
-  if (held) {
-    log.debug('Leaving workerFor(). Held affinity to ' + held.pid + '.');
-    return held;
+  log.debug("Leaving heldWorker().");
+  return held || null;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT IS WRONG WITH THE SURFACE POOL AS CONFIGURED, OR NULL (2026-09-13).
+//
+// Two answers, and they are opposite in kind on purpose:
+//
+//   * **NOTHING IT ANSWERS IS DISPATCHED — A WARNING, AND IT IS NOT FORKED.**
+//     `workers.dispatch` is the one list of what leaves this process, so a
+//     surface pool whose prefixes it does not name would be workers that load
+//     the whole service and receive nothing. That is waste and not wrongness,
+//     so it is said out loud and the service starts without them.
+//   * **READ-YOUR-WRITE IS OFF — FATAL, ON `start()`'S COORDINATION ARGUMENT.**
+//     With one pool a browser's sign-in to the console lands on ONE worker:
+//     the arrival session, the authorization code, the sign-on session and the
+//     console session are all minted in the process that reads them next.
+//     With two, `/admin/callback` is answered in a surface worker and reads a
+//     sign-on session a protocol worker minted a few milliseconds earlier; the
+//     console session it mints then names that parent, and every later console
+//     page checks the parent is alive. Coordination gets those rows there in
+//     half a second to a second, and a browser — or the suite — is faster. So
+//     the console would fail to sign in, or sign in and then end the session as
+//     an orphan, SOMETIMES. The barrier (`workers.readYourWrite`) is what makes
+//     a surface worker wait for a write a protocol worker already answered, and
+//     without it this is the silent, intermittent wrongness this repository
+//     refuses to start with rather than warn about.
+//
+// Exported for `tests/request_routing.js`: the decision is two settings and a
+// list, and reaching it through start() needs a coordinating store first.
+// ---------------------------------------------------------------------------
+function surfacePoolProblem() {
+  log.debug("Entering surfacePoolProblem().");
+  const count = size(SURFACE_POOL);
+  if (!count) {
+    log.debug("Leaving surfacePoolProblem(). No surface pool.");
+    return null;
   }
-  const chosen = leastLoaded();
-  if (chosen) {
-    // A key we have not seen, or one whose worker has gone. Either way it is
-    // bound to whoever answers now — which is the whole of the recovery story,
-    // and is safe for the reason the header gives: affinity is locality and
-    // never correctness.
-    remember(key, chosen);
+  const prefixes = surfacePrefixes();
+  // REACHED EITHER WAY ROUND: `/admin` dispatched reaches the `/admin` pool,
+  // and so does `/admin/users` dispatched on its own — a surface pool left unforked
+  // for that second shape would answer every `/admin/users` request 503.
+  const narrower = dispatchPrefixes();
+  const reached = prefixes.filter(function (one) {
+    return dispatched(one) || narrower.some(function (entry) {
+      return entry.indexOf(one + '/') === 0;
+    });
+  });
+  if (!reached.length) {
+    log.debug("Leaving surfacePoolProblem(). Nothing reaches it.");
+    return { code: 'STS-WORKER-0039', fatal: false,
+             message: 'request_pool: workers.surfaceCount is ' + count +
+               ' and none of workers.surfaces (' +
+               (prefixes.join(', ') || 'empty') + ') is named by ' +
+               'workers.dispatch, so no request would ever reach those ' +
+               'workers. They are not being started; name the paths in ' +
+               'workers.dispatch (or use "*") to give the console and the ' +
+               'portal workers of their own.' };
   }
-  log.debug('Leaving workerFor(). New affinity to ' +
-            (chosen ? chosen.pid : '(none)') + '.');
-  return chosen;
+  if (!readYourWrite()) {
+    log.debug("Leaving surfacePoolProblem(). No read-your-write.");
+    return { code: 'STS-WORKER-0038', fatal: true,
+             message: 'request_pool: workers.surfaceCount is ' + count +
+               ' and workers.readYourWrite is OFF. Signing in to ' +
+               reached.join(' or ') + ' would then cross two processes that ' +
+               'only converge — the sign-in minted in a protocol worker, the ' +
+               'session that depends on it read in a hosted-surface worker ' +
+               'up to a second before it arrives — so those surfaces would ' +
+               'fail to sign in, or sign in and lose the session, ' +
+               'intermittently. Turn workers.readYourWrite on, or set ' +
+               'workers.surfaceCount to 0 to keep those paths with the ' +
+               'protocol workers.' };
+  }
+  log.debug("Leaving surfacePoolProblem(). None.");
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2112,7 +2882,24 @@ function start() {
     log.debug("Leaving start().");
     return starting;
   }
-  const wanted = size();
+  // BOTH POOLS COUNT. A service with no protocol workers and a surface pool is
+  // a supported shape — the console and the portal off the front process, every
+  // protocol still on it — so neither size alone decides whether to go on.
+  // Its refusal is raised BELOW the coordination guard, not here: a service
+  // that is not coordinating at all has the more fundamental problem, and the
+  // message an operator reads first should be about that one.
+  const surfaceCheck = surfacePoolProblem();
+  if (surfaceCheck && !surfaceCheck.fatal) {
+    log.warn(errorCodes.tag(surfaceCheck.code) + surfaceCheck.message);
+  }
+  const wantedByPool = {};
+  wantedByPool[PROTOCOL_POOL] = size(PROTOCOL_POOL);
+  // A FATAL check still counts its workers as wanted, or a service configured
+  // with a surface pool and no protocol pool would take the early return below
+  // and never reach the refusal.
+  wantedByPool[SURFACE_POOL] = (surfaceCheck && !surfaceCheck.fatal)
+    ? 0 : size(SURFACE_POOL);
+  const wanted = wantedByPool[PROTOCOL_POOL] + wantedByPool[SURFACE_POOL];
   if (!wanted) {
     log.debug('Leaving start(). No request workers are configured.');
     starting = Promise.resolve({ started: 0, wanted: 0 });
@@ -2185,6 +2972,14 @@ function start() {
              'store, so a worker sees what the others write.');
 
   }
+  // THE SURFACE POOL'S OWN REFUSAL, for the same class of reason and in the
+  // same shape. See surfacePoolProblem().
+  if (surfaceCheck && surfaceCheck.fatal) {
+    starting = Promise.reject(new Error(errorCodes.tag(surfaceCheck.code) +
+                                        surfaceCheck.message));
+    log.debug("Leaving start(). The surface pool is refused.");
+    return starting;
+  }
   // ---------------------------------------------------------------------
   // THE EPHEMERAL KEY-ENCRYPTION KEY, WITHOUT WHICH NOTHING MINTED IS SHARED.
   //
@@ -2236,14 +3031,26 @@ function start() {
   directory().setConnectionWatcher(function (rows) {
     publishDirectoryConnections(rows);
   });
-  log.info('request_pool: starting ' + wanted + ' request worker(s). Each ' +
+  log.info('request_pool: starting ' + wanted + ' request worker(s) — ' +
+           wantedByPool[PROTOCOL_POOL] + ' for the protocols and ' +
+           wantedByPool[SURFACE_POOL] + ' for the hosted surfaces (' +
+           (wantedByPool[SURFACE_POOL] ? surfacePrefixes().join(', ')
+                                       : 'none') + '). Each ' +
            'loads the whole protocol stack and binds no protocol port.');
   const forks = [];
-  for (let i = 0; i < wanted; i++) {
-    forks.push(fork().settled);
-  }
+  POOLS.forEach(function (pool) {
+    for (let i = 0; i < wantedByPool[pool]; i++) {
+      forks.push(fork(pool).settled);
+    }
+  });
   starting = Promise.all(forks).then(function (settled) {
     const up = settled.filter(Boolean).length;
+    const upByPool = {};
+    POOLS.forEach(function (pool) {
+      upByPool[pool] = settled.filter(function (one) {
+        return one && one.pool === pool;
+      }).length;
+    });
     if (!up) {
       // EVERY worker failed. Reported loudly and NOT fatal: the front process
       // can still serve every request itself, which is what
@@ -2256,9 +3063,16 @@ function start() {
     } else if (up < wanted) {
       log.warn(errorCodes.tag('STS-WORKER-0026') +
                'request_pool: ' + up + ' of ' + wanted + ' request worker(s) ' +
-               'started.');
+               'started (' + upByPool[PROTOCOL_POOL] + ' of ' +
+               wantedByPool[PROTOCOL_POOL] + ' protocol, ' +
+               upByPool[SURFACE_POOL] + ' of ' + wantedByPool[SURFACE_POOL] +
+               ' hosted-surface).');
     }
-    return { started: up, wanted: wanted };
+    return { started: up, wanted: wanted,
+             pools: POOLS.map(function (pool) {
+               return { pool: pool, started: upByPool[pool],
+                        wanted: wantedByPool[pool] };
+             }) };
   });
   log.debug('Leaving start().');
   return starting;
@@ -2455,44 +3269,156 @@ const pendingSyncs = new Map();
 
 // Ask one worker to catch up, and resolve when it has. Resolves rather than
 // rejects on every path: the caller is about to serve a request.
+//
+// ---------------------------------------------------------------------------
+// ONE SYNC PER WORKER AT A TIME, SHARED BY EVERY READER IT COVERS (2026-09-13).
+//
+// Every reader used to send a sync message of its own. Each one is a
+// `persistence.syncNow()` in the worker, which reads the change log's target
+// and pulls — a database round trip or two per READER. Under the loopback
+// storm a session sweep sets off that was 5,759 syncs outstanding at one
+// worker inside a minute, every one of them timing out at the 5,000ms bound,
+// and a pool whose connections were all held by them: the same run logged
+// `Connection terminated due to connection timeout` for a minted flush.
+//
+// **SHARING IS SOUND IN ONE DIRECTION ONLY, AND THE RULE IS `wanted`.** A
+// round started for generation W was started after W had been announced, so
+// the target it reads covers every write that moved the generation to W or
+// below — a reader wanting W or less may take its answer. A reader wanting MORE
+// may not: that write can have committed after the round read its target. So
+// it waits for ONE queued round, started when the running one settles, for the
+// highest generation asked for in between. Two syncs per worker at most,
+// however many readers.
+//
+// The per-reader bound is unchanged — each reader still gives up at
+// BARRIER_TIMEOUT_MS — and a round has the same bound of its own, so a worker
+// that never answers costs one round rather than wedging every later reader
+// behind a sync that will not come back.
+// ---------------------------------------------------------------------------
 function barrier(entry, wanted) {
   log.debug('Entering barrier(). pid=' + entry.pid + ' want=' + wanted);
   if (entry.generation >= wanted) {
     log.debug('Leaving barrier(). Already current.');
     return Promise.resolve(true);
   }
-  const id = nextSyncId++;
   log.debug("Leaving barrier().");
   return new Promise(function (resolve) {
+    let done = false;
     const timer = setTimeout(function () {
-      pendingSyncs.delete(id);
-      log.warn(errorCodes.tag('STS-WORKER-0027') +
-               'request_pool: worker ' + entry.pid + ' did not answer a read ' +
-               'barrier within ' + BARRIER_TIMEOUT_MS + 'ms; the request is ' +
-               'being served from what that worker has.');
+      if (done) {
+        return;
+      }
+      done = true;
+      warnSparingly('STS-WORKER-0027',
+                    'request_pool: worker ' + entry.pid + ' did not answer a ' +
+                    'read barrier within ' + BARRIER_TIMEOUT_MS + 'ms; the ' +
+                    'request is being served from what that worker has.');
       resolve(false);
     }, BARRIER_TIMEOUT_MS);
-    pendingSyncs.set(id, function (message) {
-      clearTimeout(timer);
-      // STAMPED WITH THE GENERATION THAT WAS ASKED FOR, not the one now: a
-      // write that landed while this barrier ran bumps the counter again and
-      // must make this worker stale again. Stamping `generation` here would
-      // mark it current for a write it has not seen.
-      if (message.ok) {
-        entry.generation = wanted;
+    syncRoundFor(entry, wanted).then(function (ok) {
+      if (done) {
+        return;
       }
-      resolve(!!message.ok);
-    });
-    try {
-      entry.child.send({ sync: true, id: id });
-    } catch (e) {
-      log.debug("Caught in a callback in barrier(): " +
-                ((e && e.message) || e));
+      done = true;
       clearTimeout(timer);
-      pendingSyncs.delete(id);
-      resolve(false);
-    }
+      resolve(!!ok);
+    });
   });
+}
+
+// The round a reader wanting `wanted` may take its answer from: the running
+// one if it covers that generation, otherwise the one queued behind it.
+function syncRoundFor(entry, wanted) {
+  log.debug('Entering syncRoundFor(). pid=' + entry.pid + ' want=' + wanted);
+  const running = entry.syncing;
+  if (!running || running.settled) {
+    log.debug("Leaving syncRoundFor(). A new round.");
+    return startSyncRound(entry, wanted).promise;
+  }
+  if (running.wanted >= wanted) {
+    log.debug("Leaving syncRoundFor(). The running round covers it.");
+    return running.promise;
+  }
+  if (entry.syncQueued) {
+    // RAISED, NOT REPLACED: everybody already waiting on the queued round
+    // still wants no more than it did, and the round reads `wanted` only when
+    // it starts.
+    if (entry.syncQueued.wanted < wanted) {
+      entry.syncQueued.wanted = wanted;
+    }
+    log.debug("Leaving syncRoundFor(). Joined the queued round.");
+    return entry.syncQueued.promise;
+  }
+  const queued = { wanted: wanted, promise: null };
+  queued.promise = running.promise.then(function () {
+    if (entry.syncQueued === queued) {
+      entry.syncQueued = null;
+    }
+    // Another round may have covered it while this one waited.
+    if (entry.generation >= queued.wanted) {
+      return true;
+    }
+    return startSyncRound(entry, queued.wanted).promise;
+  });
+  entry.syncQueued = queued;
+  log.debug("Leaving syncRoundFor(). Queued a round behind the running one.");
+  return queued.promise;
+}
+
+// One sync message to one worker, settled by its answer, by the bound, or by a
+// channel that would not take the message. Resolves `ok` and never rejects.
+function startSyncRound(entry, wanted) {
+  log.debug('Entering startSyncRound(). pid=' + entry.pid + ' want=' +
+            wanted);
+  const id = nextSyncId++;
+  const round = { wanted: wanted, settled: false, promise: null };
+  // SET BEFORE THE MESSAGE IS SENT, because a channel that refuses it settles
+  // the round synchronously below, and a round recorded after it had settled
+  // would read as running to every reader after it.
+  entry.syncing = round;
+  let settle = null;
+  round.promise = new Promise(function (resolve) {
+    settle = resolve;
+  });
+  let timer = null;
+  const finish = function (message) {
+    log.debug("Entering finish().");
+    if (round.settled) {
+      log.debug("Leaving finish(). Already settled.");
+      return;
+    }
+    round.settled = true;
+    if (timer) {
+      clearTimeout(timer);
+    }
+    pendingSyncs.delete(id);
+    // STAMPED WITH THE GENERATION THAT WAS ASKED FOR, not the one now: a
+    // write that landed while this barrier ran bumps the counter again and
+    // must make this worker stale again. Stamping `generation` here would
+    // mark it current for a write it has not seen. And NEVER BACKWARDS: two
+    // rounds can settle out of order, and the earlier one's generation is
+    // the smaller.
+    if (message.ok && !(entry.generation >= round.wanted)) {
+      entry.generation = round.wanted;
+    }
+    if (entry.syncing === round) {
+      entry.syncing = null;
+    }
+    settle(!!message.ok);
+    log.debug("Leaving finish().");
+  };
+  timer = setTimeout(function () {
+    finish({ ok: false });
+  }, BARRIER_TIMEOUT_MS);
+  pendingSyncs.set(id, finish);
+  try {
+    entry.child.send({ sync: true, id: id });
+  } catch (e) {
+    log.debug("Caught in startSyncRound(): " + ((e && e.message) || e));
+    finish({ ok: false });
+  }
+  log.debug('Leaving startSyncRound(). id=' + id);
+  return round;
 }
 
 function receiveSync(entry, message) {
@@ -2577,75 +3503,104 @@ function middleware() {
     // the least-loaded worker whatever it carries; everything else dispatched
     // is stuck to the session or flow it belongs to. See fanoutPrefixes().
     const url = req.originalUrl || req.url;
-    const key = fansOut(url) ? mutationKeyOf(req, url) : affinityKeyOf(req);
-    const entry = workerFor(key);
-    if (!entry) {
-      if (!size() || givenUp || stopped) {
-        // No pool is configured, or it gave up, or we are shutting down.
-        // Handled here, which is the supported configuration rather than a
-        // degraded one.
-        next();
-        return;
-      }
-      // A pool IS configured and has no worker to give. Refused rather than
-      // handled here — see the header: the same path served from two processes
-      // depending on timing is the bug this is avoiding.
-      log.error(errorCodes.tag('STS-WORKER-0028') +
-        'request_pool: ' + req.method + ' ' + req.url + ' matched the ' +
-        'dispatch list and no worker is serving, so it is refused. Handling ' +
-        'it here instead would mean this path is answered by whichever ' +
-        'process happened to be available, out of two that do not share ' +
-        'state.');
-      errorCodes.mark(res, 'STS-WORKER-0028');
-      res.status(503);
-      res.set('Retry-After', '5');
-      res.type('text/plain');
-      res.send('No request worker is available. This path is dispatched to ' +
-               'the worker pool (workers.dispatch) and the pool is empty; ' +
-               'the service log says why.\n');
-      return;
-    }
-    // ---------------------------------------------------------------------
-    // THE BARRIER, BEFORE THE REQUEST IS SENT AND NOT AFTER.
-    //
-    // The generation is read HERE and carried into the proxy, so a write that
-    // lands while this request is in flight does not retroactively make this
-    // worker look current for it. A request only waits when the worker chosen
-    // for it is actually behind, which after a quiet second is never.
-    // ---------------------------------------------------------------------
-    // ANSWERED-BUT-UNCOMMITTED WRITES FIRST, and only then the generation.
-    // The two are different questions: this one is "has everything that has
-    // been answered actually landed in the store", which no generation can
-    // express because the generation does not move until it has. Without it a
-    // reader that arrives inside that window never waits at all — measured as
-    // stale reads with zero barrier timeouts.
-    if (!readYourWrite()) {
-      proxy(entry, req, res, generation);
-      return;
-    }
-    // ONE TICKET PER DISPATCHED REQUEST, TAKEN BEFORE IT IS SENT. Anything that
-    // arrives after this line necessarily sees this request outstanding, which
-    // is the property taking it on `finish` could not give.
-    // **WAIT FIRST, THEN TAKE THE TICKET.** The other order deadlocks: the
-    // request would be waiting for a ticket it holds itself, which nothing can
-    // confirm until it has finished. So this waits for everything dispatched
-    // BEFORE it, and only then registers itself as outstanding for everything
-    // that comes after.
-    awaitCommitConfirmations(entry).then(function () {
-      const ticket = dispatchTicket(entry);
-      // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
-      // the generation is read — a bump after this line would be a bump this
-      // request does not wait for. See noteLocalWrites().
-      noteLocalWrites(localWriteCount());
-      const wanted = generation;
-      if (entry.generation >= wanted) {
-        proxy(entry, req, res, wanted, ticket);
-        return;
-      }
-      return barrier(entry, wanted).then(function () {
-        proxy(entry, req, res, wanted, ticket);
+    // AND WHICH POOL FIRST — the hosted surfaces have workers of their own when
+    // `workers.surfaceCount` says so. Everything below is the same in either
+    // pool; see the two-pools block above the worker table.
+    const pool = poolFor(url);
+    const key = fansOut(url) ? mutationKeyOf(req, url)
+                             : affinityKeyOf(req, pool);
+    // BATCH TRAFFIC WAITS FOR ITS LANE FIRST (2026-09-14) — see the batch
+    // lane's header. Only where the pool has workers to protect: a pool that
+    // is empty, gave up or is stopping is answered below exactly as before.
+    if (isBatch(url) && size(pool) && !givenUp[pool] && !stopped &&
+        readyWorkers(pool).length) {
+      admitBatch(pool, req, res, function (release) {
+        res.on('finish', release);
+        res.on('close', release);
+        route(laneWorkers(pool));
       });
-    });
+      return;
+    }
+    route(null);
+    // THE ROUTING AND THE BARRIER, as a function so that a batch request can
+    // run it when its lane has room. A HOT PATH — every dispatched request
+    // passes through it — so no Entering/Leaving pair, for the reason the
+    // middleware around it has none: it would drown the log.
+    function route(among) {
+      const entry = workerFor(key, pool, among);
+      if (!entry) {
+        if (!size(pool) || givenUp[pool] || stopped) {
+          // No pool is configured, or it gave up, or we are shutting down.
+          // Handled here, which is the supported configuration rather than a
+          // degraded one. (A SURFACE pool that is configured never reaches
+          // this with `size(pool)` zero or given up — poolFor() has already
+          // sent the request to the protocol pool — so this is the protocol
+          // pool's line.)
+          next();
+          return;
+        }
+        // A pool IS configured and has no worker to give. Refused rather than
+        // handled here — see the header: the same path served from two
+        // processes depending on timing is the bug this is avoiding.
+        log.error(errorCodes.tag('STS-WORKER-0028') +
+          'request_pool: ' + req.method + ' ' + req.url + ' matched the ' +
+          'dispatch list and no ' + pool + ' worker is serving, so it is ' +
+          'refused. Handling ' +
+          'it here instead would mean this path is answered by whichever ' +
+          'process happened to be available, out of two that do not share ' +
+          'state.');
+        errorCodes.mark(res, 'STS-WORKER-0028');
+        res.status(503);
+        res.set('Retry-After', '5');
+        res.type('text/plain');
+        res.send('No request worker is available. This path is dispatched to ' +
+                 'the worker pool (workers.dispatch) and the pool is empty; ' +
+                 'the service log says why.\n');
+        return;
+      }
+      // ---------------------------------------------------------------------
+      // THE BARRIER, BEFORE THE REQUEST IS SENT AND NOT AFTER.
+      //
+      // The generation is read HERE and carried into the proxy, so a write that
+      // lands while this request is in flight does not retroactively make this
+      // worker look current for it. A request only waits when the worker chosen
+      // for it is actually behind, which after a quiet second is never.
+      // ---------------------------------------------------------------------
+      // ANSWERED-BUT-UNCOMMITTED WRITES FIRST, and only then the generation.
+      // The two are different questions: this one is "has everything that has
+      // been answered actually landed in the store", which no generation can
+      // express because the generation does not move until it has. Without it a
+      // reader that arrives inside that window never waits at all — measured as
+      // stale reads with zero barrier timeouts.
+      if (!readYourWrite()) {
+        proxy(entry, req, res, generation);
+        return;
+      }
+      // ONE TICKET PER DISPATCHED REQUEST, TAKEN BEFORE IT IS SENT. Anything
+      // that arrives after this line necessarily sees this request
+      // outstanding, which is the property taking it on `finish` could not
+      // give.
+      // **WAIT FIRST, THEN TAKE THE TICKET.** The other order deadlocks: the
+      // request would be waiting for a ticket it holds itself, which nothing
+      // can confirm until it has finished. So this waits for everything
+      // dispatched BEFORE it, and only then registers itself as outstanding
+      // for everything that comes after.
+      awaitCommitConfirmations(entry).then(function () {
+        const ticket = dispatchTicket(entry);
+        // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
+        // the generation is read — a bump after this line would be a bump this
+        // request does not wait for. See noteLocalWrites().
+        noteLocalWrites(localWriteCount());
+        const wanted = generation;
+        if (entry.generation >= wanted) {
+          proxy(entry, req, res, wanted, ticket);
+          return;
+        }
+        return barrier(entry, wanted).then(function () {
+          proxy(entry, req, res, wanted, ticket);
+        });
+      });
+    }
   };
 }
 
@@ -2662,6 +3617,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // two ticket endings this request has — see ticketAbandoned(), which is the
   // one for a request the client was handed a 502 for.
   let answered = false;
+  // WHETHER THIS PROCESS ENDED THE UPSTREAM REQUEST ITSELF, because the client
+  // went away first. See the response's `close` handler at the foot.
+  let clientGone = false;
   const finish = function (lost) {
     log.debug("Entering finish().");
     if (!done) {
@@ -2743,9 +3701,13 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // cannot be confused with an application cookie by anything that enumerates
   // them — `/admin/logout` draws a list of cookies, and a routing token in it
   // would be a question nobody can answer.
+  // BOTH pools' cookies, whichever pool this request is going to: a surface
+  // worker has no more business seeing the protocol pool's pin than its own.
   if (headers.cookie) {
     const kept = String(headers.cookie).split(';').filter(function (bit) {
-      return bit.trim().indexOf(POOL_COOKIE + '=') !== 0;
+      const trimmed = bit.trim();
+      return trimmed.indexOf(POOL_COOKIE + '=') !== 0 &&
+             trimmed.indexOf(SURFACE_POOL_COOKIE + '=') !== 0;
     });
     if (kept.length) {
       headers.cookie = kept.join(';');
@@ -2761,6 +3723,19 @@ function proxy(entry, req, res, atGeneration, ticket) {
   delete headers[POOL_TICKET_HEADER];
   if (ticket) {
     headers[POOL_TICKET_HEADER] = String(ticket);
+  }
+  // WHICH PROTOCOL WORKER THIS BROWSER IS HELD BY, told to a SURFACE worker
+  // only — see PROTOCOL_WORKER_HEADER. Asked with heldWorker() and not
+  // workerFor(), so that nothing is bound by asking; a browser the protocol
+  // pool holds no binding for gets no header, and its back channel is routed by
+  // load exactly as a cookie-less request is.
+  delete headers[PROTOCOL_WORKER_HEADER];
+  if (entry.pool === SURFACE_POOL) {
+    const holder = heldWorker(affinityKeyOf(req, PROTOCOL_POOL),
+                              PROTOCOL_POOL);
+    if (holder) {
+      headers[PROTOCOL_WORKER_HEADER] = String(holder.pid);
+    }
   }
   // ---------------------------------------------------------------------
   // THE REALM IS NOT TOLD TO THE WORKER; THE WORKER WORKS IT OUT.
@@ -2823,8 +3798,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
         return !!named && bit.length > named.length + 1;
       });
     })();
-    if (!fansOut(req.originalUrl || req.url) && !affinityKeyOf(req) &&
-        !setsSession) {
+    if (!fansOut(req.originalUrl || req.url) &&
+        !affinityKeyOf(req, entry.pool) && !setsSession) {
       // ------------------------------------------------------------------
       // PIN THIS BROWSER TO THIS WORKER. Only on an affinity path, and only
       // when the request ARRIVED WITH NO AFFINITY OF ITS OWN — a fanout caller
@@ -2857,7 +3832,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // supports a plain-HTTP listener and a Secure cookie would simply never
       // be sent there — it is set when the request arrived over TLS.
       // ------------------------------------------------------------------
-      const pin = POOL_COOKIE + '=' + entry.pid + '; Path=/; HttpOnly; ' +
+      // In the name of the pool the worker is in — see SURFACE_POOL_COOKIE.
+      const pin = poolCookieFor(entry.pool) + '=' + entry.pid +
+        '; Path=/; HttpOnly; ' +
         'SameSite=Lax' + (req.secure ? '; Secure' : '');
       const already = answer.headers['set-cookie'];
       const list = already
@@ -2906,9 +3883,15 @@ function proxy(entry, req, res, atGeneration, ticket) {
     answer.pipe(res);
     answer.on('end', finish);
     answer.on('error', function (err) {
-      log.warn(errorCodes.tag('STS-WORKER-0029') +
-               'request_pool: the answer from worker ' + entry.pid +
-               ' failed mid-flight: ' + err.message);
+      if (clientGone) {
+        // Ended by this process for a client that had gone. Not a fault.
+        log.debug('request_pool: an answer from worker ' + entry.pid +
+                  ' was cut off after its client went away: ' + err.message);
+      } else {
+        log.warn(errorCodes.tag('STS-WORKER-0029') +
+                 'request_pool: the answer from worker ' + entry.pid +
+                 ' failed mid-flight: ' + err.message);
+      }
       finish();
       res.destroy();
     });
@@ -2919,6 +3902,15 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // handler (or died before a byte of the answer left it), so there is
     // nothing for it to announce and nothing a reader is owed.
     finish(!answered);
+    if (clientGone) {
+      // THIS PROCESS DESTROYED IT, because the client had already gone — see
+      // the `close` handler below. Nobody is waiting for a 502 and the worker
+      // did nothing wrong, so it is not an error line.
+      log.debug('request_pool: ' + req.method + ' ' + req.url + ' was ' +
+                'abandoned on worker ' + entry.pid + ' after its client ' +
+                'went away: ' + err.message);
+      return;
+    }
     log.error(errorCodes.tag('STS-WORKER-0030') +
               'request_pool: worker ' + entry.pid + ' could not answer ' +
               req.method + ' ' + req.url + ': ' + err.message);
@@ -2942,6 +3934,34 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // THE CLIENT WENT AWAY. If the worker had already begun answering it will
     // announce this ticket itself; if it had not, `upstream.destroy()` means it
     // never will, and holding the ticket would block every reader for ever.
+    finish(!answered);
+  });
+  // -------------------------------------------------------------------------
+  // AND THE CLIENT GOING AWAY AFTER IT HAD SENT EVERYTHING (2026-09-13).
+  //
+  // `aborted` above is emitted only for a request whose BODY was cut short. A
+  // client that sent a whole request and then gave up waiting — a timeout, a
+  // closed tab, a loopback SSF push reaching `ssf.pushTimeoutMs` — emits
+  // nothing on `req` at all, only `close` on the response with nothing
+  // written. Measured on node 22: `req end`, `req close`, `res close,
+  // writableFinished=false`, and no `aborted`.
+  //
+  // So until this handler the request went on holding its place: queued in
+  // this worker's agent behind the `workers.maxSockets` cap, counted in
+  // `inFlight` so that leastLoaded() steered around a worker for work nobody
+  // wanted, and delivered minutes later to a handler whose answer went
+  // nowhere. On the 2026-09-13 dispatch run 6,479 pushes their sender had
+  // stopped waiting for were still queued that way when the server's own 300s
+  // request timeout finally ended them.
+  //
+  // The ticket goes the way `aborted`'s does, and for its reason.
+  // -------------------------------------------------------------------------
+  res.on('close', function () {
+    if (done || res.writableFinished) {
+      return;
+    }
+    clientGone = true;
+    upstream.destroy();
     finish(!answered);
   });
   log.debug('Leaving proxy().');
@@ -3091,7 +4111,12 @@ function runOperation(kind, args, opts) {
     log.debug('Leaving runOperation(). Not dispatched.');
     return Promise.resolve({ dispatched: false });
   }
-  const entry = workerFor(options.affinity ? 'op:' + options.affinity : '');
+  // THE PROTOCOL POOL, ALWAYS. An operation is the work behind a protocol
+  // socket — LDAP, SPIFFE's gRPC — and never a hosted surface's, so the surface
+  // workers are not asked even when the protocol pool is empty; the caller then
+  // does it here, as it does with no pool at all.
+  const entry = workerFor(options.affinity ? 'op:' + options.affinity : '',
+                          PROTOCOL_POOL);
   if (!entry) {
     // Unlike a dispatched PATH, this is not refused. A path named in the
     // dispatch list has an HTTP answer to give and a 503 is one; an operation
@@ -3273,7 +4298,9 @@ function stop(timeoutMs) {
         }
       });
       workers = [];
-      affinity.clear();
+      POOLS.forEach(function (pool) {
+        affinities[pool].clear();
+      });
       removeSocketDir();
       log.debug('Leaving stop().');
       resolve({ stopped: going.length - killed, killed: killed });
@@ -3319,26 +4346,43 @@ function removeSocketDir() {
 function stats() {
   log.debug("Entering stats().");
   log.debug("Leaving stats().");
+  // THE TOP-LEVEL COUNTS ARE THE PROTOCOL POOL'S, which is what they meant
+  // before there was a second one; `running` is every worker of both, and
+  // `pools` breaks both down.
   return {
-    configured: size(),
+    configured: size(PROTOCOL_POOL),
     running: workers.length,
-    ready: readyWorkers().length,
-    inProcess: readyWorkers().length === 0,
-    gaveUp: givenUp,
+    ready: readyWorkers(PROTOCOL_POOL).length,
+    inProcess: readyWorkers(PROTOCOL_POOL).length === 0,
+    gaveUp: givenUp[PROTOCOL_POOL],
+    pools: POOLS.map(function (pool) {
+      return { pool: pool, configured: size(pool),
+               ready: readyWorkers(pool).length, gaveUp: givenUp[pool],
+               affinities: affinities[pool].size,
+               prefixes: pool === SURFACE_POOL ? surfacePrefixes() : [] };
+    }),
     readYourWrite: readYourWrite(),
     generation: generation,
+    // THE BATCH LANE per pool: in flight, waiting, the cap, which workers are
+    // in the lane, and how many were ever queued, refused or timed out.
+    batch: batchStats(),
     // THE BARRIER'S OWN BOOKKEEPING, reported because the failure it can have
     // is invisible from outside: a ticket nothing will ever clear makes this
     // service answer correctly and 2,000ms slower per read, for ever. See
     // ticketAbandoned(). `reaped` being anything but zero means a worker has
     // lost an announcement and the safety net caught it.
     tickets: { outstanding: outstanding.size, finished: finishedTickets.size,
-               reaped: reaped },
+               reaped: reaped,
+               // READERS HELD RIGHT NOW. A number that stays large once
+               // nothing is being written is the waiter leak
+               // releaseTicketWaiters() describes, come back.
+               waiters: ticketWaiters.length - settledWaiters },
     dispatch: dispatchPrefixes(),
-    affinities: affinity.size,
+    affinities: affinities[PROTOCOL_POOL].size,
     socketDir: socketDir,
     workers: workers.map(function (one) {
-      return { pid: one.pid, ready: one.ready, inFlight: one.inFlight,
+      return { pid: one.pid, pool: one.pool, ready: one.ready,
+               inFlight: one.inFlight,
                served: one.served, socket: one.socket,
                generation: one.generation };
     })
@@ -3350,8 +4394,10 @@ function reset() {
   log.debug("Entering reset().");
   generation = 0;
   pendingSyncs.clear();
-  givenUp = false;
-  quickExits = 0;
+  POOLS.forEach(function (pool) {
+    givenUp[pool] = false;
+    quickExits[pool] = 0;
+  });
   stopped = false;
   starting = null;
   // AND THE BARRIER, because it is process-wide module state exactly as the
@@ -3362,7 +4408,13 @@ function reset() {
   finishedTickets.clear();
   finishedAt.clear();
   ticketWaiters = [];
+  settledWaiters = 0;
   reaped = 0;
+  // And the batch lane's counts and queue, for the same reason.
+  batchState.forEach(function (state) {
+    state.waiting.forEach(function (entry) { clearTimeout(entry.timer); });
+  });
+  batchState.clear();
   log.debug("Leaving reset().");
 }
 
@@ -3384,6 +4436,18 @@ module.exports = {
   dispatchPrefixes: dispatchPrefixes,
   fanoutPrefixes: fanoutPrefixes,
   affinityKeyOf: affinityKeyOf,
+  // THE SECOND POOL (2026-09-13), exported for tests/request_routing.js: which
+  // pool a path goes to, what it answers, and what refuses or idles it are
+  // decisions over settings and a list, asserted without forking anything.
+  poolFor: poolFor,
+  surfacePrefixes: surfacePrefixes,
+  surfacePoolProblem: surfacePoolProblem,
+  PROTOCOL_POOL: PROTOCOL_POOL,
+  SURFACE_POOL: SURFACE_POOL,
+  SURFACE_POOL_COOKIE: SURFACE_POOL_COOKIE,
+  // The spelling both ends of the back-channel hint must agree on, exported to
+  // be compared with the worker's, as LDAP_DROP_HEADER is.
+  PROTOCOL_WORKER_HEADER: PROTOCOL_WORKER_HEADER,
   SESSION_COOKIE: SESSION_COOKIE,
   POOL_COOKIE: POOL_COOKIE,
   PEER_CERT_HEADER: PEER_CERT_HEADER,
@@ -3423,8 +4487,30 @@ module.exports = {
   reapStuckTickets: reapStuckTickets,
   awaitCommitConfirmations: awaitCommitConfirmations,
   receiveCommitted: receiveCommitted,
+  // THE SYNC HALF OF THE BARRIER AND THE PROXY, exported for the same file
+  // (2026-09-13): that one sync round per worker is shared by every reader it
+  // covers is a decision about promises and an IPC `send`, and that a client
+  // leaving releases its place needs a real socket and nothing else.
+  barrier: barrier,
+  receiveSync: receiveSync,
+  proxy: proxy,
+  // THE LISTENER'S RECONCILE, exported for tests/listener_branch_adoption.js
+  // (2026-09-13): that one pass runs at a time and that a pass left waiting
+  // for a branch arms the fallback are decisions about promises and a timer,
+  // asserted without a worker.
+  reconcileTheListener: reconcileTheListener,
+  listenerRepairArmed: listenerRepairArmed,
   // For tests/request_routing.js — the routing decisions are pure functions and
   // are asserted directly rather than by starting a pool.
   mutationKeyOf: mutationKeyOf,
+  // THE BATCH LANE (2026-09-14), for tests/request_batch_lane.js: which paths
+  // are batch, how many workers a lane is, which ones, and the admission queue
+  // — bookkeeping over settings and closures, asserted with no worker.
+  isBatch: isBatch,
+  laneSize: laneSize,
+  laneOf: laneOf,
+  admitBatch: admitBatch,
+  batchStats: batchStats,
+  leastLoaded: leastLoaded,
   PEER_AUTHORIZED_HEADER: PEER_AUTHORIZED_HEADER
 };

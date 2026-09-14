@@ -50,7 +50,9 @@ const bbs2023 = require('../common/vendored/bbs2023.js');
 const { log, logArtifact, STS, baseUrlOf, b64u, b64uDecode, jsonFromB64u,
         randomId,
         bbsKeyPair, vciError, signingKeyFor,
-        requestEncryptionKeyFor } = require('../common/helpers');
+        requestEncryptionKeyFor,
+        certificateHeaderFor,
+        publishedKidFor } = require('../common/helpers');
 const dpop = require('../oauth-oidc/dpop');
 // The error codes (common/error_codes.js). A LEAF that requires nothing; a code
 // is marked on the response object and never put in an error_description.
@@ -128,17 +130,23 @@ function proofIatWindowSeconds() {
 // and `helpers.signingKeyFor()` is the one answer to which key that is. RS256
 // takes the exact path it always took (`STS.privateKey`, `STS.kid`), so an
 // untouched service signs as it did.
+//
+// `kid` is the INTERNAL name, which `certificateHeaderFor()` finds the key by;
+// `headerKid` is what the credential's header carries, which
+// `keys.kidFormat` decides (common/jose_kid.js).
 function credentialSigner() {
   log.debug("Entering credentialSigner().");
   const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
                      'RS256');
   if (alg === 'RS256') {
     log.debug("Leaving credentialSigner(). RS256.");
-    return { alg: 'RS256', key: STS.privateKey, kid: STS.kid };
+    return { alg: 'RS256', key: STS.privateKey, kid: STS.kid,
+             headerKid: publishedKidFor(STS.kid) };
   }
   const signer = signingKeyFor(alg);
   log.debug("Leaving credentialSigner(). " + alg + ".");
-  return { alg: alg, key: signer.key, kid: signer.kid };
+  return { alg: alg, key: signer.key, kid: signer.kid,
+           headerKid: publishedKidFor(signer.kid) };
 }
 
 // THE CONTENT ENCRYPTION VALUES A DIRECTION ADVERTISES AND ACCEPTS: the
@@ -358,7 +366,8 @@ function sendVciMetadata(req, res) {
   logArtifact('OID4VCI signed_metadata', 'before signing', claims);
   try {
     meta.signed_metadata = require('../oauth-oidc/oauth2')
-      .signPublishedDocument(claims, meta.credential_issuer, 3600);
+      .signPublishedDocument(claims, meta.credential_issuer, 3600,
+                             'vci-signed-metadata');
     logArtifact('OID4VCI signed_metadata', 'after signing',
                 meta.signed_metadata);
   } catch (e) {
@@ -590,7 +599,8 @@ function buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
     _sd: digests
   };
   logArtifact('SD-JWT VC', 'before signing',
-              { header: { alg: signer.alg, typ: 'dc+sd-jwt', kid: signer.kid },
+              { header: { alg: signer.alg, typ: 'dc+sd-jwt',
+                          kid: signer.headerKid },
                 payload: payload,
                 disclosures: disclosures.map(function (d) {
                   return { name: d.name, value: d.value, salt: d.salt,
@@ -600,9 +610,15 @@ function buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
 
   // iat is added by the signer (jsonwebtoken drops a payload iat when it is
   // told not to timestamp, so it is left to do it).
+  // `oid4vci.credentialCertificateHeader` decides the `x5c` / `x5u` — and
+  // SD-JWT VC section 3.5 names `x5c` as one of the ways a verifier may find
+  // the issuer's key, which is the case this setting exists for.
   const issuerJwt = stsCrypto.signJws(payload, signer.key, {
     algorithm: signer.alg,
-    header: { alg: signer.alg, typ: 'dc+sd-jwt', kid: signer.kid }
+    header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
+                                               signer.kid),
+                          { alg: signer.alg, typ: 'dc+sd-jwt',
+                            kid: signer.headerKid })
   });
   logArtifact('SD-JWT VC issuer-signed JWT', 'after signing', issuerJwt);
 
@@ -675,12 +691,16 @@ function buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
     vc: vc
   };
   logArtifact('jwt_vc_json credential', 'before signing',
-              { header: { alg: signer.alg, typ: 'JWT', kid: signer.kid },
+              { header: { alg: signer.alg, typ: 'JWT',
+                          kid: signer.headerKid },
                 payload: payload });
 
   const token = stsCrypto.signJws(payload, signer.key, {
     algorithm: signer.alg,
-    header: { alg: signer.alg, typ: 'JWT', kid: signer.kid }
+    header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
+                                               signer.kid),
+                          { alg: signer.alg, typ: 'JWT',
+                            kid: signer.headerKid })
   });
   logArtifact('jwt_vc_json credential', 'after signing, as it will be sent',
               token);
@@ -1471,11 +1491,12 @@ function sendCredentialResponse(res, status, payload, encryption) {
 // published as its raw compressed bytes in multibase base64url, which is what
 // the Data Integrity multikey encoding uses and what verificationMethod above
 // points at. Served no-store because the key is regenerated on every start.
+// Its CORS header is `common/cors.js`'s decision like every other response's;
+// the `*` this route used to set for itself would have overridden it.
 app.get('/bbs/keys/1', async function (req, res) {
   log.debug("Entering the BBS key endpoint.");
   const keys = await bbsKeyPair();
   res.set('Cache-Control', 'no-store');
-  res.set('Access-Control-Allow-Origin', '*');
   res.status(200).type('application/json').send(JSON.stringify({
     id: baseUrlOf(req) + '/bbs/keys/1',
     type: 'Multikey',

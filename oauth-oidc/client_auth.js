@@ -33,10 +33,12 @@
 //   client_secret_jwt           an assertion signed HS256 with the secret
 //   private_key_jwt             an assertion signed with the client's own key,
 //                               verified against the JWKS it registered
-//   tls_client_auth             the client certificate's subject DN matches the
-//                               one registered (RFC 8705 section 2.1)
-//   self_signed_tls_client_auth the client certificate's thumbprint matches the
-//                               one registered (RFC 8705 section 2.2)
+//   tls_client_auth             a client certificate whose chain verified, and
+//                               which this realm issued to this application or
+//                               which carries the one subject it registered
+//                               (RFC 8705 section 2.1)
+//   self_signed_tls_client_auth the client certificate is the one registered,
+//                               by thumbprint or in its jwks (section 2.2)
 //
 // All of them are verified. The two shared-secret ones compare in constant
 // time; the two assertion ones do the full RFC 7523 section 3 check; the two
@@ -105,6 +107,9 @@ const assertionGrant = require('./assertion_grant');
 // format and that module owns it, and section 2.1 needs nothing at all from
 // client authentication.
 const samlAssertionGrant = require('./saml_assertion_grant');
+// RFC 8705 section 2.1.2's five subject parameters, read and compared — the one
+// reading the registration door in `common/applications.js` also asks. A leaf.
+const certificateSubject = require('../common/certificate_subject');
 
 // RFC 7523 section 2.2. One value, spelt once, because a client that sends the
 // wrong one is told which is expected rather than being told its assertion is
@@ -475,6 +480,35 @@ async function verifyAssertion(opts) {
                               'or ') + ' ' +
                           'as `aud`, and be unexpired.' };
   }
+  // THE ISSUER AS THE SOLE AUDIENCE, where the caller asks for it (OAuth 2.1
+  // mode, 2026-09-13). OAuth 2.1 section 2.4 makes
+  // draft-ietf-oauth-rfc7523bis-11 mandatory, and for CLIENT AUTHENTICATION
+  // that draft says the `aud` "MUST use the issuer identifier of the
+  // authorization server as its sole value", that the token endpoint URL
+  // "MUST NOT be used", and that the server "MUST reject any JWT that does not
+  // contain its issuer identifier as its sole audience value". The signature
+  // above was checked against the LENIENT list on purpose, so a well-signed
+  // assertion addressed to the token endpoint is refused for its AUDIENCE, by
+  // name, rather than reported as a document that did not verify. Before the
+  // chain, the revocation check and the used-assertion claim, so a refused
+  // assertion is not also used up.
+  if (opts.strictAudience) {
+    const aud = claims.aud;
+    const named = Array.isArray(aud) ? aud : [aud];
+    if (named.length !== 1 ||
+        String(named[0]) !== String(opts.strictAudience)) {
+      log.debug("Leaving verifyAssertion(). The audience is not the issuer " +
+                "alone.");
+      return { ok: false, errorCode: 'STS-OAUTH-0283',
+               description: 'the client_assertion must name this ' +
+                            'authorization server\'s issuer identifier, "' +
+                            opts.strictAudience + '", as its SOLE audience ' +
+                            '(OAuth 2.1 section 2.4, ' +
+                            'draft-ietf-oauth-rfc7523bis-11 section 4) — ' +
+                            'the token endpoint URL may not be used — and ' +
+                            'it names ' + JSON.stringify(aud) + '.' };
+    }
+  }
   // THE REGISTERED KEY'S CHAIN, NOW THAT IT HAS VERIFIED SOMETHING
   // (2026-09-13). A key out of `jwks` or `oauthAssertionJwks` carrying an `x5c`
   // is believed only while that certificate's WHOLE chain holds — the
@@ -676,35 +710,111 @@ async function verifyAssertion(opts) {
 //
 // Two methods, and the difference is what the certificate has to match:
 //
-//   tls_client_auth              a PKI-issued certificate whose SUBJECT DN is
-//                                the one the client registered (section 2.1.2's
-//                                `tls_client_auth_subject_dn`)
-//   self_signed_tls_client_auth  any certificate whose THUMBPRINT is the one the
-//                                client registered — no CA involved, which is
-//                                section 2.2's whole point
+//   tls_client_auth              a certificate whose CHAIN VERIFIED against the
+//                                client truststore, and which is either issued
+//                                by this realm to THIS application (implicit)
+//                                or carries the one subject the client
+//                                registered (explicit, section 2.1.2)
+//   self_signed_tls_client_auth  any certificate that is the one the client
+//                                registered — by thumbprint, or as the x5c of
+//                                a key in its jwks (section 2.2.2) — no CA
+//                                involved, which is section 2.2's whole point
 //
-// The subject is compared in RFC 4514 form, leaf first, which is the same
-// spelling `tls_server.js` files a verified certificate under on /admin/users —
-// one spelling for one DN across this service, rather than each surface picking
-// its own and the two never matching.
+// **THE TWO MAPPINGS FOR `tls_client_auth` (2026-09-13), AND WHY BOTH.** The
+// EXPLICIT one is the RFC's: exactly one of `tls_client_auth_subject_dn`,
+// `_san_dns`, `_san_uri`, `_san_ip`, `_san_email`, compared by
+// `common/certificate_subject.js` as a name rather than a string — and it is
+// what an application holding a certificate from somebody else's authority
+// uses, that authority's root installed at /tls/trust. The IMPLICIT one is
+// this service's certificate-to-identity mapping, the one a person's TLS
+// client certificate signs them in by, pointed at an application:
+// `common/tls_client_certificates.js`'s `identityOf()` names the application a
+// realm-issued certificate was issued to (its `urn:sts:application:`
+// subjectAltName), and `stillHeld()` asks whether that application's record
+// still lists it. Nothing needs registering for it, because issuing the
+// certificate TO the application was the registration.
+//
+// **A CERTIFICATE THIS SERVICE ISSUED AS SOMEBODY ELSE'S IDENTITY NEVER
+// AUTHENTICATES THIS CLIENT**, whatever subject the client registered. RFC 8705
+// section 7.4 is the reason: a subject is only as good as the authority that
+// put it in the certificate, and this realm's authority has already said whose
+// certificate this is.
+//
+// **THE CHAIN IS VERIFIED FOR BOTH, AND IT WAS NOT.** Until 2026-09-13 this
+// function compared the subject DN and logged that no chain had been checked,
+// because the truststore started empty. It is the listener's verdict now —
+// `mtls.peerVerified()`, which is the chain, revocation and the identity gate
+// in one answer — and section 2.1 is the PKI method precisely because the
+// subject is believed only from a certificate an anchor vouched for.
+// `self_signed_tls_client_auth` is untouched by it: section 6.1 says that
+// method does not verify the chain, and the proof is the handshake.
 // ---------------------------------------------------------------------------
 function subjectRfc4514(cert) {
   log.debug("Entering subjectRfc4514().");
-  // node hands back a subject object; the RDNs are ordered leaf-first when read
-  // in reverse of the object's insertion order, which is how the TLS report
-  // builds the same string.
-  const subject = (cert && cert.subject) || {};
-  const parts = [];
-  Object.keys(subject).forEach(function (type) {
-    const values = Array.isArray(subject[type]) ? subject[type] :
-                   [subject[type]];
-    values.forEach(function (value) {
-      parts.push(type + '=' +
-                 String(value).replace(/([,+="<>;\\\\])/g, '\\\\$1'));
-    });
-  });
+  // The subject as RFC 4514 writes it, leaf first, off the DER — through
+  // `common/certificate_subject.js`, which is also what compares a registered
+  // DN with it, so the spelling a refusal quotes is the one that was compared.
+  // node's `getPeerCertificate().subject` object was read here until
+  // 2026-09-13, and it cannot say which attributes were one multi-valued RDN
+  // or what order a repeated type came in.
+  let text = '';
+  try {
+    text = certificateSubject.subjectOf(
+      new crypto.X509Certificate(cert.raw)).text;
+  } catch (e) {
+    log.debug("Caught in subjectRfc4514(): " + ((e && e.message) || e));
+    text = '';
+  }
   log.debug("Leaving subjectRfc4514().");
-  return parts.reverse().join(',');
+  return text;
+}
+
+// The DER of every certificate a registered JWKS carries as a key's `x5c[0]`,
+// for section 2.2.2's reading of `self_signed_tls_client_auth`. A JWKS that
+// does not parse holds none, and the refusal says the thumbprint and the jwks
+// were both looked at.
+function registeredCertificatesOf(jwksText) {
+  log.debug("Entering registeredCertificatesOf().");
+  if (!jwksText) {
+    log.debug("Leaving registeredCertificatesOf(). No jwks.");
+    return [];
+  }
+  const read = keysFrom(jwksText);
+  if (read.error) {
+    log.debug("Leaving registeredCertificatesOf(). The jwks does not parse.");
+    return [];
+  }
+  const out = [];
+  read.keys.forEach(function (one) {
+    const x5c = one.jwk && Array.isArray(one.jwk.x5c) ? one.jwk.x5c : [];
+    if (typeof x5c[0] === 'string' && x5c[0]) {
+      out.push(Buffer.from(x5c[0], 'base64'));
+    }
+  });
+  log.debug("Leaving registeredCertificatesOf(). " + out.length + " held.");
+  return out;
+}
+
+// The two identity questions `tls_client_certificates.js` answers, off this
+// request's socket. Required lazily, for `mtls.peerVerified()`'s reason: it
+// reaches the certificate authority, and a process with none answers
+// "not issued here".
+function issuedIdentityOf(request) {
+  log.debug("Entering issuedIdentityOf().");
+  let identity = { issuedHere: false, accepted: false };
+  let held = false;
+  try {
+    const tlsClient = require('../common/tls_client_certificates');
+    const status = require('../common/revocation_status');
+    identity = tlsClient.identityOf(status.fromSocket(request.socket));
+    held = identity.accepted ? tlsClient.stillHeld(identity) : false;
+  } catch (e) {
+    log.debug("Caught in issuedIdentityOf(): " + ((e && e.message) || e));
+    identity = { issuedHere: false, accepted: false };
+    held = false;
+  }
+  log.debug("Leaving issuedIdentityOf(). issuedHere=" + identity.issuedHere);
+  return { identity: identity, held: held };
 }
 
 function verifyCertificate(opts) {
@@ -741,66 +851,156 @@ function verifyCertificate(opts) {
                           '(pki.revocationCheck is ' +
                           revocation.policy + '). ' + revocation.why };
   }
+  const presentedThumbprint = mtls.thumbprintOf(cert);
   if (opts.method === 'self_signed_tls_client_auth') {
     const registered = String(opts.certificateThumbprint || '');
-    if (!registered) {
-      log.debug("Leaving verifyCertificate().");
+    const inJwks = registeredCertificatesOf(opts.jwks);
+    if (!registered && !inJwks.length) {
+      log.debug("Leaving verifyCertificate(). Nothing registered.");
       return { ok: false, errorCode: 'STS-OAUTH-0015',
                description: 'this client authenticates with a self-signed ' +
                             'certificate (RFC 8705 section 2.2) and has none ' +
-                            'registered. Put its SHA-256 thumbprint on its ' +
-                            'entry as oauthTlsClientCertificateThumbprint.' };
+                            'registered: no key in its jwks carries an x5c ' +
+                            '(section 2.2.2), and there is no ' +
+                            'oauthTlsClientCertificateThumbprint on its ' +
+                            'entry.' };
     }
-    const presented = mtls.thumbprintOf(cert);
-    if (presented !== registered) {
-      log.debug("Leaving verifyCertificate(). The thumbprint does not match.");
+    const byThumbprint = !!registered && presentedThumbprint === registered;
+    const byJwks = inJwks.some(function (der) {
+      return Buffer.compare(der, Buffer.from(cert.raw)) === 0;
+    });
+    if (!byThumbprint && !byJwks) {
+      log.debug("Leaving verifyCertificate(). Not the registered certificate.");
       return { ok: false, errorCode: 'STS-OAUTH-0016',
-               description: 'RFC 8705 section 2.2: this client registered ' +
-                            'the certificate whose SHA-256 thumbprint ' +
-                            'is ' + registered + ', and ' +
-                            'this connection was made with the one whose ' +
-                            'thumbprint is ' + presented + '.' };
+               description: 'RFC 8705 section 2.2: this connection was made ' +
+                            'with the certificate whose SHA-256 thumbprint ' +
+                            'is ' + presentedThumbprint + ', and it is ' +
+                            'neither the x5c of a key in this client\'s jwks ' +
+                            '(' + inJwks.length + ' registered) nor ' +
+                            (registered ? 'the registered thumbprint ' +
+                                          registered
+                                        : 'a registered thumbprint') + '.' };
     }
-    log.debug("Leaving verifyCertificate(). The thumbprint matches.");
-    return { ok: true, subject: subjectRfc4514(cert), thumbprint: presented };
+    log.debug("Leaving verifyCertificate(). The registered certificate.");
+    return { ok: true, subject: subjectRfc4514(cert),
+             thumbprint: presentedThumbprint,
+             mapping: byJwks ? 'jwks' : 'thumbprint' };
   }
-  const registeredDn = String(opts.subjectDn || '');
-  if (!registeredDn) {
-    log.debug("Leaving verifyCertificate().");
-    return { ok: false, errorCode: 'STS-OAUTH-0017',
-             description: 'this client authenticates with a PKI certificate ' +
-                          '(RFC 8705 section 2.1) and has no subject DN ' +
-                          'registered. Put it on its entry as ' +
-                          'oauthTlsClientAuthSubjectDn, in RFC 4514 form — ' +
-                          'the spelling /admin/users files a verified ' +
-                          'certificate under.' };
+
+  // ---------------------------------------------------------------------
+  // tls_client_auth. THE CHAIN FIRST: nothing below is believed about a
+  // certificate no anchor vouched for.
+  // ---------------------------------------------------------------------
+  const peer = mtls.peerVerified(opts.request);
+  if (!peer.verified && peer.identity && peer.identity.issuedHere) {
+    // A chain through this service's own Root that is not an identity here —
+    // an RFC 7523 key pair, a person's certificate from another realm.
+    log.debug("Leaving verifyCertificate(). Issued here, not an identity.");
+    return { ok: false, errorCode: 'STS-OAUTH-0481',
+             description: 'RFC 8705 section 2.1: the client certificate ' +
+                          'chains to this service\'s own Root and is not a ' +
+                          'TLS client identity in this realm: ' +
+                          (peer.identity.why || peer.error || '') + '. Issue ' +
+                          'this application a TLS client certificate from ' +
+                          'its Credentials section.' };
   }
-  const presentedDn = subjectRfc4514(cert);
-  if (presentedDn !== registeredDn) {
-    log.debug("Leaving verifyCertificate(). The subject DN does not match.");
-    return { ok: false, errorCode: 'STS-OAUTH-0018',
+  if (!peer.verified) {
+    log.debug("Leaving verifyCertificate(). The chain did not verify.");
+    return { ok: false, errorCode: 'STS-OAUTH-0480',
+             description: 'RFC 8705 section 2.1: tls_client_auth ' +
+                          'authenticates a certificate whose chain is ' +
+                          'validated against a trust anchor, and this one ' +
+                          'did not verify' +
+                          (peer.error ? ' (' + peer.error + ')' : '') + '. ' +
+                          'Install the issuing authority\'s root at ' +
+                          '/tls/trust, send the intermediates with the ' +
+                          'certificate, or register the client for ' +
+                          'self_signed_tls_client_auth instead.' };
+  }
+  const subjects = certificateSubject.registeredOf(opts.subjects);
+  if (subjects.members.length > 1) {
+    // `mtlsMetadataProblem()` and `mtlsAttributeProblem()` refuse this at
+    // every write door; an `ldapmodify` is the way it arrives.
+    log.debug("Leaving verifyCertificate(). Two subject parameters.");
+    return { ok: false, errorCode: 'STS-OAUTH-0482',
+             description: 'RFC 8705 section 2.1.2: this client\'s entry ' +
+                          'registers ' + subjects.members.length + ' ' +
+                          'certificate subject parameters (' +
+                          subjects.members.join(', ') + ') where a client ' +
+                          'uses exactly one, so there is no single subject ' +
+                          'to expect. Clear all but one.' };
+  }
+  const issued = issuedIdentityOf(opts.request);
+  const identity = issued.identity;
+  if (identity.issuedHere && identity.accepted) {
+    const mine = identity.kind === 'application' &&
+      (identity.username === String(opts.applicationIdentifier || '') ||
+       identity.username === String(opts.clientId || ''));
+    if (!mine) {
+      log.debug("Leaving verifyCertificate(). Somebody else's identity.");
+      return { ok: false, errorCode: 'STS-OAUTH-0484',
+               description: 'RFC 8705 section 2.1: the client certificate ' +
+                            'was issued by this realm to the ' +
+                            identity.kind + ' "' + identity.username + '", ' +
+                            'and a certificate this service issued as ' +
+                            'somebody\'s identity authenticates that holder ' +
+                            'and nobody else — whatever subject this client ' +
+                            'registered (section 7.4).' };
+    }
+    if (!issued.held) {
+      log.debug("Leaving verifyCertificate(). No longer held.");
+      return { ok: false, errorCode: 'STS-OAUTH-0483',
+               description: 'RFC 8705 section 2.1: the client certificate ' +
+                            'was issued to this application (serial ' +
+                            identity.serialHex + '), and its record no ' +
+                            'longer lists it — it was taken off or replaced. ' +
+                            'A certificate the application\'s record does ' +
+                            'not hold is not its credential.' };
+    }
+    log.info('RFC 8705 section 2.1: client "' + (opts.clientId || '') + '" ' +
+             'authenticated with the TLS client certificate this realm ' +
+             'issued to it (serial ' + identity.serialHex + ', ' +
+             identity.why + ').');
+    log.debug("Leaving verifyCertificate(). The implicit mapping.");
+    return { ok: true, subject: subjectRfc4514(cert),
+             thumbprint: presentedThumbprint, mapping: 'implicit',
+             serialHex: identity.serialHex };
+  }
+  if (!subjects.member) {
+    log.debug("Leaving verifyCertificate(). Nothing to match an external " +
+              "certificate against.");
+    return { ok: false, errorCode: 'STS-OAUTH-0486',
+             description: 'RFC 8705 section 2.1: the client certificate ' +
+                          'verified and was not issued by this realm to ' +
+                          'this application, and the client registers no ' +
+                          'certificate subject to match it against — one of ' +
+                          'tls_client_auth_subject_dn, tls_client_auth_san_' +
+                          'dns, _san_uri, _san_ip or _san_email.' };
+  }
+  const matched = certificateSubject.matches(subjects.member, subjects.value,
+                                             cert.raw);
+  if (!matched.ok) {
+    log.debug("Leaving verifyCertificate(). The subject does not match.");
+    return { ok: false, errorCode: 'STS-OAUTH-0485',
              description: 'RFC 8705 section 2.1.2: this client registered ' +
-                          'the subject DN "' +
-                          registeredDn + '" and the certificate on this ' +
-                                         'connection has "' +
-                          presentedDn + '".' };
+                          subjects.member + ' "' + subjects.value + '" and ' +
+                          'the certificate on this connection carries ' +
+                          (matched.presented.length
+                            ? certificateSubject.MEMBERS[subjects.member]
+                                .label + ' ' +
+                              matched.presented.map(function (one) {
+                                return '"' + one + '"';
+                              }).join(', ')
+                            : 'no ' + certificateSubject.MEMBERS[
+                                subjects.member].label) + '.' };
   }
-  // NOT a check on the chain, and that is worth being explicit about rather
-  // than leaving as an omission: section 2.1 expects a PKI-issued certificate
-  // validated against a trust anchor, and this service's truststore is whatever
-  // somebody POSTed to /tls/trust — empty at startup by design. So what is
-  // verified here is possession of the private key for a certificate with the
-  // registered subject, which the TLS handshake proves, and NOT that a CA
-  // vouched for it. A real deployment must do both.
-  log.warn('RFC 8705 section 2.1: client "' + (opts.clientId || '') + '" ' +
-           'authenticated by its certificate subject DN. This service does ' +
-           'NOT validate the certificate chain — the truststore at ' +
-           '/tls/trust starts empty by design — so what was proved is ' +
-           'possession of the key for a certificate carrying that subject, ' +
-           'not that a CA issued it.');
-  log.debug("Leaving verifyCertificate(). The subject DN matches.");
-  return { ok: true, subject: presentedDn,
-           thumbprint: mtls.thumbprintOf(cert) };
+  log.info('RFC 8705 section 2.1: client "' + (opts.clientId || '') + '" ' +
+           'authenticated by ' + subjects.member + ' on a certificate whose ' +
+           'chain verified.');
+  log.debug("Leaving verifyCertificate(). The explicit mapping.");
+  return { ok: true, subject: subjectRfc4514(cert),
+           thumbprint: presentedThumbprint, mapping: 'explicit',
+           member: subjects.member };
 }
 
 // ---------------------------------------------------------------------------
@@ -901,8 +1101,13 @@ async function verify(opts) {
                                        'request says "' +
                                        (info.assertionType || '') + '".' };
     }
+    // The AUDIENCE POLICY is part of the key (2026-09-13): two callers asking
+    // about one document with two policies must not have the first answer
+    // silently decide both. See verifiedOnce().
     const checked = await verifiedOnce(info.request,
-      [method, info.clientId, info.assertionType, info.assertion],
+      [method, info.clientId, info.assertionType, info.assertion,
+       String(info.strictAudience || ''),
+       (info.audiences || []).join(' ')],
       function () {
         return verifyAssertion({
           method: method, assertion: info.assertion, clientId: info.clientId,
@@ -915,6 +1120,8 @@ async function verify(opts) {
           // of which somebody deliberately arranged.
           assertionJwks: info.assertionJwks,
           audiences: info.audiences,
+          // OAuth 2.1 mode's issuer-as-sole-audience rule, or empty.
+          strictAudience: info.strictAudience || '',
           // What binds the used-assertion claim to this response, so that an
           // assertion is spent only when tokens are issued.
           request: info.request
@@ -1007,8 +1214,15 @@ async function verify(opts) {
       method === 'self_signed_tls_client_auth') {
     const checked = verifyCertificate({
       method: method, request: info.request, clientId: info.clientId,
-      subjectDn: info.subjectDn,
-      certificateThumbprint: info.certificateThumbprint
+      // The five subject parameters, keyed by their registration member
+      // names — `clientConfigOf()`'s object is passed whole — and the
+      // entry's own identifier, which the implicit mapping compares with the
+      // application a realm-issued certificate names.
+      subjects: info.tlsSubjects ||
+                { tls_client_auth_subject_dn: info.subjectDn },
+      applicationIdentifier: info.applicationIdentifier,
+      certificateThumbprint: info.certificateThumbprint,
+      jwks: info.jwks
     });
     if (!checked.ok) {
       log.debug("Leaving verify(). The certificate was refused.");
@@ -1017,7 +1231,8 @@ async function verify(opts) {
     }
     log.debug("Leaving verify(). The certificate matched.");
     log.debug("Leaving verify().");
-    return { ok: true, method: method, subject: checked.subject };
+    return { ok: true, method: method, subject: checked.subject,
+             mapping: checked.mapping, thumbprint: checked.thumbprint };
   }
 
   // A method this file cannot verify. It is refused rather than waved through,
