@@ -82,17 +82,27 @@ function normaliseName(name) {
 // in the reference store the moment it is issued: presenting it back as `user`
 // then resolves, and a value this AS never issued does not.
 // ---------------------------------------------------------------------------
+//
+// **OVER THE PERSON'S STABLE SUBJECT WHERE THERE IS ONE (2026-09-14)**, and the
+// name only where the directory holds nobody. An identifier derived from the
+// name changed on a rename, and a person deleted and re-created under the name
+// was given the old person's — section 3.4's "SHOULD NOT reuse" broken by a
+// directory edit. The reference records the subject, so presenting it back
+// names whoever that entry is called now, and nobody once the entry is gone.
 function opaqueIdFor(username) {
   log.debug("Entering opaqueIdFor().");
   const secret = helpers.refreshTokenKeysFor().secret;
   const key = Buffer.from(nodeCrypto.hkdfSync('sha256', secret, Buffer.alloc(0),
                                               Buffer.from('mock-sts gnap ' +
                                                   'opaque subject v1'), 32));
+  const subject = helpers.subjectForName(username);
   const id = nodeCrypto.createHmac('sha256', key)
-                       .update(normaliseName(username))
+                       .update(subject || normaliseName(username))
                        .digest('base64url')
     .slice(0, 20);
-  store.putUserRef(id, { username: normaliseName(username) });
+  store.putUserRef(id, subject ? { username: normaliseName(username),
+                                   sub: subject }
+                               : { username: normaliseName(username) });
   log.debug("Leaving opaqueIdFor().");
   return id;
 }
@@ -259,13 +269,14 @@ function resolveUser(user, ctx) {
   }
   if (user.reference) {
     const row = store.userByRef(user.reference);
-    if (!row) {
+    const referenced = nameOfUserRef(row);
+    if (!referenced) {
       log.debug("Leaving resolveUser(). Unknown reference.");
       return refusal('STS-GNAP-0070', 'the user reference is not one this ' +
                      'authorization server issued (RFC 9635 section 2.4.1).');
     }
     log.debug("Leaving resolveUser(). By reference.");
-    return { ok: true, username: row.username, verified: false };
+    return { ok: true, username: referenced, verified: false };
   }
   const named = [];
   let verified = false;
@@ -306,6 +317,24 @@ function resolveUser(user, ctx) {
   return { ok: true, username: distinct[0] || null, verified: verified };
 }
 
+// The name a recorded user reference's person has NOW: through its subject
+// where one was recorded — null once that entry is gone — and the recorded
+// name otherwise.
+function nameOfUserRef(row) {
+  log.debug("Entering nameOfUserRef().");
+  if (!row) {
+    log.debug("Leaving nameOfUserRef(). No reference.");
+    return null;
+  }
+  if (!row.sub) {
+    log.debug("Leaving nameOfUserRef(). By name.");
+    return row.username;
+  }
+  const named = helpers.nameForSubject(row.sub);
+  log.debug("Leaving nameOfUserRef(). " + (named ? 'By subject.' : 'Gone.'));
+  return named ? normaliseName(named) : null;
+}
+
 function usernameFromSubId(subId, ctx) {
   log.debug("Entering usernameFromSubId().");
   if (!subId) {
@@ -313,23 +342,26 @@ function usernameFromSubId(subId, ctx) {
     return null;
   }
   if (subId.format === 'opaque') {
-    const row = store.userByRef(subId.id);
     log.debug("Leaving usernameFromSubId().");
-    return row ? row.username : null;
+    return nameOfUserRef(store.userByRef(subId.id));
   }
+  // A SUBJECT THIS SERVICE ISSUED, IN EITHER FORM (2026-09-14):
+  // `urn:uuid:<entryUUID>` is looked up in the directory and the legacy
+  // `urn:sts:user:<name>` is read. `helpers.nameForSubject()` is the one place
+  // that knows both, so this file cannot come to disagree with the token
+  // endpoint about who a subject names.
   if (subId.format === 'iss_sub') {
-    if (subId.iss !== ctx.issuer ||
-        String(subId.sub).indexOf('urn:sts:user:') !== 0) {
-      log.debug("Leaving usernameFromSubId().");
-      return null;
-    }
+    const named = subId.iss === ctx.issuer
+      ? helpers.nameForSubject(subId.sub) : '';
     log.debug("Leaving usernameFromSubId().");
-    return normaliseName(String(subId.sub).slice('urn:sts:user:'.length));
+    return named ? normaliseName(named) : null;
   }
-  if (subId.format === 'uri' &&
-      String(subId.uri).indexOf('urn:sts:user:') === 0) {
-    log.debug("Leaving usernameFromSubId().");
-    return normaliseName(String(subId.uri).slice('urn:sts:user:'.length));
+  if (subId.format === 'uri') {
+    const named = helpers.nameForSubject(subId.uri);
+    if (named) {
+      log.debug("Leaving usernameFromSubId().");
+      return normaliseName(named);
+    }
   }
   if (subId.format === 'account') {
     const match = String(subId.uri).match(/^acct:([^@]+)@/);
@@ -379,8 +411,7 @@ function usernameFromAssertion(assertion, ctx) {
       return { ok: false };
     }
     const name = claims.preferred_username ||
-      (String(claims.sub).indexOf('urn:sts:user:') === 0 ?
-       String(claims.sub).slice(13) : '');
+      helpers.nameForSubject(claims.sub);
     log.debug("Leaving usernameFromAssertion(). id_token for " + name);
     return name ? { ok: true, username: normaliseName(name) } : { ok: false };
   }

@@ -2538,6 +2538,26 @@ function mutationKeyOf(req, url) {
 // defaults to the protocol pool. Everything else about the key is the same in
 // both pools: the session cookies are the browser's, and which pool holds a
 // binding for them is a question for that pool's map.
+// ---------------------------------------------------------------------------
+// A SESSION COOKIE IS `<sid>.<handle>` SINCE 2026-09-14, AND AFFINITY IS BOUND
+// TO THE SID.
+//
+// The handle ROTATES — on every re-authentication, and when an arrival session
+// becomes a sign-in (`authn/authn.js`, `mintSessionHandle()`) — and the sid
+// does not. Binding `s:<whole value>` would add a binding per rotation and
+// leave the old one pointing at a worker for a value no browser will present
+// again. The sid is also what the worker's store is keyed by, so it names the
+// same thing the binding is about. A value with no dot (an old cookie, or a
+// test's) is taken whole, which is what this did before.
+// ---------------------------------------------------------------------------
+function sidOfCookieValue(value) {
+  log.debug("Entering sidOfCookieValue().");
+  const text = String(value || '');
+  const dot = text.indexOf('.');
+  log.debug("Leaving sidOfCookieValue().");
+  return dot > 0 ? text.slice(0, dot) : text;
+}
+
 function affinityKeyOf(req, pool) {
   log.debug("Entering affinityKeyOf().");
   const POOL_COOKIE = poolCookieFor(pool);
@@ -2550,11 +2570,11 @@ function affinityKeyOf(req, pool) {
     for (let i = 0; i < parts.length; i++) {
       const bit = parts[i].trim();
       if (bit.indexOf(SESSION_COOKIE + '=') === 0) {
-        session = bit.slice(SESSION_COOKIE.length + 1);
+        session = sidOfCookieValue(bit.slice(SESSION_COOKIE.length + 1));
       }
       const named = sessionCookieName(bit);
       if (named && named !== SESSION_COOKIE && !rp) {
-        rp = bit.slice(named.length + 1);
+        rp = sidOfCookieValue(bit.slice(named.length + 1));
       }
       if (bit.indexOf(POOL_COOKIE + '=') === 0) {
         pooled = bit.slice(POOL_COOKIE.length + 1);
@@ -2659,7 +2679,7 @@ function learn(entry, answer) {
       // is no second namespace to keep in step.
       const named = sessionCookieName(bit);
       if (named) {
-        const value = bit.slice(named.length + 1);
+        const value = sidOfCookieValue(bit.slice(named.length + 1));
         // An EMPTY value is a sign-out clearing the cookie, not a new session.
         // Binding it would map the empty key to a worker and pin every future
         // signed-out request to it.

@@ -73,7 +73,8 @@
 // half `numberWord` and `signJwt`. The symptom was `GET /admin-api/realms`
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
-const { log, baseUrlOf, stsKeysFor, userFor } = require('../common/helpers');
+const { log, baseUrlOf, stsKeysFor, userFor,
+        subjectForName } = require('../common/helpers');
 // The credential store, for the ways-in list the new-person form offers.
 const credentials = require('../common/credentials');
 // The two second factors, for the roster columns on /admin/users.
@@ -86,7 +87,7 @@ const backupCodes = require('../common/backup_codes');
 // the second one is exactly as invisible to a move as one taken from the
 // first. `authn` is position 8 in the require order, so this is a cache hit
 // wherever this file is legitimately loaded.
-const { sessions } = require('../authn/authn');
+const { sessions, sessionStartedAt } = require('../authn/authn');
 const config = require('../common/config');
 const mode = require('../common/mode');
 const realms = require('../common/realms');
@@ -373,12 +374,50 @@ function gateStateFor(req) {
   const found = consoleRpSession(req);
   const session = found ? found.session : null;
   const username = session ? session.user.username : '';
-  const held = rbac.rolesOf(username);
+  // ---------------------------------------------------------------------
+  // WHOSE ROSTER DECIDES, AND WHERE ITS ANSWER HOLDS (2026-09-14, #32).
+  //
+  // The console's own session lives in the default realm's partition and its
+  // SIGN-ON session lives wherever the code flow ran — `derivedFromRealm`
+  // names that realm, and an absent value means the default realm. That realm
+  // is who this person IS, so it is whose roster is asked:
+  //
+  //   * signed in through the DEFAULT realm: the default realm's roster, which
+  //     is the SERVICE roster — its answer holds in every realm, exactly as
+  //     before;
+  //   * signed in through realm `acme`: acme's roster, whose answer holds while
+  //     acme is the realm being read and in no other. Reaching the default
+  //     realm or another realm with that session grants nothing, and service
+  //     pages are refused even in acme (`admin-ui/admin_scope.js`).
+  //
+  // Until #32 every console session was asked the default realm's roster BY
+  // NAME, so a person in any realm who shared a service administrator's
+  // username held that administrator's roles. Asking the roster of the realm
+  // the person authenticated in is what closes that.
+  // ---------------------------------------------------------------------
+  const identityRealm = session
+    ? String(session.derivedFromRealm || realms.DEFAULT_ID) : '';
+  const authority = !session ? null
+    : (identityRealm === realms.DEFAULT_ID ? 'service' : 'realm');
+  const ambientRealm = realms.currentId();
+  const outsideRealm = authority === 'realm' && ambientRealm !== identityRealm;
+  const asked = rbac.rolesOf(username, identityRealm || realms.DEFAULT_ID);
+  const held = outsideRealm
+    ? Object.assign({}, asked, { roles: [], read: false, write: false,
+                                 open: false, openable: false })
+    : asked;
   const state = {
     enforced: enforced,
     available: rbac.available(),
     session: session,
     username: username,
+    // `service` for a default-realm identity and `realm` for any other; null
+    // when nobody is signed in.
+    authority: authority,
+    identityRealm: identityRealm || null,
+    // A realm administrator reading a realm that is not theirs holds nothing
+    // here; the gate says why rather than drawing a page of refusals.
+    outsideRealm: outsideRealm,
     readGroup: config.value('admin.readGroup'),
     writeGroup: config.value('admin.writeGroup'),
     // With the gate OFF everybody may do everything, which is what this console
@@ -424,7 +463,16 @@ function signOnSessionRows() {
       sub: (session.user && session.user.sub) || '',
       amr: (session.amr || []).join(', '),
       acr: session.acr || '',
+      // TWO INSTANTS SINCE 2026-09-14, and they stopped being one when a
+      // session learned to hold several authentications: `startedAt` is when
+      // it BEGAN (its first event) and `authTime` the MOST RECENT
+      // authentication, which a step-up or `max_age` moves. A column called
+      // "Signed in" drawn from `authTime` showed an hour-old session as a
+      // minute old.
+      startedAt: sessionStartedAt(session),
       authTime: (session.authTime || 0) * 1000,
+      authentications: (Array.isArray(session.events)
+        ? session.events.length : 1) + (session.eventsDropped || 0),
       expires: session.expires || 0,
       expired: !!session.expires && session.expires <= nowMs,
       // Which WS-Federation relying parties this session signed into. It is the
@@ -433,7 +481,7 @@ function signOnSessionRows() {
       wsfedRealms: Object.keys(session.wsfedRealms || {})
     });
   });
-  rows.sort(function (a, b) { return b.authTime - a.authTime; });
+  rows.sort(function (a, b) { return b.startedAt - a.startedAt; });
   log.debug("Leaving signOnSessionRows(). " + rows.length + " session(s).");
   return rows;
 }
@@ -1140,6 +1188,12 @@ function realmJson(req, realm) {
 
 function realmsJson(req) {
   log.debug("Entering realmsJson().");
+  // A REALM ADMINISTRATOR SEES THEIR OWN REALM (2026-09-14, #32). The registry
+  // is the service's and so is the list of who else is on it; a realm
+  // administrator's page lists the one row they administer.
+  const gate = req ? gateStateFor(req) : null;
+  const onlyRealm = gate && gate.authority === 'realm' ? gate.identityRealm
+                                                       : '';
   const out = {
     // The SETTING, and whether any prefix is actually answering. They differ in
     // the one case that matters — the feature on with no realm defined — and a
@@ -1154,6 +1208,9 @@ function realmsJson(req) {
     // know before they type it, not after.
     reserved: realms.reserved().sort(),
     realms: realms.list()
+                  .filter(function (realm) {
+                    return !onlyRealm || realm.id === onlyRealm;
+                  })
                   .map(function (realm) { return realmJson(req, realm); }),
     support: realms.realmSupport()
   };
@@ -2338,7 +2395,7 @@ function queryOne(query, key) {
 // Does one catalogue entry match what was typed? Case-insensitive, and over
 // EVERY spelling the catalogue holds rather than the one it shows: an
 // application arrives as `HTTP/backend@EXAMPLE.COM` and as `HTTP/backend`, a
-// person as `alice`, as `alice@STS.MOCK` and as `urn:sts:user:alice`, and
+// person as `alice`, as `alice@STS.MOCK` and as `urn:uuid:<entryUUID>`, and
 // each chooser draws one of them. A reader searching for a name they pasted out
 // of the acts table four inches up the page is pasting the OTHER one about half
 // the time, and a search that answers "nothing matches" to a string printed on
@@ -3423,7 +3480,9 @@ const CREDENTIAL_CHOICES = [
 function rbacListJson(req) {
   log.debug("Entering rbacListJson().");
   log.debug("Entering rbacListPage().");
-  const info = rbac.describe();
+  // The roster of the realm being read (2026-09-14, #32): the service roster
+  // in the default realm, that realm's own anywhere else.
+  const info = rbac.describe(realms.currentId());
   const state = gateStateFor(req);
 
   // One row per grant, flattened out of the two rosters. Sorted by name and
@@ -3469,7 +3528,8 @@ function rbacListJson(req) {
   const filterParams = { q: wantedText || '', role: wantedRole || '',
                          per: req.query.per ? paging.perPage : '' };
   const knownKeys = knownUserKeys();
-  const candidates = rbac.candidates(Object.keys(knownKeys));
+  const candidates = rbac.candidates(Object.keys(knownKeys),
+                                    realms.currentId());
 
   // WHO CAN BE PICKED, SEARCHED AND PAGED (2026-09-13). This was a `<select>`
   // holding every candidate, and a realm bulk loaded with thousands of people
@@ -4914,8 +4974,8 @@ function federationDetailJson(req, id) {
     // box a person types TRUE into is a text box a person types "true", "yes"
     // and "1" into — and one of those is how a relationship stays disabled
     // while the page says it is on.
-    return ['fedEnabled', 'fedAutocreateUsers', 'fedSignRequest',
-            'fedAllowUnsolicited'].indexOf(field.name) === -1;
+    return ['fedEnabled', 'fedAutocreateUsers', 'fedUpdateUserAttributes',
+            'fedSignRequest', 'fedAllowUnsolicited'].indexOf(field.name) === -1;
   });
   const multiFields = federation.fieldsForRole(row.role, 'multi');
 
@@ -5430,6 +5490,12 @@ function userDetailJson(req, key) {
     json: (function () {
     return {
         user: row,
+        // THE PERSON'S SUBJECT (2026-09-14): `urn:uuid:<entryUUID>`, the `sub`
+        // every token issued to them carries — '' where the directory holds
+        // no entry for them. Said here because it is no longer derivable from
+        // the name, and "which sub is this person" is the first thing somebody
+        // matching a relying party's records to this page needs.
+        subject: subjectForName(key),
         // WHAT THEY CAN SIGN IN WITH, and what they are asked for as a second
         // factor (2026-09-10). It is `factors` here and on every row of the
         // list, so a caller reads one member name whichever view it fetched.
@@ -5597,12 +5663,12 @@ function queryWith(params, overrides) {
 
 // The live sign-on sessions belonging to one user. Sessions are keyed by an
 // opaque id and hold a user object, so the match is on the identity rather than
-// the string: the session says `alice` and the tokens say `urn:sts:user:alice`,
-// and these have to end up on the same page.
+// the string: the session says `alice` and the tokens say
+// `urn:uuid:<entryUUID>`, and these have to end up on the same page.
 function sessionRowsFor(key) {
   log.debug("Entering sessionRowsFor(). key=" + key);
   const rows = signOnSessionRows().filter(function (session) {
-    return stats.identityKeyOf(session.username || session.sub) === key;
+    return stats.holderKeyOf(session.username, session.sub) === key;
   });
   log.debug("Leaving sessionRowsFor(). " + rows.length + " session(s).");
   return rows;
@@ -5822,6 +5888,9 @@ module.exports = {
   sessionRowsFor: sessionRowsFor,
   tokensBySession: tokensBySession,
   ldapObjectJson: ldapObjectJson,
+  // The person's `sub` for the console's drill-down (2026-09-14): the same
+  // answer the JSON half's `subject` member carries.
+  userDetailSubject: subjectForName,
   mfaJson: mfaJson,
   userDetailJson: userDetailJson,
   personCredentialsState: personCredentialsState,

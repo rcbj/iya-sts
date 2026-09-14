@@ -43,7 +43,8 @@
 // consult it.
 // ---------------------------------------------------------------------------
 
-const { log, setJwtRecorder, userFor } = require('./helpers');
+const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
+        LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
@@ -1545,7 +1546,7 @@ function resetScimForTests() {
 //
 // **Identity is keyed on the LOCAL NAME, and that is a decision with a visible
 // consequence.** The same person reaches this service under four spellings —
-// `alice` at the login screen, `urn:sts:user:alice` as the `sub` of every
+// `alice` at the login screen, `urn:uuid:<entryUUID>` as the `sub` of every
 // token, `alice` as a SAML subject, `alice@STS.MOCK` as a Kerberos principal —
 // and a page showing four rows for one name would be a worse answer than one
 // row, since the whole premise of this mock is that the name you type is who
@@ -1560,15 +1561,19 @@ function resetScimForTests() {
 // Kept in memory and dropped with the process, like everything else here.
 // ---------------------------------------------------------------------------
 
-// The prefix helpers.userFor() puts in front of a subject, derived rather than
-// written down again: a change to that function must not leave this file
-// stripping a prefix nothing produces any more, which would silently split
-// every user into two rows (one seen through a token, one through a sign-in).
-const SUBJECT_PREFIX = (function () {
-  const probe = 'probe';
-  const sample = userFor(probe).sub;
-  return sample.slice(0, sample.length - probe.length);
-})();
+// The subject form this service issued until 2026-09-14, still READ — a
+// refresh token, a stored record or another instance's token carries it — and
+// never written. It was derived from `userFor()` so that a change there could
+// not leave this file stripping a prefix nothing produces; that change has now
+// happened, and the form this file has to go on recognising is written down in
+// `helpers.js` beside the function that stopped producing it.
+//
+// **A `urn:uuid:` SUBJECT IS RESOLVED RATHER THAN STRIPPED**: it is a
+// directory entry's `entryUUID`, and `helpers.nameForSubject()` asks the
+// directory whose it is. One that names nobody here — another instance's, a
+// deleted person's — is kept whole as its own key, and `ldap_server.js`
+// refuses to create an entry named after it.
+const SUBJECT_PREFIX = LEGACY_SUBJECT_PREFIX;
 
 // PER TRUST REALM, since 2026-08-25 and for the reason the counters block above
 // gives: this register is the list of people a realm has SEEN, and the people a
@@ -1626,6 +1631,19 @@ function identityOf(value) {
   let realm = '';
   if (rest.indexOf(SUBJECT_PREFIX) === 0) rest = rest.slice(
       SUBJECT_PREFIX.length);
+  if (/^urn:uuid:/i.test(rest)) {
+    const named = nameForSubject(rest);
+    if (!named) {
+      log.debug("Leaving identityOf(). A subject naming nobody here.");
+      return { key: rest, name: rest, realm: '', form: text,
+               unresolved: true };
+    }
+    // THE NAME THE DIRECTORY HOLDS IS THE KEY, and it is not split again: it
+    // is already what `autoCreateUser()` filed the person under, a DN or a
+    // DID included.
+    log.debug("Leaving identityOf(). A subject, resolved.");
+    return { key: named, name: named, realm: '', form: text };
+  }
   // A Kerberos principal. The LAST '@' splits it, because a principal name may
   // itself contain one (a UPN-shaped account name is ordinary in a Windows
   // realm) and the realm never does.
@@ -1669,6 +1687,87 @@ function identityKeyOf(value) {
 }
 
 // ---------------------------------------------------------------------------
+// THE KEY OF A RECORD THAT CARRIES A NAME AND A SUBJECT (2026-09-14).
+//
+// A token record, a session and a pre-authorized code each keep the NAME the
+// person had when it was made and — for a person — their `urn:uuid:` subject.
+// Filed by the name, a rename split one person into two rows: everything made
+// before it under the old name, which no longer names anybody, and everything
+// after under the new one. The subject names the ENTRY, so where it resolves
+// it decides; a subject naming nobody (the entry is gone) and a record with
+// none fall back to the name, which is all such a record ever had.
+// ---------------------------------------------------------------------------
+function holderKeyOf(username, sub) {
+  log.debug("Entering holderKeyOf().");
+  const subject = String(sub || '');
+  if (/^urn:uuid:/i.test(subject)) {
+    const identity = identityOf(subject);
+    if (identity.key && !identity.unresolved) {
+      log.debug("Leaving holderKeyOf(). By subject.");
+      return identity.key;
+    }
+  }
+  log.debug("Leaving holderKeyOf(). By name.");
+  return identityKeyOf(username || subject);
+}
+
+// ---------------------------------------------------------------------------
+// A RENAMED PERSON KEEPS THEIR ROW (2026-09-14). The register is keyed by the
+// name, so `ldap_server.js`'s rename moves the record from the old key to the
+// new one, merged into a row the new name may already have. Called by the
+// directory's modifyDN handler for a person entry, and a no-op for anything
+// this register never saw.
+// ---------------------------------------------------------------------------
+function renameIdentity(from, to) {
+  log.debug("Entering renameIdentity().");
+  const oldKey = identityKeyOf(from);
+  const newKey = identityKeyOf(to);
+  const moved = oldKey && newKey && oldKey !== newKey ? users.get(oldKey)
+                                                      : null;
+  if (!moved) {
+    log.debug("Leaving renameIdentity(). Nothing to move.");
+    return false;
+  }
+  const existing = users.get(newKey);
+  users.delete(oldKey);
+  if (!existing) {
+    moved.key = newKey;
+    moved.name = newKey;
+    users.set(newKey, moved);
+    log.debug("Leaving renameIdentity(). Moved.");
+    return true;
+  }
+  ['forms', 'realms', 'protocols'].forEach(function (member) {
+    Object.keys(moved[member] || {}).forEach(function (name) {
+      const value = moved[member][name];
+      existing[member] = existing[member] || {};
+      existing[member][name] = typeof value === 'number'
+        ? (existing[member][name] || 0) + value
+        : (existing[member][name] || value);
+    });
+  });
+  existing.authentications = (existing.authentications || 0) +
+                             (moved.authentications || 0);
+  existing.firstAt = Math.min(existing.firstAt || Infinity,
+                              moved.firstAt || Infinity);
+  if (existing.firstAt === Infinity) {
+    existing.firstAt = 0;
+  }
+  existing.lastAt = Math.max(existing.lastAt || 0, moved.lastAt || 0);
+  existing.events = (moved.events || []).concat(existing.events || [])
+    .sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
+  existing.eventsForgotten = (existing.eventsForgotten || 0) +
+                             (moved.eventsForgotten || 0);
+  while (existing.events.length > MAX_EVENTS_PER_USER) {
+    existing.events.shift();
+    existing.eventsForgotten++;
+  }
+  users.set(newKey, existing);
+  log.debug("Leaving renameIdentity(). Merged.");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // The one hook ldap_server.js needs, and the reason it is a hook rather than a
 // require.
 //
@@ -1679,7 +1778,7 @@ function identityKeyOf(value) {
 // place and not twelve.
 //
 // But ldap_server.js requires THIS file (it needs identityOf's normalisation,
-// so that `alice`, `urn:sts:user:alice` and `alice@REALM` seed one entry and
+// so that `alice`, `urn:uuid:<entryUUID>` and `alice@REALM` seed one entry and
 // not three), so this file cannot require it back: a cycle in node hands back a
 // half-initialised module whose exports are undefined, and the symptom arrives
 // later as something that is not a function. So the direction is inverted, the
@@ -1830,6 +1929,95 @@ function recordAuthentication(detail) {
   }
   const family = record.protocols[protocol];
   const method = String(info.method || 'unstated');
+  // The embedded LDAP directory, if it is loaded. Wrapped for the same reason
+  // the JWT recorder is: a throw out here would fail the request that was
+  // accepting a credential, which is the tail wagging the dog. It is given the
+  // NORMALISED identity rather than `presented`, so that the three spellings of
+  // one person seed one entry.
+  // **THE DIRECTORY IS TOLD FIRST (2026-09-14)**, before the event and the
+  // audit row below, where it used to be told last. A person's `sub` is their
+  // entry's `entryUUID` now, so the entry an authentication creates has to
+  // exist before anything here writes the subject down — and before
+  // `authn.startSession()` asks for it. The observer still cannot fail the
+  // authentication: it is caught exactly as it was.
+  if (userObserver) {
+    try {
+      userObserver({
+        // WHICH OF THE THREE THINGS HAPPENED. The observer used to be offered
+        // one kind of event and needed no discriminator; it is now offered
+        // three (see noteCertificateIssued() above), and an absent `event` has
+        // to keep meaning this one — an older copy of ldap_server.js that does
+        // not read the field must go on behaving exactly as it did.
+        event: 'authentication',
+        key: identity.key, name: identity.name, realm: identity.realm,
+        presented: identity.form, protocol: protocol, method: method,
+        isClient: record.isClient, sub: info.sub || '',
+        // HOW they authenticated, in RFC 8176's vocabulary, passed through
+        // untouched for the same reason `certificate` is: this file counts and
+        // the directory decides what to do about it. It is what lets an entry
+        // record that a second factor was used — a WebAuthn ceremony after a
+        // password arrives here as ["pwd","hwk"], and the same ceremony used as
+        // the PRIMARY credential arrives as ["hwk"] alone, which is one factor
+        // and must not be flagged as two. Most families set neither: a Kerberos
+        // AS-REQ and a UsernameToken have no amr to state, and an entry with no
+        // factors recorded is the honest answer for them rather than a default.
+        amr: info.amr || [], acr: info.acr || '',
+        // Passed through untouched, and only the TLS listeners set it: a client
+        // certificate's identity IS a DN, so the entry the directory seeds for
+        // it is not `uid=<name>` and the facts that go in it — issuer, serial,
+        // validity — are on the certificate rather than in anything this file
+        // holds. It rides on the observer rather than on a second hook because
+        // this is already the funnel, and a second call at the TLS listener
+        // would be a second thing to keep right. Nothing here reads it.
+        certificate: info.certificate || null,
+        // WHOSE identity this one belongs to, where the caller knows and only
+        // where it does. It exists for one shape: a DECENTRALIZED IDENTIFIER,
+        // which names nobody by itself, arriving from the Credential Endpoint
+        // where the access token has already said who the credential is about.
+        // The directory folds such a DID onto that person's entry instead of
+        // creating a second one named by a digest of it.
+        //
+        // NORMALISED like `key` is, and through the same function: the caller
+        // has whatever the token carried — `alice` or `urn:uuid:<entryUUID>`
+        // — and passing it through raw would link the DID to a person filed
+        // under a name nothing else here uses, which is the split this whole
+        // funnel exists to prevent.
+        //
+        // Empty for every other family, and that is not an omission to fill in
+        // later: a name-shaped identity IS the person, so a link from it to
+        // itself would say nothing.
+        linkedTo: info.linkedTo ? identityKeyOf(info.linkedTo) : '',
+        // WHAT A FOREIGN IDENTITY PROVIDER SAID ABOUT THEM, where a federated
+        // sign-in is what brought us here. Only `federation/federation_sp.js`
+        // sets it, and it is passed through UNTOUCHED for exactly the reason
+        // `certificate` above is: this file counts, and the directory decides
+        // what to do about it. Nothing here reads it.
+        //
+        // It is a FIELD ON THIS PAYLOAD rather than a fourth `event` or a sixth
+        // slot, and that is rule 3e's test applied rather than skipped. A new
+        // event would be wrong on its own terms — this IS an authentication,
+        // and filing it as something else would take a federated sign-in off
+        // /admin/users, which is precisely where somebody looks for one. A new
+        // slot would be an indirection bought for nothing: `certificate` and
+        // `linkedTo` already established that a family with an extra fact about
+        // the identity puts it here, and this is the third.
+        //
+        // The attributes inside it are ALREADY MAPPED to this directory's own
+        // names — federation_map.js owns that vocabulary — so nothing here or
+        // in ldap_server.js has to know what a `urn:oid:` name is.
+        federation: info.federation || null
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-REG-0039') +
+                'the user observer threw and was ignored; the authentication ' +
+                'itself is unaffected: ' + e.message);
+    }
+  }
+  // The subject, now that the entry exists: the caller's where it gave one, and
+  // otherwise the directory's — '' for a client, for somebody the directory
+  // declined to create, and in a process with no directory.
+  const subject = info.sub ||
+    (record.isClient ? '' : subjectForName(identity.key));
   family.count++;
   family.methods[method] = (family.methods[method] || 0) + 1;
   family.lastAt = now;
@@ -1838,7 +2026,7 @@ function recordAuthentication(detail) {
   record.lastAt = now;
   record.events.push({
     at: now, protocol: protocol, method: method, presented: identity.form,
-    realm: identity.realm || '', sub: info.sub || '',
+    realm: identity.realm || '', sub: subject,
     client_id: info.client_id || '',
     amr: (info.amr || []).join(', '), acr: info.acr || '',
     sessionId: info.sessionId || '', note: info.note || ''
@@ -1874,7 +2062,7 @@ function recordAuthentication(detail) {
       method: method,
       presented: identity.form,
       realm: identity.realm || '',
-      sub: info.sub || '',
+      sub: subject,
       client_id: info.client_id || '',
       amr: (info.amr || []).join(', '),
       acr: info.acr || '',
@@ -1915,84 +2103,6 @@ function recordAuthentication(detail) {
     log.error(errorCodes.tag('STS-REG-0041') +
               'the application registry threw and was ignored; the ' +
               'authentication itself stands: ' + e.message);
-  }
-  // The embedded LDAP directory, if it is loaded. Wrapped for the same reason
-  // the JWT recorder is: a throw out here would fail the request that was
-  // accepting a credential, which is the tail wagging the dog. It is given the
-  // NORMALISED identity rather than `presented`, so that the three spellings of
-  // one person seed one entry.
-  if (userObserver) {
-    try {
-      userObserver({
-        // WHICH OF THE THREE THINGS HAPPENED. The observer used to be offered
-        // one kind of event and needed no discriminator; it is now offered
-        // three (see noteCertificateIssued() above), and an absent `event` has
-        // to keep meaning this one — an older copy of ldap_server.js that does
-        // not read the field must go on behaving exactly as it did.
-        event: 'authentication',
-        key: identity.key, name: identity.name, realm: identity.realm,
-        presented: identity.form, protocol: protocol, method: method,
-        isClient: record.isClient, sub: info.sub || '',
-        // HOW they authenticated, in RFC 8176's vocabulary, passed through
-        // untouched for the same reason `certificate` is: this file counts and
-        // the directory decides what to do about it. It is what lets an entry
-        // record that a second factor was used — a WebAuthn ceremony after a
-        // password arrives here as ["pwd","hwk"], and the same ceremony used as
-        // the PRIMARY credential arrives as ["hwk"] alone, which is one factor
-        // and must not be flagged as two. Most families set neither: a Kerberos
-        // AS-REQ and a UsernameToken have no amr to state, and an entry with no
-        // factors recorded is the honest answer for them rather than a default.
-        amr: info.amr || [], acr: info.acr || '',
-        // Passed through untouched, and only the TLS listeners set it: a client
-        // certificate's identity IS a DN, so the entry the directory seeds for
-        // it is not `uid=<name>` and the facts that go in it — issuer, serial,
-        // validity — are on the certificate rather than in anything this file
-        // holds. It rides on the observer rather than on a second hook because
-        // this is already the funnel, and a second call at the TLS listener
-        // would be a second thing to keep right. Nothing here reads it.
-        certificate: info.certificate || null,
-        // WHOSE identity this one belongs to, where the caller knows and only
-        // where it does. It exists for one shape: a DECENTRALIZED IDENTIFIER,
-        // which names nobody by itself, arriving from the Credential Endpoint
-        // where the access token has already said who the credential is about.
-        // The directory folds such a DID onto that person's entry instead of
-        // creating a second one named by a digest of it.
-        //
-        // NORMALISED like `key` is, and through the same function: the caller
-        // has whatever the token carried — `alice` or `urn:sts:user:alice`
-        // — and passing it through raw would link the DID to a person filed
-        // under a name nothing else here uses, which is the split this whole
-        // funnel exists to prevent.
-        //
-        // Empty for every other family, and that is not an omission to fill in
-        // later: a name-shaped identity IS the person, so a link from it to
-        // itself would say nothing.
-        linkedTo: info.linkedTo ? identityKeyOf(info.linkedTo) : '',
-        // WHAT A FOREIGN IDENTITY PROVIDER SAID ABOUT THEM, where a federated
-        // sign-in is what brought us here. Only `federation/federation_sp.js`
-        // sets it, and it is passed through UNTOUCHED for exactly the reason
-        // `certificate` above is: this file counts, and the directory decides
-        // what to do about it. Nothing here reads it.
-        //
-        // It is a FIELD ON THIS PAYLOAD rather than a fourth `event` or a sixth
-        // slot, and that is rule 3e's test applied rather than skipped. A new
-        // event would be wrong on its own terms — this IS an authentication,
-        // and filing it as something else would take a federated sign-in off
-        // /admin/users, which is precisely where somebody looks for one. A new
-        // slot would be an indirection bought for nothing: `certificate` and
-        // `linkedTo` already established that a family with an extra fact about
-        // the identity puts it here, and this is the third.
-        //
-        // The attributes inside it are ALREADY MAPPED to this directory's own
-        // names — federation_map.js owns that vocabulary — so nothing here or
-        // in ldap_server.js has to know what a `urn:oid:` name is.
-        federation: info.federation || null
-      });
-    } catch (e) {
-      log.error(errorCodes.tag('STS-REG-0039') +
-                'the user observer threw and was ignored; the authentication ' +
-                'itself is unaffected: ' + e.message);
-    }
   }
   log.debug("Leaving recordAuthentication(). " + users.size +
             " user(s) known.");
@@ -3547,7 +3657,7 @@ function userRows() {
   tokens.forEach(function (record) {
     // `username` first: it is the local name, and falling back to `sub` costs
     // nothing because identityOf() strips the prefix off it anyway.
-    const row = rowFor(record.username || record.sub);
+    const row = rowFor(holderKeyOf(record.username, record.sub));
     if (!row) return;
     // Both spellings are recorded as forms when they differ, so the page can
     // show that this row's `sub` is what the tokens say.
@@ -3618,7 +3728,7 @@ function userDetail(key) {
   const nowMs = Date.now();
   const theirTokens = [];
   tokens.forEach(function (record) {
-    if (identityKeyOf(record.username || record.sub) !== wanted) return;
+    if (holderKeyOf(record.username, record.sub) !== wanted) return;
     theirTokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
                                    record));
   });
@@ -4005,6 +4115,8 @@ module.exports = {
   noteKnownIdentity: noteKnownIdentity,
   identityOf: identityOf,
   identityKeyOf: identityKeyOf,
+  holderKeyOf: holderKeyOf,
+  renameIdentity: renameIdentity,
   userRows: userRows,
   userDetail: userDetail,
   sessionIdOfJti: sessionIdOfJti,

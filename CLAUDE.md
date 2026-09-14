@@ -225,6 +225,7 @@ holds is the table above; what each module is for is that directory's
    | `portal/portal.js` | `setDirectory`, filled by `ldap/ldap_server.js` | `portal/CLAUDE.md` |
    | `authn/authn.js` | `setSessionObserver`, filled by `ssf/ssf.js` | `authn/CLAUDE.md`, `ssf/CLAUDE.md` |
    | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver` | `common/CLAUDE.md` |
+   | `common/helpers.js` | `setSubjectResolver` (a person's `sub` from their entry's `entryUUID`, and back), filled by `ldap/ldap_server.js` (2026-09-14) | `ldap/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
    it carries** — `common/protocol_stack.js` fills it, because the owner is first
@@ -244,10 +245,11 @@ outside it:
 2. **A store becomes per realm at its DECLARATION and nowhere else**;
    `tests/realm_isolation.js` is the guard. — `common/CLAUDE.md`
 3. **The embedded directory is per realm too**, `dc=<id>` beneath `ldap.baseDn`. — `ldap/CLAUDE.md`
-4. **The two admin console roles are deliberately NOT separated** — a per-realm
-   roster would let anybody who can create a realm administer the service. The
-   console AUTHENTICATES in the ambient realm and is AUTHORIZED against the
-   default realm's roster. — `admin-ui/CLAUDE.md`, `authn/CLAUDE.md`
+4. **A realm has administrators of its own, CONFINED to it** (2026-09-14, #32; it
+   read *deliberately NOT separated* until then). The console asks the roster of
+   the realm a person signed in through; the default realm's is the service
+   roster over every realm, and `admin-ui/admin_scope.js` refuses a realm's own
+   everything about the process. — `admin-ui/CLAUDE.md` 8d, `mgmt-api/CLAUDE.md`
 5. **Kerberos and the two TLS listeners are still shared**, having no path and no
    name inside the protocol to put a realm in. SPIFFE left that list on
    2026-09-12 — a realm gets a trust domain and sockets of its own, told apart
@@ -265,6 +267,17 @@ came from and dies with it, and a Sign out on each that ends both.
 `common/CLAUDE.md` (`oidc_rp.js`) carries the design, the realm split and the
 `Location`-header bug; `authn/CLAUDE.md` the two kinds of session;
 `admin-ui/CLAUDE.md` and `portal/CLAUDE.md` the gate exemptions and sign-out.
+
+## What an authenticated identity is
+
+**It is `authn/`'s session: an internal, protocol-independent record, and no
+protocol's token** (2026-09-14). A subject (`urn:uuid:<entryUUID>`), a list of
+authentication events, and a session with a stable `sid` and a rotating cookie
+handle. Every artifact this service issues is a PROJECTION of it; every
+credential it accepts is EVIDENCE on an event. A protocol module that issues or
+accepts anything is bound by it. `authn/CLAUDE.md` argues it; a session needs
+a directory entry to be the subject of, so federation's provisioning switches
+(`federation/CLAUDE.md`) and SCIM's ids (`scim/CLAUDE.md`) follow from it.
 
 ## One front process, and what a socket cannot share
 
@@ -749,7 +762,7 @@ the file the row names.
 | Decide who may delegate to whom IN THE ACT, in two of the three families that can | `common/CLAUDE.md`, `kerberos/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | ~~Give every trust realm a certificate authority of its own~~ — **reversed 2026-09-11**: one Root, an Intermediate per realm, and the boundary moved down a tier | `common/CLAUDE.md`, `docs/pki.md` |
 | Give a trust realm its own Kerberos KDC or TLS listeners (the directory and SPIFFE came off this row) | `common/CLAUDE.md`, `ldap/CLAUDE.md`, `spiffe/CLAUDE.md` |
-| Give a trust realm its own administrator | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `ldap/CLAUDE.md` |
+| ~~Give a trust realm its own administrator~~ — **reversed 2026-09-14 (#32)**: a realm's own roster, confined to the realm; the default realm's stays the service roster | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `ldap/CLAUDE.md` |
 | ~~Persist anything it MINTS~~ — **reversed 2026-09-06, in product mode on postgres only** | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.js` |
 | Start with demonstration data, invent a claim value, or open a test control to anybody, **in product mode** | `common/mode.js`, `common/CLAUDE.md` |

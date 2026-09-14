@@ -390,6 +390,10 @@ async function issue(realmId, spec) {
   const slot = slotFor(username, kind);
   const made = await pki.certify(scope, USE_CASE, {
     slot: slot,
+    holderSubject: kind === 'person' && realms.get(scope)
+      ? realms.run(realms.get(scope), function () {
+        return require('./helpers').subjectForName(username);
+      }) : '',
     label: String(s.label || '') || 'TLS client certificate',
     commonName: username,
     keyAlg: keyAlgId,
@@ -609,6 +613,66 @@ function subjectCnOf(x509) {
   return found ? found[1] : '';
 }
 
+// ---------------------------------------------------------------------------
+// WHO HOLDS AN ACCEPTED PERSON'S CERTIFICATE NOW (2026-09-14).
+//
+// A certificate names a person as they were CALLED when it was issued — the
+// CN, the `urn:sts:person:` SAN and the register's slot all carry that name.
+// A rename leaves the certificate naming nobody, and a name deleted and
+// re-created would hand it to a different person: the account-recycling hole
+// a stable subject exists to close. So where the issuing record carries the
+// holder's `urn:uuid:` subject, the directory says who that is today, and a
+// subject naming nobody refuses the certificate. A record written before the
+// subject was recorded is answered by its name, as before.
+//
+// Asked per call and never memoised, because the answer is the directory's.
+// ---------------------------------------------------------------------------
+function currentHolderOf(answer) {
+  log.debug("Entering currentHolderOf().");
+  if (!answer || !answer.accepted || answer.kind !== 'person' ||
+      !answer.authority) {
+    log.debug("Leaving currentHolderOf(). Nothing to resolve.");
+    return answer;
+  }
+  let normal = function (serial) {
+    return String(serial || '').toLowerCase().replace(/^0+/, '');
+  };
+  try {
+    normal = revocation().normalSerial;
+  } catch (e) {
+    log.debug("Caught in currentHolderOf(): " + ((e && e.message) || e));
+  }
+  const serial = normal(answer.serialHex);
+  const ca = String(answer.authority.ca);
+  const records = ca === USE_CASE
+    ? pki.certificatesFor(answer.realm, USE_CASE)
+    : pki.issuedKeyPairsFor(answer.realm, ca);
+  const record = records.filter(function (one) {
+    return one && normal(one.serialHex) === serial;
+  })[0];
+  const subject = record && record.holderSubject;
+  if (!subject) {
+    log.debug("Leaving currentHolderOf(). No subject recorded.");
+    return answer;
+  }
+  const realm = realms.get(answer.realm);
+  const named = realm ? realms.run(realm, function () {
+    return require('./helpers').nameForSubject(subject);
+  }) : '';
+  if (!named) {
+    log.debug("Leaving currentHolderOf(). The holder is gone.");
+    return { issuedHere: true, accepted: false, error: 'HOLDER_GONE',
+             why: 'the certificate was issued to the person "' +
+                  answer.username + '", whose directory entry is gone; a ' +
+                  'person created since under that name is somebody else',
+             authority: answer.authority, serialHex: answer.serialHex };
+  }
+  log.debug("Leaving currentHolderOf(). " + named);
+  return named === answer.username ? answer
+    : Object.assign({}, answer, { username: named,
+                                  certifiedName: answer.username });
+}
+
 function identityOf(input) {
   log.debug("Entering identityOf().");
   if (!input || !input.leaf || input.verified !== true) {
@@ -631,7 +695,7 @@ function identityOf(input) {
     .digest('hex') + '|' + heldKey;
   if (memo.has(key)) {
     log.debug("Leaving identityOf(). Memoised.");
-    return memo.get(key);
+    return currentHolderOf(memo.get(key));
   }
   const walked = status.walk(input);
   const links = (walked && walked.links) || [];
@@ -721,7 +785,7 @@ function identityOf(input) {
   memo.set(key, answer);
   log.debug("Leaving identityOf(). issuedHere=" + answer.issuedHere +
             " accepted=" + answer.accepted);
-  return answer;
+  return currentHolderOf(answer);
 }
 
 // ---------------------------------------------------------------------------
@@ -762,7 +826,7 @@ function stillHeld(identity) {
     const held = pki.certificatesFor(scope, USE_CASE).some(function (one) {
       const holder = slotHolder(one.slot);
       return !!holder && holder.kind === identity.kind &&
-             holder.id === identity.username &&
+             holder.id === (identity.certifiedName || identity.username) &&
              normal(one.serialHex) === serial;
     });
     log.debug("Leaving stillHeld(). tls-client register: " + held);

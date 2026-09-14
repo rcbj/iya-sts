@@ -3774,6 +3774,14 @@ async function certify(scopeId, useCaseId, spec) {
     pinned: !!spec.pinned,
     createdAt: Date.now()
   };
+  // THE HOLDER'S SUBJECT, where the caller knows one (2026-09-14): the slot
+  // and the certificate name the holder as they were CALLED at issuance, and a
+  // rename or a re-created name would otherwise move the certificate to
+  // whoever holds that name now. See `tls_client_certificates.js`'s
+  // `currentHolderOf()`.
+  if (spec.holderSubject) {
+    record.holderSubject = String(spec.holderSubject);
+  }
   if (spec.pinned && spec.privateKeyPem) {
     // THE ONE RECORD SHAPE WITH A PRIVATE KEY IN IT — see the header. An
     // operator pasted this pair in and this service has nowhere else to keep
@@ -4259,6 +4267,8 @@ async function issueEnrolled(scopeId, useCaseId, spec) {
       notAfter: issued.notAfter,
       identifier: String(asked.identifier || ''),
       subjectKind: String(asked.subjectKind || ''),
+      // The holder's subject, for `certify()`'s reason above.
+      holderSubject: String(asked.holderSubject || ''),
       purpose: 'enrolled:' + String(asked.profile),
       useCase: uc.id,
       issuedAt: new Date(nowMs).toISOString()

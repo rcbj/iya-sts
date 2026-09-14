@@ -115,17 +115,17 @@
 // facts riding along beside the identity.
 //
 // ONE ENTRY PER PERSON, HOWEVER MANY WAYS THEY GET IN. `rcbj` signing in at the
-// login screen, `urn:sts:user:rcbj` in a token, `rcbj@STS.MOCK` in a Kerberos
-// AS-REQ and `rcbj` on a WS-Security UsernameToken have always been one entry —
-// identityOf() in admin_stats.js normalises all four to one key before this
-// hook ever sees them. What did NOT fold was the identity that is a DN rather
-// than a name, and now does: a certificate saying `CN=rcbj` lands on the entry
-// rcbj already has, and a password sign-in after a handshake lands on the one
-// the certificate made. existingUserEntry() is the whole of it, and the same
-// function answers at the other two doors — an `ldapadd` under `ou=users` and
-// createUser(), which the console and the management API share. A DID is the
-// one identity that names nobody by itself and so cannot generally fold; where
-// this service KNOWS whose it is, it does. See didPlan().
+// login screen, `urn:uuid:<entryUUID>` in a token, `rcbj@STS.MOCK` in a
+// Kerberos AS-REQ and `rcbj` on a WS-Security UsernameToken have always been
+// one entry — identityOf() in admin_stats.js normalises all four to one key
+// before this hook ever sees them. What did NOT fold was the identity that is a
+// DN rather than a name, and now does: a certificate saying `CN=rcbj` lands on
+// the entry rcbj already has, and a password sign-in after a handshake lands on
+// the one the certificate made. existingUserEntry() is the whole of it, and the
+// same function answers at the other two doors — an `ldapadd` under `ou=users`
+// and createUser(), which the console and the management API share. A DID is
+// the one identity that names nobody by itself and so cannot generally fold;
+// where this service KNOWS whose it is, it does. See didPlan().
 // ---------------------------------------------------------------------------
 
 // For one thing only: the short, stable uid a DID-named entry is placed at.
@@ -134,6 +134,9 @@ const crypto = require('crypto');
 const ldap = require('ldapjs');
 const app = require('../common/app');
 const { log, xmlEscape, dnRfc4514 } = require('../common/helpers');
+// The subject resolver slot this module fills (2026-09-14). Named apart from
+// the destructure above because it is a FILLING, not a use.
+const helpers = require('../common/helpers');
 const config = require('../common/config');
 // THE TRUST REALM REGISTRY, and this module is the one place in this service
 // that needs more of it than the ambient value. It reads `currentId()` to build
@@ -2228,6 +2231,261 @@ function hasChildren(dn) {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// `entryUUID` (RFC 4530): THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES
+// (2026-09-14).
+//
+// **IT IS WHAT A PERSON'S `sub` IS NOW**: `urn:uuid:<entryUUID>`, in both
+// modes, through `helpers.setSubjectResolver()`. It replaced
+// `urn:sts:user:<username>`, which a rename changed and a person deleted and
+// re-created under the same name inherited — the account-recycling hole a
+// relying party linking on `sub` falls straight into. `authn/CLAUDE.md`, *What
+// an authenticated identity is here*, carries the design and rcbj's choices.
+//
+// Four rules, each enforced in one place:
+//
+//   * **ASSIGNED IN `putEntry()` AND CARRIED THROUGH EVERY OVERWRITE.** Every
+//     writer in this file reaches the store through that function, and most of
+//     them REBUILD the attribute set (`writePerson()`, `writeApplication()`,
+//     the CRL containers), so the value is taken from the entry already at that
+//     DN
+//     and never from the attributes a caller handed in. A delete followed by a
+//     create at the same DN is a NEW entry and gets a new value — which is the
+//     whole difference from a name-derived subject.
+//   * **A RENAME KEEPS IT**, because `modifyDN` moves the stored object rather
+//     than writing a new one.
+//   * **A SEEDED ENTRY'S IS DETERMINISTIC** — a name-based (version 5) UUID
+//     over the realm and the DN — and every other entry's is random (version
+//     4). The seed runs on every start, so a random value would give alice a
+//     new `sub` on every restart of a development service; nothing created by
+//     a door is
+//     treated that way, because a deterministic value is exactly what makes a
+//     re-created person the same subject again (rcbj's choice).
+//   * **A RESTORED OR REPLICATED ROW WITHOUT ONE IS BACKFILLED THE SAME WAY**
+//     (version 5 over the realm and the stored key), so every process that
+//     reads a row written before this change computes the SAME value without
+//     having to write it back first.
+//
+// It is NO-USER-MODIFICATION (RFC 4530 section 2), refused on an add or modify
+// in BOTH modes — see `ALWAYS_PROTECTED_OPERATIONAL` — and returned on a search
+// only when it is asked for by name, like every other operational attribute.
+// ---------------------------------------------------------------------------
+const ENTRY_UUID_NAMESPACE = Buffer.from('3b2f8c4e6d1a4e9f8a7c5d2e1f0b9a86',
+                                        'hex');
+
+const UUID_SHAPED =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// RFC 9562 section 5.5: SHA-1 over the namespace and the name, the version and
+// variant bits set. Node has a v4 generator and no v5 one.
+function nameBasedUuid(name) {
+  log.debug("Entering nameBasedUuid().");
+  const hash = crypto.createHash('sha1').update(ENTRY_UUID_NAMESPACE)
+    .update(String(name), 'utf8').digest();
+  const bytes = Buffer.from(hash.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  log.debug("Leaving nameBasedUuid().");
+  return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) +
+         '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+}
+
+// The value a seeded entry, or a row read back without one, is given: one
+// answer in every process, from the realm and the store key alone.
+function backfilledEntryUuid(realmId, key) {
+  log.debug("Entering backfilledEntryUuid().");
+  log.debug("Leaving backfilledEntryUuid().");
+  return nameBasedUuid(String(realmId || realms.DEFAULT_ID) + '\n' +
+                       String(key));
+}
+
+function entryUuidOf(stored) {
+  log.debug("Entering entryUuidOf().");
+  const value = stored && stored.attributes &&
+                (stored.attributes.entryuuid || [])[0];
+  log.debug("Leaving entryUuidOf().");
+  return value ? String(value).toLowerCase() : '';
+}
+
+// ---------------------------------------------------------------------------
+// TWO PROCESSES THAT CREATE ONE PERSON AT ONCE (2026-09-14).
+//
+// `putEntry()` gives a door-created entry a random UUID, and a request worker
+// knows only its own store until replication reaches it. So two workers that
+// create the same person inside one replication interval — two first sign-ins
+// by one person, a SCIM create racing an auto-create — each assign a value,
+// each issue tokens whose `sub` carries it, and each write the entry; the
+// store keeps the LAST row and the other value names nobody. Every token the
+// losing worker issued then fails at UserInfo, refuses to refresh
+// (`STS-OAUTH-0511`) and has its console row filed under nobody.
+//
+// **THE LOSING VALUE IS KEPT AS AN ALIAS**, on `stsEntryUuidAlias`, and both
+// values resolve to the entry. Which is primary is decided by the values
+// alone — the lower one — so every process that sees both rows reaches the
+// same entry in whatever order they arrive, and writes it back once; when
+// the rows it then receives already carry that answer, nothing is written.
+//
+// **ONLY FOR TWO CREATES, NOT FOR A RE-CREATE.** A person deleted and created
+// again is a NEW subject, which is the whole point of `entryUUID` — and a
+// replication page that coalesced the delete away would look like this race.
+// The two are told apart by the creation instants: a race is two creations
+// within `CREATE_RACE_WINDOW_S` of each other, and a re-create is later than
+// the entry it replaced by at least however long that person existed.
+// `mergeCreateRace()` and `applyEntry()` below are the whole of it.
+// ---------------------------------------------------------------------------
+const ENTRY_UUID_ALIAS = 'stsentryuuidalias';
+const CREATE_RACE_WINDOW_S = 60;
+
+function entryUuidAliasesOf(stored) {
+  log.debug("Entering entryUuidAliasesOf().");
+  const values = (stored && stored.attributes &&
+                  stored.attributes[ENTRY_UUID_ALIAS]) || [];
+  log.debug("Leaving entryUuidAliasesOf().");
+  return values.map(function (one) {
+    return String(one).toLowerCase();
+  });
+}
+
+// Seconds since the epoch of a generalized time this file wrote, or NaN.
+function generalizedTimeSeconds(text) {
+  log.debug("Entering generalizedTimeSeconds().");
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(
+    String(text || ''));
+  log.debug("Leaving generalizedTimeSeconds().");
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000
+           : NaN;
+}
+
+// What the entry should say after `incoming` replaced `local` at one key:
+// `{ uuid, aliases }`, or null when there is nothing to reconcile. Pure, so
+// the rule can be asked without a store.
+function mergeCreateRace(local, incoming) {
+  log.debug("Entering mergeCreateRace().");
+  const mine = entryUuidOf(local);
+  const theirs = entryUuidOf(incoming);
+  if (!mine || !theirs) {
+    log.debug("Leaving mergeCreateRace(). A side has no UUID.");
+    return null;
+  }
+  const aliases = {};
+  entryUuidAliasesOf(local).concat(entryUuidAliasesOf(incoming))
+    .forEach(function (one) {
+      aliases[one] = true;
+    });
+  let uuid = theirs;
+  if (mine !== theirs && !aliases[mine] && !aliases[theirs]) {
+    const apart = Math.abs(generalizedTimeSeconds(local.createdAt) -
+                           generalizedTimeSeconds(incoming.createdAt));
+    if (!(apart <= CREATE_RACE_WINDOW_S)) {
+      log.debug("Leaving mergeCreateRace(). A re-create, not a race.");
+      return null;
+    }
+    uuid = mine < theirs ? mine : theirs;
+    aliases[mine] = true;
+    aliases[theirs] = true;
+  } else if (mine !== theirs) {
+    // One side already carries the other as an alias: the primary that is
+    // not an alias of anything wins.
+    uuid = aliases[theirs] ? mine : theirs;
+    aliases[mine] = true;
+    aliases[theirs] = true;
+  }
+  delete aliases[uuid];
+  const list = Object.keys(aliases).sort();
+  const unchanged = uuid === theirs &&
+    list.join(',') === entryUuidAliasesOf(incoming).sort().join(',');
+  log.debug("Leaving mergeCreateRace(). " +
+            (unchanged ? 'Nothing to change.' : 'Reconciled.'));
+  return unchanged ? null : { uuid: uuid, aliases: list };
+}
+
+// ---------------------------------------------------------------------------
+// ENTRY BY UUID, AND WHY THE INDEX VALIDATES RATHER THAN BEING KEPT IN STEP.
+//
+// A token's `sub` is looked up on every token record, every console row and
+// every refresh, so a walk per lookup is the quadratic the username index was
+// written to remove. Unlike a name a UUID is never changed by a caller — so a
+// hit is checked against the store (is that entry still under that key, and
+// does it still carry that value?) and a miss or a stale hit rebuilds once per
+// directory version. A writer nobody hooked therefore costs a rebuild and can
+// never cost a wrong answer, which is the username index's bargain; and a
+// lookup for a UUID this directory never issued — a foreign partner's `sub`, a
+// credential's random subject — rebuilds at most once per write rather than
+// once per lookup.
+// ---------------------------------------------------------------------------
+const uuidIndexes = realms.keyed(function () {
+  return { index: null, version: -1 };
+});
+
+// ---------------------------------------------------------------------------
+// A RESOURCE ID AND A DN, BOTH WAYS (2026-09-14). SCIM's `id` was the entry's
+// DN, so a rename gave the same person a new id — which RFC 7643 section 3.1
+// says an id must never do ("MUST NOT be reassigned"). It is the entry's
+// `entryUUID` now. A DN handed in still resolves, for every caller that is not
+// SCIM and for a client that stored an id before the change; a dangling DN
+// (a member whose entry is gone) has no UUID and is reported as itself.
+// ---------------------------------------------------------------------------
+function dnForResourceId(id) {
+  log.debug("Entering dnForResourceId().");
+  const text = String(id == null ? '' : id).trim();
+  if (/^urn:uuid:/i.test(text) || UUID_SHAPED.test(text)) {
+    const found = entryByUuid(text);
+    log.debug("Leaving dnForResourceId(). " + (found ? 'A UUID.' : 'Nobody.'));
+    return found ? found.dn : text;
+  }
+  log.debug("Leaving dnForResourceId(). A DN.");
+  return text;
+}
+
+function resourceIdOfDn(dn) {
+  log.debug("Entering resourceIdOfDn().");
+  const value = entryUuidOf(getEntry(String(dn || '')));
+  log.debug("Leaving resourceIdOfDn().");
+  return value || String(dn || '');
+}
+
+function entryByUuid(uuid) {
+  log.debug("Entering entryByUuid().");
+  const wanted = String(uuid || '').trim().toLowerCase()
+    .replace(/^urn:uuid:/, '');
+  if (!UUID_SHAPED.test(wanted)) {
+    log.debug("Leaving entryByUuid(). Not a UUID.");
+    return null;
+  }
+  const cache = uuidIndexes();
+  const lookup = function () {
+    const key = cache.index ? cache.index.get(wanted) : null;
+    const stored = key ? entries.get(key) : null;
+    return stored && (entryUuidOf(stored) === wanted ||
+                      entryUuidAliasesOf(stored).indexOf(wanted) >= 0)
+      ? stored : null;
+  };
+  let found = lookup();
+  if (!found && cache.version !== directoryVersion) {
+    const index = new Map();
+    eachEntryInRealm(function (entry, key) {
+      const value = entryUuidOf(entry);
+      if (value && !index.has(value)) {
+        index.set(value, key);
+      }
+    });
+    // An alias second, so a primary value always wins the slot.
+    eachEntryInRealm(function (entry, key) {
+      entryUuidAliasesOf(entry).forEach(function (alias) {
+        if (!index.has(alias)) {
+          index.set(alias, key);
+        }
+      });
+    });
+    cache.index = index;
+    cache.version = directoryVersion;
+    found = lookup();
+  }
+  log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
+  return found;
+}
+
 // Put an entry in the store. `attributes` is a plain object whose values may be
 // a string or an array; the operational attributes are added here so that every
 // entry has them however it was created.
@@ -2254,6 +2512,18 @@ function putEntry(dn, attributes, options) {
   // afterwards the old attributes are gone. Empty for a create.
   const previous = entries.get(normalizeDn(dn));
   const hadNames = previous ? usernameKeysOf(previous) : [];
+  // THE ENTRY'S OWN, CARRIED, NEVER THE CALLER'S — see `entryUUID` above. A
+  // writer that rebuilt the attribute set from a copy of the entry may well be
+  // handing one back, and one that did not is handing none; neither decides.
+  stored.attributes.entryuuid = [entryUuidOf(previous) ||
+    (stored.origin === 'seed'
+      ? backfilledEntryUuid(realms.currentId(), normalizeDn(dn))
+      : crypto.randomUUID())];
+  // And its aliases, the same way: the entry's, never the caller's.
+  delete stored.attributes[ENTRY_UUID_ALIAS];
+  if (entryUuidAliasesOf(previous).length) {
+    stored.attributes[ENTRY_UUID_ALIAS] = entryUuidAliasesOf(previous);
+  }
   entries.set(normalizeDn(dn), stored);
   touchDirectory(stored.dn);
   noteUsernameIndexPut(stored, hadNames, usernameIndexWasCurrent);
@@ -2291,7 +2561,8 @@ function matchable(stored) {
 // modifyTimestamp come back only when they were asked for by name. That
 // distinction is one of the commonest surprises in LDAP and is worth
 // reproducing rather than smoothing over.
-const OPERATIONAL = ['createtimestamp', 'modifytimestamp', 'entrydn'];
+const OPERATIONAL = ['createtimestamp', 'modifytimestamp', 'entrydn',
+                     'entryuuid', ENTRY_UUID_ALIAS];
 
 // ---------------------------------------------------------------------------
 // A BUG IN ldapjs 3.0.7 THAT THIS FILE ROUTES AROUND, recorded here because the
@@ -2950,6 +3221,36 @@ persistence.setDirectory({
     if (row.origin) {
       stored.origin = String(row.origin);
     }
+    // A row written before `entryUUID` existed: every process computes the same
+    // value from the realm and the key, so none has to write it back first.
+    if (!entryUuidOf(stored)) {
+      stored.attributes.entryuuid = [backfilledEntryUuid(realmId, key)];
+    }
+    // TWO CREATES OF ONE ENTRY IN TWO PROCESSES — see `mergeCreateRace()`.
+    // The row is applied AS STORED first, because the caller records what it
+    // applied as what the store holds; the reconciliation is then this
+    // process's OWN write, in a microtask — after the caller has recorded the
+    // row and before any request can read the entry in between.
+    const local = store.get(key);
+    const reconcile = mergeCreateRace(local, stored);
+    if (reconcile) {
+      queueMicrotask(function () {
+        realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+          if (entries.get(key) !== stored) {
+            return;
+          }
+          stored.attributes.entryuuid = [reconcile.uuid];
+          stored.attributes[ENTRY_UUID_ALIAS] = reconcile.aliases;
+          stored.modifiedAt = generalizedTime();
+          stored.attributes.modifytimestamp = [stored.modifiedAt];
+          log.info('ldap: ' + stored.dn + ' was created in two processes ' +
+                   'at once; it is ' + reconcile.uuid + ', and ' +
+                   reconcile.aliases.join(', ') + ' is kept as an alias so ' +
+                   'the tokens already issued under it still name this entry.');
+          touchDirectory(stored.dn);
+        });
+      });
+    }
     // ---------------------------------------------------------------------
     // THE INDEXES ARE KEPT HERE TOO, AND NOT KEEPING THEM WAS A QUADRATIC
     // (2026-09-08).
@@ -3100,6 +3401,10 @@ persistence.setDirectory({
       if (row.origin) {
         stored.origin = String(row.origin);
       }
+      if (!entryUuidOf(stored)) {
+        stored.attributes.entryuuid =
+          [backfilledEntryUuid(realmId, normalizeDn(stored.dn))];
+      }
       store.set(normalizeDn(stored.dn), stored);
     });
     // The reverse group index describes a directory that is no longer there.
@@ -3181,6 +3486,60 @@ persistence.setDirectory({
   }
 });
 
+// ---------------------------------------------------------------------------
+// THE SUBJECT RESOLVER (2026-09-14): `helpers.userFor()` asks it for a
+// person's `sub`, and `admin_stats.js`'s `identityOf()` asks it who a `sub`
+// names.
+//
+// A SLOT, AND RULE 3e's TEST ANSWERS YES BOTH WAYS ROUND. `helpers.js` is a
+// leaf this module requires, so a require back would close the cycle rule 2
+// exists for; and a require of this module from `helpers.js` would register
+// every `/admin/ldap/*` route at #3 in the router, ahead of everything. Two
+// functions, validated whole at the other end.
+//
+// Both answer in the AMBIENT realm, like every other lookup here: a realm's
+// people have that realm's subjects and no other realm's.
+// ---------------------------------------------------------------------------
+function subjectForName(name) {
+  log.debug('Entering subjectForName(). name=' + name);
+  const key = stats.identityKeyOf(name);
+  const located = key ? locateEntry(key) : null;
+  const stored = located && located.stored;
+  const uuid = stored && isPersonEntry(stored) ? entryUuidOf(stored) : '';
+  log.debug('Leaving subjectForName(). ' + (uuid ? 'Found.' : 'Nobody.'));
+  return uuid ? 'urn:uuid:' + uuid : '';
+}
+
+// The name the rest of this service files a person under: their `uid` where
+// they have one, and otherwise the identifier their entry was created FROM —
+// a certificate subject, a DID, a SPIFFE ID — which is what `autoCreateUser()`
+// was handed as the identity key in the first place.
+function nameForSubject(subject) {
+  log.debug('Entering nameForSubject().');
+  const stored = entryByUuid(subject);
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving nameForSubject(). Nobody.');
+    return '';
+  }
+  const name = personNameOf(stored);
+  log.debug('Leaving nameForSubject(). ' + name);
+  return name;
+}
+
+// The name a person entry is filed under — see `nameForSubject()`.
+function personNameOf(stored) {
+  log.debug('Entering personNameOf().');
+  const a = stored.attributes;
+  const name = (a.uid || [])[0] || (a.x509subject || [])[0] ||
+               (a.didsubject || [])[0] || (a.spiffesubject || [])[0] ||
+               usernameOfEntry(stored);
+  log.debug('Leaving personNameOf().');
+  return String(name || '');
+}
+
+helpers.setSubjectResolver({ subjectFor: subjectForName,
+                             nameFor: nameForSubject });
+
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
 // are NOT escaped, because a value may legitimately contain one — `O=Example\,
 // Ltd` is one RDN and not two — and splitting there would produce components
@@ -3249,6 +3608,13 @@ function unescapeDnValue(value) {
 function addValues(stored, name, values) {
   log.debug('Entering addValues().');
   const key = String(name).toLowerCase();
+  // Never an operational attribute this directory maintains — `entryUUID` is a
+  // person's subject, and `certificatePlan()` turns whatever RDNs a certificate
+  // carries into calls to this function.
+  if (CLIENT_WRITTEN_OPERATIONAL.indexOf(key) !== -1) {
+    log.debug('Leaving addValues(). An operational attribute.');
+    return false;
+  }
   const have = stored.attributes[key] || [];
   const added = valuesOf(values).filter(function (value) {
     return value !== '' && have.indexOf(value) === -1;
@@ -3307,12 +3673,13 @@ function commonNameOf(dn) {
 // below are the whole of how that is kept true.
 //
 // It was already true for most of this service and by accident rather than by
-// design: identityOf() in admin_stats.js strips the `urn:sts:user:` prefix
-// and the Kerberos realm, so `rcbj`, `urn:sts:user:rcbj` and
-// `rcbj@STS.MOCK` reach autoCreateUser() as one key and namePlan() builds one
-// DN from it. Every name-shaped family — OAuth 2.0, OpenID Connect,
-// WS-Federation, WS-Trust, both SAML profiles, Kerberos, SPNEGO, an LDAP bind —
-// therefore landed on `uid=rcbj,ou=users` already.
+// design: identityOf() in admin_stats.js resolves a `urn:uuid:` subject to the
+// entry's name (and strips the retired `urn:sts:user:` prefix) and the Kerberos
+// realm, so `rcbj`, a token's subject and `rcbj@STS.MOCK` reach
+// autoCreateUser() as one key and namePlan() builds one DN from it. Every
+// name-shaped family — OAuth 2.0, OpenID Connect, WS-Federation, WS-Trust, both
+// SAML profiles, Kerberos, SPNEGO, an LDAP bind — therefore landed on
+// `uid=rcbj,ou=users` already.
 //
 // What did NOT fold was the one identity that is a DN rather than a name. A
 // client certificate `CN=rcbj,O=Example` becomes `cn=rcbj,ou=users`
@@ -4024,9 +4391,17 @@ function spiffePlan(info) {
 // division of labour `applications.js` keeps with this file about the
 // applications schema.
 // ---------------------------------------------------------------------------
-function applyFederatedAttributes(stored, info) {
+function applyFederatedAttributes(stored, info, how) {
   log.debug('Entering applyFederatedAttributes(). dn=' + (stored && stored.dn));
   const federated = info && info.federation;
+  // WHETHER THE PARTNER'S VALUES MAY OVERWRITE WHAT THE ENTRY HOLDS
+  // (2026-09-14): always when this sign-in created the entry, and on a
+  // returning person only while `fedUpdateUserAttributes` is on. The three
+  // facts about where the person came from are recorded either way — they are
+  // about this sign-in, not claims about the person.
+  const createdNow = !!(how && how.created);
+  const updates = createdNow ||
+                  !(federated && federated.updateAttributes === false);
   if (!stored || !federated) {
     log.debug('Leaving applyFederatedAttributes(). Not a federated sign-in.');
     return false;
@@ -4045,7 +4420,12 @@ function applyFederatedAttributes(stored, info) {
       addValues(stored, 'federationSubject',
                 [String(federated.subject)])) changed = true;
 
-  const attributes = federated.attributes || {};
+  const attributes = updates ? (federated.attributes || {}) : {};
+  if (!updates) {
+    log.debug('applyFederatedAttributes(): fedUpdateUserAttributes is off on ' +
+              federated.id + ' and this entry already existed, so the ' +
+              'partner\'s attributes are not written.');
+  }
   const written = [];
   Object.keys(attributes).forEach(function (name) {
     const values = (Array.isArray(attributes[name]) ? attributes[name] :
@@ -4062,7 +4442,8 @@ function applyFederatedAttributes(stored, info) {
     const lower = name.toLowerCase();
     if (lower === 'uid' || lower === 'objectclass' ||
         lower === 'createtimestamp' || lower === 'modifytimestamp' ||
-        lower === 'entrydn') {
+        lower === 'entrydn' || lower === 'entryuuid' ||
+        lower === ENTRY_UUID_ALIAS) {
       log.debug('applyFederatedAttributes(): not writing "' + name + '" — it ' +
                 'names the entry rather than describing the person.');
       return;
@@ -4541,18 +4922,19 @@ function autoCreateUser(detail) {
               'person.');
     return null;
   }
-  // AND THE PER-RELATIONSHIP SWITCH, which is the one place a federated sign-in
-  // is treated differently from every other kind here. `ldap.autocreateUsers`
-  // above is the service-wide answer; `fedAutocreateUsers` is one partner's,
-  // and it exists because a federation partner is the one source of identities
-  // this service does not control the volume of — a partner with ten thousand
-  // people behind it would otherwise fill ou=users the first time somebody
-  // pointed a load generator at it. Off means a session and no entry, which is
-  // a state worth being able to watch.
-  if (info.federation && info.federation.autocreate === false) {
-    log.debug('Leaving autoCreateUser(). fedAutocreateUsers is off on ' +
-              info.federation.id + ', so this federated sign-in leaves no ' +
-                                   'entry.');
+  // A SUBJECT THIS DIRECTORY COULD NOT RESOLVE IS NOBODY TO CREATE
+  // (2026-09-14). `admin_stats.js`'s `identityOf()` turns a `urn:uuid:` it can
+  // resolve into the person's name before it reaches here, so what arrives in
+  // that shape is a subject naming nobody in this realm: another instance's, a
+  // deleted person's, a credential's random one. Creating `uid=urn:uuid:…`
+  // for it would be a phantom person named after a subject, holding a
+  // DIFFERENT subject of its own.
+  if (/^urn:uuid:/i.test(name) || UUID_SHAPED.test(name)) {
+    log.info(errorCodes.tag('STS-LDAP-0091') +
+             'ldap: not creating an entry for "' + name + '": it is a ' +
+             'subject identifier naming nobody in this realm\'s directory, ' +
+             'not a username.');
+    log.debug('Leaving autoCreateUser(). An unresolved subject.');
     return null;
   }
   // FOUR shapes of identity and one placement function each, chosen here and
@@ -4586,6 +4968,28 @@ function autoCreateUser(detail) {
   // different people (see didPlan()'s linked branch).
   const personaName = plan.personaKey || name;
   const existing = getEntry(dn);
+  // AND THE PER-RELATIONSHIP SWITCH, which is the one place a federated sign-in
+  // is treated differently from every other kind here. `ldap.autocreateUsers`
+  // above is the service-wide answer; `fedAutocreateUsers` is one partner's,
+  // and it exists because a federation partner is the one source of identities
+  // this service does not control the volume of — a partner with ten thousand
+  // people behind it would otherwise fill ou=users the first time somebody
+  // pointed a load generator at it.
+  //
+  // **IT IS ASKED AFTER THE LOOKUP, WHERE IT WAS ASKED BEFORE (2026-09-14).**
+  // Off used to mean "a session and no entry" and returned before anything
+  // was looked up, so a person PROVISIONED ahead of time — by SCIM, the
+  // pre-provisioned shape rcbj wants — was never folded onto and never had a
+  // partner's attributes written. A session needs an entry to be the subject
+  // of now, so off means exactly "do not CREATE one": an existing entry is
+  // used and updated, and a missing one is left missing for
+  // `authn.startSession()` to refuse.
+  if (!existing && info.federation && info.federation.autocreate === false) {
+    log.debug('Leaving autoCreateUser(). fedAutocreateUsers is off on ' +
+              info.federation.id + ' and nobody was provisioned at ' + dn +
+              ', so nothing is created.');
+    return null;
+  }
   // What the entry's description says about why it exists. A plan may state its
   // own — didPlan() does, because "authenticated through W3C DID Core" would be
   // the wrong sentence for an identifier nobody signed in with.
@@ -4652,7 +5056,7 @@ function autoCreateUser(detail) {
     // address beats the invented one whichever way round the entry was created.
     // Reversed, an entry created by a federated sign-in would have its real
     // values quietly replaced by invented ones on the very next sign-in.
-    if (applyFederatedAttributes(existing, info)) {
+    if (applyFederatedAttributes(existing, info, { created: false })) {
       changed = true;
     }
     if (changed) {
@@ -4691,7 +5095,7 @@ function autoCreateUser(detail) {
   // Last, for applyVcAttributes()'s sake: see the note on the returning-person
   // branch above. What a foreign identity provider asserted about somebody
   // beats what this service invented for them.
-  applyFederatedAttributes(created, info);
+  applyFederatedAttributes(created, info, { created: true });
   log.info('ldap: created ' + dn + ' because ' + name + ' ' + note + '.');
   // A user created by the SERVICE rather than by a client, and the audit row
   // says so through `channel: 'internal'` — no LDAP client asked for this. It
@@ -4908,6 +5312,22 @@ function createUser(name, options) {
                                  'presenting a client certificate, where the ' +
                                  'DN is the identity; there is nothing to ' +
                                  'create one from by hand.'] });
+  }
+  // A SUBJECT IS NOT A USERNAME (2026-09-14). `urn:uuid:<entryUUID>` is what
+  // a token's `sub` holds now, and a create under that string would put a
+  // second person in the directory named after the first one's subject — one
+  // whose own subject is a different UUID, so every lookup by either would
+  // find the wrong one. A bare UUID is refused for the same reason.
+  if (/^urn:uuid:/i.test(wanted) || UUID_SHAPED.test(wanted)) {
+    log.debug('Leaving createUser(). That is a subject identifier.');
+    return coded('STS-LDAP-0090', { ok: false, errors: ['"' + wanted + '" ' +
+                                 'is a subject identifier and not a ' +
+                                 'username. Every person here is given one — ' +
+                                 'their entryUUID — and a token\'s sub is ' +
+                                 'urn:uuid:<that value>, so a person named ' +
+                                 'after one would be a second person ' +
+                                 'answering to somebody else\'s ' +
+                                 'subject.'] });
   }
   if (DID_SHAPED.test(wanted)) {
     log.debug('Leaving createUser(). That is a DID.');
@@ -5397,7 +5817,8 @@ function vcAttributesFor(key) {
 // module fills it, exactly as admin_stats.js does for the observer.
 //
 // It is given the IDENTITY KEY the console files a person under — the local
-// name, with `urn:sts:user:` and any realm already stripped — which is the same
+// name, with a subject already resolved and any realm stripped — which is the
+// same
 // string autoCreateUser() built the DN from, so the two cannot drift.
 //
 // What comes back is deliberately more than the entry: the DN is reported
@@ -5420,6 +5841,17 @@ function vcAttributesFor(key) {
 // than naming a place nothing was ever going to be.
 function locateEntry(key) {
   log.debug('Entering locateEntry(). key=' + key);
+  // A SUBJECT (2026-09-14): `urn:uuid:<entryUUID>`, which is what a token's
+  // `sub` holds. It names an entry by the one thing about it that never
+  // changes, so it is looked up and never rebuilt — and where nothing here
+  // carries it there is nowhere an entry "would go", because a subject is
+  // assigned to an entry and never the other way round.
+  if (/^urn:uuid:/i.test(String(key || ''))) {
+    const found = entryByUuid(key);
+    log.debug('Leaving locateEntry(). A subject: ' +
+              (found ? found.dn : 'nobody here.'));
+    return { dn: found ? found.dn : '', stored: found };
+  }
   if (DN_SHAPED.test(key)) {
     // A DN is the one identity shape a caller can hand this function that names
     // a PLACE rather than a person, so it was the one that could reach out of
@@ -5860,8 +6292,9 @@ function groupsFor(dn) {
   // DEFAULT realm's group in full under /realm/acme — members, attributes and
   // all, beside a `groupsDn` saying acme's — for as long as one Map held every
   // realm. It reads the realm's own store now. groupRuleFor() still decides
-  // whether it IS a group; the store decides whose it is.
-  const stored = getEntry(wanted);
+  // whether it IS a group; the store decides whose it is. A SCIM id — the
+  // group's entryUUID since 2026-09-14 — names the same group as its DN.
+  const stored = getEntry(dnForResourceId(wanted));
   if (!stored) {
     log.debug('Leaving groupsFor(). There is no entry at ' + wanted + ' in ' +
         'this realm.');
@@ -6570,7 +7003,7 @@ function reloadTrustAnchorsQuietly() {
 // **THE IDENTITY IS ALREADY NORMALISED WHEN IT ARRIVES.** consent.js runs it
 // through `admin_stats.js`'s identityKeyOf() first, which is the same
 // normalisation `autoCreateUser()` used to place the entry — so `alice`,
-// `alice@EXAMPLE.COM` and `urn:sts:user:alice` reach `locateEntry()` as
+// `alice@EXAMPLE.COM` and `urn:uuid:<entryUUID>` reach `locateEntry()` as
 // one key and find one entry. A second normalisation here would be a second
 // opinion about who somebody is.
 // ---------------------------------------------------------------------------
@@ -6945,10 +7378,34 @@ function boundDnIsDirectoryAdministrator(boundDn) {
     if (!stored) {
       return false;
     }
-    const roles = adminRbac.rolesOf(consoleKeyFor(stored.dn, stored));
+    const roles = adminRbac.rolesOf(consoleKeyFor(stored.dn, stored),
+                                    realms.DEFAULT_ID);
     return roles.write === true && roles.open !== true;
   })();
   log.debug('Leaving boundDnIsDirectoryAdministrator(). ' + answer);
+  return answer;
+}
+
+// A REALM'S OWN ADMINISTRATOR (2026-09-14, #32): a bound DN in the realm the
+// operation is in, holding Admin Write in THAT realm's roster, may write that
+// realm's directory and no other. The operation's store is the ambient realm's,
+// so a DN bound under another realm is simply not an entry here, which is the
+// same argument the default-realm check above makes one realm along.
+function boundDnIsRealmAdministrator(boundDn) {
+  log.debug('Entering boundDnIsRealmAdministrator(). dn=' + boundDn);
+  const here = realms.currentId();
+  if (!boundDn || here === realms.DEFAULT_ID) {
+    log.debug('Leaving boundDnIsRealmAdministrator(). Not a realm operation.');
+    return false;
+  }
+  const stored = getEntry(boundDn);
+  if (!stored) {
+    log.debug('Leaving boundDnIsRealmAdministrator(). Not in this realm.');
+    return false;
+  }
+  const roles = adminRbac.rolesOf(consoleKeyFor(stored.dn, stored), here);
+  const answer = roles.write === true && roles.open !== true;
+  log.debug('Leaving boundDnIsRealmAdministrator(). ' + answer);
   return answer;
 }
 
@@ -6969,7 +7426,8 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
         'an anonymous connection may not write this directory; bind first'),
       dn);
   }
-  if (boundDnIsDirectoryAdministrator(boundDn)) {
+  if (boundDnIsDirectoryAdministrator(boundDn) ||
+      boundDnIsRealmAdministrator(boundDn)) {
     log.debug('Leaving directoryWriteRefusal(). An administrator.');
     return null;
   }
@@ -7077,7 +7535,13 @@ const SECRET_ATTRIBUTES = [
 ];
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
-                                    'entrydn'];
+                                    'entrydn', 'entryuuid', ENTRY_UUID_ALIAS];
+
+// The operational attributes refused in EVERY mode (2026-09-14). `entryUUID`
+// is a person's `sub`; a client that could write one could make their entry
+// the subject of somebody else's tokens, which is not a development-mode
+// convenience but an identity theft with a result code.
+const ALWAYS_PROTECTED_OPERATIONAL = ['entryuuid', ENTRY_UUID_ALIAS];
 
 function isSecretAttribute(name) {
   log.debug("Entering isSecretAttribute().");
@@ -7183,12 +7647,10 @@ function secretCompareRefusal(req, dn, type) {
 // `types` is the lower-cased attribute names the operation writes.
 function operationalWriteRefusal(req, operation, dn, types) {
   log.debug('Entering operationalWriteRefusal(). ' + operation + ' ' + dn);
-  if (!mode.protectsOperationalAttributes()) {
-    log.debug('Leaving operationalWriteRefusal(). Not protected in this mode.');
-    return null;
-  }
+  const protectedHere = mode.protectsOperationalAttributes()
+    ? CLIENT_WRITTEN_OPERATIONAL : ALWAYS_PROTECTED_OPERATIONAL;
   const named = (types || []).filter(function (type, index, all) {
-    return CLIENT_WRITTEN_OPERATIONAL.indexOf(type) !== -1 &&
+    return protectedHere.indexOf(type) !== -1 &&
            all.indexOf(type) === index;
   });
   if (!named.length) {
@@ -8156,33 +8618,32 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // naming what was missing. Guarded like the five above, so an older
 // `admin_rbac.js` costs a warning rather than a service that will not start.
 // ---------------------------------------------------------------------------
-// AND EVERY ONE OF THEM IS PINNED TO THE DEFAULT REALM. THIS IS THE WHOLE OF
-// "THE CONSOLE AUTHENTICATES AGAINST THE DEFAULT REALM".
+// AND EVERY ONE OF THEM IS BOUND TO ONE REALM — THE DEFAULT ONE UNLESS A CALLER
+// NAMES ANOTHER.
 //
-// The directory is per realm now, so `groupsOfUser('alice')` means a different
-// thing in each one — and the two console roles must not. A role is permission
-// to change what EVERY realm's protocol endpoints do: `/admin/config` reached
-// under `/realm/acme` writes acme's overrides, `/admin/realms` can delete a
-// realm outright, and `/admin/applications` edits a registry the SAML and OAuth
-// endpoints read. If the roster were per realm then anybody who could create a
-// realm could grant themselves both roles inside it and walk back out into the
-// default one — the realm feature would have become a privilege escalation.
+// The directory is per realm, so `groupsOfUser('alice')` means a different
+// thing in each one. Until 2026-09-14 every member was pinned to the DEFAULT
+// realm, because a role was permission to change what EVERY realm's protocol
+// endpoints do and a per-realm roster would have let anybody who could create
+// a realm grant themselves both roles and walk back out into the default one.
 //
-// So `inDefaultRealm()` wraps each function in `realms.run(DEFAULT_REALM, …)`.
-// Nine functions rather than a note asking callers to remember, because the
-// caller is `admin_rbac.js` and it has no business knowing that realms exist:
-// what it asked for was "the directory", and what it gets is the one directory
-// that decides this.
+// **THAT ARGUMENT IS ANSWERED RATHER THAN DROPPED (#32).** Each realm now has a
+// roster of its own, and what a member of it may reach is narrowed by
+// `admin-ui/admin_scope.js`: that realm's pages and actions, and nothing about
+// the process — no other realm, no realm created or removed, no per-process
+// setting, no service Root. So the escalation the pinning prevented is closed
+// by the SCOPE instead, and the default realm's roster is still the only one
+// that administers the service. `rosterViewFor(realm)` below binds these same
+// functions to a named realm; the default view is still what a caller that
+// names nothing gets.
 //
-// **THE ADMINISTRATORS THEMSELVES ARE THEREFORE DEFAULT-REALM PEOPLE.**
-// `allPersons()` and `existingUserEntry()` are pinned with the rest, so the
-// roster page lists the default realm's `ou=users` and a grant names an entry
-// there. Somebody who exists only under `dc=acme,dc=example,dc=com` cannot hold
-// a role and cannot be granted one — which is the point, and is why
-// `authn.js`'s console gate resolves its session in the default realm too.
-// The two halves have to agree: a gate that accepted an acme session while the
-// roster could only name default-realm people would let somebody in and then
-// insist they were nobody.
+// **SO AN ADMINISTRATOR IS A PERSON OF THE REALM WHOSE ROSTER NAMES THEM.** A
+// default-realm person holds the service roles; somebody under
+// `dc=acme,dc=example,dc=com` can hold acme's and nothing else. The console
+// gate asks the roster of the realm the SESSION was signed in through
+// (`admin_views.gateStateFor()`), which is what keeps the two halves agreeing:
+// a gate that accepted an acme session while reading the default roster would
+// let somebody in and then insist they were nobody.
 //
 // It is deliberately NOT applied to `setDirectoryReader()` and
 // `setDirectoryWriter()` above. Those draw the console's USER pages, and
@@ -8282,17 +8743,40 @@ function inDefaultRealm(fn) {
   };
 }
 
-if (typeof adminRbac.setDirectory === 'function') {
-  adminRbac.setDirectory({
-    groupsOfUser: inDefaultRealm(groupsOfUser),
-    readGroupEntry: inDefaultRealm(readGroupEntry),
-    writeGroupEntry: inDefaultRealm(writeGroupEntry),
-    groupDnFor: inDefaultRealm(groupDnFor),
+// ---------------------------------------------------------------------------
+// THE ROSTER'S VIEW OF ONE REALM (2026-09-14, #32). Every member below was
+// pinned to the DEFAULT realm with `inDefaultRealm()`, because the console had
+// one roster and it was that realm's. Now each realm has its own and the
+// default realm's is the SERVICE roster, so the same members are built for a
+// NAMED realm: `rosterViewFor(realm)` binds each function to that realm, and
+// the object installed is the default realm's view plus `forRealm(id)`, which
+// builds another realm's view on demand. `admin_rbac.js` binds a realm only
+// when a caller names one, so a caller that names none still reads the default
+// realm — the pinning argument survives as the default.
+// ---------------------------------------------------------------------------
+function rosterViewFor(realm) {
+  log.debug("Entering rosterViewFor(). realm=" + realm.id);
+  const inRealm = function (fn) {
+    log.debug("Entering inRealm().");
+    log.debug("Leaving inRealm().");
+    return function () {
+      const args = arguments;
+      return realms.run(realm, function () {
+        return fn.apply(null, args);
+      });
+    };
+  };
+  log.debug("Leaving rosterViewFor().");
+  return {
+    groupsOfUser: inRealm(groupsOfUser),
+    readGroupEntry: inRealm(readGroupEntry),
+    writeGroupEntry: inRealm(writeGroupEntry),
+    groupDnFor: inRealm(groupDnFor),
     normalizeDn: normalizeDn,
-    existingUserEntry: inDefaultRealm(existingUserEntry),
+    existingUserEntry: inRealm(existingUserEntry),
     usernameOfEntry: usernameOfEntry,
     nameUsableInDn: nameUsableInDn,
-    allPersons: inDefaultRealm(allPersons),
+    allPersons: inRealm(allPersons),
     // THE OTHER DIRECTION OF MEMBERSHIP. `readGroupEntry()` answers what the
     // GROUP lists; this answers who CLAIMS the group through their own
     // `memberOf` while the group does not list them back. `groupsOfUser()`
@@ -8300,24 +8784,36 @@ if (typeof adminRbac.setDirectory === 'function') {
     // the role — and without this the roster page would have shown a console
     // they could use and a list they were not on, which is the one thing a
     // permissions page must never do.
-    claimedMembersOf: inDefaultRealm(claimedMembersOf),
+    claimedMembersOf: inRealm(claimedMembersOf),
     // THE BOOTSTRAP ADMINISTRATOR (2026-09-13): its entry made if absent, and
     // its flags read and written — see readPersonFlags(). Optional members,
     // checked where they are used, so an older admin_rbac.js still installs.
-    createPerson: inDefaultRealm(function (name) {
+    createPerson: inRealm(function (name) {
       log.debug("Entering createPerson().");
       log.debug("Leaving createPerson().");
       return createUser(name, {});
     }),
-    readPersonFlags: inDefaultRealm(readPersonFlags),
-    writePersonFlag: inDefaultRealm(writePersonFlag),
-    // STRINGS, and the DEFAULT realm's — evaluated once, here, rather than read
-    // per call. That is correct precisely because these are pinned: the default
-    // realm's base DN cannot change while the process runs, so there is nothing
-    // to re-read, and a function would only invite somebody to make it ambient.
-    usersDn: realms.run(realms.DEFAULT_REALM, usersDn),
-    groupsDn: realms.run(realms.DEFAULT_REALM, groupsDn)
-  });
+    readPersonFlags: inRealm(readPersonFlags),
+    writePersonFlag: inRealm(writePersonFlag),
+    // STRINGS, and THIS realm's — evaluated once, when the view is built,
+    // rather than read per call. A realm's base DN cannot change while the
+    // process runs, so there is nothing to re-read, and a function would only
+    // invite somebody to make it ambient.
+    usersDn: realms.run(realm, usersDn),
+    groupsDn: realms.run(realm, groupsDn),
+    realmId: realm.id
+  };
+}
+
+if (typeof adminRbac.setDirectory === 'function') {
+  const defaultView = rosterViewFor(realms.DEFAULT_REALM);
+  defaultView.forRealm = function (id) {
+    log.debug("Entering forRealm(). id=" + id);
+    const realm = realms.get(String(id || ''));
+    log.debug("Leaving forRealm(). " + (realm ? "Built." : "No such realm."));
+    return realm ? rosterViewFor(realm) : null;
+  };
+  adminRbac.setDirectory(defaultView);
 } else {
   log.warn('ldap: admin_rbac.js offers no setDirectory(), so the admin ' +
            'console cannot read or grant its two roles. The console gate is ' +
@@ -9117,6 +9613,9 @@ function operationRequest(operation, req) {
   } else if (operation === 'modifyDN') {
     shape.newRdn = req.newRdn ? req.newRdn.toString() : '';
     shape.newSuperior = req.newSuperior ? req.newSuperior.toString() : '';
+    // Carried since 2026-09-14, when the handler started honouring it: a rename
+    // answered by a worker would otherwise leave the old name resolving.
+    shape.deleteOldRdn = !!req.deleteOldRdn;
   } else if (operation === 'compare') {
     shape.attribute = String(req.attribute || '');
     shape.value = String(req.value === undefined ? '' : req.value);
@@ -9164,6 +9663,7 @@ function operationContext(operation, shape) {
   } else if (operation === 'modifyDN') {
     req.newRdn = shape.newRdn || '';
     req.newSuperior = shape.newSuperior || '';
+    req.deleteOldRdn = !!shape.deleteOldRdn;
   } else if (operation === 'compare') {
     req.attribute = shape.attribute || '';
     req.value = shape.value || '';
@@ -10193,7 +10693,30 @@ server.modify('', function (req, res, next) {
         ' was refused by the password rules', policyRefusal, dn));
     }
   }
-  working.createtimestamp = stored.attributes.createtimestamp;
+  // A ROW WITH NO createTimestamp (one imported, or written by hand into a
+  // store) used to be given `undefined` here, and the next reader of the
+  // entry that copies each value — `entryObject()`, behind every SCIM list —
+  // threw on it (2026-09-14). The entry's own creation instant is the value
+  // when there is one; otherwise the attribute stays absent.
+  if (stored.attributes.createtimestamp) {
+    working.createtimestamp = stored.attributes.createtimestamp;
+  } else if (stored.createdAt) {
+    working.createtimestamp = [String(stored.createdAt)];
+  } else {
+    delete working.createtimestamp;
+  }
+  // AND THE UUID, for the same reason and one more: it is the subject of every
+  // token this entry's person holds, so a modify that dropped it would sign
+  // them out of every relying party that links on `sub`. The refusal above
+  // stops a client NAMING it; this stops a `replace` of the whole entry's
+  // attributes from losing it.
+  if (stored.attributes.entryuuid) {
+    working.entryuuid = stored.attributes.entryuuid;
+  }
+  delete working[ENTRY_UUID_ALIAS];
+  if (stored.attributes[ENTRY_UUID_ALIAS]) {
+    working[ENTRY_UUID_ALIAS] = stored.attributes[ENTRY_UUID_ALIAS];
+  }
   working.modifytimestamp = [generalizedTime()];
   stored.attributes = working;
   touchDirectory();
@@ -10308,12 +10831,37 @@ server.modifyDN('', function (req, res, next) {
       ' would have moved it into another trust realm',
       new ldap.AffectsMultipleDsasError(target), dn));
   }
+  const before = attributeSnapshot(stored);
+  const nameBefore = isPersonEntry(stored) ? personNameOf(stored) : '';
   entries.delete(normalizeDn(dn));
   stored.dn = target;
   // The RDN's own attribute has to hold the new value, or the entry no longer
   // describes itself. deleteOldRdn says whether the OLD value goes; a client
   // that clears it and never sets the new one is the commonest way to end up
   // with an entry whose cn does not match its DN.
+  //
+  // **AND THAT SENTENCE DESCRIBED NOTHING UNTIL 2026-09-14**: `deleteOldRdn`
+  // (RFC 4511 section 4.9) was ignored, so renaming `uid=alice` to
+  // `uid=alicia` left `uid: alice` behind and the old name went on resolving to
+  // the renamed person — through `existingUserEntry()`, a sign-in and every
+  // lookup a token names. A curiosity while a `sub` was a name; a defect now
+  // that a rename is an ordinary event the subject survives.
+  if (req.deleteOldRdn) {
+    const oldParts = String(dn).split(/(?<!\\),/)[0].split('=');
+    if (oldParts.length >= 2) {
+      const oldType = oldParts[0].trim().toLowerCase();
+      const oldValue = oldParts.slice(1).join('=').trim().toLowerCase();
+      const held = stored.attributes[oldType] || [];
+      const kept = held.filter(function (value) {
+        return String(value).toLowerCase() !== oldValue;
+      });
+      if (kept.length) {
+        stored.attributes[oldType] = kept;
+      } else {
+        delete stored.attributes[oldType];
+      }
+    }
+  }
   const rdnParts = newRdn.split('=');
   if (rdnParts.length >= 2) {
     const rdnType = rdnParts[0].trim().toLowerCase();
@@ -10326,6 +10874,18 @@ server.modifyDN('', function (req, res, next) {
   stored.attributes.modifytimestamp = [generalizedTime()];
   entries.set(normalizeDn(target), stored);
   touchDirectory();
+  // A RENAME OF A PERSON IS AN ACCOUNT CHANGE and says so, where it used to
+  // tell nobody: the SSF and RISC registers key on the name that just moved.
+  if (isPersonEntry(stored)) {
+    // AND THE IDENTITY REGISTER'S ROW MOVES WITH THEM (2026-09-14), or
+    // /admin/users shows the renamed person as two people: everything before
+    // the rename under a name that names nobody now.
+    const nameAfter = personNameOf(stored);
+    if (nameBefore && nameAfter && nameBefore !== nameAfter) {
+      stats.renameIdentity(nameBefore, nameAfter);
+    }
+    noteAccountChange('updated', stored.dn, before, attributeSnapshot(stored));
+  }
   // The kind is taken from the NEW DN, because that is what the entry is now —
   // and a rename can move an entry between containers, which is exactly the
   // case where the two DNs would disagree. Both are on the row, so a rename out
@@ -12606,6 +13166,9 @@ function allPersons() {
 // would give for a resource that is not of the type asked for.
 function readPerson(dn) {
   log.debug('Entering readPerson(). dn=' + dn);
+  // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
+  // resolves, which is what every other caller hands this.
+  dn = dnForResourceId(dn);
   const stored = getEntry(dn);
   if (!stored || !isPersonEntry(stored)) {
     log.debug('Leaving readPerson(). ' +
@@ -12795,14 +13358,27 @@ function writePerson(dn, attributes) {
 // and renaming it is a delete under another name. So every door that removes a
 // person refuses it: SCIM (through `deletePerson()` here), an LDAP delete and an
 // LDAP rename. The name is compared case-insensitively, as a username is
-// everywhere in this directory, and the rule is the DEFAULT realm's only — a
-// trust realm's `admin` is an ordinary person there.
+// everywhere in this directory.
+//
+// **EVERY REALM HAS ONE SINCE 2026-09-14 (#32)**, and this said "the rule is
+// the DEFAULT realm's only — a trust realm's `admin` is an ordinary person
+// there" until then. A realm's own bootstrap administrator is how that realm
+// is administered, so it is protected in its realm for the same reason. It is
+// recognised by the `stsBootstrapAdministrator` flag the seed writes, so a
+// realm's ordinary person who merely shares the name — made before that realm
+// was seeded, say — is still an ordinary person; the default realm's account
+// is protected by name, as before.
 // ---------------------------------------------------------------------------
 function isBootstrapAdministratorEntry(stored) {
   log.debug('Entering isBootstrapAdministratorEntry().');
   const wanted = String(config.value('admin.bootstrapUsername') || '')
     .trim().toLowerCase();
-  const answer = !!(stored && wanted && realms.isDefault() &&
+  const flagged = !!(stored && stored.attributes &&
+    (stored.attributes.stsbootstrapadministrator || [])
+      .some(function (value) {
+        return String(value).toUpperCase() === 'TRUE';
+      }));
+  const answer = !!(stored && wanted && (realms.isDefault() || flagged) &&
                     isPersonEntry(stored) &&
                     String(usernameOfEntry(stored)).toLowerCase() === wanted);
   log.debug('Leaving isBootstrapAdministratorEntry(). ' + answer);
@@ -12816,6 +13392,9 @@ function isBootstrapAdministratorEntry(stored) {
 // SCIM client that means to remove somebody from their groups has to say so.
 function deletePerson(dn) {
   log.debug('Entering deletePerson(). dn=' + dn);
+  // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
+  // resolves, which is what every other caller hands this.
+  dn = dnForResourceId(dn);
   const stored = getEntry(dn);
   if (!stored || !isPersonEntry(stored)) {
     log.debug('Leaving deletePerson(). It was not a person here.');
@@ -12823,7 +13402,7 @@ function deletePerson(dn) {
   }
   if (isBootstrapAdministratorEntry(stored)) {
     log.warn(errorCodes.tag('STS-LDAP-0077') + 'ldap: refused to delete ' +
-             stored.dn + ' — it is the default realm\'s bootstrap ' +
+             stored.dn + ' — it is its realm\'s bootstrap ' +
              'administrator (admin.bootstrapUsername).');
     log.debug('Leaving deletePerson(). The bootstrap administrator.');
     return coded('STS-LDAP-0077', { ok: false, reason: 'protected',
@@ -12885,6 +13464,9 @@ function allGroupEntries() {
 // now read the realm's own store and could not reach another's if they tried.
 function readGroupEntry(dn) {
   log.debug('Entering readGroupEntry(). dn=' + dn);
+  // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
+  // resolves, which is what every other caller hands this.
+  dn = dnForResourceId(dn);
   const stored = getEntry(dn);
   if (!stored || !groupRuleFor(stored)) {
     log.debug('Leaving readGroupEntry(). ' +
@@ -12958,6 +13540,9 @@ function writeGroupEntry(dn, attributes, origin) {
 
 function deleteGroupEntry(dn) {
   log.debug('Entering deleteGroupEntry(). dn=' + dn);
+  // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
+  // resolves, which is what every other caller hands this.
+  dn = dnForResourceId(dn);
   const stored = getEntry(dn);
   if (!stored || !groupRuleFor(stored)) {
     log.debug('Leaving deleteGroupEntry(). It was not a group here.');
@@ -14715,6 +15300,13 @@ function close() {
 module.exports = {
   listen: listen,
   close: close,
+  // THE ENTRY UUID (2026-09-14): the lookups a person's `sub` and a SCIM id
+  // go through, exported for SCIM and for the tests.
+  entryByUuid: entryByUuid,
+  entryUuidOf: entryUuidOf,
+  mergeCreateRace: mergeCreateRace,
+  dnForResourceId: dnForResourceId,
+  resourceIdOfDn: resourceIdOfDn,
   LDAP_PORT: LDAP_PORT,
   LDAPS_PORT: LDAPS_PORT,
   baseDn: baseDn,

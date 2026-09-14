@@ -347,21 +347,21 @@ function normalHostName(value) {
 // ---------------------------------------------------------------------------
 // AUTHENTICATION. Each answers { ok, principal } where a principal is
 //   { kind, id, admin, via, realm }
-// and `admin` is true only for a person holding Admin Write, established in
-// the DEFAULT realm (see `adminFor()`).
+// and `admin` is true only for a person holding Admin Write — in the DEFAULT
+// realm's roster, or in the ambient realm's own (see `adminFor()`).
 // ---------------------------------------------------------------------------
 
-// **ADMIN IS DECIDED IN THE DEFAULT REALM, WITH THE CREDENTIAL CHECKED THERE.**
-// The console's two roles are groups in the default realm's directory and are
-// read there from every realm — `admin-ui/CLAUDE.md` argues why a per-realm
-// roster would let anybody who can create a realm administer the service. What
-// that rule does NOT answer is a realm that has a person of the same NAME as a
-// default-realm administrator; taking the roster by name alone would make that
-// person an administrator of every realm. So the password is verified against
-// the default realm's entry too, and only then is the roster consulted. An
-// empty roster (`open`) grants nothing here, as it grants nothing on the LDAP
-// socket: "everybody is an administrator because nobody is" is a bootstrap for
-// the console and not a reason to issue certificates in anybody's name.
+// **ADMIN IS DECIDED IN THE REALM WHOSE ROSTER GRANTS IT, WITH THE CREDENTIAL
+// CHECKED THERE.** Two rosters can make somebody an administrator here: the
+// DEFAULT realm's, which administers every realm, and since 2026-09-14 (#32)
+// the ambient realm's own, which administers that realm only — and an
+// enrollment in a realm can only name targets in that realm. What NAMES alone
+// would get wrong is a realm with a person of the same name as an
+// administrator elsewhere, so each roster is consulted only after the password
+// verified against the entry in THAT roster's realm. An empty roster (`open`)
+// grants nothing here, as it grants nothing on the LDAP socket: "everybody is
+// an administrator because nobody is" is a bootstrap for the console and not a
+// reason to issue certificates in anybody's name.
 async function adminFor(username, password, via) {
   log.debug("Entering adminFor(). username=" + username);
   const name = String(username || '');
@@ -379,30 +379,65 @@ async function adminFor(username, password, via) {
     log.debug("Caught in adminFor(): " + ((e && e.message) || e));
     verified = false;
   }
-  if (!verified || !verified.ok) {
-    log.debug("Leaving adminFor(). Not verified in the default realm.");
+  let roles = null;
+  if (verified && verified.ok) {
+    try {
+      roles = adminRbac.rolesOf(name, realms.DEFAULT_ID);
+    } catch (e) {
+      log.debug("Caught in adminFor(): " + ((e && e.message) || e));
+      roles = null;
+    }
+  }
+  if (roles && roles.write === true && roles.open !== true) {
+    log.debug("Leaving adminFor(). A service administrator.");
+    return true;
+  }
+  // A REALM'S OWN ADMINISTRATOR (2026-09-14, #32): the same two questions
+  // asked of the AMBIENT realm — the password against that realm's entry, then
+  // that realm's roster. Its authority is that realm's, and so is every target
+  // an enrollment here can name.
+  const here = realms.currentId();
+  if (here === realms.DEFAULT_ID) {
+    log.debug("Leaving adminFor(). Not an administrator.");
     return false;
   }
-  let roles = null;
+  let local = null;
   try {
-    roles = adminRbac.rolesOf(name);
+    local = await credentials.verifyAsync(name, String(password || ''),
+                                          { via: via });
   } catch (e) {
     log.debug("Caught in adminFor(): " + ((e && e.message) || e));
-    roles = null;
+    local = null;
   }
-  const admin = !!(roles && roles.write === true && roles.open !== true);
-  log.debug("Leaving adminFor(). admin=" + admin);
+  let realmRoles = null;
+  if (local && local.ok) {
+    try {
+      realmRoles = adminRbac.rolesOf(name, here);
+    } catch (e) {
+      log.debug("Caught in adminFor(): " + ((e && e.message) || e));
+      realmRoles = null;
+    }
+  }
+  const admin = !!(realmRoles && realmRoles.write === true &&
+                   realmRoles.open !== true);
+  log.debug("Leaving adminFor(). realm admin=" + admin);
   return admin;
 }
 
 // The same roster question for a principal a console or portal session has
 // ALREADY authenticated — the console gate verified the sign-in, so asking for
 // the password again would be asking for something the caller does not have.
+//
+// **THE ROSTER IS THE AMBIENT REALM'S** (2026-09-14, #32): a portal session is
+// the person of the realm it was signed in through, so it is that realm's
+// roster that says whether they administer it — the default realm's in the
+// default realm, a realm's own anywhere else. Asking the default realm's by
+// name from inside a realm was the collision `adminFor()` describes.
 function sessionIsAdmin(username) {
   log.debug("Entering sessionIsAdmin().");
   let roles = null;
   try {
-    roles = adminRbac.rolesOf(String(username || ''));
+    roles = adminRbac.rolesOf(String(username || ''), realms.currentId());
   } catch (e) {
     log.debug("Caught in sessionIsAdmin(): " + ((e && e.message) || e));
     roles = null;
@@ -1349,7 +1384,9 @@ async function issue(spec) {
     subjectAltName: names.names,
     days: days,
     identifier: resolved.entry.id,
-    subjectKind: resolved.entry.kind
+    subjectKind: resolved.entry.kind,
+    holderSubject: resolved.entry.kind === 'person'
+      ? helpers.subjectForName(resolved.entry.id) : ''
   });
   if (!issued.ok) {
     log.debug("Leaving issue(). The authority refused.");
@@ -1524,7 +1561,16 @@ function findEnrolled(serialHex, family) {
       return normalSerial(one.serialHex) === wanted;
     })[0];
     if (hit && isKind(hit.subjectKind)) {
-      const entry = { kind: hit.subjectKind, id: hit.identifier };
+      // THE ENTRY IT WAS ISSUED TO, by its subject where one was recorded, so
+      // a rename finds the renamed entry and a name deleted and re-created
+      // finds nobody (2026-09-14).
+      const renamed = hit.holderSubject
+        ? helpers.nameForSubject(hit.holderSubject) : hit.identifier;
+      if (!renamed) {
+        log.debug("Leaving findEnrolled(). Its holder is gone.");
+        return null;
+      }
+      const entry = { kind: hit.subjectKind, id: renamed };
       const record = enrolledOf(entry).filter(function (one) {
         return normalSerial(one.serialHex) === wanted;
       })[0];
@@ -2213,7 +2259,8 @@ async function ensureAuthority(family) {
 
 // A principal for a console, API or portal session that authenticated
 // elsewhere: the console gate, the /admin-api token gate, or the portal's
-// own sign-in. `admin` asks the default realm's roster.
+// own sign-in. `admin` asks the roster of the realm the session is in — the
+// default realm's for a session there, the realm's own otherwise.
 function sessionPrincipal(username, via, opts) {
   log.debug("Entering sessionPrincipal().");
   const options = opts || {};

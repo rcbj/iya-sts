@@ -162,6 +162,9 @@ function hears(uri, who, prefix) {
   return function (sets) { return about(sets, uri, who, prefix).length > 0; };
 }
 
+// A person's `urn:uuid:<entryUUID>`, by name, filled once they are created.
+const SUBJECTS = {};
+
 function about(sets, uri, who, prefix) {
   log.debug("Entering about().");
   log.debug("Leaving about().");
@@ -170,7 +173,7 @@ function about(sets, uri, who, prefix) {
     const subject = set.sub_id || (event && event.subject) || {};
     const user = subject.user || {};
     const session = subject.session || {};
-    return event && String(user.sub) === "urn:sts:user:" + who &&
+    return event && !!SUBJECTS[who] && String(user.sub) === SUBJECTS[who] &&
            String(session.id || "").indexOf(prefix) === 0;
   });
 }
@@ -187,6 +190,9 @@ async function test() {
   await h.setting("gnap.continueWaitS", 0);
   await h.ensurePerson(OWNER);
   await h.ensurePerson(STRANGER);
+  // Their subjects, which a SET's `user.sub` carries (2026-09-14).
+  SUBJECTS[OWNER] = await h.subjectOf(OWNER);
+  SUBJECTS[STRANGER] = await h.subjectOf(STRANGER);
   jwks = await (await fetch(h.realmBase + "/oauth2/jwks")).json();
   const web = new gnap.Client({ key: gnap.newKey("ES256") });
   const other = new gnap.Client({ key: gnap.newKey("ES256") });

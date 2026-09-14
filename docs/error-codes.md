@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2523** of them, in **32** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2542** of them, in **32** subsystems.
 
 ## Where a code appears
 
@@ -50,7 +50,7 @@ is an ordinary outcome.
 ## Contents
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
-* [Service core (`STS-CORE`)](#sts-core) — 43
+* [Service core (`STS-CORE`)](#sts-core) — 45
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 48
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 55
@@ -59,14 +59,14 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 70
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 44
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 164
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 383
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 54
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 16
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 165
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 385
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 56
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 73
+* [Federation (`STS-FED`)](#sts-fed) — 74
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 115
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 63
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 65
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 70
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 74
 * [TLS listeners (`STS-TLS`)](#sts-tls) — 31
@@ -75,9 +75,9 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 264
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 162
-* [Management API (`STS-API`)](#sts-api) — 66
-* [User portal (`STS-PORTAL`)](#sts-portal) — 51
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 167
+* [Management API (`STS-API`)](#sts-api) — 68
+* [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 92
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 25
@@ -160,6 +160,8 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 | `STS-CORE-0041` | The build stamp version.json could not be written at image build time. | — |
 | `STS-CORE-0042` | A shared store's reconciler threw while deciding whether a restored or replicated row (or its removal) may be applied, so it was not applied and what the process held is unchanged. | — |
 | `STS-CORE-0043` | The plain-HTTP revocation listener (pki.httpPort) could not bind, so every http:// CRL, OCSP and caIssuers address in this service's certificates answers nothing. | — |
+| `STS-CORE-0090` | setSubjectResolver() was given an object without both subjectFor() and nameFor(), so no person in this process is issued a subject. | none — logged |
+| `STS-CORE-0091` | The subject resolver threw, and the person was given no subject (or a subject was treated as naming nobody). | none — logged |
 
 ## STS-WORKER
 
@@ -906,6 +908,7 @@ Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.
 | `STS-AUTHN-0175` | A second-factor set-up choice was refused: the mechanism is switched off in the realm, or the person holds a second factor already. | HTTP 400 page |
 | `STS-AUTHN-0176` | An authenticator app enrolment at sign-in could not be started. | HTTP 400 page |
 | `STS-AUTHN-0177` | The code confirming an authenticator app enrolled at sign-in was refused; the same secret is drawn again. | HTTP 400 page |
+| `STS-AUTHN-0180` | A signed-in session was refused because the directory holds no entry for the person, so there is no subject to give it (ldap.autocreateUsers off, or a federation relationship with dynamic provisioning off and nobody provisioned). | the calling door's own refusal |
 
 ## STS-OAUTH
 
@@ -1298,6 +1301,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0507` | An access token presented at the step-up stand-in resource did not verify against this realm's signing key. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0508` | A configured step-up requirement (oauth2.stepUpAcrValues, or an application's oauthStepUpAcrValues or oauthStepUpMaxAge written by hand) holds a value that cannot be one, and it was ignored. | none — logged only |
 | `STS-OAUTH-0509` | An authorization request's acr_values carries a value that cannot be an acr value (a double quote, a backslash or a control character). | invalid_request (redirected error) |
+| `STS-OAUTH-0510` | A password or assertion grant was refused because the directory holds no entry for the person, so there is no subject to issue a token about. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0511` | A refresh was refused because the subject of the refresh token names nobody in the directory any more (the person was deleted, or deleted and re-created). | invalid_grant (HTTP 400) |
 
 ## STS-SAML
 
@@ -1361,6 +1366,8 @@ Raised from: saml/.
 | `STS-SAML-0052` | Fetched service provider metadata is unusable: not well-formed, an EntitiesDescriptor, or no KeyDescriptor usable for encryption. | — |
 | `STS-SAML-0053` | Fetched service provider metadata carries a certificate this service cannot use (unreadable, or not an RSA key). | — |
 | `STS-SAML-0054` | The application entry refused the metadata and encryption certificate a refresh fetched. | — |
+| `STS-SAML-0055` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen without a fresh authentication (ForceAuthn) or without a session, and was answered AuthnFailed rather than sent again. | Response status AuthnFailed |
+| `STS-SAML-0056` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen with a session that still does not meet the RequestedAuthnContext, and was answered NoAuthnContext. | Response status NoAuthnContext |
 
 ## STS-WSTRUST
 
@@ -1386,6 +1393,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0014` | A Validate request carried no token in its ValidateTarget, so it was answered with a status of invalid. | wst:Status wst:Code .../status/invalid (HTTP 200) |
 | `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP 1.2 Fault soap:Sender (HTTP 500) |
 | `STS-WSTRUST-0016` | A token was issued but starting the browser sign-on session the exchange also starts threw; the RSTR is unaffected. | — |
+| `STS-WSTRUST-0017` | A JWT was refused because the directory holds no entry for the person, so there is no subject to issue it about. | SOAP Fault (HTTP 400) |
 
 ## STS-WSFED
 
@@ -1493,6 +1501,7 @@ Raised from: federation/.
 | `STS-FED-0071` | An update asked to add a value a multi-valued relationship field already carries. | action result ok:false (console redirect or /admin-api HTTP 400) |
 | `STS-FED-0072` | The directory refused the write for an update to a federation relationship. | action result ok:false (console redirect or /admin-api HTTP 400) |
 | `STS-FED-0073` | The directory would not delete a federation relationship. | action result ok:false (console redirect or /admin-api HTTP 400) |
+| `STS-FED-0090` | A federated sign-in verified, but the directory holds no entry for the person and none was created (dynamic provisioning off on the relationship, or the directory declined), so no session was started. | HTTP 403 page |
 
 ## STS-KRB
 
@@ -1689,6 +1698,8 @@ Raised from: ldap/.
 | `STS-LDAP-0076` | In product mode, an add or modify named createTimestamp, modifyTimestamp or entryDN, which the directory maintains itself. | LDAP result code 19, constraintViolation |
 | `STS-LDAP-0077` | A delete or rename of the default realm's bootstrap administrator (admin.bootstrapUsername) was refused — over LDAP or SCIM — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403 |
 | `STS-LDAP-0078` | A flag of the bootstrap administrator (pwdReset, stsBootstrapAdministrator or stsConsoleClaimedAt) could not be written because the account has no entry in this realm. | none — logged |
+| `STS-LDAP-0090` | A person was refused creation under a username that is a subject identifier (urn:uuid: or a bare UUID). | action result ok:false (console, /admin-api HTTP 400, SCIM 400) |
+| `STS-LDAP-0091` | No entry was created for an authentication whose identity is a urn:uuid: subject naming nobody in this realm's directory. | none — logged |
 
 ## STS-SCIM
 
@@ -2612,6 +2623,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0783` | Disabling somebody's primary security keys was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0784` | Disabling somebody's second factors was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0785` | Requiring, or no longer requiring, a second factor of somebody was refused. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0786` | A realm administrator reached the console in a realm other than the one they signed in through, where they hold no role. | HTTP 403 on /admin |
+| `STS-ADMIN-0787` | A realm administrator was refused a service-wide console page or action (the store, the listeners, the service Root, the realm registry, another realm). | HTTP 403 on /admin |
+| `STS-ADMIN-0788` | A realm administrator posted a setting that names the whole service rather than their realm. | HTTP 403 on /admin |
+| `STS-ADMIN-0789` | A new trust realm's bootstrap administrator could not be given its generated password in product mode. | none — logged |
+| `STS-ADMIN-0790` | The realm chooser in front of /admin was asked for a realm that is not defined. | HTTP 400 on /admin |
 
 ## STS-API
 
@@ -2687,6 +2703,8 @@ Raised from: mgmt-api/.
 | `STS-API-0101` | An /admin-api/oauth2/monitor action was refused and the action layer attached no more specific code. | HTTP 400 { ok: false, errors } |
 | `STS-API-0102` | An /admin-api/oauth2/monitor action threw; nothing is known to have changed and the log line carries the stack. | HTTP 500 { ok: false, errors } |
 | `STS-API-0110` | An /admin-api access token bound to a client certificate (RFC 8705 cnf x5t#S256) was presented on a connection without that certificate. | invalid_token (HTTP 401) |
+| `STS-API-0111` | A trust realm's own access token was presented at /admin-api by a client other than that realm's sts-management-api. | HTTP 403 forbidden |
+| `STS-API-0112` | A trust realm's own token or administrator reached a service-wide /admin-api operation, or another realm's. | HTTP 403 forbidden |
 
 ## STS-PORTAL
 
@@ -2747,6 +2765,7 @@ Raised from: portal/.
 | `STS-PORTAL-0071` | A password reset link did not verify; the page answers one sentence for every reason. | HTTP 400 page |
 | `STS-PORTAL-0072` | A new password from a reset link was refused before it was tried: missing, not typed twice alike, or the reserved password. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0073` | A new password from a reset link was refused by the password policy or the store. | the reset form again, HTTP 400 |
+| `STS-PORTAL-0074` | The realm chooser in front of /portal was asked for a realm that is not defined. | HTTP 400 on /portal |
 
 ## STS-LOGOUT
 

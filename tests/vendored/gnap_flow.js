@@ -316,6 +316,22 @@ function harness(options) {
     log.debug("Leaving ensurePerson().");
   };
 
+  // A PERSON'S SUBJECT, as every token issued to them carries it
+  // (2026-09-14): `urn:uuid:<entryUUID>`, read off `GET /admin-api/users` in
+  // this realm. It is not derivable from the name any more, so a job asserting
+  // `sub` asks the service rather than building the string.
+  self.subjectOf = async function (who) {
+    log.debug("Entering subjectOf().");
+    const r = await self.apiGet(realmApi + "/users?user=" +
+                                encodeURIComponent(who));
+    const subject = r.body && typeof r.body === "object" ? r.body.subject : "";
+    assert.ok(/^urn:uuid:[0-9a-f-]{36}$/.test(String(subject || "")),
+              "the subject of " + who + " from /admin-api/users: " +
+              String(r.raw).slice(0, 200));
+    log.debug("Leaving subjectOf().");
+    return subject;
+  };
+
   self.createRealm = async function (name) {
     log.debug("Entering createRealm().");
     await self.ok(api + "/realms/create", { id: REALM, name: name },

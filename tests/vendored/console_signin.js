@@ -194,18 +194,36 @@ async function signInToTheConsole(base, user, log) {
   const say = (log && log.info) ? log.info.bind(log) : function () {};
   const cookies = jar();
 
-  function absolute(where) {
-    return /^https?:\/\//i.test(String(where || ""))
-      ? String(where) : base + String(where || "");
+  // Two kinds of address, and they resolve differently. A path THIS FILE
+  // names ("/admin/tokens", "/authn/login") is relative to `base`, which may
+  // carry a realm prefix. A `Location` the service sent is already a path on
+  // the ORIGIN — `/realm/acme/oauth2/authorize` — so it is resolved the way a
+  // browser resolves it; prefixing `base` to it gave
+  // `/realm/acme/realm/acme/…` and a 404 for every realm base.
+  function underBase(path) {
+    return /^https?:\/\//i.test(String(path || ""))
+      ? String(path) : base + String(path || "");
   }
 
-  async function hop(where, options) {
+  function fromLocation(location) {
+    return new URL(String(location || ""), base).toString();
+  }
+
+  async function fetchKeeping(url, options) {
     const opts = Object.assign({ redirect: "manual" }, options || {});
     opts.headers = Object.assign({ cookie: cookies.header() },
                                  opts.headers || {});
-    const r = await fetch(absolute(where), opts);
+    const r = await fetch(url, opts);
     cookies.keep(r);
     return r;
+  }
+
+  async function hop(path, options) {
+    return fetchKeeping(underBase(path), options);
+  }
+
+  async function follow(location) {
+    return fetchKeeping(fromLocation(location));
   }
 
   const gated = await hop("/admin/tokens");
@@ -227,7 +245,7 @@ async function signInToTheConsole(base, user, log) {
     "the console's authorization request should name sts-admin-console; it " +
     "was " + toAuthorize);
 
-  const toScreen = await hop(toAuthorize);
+  const toScreen = await follow(toAuthorize);
   const where = toScreen.headers.get("location") || "";
   const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
   assert.ok(authn,
@@ -238,7 +256,7 @@ async function signInToTheConsole(base, user, log) {
     "sign in FOR and refuses the POST.");
 
   const password = await ensureConsoleAccount(base, user, say);
-  const screen = await hop(where);
+  const screen = await follow(where);
   const screenHtml = await screen.text();
   const csrf =
     (screenHtml.match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
@@ -260,9 +278,9 @@ async function signInToTheConsole(base, user, log) {
   // Back through the authorization endpoint — which now has a session — and
   // then the callback, which redeems the code and establishes the console's
   // own session. Bounded, so a redirect loop fails as a loop.
-  let at = await hop(signedIn.headers.get("location") || "");
+  let at = await follow(signedIn.headers.get("location") || "");
   for (let i = 0; i < 4 && (at.status === 302 || at.status === 303); i++) {
-    at = await hop(at.headers.get("location") || "");
+    at = await follow(at.headers.get("location") || "");
   }
 
   assert.ok(cookies.get("sts_admin"),

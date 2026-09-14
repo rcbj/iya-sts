@@ -158,3 +158,13 @@ are where the value is: `Validate` and `Cancel` answering above the
 `OnBehalfOf`, a `Renew` with no security header. Every one of those is drivable
 over HTTP, so by the root `CLAUDE.md`'s rule they belong in the PARENT project's
 suite.
+
+## A JWT'S `sub` IS A SUBJECT, AND THERE IS NONE WITHOUT AN ENTRY (2026-09-14)
+
+A JWT is issued with `sub: urn:uuid:<entryUUID>`. For a person the directory does not
+hold — `ldap.autocreateUsers` off and nobody provisioned — it is refused with a SOAP
+Fault (`STS-WSTRUST-0017`) rather than issued with the bare name, which is the rule the
+OAuth 2.0 grants follow (`STS-OAUTH-0510`): a bare name is a `sub` a relying party links
+on and a person created later under the name would inherit. An `anonymous` request names
+nobody by design and is unaffected, and so is a SAML assertion, whose `NameID` is the
+username. A process with no directory still uses the name. `tests/stable_subject.js` D5b.

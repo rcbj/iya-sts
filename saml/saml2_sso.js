@@ -128,7 +128,8 @@ const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const { log, logArtifact, STS, xmlEscape, genId, iso, baseUrlOf, randomId,
-        parseBody, firstByLocal, textByLocal } = require('../common/helpers');
+        parseBody, firstByLocal, textByLocal,
+        nowSec } = require('../common/helpers');
 // The input validator. A LEAF (rule 3): it registers no route and closes no
 // cycle.
 const validation = require('../common/validation');
@@ -1593,13 +1594,77 @@ function singleSignOn(req, res) {
     }
   });
 
+  // The person cancelled at the screen, or it failed. authn.js reports back on
+  // the query string and leaves it to the CALLER to decide what its protocol
+  // does — and what this one does is send a Response carrying a status, because
+  // section 3.2.2 has one for exactly this and a service provider's handling of
+  // it is worth exercising.
+  //
+  // **BEFORE THE SESSION IS LOOKED AT, AND IT WAS AFTER UNTIL 2026-09-14.** A
+  // person who cancels has, by definition, no session — so step 4 found none,
+  // sent them straight back to the sign-in screen, and Cancel never reached
+  // this block at all: a loop between the screen and this endpoint. The
+  // authorization endpoint has always checked `authn_error` before the session
+  // for exactly this reason (`authn/CLAUDE.md`).
+  if (params.authn_error) {
+    log.debug("The sign-in did not complete: " + params.authn_error);
+    pendingRequests.delete(String(params.rid || ''));
+    errorCodes.mark(res, 'STS-SAML-0009');
+    const refusal = buildResponse({
+      issuer: idpEntityId, sp: spEntityId,
+      destination: acsUrl, inResponseTo: request.id,
+      status: STATUS_RESPONDER,
+      subStatus: 'urn:oasis:names:tc:SAML:2.0:status:AuthnFailed',
+      statusMessage: String(params.authn_error_description ||
+                            params.authn_error)
+    });
+    deliver(res, {
+      binding: wanted.binding, destination: acsUrl, field: 'SAMLResponse',
+      xml: refusal.xml,
+      relayState: relayState, issuer: idpEntityId, spEntityId: spEntityId,
+      inResponseTo: request.id,
+      note: { title: 'Sign-in failed — SAML 2.0', who: 'the service provider',
+              sub: 'A <samlp:Response> carrying AuthnFailed. Unlike ' +
+                   'WS-Federation\'s passive profile, this one has somewhere ' +
+                   'to report a cancellation to.' }
+    });
+    log.debug("Leaving singleSignOn(). AuthnFailed.");
+    return;
+  }
+
   // --- step 4: a session ----------------------------------------------------
   const session = sessionOf(req);
   const wantsMfa = request.requestedAuthnContexts.some(function (ref) {
     return AC_MFA_DEMANDS.indexOf(ref) >= 0;
   });
   const stale = session && wantsMfa && !authnContextFor(session).multiFactor;
-  if (!session || request.forceAuthn || stale) {
+  // ---------------------------------------------------------------------
+  // ONE TRIP TO THE SIGN-IN SCREEN PER REQUEST, AND NEVER A SECOND
+  // (2026-09-14).
+  //
+  // The request is HELD while the person is at the screen, and the return
+  // address reads it again from its XML — so `ForceAuthn="true"` was just as
+  // true on the way back, the session the person had just made did not
+  // change that, and they were sent to the screen again, for ever. The same
+  // loop waited for a RequestedAuthnContext the sign-in could not meet (a
+  // federated partner that authenticated with one factor, say).
+  //
+  // So the trip is RECORDED on the held request (`forcedAt`), and a request
+  // that has made it is never redirected again: it is answered from a
+  // session authenticated at or after that instant — which is what ForceAuthn
+  // asks for, saml-core-2.0-os section 3.4.1 — and otherwise a Response with a
+  // status goes back to the service provider: NoAuthnContext where the
+  // authentication context is still not met, AuthnFailed where no fresh
+  // authentication happened. RFC 9470's step-up takes the same shape at the
+  // authorization endpoint (`step_up_honoured`), for the same reason.
+  //
+  // **FRESH IS COMPARED IN WHOLE SECONDS**, because `authTime` is one: a
+  // session authenticated earlier in the same second as the trip counts as
+  // fresh. The marker is on the SERVER's copy of the request, so a browser
+  // cannot claim to have made the trip.
+  // ---------------------------------------------------------------------
+  const returned = !!(held && held.forcedAt);
+  if (!returned && (!session || request.forceAuthn || stale)) {
     if (request.isPassive) {
       // IsPassive says the identity provider MUST NOT take control of the user
       // interface — so the answer is a Response carrying NoPassive, delivered
@@ -1643,6 +1708,8 @@ function singleSignOn(req, res) {
       sigAlg: String(params.SigAlg || '')
     };
     record.expires = Date.now() + requestTtlMs();
+    // The trip, recorded before it is made. See `returned` above.
+    record.forcedAt = nowSec();
     pendingRequests.set(record.id, record);
     pendingRequests.forEach(function (v, k) {
       if (v.expires < Date.now()) pendingRequests.delete(k);
@@ -1696,35 +1763,50 @@ function singleSignOn(req, res) {
     return res.set('Cache-Control', 'no-store').redirect(303, where);
   }
 
-  // The person cancelled at the screen, or it failed. authn.js reports back on
-  // the query string and leaves it to the CALLER to decide what its protocol
-  // does — and what this one does is send a Response carrying a status, because
-  // section 3.2.2 has one for exactly this and a service provider's handling of
-  // it is worth exercising.
-  if (params.authn_error) {
-    log.debug("The sign-in did not complete: " + params.authn_error);
-    pendingRequests.delete(String(params.rid || ''));
-    errorCodes.mark(res, 'STS-SAML-0009');
-    const refusal = buildResponse({
-      issuer: idpEntityId, sp: spEntityId,
-      destination: acsUrl, inResponseTo: request.id,
-      status: STATUS_RESPONDER,
-      subStatus: 'urn:oasis:names:tc:SAML:2.0:status:AuthnFailed',
-      statusMessage: String(params.authn_error_description ||
-                            params.authn_error)
-    });
-    deliver(res, {
-      binding: wanted.binding, destination: acsUrl, field: 'SAMLResponse',
-      xml: refusal.xml,
-      relayState: relayState, issuer: idpEntityId, spEntityId: spEntityId,
-      inResponseTo: request.id,
-      note: { title: 'Sign-in failed — SAML 2.0', who: 'the service provider',
-              sub: 'A <samlp:Response> carrying AuthnFailed. Unlike ' +
-                   'WS-Federation\'s passive profile, this one has somewhere ' +
-                   'to report a cancellation to.' }
-    });
-    log.debug("Leaving singleSignOn(). AuthnFailed.");
-    return;
+  // BACK FROM THE ONE TRIP, and what it did not achieve is REPORTED rather
+  // than asked for again.
+  if (returned) {
+    const fresh = !!session &&
+                  Number(session.authTime || 0) >= Number(held.forcedAt);
+    const contextUnmet = !!session && wantsMfa &&
+                         !authnContextFor(session).multiFactor;
+    const unmet = !session || (request.forceAuthn && !fresh)
+      ? 'authn' : (contextUnmet ? 'context' : '');
+    if (unmet) {
+      const why = unmet === 'context'
+        ? 'The person signed in, and the session still does not meet the ' +
+          'RequestedAuthnContext (' + request.requestedAuthnContexts.join(' ') +
+          ').'
+        : (!session
+          ? 'The person came back from the sign-in screen with no session.'
+          : 'ForceAuthn asked for a fresh authentication and the person came ' +
+            'back from the sign-in screen without authenticating again.');
+      log.info('saml2: ' + why + ' Answering "' + spEntityId + '" with a ' +
+               'status rather than sending the person to the sign-in screen ' +
+               'a second time.');
+      pendingRequests.delete(String(params.rid || ''));
+      const subStatus = unmet === 'context'
+        ? 'urn:oasis:names:tc:SAML:2.0:status:NoAuthnContext'
+        : 'urn:oasis:names:tc:SAML:2.0:status:AuthnFailed';
+      errorCodes.mark(res, unmet === 'context' ? 'STS-SAML-0056'
+                                               : 'STS-SAML-0055');
+      const refusal = buildResponse({
+        issuer: idpEntityId, sp: spEntityId,
+        destination: acsUrl, inResponseTo: request.id,
+        status: STATUS_RESPONDER, subStatus: subStatus, statusMessage: why
+      });
+      deliver(res, {
+        binding: wanted.binding, destination: acsUrl, field: 'SAMLResponse',
+        xml: refusal.xml,
+        relayState: relayState, issuer: idpEntityId, spEntityId: spEntityId,
+        inResponseTo: request.id,
+        note: { title: 'Refused — SAML 2.0', who: 'the service provider',
+                sub: 'A <samlp:Response> carrying ' +
+                     subStatus.split(':').pop() + '. ' + why }
+      });
+      log.debug("Leaving singleSignOn(). " + subStatus.split(':').pop() + ".");
+      return;
+    }
   }
 
   // --- step 5: the answer ---------------------------------------------------

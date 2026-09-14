@@ -627,11 +627,22 @@ const SCHEMA = {
             'rather than for the names everybody uses.' },
     { name: 'fedAutocreateUsers', kind: 'single', role: 'service-provider',
       from: 'this register',
-      what: 'Create a directory entry for a person this partner ' +
-            'authenticates. ON by default, because it is the point of the ' +
-            'feature; OFF gives a session and no entry, which is how to ' +
-            'watch what a federated sign-in does WITHOUT filling ou=users ' +
-            'up.' },
+      what: 'DYNAMIC PROVISIONING: create a directory entry the first time ' +
+            'this partner signs somebody in. ON by default. OFF means the ' +
+            'person must ALREADY have an entry here — provisioned ahead of ' +
+            'time, by SCIM or by hand — and a sign-in for somebody who does ' +
+            'not is refused, because a session needs an entry to be the ' +
+            'subject of. (Until 2026-09-14 OFF gave a session and no entry; ' +
+            'a stable subject made that state impossible.)' },
+    { name: 'fedUpdateUserAttributes', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'Update the person\'s directory attributes on EVERY sign-in from ' +
+            'the latest assertion or token. ON by default, which is what ' +
+            'this service always did. OFF writes the partner\'s attributes ' +
+            'only when this sign-in CREATED the entry, so a pre-provisioned ' +
+            'person — or one somebody has since edited — keeps what the ' +
+            'directory says. Which relationship and issuer a person came ' +
+            'through is recorded either way.' },
     { name: 'fedAllowUnsolicited', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'Accept a response this service did not ask for — SAML 2.0\'s ' +
@@ -789,6 +800,7 @@ const EDITABLE = {
   fedSignRequest: 'set',
   fedUsernameSource: 'set',
   fedAutocreateUsers: 'set',
+  fedUpdateUserAttributes: 'set',
   fedAllowUnsolicited: 'set',
   fedApplication: 'set',
   fedAuthnMechanism: 'set',
@@ -1737,6 +1749,7 @@ function create(spec) {
   // nothing and leaving the behaviour in this file.
   if (role === 'service-provider') {
     record.fedAutocreateUsers = boolText(true);
+    record.fedUpdateUserAttributes = boolText(true);
     record.fedSignRequest = boolText(false);
     if (protocol === 'saml2' || protocol === 'saml11') {
       record.fedBinding = 'HTTP-Redirect';
@@ -1907,6 +1920,7 @@ function update(id, change) {
   // reach the entry as the same string. Without this the entry holds whatever
   // the form posted and `boolOf()` has to guess.
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
+      row.name === 'fedUpdateUserAttributes' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited') {
     record[field] = boolText(boolOf(record[field], false));
   }

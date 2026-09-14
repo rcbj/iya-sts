@@ -188,6 +188,19 @@ function seedsDemoData() {
   return !isProduct();
 }
 
+// Does the realm chooser in front of `/admin` and `/portal` LIST the realms?
+// (2026-09-14, #32.) A person arriving at either surface with no session, on a
+// service with realms defined, chooses which realm to sign in through.
+// Development draws every realm in a list, because the list is what somebody
+// exercising the service wants; product asks for the realm's id in a text box,
+// because a list drawn to anybody who can reach the page publishes every
+// tenant this deployment serves.
+function listsRealmsBeforeSignIn() {
+  log.debug("Entering listsRealmsBeforeSignIn().");
+  log.debug("Leaving listsRealmsBeforeSignIn().");
+  return !isProduct();
+}
+
 // May a claim VALUE be invented where the store holds none? A persona surname,
 // an address at a domain nobody owns with `email_verified: true`, a generated
 // birthdate in a signed credential, an `@example.com` subject in a security
@@ -564,6 +577,15 @@ const REQUIREMENTS = [
              'resolved once and the connection pinned to the address that ' +
              'was checked. A malformed document is refused in both modes.',
     where: 'oauth-oidc/protected_resource_metadata.js' },
+  { id: 'realm-chooser',
+    what: 'The realm chooser before sign-in lists every realm',
+    development: 'A browser with no session at /admin or /portal, on a ' +
+                 'service with trust realms defined, is shown a list of every ' +
+                 'realm to sign in through.',
+    product: 'The same page asks for the realm\'s id in a text box, so the ' +
+             'deployment\'s realms are not published to anybody who can ' +
+             'reach it.',
+    where: 'common/realm_chooser.js' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
     development: 'An assertion or token that should have been encrypted and ' +
@@ -1030,6 +1052,7 @@ module.exports = {
   requiresClientSecret: requiresClientSecret,
   gatesManagementApi: gatesManagementApi,
   seedsDemoData: seedsDemoData,
+  listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   opensTestControls: opensTestControls,

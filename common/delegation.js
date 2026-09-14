@@ -21,7 +21,7 @@
 //
 // It requires helpers.js, config.js and admin_stats.js — that last one for
 // identityOf()'s normalisation only, which is what makes `alice`,
-// `alice@STS.MOCK` and `urn:sts:user:alice` one person on a chain rather
+// `alice@STS.MOCK` and `urn:uuid:<entryUUID>` one person on a chain rather
 // than three. admin_stats.js requires nothing here, so there is no cycle and
 // none of rule 3e's slots is needed. Keep it that way: this file is called from
 // the KDC, from WS-Trust and from the token endpoint, and anything it required
@@ -1203,11 +1203,11 @@ function actsOfChain(rows, chainKey) {
 // NAMED — the `client_id`, the `AppliesTo`, the SPN — because "everything
 // delegated through this client" is a question about the client. A person is
 // keyed on the identity they PRESENTED, normalised by `identityKeyOf()`,
-// because `alice`, `alice@STS.MOCK` and `urn:sts:user:alice` are one person and
-// the console files them under one row on /admin/users. Using one key for both
-// would lose exactly the case each is for: an RFC 8693 exchange's intermediary
-// is an ACTOR (a party) beside a `client_id` (an application), and they are two
-// different strings naming two different things in one column.
+// because `alice`, `alice@STS.MOCK` and `urn:uuid:<entryUUID>` are one person
+// and the console files them under one row on /admin/users. Using one key for
+// both would lose exactly the case each is for: an RFC 8693 exchange's
+// intermediary is an ACTOR (a party) beside a `client_id` (an application), and
+// they are two different strings naming two different things in one column.
 //
 // So this key is the same one `/admin/users` uses, which is what lets a link
 // from that page reach this store and get the acts naming that person — in any

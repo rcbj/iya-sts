@@ -51,6 +51,188 @@ never writes one. Do not give any other module a session store to "decouple" it:
 two stores would each look correct alone and never see each other, and the
 symptom is a sign-on that silently is not single.
 
+## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
+
+**It is this module's session: an internal, protocol-independent record, and
+NOT any protocol's token.** Every identity service has a canonical form
+underneath its protocols. ADFS makes a Windows logon behind every sign-in, and
+every identity after that has to fit Kerberos's names and lifetimes. The
+alternative considered here was an OpenID Connect ID Token, and it was refused
+for a reason that is structural rather than a matter of taste: **an ID Token is
+a statement TO one relying party** (`aud`, `azp`, `nonce`), and a session is
+addressed to nobody. Making one the anchor would mean inventing an audience of
+"this service" and carrying OAuth's naming and lifetime rules into every SAML,
+WS-Federation and WS-Trust sign-in. Keycloak's user session, Shibboleth's
+authentication result and PingFederate's session are internal records for the
+same reason.
+
+**The vocabulary is borrowed and the container is not.** Every field below
+uses the name a specification already gave it (`sub`, `sid`, `auth_time`, RFC
+8176 `amr`, `acr`), so a projection into any protocol is a mapping and never an
+invention.
+
+### Three things, kept apart
+
+| Concept | What it is | Fields |
+|---|---|---|
+| **Subject** | who | `sub` = `urn:uuid:<entryUUID>`: the directory entry's RFC 4530 identifier, assigned when the entry is created and never changed, **renames included** |
+| **Authentication event** | one act of proving it | `at` (`auth_time`), `amr`, `acr`, `via` (the door), the authority (this service, a federation partner, a Kerberos realm), a fingerprint of the evidence |
+| **Session** | what browsers, sign-out and CAEP reason about | a stable `sid`; a cookie HANDLE that rotates; the subject; **a list of events**; its clocks; the sessions derived from it; the parties it was answered to |
+
+**An authenticated identity is a session holding at least one event with
+`authenticated: true`.** The anonymous principal from *Continue without signing
+in* has a session and is not an authenticated identity.
+
+### Two words, used strictly
+
+* **RE-AUTHENTICATION** is any fresh proof by the SAME person on a LIVE
+  session, whatever it does to assurance. Four things ask for one: RFC 9470
+  `acr_values`, an elapsed `max_age`, `prompt=login` and SAML `ForceAuthn`.
+  All four reach the sign-in screen and `startSession({ request })`, which is
+  why they share one mechanism and shared one defect.
+* **STEP-UP** is the one kind that RAISES `acr`: RFC 9470, where a resource
+  server's `insufficient_user_authentication` sends the client back for a
+  stronger method (`oauth-oidc/step_up.js`). The levels are ordered `0` < `1`
+  < `mfa`. An elapsed `max_age` usually leaves `acr` where it was and moves
+  only `auth_time`. `prompt=login` and `ForceAuthn` can LOWER it, which is a
+  **step-down**.
+
+A rule below that says *re-authentication* applies to all four. Only the CAEP
+rule is about the level actually changing.
+
+### The rules that hold it together
+
+* **Evidence arrives, identity does not.** A federated assertion, a SPNEGO
+  ticket, a client certificate or a WS-Trust token is recorded ON an event as
+  what proved it. None of them is the identity.
+* **Artifacts leave as PROJECTIONS.** An ID Token, a SAML `AuthnStatement` and a
+  WS-Federation token are rendered from the session and carry its `sid` (or
+  `SessionIndex`). None of them is kept as the session's truth.
+* **Kerberos runs one way.** A ticket can BECOME a session (`/authn/spnego`); a
+  session never mints a ticket. That rule is what keeps ADFS's problem out.
+* **The session's current `amr`, `acr` and `auth_time` are the MOST RECENT
+  event's** (rcbj's choice). So a step-down lowers `acr`, which is OIDC's
+  literal reading of those claims.
+* **A re-authentication ADDS an event; a different person REPLACES the
+  session.** A re-authentication is not a sign-out, whichever of the four asked
+  for it. The sessions derived from this one, the parties it answered and the
+  refresh tokens it issued all carry on.
+* **The cookie handle rotates on every re-authentication, and `sid` never
+  does.** Rotation is OWASP's rule for a change of privilege, and it is applied
+  to every re-authentication rather than only to a step-up: a rule that first
+  had to work out whether privilege rose is a rule with a way to be wrong. A
+  stable `sid` is what front-channel logout, token records and
+  `/admin/sessions` need. When one value did both jobs, one of those rules had
+  to lose.
+* **A step-up or a step-down is a CAEP `assurance-level-change`**, with its
+  direction, emitted only when `acr` actually moved. A re-authentication that
+  leaves `acr` where it was emits nothing. There is never a `session-revoked`
+  or a `session-established` for one, because nothing ended and nothing began.
+
+### Why this was written down: the defect that made it necessary
+
+An in-process probe on 2026-09-14 had one person sign in with a password, get a
+portal session and a refresh token, and answer one OIDC client and one SAML
+service provider. The same person in the same browser then stepped up from
+`acr` `1` (`["pwd"]`) to `mfa` (`["pwd","otp"]`). `startSession()` treated that
+re-authentication exactly like somebody else signing in:
+
+| | What happened |
+|---|---|
+| the session | deleted, and a new one made with a new id |
+| the portal session derived from it | ended by the cascade |
+| `oidcClients`, `saml2ServiceProviders` | gone, so sign-out could no longer reach parties that were still signed in |
+| CAEP | two `session-revoked` events, then `session-established` |
+| refresh tokens issued on it | **revoked in RFC 9700 and OAuth 2.1 mode**: one client asking for `mfa` took another client's refresh token away |
+
+The probe was a step-up, but the table is true of all four kinds of
+re-authentication, because nothing on that path asks which kind it is.
+
+**The code was right for a change of person and wrong for the same person**,
+because the record could hold one authentication and nothing else. What it
+needed was a list of events, not another branch.
+
+### Status
+
+**Built (2026-09-14)**, and `tests/session_reauthentication.js` is the
+contract:
+
+* **the list of events.** `authenticationEvent()` builds one, and a session
+  keeps at most `MAX_SESSION_EVENTS` (20): the first, then the most recent,
+  with `eventsDropped` counting what went. `sessionStartedAt()` is when a
+  session BEGAN, now that `authTime` is its latest authentication; the
+  `/logout` inventory and `/admin/sessions` rows read it.
+* **appending on re-authentication.** `startSession()` recognises the same
+  `sub` on a live, chosen, authenticated sign-on session behind the cookie and
+  hands off to `reauthenticateSession()`, whose header lists what it does and,
+  at more length, what it does not. The issuance gate is still asked, because
+  a re-authentication may be for a different application.
+* **the cookie handle split from `sid`.** A cookie is `<sid>.<handle>`;
+  `mintSessionHandle()` stores only a SHA-256 of the handle, and
+  `cookieSession()` is the one reader. It is used for the sign-on cookie AND
+  for the three relying-party cookies (`sts_admin`, `sts_portal`,
+  `sts_debugger`), whose bare ids are printed on `/admin/sessions`. A bare id
+  is refused, and a session persisted before the change costs one sign-in.
+  **Rotation also closed a fixation hole**: an arrival session keeps its sid
+  through the sign-in that upgrades it, and it used to keep its cookie too.
+  `common/request_pool.js` binds worker affinity to the sid part.
+* **`assurance-level-change`**, from `ssf/caep.js` on a `reauthenticated`
+  notice whose `acr` moved, on the private `urn:sts:acr` scale with
+  `change_direction` from `oauth-oidc/step_up.js`'s ordering. It is in
+  `caep.autoEmitTypes`' default; a deployment that pinned the old list emits
+  nothing for it.
+
+**Built the same day, after the per-realm roster work landed**:
+
+* **`entryUUID` on every entry and `sub = urn:uuid:<entryUUID>` in both modes**, resolved
+  both ways by the subject resolver `ldap/ldap_server.js` fills into `helpers.js`.
+  `ldap/CLAUDE.md` carries the directory's rules — assigned in `putEntry()`, kept through
+  an overwrite and a rename, new on a re-create, deterministic for seeded entries,
+  backfilled deterministically, unwritable by a client in either mode.
+* **No signed-in session without an entry.** `startSession()` records the authentication
+  BEFORE the session is built — that is what makes the directory create the entry — and
+  refuses a signed-in session whose person has none (`STS-AUTHN-0180`). A keyed API caller,
+  an unauthenticated session and a process with no directory are exempt, each for a
+  reason written above the check. `sameIdentity()` tells two people apart by subject where
+  both have one and by name otherwise, so two empty subjects are never one person.
+* **The token grants follow the same rule** (`oauth-oidc/CLAUDE.md`).
+* **SCIM's resource `id` is the `entryUUID`** (`scim/CLAUDE.md`). **Everyone moved** (rcbj's
+  choice): every `sub` a relying party had stored changed once, and the four owned jobs
+  that built the old form now read `subject` off `GET /admin-api/users`.
+* **Federation's two switches**: `fedAutocreateUsers` off means the entry must already
+  exist, and `fedUpdateUserAttributes` decides whether a returning person's attributes are
+  overwritten (`federation/CLAUDE.md`).
+* **`deleteOldRdn` is honoured** on a rename, so the old name stops resolving.
+
+`tests/stable_subject.js` and `tests/federation_provisioning.js` are the contract.
+
+**Closed the same day, from the list of what was still open:**
+
+* **A keyed API session's touch is written through the store.** `found.calls` and
+  `lastSeenAt` changed on the object and the store journals a `set()`, so in `dispatch`
+  mode every other worker read a count frozen at the first call.
+* **`/admin/sessions` shows when a session BEGAN beside its latest authentication**
+  (`signOnSessionRows()`'s `startedAt`, `authTime` and `authentications`; the users page's
+  session block the same). "Signed in" was `authTime`, which a re-authentication moves.
+* **A relying-party session reads the person's sign-in through its parent.**
+  `signOnFactsFor()` answers the sign-on session's `acr`, `amr`, start, latest
+  authentication and count while it is live, and the session's own copy otherwise; the
+  portal's "You" card uses it, so a step-up shows at once. The console and portal
+  sessions' own `authTime`/`acr`/`amr` are unchanged — they are what the ID Token said,
+  and `oidc_rp.js`'s renewal compares against that `authTime`.
+* **Two workers creating one person** keep both UUIDs (`ldap/CLAUDE.md`), and
+  `sameIdentity()` treats a session under the alias as the same person.
+* **A rename keeps every name-keyed record together** — the identity register, the tokens
+  and sessions filed under a person, the RISC register (`ssf/risc.js`), GNAP's opaque
+  identifier and user reference (`gnap/gnap_subject.js`), and a person's TLS client and
+  enrolled certificates, whose issuing records now keep the holder's subject
+  (`common/tls_client_certificates.js`'s `currentHolderOf()`: a rename follows the entry,
+  a deleted-and-re-created name is refused `HOLDER_GONE`). A WS-Trust JWT for somebody
+  with no entry is refused (`STS-WSTRUST-0017`) rather than issued with a bare-name `sub`.
+  `tests/certificate_holder_rename.js` pins the certificates.
+
+---
+
 **`startSession()` TOOK A SIXTH ARGUMENT FOR FEDERATION, AND IT REPLACED A
 DOUBLE-COUNT RATHER THAN ADDING A FEATURE.** This function has always recorded
 the authentication ITSELF — that is what makes a WS-Federation sign-in appear on
@@ -147,7 +329,12 @@ subtree per realm. Each realm has its own `ou=groups` now, so a session minted i
 grant themselves both roles inside it and walk back out into the default one —
 the realm feature would have become a privilege escalation.
 `ldap/ldap_server.js` pins `admin_rbac.js`'s whole directory to the default realm
-for that reason, and this function is the other half of the same decision. **The
+for that reason, and this function is the other half of the same decision.
+(**Since 2026-09-14 (#32) a realm HAS a roster of its own, confined to that realm
+by `admin-ui/admin_scope.js`, and the gate asks the roster of the realm the
+session was signed in through** — `admin-ui/CLAUDE.md` 8d. This function still
+reads the session out of the default realm's partition; which roster decides
+moved, and the escalation above is closed by the confinement.) **The
 two have to agree**: a gate that accepted an `acme` session while the roster
 could only name default-realm people would let somebody in and then insist they
 were nobody.

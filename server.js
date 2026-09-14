@@ -675,6 +675,21 @@ serviceState.start().then(function (both) {
     return adminRbac.seedBootstrapAdministrator();
   });
   credentials.bootstrap({ username: config.value('admin.bootstrapUsername') });
+  // AND EVERY TRUST REALM THIS PROCESS STARTED WITH (2026-09-14, #32): each
+  // has an administrator of its own, confined to it. A realm created while
+  // running is given one by the create action itself; this is for a realm
+  // restored from the store that predates the feature, or whose account was
+  // removed. Both steps are idempotent, exactly as they are for the default
+  // realm above.
+  realms.list().filter(function (realm) {
+    return realm.id !== realms.DEFAULT_ID;
+  }).forEach(function (realm) {
+    adminRbac.seedBootstrapAdministrator(realm.id);
+    realms.run(realm, function () {
+      return credentials.bootstrap({
+        username: config.value('admin.bootstrapUsername') });
+    });
+  });
 
   // ---------------------------------------------------------------------
   // THE REQUEST WORKERS, AND THEY COME UP BEFORE THE LISTENER DOES.

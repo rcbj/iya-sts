@@ -422,16 +422,20 @@ async function createThePeople(sendable, byLdap) {
       "population than the one it claims, which is why this is asserted " +
       "rather than reported.");
   });
-  check("every created person came back with an id, and it is their DN",
-        function () {
+  // `dn` on each row is the SCIM id the create returned, which is the
+  // person's entryUUID since 2026-09-14; the membership writes below send it
+  // as a member value and the service stores the DN it names.
+  check("every created person came back with an id, and it is their " +
+        "entryUUID", function () {
     const wrong = created.filter(function (one) {
-      return String(one.dn).toLowerCase().indexOf(",") < 0;
+      return !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        .test(String(one.dn));
     });
     assert.strictEqual(wrong.length, 0,
-      "the SCIM id of a person here IS their directory entry's DN — that is " +
-      "what `scim/CLAUDE.md` says and what the membership writes below " +
-      "depend on. " + wrong.length + " came back with something else, e.g. " +
-      JSON.stringify(wrong.slice(0, 3)));
+      "the SCIM id of a person here is their directory entry's entryUUID " +
+      "(RFC 4530) — `scim/CLAUDE.md` says so, and the membership writes " +
+      "below send it. " + wrong.length + " came back with something else, " +
+      "e.g. " + JSON.stringify(wrong.slice(0, 3)));
   });
 
   const summary = bulk.summaryOf(watch);
@@ -479,13 +483,16 @@ async function createTheGroups() {
       created.length + " of " + SIZES.GROUPS + " groups were created. The " +
       "first few refusals were:\n  " + failures.join("\n  "));
   });
-  check("each group came back with an id, and it is its DN", function () {
+  check("each group came back with an id, and it is its entryUUID",
+        function () {
     const wrong = created.filter(function (one) {
-      return one.id.toLowerCase().indexOf("cn=") !== 0;
+      return !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        .test(String(one.id));
     });
     assert.strictEqual(wrong.length, 0,
-      "the SCIM id of a group here IS its directory entry's DN. " +
-      wrong.length + " came back with something else, e.g. " +
+      "the SCIM id of a group here is its directory entry's entryUUID " +
+      "(RFC 4530), which a rename does not change — it was the DN until " +
+      "2026-09-14. " + wrong.length + " came back with something else, e.g. " +
       JSON.stringify(wrong.slice(0, 3)));
   });
 
@@ -632,8 +639,19 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
     assert.strictEqual(entry.status, 200,
       "GET /admin-api/ldap/directory answered " + entry.status + ".");
     const rows = (entry.body && entry.body.entries) || [];
+    // `one.dn` is the SCIM id, which is the entry's `entryUUID` since
+    // 2026-09-14 and no longer its DN — so the row is the one whose own
+    // `entryUUID` attribute is that id. The DN comparison is kept beside it
+    // for a service from before the change, where the id was the DN.
     const found = rows.filter(function (row) {
-      return String(row.dn || "").toLowerCase() === one.dn.toLowerCase();
+      const attributes = row.attributes || {};
+      const uuid = Object.keys(attributes).filter(function (name) {
+        return name.toLowerCase() === "entryuuid";
+      }).map(function (name) {
+        return [].concat(attributes[name]).map(String);
+      })[0] || [];
+      return uuid.indexOf(one.dn) >= 0 ||
+             String(row.dn || "").toLowerCase() === one.dn.toLowerCase();
     })[0];
     assert.ok(found,
       "the entry at " + one.dn + " is not in the directory's own view of " +

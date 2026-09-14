@@ -149,7 +149,8 @@ are the exception in RFC 9700 mode.
 
 Nothing here limits how many a person may hold: two browsers is two sessions.
 They are folded onto one person by an **identity key** — the normalisation that
-makes `alice`, `alice@REALM` and `urn:sts:user:alice` one identity — which
+makes `alice`, `alice@REALM` and a token's `urn:uuid:<entryUUID>` subject one
+identity (the older `urn:sts:user:alice` form is still read) — which
 is what `/admin/users`, `/admin/logout` and `/admin/sessions` all file rows
 under.
 

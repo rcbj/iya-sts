@@ -35,8 +35,8 @@ readers are consumers of that definition, not co-owners of it.
    `vc_issuer.js` (early), `admin.js` (late) and `ldap_server.js` (last) all read it,
    so it must stay a library: it registers no route and requires only `helpers.js`
    and `admin_stats.js` (for `identityKeyOf()`, so that `alice`,
-   `urn:sts:user:alice` and `alice@REALM` are one invented person and one
-   entry). The DIRECTORY half is inverted the usual way — `setDirectory()` is filled
+   `alice@REALM` and her `urn:uuid:<entryUUID>` — or the retired
+   `urn:sts:user:alice` — are one invented person and one entry). The DIRECTORY half is inverted the usual way — `setDirectory()` is filled
    by `ldap_server.js` at ITS require time, because that module cannot be required
    from a module `vc_issuer.js` reads without dragging every `/ldap` route to the
    front of the router. Two things there are load-bearing and easy to undo: the

@@ -597,6 +597,15 @@ const CODES = [
       'bind, so every http:// CRL, OCSP and caIssuers address in this ' +
       'service\'s certificates answers nothing.',
     spec: '' },
+  { code: 'STS-CORE-0090',
+    summary: 'setSubjectResolver() was given an object without both ' +
+      'subjectFor() and nameFor(), so no person in this process is issued ' +
+      'a subject.',
+    spec: 'none — logged' },
+  { code: 'STS-CORE-0091',
+    summary: 'The subject resolver threw, and the person was given no ' +
+      'subject (or a subject was treated as naming nobody).',
+    spec: 'none — logged' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -3309,6 +3318,12 @@ const CODES = [
     summary: 'The code confirming an authenticator app enrolled at sign-in ' +
       'was refused; the same secret is drawn again.',
     spec: 'HTTP 400 page' },
+  { code: 'STS-AUTHN-0180',
+    summary: 'A signed-in session was refused because the directory holds ' +
+      'no entry for the person, so there is no subject to give it ' +
+      '(ldap.autocreateUsers off, or a federation relationship with ' +
+      'dynamic provisioning off and nobody provisioned).',
+    spec: 'the calling door\'s own refusal' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -4959,6 +4974,16 @@ const CODES = [
       'cannot be an acr value (a double quote, a backslash or a control ' +
       'character).',
     spec: 'invalid_request (redirected error)' },
+  { code: 'STS-OAUTH-0510',
+    summary: 'A password or assertion grant was refused because the ' +
+      'directory holds no entry for the person, so there is no subject to ' +
+      'issue a token about.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0511',
+    summary: 'A refresh was refused because the subject of the refresh ' +
+      'token names nobody in the directory any more (the person was ' +
+      'deleted, or deleted and re-created).',
+    spec: 'invalid_grant (HTTP 400)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -5192,6 +5217,16 @@ const CODES = [
     summary: 'The application entry refused the metadata and encryption ' +
       'certificate a refresh fetched.',
     spec: '' },
+  { code: 'STS-SAML-0055',
+    summary: 'A SAML 2.0 sign-in came back from its one trip to the sign-in ' +
+      'screen without a fresh authentication (ForceAuthn) or without a ' +
+      'session, and was answered AuthnFailed rather than sent again.',
+    spec: 'Response status AuthnFailed' },
+  { code: 'STS-SAML-0056',
+    summary: 'A SAML 2.0 sign-in came back from its one trip to the sign-in ' +
+      'screen with a session that still does not meet the ' +
+      'RequestedAuthnContext, and was answered NoAuthnContext.',
+    spec: 'Response status NoAuthnContext' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -5267,6 +5302,10 @@ const CODES = [
     summary: 'A token was issued but starting the browser sign-on session ' +
       'the exchange also starts threw; the RSTR is unaffected.',
     spec: '' },
+  { code: 'STS-WSTRUST-0017',
+    summary: 'A JWT was refused because the directory holds no entry for the ' +
+      'person, so there is no subject to issue it about.',
+    spec: 'SOAP Fault (HTTP 400)' },
   // ===== WSFED =============================================================
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
@@ -5658,6 +5697,11 @@ const CODES = [
     summary: 'The directory would not delete a federation relationship.',
     spec: 'action result ok:false (console redirect or /admin-api HTTP ' +
       '400)' },
+  { code: 'STS-FED-0090',
+    summary: 'A federated sign-in verified, but the directory holds no entry ' +
+      'for the person and none was created (dynamic provisioning off on the ' +
+      'relationship, or the directory declined), so no session was started.',
+    spec: 'HTTP 403 page' },
   // ===== KRB ===============================================================
   { code: 'STS-KRB-0001',
     summary: 'A cross-realm referral could not be issued because the trust ' +
@@ -6389,6 +6433,14 @@ const CODES = [
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +
       'stsBootstrapAdministrator or stsConsoleClaimedAt) could not be ' +
       'written because the account has no entry in this realm.',
+    spec: 'none — logged' },
+  { code: 'STS-LDAP-0090',
+    summary: 'A person was refused creation under a username that is a ' +
+      'subject identifier (urn:uuid: or a bare UUID).',
+    spec: 'action result ok:false (console, /admin-api HTTP 400, SCIM 400)' },
+  { code: 'STS-LDAP-0091',
+    summary: 'No entry was created for an authentication whose identity is ' +
+      'a urn:uuid: subject naming nobody in this realm\'s directory.',
     spec: 'none — logged' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
@@ -9994,6 +10046,28 @@ const CODES = [
     summary: 'Requiring, or no longer requiring, a second factor of somebody ' +
       'was refused.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  // PER-REALM ADMINISTRATORS (2026-09-14, #32).
+  { code: 'STS-ADMIN-0786',
+    summary: 'A realm administrator reached the console in a realm other than ' +
+      'the one they signed in through, where they hold no role.',
+    spec: 'HTTP 403 on /admin' },
+  { code: 'STS-ADMIN-0787',
+    summary: 'A realm administrator was refused a service-wide console page ' +
+      'or action (the store, the listeners, the service Root, the realm ' +
+      'registry, another realm).',
+    spec: 'HTTP 403 on /admin' },
+  { code: 'STS-ADMIN-0788',
+    summary: 'A realm administrator posted a setting that names the whole ' +
+      'service rather than their realm.',
+    spec: 'HTTP 403 on /admin' },
+  { code: 'STS-ADMIN-0789',
+    summary: 'A new trust realm\'s bootstrap administrator could not be given ' +
+      'its generated password in product mode.',
+    spec: 'none — logged' },
+  { code: 'STS-ADMIN-0790',
+    summary: 'The realm chooser in front of /admin was asked for a realm ' +
+      'that is not defined.',
+    spec: 'HTTP 400 on /admin' },
   // ===== API ===============================================================
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
@@ -10303,6 +10377,15 @@ const CODES = [
       'certificate.',
     spec: 'invalid_token (HTTP 401)' },
   // ===== PORTAL ============================================================
+  // PER-REALM ADMINISTRATORS (2026-09-14, #32).
+  { code: 'STS-API-0111',
+    summary: 'A trust realm\'s own access token was presented at /admin-api by ' +
+      'a client other than that realm\'s sts-management-api.',
+    spec: 'HTTP 403 forbidden' },
+  { code: 'STS-API-0112',
+    summary: 'A trust realm\'s own token or administrator reached a ' +
+      'service-wide /admin-api operation, or another realm\'s.',
+    spec: 'HTTP 403 forbidden' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -10514,6 +10597,10 @@ const CODES = [
       'policy or the store.',
     spec: 'the reset form again, HTTP 400' },
   // ===== LOGOUT ============================================================
+  { code: 'STS-PORTAL-0074',
+    summary: 'The realm chooser in front of /portal was asked for a realm ' +
+      'that is not defined.',
+    spec: 'HTTP 400 on /portal' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

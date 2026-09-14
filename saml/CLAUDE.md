@@ -721,3 +721,36 @@ address a Response would go to is the address in question.
 Organization is schema-invalid and a setting silently ignored in one mode would
 be a setting that lies on the console. The two "ten minutes" refusal pages are
 built from the value.
+
+## ONE TRIP TO THE SIGN-IN SCREEN PER REQUEST (2026-09-14)
+
+**`ForceAuthn="true"` LOOPED FOR EVER, AND SO DID CANCEL.** `singleSignOn()` holds an
+AuthnRequest while the person is at the sign-in screen, and the return address
+(`?rid=`) reads the request again from its XML — so on the way back `ForceAuthn` was
+exactly as true as on the way in, the session the person had just made changed nothing,
+and they were sent to the screen again. A RequestedAuthnContext the sign-in could not
+meet (a federated partner that authenticated with one factor) had the same shape. Cancel
+looped for a different reason: `authn_error` was checked AFTER the session, and a person
+who cancels has no session, so step 4 sent them back to the screen before the
+cancellation was ever read. An in-process probe counted twelve redirects and still going
+for both; the section above calling `ForceAuthn` hand-verified was true of the first leg
+only.
+
+**The fix is the RFC 9470 step-up shape** (`oauth-oidc/step_up.js`'s `step_up_honoured`),
+with the marker on the SERVER's copy of the request so a browser cannot claim the trip:
+
+* the redirect to the screen stamps `forcedAt` on the held request;
+* a request back from that trip is **never redirected again**. It is answered from a
+  session authenticated at or after `forcedAt` (whole seconds, because `authTime` is one),
+  and otherwise a Response goes to the service provider: **`NoAuthnContext`**
+  (`STS-SAML-0056`) where the context is still unmet, **`AuthnFailed`**
+  (`STS-SAML-0055`) where no fresh authentication happened or there is no session;
+* **`authn_error` is read before step 4**, so a cancellation is reported as one
+  (`STS-SAML-0009`, with the screen's own reason) — the rule above would also answer
+  `AuthnFailed`, but as "came back with no session", which is a different fact.
+
+`ForceAuthn` with an existing session still shows the screen, once; the re-authentication
+keeps the session and moves `auth_time` (`authn/CLAUDE.md`), which is what the fresh
+`AuthnInstant` in the Response comes from. `tests/saml2_force_authn.js` pins all of it
+over HTTP; four mutants, all caught — the cancellation one only after the test asserted
+HOW the cancellation was reported.

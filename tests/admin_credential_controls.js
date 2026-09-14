@@ -126,14 +126,20 @@ function childMain() {
            JSON.stringify(made.errors));
       const streamId = made.stream && made.stream.stream_id;
 
-      // Every SET queued on the stream about one person so far.
+      // Every SET queued on the stream about one person so far — named in
+      // `sub_id` by their NAME (an email or account subject) or by their
+      // SUBJECT, which since 2026-09-14 is `urn:uuid:<entryUUID>` and is what
+      // an issuer_subject_id carries.
+      const helpersC = require(ROOT + '/common/helpers');
       const setsAbout = function (username) {
         const record = streams.getStream(streamId);
+        const subject = helpersC.subjectForName(username);
         return streams.queueOf(record).map(function (one) {
           return one.claims || {};
         }).filter(function (claims) {
-          return JSON.stringify(claims.sub_id || {}).indexOf('"' + username +
-                                                             '"') >= 0;
+          const text = JSON.stringify(claims.sub_id || {});
+          return text.indexOf('"' + username + '"') >= 0 ||
+                 (!!subject && text.indexOf('"' + subject + '"') >= 0);
         });
       };
       // Wait for `count` SETs about somebody, since signing is asynchronous.

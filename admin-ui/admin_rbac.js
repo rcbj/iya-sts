@@ -101,6 +101,30 @@ const audit = require('../common/audit');
 // code rides on the object under the non-enumerable Symbol `mark()` uses —
 // invisible to JSON.stringify, read back with `errorCodes.codeOf(result)`.
 const errorCodes = require('../common/error_codes');
+// THE REALMS, for their ids and the default realm's. A leaf here: this module
+// asks the registry whether a realm exists and never enters one itself — the
+// directory slot's `forRealm()` does that.
+const realms = require('../common/realms');
+
+// ---------------------------------------------------------------------------
+// A ROSTER PER REALM (2026-09-14, ticket #32), AND THE DEFAULT REALM'S IS STILL
+// THE SERVICE'S.
+//
+// Until that day there was ONE roster — the default realm's two groups — and
+// the prose said a per-realm one would let anybody who can create a realm
+// administer the service. rcbj asked for per-realm administrators with the
+// default realm's roster kept as the SUPER administrator over every realm, and
+// the argument is answered rather than dropped: a realm's roster grants
+// AUTHORITY IN THAT REALM ONLY, which `admin-core/admin_views.js`'s
+// `gateStateFor()` and `admin-ui/admin_scope.js` enforce, and creating a realm
+// is itself a service action.
+//
+// So every public function here takes an OPTIONAL realm id. Absent, it answers
+// about whatever realm is bound — the default realm, at the top level — which
+// is what keeps every caller written before this unchanged, and what lets a
+// function here call another without re-binding. Present, it binds that realm
+// for the call through the slot's `forRealm()`.
+// ---------------------------------------------------------------------------
 
 function refused(code, result) {
   log.debug("Entering refused().");
@@ -153,6 +177,10 @@ function groupCnFor(role) {
 // The slot. See the header.
 // ---------------------------------------------------------------------------
 
+// `installed` is what the filler offered, bound to the DEFAULT realm;
+// `directory` is the view in use for the call in progress, which is the same
+// object except while `inRosterRealm()` has bound another realm.
+let installed = null;
 let directory = null;
 
 // What the filler has to provide. Named here rather than checked inline so the
@@ -182,6 +210,7 @@ function setDirectory(fns) {
         "member(s) missing.");
     return false;
   }
+  installed = given;
   directory = given;
   log.debug("Leaving setDirectory(). Installed.");
   log.info('admin_rbac: the admin console roles are the directory groups ' +
@@ -196,6 +225,67 @@ function available() {
   log.debug("Entering available().");
   log.debug("Leaving available().");
   return !!directory;
+}
+
+// The realm this module answers about when a caller names one. `''`, null and
+// undefined mean "whatever is bound", so an inner call inherits its caller's
+// realm; the default realm's own id binds the installed view.
+function realmIdOf(realmId) {
+  log.debug("Entering realmIdOf().");
+  const id = realmId === undefined || realmId === null ? '' : String(realmId);
+  log.debug("Leaving realmIdOf().");
+  return id.trim();
+}
+
+// The directory view for a named realm: the installed one for the default
+// realm, `forRealm()`'s for any other, and NULL for a realm that does not exist
+// or a filler that offers no per-realm view — which every function here already
+// answers as "no directory is loaded", so an unknown realm grants nothing.
+function viewFor(realmId) {
+  log.debug("Entering viewFor(). realm=" + realmId);
+  if (!installed) {
+    log.debug("Leaving viewFor(). Nothing installed.");
+    return null;
+  }
+  if (realmId === realms.DEFAULT_ID) {
+    log.debug("Leaving viewFor(). The default realm.");
+    return installed;
+  }
+  if (typeof installed.forRealm !== 'function' || !realms.get(realmId)) {
+    log.debug("Leaving viewFor(). No view for that realm.");
+    return null;
+  }
+  const view = installed.forRealm(realmId);
+  log.debug("Leaving viewFor(). " + (view ? "Bound." : "Refused."));
+  return view || null;
+}
+
+// Run `fn` with the named realm's roster bound, or with whatever is bound when
+// no realm is named. Synchronous throughout, like every function it wraps, so
+// the binding cannot leak into another request.
+function inRosterRealm(realmId, fn) {
+  log.debug("Entering inRosterRealm().");
+  const id = realmIdOf(realmId);
+  if (!id) {
+    log.debug("Leaving inRosterRealm(). Inherited.");
+    return fn();
+  }
+  const previous = directory;
+  directory = viewFor(id);
+  try {
+    log.debug("Leaving inRosterRealm(). Bound " + id + ".");
+    return fn();
+  } finally {
+    directory = previous;
+  }
+}
+
+// The realm a view answers about, for the words a result carries.
+function boundRealmId() {
+  log.debug("Entering boundRealmId().");
+  log.debug("Leaving boundRealmId().");
+  return directory && directory.realmId ? String(directory.realmId)
+                                        : realms.DEFAULT_ID;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +579,7 @@ function seedBootstrapAdministrator() {
     if (!made || made.ok === false) {
       log.error(errorCodes.tag('STS-ADMIN-0706') + 'admin_rbac: the ' +
                 'bootstrap administrator "' + name + '" could not be ' +
-                'created in the default realm: ' +
+                'created in the "' + boundRealmId() + '" realm: ' +
                 ((made && (made.errors || []).join(' ')) || 'no reason'));
       log.debug("Leaving seedBootstrapAdministrator(). Not created.");
       return { ran: false, why: 'the account could not be created',
@@ -527,11 +617,13 @@ function seedBootstrapAdministrator() {
              (closedAtOnce ? '; the console was already administered, so it ' +
                              'is not opened to everybody' : ''),
     detail: { event: 'seeded', username: name, created: created,
+              realm: boundRealmId(),
               passwordResetRequired: created,
               administeredBy: administeredBy.slice(0, 20),
               windowClosed: closedAtOnce }
   });
-  log.info('admin_rbac: "' + name + '" in the default realm holds Admin Read ' +
+  log.info('admin_rbac: "' + name + '" in the "' + boundRealmId() +
+           '" realm holds Admin Read ' +
            'and Admin Write' + (created ? ', and must change its password at ' +
            'its first sign-in' : '') + '. ' + (closedAtOnce
              ? 'The roster already named ' + administeredBy.join(', ') +
@@ -540,7 +632,7 @@ function seedBootstrapAdministrator() {
                'use the console.'));
   log.debug("Leaving seedBootstrapAdministrator().");
   return { ran: true, username: name, created: created,
-           windowClosed: closedAtOnce };
+           realm: boundRealmId(), windowClosed: closedAtOnce };
 }
 
 // ---------------------------------------------------------------------------
@@ -548,11 +640,13 @@ function seedBootstrapAdministrator() {
 // console gate for every signed-in request, so the common answer — not that
 // account, or already closed — is one flag read and no write.
 //
-// **ONLY A DEFAULT-REALM SIGN-IN COUNTS.** The console's code flow runs in the
-// realm it was reached in and the roster is matched by NAME, so a trust
-// realm's own `admin` signing in must not close a window that belongs to the
-// default realm's account. The password has already been changed by then:
-// `authn.js` asks for it before any session exists.
+// **A SIGN-IN CLOSES THE WINDOW OF THE REALM IT CAME FROM, AND NO OTHER.** The
+// console's code flow runs in the realm it was reached in, so a trust realm's
+// own `admin` signing in closes THAT realm's window (2026-09-14, #32) and must
+// never close the default realm's, which belongs to the service's account.
+// Until #32 a sign-in through another realm closed nothing at all, because
+// there was no realm window to close. The password has already been changed
+// by then: `authn.js` asks for it before any session exists.
 // ---------------------------------------------------------------------------
 function noteConsoleSignIn(username, session, defaultRealmId) {
   log.debug("Entering noteConsoleSignIn().");
@@ -563,14 +657,20 @@ function noteConsoleSignIn(username, session, defaultRealmId) {
     return false;
   }
   const fromRealm = String((session && session.derivedFromRealm) ||
-                           defaultRealmId);
-  if (fromRealm !== String(defaultRealmId)) {
-    log.debug("Leaving noteConsoleSignIn(). Signed in through another realm.");
-    return false;
-  }
+                           defaultRealmId || realms.DEFAULT_ID);
+  const closed = inRosterRealm(fromRealm, function () {
+    return closeBootstrapWindow(name, wanted);
+  });
+  log.debug("Leaving noteConsoleSignIn(). " + (closed ? "Closed " : "Open ") +
+            "in " + fromRealm + ".");
+  return closed;
+}
+
+function closeBootstrapWindow(name, wanted) {
+  log.debug("Entering closeBootstrapWindow().");
   const state = bootstrapState();
   if (!state.seeded || state.claimedAt) {
-    log.debug("Leaving noteConsoleSignIn(). Nothing to close.");
+    log.debug("Leaving closeBootstrapWindow(). Nothing to close.");
     return false;
   }
   const at = nowGeneralized();
@@ -582,10 +682,11 @@ function noteConsoleSignIn(username, session, defaultRealmId) {
              'console; it is enforced from now on',
     detail: { event: 'claimed', username: name, at: at }
   });
-  log.info('admin_rbac: the bootstrap administrator "' + name + '" signed in ' +
-           'to the console. The roster is enforced from now on: only members ' +
-           'of the two role groups may use it.');
-  log.debug("Leaving noteConsoleSignIn(). Closed.");
+  log.info('admin_rbac: the bootstrap administrator "' + name + '" of the "' +
+           boundRealmId() + '" realm signed in to the console. That ' +
+           'realm\'s roster is enforced from now on: only members of its two ' +
+           'role groups may use it.');
+  log.debug("Leaving closeBootstrapWindow(). Closed.");
   return true;
 }
 
@@ -1123,6 +1224,11 @@ function describe() {
     available: !!directory,
     groupsDn: directory ? directory.groupsDn : '',
     usersDn: directory ? directory.usersDn : '',
+    // WHOSE ROSTER THIS IS (2026-09-14, #32). The default realm's is the
+    // SERVICE roster — its members administer every realm and the whole
+    // service; any other realm's grants authority in that realm alone.
+    realm: boundRealmId(),
+    authority: boundRealmId() === realms.DEFAULT_ID ? 'service' : 'realm',
     roles: rows,
     grantCount: rows.reduce(function (n, row) { return n + row.memberCount; },
                             0)
@@ -1145,22 +1251,64 @@ function describe() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE PUBLIC FUNCTIONS, EACH TAKING THE REALM (2026-09-14, #32).
+//
+// `bound(fn, at)` answers a function that binds the realm found at argument
+// `at` for the call and then runs `fn` with the same arguments. The functions
+// above never re-bind — they read `directory` — so one of them calling another
+// stays in the realm its caller named.
+//
+// `grant()` and `revoke()` take it as `context.realm`, where their other
+// options already are.
+// ---------------------------------------------------------------------------
+function bound(fn, at) {
+  log.debug("Entering bound(). " + fn.name);
+  log.debug("Leaving bound().");
+  return function () {
+    const args = arguments;
+    return inRosterRealm(args[at], function () {
+      return fn.apply(null, args);
+    });
+  };
+}
+
+function inContextRealm(fn) {
+  log.debug("Entering inContextRealm(). " + fn.name);
+  log.debug("Leaving inContextRealm().");
+  return function (username, roleId, context) {
+    return inRosterRealm((context || {}).realm, function () {
+      return fn(username, roleId, context);
+    });
+  };
+}
+
+// The id an ambient authority names for a realm, for a caller that has a realm
+// record rather than an id.
+function isServiceRealm(realmId) {
+  log.debug("Entering isServiceRealm().");
+  const id = realmIdOf(realmId);
+  log.debug("Leaving isServiceRealm().");
+  return !id || id === realms.DEFAULT_ID;
+}
+
 module.exports = {
   ROLES: ROLES,
   ROLE_IDS: ROLE_IDS,
   roleFor: roleFor,
   setDirectory: setDirectory,
-  available: available,
-  roster: roster,
-  rosterFor: rosterFor,
-  rosterEmpty: rosterEmpty,
-  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13).
-  seedBootstrapAdministrator: seedBootstrapAdministrator,
+  available: bound(available, 0),
+  roster: bound(roster, 0),
+  rosterFor: bound(rosterFor, 1),
+  rosterEmpty: bound(rosterEmpty, 0),
+  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13), one per realm since 2026-09-14.
+  seedBootstrapAdministrator: bound(seedBootstrapAdministrator, 0),
   noteConsoleSignIn: noteConsoleSignIn,
-  bootstrapState: bootstrapState,
-  rolesOf: rolesOf,
-  grant: grant,
-  revoke: revoke,
-  candidates: candidates,
-  describe: describe
+  bootstrapState: bound(bootstrapState, 0),
+  rolesOf: bound(rolesOf, 1),
+  grant: inContextRealm(grant),
+  revoke: inContextRealm(revoke),
+  candidates: bound(candidates, 1),
+  describe: bound(describe, 0),
+  isServiceRealm: isServiceRealm
 };

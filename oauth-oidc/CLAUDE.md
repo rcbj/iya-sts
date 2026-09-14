@@ -2474,3 +2474,27 @@ grant's, and `oauth2.js` writes the authentication note and the delegation row a
 *a person presenting themselves* rather than as a third party vouching.
 `tests/person_credentials.js` holds it in process and
 `tests/vendored/sts_user_credentials.js` at `/oauth2/token`.
+
+## A PERSON'S `sub` IS THEIR ENTRY'S, AND A GRANT WITH NO BROWSER STILL NEEDS ONE (2026-09-14)
+
+Every token issued to a person carries `sub = urn:uuid:<entryUUID>` now (it was
+`urn:sts:user:<username>`); `authn/CLAUDE.md`, *What an authenticated identity is here*,
+carries the design and `ldap/CLAUDE.md` the directory half. Three things in this directory
+changed with it:
+
+* **The password grant and both assertion grants record the authentication FIRST** — which
+  is what makes the directory create the entry — and then ask for the person through
+  `provisionedPerson()`. Where the directory still holds nobody (`ldap.autocreateUsers`
+  off, the person never provisioned) they refuse `invalid_grant` (`STS-OAUTH-0510`) rather
+  than minting an empty `sub`. A process with no directory refuses nothing.
+* **A refresh follows the token's SUBJECT, not the username beside it**
+  (`refreshedPerson()`): a person renamed since the grant is found under the new name and
+  keeps their `sub`; one deleted since — or deleted and re-created under the same name,
+  which is a different subject — is refused `invalid_grant` (`STS-OAUTH-0511`). A refresh
+  token whose subject is not a person's is minted as it always was.
+* **UserInfo reads the person under the name their subject names now**, so a renamed
+  person is answered with their own entry. A person's RFC 7523 self-assertion may carry
+  their own `urn:uuid:` as `sub` (`person_assertions.subjectIsSelf()`), and GNAP reads
+  either subject form through `helpers.nameForSubject()`.
+
+`tests/stable_subject.js` section D drives all three over HTTP.

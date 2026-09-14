@@ -387,7 +387,10 @@ function childMain() {
            'and the scope is kept', JSON.stringify(claims));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access } });
-      note(r.status === 200 && r.json.sub === 'urn:sts:user:r9-alice',
+      // The person's `urn:uuid:<entryUUID>` since 2026-09-14.
+      note(r.status === 200 && r.json.sub ===
+             require(ROOT + '/common/helpers').subjectForName('r9-alice') &&
+           /^urn:uuid:/.test(r.json.sub),
            '3h. UserInfo accepts it', r.status + ' ' + r.text.slice(0, 160));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access,

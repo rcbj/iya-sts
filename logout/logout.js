@@ -112,7 +112,7 @@ const config = require('../common/config');
 // of them. A LEAF (rule 3): it requires only `config`.
 const mode = require('../common/mode');
 // The token registry, its ONE revocation set, and identityKeyOf() — which is
-// what makes `alice`, `alice@STS.MOCK` and `urn:sts:user:alice` one person
+// what makes `alice`, `alice@STS.MOCK` and `urn:uuid:<entryUUID>` one person
 // here rather than three, exactly as it does on /admin/users.
 const stats = require('../common/admin_stats');
 const audit = require('../common/audit');
@@ -223,7 +223,8 @@ function sessionsForKey(key) {
   const out = [];
   authn.sessions.forEach(function (session) {
     const username = (session.user && session.user.username) || '';
-    if (stats.identityKeyOf(username) === wanted) out.push(session);
+    const sub = (session.user && session.user.sub) || '';
+    if (stats.holderKeyOf(username, sub) === wanted) out.push(session);
   });
   out.sort(function (a, b) { return (b.authTime || 0) - (a.authTime || 0); });
   log.debug("Leaving sessionsForKey(). " + out.length + " session(s).");
@@ -280,7 +281,9 @@ const FAMILIES = [
                   ', acr ' + (session.acr || 'none') + ')' +
                   (rides.length ? '; carries ' + rides.join(', ') : '; ' +
                       'nothing signed into on it'),
-          startedAt: (session.authTime || 0) * 1000,
+          // The FIRST authentication, not the latest: see
+          // authn.sessionStartedAt().
+          startedAt: authn.sessionStartedAt(session),
           expiresAt: session.expires || 0,
           sessionId: session.id
         });
@@ -609,7 +612,8 @@ const FAMILIES = [
       const at = Date.now();
       vcOffers.preAuthorizedCodes.forEach(function (record, code) {
         const username = (record.user && record.user.username) || '';
-        if (stats.identityKeyOf(username) !== ctx.key) return;
+        if (stats.holderKeyOf(username, record.user && record.user.sub) !==
+            ctx.key) return;
         if (record.expires && record.expires < at) return;
         rows.push(row('vci-code', 'pre-authorized code', handleFor(code), {
           label: 'a pre-authorized code for ' +
@@ -631,7 +635,8 @@ const FAMILIES = [
       let found = '';
       vcOffers.preAuthorizedCodes.forEach(function (record, code) {
         const username = (record.user && record.user.username) || '';
-        if (stats.identityKeyOf(username) !== ctx.key) return;
+        if (stats.holderKeyOf(username, record.user && record.user.sub) !==
+            ctx.key) return;
         if (handleFor(code) === r.handle) found = code;
       });
       if (!found) {
@@ -1214,7 +1219,7 @@ function liveSessions() {
       // can see which is which rather than inferring it from the times.
       derivedFrom: session.derivedFrom || '',
       rpClientId: session.rpClientId || '',
-      key: stats.identityKeyOf(username),
+      key: stats.holderKeyOf(username, session.user && session.user.sub),
       username: username,
       sub: (session.user && session.user.sub) || '',
       // The protocol the sign-in came THROUGH. See startSession(): every
@@ -1225,7 +1230,7 @@ function liveSessions() {
       // The session id, which is what a token issued on it records — so this
       // is the join to /admin/tokens and the only row kind that has one.
       sessionId: session.id,
-      startedAt: (session.authTime || 0) * 1000,
+      startedAt: authn.sessionStartedAt(session),
       expiresAt: session.expires || 0,
       expiryRule: session.credentialKey ? SESSION_EXPIRY_RULES.api
         : (session.rpSurface && session.rpTokens &&
@@ -1411,7 +1416,7 @@ function liveSessions() {
 // `key` is the console's identity key — `stats.identityKeyOf()` applied to
 // whatever was presented — so that a person who signed in as `alice`, holds a
 // Kerberos principal `alice@STS.MOCK` and has a token with `sub`
-// `urn:sts:user:alice` is ONE row set rather than three.
+// `urn:uuid:<entryUUID>` is ONE row set rather than three.
 //
 // A COLLECTOR THAT THROWS DOES NOT TAKE THE PAGE DOWN. Nine modules are read
 // here and one of them being mid-change is exactly when somebody needs this

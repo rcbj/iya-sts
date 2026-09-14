@@ -91,7 +91,7 @@
 // product mode on 2026-09-06. `touch()` below reports a row edited in place.
 // ---------------------------------------------------------------------------
 
-const { log, nowSec, iso } = require('../common/helpers');
+const { log, nowSec, iso, nameForSubject } = require('../common/helpers');
 const config = require('../common/config');
 // The partition. A LEAF requiring `config` and nothing else here.
 const realms = require('../common/realms');
@@ -334,7 +334,7 @@ function subjectFor(row, uri) {
       row.sub || row.accountId,
       String(config.value('risc.subjectFormat') || 'iss_sub'),
       String(row.iss || ''),
-      { mail: row.email, phone: row.phone });
+      { mail: row.email, phone: row.phone, subject: row.subject || '' });
   }
   const out = googleSubjectType(subject);
   log.debug('Leaving subjectFor(). ' + subjects.describeSubject(subject));
@@ -448,12 +448,21 @@ function matchAccount(candidate) {
     log.debug('Leaving matchAccount(). By account id.');
     return value;
   }
+  // A PERSON'S SUBJECT (2026-09-14): an issuer_subject_id carries
+  // `urn:uuid:<entryUUID>` now, and the register is keyed on the name. The
+  // directory says whose it is; a row that recorded the subject — which is the
+  // only way to recognise an account already deleted — is matched below.
+  const named = /^urn:uuid:/i.test(value) ? nameForSubject(value) : '';
+  if (named && register.has(named)) {
+    log.debug('Leaving matchAccount(). By subject.');
+    return named;
+  }
   let found = '';
   register.forEach(function (row, id) {
     if (found) {
       return;
     }
-    if (row.sub === value || row.email === value ||
+    if (row.sub === value || row.email === value || row.subject === value ||
         (row.formerIdentifiers || []).indexOf(value) >= 0 ||
         row.phone === value) {
       found = id;
@@ -982,6 +991,33 @@ function observe(notice) {
     return [];
   }
   let row = register.get(accountId);
+  // A RENAMED ACCOUNT KEEPS ITS ROW (2026-09-14). The register is keyed by the
+  // name, and a rename arrives here as an update naming the NEW one; the
+  // entry's subject is what says it is the row already held under the old
+  // name. Its counts and state move with it, and the old name is kept among
+  // its former identifiers so an event naming it is still matched.
+  const renamedUuid = ((deleted ? before : after).entryuuid || [])[0];
+  if (!row && renamedUuid) {
+    const wantedSubject = 'urn:uuid:' + String(renamedUuid).toLowerCase();
+    let formerId = '';
+    register.forEach(function (held, id) {
+      if (!formerId && held.subject === wantedSubject) {
+        formerId = id;
+      }
+    });
+    if (formerId) {
+      row = register.get(formerId);
+      register.delete(formerId);
+      row.formerIdentifiers = (row.formerIdentifiers || [])
+        .filter(function (one) {
+          return one !== formerId;
+        }).concat([formerId]);
+      row.accountId = accountId;
+      row.username = accountId;
+      row.sub = accountId;
+      register.set(accountId, row);
+    }
+  }
   if (!row) {
     row = blankRow({
       accountId: accountId,
@@ -1001,6 +1037,14 @@ function observe(notice) {
   }
   if (asked.dn) {
     row.dn = String(asked.dn);
+  }
+  // THE ENTRY'S SUBJECT, off whichever snapshot has the entry in it
+  // (2026-09-14). It is kept on the row because the one event where it matters
+  // most — an account PURGED — is about an entry that is gone, and the
+  // directory can no longer be asked whose `urn:uuid:` it was.
+  const snapshotUuid = ((deleted ? before : after).entryuuid || [])[0];
+  if (snapshotUuid) {
+    row.subject = 'urn:uuid:' + String(snapshotUuid).toLowerCase();
   }
   row.updatedAt = iso();
 

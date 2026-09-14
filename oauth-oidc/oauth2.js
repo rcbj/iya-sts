@@ -77,7 +77,8 @@ const { log, logArtifact, STS, baseUrlOf, b64u, jsonFromB64u, nowSec, randomId,
         allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
         hasScope, signingKeyFor,
         certificateHeaderFor,
-        publishedKidFor } = require('../common/helpers');
+        publishedKidFor, nameForSubject, hasSubjectResolver,
+        LEGACY_SUBJECT_PREFIX } = require('../common/helpers');
 const dpop = require('./dpop');
 // WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
 // `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
@@ -1038,8 +1039,9 @@ function oidcMetadata(req, issuer) {
     userinfo_encryption_alg_values_supported: stsCrypto.JWE_ASYMMETRIC_ALGS,
     userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
     //
-    // `public`: the `sub` userFor() mints is urn:sts:user:<username> and is
-    // the same value for every client that asks, which is what public MEANS.
+    // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
+    // since 2026-09-14 — is the same value for every client that asks, which
+    // is what public MEANS.
     // Claiming `pairwise` would be a claim about a calculation this server does
     // not perform.
     subject_types_supported: ['public'],
@@ -2811,14 +2813,66 @@ const PERSONA_CLAIMS = ['name', 'given_name', 'family_name',
 //   * DEVELOPMENT IS UNTOUCHED — `userFor()` filled all six there, so this
 //     function finds nothing undefined and returns the object as it was given.
 //
-// `sub` is not touched, and that is worth saying because it is the claim a
-// reader might expect a directory-backed person to take from the entry: it is
-// `urn:sts:user:<username>`, derived from the NAME, so a person deleted
-// and re-created under the same username is the same subject to every relying
-// party that ever saw the first one. That is a property of the identifier
-// scheme rather than of this function, and changing it is a migration.
+// `sub` is not touched here, and that is worth saying because it is the claim a
+// reader might expect a directory-backed person to take from the entry — which
+// is what it does, one layer down: since 2026-09-14 `userFor()` gives
+// `urn:uuid:<entryUUID>`, so a person deleted and re-created under the same
+// username is a DIFFERENT subject to every relying party (it was
+// `urn:sts:user:<username>`, derived from the name, before that date).
 // ---------------------------------------------------------------------------
 const DIRECTORY_PERSONA_CLAIMS = ['name', 'given_name', 'family_name', 'email'];
+
+// ---------------------------------------------------------------------------
+// A GRANT WITH NO BROWSER STILL NEEDS A PERSON WITH AN ENTRY (2026-09-14).
+//
+// A person's `sub` is their directory entry's `entryUUID` (see
+// `authn/CLAUDE.md`, *What an authenticated identity is here*). The password
+// grant and the two assertion grants record the authentication FIRST — that is
+// what makes the directory create the entry — and then ask for the person, and
+// where the directory still holds nobody (`ldap.autocreateUsers` off and the
+// person never provisioned) they refuse `invalid_grant` rather than minting a
+// token whose `sub` is empty. A process with no directory has no subjects for
+// anybody and refuses nothing, for `authn.startSession()`'s reason.
+// ---------------------------------------------------------------------------
+function provisionedPerson(username) {
+  log.debug("Entering provisionedPerson().");
+  const user = userFor(username);
+  if (!user.sub && hasSubjectResolver()) {
+    log.debug("Leaving provisionedPerson(). No entry.");
+    return null;
+  }
+  log.debug("Leaving provisionedPerson().");
+  return user;
+}
+
+// The person a refresh token's next generation is minted for, taken from the
+// token's SUBJECT and not from the username beside it: a person renamed since
+// the grant is found under their new name, and one deleted since it — or
+// deleted and re-created under the same name, which is a different subject —
+// is nobody, and the refresh is refused. A refresh token whose subject is not
+// a person's (a client's, an exchange's) is minted as it always was.
+function refreshedPerson(claims) {
+  log.debug("Entering refreshedPerson().");
+  const sub = String((claims && claims.sub) || '');
+  const personal = /^urn:uuid:/i.test(sub) ||
+                   sub.indexOf(LEGACY_SUBJECT_PREFIX) === 0;
+  if (!personal || !hasSubjectResolver()) {
+    log.debug("Leaving refreshedPerson(). Not a person's subject.");
+    return userFor(claims.username);
+  }
+  const name = nameForSubject(sub);
+  const user = name ? userFor(name) : null;
+  log.debug("Leaving refreshedPerson(). " +
+            (user && user.sub ? 'Found.' : 'Nobody.'));
+  if (!user || !user.sub) {
+    return null;
+  }
+  // THE SUBJECT THE TOKEN FAMILY WAS ISSUED UNDER, where it is one of this
+  // entry's: an alias left by a create race (`ldap_server.js`'s
+  // `mergeCreateRace()`) still names this person, and a relying party that
+  // links on `sub` must see the same value on every refresh — OIDC Core 12.2.
+  return /^urn:uuid:/i.test(sub) ? Object.assign({}, user, { sub: sub }) : user;
+}
 
 function personFromDirectory(user) {
   log.debug("Entering personFromDirectory().");
@@ -6129,8 +6183,12 @@ function userinfoResponse(req, res) {
   // the rest is rebuilt from the username that travels with it. In a realm that
   // invents no claim values, the profile claims come off the person's directory
   // entry instead — see personFromDirectory().
-  const user = personFromDirectory(userFor(claims.username));
-  const username = String(claims.username || user.username || '');
+  // UNDER THE NAME THE SUBJECT NAMES NOW (2026-09-14), so a person renamed
+  // since the token was issued is answered with their current entry rather
+  // than with the attributes of whoever holds the old name.
+  const user = personFromDirectory(userFor(nameForSubject(claims.sub) ||
+                                           claims.username));
+  const username = String(user.username || claims.username || '');
 
   // -----------------------------------------------------------------------
   // WHAT THE RESPONSE CARRIES, IN FOUR LAYERS. LATER WINS, and every step up
@@ -7943,6 +8001,18 @@ async function tokenGrant(req, res) {
                         refreshDetailsProblem);
     }
 
+    const refreshedUser = refreshedPerson(claims);
+    if (!refreshedUser) {
+      log.info('oauth2: a refresh for "' + (claims.username || '') + '" was ' +
+               'refused: its subject names nobody in this directory any more ' +
+               '— the person was deleted, or deleted and re-created, which ' +
+               'is a different subject.');
+      errorCodes.mark(res, 'STS-OAUTH-0511');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, 'invalid_grant',
+        'The person this refresh token was issued for is no longer in this ' +
+        'service\'s directory.');
+    }
     const refreshed = await issue({
       // The presented token's jti, so the one it mints belongs to the same
       // FAMILY. Only this grant sets it; a root refresh token has none.
@@ -7975,7 +8045,7 @@ async function tokenGrant(req, res) {
       // happens to have signed this request would let a stolen bound token be
       // laundered into one bound to the thief's key.
       jkt: boundTo || dpopJkt,
-      user: userFor(claims.username), client_id: claims.client_id,
+      user: refreshedUser, client_id: claims.client_id,
       scope: body.scope ? String(body.scope) : claims.scope,
       // What the PRESENTED refresh token carried, for the refresh token this
       // grant mints: the two values above narrow the access token only. See the
@@ -8194,17 +8264,25 @@ async function tokenGrant(req, res) {
     stats.recordAuthentication({
       presented: username, protocol: 'OAuth 2.0', method: 'password grant ' +
           '(RFC 6749 section 4.3)',
-      sub: userFor(username).sub, client_id: client.client_id,
+      client_id: client.client_id,
       note: credential.reason === 'verified'
         ? 'The password was verified against the stored userPassword. ' +
           'A password grant creates no browser session.'
         : 'No password is checked here either, except the reserved string ' +
           '"invalid". A password grant creates no browser session.'
     });
+    const passwordUser = provisionedPerson(username);
+    if (!passwordUser) {
+      errorCodes.mark(res, 'STS-OAUTH-0510');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, 'invalid_grant', 'There is no directory ' +
+        'entry for ' + username + ', so there is no subject to issue a token ' +
+        'about; the person has to be provisioned first.');
+    }
     log.debug("Leaving tokenGrant().");
     return respond(await issue({
       jkt: dpopJkt,
-      user: userFor(username), client_id: client.client_id,
+      user: passwordUser, client_id: client.client_id,
       scope: String(body.scope || 'openid'),
       // RFC 8707 again. This grant DOES issue a refresh token, so the list goes
       // onto it as well — section 2.2.2's rule that a grant cannot widen itself
@@ -8214,7 +8292,7 @@ async function tokenGrant(req, res) {
       audience: audienceClaim(requestedResources),
       resources: requestedResources,
       authorization_details: grantIdentifiers(requestedDetails,
-                                              userFor(username)),
+                                              passwordUser),
       grant: 'password'
     }));
   }
@@ -8272,13 +8350,12 @@ async function tokenGrant(req, res) {
     // typing the name at the sign-in screen does. That is the permissiveness
     // this service keeps everywhere: what is real here is the SIGNATURE, and
     // `assertion_grant.js`'s header says which half is which.
-    const subject = userFor(checked.subject);
     stats.recordAuthentication({
       presented: checked.subject,
       protocol: 'OAuth 2.0',
       method: 'RFC 7523 JWT bearer assertion' +
               (checked.encrypted ? ' (encrypted)' : ''),
-      sub: subject.sub, client_id: client.client_id,
+      client_id: client.client_id,
       note: (checked.issuerKind === 'person'
               ? 'This person asserted THEMSELVES, with a signing key pair ' +
                 'this service issued to them. '
@@ -8292,6 +8369,16 @@ async function tokenGrant(req, res) {
               : '') + '. No password was checked and no browser was ' +
             'involved: this grant has neither.'
     });
+    // THE PERSON, NOW THAT RECORDING THE AUTHENTICATION HAS CREATED THEIR
+    // ENTRY (2026-09-14) — and a refusal where the directory declined to.
+    const subject = provisionedPerson(checked.subject);
+    if (!subject) {
+      errorCodes.mark(res, 'STS-OAUTH-0510');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, 'invalid_grant', 'There is no directory ' +
+        'entry for the assertion\'s subject, so there is no subject to issue ' +
+        'a token about; the person has to be provisioned first.');
+    }
     // RFC 7523 section 3 claim 8: an assertion MAY carry other claims. They go
     // onto the token, which is the only useful thing an authorization server
     // can do with a statement a trusted party made about somebody — and the
@@ -8439,13 +8526,12 @@ async function tokenGrant(req, res) {
     }
     // The subject is a PERSON, named by somebody this service trusts, and need
     // not be anybody it has heard of — exactly as for the JWT profile.
-    const subject = userFor(checked.subject);
     stats.recordAuthentication({
       presented: checked.subject,
       protocol: 'OAuth 2.0',
       method: 'RFC 7522 SAML 2.0 bearer assertion' +
               (checked.encrypted ? ' (encrypted)' : ''),
-      sub: subject.sub, client_id: client.client_id,
+      client_id: client.client_id,
       note: (checked.issuerKind === 'person'
               ? 'This person asserted THEMSELVES in a SAML 2.0 assertion, ' +
                 'signed with the RFC 7522 key pair on their own entry. '
@@ -8468,6 +8554,16 @@ async function tokenGrant(req, res) {
             ' No password was checked and no browser was involved: this ' +
             'grant has neither.'
     });
+    // THE PERSON, NOW THAT RECORDING THE AUTHENTICATION HAS CREATED THEIR
+    // ENTRY (2026-09-14) — and a refusal where the directory declined to.
+    const subject = provisionedPerson(checked.subject);
+    if (!subject) {
+      errorCodes.mark(res, 'STS-OAUTH-0510');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, 'invalid_grant', 'There is no directory ' +
+        'entry for the assertion\'s subject, so there is no subject to issue ' +
+        'a token about; the person has to be provisioned first.');
+    }
     // RFC 7522 section 3 item 8: other statements MAY be in the assertion.
     // Every attribute goes onto the token, which is the only useful thing an
     // authorization server can do with a statement a trusted party made — the

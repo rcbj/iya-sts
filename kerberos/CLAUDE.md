@@ -123,9 +123,10 @@ Five things about it are load-bearing:
   acceptor.
 * **THE REALM IS STRIPPED FROM THE PRINCIPAL, AND ONLY THE LOCAL ONE.**
   `alice@EXAMPLE.COM` becomes a session for `alice`, because the session's
-  username becomes `sub: urn:sts:user:<name>` in every token that follows
-  and leaving the realm on would make a typed sign-in and a ticket sign-in two
-  subjects for one person. A FOREIGN realm is kept whole — `bob@PARTNER.COM` is
+  username is the name the directory entry — and so the `sub`
+  (`urn:uuid:<entryUUID>` since 2026-09-14) in every token that follows — is
+  found under, and leaving the realm on would make a typed sign-in and a
+  ticket sign-in two entries for one person. A FOREIGN realm is kept whole — `bob@PARTNER.COM` is
   not this service's `bob` — and the asymmetry is deliberate:
   `admin_stats.js`'s `identityOf()` folds them onto one DIRECTORY entry anyway,
   so the directory answers "which human" while the token answers "who am I

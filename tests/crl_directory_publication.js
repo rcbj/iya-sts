@@ -150,8 +150,37 @@ function subjectDerOf(certDer) {
   return certDer.subarray(subject.start, subject.end);
 }
 
+// ---------------------------------------------------------------------------
+// THE CERTIFICATE AUTHORITY THIS FILE FINDS IS THE ONE IT LEAVES. `run.js`
+// runs every file in ONE process, and `pki.start()` here builds a service Root
+// and the default realm's branch — which `tests/pki.js` then meets when it asks
+// for a Root of its own, so its "the Root carries the organisation it was
+// asked for" failed in the suite and passed alone. Whatever was absent on the
+// way in is removed on the way out; what was already there is left exactly as
+// it was. The same pair `tests/person_credentials.js` and
+// `tests/application_credentials.js` carry.
+// ---------------------------------------------------------------------------
+function heldAuthority(pki, keystore) {
+  log.debug("Entering heldAuthority().");
+  log.debug("Leaving heldAuthority().");
+  return { root: !!keystore.pkiFor(pki.SERVICE_SCOPE),
+           chain: pki.hasChain() };
+}
+
+function restoreAuthority(pki, keystore, before) {
+  log.debug("Entering restoreAuthority().");
+  if (!before.chain && pki.hasChain()) {
+    pki.clearChain(undefined);
+  }
+  if (!before.root && keystore.pkiFor(pki.SERVICE_SCOPE)) {
+    keystore.attachPki(pki.SERVICE_SCOPE, null);
+  }
+  log.debug("Leaving restoreAuthority().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
+  const before = heldAuthority(pki, keystore);
   const made = realms.create({ id: REALM, name: REALM,
                                description: 'Created by ' + __filename });
   if (!made.ok) {
@@ -314,6 +343,7 @@ async function run(t) {
             'an hour after start');
   } finally {
     realms.remove(REALM);
+    restoreAuthority(pki, keystore, before);
   }
   log.debug("Leaving run().");
 }

@@ -32,6 +32,7 @@ more than one family needs it, not because it felt general.
 | `jose_kid.js` | **WHICH `kid` A SIGNED TOKEN CARRIES (2026-09-13)** — `keys.kidFormat`, per realm: `internal` (the default, `sts-…`) or `jwk-thumbprint-uri`, the signing key's RFC 9278 JWK Thumbprint URI. A TRANSLATION at the edges — the header a signer writes, the JWKS, a lookup of one of this service's own tokens — while the key set, the keystore, the certificate register and `certificateHeaderFor()` go on naming a key by its internal kid. A LIBRARY over `config`, `crypto` and `error_codes`. See *3af, continued* below. |
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
+| `realm_chooser.js` | **WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32).** A GET of exactly `/admin` or `/portal`, in the default realm, with no session and realms defined, asks which realm first — a list in development and a text box in product (`mode.listsRealmsBeforeSignIn()`) — and `?realm=<id>` redirects to that realm's surface, BUILT from the registry and never echoed. A LIBRARY both surfaces call from their own gate, so they cannot ask differently; `admin-ui/CLAUDE.md` 8d. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
@@ -1369,10 +1370,13 @@ reader derives from four directory files. The short version:
   also how the socket picks which store to answer from. It was a subtree of one
   shared Map for two days, and `../ldap/CLAUDE.md` argues why that was one day
   too many: the isolation was a rule every reader had to remember, and two
-  readers did not. **The TWO ADMIN CONSOLE ROLES are the exception and are pinned to the
-  DEFAULT realm's `ou=groups`** — one roster for the process, on purpose, since
-  a per-realm roster would let anybody who can create a realm administer the
-  service. **The console's SESSION follows the roster and its SIGN-IN does
+  readers did not. **The TWO ADMIN CONSOLE ROLES were the exception and were
+  pinned to the DEFAULT realm's `ou=groups` until 2026-09-14** — one roster for
+  the process, since a per-realm roster would have let anybody who can create a
+  realm administer the service. **#32 gave each realm a roster of its own,
+  CONFINED to that realm by `admin-ui/admin_scope.js`**, and kept the default
+  realm's as the service roster over every realm; `admin-ui/CLAUDE.md` 8d
+  argues it. **The console's SESSION follows the roster and its SIGN-IN does
   not, and that sentence split in two on 2026-09-11.** It read *the console's
   SIGN-ON follows the roster: its gate accepts the DEFAULT realm's session and
   no other*, which was one answer to two questions. The console's own session is
@@ -2610,7 +2614,8 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    It requires `helpers.js`, `config.js` and `admin_stats.js` — that last one
    for `identityKeyOf()`'s normalisation only, so that `alice`, `alice@REALM`
-   and `urn:sts:user:alice` are one person on a chain rather than three.
+   and her `urn:uuid:<entryUUID>` (or the retired `urn:sts:user:alice`) are
+   one person on a chain rather than three.
    `admin_stats.js` requires nothing here, so there is no cycle and none of
    rule 3e's slots is needed. Keep it that way: it is called from the KDC, from
    WS-Trust and from the token endpoint, and anything it required all three
@@ -3414,9 +3419,9 @@ on its own and silently disagreed with an `ldapsearch`. It also means an
 URI.
 
 It requires `helpers.js`, `config.js`, `applications.js` and `admin_stats.js`
-(for `identityKeyOf()`, so that `alice`, `alice@EXAMPLE.COM` and
-`urn:sts:user:alice` are one person here exactly as they are one entry in
-the directory), and nothing requires it back. **The directory arrives through
+(for `identityKeyOf()`, so that `alice`, `alice@EXAMPLE.COM` and her
+`urn:uuid:<entryUUID>` — or the retired `urn:sts:user:alice` — are one person
+here exactly as they are one entry in the directory), and nothing requires it back. **The directory arrives through
 `setDirectory()`, which `ldap_server.js` fills at ITS require time** — the same
 inversion `group_claims.js`, `applications.js`, `federation.js`,
 `spiffe_registry.js`, `vc_claims.js` and `admin_rbac.js` all use, and for their
@@ -6533,6 +6538,17 @@ register for this module's own, `cert_enrollment.findEnrolled()` in the
 certificate's realm for ACME, EST and SCEP — and is what RFC 8705's implicit
 mapping at the token endpoint asks (`oauth-oidc/CLAUDE.md` 3an). An
 application's certificate signs nobody in at 8443 or 9443 (`tls/CLAUDE.md`).
+
+**A PERSON'S CERTIFICATE FOLLOWS THEIR ENTRY SINCE 2026-09-14.** The CN, the SAN, the
+slot and an enrolled certificate's issued record all carry the name the person had at
+issuance, so a rename left a certificate naming nobody and a name deleted and re-created
+handed it to somebody else. `pki.certify()` and `pki.issueEnrolled()` now keep the
+holder's `urn:uuid:` subject beside the record (`holderSubject`), and `identityOf()` asks
+`currentHolderOf()` on every call — never memoised, since it is the directory's answer —
+which answers the entry's current name, `certifiedName` for the one the certificate
+carries, or `HOLDER_GONE` when the subject names nobody. `stillHeld()` compares the slot
+with the certified name, and `cert_enrollment.findEnrolled()` resolves the subject too. A
+record written before the subject was kept is answered by its name, as before.
 
 ## 3ag. `cert_enrollment.js`: ACME, EST AND SCEP ISSUE THROUGH ONE CORE (2026-09-13)
 

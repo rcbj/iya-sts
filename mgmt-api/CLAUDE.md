@@ -1489,3 +1489,39 @@ handler passes `base: baseUrlOf(req)`, so `issue-password-reset`'s `resetUrl`
 names the realm the call was made in. **`reset-password` answers `password` and
 `issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
 retrievable afterwards, and neither is in the audit row.
+
+## A REALM'S OWN TOKEN (2026-09-14, #32)
+
+A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7
+owes them this API as well as the console. rcbj chose a realm-scoped
+`sts-management-api` token per realm over reusing the service token. The gate
+keeps the SERVICE credential exactly as it was and adds a second, narrower one:
+
+* **TRIED SECOND, AND ONLY UNDER A REALM PREFIX.** A token that does not verify
+  under the default realm's key is tried under the AMBIENT realm's key when the
+  request is under `/realm/<id>/admin-api`, and never at `/admin-api` itself, so
+  one realm's key is never asked about another realm's request.
+* **THE REALM'S ISSUER AND AUDIENCE.** `realmIssuerAccepted()` asks
+  `jwtAccessToken.isHostedIssuer()` against the request's realm base, and
+  `realmAudienceAccepted()` wants `<base>/realm/<id>/admin-api` — what
+  `resource=` at that realm's token endpoint gives. `adminApi.audience` pins the
+  service's audience and is not consulted.
+* **ONLY FROM THAT REALM'S `sts-management-api`** (`STS-API-0111`). The token
+  endpoint does not restrict who may ask for `admin:*`, so without this any
+  client registered in the realm — dynamic registration included — could mint
+  itself Admin Write over the realm. **This is narrower than the service token,
+  which accepts a token issued to any client carrying the scopes**; that wider
+  gap is not changed here.
+* **THE CONSOLE'S SCOPE, READ OFF THE OPERATION** (`STS-API-0112`).
+  `consoleOperationOf()` maps the request to the console path and action it
+  mirrors — `POST /admin-api/pki/build-root` is `build-root` on `/admin/pki` —
+  and `admin_scope.refusalFor()` answers as it does for the console. So the two
+  doors refuse a realm administrator the same things by construction.
+
+The realm's client secret is minted per start and is not pinned by
+`adminApi.clientSecret`, which is the service client's; a realm administrator
+reads or regenerates it on their realm's console
+(`/realm/<id>/admin/applications?application=sts-management-api`). The
+pinned-secret refusal on `regenerate-secret` applies in the default realm only.
+With `adminApi.authRequired` off, a console SESSION reaching this API is confined
+the same way when its authority is a realm's.

@@ -184,6 +184,108 @@ function setJwtRecorder(fn) {
   log.debug("Leaving setJwtRecorder().");
 }
 
+// ---------------------------------------------------------------------------
+// THE SUBJECT RESOLVER: A PERSON'S `sub` COMES FROM THEIR DIRECTORY ENTRY
+// (2026-09-14).
+//
+// `userFor()` below minted `urn:sts:user:<username>` from the name alone. A
+// rename changed it, and a person deleted and re-created under the same name
+// inherited it — the account-recycling hole a relying party linking accounts
+// on `sub` falls straight into. It is `urn:uuid:<entryUUID>` now, in both
+// modes, and the UUID is on the entry: `ldap/ldap_server.js` assigns it and
+// fills this slot with the two lookups. `authn/CLAUDE.md`, *What an
+// authenticated identity is here*, carries the design.
+//
+// A SLOT FOR `setJwtRecorder()`'s REASON: this file is the leaf, the directory
+// requires it, and a require the other way would close a cycle and register
+// every directory route at #3. Rule 3e's test answers yes both ways round.
+//
+// **A PROCESS WITH NO DIRECTORY HAS NO SUBJECTS.** Nothing fills this slot in
+// a module test that never requires the directory, or in the remote PEP
+// container's shim, and `userFor()` then answers `sub: ''` — not the old
+// name-derived form, which would be a second spelling of a subject that no
+// running service issues any more.
+// ---------------------------------------------------------------------------
+let subjectResolver = null;
+
+// The one subject form this service issued before 2026-09-14. It is still READ
+// — refresh tokens, stored consent and another instance's tokens carry it —
+// and never written.
+const LEGACY_SUBJECT_PREFIX = 'urn:sts:user:';
+
+// Whether this process can issue a subject at all. A caller that REFUSES a
+// person with no entry asks this first, because in a process with no directory
+// everybody has no entry and refusing them all would refuse every module test.
+function hasSubjectResolver() {
+  log.debug("Entering hasSubjectResolver().");
+  log.debug("Leaving hasSubjectResolver().");
+  return !!subjectResolver;
+}
+
+function setSubjectResolver(resolver) {
+  log.debug("Entering setSubjectResolver().");
+  if (!resolver || typeof resolver.subjectFor !== 'function' ||
+      typeof resolver.nameFor !== 'function') {
+    log.error(errorCodes.tag('STS-CORE-0090') +
+              'helpers: setSubjectResolver() was given an object without ' +
+              'both subjectFor() and nameFor(), and it was ignored. No ' +
+              'person in this process will be issued a subject.');
+    log.debug("Leaving setSubjectResolver(). Refused.");
+    return;
+  }
+  subjectResolver = resolver;
+  log.debug("Leaving setSubjectResolver(). Installed.");
+}
+
+// A person's subject, or '' where the directory holds no entry for them (or
+// there is no directory). Never throws: a lookup that fails is a person with
+// no subject, which every caller already has to handle.
+function subjectForName(name) {
+  log.debug("Entering subjectForName().");
+  if (!subjectResolver || !name) {
+    log.debug("Leaving subjectForName(). No resolver or no name.");
+    return '';
+  }
+  try {
+    const sub = String(subjectResolver.subjectFor(String(name)) || '');
+    log.debug("Leaving subjectForName().");
+    return sub;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-CORE-0091') +
+              'helpers: the subject resolver threw for "' + name + '" and ' +
+              'the person was given no subject: ' + ((e && e.message) || e));
+    log.debug("Leaving subjectForName(). The resolver threw.");
+    return '';
+  }
+}
+
+// Who a subject names, as the name this service files a person under, or ''.
+// Both forms: `urn:uuid:` is looked up, `urn:sts:user:` is read, and anything
+// else is not a subject this service issued.
+function nameForSubject(sub) {
+  log.debug("Entering nameForSubject().");
+  const text = String(sub == null ? '' : sub).trim();
+  if (text.indexOf(LEGACY_SUBJECT_PREFIX) === 0) {
+    log.debug("Leaving nameForSubject(). The legacy form.");
+    return text.slice(LEGACY_SUBJECT_PREFIX.length);
+  }
+  if (!/^urn:uuid:/i.test(text) || !subjectResolver) {
+    log.debug("Leaving nameForSubject(). Not a subject this service issues.");
+    return '';
+  }
+  try {
+    const name = String(subjectResolver.nameFor(text) || '');
+    log.debug("Leaving nameForSubject().");
+    return name;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-CORE-0091') +
+              'helpers: the subject resolver threw looking up a subject and ' +
+              'it was treated as naming nobody: ' + ((e && e.message) || e));
+    log.debug("Leaving nameForSubject(). The resolver threw.");
+    return '';
+  }
+}
+
 // Read once, because the listener is bound with it before anything can ask
 // for it again; config.js marks it restart-only for that reason and refuses
 // to change it while this process runs.
@@ -2822,7 +2924,12 @@ function userFor(username) {
   log.debug("Entering userFor(). username=" + username);
   const name = String(username || 'mock-user');
   const user = {
-    sub: 'urn:sts:user:' + name,
+    // FROM THE DIRECTORY (2026-09-14), and '' where it holds nobody — see the
+    // subject resolver above. Callers that ISSUE something to a person make
+    // sure the entry exists first (`authn.startSession()`, the token grants),
+    // so an empty value here is a preview, a lookup of somebody who is not
+    // there, or a process with no directory.
+    sub: subjectForName(name),
     username: name,
     preferred_username: name
   };
@@ -3112,6 +3219,11 @@ module.exports = {
   signJwt: signJwt,
   setJwtRecorder: setJwtRecorder,
   userFor: userFor,
+  setSubjectResolver: setSubjectResolver,
+  hasSubjectResolver: hasSubjectResolver,
+  subjectForName: subjectForName,
+  nameForSubject: nameForSubject,
+  LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,
   escapeRdnValue: escapeRdnValue,
   dnRfc4514: dnRfc4514,

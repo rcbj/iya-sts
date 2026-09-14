@@ -101,6 +101,10 @@ const roles = require('../common/roles');
 // definition of the table and goes stale in the document a caller trusts most.
 const passwordPolicy = require('../common/password_policy');
 const admin = require('../admin-ui/admin');
+// WHAT A REALM ADMINISTRATOR MAY NOT REACH (2026-09-14, #32) — the console's
+// table, asked of a realm's own token and a realm's own session here. A
+// library with no route.
+const adminScope = require('../admin-ui/admin_scope');
 // ---------------------------------------------------------------------------
 // THE ACTION LAYER (2026-09-12). Every operation below that CHANGES something
 // calls a function here rather than one on the console module.
@@ -4200,7 +4204,8 @@ const ROUTES = [
           type: 'object',
           properties: { subject: { type: 'string' } },
           required: ['subject'],
-          examples: [{ subject: 'urn:sts:user:alice' }],
+          examples: [{
+            subject: 'urn:uuid:016dc8f1-1bc4-55d9-9657-9b2ebb3cd4d2' }],
           additionalProperties: false
         },
         responseDescription: 'How many were revoked, in `revoked`.' },
@@ -4208,7 +4213,7 @@ const ROUTES = [
       { action: 'revoke-user', operationId: 'revokeTokensByUser',
         summary: 'Revoke everything for one identity, under every spelling',
         description: 'The users list\'s `key`, and every spelling of it — ' +
-                     '`alice`, `urn:sts:user:alice` and ' +
+                     '`alice`, her `urn:uuid:<entryUUID>` subject and ' +
                      '`alice@STS.MOCK` are one identity here, so revoking ' +
                      '"for alice" means all of them. Use `revoke-subject` ' +
                      'when you want an exact string instead.',
@@ -12988,7 +12993,7 @@ const ROUTES = [
                         description: 'The person, exactly as /admin/users ' +
                                      'names them. It is normalised the same ' +
                                      'way every identity here is, so `alice` ' +
-                                     'and `urn:sts:user:alice` are one ' +
+                                     'and her urn:uuid: subject are one ' +
                                      'person.' },
             client: { type: 'string',
                       description: 'The application they consented it to.' },
@@ -13666,12 +13671,13 @@ function wantedAudiences(req) {
     return [pinned];
   }
   // COMPUTED OUTSIDE ANY REALM, for the reason the signing key is taken from
-  // the default realm below: this credential is service-wide. `baseUrlOf()`
+  // the default realm below: THIS credential is service-wide. `baseUrlOf()`
   // glues on `realms.currentPrefix()`, so under `/realm/acme` it would answer
-  // `https://host/realm/acme/admin-api` — a different audience per realm, and
-  // therefore a token per realm, which is exactly the per-realm administrator
-  // this service refuses to have. Running in the default realm gives the empty
-  // prefix and one audience everywhere.
+  // `https://host/realm/acme/admin-api` — a different audience per realm.
+  // Running in the default realm gives the empty prefix and one audience
+  // everywhere. A realm's OWN token (2026-09-14, #32) carries the realm's
+  // audience instead and is checked by `realmAudienceAccepted()`, which is
+  // the one place a per-realm audience is accepted.
   const fromRequest = realms.run(realms.get(realms.DEFAULT_ID), function () {
     return baseUrlOf(req);
   }) + BASE;
@@ -13749,6 +13755,92 @@ function issuerAccepted(claims, req) {
   return accepted;
 }
 
+// ---------------------------------------------------------------------------
+// A REALM TOKEN'S THREE BOUNDS (2026-09-14, #32). See the gate below.
+// ---------------------------------------------------------------------------
+
+// Its issuer is THIS realm's: a hosted issuer under the realm's own base.
+function realmIssuerAccepted(claims, req) {
+  log.debug("Entering realmIssuerAccepted().");
+  const accepted = jwtAccessToken.isHostedIssuer(claims.iss, baseUrlOf(req));
+  log.debug("Leaving realmIssuerAccepted(). " + accepted);
+  return accepted;
+}
+
+// Its audience is THIS realm's management API — the request's own base under
+// the realm prefix, which is what `resource=<base>/realm/<id>/admin-api` at
+// that realm's token endpoint gives. `adminApi.audience` pins the SERVICE's
+// audience and is not consulted: it names the unprefixed API.
+function realmAudienceAccepted(claims, req) {
+  log.debug("Entering realmAudienceAccepted().");
+  const wanted = baseUrlOf(req) + BASE;
+  const held = Array.isArray(claims.aud) ? claims.aud
+    : (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
+  const accepted = held.map(String).indexOf(wanted) >= 0;
+  log.debug("Leaving realmAudienceAccepted(). " + accepted);
+  return accepted;
+}
+
+// The operation a request is, as the CONSOLE path it mirrors and the action
+// it names: `/admin-api/pki/build-root` is a POST of `build-root` to
+// `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
+// `/admin/config`. An action route is recognised off ROUTES, so a path segment
+// is only ever an action where this API declares one.
+function consoleOperationOf(req) {
+  log.debug("Entering consoleOperationOf().");
+  const path = BASE + String(req.path || '');
+  let action = '';
+  let resource = path;
+  ROUTES.forEach(function (entry) {
+    const route = String(entry.route || '');
+    if (!action && route.slice(-':action'.length) === ':action') {
+      const prefix = route.slice(0, -':action'.length);
+      const rest = path.slice(prefix.length);
+      if (path.indexOf(prefix) === 0 && rest && rest.indexOf('/') < 0) {
+        action = rest;
+        resource = prefix.replace(/\/$/, '');
+      }
+    }
+  });
+  log.debug("Leaving consoleOperationOf(). " + resource + " " + action);
+  return { path: '/admin' + resource.slice(BASE.length), action: action };
+}
+
+// The client, and the scope table. Answers null, or `{ code, detail }`.
+//
+// **ONLY THIS REALM'S `sts-management-api`.** The token endpoint does not
+// restrict who may ask for `admin:*`, so without this any client registered in
+// the realm — by an operator, by dynamic registration — could mint itself
+// Admin Write over the realm. The seeded client is the realm's door.
+function realmTokenRefusal(claims, req) {
+  log.debug("Entering realmTokenRefusal().");
+  if (String(claims.client_id || '') !== 'sts-management-api') {
+    log.debug("Leaving realmTokenRefusal(). Another client.");
+    return { code: 'STS-API-0111',
+             detail: 'A trust realm\'s own access token is accepted only ' +
+                     'from that realm\'s sts-management-api client, and this ' +
+                     'one was issued to ' +
+                     JSON.stringify(claims.client_id || null) + '.' };
+  }
+  const operation = consoleOperationOf(req);
+  const body = req.method === 'GET' || req.method === 'HEAD'
+    ? null : Object.assign({}, parseBody(req));
+  if (body && operation.action) {
+    body.action = operation.action;
+  }
+  const refusal = adminScope.refusalFor(
+    { authority: 'realm', identityRealm: realms.currentId() },
+    operation.path, body, req.query);
+  log.debug("Leaving realmTokenRefusal(). " +
+            (refusal ? refusal.reason : 'allowed'));
+  return refusal
+    ? { code: 'STS-API-0112',
+        detail: refusal.detail + ' A realm\'s token reaches that realm\'s ' +
+                'operations only; a service administrator\'s token, from ' +
+                'the default realm, reaches this one.' }
+    : null;
+}
+
 app.use(BASE, function (req, res, next) {
   if (config.value('adminApi.authRequired')) {
     const scopesWanted = req.method === 'GET' ? 'admin:read' : 'admin:write';
@@ -13773,14 +13865,14 @@ app.use(BASE, function (req, res, next) {
     // perfectly good credential.
     //
     // Taking the default realm's key is not a workaround for that; it is the
-    // same rule the console's two roles already follow, for the same reason.
-    // Those are groups in the DEFAULT realm's directory, read there from every
-    // realm, "because a per-realm roster would mean anybody who can create a
-    // realm can make themselves an administrator of the service". A per-realm
-    // SIGNING KEY for this API is that hole with a different shape: anybody who
-    // could create a realm could mint themselves a token its own management API
-    // would believe. So the credential for this surface is service-wide, and
-    // what a realm still decides is what the operations reach.
+    // SERVICE credential, and the service roster is the default realm's too.
+    // A token a realm's key signed would be believed nowhere else if it were
+    // believed here, which is why that case is its own block below: since
+    // 2026-09-14 (#32) a realm has administrators of its own, their token is
+    // tried only under their realm's prefix, and `admin_scope.js` refuses it
+    // every service-wide operation. Believing a realm-minted token AS the
+    // service credential would be the hole — anybody who could create a realm
+    // minting a token for everything — and this key is what keeps it shut.
     //
     // The AUDIENCE needs no such care: `baseUrlOf()` answers scheme and host
     // with no path, so `<base>/admin-api` is the same string in every realm.
@@ -13794,6 +13886,34 @@ app.use(BASE, function (req, res, next) {
       log.debug("Caught in a callback in module scope: " +
                 ((e && e.message) || e));
       claims = null;
+    }
+    // -------------------------------------------------------------------
+    // A REALM'S OWN TOKEN (2026-09-14, #32).
+    //
+    // A trust realm has administrators of its own, and rule 7 owes them the
+    // machine door to their realm. A token that does not verify under the
+    // default realm's key is tried under the AMBIENT realm's key — and only
+    // when the request is under a realm prefix, so a realm's key is never
+    // tried at `/admin-api` itself or at another realm's. What such a token
+    // may do is then bounded three ways below: its issuer and audience are
+    // this realm's, it was issued to this realm's `sts-management-api`
+    // client, and `admin-ui/admin_scope.js` refuses it every service-wide
+    // operation.
+    //
+    // This is the hole the comment above the default-realm key named — a
+    // realm-minted credential its API believes — answered rather than
+    // reopened: the credential is believed IN THAT REALM ONLY.
+    // -------------------------------------------------------------------
+    let tokenRealm = realms.DEFAULT_ID;
+    if (!claims && realms.currentId() !== realms.DEFAULT_ID) {
+      try {
+        claims = stsCrypto.verifyJws(presented, STS.certPem);
+        tokenRealm = realms.currentId();
+      } catch (e) {
+        log.debug("Caught in a callback in module scope: " +
+                  ((e && e.message) || e));
+        claims = null;
+      }
     }
     if (!claims) {
       errorCodes.mark(res, 'STS-API-0002');
@@ -13829,7 +13949,8 @@ app.use(BASE, function (req, res, next) {
         'token minted before this service issued at+jwt is refused too; ask ' +
         '/oauth2/token for a new one.'] });
     }
-    if (!issuerAccepted(claims, req)) {
+    if (tokenRealm === realms.DEFAULT_ID ? !issuerAccepted(claims, req)
+                                         : !realmIssuerAccepted(claims, req)) {
       errorCodes.mark(res, 'STS-API-0083');
       res.set('WWW-Authenticate',
               'Bearer error="invalid_token", scope="' + scopesWanted + '"');
@@ -13841,7 +13962,9 @@ app.use(BASE, function (req, res, next) {
         'it at the address you call this API at, or set ' +
         'global.publicBaseUrl.'] });
     }
-    if (!audienceAccepted(claims, req)) {
+    const audienceOk = tokenRealm === realms.DEFAULT_ID
+      ? audienceAccepted(claims, req) : realmAudienceAccepted(claims, req);
+    if (!audienceOk) {
       errorCodes.mark(res, 'STS-API-0004');
       return sendJson(res, 403, { error: 'forbidden', errors: [
         'That access token is for a different audience. It carries ' +
@@ -13867,6 +13990,15 @@ app.use(BASE, function (req, res, next) {
     }
     const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
     const who = String(claims.client_id || claims.sub || '(a client)');
+    if (tokenRealm !== realms.DEFAULT_ID) {
+      const realmRefusal = realmTokenRefusal(claims, req);
+      if (realmRefusal) {
+        errorCodes.mark(res, realmRefusal.code);
+        // error-code: none — the code is realmRefusal.code, marked above
+        return sendJson(res, 403, { error: 'forbidden',
+                                    errors: [realmRefusal.detail] });
+      }
+    }
     const held = roles.rolesOf({ kind: 'application', name: who,
                                  authenticated: true, scopes: scopes });
     const policy = accessGate.check({
@@ -13904,6 +14036,26 @@ app.use(BASE, function (req, res, next) {
     return next();
   }
   const gate = adminViews.gateStateFor(req);
+  // A REALM ADMINISTRATOR'S SESSION (2026-09-14, #32) holds nothing outside
+  // its realm — `gateStateFor()` has already said so — and in its realm is
+  // refused the service-wide operations, exactly as at the console's gate.
+  if (gate.authority === 'realm') {
+    const operation = consoleOperationOf(req);
+    const body = req.method === 'GET' || req.method === 'HEAD'
+      ? null : Object.assign({}, parseBody(req));
+    if (body && operation.action) {
+      body.action = operation.action;
+    }
+    const scoped = gate.outsideRealm
+      ? { detail: 'This session administers the "' + gate.identityRealm +
+                  '" realm and this request is for another.' }
+      : adminScope.refusalFor(gate, operation.path, body, req.query);
+    if (scoped) {
+      errorCodes.mark(res, 'STS-API-0112');
+      return sendJson(res, 403, { error: 'forbidden',
+                                  errors: [scoped.detail] });
+    }
+  }
   // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET needs
   // Admin Read and anything else needs Admin Write. Asking `admin.js` rather
   // than re-deriving it is what stops this becoming a second answer to who may

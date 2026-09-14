@@ -75,8 +75,15 @@ function run(t) {
 
     // --- 2. userFor() ------------------------------------------------------
     const product = helpers.userFor('alice');
-    t.equal(product.sub, 'urn:sts:user:alice',
-            'product mode keeps the subject');
+    // THE SUBJECT IS THE DIRECTORY'S, NOT THE MODE'S (2026-09-14):
+    // `urn:uuid:<entryUUID>` where a directory is loaded, and '' in a process
+    // with none. Asserted against the resolver rather than as a literal,
+    // because `run.js` runs every file in one process and whether an earlier
+    // file loaded the directory is not this file's to decide.
+    t.equal(product.sub, helpers.subjectForName('alice'),
+            'product mode gives the subject the directory gives');
+    t.check(product.sub === '' || /^urn:uuid:/.test(product.sub),
+            'and it is never the retired name-derived form', product.sub);
     t.equal(product.preferred_username, 'alice',
             'and the name that authenticated');
     ['name', 'given_name', 'family_name', 'email', 'email_verified']
@@ -87,6 +94,8 @@ function run(t) {
 
     config.setOverride('global.mode', 'development');
     const dev = helpers.userFor('alice');
+    t.equal(dev.sub, product.sub, 'development gives the same subject — ' +
+            'the mode decides invented claims, not who somebody is');
     t.equal(dev.family_name, 'Mock', 'development keeps the persona surname');
     t.equal(dev.email, 'alice@sts.example',
             'development keeps the persona address');

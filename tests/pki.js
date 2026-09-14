@@ -76,6 +76,21 @@ const PEM = '-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE ' +
 
 async function run(t) {
   log.debug("Entering run().");
+  // THE ROOT THIS FILE ASSERTS ABOUT IS ONE IT BUILT. `run.js` runs every file
+  // in ONE process, and a service Root left by anything earlier would be
+  // REUSED by `buildChain()` below — so "the Root carries the organisation it
+  // was asked for" was a claim about whichever file ran first. Cleaning up
+  // after each builder is not enough: once any file has armed `pki.js`'s realm
+  // watcher, every realm a LATER file creates builds a Root in the background
+  // (`oauth21_mode.js` was the one that did it in a full run). So the Root is
+  // set aside here rather than hunted down there. Nothing is put back: the
+  // last section ends with `keystore.reset()`, which every file after this one
+  // already meets.
+  if (keystore.pkiFor(pki.SERVICE_SCOPE)) {
+    log.info('pki test: a service Root was left by an earlier file; set ' +
+             'aside so the Root asserted below is one this file built.');
+    keystore.attachPki(pki.SERVICE_SCOPE, null);
+  }
   t.log.info('=== the three tiers, built in one act ===');
 
   const built = await pki.buildChain(REALM,

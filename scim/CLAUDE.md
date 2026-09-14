@@ -506,3 +506,29 @@ never builds an `ErrorResponse`.
 * **`scim.digestNonceSeconds` and `scim.hobaMaxAgeSeconds` carry `min: 1`** and
   are read straight through; they were `Number(...) || 300` and `|| 600`, which
   rewrote a value the table accepted without saying so.
+
+## THE `id` IS THE ENTRY'S `entryUUID` (2026-09-14)
+
+It was the DN, and `README.md`'s *The `id` is the entry's `entryUUID`* records why it was
+and why that lost: RFC 7643 section 3.1's id must never be reassigned, a rename reassigned
+the DN, and once a person's `sub` became `urn:uuid:<entryUUID>` a SCIM id that a rename
+changed would have been the one identifier here that still moved. Five things follow.
+
+* **`scim_map.js`'s `scimIdOf()` reads the id off the entry** (its `entryUUID`, and its DN
+  for an entry with none), so that module still asks the directory nothing.
+* **Member, group and manager values are ids on the wire and DNs in the store.** The
+  handlers translate: `groupResourceFor()` and `groupsOf()` add each DN's id, the Group
+  ingress turns member ids into DNs before writing, and the User ingress does the same for
+  `manager`. A value naming no entry is kept as it was sent — this directory does no
+  referential integrity, as the dangling-member paragraph above says.
+* **A DN presented as an id still resolves**, through the directory's
+  `dnForResourceId()`, for a client that stored one before the change; the resource comes
+  back with its new id.
+* **A rename keeps the id**, which the paragraph beside the PUT handler used to say it
+  would not.
+* The `nameUsableInDn()` refusals stand for a different reason now: the DN is still built
+  from the name, so a name carrying an RFC 4514 special character still gives an entry the
+  other doors cannot name.
+
+`tests/stable_subject.js` section E drives it over HTTP; `sts_directory_bulk_load_scim.js`
+asserts every created id is a UUID and sends them back as member values.

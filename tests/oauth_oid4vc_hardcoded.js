@@ -190,8 +190,12 @@ function childMain() {
            '2b. and it asserts NO email_verified, because nothing verified ' +
            'that mailbox',
            idt.email_verified);
-      note(idt.sub === 'urn:sts:user:hc-alice', '2c. and sub is unchanged',
-           idt.sub);
+      // The person's own subject, from the directory (2026-09-14): the
+      // entry's `entryUUID`, the same in product mode as in development.
+      note(idt.sub === require(ROOT + '/common/helpers')
+                         .subjectForName('hc-alice') &&
+           /^urn:uuid:/.test(idt.sub),
+           '2c. and sub is the person\'s urn:uuid:<entryUUID>', idt.sub);
     } else {
       note(false, '2a. PRODUCT: an ID Token came back to inspect',
            r.text.slice(0, 160));

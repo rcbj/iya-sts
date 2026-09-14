@@ -37,11 +37,12 @@
 // there is nothing to keep in step between a rule and a fact.
 //
 // **THE CONSOLE'S TWO ROLES ARE THE EXCEPTION AND THEY STAY WHERE THEY ARE.**
-// `admin_rbac.js` reads `cn=admin-read` and `cn=admin-write` in the DEFAULT
-// realm, deliberately — a per-realm roster would let anybody who can create a
-// realm administer the service. What this PEP does is put the roles that
-// module found INTO the request, so the policy decides on them; it does not
-// take over deciding what they are.
+// `admin_rbac.js` reads `cn=admin-read` and `cn=admin-write` — the default
+// realm's for a service administrator, and since 2026-09-14 (#32) a realm's own
+// for that realm's administrator, whom `admin-ui/admin_scope.js` confines to
+// the realm. What this PEP does is put the roles that module found INTO the
+// request, so the policy decides on them; it does not take over deciding what
+// they are, or which roster they came from.
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route; `xacml.js` requires it at 23c,

@@ -205,6 +205,13 @@ function browser(name) {
 // SCIM Basic credential against the named person's own `userPassword`, so a
 // made-up name with a word nothing checks is a credential only development
 // accepts. The account is made on first use, by `ensurePerson()` below.
+// A BARE `/portal` DRAWS THE REALM CHOOSER once a service has trust realms
+// (2026-09-14, #32), and the suite nearly always has some. The chooser's own
+// `?realm=default` is what a script names to skip it, so the door this file
+// signs in through names it. `sts_realm_administrators.js` asserts the chooser
+// itself.
+const PORTAL_DOOR = "/portal?realm=default";
+
 const SCIM_CALLER = usernameFor("dir-scim-caller");
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
@@ -318,7 +325,7 @@ async function signIn(who) {
   log.debug("Entering signIn(). who=" + who);
   await ensurePerson(who);
   const b = browser(who);
-  let r = await b.go("GET", "/portal");
+  let r = await b.go("GET", PORTAL_DOOR);
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
     "/portal should send an unauthenticated browser to the authorization " +
     "endpoint; it answered " + r.status + " -> " + r.location);

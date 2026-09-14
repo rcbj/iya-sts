@@ -214,6 +214,13 @@ const JOBS = [
   { file: 'sts_admin_api_auth.js',       browser: false, local: true },
   { file: 'sts_admin_api_operations.js', browser: false, local: true },
   { file: 'sts_admin_console.js',        browser: true,  local: true },
+  // A TRUST REALM'S OWN ADMINISTRATORS (2026-09-14, #32): the realm chooser,
+  // a realm administrator confined to their realm in the console and through
+  // a realm's own management API token, and the service administrator over
+  // every realm. Its two realms are left standing; it touches the default
+  // realm's roster only when that realm's bootstrap window is closed, and
+  // then revokes what it granted.
+  { file: 'sts_realm_administrators.js', browser: false, local: true },
   { file: 'sts_consent.js',              browser: false, local: true },
   { file: 'sts_delegated_permissions_example.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },

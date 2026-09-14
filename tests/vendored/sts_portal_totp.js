@@ -211,6 +211,13 @@ function browser(name) {
   return self;
 }
 
+// A BARE `/portal` OR `/admin` DRAWS THE REALM CHOOSER once a service has
+// trust realms (2026-09-14, #32), and the suite nearly always has some. The
+// chooser's own `?realm=default` is what a script names to skip it, so every
+// door this file signs in through, or asks whether a browser is anybody, names
+// it. `sts_realm_administrators.js` asserts the chooser itself.
+const PORTAL_DOOR = "/portal?realm=default";
+
 async function apiGet(path) {
   log.debug("Entering apiGet().");
   const r = await fetch(api + path);
@@ -603,7 +610,7 @@ async function theSignInDemandsIt(enrolment) {
   let replayRefused = false;
   let amr = "";
 
-  const b = await signIn("/portal", OWNER, async function (bb, r) {
+  const b = await signIn(PORTAL_DOOR, OWNER, async function (bb, r) {
     sawTheCodeScreen = /One-time code|one-time code|authenticator app/i.test(
         r.text) &&
                        /name="mfa_id"/.test(r.text);
@@ -874,7 +881,7 @@ async function anOperatorCanClearIt() {
 
   // THE TRANSITION. `signIn` with no handler ASSERTS that the password alone
   // was enough, so this one call is the whole claim.
-  const b = await signIn("/portal", OWNER);
+  const b = await signIn(PORTAL_DOOR, OWNER);
   const page = await b.go("GET", "/portal");
   check("AND THE PASSWORD ALONE SIGNS THEM IN AGAIN — the transition, which " +
         "is the only shape of assertion that can tell 'the factor was " +

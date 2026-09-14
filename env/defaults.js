@@ -704,7 +704,7 @@ var config = {
   caep: {
     enabled: true,                                                                                                                                                                    // CAEP enabled
     autoEmit: true,                                                                                                                                                                   // Emit events when something really happens
-    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change",                                                                                         // Which acts emit automatically
+    autoEmitTypes: "session-established,session-presented,session-revoked,credential-change,assurance-level-change",                                                                  // Which acts emit automatically
     eventsSupported: "session-revoked,session-established,session-presented,token-claims-change,credential-change,assurance-level-change,device-compliance-change,risk-level-change", // CAEP event types offered
     assuranceNamespace: "NIST-AAL",                                                                                                                                                   // Assurance namespace
     defaultRiskLevel: "MEDIUM",                                                                                                                                                       // Default risk level

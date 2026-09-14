@@ -76,7 +76,8 @@ const app = require('../common/app');
 // mock relying party), and a second copy of a reader that has to cope with four
 // trust namespaces is a second copy that gets one of them wrong.
 const { log, logArtifact, STS, xmlEscape, iso, randomId, signJwtAs,
-        firstByLocal, textByLocal } = require('../common/helpers');
+        firstByLocal, textByLocal,
+        subjectForName, hasSubjectResolver } = require('../common/helpers');
 // The input validator. A LEAF (rule 3): it registers no route and requires only
 // `config`, `bunyan`, zod and the vendored XML parser, so it closes no cycle.
 const validation = require('../common/validation');
@@ -166,7 +167,13 @@ function buildJwt(subject, audience, lifetimeMin) {
   const now = Math.floor(Date.now() / 1000);
   const claims = {
     iss: config.value('wstrust.issuer'),
-    sub: subject,
+    // THE PERSON'S SUBJECT (2026-09-14) — `urn:uuid:<entryUUID>`, as every
+    // other token here. The bare name is left only for a process with no
+    // directory, where nobody has a subject; with one, a person the directory
+    // does not hold is refused before this is reached (`STS-WSTRUST-0017`),
+    // because a bare name would be a `sub` a relying party links on and a
+    // person created later under that name would inherit.
+    sub: subjectForName(subject) || subject,
     name: subject,
     iat: now,
     exp: now +
@@ -958,6 +965,20 @@ function handleRst(rawBody, contentType, options) {
 
   const tokenType = (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE :
                      SAML2_TOKEN_TYPE;
+  // A JWT'S `sub` IS A SUBJECT, AND THERE IS NONE WITHOUT AN ENTRY — the rule
+  // the OAuth 2.0 grants follow (`STS-OAUTH-0510`). An `anonymous` Renew names
+  // nobody by design and is left to the paragraph above.
+  if (tokenType === JWT_TOKEN_TYPE && subject !== 'anonymous' &&
+      hasSubjectResolver() && !subjectForName(subject)) {
+    log.info('wstrust: refused a JWT for "' + String(subject) + '": the ' +
+             'directory holds no entry for them, so there is no subject to ' +
+             'issue it about.');
+    log.debug("Leaving the RST handler. No subject for the JWT.");
+    return { status: 400, version: version, errorCode: 'STS-WSTRUST-0017',
+             body: soapFault(version, 'There is no directory entry for "' +
+                             String(subject) + '", so no JWT can be issued ' +
+                             'about them.') };
+  }
   const tok = buildToken(tokenType, subject, audience, lifetimeMin,
                          authnContextOf(auth));
 

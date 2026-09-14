@@ -49,6 +49,7 @@ header_pages:
   - gnap.md
   - persistence.md
   - encryption-at-rest.md
+  - caches.md
   - remote-pep.md
   - what-is-not-checked.md
   - error-codes.md

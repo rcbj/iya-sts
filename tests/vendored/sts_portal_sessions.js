@@ -191,6 +191,14 @@ function browser(name) {
   return self;
 }
 
+// A BARE `/portal` OR `/admin` DRAWS THE REALM CHOOSER once a service has
+// trust realms (2026-09-14, #32), and the suite nearly always has some. The
+// chooser's own `?realm=default` is what a script names to skip it, so every
+// door this file signs in through, or asks whether a browser is anybody, names
+// it. `sts_realm_administrators.js` asserts the chooser itself.
+const PORTAL_DOOR = "/portal?realm=default";
+const ADMIN_DOOR = "/admin?realm=default";
+
 async function get(path) {
   log.debug("Entering get().");
   const r = await fetch(api + path);
@@ -263,19 +271,33 @@ async function ensurePerson(who) {
 // derived from it. The one a door CREATED is the second, so that is the one
 // these assertions are about — and `signOnIdOf()` beside it is how a test
 // reaches the other when it means the other.
+//
+// **AND A COOKIE IS `<sid>.<handle>` SINCE 2026-09-14**, not the bare id: the
+// handle rotates on every re-authentication and the sid never does
+// (`authn/CLAUDE.md`), and every row, audit target and `derivedFrom` names the
+// sid. So the id is the part before the first dot.
 const SURFACE_COOKIES = { admin: "sts_admin", portal: "sts_portal" };
 const SIGN_ON_COOKIE = "sts_session";
+
+function sidOfCookie(value) {
+  log.debug("Entering sidOfCookie().");
+  const text = String(value || "");
+  const dot = text.indexOf(".");
+  log.debug("Leaving sidOfCookie().");
+  return dot > 0 ? text.slice(0, dot) : text;
+}
 
 function sessionIdOf(b) {
   log.debug("Entering sessionIdOf().");
   log.debug("Leaving sessionIdOf().");
-  return b.jar[SURFACE_COOKIES.admin] || b.jar[SURFACE_COOKIES.portal] || "";
+  return sidOfCookie(b.jar[SURFACE_COOKIES.admin] ||
+                     b.jar[SURFACE_COOKIES.portal]);
 }
 
 function signOnIdOf(b) {
   log.debug("Entering signOnIdOf().");
   log.debug("Leaving signOnIdOf().");
-  return b.jar[SIGN_ON_COOKIE] || "";
+  return sidOfCookie(b.jar[SIGN_ON_COOKIE]);
 }
 
 async function liveSessions() {
@@ -467,7 +489,7 @@ async function theConsoleSignInCreatesASession() {
 async function thePortalSignInCreatesASession() {
   log.debug("Entering thePortalSignInCreatesASession().");
   log.info("=== the user portal: sign in, and the session is listed ===");
-  const b = await signInAt("/portal", OWNER);
+  const b = await signInAt(PORTAL_DOOR, OWNER);
   const id = sessionIdOf(b);
   const row = await rowFor(id);
 
@@ -505,7 +527,7 @@ async function thePortalSignInCreatesASession() {
 async function oneUserCannotReachAnother(owner) {
   log.debug("Entering oneUserCannotReachAnother().");
   log.info("=== a signed-in person cannot reach another's portal account ===");
-  const b = await signInAt("/portal", INTRUDER);
+  const b = await signInAt(PORTAL_DOOR, INTRUDER);
 
   // EVERY PARAMETER A FUTURE AUTHOR MIGHT PLAUSIBLY READ, with the owner's
   // name in it. A handler that grew `req.query.user` would fail here on the
@@ -714,7 +736,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   // started working because a session existed is exactly what this catches,
   // and it catches it where the old line could not: a real sign-on session
   // would send them to their account instead.
-  const notSignedIn = await b.go("GET", "/portal");
+  const notSignedIn = await b.go("GET", PORTAL_DOOR);
   check("and that browser is signed in to NOBODY — the cookie it now holds " +
         "names an anonymous arrival session and not a person",
     function () {
@@ -754,7 +776,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   // the browser already has goes on naming the session — so a real sign-in
   // here would leave the jar holding the same string it held a moment ago.
   // Only asking a gated page whether this browser is anybody tells them apart.
-  const stillNobody = await b.go("GET", "/portal");
+  const stillNobody = await b.go("GET", PORTAL_DOOR);
   check("and it establishes NO session — the last step of setup is to go and " +
         "use the credential, not to be let in by the link that set it",
     function () {
@@ -1200,7 +1222,7 @@ async function theApplicationsPageIsDecidedByThePolicy() {
     "creating the Shared Signals receiver answered " + r.status + " " +
     String(r.raw).slice(0, 300));
 
-  const b = await signInAt("/portal", who);
+  const b = await signInAt(PORTAL_DOOR, who);
 
   // ------------------------------------------------------------------
   // THE FOUR PAGES, and the column that joins them.
@@ -1436,18 +1458,18 @@ async function test() {
 
   // THE TWO SURFACES' OWN SIGN OUT BUTTONS, each in a browser of its own so
   // that nothing above is signed out from underneath it.
-  await theSignOutButtonEndsBothSessions("/portal", "/portal",
+  await theSignOutButtonEndsBothSessions(PORTAL_DOOR, "/portal",
                                          usernameFor("portal-signout"));
-  await theSignOutButtonEndsBothSessions("/admin", "/admin",
+  await theSignOutButtonEndsBothSessions(ADMIN_DOOR, "/admin",
                                          usernameFor("console-signout"));
-  await signingOutInvalidatesIt(newcomer, NEWCOMER, "/portal");
+  await signingOutInvalidatesIt(newcomer, NEWCOMER, PORTAL_DOOR);
 
   // SECTION 7 RUNS BEFORE THE SIGN-OUTS, in a browser of its own, so that
   // nothing it signs in is signed out from underneath the sections above.
   const appsBrowser = await theApplicationsPageIsDecidedByThePolicy();
 
-  await signingOutInvalidatesIt(intruder, INTRUDER, "/portal");
-  await signingOutInvalidatesIt(owner, OWNER, "/portal");
+  await signingOutInvalidatesIt(intruder, INTRUDER, PORTAL_DOOR);
+  await signingOutInvalidatesIt(owner, OWNER, PORTAL_DOOR);
   await signingOutInvalidatesIt(operator, OPERATOR, "/admin/sessions");
 
   // A FLOOR ON THE COUNT, for sts_admin_console.js's reason: a section that

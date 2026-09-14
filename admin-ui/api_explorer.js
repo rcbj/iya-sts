@@ -45,14 +45,14 @@
 // step where a person copies a credential out of a shell and into a form; it
 // removes no check.
 //
-// **MINTED IN THE DEFAULT REALM, WHEREVER THIS PAGE IS READ.** `admin_api.js`
-// verifies against the DEFAULT realm's key and computes the audience outside
-// any realm, because that credential is service-wide — a per-realm signing key
-// for it would let anybody who can create a realm mint that realm's
-// administrator token. A page that minted with the ambient realm's key would
-// produce a token its own API refuses, inside every realm but one. That is the
-// same rule the console's two roles already follow and the reason both halves
-// are written down in both files.
+// **MINTED IN THE DEFAULT REALM, WHEREVER THIS PAGE IS READ.** What it mints is
+// the SERVICE credential: `admin_api.js` verifies it against the DEFAULT
+// realm's key and computes its audience outside any realm. So since 2026-09-14
+// (#32) the page is a service page — `admin_scope.js` hides and refuses it to a
+// realm administrator, because handing one a service token would make them a
+// service administrator. A realm administrator's machine door is their realm's
+// own `sts-management-api` token; this page becomes a realm page only once it
+// can mint that for a realm authority.
 //
 // ---------------------------------------------------------------------------
 // THE DOCUMENT IS SERVED FROM HERE RATHER THAN FETCHED FROM `/admin-api`.

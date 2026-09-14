@@ -205,6 +205,13 @@ function browser(name) {
   return self;
 }
 
+// A BARE `/portal` OR `/admin` DRAWS THE REALM CHOOSER once a service has
+// trust realms (2026-09-14, #32), and the suite nearly always has some. The
+// chooser's own `?realm=default` is what a script names to skip it, so every
+// door this file signs in through, or asks whether a browser is anybody, names
+// it. `sts_realm_administrators.js` asserts the chooser itself.
+const PORTAL_DOOR = "/portal?realm=default";
+
 async function apiGet(path) {
   log.debug("Entering apiGet().");
   const r = await fetch(api + path);
@@ -438,7 +445,7 @@ async function enrolAuthenticator(b) {
 async function enrollingIssuesNothing() {
   log.debug("Entering enrollingIssuesNothing().");
   log.info("=== 1. enrolling a second factor issues nothing, and says so ===");
-  const b = await signIn("/portal", OWNER);
+  const b = await signIn(PORTAL_DOOR, OWNER);
 
   const before = await b.go("GET", "/portal/mfa");
   check("before any enrolment the page says none have been generated",
@@ -653,7 +660,7 @@ async function aCodeSignsThemIn(state) {
   let sawTheLink = false;
   let refusedReplay = null;
 
-  const b = await signIn("/portal", OWNER, async function (br, asked) {
+  const b = await signIn(PORTAL_DOOR, OWNER, async function (br, asked) {
     // THE SCREEN THE PASSWORD LANDED ON is the authenticator's, because that
     // is what this person is CONFIGURED for — a recovery code is never the
     // factor a sign-in asks for.

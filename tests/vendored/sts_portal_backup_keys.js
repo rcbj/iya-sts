@@ -336,6 +336,13 @@ function browser() {
   return self;
 }
 
+// A BARE `/portal` OR `/admin` DRAWS THE REALM CHOOSER once a service has
+// trust realms (2026-09-14, #32), and the suite nearly always has some. The
+// chooser's own `?realm=default` is what a script names to skip it, so every
+// door this file signs in through, or asks whether a browser is anybody, names
+// it. `sts_realm_administrators.js` asserts the chooser itself.
+const PORTAL_DOOR = "/portal?realm=default";
+
 async function get(path) {
   log.debug("Entering get().");
   const r = await fetch(api + path);
@@ -643,7 +650,7 @@ async function eitherKeySignsThemIn(first, second) {
   log.debug("Entering eitherKeySignsThemIn().");
   log.info("=== either key signs them in ===");
   for (const one of [first, second]) {
-    const b = await signIn("/portal", one);
+    const b = await signIn(PORTAL_DOOR, one);
     check("the key called `" + one.name + "` completes the second-factor " +
           "step on its own — a service that checked whichever key it found " +
           "FIRST would refuse every assertion from the others and look " +
@@ -654,7 +661,7 @@ async function eitherKeySignsThemIn(first, second) {
 
   const stranger = makeAuthenticator("never enrolled");
   const b = browser();
-  let r = await b.go("GET", "/portal");
+  let r = await b.go("GET", PORTAL_DOOR);
   r = await b.go("GET", r.location);
   r = await b.go("GET", r.location);
   r = await b.go("POST", "/authn/login",

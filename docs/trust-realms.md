@@ -150,22 +150,44 @@ directories, so that is the truth rather than a borrowed error code.
 With no realms defined there is one naming context and one container, and every
 byte of every answer is what it was before realms existed.
 
-### Not separated — the two admin console roles
+### Separated, and confined — the admin console roles (2026-09-14)
 
-Deliberately. They are groups in the **default realm's** `ou=groups`, read there
-whichever realm the console is reached in, and a grant made through
-`/realm/acme/admin-api/rbac/grant` lands there too and says so in its reply.
+Every realm has two administrator rosters that matter to it:
 
-There is one administrator roster for the process on purpose: a role is
-permission to change what *every* realm does — a settings form writes the realm
-it is reached in, and `/admin/realms` can delete a realm outright — so a
-per-realm roster would mean anybody who can create a realm can administer the
-whole service.
+- **Its own.** The realm's `cn=admin-read` and `cn=admin-write`, in its own
+  `ou=groups`. A new realm is seeded with an `admin` account holding both, which
+  must change its password at its first sign-in; in product mode creating the
+  realm shows that password once. Until that account signs in to the realm's
+  console, anybody who signs in through the realm holds both of its roles.
+- **The service's.** The default realm's two groups. Their members administer
+  every realm, as they always did.
 
-The console's sign-on follows the roster. It accepts the default realm's session
-and no other, and an unauthenticated reader of *any* realm's console is sent to
-the **default realm's** sign-in screen — then returned to the realm page they
-asked for. Sign in once, in one realm; read every realm.
+A realm's own administrators are **confined to their realm**. Everything about
+the whole process is hidden from them and refused if asked for: the persistence
+store, the database, encryption, the secret store, the TLS listeners and client
+truststore, Kerberos, the LDAP service page, the embedded debugger and the API
+explorer. So are creating or removing a realm, reading or editing another realm,
+replacing the service Root, exporting the TLS listener's key, and every setting
+that belongs to the process. That confinement is what makes a per-realm roster
+safe: creating a realm makes somebody an administrator of that realm and of
+nothing else.
+
+The console asks the roster of the realm a person **signed in through**. Sign in
+at `/realm/acme/admin` and acme's roster decides; `admin` in acme and `admin` in
+the default realm are different people. A realm administrator who opens another
+realm's console is told they administer another realm, with a link back.
+
+**Choosing a realm.** When realms are defined, the plain `/admin` and `/portal`
+ask which realm you belong to before signing you in — a list of realms in
+development mode, a box for the realm's id in product mode. Add `?realm=<id>` to
+skip the question, or `?realm=default` to sign in to the default realm. A link
+to any page below `/admin` or `/portal` never asks.
+
+**The management API.** `/admin-api` accepts a token from the default realm's
+`sts-management-api` client everywhere. Under `/realm/<id>/admin-api` it also
+accepts a token that realm's own `sts-management-api` client was issued, with
+the realm's issuer and audience, and refuses that token the same service-wide
+operations the console refuses the realm's administrators.
 
 ### Separated — SPIFFE, by ADDRESS (2026-09-12)
 

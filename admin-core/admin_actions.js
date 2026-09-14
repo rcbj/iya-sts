@@ -104,6 +104,9 @@ const credentials = require('../common/credentials');
 const realms = require('../common/realms');
 const stats = require('../common/admin_stats');
 const rbac = require('../admin-ui/admin_rbac');
+// THE MODE, for the one product-mode step a realm's creation takes: its
+// bootstrap administrator's generated password. A leaf (rule 3).
+const mode = require('../common/mode');
 const vcClaims = require('../oid4vc/vc_claims');
 const vpConfig = require('../oid4vc/vc_verifier_config');
 const claimAttributes = require('../common/claim_attributes');
@@ -613,7 +616,7 @@ function tokenAction(body) {
   // and the difference is the reason it exists: that one matches a `sub` or a
   // `username` EXACTLY, which is what somebody typing into the box on the
   // tokens page means, while a user on the users page is an identity that has
-  // been seen under several spellings — `alice`, `urn:sts:user:alice`,
+  // been seen under several spellings — `alice`, `urn:uuid:<entryUUID>`,
   // `alice@STS.MOCK`. Revoking "for alice" from that page has to mean all of
   // them, or the page would offer a button that visibly missed half of its own
   // table.
@@ -625,7 +628,7 @@ function tokenAction(body) {
           'as the users page names them.'] });
     }
     const count = stats.revokeWhere(function (record) {
-      return stats.identityKeyOf(record.username || record.sub) === key;
+      return stats.holderKeyOf(record.username, record.sub) === key;
     }, 'the admin console (everything for the user ' + key + ')');
     log.debug("Leaving tokenAction(). Revoked " + count + " for a user.");
     return { ok: true, revoked: count, user: key,
@@ -2704,8 +2707,13 @@ function rbacAction(body, context) {
   const action = String(body.action || '');
   const username = String(body.username || body.user || '').trim();
   const role = String(body.role || '').trim();
+  // THE ROSTER OF THE REALM BEING READ (2026-09-14, #32): the default realm's
+  // is the service roster, any other realm's its own. A realm administrator
+  // reaches only their own realm's page, which the gate has decided before
+  // this runs.
   const ctx = { via: (context || {}).via || 'console',
-                actor: (context || {}).actor || '' };
+                actor: (context || {}).actor || '',
+                realm: realms.currentId() };
 
   if (action === 'grant') {
     const result = rbac.grant(username, role, ctx);
@@ -3595,13 +3603,56 @@ function realmsAction(body) {
       log.debug("Leaving realmsAction(). create refused.");
       return refusedBy('STS-ADMIN-0562', result);
     }
+    // THE REALM'S OWN ADMINISTRATOR (2026-09-14, #32). A realm is born with a
+    // bootstrap `admin` in both of ITS console roles, forced to change its
+    // password at its first sign-in — the default realm's arrangement, one
+    // realm down — and administering that realm alone. Seeded here, in the
+    // one process that ran the create, rather than in every process that
+    // hears the realm arrive: a replicated realm has its entry already.
+    //
+    // In product mode nobody's password is accepted unchecked, so the account
+    // is given a generated one and it is handed back ONCE, in this result.
+    // The console draws it on a page of its own rather than in a redirect,
+    // for `/admin/users`' reset-password reason.
+    const seeded = rbac.seedBootstrapAdministrator(result.realm.id);
+    let password = '';
+    if (seeded.ran && seeded.created && mode.isProduct()) {
+      realms.run(result.realm, function () {
+        const generated = credentials.generatePassword(seeded.username);
+        const set = credentials.setPassword(seeded.username, generated,
+                                            { generated: true });
+        if (set.ok) {
+          credentials.setPasswordResetRequired(seeded.username, true);
+          password = generated;
+        } else {
+          log.error(errorCodes.tag('STS-ADMIN-0789') + 'admin: the "' +
+                    result.realm.id + '" realm\'s bootstrap administrator ' +
+                    'could not be given a password: ' +
+                    (set.errors || []).join(' '));
+        }
+      });
+    }
     log.debug("Leaving realmsAction(). create ok, " +
               Object.keys(result.realm.overrides).length + " setting(s).");
     return { ok: true, realm: result.realm.id,
+             bootstrap: seeded.ran
+               ? { username: seeded.username, created: !!seeded.created,
+                   passwordResetRequired: !!seeded.created }
+               : null,
+             password: password || undefined,
+             username: password ? seeded.username : undefined,
              message: 'The realm "' + result.realm.id + '" is defined. Every ' +
                       'HTTP endpoint this service has now answers under ' +
                       realms.prefixOf(result.realm) + '/ as well, with its ' +
-                      'own signing key and nothing issued yet.' };
+                      'own signing key and nothing issued yet.' +
+                      (seeded.ran
+                        ? ' "' + seeded.username + '" administers it, and ' +
+                          'only it, from ' + realms.prefixOf(result.realm) +
+                          '/admin' + (seeded.created
+                            ? ', and must choose a new password at its ' +
+                              'first sign-in.'
+                            : '.')
+                        : '') };
   }
 
   if (action === 'update') {

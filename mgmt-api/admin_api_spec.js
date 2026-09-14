@@ -1230,6 +1230,15 @@ const SCHEMAS = {
       tokensWithNoSessionPaging: pagingObject('tokensWithNoSession'),
       artifacts: { type: 'array', items: ISSUED_RECORD },
       artifactsPaging: pagingObject('artifacts'),
+      subject: {
+        type: 'string',
+        description: 'The person\'s subject — `urn:uuid:<entryUUID>`, the ' +
+                     '`sub` every token issued to them carries (2026-09-14) ' +
+                     '— or an empty string where the directory holds no ' +
+                     'entry for them. It survives a rename, and a person ' +
+                     'deleted and re-created under the same name has a new ' +
+                     'one.'
+      },
       ldap: {
         description: 'This person\'s directory entry, or null when no ' +
                      'directory is loaded in this process — which is a ' +
@@ -4403,8 +4412,10 @@ const SCHEMAS = {
         type: 'string',
         description: 'The NORMALISED local name, so a party here and a row ' +
                      'on /admin-api/users name the same person — `alice`, ' +
-                     '`urn:sts:user:alice` and `alice@STS.MOCK` are one ' +
-                     'identity. Empty where this layer is an application ' +
+                     'her `urn:uuid:<entryUUID>` subject and ' +
+                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     'this ' +
+                     'layer is an application ' +
                      'rather than a person, or where nothing named it.'
       },
       presented: {
@@ -4836,9 +4847,10 @@ const SCHEMAS = {
       actor: {
         type: 'string',
         description: 'The NORMALISED local name, so a row here and a row on ' +
-                     '/admin-api/users name the same person — `alice`, ' +
-                     '`urn:sts:user:alice` and `alice@STS.MOCK` are one ' +
-                     'identity. Empty where nothing named an actor, which an ' +
+                     '/admin-api/users name the same person — `alice`, her ' +
+                     '`urn:uuid:<entryUUID>` subject and ' +
+                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     'nothing named an actor, which an ' +
                      'unauthenticated protocol call and an anonymous LDAP ' +
                      'bind both are.'
       },

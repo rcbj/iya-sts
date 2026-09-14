@@ -131,7 +131,7 @@
 // ===========================================================================
 
 // The service's own logger, as every module here takes it.
-const { log } = require('./helpers');
+const { log, subjectForName, nameForSubject } = require('./helpers');
 const keystore = require('./keystore');
 // A leaf. The refusal objects below carry `errorCode` for the caller that
 // sends the response; it is never part of anything serialised.
@@ -479,8 +479,21 @@ function subjectIsSelf(record, sub, purpose) {
   const names = purposeIdOf(purpose) === 'saml'
     ? (record.samlEffectiveIssuers || record.effectiveIssuers || [])
     : (record.effectiveIssuers || []);
+  // THE PERSON'S OWN SUBJECT COUNTS AS THEM (2026-09-14). A `sub` is
+  // `urn:uuid:<entryUUID>` now, which is exactly what a relying party holds and
+  // what an assertion naming this person most naturally carries; refusing it
+  // while accepting the bare username would make the stable identifier the one
+  // spelling of yourself you may not use.
+  // An alias of it too, which resolves to the same entry and so back to the
+  // same subject (`ldap_server.js`'s `mergeCreateRace()`).
+  const ownSubject = /^urn:uuid:/i.test(wanted)
+    ? subjectForName(record.username) : '';
+  const wantedSubject = ownSubject && wanted.toLowerCase() !==
+    ownSubject.toLowerCase() ? subjectForName(nameForSubject(wanted)) : '';
   log.debug("Leaving subjectIsSelf().");
-  return wanted === String(record.username) || names.indexOf(wanted) >= 0;
+  return wanted === String(record.username) || names.indexOf(wanted) >= 0 ||
+         (!!ownSubject && (ownSubject.toLowerCase() === wanted.toLowerCase() ||
+                           wantedSubject === ownSubject));
 }
 
 // ---------------------------------------------------------------------------

@@ -456,10 +456,20 @@ async function test() {
           assert.ok(granted.body.access_token, "no access token came back");
         });
   const claims = claimsOf(granted.body.access_token);
+  // A person's `sub` is `urn:uuid:<entryUUID>` since 2026-09-14
+  // (`authn/CLAUDE.md`), so it is not built from the name: the job asks the
+  // realm's /admin-api/users what this person's subject is and compares.
+  const subjectAnswer = await get(realmApi + "/users?user=" +
+                                  encodeURIComponent(person));
+  const expectedSub = String((subjectAnswer.body &&
+                              subjectAnswer.body.subject) || "");
   check("the token is FOR THE SUBJECT of the assertion and not for the " +
         "issuer — a party asserting on somebody's behalf is not that person",
         function () {
-          assert.ok(String(claims.sub).indexOf(person) >= 0,
+          assert.ok(/^urn:uuid:[0-9a-f-]{36}$/.test(expectedSub),
+            "the subject of " + person + " from /admin-api/users: " +
+            String(subjectAnswer.raw).slice(0, 200));
+          assert.strictEqual(claims.sub, expectedSub,
             "sub=" + claims.sub + " for " + person);
           assert.strictEqual(claims.username, person);
         });
@@ -1067,6 +1077,15 @@ async function test() {
            { application: ONCE, attribute: "oauthAssertionIssuer",
              value: ONCE },
            "declared it as an assertion issuer too");
+  // AND A PERSON OF THE SAME NAME (2026-09-14). A client assertion's `sub` is
+  // the client_id by RFC 7523 section 3, so the one document presented both
+  // ways names ONCE — and a token grant for somebody with no directory entry
+  // is refused `invalid_grant` since that date (`oauth-oidc/CLAUDE.md`), which
+  // would refuse the grant for a reason that is not the history this section
+  // is about.
+  await ok(realmApi + "/users/create",
+           { username: ONCE, invent: false, attributes: personFields(ONCE) },
+           "created the person the grant half names");
   function onceJwt() {
     log.debug("Entering onceJwt().");
     log.debug("Leaving onceJwt().");

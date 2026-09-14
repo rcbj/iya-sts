@@ -1026,6 +1026,14 @@ async function groupsAndApplicationsHoldRoles() {
   // AND THE SAME NAME AS A PERSON HOLDS NOTHING. The three membership lists
   // are three relations, not one list with a label on it — a bug that merged
   // them would let anybody who could pick a username reach a client's role.
+  //
+  // **THE PERSON IS CREATED FIRST SINCE 2026-09-14**, when a token grant for
+  // somebody with no directory entry stopped being issued at all
+  // (`oauth-oidc/CLAUDE.md`): without the entry the grant is refused
+  // `invalid_grant` before the role is ever asked, which would pass for the
+  // wrong reason under a looser check and fails this one. With it, the
+  // refusal below can only be the role.
+  await createPerson(ROBOT);
   const asPerson = await tokenFor(ROBOT, ROBOT, "openid");
   check("the same name as a PERSON holds nothing", function () {
     assert.ok(asPerson.status === 400 &&

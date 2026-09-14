@@ -3364,7 +3364,7 @@ const ENDPOINTS = [
           'each time, every sign-on session they hold and the tokens issued ' +
           'ON each of those sessions, and the assertions, tickets and ' +
           'credentials issued to them. One row is one local name across all ' +
-          'protocols — alice, urn:sts:user:alice and alice@REALM are one ' +
+          'protocols — alice, her urn:uuid: subject and alice@REALM are one ' +
           'identity — and subjects that never authenticated at all (an ' +
           'exchanged foreign token, OnBehalfOf, S4U) are listed and marked ' +
           'as such. Add ?format=json. IT HAS ONE CONTROL, and it writes ' +

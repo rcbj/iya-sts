@@ -151,7 +151,8 @@ const VIA = 'Kerberos v5 (SPNEGO)';
 // is `alice`, when and only when that realm is THIS KDC's own.
 //
 // **THE STRIPPING IS THE POINT AND IT IS NOT COSMETIC.** The session's username
-// becomes `sub: urn:sts:user:<username>` in every token, assertion and
+// names the entry whose `urn:uuid:<entryUUID>` is the `sub` of every token,
+// assertion and
 // credential that follows. Leaving the realm on would mean that somebody who
 // types `alice` at the sign-in screen and the same person arriving with a
 // ticket are TWO SUBJECTS as far as every relying party is concerned — which is

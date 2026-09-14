@@ -153,7 +153,7 @@ const realms = require('./../common/realms');
 const documentSettings = require('./../saml/document_settings');
 const {
   log, logArtifact, STS, xmlEscape, firstByLocal, textByLocal, iso, baseUrlOf,
-  jsonFromB64u, randomId, parseBody
+  jsonFromB64u, randomId, parseBody, subjectForName, hasSubjectResolver
 } = require('./../common/helpers');
 
 // READ FROM THE REGISTER rather than written here, and the header of PATHS over
@@ -922,6 +922,10 @@ function completeSignIn(req, res, record, result) {
       protocolLabel: protocolLabel,
       subject: result.subject,
       autocreate: federation.boolOf(record.fedAutocreateUsers, true),
+      // Whether the partner's attributes overwrite the entry's on a sign-in
+      // that did not create it (2026-09-14). See `fedUpdateUserAttributes`.
+      updateAttributes: federation.boolOf(record.fedUpdateUserAttributes,
+                                          true),
       attributes: mapped.attributes,
       mapped: mapped.mapped.length,
       unmapped: mapped.unmapped.map(function (one) { return one.incoming; })
@@ -986,6 +990,30 @@ function completeSignIn(req, res, record, result) {
   // The refusal is a PAGE and not a redirect back to the partner: the assertion
   // verified, so there is nothing for the partner to retry and bouncing the
   // browser there would loop.
+  // NO ENTRY, AND DYNAMIC PROVISIONING OFF (2026-09-14) — told apart from a
+  // policy refusal because they are two different things to fix: one is a
+  // person nobody provisioned, the other a role they do not hold.
+  if (!session && hasSubjectResolver() &&
+      !subjectForName(mapped.username)) {
+    log.info('federation: no session for ' + mapped.username + ' arriving ' +
+             'through ' + record.fedId + ': the directory holds no entry for ' +
+             'them and dynamic provisioning is ' +
+             (federation.boolOf(record.fedAutocreateUsers, true)
+               ? 'on but the directory declined to create one.'
+               : 'off on this relationship.'));
+    errorCodes.mark(res, 'STS-FED-0090');
+    log.debug("Leaving completeSignIn().");
+    return refuse(res, record, 403, 'This person has not been provisioned',
+      'The assertion verified and the partner is configured, but this ' +
+      'service holds no directory entry for ' + mapped.username + ', and ' +
+      (federation.boolOf(record.fedAutocreateUsers, true)
+        ? 'the directory would not create one (ldap.autocreateUsers is off, ' +
+          'or it is full).'
+        : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
+          'relationship, so the person has to be created here first — ' +
+          'through SCIM, /admin/users/new or the management API — under the ' +
+          'username this relationship maps them to.'));
+  }
   if (!session) {
     log.info('federation: the issuance policy refused a session for ' +
              mapped.username + ' arriving through ' + record.fedId + '.');
@@ -1098,10 +1126,15 @@ function signedInPage(record, mapped, result, session) {
     '</span></td></tr><tr><td>Directory ' +
     'entry</td><td>' +
       (federation.boolOf(record.fedAutocreateUsers, true)
-        ? 'created or updated under <code>ou=users</code> — see ' +
+        ? 'created if absent, under <code>ou=users</code> — see ' +
           '<a href="/admin/users">/admin/users</a>'
-        : '<span class="note">NOT created: fedAutocreateUsers is off on this ' +
-          'relationship, so this sign-in leaves no entry behind</span>') +
+        : '<span class="note">NEVER created here: fedAutocreateUsers is ' +
+          'off on this relationship, so the person must already have an ' +
+          'entry</span>') +
+      (federation.boolOf(record.fedUpdateUserAttributes, true)
+        ? '; its attributes are updated from this assertion'
+        : '<span class="note">; its attributes are written only when this ' +
+          'sign-in creates it (fedUpdateUserAttributes is off)</span>') +
       '</td></tr></table>' +
     (rows ? '<h2>Attributes mapped onto the directory ' +
       'entry</h2><table><tr><th>The partner ' +

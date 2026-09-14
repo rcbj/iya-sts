@@ -1084,7 +1084,8 @@ person federating twice is ONE entry; that a partner's `mail` OVERWRITES an
 invented one and an invented one never overwrites a partner's; that `uid` is
 never written from an assertion; that an attribute the partner stopped sending
 is LEFT ALONE; that `federationAttribute` names exactly the attributes that came
-from the partner; that `fedAutocreateUsers` off gives a session and no entry;
+from the partner; that `fedAutocreateUsers` off REFUSES a person nobody provisioned
+and signs in one who was (`tests/federation_provisioning.js`, 2026-09-14);
 and that `federation.usernamePrefix` changes the NAME and not which incoming
 value was chosen.
 
@@ -1161,3 +1162,32 @@ with the auto-redirect on is a redirect, so an entry naming three partners of
 which two are disabled works perfectly and draws no page at all. There is no
 banner to put those two problems on, and the flow succeeding is exactly why
 nobody would go looking — so `beginAuthentication()` writes them at INFO.
+
+## DYNAMIC PROVISIONING, PRE-PROVISIONING, AND WHETHER A PARTNER'S ATTRIBUTES WIN (2026-09-14)
+
+rcbj wants both shapes on the service-provider side of every relationship, each a switch
+on the relationship's page (the same list of switches every protocol's relationship draws):
+
+| Switch | On (default) | Off |
+|---|---|---|
+| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — no SCIM needed | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`); a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
+| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
+
+**Off used to mean "a session and no entry", and a stable subject is why it cannot.** A
+person's `sub` is their entry's `entryUUID` now (`authn/CLAUDE.md`, *What an authenticated
+identity is here*), so a session with no entry has no subject. And the old check ran before
+the entry was looked up, so a person SCIM had already provisioned was never folded onto —
+the pre-provisioned shape did not work at all. `ldap/CLAUDE.md` carries the directory half.
+
+**The username a pre-provisioned person must be created under is whatever the relationship
+maps them to** — `fedUsernameSource` (a `preferred_username` or an `email`), or the
+subject. **A partner's `urn:uuid:` subject becomes `sub-<uuid>`** and is never looked up in
+this directory: it names an entry in the PARTNER's namespace, and resolving it here would
+file the person under a raw URN or, worse, find a local person holding that value
+(`federation_map.js`'s `usernameFor()`). Another instance of this service issues exactly
+that form, so a relationship to one wants `fedUsernameSource` set.
+
+`tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
+of one process — the default realm's OpenID Provider and a service-provider realm of its
+own — through dynamic provisioning, a refused unprovisioned person, a person pre-provisioned
+over SCIM, and the refresh switch in both positions.

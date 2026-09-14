@@ -78,7 +78,7 @@ const { log } = require('../common/helpers');
 // /admin/users files a row under, and using anything else here would be the bug
 // CLAUDE.md's "one row is one local name" rule exists to prevent — see
 // personaFor() for what it looked like: an access token whose sub is
-// `urn:sts:user:alice` inventing a second alice, with her directory entry
+// `urn:uuid:<entryUUID>` inventing a second alice, with her directory entry
 // sitting right there unread.
 //
 // admin_stats.js is a library that requires only helpers.js, so this is no
@@ -583,12 +583,13 @@ function personaFor(name) {
   log.debug("Entering personaFor(). name=" + name);
   // NORMALISED first, and this line is load-bearing. The three spellings of one
   // person reach this module from three directions — `alice` from the directory
-  // sweep, `urn:sts:user:alice` from an access token's sub, `alice@EXAMPLE.COM`
-  // from a Kerberos-authenticated one — and the seed is the string. Seeding on
-  // the raw value invented a different person per spelling and then failed to
-  // find the entry any of them had, so a credential for alice asserted a name
-  // her own directory entry contradicted. It looked like the directory was not
-  // being read at all, which is the wrong thing to go looking at.
+  // sweep, `urn:uuid:<entryUUID>` from an access token's sub,
+  // `alice@EXAMPLE.COM` from a Kerberos-authenticated one — and the seed is the
+  // string. Seeding on the raw value invented a different person per spelling
+  // and then failed to find the entry any of them had, so a credential for
+  // alice asserted a name her own directory entry contradicted. It looked like
+  // the directory was not being read at all, which is the wrong thing to go
+  // looking at.
   const username = stats.identityKeyOf(name) || 'somebody';
   const random = randomFor(username);
   const given = pick(random, GIVEN_NAMES);
@@ -724,8 +725,9 @@ function directoryAttributes(name) {
   }
   try {
     // Normalised for the reason personaFor() gives: the directory files a
-    // person under their local name, and an access token's `urn:sts:user:alice`
-    // would otherwise look up an entry nothing ever created.
+    // person under their local name, and an access token's
+    // `urn:uuid:<entryUUID>` would otherwise look up an entry nothing ever
+    // created.
     log.debug("Leaving directoryAttributes().");
     return directory.attributesFor(stats.identityKeyOf(name)) || null;
   } catch (e) {

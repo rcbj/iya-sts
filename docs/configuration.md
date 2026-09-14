@@ -402,8 +402,11 @@ The console's two roles are two ordinary groups in the embedded directory —
 membership. **Write implies read.**
 
 `admin.bootstrapUsername` (`admin`) names the default realm's bootstrap
-administrator. Startup creates it if it is absent and makes it a member of both
-groups. A newly created account must choose a new password at its first sign-in,
+administrator — and, since 2026-09-14, every trust realm's, where the account
+and the two groups belong to that realm and administer it alone (see
+[trust realms](trust-realms.md)). Startup creates it if it is absent and makes
+it a member of both groups. A realm created at runtime gets one at once, and in
+product mode the realm's password is shown once by the create. A newly created account must choose a new password at its first sign-in,
 and the account cannot be deleted or renamed. In development any password
 reaches that screen. In product mode the account gets the generated password
 that is logged once.
@@ -420,6 +423,9 @@ setting off, which restores the open API this had until 2026-09-09.
 
 Renaming a role group does not move anybody: the members stay in the old group,
 which stops granting anything the moment the name changes.
+
+All four are process-wide since 2026-09-14: a trust realm cannot carry its own
+value, because they decide who administers the service.
 
 ### The federation settings, and the one that is stricter than a mock usually is
 

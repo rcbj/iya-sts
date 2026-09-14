@@ -3882,14 +3882,16 @@ async function theKerberosPrincipalsRoundTrip() {
 }
 
 // ---------------------------------------------------------------------------
-// THE ADMIN ROLES, WHICH ARE THE ONE THING HERE THAT IS NOT REALM-SCOPED.
+// THE ADMIN ROLES, A ROSTER PER REALM SINCE 2026-09-14 (#32).
 //
-// The two console roles are ordinary groups in the DEFAULT realm's ou=groups,
-// read there from every realm, and a grant made through
-// /realm/<id>/admin-api/rbac/grant lands there too and says so in its reply.
-// That is deliberate: a role is permission to change what EVERY realm does, so
-// a per-realm roster would mean anybody who can create a realm can make
-// themselves an administrator of the service.
+// The two console roles are ordinary groups in the ou=groups of the realm
+// being read: a grant made through /realm/<id>/admin-api/rbac/grant lands in
+// that realm's directory and says so in its reply, and makes a person an
+// administrator of THAT realm alone. The default realm's roster is the
+// SERVICE roster. Until #32 this section asserted the opposite — every grant
+// landed in the default realm — and it now asserts both halves of the new
+// rule: a realm's grant is in the realm, and it leaves the service roster
+// untouched.
 //
 // Which makes this the one section that must clean up after itself by hand, and
 // the one that can lock every other job out of the console if it does not:
@@ -3915,12 +3917,15 @@ async function theAdminRolesRoundTrip() {
     "the whole of this console's authorization model, and a third would be a " +
     "design change rather than a configuration one. It published " +
     JSON.stringify(rolesAvailable));
-  assert.ok(String(before.body.groupsDn || "").indexOf("dc=" + REALM) < 0,
-    "READ FROM INSIDE " + REALM + ", THE ROSTER MUST STILL BE THE DEFAULT " +
-    "REALM'S. The two roles are one roster for the process on purpose: a " +
-    "role is permission to change what every realm does, so a per-realm " +
-    "roster would let anybody who can create a realm administer the whole " +
-    "service. It named " + before.body.groupsDn);
+  assert.ok(String(before.body.groupsDn || "").indexOf("dc=" + REALM) >= 0,
+    "READ FROM INSIDE " + REALM + ", THE ROSTER IS THAT REALM'S (#32): each " +
+    "realm has administrators of its own, and the default realm's are the " +
+    "service's. It named " + before.body.groupsDn);
+  const serviceBefore = await get("/rbac", true);
+  assert.ok(String(serviceBefore.body.groupsDn || "").indexOf("dc=" + REALM) <
+            0,
+    "and read at the root, the roster is the DEFAULT realm's — the service " +
+    "roster. It named " + serviceBefore.body.groupsDn);
 
   // EVERY LIST IN THE REPLY IS PAGED (2026-09-13). A directory of thousands
   // made `candidates` thousands of rows and `roles[].members` every
@@ -3959,12 +3964,18 @@ async function theAdminRolesRoundTrip() {
     "a grant should name the group it wrote and the member it added, so a " +
     "caller can reach the same membership through the other three doors. It " +
     "answered " + JSON.stringify(granted).slice(0, 300));
-  assert.ok(String(granted.dn).indexOf("dc=" + REALM) < 0 &&
-            String(granted.member).indexOf("dc=" + REALM) < 0,
-    "A GRANT MADE UNDER A REALM PREFIX MUST LAND IN THE DEFAULT REALM, and " +
-    "the DN in the reply is how it says so — a caller who did not read it " +
-    "would reasonably believe it had made a " + REALM + " administrator. It " +
-    "wrote " + granted.dn + " / " + granted.member);
+  assert.ok(String(granted.dn).indexOf("dc=" + REALM) >= 0 &&
+            String(granted.member).indexOf("dc=" + REALM) >= 0,
+    "A GRANT MADE UNDER A REALM PREFIX LANDS IN THAT REALM (#32), and the DN " +
+    "in the reply is how it says so: it made a " + REALM + " administrator " +
+    "and nothing more. It wrote " + granted.dn + " / " + granted.member);
+  const serviceDuring = await get("/rbac", true);
+  assert.strictEqual(serviceDuring.body.grantCount,
+                     serviceBefore.body.grantCount,
+    "AND THE SERVICE ROSTER IS UNTOUCHED BY IT — a realm's grant that reached " +
+    "the default realm's groups would make a realm's administrator the " +
+    "service's. It reads " + serviceDuring.body.grantCount + " against " +
+    serviceBefore.body.grantCount + " before.");
   assert.strictEqual(granted.changed, true,
     "and it should report that it CHANGED the membership rather than " +
     "finding it already there.");
@@ -3985,8 +3996,8 @@ async function theAdminRolesRoundTrip() {
     "here closes the console for every other job in the run, and the job " +
     "that fails is not this one. It reads " + after.body.grantCount +
     " grant(s) against " + grantedBefore + " before.");
-  log.info("[rbac] OK — grant and revoke round-tripped in the default " +
-           "realm's directory, from inside " + REALM + ", and the roster is " +
+  log.info("[rbac] OK — grant and revoke round-tripped in " + REALM + "'s " +
+           "own roster, the service roster untouched, and the roster is " +
            "back where it started.");
   log.debug("Leaving theAdminRolesRoundTrip().");
 }

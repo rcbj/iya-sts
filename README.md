@@ -1653,15 +1653,23 @@ A subtree search from `dc=example,dc=com` still returns every realm's entries,
 because that is what a naming context is. What is isolated is the container each
 realm reads and writes: `ou=users,dc=example,dc=com` holds no `acme` person.
 
-**Not separated — the two admin console roles, deliberately.** They are groups in
-the **default realm's** `ou=groups`, read there whichever realm the console is
-reached in, and a grant made through `/realm/acme/admin-api/rbac/grant` lands
-there too and says so. There is one administrator roster for the process on
-purpose: a role is permission to change what *every* realm does, so a per-realm
-roster would mean anybody who can create a realm can administer the service. The
-console's gate agrees with it — it accepts the default realm's session and no
-other, and an unauthenticated reader of any realm's console is sent to the
-default realm's sign-in screen.
+**Separated, and confined — the two admin console roles (since 2026-09-14).**
+Each realm has its own `cn=admin-read` and `cn=admin-write` in its own
+`ou=groups`, seeded with an `admin` account that must change its password at its
+first sign-in (in product mode, creating the realm shows a generated password
+once). Their members administer **that realm only**: the pages and settings
+about the whole process — the store, the database, the secret store, the TLS
+listeners and truststore, Kerberos, the embedded debugger, the API explorer,
+per-process settings — are hidden and refused, and so are creating or removing a
+realm and replacing the service Root. The **default realm's** two groups are the
+service administrators and administer every realm. A grant made through
+`/realm/acme/admin-api/rbac/grant` lands in acme's roster. The console asks the
+roster of the realm a person signed in through, so `admin` in `acme` and `admin`
+in the default realm are two people. When realms are defined, the plain `/admin`
+and `/portal` ask which realm first (a list in development, a text box in
+product; `?realm=<id>` skips the question). `/admin-api` accepts the default
+realm's token everywhere and a realm's own `sts-management-api` token in that
+realm only.
 
 **Not separated — three socket families.** Kerberos (over raw UDP/TCP 88 and
 over MS-KKDCP alike: `/KdcProxy` is reachable under a prefix but reaches the same
@@ -2930,7 +2938,7 @@ credential belonged to a person:
 | | how to tell |
 |---|---|
 | mode off | `sub` **equals** `client_id` on a `client_credentials` token and on nothing else. RFC 9700 suggests this comparison itself; it needs no invented claim |
-| mode on | **separate namespaces** — `urn:sts:client:<id>` beside `urn:sts:user:<name>`, so the two cannot collide however a client is named |
+| mode on | **separate namespaces** — `urn:sts:client:<id>` beside a person's `urn:uuid:<entryUUID>` (it was `urn:sts:user:<name>` until 2026-09-14), so the two cannot collide however a client is named |
 
 The namespace is the stronger answer and it is the mode's, because changing a subject
 identifier is a change and callers key on it. Note the consequence, which the row states
@@ -4789,8 +4797,8 @@ was handed; an `AppliesTo` handed a SAML 2.0 assertion is a WS-Trust relying par
 *and* that assertion's service provider. Recording only one of each is how
 `wsfed-relying-party` came to be a kind the console offered as a filter and no
 protocol path ever produced. That is the
-same rule that makes `alice`, `urn:sts:user:alice` and `alice@REALM` one
-person on `/admin/users`, and it is the shape the federation work will need: a
+same rule that makes `alice`, `alice@REALM` and her `urn:uuid:<entryUUID>`
+subject one person on `/admin/users`, and it is the shape the federation work will need: a
 relying party that federates over both OIDC and SAML is one relationship.
 
 It is recorded where each protocol accepts it rather than at the authentication
@@ -5245,7 +5253,7 @@ withheld header is logged as `STS-HTTP-0019` (a preflight), `-0020` (no client n
 
 **`/admin/users`** answers the question the other pages cannot: *who has this service seen, and what do they hold right now?* It lists every userid presented as part of an interaction that **succeeded** — the name typed at either sign-in screen, the one on a password grant, the subject of a WS-Security `UsernameToken` or of a WS-Trust `OnBehalfOf`, the client principal in a Kerberos AS-REQ or in an AP-REQ this service accepted (over a raw socket or through SPNEGO), and the subject of an exchanged token. A request that was *refused* records nothing, so this is a list of identities that got somewhere rather than of names that were tried. `?user=<name>` drills into one: the names they were seen under, every authentication with the method that performed it, each sign-on session they hold **with the tokens issued on that session underneath it**, the tokens that belong to no session, and the assertions, tickets and credentials issued to them. A `revoke-user` button invalidates everything revocable for that identity under any of its spellings.
 
-**Two decisions there are worth stating before changing anything.** The first is what *one row* is. A single person reaches this service as `alice` at the login screen, `urn:sts:user:alice` in every token, `alice` as a SAML `NameID` and `alice@EXAMPLE.COM` as a Kerberos principal, so the identity is keyed on the **local name** — the `urn:` prefix stripped (derived from `userFor()` rather than written down again, so a change there cannot silently split every user into two rows) and the realm split off at the last `@`. Four rows for one name would be a worse answer than one on a service whose whole premise is that the name you type is who you are in every protocol at once. What that costs is real and is shown rather than hidden: two different people called `alice` in two Kerberos realms are one row, which is what the Realms column exists to make visible. Case is never collapsed, because nothing else here treats `Alice` and `alice` as one person. The second is that the list is built from **three** sources — the authentications recorded, plus every token's `sub`/`username`, plus every artifact's subject — because an identity can be issued something here without ever having authenticated here: a token exchange presents somebody else's token, a WS-Trust `OnBehalfOf` names a delegated subject, an anonymous RST issues an assertion for `anonymous`, and a Kerberos S4U2Self ticket is for a user who was never near this KDC. Such a row is listed and **marked as never authenticated**, because a users page that showed only the sign-ins would deny the existence of subjects the tokens page is displaying at the same moment. The same honesty runs through the methods column: "sign-in screen (password)" and "AS-REQ with PA-ENC-TIMESTAMP" are both authentications and only one of them checked anything, and an S4U row says the user was not there and names the service that asked in their stead.
+**Two decisions there are worth stating before changing anything.** The first is what *one row* is. A single person reaches this service as `alice` at the login screen, `urn:uuid:<entryUUID>` in every token (`urn:sts:user:alice` before 2026-09-14, still read), `alice` as a SAML `NameID` and `alice@EXAMPLE.COM` as a Kerberos principal, so the identity is keyed on the **local name** — a `urn:uuid:` subject resolved through the directory to the entry's current name (so a rename does not split a user into two rows), the legacy prefix stripped, and the realm split off at the last `@`. Four rows for one name would be a worse answer than one on a service whose whole premise is that the name you type is who you are in every protocol at once. What that costs is real and is shown rather than hidden: two different people called `alice` in two Kerberos realms are one row, which is what the Realms column exists to make visible. Case is never collapsed, because nothing else here treats `Alice` and `alice` as one person. The second is that the list is built from **three** sources — the authentications recorded, plus every token's `sub`/`username`, plus every artifact's subject — because an identity can be issued something here without ever having authenticated here: a token exchange presents somebody else's token, a WS-Trust `OnBehalfOf` names a delegated subject, an anonymous RST issues an assertion for `anonymous`, and a Kerberos S4U2Self ticket is for a user who was never near this KDC. Such a row is listed and **marked as never authenticated**, because a users page that showed only the sign-ins would deny the existence of subjects the tokens page is displaying at the same moment. The same honesty runs through the methods column: "sign-in screen (password)" and "AS-REQ with PA-ENC-TIMESTAMP" are both authentications and only one of them checked anything, and an S4U row says the user was not there and names the service that asked in their stead.
 
 **Putting a token under a session needed one thing that is not on the wire, and it is deliberately not a claim.** No token this service issues carries a session identifier — OIDC's `sid` is for front-channel logout, and inventing one for every token to make an admin page easier to draw would change what every client receives. So `signJwt()` takes an optional third argument, a `context` that is signed into nothing and sent nowhere, and the recorder stores its `sessionId` and `grant` on the token record. The link is threaded where it genuinely exists: the session id rides on the authorization code (the only route to a back-channel token request, which arrives with no cookie behind it), the token endpoint passes it on, and a **refresh** looks it up by the refresh token's own `jti` — without which the second generation of every token would show as sessionless and a session's list would quietly stop growing the moment a client refreshed. A grant that never had a session says so: `password`, `client_credentials`, the pre-authorized code and token exchange are shown as issued with no browser session at all, which is a fact about them rather than a gap in the recording. Tokens naming a session this service no longer holds get their own heading, since that is the ordinary end state rather than an error — the session expired and the tokens it produced outlived it.
 
@@ -6047,8 +6055,8 @@ That is **one hook and not twelve**, because `admin_stats.recordAuthentication()
 already the single funnel every one of those call sites goes through at the moment a
 credential is ACCEPTED. The hook is **inverted**, exactly as `helpers.js`'s
 `setJwtRecorder` is: `ldap_server.js` requires `admin_stats.js` — it needs `identityOf`'s
-normalisation, so that `alice`, `urn:sts:user:alice` and `alice@REALM` seed one entry
-and not three — so `admin_stats.js` cannot require it back without a cycle. It offers a
+normalisation, so that `alice`, `alice@REALM` and her `urn:uuid:<entryUUID>` subject
+seed one entry and not three — so `admin_stats.js` cannot require it back without a cycle. It offers a
 slot instead, and `ldap_server.js` fills it at require time. The observer's return value is
 ignored and a throw from it is caught: a directory must never be able to fail an
 authentication.
@@ -6112,8 +6120,9 @@ not a person and `ou=users` is for people, a distinction the admin console alrea
 with its `isClient` flag, which is what this reads.
 
 **One entry per person, however many ways they get in.** `rcbj` at the login screen,
-`urn:sts:user:rcbj` in a token, `rcbj@STS.MOCK` in a Kerberos AS-REQ and `rcbj` on a
-WS-Security `UsernameToken` have always been one entry: `identityOf()` strips the prefix
+`urn:uuid:<entryUUID>` in a token (or the retired `urn:sts:user:rcbj` in an older one),
+`rcbj@STS.MOCK` in a Kerberos AS-REQ and `rcbj` on a WS-Security `UsernameToken` are one
+entry: `identityOf()` resolves a subject through the directory, strips the legacy prefix
 and the realm before the observer sees any of them, so every name-shaped family here —
 OAuth 2.0, OpenID Connect, both SAML profiles, WS-Federation, WS-Trust, Kerberos, SPNEGO
 — lands on `uid=rcbj,ou=users` and simply adds a line to its `description`.
@@ -6366,24 +6375,27 @@ person created here gets a directory entry with `origin: scim` and no row on
 distinction, and the same one this service draws
 everywhere else between an identity being *recorded* and an identity having *authenticated*.
 
-#### The `id` is the DN
+#### The `id` is the entry's `entryUUID`
 
 RFC 7643 section 3.1 asks for an opaque, server-assigned, unique identifier the client
-must not parse. The DN already is one — it is the key the entry is stored under — so that
-is what a SCIM `id` is here, percent-encoded in a path segment:
+must not parse and that is never reassigned. Since 2026-09-14 that is the entry's
+**`entryUUID`** (RFC 4530): assigned when the entry is created, kept through a rename,
+and new for a person deleted and created again under the same name.
 
 ```
-GET /scim/v2/Users/uid%3Ddave%2Cou%3Dusers%2Cdc%3Dexample%2Cdc%3Dcom
+GET /scim/v2/Users/5503c620-f13d-42e9-a841-fbfbe4cf8899
 ```
 
-Every other candidate is a *second definition of one fact*. A `uid` is not unique in this
-tree (nothing stops `uid=alice,ou=users` and `cn=alice,ou=people` existing side by side);
-a synthesised id would have to be stored on the entry and would go stale on a rename,
-which is the failure `applicationEntry()`'s fallback exists to route around; a digest
-would be unreadable in the one place a reader most wants to read one. The cost is stated
-rather than hidden: **an LDAP rename gives the same person a new SCIM id**, which really
-is a deviation from "stable for the lifetime of the resource" — and it is the honest
-behaviour for a directory-backed server, because after a rename it *is* a different key.
+It is the same value a person's tokens carry in `sub`, as `urn:uuid:<entryUUID>`. Group
+`members[].value`, a User's `groups[].value` and the enterprise `manager.value` are ids
+too; the service stores the DNs they name, because that is what LDAP's `member` and
+`manager` hold. **A DN presented as an id still resolves**, for a client that stored one
+before the change, and the resource comes back with its new id.
+
+It was the DN until that date, on the argument that the DN was already the key the entry
+is stored under. That argument lost to its own stated cost: an LDAP rename gave the same
+person a new SCIM id, and once a person's `sub` became stable a SCIM id that was not would
+have been the one identifier here still reassigned by a rename.
 
 #### A create goes through the directory's own door
 

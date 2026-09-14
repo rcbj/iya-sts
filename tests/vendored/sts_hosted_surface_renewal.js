@@ -223,6 +223,20 @@ async function sessionsIn(apiBase) {
   return r.body.sessions;
 }
 
+// A session cookie is `<sid>.<handle>` since 2026-09-14 (`authn/CLAUDE.md`):
+// the handle rotates on a re-authentication and the sid never does. A session
+// row, its `derivedFrom` and an audit row's target name the SID, so a match
+// takes the part before the first dot. The "same session" checks keep
+// comparing the WHOLE cookie, which is the stronger claim: a renewal must not
+// rotate the handle either.
+function sidOf(cookie) {
+  log.debug("Entering sidOf().");
+  const text = String(cookie || "");
+  const dot = text.indexOf(".");
+  log.debug("Leaving sidOf().");
+  return dot > 0 ? text.slice(0, dot) : text;
+}
+
 async function auditRows(apiBase, action, target) {
   log.debug("Entering auditRows().");
   const r = await call("GET",
@@ -299,7 +313,7 @@ async function thePortalRenewsInPlace() {
   const first = await b.go("GET", R + "/portal/mfa");
   const csrfBefore = csrfOf(first.text);
   const renewalsBefore = (await auditRows(realmApi, "session.renew",
-                                          portalId)).length;
+                                          sidOf(portalId))).length;
   await sleep(1100);
   const page = await b.go("GET", R + "/portal/mfa");
   check("THE PAGE IS DRAWN — 200, not a redirect to the authorization " +
@@ -325,7 +339,8 @@ async function thePortalRenewsInPlace() {
     assert.ok(page.text.indexOf(who) >= 0, "the page does not name " + who);
   });
 
-  const renewals = await auditRows(realmApi, "session.renew", portalId);
+  const renewals = await auditRows(realmApi, "session.renew",
+                                  sidOf(portalId));
   check("A RENEWAL HAPPENED: `session.renew` rows for this session, outcome " +
         "success",
     function () {
@@ -351,7 +366,7 @@ async function thePortalRenewsInPlace() {
     })));
   });
   const row = (await sessionsIn(realmApi)).filter(function (s) {
-    return s.sessionId === portalId;
+    return s.sessionId === sidOf(portalId);
   })[0];
   check("the sessions list names the renewals on the portal session's row, " +
         "and its expiry rule says it renews rather than dying with its " +
@@ -381,7 +396,7 @@ async function aSignOutStillEndsIt() {
   await signInAt(b, R + "/portal", who);
   const portalId = b.jar.sts_portal;
   const signOn = (await sessionsIn(realmApi)).filter(function (s) {
-    return s.sessionId === b.jar.sts_session;
+    return s.sessionId === sidOf(b.jar.sts_session);
   })[0];
   assert.ok(signOn, "no row for the sign-on session " + b.jar.sts_session);
   await ok(realmApi + "/sessions/revoke",
@@ -396,7 +411,9 @@ async function aSignOutStillEndsIt() {
   });
   const rows = await sessionsIn(realmApi);
   check("and the portal session is gone from the list", function () {
-    assert.ok(!rows.some(function (s) { return s.sessionId === portalId; }),
+    assert.ok(!rows.some(function (s) {
+      return s.sessionId === sidOf(portalId);
+    }),
               portalId);
   });
   log.debug("Leaving aSignOutStillEndsIt().");
@@ -413,7 +430,14 @@ async function aRefusedRenewalReturnsToThePage() {
   const b = browser();
   await signInAt(b, R + "/portal/keys", who);
   const portalId = b.jar.sts_portal;
-  const sub = "urn:sts:user:" + who;
+  // The person's own subject (`urn:uuid:<entryUUID>` since 2026-09-14), read
+  // off the realm's /admin-api/users rather than built from the name.
+  const subjectAnswer = await call("GET", realmApi + "/users?user=" +
+                                   encodeURIComponent(who));
+  const sub = String((subjectAnswer.body && subjectAnswer.body.subject) || "");
+  check("the person has a urn:uuid: subject to revoke by", function () {
+    assert.ok(/^urn:uuid:/.test(sub), subjectAnswer.raw.slice(0, 200));
+  });
   const revoked = await ok(realmApi + "/tokens/revoke-subject",
                            { subject: sub },
                            "revoked every token for " + who);
@@ -428,7 +452,8 @@ async function aRefusedRenewalReturnsToThePage() {
                 /\/oauth2\/authorize\?/.test(page.location),
                 page.status + " -> " + page.location);
     });
-  const refused = (await auditRows(realmApi, "session.renew", portalId)).filter(
+  const refused = (await auditRows(realmApi, "session.renew",
+                                   sidOf(portalId))).filter(
       function (row) {
     return row.outcome === "refused";
   });
@@ -477,7 +502,7 @@ async function theConsoleRenewsToo() {
   check("with the same console session", function () {
     assert.strictEqual(b.jar.sts_admin, adminId);
   });
-  const rows = await auditRows(api, "session.renew", adminId);
+  const rows = await auditRows(api, "session.renew", sidOf(adminId));
   check("THE RENEWAL IS RECORDED IN THE DEFAULT REALM, where the console " +
         "session lives, although the sign-in ran in " + REALM, function () {
     assert.ok(rows.some(function (row) { return row.outcome === "success"; }),
@@ -494,7 +519,7 @@ async function theSignOnSessionRunningOut(held) {
   log.info("=== 5. the sign-on session runs out; the portal session does not " +
            "===");
   const signOn = (await sessionsIn(realmApi)).filter(function (s) {
-    return s.sessionId === held.signOnId;
+    return s.sessionId === sidOf(held.signOnId);
   })[0];
   const waitMs = signOn ?
                  Math.max(0, Number(signOn.expiresAt) - Date.now()) + 1500
@@ -511,7 +536,7 @@ async function theSignOnSessionRunningOut(held) {
   const rows = await sessionsIn(realmApi);
   check("the sign-on session has ended", function () {
     assert.ok(!rows.some(function (s) {
-      return s.sessionId === held.signOnId;
+      return s.sessionId === sidOf(held.signOnId);
     }),
               held.signOnId);
   });
@@ -524,13 +549,13 @@ async function theSignOnSessionRunningOut(held) {
     assert.ok(page.text.indexOf(held.who) >= 0);
   });
   const after = (await sessionsIn(realmApi)).filter(function (s) {
-    return s.sessionId === held.portalId;
+    return s.sessionId === sidOf(held.portalId);
   })[0];
   check("and it is still listed, derived from a sign-on session that no " +
         "longer exists",
     function () {
       assert.ok(after, "no row for " + held.portalId);
-      assert.strictEqual(after.derivedFrom, held.signOnId);
+      assert.strictEqual(after.derivedFrom, sidOf(held.signOnId));
     });
   log.debug("Leaving theSignOnSessionRunningOut().");
 }

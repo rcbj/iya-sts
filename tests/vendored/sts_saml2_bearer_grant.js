@@ -476,10 +476,20 @@ async function test() {
           assert.ok(granted.body.access_token, "no access token came back");
         });
   const claims = claimsOf(granted.body.access_token);
+  // A person's `sub` is `urn:uuid:<entryUUID>` since 2026-09-14
+  // (`authn/CLAUDE.md`), so it is not built from the name: the job asks the
+  // realm's /admin-api/users what this person's subject is and compares.
+  const subjectAnswer = await get(realmApi + "/users?user=" +
+                                  encodeURIComponent(person));
+  const expectedSub = String((subjectAnswer.body &&
+                              subjectAnswer.body.subject) || "");
   check("the token is FOR THE <Subject> of the assertion and not for its " +
         "<Issuer> — a party asserting on somebody's behalf is not that person",
         function () {
-          assert.ok(String(claims.sub).indexOf(person) >= 0,
+          assert.ok(/^urn:uuid:[0-9a-f-]{36}$/.test(expectedSub),
+            "the subject of " + person + " from /admin-api/users: " +
+            String(subjectAnswer.raw).slice(0, 200));
+          assert.strictEqual(claims.sub, expectedSub,
             "sub=" + claims.sub + " for " + person);
           assert.strictEqual(claims.username, person);
         });
@@ -993,6 +1003,18 @@ async function test() {
            { application: AUTH_CLIENT, attribute: "oauthSamlAssertionIssuer",
              value: AUTH_CLIENT },
            "declared the authenticating client as a SAML assertion issuer too");
+  // AND A PERSON OF THE SAME NAME (2026-09-14). A client assertion's
+  // <Subject> is the client_id, so the one document presented both ways names
+  // AUTH_CLIENT — and a grant for somebody with no directory entry is refused
+  // `invalid_grant` since that date (`oauth-oidc/CLAUDE.md`), for a reason
+  // that is not the history this section is about.
+  await ok(realmApi + "/users/create",
+           { username: AUTH_CLIENT, invent: false,
+             attributes: { cn: "SAML client " + AUTH_CLIENT, givenName: "SAML",
+                           sn: AUTH_CLIENT,
+                           displayName: "SAML client " + AUTH_CLIENT,
+                           mail: AUTH_CLIENT + "@saml-grant.test" } },
+           "created the person the grant half names");
   const bothWays = clientAssertion({});
   const authFirst = await tokenRequest({ grant_type: "client_credentials",
     scope: "openid", client_id: AUTH_CLIENT, client_assertion_type: CLIENT_TYPE,

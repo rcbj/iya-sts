@@ -391,9 +391,18 @@ async function testLoginScreen(meta, verify) {
   const it = verify(set.id_token, "the ID token");
   assert.strictEqual(at.username, username,
     "the access token should name the user who signed in. Got: " + at.username);
-  assert.ok(at.sub.indexOf(username) !== -1,
-    "the subject should be derived from the username signed in with. Got: " +
-        at.sub);
+  // The mock STS's `sub` was `urn:sts:user:<username>` and is
+  // `urn:uuid:<entryUUID>` since 2026-09-14 — the directory entry's
+  // identifier, which a rename does not change and a re-created account does
+  // not inherit. Either form is accepted, because this suite runs against the
+  // pinned `sts/` gitlink and the vendored copy against the current tree; what
+  // holds for both is that the access token and the ID Token name ONE subject.
+  assert.ok(at.sub.indexOf(username) !== -1 ||
+            /^urn:uuid:[0-9a-f-]{36}$/.test(String(at.sub)),
+    "the subject should be derived from the username signed in with, or be " +
+        "the directory entry's urn:uuid: identifier. Got: " + at.sub);
+  assert.strictEqual(it.sub, at.sub,
+    "the ID Token and the access token should name the same subject.");
   assert.strictEqual(it.preferred_username, username,
                      "the ID token should name that user too.");
   assert.strictEqual(it.given_name, username,
@@ -869,9 +878,16 @@ async function testOtherGrants(meta, verify, codeTokens) {
   assert.strictEqual(ro.status, 200, "the password grant failed: " + ro.raw);
   const roClaims = verify(ro.body.access_token,
       "the password grant access token");
-  assert.ok(roClaims.sub.indexOf(RO_USER) !== -1,
+  // `sub` is the directory entry's `urn:uuid:` identifier on a mock STS from
+  // 2026-09-14 and `urn:sts:user:<name>` before it (see the sign-in section
+  // above), so the NAME is asserted on `username`, which both carry.
+  assert.strictEqual(roClaims.username, RO_USER,
             "the password grant should describe the user who authenticated (" +
-            RO_USER + "), not " + roClaims.sub + ".");
+            RO_USER + "), not " + roClaims.username + ".");
+  assert.ok(roClaims.sub.indexOf(RO_USER) !== -1 ||
+            /^urn:uuid:[0-9a-f-]{36}$/.test(String(roClaims.sub)),
+            "the password grant's subject should be derived from " + RO_USER +
+            " or be a urn:uuid: identifier, not " + roClaims.sub + ".");
   verify(ro.body.id_token, "the password grant ID token");
 
   const roBad = await postForm(meta.token_endpoint, {

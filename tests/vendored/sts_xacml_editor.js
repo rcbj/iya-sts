@@ -629,7 +629,9 @@ async function pressOn(driver, path, action, values, carrying) {
 async function signIn(driver, username) {
   log.debug("Entering signIn(). username=" + username);
   await driver.manage().deleteAllCookies();
-  await open(driver, root("/admin"));
+  await open(driver, root("/admin?realm=default"));
+  // `?realm=default`: a bare /admin draws the realm chooser once the service
+  // has trust realms (2026-09-14, #32), which this suite nearly always does.
   const url = await driver.getCurrentUrl();
   if (url.indexOf("/authn/login") < 0) {
     // AND THE PAGE REALLY IS THE CONSOLE. A browser that could not load the

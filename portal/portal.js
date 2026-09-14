@@ -145,6 +145,11 @@ const authn = require('../authn/authn');
 // for a screen and reading the session that screen minted. `common/oidc_rp.js`
 // runs the flow and argues it; the section below is what changed here.
 const oidcRp = require('../common/oidc_rp');
+// WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32). A library with no route,
+// shared with the admin console.
+const realmChooser = require('../common/realm_chooser');
+// The realms, for where a sign-in link goes (`signInHref()`). A leaf here.
+const realms = require('../common/realms');
 // The access-control gate. A LEAF (rule 3), armed by xacml/xacml_access_pep.js
 // at 23c — before that line every check is allowed, which is what a process
 // without the XACML family does.
@@ -513,6 +518,19 @@ function page(title, inner, wide) {
     '<p class="ver" title="' + esc(APP_BUILD_INFO) + '">mock-sts <code>' +
     esc(APP_VERSION.version) + '</code></p>' +
     '</div></body></html>\n';
+}
+
+// WHERE A "SIGN IN" LINK ON A PORTAL PAGE GOES (2026-09-14, #32). Every one
+// of them is drawn in the realm the person belongs to — an activation, a reset,
+// a sign-out — so the realm chooser has nothing to ask them. In a trust realm
+// `/portal` is rewritten under its prefix and the chooser never applies; in
+// the default realm, once realms are defined, `?realm=default` is the choice
+// already made.
+function signInHref() {
+  log.debug("Entering signInHref().");
+  const skip = realms.isDefault() && realms.active();
+  log.debug("Leaving signInHref(). " + (skip ? "Past the chooser." : "Plain."));
+  return BASE + (skip ? '?realm=' + encodeURIComponent(realms.DEFAULT_ID) : '');
 }
 
 function send(res, status, html) {
@@ -1281,7 +1299,7 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
   // them is PROSE rather than a destination: with a key still to enrol they
   // are told why signing in comes first (enrolling one requires knowing who is
   // asking, and until they sign in nobody does).
-  const next = BASE;
+  const next = signInHref();
   log.debug('Leaving finishActivation(). Set up; sending to sign in.');
   return send(res, 200, page('Account ready',
     '<div class="card"><h1>Your account is ready</h1>' +
@@ -1551,7 +1569,7 @@ app.post(RESET_PASSWORD, function (req, res) {
     // `/portal` and not the sign-in screen, for `finishActivation()`'s reason:
     // `/authn/login` draws a form for a pending record, and `/portal` is what
     // mints one when the link is pressed.
-    '<p><a href="' + esc(BASE) + '">Sign in</a></p></div>'));
+    '<p><a href="' + esc(signInHref()) + '">Sign in</a></p></div>'));
 });
 
 // ---------------------------------------------------------------------------
@@ -1658,6 +1676,26 @@ function requireSignIn(req, res, returnTo, want) {
   // `beginAuthentication()` checked it AND held server-side, so the portal
   // still cannot be turned into an open redirect.
   // -------------------------------------------------------------------
+  // WHICH REALM FIRST (2026-09-14, #32): a bare /portal on a service with
+  // realms defined asks which realm the person belongs to before anything
+  // sends them to sign in — `common/realm_chooser.js`, shared with the
+  // console. A choice is a redirect to that realm's own portal.
+  const choice = realmChooser.decide(req, 'portal');
+  if (choice && choice.kind === 'redirect') {
+    res.set('Cache-Control', 'no-store').redirect(303, choice.location);
+    log.debug("Leaving requireSignIn(). To the chosen realm.");
+    return null;
+  }
+  if (choice) {
+    if (choice.error) {
+      errorCodes.mark(res, 'STS-PORTAL-0074');
+    }
+    send(res, choice.error ? 400 : 200, page('Choose your realm',
+      '<div class="card"><h1>Choose your realm</h1>' +
+      realmChooser.form(req, 'portal', choice.error) + '</div>'));
+    log.debug("Leaving requireSignIn(). The realm chooser.");
+    return null;
+  }
   const started = oidcRp.beginSignIn(req, res, 'portal', {
     returnTo: returnTo || BASE,
     fallback: BASE
@@ -1897,6 +1935,10 @@ function overviewPage(session, message, error) {
   // where no directory is installed, which the block below says out loud
   // rather than drawing an empty table.
   const entry = entryFor(session);
+  // THE SIGN-ON SESSION'S account of how this person is signed in, not the
+  // copy this portal session took from its ID Token: a step-up since then is
+  // on the sign-on session and nowhere else (`authn.signOnFactsFor()`).
+  const signOn = authn.signOnFactsFor(session);
 
   const html = shell(BASE, session, message, error,
     '<div class="card">' +
@@ -1912,10 +1954,17 @@ function overviewPage(session, message, error) {
         '</code></td></tr>'
       : '') +
     '<tr><th>Signed in</th><td>' +
-      esc(new Date((session.authTime || 0) * 1000).toISOString()) +
-    '</td></tr><tr><th>How</th><td>' +
-    esc((session.amr || []).join(', ') || 'unstated') +
-      ' (acr ' + esc(session.acr || '') + ')</td></tr>' +
+      esc(new Date(signOn.startedAt).toISOString()) +
+    '</td></tr>' +
+    (signOn.authentications > 1
+      ? '<tr><th>Last authenticated</th><td>' +
+        esc(new Date(signOn.authTime).toISOString()) + ' (' +
+        signOn.authentications + ' authentications in this sign-in)' +
+        '</td></tr>'
+      : '') +
+    '<tr><th>How</th><td>' +
+    esc(signOn.amr.join(', ') || 'unstated') +
+      ' (acr ' + esc(signOn.acr) + ')</td></tr>' +
     '<tr><th>This session ends</th><td>' +
       esc(new Date(session.expires || 0).toISOString()) + '</td></tr>' +
     (detail
@@ -5080,7 +5129,7 @@ app.post(BASE + '/signout', function (req, res) {
     return send(res, 200, page('Signed out',
       '<div class="card"><h1>You are signed out</h1><p class="note">There ' +
       'was no portal session on this browser to end.</p><p><a ' +
-      'href="' + esc(BASE) + '">Sign in</a></p></div>'));
+      'href="' + esc(signInHref()) + '">Sign in</a></p></div>'));
   }
   const username = session.user.username;
   const body = parseBody(req);
@@ -5144,7 +5193,8 @@ app.post(BASE + '/signout', function (req, res) {
     'nothing to type.</p><p class="note">Tokens, tickets and other ' +
     'credentials already issued to applications are untouched. <a ' +
     'href="/logout">/logout</a> lists all of them and ends what you ' +
-    'choose.</p><p><a href="' + esc(BASE) + '">Sign in again</a></p></div>'));
+    'choose.</p><p><a href="' + esc(signInHref()) + '">Sign in again</a></p>' +
+    '</div>'));
 });
 
 log.info('The User Portal is at ' + BASE + ': a person\'s own account, in ' +

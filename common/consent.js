@@ -100,7 +100,7 @@
 // state about themselves at length.
 //
 // It requires `helpers.js`, `config.js`, `applications.js` and `admin_stats.js`
-// (for `identityKeyOf()`, so that `alice`, `urn:sts:user:alice` and
+// (for `identityKeyOf()`, so that `alice`, `urn:uuid:<entryUUID>` and
 // `alice@REALM` are one person here exactly as they are one entry in the
 // directory), and NOTHING requires it back — so it closes no cycle and moves no
 // route.
@@ -286,7 +286,7 @@ function parseConsentValue(value) {
 // WHO SOMEBODY IS, in the one spelling this whole feature files answers under.
 //
 // It is `admin_stats.js`'s normalisation and nothing of this module's own —
-// `alice`, `alice@EXAMPLE.COM` and `urn:sts:user:alice` are one entry in
+// `alice`, `alice@EXAMPLE.COM` and `urn:uuid:<entryUUID>` are one entry in
 // the directory, so they have to be one person here or somebody would be asked
 // again for every spelling of their own name. Exported because
 // `consent_screen.js` has to compare the session against the record it is
@@ -425,7 +425,7 @@ function scopeProblem(scope) {
 // Everything one person has agreed to, parsed. The identity is normalised
 // through `admin_stats.js` first, so that the key this module looks an entry up
 // by is the key the entry was created under — `alice`, `alice@EXAMPLE.COM` and
-// `urn:sts:user:alice` are one person to the directory and have to be one
+// `urn:uuid:<entryUUID>` are one person to the directory and have to be one
 // person here, or somebody would be asked again for every spelling of their own
 // name.
 function consentsOf(username) {

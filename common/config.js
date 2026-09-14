@@ -733,10 +733,15 @@ const SETTINGS = [
     label: 'Bootstrap administrator account',
     path: 'admin.bootstrapUsername', env: 'STS_ADMIN_BOOTSTRAP_USERNAME',
     type: 'string', dflt: 'admin', runtime: false,
+    // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
+    // decides who administers the service — see admin-ui/admin_scope.js.
+    perProcess: true,
     restartReason: 'the bootstrap runs once, between the persistence store ' +
                    'opening and the listener binding, so a change after that ' +
                    'has nothing left to name',
-    description: 'The DEFAULT realm\'s bootstrap administrator (2026-09-13): ' +
+    description: 'The bootstrap administrator\'s username (2026-09-13), in ' +
+                 'the DEFAULT realm and, since 2026-09-14, in every trust ' +
+                 'realm, where it administers that realm only: ' +
                  'made at startup if absent, a member of both console roles, ' +
                  'forced to change its password at its first sign-in, and ' +
                  'impossible to delete or rename. Until it first signs in to ' +
@@ -4721,6 +4726,9 @@ const SETTINGS = [
   // console.
   { key: 'admin.readGroup', group: 'Admin console', label: 'Admin Read role',
     env: 'ADMIN_READ_GROUP', type: 'string', dflt: 'admin-read', runtime: true,
+    // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
+    // decides who administers the service — see admin-ui/admin_scope.js.
+    perProcess: true,
     description: 'The cn of the directory group whose members may READ the ' +
                  'console — every page, and every ?format=json view of one. ' +
                  'It is an ordinary group under ou=groups, so an ldapmodify, ' +
@@ -4731,6 +4739,9 @@ const SETTINGS = [
 
   { key: 'admin.writeGroup', group: 'Admin console', label: 'Admin Write role',
     env: 'ADMIN_WRITE_GROUP', type: 'string', dflt: 'admin-write',
+    // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
+    // decides who administers the service — see admin-ui/admin_scope.js.
+    perProcess: true,
     runtime: true,
     description: 'The cn of the directory group whose members may POST a ' +
                  'console form — revoke a token, add a claim, change a ' +
@@ -4753,6 +4764,9 @@ const SETTINGS = [
   { key: 'adminApi.authRequired', group: 'Management API',
     label: 'Require an access token on /admin-api',
     env: 'ADMIN_API_AUTH_REQUIRED', type: 'bool', dflt: true,
+    // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
+    // decides who administers the service — see admin-ui/admin_scope.js.
+    perProcess: true,
     runtime: true,
     description: 'Every call into /admin-api must present a Bearer access ' +
                  'token this service issued, audienced to this API, carrying ' +
@@ -4766,6 +4780,9 @@ const SETTINGS = [
   { key: 'adminApi.clientSecret', group: 'Management API',
     label: 'The management API client\'s secret',
     env: 'ADMIN_API_CLIENT_SECRET', type: 'string', dflt: '',
+    // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
+    // decides who administers the service — see admin-ui/admin_scope.js.
+    perProcess: true,
     secret: true,
     restartReason: 'the seeded registration is written once, at startup, so ' +
                    'a secret changed while running would be a value nothing ' +
@@ -4798,6 +4815,9 @@ const SETTINGS = [
   { key: 'adminApi.audience', group: 'Management API',
     label: 'The audience an /admin-api token must carry',
     env: 'ADMIN_API_AUDIENCE', type: 'string', derived: true,
+    // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
+    // decides who administers the service — see admin-ui/admin_scope.js.
+    perProcess: true,
     dflt: function () {
       log.debug("Entering dflt().");
       log.debug("Leaving dflt().");
@@ -4819,6 +4839,9 @@ const SETTINGS = [
   { key: 'admin.openWhenEmpty', group: 'Admin console',
     label: 'Open until the bootstrap administrator signs in',
     env: 'ADMIN_OPEN_WHEN_EMPTY', type: 'bool', dflt: true, runtime: true,
+    // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
+    // decides who administers the service — see admin-ui/admin_scope.js.
+    perProcess: true,
     description: 'SINCE 2026-09-13, on a service that seeded its bootstrap ' +
                  'administrator (admin.bootstrapUsername): ON, every ' +
                  'signed-in person may use the whole console UNTIL that ' +
@@ -7890,17 +7913,21 @@ const SETTINGS = [
     label: 'Which acts emit automatically',
     env: 'STS_CAEP_AUTO_EMIT_TYPES', type: 'csv',
     dflt: 'session-established,session-presented,session-revoked,' +
-          'credential-change',
+          'credential-change,assurance-level-change',
     runtime: true,
     description: 'The SHORT NAMES of the CAEP events this service emits by ' +
-                 'itself, out of the four acts it can actually observe: a ' +
+                 'itself, out of the five acts it can actually observe: a ' +
                  'session starting, a session being presented, a session ' +
-                 'ending, and — since 2026-09-13 — an administrator changing ' +
+                 'ending, a person re-authenticating on a session they ' +
+                 'already hold with a different acr (a step-up or ' +
+                 'step-down, since 2026-09-14, which emits ' +
+                 'assurance-level-change on the urn:sts:acr scale), and — ' +
+                 'since 2026-09-13 — an administrator changing ' +
                  'a person\'s credentials on their /admin/users page or ' +
                  'through /admin-api/users (a password set or reset, a ' +
                  'security key, an authenticator app or every second factor ' +
                  'removed), or the person spending a password reset link, ' +
-                 'which emits credential-change. The other four are things ' +
+                 'which emits credential-change. The other three are things ' +
                  'nothing here does — no device reports compliance to this ' +
                  'service and no risk engine talks to it — so they are ' +
                  'emitted BY HAND from /admin/caep or POST ' +

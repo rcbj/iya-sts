@@ -153,8 +153,9 @@ from `listen()`* is the rule this is an instance of.
    own DID, and an entry for it would file the issuer among the people.
 
    But this module requires `admin_stats.js` (it needs
-   `identityOf`'s normalisation, so `alice`, `urn:sts:user:alice` and
-   `alice@REALM` seed ONE entry), which means `admin_stats.js` cannot require it
+   `identityOf`'s normalisation, so `alice`, `alice@REALM` and a token's
+   `urn:uuid:<entryUUID>` — or the retired `urn:sts:user:alice` — seed ONE
+   entry), which means `admin_stats.js` cannot require it
    back: that is the cycle rule 2 exists for. So `admin_stats.js` offers
    `setUserObserver()` and this module fills it at require time. The observer's
    return value is ignored and a throw from it is caught — a directory must never
@@ -190,7 +191,8 @@ from `listen()`* is the rule this is an instance of.
 
    **ONE ENTRY PER PERSON, AND IT IS ENFORCED AT FOUR DOORS RATHER THAN ASSUMED
    AT ONE.** Most of it was already true by accident: `identityOf()` normalises
-   `rcbj`, `urn:sts:user:rcbj` and `rcbj@STS.MOCK` to one key, so every
+   `rcbj`, `rcbj@STS.MOCK`, `urn:uuid:<rcbj's entryUUID>` and the retired
+   `urn:sts:user:rcbj` to one key, so every
    name-shaped family folds onto `uid=rcbj,ou=users` before this module sees
    them. What did not fold was the identity that is a DN — a certificate saying
    `CN=rcbj` became a SECOND object beside the entry `rcbj` already had, in
@@ -612,11 +614,16 @@ would have handed the default realm's index to every other one. The symptom woul
 have been the worst kind: a `groups` claim in a token issued under `/realm/acme`
 naming the DEFAULT realm's groups, correct-looking, verifiable and wrong.
 
-**AND THE TWO ADMIN CONSOLE ROLES ARE PINNED TO THE DEFAULT REALM.**
-`adminRbac.setDirectory()` is handed nine functions wrapped in `inDefaultRealm()`,
-which is `realms.run(DEFAULT_REALM, …)`. A role is permission to change what
-every realm does, so a per-realm roster would mean anybody who can create a realm
-can grant themselves both roles inside it and walk back out into the default one.
+**AND THE TWO ADMIN CONSOLE ROLES WERE PINNED TO THE DEFAULT REALM UNTIL
+2026-09-14.** `adminRbac.setDirectory()` was handed nine functions wrapped in
+`inDefaultRealm()`, because a role was permission to change what every realm
+does, so a per-realm roster would have meant anybody who can create a realm
+granting themselves both roles inside it and walking back out into the default
+one. **Since #32 each realm has a roster of its own**: `rosterViewFor(realm)`
+builds the same nine functions bound to a named realm, the default view still
+answers a caller that names none, and `admin-ui/admin_scope.js` confines a
+realm's administrators to their realm — which is what answers the escalation
+the pinning prevented (`admin-ui/CLAUDE.md` 8d).
 `setDirectoryReader()` and `setDirectoryWriter()` are deliberately NOT pinned:
 those draw the console's user pages, and `/realm/acme/admin/users` showing the
 default realm's people would be a console that cannot see the realm it is pointed
@@ -700,8 +707,90 @@ raises, and without this there is no way to answer it.
 `fedAutocreateUsers` on the relationship is checked in `autoCreateUser()` beside
 `ldap.autocreateUsers`, and it is the one place a federated sign-in is treated
 differently from any other kind: a federation partner is the one source of
-identities whose VOLUME this service does not control, and off gives a session
-and no entry.
+identities whose VOLUME this service does not control.
+
+**Since 2026-09-14 it is asked AFTER the entry is looked up, and off means "do not
+create".** It used to return before the lookup and mean "a session and no entry" — so a
+person PROVISIONED ahead of time, by SCIM, was never folded onto and never had a
+partner's attributes written, and a session could have no entry to be the subject of.
+Now an existing entry is used and updated, and a missing one is left missing for
+`authn.startSession()` to refuse (`STS-AUTHN-0180`; the relationship's own page answers
+`STS-FED-0090`). **`fedUpdateUserAttributes`** (on by default) is the second switch:
+`applyFederatedAttributes()` takes `{ created }` and writes the partner's values on a
+returning person only while it is on, while the three facts about where the person came
+from are recorded either way. `tests/federation_provisioning.js` drives both shapes
+through a real OIDC federated sign-in.
+
+## `entryUUID`: THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES, AND A PERSON'S `sub` (2026-09-14)
+
+**A person's `sub` is `urn:uuid:<entryUUID>` in both modes**, and a SCIM resource's `id`
+is the bare `entryUUID`. Until this date `sub` was `urn:sts:user:<username>` — a rename
+changed it, and a person deleted and re-created under the same name inherited it — and a
+SCIM id was the DN, which a rename reassigned. `authn/CLAUDE.md`, *What an authenticated
+identity is here*, carries the design and rcbj's choices; this is the directory's half.
+
+| Rule | Where |
+|---|---|
+| **Assigned in `putEntry()` and carried through every overwrite** — taken from the entry already at that DN, never from the attributes a caller handed in, because most writers REBUILD the attribute set | `putEntry()` |
+| **A rename keeps it**: `modifyDN` moves the stored object | the modifyDN handler |
+| **A delete and re-create is a new value**: nothing at the DN to carry | `putEntry()` |
+| **Seeded entries get a name-based (v5) UUID** over the realm and the DN; every other entry a random (v4) one. The seed runs on every start, so a random value gave alice a new `sub` per restart in memory mode | `backfilledEntryUuid()` |
+| **A restored or replicated row without one is backfilled the same way**, so every process computes the same value without writing it back | `applyEntry`, `replaceRealm` |
+| **NO-USER-MODIFICATION in BOTH modes** (RFC 4530 section 2): an add or modify naming it is `STS-LDAP-0076`, a modify replacing everything keeps it, `addValues()` and `applyFederatedAttributes()` never write it | `ALWAYS_PROTECTED_OPERATIONAL` |
+| **Operational**: returned on a search only when asked for by name | `OPERATIONAL` |
+| **Looked up through a validating index** — a hit is checked against the store, a miss rebuilds once per directory version, so a foreign subject cannot cost a walk per lookup | `entryByUuid()` |
+
+**THE SUBJECT RESOLVER IS A SLOT THIS FILE FILLS**, `helpers.setSubjectResolver({
+subjectFor, nameFor })`: `helpers.userFor()` asks for a person's `sub` and
+`admin_stats.js`'s `identityOf()` asks who a `sub` names. Rule 3e's test answers yes both
+ways round — `helpers.js` is a leaf this module requires, and a require the other way
+would register every `/admin/ldap/*` route at #3. Both answer in the ambient realm and
+only for PERSON entries. **A process with no directory has no subjects**: `userFor()`
+gives `sub: ''` there rather than the retired name-derived form.
+
+**A SUBJECT IS NOT A USERNAME, AND NOTHING IS CREATED NAMED AFTER ONE.** `createUser()`
+refuses a `urn:uuid:` or bare-UUID name (`STS-LDAP-0090`) and `autoCreateUser()` creates
+nothing for one (`STS-LDAP-0091`): `identityOf()` has already resolved every subject this
+realm knows, so what arrives in that shape names nobody here, and an entry named after it
+would be a second person answering to somebody else's subject. `locateEntry()` looks a
+`urn:uuid:` up and never says where an entry "would go".
+
+**`deleteOldRdn` IS HONOURED SINCE THE SAME DAY** (RFC 4511 section 4.9), on the socket
+and through a dispatched operation (`operationRequest()` carries it). It was ignored, so
+renaming `uid=alice` to `uid=alicia` left `uid: alice` resolving to the renamed person. A
+rename of a person also calls `noteAccountChange('updated', …)` now.
+
+**SCIM's four entry points take either an id or a DN**: `readPerson()`,
+`readGroupEntry()`, `deletePerson()` and `deleteGroupEntry()` begin with
+`dnForResourceId()`, and `groupsFor()` does too, so `/admin-api/groups?group=` answers a
+SCIM id. `resourceIdOfDn()` is the other direction, for member and manager values.
+
+**TWO PROCESSES THAT CREATE ONE PERSON AT ONCE KEEP BOTH VALUES** (the same day).
+A request worker knows only its own store until replication reaches it, so two first
+sign-ins by one person on two workers each assigned a random UUID, each issued tokens
+under it, and the store kept the last row. `applyEntry()` asks `mergeCreateRace()` about
+the row it is replacing: two creates within `CREATE_RACE_WINDOW_S` (60s) of each other
+keep the LOWER value as `entryUUID` and the other on `stsEntryUuidAlias`, and a
+microtask writes that answer back as this process's own write — after the replication
+applier has recorded the row it applied, before any request can read the entry. Every
+process reaches the same answer in either order and writes it back once. A RE-CREATE —
+created long after the entry it replaced — is not merged, so a coalesced delete cannot
+alias a deleted person's subject onto a new one. The alias is carried by `putEntry()` and
+a modify, indexed by `entryByUuid()`, operational and client-unwritable like `entryUUID`.
+Downstream, `authn.js`'s `sameIdentity()`, `person_assertions.subjectIsSelf()` and
+`oauth2.js`'s refresh (which KEEPS the aliased `sub` its relying party holds) resolve an
+alias to its entry.
+
+**A RENAME MOVES THE PERSON'S ROW IN THE IDENTITY REGISTER**: the modifyDN handler calls
+`stats.renameIdentity()`, and token, session and code records are filed by
+`stats.holderKeyOf()`, which prefers a resolvable subject over the name they were made
+under. **A modify of a row with no `createTimestamp`** — one imported or written by hand —
+used to write `undefined` into it, and every SCIM list after that threw
+(`Cannot read … 'slice'`); it takes the entry's `createdAt` or stays absent.
+
+`tests/stable_subject.js` is the contract, in two processes for the determinism claims;
+sixteen mutants across this file and the others the change touched, all caught, and
+twenty more for the race, the rename and the timestamp.
 
 ## A CREATE WAS A FUNCTION OF DIRECTORY SIZE, AND THE USERNAME INDEX IS WHY IT IS NOT (2026-09-07)
 
@@ -1634,8 +1723,9 @@ somebody in the directory that `autoCreateUsers` had just been set to keep out.
 
 **THE IDENTITY ARRIVES NORMALISED.** `consent.js` runs it through
 `admin_stats.js`'s `identityKeyOf()` first, which is the same normalisation
-`autoCreateUser()` used to place the entry — so `alice`, `alice@EXAMPLE.COM` and
-`urn:sts:user:alice` reach `locateEntry()` as one key and find one entry. A
+`autoCreateUser()` used to place the entry — so `alice`, `alice@EXAMPLE.COM`,
+her `urn:uuid:<entryUUID>` and the retired `urn:sts:user:alice` reach
+`locateEntry()` as one key and find one entry. A
 second normalisation here would be a second opinion about who somebody is.
 
 **A REMOVE THAT EMPTIES THE ATTRIBUTE DELETES IT.** LDAP has no empty attribute
@@ -2034,7 +2124,10 @@ whether it asks at all. Three lines:
 * **an anonymous connection writes nothing** (`STS-LDAP-0052`);
 * **an administrator writes anything** — somebody whose bound DN names an entry in
   the DEFAULT realm's directory whose identity holds **Admin Write**
-  (`STS-LDAP-0053` otherwise);
+  (`STS-LDAP-0053` otherwise). **Since 2026-09-14 a realm's own administrator
+  writes anything in THAT realm** (`boundDnIsRealmAdministrator()`): a
+  non-default ambient realm, a bound DN naming an entry in it, and Admin Write
+  on that realm's roster — never its open bootstrap window;
 * **anybody else may MODIFY THEIR OWN ENTRY, and only the attributes
   `ldap.selfWritableAttributes` names** (`STS-LDAP-0054`). No add, no delete, no
   rename.

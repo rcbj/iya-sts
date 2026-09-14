@@ -42,7 +42,7 @@
 // time in a running service, the require is a cache hit.
 // ---------------------------------------------------------------------------
 
-const { log, userFor } = require('../common/helpers');
+const { log, userFor, nameForSubject } = require('../common/helpers');
 const errorCodes = require('../common/error_codes');
 const realms = require('../common/realms');
 const config = require('../common/config');
@@ -187,9 +187,11 @@ function usernameOf(subjectValue) {
     return null;
   }
   const sub = String(one.sub || one.uri || '');
-  if (sub.indexOf('urn:sts:user:') === 0) {
+  // Either subject form this service issued — see `helpers.nameForSubject()`.
+  const named = nameForSubject(sub);
+  if (named) {
     log.debug("Leaving usernameOf().");
-    return sub.slice('urn:sts:user:'.length);
+    return named;
   }
   if (one.email) {
     log.debug("Leaving usernameOf().");

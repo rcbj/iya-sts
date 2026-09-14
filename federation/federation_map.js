@@ -419,7 +419,19 @@ function usernameFor(record, flat, subject) {
   }
   raw = raw.trim();
   // Step 2. See the header.
-  const normalised = stats.identityKeyOf(raw);
+  //
+  // **EXCEPT A `urn:uuid:` SUBJECT, WHICH IS NOT RESOLVED HERE (2026-09-14).**
+  // That is this service's own subject form now (`urn:uuid:<entryUUID>`), and
+  // `identityOf()` answers it by looking the UUID up in THIS realm's
+  // directory. A partner's subject is a value in the PARTNER's namespace: it
+  // names an entry over there, and resolving it here would either find nobody
+  // (and file the person under a raw URN nothing may create an entry for) or,
+  // worse, find a local person who happens to hold that value. So it becomes a
+  // local name of its own — `sub-<uuid>`, stable for as long as the partner's
+  // subject is, and in no namespace a local person can be in.
+  const normalised = /^urn:uuid:/i.test(raw)
+    ? 'sub-' + raw.slice('urn:uuid:'.length).toLowerCase()
+    : stats.identityKeyOf(raw);
   if (normalised !== raw) {
     log.debug('usernameFor(): the partner\'s subject "' + raw + '" is filed ' +
         'here as "' +

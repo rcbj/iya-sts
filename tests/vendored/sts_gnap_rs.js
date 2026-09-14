@@ -812,7 +812,8 @@ async function test() {
         "same resource owner", function () {
     assert.strictEqual(r.json.active, true, r.text);
     assert.strictEqual(r.json.instance_id, RS_ID);
-    assert.ok(/gnap-rs-owner|urn:sts:user:/.test(String(r.json.sub)),
+    // A person's subject is `urn:uuid:<entryUUID>` since 2026-09-14.
+    assert.ok(/gnap-rs-owner|^urn:uuid:[0-9a-f-]{36}$/.test(String(r.json.sub)),
               String(r.json.sub));
   });
   r = await rsKey.send("POST", h.GRANT, { json: {

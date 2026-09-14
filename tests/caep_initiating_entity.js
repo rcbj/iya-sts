@@ -149,14 +149,25 @@ function run(t) {
   t.log.info('C. an expiry is neither a person nor an administrator');
   // -----------------------------------------------------------------------
   const seenExpiry = capture();
-  const expiring = signIn('entity-expiry');
+  // The cookie the sign-in WROTE, and not `sts_session=<id>`: since
+  // 2026-09-14 a session cookie is `<sid>.<handle>` and a bare id is nobody's
+  // cookie, so a lookup built from the id alone finds nothing whether or not
+  // the session has expired — and this assertion would pass for that reason.
+  const written = [];
+  const expiring = authn.startSession({ set: function (name, value) {
+    written.push(String(value));
+  }, req: null }, 'entity-expiry', ['pwd'], '1', 'OAuth 2.0 / OIDC');
+  const expiringCookie = (written[0] || '').split(';')[0];
+  t.check(authn.sessionOf({ headers: { cookie: expiringCookie } }) === expiring,
+          'the cookie the sign-in wrote opens the session before it expires, ' +
+          'so the null below is the expiry and not a cookie nobody holds');
   seenExpiry.length = 0;
   // Make it run out and then look it up, which is one of the two lazy paths.
   // The sweep is the other and reaches the same function; a test that waited
   // thirty seconds for it would be a test nobody runs.
   expiring.expires = Date.now() - 1000;
   const found = authn.sessionOf({
-    headers: { cookie: 'sts_session=' + expiring.id } });
+    headers: { cookie: expiringCookie } });
   t.equal(found, null, 'an expired session is not returned');
   t.equal(seenExpiry.length, 1,
           'and ending it told the observer, which it did not do at all ' +

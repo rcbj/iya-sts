@@ -806,14 +806,14 @@ function groupsOf(dn) {
   const answer = directory.groupsOfUser(dn);
   log.debug("Leaving groupsOf().");
   return (answer.groups || []).map(function (group) {
-    return { dn: group.dn, cn: group.cn };
+    return { dn: group.dn, cn: group.cn,
+             id: directory.resourceIdOfDn(group.dn) };
   });
 }
 
 function userResourceFor(entry, req) {
   log.debug("Entering userResourceFor().");
-  log.debug("Leaving userResourceFor().");
-  return scimMap.toScimUser(entry, {
+  const resource = scimMap.toScimUser(entry, {
     groups: groupsOf(entry.dn),
     location: locationPrefix(req, 'Users'),
     // WHAT THIS PERSON IS CALLED WHEN THEIR ENTRY HAS NO `uid` — which is an
@@ -826,6 +826,14 @@ function userResourceFor(entry, req) {
     // and the whole of it is in toScimUser().
     rdnName: directory.usernameOfEntry(entry)
   });
+  // The manager as a SCIM id, where the directory holds the DN (2026-09-14).
+  const extension = resource[scimMap.ENTERPRISE_SCHEMA];
+  if (extension && extension.manager && extension.manager.value) {
+    extension.manager.value =
+      directory.resourceIdOfDn(extension.manager.value);
+  }
+  log.debug("Leaving userResourceFor().");
+  return resource;
 }
 
 // EXTENDED WITH THE ENTERPRISE USER SCHEMA (RFC 7643 section 4.3), and the
@@ -944,9 +952,9 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
     // -----------------------------------------------------------------------
     let dn;
     if (existing) {
-      // An update keeps the DN it has. A SCIM id IS the DN, so moving the entry
-      // would change the id underneath a client that is holding it, and a
-      // rename is an LDAP modrdn rather than a PUT.
+      // An update keeps the DN it has. A rename is an LDAP modrdn rather than a
+      // PUT — and since 2026-09-14 it would not change the SCIM id either,
+      // which is the entry's `entryUUID`.
       dn = existing.dn;
 
       // UNIQUENESS on an update, which createUser() cannot answer because
@@ -1007,6 +1015,14 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
                                converted.errors.join(' ')));
     }
 
+    // The manager arrives as a SCIM id and is stored as the DN LDAP's
+    // `manager` holds (2026-09-14); a value naming no entry is kept as sent.
+    if (converted.attributes.manager) {
+      converted.attributes.manager = [].concat(converted.attributes.manager)
+        .map(function (value) {
+          return directory.dnForResourceId(value);
+        });
+    }
     const written = directory.writePerson(dn, converted.attributes);
     if (!written.ok) {
       // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
@@ -1068,9 +1084,9 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
       // on an otherwise valid resource.
       throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
         new SCIMMY.Types.Error(403, null,
-          'The entry at ' + resource.id + ' is this service\'s bootstrap ' +
-          'administrator (admin.bootstrapUsername) in the default realm, and ' +
-          'it cannot be deleted.'));
+          'The entry at ' + resource.id + ' is its realm\'s bootstrap ' +
+          'administrator (admin.bootstrapUsername), and it cannot be ' +
+          'deleted.'));
     }
     if (!removed.ok) {
       throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
@@ -1112,7 +1128,12 @@ function groupResourceFor(entry, req) {
   log.debug("Entering groupResourceFor().");
   log.debug("Leaving groupResourceFor().");
   return scimMap.toScimGroup(entry, {
-    members: entry.members || [],
+    // Each member with its SCIM id beside its DN (2026-09-14), so a member's
+    // `value` is the same id that person's own User resource carries.
+    members: (entry.members || []).map(function (member) {
+      return Object.assign({}, member,
+                           { id: directory.resourceIdOfDn(member.dn) });
+    }),
     location: locationPrefix(req, 'Groups')
   });
 }
@@ -1180,7 +1201,7 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
     if (!existing && !directory.nameUsableInDn(displayName)) {
       throw coded('STS-LDAP-0046', new SCIMMY.Types.Error(400, 'invalidValue',
         'This displayName carries a character RFC 4514 section 2.4 reserves ' +
-        'in a DN (one of , = + < > # ; " \\). The SCIM id of a group here IS ' +
+        'in a DN (one of , = + < > # ; " \\). A group here is stored at a ' +
         'its entry\'s DN, so such a name would produce a group that cannot ' +
         'be read back. Refused rather than escaped, for the reason ' +
         'createUser() refuses the same characters in a username: an ' +
@@ -1201,6 +1222,16 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
     // /admin/groups exists to report, and would be this service enforcing in
     // one direction what it explicitly does not enforce in the other. Logged,
     // so it is visible rather than silent.
+    // A MEMBER ARRIVES AS A SCIM ID AND IS STORED AS A DN (2026-09-14): a
+    // `member` value is a DN in LDAP, and every reader of a group here — the
+    // groups claim, /admin/groups, an ldapsearch — reads it as one. A value
+    // that names no entry is kept as it was sent, for the reason below.
+    if (converted.attributes.member) {
+      converted.attributes.member = converted.attributes.member
+        .map(function (value) {
+          return directory.dnForResourceId(value);
+        });
+    }
     (converted.attributes.member || []).forEach(function (value) {
       if (!directory.readPerson(value) && !directory.readGroupEntry(value)) {
         log.info('scim: ' + dn + ' lists ' + value + ' as a member and ' +
@@ -1431,7 +1462,7 @@ function meSubject(req) {
       'is missing.'));
   }
   // Through the identity normalisation every other reader of this directory
-  // uses, so that `alice`, `urn:sts:user:alice` and `alice@REALM` reach
+  // uses, so that `alice`, `urn:uuid:<entryUUID>` and `alice@REALM` reach
   // ONE entry — the same fold recordAuthentication() applies, and the reason
   // this is not a lookup by the raw principal. objectFor() then handles all
   // three identity shapes, including the DN of a client certificate and a DID,
@@ -1913,16 +1944,18 @@ function description(req) {
       maxEntries: directory.maxEntries()
     },
     identifiers: {
-      id: "the entry's DN, percent-encoded in a URL path segment",
+      id: "the entry's entryUUID (RFC 4530)",
       why: 'RFC 7643 section 3.1 asks for an opaque, server-assigned, unique ' +
-           'identifier, and the DN already is one — it is the key the entry ' +
-           'is stored under. Any other choice would be a second definition ' +
-           'of one fact. The cost is stated rather than hidden: an LDAP ' +
-           'rename gives the same person a new SCIM id, which is a real ' +
-           'deviation from "stable for the lifetime of the resource" and is ' +
-           'the honest behaviour for a directory-backed server.',
+           'identifier that is never reassigned. It was the entry\'s DN ' +
+           'until 2026-09-14, and a rename reassigned it. The entryUUID is ' +
+           'assigned ' +
+           'when the entry is created, survives a rename, and is the same ' +
+           'value a person\'s token carries in `sub` as urn:uuid:<value>. A ' +
+           'DN presented as an id still resolves, for a client that stored ' +
+           'one before the change. Member and manager values are ids too, ' +
+           'and are stored as the DNs LDAP holds.',
       example: base + BASE + '/Users/' +
-               encodeURIComponent('uid=alice,' + directory.usersDn())
+               directory.resourceIdOfDn('uid=alice,' + directory.usersDn())
     },
     endpoints: [
       { method: 'GET', path: BASE + '/ServiceProviderConfig',
@@ -2052,11 +2085,12 @@ function description(req) {
       { what: 'A userName or displayName carrying an RFC 4514 special ' +
               'character (a comma, a quote, a plus, a hash, a semicolon, an ' +
               'equals, an angle bracket or a backslash)',
-        answer: '400 invalidValue — the SCIM id here IS the entry\'s DN, so ' +
-                'a name carrying one would produce a resource that cannot be ' +
-                'read back. It is the SAME refusal the console and the ' +
-                'management API give, from the same rule; an ldapadd can ' +
-                'still create such an entry with the escaping written out.' },
+        answer: '400 invalidValue — the entry\'s DN is built from the name, ' +
+                'so a name carrying one would produce an entry the other ' +
+                'doors cannot name. It is the SAME refusal the console and ' +
+                'the management API give, from the same rule; an ldapadd ' +
+                'can still create such an entry with the escaping written ' +
+                'out.' },
       { what: 'A userName that is DN-shaped or DID-shaped',
         answer: '400 invalidValue — an entry named by a distinguished name ' +
                 'gets here by presenting a client certificate and one named ' +

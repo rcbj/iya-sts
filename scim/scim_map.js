@@ -58,7 +58,15 @@
 // ---------------------------------------------------------------------------
 // FIVE DECISIONS ARE LOAD-BEARING, and each is easy to undo by accident.
 //
-// **THE SCIM `id` IS THE ENTRY'S DN.** RFC 7643 section 3.1 wants an opaque,
+// **THE SCIM `id` WAS THE ENTRY'S DN UNTIL 2026-09-14, AND IS ITS `entryUUID`
+// NOW** — the paragraph below is the argument that was made for the DN, kept
+// because its last sentence is the one that lost: RFC 7643 section 3.1's id
+// "MUST NOT be reassigned", a rename reassigned it, and a stable subject made
+// that a defect rather than a quirk. The UUID is the value a person's token
+// carries in `sub` as `urn:uuid:<value>`; `scimIdOf()` reads it off the entry,
+// and the SCIM handlers translate member and manager ids to and from DNs.
+//
+// RFC 7643 section 3.1 wants an opaque,
 // server-assigned, unique identifier that the client must not parse, and the DN
 // is exactly that and is already the key the entry is stored under. Any other
 // choice is a SECOND definition of one fact: a `uid` is not unique in this tree
@@ -167,7 +175,8 @@ const USER_ATTRIBUTES = [
     schema: 'RFC 4519 2.39',
     note: 'The SCIM uniqueness constraint. It is the RDN of an auto-created ' +
           'entry, so for anybody this service authenticated it is also their ' +
-          'sign-in name — but it is NOT the SCIM id, which is the DN.' },
+          'sign-in name — but it is NOT the SCIM id, which is the entry\'s ' +
+          'entryUUID.' },
   { scim: 'externalId', ldap: 'scimExternalId', kind: 'single',
     schema: "this service's own (no standard type)",
     note: 'The provisioning client\'s own identifier for this person. Stored ' +
@@ -239,11 +248,9 @@ const USER_ATTRIBUTES = [
     kind: 'single', extension: true, schema: 'RFC 4519 2.20' },
   { scim: ENTERPRISE_SCHEMA + ':manager.value', ldap: 'manager',
     kind: 'single', extension: true, schema: 'RFC 2798 2.9',
-    note: 'A DN in the directory and an id in SCIM. It is passed through ' +
-          'UNCHANGED rather than resolved, because the SCIM id of a person ' +
-          'IS their DN here — so the two spellings coincide, and a ' +
-          'resolution step would only be a place for them to stop ' +
-          'coinciding.' },
+    note: 'A DN in the directory and an id in SCIM, translated both ways by ' +
+          'the SCIM handlers since the id became the entryUUID ' +
+          '(2026-09-14). A value naming no entry is kept as it was sent.' },
 
   { scim: 'groups', ldap: '(member, uniqueMember, memberUid on the group)',
     kind: 'derived', readOnly: true,
@@ -552,13 +559,27 @@ function carryThrough(existing) {
 // purpose — the padding is for the matcher and the pruning is for the wire, and
 // folding them together is how one of them quietly stops happening.
 // ---------------------------------------------------------------------------
+// The id of a resource: the entry's `entryUUID`, and its DN where it has none.
+// Read off the entry the caller already holds, so this module still asks the
+// directory nothing.
+function scimIdOf(entry) {
+  log.debug("Entering scimIdOf().");
+  const uuid = firstOf((entry && entry.attributes) || {}, 'entryUUID');
+  log.debug("Leaving scimIdOf().");
+  return uuid ? String(uuid) : String((entry && entry.dn) || '');
+}
+
 function toScimUser(entry, context) {
   log.debug("Entering toScimUser(). dn=" + (entry && entry.dn));
   const ctx = context || {};
   const attributes = (entry && entry.attributes) || {};
   const resource = {
     schemas: [USER_SCHEMA],
-    id: entry.dn,
+    // THE ENTRY'S `entryUUID` (2026-09-14), which a rename does not change —
+    // RFC 7643 section 3.1's id "MUST NOT be reassigned", and the DN it was
+    // until then was reassigned by every rename. An entry without one (a
+    // process with no directory behind it) keeps the DN.
+    id: scimIdOf(entry),
     // Padded for the matcher; pruned before it goes out.
     name: {},
     emails: [],
@@ -572,7 +593,7 @@ function toScimUser(entry, context) {
       lastModified: isoFromGeneralizedTime(firstOf(attributes,
                                                    'modifyTimestamp') ||
                                            entry.modifiedAt),
-      location: (ctx.location || '') + encodeURIComponent(entry.dn)
+      location: (ctx.location || '') + encodeURIComponent(scimIdOf(entry))
     }
   };
 
@@ -686,7 +707,7 @@ function toScimUser(entry, context) {
   // is not here.
   (ctx.groups || []).forEach(function (group) {
     resource.groups.push({
-      value: group.dn,
+      value: group.id || group.dn,
       display: group.cn || group.dn,
       type: 'direct'
     });
@@ -822,7 +843,7 @@ function toScimGroup(entry, context) {
   const attributes = (entry && entry.attributes) || {};
   const resource = {
     schemas: [GROUP_SCHEMA],
-    id: entry.dn,
+    id: scimIdOf(entry),
     displayName: firstOf(attributes, 'cn') || entry.dn,
     members: [],
     meta: {
@@ -832,7 +853,7 @@ function toScimGroup(entry, context) {
       lastModified: isoFromGeneralizedTime(firstOf(attributes,
                                                    'modifyTimestamp') ||
                                            entry.modifiedAt),
-      location: (ctx.location || '') + encodeURIComponent(entry.dn)
+      location: (ctx.location || '') + encodeURIComponent(scimIdOf(entry))
     }
   };
   const externalId = firstOf(attributes, 'scimExternalId');
@@ -846,7 +867,7 @@ function toScimGroup(entry, context) {
       // comes back as the same id the User resource has. Sending the bare name
       // would be SCIM saying two different things about one person depending on
       // which attribute their membership happened to be written in.
-      value: member.dn,
+      value: member.id || member.dn,
       display: member.cn || member.displayName || member.value,
       // RFC 7643 section 4.2 defines `type` on a member as User or Group. A
       // dangling member is neither and is reported as a User rather than

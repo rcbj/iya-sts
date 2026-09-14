@@ -49,7 +49,7 @@
 // drive it with plain objects.
 // ---------------------------------------------------------------------------
 
-const { log } = require('../common/helpers');
+const { log, subjectForName } = require('../common/helpers');
 // For `inventsClaimValues()`: whether an address may be made up for somebody
 // whose entry carries none. A leaf requiring only config, so this file stays a
 // library that can join no cycle.
@@ -565,8 +565,16 @@ function subjectForUser(userid, format, issuer, facts) {
   const name = String(userid || '');
   const known = facts || {};
   const chosen = FORMAT_BY_NAME[format] ? format : 'issuer_subject_id';
+  // THE `sub` EVERY TOKEN THIS ISSUER HANDED OUT CARRIES (2026-09-14): the
+  // person's `urn:uuid:<entryUUID>`. An issuer_subject_id is RFC 9493's
+  // "subject as the issuer knows it", and a receiver joins it to the tokens it
+  // already holds — so a bare name here named a subject no token had. A caller
+  // that knows the subject (an event about an entry already deleted) passes it
+  // as `facts.subject`; somebody the directory does not hold keeps the name.
+  const issuerSubject = String(known.subject || '') ||
+                        subjectForName(name) || name;
   const fallback = { format: 'issuer_subject_id', iss: String(issuer || ''),
-    sub: name };
+    sub: issuerSubject };
   if (chosen === 'email') {
     const mail = realOrInventedMail(name, known);
     log.debug('Leaving subjectForUser(). email' + (mail ? '.' : ': none, ' +
@@ -618,7 +626,8 @@ function subjectForUser(userid, format, issuer, facts) {
   if (chosen === 'aliases') {
     const mail = realOrInventedMail(name, known);
     const identifiers = [
-      { format: 'issuer_subject_id', iss: String(issuer || ''), sub: name }
+      { format: 'issuer_subject_id', iss: String(issuer || ''),
+        sub: issuerSubject }
     ];
     if (mail) {
       identifiers.push({ format: 'email', email: mail });

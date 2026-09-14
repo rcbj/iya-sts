@@ -89,7 +89,7 @@
 // the same string is ONE application that speaks two protocols, and this
 // registry says so by accumulating `appKind` and `appProtocol` rather than
 // filing it twice. That is the same reasoning that makes `alice`,
-// `urn:sts:user:alice` and `alice@REALM` one person on /admin/users, and
+// `urn:uuid:<entryUUID>` and `alice@REALM` one person on /admin/users, and
 // it is the shape the federation work will need: a relying party that federates
 // over both OIDC and SAML is one relationship, not two.
 //
@@ -7476,7 +7476,7 @@ function regenerateClientSecret(identifier, options) {
   // wherever a secret is checked, nobody could obtain one. The setting is the
   // one place that secret is decided; this refuses rather than making a
   // second.
-  if (String(identifier) === 'sts-management-api' &&
+  if (String(identifier) === 'sts-management-api' && realms.isDefault() &&
       String(config.value('adminApi.clientSecret') || '')) {
     log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
     return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
@@ -8899,10 +8899,12 @@ function internalApplications() {
       // has to be there. The last clause of the old comment is therefore
       // reversed: a realm WITHOUT this entry is the one nothing can sign in to.
       //
-      // **THIS IS NOT A PER-REALM ADMINISTRATOR.** The client is what the flow
-      // authenticates AS; the ROLE is read from the default realm's `ou=groups`
-      // by `admin_rbac.js` and did not move. Somebody who creates a realm gets
-      // a client entry in it and no more access than they had.
+      // **THIS IS NOT WHAT MAKES SOMEBODY AN ADMINISTRATOR.** The client is
+      // what the flow authenticates AS; the ROLE is read by `admin_rbac.js` —
+      // the default realm's `ou=groups` for the service roster, the realm's
+      // own for its administrators (2026-09-14, #32), who are confined to that
+      // realm. Somebody who creates a realm gets a client entry in it and no
+      // access outside it.
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own admin console at ' +
                    '/admin (applications.seedInternal)',
@@ -8973,10 +8975,15 @@ function internalApplications() {
       name: 'Management API',
       kinds: ['oauth2-client'],
       protocols: ['OAuth 2.0'],
-      // The default realm only, and for a third reason again: `/admin-api` is
-      // not gated at all, so this row is a DESCRIPTION of a caller rather than
-      // a client anything signs in as. One copy of a description is enough.
-      realmScope: 'default',
+      // EVERY REALM SINCE 2026-09-14 (#32), and it was the default realm only.
+      // A trust realm has administrators of its own now, and rule 7 owes each
+      // of them the machine door to their realm: a token this realm's
+      // authorization server issues to this realm's copy of the client works
+      // at `/realm/<id>/admin-api` and nowhere else, and never at a
+      // service-wide operation (`mgmt-api/admin_api.js`'s gate and
+      // `admin-ui/admin_scope.js`). The default realm's copy is still the
+      // service's and works everywhere.
+      realmScope: 'every',
       description: 'seeded at startup: this service\'s own management API at ' +
                    '/admin-api (applications.seedInternal)',
       registration: {
@@ -8990,7 +8997,11 @@ function internalApplications() {
         // restart would leave nobody able to get a token.
         // `adminApi.clientSecret` is how a deployment — and every test launcher
         // — pins it.
-        client_secret: String(config.value('adminApi.clientSecret') || '') ||
+        // The PINNED secret is the default realm's alone (2026-09-14, #32): a
+        // realm's copy is a different client, and one secret opening every
+        // realm's management API would be one credential for every realm.
+        client_secret: (realms.isDefault() &&
+                        String(config.value('adminApi.clientSecret') || '')) ||
                        randomId(24),
         client_secret_expires_at: 0,
         registration_access_token: randomId(24),

@@ -447,6 +447,13 @@ const { sessions, consoleSession, beginAuthentication, endSessionById,
 // which it reaches through a slot ldap_server.js fills; see its header for why
 // that is a directory group rather than a store of this console's own.
 const rbac = require('./admin_rbac');
+// WHAT A REALM ADMINISTRATOR MAY NOT REACH (2026-09-14, #32): the service-wide
+// pages, actions and settings, in one table the management API reads too. A
+// library with no route.
+const adminScope = require('./admin_scope');
+// WHICH REALM TO SIGN IN THROUGH (2026-09-14, #32), asked before a bare /admin
+// sends anybody to sign in. A library with no route, shared with the portal.
+const loginRealmChooser = require('../common/realm_chooser');
 // The credential claim set: which LDAP attributes an issued Verifiable
 // Credential carries, and the invented values behind them. A library like
 // admin_stats.js — it registers no route — so requiring it here neither adds to
@@ -3041,12 +3048,18 @@ function upTo(path, leaf, listView) {
 // like the section's, one level in.
 function navBar(active, up, req) {
   log.debug("Entering navBar(). active=" + active);
+  // A REALM ADMINISTRATOR'S SIDEBAR (2026-09-14, #32) leaves out the pages
+  // that belong to the whole service, which the gate would refuse them, and
+  // the realm switcher, since their console is one realm. The service
+  // administrator's is unchanged.
+  const state = req ? gateStateFor(req) : null;
+  const realmOnly = !!(state && state.authority === 'realm');
   const html = '<nav aria-label="Admin console sections">' +
     // FIRST, inside this card rather than above it. It does not select a page
     // — it selects which service the pages are about — but it is the first
     // question a reader has about the column, so it is the first thing in it.
-    realmChooser(req) +
-    SECTIONS.map(function (section) {
+    (realmOnly ? '' : realmChooser(req)) +
+    visibleSections(state).map(function (section) {
       const inThisSection = sectionPages(section).filter(function (item) {
         return item.path === active;
       }).length > 0;
@@ -3059,6 +3072,36 @@ function navBar(active, up, req) {
     }).join('') + '</nav>';
   log.debug("Leaving navBar(). " + SECTIONS.length + " section(s).");
   return html;
+}
+
+// SECTIONS as one state may see it: service pages dropped for a realm
+// administrator, a group with nothing left dropped with them, and a section
+// with nothing left dropped too. The table itself is never edited.
+function visibleSections(state) {
+  log.debug("Entering visibleSections().");
+  if (!state || state.authority !== 'realm') {
+    log.debug("Leaving visibleSections(). Everything.");
+    return SECTIONS;
+  }
+  const shown = function (item) {
+    log.debug("Entering shown().");
+    log.debug("Leaving shown().");
+    return adminScope.pageVisible(state, item.path);
+  };
+  const out = SECTIONS.map(function (section) {
+    const items = section.items.map(function (item) {
+      if (!isNavGroup(item)) {
+        return shown(item) ? item : null;
+      }
+      const pages = item.items.filter(shown);
+      return pages.length ? Object.assign({}, item, { items: pages }) : null;
+    }).filter(Boolean);
+    return Object.assign({}, section, { items: items });
+  }).filter(function (section) {
+    return section.items.length > 0;
+  });
+  log.debug("Leaving visibleSections(). " + out.length + " section(s).");
+  return out;
 }
 
 // One row of a section's list: a page, or a group holding pages.
@@ -4021,6 +4064,15 @@ function runtimeFooter(gate) {
     return '';
   }
   const facts = runtimeFacts();
+  // A REALM ADMINISTRATOR (2026-09-14, #32) may not read `/admin/persistence`
+  // or `/admin/secrets`, so they are not handed the database host, the
+  // secret-store paths or the process arrangement those pages draw — nor the
+  // two links, which would only answer 403. The realm's mode is theirs.
+  if (gate && gate.authority === 'realm') {
+    log.debug("Leaving runtimeFooter(). A realm authority.");
+    return '<div class="runtime">mode <code>' + esc(facts.mode) +
+      '</code></div>';
+  }
   const html = '<div class="runtime">' +
     'running as <code>' + esc(facts.process) + '</code>' +
     ' &middot; mode <code>' + esc(facts.mode) + '</code>' +
@@ -5403,6 +5455,27 @@ app.use('/admin', function (req, res, next) {
     // click silently discarded. Better to say what happened and let them post
     // it again.
     if (req.method === 'GET' || req.method === 'HEAD') {
+      // WHICH REALM FIRST (2026-09-14, #32), for a bare /admin on a service
+      // with realms defined: `common/realm_chooser.js` says when, and a
+      // choice is a redirect to that realm's own console.
+      const choice = loginRealmChooser.decide(req, 'admin');
+      if (choice && choice.kind === 'redirect') {
+        res.set('Cache-Control', 'no-store').redirect(303, choice.location);
+        log.debug("Leaving the admin console gate. To the chosen realm.");
+        return;
+      }
+      if (choice) {
+        if (choice.error) {
+          errorCodes.mark(res, 'STS-ADMIN-0790');
+        }
+        res.status(choice.error ? 400 : 200).set('Cache-Control', 'no-store')
+           .type('text/html').send(page('Choose your realm', null,
+             '<div class="card"><h2>Choose your realm</h2>' +
+             loginRealmChooser.form(req, 'admin', choice.error) + '</div>',
+             null, null, req));
+        log.debug("Leaving the admin console gate. The realm chooser.");
+        return;
+      }
       sendToConsoleSignIn(req, res);
       log.debug("Leaving the admin console gate. Sent to the sign-in screen.");
       return;
@@ -5497,6 +5570,60 @@ app.use('/admin', function (req, res, next) {
   // test is written as "not GET and not HEAD" rather than "is POST" so that a
   // method added later is refused by default rather than allowed by omission.
   const needsWrite = req.method !== 'GET' && req.method !== 'HEAD';
+
+  // ---------------------------------------------------------------------
+  // A REALM ADMINISTRATOR IS CONFINED TO THEIR REALM (2026-09-14, #32).
+  //
+  // Two refusals the role check below cannot make, because it asks WHETHER
+  // somebody holds a role and not WHERE the role holds. Signed in through a
+  // realm, they hold nothing in any other realm — `gateStateFor()` has already
+  // said so as `outsideRealm` — and in their own realm they still may not
+  // reach what belongs to the whole service, which `admin_scope.js` decides.
+  // Both are answered before the role check so that the page says the true
+  // reason rather than "you hold no role".
+  // ---------------------------------------------------------------------
+  if (state.outsideRealm) {
+    errorCodes.mark(res, 'STS-ADMIN-0786');
+    const home = realms.get(state.identityRealm);
+    refuse(req, res, 403, 'outside_realm',
+           'You administer another realm.',
+           'Signed in as ' + state.username + ' through the "' +
+           state.identityRealm + '" realm, whose administrators administer ' +
+           'that realm only. This console is being read in the "' +
+           realms.currentId() + '" realm.',
+           { identityRealm: state.identityRealm,
+             html: note((home
+               ? '<a href="' + esc(realmRoot(req) + realms.prefixOf(home) +
+                 '/admin') + '">Open the "' + esc(home.id) + '" realm\'s ' +
+                 'console</a>, or sign out'
+               : 'Sign out') + ' and sign in through the default realm as ' +
+               'a service administrator to read this realm.') });
+    log.debug("Leaving the admin console gate. A realm administrator outside " +
+              "their realm.");
+    return;
+  }
+  const scoped = adminScope.refusalFor(state, '/admin' + req.path,
+                                       needsWrite ? parseBody(req) : null,
+                                       req.query);
+  if (scoped) {
+    errorCodes.mark(res, scoped.code);
+    // error-code: none — the code is scoped.code, marked on the line above
+    refuse(req, res, 403, scoped.reason,
+           'That belongs to the whole service.', scoped.detail,
+           { identityRealm: state.identityRealm,
+             settings: scoped.settings || undefined,
+             html: note('Signed in as ' + esc(state.username) +
+               ' through the "' + esc(state.identityRealm) + '" realm. ' +
+               'A realm\'s ' +
+               'administrators administer that realm; the store, the ' +
+               'listeners, the service Root, process-wide settings and the ' +
+               'realm registry belong to the service administrators of the ' +
+               'default realm.') });
+    log.debug("Leaving the admin console gate. Service scope refused to a " +
+              "realm administrator: " + scoped.reason + ".");
+    return;
+  }
+
   if (needsWrite ? state.write : state.read) {
     // ---------------------------------------------------------------------
     // AND THE CSRF TOKEN, ON THE WAY THROUGH (2026-09-06). OWASP A01/A08.
@@ -5540,9 +5667,10 @@ app.use('/admin', function (req, res, next) {
     // by this file.
     //
     // **THE ROLE CHECK ABOVE STAYS AND IS NOT REPLACED.** `admin_rbac.js`
-    // decides WHAT roles this person holds — out of two groups in the DEFAULT
-    // realm, deliberately, because a per-realm roster would let anybody who
-    // can create a realm administer the service. This asks whether the policy
+    // decides WHAT roles this person holds — out of the two groups of the
+    // realm they signed in through, the default realm's being the service
+    // roster, and `admin_scope.js` above has already refused a realm
+    // administrator anything outside their realm. This asks whether the policy
     // permits them, given those roles, to do this to this resource. The two
     // are different questions and the second is the one an operator can
     // change without a deployment.
@@ -7015,10 +7143,10 @@ function guideItem(page) {
          note(page.blurb) + '</li>';
 }
 
-function consoleGuide(activePath) {
+function consoleGuide(activePath, state) {
   log.debug("Entering consoleGuide(). activePath=" + activePath);
   const out = [];
-  SECTIONS.forEach(function (section) {
+  visibleSections(state).forEach(function (section) {
     const items = [];
     section.items.forEach(function (item) {
       if (isNavGroup(item)) {
@@ -7387,7 +7515,7 @@ app.get('/admin', function (req, res) {
     'sidebar is drawn from. A page cannot be added to this console and left ' +
     'out of here; one added without a description says so on its own row ' +
     'rather than going quietly.') +
-    consoleGuide('/admin') +
+    consoleGuide('/admin', gateStateFor(req)) +
     '<h2>What it deliberately does not do</h2>' +
     note('Worth knowing before looking for a control that is not here. Most ' +
     'of these are things this console CANNOT do rather than things somebody ' +
@@ -7509,10 +7637,11 @@ app.get('/admin', function (req, res) {
     'one it is read in.</strong> Every page here reports the realm in the ' +
     'path it was reached by, and the switcher above the nav is how you leave ' +
     'it — so a setting saved on any of these pages changes that realm and no ' +
-    'other. There is deliberately no per-realm administrator: the two roles ' +
-    'are groups in the ONE shared directory, so somebody who holds Admin ' +
-    'Write holds it everywhere, and the console\'s own sign-on follows the ' +
-    'roles rather than the sessions.') +
+    'other. A realm has administrators of its own since 2026-09-14: the ' +
+    'two role groups in its own directory, confined to that realm, while ' +
+    'the default realm\'s two groups remain the service administrators ' +
+    'over every realm. A realm administrator does not see the pages about ' +
+    'the whole process, and is refused them if they ask.') +
     bullet('<strong>It runs no script, and that costs one thing worth ' +
     'naming.</strong> <code>script-src \'none\'</code> holds over every page ' +
     'in this console, which is what makes a family of reflected-content ' +
@@ -7664,11 +7793,12 @@ app.get('/admin/metrics', function (req, res) {
   // of hundred characters of base64url with not one place in it a browser will
   // break a line. Emitted as plain text that made the cell's minimum width
   // wider than the card, so the table overflowed and took the OAuth 2.0 / OIDC
-  // row's column with it, even though `urn:sts:user:alice` is short and never
-  // the problem. So each subject is drawn the way the tokens page draws a jti —
-  // shortened, with the whole string in the title so it is still recoverable by
-  // hovering — and inside <code>, which the stylesheet already lets break
-  // mid-string.
+  // row's column with it, even though a subject was rarely the long one (a
+  // `urn:uuid:` subject, since 2026-09-14, is 45 characters and is shortened
+  // like the rest). So each subject is drawn the way the tokens page draws a
+  // jti — shortened, with the whole string in the title so it is still
+  // recoverable by hovering — and inside <code>, which the stylesheet already
+  // lets break mid-string.
   const sessionFamilyRows = snap.sessions.families.map(function (row) {
     const shown = row.who.slice(0, MAX_WHO).map(function (subject) {
       return shortened(subject, 28);
@@ -7687,7 +7817,10 @@ app.get('/admin/metrics', function (req, res) {
       '<td class="' + (s.expired ? 'state-expired' : 'state-valid') + '">' +
         (s.expired ? 'expired, not yet swept' : 'active') + '</td>' +
       '<td>' + esc(s.amr || '—') + '</td><td>' + esc(s.acr || '—') + '</td>' +
-      '<td>' + esc(whenText(s.authTime)) + '</td>' +
+      '<td>' + esc(whenText(s.startedAt)) + '</td>' +
+      '<td>' + esc(whenText(s.authTime)) +
+      (s.authentications > 1 ? ' (' + s.authentications + ')' : '') +
+      '</td>' +
       '<td>' + esc(whenText(s.expires)) + '</td>' +
       '<td>' + (s.wsfedRealms.length ? esc(s.wsfedRealms.join(', ')) : '—') +
       '</td></tr>';
@@ -7764,9 +7897,9 @@ app.get('/admin/metrics', function (req, res) {
     'of them are.') +
     '<h3>Sign-on sessions (' + liveSignOn.length + ' active of ' +
     signOn.length + ' held)</h3><table><tr><th>User</th><th>State</th><th>' +
-    'amr</th><th>acr</th><th>Signed in</th><th>Expires</th><th>WS-Fed ' +
-    'relying parties signed into</th></tr>' +
-    (signOnRows || '<tr><td colspan="7">Nobody is signed in.</td></tr>') +
+    'amr</th><th>acr</th><th>Signed in</th><th>Last authenticated</th>' +
+    '<th>Expires</th><th>WS-Fed relying parties signed into</th></tr>' +
+    (signOnRows || '<tr><td colspan="8">Nobody is signed in.</td></tr>') +
     '</table>' +
     note('An expired session stays in the map until something reads it — ' +
     '<code>sessionOf()</code> drops one when it finds it stale — so it is ' +
@@ -8463,7 +8596,7 @@ app.get('/admin/tokens', function (req, res) {
       '<input type="hidden" name="back" value="' + esc(backFilter) + '"><div ' +
       'class="formrow"><label for="subject">Everything for one subject or ' +
       'username</label><input type="text" id="subject" name="subject" ' +
-      'size="40" placeholder="alice, or urn:sts:user:alice"><button ' +
+      'size="40" placeholder="alice, or urn:uuid:…"><button ' +
       'class="danger">Revoke</button></div></form><h2>What has been ' +
       'issued</h2>' +
     // No `page` input in this form, and that is the point: changing the filter
@@ -14487,7 +14620,7 @@ app.get('/admin/delegation/application', function (req, res) {
 // (`delegation.js`'s `identityList()` header argues it). An application is
 // chosen by the identifier a protocol NAMED, because that is what a reader
 // recognises in a URL. A person has no such identifier: they arrive as `alice`,
-// as `alice@STS.MOCK` and as `urn:sts:user:alice`, and the console has
+// as `alice@STS.MOCK` and as `urn:uuid:<entryUUID>`, and the console has
 // filed all three under one name — which is the name on /admin/users, on
 // /admin/audit and in the directory. Putting a spelling in the URL would make a
 // link from this console disagree with every other link in it. The route
@@ -15272,9 +15405,9 @@ app.get('/admin/delegation/user', function (req, res) {
 // a Kerberos S4U2Self) is listed and marked as such, rather than being absent
 // from a page whose whole job is to answer "who has this service seen". And the
 // identity is keyed on the local name, so one row covers `alice`,
-// `urn:sts:user:alice` and `alice@STS.MOCK`, which is right on a mock where the
-// name you type is who you are everywhere — and would be wrong on a real system
-// with two realms. The Realms column exists so that collapse is visible.
+// `urn:uuid:<entryUUID>` and `alice@STS.MOCK`, which is right on a mock where
+// the name you type is who you are everywhere — and would be wrong on a real
+// system with two realms. The Realms column exists so that collapse is visible.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -15943,6 +16076,13 @@ function ldapObjectSection(row, key) {
     '<td>' + esc(entry.origin) + '</td>' +
     '<td><code>' + esc(entry.createdAt) + '</code></td>' +
     '<td><code>' + esc(entry.modifiedAt) + '</code></td></tr></table>' +
+    // THE SUBJECT (2026-09-14), which is no longer derivable from the name:
+    // what every token issued to this person carries in `sub`.
+    '<p>Subject (<code>sub</code>): <code>' +
+    esc(adminViews.userDetailSubject(key) || '(none)') + '</code></p>' +
+    note('<code>urn:uuid:</code> and this entry\'s <code>entryUUID</code>, ' +
+    'which it keeps through a rename. A person deleted and created again ' +
+    'under the same name is a different subject.') +
     note('The two timestamps are <em>generalized time</em> ' +
     '(<code>YYYYMMDDHHMMSSZ</code>), which is what a directory shows &mdash; ' +
     'not the ISO 8601 strings the rest of this console uses. The difference ' +
@@ -16089,9 +16229,13 @@ function sessionBlock(session, tokenPage, back, params) {
     '<span class="' + (session.expired ? 'state-expired' : 'state-valid') +
     '">' +
     (session.expired ? 'expired, not yet swept' : 'active') + '</span></h3>' +
-    '<table><tr><th>Signed in</th><th>Expires</th><th>amr</th><th>acr</th>' +
+    '<table><tr><th>Signed in</th><th>Last authenticated</th><th>Expires' +
+    '</th><th>amr</th><th>acr</th>' +
     '<th>WS-Fed relying parties signed into</th></tr>' +
-    '<tr><td>' + esc(whenText(session.authTime)) + '</td>' +
+    '<tr><td>' + esc(whenText(session.startedAt)) + '</td>' +
+    '<td>' + esc(whenText(session.authTime)) +
+    (session.authentications > 1 ? ' (' + session.authentications + ')' : '') +
+    '</td>' +
     '<td>' + esc(whenText(session.expires)) + '</td>' +
     '<td>' + esc(session.amr || '—') + '</td>' +
     '<td>' + esc(session.acr || '—') + '</td>' +
@@ -17272,9 +17416,10 @@ function usersListPage(req) {
     // did:jwk is a couple of hundred characters of base64url with not one place
     // in it a browser will break a line, so drawn in full it sets this cell's
     // minimum width and pushes every column after it off the card — including
-    // the rows of people whose names are three letters long. 40 keeps
-    // `urn:sts:user:alice` and an ordinary DID whole; shortened() puts the
-    // rest in the title attribute, so nothing is lost, only hidden.
+    // the rows of people whose names are three letters long. 40 keeps an
+    // ordinary DID whole, and shortens a `urn:uuid:` subject (45 characters);
+    // shortened() puts the rest in the title attribute, so nothing is lost,
+    // only hidden.
     // THREE CELLS ARRIVED ON 2026-09-10 WITH THE ROSTER `/admin/mfa` USED TO
     // DRAW: where the row came from, what the person can sign in WITH, and
     // what they are asked for as a SECOND factor. They are here rather than on
@@ -17402,7 +17547,7 @@ function usersListPage(req) {
     'href="/admin/spiffe">SPIFFE</a>.') +
     warn('<strong>One row is one local name, across every protocol.</strong> ' +
     'The same person arrives here as <code>alice</code> at the login screen, ' +
-    '<code>urn:sts:user:alice</code> in every token and ' +
+    'her <code>urn:uuid:</code> subject in every token and ' +
     '<code>alice@STS.MOCK</code> as a Kerberos principal, and showing three ' +
     'rows for that would be a worse answer than one — the premise of this ' +
     'service is that the name you type is who you are in every protocol at ' +
@@ -19503,7 +19648,7 @@ function applicationsListPage(req) {
     'not lower-cased and not namespaced by protocol &mdash; so an ' +
     'application appearing under one name in two protocols is one row with ' +
     'two kinds rather than two rows. That is the same rule that makes ' +
-    '<code>alice</code>, <code>urn:sts:user:alice</code> and ' +
+    '<code>alice</code>, her <code>urn:uuid:</code> subject and ' +
     '<code>alice@REALM</code> one person on the users page.') +
     note('<strong>Sessions and Users are counts of CHANGES, not of distinct ' +
     'sets.</strong> The ids themselves are deliberately not kept on the ' +
@@ -26529,14 +26674,14 @@ const REALMS_CAVEAT =
   note('<strong>A realm separates what this service ISSUES, not who it ' +
   'knows.</strong> Each realm has its own signing key, so a token minted in ' +
   'one does not verify against another\'s JWKS — that is the point of a ' +
-  'realm rather than a side effect. What every realm SHARES is the embedded ' +
-  'directory: one <code>ou=users</code>, one <code>ou=groups</code> and one ' +
-  '<code>ou=applications</code> for the whole process, because LDAP answers ' +
-  'on a socket with no path to put a realm segment in. So the same person ' +
-  'can sign in to two realms and be one entry, a client registered once can ' +
-  'be used in both, and <strong>the two admin roles are held once</strong> — ' +
-  'there is no per-realm administrator. The table at the foot of this page ' +
-  'is the whole list of what is separated how.') +
+  'realm rather than a side effect. Each realm also has a directory of its ' +
+  'own — its own <code>ou=users</code>, <code>ou=groups</code> and ' +
+  '<code>ou=applications</code> under <code>dc=&lt;id&gt;</code> — and so ' +
+  '<strong>administrators of its own</strong>: the two role groups in that ' +
+  'directory administer that realm and nothing outside it, while the ' +
+  'default realm\'s two groups administer every realm. A new realm is ' +
+  'seeded with an <code>admin</code> account that holds both. The table at ' +
+  'the foot of this page is the whole list of what is separated how.') +
   (persistence.status().persistsRealms
     ? '<div class="ok"><strong>A realm defined here WILL come back.</strong> ' +
       'This process is running with ' +
@@ -26916,6 +27061,32 @@ app.post('/admin/realms', function (req, res) {
   const back = (id && result.ok !== false && String(body.action) !== 'remove')
     ? '/admin/realms' + queryWith(listView, { realm: id })
     : '/admin/realms' + queryWith(listView, {});
+  // A NEW REALM'S BOOTSTRAP PASSWORD, ONCE (2026-09-14, #32). Product mode
+  // hands the realm's `admin` a generated password in the create's result, and
+  // a redirect would put it in a query string; so it is drawn on a page of its
+  // own, `/admin/users`' reset arrangement. A JSON caller gets JSON.
+  if (result.ok && result.password &&
+      !/json/i.test(String(req.headers['content-type'] || ''))) {
+    const made = realms.get(result.realm);
+    const realmUrl = realmRoot(req) + (made ? realms.prefixOf(made) : '') +
+                     '/admin';
+    respond(req, res, result, 'Realm created', '/admin/realms',
+      '<h2>The "' + esc(result.realm) + '" realm\'s administrator, shown ' +
+      'once</h2>' +
+      '<table class="key"><tr><th>Username</th><td><code>' +
+      esc(result.username) + '</code></td></tr></table>' +
+      '<div class="secret">' + esc(result.password) + '</div>' +
+      warn('<strong>Note it now.</strong> It is stored as a scrypt hash and ' +
+      'cannot be shown again. It works once, at that realm\'s sign-in ' +
+      'screen, where a new password must be chosen. This account administers ' +
+      'the "' + esc(result.realm) + '" realm and nothing else.') +
+      note('<a class="btn" href="' + esc(back) + '">Back to the realm</a> ' +
+      '&middot; <a href="' + esc(realmUrl) + '">its console</a>'),
+      upTo('/admin/realms', 'Realm created', listView));
+    log.debug("Leaving the admin trust realms action endpoint. A one-time " +
+              "page.");
+    return;
+  }
   respondToAction(req, res, back, result);
   log.debug("Leaving the admin trust realms action endpoint.");
 });
@@ -35002,12 +35173,15 @@ function federationDetailPage(req, id) {
 
   const switches = ['fedEnabled'].concat(
     row.role === 'service-provider'
-      ? ['fedAutocreateUsers', 'fedAllowUnsolicited', 'fedSignRequest']
+      ? ['fedAutocreateUsers', 'fedUpdateUserAttributes',
+         'fedAllowUnsolicited', 'fedSignRequest']
       : []).map(function (name) {
     const field = federation.SCHEMA.attributes.filter(
         function (f) { return f.name === name; })[0];
     if (!field) return '';
-    const dflt = name === 'fedAutocreateUsers';
+    // The two provisioning switches default ON; the rest default off.
+    const dflt = name === 'fedAutocreateUsers' ||
+                 name === 'fedUpdateUserAttributes';
     const on = federation.boolOf(record[name], dflt);
     return '<tr><td><code>' + esc(name) + '</code></td>' +
       '<td class="' + (on ? 'ok' : 'off') + '">' + (on ? 'TRUE' : 'FALSE') +

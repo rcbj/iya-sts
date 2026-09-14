@@ -649,6 +649,7 @@ async function test() {
           assert.ok(!isNaN(Date.parse(subject.updated_at)));
         });
   const jwks = await (await fetch(realmBase + "/oauth2/jwks")).json();
+  const ownerSubject = await h.subjectOf(OWNER);
   check("the id_token assertion verifies against the realm JWKS and names " +
         "the resource owner",
         function () {
@@ -665,7 +666,8 @@ async function test() {
             Buffer.from(parts[2], "base64url"));
           assert.ok(ok1, "the ID Token signature verifies");
           const claims = JSON.parse(Buffer.from(parts[1], "base64url"));
-          assert.strictEqual(claims.sub, "urn:sts:user:" + OWNER);
+          // The owner's urn:uuid:<entryUUID> since 2026-09-14.
+          assert.strictEqual(claims.sub, ownerSubject);
         });
   check("the saml2 assertion is unpadded base64url of a SAML 2.0 Assertion " +
         "naming the owner",

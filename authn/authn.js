@@ -56,6 +56,9 @@
 // dependency and free of the import cycles this service's module split exists
 // to avoid: oauth2.js, wsfed.js and admin.js require THIS.
 const crypto = require('crypto');
+// The constant-time comparison a session handle is checked with. A LEAF that
+// never requires anything here back (rule 3r).
+const stsCrypto = require('../common/crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
@@ -63,6 +66,10 @@ const realms = require('../common/realms');
 const app = require('../common/app');
 const { log, logArtifact, baseUrlOf, nowSec, randomId, xmlEscape, parseBody,
         oauthError, userFor } = require('../common/helpers');
+// The subject resolver's two questions (2026-09-14), asked by name rather than
+// destructured because `sameIdentity()` and the provisioning refusal are the
+// only callers and both read better as `helpers.`.
+const helpers = require('../common/helpers');
 const stats = require('../common/admin_stats');
 // The federation register, for the buttons at the foot of the sign-in screen.
 // A plain require in the ordinary direction and it passes rule 3e's test both
@@ -458,19 +465,118 @@ function cookiesOf(req) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A SESSION COOKIE IS `<sid>.<handle>`, AND ONLY THE HANDLE IS A SECRET
+// (2026-09-14).
+//
+// **ONE VALUE USED TO DO TWO JOBS, AND THE JOBS WANT OPPOSITE THINGS.** The
+// session id was the key in the store, the cookie a browser presented, the
+// `sid` in every ID Token, the SAML `SessionIndex`, the CAEP subject, the join
+// on every token record and the id printed on `/admin/sessions`. A stable
+// identifier wants to NEVER change for the life of the session. A bearer
+// secret wants to CHANGE whenever privilege does — OWASP's rotation rule — and
+// wants never to be printed anywhere. A re-authentication (see
+// `authn/CLAUDE.md`, *What an authenticated identity is here*) is exactly where
+// the two collide:
+// rotating the id would orphan every `sid` a relying party holds, and keeping
+// it would leave a pre-authentication cookie authenticated afterwards.
+//
+// So they are two values now. `session.id` IS the `sid` and does not change,
+// and every reader that wanted a stable identifier — about eighty of them —
+// goes on reading it unchanged. The HANDLE is minted by `mintSessionHandle()`,
+// rotated on every re-authentication and on the arrival session's upgrade, and
+// the store holds only its SHA-256 (`handleHash`), so a copy of the store or a
+// row printed on a console page is not a way into anybody's session.
+//
+// **THE SID IS IN THE COOKIE ON PURPOSE**: the store is keyed by it, so a
+// lookup is one `get()` and a hash comparison. The alternative — a handle index
+// beside the store — is a second map to hold in step with the first across
+// realms, processes and persistence, which is the mistake `startSession()`'s
+// keyed-session branch already declines to make one size down.
+//
+// **A COOKIE WITH NO HANDLE IS REFUSED, and so is a row with no `handleHash`.**
+// There is no legacy acceptance of a bare id, and that is a security decision
+// rather than an oversight: relying-party and API rows live in the same store
+// and their ids are printed on `/admin/sessions`, so honouring a bare id would
+// keep every printed id a working credential. A session persisted before this
+// change costs one sign-in.
+// ---------------------------------------------------------------------------
+function handleHashOf(handle) {
+  log.debug("Entering handleHashOf().");
+  log.debug("Leaving handleHashOf().");
+  return crypto.createHash('sha256').update(String(handle), 'utf8')
+    .digest('base64url');
+}
+
+// Mints a fresh handle onto the session and returns the cookie VALUE. The
+// caller writes the session back through its store: this function stamps a
+// field, and a persisted store's journal sees `set()` rather than the field.
+function mintSessionHandle(session) {
+  log.debug("Entering mintSessionHandle(). sid=" + session.id);
+  const handle = randomId(24);
+  session.handleHash = handleHashOf(handle);
+  session.handleIssuedAt = Date.now();
+  log.debug("Leaving mintSessionHandle().");
+  return session.id + '.' + handle;
+}
+
+// The attributes every session cookie is written with. One place, for the
+// reason the header above `methodPhraseFor()` gives: a second copy that
+// disagreed about Path or SameSite would be two sessions that never saw each
+// other.
+function sessionCookieLine(name, value) {
+  log.debug("Entering sessionCookieLine(). name=" + name);
+  log.debug("Leaving sessionCookieLine().");
+  return String(name) + '=' + value + '; Path=/; HttpOnly; SameSite=Lax' +
+         (config.value('global.https') ? '; Secure' : '');
+}
+
+// The session a request's cookie names, IF the cookie also carries that
+// session's current handle. `{ id, session }` or null. `store` is a realm's
+// partition where the caller is reading a named one; the ambient partition
+// otherwise. It EXPIRES NOTHING: the callers that sweep what they find
+// (`sessionOf()`, `relyingPartySessionOf()`, `consoleSession()`) still do, and
+// an observer that ended sessions while reporting on them would be changing
+// the thing it describes.
+function cookieSession(req, cookieName, store) {
+  log.debug("Entering cookieSession(). cookie=" + cookieName);
+  const value = req ? cookiesOf(req)[String(cookieName || SESSION_COOKIE)]
+                    : '';
+  if (!value) {
+    log.debug("Leaving cookieSession(). No cookie.");
+    return null;
+  }
+  const dot = value.indexOf('.');
+  if (dot <= 0 || dot === value.length - 1) {
+    log.debug("Leaving cookieSession(). The cookie carries no handle.");
+    return null;
+  }
+  const id = value.slice(0, dot);
+  const handle = value.slice(dot + 1);
+  const session = (store || sessions).get(id);
+  if (!session || !session.handleHash ||
+      !stsCrypto.constantTimeEquals(handleHashOf(handle),
+                                    session.handleHash)) {
+    // A rotated handle lands here, which is the ordinary case after a
+    // re-authentication in another browser holding a copied cookie and the
+    // whole point of rotating. Not worth a line per request above debug.
+    log.debug("Leaving cookieSession(). No session holds that handle.");
+    return null;
+  }
+  log.debug("Leaving cookieSession(). sid=" + id);
+  return { id: id, session: session };
+}
+
 function sessionOf(req) {
   log.debug("Entering sessionOf().");
-  const id = cookiesOf(req)[SESSION_COOKIE];
-  if (!id) {
-    log.debug("Leaving sessionOf(). No session cookie.");
+  const found = cookieSession(req, SESSION_COOKIE);
+  if (!found) {
+    log.debug("Leaving sessionOf(). No session cookie naming a session this " +
+              "server holds, with its current handle.");
     return null;
   }
-  const session = sessions.get(id);
-  if (!session) {
-    log.debug("Leaving sessionOf(). The cookie names no session this server " +
-              "knows.");
-    return null;
-  }
+  const id = found.id;
+  const session = found.session;
   const ended = sessionEnded(session);
   if (ended) {
     // Through expireSession() and not a bare delete: this is a session ENDING
@@ -552,8 +658,7 @@ function sessionOf(req) {
 // ---------------------------------------------------------------------------
 function startArrivalSession(req, res, via) {
   log.debug("Entering startArrivalSession().");
-  const existing = cookiesOf(req)[SESSION_COOKIE];
-  if (existing && sessions.get(existing)) {
+  if (cookieSession(req, SESSION_COOKIE)) {
     // Already has one — a live sign-in, or an arrival session from an earlier
     // hop. Either way this browser is already correlated and must not be given
     // a second identity.
@@ -592,12 +697,12 @@ function startArrivalSession(req, res, via) {
     lastSeenAt: Date.now(),
     amr: [], acr: '0',
     via: via || 'unknown',
-    relyingParties: []
+    relyingParties: [],
+    events: []
   };
+  const cookieValue = mintSessionHandle(session);
   sessions.set(sessionId, session);
-  setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; ' +
-                  'HttpOnly; SameSite=Lax' +
-                  (config.value('global.https') ? '; Secure' : ''));
+  setCookieHeader(res, sessionCookieLine(SESSION_COOKIE, cookieValue));
   log.debug("Leaving startArrivalSession(). " + sessionId + ".");
   return session;
 }
@@ -744,12 +849,9 @@ app.use(function (req, res, next) {
 // ---------------------------------------------------------------------------
 function touchArrivalSession(req) {
   log.debug("Entering touchArrivalSession().");
-  const id = cookiesOf(req)[SESSION_COOKIE];
-  if (!id) {
-    log.debug("Leaving touchArrivalSession().");
-    return;
-  }
-  const session = sessions.get(id);
+  const found = cookieSession(req, SESSION_COOKIE);
+  const id = found ? found.id : '';
+  const session = found ? found.session : null;
   if (!session || session.chosen !== false) {
     log.debug("Leaving touchArrivalSession().");
     return;
@@ -776,12 +878,8 @@ function touchArrivalSession(req) {
 // deliberately declines to hand one of these out.
 function arrivalSessionOf(req) {
   log.debug("Entering arrivalSessionOf().");
-  const id = cookiesOf(req)[SESSION_COOKIE];
-  if (!id) {
-    log.debug("Leaving arrivalSessionOf().");
-    return null;
-  }
-  const session = sessions.get(id);
+  const found = cookieSession(req, SESSION_COOKIE);
+  const session = found ? found.session : null;
   if (!session || session.chosen !== false) {
     log.debug("Leaving arrivalSessionOf().");
     return null;
@@ -911,17 +1009,19 @@ function derivedFrom(parentId, store) {
 // is a Map lookup on a request that already does several.
 function relyingPartySessionOf(req, cookie, realmId) {
   log.debug("Entering relyingPartySessionOf(). cookie=" + cookie);
-  const id = cookiesOf(req)[String(cookie || '')];
-  if (!id) {
-    log.debug("Leaving relyingPartySessionOf(). No cookie.");
-    return null;
-  }
   const store = realmId ? sessions.realmMap(realmId) : sessions.realmMap();
-  const session = store.get(id);
-  if (!session) {
-    log.debug("Leaving relyingPartySessionOf(). The cookie names no session.");
+  // THE SAME `<id>.<handle>` SHAPE AS THE SIGN-ON COOKIE (2026-09-14), and for
+  // a reason that is sharper here: these ids are printed on /admin/sessions to
+  // every holder of Admin Read, and a bare id in `sts_admin` was a console
+  // session belonging to whoever held Admin Write.
+  const found = cookieSession(req, String(cookie || ''), store);
+  if (!found) {
+    log.debug("Leaving relyingPartySessionOf(). No cookie naming a session " +
+              "with its current handle.");
     return null;
   }
+  const id = found.id;
+  const session = found.session;
   const ended = sessionEnded(session);
   if (ended) {
     expireSession(store, id, session, 'a request that presented it', ended);
@@ -1098,11 +1198,10 @@ function startRelyingPartySession(spec) {
     lastSeenAt: Date.now(),
     calls: 1
   };
+  const cookieValue = mintSessionHandle(session);
   store.set(sessionId, session);
   armSessionSweep();
-  setCookieHeader(spec.res, String(spec.cookie) + '=' + sessionId +
-                  '; Path=/; HttpOnly; SameSite=Lax' +
-                  (config.value('global.https') ? '; Secure' : ''));
+  setCookieHeader(spec.res, sessionCookieLine(spec.cookie, cookieValue));
   // THE AUDIT ROW SAYS WHERE IT CAME FROM, and it is a `session.start` like
   // every other because that is what happened. What tells it apart from the
   // sign-in that produced the ID Token is the summary and the detail: an
@@ -1310,21 +1409,18 @@ function consoleSession(req) {
       ? { session: here, realm: realms.DEFAULT_REALM, foreign: false }
       : null;
   }
-  const id = cookiesOf(req)[SESSION_COOKIE];
-  if (!id) {
-    log.debug("Leaving consoleSession(). No session cookie.");
-    return null;
-  }
   // The default realm's own Map. `realmMap(id)` is the facade's door for
   // exactly this — a caller that wants a NAMED partition rather than the
   // ambient one.
   const store = sessions.realmMap(realms.DEFAULT_ID);
-  const session = store.get(id);
-  if (!session) {
-    log.debug("Leaving consoleSession(). The default realm holds no such " +
-              "session.");
+  const found = cookieSession(req, SESSION_COOKIE, store);
+  if (!found) {
+    log.debug("Leaving consoleSession(). The default realm holds no session " +
+              "this cookie names with its current handle.");
     return null;
   }
+  const id = found.id;
+  const session = found.session;
   const ended = sessionEnded(session);
   if (ended) {
     // The DEFAULT realm's store, whichever realm the console is being read in —
@@ -1760,6 +1856,226 @@ function setCookieHeader(res, value) {
   log.debug("Leaving setCookieHeader().");
 }
 
+// ---------------------------------------------------------------------------
+// ONE AUTHENTICATION EVENT: ONE ACT OF PROVING WHO SOMEBODY IS (2026-09-14).
+//
+// A session holds a LIST of these, and the reason is the whole of
+// `authn/CLAUDE.md`'s *What an authenticated identity is here*: a session is
+// the container, and a person may prove themselves to it more than once. The
+// fields are the names specifications already gave them — `at` is `auth_time`,
+// `amr` is RFC 8176's — so a projection into any protocol is a mapping.
+//
+// `authority` is WHO VOUCHED: this service, a federation partner, or a
+// Kerberos principal's realm. It is EVIDENCE about the act and never the
+// identity, which is the rule that keeps a foreign artifact from becoming this
+// service's canonical form. `evidence` is the credential fingerprint a keyed
+// caller passes — a hash, never the value — and empty otherwise.
+// ---------------------------------------------------------------------------
+function authenticationEvent(amr, acr, via, extra) {
+  log.debug("Entering authenticationEvent().");
+  const detail = extra || {};
+  let authority = { kind: 'local' };
+  if (detail.federation && detail.federation.id) {
+    authority = { kind: 'federation', id: String(detail.federation.id),
+                  peer: String(detail.federation.peer || ''),
+                  subject: String(detail.federation.subject || '') };
+  } else if (detail.protocol === 'Kerberos v5' && detail.presented) {
+    authority = { kind: 'kerberos', principal: String(detail.presented) };
+  }
+  log.debug("Leaving authenticationEvent(). authority=" + authority.kind);
+  return {
+    at: nowSec(),
+    amr: (amr || []).slice(),
+    acr: acr || '',
+    via: via || 'OAuth 2.0 / OIDC',
+    authenticated: detail.authenticated !== false,
+    authority: authority,
+    evidence: detail.key ? String(detail.key) : ''
+  };
+}
+
+// When a session BEGAN, in milliseconds: its first authentication event.
+// `authTime` stopped meaning that on 2026-09-14 — it is the MOST RECENT
+// authentication now, and moves on every re-authentication — so a list that
+// drew it as "signed in" would show a session an hour old as a minute old.
+// A row with no events (older than them, or not a sign-on at all) falls back
+// to `authTime`, which for such a row still is the only authentication.
+function sessionStartedAt(session) {
+  log.debug("Entering sessionStartedAt().");
+  const first = session && Array.isArray(session.events) &&
+                session.events.length ? session.events[0] : null;
+  log.debug("Leaving sessionStartedAt().");
+  return ((first && first.at) || (session && session.authTime) || 0) * 1000;
+}
+
+// HOW A PERSON IS SIGNED IN, READ THROUGH A RELYING-PARTY SESSION (2026-09-14).
+//
+// A console or portal session copies `authTime`, `amr` and `acr` out of the
+// ID Token it was made from, and those stay what the relying party was TOLD —
+// `common/oidc_rp.js`'s renewal compares against that `authTime`, so it is
+// never rewritten. But a re-authentication on the sign-on session behind it
+// adds an event there and nothing here, so a page that describes the PERSON'S
+// sign-in from the relying-party copy shows a step-up only after the next
+// code flow. This answers from the sign-on session while it is live, and from
+// the session itself otherwise (a sign-on session, a parent that ran out, a
+// process where the parent is in no store this one can read).
+function signOnFactsFor(session) {
+  log.debug("Entering signOnFactsFor().");
+  let source = session || {};
+  let fromParent = false;
+  if (session && session.derivedFrom) {
+    const parentRealm = String(session.derivedFromRealm || realms.currentId());
+    const parent = sessions.realmMap(parentRealm).get(session.derivedFrom);
+    if (parent && !sessionEnded(parent)) {
+      source = parent;
+      fromParent = true;
+    }
+  }
+  const events = Array.isArray(source.events) ? source.events.length : 1;
+  log.debug("Leaving signOnFactsFor(). fromParent=" + fromParent);
+  return {
+    startedAt: sessionStartedAt(source),
+    authTime: (source.authTime || 0) * 1000,
+    amr: (source.amr || []).slice(),
+    acr: source.acr || '',
+    authentications: events + (source.eventsDropped || 0),
+    fromParent: fromParent
+  };
+}
+
+// Whether a session's person and the one signing in are the same. The SUBJECT
+// where both have one — `urn:uuid:<entryUUID>`, which a rename does not change
+// and a re-created person does not inherit — and the username otherwise, which
+// is every process with no directory, where nobody has a subject and two
+// empty strings must not make two people one.
+function sameIdentity(user, username) {
+  log.debug("Entering sameIdentity().");
+  const theirs = String((user && user.sub) || '');
+  const asked = helpers.subjectForName(username);
+  if (theirs && asked) {
+    // An ALIAS of that entry's subject is that entry too: a session made on
+    // a worker that lost a create race carries the value the directory now
+    // keeps as an alias (`ldap_server.js`'s `mergeCreateRace()`).
+    const aliased = theirs !== asked &&
+      helpers.subjectForName(helpers.nameForSubject(theirs)) === asked;
+    log.debug("Leaving sameIdentity(). By subject.");
+    return theirs === asked || aliased;
+  }
+  log.debug("Leaving sameIdentity(). By name.");
+  return !theirs && !asked &&
+         String((user && user.username) || '') === String(username || '');
+}
+
+// How many events a session keeps. A `max_age=0` client re-authenticates on
+// every request and a list that grew without bound would be a persisted row
+// that grew without bound. The FIRST event is always kept — it is how the
+// session began — and the most recent ones after it; `eventsDropped` says how
+// many went, so a reader never mistakes a trimmed list for a whole one.
+const MAX_SESSION_EVENTS = 20;
+
+// ---------------------------------------------------------------------------
+// THE SAME PERSON, AGAIN, ON THE SESSION THEY ALREADY HOLD (2026-09-14).
+//
+// What a re-authentication DOES, in the order it does it, and the list of what
+// it deliberately does NOT do is the longer and more important half:
+//
+//   * it APPENDS an event, and reassigns `amr`, `acr`, `authTime` and `via` to
+//     the new event's — never editing them in place;
+//   * it ROTATES the cookie handle, since a re-authentication is a change of
+//     privilege, and the `sid` does not move;
+//   * it records the authentication (`recordAuthentication()`), because it is
+//     one — the directory's second-factor flags and `/admin/users` count it;
+//   * it writes `session.reauthenticate`, not `session.start`;
+//   * it tells the observer `reauthenticated` with what the session said
+//     BEFORE, and `ssf/caep.js` decides whether that is an
+//     `assurance-level-change` (only when `acr` moved);
+//   * it sets `firstPresentationIsTheSignIn`, because the browser is about to
+//     come back to the protocol that asked, and that trip is this act and not
+//     single sign-on.
+//
+// It does NOT end the session, end the sessions derived from it, forget the
+// relying parties it answered, revoke a refresh token, emit
+// `session-revoked` or `session-established`, or move `expires` — a sign-on
+// session's lifetime is absolute (`logout.js`'s SESSION_EXPIRY_RULES) and
+// proving yourself again is not a reason to extend it.
+//
+// The issuance gate has already been asked by the caller, `startSession()`,
+// because the re-authentication may be for a different application than the
+// one the session began with.
+// ---------------------------------------------------------------------------
+function reauthenticateSession(res, session, username, amr, acr, via, extra) {
+  log.debug("Entering reauthenticateSession(). sid=" + session.id);
+  const previous = {
+    amr: (session.amr || []).slice(),
+    acr: session.acr || '',
+    authTime: session.authTime || 0,
+    via: session.via || ''
+  };
+  const event = authenticationEvent(amr, acr, via, extra);
+  // A row persisted before events existed has none. It is given one standing
+  // for the authentication it recorded, so the list is never missing its
+  // beginning.
+  let events = Array.isArray(session.events) && session.events.length
+    ? session.events.slice()
+    : [{ at: previous.authTime, amr: previous.amr, acr: previous.acr,
+         via: previous.via, authenticated: true,
+         authority: { kind: 'unrecorded' }, evidence: '' }];
+  events.push(event);
+  if (events.length > MAX_SESSION_EVENTS) {
+    const dropped = events.length - MAX_SESSION_EVENTS;
+    events = [events[0]].concat(events.slice(dropped + 1));
+    session.eventsDropped = (session.eventsDropped || 0) + dropped;
+  }
+  session.events = events;
+  session.amr = event.amr.slice();
+  session.acr = event.acr;
+  session.authTime = event.at;
+  session.via = event.via;
+  session.lastSeenAt = Date.now();
+  session.firstPresentationIsTheSignIn = true;
+  const cookieValue = mintSessionHandle(session);
+  sessions.set(session.id, session);
+  if (extra.cookie !== false) {
+    setCookieHeader(res, sessionCookieLine(SESSION_COOKIE, cookieValue));
+  }
+  const statsExtra = Object.assign({}, extra);
+  delete statsExtra.authenticated;
+  stats.recordAuthentication(Object.assign({
+    presented: username, protocol: event.via,
+    method: methodPhraseFor(event.amr),
+    sub: session.user.sub, amr: event.amr, acr: event.acr,
+    note: 'A re-authentication on a session this person already held.'
+  }, statsExtra, { sessionId: session.id }));
+  audit.audit({
+    action: 'session.reauthenticate',
+    actor: username,
+    protocol: event.via,
+    channel: 'http',
+    target: session.id,
+    summary: username + ' re-authenticated through ' + event.via +
+             ' on session ' + session.id + ' (acr ' +
+             (previous.acr || 'none') + ' to ' + (event.acr || 'none') + ')',
+    detail: {
+      sessionId: session.id,
+      sub: session.user.sub,
+      amr: event.amr.join(', '),
+      acr: event.acr,
+      previousAmr: previous.amr.join(', '),
+      previousAcr: previous.acr,
+      authTime: event.at,
+      events: session.events.length + (session.eventsDropped || 0),
+      authority: event.authority.kind,
+      // Unchanged, and said so: a re-authentication is not an extension.
+      expiresAt: new Date(session.expires).toISOString()
+    }
+  });
+  notifySession('reauthenticated', session, { via: event.via,
+    previous: previous, req: (res && res.req) || null });
+  log.debug("Leaving reauthenticateSession(). " + session.events.length +
+            " event(s).");
+  return session;
+}
+
 function startSession(res, username, amr, acr, via, detail) {
   log.debug("Entering startSession(). username=" + username + ", acr=" + acr);
   const extra = detail || {};
@@ -1797,12 +2113,48 @@ function startSession(res, username, amr, acr, via, detail) {
   // like the upgrade simply did not work, which is what it was.
   // ---------------------------------------------------------------------
   const arrived = extra.request ? arrivalSessionOf(extra.request) : null;
+  // -------------------------------------------------------------------------
+  // THE SAME PERSON AGAIN IS A RE-AUTHENTICATION, NOT A REPLACEMENT
+  // (2026-09-14).
+  //
+  // Everything below this block used to treat a sign-in on a browser that
+  // already held a session as a change of person, whoever it was. For a
+  // DIFFERENT person that is right and it is kept. For the SAME person — RFC
+  // 9470 step-up, an elapsed `max_age`, `prompt=login`, SAML `ForceAuthn` — it
+  // ended a session nobody had signed out of: the portal and console sessions
+  // derived from it died with it, the relying parties a sign-out has to reach
+  // were forgotten, CAEP was told `session-revoked`, and in RFC 9700 mode every
+  // refresh token issued on it was revoked, so one client asking for `mfa`
+  // took another client's refresh token away. `authn/CLAUDE.md`, *What an
+  // authenticated identity is here*, carries the probe that measured it.
+  //
+  // **"THE SAME PERSON" IS THE SAME `sub`**, which today is the same username
+  // exactly. `identityKeyOf()` is deliberately not used: it folds `alice` and
+  // `alice@SOME.REALM` together for the console's lists, and a federated or
+  // foreign-realm `alice` being treated as a re-authentication of the local
+  // one would hand one person's session to another.
+  //
+  // It needs a SIGNED-IN session on both sides. An arrival session is
+  // upgraded below rather than appended to; the anonymous principal has no
+  // authentication to add to; a keyed API caller has no browser and no
+  // cookie. A relying-party row cannot arrive here at all, because its cookie
+  // is not `sts_session`.
+  const current = extra.request ? cookieSession(extra.request,
+                                                SESSION_COOKIE) : null;
+  const reauthenticating = !!(current && !extra.key &&
+    extra.authenticated !== false &&
+    current.session.chosen !== false &&
+    current.session.authenticated !== false &&
+    !current.session.rpSurface && !current.session.credentialKey &&
+    !sessionEnded(current.session) &&
+    current.session.user && sameIdentity(current.session.user, username));
   if (extra.request) {
-    const previous = cookiesOf(extra.request)[SESSION_COOKIE];
+    const previous = current ? current.id : '';
     // AN ARRIVAL SESSION IS NOT ENDED, it is upgraded — ending it would write
     // a sign-out audit row and a CAEP `session-revoked` for a session nobody
-    // was ever in, every time anybody signed in.
-    if (previous && sessions.get(previous) &&
+    // was ever in, every time anybody signed in. Nor is a session the same
+    // person is re-authenticating on.
+    if (previous && !reauthenticating &&
         !(arrived && arrived.id === previous)) {
       log.info('authn: ending the session this browser was already on (' +
                previous + ') because a new sign-in is replacing it. Every ' +
@@ -1907,6 +2259,14 @@ function startSession(res, username, amr, acr, via, detail) {
       found.expires = Date.now() + sessionLifetimeMs();
       found.lastSeenAt = Date.now();
       found.calls = (found.calls || 1) + 1;
+      // AND WRITTEN BACK THROUGH THE STORE (2026-09-14). `sessions` is
+      // `realms.map({persist})`, whose journal sees `set()` and not three
+      // fields stamped on the object it handed out — so the extension reached
+      // this process's memory and nothing else, and in dispatch mode every
+      // other process went on holding the OLD expiry and ended a session a
+      // SCIM client or SPIRE agent was actively using. `touchArrivalSession()`
+      // records the same lesson one function up.
+      sessions.set(found.id, found);
       // The name may sharpen between calls — a scheme that authenticated
       // anonymously first and by name later — and the creation instant
       // deliberately does not move.
@@ -1915,6 +2275,13 @@ function startSession(res, username, amr, acr, via, detail) {
                 "session " + found.id + " was touched rather than replaced.");
       return found;
     }
+  }
+  if (reauthenticating) {
+    const again = reauthenticateSession(res, current.session, username, amr,
+                                        acr, via, extra);
+    log.debug("Leaving startSession(). " + username + " re-authenticated on " +
+              "session " + again.id + ".");
+    return again;
   }
   // ---------------------------------------------------------------------
   // A TRACKING ROW IS UPGRADED IN PLACE RATHER THAN REPLACED (2026-09-07).
@@ -1932,6 +2299,86 @@ function startSession(res, username, amr, acr, via, detail) {
   // credential-fingerprint branch above gives about the creation instant.
   // ---------------------------------------------------------------------
   const sessionId = arrived ? arrived.id : randomId(24);
+  const firstEvent = authenticationEvent(amr, acr, via, extra);
+  const authenticatedNow = extra.authenticated !== false;
+  // ---------------------------------------------------------------------
+  // THE AUTHENTICATION IS RECORDED BEFORE THE SESSION IS BUILT (2026-09-14),
+  // where it used to be recorded after. Recording it is what makes the
+  // directory create this person's entry, and a person's `sub` is that
+  // entry's `entryUUID` now — so the session cannot be given a subject until
+  // the entry exists.
+  // ---------------------------------------------------------------------
+  // One of the two places a person is authenticated by typing a name at a
+  // screen — this one covers both, since WS-Federation signs in through here.
+  //
+  // AN UNAUTHENTICATED SESSION IS RECORDED HERE TOO, and that needed deciding
+  // rather than falling out. What this funnel counts is "an identity was
+  // established at a door", which is what happened — the anonymous principal
+  // gets its directory entry from this call like anybody else, which is what
+  // makes it visible on /admin/users and able to hold a configured role. What
+  // it must not do is CLAIM a credential was checked, so `method` says
+  // `declined` and the note says so outright; the count on that entry is a
+  // count of anonymous sessions, and the method column is what tells a reader
+  // which kind of row they are looking at. `authenticated` is stripped from
+  // `extra` because it is a fact about the SESSION and this payload is about
+  // the act — leaving it in would put a field on the audit detail that nothing
+  // reads and that a reader would take for a claim about the credential.
+  const statsExtra = Object.assign({}, extra);
+  delete statsExtra.authenticated;
+  stats.recordAuthentication(Object.assign({
+    presented: username, protocol: via || 'OAuth 2.0 / OIDC',
+    method: authenticatedNow ? methodPhraseFor(amr) : 'declined',
+    amr: amr, acr: acr, sessionId: sessionId,
+    note: authenticatedNow
+      ? 'No password was checked; the name typed is the identity.'
+      : 'Nobody authenticated: this is the anonymous principal, from ' +
+        '"Continue without signing in" at the sign-in screen.'
+  }, statsExtra, { sessionId: sessionId }));
+  // ---------------------------------------------------------------------
+  // NO SIGNED-IN SESSION WITHOUT A DIRECTORY ENTRY (2026-09-14).
+  //
+  // A stable subject has to be the subject OF something, and what it is the
+  // subject of is the person's entry. So where the directory holds no entry
+  // after the authentication was recorded — `ldap.autocreateUsers` is off, or
+  // a federation relationship has dynamic provisioning off and nobody was
+  // provisioned ahead of time (by SCIM, say) — the session is REFUSED rather
+  // than started with no subject. That is rcbj's pre-provisioned federation
+  // shape, and it is the same rule for every door.
+  //
+  // Three things are exempt, and each for a reason: a keyed API caller (a SCIM
+  // client, a SPIRE agent) is not a person and has no entry to have; an
+  // UNAUTHENTICATED session is not an authenticated identity; and a process
+  // with no directory at all has no subjects for anybody, so refusing there
+  // would refuse every module test that signs somebody in.
+  // ---------------------------------------------------------------------
+  const user = userFor(username);
+  if (!user.sub && authenticatedNow && !extra.key &&
+      helpers.hasSubjectResolver()) {
+    log.info(errorCodes.tag('STS-AUTHN-0180') +
+             'authn: a session for "' + username + '" was REFUSED at the ' +
+             (via || 'sign-in') + ' door: the directory holds no entry for ' +
+             'them, so there is no subject to give the session. ' +
+             (extra.federation && extra.federation.id
+               ? 'Dynamic provisioning is off on the federation relationship ' +
+                 '"' + extra.federation.id + '", so the person has to be ' +
+                 'provisioned before they sign in.'
+               : 'ldap.autocreateUsers is off, so the person has to be ' +
+                 'created before they sign in.'));
+    audit.audit({
+      action: 'session.refuse', actor: username,
+      errorCode: 'STS-AUTHN-0180',
+      protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
+      summary: 'a session for ' + username + ' was refused: the directory ' +
+               'holds no entry for them',
+      detail: { why: 'no directory entry, so no subject',
+                federation: (extra.federation && extra.federation.id) || '',
+                autocreate: extra.federation
+                  ? String(extra.federation.autocreate !== false) : '' }
+    });
+    log.debug("Leaving startSession(). There is no entry to be the subject " +
+              "of.");
+    return null;
+  }
   const session = {
     // The id is on the session as well as being the map key, because everything
     // that is handed a session gets the object and not the key — the
@@ -1939,7 +2386,7 @@ function startSession(res, username, amr, acr, via, detail) {
     // tokens issued on a session could not name the session they were issued
     // on.
     id: sessionId,
-    user: userFor(username), authTime: nowSec(),
+    user: user, authTime: firstEvent.at,
     // `authn.sessionLifetimeS`, read now, so a change reaches the next session.
     expires: Date.now() + sessionLifetimeMs(),
     // WHETHER ANYBODY ACTUALLY AUTHENTICATED (2026-09-05).
@@ -1973,7 +2420,15 @@ function startSession(res, username, amr, acr, via, detail) {
     startedAt: arrived ? arrived.startedAt : Date.now(),
     // Stated rather than omitted: a relying party that asked for a second
     // factor needs to be able to see that it did not get one.
+    //
+    // **THESE FOUR — `amr`, `acr`, `authTime`, `via` — ARE THE MOST RECENT
+    // EVENT'S** (2026-09-14), kept as plain fields because some sixty readers
+    // and several test fixtures read them off plain objects. `events` below is
+    // the record; these are what it currently says. A re-authentication
+    // REASSIGNS them and never edits them in place: an authorization code and
+    // a GNAP grant hold the very array a session handed them.
     amr: amr, acr: acr,
+    events: [firstEvent],
     // WHICH PROTOCOL THIS SESSION WAS STARTED THROUGH, on the session itself
     // (2026-09-04). It was already handed to `recordAuthentication()` and to
     // the CAEP observer below and kept in neither place the session lives, so
@@ -2001,6 +2456,14 @@ function startSession(res, username, amr, acr, via, detail) {
     lastSeenAt: Date.now(),
     calls: 1
   };
+  // A FRESH HANDLE, EVEN FOR AN UPGRADED ARRIVAL ROW. The arrival session's id
+  // survives the upgrade on purpose — it is the `sid` a flow was correlated by
+  // from its first request — and until 2026-09-14 so did its COOKIE, which
+  // made the cookie a browser was handed before anybody authenticated the one
+  // that was authenticated afterwards. That is session fixation, whatever the
+  // randomness of the id. Rotating the handle keeps the correlation and ends
+  // the fixation.
+  const cookieValue = mintSessionHandle(session);
   sessions.set(sessionId, session);
   // The first session this process holds arms the sweep that will end it if
   // nobody signs it out. See armSessionSweep(): nothing is armed in a process
@@ -2025,36 +2488,8 @@ function startSession(res, username, amr, acr, via, detail) {
   // and it is deliberately opt-OUT: every caller that existed before this
   // field is a browser and must keep getting the cookie.
   if (extra.cookie !== false) {
-    setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; ' +
-        'HttpOnly; SameSite=Lax' +
-                         (config.value('global.https') ? '; Secure' : ''));
+    setCookieHeader(res, sessionCookieLine(SESSION_COOKIE, cookieValue));
   }
-  // One of the two places a person is authenticated by typing a name at a
-  // screen — this one covers both, since WS-Federation signs in through here.
-  //
-  // AN UNAUTHENTICATED SESSION IS RECORDED HERE TOO, and that needed deciding
-  // rather than falling out. What this funnel counts is "an identity was
-  // established at a door", which is what happened — the anonymous principal
-  // gets its directory entry from this call like anybody else, which is what
-  // makes it visible on /admin/users and able to hold a configured role. What
-  // it must not do is CLAIM a credential was checked, so `method` says
-  // `declined` and the note says so outright; the count on that entry is a
-  // count of anonymous sessions, and the method column is what tells a reader
-  // which kind of row they are looking at. `authenticated` is stripped from
-  // `extra` because it is a fact about the SESSION and this payload is about
-  // the act — leaving it in would put a field on the audit detail that nothing
-  // reads and that a reader would take for a claim about the credential.
-  const statsExtra = Object.assign({}, extra);
-  delete statsExtra.authenticated;
-  stats.recordAuthentication(Object.assign({
-    presented: username, protocol: via || 'OAuth 2.0 / OIDC',
-    method: session.authenticated ? methodPhraseFor(amr) : 'declined',
-    sub: session.user.sub, amr: amr, acr: acr, sessionId: sessionId,
-    note: session.authenticated
-      ? 'No password was checked; the name typed is the identity.'
-      : 'Nobody authenticated: this is the anonymous principal, from ' +
-        '"Continue without signing in" at the sign-in screen.'
-  }, statsExtra, { sessionId: sessionId }));
   // The session itself, as its own audit event. It is deliberately separate
   // from the authentication recorded on the line above: the two are one act at
   // this screen and are NOT one act everywhere — a Kerberos AS-REQ and a
@@ -2380,9 +2815,16 @@ function clearSessionCookie(res, cookieName) {
 // lives on the session object it is about to discard.
 function endSession(req, res) {
   log.debug("Entering endSession().");
-  const id = cookiesOf(req)[SESSION_COOKIE];
+  // ONLY A COOKIE CARRYING THE CURRENT HANDLE ENDS ANYTHING. The sid is not a
+  // secret — every relying party that received an ID Token holds it — so a
+  // sign-out endpoint that honoured `sts_session=<sid>` would let any of them
+  // sign a person out from a forged cookie. A cookie that names nothing is
+  // still recorded as a refused sign-out, by dropSession() below.
+  const found = cookieSession(req, SESSION_COOKIE);
+  const id = found ? found.id : '';
+  const presented = !!cookiesOf(req)[SESSION_COOKIE];
   const session = dropSession(id, 'the sign-out endpoint for this browser',
-                              !!id, req);
+                              presented, req);
   clearSessionCookie(res);
   log.debug("Leaving endSession(). " +
             (session ? 'Dropped the session for ' + session.user.username + '.'
@@ -6639,12 +7081,8 @@ function finishBackupCode(req, res, base, mfaId, step, verdict) {
 // ---------------------------------------------------------------------------
 function auditActorOf(req) {
   log.debug("Entering auditActorOf().");
-  const id = cookiesOf(req)[SESSION_COOKIE];
-  if (!id) {
-    log.debug("Leaving auditActorOf().");
-    return '';
-  }
-  const session = sessions.get(id);
+  const found = cookieSession(req, SESSION_COOKIE);
+  const session = found ? found.session : null;
   if (!session) {
     log.debug("Leaving auditActorOf().");
     return '';
@@ -6711,6 +7149,16 @@ module.exports = {
   sessionIdleTimeoutMs: sessionIdleTimeoutMs,
   pendingTtlMs: pendingTtlMs,
   mfaStepTtlMs: mfaStepTtlMs,
+  // WHAT AN AUTHENTICATED IDENTITY IS (2026-09-14). `sessionStartedAt()` is
+  // for every list that draws when a session BEGAN, now that `authTime` is
+  // the most recent authentication; `cookieSession()` is the one reader of a
+  // session cookie's `<sid>.<handle>`, exported for the tests that hold a
+  // stale handle and for nothing else — a module reading the cookie for
+  // itself would be a second place to get the handle check wrong.
+  sessionStartedAt: sessionStartedAt,
+  signOnFactsFor: signOnFactsFor,
+  cookieSession: cookieSession,
+  MAX_SESSION_EVENTS: MAX_SESSION_EVENTS,
   startArrivalSession: startArrivalSession,
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,

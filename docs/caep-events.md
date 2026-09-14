@@ -44,9 +44,12 @@ arrived" are the third.
    back missing from `events_delivered` — which is the only notice SSF gives a
    receiver, and exactly the case a receiver ought to be tested against.
    `caep.eventsSupported` narrows the eight without turning the profile off.
-2. **Did something fire it.** For the three automatic ones, `caep.autoEmit`
-   (default on) and `caep.autoEmitTypes` (default: all three). Naming one of the
-   other five in `autoEmitTypes` is **dropped with a warning** rather than
+2. **Did something fire it.** For the automatic ones, `caep.autoEmit`
+   (default on) and `caep.autoEmitTypes` (default: all five — the three session
+   events, `credential-change`, and `assurance-level-change`, which goes out
+   when the same person re-authenticates on a session they already hold and
+   its `acr` changes, on the `urn:sts:acr` scale). Naming any other type in
+   `autoEmitTypes` is **dropped with a warning** rather than
    honoured — no code path here would ever fire it, and a setting that reads as
    configured and does nothing is worse than one that refuses.
 3. **Does a stream take it.** A stream must both deliver that type *and* cover
@@ -512,7 +515,7 @@ session in CAEP's sense:
 |---|---|---|
 | `caep.enabled` | on | off drops all eight from `events_supported` |
 | `caep.autoEmit` | on | off leaves the register accurate and sends nothing by itself |
-| `caep.autoEmitTypes` | the three | which of the three observable acts emit; naming one of the other five is dropped with a warning |
+| `caep.autoEmitTypes` | the five | which of the five observable acts emit; naming any other type is dropped with a warning |
 | `caep.eventsSupported` | all eight | which types this transmitter will agree to deliver |
 | `caep.omitEventTimestamp` | off | on produces a conforming event with **no** `event_timestamp`, to break a receiver that assumes one |
 | `caep.includeReasons` | on | whether `reason_admin` / `reason_user` are sent |

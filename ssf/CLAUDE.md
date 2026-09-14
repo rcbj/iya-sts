@@ -1137,20 +1137,39 @@ own way turns both checks off with nothing failing.
 
 ---
 
-## THE THREE ACTS THIS SERVICE CAN OBSERVE, AND THE FIVE IT CANNOT
+## THE ACTS THIS SERVICE CAN OBSERVE, AND THE EVENTS IT CANNOT CAUSE
 
-`caep.autoEmitTypes` names the first three and drops anything else with a
-warning, and the division is not arbitrary:
+`caep.autoEmitTypes` names the observable ones and drops anything else with a
+warning, and the division is not arbitrary. This heading said THREE until two
+more acts arrived: `credential-change` on 2026-09-13 (the section on
+administrator credential acts below) and `assurance-level-change` on
+2026-09-14.
 
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a session is created | `session-established` | `authn.startSession()` |
 | a session is presented and honoured | `session-presented` | `oauth-oidc/oauth2.js`'s authorization endpoint, through `authn.notePresented()` |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
+| the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
 
-The other five — token claims change, credential change, assurance level
-change, device compliance change, risk level change — have **no act here that
-could cause them**. No device reports compliance to this service and no risk
+**A RE-AUTHENTICATION IS NOT A SESSION EVENT, AND THAT IS WHY THE FOURTH ROW
+EXISTS.** Until 2026-09-14 the same person stepping up in the same browser went
+through the change-of-person path, and a receiver was told `session-revoked`
+then `session-established` about a session nobody had signed out of. Now
+`observe()` emits `assurance-level-change` only when `acr` actually moved. A
+re-authentication that leaves it where it was (an elapsed `max_age` answered
+the same way) emits nothing and still updates the row. The scale is
+**`urn:sts:acr`**, with levels spelt the way every token here carries `acr`
+(`0`, `1`, `mfa`), because mapping them onto NIST's AALs would assert a
+conformance nobody assessed (rcbj's choice). `caep.assuranceNamespace` stays
+the default for an event emitted BY HAND. `change_direction` comes from
+`oauth-oidc/step_up.js`'s `LEVELS`, required rather than copied so that step-up
+and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
+an authenticated identity is here*, carries the design and the probe.
+
+What remains — token claims change, device compliance change, risk level
+change, and credential changes other than an administrator's — has **no act
+here that could cause it**. No device reports compliance to this service and no risk
 engine talks to it, so an automatic emission of one would be this service
 inventing a fact. They are emitted by hand from `/admin/caep` or
 `POST /admin-api/caep/emit`, and a row in `caep.autoEmitTypes` naming one is
@@ -1420,3 +1439,11 @@ key records no authenticator attachment, and the label goes out as
 pages and the LDAP socket emit nothing**, which is the scope that was asked for
 (the admin user-page doors and the reset link), not a claim that nothing else
 changes a credential.
+
+## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
+
+The RISC register is keyed by the account's name, and a rename reaches `observe()` as an
+update naming the NEW one. Where no row holds that name, the entry's subject (off the
+snapshot) finds the row already recorded under the old name; it is re-keyed, its counts
+and state move with it, and the old name joins `formerIdentifiers` so an event naming it
+still matches. `tests/stable_subject.js` D13.

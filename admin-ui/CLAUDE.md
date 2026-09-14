@@ -2085,9 +2085,10 @@ owns the store, and reimplementing any of it here is how the console and an
   presented to this service in an interaction that SUCCEEDED, across all twelve
   families, and drills into one's sessions and the tokens issued on each. Two rules
   hold it up and both are easy to break by accident: **one row is one local name**
-  (`alice`, `urn:sts:user:alice` and `alice@REALM` are one identity — the prefix
-  is derived from `userFor()` rather than written down, so changing that function
-  cannot silently split every user in two), and **a token is placed under a session by
+  (`alice`, `alice@REALM` and her `urn:uuid:<entryUUID>` are one identity — a
+  subject is resolved through the directory's subject resolver rather than
+  parsed, so a rename cannot silently split a user in two, and the retired
+  `urn:sts:user:alice` is still read), and **a token is placed under a session by
   the optional third argument to `signJwt()`**, never by a claim — no token here
   carries a session identifier and adding one would change what every client receives.
   A new authentication point needs one `stats.recordAuthentication()` call at the
@@ -3030,7 +3031,9 @@ question no other module here may is in `../authn/CLAUDE.md`, beside the
 function.
 
 **WHAT IT ASKS IS "DOES THE DEFAULT REALM HOLD THIS SESSION", NOT "DOES ANY
-REALM"**, and this paragraph said the second until 2026-08-25. The embedded
+REALM"**, and this paragraph said the second until 2026-08-25. (Since
+2026-09-14 the ROSTER is the one of the realm the session was signed in through,
+confined to that realm — 8d. The session store is unchanged.) The embedded
 directory became a subtree per realm on that date, so the two roles this guard
 decides from are groups in the DEFAULT realm's `ou=groups` and nowhere else —
 `ldap_server.js` pins the whole RBAC directory there. If an `acme` session still
@@ -3324,6 +3327,102 @@ change, no assertion gains an attribute, no Kerberos PAC is affected, no protoco
 endpoint reads them, and `groups.claim` carries `admin-write` into an access token
 exactly as it carries any other group, where still nothing reads it.
 
+## 8d. A TRUST REALM HAS ADMINISTRATORS OF ITS OWN (2026-09-14, #32)
+
+**THIS REVERSED A DOCUMENTED NON-GOAL**, *give a trust realm its own
+administrator*, whose argument was that a per-realm roster would let anybody who
+can create a realm administer the service. That argument was about what a
+realm's roster could REACH, and it is answered by narrowing the reach rather
+than by refusing the roster. rcbj's four decisions are the design:
+
+| Question | Answer |
+|---|---|
+| Who is on a realm's roster | the realm's own `cn=admin-read` and `cn=admin-write`, and a seeded `admin` with a forced password change |
+| What a realm administrator reaches | their realm; service pages, actions and settings are hidden and refused |
+| How the plain `/admin` and `/portal` pick a realm | a chooser — a list in development, a text box in product |
+| The machine door | a realm-scoped `sts-management-api` token per realm |
+
+**THE DEFAULT REALM'S ROSTER IS STILL THE SERVICE ROSTER** and administers every
+realm exactly as before, which rcbj stated as a requirement in its own right.
+
+### Two authorities, decided in `gateStateFor()` from the SESSION
+
+`admin-core/admin_views.js`'s `gateStateFor()` reads the realm the session was
+SIGNED IN THROUGH (`session.derivedFromRealm`, empty meaning the default) and
+asks THAT realm's roster: `authority` is `service` for the default realm and
+`realm` otherwise, and `identityRealm` names it. The name alone decides nothing
+— `admin` in `acme` and `admin` in the default realm are two people, asked two
+rosters, and `tests/realm_administrators.js` holds that collision. The console's
+session still lives in the default realm's partition, as 8 argues; only the
+roster it is asked against moved.
+
+A realm authority reading ANOTHER realm is `outsideRealm`: every role is zeroed
+and the gate answers 403 `outside_realm` (`STS-ADMIN-0786`) with a link to their
+own realm's console, before the role check, so the page says the true reason.
+
+### `admin_scope.js` IS THE ONE PLACE THE LINE IS DRAWN
+
+For the console AND `/admin-api`, so rule 7 cannot come apart here. Three
+tables, each refused only to a realm authority (`refusalFor()`):
+
+* **`SERVICE_PAGES`** — persistence, database, encryption, secrets, debugger,
+  TLS (and its truststore), Kerberos, the LDAP service page, the API explorer.
+  Hidden from the nav and `consoleGuide()` (`pageVisible()`), refused whatever
+  the method (`STS-ADMIN-0787`).
+* **`SERVICE_ACTIONS`** — creating or removing a realm, or naming another realm
+  on `/admin/realms`; `build-root` or a `*` scope on `/admin/pki`; exporting the
+  `tls-server` key. `REALM_READS` refuses `/admin/realms?realm=<another>`.
+* **SETTINGS** — every `perProcess` row (a realm write of one lands PROCESS-WIDE
+  in `config.setOverride()`, so a Save on a realm's page would change the
+  process), the `admin.`, `adminApi.`, `realms.`, `workers.`, `persistence.`,
+  `debugger.`, `tls.`, `krb5.`, `keys.` prefixes, `security.passwordHash*`, and
+  a short key list (`global.mode`, `global.publicBaseUrl`, listener and file
+  settings). Any field of a body naming one is refused (`STS-ADMIN-0788`).
+  **The `admin.*` and `adminApi.*` gate settings were made `perProcess` for the
+  same reason** — a realm override of the console's own groups would otherwise
+  be a way round the roster.
+
+**A NEW SERVICE PAGE OWES A ROW IN `SERVICE_PAGES`.** Nothing detects a missing
+one; the page is simply visible and reachable to every realm administrator.
+
+### The bootstrap `admin`, per realm
+
+`admin_rbac.seedBootstrapAdministrator(realmId)` runs for every realm at startup
+(`server.js`) and when a realm is created (`realmsAction()`), with the same
+rules as the default realm's (8a): both roles, `pwdReset` on an account it
+created, and a window open until THAT account signs in through its realm —
+`noteConsoleSignIn()` closes the window of `session.derivedFromRealm`. While a
+realm's window is open, anybody signed in through that realm holds both of that
+realm's roles, and nothing outside it. A realm whose roster already named
+somebody seeds with its window closed. **In product mode a create generates the
+password** (`STS-ADMIN-0789` if it cannot), and `POST /admin/realms` answers a
+one-time page carrying it rather than a redirect, for `/admin/users/new`'s
+reason. The account is protected from deletion in its realm
+(`isBootstrapAdministratorEntry()`).
+
+### The realm chooser, `common/realm_chooser.js`
+
+A GET of exactly `/admin` or `/portal`, in the default realm, with no session,
+while realms are defined, draws a chooser (`STS-ADMIN-0790` / `STS-PORTAL-0074`
+for an unknown id). `?realm=<id>` 303s to that realm's surface, BUILT from the
+registry and never echoed; `?realm=default` signs in where it is. A deep link is
+never asked. **`mode.listsRealmsBeforeSignIn()`** decides list versus text box,
+because listing every tenant's name to anonymous readers is a development
+convenience. **Every owned job signs in through `?realm=default`** since the
+suite nearly always has realms — the doors are named constants in each job.
+
+### What it does not do yet
+
+The API explorer mints only the SERVICE token, so it is a service page. The LDAP
+socket's write authorization recognises a realm administrator in their realm
+(`ldap_server.js`'s `boundDnIsRealmAdministrator()`), and certificate
+enrollment (`common/cert_enrollment.js`'s `adminFor()` and `sessionIsAdmin()`)
+asks the ambient realm's roster after the service's; no other protocol door was
+widened, and SCIM changed only the wording of the bootstrap account's delete
+refusal. `tests/realm_administrators.js` holds the in-process half
+(ten mutants, all caught); `sts_realm_administrators.js` over HTTP is not
+written yet.
+
 ## Every page here shows ONE trust realm
 
 Since 2026-08-24 this service can run several logical copies of itself at once,
@@ -3432,13 +3531,17 @@ would cost an afternoon:
   says so on every page: a form that read one realm and wrote another is the
   surprise this arrangement exists to avoid, and the only way a reader can tell
   which realm they are in is if it is named where they are looking.
-* **THE TWO ROLES ARE NOT PER REALM.** They are groups in the embedded
-  directory, which is shared by every realm in the process, so somebody who
-  holds Admin Write holds it everywhere. `/admin/rbac` reached under a realm
-  prefix is the same roster as the one reached without. Rule 8 is unchanged and
-  there is deliberately no per-realm administrator; if there is ever to be one,
-  it is a per-realm container in the directory rather than a second store here.
-* **AND NEITHER IS THE CONSOLE'S SIGN-ON, which follows from the line above.**
+* **THE TWO ROLES ARE PER REALM SINCE 2026-09-14, AND THE DEFAULT REALM'S ARE
+  THE SERVICE ROSTER.** This bullet said *there is deliberately no per-realm
+  administrator; if there is ever to be one, it is a per-realm container in the
+  directory rather than a second store here* — and that is what was built: each
+  realm's own `cn=admin-read` and `cn=admin-write`, no second store, confined to
+  the realm by `admin_scope.js`. `/admin/rbac` under a realm prefix is that
+  realm's roster. 8d argues it.
+* **THE CONSOLE'S SESSION IS STILL THE DEFAULT REALM'S, AND WHICH ROSTER IT IS
+  ASKED IS THE REALM IT WAS SIGNED IN THROUGH (8d).** The paragraph below
+  predates both that and the 2026-09-11 move of the flow to the ambient realm,
+  and is kept for its account of `consoleSession()`.
   The guard resolves the one session cookie in the DEFAULT realm — that is
   `consoleSession()`, and the name it had while it accepted any realm's session
   was `sessionAnywhere()`. Switching realm therefore switches rather than asking

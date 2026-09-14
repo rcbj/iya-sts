@@ -115,8 +115,8 @@ const app = require('../common/app');
 // on 2026-09-10 with the three functions that read a received SET — they are
 // `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were. See
 // the note above POST /ssf/receive.
-const { log, xmlEscape, baseUrlOf, iso, nowSec, numberWord } =
-  require('../common/helpers');
+const { log, xmlEscape, baseUrlOf, iso, nowSec, numberWord,
+        subjectForName: helpersSubjectFor } = require('../common/helpers');
 const config = require('../common/config');
 const realms = require('../common/realms');
 const stats = require('../common/admin_stats');
@@ -2923,8 +2923,9 @@ function emitCredentialChange(asked) {
     return Promise.resolve({ sent: 0, streams: 0,
                              why: verdict.errors.join(' ') });
   }
+  // The person's own subject, as every token names them (2026-09-14).
   const subject = { user: { format: 'issuer_subject_id',
-    iss: issuerFor(null), sub: username } };
+    iss: issuerFor(null), sub: helpersSubjectFor(username) || username } };
   const candidates = streams.listStreams().filter(function (record) {
     return streams.deliversEvent(record, uri) &&
            streams.streamCoversSubject(record, subject);

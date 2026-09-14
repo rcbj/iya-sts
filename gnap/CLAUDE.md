@@ -125,6 +125,17 @@ approved a grant to it. `ssf/ssf.js`'s `emitProtocolEvent()` is the delivery,
 and `ssf/ssf_auth.js`'s `gnap` scheme is how an application owns a stream as
 itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision.
 
+## A person's opaque identifier is over their subject (2026-09-14)
+
+`gnap_subject.js`'s `opaqueIdFor()` HMACs the person's `urn:uuid:` subject where the
+directory holds one, and the name only where it does not, and the user reference it
+records keeps that subject. So a rename leaves the identifier and the reference naming
+the renamed person, and a name deleted and re-created gets a different identifier while
+the old reference names nobody — RFC 9635 section 3.4's "SHOULD NOT reuse" held across a
+directory edit. Every identifier minted before the change moves once. `account` (an
+`acct:` URI, RFC 7565) is a name by definition and still changes with one.
+`tests/stable_subject.js` D9–D10.
+
 ## Error codes
 
 `STS-GNAP-NNNN`, registered in `common/error_codes.js`:

@@ -1014,7 +1014,7 @@ const REQUIREMENTS = [
           'like a subject is possible for any client that never ' +
           'registered.\n\nWITH THE MODE ON, they get SEPARATE NAMESPACES ' +
           'instead: a client\'s subject is urn:sts:client:<id> beside a ' +
-          'person\'s urn:sts:user:<name>, so the two cannot collide however ' +
+          'person\'s urn:uuid:<entryUUID>, so the two cannot collide however ' +
           'a client is named — the SHOULD above it, done properly. That ' +
           'makes `sub` no longer equal to `client_id`, so a resource server ' +
           'written against the comparison must read the PREFIX instead. Both ' +

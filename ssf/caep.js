@@ -91,8 +91,33 @@ const AUTO_ACTS = {
   // out through `ssf.js`'s `emitCredentialChange()` rather than through
   // `observe()` below, because there is no session row to hang it on — the
   // subject names the PERSON — so `observe()` never sees this act.
-  credential: 'credential-change'
+  credential: 'credential-change',
+  // THE FIFTH (2026-09-14): the same person re-authenticated on a session
+  // they already held, and `acr` MOVED — a step-up or a step-down. It is not a
+  // session event: nothing began and nothing ended, which is exactly what
+  // `session-established` and `session-revoked` would have claimed, and what
+  // this service used to send. A re-authentication that leaves `acr` where it
+  // was emits nothing; `observe()` below decides. See `authn/CLAUDE.md`, *What
+  // an authenticated identity is here*.
+  reauthenticated: 'assurance-level-change'
 };
+
+// THE SCALE THIS SERVICE'S OWN LEVELS ARE ON, and it is deliberately not
+// `caep.assuranceNamespace` (NIST-AAL), which stays the default for an event
+// emitted BY HAND. `0`, `1` and `mfa` are what `authn.js` records and what
+// every token here carries in `acr`; mapping them onto NIST's AALs would
+// assert a conformance nobody assessed. CAEP's namespace list is an open enum,
+// so a private URN is carried with a warning at worst, and a receiver sees the
+// level spelt exactly as the tokens it already holds spell it (rcbj's choice).
+const ACR_NAMESPACE = 'urn:sts:acr';
+
+// The ORDER of those levels is `oauth-oidc/step_up.js`'s, required rather than
+// written out again: RFC 9470's "a stronger authentication satisfies a request
+// for a weaker one" and this file's `change_direction` are one ordering, and
+// two copies would disagree the first time a level was added. step_up.js is a
+// library over `common/` and registers no route, so the require moves nothing
+// and closes no cycle.
+const stepUp = require('../oauth-oidc/step_up');
 
 // How many events one row remembers. It is a RING and not a total — the total
 // is on `counts`, which never forgets — because the list exists so that a
@@ -656,6 +681,23 @@ function observe(notice) {
     row.iss = String(asked.issuer);
   }
   row.updatedAt = iso();
+  // A RE-AUTHENTICATION MOVES WHAT THE ROW SAYS THE SESSION IS, whether or not
+  // anything goes out — the register follows the ACT, as it does for a
+  // revocation with emission off. And it is only an EVENT when `acr` moved:
+  // an elapsed `max_age` answered with the same method is a fresh `auth_time`
+  // and nothing a receiver's decision could turn on.
+  let previousAcr = '';
+  if (act === 'reauthenticated') {
+    previousAcr = String(((asked.previous || {}).acr) || row.acr || '');
+    row.acr = String(session.acr || '');
+    row.amr = Array.isArray(session.amr) ? session.amr.slice() : [];
+    if (previousAcr === row.acr) {
+      touch(row);
+      log.debug('Leaving observe(). A re-authentication that left acr at "' +
+                row.acr + '"; nothing to emit.');
+      return null;
+    }
+  }
   touch(row);
 
   const short = AUTO_ACTS[act];
@@ -689,6 +731,21 @@ function observe(notice) {
   }
   if (act === 'presented') {
     values.ext_id = sessionId;
+  }
+  if (act === 'reauthenticated') {
+    values.namespace = ACR_NAMESPACE;
+    values.current_level = row.acr;
+    if (previousAcr) {
+      values.previous_level = previousAcr;
+    }
+    // Said outright where both levels are on the scale, and omitted where one
+    // is not: CAEP makes the member optional precisely so that a transmitter
+    // never has to guess an order it does not have.
+    const from = stepUp.LEVELS.indexOf(previousAcr);
+    const to = stepUp.LEVELS.indexOf(row.acr);
+    if (from >= 0 && to >= 0 && from !== to) {
+      values.change_direction = to > from ? 'increase' : 'decrease';
+    }
   }
   // WHO INITIATED IT, in CAEP section 2's four words.
   //
@@ -729,6 +786,9 @@ function reasonFor(act, notice) {
   } else if (act === 'presented') {
     text = 'An existing session was presented at ' + via + ' and honoured ' +
       'without a new authentication.';
+  } else if (act === 'reauthenticated') {
+    text = 'The person re-authenticated at ' + via + ' on a session they ' +
+      'already held, and its assurance changed. The session was not ended.';
   } else {
     text = 'The session was ended at ' + via + '.';
   }
@@ -746,9 +806,14 @@ function reasonForUser(act, notice) {
     log.debug('Leaving reasonForUser(). Expired.');
     return 'Your session expired. Sign in again to carry on.';
   }
-  const text = act === 'revoked'
-    ? 'You have been signed out.'
-    : (act === 'established' ? 'You signed in.' : 'You are still signed in.');
+  let text = 'You are still signed in.';
+  if (act === 'revoked') {
+    text = 'You have been signed out.';
+  } else if (act === 'established') {
+    text = 'You signed in.';
+  } else if (act === 'reauthenticated') {
+    text = 'You confirmed who you are again, and you are still signed in.';
+  }
   log.debug('Leaving reasonForUser().');
   return text;
 }

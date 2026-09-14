@@ -222,7 +222,7 @@ function readGroups(username) {
   try {
     // Normalised for the reason vc_claims.js's directoryAttributes() gives: the
     // directory files a person under their local name, so an access token's
-    // `urn:sts:user:alice` and a Kerberos `alice@REALM` would otherwise
+    // `urn:uuid:<entryUUID>` and a Kerberos `alice@REALM` would otherwise
     // look up an entry nothing ever created. identityKeyOf() is the one place
     // that mapping is made, which is what keeps `alice` one person here and one
     // person on /admin/users.

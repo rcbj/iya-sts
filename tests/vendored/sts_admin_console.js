@@ -840,7 +840,9 @@ async function signIn(driver, username) {
   // in the DEFAULT realm, where the console's session and its roster live.
   await ensurePerson(root("/admin-api"), username);
   await clearSession(driver);
-  await go(driver, root("/admin"));
+  await go(driver, root("/admin?realm=default"));
+  // `?realm=default`: a bare /admin draws the realm chooser once the service
+  // has trust realms (2026-09-14, #32), which this suite nearly always does.
   const url = await driver.getCurrentUrl();
   if (url.indexOf("/authn/login") < 0) {
     log.info("The console is OPEN; no sign-in was needed. That should not " +

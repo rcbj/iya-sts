@@ -2069,21 +2069,22 @@ function realmSupport() {
     { family: 'Admin console and management API', state: 'partial', by: 'path',
       note: 'Every page and every operation is per realm — /admin/config ' +
             'READS and WRITES the realm it is reached in, and /admin/users ' +
-            'lists the realm\'s own people. The two ADMIN ROLES are the ' +
-            'exception and are DELIBERATELY pinned: they are groups in the ' +
-            'DEFAULT realm\'s ou=groups, read there whichever realm the ' +
-            'console is reached in, and a grant made through a realm\'s ' +
-            '/admin-api/rbac/grant lands there too and says so. There is one ' +
-            'administrator roster for the process, on purpose: a role is ' +
-            'permission to change what EVERY realm does, so a per-realm ' +
-            'roster would mean anybody who can create a realm can make ' +
-            'themselves an administrator of the service. The CONSOLE SIGN-ON ' +
-            'follows the roster: its gate accepts the DEFAULT realm\'s ' +
-            'session and no other, and an unauthenticated reader of any ' +
-            'realm\'s console is sent to the default realm\'s sign-in ' +
-            'screen. Nothing else reads a session across realms at all; in ' +
-            'the realm you switched to, /oauth2/authorize and the SAML and ' +
-            'WS-Federation endpoints see none.' },
+            'lists the realm\'s own people. The ADMIN ROLES are held TWICE, ' +
+            'deliberately, since 2026-09-14 (#32): the DEFAULT realm\'s ' +
+            'cn=admin-read and cn=admin-write are the SERVICE roster and ' +
+            'administer every realm, and each other realm has the same two ' +
+            'groups in its own ou=groups, seeded with an `admin` account, ' +
+            'whose members administer THAT realm only — every page and ' +
+            'operation about the whole process (the store, the database, ' +
+            'the secret store, the listeners, the debugger, the explorer), ' +
+            'creating or removing a realm, replacing the service Root, and ' +
+            'the per-process settings are refused to them. A realm\'s own ' +
+            'roster therefore grants nothing outside the realm, which is ' +
+            'what made it safe to add. The console signs a person in through ' +
+            'the realm it is reached in, and the plain /admin and /portal ' +
+            'ask which realm first when realms are defined. /admin-api takes ' +
+            'the default realm\'s token everywhere and a realm\'s own ' +
+            'sts-management-api token in that realm only.' },
     { family: 'LDAP (389 / 636)', state: 'full', by: 'dn',
       note: 'A DIRECTORY PER REALM behind one socket — a separate store, not ' +
             'a subtree of a shared one, since 2026-08-25. The DN layout is ' +
