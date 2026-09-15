@@ -319,6 +319,14 @@ function attemptOAuth(req, need) {
 // that server, and a transmitter accepting it would be the confused deputy
 // RFC 9767's audience exists to prevent.
 // ---------------------------------------------------------------------------
+// LAZY: ssf_cluster.js requires the cluster layer, and this file is loaded by
+// tests that want the SSF gate alone.
+function ssfCluster() {
+  log.debug("Entering ssfCluster().");
+  log.debug("Leaving ssfCluster().");
+  return require('./ssf_cluster');
+}
+
 function gnapCovers(access, need) {
   log.debug("Entering gnapCovers().");
   const accessLib = require('../gnap/gnap_access');
@@ -353,7 +361,49 @@ function attemptGnap(req, need) {
       'The GNAP scheme cannot be judged in this process.',
       { 'WWW-Authenticate': challenges(req) });
   }
-  const presented = rs.presentation(req);
+  // ---------------------------------------------------------------------
+  // SPENT ALREADY, WHERE THE ROUTE'S MIDDLEWARE RAN (2026-09-14, #46).
+  //
+  // `presentation()` checks the key proof against THIS PROCESS'S replay
+  // cache, and the cluster half of that check needs an await this gate
+  // cannot make — so `ssf_cluster.js`'s `spendGnapProof` runs the
+  // presentation and the spend before the handler and leaves both on the
+  // request. Calling presentation() again here would judge the same proof a
+  // second time, and the cache would refuse it as the replay it is not.
+  //
+  // A caller that did not go through the route — a test driving this
+  // function directly — gets the synchronous presentation, which is the
+  // whole check where no claim store is shared. Where one IS shared, a proof
+  // nothing spent across the cluster is refused rather than trusted
+  // (`STS-SSF-0099`): the in-memory cache alone is exactly the check a
+  // second node's replay walks past.
+  // ---------------------------------------------------------------------
+  const prepared = ssfCluster().gnapSpentOf(req);
+  let presented = prepared ? prepared.presented : null;
+  if (!prepared) {
+    if (ssfCluster().sharedStore()) {
+      log.debug('Leaving attemptGnap(). No spend on a shared store.');
+      return refusal('STS-SSF-0099', 401,
+        'This GNAP key proof could not be confirmed unused across the ' +
+        'cluster: the request did not reach the step that spends it.',
+        { 'WWW-Authenticate': challenges(req) }, 'invalid_token');
+    }
+    presented = rs.presentation(req);
+  }
+  if (!presented) {
+    log.debug('Leaving attemptGnap(). The presentation threw.');
+    return refusal('STS-SSF-0078', 401,
+      'This GNAP access token could not be accepted.',
+      { 'WWW-Authenticate': challenges(req) }, 'invalid_token');
+  }
+  if (presented.ok && prepared && !(prepared.spent && prepared.spent.ok)) {
+    log.debug('Leaving attemptGnap(). Refused at the spend.');
+    return refusal(errorCodes.codeOf(prepared.spent) || 'STS-SSF-0099', 401,
+      'This GNAP access token could not be accepted: ' +
+      String((prepared.spent && prepared.spent.why) ||
+             'its key proof could not be spent'),
+      { 'WWW-Authenticate': challenges(req) }, 'invalid_token');
+  }
   if (!presented.ok) {
     log.debug('Leaving attemptGnap(). Refused: ' + presented.why);
     return refusal(errorCodes.codeOf(presented) || 'STS-SSF-0078', 401,

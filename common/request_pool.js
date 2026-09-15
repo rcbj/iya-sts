@@ -89,6 +89,9 @@ const keystore = require('./keystore');
 // A LEAF with no requires: the failure codes on the log lines and the 502s and
 // 503s below. See common/error_codes.js.
 const errorCodes = require('./error_codes');
+// Who a request came from, a LEAF (config, net, bunyan). See the
+// `x-forwarded-for` line in proxy() below.
+const clientAddress = require('./client_address');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -1642,6 +1645,25 @@ function receivePublishedKeys(entry, published) {
   // process and this one come to disagree about what a race is.
   const heldBlob = keystore.sharedBlobFor(realmId);
   const enriches = keystore.enriches(published.blob, heldBlob);
+  // -------------------------------------------------------------------------
+  // **A CONFIRMED SET IS THE STORE'S ANSWER AND IS NEVER ARBITRATED HERE
+  // (2026-09-14, #46).** Where the keystore persists to a store that can
+  // arbitrate, a worker whose write found another set in the row adopts that
+  // set and publishes it marked `confirmed`. First-heard-wins below would
+  // otherwise tell the process that just adopted the store's set to take the
+  // one THIS process heard about first — a set the store has already refused —
+  // and the two arbiters would disagree for as long as they kept exchanging
+  // it. The store decides for every node; this channel only carries it.
+  // -------------------------------------------------------------------------
+  if (published.confirmed) {
+    keystore.adoptShared(realmId, published.blob);
+    log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
+             'confirmed by the store through worker ' + (entry && entry.pid) +
+             '; every process here now uses it.');
+    broadcastKeys(realmId, published.blob, entry);
+    log.debug("Leaving receivePublishedKeys().");
+    return;
+  }
   if (enriches) {
     keystore.adoptShared(realmId, published.blob);
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
@@ -1745,7 +1767,11 @@ function closeDirectoryConnections(header) {
       return;
     }
     try {
-      const dropped = directory().dropConnectionsFor(key);
+      // LOCAL ONLY (2026-09-14, #46): the worker that answered the sign-out
+      // already wrote the instruction every other node acts on, inside the
+      // commit its response was held for; writing it again from here would be
+      // a second change row outside any request.
+      const dropped = directory().dropConnectionsFor(key, { localOnly: true });
       log.info('request_pool: a request worker signed ' + key + ' out of the ' +
                'directory; ' + dropped.length + ' connection(s) closed in ' +
                'this process, which is the one holding them.');
@@ -1976,6 +2002,39 @@ function runListenerPass(repair) {
                 'request_pool: the listener certificate could not be ' +
                 'reconciled with the rebuilt hierarchy: ' + e.message);
     });
+}
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE AUTHORITY ANOTHER NODE WROTE WAS ADOPTED FROM THE STORE
+// (2026-09-14, #46). `persistence.js` calls this in the process that holds the
+// listener; the row itself needs nothing from here, because every process of
+// this container reads the change log and adopts it for itself. What only this
+// process can do is the socket — `receivePublishedPki()`'s second half, for a
+// hierarchy that arrived from another CONTAINER rather than from a worker.
+// ---------------------------------------------------------------------------
+function hierarchyArrived(scopeId) {
+  log.debug("Entering hierarchyArrived(). scope=" + scopeId);
+  if (process.env.STS_REQUEST_WORKER) {
+    log.debug("Leaving hierarchyArrived(). A worker holds no listener.");
+    return null;
+  }
+  // **ONLY THE TWO ROWS THE LISTENER CHAINS THROUGH, AND ONLY ONCE THE BRANCH
+  // IS HERE.** A realm's row certifies nothing on these sockets. And on a cold
+  // start the Root arrives from the node that built it a moment before that
+  // node's process branch does — reconciling on the Root alone asked the
+  // process scope for a TLS Issuing CA it did not have yet and logged
+  // STS-PKI-0046 and STS-TLS-0026 about a certificate that was re-issued
+  // correctly one row later. The branch's own arrival reconciles.
+  const pki = require('./pki');
+  const processRow = pki.rawRowFor(pki.PROCESS_SCOPE);
+  if ((scopeId !== pki.SERVICE_SCOPE && scopeId !== pki.PROCESS_SCOPE) ||
+      !(processRow && processRow.issuing && processRow.issuing.tls)) {
+    log.debug("Leaving hierarchyArrived(). Nothing the listener chains " +
+              "through yet.");
+    return null;
+  }
+  log.debug("Leaving hierarchyArrived().");
+  return reconcileTheListener();
 }
 
 function broadcastPki(realmId, chain, except) {
@@ -3802,8 +3861,26 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // which would put the whole service in ONE rate-limit bucket, and that is
   // not a subtle failure: `tests/CLAUDE.md` records the suite tripping the
   // per-address limiter when it was one address.
-  headers['x-forwarded-for'] = req.ip ||
-    (req.connection && req.connection.remoteAddress) || '';
+  //
+  // **THE CLIENT AS RESOLVED HERE, AND ONE ADDRESS (2026-09-14, #46).** This
+  // wrote `req.ip`, which in this process is the socket's peer — behind a load
+  // balancer, the balancer, so every caller shared one bucket — and the worker
+  // read it only when `global.trustProxy` was on, answering `unknown` (a unix
+  // socket has no peer address) for everybody otherwise. It is now
+  // `client_address.js`'s answer: the peer, or with `global.trustedProxies`
+  // set the right-most forwarded hop that is not one of them, and the worker
+  // believes it because nothing but this process reaches its socket. A
+  // forwarded host from a peer that may not forward is dropped, so the worker
+  // cannot believe what this process would not have. **Behind an L4 balancer
+  // with `global.proxyProtocol` on, the peer IS the client**:
+  // `common/proxy_protocol.js` put the header's address on the socket before
+  // this request was parsed, so what is written here is that address and the
+  // balancer never appears (`tests/proxy_protocol.js` 3a).
+  headers['x-forwarded-for'] = clientAddress.clientAddressOf(req) ||
+    req.ip || (req.connection && req.connection.remoteAddress) || '';
+  if (!clientAddress.forwardedBelieved(req)) {
+    delete headers['x-forwarded-host'];
+  }
   headers['x-forwarded-proto'] = req.protocol || 'https';
   if (req.headers && req.headers.host) {
     headers.host = req.headers.host;
@@ -4545,6 +4622,8 @@ module.exports = {
   // asserted without a worker.
   reconcileTheListener: reconcileTheListener,
   listenerRepairArmed: listenerRepairArmed,
+  // A hierarchy adopted from the store (#46), for persistence.js.
+  hierarchyArrived: hierarchyArrived,
   // For tests/request_routing.js — the routing decisions are pure functions and
   // are asserted directly rather than by starting a pool.
   mutationKeyOf: mutationKeyOf,

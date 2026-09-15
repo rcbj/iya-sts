@@ -108,6 +108,20 @@ const webauthnVerifier = require('../authn/webauthn');
 // ENUMERABLY, so `errorCodes.codeOf(verdict)` reads it and a verdict handed
 // whole to `/admin-api` as JSON carries no trace of it.
 const errorCodes = require('./error_codes');
+// SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46 section 2). Every
+// single-use credential this file holds — a TOTP step, a recovery code, a
+// WebAuthn signature counter and ceremony, an activation or reset link, the
+// bootstrap password — was spent by reading the directory entry and writing it
+// back, which on one node is atomic and across nodes is two nodes both
+// accepting inside the change log's window. The claims module spends a value
+// ONCE in the store; the counters module advances a value that may only go
+// UP. Both are LIBRARIES that require `config`, `realms`, `error_codes` and
+// the capability table and reach `persistence.js` lazily, so neither can close
+// a cycle from here, and on a memory or ldif store each is this process's own
+// map — exactly as atomic as the entry check it sits behind.
+const claims = require('../cluster/cluster_claims');
+const counters = require('../cluster/cluster_counters');
+const capabilities = require('../cluster/cluster_capabilities');
 
 function coded(code, verdict) {
   log.debug("Entering coded().");
@@ -1002,6 +1016,103 @@ function bootstrap(opts) {
 }
 
 // ---------------------------------------------------------------------------
+// ONE BOOTSTRAP FOR THE CLUSTER (2026-09-14, #46 section 8).
+//
+// **N NODES COLD-STARTED AGAINST AN EMPTY STORE PRINTED N PASSWORDS.** Each
+// restored the same empty directory, each asked "does anybody hold a
+// credential", each got no, and each generated, logged and wrote its own. The
+// entry is last writer wins, so exactly one of the N passwords in N logs
+// worked and nothing said which. Worse, the account ITSELF was made N times:
+// `seedBootstrapAdministrator()` creates the entry on every node, and a node
+// whose create committed after another node's password write replaced the
+// entry with one that has no password at all — N passwords and none working.
+//
+// **SO THE WHOLE STEP — SEED AND PASSWORD — IS ONE CLAIM PER REALM.** `work`
+// is the caller's (`server.js` seeds the administrator and then calls
+// `bootstrap()`; this file cannot require `admin_rbac.js`, which requires it),
+// and it runs only on the node that wins the claim, after that node has caught
+// up with the store — so a node whose claim was won because an earlier
+// winner's claim EXPIRED still sees the credential that winner wrote and does
+// nothing. The winner waits for its own writes to commit and then gives the
+// claim back, so a node starting afterwards asks the question again against a
+// directory that answers it.
+//
+// **WHAT A NODE THAT LOSES SEES**: one info line naming the node holding the
+// claim and when it took it, and NO password — it seeds nothing and writes
+// nothing, and the password is in the winner's log alone. If the winner died
+// before it wrote, the claim expires (`BOOTSTRAP_CLAIM_TTL_MS`) and the next
+// node to start runs the bootstrap; a service nobody can sign in to for that
+// long is the price of never printing a password that does not work.
+//
+// **A STORE THAT CANNOT BE ASKED RUNS NOTHING** (`STS-AUTHN-0185`), for the
+// same reason: a node that cannot prove it is the only one generating must not
+// print a credential that another node may be overwriting. On memory or ldif
+// the claim is this process's, always won, and this is exactly the old step.
+// ---------------------------------------------------------------------------
+const BOOTSTRAP_CLAIM_TTL_MS = 5 * 60 * 1000;
+
+function bootstrapOnce(realmId, work) {
+  log.debug("Entering bootstrapOnce(). realm=" + realmId);
+  const persistence = sharedStore();
+  log.debug("Leaving bootstrapOnce(). Claiming.");
+  return claims.claim({ scope: 'ops.bootstrap', value: 'administrator',
+                        ttlMs: BOOTSTRAP_CLAIM_TTL_MS,
+                        realm: String(realmId || '') })
+    .then(function (claimed) {
+      if (!claimed.ok && claimed.reason === 'used') {
+        const holder = claimed.existing || {};
+        // `existing` is null when the holder gave the claim back between this
+        // node's INSERT and its look at the row — it has already finished.
+        log.info('credentials: another node (' + (holder.origin
+                   ? holder.origin + ', since ' +
+                     new Date(Number(holder.claimedAt)).toISOString()
+                   : 'which has just finished') + ') holds the ' +
+                 'product-mode bootstrap for the "' +
+                 (realmId || 'default') + '" realm. ' +
+                 'This node seeds nothing and generates no password; if one ' +
+                 'is generated it is in THAT node\'s log.');
+        return { ran: false, lost: true, holder: holder };
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-AUTHN-0185') + 'credentials: the ' +
+                  'bootstrap for the "' + (realmId || 'default') + '" realm ' +
+                  'was NOT attempted: this node could not ask the store ' +
+                  'whether another node is running it (' +
+                  (claimed.why || claimed.reason) + '). Restart once the ' +
+                  'store answers.');
+        return { ran: false, why: 'the store could not be asked' };
+      }
+      return Promise.resolve().then(function () {
+        return persistence.clusterStore() &&
+          typeof persistence.syncNow === 'function'
+          ? persistence.syncNow() : null;
+      }).catch(function (e) {
+        log.warn('credentials: catching up before the bootstrap failed (' +
+                 ((e && e.message) || e) + '); it runs against what this ' +
+                 'node restored.');
+        return null;
+      }).then(function () {
+        return work();
+      }).then(function (result) {
+        // THE CLAIM IS GIVEN BACK ONLY ONCE THE WRITES HAVE COMMITTED, so the
+        // next node to take it reads a directory that already holds them.
+        return Promise.resolve().then(function () {
+          return persistence.clusterStore()
+            ? Promise.all([persistence.flush(), persistence.flushMinted()])
+            : null;
+        }).catch(function (e) {
+          log.debug("Caught in bootstrapOnce(): " + ((e && e.message) || e));
+          return null;
+        }).then(function () {
+          return claims.release(claimed.handle);
+        }).then(function () {
+          return result;
+        });
+      });
+    });
+}
+
+// ---------------------------------------------------------------------------
 // THE KEYS SOMEBODY HOLDS, AND WHAT THEY ARE FOR.
 // ---------------------------------------------------------------------------
 function keysOf(username) {
@@ -1091,6 +1202,24 @@ function addKey(username, credential, role) {
   // which is a page that stops rendering and a flush that gets slower rather
   // than anything security-shaped.
   const held = keysOf(name);
+  // ONE ROW PER CREDENTIAL ID, WHICHEVER DOOR ASKS (2026-09-14). The two
+  // ceremony doors checked `excludeCredentials` against the list as it was
+  // when the ceremony BEGAN, so the same attestation posted twice — or a key
+  // written by another request since — became a second row for one device.
+  // Asked here, the one writer, against the entry as it is now;
+  // `addKeyClaimed()` below closes the concurrent case between nodes.
+  const wantedId = String((credential || {}).credentialId || '');
+  if (wantedId && held.some(function (one) {
+    return String(one.credentialId) === wantedId;
+  })) {
+    log.info('credentials: ' + name + ' presented an authenticator that is ' +
+             'already enrolled. Refused as a duplicate.');
+    log.debug("Leaving addKey(). Already enrolled.");
+    return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
+             errors: ['That authenticator is already enrolled. Use a ' +
+                      'DIFFERENT one — a backup on the same device is lost ' +
+                      'with the original.'] });
+  }
   const cap = webauthnPolicy.settings().maxKeysPerPerson;
   if (held.length >= cap) {
     log.info('credentials: ' + name + ' already holds ' + held.length +
@@ -1171,6 +1300,171 @@ function addKey(username, credential, role) {
 // defence: an authenticator's counter only ever goes up, so a counter that went
 // backwards is a cloned key. `webauthn.js` performs the CHECK; this records the
 // new value so the next assertion has something to check against.
+// ---------------------------------------------------------------------------
+// AN ASSERTION, SPENT ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// `noteKeyUsed()` below reads the entry's keys, sets one counter and writes
+// the whole attribute back. On one node that is the replay defence WebAuthn
+// asks for. Across nodes it was two defects:
+//
+//   * **THE COUNTER COULD GO BACKWARDS.** Node A accepts counter 11 and node B
+//     counter 10 at the same moment; whichever write lands last is the entry,
+//     so it can say 10 — and a CLONED authenticator presenting 11 is then
+//     accepted everywhere, which is exactly the thing WebAuthn Level 3 section
+//     6.1.1 has the counter for.
+//   * **ONE ASSERTION SIGNED IN TWICE.** Two nodes both checking against 10
+//     both accept the same 11.
+//
+// So an assertion that verified is SPENT here before the sign-in stands, in
+// two steps and in this order:
+//
+//   1. **THE CHALLENGE IS CLAIMED.** A ceremony's challenge is single-use by
+//      construction and this is the only defence at all for an authenticator
+//      whose counter is always 0 — which is every synced passkey. Two posts of
+//      one assertion to two nodes: one wins.
+//   2. **THE COUNTER IS ADVANCED** through `cluster/cluster_counters.js`,
+//      which refuses a value not above the highest ANY node has recorded for
+//      that credential. A counter of 0 against a stored 0 is accepted (no
+//      counter, section 6.1.1); 0 against a stored 7 is a counter that went
+//      backwards and is refused.
+//
+// A refused counter GIVES THE CHALLENGE BACK, so the person can try again
+// inside the same step rather than being sent to the start for somebody
+// else's clone. The entry is still written through `noteKeyUsed()` afterwards,
+// for the "last used" a page draws — the counter row, not the entry, is what
+// the next assertion is decided by across nodes; the entry stays the first,
+// free check `webauthn.js` makes.
+// ---------------------------------------------------------------------------
+const WEBAUTHN_CHALLENGE_SCOPE = 'authn.webauthn-challenge';
+const WEBAUTHN_COUNTER_SCOPE = 'authn.webauthn-sign-count';
+// ---------------------------------------------------------------------------
+// A REGISTRATION CLAIMS ITS CREDENTIAL ID (2026-09-14, #46 follow-up).
+//
+// `addKey()` refuses a credential id already on the entry, and on several
+// nodes "already on the entry" is a question with a window: the same
+// attestation posted to two nodes at once passes both checks, both nodes write
+// a row, and the directory merge — which merges the key attribute BY VALUE,
+// and two rows for one key differ in `enrolledAt` — keeps both. So the id is
+// claimed in the store before the write, and a second registration of it is
+// refused (`STS-AUTHN-0193`; `STS-AUTHN-0194` when the store cannot be asked —
+// fail closed, `cluster_claims.js`'s rule).
+//
+// **HELD FOR ITS LIFETIME ON SUCCESS, GIVEN BACK ON A REFUSED WRITE.** A
+// credential id is minted by the authenticator per registration, so nothing
+// legitimate registers the same one again: the only second registration of an
+// id is a replay of one attestation, which the claim should refuse for as long
+// as that attestation's challenge could still be answered — and after that the
+// entry's own check above does. On memory or ldif the claim is this process's
+// map, as atomic as the check it backs.
+// ---------------------------------------------------------------------------
+const WEBAUTHN_REGISTRATION_SCOPE = 'authn.webauthn-registration';
+const WEBAUTHN_REGISTRATION_CLAIM_MS = 30 * 60 * 1000;
+
+function addKeyClaimed(username, credential, role) {
+  log.debug("Entering addKeyClaimed().");
+  const credentialId = String((credential || {}).credentialId || '');
+  if (!credentialId) {
+    log.debug("Leaving addKeyClaimed(). No id to claim; addKey() decides.");
+    return Promise.resolve(addKey(username, credential, role));
+  }
+  const name = String(username || '').trim();
+  log.debug("Leaving addKeyClaimed(). Claiming the credential id.");
+  return claims.claim({
+    scope: WEBAUTHN_REGISTRATION_SCOPE, value: credentialId,
+    ttlMs: WEBAUTHN_REGISTRATION_CLAIM_MS, realm: realms.currentId()
+  }).then(function (claimed) {
+    if (!claimed.ok && claimed.reason === 'used') {
+      log.warn('credentials: a security key registration for ' + name +
+               ' was REFUSED: its credential id is being registered, or ' +
+               'was just registered, by another request or node.');
+      return coded('STS-AUTHN-0193', { ok: false, reason: 'duplicate',
+        errors: ['That authenticator has just been registered by another ' +
+                 'request. It is enrolled once; look for it on your key ' +
+                 'list.'] });
+    }
+    if (!claimed.ok) {
+      log.error(errorCodes.tag('STS-AUTHN-0194') + 'credentials: whether ' +
+                'the credential id of a security key for ' + name + ' is ' +
+                'already registered elsewhere could not be asked (' +
+                (claimed.why || claimed.reason) + '), so it was not ' +
+                'enrolled.');
+      return coded('STS-AUTHN-0194', { ok: false, reason: 'store',
+        errors: ['The security key could not be registered just now. Try ' +
+                 'again.'] });
+    }
+    const stored = addKey(username, credential, role);
+    if (!stored.ok) {
+      claims.release(claimed.handle);
+    }
+    return stored;
+  });
+}
+
+function spendAssertion(spec) {
+  log.debug("Entering spendAssertion().");
+  const s = spec || {};
+  const name = String(s.username || '').trim();
+  const credentialId = String(s.credentialId || '');
+  const realmId = realms.currentId();
+  const signCount = Math.max(0, Math.floor(Number(s.signCount) || 0));
+  if (!credentialId || !s.challenge) {
+    log.debug("Leaving spendAssertion(). Nothing to spend.");
+    return Promise.resolve(coded('STS-AUTHN-0182', { ok: false,
+      reason: 'store', detail: 'The assertion names no credential or ' +
+                               'challenge, so it cannot be spent.' }));
+  }
+  log.debug("Leaving spendAssertion(). Claiming the challenge.");
+  return claims.claim({
+    scope: WEBAUTHN_CHALLENGE_SCOPE, value: String(s.challenge),
+    ttlMs: Math.max(60000, Number(s.ttlMs) || 0), realm: realmId
+  }).then(function (claimed) {
+    if (!claimed.ok) {
+      if (claimed.reason === 'used') {
+        log.warn('credentials: a security-key assertion for ' + name +
+                 ' verified and was REFUSED: its challenge had already been ' +
+                 'answered, by another node or a request racing this one.');
+        return coded('STS-AUTHN-0181', { ok: false, reason: 'replay',
+          detail: 'this sign-in step has already been answered' });
+      }
+      log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: a ' +
+                'security-key assertion for ' + name + ' could not be ' +
+                'proved unspent (' + (claimed.why || claimed.reason) +
+                '), so it was refused.');
+      return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
+        detail: 'the assertion could not be checked just now' });
+    }
+    return counters.advance({
+      scope: WEBAUTHN_COUNTER_SCOPE, key: credentialId, value: signCount,
+      realm: realmId
+    }).then(function (answer) {
+      if (!answer.ok) {
+        claims.release(claimed.handle);
+        if (answer.reason === 'behind') {
+          log.warn('credentials: a security-key assertion for ' + name +
+                   ' presented signature counter ' + signCount + ' and the ' +
+                   'highest any node has recorded for that key is ' +
+                   answer.highest + '. It was REFUSED — a counter that does ' +
+                   'not go up is a replay or a CLONED authenticator ' +
+                   '(WebAuthn Level 3 section 6.1.1).');
+          return coded('STS-AUTHN-0035', { ok: false, reason: 'counter',
+            highest: answer.highest,
+            detail: 'the signature counter did not increase (now ' +
+                    signCount + ', highest seen ' + answer.highest +
+                    ') — the key may have been cloned' });
+        }
+        log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: the ' +
+                  'signature counter for ' + name + ' could not be advanced ' +
+                  '(' + (answer.why || answer.reason) + '), so the ' +
+                  'assertion was refused.');
+        return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
+          detail: 'the signature counter could not be checked just now' });
+      }
+      const recorded = noteKeyUsed(name, credentialId, signCount);
+      return { ok: true, recorded: !!recorded, advanced: answer.advanced };
+    });
+  });
+}
+
 function noteKeyUsed(username, credentialId, signCount) {
   log.debug('Entering noteKeyUsed().');
   if (!directory || typeof directory.replaceWebauthn !== 'function') {
@@ -1360,23 +1654,33 @@ const TOTP_ATTRIBUTE = 'stsTotpCredential';
 // every other pending record here is: a realm is a logical copy of this
 // service, and an enrolment begun in one is not an enrolment in another.
 //
-// **IT CARRIES NO `persist:` NAME, WHERE `authn.js`'s THREE PENDING MAPS ALL
-// DO, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.** A `persist` handle
-// journals the store, so in product mode on postgres these rows would be
-// written down and replicated to every other process — and what is in them is
-// an UNCONFIRMED SHARED SECRET, a credential nobody has yet proved they hold,
-// for an enrolment that will most often be abandoned. A pending
-// authentication record is a `returnTo` and a few flags; this is the second
-// factor itself.
+// ~~IT CARRIES NO `persist:` NAME~~ — **REVERSED 2026-09-14 (#46), BECAUSE
+// THE PREMISE WAS AFFINITY AND A CLUSTER HAS NONE.** Until that day the
+// argument was that the row is an UNCONFIRMED SHARED SECRET for an enrolment
+// that is usually abandoned, and that nothing lost by keeping it in one
+// process's memory, because "the only surfaces that read it hold worker
+// affinity". Across NODES behind a balancer they do not: `POST /portal/mfa`
+// answered by node A redirects to `GET /portal/mfa`, the balancer hands that
+// to node B, and B had no pending secret to draw — no QR code, no secret, no
+// way to confirm. The suite's `cluster` mode measured it in five jobs
+// (`sts_portal_totp`, `sts_portal_backup_codes`,
+// `sts_portal_directory_attributes`, `sts_step_up`, and the security-key
+// page's twin below in `sts_portal_backup_keys`). A person pressing *Set up*
+// again does not converge either: every retry has the same odds of landing
+// on the node that did not make it.
 //
-// What it costs is that an enrolment does not survive a restart and does not
-// cross to another request worker. Neither matters: it lives ten minutes
-// (`totp.enrolmentTtlMinutes`), the only surfaces that read it hold worker
-// affinity (`/portal` is session-bearing, and the pool pins a cookie-less
-// browser on its first answer), and the failure mode is a person pressing
-// *Set up* again — against a restart that would otherwise have left a live
-// secret on disk for a setup nobody finished.
-const pendingTotp = realms.map();
+// **WHAT THE ORIGINAL WORRY WAS ABOUT IS STILL ANSWERED, BY THE ROW'S SEAL AND
+// ITS LIFETIME RATHER THAN BY ITS ABSENCE.** A persisted row is written only
+// where minted state is (`persistence_minted.js`'s `enabled()`: product mode,
+// a dispatched container, a cluster node — never a single development
+// process, never memory or ldif), every body is `keystore.seal()`ed under the
+// key-encryption key before it reaches the table, and the row goes the moment
+// the enrolment is confirmed, abandoned or found expired by any process's
+// sweep (`sweepPendingTotp()`), each a journalled delete. Its value is never
+// edited in place — `beginTotpEnrolment()` sets a whole new record — so it
+// owes no `touch()`. And it carries no `tombstone`: it is keyed by a NAME,
+// which a person legitimately writes again every time they start over.
+const pendingTotp = realms.map({ persist: 'credentials.pendingTotp' });
 
 function pendingKeyOf(username) {
   log.debug("Entering pendingKeyOf().");
@@ -1685,16 +1989,16 @@ function confirmTotpEnrolment(username, code) {
 // SPNEGO exception read a second time, and the only other place in this
 // service where a credential presented by an end user is actually checked.
 // ---------------------------------------------------------------------------
-function verifyTotp(username, code, opts) {
-  log.debug("Entering verifyTotp().");
-  const name = String(username || '').trim();
-  log.debug('Entering verifyTotp(). username=' + name);
-  const options = opts || {};
+// PREPARE / FINISH, `backupPrepare()`'s shape: everything decided against the
+// entry is decided in the first half, so the synchronous door and the
+// asynchronous one below refuse in the same order and cannot drift apart.
+function totpPrepare(name, code, options) {
+  log.debug("Entering totpPrepare().");
   const record = totpOf(name);
   if (!record) {
-    log.debug('Leaving verifyTotp(). Nothing enrolled.');
-    return coded('STS-AUTHN-0076', { ok: false, reason: 'none',
-             detail: 'No authenticator app is enrolled for ' + name + '.' });
+    log.debug('Leaving totpPrepare(). Nothing enrolled.');
+    return { done: coded('STS-AUTHN-0076', { ok: false, reason: 'none',
+             detail: 'No authenticator app is enrolled for ' + name + '.' }) };
   }
   if (record.unusable) {
     log.error(errorCodes.tag('STS-AUTHN-0077') +
@@ -1702,21 +2006,28 @@ function verifyTotp(username, code, opts) {
               'this process cannot read (' + record.why + '), so the second ' +
               'factor cannot be checked. They are refused rather than let ' +
               'through on one factor.');
-    log.debug('Leaving verifyTotp(). The enrolment is unusable.');
-    return coded('STS-AUTHN-0077', { ok: false, reason: 'unusable',
+    log.debug('Leaving totpPrepare(). The enrolment is unusable.');
+    return { done: coded('STS-AUTHN-0077', { ok: false, reason: 'unusable',
              detail: 'Your authenticator enrolment cannot be read by this ' +
                      'service, so it cannot be checked. An administrator ' +
                      'has to clear it on your row under /admin/users and ' +
-                     'you can enrol again.' });
+                     'you can enrol again.' }) };
   }
   const verdict = totp.verify(record, code, options);
   if (!verdict.ok) {
     log.info('credentials: a code for ' + name + ' was refused (' +
              verdict.reason + ').');
-    log.debug('Leaving verifyTotp(). Refused.');
-    return coded(errorCodes.codeOf(verdict) || 'STS-AUTHN-0105',
-                 { ok: false, reason: verdict.reason, detail: verdict.detail });
+    log.debug('Leaving totpPrepare(). Refused.');
+    return { done: coded(errorCodes.codeOf(verdict) || 'STS-AUTHN-0105',
+                 { ok: false, reason: verdict.reason,
+                   detail: verdict.detail }) };
   }
+  log.debug("Leaving totpPrepare().");
+  return { record: record, verdict: verdict };
+}
+
+function totpFinish(name, record, verdict) {
+  log.debug("Entering totpFinish().");
   record.lastCounter = verdict.counter;
   record.lastUsedAt = Date.now();
   const written = writeTotpRecord(name, record);
@@ -1729,8 +2040,103 @@ function verifyTotp(username, code, opts) {
               'recorded, so that code could be replayed inside its window: ' +
               (written.errors || []).join(' '));
   }
-  log.debug('Leaving verifyTotp(). Accepted at step ' + verdict.counter + '.');
+  log.debug('Leaving totpFinish(). Accepted at step ' + verdict.counter + '.');
   return { ok: true, counter: verdict.counter, drift: verdict.drift };
+}
+
+// THE SYNCHRONOUS DOOR, KEPT FOR ITS CALLERS AND NOT CLUSTER-SAFE. It spends
+// the step on the entry only, which is the whole defence on one node and two
+// nodes' worth of acceptance across two. The sign-in screen uses
+// `verifyTotpAsync()` below; nothing in this service calls this one any more.
+function verifyTotp(username, code, opts) {
+  log.debug("Entering verifyTotp().");
+  const name = String(username || '').trim();
+  log.debug('Entering verifyTotp(). username=' + name);
+  const ready = totpPrepare(name, code, opts || {});
+  if (ready.done) {
+    log.debug('Leaving verifyTotp(). Refused.');
+    return ready.done;
+  }
+  log.debug("Leaving verifyTotp().");
+  return totpFinish(name, ready.record, ready.verdict);
+}
+
+// ---------------------------------------------------------------------------
+// THE STEP, SPENT ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// **RFC 6238 SECTION 5.2 WAS HELD ONCE PER NODE.** `lastCounter` is on the
+// entry, and two nodes reading "last step 41" at the same moment both accepted
+// step 42 — a code shoulder-surfed off a screen and typed at a second node
+// while its owner typed it at the first was two sign-ins. Worse, the entry is
+// last writer wins, so a node that accepted 42 after another accepted 43 could
+// write the counter BACKWARDS, and 43 would then verify again anywhere.
+//
+// **A COUNTER AND NOT A CLAIM**, unlike every other single-use value in this
+// file. A claim on (person, step) stops the same step twice;
+// `totp.verify()` refuses every step AT OR BELOW the last one, and that is the
+// property worth keeping across nodes — so the step is advanced through
+// `cluster/cluster_counters.js`, which refuses anything not above the highest
+// step any node has accepted, in one statement. The entry's `lastCounter`
+// stays the FIRST check (no round trip for the ordinary repeat) and is still
+// written, so a page that draws "last used" is right.
+//
+// **THE KEY NAMES THE ENROLMENT, NOT ONLY THE PERSON**: `enrolledAt` is part
+// of it. Somebody who removes their authenticator and enrols a new one inside
+// the same thirty seconds has a new secret whose codes have nothing to do with
+// the old one's steps, and refusing their confirmation-adjacent sign-in because
+// the OLD enrolment spent that step would be a wrong answer for no defence.
+//
+// **A STORE THAT CANNOT BE ASKED REFUSES** (`STS-AUTHN-0182`): a code this
+// service cannot prove unspent is not one it may accept. That is the opposite
+// of a failed ENTRY write after acceptance, which `totpFinish()` still logs and
+// lets stand — by then the step is spent in the counter, which is the defence.
+// ---------------------------------------------------------------------------
+const TOTP_STEP_SCOPE = 'authn.totp-step';
+
+function verifyTotpAsync(username, code, opts) {
+  log.debug("Entering verifyTotpAsync().");
+  const name = String(username || '').trim();
+  const realmId = realms.currentId();
+  let ready;
+  try {
+    ready = totpPrepare(name, code, opts || {});
+  } catch (e) {
+    log.debug("Caught in verifyTotpAsync(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyTotpAsync(). It threw.");
+    return Promise.reject(e);
+  }
+  if (ready.done) {
+    log.debug('Leaving verifyTotpAsync(). Refused before the store.');
+    return Promise.resolve(ready.done);
+  }
+  log.debug("Leaving verifyTotpAsync(). Advancing the step.");
+  return counters.advance({
+    scope: TOTP_STEP_SCOPE,
+    key: name + '\n' + String(ready.record.enrolledAt || 0),
+    value: ready.verdict.counter,
+    realm: realmId
+  }).then(function (answer) {
+    if (answer.ok) {
+      return totpFinish(name, ready.record, ready.verdict);
+    }
+    if (answer.reason === 'behind') {
+      log.warn('credentials: a code for ' + name + ' verified at step ' +
+               ready.verdict.counter + ' and was REFUSED: step ' +
+               answer.highest + ' has already been accepted for this ' +
+               'enrolment, by another node or a request racing this one.');
+      return coded('STS-AUTHN-0106', { ok: false, reason: 'replay',
+        counter: ready.verdict.counter,
+        detail: 'That code has already been used. Wait for your ' +
+                'authenticator to show the next one.' });
+    }
+    log.error(errorCodes.tag('STS-AUTHN-0182') +
+              'credentials: a code for ' + name + ' verified and could not ' +
+              'be proved unspent (' + (answer.why || answer.reason) + '), ' +
+              'so it was refused.');
+    return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
+      detail: 'That code could not be checked just now. Try the next one ' +
+              'in a moment.' });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2216,12 +2622,20 @@ function writeBackupCodesRecord(username, codes, meta) {
 // partition is a property of the declaration rather than of anybody
 // remembering. Keyed by a handle rather than by username, so that two tabs
 // cannot confirm each other's set — the handle is what the form carries back.
-const pendingBackupCodes = realms.map();
+//
+// **PERSISTED SINCE 2026-09-14 (#46)**, for `pendingTotp`'s reason read one
+// door along: the page that shows the set and the form that confirms it can be
+// answered by two nodes, and a confirm that lands on the node which did not
+// generate the set stores nothing. The codes are in the clear in the RECORD —
+// they have to be, the page shows them — and sealed in the ROW, which is gone
+// when the set is confirmed, discarded, replaced or swept.
+const pendingBackupCodes = realms.map({
+  persist: 'credentials.pendingBackupCodes' });
 
-// A pending set is a live credential in this process's memory and nowhere
-// else. It expires for the same reason an authorization code does: the window
-// in which it can be confirmed should be the window in which somebody is
-// actually looking at the page.
+// A pending set is a live credential in this service's memory — and, where
+// minted state is written down, in one sealed row. It expires for the same
+// reason an authorization code does: the window in which it can be confirmed
+// should be the window in which somebody is actually looking at the page.
 function pendingTtlMs() {
   log.debug("Entering pendingTtlMs().");
   log.debug("Leaving pendingTtlMs().");
@@ -2613,8 +3027,12 @@ function backupPrepare(name, presented) {
   return { held: held };
 }
 
-function backupFinish(name, held, found) {
+function backupFinish(name, held, found, alsoSpent) {
   log.debug("Entering backupFinish().");
+  // Codes ANOTHER node has spent that this entry still shows unused — see
+  // `verifyBackupCodeAsync()`. Written as spent with this one, so a write-back
+  // from here does not resurrect them.
+  const others = alsoSpent || [];
   const matchedIndex = found.matchedIndex;
   const spentIndex = found.spentIndex;
   if (matchedIndex < 0 && spentIndex >= 0) {
@@ -2640,9 +3058,10 @@ function backupFinish(name, held, found) {
   // entry used and must not re-hash anything: the codes are not here to hash,
   // and re-hashing what IS here would hash a hash.
   const list = held.codes.map(function (one, i) {
+    const spentNow = i === matchedIndex ||
+      (!one.usedAt && others.indexOf(i) >= 0);
     return { hash: one.hash,
-             usedAt: i === matchedIndex ? Date.now() :
-                     Number(one.usedAt || 0) };
+             usedAt: spentNow ? Date.now() : Number(one.usedAt || 0) };
   });
   const written = writeBackupCodesRecord(name, list,
     { generatedAt: held.generatedAt, lastUsedAt: Date.now() });
@@ -2718,6 +3137,9 @@ function verifyBackupCodeAsync(username, presented) {
     return Promise.resolve(ready.done);
   }
   const entries = ready.held.codes;
+  // The realm the code belongs to, captured before any await: the reconcile a
+  // spend schedules runs on a timer, outside the request's ambient realm.
+  const realm = realms.current();
   log.debug("Leaving verifyBackupCodeAsync().");
   return Promise.all(entries.map(function (entry) {
     const stored = String((entry || {}).hash || '');
@@ -2733,11 +3155,230 @@ function verifyBackupCodeAsync(username, presented) {
     }
     return backupCodes.matchesHashAsync(presented, stored);
   })).then(function (hits) {
-    const out = backupFinish(name, ready.held,
-                             matchAgainstSet(presented, entries, hits));
-    log.debug('Leaving verifyBackupCodeAsync(). ok=' + out.ok);
-    return out;
+    const found = matchAgainstSet(presented, entries, hits);
+    if (found.matchedIndex < 0) {
+      const refused = backupFinish(name, ready.held, found);
+      log.debug('Leaving verifyBackupCodeAsync(). ok=' + refused.ok);
+      return refused;
+    }
+    return spendBackupCode(name, ready.held, found, realm);
   });
+}
+
+// ---------------------------------------------------------------------------
+// A RECOVERY CODE, SPENT ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// **TWO DEFECTS, AND THE SECOND IS THE ONE WORTH UNDERSTANDING.**
+//
+//   * A code worked once PER NODE: each node read "unused" off its own copy of
+//     the entry and wrote "used" back, and inside the change log's window both
+//     accepted. Fixed by CLAIMING the code before it is accepted — the claim is
+//     keyed by the person and the code's stored hash, which is unique per code
+//     (a salted scrypt) and never the code.
+//   * **SPENDING TWO DIFFERENT CODES ON TWO NODES AT ONCE LEFT ONE UNSPENT.**
+//     The set is ONE attribute holding the whole array, the entry is last
+//     writer wins, and A's write says "code 0 used, code 1 unused" while B's
+//     says the reverse. Whichever lands last RESURRECTS the other's code on
+//     the entry. A claim alone does not fix that: the claim still refuses the
+//     resurrected code, but only for its lifetime, and after that the entry
+//     is the only record and the entry is wrong.
+//
+// **THE CLAIMS ARE THE TRUTH ABOUT WHICH CODES ARE SPENT, AND THE ENTRY IS
+// MADE TO CONVERGE ON THEM.** Three places do it, and each closes a hole the
+// others leave:
+//
+//   1. **AT THE SPEND**, every code the entry still shows unused is asked
+//      about (`isClaimed`, up to nine reads in parallel) and any another node
+//      has claimed is written as spent together with this one. That alone is
+//      not enough — of two concurrent spends, the one that asked BEFORE the
+//      other claimed can be the last writer (linearise the four operations and
+//      at least one of the two sees the other, but it need not be the one
+//      whose write lands last).
+//   2. **A SPEND ON A SHARED STORE SCHEDULES A RECONCILE** a few seconds
+//      later (`RECOVERY_RECONCILE_MS`), once the other node's write has had
+//      time to arrive: it catches up with the store, re-reads the set, and
+//      writes any claimed-but-unmarked code as spent. The last write to the
+//      entry is always followed by its writer's reconcile, and a reconcile
+//      writes a superset of every claim made before it — so whichever order
+//      the commits land in, the entry ends with every spent code marked. It
+//      writes nothing if the set was REPLACED meanwhile (`generatedAt`
+//      differs): writing an old set back over a new one would be far worse
+//      than the defect it repairs.
+//   3. **A CODE REFUSED BY ITS CLAIM** — the entry said unused, a claim said
+//      spent — repairs the entry on the spot (`STS-AUTHN-0091`), which covers
+//      a node that died between its write and its reconcile.
+//
+// **WHAT IS LEFT, SAID PLAINLY**: a claim lives at most thirty days (the
+// ceiling `cluster_claims.js` puts on every claim). A code resurrected on the
+// entry by a node that wrote it and then died before its reconcile, which is
+// never presented and whose set sees no other spend for thirty days, is usable
+// once more after that. Every step above has to fail, in that order, for it.
+//
+// **A CODE THAT VERIFIED AND COULD NOT BE WRITTEN KEEPS ITS CLAIM.** The door
+// refuses it (`STS-AUTHN-0093`, as before) and the claim makes sure it stays
+// spent — a code somebody was told not to use must not quietly work on the
+// next node.
+//
+// **THE SYNCHRONOUS DOOR DOES NONE OF THIS** and has no caller outside the
+// tests; see `verifyTotp()` beside it for the same note.
+// ---------------------------------------------------------------------------
+const RECOVERY_SCOPE = 'authn.recovery-code';
+const RECOVERY_CLAIM_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Longer than LISTEN/NOTIFY's delivery (under a second) and the replication
+// poll's five-second backstop, so the other node's write has normally arrived;
+// the reconcile catches up explicitly as well, so this bounds the wait rather
+// than the correctness.
+const RECOVERY_RECONCILE_MS = 8000;
+
+function recoveryClaimOf(name, entry, realmId) {
+  log.debug("Entering recoveryClaimOf().");
+  log.debug("Leaving recoveryClaimOf().");
+  return { scope: RECOVERY_SCOPE, value: name + '\n' + String(entry.hash),
+           ttlMs: RECOVERY_CLAIM_TTL_MS, realm: realmId };
+}
+
+// The indexes of codes this entry shows unused and a claim says are spent.
+function claimedButUnmarked(name, codes, realmId, except) {
+  log.debug("Entering claimedButUnmarked().");
+  log.debug("Leaving claimedButUnmarked().");
+  return Promise.all(codes.map(function (one, i) {
+    if (i === except || one.usedAt || !one.hash) {
+      return Promise.resolve(false);
+    }
+    return claims.isClaimed(recoveryClaimOf(name, one, realmId))
+      .catch(function (e) {
+        // Not claimed as far as this spend can tell. The reconcile asks again,
+        // and a code a claim still guards is refused when presented anyway.
+        log.debug("Caught in claimedButUnmarked(): " +
+                  ((e && e.message) || e));
+        return false;
+      });
+  })).then(function (flags) {
+    return flags.map(function (flag, i) {
+      return flag ? i : -1;
+    }).filter(function (i) { return i >= 0; });
+  });
+}
+
+function sharedStore() {
+  log.debug("Entering sharedStore().");
+  // LAZY, for `cluster_claims.js`'s reason: this file is a leaf on the require
+  // path and must not pull the store module ahead of #4a.
+  const persistence = require('../persistence/persistence');
+  log.debug("Leaving sharedStore().");
+  return persistence;
+}
+
+// Step 2 of the header: converge the entry on the claims.
+function reconcileBackupCodes(username, realm, generatedAt) {
+  log.debug("Entering reconcileBackupCodes().");
+  const name = String(username || '').trim();
+  const persistence = sharedStore();
+  log.debug("Leaving reconcileBackupCodes().");
+  return Promise.resolve().then(function () {
+    return typeof persistence.syncNow === 'function' &&
+      persistence.clusterStore() ? persistence.syncNow() : null;
+  }).catch(function (e) {
+    log.debug("Caught in reconcileBackupCodes(): " + ((e && e.message) || e));
+    return null;
+  }).then(function () {
+    return realms.run(realm, function () {
+      const held = backupCodesOf(name);
+      if (!held || held.unusable ||
+          (generatedAt !== undefined &&
+           Number(held.generatedAt) !== Number(generatedAt))) {
+        return { repaired: 0 };
+      }
+      return claimedButUnmarked(name, held.codes, realm.id, -1)
+        .then(function (indexes) {
+          if (!indexes.length) {
+            return { repaired: 0 };
+          }
+          const list = held.codes.map(function (one, i) {
+            return { hash: one.hash,
+                     usedAt: indexes.indexOf(i) >= 0 ? Date.now()
+                       : Number(one.usedAt || 0) };
+          });
+          const written = writeBackupCodesRecord(name, list,
+            { generatedAt: held.generatedAt, lastUsedAt: held.lastUsedAt });
+          if (!written.ok) {
+            log.error(errorCodes.tag('STS-AUTHN-0184') + 'credentials: ' +
+                      indexes.length + ' recovery code(s) of ' + name +
+                      ' spent on another node could not be written as ' +
+                      'spent: ' + (written.errors || []).join(' ') + ' Their ' +
+                      'claims still refuse them.');
+            return { repaired: 0, failed: indexes.length };
+          }
+          log.info('credentials: ' + indexes.length + ' recovery code(s) of ' +
+                   name + ' spent on another node were written as spent on ' +
+                   'the entry.');
+          return { repaired: indexes.length };
+        });
+    });
+  });
+}
+
+function scheduleBackupReconcile(name, realm, generatedAt) {
+  log.debug("Entering scheduleBackupReconcile().");
+  if (!sharedStore().clusterStore()) {
+    // One process: nothing else writes this entry, so there is nothing to
+    // converge.
+    log.debug("Leaving scheduleBackupReconcile(). No shared store.");
+    return;
+  }
+  const timer = setTimeout(function () {
+    reconcileBackupCodes(name, realm, generatedAt).catch(function (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0184') + 'credentials: reconciling ' +
+                'the recovery codes of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+    });
+  }, RECOVERY_RECONCILE_MS);
+  if (timer && typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  log.debug("Leaving scheduleBackupReconcile().");
+}
+
+function spendBackupCode(name, held, found, realm) {
+  log.debug("Entering spendBackupCode().");
+  const entry = held.codes[found.matchedIndex];
+  log.debug("Leaving spendBackupCode(). Claiming.");
+  return claims.claim(recoveryClaimOf(name, entry, realm.id))
+    .then(function (claimed) {
+      if (!claimed.ok && claimed.reason === 'used') {
+        log.warn('credentials: a recovery code for ' + name + ' matched a ' +
+                 'code this entry shows unused and was REFUSED: it has ' +
+                 'already been spent, by another node or a request racing ' +
+                 'this one. The entry is being corrected.');
+        return reconcileBackupCodes(name, realm, held.generatedAt)
+          .catch(function (e) {
+            log.debug("Caught in spendBackupCode(): " +
+                      ((e && e.message) || e));
+            return null;
+          }).then(function () {
+            return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
+              detail: 'That recovery code has already been used. Each one ' +
+                      'works once — use the next unused code on your list.' });
+          });
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: a ' +
+                  'recovery code for ' + name + ' matched and could not be ' +
+                  'proved unspent (' + (claimed.why || claimed.reason) +
+                  '), so it was refused.');
+        return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
+          detail: 'That code could not be checked just now. Try again in a ' +
+                  'moment.' });
+      }
+      return claimedButUnmarked(name, held.codes, realm.id, found.matchedIndex)
+        .then(function (others) {
+          const out = backupFinish(name, held, found, others);
+          if (out.ok) {
+            scheduleBackupReconcile(name, realm, held.generatedAt);
+          }
+          return out;
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3004,11 +3645,14 @@ function mechanismsFor(username) {
 
 // The attribute is the same one `addKey()` writes; this register holds only
 // what has been ASKED FOR and not yet proved. Per realm, like every other
-// pending record here, and carrying no `persist:` name for `pendingTotp`'s
-// reason read one step weaker: a challenge is not a credential, so journalling
-// it would leak nothing — but it is worthless a minute later and would be
-// replicated to every process for no reader.
-const pendingKeys = realms.map();
+// pending record here, and ~~carrying no `persist:` name~~ — **PERSISTED SINCE
+// 2026-09-14 (#46)**. The old reason was "replicated to every process for no
+// reader"; behind a balancer the reader is the node the ceremony's next
+// request lands on, which drew `/portal/keys` with no challenge
+// (`sts_portal_backup_keys`) because another node minted it. A challenge is
+// not a credential, so the row leaks nothing, and it is sealed anyway like
+// every minted row.
+const pendingKeys = realms.map({ persist: 'credentials.pendingKeys' });
 
 // Long enough to find the key in a drawer, short enough that an abandoned
 // ceremony is not sitting in memory. It rides the SAME setting the
@@ -3157,14 +3801,25 @@ function abandonKeyEnrolment(username) {
 // never does, which is the mistake `authn/authn.js`'s `originOf()` exists to
 // stop being made twice.
 // ---------------------------------------------------------------------------
+// **IT ANSWERS A PROMISE SINCE 2026-09-14**: the write claims the credential
+// id across nodes first (`addKeyClaimed()`). Every refusal before the write is
+// the same object it was, resolved.
 function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
   log.debug("Entering confirmKeyEnrolment().");
+  log.debug("Leaving confirmKeyEnrolment().");
+  return Promise.resolve().then(function () {
+    return checkKeyEnrolment(username, enrolmentId, credential, opts);
+  });
+}
+
+function checkKeyEnrolment(username, enrolmentId, credential, opts) {
+  log.debug("Entering checkKeyEnrolment().");
   const name = String(username || '').trim();
-  log.debug('Entering confirmKeyEnrolment(). username=' + name);
+  log.debug('Entering checkKeyEnrolment(). username=' + name);
   const options = opts || {};
   const held = pendingKeyEnrolmentFor(name);
   if (!held) {
-    log.debug('Leaving confirmKeyEnrolment(). Nothing pending.');
+    log.debug('Leaving checkKeyEnrolment(). Nothing pending.');
     return coded('STS-AUTHN-0075', { ok: false, reason: 'expired',
              errors: ['That enrolment has expired. Start again.'] });
   }
@@ -3172,7 +3827,7 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
   // with the challenge of another. It is the same rule the sign-in screen's
   // `mfa_id` follows.
   if (String(enrolmentId || '') !== held.id) {
-    log.debug('Leaving confirmKeyEnrolment(). A different enrolment.');
+    log.debug('Leaving checkKeyEnrolment(). A different enrolment.');
     return coded('STS-AUTHN-0094', { ok: false, reason: 'mismatch',
              errors: ['That enrolment is not the one in progress. Start ' +
                       'again.'] });
@@ -3185,7 +3840,7 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
     const said = credential && credential.error
       ? credential.error + ': ' + (credential.message || '')
       : 'the browser sent no credential';
-    log.debug('Leaving confirmKeyEnrolment(). No credential.');
+    log.debug('Leaving checkKeyEnrolment(). No credential.');
     return coded('STS-AUTHN-0022',
                  { ok: false, reason: 'browser', errors: [said] });
   }
@@ -3201,14 +3856,14 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
       requireUserVerification: webauthnPolicy.requireUserVerification()
     });
   } catch (e) {
-    log.debug('Leaving confirmKeyEnrolment(). Verification threw.');
+    log.debug('Leaving checkKeyEnrolment(). Verification threw.');
     return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
              errors: ['The registration could not be checked: ' + e.message] });
   }
   if (!verdict.ok) {
     log.info('credentials: a security key enrolment for ' + name +
              ' did not verify — ' + (verdict.failed || []).join('; '));
-    log.debug('Leaving confirmKeyEnrolment(). It did not verify.');
+    log.debug('Leaving checkKeyEnrolment(). It did not verify.');
     return coded(webauthnPolicy.failureCodeFor(verdict),
                  { ok: false, reason: 'invalid',
              errors: ['The registration did not verify — ' +
@@ -3223,14 +3878,17 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
   if (held.exclude.indexOf(String(verdict.credentialId)) >= 0) {
     log.info('credentials: ' + name + ' presented an authenticator that is ' +
              'already enrolled. Refused as a duplicate.');
-    log.debug('Leaving confirmKeyEnrolment(). Already enrolled.');
+    log.debug('Leaving checkKeyEnrolment(). Already enrolled.');
     return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
              errors: ['That authenticator is already enrolled. Use a ' +
                       'DIFFERENT one — a backup on the same device is lost ' +
                       'with the original.'] });
   }
 
-  const stored = addKey(name, {
+  // THROUGH THE CLAIM (2026-09-14), which is why this function answers a
+  // promise now — see `addKeyClaimed()`.
+  log.debug('Leaving checkKeyEnrolment(). Writing through the claim.');
+  return addKeyClaimed(name, {
     credentialId: verdict.credentialId,
     publicKeyJwk: verdict.publicKeyJwk,
     signCount: verdict.signCount,
@@ -3239,20 +3897,27 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
     userVerified: !!(verdict.flags && verdict.flags.uv),
     aaguid: verdict.aaguid || null,
     algorithm: verdict.algorithm || null
-  }, held.role);
+  }, held.role).then(function (stored) {
+    return keyEnrolmentWritten(name, held, stored);
+  });
+}
+
+// The end of `confirmKeyEnrolment()`, once the claimed write has answered.
+function keyEnrolmentWritten(name, held, stored) {
+  log.debug("Entering keyEnrolmentWritten().");
   if (!stored.ok) {
     // NOT ABANDONED. The ceremony was good and the write was refused — the cap
     // reached in another tab, the role turned off while they were touching the
     // key — so the pending record stays and the page can say what happened
     // without making them start over for a reason that may have gone away.
-    log.debug('Leaving confirmKeyEnrolment(). The store refused it.');
+    log.debug('Leaving keyEnrolmentWritten(). The store refused it.');
     return coded(errorCodes.codeOf(stored) || 'STS-AUTHN-0068',
                  { ok: false, reason: 'refused', errors: stored.errors });
   }
   abandonKeyEnrolment(name);
   log.info('credentials: ' + name + ' enrolled a "' + held.role +
            '" security key. They now hold ' + keysOf(name).length + '.');
-  log.debug('Leaving confirmKeyEnrolment(). Enrolled.');
+  log.debug('Leaving keyEnrolmentWritten(). Enrolled.');
   return { ok: true, username: name, role: held.role,
            credentialId: stored.credentialId, held: keysOf(name).length };
 }
@@ -3386,6 +4051,103 @@ function consumeActivation(username) {
            'and is now invalid.');
   log.debug("Leaving consumeActivation().");
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// A LINK, SPENT ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// An activation link and a password reset link are each "check the hash on
+// the entry, do the work, clear the hash". On one node nothing yields between
+// the check and the clear that matters; across nodes the entry is last writer
+// wins and arrives a moment later, so the same link POSTed to two nodes at
+// once set TWO passwords — and a link that leaked (a proxy log, a shared
+// screen) raced against its owner was an account takeover that the owner's
+// own successful setup did nothing to stop.
+//
+// **THE LINK IS CLAIMED BEFORE THE WORK, AND THE CLAIM IS WHAT MAKES IT
+// SINGLE USE ACROSS NODES.** The value is the person and the token itself
+// (stored as a digest by `cluster_claims.js`, never the token), so a link an
+// administrator REISSUES is a new claim and the old one's claim guards nothing
+// that still verifies. Its lifetime is what remains of the link's own, so the
+// claim outlives every moment the hash on the entry could still verify.
+//
+// **WHERE IT IS CLAIMED IS THE PORTAL'S DECISION, NOT THIS FILE'S**, because
+// only the door knows which request FINISHES: `/portal/activate` can take two
+// POSTs (a password, then an authenticator code) and spends the link on the
+// second. The door claims before it sets anything, releases the claim on any
+// answer that does not finish (`releaseLink()`), and keeps it on the one that
+// does. `checkActivation()` / `checkPasswordReset()` stay the first, free
+// check; this is what decides a race between two requests that both passed
+// it.
+//
+// **SYNCHRONOUS CALLERS KEEP THE SYNCHRONOUS CHECK.** These two functions are
+// asynchronous because a claim on postgres is a round trip, and the portal's
+// handlers are already `async`; `consumeActivation()` and
+// `consumePasswordReset()` are unchanged and still clear the entry, which is
+// what every page and `/admin/users` reads.
+// ---------------------------------------------------------------------------
+function linkClaim(kind, username, token) {
+  log.debug("Entering linkClaim(). kind=" + kind);
+  const name = String(username || '').trim();
+  let held = null;
+  try {
+    held = kind === 'activation'
+      ? directory.readActivation(name) : directory.readPasswordResetLink(name);
+  } catch (e) {
+    log.debug("Caught in linkClaim(): " + ((e && e.message) || e));
+    held = null;
+  }
+  const remaining = held && held.expires ? held.expires - Date.now() : 0;
+  log.debug("Leaving linkClaim().");
+  return claims.claim({
+    scope: 'credentials.' + kind,
+    value: name + '\n' + String(token || ''),
+    // A minute past the link's own expiry, for the clock skew between nodes.
+    ttlMs: Math.max(60 * 1000, remaining + 60 * 1000)
+  }).then(function (claimed) {
+    if (claimed.ok) {
+      return { ok: true, handle: claimed.handle };
+    }
+    if (claimed.reason === 'used') {
+      log.warn('credentials: a ' + kind + ' link for ' + name + ' was ' +
+               'REFUSED: another request is spending it or has spent it, on ' +
+               'this node or another.');
+      return coded('STS-AUTHN-0183', { ok: false, reason: 'spent' });
+    }
+    log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: a ' + kind +
+              ' link for ' + name + ' could not be proved unspent (' +
+              (claimed.why || claimed.reason) + '), so it was refused.');
+    return coded('STS-AUTHN-0182', { ok: false, reason: 'store' });
+  });
+}
+
+function spendActivation(username, token) {
+  log.debug("Entering spendActivation().");
+  if (!directory || typeof directory.readActivation !== 'function') {
+    log.debug("Leaving spendActivation(). No store.");
+    return Promise.resolve(coded('STS-AUTHN-0059',
+                                 { ok: false, reason: 'no-store' }));
+  }
+  log.debug("Leaving spendActivation().");
+  return linkClaim('activation', username, token);
+}
+
+function spendPasswordReset(username, token) {
+  log.debug("Entering spendPasswordReset().");
+  if (!directory || typeof directory.readPasswordResetLink !== 'function') {
+    log.debug("Leaving spendPasswordReset(). No store.");
+    return Promise.resolve(coded('STS-AUTHN-0059',
+                                 { ok: false, reason: 'no-store' }));
+  }
+  log.debug("Leaving spendPasswordReset().");
+  return linkClaim('password-reset', username, token);
+}
+
+// Gives a link's claim back: the request that claimed it did not finish.
+function releaseLink(handle) {
+  log.debug("Entering releaseLink().");
+  log.debug("Leaving releaseLink().");
+  return claims.release(handle);
 }
 
 // Is one outstanding? What /admin/users draws beside somebody who cannot yet
@@ -3809,6 +4571,18 @@ function removeSecondFactors(username) {
   return { ok: true, username: name, removed: done };
 }
 
+// DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason: active-active
+// is held to the capability table before anything later in startup runs, so a
+// capability is the CODE being present. Each is the whole of its row — every
+// door that spends one of these values goes through a function above.
+//   * `authn.second-factors-once`: `verifyTotpAsync()`, the async recovery
+//     code door, `spendAssertion()`;
+//   * `credentials.links-once`: `spendActivation()`, `spendPasswordReset()`;
+//   * `ops.bootstrap-once`: `bootstrapOnce()`.
+capabilities.provide('authn.second-factors-once');
+capabilities.provide('credentials.links-once');
+capabilities.provide('ops.bootstrap-once');
+
 module.exports = {
   // --- the authenticator app (RFC 6238) ---
   TOTP_ATTRIBUTE: TOTP_ATTRIBUTE,
@@ -3858,6 +4632,7 @@ module.exports = {
   pendingKeyEnrolmentFor: pendingKeyEnrolmentFor,
   abandonKeyEnrolment: abandonKeyEnrolment,
   confirmKeyEnrolment: confirmKeyEnrolment,
+  addKeyClaimed: addKeyClaimed,
   noteKeyUsed: noteKeyUsed,
   mechanismsFor: mechanismsFor,
   bootstrap: bootstrap,
@@ -3894,5 +4669,14 @@ module.exports = {
   mfaRequirementFor: mfaRequirementFor,
   setMfaRequired: setMfaRequired,
   removePrimaryKeys: removePrimaryKeys,
-  removeSecondFactors: removeSecondFactors
+  removeSecondFactors: removeSecondFactors,
+  // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46) — each is argued above
+  // its definition.
+  verifyTotpAsync: verifyTotpAsync,
+  spendAssertion: spendAssertion,
+  reconcileBackupCodes: reconcileBackupCodes,
+  spendActivation: spendActivation,
+  spendPasswordReset: spendPasswordReset,
+  releaseLink: releaseLink,
+  bootstrapOnce: bootstrapOnce
 };

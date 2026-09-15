@@ -132,6 +132,9 @@ const replication = require('./persistence_replication');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. NOT audit.js, which requires persistence_replication.js.
 const errorCodes = require('../common/error_codes');
+// The table of what active-active mode depends on (#46). A LEAF: bunyan and
+// config. `sessions.no-resurrection` is provided below, at require time.
+const capabilities = require('../cluster/cluster_capabilities');
 
 const log = bunyan.createLogger({ name: 'sts-persistence-minted' });
 
@@ -245,6 +248,75 @@ let stopped = false;
 // ONE AT A TIME PER PROCESS, which is what makes commit order the same as the
 // order the values were read in.
 let flushInFlight = null;
+// ---------------------------------------------------------------------------
+// WRITE GENERATIONS, for the cluster barrier's commit hold (2026-09-14, #46).
+//
+// `generation` goes up on every key journalled; `takenAt` is the generation a
+// flush's journal take covered; `committedAt` is the highest `takenAt` whose
+// write has settled. So "everything journalled up to generation G has reached
+// the store" is `committedAt >= G`, which is what lets a response be held for
+// ITS writes rather than for whatever flush happens to be pending in the
+// process — see cluster/cluster_barrier.js for what that was costing.
+// ---------------------------------------------------------------------------
+let generation = 0;
+let committedAt = 0;
+let inFlightTakenAt = 0;
+// ---------------------------------------------------------------------------
+// HOW MANY OF THOSE KEYS WERE AN OBSERVATION (2026-09-15, #46): a store
+// declared `observation: true` (common/realms.js) — a decision counter. The
+// barrier subtracts this from `generation` when it asks whether a request
+// WROTE, so a read whose only row is a tally is answered at once (rcbj's
+// decision 6) while a request that wrote something else is held and its tally
+// commits with it. `observational` caches the declaration per handle, because
+// `note()` is on the path of every store write in the service.
+//
+// **WHY IT EXISTS: `xacml_monitor.js` INCREMENTED ITS ROW IN PLACE AND NEVER
+// JOURNALLED IT.** Only the first decision per process created the row through
+// `set()`; every later one changed the object and told nobody, so the row in
+// `sts_minted` stayed at whatever that first write held. One node's page adds
+// its own live tally to the OTHER node's stale row, so two nodes reported
+// different totals for one service — the suite's `cluster` mode read 126 on
+// node A and 142 on node B across one page load (and 21 then 17 in a run of
+// that job alone). Journalling each decision fixes the row; without this count
+// it would also have made every console, portal and `/admin-api` read a
+// WRITING request, because the access PEP decides on each of them.
+// ---------------------------------------------------------------------------
+let observedGeneration = 0;
+const observational = new Map();
+// ---------------------------------------------------------------------------
+// A MINTED WRITE ASKS FOR A FLUSH (2026-09-14, #46 follow-up). THE JOURNAL
+// RECORDED THE KEY AND NOTHING EVER ASKED FOR IT TO BE WRITTEN.
+//
+// `persistence.js` has had a `mintedChanged()` door since minted persistence
+// was written — "the one door that marks nothing and only schedules" — and
+// nothing called it. A minted row therefore reached the store only when
+// something ELSE flushed: a directory, realm or settings change in the same
+// process, or one of the three explicit `flushMinted()` callers (the cluster
+// barrier's commit-before-respond, a request worker's commit announcement, a
+// credential spend). A sign-in usually touches the directory, so sessions
+// were written; a SIGN-OUT touches nothing else, so its delete — the
+// TOMBSTONE that keeps an ended session ended — sat in the journal until an
+// unrelated write came along.
+//
+// **MEASURED, and it was the unexplained half of the section-3 session
+// probe:** two product nodes with `cluster.mode=off`, a session revoked on
+// node A — 8 of 8 rows still live in `sts_minted` six seconds later, with NO
+// other node touching the session at all (4 of 4), and a single node alone
+// the same. Active-active read 0 of 8 only because its barrier flushes every
+// writing response. The row outlived the sign-out in the store, so a second
+// node or a restart restored it: resurrection without any race.
+//
+// So the first key journalled after a flush asks `persistence.js` to schedule
+// one — `schedule()`'s delay is 0 on postgres, a transaction per burst, which
+// is what that file's header always said happened. Once per flush, not once
+// per write: `flushAsked` is cleared where the journal is taken. A key put
+// BACK after a failed write does not ask (`requeuing`), or a database outage
+// would be a loop of zero-delay retries; it is retried by the next write, as
+// the failure's log line says.
+// ---------------------------------------------------------------------------
+let scheduler = null;
+let flushAsked = false;
+let requeuing = false;
 
 // What /admin/persistence and GET /admin-api/persistence report.
 let lastWriteAt = null;
@@ -334,8 +406,33 @@ function enabled() {
   // ANSWERING ONE PORT, which is two config values and is read the same way in
   // the front process and in every worker. `sealed()` is the other half: there
   // has to be a key to seal the rows with, whoever supplied it.
+  //
+  // **AND A FOURTH ARM SINCE 2026-09-14 (#46): SEVERAL NODES, NOT ONLY SEVERAL
+  // PROCESSES.** The third arm's question is "does more than one process
+  // answer one address", and it read that question off `workers.*` — so two
+  // single-process development containers in active-active mode, behind one
+  // load balancer, each kept their own sessions, pending sign-ins and codes.
+  // The suite's `cluster` mode measured it: a console sign-in with every hop
+  // on node A worked, every hop on B worked, and alternating hops failed
+  // `STS-AUTHN-0003` because the pending sign-in was minted on the other node
+  // — 42 of 58 protocol jobs. The capability gate passed, because every
+  // capability was provided; what was missing was that the state they spend
+  // was not shared at all. A clustered node IS several processes answering one
+  // address, and `sealed()` is guaranteed there: cluster.js refuses
+  // active-active without persisted keys. Active-passive counts too — a
+  // takeover that restored no sessions would sign everybody out.
   return mode.isProduct() || keystore.hasEphemeralKek() ||
-         (severalProcesses() && keystore.sealed());
+         ((severalProcesses() || severalNodes()) && keystore.sealed());
+}
+
+// Is this process a node of a cluster? Asked of `cluster/cluster.js` LAZILY:
+// that module is a leaf this file would not otherwise need at load, and the
+// answer is read per call like every arm above.
+function severalNodes() {
+  log.debug("Entering severalNodes().");
+  const cluster = require('../cluster/cluster');
+  log.debug("Leaving severalNodes().");
+  return cluster.mode() !== 'off';
 }
 
 // Is this process one of several answering one port? Dispatch needs BOTH a
@@ -459,6 +556,27 @@ function note(handle, realmId, key) {
     byRealm.set(id, keys);
   }
   keys.add(key === null || key === undefined ? '' : String(key));
+  generation += 1;
+  if (!observational.has(handle)) {
+    const declared = realms.handleFor(handle);
+    observational.set(handle, !!(declared && declared.observation));
+  }
+  if (observational.get(handle)) {
+    observedGeneration += 1;
+  }
+  if (!flushAsked && !requeuing && scheduler) {
+    // `scheduler` answers false when nothing could be scheduled (the store is
+    // restoring, or persistence is off), and the next write asks again.
+    flushAsked = scheduler() !== false;
+  }
+}
+
+// `persistence.js` hands its `mintedChanged()` here once a driver is open.
+function setScheduler(fn) {
+  log.debug("Entering setScheduler().");
+  scheduler = typeof fn === 'function' ? fn : null;
+  flushAsked = false;
+  log.debug("Leaving setScheduler().");
 }
 
 // The inverse of `storedKey()`. A `replace` store's key is itself; an `own`
@@ -845,11 +963,15 @@ function flush() {
     // it has ever held — which is a memory leak whose size is the service's
     // whole traffic.
     journal.clear();
+    flushAsked = false;
+    committedAt = generation;
     log.debug('Leaving flush(). Not persisting minted state.');
     return Promise.resolve({ written: false });
   }
   if (!keystore.sealed()) {
     journal.clear();
+    flushAsked = false;
+    committedAt = generation;
     lastError = 'no key-encryption key is available, so nothing minted can ' +
                 'be sealed';
     // A PRODUCT-MODE REALM IN A PROCESS THAT IS NOT IN PRODUCT MODE IS NOT THE
@@ -884,6 +1006,8 @@ function flush() {
   }
 
   const taken = journal;
+  // Everything journalled so far is in `taken`: no flush is in flight here.
+  const takenAt = generation;
   const upserts = [];
   const deletes = [];
   let unsealable = 0;
@@ -908,7 +1032,10 @@ function flush() {
                          // The key as the STORE knows it, for the retry — see
                          // the catch below.
                          journalKey: key,
-                         own: row.merge === 'own' });
+                         own: row.merge === 'own',
+                         // An ENDED key leaves a tombstone. See
+                         // ENDED ROWS below.
+                         tombstone: row.tombstone === true });
           return;
         }
         let body = null;
@@ -934,7 +1061,11 @@ function flush() {
                        // somebody asks — so another worker does not need it
                        // applied before it can answer. See the driver's
                        // recordChanges() and replication's syncNow().
-                       own: row.merge === 'own' });
+                       own: row.merge === 'own',
+                       tombstone: row.tombstone === true,
+                       merge: row.mergeRow
+                         ? mergerFor(row, handle, key, present.value)
+                         : undefined });
       });
     });
   });
@@ -943,14 +1074,19 @@ function flush() {
   // this same Map, so a write that lands during the loop is picked up by the
   // loop and one that lands after it survives the clear below.
   journal.clear();
+  flushAsked = false;
 
   if (!upserts.length && !deletes.length) {
+    committedAt = Math.max(committedAt, takenAt);
     log.debug('Leaving flush(). Nothing survived the read.');
     return Promise.resolve({ written: false });
   }
 
   log.debug("Leaving flush().");
-  const saving = driver.saveMinted(upserts, deletes).then(function () {
+  const saving = driver.saveMinted(upserts, deletes).then(function (result) {
+    committedAt = Math.max(committedAt, takenAt);
+    settleDecided(result);
+    maybePurgeTombstones();
     writes++;
     rowsWritten += upserts.length;
     rowsDeleted += deletes.length;
@@ -984,14 +1120,19 @@ function flush() {
     // of an 8-second CPU profile hashing keys in `note()`, with its commit
     // announcements — and so the read barrier — stalled behind it. The SCIM
     // bulk load was the job that timed out.
+    requeuing = true;
+    try {
+      upserts.forEach(function (row) {
+        note(row.handle, row.realm, row.journalKey);
+      });
+      deletes.forEach(function (row) {
+        note(row.handle, row.realm, row.journalKey);
+      });
+    } finally {
+      requeuing = false;
+    }
     failures++;
     lastError = err.message;
-    upserts.forEach(function (row) {
-      note(row.handle, row.realm, row.journalKey);
-    });
-    deletes.forEach(function (row) {
-      note(row.handle, row.realm, row.journalKey);
-    });
     log.error(errorCodes.tag('STS-STORE-0021') +
               'persistence: minted state could not be written: ' + err.message +
               '. The service is unaffected and is still answering from ' +
@@ -1018,8 +1159,184 @@ function flush() {
     return { written: false, error: lastError };
   });
   flushInFlight = settled;
+  inFlightTakenAt = takenAt;
   return settled;
 }
+
+// The generation every key journalled so far has reached, and the one whose
+// writes have settled in the store.
+function generationNow() {
+  log.debug("Entering generationNow().");
+  log.debug("Leaving generationNow().");
+  return generation;
+}
+
+// The part of `generation` that was observations. See `observedGeneration`.
+function observedGenerationNow() {
+  log.debug("Entering observedGenerationNow().");
+  log.debug("Leaving observedGenerationNow().");
+  return observedGeneration;
+}
+
+function committedGeneration() {
+  log.debug("Entering committedGeneration().");
+  log.debug("Leaving committedGeneration().");
+  return committedAt;
+}
+
+// ---------------------------------------------------------------------------
+// A FLUSH THAT COVERS GENERATION `target`, AND NO MORE THAN IT NEEDS TO.
+//
+// Already committed: nothing to wait for. A flush in flight whose journal take
+// covered it: that flush, and not the one queued behind it — which is what
+// flush() would have returned, and under concurrent writers that is a SECOND
+// transaction the caller has no writes in. Otherwise flush(), which waits out
+// the one in flight and then takes the journal holding the target. Resolves
+// flush()'s answer; `error` set means the write did not land.
+// ---------------------------------------------------------------------------
+function flushThrough(target) {
+  log.debug("Entering flushThrough().");
+  if (committedAt >= target) {
+    log.debug("Leaving flushThrough(). Already committed.");
+    return Promise.resolve({ written: false });
+  }
+  if (flushInFlight && inFlightTakenAt >= target) {
+    log.debug("Leaving flushThrough(). The flush in flight covers it.");
+    return flushInFlight;
+  }
+  log.debug("Leaving flushThrough(). Flushing.");
+  return flush();
+}
+
+// ---------------------------------------------------------------------------
+// ENDED ROWS, AND ROWS TWO NODES EDIT (2026-09-14, #46 section 3).
+//
+// **A SESSION CAME BACK AFTER SIGN-OUT.** Node A ended it: a delete, written
+// down, replicated. Node B still held it in memory a moment behind and wrote
+// its copy back on the next request that touched it — `noteSessionUsed()` and
+// `touchArrivalSession()` stamp a field and re-set the row — so the session
+// somebody signed out of was live again on every node. `flushInFlight` above
+// fixed that ordering INSIDE one process; between processes the store simply
+// had no record that the key had ever been ended.
+//
+// **AND A SIGN-IN WAS UNDONE, AND A RELYING PARTY WAS FORGOTTEN, THE SAME
+// WAY.** An arrival session upgraded to a sign-in on A was written back as the
+// anonymous arrival by B's touch; a client A added to the session's
+// front-channel list was dropped by B's write of the session without it, and a
+// client that is not on the list never gets its logout iframe.
+//
+// Two declarations on the store fix both, each read by the driver:
+//
+//   * `tombstone: true` — a delete leaves a tombstone and a write of the key
+//     is refused IN SQL. What was refused is dropped here too: another node
+//     ended it (`STS-STORE-0054`).
+//   * `mergeRow(mine, theirs)` — the stored row is read under a lock and this
+//     process's copy is merged with it; `mergerFor()` below opens, merges and
+//     seals, so the driver never holds a key. What the merge produced is put
+//     into this process's store unless a newer local write is already
+//     journalled for the key, in which case the next flush merges that.
+//
+// A tombstone expires with `persistence.mintedRetention` — longer than every
+// lifetime this service issues, which is how long a copy could be written
+// back — through `maybePurgeTombstones()`. 0 keeps them with everything else.
+// ---------------------------------------------------------------------------
+function mergerFor(row, handle, key, mine) {
+  log.debug("Entering mergerFor().");
+  log.debug("Leaving mergerFor().");
+  return function (storedBody) {
+    try {
+      const text = keystore.open(storedBody, 'minted-rows');
+      if (text === null) {
+        log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
+                 handle + '" row another node wrote will not open here, so ' +
+                 'this process\'s copy is written as it is.');
+        return null;
+      }
+      const merged = row.mergeRow(mine, JSON.parse(text));
+      return keystore.seal(JSON.stringify(merged), 'minted-rows');
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
+               handle + '" row under "' + key + '" could not be merged with ' +
+               'the stored one (' + ((e && e.message) || e) + '), so this ' +
+               'process\'s copy is written as it is.');
+      return null;
+    }
+  };
+}
+
+function journalled(handle, realmId, key) {
+  log.debug("Entering journalled().");
+  const byRealm = journal.get(handle);
+  const keys = byRealm ? byRealm.get(String(realmId)) : null;
+  log.debug("Leaving journalled().");
+  return !!keys && keys.has(String(key));
+}
+
+function settleDecided(result) {
+  log.debug("Entering settleDecided().");
+  const refused = (result && result.refused) || [];
+  const merged = (result && result.merged) || [];
+  refused.forEach(function (row) {
+    const store = realms.handleFor(row.handle);
+    if (!store) {
+      return;
+    }
+    log.info(errorCodes.tag('STS-STORE-0054') + 'persistence: a "' +
+             row.handle + '" row was not written back: another node ended ' +
+             'it. Dropped here too.');
+    const byRealm = journal.get(row.handle);
+    const keys = byRealm ? byRealm.get(String(row.realm)) : null;
+    if (keys) {
+      keys.delete(String(row.journalKey));
+    }
+    applyLocally(store, row.realm, row.journalKey, undefined, true);
+  });
+  merged.forEach(function (row) {
+    const store = realms.handleFor(row.handle);
+    if (!store || journalled(row.handle, row.realm, row.journalKey)) {
+      return;
+    }
+    const text = keystore.open(row.body, 'minted-rows');
+    if (text === null) {
+      return;
+    }
+    try {
+      applyLocally(store, row.realm, row.journalKey, JSON.parse(text), false);
+    } catch (e) {
+      log.debug("Caught in settleDecided(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving settleDecided(). " + refused.length + " refused, " +
+            merged.length + " merged.");
+}
+
+const TOMBSTONE_SWEEP_MS = 10 * 60 * 1000;
+let lastTombstoneSweep = 0;
+
+function maybePurgeTombstones() {
+  log.debug("Entering maybePurgeTombstones().");
+  const now = Date.now();
+  if (!driver || typeof driver.purgeTombstones !== 'function' ||
+      !retentionMs() || now - lastTombstoneSweep < TOMBSTONE_SWEEP_MS) {
+    log.debug("Leaving maybePurgeTombstones(). Not due.");
+    return;
+  }
+  lastTombstoneSweep = now;
+  Promise.resolve().then(function () {
+    return driver.purgeTombstones(now - retentionMs());
+  }).then(function (removed) {
+    if (removed) {
+      log.info('persistence: ' + removed + ' expired tombstone(s) of ended ' +
+               'minted rows swept.');
+    }
+  }).catch(function (e) {
+    log.warn(errorCodes.tag('STS-STORE-0055') + 'persistence: sweeping ' +
+             'expired tombstones failed: ' + ((e && e.message) || e) + '.');
+  });
+  log.debug("Leaving maybePurgeTombstones(). Started.");
+}
+
+capabilities.provide('sessions.no-resurrection');
 
 // ---------------------------------------------------------------------------
 // THE RESTORE.
@@ -1188,6 +1505,7 @@ function restore() {
     // own — `realms.create()` fires every builder, and a builder that seeds
     // something writes — and those writes are already in the store.
     journal.clear();
+    flushAsked = false;
 
     if (staleHandles.size) {
       log.info('persistence: ' + droppedUnknown + ' minted row(s) belong to ' +
@@ -1296,12 +1614,21 @@ function status() {
 function reset() {
   log.debug("Entering reset().");
   journal.clear();
+  scheduler = null;
+  flushAsked = false;
+  requeuing = false;
   driver = null;
   stopped = false;
   restoring = false;
   // A write left in flight by the previous test must not make the next one's
   // first flush wait on a driver that is no longer installed.
   flushInFlight = null;
+  generation = 0;
+  observedGeneration = 0;
+  observational.clear();
+  committedAt = 0;
+  inFlightTakenAt = 0;
+  lastTombstoneSweep = 0;
   lastWriteAt = null;
   lastError = '';
   writes = 0;
@@ -1320,6 +1647,7 @@ function reset() {
 
 module.exports = {
   setDriver: setDriver,
+  setScheduler: setScheduler,
   applyChange: applyChange,
   prefetch: prefetch,
   endPrefetch: endPrefetch,
@@ -1327,6 +1655,10 @@ module.exports = {
   enabled: enabled,
   dirty: dirty,
   flush: flush,
+  flushThrough: flushThrough,
+  generation: generationNow,
+  observedGeneration: observedGenerationNow,
+  committedGeneration: committedGeneration,
   restore: restore,
   stop: stop,
   status: status,

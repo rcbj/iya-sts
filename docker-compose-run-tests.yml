@@ -190,7 +190,7 @@ services:
   # ===========================================================================
   openbao-tls:
     container_name: ${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}
-    image: rcbj/sts
+    image: ${STS_IMAGE:-rcbj/sts}
     build:
       context: .
     restart: "no"
@@ -228,7 +228,7 @@ services:
 
   openbao-seed:
     container_name: ${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}
-    image: rcbj/sts
+    image: ${STS_IMAGE:-rcbj/sts}
     build:
       context: .
     restart: "no"
@@ -259,7 +259,9 @@ services:
     # 127.0.0.1). A different hostname here would be a certificate error in
     # every job that verifies one.
     hostname: sts
-    image: rcbj/sts
+    # A TAG OF ITS OWN WHEN A RUN NAMES ONE (2026-09-14): an image tag is
+    # machine-wide, as docker-compose.yml's `sts` argues. Unset is unchanged.
+    image: ${STS_IMAGE:-rcbj/sts}
     # ---------------------------------------------------------------------
     # THE SECONDARY ADDRESSES THE PER-REALM SPIFFE LISTENERS BIND
     # (2026-09-12), and the reason this stack needs them as much as
@@ -520,7 +522,7 @@ services:
     # The name the tests container dials AND the name the service nudges. Both
     # resolve on this bridge and neither is published anywhere.
     hostname: xacml-pep
-    image: rcbj/xacml-pep
+    image: ${XACML_PEP_IMAGE:-rcbj/xacml-pep}
     build:
       # The repository root, because xacml-pep/Dockerfile copies the seven
       # engine modules out of xacml/ at build time — so this image cannot drift
@@ -614,7 +616,7 @@ services:
   # ---------------------------------------------------------------------------
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
-    image: rcbj/mock-sts-tests
+    image: ${STS_TESTS_IMAGE:-rcbj/mock-sts-tests}
     build:
       # The same context as the service, with tests/Dockerfile.dockerignore
       # deciding what is in it — see tests/Dockerfile's header for why the two

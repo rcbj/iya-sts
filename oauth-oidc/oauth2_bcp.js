@@ -143,6 +143,15 @@ const oauth21 = require('./oauth21');
 // native app's private-use one. validation.js requires config.js, zod and
 // error_codes.js and nothing here, so this closes no cycle.
 const validation = require('../common/validation');
+// SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46): the atomic "once" a
+// rotated refresh token is redeemed through, and the capability table this
+// file declares `oauth.refresh-rotation` in. Both are libraries; the claims
+// module requires `config`, `realms`, `error_codes` and the table, and
+// `persistence.js` only LAZILY, so `dpop.js` — which requires this file —
+// stays out of any cycle. `error_codes.js` is a leaf.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
+const errorCodes = require('../common/error_codes');
 
 // ---------------------------------------------------------------------------
 // THE TABLE.
@@ -2547,7 +2556,23 @@ function maxRefreshTokens() {
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // jti -> { family, clientId, rotated, forget }
-const refreshTokens = realms.map({ persist: 'oauth2_bcp.refreshTokens' });
+//
+// TOMBSTONED AND MERGED (2026-09-14, #46): a forgotten record's delete leaves a
+// tombstone so an older copy cannot be written back, and `rotated` only moves
+// forward — a node that had not yet heard of a rotation must not write the
+// record back as unrotated, which would make the replay it marks undetectable.
+const refreshTokens = realms.map({
+  persist: 'oauth2_bcp.refreshTokens', tombstone: true,
+  mergeRow: function (mine, theirs) {
+    log.debug("Entering mergeRow().");
+    log.debug("Leaving mergeRow().");
+    if (!mine || !theirs || typeof mine !== 'object') {
+      return mine || theirs;
+    }
+    return Object.assign({}, mine,
+                         { rotated: !!(mine.rotated || theirs.rotated) });
+  }
+});
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
@@ -2608,7 +2633,75 @@ function forgetStaleRefreshTokens() {
 // which is why there is no per-grant call site to forget. `parentJti` is empty
 // for the root of a family (an authorization code or a pre-authorized code
 // redeemed for the first time) and is the presented token's jti on a refresh.
-function noteRefreshIssued(jti, parentJti, clientId) {
+//
+// ---------------------------------------------------------------------------
+// THE FAMILY ACROSS NODES (2026-09-14, #46) — three things were wrong, and
+// each is the store converging where the rule needed it to agree.
+//
+//   1. **A CHILD WHOSE PARENT THIS NODE HAD NOT HEARD OF STARTED A FAMILY OF
+//      ITS OWN.** The family was found by looking the parent's jti up here, so
+//      a parent record not yet replicated (or dropped by the cap) split the
+//      chain, and a later replay revoked half of it. So the family id now
+//      travels IN THE REFRESH TOKEN (`FAMILY_CLAIM`, RFC 9700 mode only, inside
+//      the JWE where no client reads it), and `familyForIssuance()` prefers
+//      what the parent's own token says.
+//   2. **`family.members.push()` LOST MEMBERS.** The family row is written
+//      whole, so two nodes each adding a child wrote back two arrays with one
+//      child each, and the last writer won. Membership is no longer stored as
+//      an array: every token's OWN record (`refreshTokens`, one key per jti)
+//      names its family, and `membersOf()` derives the list. Two nodes writing
+//      two different keys cannot lose either. A `members` array on a row
+//      restored from an older build is still read.
+//   3. **A REPLAY REVOKED THE MEMBERS ONE NODE KNEW.** A child minted on
+//      another node in the same instant is in nobody's list yet. So a replay
+//      now also revokes the FAMILY BY ID — a claim in the scope
+//      `oauth.refresh-family-revoked`, which every node sees at once — and
+//      `spendRefreshToken()` refuses any token whose family carries it. The
+//      member nobody listed is refused at its first use instead of at the
+//      replay, which is the same outcome one request later.
+// ---------------------------------------------------------------------------
+const FAMILY_CLAIM = 'refresh_family';
+
+// The family a refresh token about to be minted belongs to. `parentFamily` is
+// the presented token's own `refresh_family` claim, where it has one.
+function familyForIssuance(jti, parentJti, parentFamily) {
+  log.debug("Entering familyForIssuance().");
+  const parent = parentJti ? refreshTokens.get(String(parentJti)) : null;
+  // The root's own jti names the family. It needs no randomness of its own and
+  // it makes a family identifiable in a log line without a second lookup.
+  const familyId = String(parentFamily || '') ||
+                   (parent && parent.family) || String(jti);
+  log.debug("Leaving familyForIssuance(). family=" + familyId);
+  return familyId;
+}
+
+// Every jti this node knows to be in a family: the per-token records, and a
+// legacy `members` array where a restored row still carries one.
+function membersOf(familyId, alsoJti) {
+  log.debug("Entering membersOf().");
+  const wanted = String(familyId || '');
+  const out = new Set();
+  if (alsoJti) {
+    out.add(String(alsoJti));
+  }
+  if (wanted) {
+    refreshTokens.forEach(function (record, jti) {
+      if (record && record.family === wanted) {
+        out.add(String(jti));
+      }
+    });
+    const family = refreshFamilies.get(wanted);
+    if (family && Array.isArray(family.members)) {
+      family.members.forEach(function (jti) {
+        out.add(String(jti));
+      });
+    }
+  }
+  log.debug("Leaving membersOf(). " + out.size + " member(s).");
+  return Array.from(out);
+}
+
+function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   log.debug("Entering noteRefreshIssued(). jti=" + jti + ", parent=" +
             (parentJti || '(root)'));
   if (!enabled() || !jti) {
@@ -2617,30 +2710,195 @@ function noteRefreshIssued(jti, parentJti, clientId) {
         "9700 mode is off."));
     return;
   }
-  const parent = parentJti ? refreshTokens.get(String(parentJti)) : null;
-  // The root's own jti names the family. It needs no randomness of its own and
-  // it makes a family identifiable in a log line without a second lookup.
-  const familyId = (parent && parent.family) || String(jti);
+  const familyId = familyForIssuance(jti, parentJti, parentFamily);
   const forget = Date.now() + refreshFamilyWindowMs();
   refreshTokens.set(String(jti),
                     { family: familyId, clientId: String(clientId || ''),
                                    rotated: false, forget: forget });
-  const family = refreshFamilies.get(familyId) ||
-                 { members: [], clientId: String(clientId || ''),
-                   forget: forget,
-                   // When any token in this chain was last redeemed, for the
-                   // IDLE timeout. Measured on the FAMILY rather than on each
-                   // token, because the requirement is about a client that has
-                   // gone quiet and a client that refreshes hourly has not —
-                   // per-token it would be an absolute lifetime wearing a
-                   // different name.
-                   lastUsedAt: Date.now() };
-  family.members.push(String(jti));
-  family.forget = forget;
+  const known = refreshFamilies.get(familyId);
+  // NO `members` ARRAY IS WRITTEN — see (2) above. What the row still holds
+  // is the family's clock, and a lost update of either field between two
+  // nodes costs a few seconds of it rather than a member.
+  const family = known
+    ? Object.assign({}, known, { forget: forget })
+    : { clientId: String(clientId || ''), forget: forget,
+        // When any token in this chain was last redeemed, for the IDLE
+        // timeout. Measured on the FAMILY rather than on each token, because
+        // the requirement is about a client that has gone quiet and a client
+        // that refreshes hourly has not — per-token it would be an absolute
+        // lifetime wearing a different name.
+        lastUsedAt: Date.now() };
   refreshFamilies.set(familyId, family);
   forgetStaleRefreshTokens();
-  log.debug("Leaving noteRefreshIssued(). Family " + familyId + " now has " +
-            family.members.length + " member(s).");
+  log.debug("Leaving noteRefreshIssued(). Family " + familyId + ".");
+}
+
+// How long a family revoked by a replay stays revoked: as long as any member
+// minted before the revocation could still be presented. The window is the
+// family bookkeeping's own, and the client's lifetime where it is longer.
+function familyRevocationTtlMs(clientId) {
+  log.debug("Entering familyRevocationTtlMs().");
+  const perClient = Number(applications.settingFor(String(clientId || ''),
+                                                   'oauth2.refreshTokenTtlS',
+                                                   config));
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  log.debug("Leaving familyRevocationTtlMs().");
+  return Math.max(refreshFamilyWindowMs(),
+                  isFinite(perClient) ? perClient * 1000 : 0) +
+         (isFinite(skew) ? skew * 1000 : 0);
+}
+
+// Revokes a family BY ID, for every node at once. Resolves whether the mark is
+// in place; never rejects. A mark that could not be written is logged — the
+// members this node knew are still revoked by the caller.
+function revokeFamily(familyId, clientId) {
+  log.debug("Entering revokeFamily(). family=" + familyId);
+  if (!familyId) {
+    log.debug("Leaving revokeFamily(). No family.");
+    return Promise.resolve(false);
+  }
+  log.debug("Leaving revokeFamily(). Claiming the mark.");
+  return clusterClaims.claim({
+    scope: 'oauth.refresh-family-revoked', value: String(familyId),
+    ttlMs: familyRevocationTtlMs(clientId)
+  }).then(function (answer) {
+    if (answer.ok || answer.reason === 'used') {
+      return true;
+    }
+    log.error(errorCodes.tag('STS-OAUTH-0518') + 'RFC 9700 mode: refresh ' +
+              'family ' + familyId + ' could not be revoked by id, because ' +
+              'the claim store could not be asked (' + (answer.why || '') +
+              '). The members this node knows are revoked; one minted on ' +
+              'another node at the same moment may not be.');
+    return false;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE REDEMPTION OF A ROTATED REFRESH TOKEN, ONCE ACROSS THE CLUSTER (#46).
+//
+// **WHAT WAS WRONG.** `noteRefreshRotated()` marks the presented token after
+// the new set is minted, and `checkRefreshRequest()` refuses a token carrying
+// the mark. The mark is a write to a store that reaches another node a moment
+// later — and even in one process the mint is an `await` — so two
+// redemptions of one token at once both found it unrotated and both were
+// issued a fresh chain: the copied-chain case section 2.2.2 exists to catch,
+// uncaught.
+//
+// **WHAT IT IS NOW.** Asked by the refresh grant immediately before the mint,
+// after every other refusal:
+//
+//   * a token whose family carries the revoked-by-id mark is refused
+//     (`STS-OAUTH-0517`) and itself revoked;
+//   * the token is then spent through `cluster_claims.claim()`, and a claim
+//     already held is a REPLAY, answered exactly as the local one is — the
+//     family revoked (by id as well as by the members known here) and
+//     `STS-OAUTH-0516`;
+//   * a store that cannot be asked refuses (`STS-OAUTH-0518`), because a
+//     rotated token this service cannot prove unspent is not one it may
+//     redeem;
+//   * the claim is bound to the response, so a mint that fails gives the
+//     token back.
+//
+// Resolves `{ ok: true }` or a refusal in `checkRefreshRequest()`'s shape,
+// with `revoke` and, for a server error, `status: 500`. Never rejects. A no-op
+// while the mode is off, where a refresh token is reusable by design.
+// ---------------------------------------------------------------------------
+async function spendRefreshToken(opts) {
+  log.debug("Entering spendRefreshToken().");
+  if (!enabled()) {
+    log.debug("Leaving spendRefreshToken(). RFC 9700 mode is off.");
+    return { ok: true };
+  }
+  const o = opts || {};
+  const claims = o.claims || {};
+  const jti = String(claims.jti || '');
+  if (!jti) {
+    log.debug("Leaving spendRefreshToken(). No jti to spend.");
+    return { ok: true };
+  }
+  const known = refreshTokens.get(jti);
+  const familyId = String((known && known.family) || claims[FAMILY_CLAIM] ||
+                          '');
+  const clientId = String(claims.client_id || '');
+  if (familyId) {
+    let revoked = false;
+    try {
+      revoked = await clusterClaims.isClaimed({
+        scope: 'oauth.refresh-family-revoked', value: familyId
+      });
+    } catch (e) {
+      log.debug("Caught in spendRefreshToken(): " + ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-OAUTH-0518') + 'RFC 9700 mode: whether ' +
+                'refresh family ' + familyId + ' was revoked could not be ' +
+                'asked: ' + ((e && e.message) || e) + '. The refresh is ' +
+                'refused.');
+      log.debug("Leaving spendRefreshToken(). The store failed.");
+      return storeRefusal();
+    }
+    if (revoked) {
+      log.warn('RFC 9700 section 2.2.2: refresh token ' + jti + ' belongs ' +
+               'to family ' + familyId + ', which a replay has already ' +
+               'revoked. Refused, and revoked itself.');
+      log.debug("Leaving spendRefreshToken(). The family was revoked.");
+      return { ok: false, errorCode: 'STS-OAUTH-0517', error: 'invalid_grant',
+               requirement: 'refresh-replay-family',
+               family: familyId, clientId: clientId,
+               revoke: membersOf(familyId, jti),
+               description: 'RFC 9700 section 2.2.2: this refresh token ' +
+                            'descends from a grant whose refresh chain was ' +
+                            'revoked after a refresh token in it was ' +
+                            'presented twice. Start a new authorization ' +
+                            'request.' };
+    }
+  }
+  const expiresMs = Number(claims.exp) * 1000;
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const answer = await clusterClaims.claim({
+    scope: 'oauth.refresh', value: jti,
+    ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
+                                : refreshFamilyWindowMs()) +
+           (isFinite(skew) ? skew * 1000 : 0)
+  });
+  if (answer.ok) {
+    clusterClaims.releaseUnlessSucceeded(o.res, answer.handle);
+    log.debug("Leaving spendRefreshToken(). Spent.");
+    return { ok: true, handle: answer.handle };
+  }
+  if (answer.reason !== 'used') {
+    log.error(errorCodes.tag('STS-OAUTH-0518') + 'RFC 9700 mode: refresh ' +
+              'token ' + jti + ' could not be spent, because the claim store ' +
+              'could not be asked (' + (answer.why || '') + '). Refused.');
+    log.debug("Leaving spendRefreshToken(). The store failed.");
+    return storeRefusal();
+  }
+  const members = membersOf(familyId, jti);
+  log.warn('RFC 9700 section 2.2.2: refresh token ' + jti + ' was redeemed ' +
+           'by another request at the same moment, on this node or another. ' +
+           'Revoking family ' + (familyId || '(unknown)') + ' by id and the ' +
+           members.length + ' member(s) known here — a refresh token ' +
+           'redeemed twice means the chain has been copied.');
+  log.debug("Leaving spendRefreshToken(). A concurrent replay.");
+  return { ok: false, errorCode: 'STS-OAUTH-0516', error: 'invalid_grant',
+           requirement: 'refresh-replay-family',
+           family: familyId, clientId: clientId, revoke: members,
+           description: 'RFC 9700 section 2.2.2: this refresh token was ' +
+                        'already redeemed. Presenting it again means the ' +
+                        'chain has been copied, and this server cannot tell ' +
+                        'the legitimate holder from the attacker — so the ' +
+                        'refresh tokens descended from the original grant ' +
+                        'have been revoked. Start a new authorization ' +
+                        'request.' };
+}
+
+function storeRefusal() {
+  log.debug("Entering storeRefusal().");
+  log.debug("Leaving storeRefusal().");
+  return { ok: false, errorCode: 'STS-OAUTH-0518', error: 'server_error',
+           status: 500, requirement: 'refresh-once', revoke: [],
+           description: 'This authorization server could not record that ' +
+                        'the refresh token is being redeemed, so it has not ' +
+                        'redeemed it. The token has not been spent; retry.' };
 }
 
 // The presented token has just been redeemed, so it is retired. `oauth2.js`
@@ -2694,8 +2952,8 @@ function checkRefreshRequest(opts) {
   // answer it with "the refresh token was revoked" — accurate, and silent about
   // the fact that a copy of the chain is in circulation.
   if (known && known.rotated) {
-    const family = refreshFamilies.get(known.family);
-    const members = family ? family.members.slice(0) : [String(claims.jti)];
+    // DERIVED, not read off the family row — see `membersOf()` (#46).
+    const members = membersOf(known.family, claims.jti);
     log.warn('RFC 9700 section 2.2.2: refresh token ' + claims.jti + ' was ' +
              'already redeemed and has been presented again. Revoking ' +
              'all ' + members.length + ' ' +
@@ -2706,6 +2964,8 @@ function checkRefreshRequest(opts) {
     log.debug("Leaving checkRefreshRequest(). Replay detected.");
     return { ok: false, errorCode: 'STS-OAUTH-0138', error: 'invalid_grant',
              requirement: 'refresh-replay-family',
+             // So the grant can revoke the family BY ID as well (#46).
+             family: known.family, clientId: String(claims.client_id || ''),
              revoke: members,
              description: 'RFC 9700 section 2.2.2: this refresh token was ' +
                           'already redeemed. Presenting it again means the ' +
@@ -3253,6 +3513,12 @@ function state() {
   return view;
 }
 
+// #46: a rotated refresh token is redeemed once across the cluster and a
+// replay revokes its family by id (`spendRefreshToken()`); the hosted
+// surfaces' renewal is single-flight across nodes in `common/oidc_rp.js`,
+// which this row names too. At require time — see cluster/CLAUDE.md.
+capabilities.provide('oauth.refresh-rotation');
+
 module.exports = {
   REQUIREMENTS: REQUIREMENTS,
   enabled: enabled,
@@ -3265,6 +3531,13 @@ module.exports = {
   checkRefreshRequest: checkRefreshRequest,
   noteRefreshIssued: noteRefreshIssued,
   noteRefreshRotated: noteRefreshRotated,
+  // #46: the family a refresh token is minted into (and the claim that
+  // carries it), the once-across-the-cluster redemption, and revoking a
+  // family by id.
+  FAMILY_CLAIM: FAMILY_CLAIM,
+  familyForIssuance: familyForIssuance,
+  spendRefreshToken: spendRefreshToken,
+  revokeFamily: revokeFamily,
   revokeRefreshOnLogout: revokeRefreshOnLogout,
   noteTokenBinding: noteTokenBinding,
   corsForbidden: corsForbidden,

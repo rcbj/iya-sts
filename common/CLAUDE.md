@@ -25,6 +25,7 @@ more than one family needs it, not because it felt general.
 | `pki_authoring.js` | **THE CERTIFICATE & KEY CONFIGURATION PANE, AS A MODEL (2026-09-10)** — the parent project's *PKI / X.509* workflow: fourteen profiles, five cryptographic approaches, a subject DN, twenty-two X.509v3 extensions, PKCS#10 and four keystore formats, over the same vendored encoder. A LEAF (rule 3aa): it draws no HTML and holds no store. |
 | `pqc_support.js` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
 | `certificate_details.js` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.js` does. |
+| `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
 | `pki.js` | **A CERTIFICATE AUTHORITY PER TRUST REALM, since 2026-09-10** — Root, Intermediate, Issuing, and the signing key pairs it issues to applications. **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms` and the two vendored PKI modules. |
 | `cert_enrollment.js` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
 | `enrollment_monitor.js` | **WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE (2026-09-13)** — one vocabulary of counters for `/admin/{acme,est,scep}/monitor`, per realm, merged across processes in `gnap_monitor.js`'s shape, and unable to throw into the request it counts. |
@@ -1070,7 +1071,8 @@ where the third must be 429, two runs in a row. The row is `set()` again after
 every increment, and the read barrier then makes the next request see the
 count. Two concurrent attempts can still both read the older count: the limit
 holds to within one caller's concurrency. `tests/rate_limit_replication.js`
-pins it.
+pins it. **Where a store is shared, that row is no longer the count at all** —
+see *Several nodes: one rate-limit budget* at the end of this file.
 
 `tests/request_routing.js`'s `checkTheSurfacePool()` pins the pool choice, the
 cookies, both startup checks and, as source, the three files that must agree on
@@ -1151,10 +1153,34 @@ realm's key under load and nothing else.
 
 **The one place it does not propagate is an EventEmitter listener**, which runs
 in the async context of whatever emitted the event rather than the one it was
-added in. `app.js`'s call log and audit row are written from `res.on('finish')`,
-so that handler re-enters `req.realm` EXPLICITLY. It is not belt and braces:
-without it the statistics land in whichever realm the process happened to be in,
-which under load is a different one.
+added in. `app.js`'s call log and audit row are written through a function bound
+to `req.realm` EXPLICITLY. It is not belt and braces: without it the statistics
+land in whichever realm the process happened to be in, which under load is a
+different one. **Since 2026-09-14 (#46) that function runs in `res.end()`, not
+from `res.on('finish')`** (which only catches a response that bypassed `end()`),
+so the rows are in the journal when the cluster barrier decides whether to hold
+the response — `cluster/CLAUDE.md`, *The barrier*.
+
+**And a path naming a realm this process does not hold is caught up first on an
+active-active node** (2026-09-14, #46): the realm middleware runs above the
+cluster barrier, so a realm created on node A was a 404 on node B's first
+request (2 of 6). When `clusterBarrier.isActive()` and
+`realms.unknownRealmPath()` both say so, the middleware runs the barrier
+(`syncShared()`), matches again, and falls through to Express's own
+`Cannot GET` only if the realm still does not exist; it tells the barrier
+middleware (`markSynced()`), so the request catches up once. With an empty
+`realms.pathSegment` the first segment of every registered route is excluded, or
+every mistyped path would cost a round trip.
+
+**`realms.arr({ persist, segment: N })`** (2026-09-14, #46) stores an array in
+rows of N elements keyed by ABSOLUTE position instead of one whole-array row —
+for a ring appended at one end and trimmed at the other, and nothing else. A
+push rewrites one segment; a shift writes nothing until a whole segment has
+left; anything that renumbers rewrites every segment. A stored copy can carry up
+to N-1 elements the owner already dropped, so the reader trims (`audit.js`'s
+`merged()` keeps `audit.maxEvents` per origin) — `realms.js`'s `segmentedArr()`
+argues it. `audit.events` is the one declared so (`segment: 32`); the measured
+reason is in `cluster/CLAUDE.md`.
 
 ### A store becomes per realm at its DECLARATION, and "everything it is made of" is the test
 
@@ -4100,6 +4126,107 @@ page that had to decrypt to print a serial number would decrypt on every render.
 Narrowing this window the same way is the obvious next increment and is named in
 `mode.js`'s `NOT_YET` rather than left to be discovered.
 
+### BETWEEN NODES THE STORE IS THE ARBITER (2026-09-14, #46 section 1)
+
+Everything above agrees the processes of ONE container: first generator wins for
+a key set over the request pool's IPC, last write wins for a hierarchy, and the
+store a mirror each process wrote whole. Between containers the only link is the
+store, and that was the issue's worst section — two nodes cold-starting against
+an empty store each generated keys and the later UPSERT won the row while the
+earlier went on signing; `applyKeysChange()` did nothing, so a rotation, a realm
+created on A and used on B, and a rebuilt Root each reached one node; and a
+scope's whole certificate authority was one row any node's next save threw
+another node's revocations out of. **One rule now: a write asks the store what
+is there, under the row's lock, and every node ends up holding what the store
+holds.**
+
+* **THE WRITE.** `persistence_postgres.js`'s `mergeKeys(realm, cipher, merge)`
+  locks the row (`SELECT … FOR UPDATE`, or an `INSERT … ON CONFLICT DO NOTHING`
+  and round again where there is none) and calls `merge(currentCipher)`, which
+  is this file's because only it holds the KEK. Writes are QUEUED per row, one
+  running and one waiting that takes the latest attach (a branch build saves a
+  dozen times), and `pendingWrites()`/`settleAll()` feed the cluster barrier's
+  commit-before-respond through `persistence.pendingWrites()` and `flushMinted()`.
+* **A KEY SET IS FIRST WRITER WINS** (`decideKeys()`): another set in the row is
+  kept and this process ADOPTS it — material, shared blob and the cached set
+  (`adoptStoredKeys()`), published over the pool marked `confirmed` so
+  `request_pool.js`'s `receivePublishedKeys()` adopts it instead of arbitrating
+  it away. The same set is JOINED: a member one side lacks (post-quantum keys,
+  the three encryption key pairs) is taken from the other.
+* **A CERTIFICATE AUTHORITY ROW IS A THREE-WAY MERGE** against `pkiBase`, the
+  ciphertext this process last read or wrote — equal ciphertexts are the fast
+  path, since every seal has a fresh IV. `pki_merge.js` has the rules: a
+  revocation and an issued serial are UNIONS (only a released `certificateHold`
+  leaves), the register's CRL number adds both bumps, a CA tier or a certificate
+  slot is FIRST WRITER WINS and reported in `lost`, a displaced slot record's
+  serial is kept in `issuedKeyPairs`. A merged row is held, published, and handed
+  to the store hook `hierarchyAdopted`, which reconciles the listener.
+* **A ROW ANOTHER NODE WROTE IS ADOPTED** — `applyStoredChange()`, called by
+  `persistence.js`'s `keys` applier for every change row: it reads the CURRENT
+  row, defers to a write of its own in flight, drops a set whose row is gone
+  (rotation, removal — `deleteKeys()` logs a change row since this), and adopts a
+  different set or a richer one. `rotate()` now drops the cached set as well.
+* **A COLD START SETTLES BEFORE ANYTHING IS SERVED** — `service_state.js`'s
+  `settleSigningKeys()`, after coordination and before `pki.start()`: every realm
+  in active-active mode, the default realm otherwise.
+
+**WHAT ADOPTING STRANDS, AND WHY IT IS RIGHT.** `applyKeysChange()` refused to
+adopt because it would strand what the process had signed. But the set a node
+adopts away from is, by construction, one the store REJECTED while every other
+node signs with the winner — refusing strands those tokens for ever rather than
+for a window. The window is the first write's round trip; a cold start closes it
+by settling, and a realm created at runtime keeps the one it always had inside a
+container. There are no retained keys to fall back on (one key per realm per
+algorithm — `rotate()`, and `mode.js`'s `NOT_YET`).
+
+**`arbitrates()` GATES ALL OF IT**: keys persisted, a store with `mergeKeys`
+and `loadKey` (postgres), a KEK, and `cluster.mode` not `off`. `ldif`,
+development and a cluster switched off keep the upsert and the do-nothing
+applier exactly as they were — measured: two nodes with `cluster.mode=off`
+started together against one empty store still publish two JWKS (and two Roots
+when their starts overlap), where `active-active` publishes one of each.
+`tests/cluster_key_pki_agreement.js` holds every rule to a stub store and two
+fresh module instances.
+
+### A REALM'S KEY SET, MADE OFF THE EVENT LOOP (2026-09-14, #46 follow-up)
+
+`stsKeysFor` is a factory behind a property read, so a realm this process holds
+no keys for was generated INSIDE the first read — four 2048-bit RSA generations
+and a certificate, ~470ms of a stopped process (measured in process), ~1.2s on
+a loaded product node. One realm at a time that is a slow request; a list is
+not one at a time. `GET /admin-api/realms` and `/admin/realms` show every
+realm's `kid`, a realm created on another node is one this node holds nothing
+for, and thirteen realms listed in process stopped the loop for 7.7s. In a
+cluster that is past `cluster.nodeTtlMs`: twenty realms created on node A and
+listed on node B killed BOTH nodes (`STS-CLUSTER-0011`), and so did twenty
+concurrent first requests to those realms on B (`cluster/CLAUDE.md`, *A node's
+thread and its lifetime*, has the numbers either side of the fix).
+`service_state.js`'s cold-start settle had the same loop over every realm.
+
+* **`helpers.prepareKeySet(realmId)`** generates the four RSA pairs with
+  `crypto.generateKeyPair` — libuv's threads, never this one — and hands them
+  to the factory through `prepared`; `makeStsKeys(made)` assembles the set
+  either way, so there is ONE assembly and the two doors cannot disagree about
+  its shape (`crypto.selfSignedRsaCertificate()` takes `rsaPrivateKeyPem`).
+  The six curve keys, the secret and the certificate signature stay on the
+  thread: tens of milliseconds. **The factory's order is untouched** — stored,
+  a sibling's, then generated — and a prepared set the factory does not use is
+  dropped. It never rejects: a failure is `STS-CORE-0092` and the read
+  generates on the thread as before.
+* **`prepareKeySets(ids)`** runs them one after another with a `setImmediate`
+  between realms: one realm's four generations fill the default thread pool,
+  which DNS, the file system and scrypt share.
+* **Callers**: the middleware in `app.js` below the cluster barrier (the
+  request's realm — after the first request a map lookup), the realm list and
+  drill-down on both admin surfaces, and `settleSigningKeys()`. A read reached
+  another way — an LDAP bind, a KDC exchange, a background sweep — still
+  generates on the thread, one realm.
+* **Not `worker_pool.js`**: RSA and EC generation is node's own OpenSSL with an
+  asynchronous door of its own, which costs no IPC and no child. 3aa's reason
+  for keeping `pki_authoring.js` off the pool is about the post-quantum
+  encoders and is untouched — and that pane's SLH-DSA signature (13.7s
+  measured) is what `cluster.nodeTtlMs`'s new default is sized against.
+
 ### `secrets.js` — the key-encryption key
 
 Five providers behind one `read()`. **`file` is the default because it needs
@@ -4559,6 +4686,38 @@ Four things the console's Build form could say and nothing else could:
   than papered over.
 
 `tests/pki_defaults.js` pins all four, mutation-tested against nine.
+
+### ONE BUILD OF A SCOPE IN THE CLUSTER (2026-09-14, #46)
+
+`oneBuildAtATime()` is per process, and `ensureRoot()` asked this process's copy
+whether a Root existed — "no" on every node of a cold start, so each built a Root
+and a branch and the last save won. **`oneBuildInTheCluster()`** wraps every
+ensure and deliberate build where `keystore.arbitrates()`: read the row from the
+store, take a `pki.build` claim (`cluster/cluster_claims.js`), read it again,
+build only if still missing, await the row's write, release. A node that finds
+the claim held polls the store and takes the other node's build. **The claim is
+an optimisation and the merge is the arbiter** — a tier is first writer wins in
+`pki_merge.js`, so a build that ran anyway is reported: an ensure adopts the
+other node's tier (`STS-PKI-0182` at warn), a deliberate Build is refused with
+it. It is a claim and not `cluster.withLease()`, because a lease there is a role a
+node keeps, and a Build pressed on any other node would be refused for as long as
+the holder lived. `STS-PKI-0183` is a store that could not be asked,
+`STS-PKI-0184` a claim held past three minutes. `scep/scep_ra.js` uses the same
+function under a claim of its own. `buildScopeNow()` also writes its branch onto
+the row as it is when it saves, not as it was read before nine awaits.
+
+**CRL NUMBERS ACROSS NODES** — `pki_revocation.js`'s `agreedCrlNumber()` advances
+the clock-based candidate in `cluster/cluster_counters.js` wherever a shared
+store is open, stepping past any number another node used; a store that cannot
+be asked signs nothing (`STS-PKI-0185`), because a duplicate or backwards number
+is what the field exists to prevent.
+
+**AND `serialBytes()` LEAKED THE BUFFER POOL INTO EVERY CRL (fixed 2026-09-14).**
+For a serial with its high bit set it returned `Buffer.concat(…).buffer` — node's
+shared 8 KB allocation pool — so the CRL entry's "serial" was whatever the process
+had recently put there. The two-node revocation probe read one beginning `SELECT
+seq, origin, realm, key FROM sts_changes`. Pinned in
+`tests/cluster_key_pki_agreement.js` section 12.
 
 ### A BRANCH IN ONE ACT, OR NONE
 
@@ -5529,6 +5688,20 @@ under `/admin/users`.
 produce** — a person who opens the page and never scans it would be locked out
 by a form they abandoned.
 
+**The three pending stores are persisted since 2026-09-14 (#46)** —
+`credentials.pendingTotp`, `credentials.pendingBackupCodes` and
+`credentials.pendingKeys`. They were deliberately undeclared, on the argument
+that an unconfirmed secret should not reach a disk and that the pages reading
+it hold worker affinity. Behind a balancer nothing holds affinity: the setup
+POST answered by one node redirects to a GET answered by the other, which drew
+no QR code, no recovery codes and no WebAuthn challenge (five jobs in the
+suite's `cluster` mode). The worry is answered by the row instead of by its
+absence: written only where minted state is (never a single development process,
+never memory or ldif), sealed like every minted row, never edited in place (so
+no `touch()`), and deleted on confirm, abandon, replace or any process's sweep.
+No `tombstone` — `pendingTotp` and `pendingKeys` are keyed by a name a person
+writes again every time they start over.
+
 The counter that confirmed the enrolment is stored WITH it, so the very code
 used to set the app up cannot also sign somebody in. Section 5.2 applied from
 the first moment rather than from the second.
@@ -5579,6 +5752,22 @@ state at all.
 
 `tls/CLAUDE.md` carries what it looked like from the outside, and
 `tests/pki_anchor_drift.js` pins the repair.
+
+### And it records only what the CURRENT authority signed (2026-09-15, #46)
+
+The signature is an await, and a branch rebuild or a reissue of the use case
+can land inside it — the realm watcher certifies a new realm's keys in the same
+moment `POST /admin-api/pki/build` rebuilds that branch. A certificate signed by
+the replaced Issuing CA and recorded afterwards would be published, with the
+old Intermediate as its chain, until something certified that slot again; a
+rebuild's own re-mint (`admin-ui/CLAUDE.md`, *A rebuild re-mints*) only reaches
+what was recorded before it. So just before `saveRow()` — no await between —
+`certify()` compares the row's Issuing CA and Intermediate with the ones it
+signed with, and when either moved it SIGNS AGAIN from the current one. Nothing
+is superseded: the first certificate was never recorded, returned or
+published. Bounded at three retries, then refused with `STS-PKI-0186`.
+`tests/pki_rebuild_recertifies.js` section B drives it deterministically by
+replacing the authority from inside a wrapped encoder.
 
 ### The pool had no bound on a job, only on a worker's life (2026-09-11)
 
@@ -6005,7 +6194,9 @@ reach outside it and this is the index of them:
    the ID Token and access token expire, renew them with the refresh token grant
    over the same back channel, writing them onto the same session — same cookie,
    same page, no sign-in — for up to the refresh token's lifetime from the
-   sign-in (`common/oidc_rp.js` section 4, `oidcRp.renewBeforeExpiryS`). A
+   sign-in (`common/oidc_rp.js` section 4, `oidcRp.renewBeforeExpiryS`) — once
+   per session across NODES as well as requests since 2026-09-14 (#46), through
+   a claim (`oauth-oidc/CLAUDE.md`, *Several nodes*). A
    sign-out still ends it. — `authn/CLAUDE.md`, `logout/CLAUDE.md`
 4. **`/admin/callback` IS THE ONE PATH UNDER `/admin` THE CONSOLE GATE DOES NOT
    GUARD**, and it cannot be: somebody arriving there has no console session
@@ -6667,3 +6858,261 @@ on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
 `risc.autoEmitTypes` names `account-credential-change-required` and
 `recovery-information-changed` — `ssf/CLAUDE.md` has the table of which door
 sends what.
+
+## Several nodes: second factors, links, enrollment credentials and the bootstrap (2026-09-14, #46)
+
+Issue #46 sections 2 and 8. Every value here was spent by reading an entry (or
+a replicated map) and writing it back: atomic on one node, and two acceptances
+across two inside the change log's window. The capability rows
+`authn.second-factors-once`, `credentials.links-once` and `ops.bootstrap-once`
+are provided by `credentials.js`, and `enrollment.credentials-once` by
+`cert_enrollment.js`, at require time. The argument for each is in the comment
+above the function named; what a maintainer needs before touching them:
+
+* **A TOTP step is a COUNTER, not a claim** (`verifyTotpAsync()`), through
+  `cluster/cluster_counters.js`, keyed by the person and the enrolment's
+  `enrolledAt`: a claim on (person, step) stops the same step twice and not
+  an older step after a newer one, which is what `totp.verify()` refuses. The
+  entry's `lastCounter` stays the first check and is still written. A refusal is the
+  replay it always was (`STS-AUTHN-0106`).
+* **A WebAuthn assertion claims its CHALLENGE and advances its COUNTER**
+  (`spendAssertion()`, called by `authn/authn.js` after verification): the claim
+  is the only defence for an always-zero counter (synced passkeys), the counter
+  catches a cloned authenticator even when a stale write took the entry's copy
+  backwards (`STS-AUTHN-0035`, the same condition `webauthn.js` names). A
+  refused counter gives the challenge back.
+* **A WebAuthn REGISTRATION claims its credential id** (2026-09-14,
+  `addKeyClaimed()`, called by both ceremony doors — the sign-in screen's and
+  `confirmKeyEnrolment()`, which answers a promise now): two concurrent
+  registrations of one attestation passed the entry check on two nodes and the
+  directory merge kept both rows (they differ in `enrolledAt`). The second is
+  refused (`STS-AUTHN-0193`; `STS-AUTHN-0194` when the store cannot be asked).
+  The claim is HELD on success for thirty minutes — nothing legitimate registers
+  one credential id twice — and given back when the write is refused; after it,
+  `addKey()` refuses an id already on the entry whatever door asks
+  (`STS-AUTHN-0095`, which only the two ceremonies' begin-time exclusion list
+  asked before).
+* **A recovery code is claimed by the person and its stored hash, and the
+  ENTRY IS MADE TO CONVERGE ON THE CLAIMS** (`spendBackupCode()`,
+  `reconcileBackupCodes()`): two nodes spending two different codes each write
+  the whole set back and the later write resurrects the other's code. Three
+  repairs — every spend writes other claimed codes as spent, a spend on a shared
+  store schedules a reconcile eight seconds later (never over a REPLACED set:
+  `generatedAt` must match), and a code refused by its claim repairs on the
+  spot.
+  The residue is stated in the code: a claim lives thirty days.
+* **The synchronous doors `verifyTotp()` and `verifyBackupCode()` are NOT
+  cluster-safe** and have no production caller; they are kept for their tests.
+* **Links are claimed by the PORTAL, not here** (`spendActivation()`,
+  `spendPasswordReset()`): only the door knows which POST finishes. It claims
+  before setting anything and releases on every response but the finishing one
+  (`portal/portal.js`'s `holdLinkClaim()`); `STS-AUTHN-0183` is the refusal.
+* **The bootstrap is one claim per realm around BOTH steps** (`bootstrapOnce()`,
+  called by `server.js`): the seed of the administrator as well as the password,
+  because a node whose seed committed after another node's password write
+  replaced the entry with one holding none. The winner catches up, runs, waits
+  for its commit and releases; a loser logs who holds it and prints nothing; a
+  store that cannot be asked runs nothing (`STS-AUTHN-0185`).
+* **`cert_enrollment.js`**: `bindEabOnce()` claims the key id before the binding
+  is written (the same account retrying at a second node before replication is
+  refused once — the claim cannot say which account holds it);
+  `redeemScepChallengeOnce()` claims the challenge id between the peek and the
+  spend. ACME's nonce and finalize and SCEP's transaction are in their own
+  directories' files; the SPIFFE join token in `spiffe/spiffe_api.js`.
+* **`STS-AUTHN-0182`** is one code for "a single-use credential could not be
+  proved unspent": every door refuses on it.
+
+`tests/cluster_single_use_credentials.js` holds each against a stub store with
+postgres's semantics.
+
+**Verified against a real postgres, two active-active product-mode nodes on one
+host (2026-09-14).** Each probe was run first with the fix bypassed by a
+`--require` preload that restores the old function, to show it discriminates:
+
+* **Cold start of both nodes at once against an empty store.** Bypassed: two
+  of three runs printed TWO bootstrap passwords, and in each only one verified
+  against the stored hash. Fixed: three of three printed ONE, and it verified;
+  the other node logged that another node held the bootstrap (or, when the
+  winner had already released, won the claim, caught up and found the
+  credential).
+* **One activation link POSTed to both nodes at once, ten rounds.** Bypassed:
+  ten of ten rounds, BOTH nodes answered *Your account is ready* with two
+  different passwords. Fixed: ten of ten, exactly one did.
+
+Not run against two nodes: the TOTP, recovery-code and WebAuthn doors, the
+reset link, ACME, SCEP and the SPIFFE join token — in process only.
+
+## Several nodes: one rate-limit budget, who a request came from, and the connections (2026-09-14, #46)
+
+Issue #46 sections 2 and 8. The capability row `security.rate-limits` is
+provided by `websecurity.js` at require time. What a maintainer needs:
+
+### The limiter counts in the store every node shares
+
+* **Every production door calls `attemptShared()`, `blockedShared()` and
+  `succeededShared()`** — the sign-in screen, the password grant, the four
+  second-factor steps, the portal's activation, reset and password forms, the
+  signing-key and enrollment self-service, client-secret failures at the token,
+  PAR and introspection endpoints, the ACME/EST/SCEP throttles
+  (`cert_enrollment.js`'s `throttledShared()`), GNAP's user code, `POST
+  /xacml/pip` and the LDAP bind. Same buckets, window, limits, refusals and
+  codes as the synchronous three, which stay for the tests that drive them.
+* **On a shared store (postgres) the count is a row of
+  `sts_cluster_windows`**, one conditional upsert per bucket that resets a
+  passed window and increments a live one, returning the count THIS attempt
+  made (`cluster/cluster_counters.js`'s `countInWindow()`). The replicated
+  bucket row was last writer wins on a counter — two nodes each read 3 and each
+  wrote 4 — and each node refused on its own view, so N nodes were N budgets.
+  **Without a shared store they ARE the synchronous functions.**
+* **A store that cannot be asked falls back to this process's buckets**,
+  logged `STS-CLUSTER-0023` — deliberately unlike a claim, which refuses: a
+  limiter that cannot reach the shared count still has one, and refusing every
+  sign-in while the database is unreachable is an outage nobody caused.
+* **`blockedShared()` then a counted failure was not atomic**, exactly as on one
+  node: concurrent attempts all read the count first (the 19–34 of 40 below). A
+  door that counts before it checks (`attemptShared()`) is refused at exactly
+  the limit under any concurrency.
+* **Since 2026-09-14 the doors that verify first decide the ANSWER on the
+  atomic count** — client secrets at the token, PAR and introspection endpoints
+  (`countSecretFailure()` / `settleSecretSuccess()` in `oauth2.js`), the LDAP
+  bind, and the EST, ACME and SCEP refusal writers
+  (`cert_enrollment.js`'s `countFailureShared()`, where `sharesThrottle()`).
+  A failure is counted with `failedShared()` and awaited, and one whose
+  increment took a bucket past the limit is answered with the lockout rather
+  than "wrong" — at most `limit` failures per window are answered as failures,
+  on every node together. A verified credential is answered only while the
+  bucket is under the limit (`succeededShared({ unlessBlocked })`), so a right
+  guess racing a spent budget teaches nothing. **They do not reserve at
+  admission** (count every attempt before verifying) because that counts
+  successes still in flight: six concurrent token requests from one client
+  host, or a connection pool binding fifty connections as one DN, would be
+  refused for being busy — the reason `blocked()` exists. What remains is a
+  right guess that completes before the burst's failures have counted, the
+  race a before-verification lockout had too. The enrollment doors do not
+  re-check a success (a success there clears nothing). With no shared store
+  every one of these is the synchronous path it was.
+  `tests/cluster_followups.js` section H: forty concurrent failures, limit 5 —
+  exactly 5 answered as failures; the control (a count read and written back)
+  answers 40.
+  **Measured live** (two active-active product nodes, `rateLimitPerIdentity=10`,
+  40 concurrent wrong client secrets at `/oauth2/token` alternating nodes, three
+  runs): answered `invalid_client` 10, 10, 10 — the control build 27, 37, 39;
+  and 30 concurrent RIGHT secrets from one address, 30 of 30 answered 200.
+* Where a handler was synchronous it became `async` (`authn.js`'s sign-in,
+  TOTP and recovery-code POSTs, the portal's `GET` activation and reset and
+  `POST /portal/password`, `POST /xacml/pip`); ACME's `gateRefused()` and EST's
+  `refusedBeforeBody()` return promises; the LDAP bind handler finishes in
+  `finishBind()` once the limiter has answered.
+* `tests/cluster_limits_challenges_retention.js` section A: forty concurrent
+  guesses at one person over twenty addresses are allowed exactly the limit
+  against a store with postgres's semantics, and more than the limit against
+  the control (a read-and-write-back row).
+* **Measured on two live active-active nodes** (product mode, two request
+  workers each, `security.rateLimitPerIdentity=10`, a private postgres), three
+  runs each. The control ran the same build with `--require` making
+  `sharesWindows()` answer false — the journalled buckets as they were:
+
+  | Probe | shared windows | control |
+  |---|---|---|
+  | 40 concurrent password-grant guesses at one person, alternating nodes — answered `Authentication failed` rather than refused | 10, 10, 10 | 29, 20, 21 |
+  | 30 sequential wrong client secrets, alternating nodes — answered before the first 429 | 10, 10, 10 | 10, 10, 10 |
+  | after a burst of 40 wrong secrets, the next one on each node | 429 on both, 3 of 3 | 429 on both in 2 of 3 |
+
+  The sequential row is the same both ways because the read barrier already
+  carried the journalled count to the other node between two sequential
+  requests; the password row is the race the store fixes. A burst of wrong
+  client secrets was still let through — 19 to 34 of 40 with shared windows, 29
+  to 40 in the control — because that door read (`blockedShared()`) before it
+  counted; the whole burst was counted, so the next attempt on either node was
+  refused. That door now answers on the count (the bullet above).
+
+### `client_address.js`: which hops may say where a request came from
+
+* **`global.trustProxy` alone believed a forwarded header from ANYBODY** who
+  could reach a node — on the container network, past the load balancer — so a
+  direct caller picked a fresh rate-limit address per guess and picked what
+  `baseUrlOf()` believed this service's URL was. And the limiter read the
+  LEFT-MOST `X-Forwarded-For` entry, which the client writes.
+* **In the request-worker pool every caller was ONE address bucket**:
+  `addressOf()` read the socket when the setting was off, and a worker's socket
+  is a unix socket whose `remoteAddress` is `undefined` — `unknown` for
+  everybody (measured). The front process wrote `X-Forwarded-For` from
+  `req.ip`, which behind a balancer is the balancer.
+* **`global.trustedProxies`** (CIDRs, empty by default = the old rule exactly):
+  set, forwarded headers are believed only from a peer in a range, and the
+  client is the right-most `X-Forwarded-For` hop not in one. The front process
+  writes ONE resolved address and drops a forwarded host its peer may not send;
+  a worker believes it because only the front process reaches its socket.
+  `helpers.forwardedFrom()` asks the same question for the base URL.
+* **Mutual TLS needs L4 passthrough.** No forwarded client-certificate header is
+  read in any mode and none will be (a forwarded certificate is a certificate
+  anybody can forge). A balancer that TERMINATES TLS on 8443, 9443, the main
+  port when `global.https` is on, or the SPIRE Server API disables RFC 8705
+  `tls_client_auth` and certificate-bound tokens, certificate sign-in, the XACML
+  certificate gates and SPIRE's SVID authentication. Pass those listeners
+  through at L4 (TCP) and terminate TLS on the node. Behind an L4 balancer the
+  peer address is the balancer's unless it sends the PROXY protocol — see the
+  next section, which puts the client's address on the socket so this file
+  never sees the balancer as a hop.
+
+### `proxy_protocol.js`: the client's address from below TLS (2026-09-14, #46)
+
+`global.proxyProtocol` (`off` | `v2`, restart-only) reads a HAProxy PROXY
+protocol v2 header off every TCP listener this service owns — the main port,
+8443/9443, LDAP 389/636, the KDC's TCP listener, the debugger and the plain PKI
+listener — for an AWS Network Load Balancer with TLS passthrough and
+`proxy_protocol_v2.enabled`. The file's header argues every point; the ones a
+maintainer of a listener has to know:
+
+* **One list, `global.trustedProxies`**, not a second: the same question one
+  layer down. `client_address.isTrustedProxy()` answers it and, unlike
+  `peerIsTrustedProxy()`, an EMPTY list trusts nobody — so v2 with no usable
+  range stops the service (`STS-PROXY-0009`, in `server.js` after the store
+  restored any runtime override).
+* **Three kinds of peer.** Trusted: a valid header is REQUIRED (LOCAL and
+  PROXY/UNSPEC — health checks, verified in AWS's documentation — keep the
+  socket's address). Untrusted: CLOSED, not served plain. This host (loopback,
+  or peer = local address): served PLAIN, because `oidc_rp.js`'s back channel,
+  the SSF push and every request worker dial the main port on
+  `helpers.loopbackHost()` with no header; a same-host peer that is also
+  trusted (a sidecar) may send one or not, told apart by the signature's first
+  byte.
+* **The address is put on the SOCKET, not in a field.** The TCP handle gets an
+  own `getpeername()` and the socket's `_peername` is replaced, so express's
+  `req.ip`, `clientAddressOf()`, the request pool's `X-Forwarded-For`, ldapjs's
+  connection id, the LDAP bind limiter, the KDC and `/tls/whoami` read the
+  client with no change. The HANDLE because a `TLSSocket` asks its TLSWrap,
+  which proxies `getpeername` to the TCP handle — shadowing the JS socket's
+  getter would miss every TLS reader (measured).
+* **`install(server)` shadows `server.emit('connection')`** instead of putting a
+  second `net.Server` in front, so `listen()`, `address()`,
+  `setSecureContext()` and the truststore registration are untouched. Bytes
+  that arrived with the header are unshifted onto the paused socket; a
+  `tls.Server` drains them into the TLS engine, every other server needs the
+  socket RESUMED after the real emit — without that `http.Server` answered 408
+  (measured).
+* **A refusal is one audit row per (code, address) per minute**, the rest
+  counted in `report()`: the connections refused here are the ones a stranger
+  can open as fast as they like, and the audit ring is capped.
+* **Not covered**: the KDC's UDP socket (no stream), and the SPIFFE gRPC
+  listeners (grpc-js owns its server). `tests/proxy_protocol.js` holds the
+  parser, the three peers and the round trips through http, https with a
+  client certificate, net and ldapjs.
+
+### Database connections per container
+
+Each process that opens the store holds a `pg` pool of `max: 4`
+(`persistence_postgres.js`) plus ONE dedicated connection for `LISTEN`. A
+container is its front process, `workers.requestCount` request workers and
+`workers.surfaceCount` surface workers — with `docker-compose.yml`'s defaults
+(3 and 2) six processes, so **up to 30 connections per container**. Against
+PostgreSQL's default `max_connections=100` (less `superuser_reserved_connections`
+and whatever else connects) the fourth container's `persistence.start()` fails,
+and that failure is FATAL by design. Size `max_connections` to
+`containers × processes × 5` plus headroom, or lower the worker counts.
+**PgBouncer in transaction mode breaks `LISTEN`** — a notification is
+delivered to a session, and transaction pooling hands the session to somebody
+else — so either give the listener a direct connection or session mode; the
+poll (`persistence.pollInterval`) still converges without it, at up to that
+interval's latency. Every commit NOTIFYs every process of every container.
+

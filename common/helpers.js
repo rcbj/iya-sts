@@ -96,6 +96,12 @@ const certificateHeader = require('./jose_certificate_header');
 // `crypto` and `error_codes` and nothing that requires it back.
 // `publishedKidFor()` and `kidNamesKey()` below are the callers.
 const joseKid = require('./jose_kid');
+// WHICH HOPS MAY SAY WHERE A REQUEST CAME FROM (2026-09-14, #46). A LEAF that
+// requires `net`, bunyan and `config` only. `forwardedFrom()` below asks it
+// whether a request's forwarded headers are believed at all — the connection's
+// peer must be one of `global.trustedProxies` when that is set. It is in the
+// parent project's Kerberos COPY set through this file (kerberos/CLAUDE.md).
+const clientAddress = require('./client_address');
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
 // Registering it is what makes global.logLevel a setting rather than a claim:
@@ -373,10 +379,13 @@ function requestEncryptionJwkOf(privateKey) {
   });
 }
 
-function makeRequestEncryptionKey() {
+// `made` is an RSA pair generated OFF the event loop by `prepareKeySet()`
+// (2026-09-14); absent, the pair is generated here, as it always was.
+function makeRequestEncryptionKey(made) {
   log.debug("Entering makeRequestEncryptionKey().");
-  const bits = Number(config.value('oid4vci.requestEncryptionKeyBits')) || 2048;
-  const pair = crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const bits = rsaBitsFor('oid4vci.requestEncryptionKeyBits');
+  const pair = made ||
+               crypto.generateKeyPairSync('rsa', { modulusLength: bits });
   const out = { privateKey: pair.privateKey,
                 publicJwk: requestEncryptionJwkOf(pair.privateKey) };
   log.debug("Leaving makeRequestEncryptionKey(). " + bits + " bits, kid=" +
@@ -437,15 +446,15 @@ function refreshTokenJwkOf(privateKey, kind) {
   });
 }
 
-function makeRefreshTokenEncryptionKeys() {
+function makeRefreshTokenEncryptionKeys(madeRsa) {
   log.debug("Entering makeRefreshTokenEncryptionKeys().");
-  const bits = Number(config.value('oauth2.refreshTokenEncryptionKeyBits')) ||
-               2048;
+  const bits = rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits');
   const curveName = String(config.value('oauth2.refreshTokenEncryptionCurve') ||
                            'P-256');
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
-  const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const rsa = madeRsa ||
+              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
   const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
   const secret = crypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
@@ -505,15 +514,15 @@ function requestObjectJwkOf(privateKey, kind) {
   });
 }
 
-function makeRequestObjectEncryptionKeys() {
+function makeRequestObjectEncryptionKeys(madeRsa) {
   log.debug("Entering makeRequestObjectEncryptionKeys().");
-  const bits = Number(config.value('oauth2.requestObjectEncryptionKeyBits')) ||
-               2048;
+  const bits = rsaBitsFor('oauth2.requestObjectEncryptionKeyBits');
   const curveName = String(config.value(
     'oauth2.requestObjectEncryptionCurve') || 'P-256');
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
-  const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const rsa = madeRsa ||
+              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
   const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
   const out = {
     rsa: { privateKey: rsa.privateKey,
@@ -527,16 +536,37 @@ function makeRequestObjectEncryptionKeys() {
   return out;
 }
 
+// The RSA size a member of the key set is made at, read in the realm the set
+// is for. ONE reading for the synchronous maker and the asynchronous one, so a
+// set prepared off the loop is the size a set made on it would have been.
+function rsaBitsFor(key) {
+  log.debug("Entering rsaBitsFor().");
+  log.debug("Leaving rsaBitsFor().");
+  return Number(config.value(key)) || 2048;
+}
+
+// The service signing key is 2048 bits and not a setting.
+const STS_SIGNING_KEY_BITS = 2048;
+
 // --- STS signing key/cert (generated once at startup) ----------------------
-function makeStsKeys() {
+// `made` (2026-09-14) is the four RSA pairs `prepareKeySet()` generated in
+// node's thread pool — `{ signingPem, vci, refresh, requestObject }` — and
+// absent it everything is generated here, synchronously, exactly as before.
+// The rest of the set (six curve keys, a 64-byte secret, a certificate
+// signature) is a few tens of milliseconds and is built here either way, so
+// there is ONE assembly of a key set and the two doors cannot disagree about
+// its shape.
+function makeStsKeys(made) {
   log.debug("Entering makeStsKeys().");
+  const pre = made || {};
   // The RSA keygen-and-self-sign skeleton is shared with `tls/tls_server.js`,
   // which builds a very different certificate — a TLS server certificate lives
   // or dies by its subjectAltName and this one carries no extensions at all.
   // What they had in common was the twenty lines of forge boilerplate, and that
   // is what moved; the differences stayed as arguments.
   const keys = stsCrypto.selfSignedRsaCertificate({
-    bits: 2048,
+    bits: STS_SIGNING_KEY_BITS,
+    rsaPrivateKeyPem: pre.signingPem,
     commonName: 'ws-trust-sts',
     // The LEADING BYTE of a random serial, and not arbitrary: the TLS
     // listener's certificate is '03', so a person looking at two of this
@@ -637,13 +667,13 @@ function makeStsKeys() {
     // unit the key channel arbitrates, so a member made with it is agreed with
     // it, and a member made later has to win a second race. See
     // makeRequestEncryptionKey() for why it is a plain key and not a leaf.
-    vciRequestEncKey: makeRequestEncryptionKey(),
+    vciRequestEncKey: makeRequestEncryptionKey(pre.vci),
     // THE REFRESH-TOKEN ENCRYPTION KEYS, made with the set for the same reason
     // as the request-encryption key: the set is what the key channel agrees.
-    refreshTokenEncKeys: makeRefreshTokenEncryptionKeys(),
+    refreshTokenEncKeys: makeRefreshTokenEncryptionKeys(pre.refresh),
     // THE REQUEST OBJECT ENCRYPTION KEYS (RFC 9101), made with the set for the
     // same reason — see makeRequestObjectEncryptionKeys().
-    requestObjectEncKeys: makeRequestObjectEncryptionKeys(),
+    requestObjectEncKeys: makeRequestObjectEncryptionKeys(pre.requestObject),
     // A `kid` names a KEY, so it is derived from the key material rather than
     // hard-coded. This key is regenerated on every start, and the kid was
     // previously a constant — so two instances of this mock (a stale container
@@ -1329,6 +1359,10 @@ const stsKeysFor = realms.keyed(function (realm) {
   // start of a product deployment — falls through, generates, and is written
   // back by `remember()` below.
   // ---------------------------------------------------------------------
+  // A set `prepareKeySet()` generated off the event loop for this realm, TAKEN
+  // here whichever branch below answers — a set that is not used is private
+  // key material nobody will ever sign with, and it is not kept.
+  const prepared = takePrepared(realm.id);
   const stored = keystore.storedFor(realm.id);
   if (stored) {
     const restored = lazyKeySet(realm.id, stored);
@@ -1398,7 +1432,15 @@ const stsKeysFor = realms.keyed(function (realm) {
   // not ambient in: `makeStsKeys()` reads `oid4vci.requestEncryptionKeyBits`,
   // and a realm carrying that setting must get the size it asked for rather
   // than whichever realm happened to be current when its keys were made.
-  const keys = realms.run(realm, makeStsKeys);
+  // **WITH THE RSA PAIRS `prepareKeySet()` MADE, WHERE IT MADE THEM**
+  // (2026-09-14, #46): four RSA generations are ~400ms of this thread per
+  // realm, and a list of realms this process held no keys for built them back
+  // to back — past `cluster.nodeTtlMs`, so the node lost its membership and
+  // exited. The ORDER above is untouched: a stored set and a sibling's still
+  // win.
+  const keys = realms.run(realm, function () {
+    return makeStsKeys(prepared);
+  });
   keys.createdAt = Date.now();
   // ---------------------------------------------------------------------
   // THE SAME PRIVATE KEY AS AN ALREADY-PARSED `KeyObject`, and it is here for
@@ -1482,6 +1524,194 @@ const stsKeysFor = realms.keyed(function (realm) {
   const written = keystore.storedFor(realm.id);
   return written ? lazyKeySet(realm.id, written) : keys;
 });
+
+// ---------------------------------------------------------------------------
+// A REALM'S KEY SET, MADE OFF THE EVENT LOOP BEFORE ANYTHING READS IT
+// (2026-09-14, #46 — the fail-stop under ordinary admin load).
+//
+// `stsKeysFor` is a factory behind a PROPERTY READ, so it cannot await, and a
+// realm this process holds no keys for is generated inside whichever read
+// touches it first: four 2048-bit RSA generations and a certificate, measured
+// at ~470ms of a stopped process in development mode and ~1.2s on a loaded
+// product node. One realm at a time that is a slow request. **A LIST of realms
+// is not one at a time**: `GET /admin-api/realms` shows every realm's `kid`, a
+// realm created on another node is one this node holds no keys for, and a
+// burst of twenty creations followed by one list stopped a node's event loop
+// for longer than `cluster.nodeTtlMs`. Its heartbeat could not run, its
+// membership row expired by the database's clock, and its next write was
+// fenced — `STS-CLUSTER-0011`, the node exited. Measured in process with
+// thirteen realms: one 7.7s stall; `settleSigningKeys()` had the same loop at
+// a cold start.
+//
+// **SO THE EXPENSIVE HALF IS GENERATED HERE, IN NODE'S THREAD POOL**
+// (`crypto.generateKeyPair`, which runs in libuv's threads and never on this
+// one), and handed to the factory through `prepared`, which assembles the set
+// with the same `makeStsKeys()` a synchronous read uses. What is left on the
+// thread — six curve keys, a certificate signature, four JWK exports — is tens
+// of milliseconds, and `prepareKeySets()` yields between realms.
+//
+// **NOT `common/worker_pool.js`**, and the reason is not the one
+// `pki_authoring.js` gives for its own generation (that one is about the
+// post-quantum encoders' byte layouts): an RSA or EC generation is node's own
+// OpenSSL either way, and node already has an asynchronous door to it that
+// costs no IPC round trip and no forked child. The pool is for computation
+// node has no asynchronous door to.
+//
+// **THE FACTORY'S ORDER IS NOT CHANGED**: stored, then a sibling's, then
+// generated — and `prepared` is only ever the third. A set prepared here while
+// another process's set arrived is dropped unused, which is the arbitration
+// every other door already follows. Where there is nothing to prepare — held
+// already, stored, or offered by a sibling — this does nothing.
+//
+// Callers: the realm middleware in `app.js` (the realm a request is in), the
+// realm list and drill-down on `/admin/realms` and `GET /admin-api/realms`, and
+// `service_state.js`'s cold-start settle. A read that reaches the factory by
+// another road — an LDAP bind, a KDC exchange, a background sweep — still
+// generates synchronously, one realm, as it always did.
+// ---------------------------------------------------------------------------
+const preparedSets = new Map();
+const preparing = new Map();
+
+function takePrepared(realmId) {
+  log.debug("Entering takePrepared().");
+  const id = String(realmId || '');
+  const made = preparedSets.get(id) || null;
+  preparedSets.delete(id);
+  log.debug("Leaving takePrepared(). " + (made ? "Prepared." : "None."));
+  return made;
+}
+
+// The id a key set is cached under, and the realm the factory would make it
+// for, the way `realms.keyed()`'s `.of()` resolves them.
+function realmForKeys(realmId) {
+  log.debug("Entering realmForKeys().");
+  const realm = realms.get(realmId) || realms.DEFAULT_REALM;
+  log.debug("Leaving realmForKeys().");
+  return realm;
+}
+
+// Whether a read of this realm's keys would GENERATE — the question
+// `prepareKeySet()` asks before spending a thread on it. Cheap: a map lookup,
+// the keystore's in-memory material, the sibling channel's blob.
+function keySetNeedsMaking(realmId) {
+  log.debug("Entering keySetNeedsMaking().");
+  const held = stsKeysFor.existing();
+  if (held && held.has(realmId)) {
+    log.debug("Leaving keySetNeedsMaking(). Held.");
+    return false;
+  }
+  const realm = realmForKeys(realmId);
+  if (keystore.sharedBlobFor(realm.id) || keystore.storedFor(realm.id)) {
+    log.debug("Leaving keySetNeedsMaking(). Stored or shared.");
+    return false;
+  }
+  log.debug("Leaving keySetNeedsMaking(). Would generate.");
+  return true;
+}
+
+function generateRsaPairAsync(bits, asPem) {
+  log.debug("Entering generateRsaPairAsync(). bits=" + bits);
+  const options = { modulusLength: bits };
+  if (asPem) {
+    options.privateKeyEncoding = { type: 'pkcs1', format: 'pem' };
+    options.publicKeyEncoding = { type: 'pkcs1', format: 'pem' };
+  }
+  log.debug("Leaving generateRsaPairAsync().");
+  return new Promise(function (resolve, reject) {
+    crypto.generateKeyPair('rsa', options, function (err, publicKey,
+                                                     privateKey) {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve({ publicKey: publicKey, privateKey: privateKey });
+    });
+  });
+}
+
+// Resolves once the realm's key set is held by this process (or there was
+// nothing to prepare). Never rejects: a failure is logged and the read that
+// follows generates synchronously, which is what it did before this existed.
+function prepareKeySet(realmId) {
+  log.debug("Entering prepareKeySet(). realm=" + realmId);
+  const id = String(realmId || '');
+  if (!keySetNeedsMaking(id)) {
+    log.debug("Leaving prepareKeySet(). Nothing to make.");
+    return Promise.resolve(false);
+  }
+  if (preparing.has(id)) {
+    log.debug("Leaving prepareKeySet(). Already under way.");
+    return preparing.get(id);
+  }
+  const realm = realmForKeys(id);
+  const started = Date.now();
+  // The sizes are read IN THE REALM, synchronously, before anything is
+  // awaited — `makeStsKeys()` reads the same three settings the same way.
+  const bits = realms.run(realm, function () {
+    return {
+      vci: rsaBitsFor('oid4vci.requestEncryptionKeyBits'),
+      refresh: rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits'),
+      requestObject: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits')
+    };
+  });
+  const work = Promise.all([
+    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true),
+    generateRsaPairAsync(bits.vci),
+    generateRsaPairAsync(bits.refresh),
+    generateRsaPairAsync(bits.requestObject)
+  ]).then(function (pairs) {
+    // Somebody may have made or adopted the set while the threads worked; the
+    // factory's order decides, and a prepared set it does not use is dropped.
+    if (keySetNeedsMaking(id)) {
+      preparedSets.set(realm.id, { signingPem: pairs[0].privateKey,
+                                   vci: pairs[1], refresh: pairs[2],
+                                   requestObject: pairs[3] });
+      stsKeysFor.of(id);
+      preparedSets.delete(realm.id);
+    }
+    log.debug('prepareKeySet(): the "' + realm.id + '" realm\'s key set was ' +
+              'generated off the event loop in ' + (Date.now() - started) +
+              'ms.');
+    return true;
+  }).catch(function (e) {
+    log.debug("Caught in prepareKeySet(): " + ((e && e.message) || e));
+    preparedSets.delete(realm.id);
+    log.warn(errorCodes.tag('STS-CORE-0092') + 'helpers: the "' + realm.id +
+             '" realm\'s key set could not be generated off the event loop (' +
+             ((e && e.message) || e) + '); the first read of it generates ' +
+             'it on the loop instead.');
+    return false;
+  }).then(function (made) {
+    preparing.delete(id);
+    return made;
+  });
+  preparing.set(id, work);
+  log.debug("Leaving prepareKeySet(). Generating.");
+  return work;
+}
+
+// Several realms ONE AFTER ANOTHER, yielding to the event loop between them —
+// what a list of realms or a cold start calls. In sequence rather than all at
+// once because the thread pool is four threads that DNS, the file system and
+// scrypt also use; one realm's four generations fill it.
+function prepareKeySets(realmIds) {
+  log.debug("Entering prepareKeySets().");
+  const ids = (realmIds || []).slice();
+  let chain = Promise.resolve();
+  ids.forEach(function (id) {
+    chain = chain.then(function () {
+      return prepareKeySet(id);
+    }).then(function () {
+      return new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    });
+  });
+  log.debug("Leaving prepareKeySets(). " + ids.length + " realm(s).");
+  return chain.then(function () {
+    return ids.length;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // THE OPENID4VCI REQUEST-ENCRYPTION KEY OF A KEY SET, as `{ privateKey,
@@ -1756,6 +1986,12 @@ function randomId(bytes) {
 // One BBS key pair per start, like the RSA one. Generated lazily because key
 // generation is async and the module loads synchronously.
 let bbsKeys = null;
+// The encoded text `bbsKeys` was read from, or made as. `bbsKeyPair()` compares
+// it with the environment variable on every call — see below.
+let bbsKeysText = '';
+// A handed-down text that would not read, so it is refused once and logged
+// once rather than on every proof.
+let bbsRefusedText = '';
 
 // ---------------------------------------------------------------------------
 // ONE BBS PAIR ACROSS EVERY PROCESS IN THIS SERVICE (2026-09-07).
@@ -1775,35 +2011,99 @@ let bbsKeys = null;
 // **IT IS NOT ON `keystore`'s SHARED CHANNEL**, which carries a REALM's key set
 // and is keyed by realm. This pair is one per service and not one per realm, so
 // putting it there would have meant inventing a realm for it.
+//
+// **AND ACROSS NODES SINCE 2026-09-14 (#46 section 1).** The same three jobs
+// failed again in the suite's `cluster` mode, one level up: each CONTAINER
+// generated its own pair, so `/bbs/keys/1` answered a different key on each
+// node. `cluster/cluster_secrets.js` now declares the pair (`bbs-keypair`):
+// the store keeps the first node's, sealed, and every front process puts it in
+// `STS_BBS_KEYPAIR` before anything issues — the variable this function
+// already read. Its argument for being there rather than in `sts_keys` is at
+// that row.
+//
+// **THE VARIABLE IS COMPARED ON EVERY CALL, NOT ONLY THE FIRST.** A pair this
+// process made before the store's arrived — nothing issues before start(),
+// but "nothing" is a claim about every caller, now and later — would otherwise
+// be held for the life of the process, which is the divergence this exists to
+// remove. One string comparison per proof is the price.
 // ---------------------------------------------------------------------------
 async function bbsKeyPair() {
   log.debug("Entering bbsKeyPair().");
-  if (bbsKeys) {
+  const handed = process.env.STS_BBS_KEYPAIR || '';
+  if (bbsKeys && (!handed || handed === bbsKeysText ||
+                  handed === bbsRefusedText)) {
     log.debug("Leaving bbsKeyPair().");
     return bbsKeys;
   }
-  const handed = process.env.STS_BBS_KEYPAIR || '';
-  if (handed) {
+  if (handed && handed !== bbsRefusedText) {
     try {
-      const held = JSON.parse(Buffer.from(handed, 'base64').toString('utf8'));
-      bbsKeys = {
-        secretKey: Uint8Array.from(Buffer.from(held.secret, 'base64')),
-        publicKey: Uint8Array.from(Buffer.from(held.public, 'base64'))
-      };
+      bbsKeys = bbsKeyPairFromText(handed);
+      bbsKeysText = handed;
       log.info('The BBS key pair came from another process in this service, ' +
                'so every process signs and publishes the same one.');
       log.debug("Leaving bbsKeyPair().");
       return bbsKeys;
     } catch (e) {
+      bbsRefusedText = handed;
       log.error(errorCodes.tag('STS-CORE-0025') +
                 'The handed-down BBS key pair could not be read (' + e.message +
                 '); generating one, which means this process publishes a ' +
                 'different verification method from its siblings.');
+      if (bbsKeys) {
+        log.debug("Leaving bbsKeyPair(). Keeping the pair already held.");
+        return bbsKeys;
+      }
     }
   }
-  bbsKeys = await bbs2023.generateKeyPair();
+  const made = await bbs2023.generateKeyPair();
+  // A concurrent caller may have finished first; the first pair held wins, so
+  // one process never signs with two.
+  if (!bbsKeys) {
+    bbsKeys = made;
+    bbsKeysText = bbsKeyPairText(made);
+  }
   log.debug("Leaving bbsKeyPair().");
   return bbsKeys;
+}
+
+// The pair as the text the fork's IPC channel, the environment variable and
+// the cluster's sealed secret all carry: base64 of a JSON object of two base64
+// members. One encoding for all three, so a value any of them carries is one
+// the other two can read.
+function bbsKeyPairText(pair) {
+  log.debug("Entering bbsKeyPairText().");
+  log.debug("Leaving bbsKeyPairText().");
+  return Buffer.from(JSON.stringify({
+    secret: Buffer.from(pair.secretKey).toString('base64'),
+    public: Buffer.from(pair.publicKey).toString('base64')
+  }), 'utf8').toString('base64');
+}
+
+// The inverse. Throws on anything that is not that shape.
+function bbsKeyPairFromText(text) {
+  log.debug("Entering bbsKeyPairFromText().");
+  const held = JSON.parse(Buffer.from(String(text), 'base64')
+    .toString('utf8'));
+  if (!held || !held.secret || !held.public) {
+    log.debug("Leaving bbsKeyPairFromText(). Not a pair.");
+    throw new Error('the text does not carry a secret and a public key');
+  }
+  log.debug("Leaving bbsKeyPairFromText().");
+  return {
+    secretKey: Uint8Array.from(Buffer.from(held.secret, 'base64')),
+    publicKey: Uint8Array.from(Buffer.from(held.public, 'base64'))
+  };
+}
+
+// A FRESH pair as that text, held by nobody — the OFFER `cluster_secrets.js`
+// makes to the store. Deliberately not `bbsKeyPairForSharing()`: that one
+// caches the pair it makes as this process's, and an offer that loses the
+// race must be thrown away rather than kept.
+async function newBbsKeyPairText() {
+  log.debug("Entering newBbsKeyPairText().");
+  const pair = await bbs2023.generateKeyPair();
+  log.debug("Leaving newBbsKeyPairText().");
+  return bbsKeyPairText(pair);
 }
 
 // The pair as a string the fork's IPC channel can carry. Generates it if this
@@ -1813,10 +2113,7 @@ async function bbsKeyPairForSharing() {
   log.debug("Entering bbsKeyPairForSharing().");
   const pair = await bbsKeyPair();
   log.debug("Leaving bbsKeyPairForSharing().");
-  return Buffer.from(JSON.stringify({
-    secret: Buffer.from(pair.secretKey).toString('base64'),
-    public: Buffer.from(pair.publicKey).toString('base64')
-  }), 'utf8').toString('base64');
+  return bbsKeyPairText(pair);
 }
 
 // Request bodies arrive as raw text (the SOAP parser takes every content type),
@@ -2781,7 +3078,10 @@ function forwardedFrom(req) {
   const socketProto = (req && req.protocol) || 'http';
   const socketHost = (req && req.get && req.get('host')) || ('localhost:' +
       PORT);
-  if (!trustProxy()) {
+  // AND FROM A PEER THE DEPLOYMENT VOUCHES FOR (2026-09-14, #46): with
+  // `global.trustedProxies` set, a caller that reached this node directly —
+  // past the load balancer — is answered from the socket, whatever it sent.
+  if (!trustProxy() || !clientAddress.forwardedBelieved(req)) {
     log.debug("Leaving forwardedFrom().");
     return { proto: socketProto, host: socketHost, forwarded: false };
   }
@@ -3181,6 +3481,8 @@ module.exports = {
   publishedKidFor: publishedKidFor,
   kidNamesKey: kidNamesKey,
   warmPqKeys: warmPqKeys,
+  prepareKeySet: prepareKeySet,
+  prepareKeySets: prepareKeySets,
   log: log,
   logArtifact: logArtifact,
   headersOf: headersOf,
@@ -3207,6 +3509,8 @@ module.exports = {
   nowSec: nowSec,
   randomId: randomId,
   bbsKeyPairForSharing: bbsKeyPairForSharing,
+  newBbsKeyPairText: newBbsKeyPairText,
+  bbsKeyPairFromText: bbsKeyPairFromText,
   bbsKeyPair: bbsKeyPair,
   walletBaseUrl: walletBaseUrl,
   parseBody: parseBody,

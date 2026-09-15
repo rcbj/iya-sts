@@ -1129,9 +1129,13 @@ if (require.main === module) {
         keystore.adoptPki(one.realm, one.chain);
       }
     });
-    keystore.setKeyPublisher(function (realmId, blob) {
+    keystore.setKeyPublisher(function (realmId, blob, options) {
       try {
-        process.send({ publishKeys: { realm: realmId, blob: blob } });
+        // `confirmed` (#46): the set is the store's answer, not this
+        // process's offer — see request_pool.js's receivePublishedKeys().
+        process.send({ publishKeys: { realm: realmId, blob: blob,
+                                      confirmed: !!(options &&
+                                                    options.confirmed) } });
       } catch (e) {
         // The parent has gone; this worker is about to be told so. Its keys
         // stay its own, which is correct for a process on its way out.

@@ -195,6 +195,9 @@ const config = require('../common/config');
 const stats = require('../common/admin_stats');
 const audit = require('../common/audit');
 const directory = require('../ldap/ldap_server');
+// The sentence a create refused by a concurrent one carries (#46 section 3).
+// A LIBRARY that registers nothing.
+const createClaims = require('../ldap/directory_create_claims');
 // WHO IS ASKING. A library like scim_map.js — it registers nothing and never
 // touches `res`; it decides and this module answers, which is the same split
 // oauth2_bcp.js has with oauth2.js. Everything about the six schemes RFC 7644
@@ -525,29 +528,35 @@ function handle(info, fn) {
     // DPoP nonce handshake, the DPoP-Nonce a wallet needs to retry), and on
     // success they can be the RFC 7616 Authentication-Info that lets a client
     // authenticate this server back.
-    const decision = scimAuth.authenticate(req, info.need || 'none');
-    Object.keys(decision.headers || {}).forEach(function (name) {
-      res.set(name, decision.headers[name]);
-    });
-    // Stashed on the request rather than passed down: the handlers below build
-    // their own info objects at each call site, and threading a fifth argument
-    // through all of them is how one of them comes to be missing it. It is read
-    // by the two senders (for the per-scheme counters), by auditScim() (for the
-    // actor) and by /Me (for the subject).
-    req.scimAuth = decision;
-    if (!decision.ok) {
-      // scim_auth.js names the condition on the decision it refused with.
-      sendScimError(req, res, info,
-                    coded(errorCodes.codeOf(decision) || 'STS-SCIM-0029',
-        new SCIMMY.Types.Error(decision.status, decision.scimType,
-                               decision.detail)));
-      log.debug("Leaving the SCIM handler. The caller was refused with " +
-                decision.status + ".");
-      return;
-    }
-
-    Promise.resolve()
-      .then(function () { return fn(req, res); })
+    //
+    // **`authenticateSpent()` SINCE 2026-09-14 (#46 section 5)**: the same
+    // decision, with a Digest nonce count or a HOBA signature spent across the
+    // cluster before it is accepted — which is a round trip, so the rest of
+    // this gate runs when it is in.
+    scimAuth.authenticateSpent(req, info.need || 'none')
+      .then(function (decision) {
+        Object.keys(decision.headers || {}).forEach(function (name) {
+          res.set(name, decision.headers[name]);
+        });
+        // Stashed on the request rather than passed down: the handlers below
+        // build their own info objects at each call site, and threading a
+        // fifth argument through all of them is how one of them comes to be
+        // missing it. It is read by the two senders (for the per-scheme
+        // counters), by auditScim() (for the actor) and by /Me (for the
+        // subject).
+        req.scimAuth = decision;
+        if (!decision.ok) {
+          // scim_auth.js names the condition on the decision it refused with.
+          sendScimError(req, res, info,
+                        coded(errorCodes.codeOf(decision) || 'STS-SCIM-0029',
+            new SCIMMY.Types.Error(decision.status, decision.scimType,
+                                   decision.detail)));
+          log.debug("The SCIM handler refused the caller with " +
+                    decision.status + ".");
+          return undefined;
+        }
+        return fn(req, res);
+      })
       .catch(function (ex) {
         if (!(ex instanceof SCIMMY.Types.Error)) {
           // Logged whole, because scimmy will already have flattened anything
@@ -848,6 +857,56 @@ function userResourceFor(entry, req) {
 //
 // `required` is left false: RFC 7643 section 4.3 defines the extension, and a
 // User carrying none of it is an ordinary User rather than an invalid one.
+// ---------------------------------------------------------------------------
+// A CREATE THAT ARRIVES INSIDE A BULK REQUEST CLAIMS ITS NAME TOO (2026-09-14,
+// #46 follow-up).
+//
+// `createHandler()` below claims a userName or displayName across nodes before
+// it writes, and a BulkRequest's POST operations never pass through it:
+// scimmy applies each straight to the resource, which reaches the ingress
+// handler. So two Bulk creates of one name, one to each node, both answered
+// 201 with ids — the race `ldap/directory_create_claims.js` closes at every
+// other door. scimmy AWAITS an ingress handler, so the claim is made here, for
+// a create (no `resource.id`) the create handler has not already claimed
+// (`req.__scimCreateClaimed`: claiming a name twice in one request would
+// refuse the request's own second ask). A refusal is the create handler's:
+// 409 `uniqueness` (`STS-LDAP-0092`), or 500 when the store could not be asked
+// (`STS-LDAP-0093`) — inside a Bulk response, that operation's own status.
+// Inert anywhere a create cannot race.
+// ---------------------------------------------------------------------------
+function claimingIngress(type, handler) {
+  log.debug("Entering claimingIngress(). " + type);
+  log.debug("Leaving claimingIngress().");
+  return async function (resource, data, ctx) {
+    const req = (ctx || {}).req;
+    if (resource.id || (req && req.__scimCreateClaimed)) {
+      return handler(resource, data, ctx);
+    }
+    const given = data || {};
+    const held = await directory.claimCreate(type === 'User'
+      ? { username: String(given.userName || '').trim() }
+      : { group: String(given.displayName || '').trim() });
+    if (!held.ok && held.reason === 'store') {
+      throw coded('STS-LDAP-0093', new SCIMMY.Types.Error(500, null,
+        createClaims.refusalMessage(held)));
+    }
+    if (!held.ok) {
+      throw coded('STS-LDAP-0092', new SCIMMY.Types.Error(409, 'uniqueness',
+        createClaims.refusalMessage(held)));
+    }
+    let written;
+    try {
+      written = await handler(resource, data, ctx);
+    } catch (e) {
+      log.debug("Caught in claimingIngress(): " + ((e && e.message) || e));
+      held.settle(false);
+      throw e;
+    }
+    held.settle(true);
+    return written;
+  };
+}
+
 SCIMMY.Resources.declare(SCIMMY.Resources.User)
   .extend(SCIMMY.Schemas.EnterpriseUser)
   .egress(function (resource, ctx) {
@@ -878,7 +937,7 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
     // stops being useful. See scim_map.js's toScimUser().
     return matched.map(scimMap.prune);
   })
-  .ingress(function (resource, data, ctx) {
+  .ingress(claimingIngress('User', function (resource, data, ctx) {
     log.debug("Entering the SCIM User ingress handler. id=" +
               (resource.id || '(a ' +
         'create)'));
@@ -1073,7 +1132,7 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
     log.debug("Leaving the SCIM User ingress handler. The entry was " +
               (written.created ? 'created.' : 'updated.'));
     return scimMap.prune(userResourceFor(entry, req));
-  })
+  }))
   .degress(function (resource, ctx) {
     log.debug("Entering the SCIM User degress handler. id=" + resource.id);
     const removed = directory.deletePerson(resource.id);
@@ -1163,7 +1222,7 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
               " of " + all.length + " group(s).");
     return matched.map(scimMap.prune);
   })
-  .ingress(function (resource, data, ctx) {
+  .ingress(claimingIngress('Group', function (resource, data, ctx) {
     log.debug("Entering the SCIM Group ingress handler. id=" +
               (resource.id || '(a ' +
         'create)'));
@@ -1261,7 +1320,7 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
     log.debug("Leaving the SCIM Group ingress handler. The entry was " +
               (written.created ? 'created.' : 'updated.'));
     return scimMap.prune(groupResourceFor(directory.readGroupEntry(dn), req));
-  })
+  }))
   .degress(function (resource, ctx) {
     log.debug("Entering the SCIM Group degress handler. id=" + resource.id);
     const removed = directory.deleteGroupEntry(resource.id);
@@ -1711,8 +1770,39 @@ function createHandler(type, Resource) {
   log.debug("Leaving createHandler().");
   return async function (req, res) {
     const body = scimBody(req);
-    const created = await new Resource(queryParams(req)).write(body,
-                                                               { req: req });
+    // -----------------------------------------------------------------------
+    // THE NAME IS CLAIMED FIRST WHEN SEVERAL NODES WRITE ONE STORE (2026-09-14,
+    // #46 section 3). Two creates of one userName on two nodes each found
+    // nobody and each answered 201 with an id, and the store could keep only
+    // one of them — so the other client held an id naming nothing. The second
+    // is a 409 `uniqueness` now, exactly what it would have been a moment
+    // later; a store that cannot be asked is a 500. Inert anywhere a create
+    // cannot race. `ldap/directory_create_claims.js` argues it.
+    // -----------------------------------------------------------------------
+    const given = (body && typeof body === 'object') ? body : {};
+    const held = await directory.claimCreate(type === 'User'
+      ? { username: given.userName } : { group: given.displayName });
+    if (!held.ok && held.reason === 'store') {
+      // 500 and not 503: RFC 7644 section 3.12 lists no 503, which is the
+      // same reading `scim_auth.js` makes of its own store failure.
+      throw coded('STS-LDAP-0093', new SCIMMY.Types.Error(500, null,
+        createClaims.refusalMessage(held)));
+    }
+    if (!held.ok) {
+      throw coded('STS-LDAP-0092', new SCIMMY.Types.Error(409, 'uniqueness',
+        createClaims.refusalMessage(held)));
+    }
+    // Claimed: the ingress handler must not claim the same name again.
+    req.__scimCreateClaimed = true;
+    let created;
+    try {
+      created = await new Resource(queryParams(req)).write(body, { req: req });
+    } catch (e) {
+      log.debug("Caught in createHandler(): " + ((e && e.message) || e));
+      held.settle(false);
+      throw e;
+    }
+    held.settle(true);
     sendScim(req, res, { operation: 'create', resourceType: type }, 201,
              created,
              locationPrefix(req, type + 's') + encodeURIComponent(created.id));

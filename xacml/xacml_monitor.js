@@ -86,6 +86,9 @@
 //
 // ---------------------------------------------------------------------------
 // THE COUNTERS ARE PER TRUST REALM, IN MEMORY, AND DIE WITH THE PROCESS.
+// (Where minted state is persisted each process's row is written down too,
+// `merge: 'own'`, so that several processes or nodes add up — see `merge()`.
+// It is still per process: a restarted process starts its own row at zero.)
 //
 // Per realm because everything else in this family is: `ou=policies` is per
 // realm, so a decision made under `/realm/acme` was made against acme's
@@ -246,8 +249,12 @@ function emptyRow() {
 // PER TRUST REALM. See the header: `ou=policies` is per realm, so a decision
 // made under /realm/acme was made against acme's policies, and one total over
 // both would be counting two logical services as one.
+//
+// `observation: true` (2026-09-15, #46): a decision counted is a tally of what
+// a request did, so journalling it does not make a read a WRITING request that
+// the cluster barrier would hold — see `record()` and `cluster_barrier.js`.
 const counters = realms.map({ persist: 'xacml_monitor.counters',
-                              merge: 'own' });
+                              merge: 'own', observation: true });
 
 // WHEN THE COUNTING STARTED. Declared here, above its one reader, because a
 // module-level `const` used by a function defined above it is legal and reads
@@ -346,6 +353,27 @@ function record(id, outcome) {
     }
     row.lastAt = new Date().toISOString();
     row.lastDecision = decision || null;
+    // -----------------------------------------------------------------
+    // AND THE ROW IS SET BACK, WHICH IS WHAT JOURNALS IT (2026-09-15, #46).
+    //
+    // `rowFor()` hands back the live object and the lines above change it in
+    // place, which a `realms.map()` cannot see: only `set()` and `delete()`
+    // tell the persistence journal a key moved. So the row in `sts_minted`
+    // held whatever the FIRST decision of the process wrote through
+    // `rowFor()`'s `set()`, and never moved again. On one node nothing reads
+    // that row. With two, each node's `merge()` adds its own live tally to
+    // the OTHER node's frozen one, and the two pages disagree about one
+    // service: the suite's `cluster` mode read the issuance PEP at 126 on node
+    // A and 142 on node B across a page load that decided nothing, and 21
+    // then 17 in a run of that job alone — the number went DOWN, which no
+    // late-arriving decision can explain. `oauth2_monitor.js` always set its
+    // row back; this file did not.
+    //
+    // The store is declared `observation: true`, so this does not make the
+    // access PEP's every console read a request the barrier holds; a request
+    // that wrote anything else is held and the row commits with it.
+    // -----------------------------------------------------------------
+    counters.set(id, row);
   } catch (error) {
     // SWALLOWED, and the comment is the reason rather than an apology: this is
     // on the path of every issuance and every gated request in the service.

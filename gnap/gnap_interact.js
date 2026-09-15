@@ -144,10 +144,15 @@ function activeForInteraction(grant) {
 // ---------------------------------------------------------------------------
 // START MODES. Each spends itself and forwards to the one approval page.
 // ---------------------------------------------------------------------------
+// ASYNCHRONOUS SINCE 2026-09-14 (#46): a start link is spent through
+// `store.spend()` before it is honoured, so two nodes cannot both follow one.
+// The handler is wrapped in `settled()` so a defect is a coded 500 rather than
+// an unhandled rejection, which is what `gnap.js`'s `guarded()` does for the
+// JSON endpoints.
 function startMode(mode) {
   log.debug("Entering startMode().");
   log.debug("Leaving startMode().");
-  return function (req, res) {
+  return settled('the GNAP ' + mode + ' start', async function (req, res) {
     log.debug("Entering the GNAP " + mode + " start.");
     const params = validation.checkParsed({ id: req.params.id }, 'params',
                                           ID_PARAMS);
@@ -166,6 +171,20 @@ function startMode(mode) {
                                                     'been used',
         'Each interaction link works once (RFC 9635 section 4).');
     }
+    // ONCE ACROSS THE CLUSTER (#46): `one.used` is a field on a replicated
+    // grant, so another node still reading the grant before this start would
+    // follow the same link. Claimed for the interaction's own lifetime.
+    const spent = await store.spend('interaction', mode + ':' +
+                                    params.value.id,
+                                    grant.interaction.expiresAt - nowSec(),
+                                    'STS-GNAP-0712');
+    if (!spent.ok) {
+      log.debug("Leaving the GNAP " + mode + " start. Spent elsewhere.");
+      return interactionError(res, spent.reason === 'used' ? 'STS-GNAP-0712' :
+                              'STS-GNAP-0716', 'This link has already been ' +
+                              'used',
+        'Each interaction link works once (RFC 9635 section 4).');
+    }
     one.used = true;
     grant.interaction.started = grant.interaction.started || mode;
     store.dropInteraction(mode + ':' + params.value.id);
@@ -173,6 +192,24 @@ function startMode(mode) {
     log.debug("Leaving the GNAP " + mode + " start. To the approval page.");
     return res.set('Cache-Control', 'no-store').redirect(303, '/gnap/approve/' +
                                                           grant.interaction.approvalId);
+  });
+}
+
+// An asynchronous page handler, with its failure caught and coded.
+function settled(name, handler) {
+  log.debug("Entering settled().");
+  log.debug("Leaving settled().");
+  return function (req, res, next) {
+    Promise.resolve().then(function () {
+      return handler(req, res, next);
+    }).catch(function (e) {
+      log.error(errorCodes.tag('STS-GNAP-0160') + 'gnap: ' + name +
+                ' failed: ' + ((e && e.stack) || e));
+      if (!res.headersSent) {
+        interactionError(res, 'STS-GNAP-0160', 'Something went wrong',
+                         'The request could not be completed.');
+      }
+    });
   };
 }
 
@@ -213,7 +250,7 @@ app.get('/gnap/code', function (req, res) {
   return undefined;
 });
 
-app.post('/gnap/code', function (req, res) {
+app.post('/gnap/code', settled('POST /gnap/code', async function (req, res) {
   log.debug("Entering POST /gnap/code.");
   const posted = validation.checkParsed(parseBody(req), 'body', CODE_FORM);
   if (!posted.ok) {
@@ -224,7 +261,8 @@ app.post('/gnap/code', function (req, res) {
   // Section 4.1.2: "If the AS detects too many unrecognized code enter
   // attempts, the interaction component SHOULD display an error". Counted per
   // address, because the code is what is being guessed and has no owner yet.
-  const allowed = websecurity.attempt('gnap-user-code', req, '');
+  // COUNTED AGAINST ONE BUDGET FOR THE CLUSTER (#46): `attemptShared()`.
+  const allowed = await websecurity.attemptShared('gnap-user-code', req, '');
   if (!allowed.ok) {
     log.debug("Leaving POST /gnap/code. Rate limited.");
     errorCodes.mark(res, errorCodes.codeOf(allowed) || 'STS-GNAP-0404');
@@ -246,7 +284,21 @@ app.post('/gnap/code', function (req, res) {
     return codePage(req, res, 400, 'That code is not recognised, or it has ' +
                                    'expired.');
   }
-  websecurity.succeeded('gnap-user-code', req, '', { keepAddress: true });
+  // ONCE ACROSS THE CLUSTER (#46). Both user-code modes of a grant are spent
+  // together below, so what is claimed is "a user code of this grant was
+  // entered" — one claim however the End-User reached it.
+  const codeSpent = await store.spend('user-code', grant.id,
+                                      grant.interaction.expiresAt - nowSec(),
+                                      'STS-GNAP-0713');
+  if (!codeSpent.ok) {
+    log.debug("Leaving POST /gnap/code. Spent elsewhere.");
+    errorCodes.mark(res, codeSpent.reason === 'used' ? 'STS-GNAP-0713' :
+                    'STS-GNAP-0716');
+    return codePage(req, res, 400, 'That code is not recognised, or it has ' +
+                                   'expired.');
+  }
+  await websecurity.succeededShared('gnap-user-code', req, '',
+                                    { keepAddress: true });
   ['user_code', 'user_code_uri'].forEach(function (one) {
     if (grant.interaction.modes[one]) {
       grant.interaction.modes[one].used = true;
@@ -258,7 +310,7 @@ app.post('/gnap/code', function (req, res) {
   log.debug("Leaving POST /gnap/code. To the approval page.");
   return res.set('Cache-Control', 'no-store').redirect(303, '/gnap/approve/' +
                                                         grant.interaction.approvalId);
-});
+}));
 
 // ---------------------------------------------------------------------------
 // THE APPROVAL PAGE.
@@ -388,6 +440,38 @@ function afterDecision(res, grant, finished) {
     '</p>');
 }
 
+// ---------------------------------------------------------------------------
+// ONE DECISION PER INTERACTION ACROSS THE CLUSTER (2026-09-14, #46 follow-up).
+//
+// `activeForInteraction()` refuses a grant whose `interaction.decided` is set,
+// and that field is on a REPLICATED grant: two answers to one approval page —
+// a double submit, or the same form posted to two nodes — each found the grant
+// undecided, each recorded a decision, each enacted the finish method, and the
+// grant kept whichever write landed last, possibly a denial after the client
+// had been told of an approval. So a decision is claimed through
+// `store.spend()` for the interaction's own lifetime before it is recorded;
+// the second is refused (`STS-GNAP-0717`, or `STS-GNAP-0716` when the store
+// cannot be asked), and a decision that then fails to complete gives its claim
+// back. Resolves to the claim, or null once the refusal has been answered.
+// ---------------------------------------------------------------------------
+async function claimDecision(res, grant) {
+  log.debug("Entering claimDecision().");
+  const spent = await store.spend('decision', grant.id + ':' +
+                                  grant.interaction.approvalId,
+                                  grant.interaction.expiresAt - nowSec(),
+                                  'STS-GNAP-0717');
+  if (!spent.ok) {
+    interactionError(res, spent.reason === 'used' ? 'STS-GNAP-0717' :
+                     'STS-GNAP-0716', 'This request has already been answered',
+      'An answer to this request has already been recorded — on this page in ' +
+      'another tab, or by a second submission of it. It is answered once.');
+    log.debug("Leaving claimDecision(). Refused.");
+    return null;
+  }
+  log.debug("Leaving claimDecision(). Claimed.");
+  return spent;
+}
+
 function approvalGrant(req, res) {
   log.debug("Entering approvalGrant().");
   const params = validation.checkParsed({ id: req.params.id }, 'params',
@@ -418,13 +502,18 @@ app.get('/gnap/approve/:id', function (req, res) {
     // The person cancelled the sign-in screen. Section 4.2: the finish method
     // is still enacted, with the grant recording the denial.
     log.debug("Leaving GET /gnap/approve. Sign-in cancelled.");
-    grant.interaction.decided = true;
-    grant.decision = { approved: false, error: 'user_denied' };
-    monitor.record(grant.client.identifier, 'grant.denied',
-                   { gnapError: 'user_denied' });
-    return grants.finishInteraction(req, grant).then(function (finished) {
-      store.saveGrant(grant, 'sign-in cancelled');
-      return afterDecision(res, grant, finished);
+    return claimDecision(res, grant).then(function (claimed) {
+      if (!claimed) {
+        return undefined;
+      }
+      grant.interaction.decided = true;
+      grant.decision = { approved: false, error: 'user_denied' };
+      monitor.record(grant.client.identifier, 'grant.denied',
+                     { gnapError: 'user_denied' });
+      return grants.finishInteraction(req, grant).then(function (finished) {
+        store.saveGrant(grant, 'sign-in cancelled');
+        return afterDecision(res, grant, finished);
+      });
     });
   }
   const session = authn.sessionOf(req);
@@ -448,12 +537,21 @@ app.get('/gnap/approve/:id', function (req, res) {
   notePresented(session, 'GNAP', req);
   if (grants.rememberedFor(grant, session.user.username)) {
     log.debug("Leaving GET /gnap/approve. Already approved before.");
-    return grants.decide(req, grant, session,
-                         { approve: true, tokens: grant.request.tokens,
-                                                subject: false })
-      .then(function (finished) {
-        return afterDecision(res, grant, finished);
-      });
+    return claimDecision(res, grant).then(function (claimed) {
+      if (!claimed) {
+        return undefined;
+      }
+      return grants.decide(req, grant, session,
+                           { approve: true, tokens: grant.request.tokens,
+                                                  subject: false })
+        .then(function (finished) {
+          return afterDecision(res, grant, finished);
+        }, function (e) {
+          log.debug("Caught in GET /gnap/approve: " + ((e && e.message) || e));
+          store.unspend(claimed.handle);
+          throw e;
+        });
+    });
   }
   approvalPage(req, res, grant, session);
   log.debug("Leaving GET /gnap/approve. Page drawn.");
@@ -505,14 +603,25 @@ app.post('/gnap/approve/:id', function (req, res) {
   const anything = tokens.some(function (token) {
     return token.access.length;
   }) || posted.value.subject === 'yes';
-  return grants.decide(req, grant, session, {
-    approve: approve && anything,
-    tokens: tokens,
-    subject: posted.value.subject === 'yes'
-  }).then(function (finished) {
-    log.debug("Leaving POST /gnap/approve. Decided.");
-    return afterDecision(res, grant, finished);
+  let claimedDecision = null;
+  return claimDecision(res, grant).then(function (claimed) {
+    if (!claimed) {
+      log.debug("Leaving POST /gnap/approve. Already answered.");
+      return undefined;
+    }
+    claimedDecision = claimed;
+    return grants.decide(req, grant, session, {
+      approve: approve && anything,
+      tokens: tokens,
+      subject: posted.value.subject === 'yes'
+    }).then(function (finished) {
+      log.debug("Leaving POST /gnap/approve. Decided.");
+      return afterDecision(res, grant, finished);
+    });
   }).catch(function (e) {
+    if (claimedDecision) {
+      store.unspend(claimedDecision.handle);
+    }
     log.error(errorCodes.tag('STS-GNAP-0409') + 'gnap: the approval could ' +
                                                 'not be completed: ' +
               (e && e.stack || e));

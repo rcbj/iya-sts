@@ -46,6 +46,7 @@ const config = require('../common/config');
 // boundary, so `/admin/tls` covers `/admin/tls/trust` and not `/admin/tlsx`.
 const SERVICE_PAGES = [
   '/admin/persistence',
+  '/admin/cluster',
   '/admin/database',
   '/admin/encryption',
   '/admin/secrets',

@@ -99,6 +99,9 @@ const { log, randomId, iso } = require('../common/helpers');
 // (rule 3): it registers no route, so requiring it here moves nothing and it
 // cannot join a cycle.
 const stsCrypto = require('../common/crypto');
+// The secrets every node shares (2026-09-14, #46). A LIBRARY; see
+// internalSecret().
+const clusterSecrets = require('../cluster/cluster_secrets');
 const config = require('../common/config');
 // For `inventsClaimValues()` in `namesPerson()`. A leaf requiring only config.
 const mode = require('../common/mode');
@@ -271,21 +274,14 @@ function endpointFor(surface) {
 // ---------------------------------------------------------------------------
 const SECRET_VAR = 'STS_SSF_RECEIVER_SECRET';
 
+// **THE CLUSTER'S SINCE 2026-09-14 (#46).** Per run, a push from another
+// container's transmitter to this node's receiver carried a token derived from
+// a secret this node did not hold. `cluster/cluster_secrets.js` owns it now and
+// keeps the environment channel described above: the front process puts the
+// shared value in `SECRET_VAR` before it forks.
 function internalSecret() {
   log.debug("Entering internalSecret().");
-  let held = String(process.env[SECRET_VAR] || '');
-  if (!held) {
-    held = nodeCrypto.randomBytes(32).toString('base64');
-    // INTO THE ENVIRONMENT, which is the channel rather than an afterthought:
-    // `request_pool.js` forks with `Object.assign({}, process.env, …)`, so a
-    // worker inherits whatever the front process has set by the time it forks
-    // — and the front process loads the protocol stack, and therefore this
-    // file, before it forks anything. The same trick carries the OID4VCI
-    // request-encryption key and the BBS pair.
-    process.env[SECRET_VAR] = held;
-    log.debug('internalSecret(): a per-run secret was generated for this ' +
-              'service\'s own SSF receivers.');
-  }
+  const held = clusterSecrets.text('ssf-receiver');
   log.debug("Leaving internalSecret().");
   return held;
 }

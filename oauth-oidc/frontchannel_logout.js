@@ -121,6 +121,15 @@ function noteClient(session, clientId) {
       last: Date.now(),
       count: ((known && known.count) || 0) + 1
     };
+    // AND THE SESSION STORE IS TOLD (2026-09-14, #46): the assignment above
+    // edits an object the store does not journal, so another node's copy of
+    // the session never learnt the client and its sign-out drew no iframe for
+    // it. `authn.noteSessionChanged()` carries the argument. LAZILY, and only
+    // for a real session row (one with an id): authn.js is loaded long before
+    // this module is used, and a caller passing a plain object has no store.
+    if (session.id) {
+      require('../authn/authn').noteSessionChanged(session);
+    }
   } catch (e) {
     log.warn('front-channel logout: could not record the client on the ' +
              'session: ' + e.message);

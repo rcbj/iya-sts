@@ -96,6 +96,7 @@
 // common/config_file.js.
 require('./common/config_file').resolveConfigFile();
 
+const http = require('http');
 const https = require('https');
 const app = require('./common/app');
 // `warmPqKeys` joins the three destructured names for one call in announce()
@@ -346,6 +347,15 @@ function announce() {
   // what this KDC knows; GET /admin/sts-metadata cannot see a raw socket, so
   // the listener has its own entry there.
   const kdcListeners = krb5.listen();
+  // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
+  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.js` into
+  // the parent project's Kerberos COPY set (`kerberos/CLAUDE.md`). Installing
+  // after `listen()` returned is not a race — `listen()` is synchronous up to
+  // the bind, and a `connection` event is delivered from the event loop,
+  // after this line. UDP is not covered: a datagram has no stream to put a
+  // header at the front of.
+  proxyProtocol.install(kdcListeners.tcp, {
+    label: 'the KDC (TCP ' + kdcListeners.port + ')', channel: 'kerberos' });
   kdcListeners.whenReady.then(function (ready) {
     log.info('krb5: the KDC is reachable on TCP and UDP ' + ready.port + '; ' +
              'MS-KKDCP at /KdcProxy; GET /krb5/principals lists what it ' +
@@ -615,6 +625,10 @@ const adminRbac = require('./admin-ui/admin_rbac');
 const keystore = require('./common/keystore');
 // The four startup steps, shared with a request worker. See that file.
 const serviceState = require('./common/service_state');
+// The PROXY protocol v2 reader, a LIBRARY (rule 3): installed on the main
+// listener in bind() and on the KDC's TCP listener in announce(), and asked
+// once, below, whether this process may start at all. See that file.
+const proxyProtocol = require('./common/proxy_protocol');
 
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S STATE, IN THE ONE ORDER THERE IS.
@@ -626,6 +640,16 @@ const serviceState = require('./common/service_state');
 // ---------------------------------------------------------------------------
 serviceState.start().then(function (both) {
   const started = both.started;
+  // THE PROXY PROTOCOL WITH NOBODY TRUSTED (2026-09-14, #46): refused here,
+  // after the store restored any runtime `global.trustedProxies` and before
+  // anything binds, for the reason `startupProblem()` gives — such a process
+  // either refuses every client or lets any caller name any address.
+  const proxyProblem = proxyProtocol.startupProblem();
+  if (proxyProblem) {
+    log.fatal(errorCodes.tag('STS-PROXY-0009') + 'sts: NOT STARTING. ' +
+              proxyProblem);
+    process.exit(1);
+  }
   if (started.mode !== 'memory') {
     const mintedStatus = persistence.mintedStatus();
     log.info('sts: persistence is ' + started.mode + '. The embedded ' +
@@ -671,24 +695,41 @@ serviceState.start().then(function (both) {
   // change its password at its first sign-in. `credentials.bootstrap()` below
   // then gives that account its generated password in product mode. See
   // admin-ui/admin_rbac.js's seedBootstrapAdministrator().
-  realms.run(realms.DEFAULT_REALM, function () {
-    return adminRbac.seedBootstrapAdministrator();
-  });
-  credentials.bootstrap({ username: config.value('admin.bootstrapUsername') });
-  // AND EVERY TRUST REALM THIS PROCESS STARTED WITH (2026-09-14, #32): each
-  // has an administrator of its own, confined to it. A realm created while
-  // running is given one by the create action itself; this is for a realm
-  // restored from the store that predates the feature, or whose account was
-  // removed. Both steps are idempotent, exactly as they are for the default
-  // realm above.
-  realms.list().filter(function (realm) {
+  //
+  // **ONCE FOR THE CLUSTER, SINCE 2026-09-14 (#46 section 8).** Several nodes
+  // cold-started against one empty store each seeded the account and each
+  // printed a password, and only the last writer's worked — or none, when a
+  // node's seed landed after another node's password. Both steps now run
+  // inside `credentials.bootstrapOnce()`, one claim per realm: the node that
+  // wins does them after catching up with the store, and every other node
+  // does neither and says which node is. It is awaited below, before the
+  // request workers start, so the listener still binds only after it ran.
+  const bootstrapUsername = config.value('admin.bootstrapUsername');
+  const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
-  }).forEach(function (realm) {
-    adminRbac.seedBootstrapAdministrator(realm.id);
-    realms.run(realm, function () {
-      return credentials.bootstrap({
-        username: config.value('admin.bootstrapUsername') });
+  });
+  const bootstrapped = realms.run(realms.DEFAULT_REALM, function () {
+    return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
+      adminRbac.seedBootstrapAdministrator();
+      return credentials.bootstrap({ username: bootstrapUsername });
     });
+  }).then(function () {
+    // AND EVERY TRUST REALM THIS PROCESS STARTED WITH (2026-09-14, #32): each
+    // has an administrator of its own, confined to it. A realm created while
+    // running is given one by the create action itself; this is for a realm
+    // restored from the store that predates the feature, or whose account was
+    // removed. Both steps are idempotent, exactly as they are for the default
+    // realm above — and one realm at a time, each under its own claim.
+    return otherRealms.reduce(function (chain, realm) {
+      return chain.then(function () {
+        return realms.run(realm, function () {
+          return credentials.bootstrapOnce(realm.id, function () {
+            adminRbac.seedBootstrapAdministrator(realm.id);
+            return credentials.bootstrap({ username: bootstrapUsername });
+          });
+        });
+      });
+    }, Promise.resolve());
   });
 
   // ---------------------------------------------------------------------
@@ -735,14 +776,18 @@ serviceState.start().then(function (both) {
   // place to wait — see request_pool.js's setBbsKeyPair(). A failure is logged
   // and not fatal: each process then makes its own, which is what it did
   // before, and only Data Integrity proofs are affected.
-  return bbsKeyPairForSharing().then(function (encoded) {
-    requestPool.setBbsKeyPair(encoded);
-  }).catch(function (e) {
-    log.error(errorCodes.tag('STS-CORE-0034') +
-              'sts: the BBS key pair could not be shared with the request ' +
-              'workers (' + e.message + '); each will generate its own and a ' +
-              'did:web document may name a key its siblings did not sign ' +
-              'with.');
+  // The bootstrap first, OUTSIDE the BBS pair's catch: a bootstrap that
+  // throws is fatal at startup, as it was when it ran synchronously above.
+  return bootstrapped.then(function () {
+    return bbsKeyPairForSharing().then(function (encoded) {
+      requestPool.setBbsKeyPair(encoded);
+    }).catch(function (e) {
+      log.error(errorCodes.tag('STS-CORE-0034') +
+                'sts: the BBS key pair could not be shared with the request ' +
+                'workers (' + e.message + '); each will generate its own and ' +
+                'a did:web document may name a key its siblings did not ' +
+                'sign with.');
+    });
   }).then(function () {
     return requestPool.start().then(function (pool) {
       if (pool.wanted) {
@@ -778,6 +823,14 @@ serviceState.start().then(function (both) {
   // database. Told apart on the message rather than on a flag, because
   // keystore.js writes a complete explanation and this only has to choose which
   // paragraph follows it.
+  // A CLUSTER REFUSAL (2026-09-14, #46) carries its whole explanation — which
+  // mode, which setting, which node differs — and neither paragraph below is
+  // about it: the store opened and the keys are fine. See cluster/cluster.js.
+  if (/STS-CLUSTER-\d{4}/.test(err.message || '')) {
+    // error-code: none — the refusal's own STS-CLUSTER code leads err.message
+    log.fatal(err.message + ' The service is NOT STARTING.');
+    process.exit(1);
+  }
   if (/key material|key-encryption key|signing key|minted state/i.test(
       err.message || '')) {
     log.fatal(errorCodes.tag('STS-CORE-0035') + 'sts: NOT STARTING. ' +
@@ -856,9 +909,19 @@ if (useHttps) {
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
                                       'the main port (' + PORT + ')');
+  // The PROXY protocol header comes off BEFORE the TLS handshake — see
+  // common/proxy_protocol.js. A no-op with global.proxyProtocol off.
+  proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
+                                      channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
 } else {
-  app.listen(PORT, HOST, announce);
+  // `http.createServer(app)` rather than `app.listen()`, which is the same
+  // thing with the server object hidden — and the PROXY protocol has to be
+  // installed on that object before it listens.
+  const plainServer = http.createServer(app);
+  proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
+                                       channel: 'http' });
+  plainServer.listen(PORT, HOST, announce);
 }
 log.debug("Leaving bind().");
 }

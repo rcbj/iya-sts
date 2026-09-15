@@ -532,3 +532,51 @@ changed would have been the one identifier here that still moved. Five things fo
 
 `tests/stable_subject.js` section E drives it over HTTP; `sts_directory_bulk_load_scim.js`
 asserts every created id is a UUID and sends them back as member values.
+
+## Several nodes: a create claims its name first (2026-09-14, #46 section 3)
+
+`createHandler()` claims the `userName` (a User) or the `displayName` (a Group)
+across nodes before the resource is written, and a create that loses to a
+concurrent one is a 409 `uniqueness` (`STS-LDAP-0092`; 500 when the store cannot
+be asked, `STS-LDAP-0093`). The design is the directory's, in `ldap/CLAUDE.md`,
+*Several nodes: a create claims its name*. **A Bulk create is claimed too since
+2026-09-14**: a BulkRequest's POST operations never pass through
+`createHandler()`, so both ingress handlers are wrapped in `claimingIngress()`,
+which scimmy awaits, and claims for a create the handler did not already claim
+(`req.__scimCreateClaimed`). A lost claim is that operation's own 409 inside the
+Bulk response. `tests/cluster_followups.js` E5 posts two concurrent Bulk creates
+of one `userName` and gets one 201 and one 409 refused by the claim.
+
+## Several nodes: Digest and HOBA state any process can answer (2026-09-14, #46 section 5)
+
+The capability row `scim.challenge-state` is provided by `scim_auth.js`.
+
+* **It was broken inside ONE dispatched container before it was a cluster
+  problem.** `/scim/v2` fans out across request workers (`common/request_pool.js`),
+  and `digestNonces`, `hobaChallenges` and `hobaSeen` were `realms.map()` with no
+  `persist`: a challenge issued by one worker, answered at another, was "not one
+  this server issued" — Digest's `stale=true` with a fresh nonce from THAT
+  worker, and HOBA's `STS-SCIM-0050`. Found by reading, not by a run; the test
+  below reproduces the shape (a nonce that reached this process only as a
+  restored row).
+* **`scim.digestNonces` and `scim.hobaChallenges` are persisted stores now**, so
+  the read barrier carries a challenge to whichever process the answer lands
+  on. The Digest row is `{ at }` only: the nonce COUNTS were a `Set` on the row,
+  which JSON drops and a replicated row would lose to last writer wins. They are
+  a per-process `digestCounts` map (the fast refusal) and `hobaSeen` stays
+  per-process for the same reason.
+* **A nonce count (qop=auth) and a HOBA (kid, challenge, nonce) are SPENT
+  through `cluster/cluster_claims.js`** before the credential is accepted —
+  `authenticateSpent()`, which `scim.js`'s gate calls. The claim runs after the
+  scheme's own checks and BEFORE the session and the policy, so a replay mints no
+  session. `used` is the scheme's replay refusal (`STS-SCIM-0076` Digest,
+  `STS-SCIM-0077` HOBA, a 401 with fresh challenges); a store that cannot be
+  asked is `STS-SCIM-0078`, 500 (RFC 7644 section 3.12 has no 503). A Digest
+  credential without qop spends nothing: RFC 7616 lets that nonce be reused
+  until it expires, as it always could here. `authenticate()` stays synchronous
+  for its in-process callers and spends nothing across processes.
+* `tests/cluster_limits_challenges_retention.js` section C: a nonce another
+  process issued is answered, a count another node spent is refused where the
+  next count is accepted, and a failing claim store refuses. Not run against two
+  live nodes: Digest is not offered in product mode, and a HOBA run needs a
+  signed-in owner to register a key.

@@ -63,6 +63,9 @@ const certificateHeader = require('../common/jose_certificate_header');
 // response before it is sent and never written into it: a revocation client
 // is shown exactly the text and the OCSP status it was always shown.
 const errorCodes = require('../common/error_codes');
+// The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY, installed in
+// listen() like every TCP listener's.
+const proxyProtocol = require('../common/proxy_protocol');
 
 // ---------------------------------------------------------------------------
 // CACHING. A CRL says how long it is fresh for and a client is entitled to
@@ -583,6 +586,9 @@ function listen() {
                                           why: httpListenError }) };
   }
   const server = http.createServer(revocationOnly);
+  proxyProtocol.install(server, {
+    label: 'the plain-HTTP revocation listener (' + port + ')',
+    channel: 'http' });
   const whenReady = new Promise(function (resolve, reject) {
     server.once('error', function (err) {
       httpListenError = err.message;

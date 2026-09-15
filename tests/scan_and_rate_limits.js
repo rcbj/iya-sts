@@ -106,7 +106,7 @@ function run(t) {
 
   const portalSource = fs.readFileSync(path.join(__dirname, '..', 'portal',
                                                  'portal.js'), 'utf8');
-  t.check(/attempt\('portal-signing-key', req, username, \{\s*identity: config\.value\('pki\.personSelfServicePerIdentity'\),\s*address: config\.value\('pki\.personSelfServicePerAddress'\)/
+  t.check(/attempt(?:Shared)?\('portal-signing-key',\s*req,\s*username, \{\s*identity: config\.value\('pki\.personSelfServicePerIdentity'\),\s*address: config\.value\('pki\.personSelfServicePerAddress'\)/
             .test(portalSource),
           'the portal\'s signing-key door passes the two settings rather ' +
           'than the literal 5 — read as source, since reaching it means five ' +

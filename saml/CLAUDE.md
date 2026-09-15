@@ -177,6 +177,41 @@ The other four: any entityID is accepted and nothing is verified; the assertion
 is built by `saml2.js` and not by that file; the Response is signed as well as
 the assertion and both are settings; and an artifact is one-shot.
 
+### An artifact is one-shot ACROSS THE CLUSTER (2026-09-14, #46) — capability `saml.artifacts-once`
+
+The one-shot rule was a `get` and a `delete` on `artifacts`, a
+`realms.map({ persist })`: once in one process, and once PER NODE against one
+store, because the delete reaches another node through the change log a moment
+later. A service provider retrying its ArtifactResolve through a load balancer,
+or anybody racing it with an artifact read out of a browser history, landed both
+requests inside that moment on two nodes and got the assertion twice.
+
+Both profiles now keep the map check first and unchanged, delete, and then SPEND
+the artifact through `cluster/cluster_claims.js` (scopes `saml2.artifact` and
+`saml11.artifact`) before answering. `resolveArtifact()` → `spendArtifact()` in
+`saml2_sso.js` and the artifact branch of `respond()` in `saml11_sso.js`, both
+now asynchronous at that point. What is decided, and why:
+
+* **The claim lives for the artifact's remaining lifetime plus 60 s** of clock
+  disagreement between nodes — as long as a node that has not caught up could
+  still find it.
+* **Nothing releases it.** The delete has already spent the artifact in this
+  process whatever the answer, and a claim given back without the map restored
+  would only license another node to resolve it.
+* **A store that cannot be asked refuses** (fail closed) with `StatusCode
+  Responder`, where a used artifact is `Requester` as before.
+* Codes: `STS-SAML-0057` (2.0, resolved elsewhere), `0058` (1.1), `0059` (the
+  store), `0060` (the answer failed after the spend) — renumbered from
+  0055–0058 when feature/46 was rebased onto develop, which had taken 0055 and
+  0056 for the ForceAuthn and RequestedAuthnContext refusals. The capability is provided
+  from `saml2_sso.js` for both profiles, because the row names it and
+  `saml11_sso.js` requires that module.
+
+`tests/cluster_single_use_protocols.js` section 1 holds both profiles: a node
+still holding a resolved artifact is refused, the same restore against an empty
+claim store resolves (the control), a store that throws refuses, and two
+concurrent resolutions answer once.
+
 ---
 
 ## `buildSamlAssertion()` GREW SEVEN OPTIONS AND IS STILL ONE BUILDER

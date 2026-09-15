@@ -112,6 +112,15 @@
 // refusals below. It reaches for no setting and no store, so this driver still
 // reaches for nothing.
 const errorCodes = require('../common/error_codes');
+// node's own, for the process origin's UUID.
+const nodeCrypto = require('crypto');
+// A LEAF with no requires: the three-way merge a directory upsert is written
+// through when another node has changed the row (#46 section 3).
+const directoryMerge = require('./directory_merge');
+// The table of what active-active mode depends on (#46). A LEAF but for bunyan
+// and config, and it reads no setting at require time. The two rows this
+// driver provides are provided at the foot of this file.
+const capabilities = require('../cluster/cluster_capabilities');
 
 // A CHANNEL NAME AND A SCHEMA VERSION, both spelt once here.
 const CHANNEL = 'sts_ldap_change';
@@ -123,8 +132,44 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // always had. Nothing reads this yet — it is here so that a future change has
 // something to look at other than the shape of the tables — but leaving it at 1
 // over a different schema would make the one thing it is for useless. 4 SINCE
-// 2026-09-13, for `sts_used_assertions`.
-const SCHEMA_VERSION = 4;
+// 2026-09-13, for `sts_used_assertions`. 5 SINCE 2026-09-14, for the four
+// `sts_cluster_*` tables (#46) — see their block below.
+const SCHEMA_VERSION = 5;
+
+// THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
+// cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
+// `clock_timestamp()` and not `now()`: `now()` is the START of the transaction,
+// and a lease checked late in a long transaction must be checked against when
+// the check ran.
+const DB_NOW = '(extract(epoch from clock_timestamp()) * 1000)::bigint';
+
+// The advisory lock two joining nodes serialise on, so that "is every live
+// node configured the same as me" and "write my row" are one decision. An
+// advisory lock needs no privilege, which is why it is usable by `sts_app`.
+const JOIN_LOCK = 460046;
+
+// ---------------------------------------------------------------------------
+// WHAT AN ENDED MINTED ROW LEAVES BEHIND (2026-09-14, #46 section 3).
+//
+// A session ended on node A was a DELETE, and node B — holding the session in
+// memory, a moment behind — wrote its copy back on the next request that
+// touched it (`noteSessionUsed()` stamps `lastSeenAt` and re-sets the row), so
+// the session somebody had signed out of came back on every node. Nothing in
+// the store said the key had ever been ended.
+//
+// So a store that declares `tombstone: true` has its deletes written as a row
+// whose body is this marker, and an upsert of a key holding it does nothing
+// (`… DO UPDATE … WHERE sts_minted.body <> $tombstone`). Every reader here
+// treats a tombstone as absent. `$` is not in the sealed form's alphabet
+// (`$aesgcm$1$…` is the only shape `keystore.seal()` writes and a body is
+// always one), and this is not that shape, so no sealed row can be mistaken
+// for one. It expires with `persistence.mintedRetention` — `purgeTombstones()`.
+// ---------------------------------------------------------------------------
+const TOMBSTONE = '$tombstone$1';
+
+// How long a node row is kept after it expired, for `/admin/cluster` to show a
+// node that went away. A join purges older ones.
+const DEAD_NODE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
 // than a migration table, and that is a decision rather than laziness: this is
@@ -324,6 +369,128 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_used_assertions_expiry', statement:
   'CREATE INDEX IF NOT EXISTS sts_used_assertions_expiry ON ' +
   'sts_used_assertions (realm, expires_at)' },
+  // -------------------------------------------------------------------------
+  // THE CLUSTER (2026-09-14, #46): SEVERAL CONTAINERS AGAINST THIS ONE STORE.
+  // `cluster/CLAUDE.md` argues all four tables; what is the driver's is below.
+  //
+  // **EVERY TIME IN THEM IS THE DATABASE'S CLOCK**, as milliseconds in a
+  // `bigint`, and never a time a process sent. Two containers' clocks differ,
+  // and a lease that expires by the clock of whoever happens to be asking is a
+  // lease two nodes can both believe they hold. `DB_NOW` below is the one
+  // spelling of it.
+  //
+  // `sts_cluster_nodes` — ONE ROW PER PROCESS START THAT JOINED, keyed by a
+  // UUID made at that start. A row whose `expires_at` has passed is dead FOR
+  // GOOD: the heartbeat's UPDATE refuses to renew an expired row, so a node
+  // that paused past its lifetime cannot quietly come back and must exit.
+  //
+  // `sts_cluster_leases` — A NAMED ROLE ONLY ONE NODE MAY HOLD, with a FENCING
+  // TOKEN that goes up by one every time the lease changes hands. A write that
+  // needs the role carries the token it acquired, and the transaction checks it
+  // under a share lock on the lease row — so a node that lost the lease while
+  // paused cannot commit afterwards. A released lease is EXPIRED rather than
+  // deleted, so the token never goes back to 1.
+  //
+  // `sts_cluster_claims` — AN ATOMIC "ONCE": the primary key picks one winner
+  // among concurrent claims in every process against this store. `key` is a
+  // digest (`cluster/cluster_claims.js` hashes it) and never a bearer value.
+  //
+  // `sts_cluster_secrets` — A SECRET EVERY NODE MUST AGREE ON (the CSRF key,
+  // the ACME nonce key), SEALED under the key-encryption key before it arrives
+  // here and written first-writer-wins.
+  // -------------------------------------------------------------------------
+  { name: 'sts_cluster_nodes', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_nodes (' +
+  '  node_id      text   PRIMARY KEY,' +
+  '  name         text   NOT NULL DEFAULT \'\',' +
+  '  mode         text   NOT NULL,' +
+  '  version      text   NOT NULL DEFAULT \'\',' +
+  '  fingerprint  text   NOT NULL DEFAULT \'\',' +
+  '  started_at   bigint NOT NULL,' +
+  '  heartbeat_at bigint NOT NULL,' +
+  '  expires_at   bigint NOT NULL,' +
+  '  left_at      bigint NOT NULL DEFAULT 0,' +
+  '  info         jsonb  NOT NULL DEFAULT \'{}\'::jsonb)' },
+  { name: 'sts_cluster_nodes_expiry', statement:
+  'CREATE INDEX IF NOT EXISTS sts_cluster_nodes_expiry ON ' +
+  'sts_cluster_nodes (expires_at)' },
+  { name: 'sts_cluster_leases', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_leases (' +
+  '  name        text   PRIMARY KEY,' +
+  '  holder      text   NOT NULL,' +
+  '  token       bigint NOT NULL,' +
+  '  acquired_at bigint NOT NULL,' +
+  '  expires_at  bigint NOT NULL)' },
+  { name: 'sts_cluster_claims', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_claims (' +
+  '  scope       text   NOT NULL,' +
+  '  realm       text   NOT NULL,' +
+  '  key         text   NOT NULL,' +
+  '  reservation text   NOT NULL,' +
+  '  origin      text   NOT NULL DEFAULT \'\',' +
+  '  claimed_at  bigint NOT NULL,' +
+  '  expires_at  bigint NOT NULL,' +
+  '  PRIMARY KEY (scope, realm, key))' },
+  { name: 'sts_cluster_claims_expiry', statement:
+  'CREATE INDEX IF NOT EXISTS sts_cluster_claims_expiry ON ' +
+  'sts_cluster_claims (expires_at)' },
+  { name: 'sts_cluster_secrets', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_secrets (' +
+  '  name       text   PRIMARY KEY,' +
+  '  material   text   NOT NULL,' +
+  '  created_by text   NOT NULL DEFAULT \'\',' +
+  '  created_at bigint NOT NULL)' },
+  // `sts_cluster_counters` — A VALUE THAT ONLY GOES UP (2026-09-14, #46
+  // section 2): a WebAuthn signature counter, the last RFC 6238 time step a
+  // person spent. One `INSERT … ON CONFLICT DO UPDATE … WHERE value < new`
+  // under the primary key's row lock, so two nodes advancing one counter at
+  // once cannot both win and a lower value can never overwrite a higher one —
+  // which is exactly what the directory entry's last-writer-wins copy could
+  // not promise. `key` is a digest, as in the claims table.
+  // `cluster/cluster_counters.js` argues it.
+  { name: 'sts_cluster_counters', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_counters (' +
+  '  scope      text   NOT NULL,' +
+  '  realm      text   NOT NULL,' +
+  '  key        text   NOT NULL,' +
+  '  value      bigint NOT NULL,' +
+  '  origin     text   NOT NULL DEFAULT \'\',' +
+  '  updated_at bigint NOT NULL,' +
+  '  PRIMARY KEY (scope, realm, key))' },
+  // `sts_cluster_windows` — A COUNT INSIDE A FIXED WINDOW (2026-09-14, #46
+  // section 2): the rate limiter's buckets, counted by every node against one
+  // budget. One `INSERT … ON CONFLICT DO UPDATE SET count = CASE WHEN the
+  // window has passed THEN 1 ELSE count + 1 END` under the primary key's row
+  // lock, so two nodes counting one bucket at once both land and neither
+  // overwrites the other's count — which is what two copies of a Map row,
+  // last writer wins, could not promise. `key` is a digest.
+  // `cluster/cluster_counters.js` argues it.
+  { name: 'sts_cluster_windows', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_windows (' +
+  '  scope          text   NOT NULL,' +
+  '  realm          text   NOT NULL,' +
+  '  key            text   NOT NULL,' +
+  '  count          bigint NOT NULL,' +
+  '  window_ends_at bigint NOT NULL,' +
+  '  origin         text   NOT NULL DEFAULT \'\',' +
+  '  PRIMARY KEY (scope, realm, key))' },
+  { name: 'sts_cluster_windows_expiry', statement:
+  'CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON ' +
+  'sts_cluster_windows (window_ends_at)' },
+  // `sts_change_readers` — WHERE EVERY PROCESS READING `sts_changes` HAS GOT
+  // TO (2026-09-14, #46 section 8). One row per process that coordinates —
+  // a front process, and each of its request workers, which are origins of
+  // their own — carrying its low-water mark and the database time it last
+  // said so. The change log is trimmed below the lowest mark of the readers
+  // still reporting, and never below a reader nobody has declared gone.
+  // `persistence/persistence_replication.js` argues the bound.
+  { name: 'sts_change_readers', statement:
+  'CREATE TABLE IF NOT EXISTS sts_change_readers (' +
+  '  origin      text   PRIMARY KEY,' +
+  '  node_id     text   NOT NULL DEFAULT \'\',' +
+  '  applied     bigint NOT NULL,' +
+  '  started_at  bigint NOT NULL,' +
+  '  reported_at bigint NOT NULL)' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -833,13 +1000,106 @@ function create(options) {
               '. The pool will make a new one on the next write.');
   });
 
-  // WHO THIS PROCESS IS. `process.pid` alone is not enough — two containers can
-  // hold the same pid — so it is joined to the start time. It is stamped on
-  // every `sts_changes` row and on every notification, and it does ONE job:
-  // letting a process skip its own writes instead of applying its own work
-  // back over itself. That was written for "a future listener"; the listener
-  // is `watchChanges()` below.
-  const processId = String(process.pid) + '-' + String(Date.now());
+  // WHO THIS PROCESS IS. It is stamped on every `sts_changes` row and on every
+  // notification, and it does ONE job: letting a process skip its own writes
+  // instead of applying its own work back over itself.
+  //
+  // **A RANDOM UUID SINCE 2026-09-14 (#46), AND THE PID IS KEPT ONLY AS A
+  // PREFIX FOR A PERSON READING THE LOG.** It was `pid-Date.now()`, which was
+  // written against "two containers can hold the same pid" and did not finish
+  // the thought: identical containers start the same processes in the same
+  // order, so they DO hold the same pids, and two started in the same
+  // millisecond would share an origin. That failure is silent and permanent —
+  // `changesSince()`'s callers skip "their own" rows, so each would drop the
+  // other's writes for ever, and `merge: 'own'` counters would overwrite each
+  // other under one key. A UUID makes it unreachable rather than unlikely.
+  const processId = String(process.pid) + '-' + nodeCrypto.randomUUID();
+
+  // ---------------------------------------------------------------------
+  // THE FENCE (2026-09-14, #46), installed by `cluster/cluster.js`.
+  //
+  // A function answering `{ nodeId, leases: [{ name, token }] }` for the write
+  // about to happen, or null for "no cluster". When it answers, EVERY
+  // transaction this driver opens checks it before running anything else:
+  // the node's row must still be live, and every named lease must still be
+  // held by this node AT THAT TOKEN — under a SHARE lock on the lease row, so a
+  // takeover cannot commit between the check and this transaction's COMMIT.
+  //
+  // `onFenced` is what happens when the check fails, and cluster.js makes it
+  // an exit: a process that has lost its right to write and keeps running is a
+  // process that will try again on the next change, and the one after.
+  // ---------------------------------------------------------------------
+  let fence = null;
+  let onFenced = null;
+
+  // `reason` is `node` (the membership is gone — fatal for every process of
+  // the node) or `lease` (one role was lost — fatal only to the write that
+  // needed it, unless the role is the service itself). cluster.js decides.
+  function fenced(reason, message, lost) {
+    log.debug("Entering fenced().");
+    const err = new Error(errorCodes.tag('STS-CLUSTER-0001') + message);
+    err.fenced = true;
+    err.reason = reason;
+    err.lost = lost || [];
+    log.debug("Leaving fenced().");
+    return err;
+  }
+
+  function checkFence(client) {
+    log.debug("Entering checkFence().");
+    const wanted = fence ? fence() : null;
+    if (!wanted || !wanted.nodeId) {
+      log.debug("Leaving checkFence(). No fence.");
+      return Promise.resolve();
+    }
+    const leases = (wanted.leases || []).filter(function (one) {
+      return one && one.name;
+    });
+    log.debug("Leaving checkFence(). The node and " + leases.length +
+              " lease(s).");
+    // THE MEMBERSHIP FIRST, unlocked: a node row is only ever renewed by its
+    // own heartbeat, so there is no takeover of it to race.
+    return client.query(
+      'SELECT 1 FROM sts_cluster_nodes WHERE node_id = $1 AND ' +
+      'left_at = 0 AND expires_at > ' + DB_NOW, [wanted.nodeId]
+    ).then(function (r) {
+      if (!r.rowCount) {
+        throw fenced('node', 'this node\'s membership row (' +
+                     wanted.nodeId + ') has expired or been left, so it may ' +
+                     'not write.');
+      }
+      if (!leases.length) {
+        return null;
+      }
+      // THE LEASES UNDER A SHARE LOCK, held to COMMIT: a takeover is an UPDATE
+      // of the lease row, so it waits for this transaction and cannot land
+      // between the check and the write.
+      return client.query(
+        'SELECT l.name FROM sts_cluster_leases l ' +
+        'JOIN unnest($2::text[], $3::bigint[]) AS w(name, token) ' +
+        '  ON l.name = w.name AND l.token = w.token ' +
+        'WHERE l.holder = $1 AND l.expires_at > ' + DB_NOW + ' ' +
+        'FOR SHARE OF l',
+        [wanted.nodeId,
+         leases.map(function (one) { return String(one.name); }),
+         leases.map(function (one) { return String(one.token); })]
+      ).then(function (locked) {
+        const names = (locked.rows || []).map(function (row) {
+          return row.name;
+        });
+        const lost = leases.filter(function (one) {
+          return names.indexOf(one.name) < 0;
+        });
+        if (lost.length) {
+          throw fenced('lease', 'this node (' + wanted.nodeId + ') no ' +
+                       'longer holds ' + lost.map(function (one) {
+                         return one.name + '@' + one.token;
+                       }).join(', ') + ', so it may not write.', lost);
+        }
+        return null;
+      });
+    });
+  }
 
   // ---------------------------------------------------------------------
   // THE CHANGE LOG, WRITTEN INSIDE SOMEBODY ELSE'S TRANSACTION.
@@ -992,6 +1252,10 @@ function create(options) {
       // client the pool hands to the next transaction starts at nothing.
       uncommittedRows.set(client, 0);
       return client.query('BEGIN').then(function () {
+        // THE FENCE FIRST, before the transaction has written anything. See
+        // `fence` above.
+        return checkFence(client);
+      }).then(function () {
         return fn(client);
       }).then(function (result) {
         return client.query('COMMIT').then(function () {
@@ -1018,6 +1282,9 @@ function create(options) {
           unguard();
           client.release(err);
           log.debug('Leaving withTransaction(). Rolled back.');
+          if (err && err.fenced && typeof onFenced === 'function') {
+            onFenced(err);
+          }
           throw err;
         });
       });
@@ -1393,14 +1660,167 @@ function create(options) {
 
     // ONE TRANSACTION for the whole diff, and a NOTIFY at the end of it. See
     // the header for both.
+    //
+    // -----------------------------------------------------------------------
+    // **AND A MERGE, NOT AN OVERWRITE, SINCE 2026-09-14 (#46 section 3).**
+    //
+    // The upsert was `ON CONFLICT DO UPDATE SET attrs = EXCLUDED.attrs`, which
+    // is right for one process — the shadow it diffed against IS the row — and
+    // wrong for two: of two nodes that each added a member to one group, the
+    // one that committed second wrote its whole copy over the other's, and one
+    // member left the group on every node with nothing failing. Two adds of one
+    // DN replaced each other the same way, password hash included.
+    //
+    // So an upsert that carries `base` (what the diff compared against: the
+    // shadow's JSON, or null when this process believed the DN empty) is
+    // three-way merged with the row as it is NOW, read under `FOR UPDATE` in
+    // this transaction — `persistence/directory_merge.js` argues the rules.
+    // What the merge decided that this process does not already hold comes back
+    // as `outcomes`, which `persistence.js` applies to the live directory and
+    // the shadow. An upsert without `base` (a caller from before this, and
+    // every test double) is written the old way.
+    //
+    // **ONE LOCK ORDER FOR EVERY FLUSH, OR TWO NODES DEADLOCK.** Every existing
+    // row this flush touches is locked by ONE statement, ordered by the primary
+    // key, before anything is written; a new row is then inserted in the same
+    // order. A flush therefore holds no lock when it starts taking them and
+    // takes them in the order every other flush does, which is
+    // `saveMinted()`'s argument one table over. An insert that finds its row
+    // committed by somebody else in the meantime (`ON CONFLICT DO NOTHING`
+    // answering no row) locks it and merges again.
+    // -----------------------------------------------------------------------
     saveDirectory: function (change) {
       log.debug('Entering the postgres driver saveDirectory().');
+      const outcomes = [];
+      const idOf = function (realm, key) {
+        return String(realm) + '\n' + String(key);
+      };
+      const byKey = function (a, b) {
+        const left = idOf(a.realm, a.key);
+        const right = idOf(b.realm, b.key);
+        if (left === right) {
+          return 0;
+        }
+        return left < right ? -1 : 1;
+      };
+      const merging = change.upserts.filter(function (row) {
+        return row.base !== undefined;
+      }).sort(byKey);
+      const blind = change.upserts.filter(function (row) {
+        return row.base === undefined;
+      });
       log.debug("Leaving saveDirectory().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
         const moved = [];
+        const stored = new Map();
 
-        change.upserts.forEach(function (row) {
+        const entryOf = function (row) {
+          return {
+            dn: row.dn,
+            attributes: row.attrs || {},
+            origin: row.origin || undefined,
+            createdAt: row.created_at || null,
+            modifiedAt: row.modified_at || row.created_at || null
+          };
+        };
+        const params = function (row, entry) {
+          return [row.realm, row.key, entry.dn,
+                  JSON.stringify(entry.attributes || {}),
+                  entry.origin || null, entry.createdAt || null,
+                  entry.modifiedAt || null];
+        };
+        const update = function (row, entry) {
+          moved.push({ realm: row.realm, dn: row.key, op: 'put' });
+          return client.query(
+            'UPDATE sts_ldap_entries SET dn = $3, attrs = $4::jsonb, ' +
+            'origin = $5, created_at = $6, modified_at = $7 ' +
+            'WHERE realm = $1 AND dn_key = $2', params(row, entry));
+        };
+        // What the merge decided, turned into a statement and an outcome.
+        // `again` is false on the second look after a lost insert race, so a
+        // row that keeps vanishing cannot loop.
+        const settle = function (row, theirs, again) {
+          const base = row.base ? JSON.parse(row.base) : null;
+          const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
+          if (verdict.outcome === 'theirs' || verdict.outcome === 'deleted') {
+            outcomes.push({ realm: row.realm, key: row.key,
+                            outcome: verdict.outcome, entry: verdict.entry });
+            return null;
+          }
+          if (verdict.outcome === 'merged') {
+            outcomes.push({ realm: row.realm, key: row.key,
+                            outcome: 'merged', entry: verdict.entry });
+          }
+          if (theirs) {
+            return update(row, verdict.entry);
+          }
+          return client.query(
+            'INSERT INTO sts_ldap_entries ' +
+            '  (realm, dn_key, dn, attrs, origin, created_at, modified_at) ' +
+            'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7) ' +
+            'ON CONFLICT (realm, dn_key) DO NOTHING',
+            params(row, verdict.entry)
+          ).then(function (r) {
+            if (r && r.rowCount) {
+              moved.push({ realm: row.realm, dn: row.key, op: 'put' });
+              return null;
+            }
+            if (!again) {
+              // Committed by another node between the lock and the insert,
+              // twice. Written as it is rather than lost; the next flush
+              // merges against whatever is there.
+              return update(row, verdict.entry);
+            }
+            return client.query(
+              'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
+              'modified_at FROM sts_ldap_entries ' +
+              'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
+              [row.realm, row.key]
+            ).then(function (found) {
+              const now = (found.rows || [])[0];
+              // The merge was recorded against `theirs` = null; forget it.
+              for (let i = outcomes.length - 1; i >= 0; i--) {
+                if (outcomes[i].realm === row.realm &&
+                    outcomes[i].key === row.key) {
+                  outcomes.splice(i, 1);
+                }
+              }
+              return settle(row, now ? entryOf(now) : null, false);
+            });
+          });
+        };
+
+        // THE LOCKS, in one statement per chunk and in primary-key order.
+        const locking = merging.concat(change.deletes.slice(0).sort(byKey));
+        for (let at = 0; at < locking.length;
+             at += CHANGE_ROWS_PER_STATEMENT) {
+          const chunk = locking.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
+          chain = chain.then(function () {
+            return client.query(
+              'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
+              'modified_at FROM sts_ldap_entries ' +
+              'WHERE (realm, dn_key) IN ' +
+              '(SELECT r, k FROM unnest($1::text[], $2::text[]) AS u(r, k)) ' +
+              'ORDER BY realm, dn_key FOR UPDATE',
+              [chunk.map(function (row) { return String(row.realm); }),
+               chunk.map(function (row) { return String(row.key); })]
+            ).then(function (r) {
+              (r.rows || []).forEach(function (found) {
+                stored.set(idOf(found.realm, found.dn_key), entryOf(found));
+              });
+            });
+          });
+        }
+
+        merging.forEach(function (row) {
+          chain = chain.then(function () {
+            return settle(row, stored.get(idOf(row.realm, row.key)) || null,
+                          true);
+          });
+        });
+
+        blind.forEach(function (row) {
           chain = chain.then(function () {
             // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row
             // is a POINTER, and the receiver dereferences it with
@@ -1409,14 +1829,8 @@ function create(options) {
             // upsert pointed at a key that column never holds: the receiver
             // looked it up, MISSED, concluded the entry had been deleted, and
             // called `removeEntry()` — actively removing the entry it had just
-            // been told to add.
-            //
-            // The delete branch below always used `row.key` and was right,
-            // which is why only upserts were affected and why nothing failed
-            // until several processes started reading each other's writes. A
-            // registered OAuth client vanished on every other worker, which
-            // then treated the next request as "first sight" and wrote a stub
-            // over the complete row.
+            // been told to add. (The merging path above records `row.key` for
+            // the same reason.)
             moved.push({ realm: row.realm, dn: row.key, op: 'put' });
             return client.query(
               'INSERT INTO sts_ldap_entries ' +
@@ -1426,11 +1840,7 @@ function create(options) {
               '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
               '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
               '  modified_at = EXCLUDED.modified_at',
-              [row.realm, row.key, row.entry.dn,
-               JSON.stringify(row.entry.attributes || {}),
-               row.entry.origin || null,
-               row.entry.createdAt || null,
-               row.entry.modifiedAt || null]);
+              params(row, row.entry));
           });
         });
 
@@ -1448,6 +1858,15 @@ function create(options) {
         // rows written by an earlier run of this process that the current
         // shadow never saw, which is the difference between "the realm is
         // gone" and "the realm is gone as far as I remember".
+        //
+        // **ONLY A REALM THIS PROCESS REMOVED (2026-09-14, #46).** This list
+        // was every realm in the shadow that the live registry no longer held
+        // — and a realm another node created, whose entries had replicated
+        // here before its registry row did, is exactly that. So a realm
+        // created on B and a flush on A in the window deleted B's realm, its
+        // directory and everything it had minted, on every node.
+        // `persistence.js` now names only the realms `realms.remove()` was
+        // called for in this process.
         change.removedRealms.forEach(function (realmId) {
           chain = chain.then(function () {
             return client.query('DELETE FROM sts_ldap_entries WHERE realm = $1',
@@ -1501,79 +1920,131 @@ function create(options) {
       }).then(function () {
         log.debug('Leaving the postgres driver saveDirectory(). ' +
                   change.upserts.length + ' upsert(s), ' +
-                  change.deletes.length + ' delete(s).');
+                  change.deletes.length + ' delete(s), ' + outcomes.length +
+                  ' decided by another node\'s row.');
+        return { outcomes: outcomes };
       });
     },
 
-    // The realm registry, replaced wholesale inside one transaction. Wholesale
-    // rather than diffed because there are never more than a handful of realms
-    // and a diff would be more code than the thing it optimises — and because
-    // a DELETE of what is not in the list is the only way a removed realm's
-    // row goes away when persistence.realms is on and the directory is not.
-    saveRealms: function (rows) {
+    // -----------------------------------------------------------------------
+    // THE REALM REGISTRY, ONE ROW PER REALM THAT MOVED (2026-09-14, #46).
+    //
+    // It was replaced WHOLESALE: `DELETE … WHERE NOT (id = ANY(<every realm
+    // this process holds>))` and an upsert of each. For one process that is
+    // exactly the registry, and "a diff would be more code than the thing it
+    // optimises" was true. For two it is data loss: a realm created on B, then
+    // ANY realm change saved on A before B's row had replicated, deleted B's
+    // realm — and a setting changed on one realm in B was put back by A's
+    // upsert of the copy A held.
+    //
+    // So `persistence.js` hands a DELTA beside the rows: `upserts` names only
+    // the realms that changed and, for each, whether its name and description
+    // moved and which overrides were set and which cleared; `removed` names
+    // the realms `realms.remove()` was called for here. The overrides are
+    // merged IN SQL — `(stored - cleared) || set` — so a setting another node
+    // wrote to the same realm survives. **A ROW IS NEVER DELETED BECAUSE IT IS
+    // ABSENT FROM THIS PROCESS'S COPY.**
+    //
+    // Called without a delta (a test double, or a driver's caller from before
+    // this), every row given is upserted whole and nothing is deleted.
+    // -----------------------------------------------------------------------
+    saveRealms: function (rows, delta) {
       log.debug('Entering the postgres driver saveRealms().');
+      const upserts = delta && Array.isArray(delta.upserts) ? delta.upserts
+        : (rows || []).map(function (row) {
+          return { row: row, name: true, description: true,
+                   set: row.overrides || {}, cleared: [], whole: true };
+        });
+      const removed = delta && Array.isArray(delta.removed) ? delta.removed
+        : [];
       log.debug("Leaving saveRealms().");
       return withTransaction(function (client) {
-        const ids = rows.map(function (row) { return row.id; });
-        // `= ANY($1)` with an empty array is valid and matches nothing, which
-        // is exactly right when the last realm has just been removed.
-        return client.query(
-          'DELETE FROM sts_realms WHERE NOT (id = ANY($1::text[]))', [ids]
-        ).then(function () {
-          let chain = Promise.resolve();
-          rows.forEach(function (row) {
-            chain = chain.then(function () {
-              return client.query(
-                'INSERT INTO sts_realms (id, name, description, created_at, ' +
-                'overrides) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT ' +
-                '(id) DO UPDATE SET   name = EXCLUDED.name, description = ' +
-                'EXCLUDED.description,   created_at = EXCLUDED.created_at,   ' +
-                'overrides = EXCLUDED.overrides',
-                [row.id, row.name, row.description, row.createdAt,
-                 JSON.stringify(row.overrides || {})]);
-            });
+        let chain = Promise.resolve();
+        removed.forEach(function (id) {
+          chain = chain.then(function () {
+            return client.query('DELETE FROM sts_realms WHERE id = $1', [id]);
           });
-          return chain;
-        }).then(function () {
-          // ONE LOG ROW FOR THE WHOLE REGISTRY, because that is how it is
-          // written: this function replaces every realm wholesale rather than
-          // diffing, so "the realms changed" is the finest thing there is to
-          // say about it and a row per realm would be a lie about precision.
+        });
+        upserts.forEach(function (one) {
+          const row = one.row;
+          chain = chain.then(function () {
+            return client.query(
+              'INSERT INTO sts_realms (id, name, description, created_at, ' +
+              'overrides) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT ' +
+              '(id) DO UPDATE SET ' +
+              '  name = CASE WHEN $6 THEN EXCLUDED.name ' +
+              '              ELSE sts_realms.name END, ' +
+              '  description = CASE WHEN $7 THEN EXCLUDED.description ' +
+              '                     ELSE sts_realms.description END, ' +
+              '  created_at = COALESCE(sts_realms.created_at, ' +
+              '                        EXCLUDED.created_at), ' +
+              '  overrides = CASE WHEN $10 THEN EXCLUDED.overrides ELSE ' +
+              '    (COALESCE(sts_realms.overrides, \'{}\'::jsonb) - ' +
+              '     $8::text[]) || $9::jsonb END',
+              [row.id, row.name, row.description, row.createdAt,
+               JSON.stringify(row.overrides || {}), !!one.name,
+               !!one.description, (one.cleared || []).map(String),
+               JSON.stringify(one.set || {}), !!one.whole]);
+          });
+        });
+        return chain.then(function () {
+          if (!upserts.length && !removed.length) {
+            return null;
+          }
+          // ONE LOG ROW FOR THE REGISTRY, as before: the applier re-reads the
+          // whole table (a handful of rows) and merges what it finds.
           return recordChanges(client, [{ kind: 'realms' }]);
         });
       }).then(function () {
-        log.debug('Leaving the postgres driver saveRealms(). ' + rows.length +
-                  ' realm(s).');
+        log.debug('Leaving the postgres driver saveRealms(). ' +
+                  upserts.length + ' realm(s) written, ' + removed.length +
+                  ' removed.');
       });
     },
 
-    saveOverrides: function (map) {
+    // -----------------------------------------------------------------------
+    // THE PROCESS-WIDE OVERRIDES, KEY BY KEY (2026-09-14, #46), for
+    // saveRealms()'s reason: `DELETE … WHERE NOT (key = ANY(<this process's
+    // keys>))` removed a setting another node had just written. `delta.set` is
+    // what this process set or changed and `delta.cleared` what it cleared —
+    // a reset-all clears every key this process knew was stored — and nothing
+    // else is touched. Without a delta, the map is upserted and nothing is
+    // deleted.
+    // -----------------------------------------------------------------------
+    saveOverrides: function (map, delta) {
       log.debug('Entering the postgres driver saveOverrides().');
+      const set = delta && delta.set ? delta.set : (map || {});
+      const cleared = delta && Array.isArray(delta.cleared) ? delta.cleared
+        : [];
       log.debug("Leaving saveOverrides().");
       return withTransaction(function (client) {
-        const keys = Object.keys(map);
-        return client.query(
-          'DELETE FROM sts_appconfig WHERE NOT (key = ANY($1::text[]))', [keys]
-        ).then(function () {
-          let chain = Promise.resolve();
-          keys.forEach(function (key) {
-            chain = chain.then(function () {
-              return client.query(
-                'INSERT INTO sts_appconfig (key, value) VALUES ($1, ' +
-                '$2::jsonb) ON CONFLICT (key) DO UPDATE SET value = ' +
-                'EXCLUDED.value',
-                [key, JSON.stringify({ raw: map[key] })]);
-            });
+        let chain = Promise.resolve();
+        if (cleared.length) {
+          chain = chain.then(function () {
+            return client.query(
+              'DELETE FROM sts_appconfig WHERE key = ANY($1::text[])',
+              [cleared.map(String)]);
           });
-          return chain;
-        }).then(function () {
-          // ONE ROW, for saveRealms()'s reason: the override set is replaced
-          // wholesale rather than diffed.
+        }
+        Object.keys(set).forEach(function (key) {
+          chain = chain.then(function () {
+            return client.query(
+              'INSERT INTO sts_appconfig (key, value) VALUES ($1, ' +
+              '$2::jsonb) ON CONFLICT (key) DO UPDATE SET value = ' +
+              'EXCLUDED.value',
+              [key, JSON.stringify({ raw: set[key] })]);
+          });
+        });
+        return chain.then(function () {
+          if (!cleared.length && !Object.keys(set).length) {
+            return null;
+          }
           return recordChanges(client, [{ kind: 'appconfig' }]);
         });
       }).then(function () {
         log.debug('Leaving the postgres driver saveOverrides(). ' +
-                  Object.keys(map).length + ' override(s).');
+                  Object.keys(set).length + ' set, ' + cleared.length +
+                  ' cleared.');
       });
     },
 
@@ -1617,13 +2088,27 @@ function create(options) {
       });
     },
 
+    // **A TRANSACTION WITH A CHANGE ROW SINCE 2026-09-14 (#46)**, where it was
+    // one pool statement that told nobody. A rotation and a removed hierarchy
+    // are DELETEs, and a node that never heard of one went on signing with the
+    // key the operator threw away — so the delete is logged like every other
+    // write to this table, and `keystore.applyStoredChange()` on every other
+    // node reads the row gone.
     deleteKeys: function (realmId) {
       log.debug('Entering the postgres driver deleteKeys(). realm=' + realmId);
       log.debug("Leaving deleteKeys().");
-      return pool.query('DELETE FROM sts_keys WHERE realm = $1', [realmId])
-        .then(function () {
-          log.debug('Leaving the postgres driver deleteKeys().');
-        });
+      return withTransaction(function (client) {
+        return client.query('DELETE FROM sts_keys WHERE realm = $1',
+                            [realmId])
+          .then(function (r) {
+            if (!r.rowCount) {
+              return null;
+            }
+            return recordChanges(client, [{ kind: 'keys', realm: realmId }]);
+          });
+      }).then(function () {
+        log.debug('Leaving the postgres driver deleteKeys().');
+      });
     },
 
     // -----------------------------------------------------------------------
@@ -1637,7 +2122,8 @@ function create(options) {
       log.debug("Leaving loadMinted().");
       return pool.query(
         'SELECT handle, realm, key, body,        (extract(epoch from ' +
-        'written_at) * 1000)::bigint AS written_ms FROM sts_minted'
+        'written_at) * 1000)::bigint AS written_ms FROM sts_minted ' +
+        'WHERE body <> $1', [TOMBSTONE]
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
@@ -1692,19 +2178,82 @@ function create(options) {
         }
         return 0;
       });
+      // ---------------------------------------------------------------------
+      // TWO KINDS OF ROW DECLARED BY THEIR STORE (2026-09-14, #46 section 3),
+      // and a row of either is written in the same lock order as the rest:
+      //
+      //   * `tombstone` — a delete leaves TOMBSTONE behind and an upsert of a
+      //     key holding one does nothing and is reported in `refused`, so a
+      //     node holding an old copy cannot put back a session, a code or a
+      //     token another node ended. See TOMBSTONE above.
+      //   * `merge(storedBody)` — an in-place edit two nodes can make to one
+      //     row (a session's relying-party lists, its upgrade from an arrival
+      //     to a sign-in). The row is read `FOR UPDATE`, handed to the store's
+      //     merge (which opens, merges and seals — this driver never holds a
+      //     key), and what comes back is written and reported in `merged` for
+      //     the caller to apply to its own copy.
+      // ---------------------------------------------------------------------
+      const refused = [];
+      const merged = [];
+      const skip = new Set();
       log.debug("Leaving saveMinted().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
+        const upsert = function (row, body, guarded) {
+          return client.query(
+            'INSERT INTO sts_minted (handle, realm, key, body, ' +
+            'written_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT ' +
+            '(handle, realm, key) DO UPDATE SET   body = EXCLUDED.body, ' +
+            'written_at = now()' +
+            (guarded ? ' WHERE sts_minted.body <> $5' : ''),
+            guarded ? [row.handle, row.realm, row.key, body, TOMBSTONE]
+                    : [row.handle, row.realm, row.key, body]
+          ).then(function (r) {
+            if (guarded && !(r && r.rowCount)) {
+              refused.push(row);
+              skip.add(row);
+            }
+            return r;
+          });
+        };
         statements.forEach(function (one) {
           const row = one.row;
           chain = chain.then(function () {
+            if (one.upsert && typeof row.merge === 'function') {
+              return client.query(
+                'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
+                'realm = $2 AND key = $3 FOR UPDATE',
+                [row.handle, row.realm, row.key]
+              ).then(function (r) {
+                const found = (r.rows || [])[0];
+                if (found && found.body === TOMBSTONE) {
+                  refused.push(row);
+                  skip.add(row);
+                  return null;
+                }
+                let body = row.body;
+                if (found && found.body !== row.body) {
+                  const answer = row.merge(found.body);
+                  if (answer && answer !== row.body) {
+                    body = answer;
+                    merged.push({ handle: row.handle, realm: row.realm,
+                                  key: row.key, journalKey: row.journalKey,
+                                  body: answer });
+                  }
+                }
+                return upsert(row, body, true);
+              });
+            }
             if (one.upsert) {
+              return upsert(row, row.body, !!row.tombstone);
+            }
+            if (row.tombstone) {
               return client.query(
                 'INSERT INTO sts_minted (handle, realm, key, body, ' +
                 'written_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT ' +
-                '(handle, realm, key) DO UPDATE SET   body = EXCLUDED.body, ' +
+                '(handle, realm, key) DO UPDATE SET body = EXCLUDED.body, ' +
                 'written_at = now()',
-                [row.handle, row.realm, row.key, row.body]
+                [row.handle, row.realm, row.key, TOMBSTONE]
               );
             }
             return client.query(
@@ -1737,7 +2286,11 @@ function create(options) {
           // nothing to migrate because no row in the old shape was ever
           // committed.
           return recordChanges(client,
-                               upserts.concat(deletes).map(function (row) {
+                               upserts.filter(function (row) {
+                                 // A REFUSED UPSERT CHANGED NOTHING, so it
+                                 // tells nobody anything.
+                                 return !skip.has(row);
+                               }).concat(deletes).map(function (row) {
             // `minted-own` IS A SECOND KIND AND NOT A FLAG, because the only
             // thing that reads it is a `WHERE kind <> …` on the barrier's
             // target — see latestBlockingChangeSeq(). A column would have had
@@ -1751,6 +2304,11 @@ function create(options) {
                                 .toString('base64url') };
           }));
         });
+      }).then(function () {
+        log.debug('Leaving the postgres driver saveMinted(). ' +
+                  refused.length + ' refused by a tombstone, ' +
+                  merged.length + ' merged.');
+        return { refused: refused, merged: merged };
       });
     },
 
@@ -1852,7 +2410,9 @@ function create(options) {
         'ON m.handle = w.handle AND m.realm = w.realm AND m.key = w.key',
         binds
       ).then(function (res) {
-        const rows = (res.rows || []).map(function (row) {
+        const rows = (res.rows || []).filter(function (row) {
+          return row.body !== TOMBSTONE;
+        }).map(function (row) {
           return { handle: row.handle, realm: row.realm, key: row.key,
                    body: row.body, writtenAt: Number(row.written_ms) || 0 };
         });
@@ -1985,7 +2545,8 @@ function create(options) {
         [handle, realmId, key]
       ).then(function (r) {
         const row = (r.rows || [])[0];
-        if (!row) {
+        // A TOMBSTONE IS AN ABSENCE to every reader: the key was ended.
+        if (!row || row.body === TOMBSTONE) {
           return null;
         }
         return { handle: row.handle, realm: row.realm, key: row.key,
@@ -2117,6 +2678,660 @@ function create(options) {
       return pool.query('DELETE FROM sts_changes WHERE seq < $1',
                         [Number(beforeSeq) || 0])
         .then(function (r) { return r.rowCount || 0; });
+    },
+
+    // THE ROWS AT THESE SEQUENCE NUMBERS, for `persistence_replication.js`'s
+    // re-check of the holes it stepped past (2026-09-14, #46). A hole is a seq
+    // that was allocated and not yet visible — a transaction still committing
+    // — and with several nodes writing at once there is nearly always one, so
+    // the reader applies what it can see and asks for the holes again rather
+    // than stopping at the first.
+    changesAt: function (seqs) {
+      log.debug("Entering changesAt().");
+      const list = (seqs || []).map(Number).filter(function (n) {
+        return n > 0;
+      });
+      if (!list.length) {
+        log.debug("Leaving changesAt(). Nothing asked.");
+        return Promise.resolve([]);
+      }
+      log.debug("Leaving changesAt().");
+      return pool.query(
+        'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
+        'WHERE seq = ANY($1::bigint[]) ORDER BY seq ASC', [list]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { seq: Number(row.seq), origin: row.origin, kind: row.kind,
+                   realm: row.realm, key: row.key };
+        });
+      });
+    },
+
+    // =====================================================================
+    // THE CLUSTER (2026-09-14, #46). `cluster/cluster.js` owns the decisions;
+    // these are the statements, and every time in them is `DB_NOW`.
+    // =====================================================================
+
+    // The fence every transaction checks, and what to do when it fails. See
+    // `fence` near the top of create().
+    setFence: function (provider, whenFenced) {
+      log.debug("Entering setFence().");
+      fence = typeof provider === 'function' ? provider : null;
+      onFenced = typeof whenFenced === 'function' ? whenFenced : null;
+      log.debug("Leaving setFence().");
+    },
+
+    // The database's clock, for a status page that has to say how far away a
+    // node's expiry is without trusting this process's own.
+    clusterClock: function () {
+      log.debug("Entering clusterClock().");
+      log.debug("Leaving clusterClock().");
+      return pool.query('SELECT ' + DB_NOW + ' AS now').then(function (r) {
+        return Number((r.rows[0] || {}).now) || 0;
+      });
+    },
+
+    // JOINING. One transaction under an advisory lock, so that two nodes
+    // starting together cannot both see "nobody else is configured
+    // differently" and both write a row. `node.fingerprint` is compared with
+    // every LIVE node's; a mismatch writes nothing and answers who differs —
+    // the caller turns that into a refusal to start. Rows dead for longer than
+    // DEAD_NODE_RETENTION_MS are swept on the way.
+    joinCluster: function (node) {
+      log.debug("Entering joinCluster(). node=" + node.nodeId);
+      log.debug("Leaving joinCluster().");
+      return withTransaction(function (client) {
+        return client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK])
+          .then(function () {
+            return client.query(
+              'DELETE FROM sts_cluster_nodes WHERE expires_at < ' + DB_NOW +
+              ' - $1', [DEAD_NODE_RETENTION_MS]);
+          }).then(function () {
+            return client.query(
+              'SELECT node_id, name, mode, version, fingerprint FROM ' +
+              'sts_cluster_nodes WHERE left_at = 0 AND expires_at > ' +
+              DB_NOW + ' AND node_id <> $1', [node.nodeId]);
+          }).then(function (r) {
+            const live = r.rows || [];
+            // THE MODE ONLY. A joining node has no fingerprint yet — it is
+            // keyed by the key-encryption key, which is opened after the join —
+            // so the settings are compared by agreeFingerprint() below.
+            const differing = live.filter(function (row) {
+              return row.mode !== node.mode;
+            }).map(function (row) {
+              return { nodeId: row.node_id, name: row.name, mode: row.mode,
+                       version: row.version, fingerprint: row.fingerprint };
+            });
+            if (differing.length) {
+              return { joined: false, differing: differing,
+                       live: live.length };
+            }
+            return client.query(
+              'INSERT INTO sts_cluster_nodes (node_id, name, mode, version, ' +
+              'fingerprint, started_at, heartbeat_at, expires_at, info) ' +
+              'VALUES ($1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW + ', ' +
+              DB_NOW + ' + $6, $7::jsonb)',
+              [node.nodeId, node.name || '', node.mode, node.version || '',
+               node.fingerprint || '', Number(node.ttlMs),
+               JSON.stringify(node.info || {})]
+            ).then(function () {
+              return { joined: true, differing: [], live: live.length };
+            });
+          });
+      });
+    },
+
+    // AGREEMENT, once the key-encryption key is open: this node's fingerprint
+    // of the settings every node must share is written on its row and compared
+    // with every live node that has written one — under the join lock, so two
+    // nodes agreeing at once see each other. A difference writes nothing.
+    agreeFingerprint: function (nodeId, fingerprint) {
+      log.debug("Entering agreeFingerprint(). node=" + nodeId);
+      log.debug("Leaving agreeFingerprint().");
+      return withTransaction(function (client) {
+        return client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK])
+          .then(function () {
+            return client.query(
+              'SELECT node_id, name, mode, version, fingerprint FROM ' +
+              'sts_cluster_nodes WHERE left_at = 0 AND expires_at > ' +
+              DB_NOW + ' AND node_id <> $1 AND fingerprint <> \'\' AND ' +
+              'fingerprint <> $2', [nodeId, String(fingerprint)]);
+          }).then(function (r) {
+            const differing = (r.rows || []).map(function (row) {
+              return { nodeId: row.node_id, name: row.name, mode: row.mode,
+                       version: row.version };
+            });
+            if (differing.length) {
+              return { differing: differing };
+            }
+            return client.query(
+              'UPDATE sts_cluster_nodes SET fingerprint = $2 WHERE ' +
+              'node_id = $1', [nodeId, String(fingerprint)]
+            ).then(function () {
+              return { differing: [] };
+            });
+          });
+      });
+    },
+
+    // THE HEARTBEAT, and every lease this node holds renewed with it — one
+    // round trip. **AN EXPIRED ROW IS NOT RENEWED**: `alive` comes back false
+    // and the caller exits, because a node that was declared dead may already
+    // have had its leases taken over. A lease already expired is not renewed
+    // either and simply is not in `leases`, which is how the caller learns it
+    // lost one.
+    heartbeat: function (nodeId, ttlMs, info) {
+      log.debug("Entering heartbeat(). node=" + nodeId);
+      log.debug("Leaving heartbeat().");
+      return pool.query(
+        'WITH n AS (UPDATE sts_cluster_nodes SET heartbeat_at = ' + DB_NOW +
+        ', expires_at = ' + DB_NOW + ' + $2, info = COALESCE($3::jsonb, ' +
+        'info) WHERE node_id = $1 AND left_at = 0 AND expires_at > ' + DB_NOW +
+        ' RETURNING node_id), ' +
+        'l AS (UPDATE sts_cluster_leases SET expires_at = ' + DB_NOW +
+        ' + $2 WHERE holder = $1 AND expires_at > ' + DB_NOW +
+        ' AND EXISTS (SELECT 1 FROM n) RETURNING name, token) ' +
+        'SELECT (SELECT count(*) FROM n) AS alive, ' +
+        'COALESCE((SELECT json_agg(json_build_object(\'name\', name, ' +
+        '\'token\', token)) FROM l), \'[]\'::json) AS leases',
+        [nodeId, Number(ttlMs), info ? JSON.stringify(info) : null]
+      ).then(function (r) {
+        const row = r.rows[0] || {};
+        return {
+          alive: Number(row.alive) > 0,
+          leases: (row.leases || []).map(function (one) {
+            return { name: one.name, token: Number(one.token) };
+          })
+        };
+      });
+    },
+
+    // LEAVING, on a clean shutdown: the row is marked left and every lease it
+    // held expires NOW rather than at the end of its lifetime, so a standby
+    // takes over in one heartbeat instead of `cluster.nodeTtlMs`. Expired and
+    // not deleted, so a lease's token keeps counting up.
+    leaveCluster: function (nodeId) {
+      log.debug("Entering leaveCluster(). node=" + nodeId);
+      log.debug("Leaving leaveCluster().");
+      return pool.query(
+        'WITH n AS (UPDATE sts_cluster_nodes SET left_at = ' + DB_NOW +
+        ', expires_at = LEAST(expires_at, ' + DB_NOW + ') WHERE node_id = $1 ' +
+        'RETURNING node_id) ' +
+        'UPDATE sts_cluster_leases SET expires_at = 0 WHERE holder = $1',
+        [nodeId]).then(function () {
+        return true;
+      });
+    },
+
+    // ACQUIRING A LEASE. Taken when nobody holds it (no row, or an expired
+    // one), and only by a node whose own row is live. The token is one more
+    // than the last holder's. A node that already holds it gets its current
+    // token back, unchanged: re-asking is not a new tenure.
+    acquireLease: function (name, nodeId, ttlMs) {
+      log.debug("Entering acquireLease(). name=" + name);
+      log.debug("Leaving acquireLease().");
+      return pool.query(
+        'INSERT INTO sts_cluster_leases (name, holder, token, acquired_at, ' +
+        'expires_at) SELECT $1, $2, 1, ' + DB_NOW + ', ' + DB_NOW + ' + $3 ' +
+        'WHERE EXISTS (SELECT 1 FROM sts_cluster_nodes WHERE node_id = $2 ' +
+        'AND left_at = 0 AND expires_at > ' + DB_NOW + ') ' +
+        'ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, ' +
+        'token = CASE WHEN sts_cluster_leases.holder = EXCLUDED.holder AND ' +
+        'sts_cluster_leases.expires_at > ' + DB_NOW + ' THEN ' +
+        'sts_cluster_leases.token ELSE sts_cluster_leases.token + 1 END, ' +
+        'acquired_at = CASE WHEN sts_cluster_leases.holder = EXCLUDED.holder ' +
+        'AND sts_cluster_leases.expires_at > ' + DB_NOW + ' THEN ' +
+        'sts_cluster_leases.acquired_at ELSE EXCLUDED.acquired_at END, ' +
+        'expires_at = EXCLUDED.expires_at ' +
+        'WHERE sts_cluster_leases.expires_at <= ' + DB_NOW + ' OR ' +
+        'sts_cluster_leases.holder = EXCLUDED.holder ' +
+        'RETURNING holder, token, expires_at',
+        [name, nodeId, Number(ttlMs)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0];
+        if (row && row.holder === nodeId) {
+          return { held: true, token: Number(row.token),
+                   expiresAt: Number(row.expires_at) };
+        }
+        return pool.query(
+          'SELECT holder, token, expires_at FROM sts_cluster_leases ' +
+          'WHERE name = $1', [name]
+        ).then(function (found) {
+          const other = (found.rows || [])[0] || null;
+          return { held: false, holder: other ? other.holder : '',
+                   token: other ? Number(other.token) : 0,
+                   expiresAt: other ? Number(other.expires_at) : 0 };
+        });
+      });
+    },
+
+    // Giving one lease up early — a node standing down from a role.
+    releaseLease: function (name, nodeId, token) {
+      log.debug("Entering releaseLease(). name=" + name);
+      log.debug("Leaving releaseLease().");
+      return pool.query(
+        'UPDATE sts_cluster_leases SET expires_at = 0 WHERE name = $1 AND ' +
+        'holder = $2 AND token = $3', [name, nodeId, Number(token)]
+      ).then(function (r) {
+        return (r.rowCount || 0) > 0;
+      });
+    },
+
+    // Every node row still retained and every lease, with the database clock
+    // they are to be read against. `/admin/cluster` and the API draw this.
+    clusterState: function () {
+      log.debug("Entering clusterState().");
+      log.debug("Leaving clusterState().");
+      return Promise.all([
+        pool.query(
+          'SELECT node_id, name, mode, version, fingerprint, started_at, ' +
+          'heartbeat_at, expires_at, left_at, info FROM sts_cluster_nodes ' +
+          'ORDER BY started_at DESC LIMIT 200'),
+        pool.query(
+          'SELECT name, holder, token, acquired_at, expires_at FROM ' +
+          'sts_cluster_leases ORDER BY name'),
+        pool.query('SELECT ' + DB_NOW + ' AS now')
+      ]).then(function (answers) {
+        return {
+          now: Number((answers[2].rows[0] || {}).now) || 0,
+          nodes: answers[0].rows.map(function (row) {
+            return { nodeId: row.node_id, name: row.name, mode: row.mode,
+                     version: row.version, fingerprint: row.fingerprint,
+                     startedAt: Number(row.started_at),
+                     heartbeatAt: Number(row.heartbeat_at),
+                     expiresAt: Number(row.expires_at),
+                     leftAt: Number(row.left_at), info: row.info || {} };
+          }),
+          leases: answers[1].rows.map(function (row) {
+            return { name: row.name, holder: row.holder,
+                     token: Number(row.token),
+                     acquiredAt: Number(row.acquired_at),
+                     expiresAt: Number(row.expires_at) };
+          })
+        };
+      });
+    },
+
+    // A CLAIM: exactly one concurrent caller for `(scope, realm, key)` gets
+    // `claimed: true`. An EXPIRED row is replaced, which is what a claim's
+    // lifetime means; a live one refuses. Both times are the database's.
+    // `reservation` is the capability to release the claim later and is
+    // returned only to the caller that made it.
+    claimOnce: function (scope, realmId, key, opts) {
+      log.debug('Entering claimOnce(). scope=' + scope);
+      const o = opts || {};
+      const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
+      const reservation = String(o.reservation || '');
+      log.debug("Leaving claimOnce().");
+      return pool.query(
+        'INSERT INTO sts_cluster_claims (scope, realm, key, reservation, ' +
+        'origin, claimed_at, expires_at) VALUES ($1, $2, $3, $4, $5, ' +
+        DB_NOW + ', ' + DB_NOW + ' + $6) ON CONFLICT (scope, realm, key) DO ' +
+        'UPDATE SET reservation = EXCLUDED.reservation, origin = ' +
+        'EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, expires_at = ' +
+        'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
+        'EXCLUDED.claimed_at RETURNING claimed_at, expires_at',
+        [String(scope), String(realmId || ''), String(key), reservation,
+         processId, ttlMs]
+      ).then(function (r) {
+        if (r.rowCount) {
+          const row = r.rows[0];
+          return { claimed: true, claimedAt: Number(row.claimed_at),
+                   expiresAt: Number(row.expires_at) };
+        }
+        return pool.query(
+          'SELECT origin, claimed_at, expires_at FROM sts_cluster_claims ' +
+          'WHERE scope = $1 AND realm = $2 AND key = $3',
+          [String(scope), String(realmId || ''), String(key)]
+        ).then(function (found) {
+          const row = (found.rows || [])[0] || null;
+          return { claimed: false, existing: row ? {
+            origin: row.origin,
+            claimedAt: Number(row.claimed_at),
+            expiresAt: Number(row.expires_at)
+          } : null };
+        });
+      });
+    },
+
+    // Giving a claim back — the work it guarded did not happen. Pinned to the
+    // reservation, so a claim that outlived its row cannot release a later
+    // claimant's.
+    releaseClaim: function (scope, realmId, key, reservation) {
+      log.debug("Entering releaseClaim(). scope=" + scope);
+      log.debug("Leaving releaseClaim().");
+      return pool.query(
+        'DELETE FROM sts_cluster_claims WHERE scope = $1 AND realm = $2 AND ' +
+        'key = $3 AND reservation = $4',
+        [String(scope), String(realmId || ''), String(key),
+         String(reservation)]
+      ).then(function (r) {
+        return (r.rowCount || 0) > 0;
+      });
+    },
+
+    // Whether a claim is live, without making one — for a reader that must
+    // refuse what another process has already spent.
+    claimHeld: function (scope, realmId, key) {
+      log.debug("Entering claimHeld(). scope=" + scope);
+      log.debug("Leaving claimHeld().");
+      return pool.query(
+        'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = $2 ' +
+        'AND key = $3 AND expires_at > ' + DB_NOW,
+        [String(scope), String(realmId || ''), String(key)]
+      ).then(function (r) {
+        return (r.rowCount || 0) > 0;
+      });
+    },
+
+    purgeClaims: function () {
+      log.debug("Entering purgeClaims().");
+      log.debug("Leaving purgeClaims().");
+      return pool.query('DELETE FROM sts_cluster_claims WHERE expires_at <= ' +
+                        DB_NOW).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // A COUNTER THAT ONLY GOES UP (2026-09-14, #46). One statement: a row that
+    // is absent is inserted at `value`; a row below `value` is raised to it;
+    // a row at or above `value` is left alone and nothing is returned, under
+    // the primary key's row lock, so of two nodes advancing one counter to
+    // the same value exactly one gets a row back. The second statement runs
+    // only on that refusal, to say what the counter is — a report, never a
+    // decision. `cluster/cluster_counters.js` reads the two answers.
+    advanceCounter: function (scope, realmId, key, value) {
+      log.debug("Entering advanceCounter(). scope=" + scope);
+      const wanted = Math.max(0, Math.floor(Number(value) || 0));
+      log.debug("Leaving advanceCounter().");
+      return pool.query(
+        'INSERT INTO sts_cluster_counters (scope, realm, key, value, origin, ' +
+        'updated_at) VALUES ($1, $2, $3, $4, $5, ' + DB_NOW + ') ON CONFLICT ' +
+        '(scope, realm, key) DO UPDATE SET value = EXCLUDED.value, origin = ' +
+        'EXCLUDED.origin, updated_at = EXCLUDED.updated_at WHERE ' +
+        'sts_cluster_counters.value < EXCLUDED.value RETURNING value',
+        [String(scope), String(realmId || ''), String(key), wanted, processId]
+      ).then(function (r) {
+        if (r.rowCount) {
+          return { advanced: true, highest: Number(r.rows[0].value) };
+        }
+        return pool.query(
+          'SELECT value FROM sts_cluster_counters WHERE scope = $1 AND ' +
+          'realm = $2 AND key = $3',
+          [String(scope), String(realmId || ''), String(key)]
+        ).then(function (found) {
+          const row = (found.rows || [])[0] || null;
+          return { advanced: false, highest: row ? Number(row.value) : 0 };
+        });
+      });
+    },
+
+    // A COUNT INSIDE A FIXED WINDOW (2026-09-14, #46 section 2). One
+    // statement: an absent row is inserted at 1 with a window ending
+    // `windowMs` from now; a row whose window has passed is RESET to 1 with a
+    // fresh window; a live one is incremented. Under the primary key's row
+    // lock, so of two nodes counting one bucket at the same moment both
+    // increments land. "Now" is taken ONCE, from the inserted row's own
+    // window end less the span — `DB_NOW` is `clock_timestamp()` and two
+    // readings of it in one statement are two different instants, which at
+    // the boundary would reset the count and keep the old window.
+    // `cluster/cluster_counters.js` reads the answer.
+    countWindow: function (scope, realmId, key, windowMs) {
+      log.debug("Entering countWindow(). scope=" + scope);
+      const span = Math.max(1, Math.floor(Number(windowMs) || 0));
+      log.debug("Leaving countWindow().");
+      return pool.query(
+        'INSERT INTO sts_cluster_windows (scope, realm, key, count, ' +
+        'window_ends_at, origin) VALUES ($1, $2, $3, 1, ' + DB_NOW +
+        ' + $4::bigint, $5) ON CONFLICT (scope, realm, key) DO UPDATE SET ' +
+        'count = CASE WHEN sts_cluster_windows.window_ends_at <= ' +
+        'EXCLUDED.window_ends_at - $4::bigint THEN 1 ELSE ' +
+        'sts_cluster_windows.count + 1 END, window_ends_at = CASE WHEN ' +
+        'sts_cluster_windows.window_ends_at <= EXCLUDED.window_ends_at - ' +
+        '$4::bigint THEN EXCLUDED.window_ends_at ELSE ' +
+        'sts_cluster_windows.window_ends_at END, origin = EXCLUDED.origin ' +
+        'RETURNING count, window_ends_at - ' + DB_NOW + ' AS remaining',
+        [String(scope), String(realmId || ''), String(key), span, processId]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || {};
+        return { count: Number(row.count) || 0,
+                 remainingMs: Math.max(0, Number(row.remaining) || 0) };
+      });
+    },
+
+    // The count of a window still running, without counting. A row whose
+    // window has passed is a count of zero, which is what it means.
+    peekWindow: function (scope, realmId, key) {
+      log.debug("Entering peekWindow(). scope=" + scope);
+      log.debug("Leaving peekWindow().");
+      return pool.query(
+        'SELECT count, window_ends_at - ' + DB_NOW + ' AS remaining FROM ' +
+        'sts_cluster_windows WHERE scope = $1 AND realm = $2 AND key = $3 ' +
+        'AND window_ends_at > ' + DB_NOW,
+        [String(scope), String(realmId || ''), String(key)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || null;
+        return row ? { count: Number(row.count) || 0,
+                       remainingMs: Math.max(0, Number(row.remaining) || 0) }
+          : { count: 0, remainingMs: 0 };
+      });
+    },
+
+    // Forgetting a window — what a success does to its bucket.
+    clearWindow: function (scope, realmId, key) {
+      log.debug("Entering clearWindow(). scope=" + scope);
+      log.debug("Leaving clearWindow().");
+      return pool.query(
+        'DELETE FROM sts_cluster_windows WHERE scope = $1 AND realm = $2 AND ' +
+        'key = $3', [String(scope), String(realmId || ''), String(key)]
+      ).then(function (r) {
+        return (r.rowCount || 0) > 0;
+      });
+    },
+
+    purgeWindows: function () {
+      log.debug("Entering purgeWindows().");
+      log.debug("Leaving purgeWindows().");
+      return pool.query('DELETE FROM sts_cluster_windows WHERE ' +
+                        'window_ends_at <= ' + DB_NOW).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // =====================================================================
+    // CHANGE-LOG RETENTION (2026-09-14, #46 section 8). Three statements;
+    // `persistence/persistence_replication.js` owns the decisions and argues
+    // the bound.
+    // =====================================================================
+
+    // THIS PROCESS'S LOW-WATER MARK. `applied` never goes backwards in the
+    // row (GREATEST), and `inserted` tells a process that has reported before
+    // that its row was REMOVED in between — declared gone by a purge, which
+    // may already have trimmed changes it had not applied.
+    reportChangeReader: function (applied, nodeId) {
+      log.debug("Entering reportChangeReader().");
+      log.debug("Leaving reportChangeReader().");
+      return pool.query(
+        'INSERT INTO sts_change_readers (origin, node_id, applied, ' +
+        'started_at, reported_at) VALUES ($1, $2, $3, ' + DB_NOW + ', ' +
+        DB_NOW + ') ON CONFLICT (origin) DO UPDATE SET node_id = ' +
+        'EXCLUDED.node_id, applied = GREATEST(sts_change_readers.applied, ' +
+        'EXCLUDED.applied), reported_at = EXCLUDED.reported_at ' +
+        'RETURNING (xmax = 0) AS inserted',
+        [processId, String(nodeId || ''), Math.max(0, Number(applied) || 0)]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || {};
+        return { inserted: row.inserted === true };
+      });
+    },
+
+    // A clean stop: this process reads the log no longer.
+    leaveChangeReader: function () {
+      log.debug("Entering leaveChangeReader().");
+      log.debug("Leaving leaveChangeReader().");
+      return pool.query('DELETE FROM sts_change_readers WHERE origin = $1',
+                        [processId]).then(function (r) {
+        return (r.rowCount || 0) > 0;
+      });
+    },
+
+    // THE TRIM, in one statement so that the readers it declares gone and the
+    // bound it computes are one snapshot. A reader is GONE when it has not
+    // reported for `readerTtlMs`, or when it names a cluster node whose
+    // membership is no longer live — a node that left or expired is dead for
+    // good (`cluster/cluster.js`), and so are the workers it forked. The bound
+    // is the lowest mark of every reader that is not gone; with no reader at
+    // all nothing is trimmed, because a store nobody is reading is a store
+    // whose next reader has not said where it is yet. A change is removed
+    // only below the bound AND older than `retentionMs` by the database's
+    // clock. Every sub-statement sees the snapshot before the deletes, which
+    // is why `live` filters out `gone` by hand.
+    purgeChangeLog: function (opts) {
+      log.debug("Entering purgeChangeLog().");
+      const o = opts || {};
+      const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
+      const retentionMs = Math.max(0, Math.floor(Number(o.retentionMs) || 0));
+      log.debug("Leaving purgeChangeLog().");
+      return pool.query(
+        'WITH gone AS (DELETE FROM sts_change_readers r WHERE ' +
+        'r.reported_at < ' + DB_NOW + ' - $1::bigint OR (r.node_id <> \'\' ' +
+        'AND NOT EXISTS (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = ' +
+        'r.node_id AND n.left_at = 0 AND n.expires_at > ' + DB_NOW + ')) ' +
+        'RETURNING r.origin), ' +
+        'live AS (SELECT min(r.applied) AS low, count(*) AS readers FROM ' +
+        'sts_change_readers r WHERE NOT EXISTS (SELECT 1 FROM gone g WHERE ' +
+        'g.origin = r.origin)), ' +
+        'trimmed AS (DELETE FROM sts_changes c WHERE (SELECT readers FROM ' +
+        'live) > 0 AND c.seq < (SELECT low FROM live) AND c.at < now() - ' +
+        '($2::bigint * interval \'1 millisecond\') RETURNING 1) ' +
+        'SELECT (SELECT count(*) FROM gone) AS gone, (SELECT low FROM live) ' +
+        'AS low, (SELECT readers FROM live) AS readers, (SELECT count(*) ' +
+        'FROM trimmed) AS trimmed',
+        [readerTtlMs, retentionMs]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || {};
+        return { readersGone: Number(row.gone) || 0,
+                 readers: Number(row.readers) || 0,
+                 bound: row.low === null || row.low === undefined ? null
+                   : Number(row.low),
+                 trimmed: Number(row.trimmed) || 0 };
+      });
+    },
+
+    // =====================================================================
+    // ONE ROW OF `sts_keys`, AND THE WRITE THAT MAKES THE STORE THE ARBITER
+    // (2026-09-14, #46 section 1).
+    //
+    // `saveKeys()` above is an unconditional upsert, which is right for one
+    // process and is the whole of issue #46's worst section across several:
+    // two nodes cold-starting against an empty store each generated a realm's
+    // signing keys and the later upsert replaced the earlier, while the
+    // earlier node went on signing with what it had written; and the whole
+    // certificate authority of a scope — revocations included — was one row
+    // any node's next save threw another node's changes out of.
+    //
+    // `mergeKeys(realm, ciphertext, merge)` hands the decision to the caller
+    // UNDER THE ROW'S LOCK. `merge(currentCiphertext | null)` answers the
+    // ciphertext the row should hold, or null to leave it as it is; it is
+    // `keystore.js`'s, because only that module holds the key-encryption key
+    // the row is sealed under, and the driver never sees a key. It is called
+    // with null when there is no row, and may be called a second time when a
+    // concurrent INSERT lands between the lock and ours — so it must be pure.
+    //
+    // Fenced like every write (`withTransaction()`), and logged in
+    // `sts_changes` only when the row actually moved, so a merge that decided
+    // "keep what is there" wakes no other process.
+    // =====================================================================
+    loadKey: function (realmId) {
+      log.debug("Entering loadKey(). realm=" + realmId);
+      log.debug("Leaving loadKey().");
+      return pool.query('SELECT material FROM sts_keys WHERE realm = $1',
+                        [String(realmId)]).then(function (r) {
+        const row = (r.rows || [])[0];
+        return row ? row.material : null;
+      });
+    },
+
+    mergeKeys: function (realmId, ciphertext, merge) {
+      log.debug("Entering mergeKeys(). realm=" + realmId);
+      const id = String(realmId);
+      log.debug("Leaving mergeKeys().");
+      return withTransaction(function (client) {
+        function lockAndMerge() {
+          log.debug("Entering lockAndMerge().");
+          log.debug("Leaving lockAndMerge().");
+          return client.query(
+            'SELECT material FROM sts_keys WHERE realm = $1 FOR UPDATE', [id]
+          ).then(function (r) {
+            const row = (r.rows || [])[0] || null;
+            const current = row ? row.material : null;
+            const next = merge(current);
+            if (!next || next === current) {
+              return { written: false, inserted: false, material: current };
+            }
+            if (row) {
+              return client.query(
+                'UPDATE sts_keys SET material = $2, written_at = now() ' +
+                'WHERE realm = $1', [id, next]
+              ).then(function () {
+                return recordChanges(client, [{ kind: 'keys', realm: id }]);
+              }).then(function () {
+                return { written: true, inserted: false, material: next };
+              });
+            }
+            // NO ROW TO LOCK. The INSERT is the arbiter here: of two
+            // transactions reaching this line for one realm, the second waits
+            // on the first's uncommitted row and then inserts nothing — and
+            // is sent round again, where the row now exists and is locked.
+            return client.query(
+              'INSERT INTO sts_keys (realm, material, written_at) VALUES ' +
+              '($1, $2, now()) ON CONFLICT (realm) DO NOTHING', [id, next]
+            ).then(function (inserted) {
+              if (!inserted.rowCount) {
+                return null;
+              }
+              return recordChanges(client, [{ kind: 'keys', realm: id }])
+                .then(function () {
+                  return { written: true, inserted: true, material: next };
+                });
+            });
+          });
+        }
+        return lockAndMerge().then(function (first) {
+          return first || lockAndMerge();
+        }).then(function (second) {
+          if (!second) {
+            throw new Error(errorCodes.tag('STS-STORE-0050') + 'the "' + id +
+                            '" row of sts_keys was inserted and removed by ' +
+                            'other writers while this one waited, twice; ' +
+                            'nothing was written.');
+          }
+          return second;
+        });
+      });
+    },
+
+    // A SHARED SECRET, first writer wins. `material` is already sealed by the
+    // caller. Whatever is in the table afterwards is what every node uses —
+    // this caller's offer if it was first, somebody else's if not.
+    ensureSharedSecret: function (name, material) {
+      log.debug("Entering ensureSharedSecret(). name=" + name);
+      log.debug("Leaving ensureSharedSecret().");
+      return pool.query(
+        'INSERT INTO sts_cluster_secrets (name, material, created_by, ' +
+        'created_at) VALUES ($1, $2, $3, ' + DB_NOW + ') ON CONFLICT (name) ' +
+        'DO NOTHING', [String(name), String(material), processId]
+      ).then(function (inserted) {
+        return pool.query(
+          'SELECT material, created_by, created_at FROM sts_cluster_secrets ' +
+          'WHERE name = $1', [String(name)]
+        ).then(function (r) {
+          const row = (r.rows || [])[0] || null;
+          return row ? { material: row.material, createdBy: row.created_by,
+                         createdAt: Number(row.created_at),
+                         offered: (inserted.rowCount || 0) > 0 } : null;
+        });
+      });
     },
 
     // =====================================================================
@@ -2275,6 +3490,23 @@ function create(options) {
     // Rows older than the retention window. Returns HOW MANY, because the one
     // caller logs it and a purge that reported nothing would leave an operator
     // unable to tell "it worked" from "there was nothing to do".
+    // THE TOMBSTONES OF ENDED ROWS, older than `beforeMs` (2026-09-14, #46).
+    // A tombstone must outlive every copy of its row a node could still write
+    // back; `persistence_minted.js` asks with `persistence.mintedRetention`,
+    // which is also the most a restored row can be. One statement on the pool
+    // and idempotent, so any node may run it.
+    purgeTombstones: function (beforeMs) {
+      log.debug('Entering the postgres driver purgeTombstones().');
+      log.debug("Leaving purgeTombstones().");
+      return pool.query(
+        'DELETE FROM sts_minted WHERE body = $1 AND ' +
+        'written_at < to_timestamp($2 / 1000.0)',
+        [TOMBSTONE, Number(beforeMs)]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
     purgeMinted: function (beforeMs) {
       log.debug('Entering the postgres driver purgeMinted(). before=' +
                 beforeMs);
@@ -2290,6 +3522,23 @@ function create(options) {
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// WHAT THIS DRIVER MAKES TRUE FOR SEVERAL NODES (#46 section 3), at require
+// time — which is before `cluster.gate()` reads the table, because
+// `persistence.openStore()` requires this module to create the driver it then
+// hands the gate.
+//
+//   * `store.no-foreign-deletes` — `saveRealms()` and `saveOverrides()` write
+//     a delta and delete only what the writer removed; `saveDirectory()`
+//     deletes a realm's rows only for a realm `persistence.js` removed here.
+//   * `directory.concurrent-writes` — `saveDirectory()` merges each entry with
+//     the row as it is now (`directory_merge.js`) and keeps the first of two
+//     adds; `persistence.js` applies what the store decided; the create doors
+//     claim their names across nodes (`ldap/directory_create_claims.js`).
+// ---------------------------------------------------------------------------
+capabilities.provide('store.no-foreign-deletes');
+capabilities.provide('directory.concurrent-writes');
 
 module.exports = {
   create: create,

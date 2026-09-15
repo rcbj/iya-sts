@@ -2499,13 +2499,32 @@ function certificateSerial(prefixHex) {
 // key at all** and SPIFFE issues P-256. That is a capability gap, not a
 // duplication, and `common/vendored/CLAUDE.md` records it.
 // ---------------------------------------------------------------------------
+// A forge key pair over an RSA private key given as PEM (PKCS#1 or PKCS#8 —
+// node reads either and forge is handed PKCS#1, which is what it writes).
+function rsaPairFromPem(pem) {
+  log.debug("Entering rsaPairFromPem().");
+  const pkcs1 = nodeCrypto.createPrivateKey(pem)
+                          .export({ type: 'pkcs1', format: 'pem' });
+  const privateKey = forge.pki.privateKeyFromPem(pkcs1);
+  log.debug("Leaving rsaPairFromPem().");
+  return { privateKey: privateKey,
+           publicKey: forge.pki.setRsaPublicKey(privateKey.n, privateKey.e) };
+}
+
 function selfSignedRsaCertificate(opts) {
   log.debug("Entering selfSignedRsaCertificate().");
   const options = opts || {};
   log.debug('Entering selfSignedRsaCertificate(). cn=' +
             (options.commonName || '(none)'));
-  const pair = forge.pki.rsa.generateKeyPair({ bits: options.bits || 2048,
-                                               e: 0x10001 });
+  // `rsaPrivateKeyPem` (2026-09-14) is a key a caller generated ASYNCHRONOUSLY
+  // — `helpers.js`'s `prepareKeySet()`, in node's thread pool — so that a
+  // burst of realms does not stop this process for a tenth of a second each.
+  // forge's generation is node's synchronous one underneath; the certificate
+  // built over a given key is the same certificate in every other respect.
+  const pair = options.rsaPrivateKeyPem
+    ? rsaPairFromPem(options.rsaPrivateKeyPem)
+    : forge.pki.rsa.generateKeyPair({ bits: options.bits || 2048,
+                                      e: 0x10001 });
   const cert = forge.pki.createCertificate();
   cert.publicKey = pair.publicKey;
   // `serialPrefix` is the caller's LEADING BYTE because it is how a person

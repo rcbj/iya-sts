@@ -788,7 +788,20 @@ were changed by another process. THEY ARE NOT ADOPTED HERE"* lines per realm
 build were `persistence.js`'s `applyKeysChange()` reading a certificate
 authority row (`sts_keys` under `pki:`) as signing keys — one per `saveRow()`
 per other process. Not a fault; the pool's PKI channel carries those rows. It
-logs them at debug under their own name now.
+logs them at debug under their own name now. **Superseded 2026-09-14 (#46):**
+where the store arbitrates, `applyKeysChange()` adopts a `pki:` row another
+process wrote (`keystore.applyStoredChange()`), and a row from another NODE —
+which no IPC channel carries — reaches the socket through the store hook
+`hierarchyAdopted` → `request_pool.js`'s **`hierarchyArrived()`**, which runs the
+same `reconcileTheListener()` in the front process, and only for the service or
+process row once the process branch has a TLS Issuing CA (reconciling on a Root
+that arrived a moment ahead of its branch logged `STS-PKI-0046` and
+`STS-TLS-0026` about a leaf re-issued correctly one row later). Each node still
+presents a leaf over its OWN listener key; what the cluster agrees is the
+hierarchy it chains to. The `tls:server` certificate slot therefore holds one
+node's record at a time, and only a CONCURRENT displacement is kept in the
+issued register (`common/pki_merge.js`) — a node's listener serial written over
+sequentially is not, which is a slot-per-node question this work did not take.
 
 ## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
 
@@ -888,6 +901,21 @@ defaults unchanged; the CN is still the first of `tls.hostnames`.
 refusal), the fatal cipher list, and — as a real handshake — that `tls.minVersion=TLSv1.3`
 refuses a TLS 1.2 client on 8443. Mutation-tested against the product refusal removed.
 
+## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
+
+`listen()` installs `common/proxy_protocol.js` on `permissiveServer` and
+`strictServer`, and `server.js` on the main port, when `global.proxyProtocol` is
+`v2`. It shadows each server's `connection` emit, so the TLS engine `tls.Server`
+attaches is handed a socket whose header is gone — mutual TLS is unaffected, the
+client certificate verifies exactly as before (`tests/proxy_protocol.js` 3i, with
+the header coalesced into the ClientHello's segment and in a segment of its own).
+`secureConnection`, `tlsClientError` and `/tls/whoami` read the header's address
+from the TLS socket with no change here, because the module shadows the TCP
+handle's `getpeername` that a TLSWrap proxies to. `/tls/whoami` gained one field,
+`https.proxyProtocol`: what the header said, including the balancer's own address
+(`via`), or null. This is what makes an AWS Network Load Balancer with TLS
+passthrough a supported front for 8443 and 9443 — the balancer never terminates.
+
 ## A RUNTIME ANCHOR SURVIVES A RESTART (2026-09-12)
 
 The gated doors above said *nothing is persisted*, and the durable door was
@@ -939,3 +967,16 @@ container equally, and is recorded in `common/mode.js`.
 controls and a real restart against an `ldif` store, in child processes. It
 found a pre-existing defect in `persistence/persistence.js` on its first run —
 see that directory's `CLAUDE.md`.
+
+## THE TWO LISTENERS ARE BEHIND THE CLUSTER BARRIER (2026-09-14, #46 section 4)
+
+A verified client certificate on 8443 or 9443 STARTS A SESSION, and
+`makeHandler()`'s handler is not the express app `common/app.js` installs the
+cluster barrier on. In active-active mode a certificate sign-in on node A was
+therefore answered before its session committed, and a global sign-out
+answered by node B a moment later listed the sessions B had and missed it —
+the issue's "certificate sign-ins on 9443". The handler now runs through
+`cluster_barrier.middleware()` before the revocation check: catch up with what
+other nodes committed, and hold the answer until this request's writes commit.
+Outside active-active the middleware calls straight through. Not measured on a
+live pair.

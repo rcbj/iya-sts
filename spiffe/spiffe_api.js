@@ -98,6 +98,9 @@ const rpc = require('./spiffe_grpc');
 // For the caller on a call — see the header. This module never authorizes;
 // it reads WHO, where a method's answer depends on it.
 const auth = require('./spiffe_auth');
+// The atomic "once" a join token is spent through across nodes — see
+// AttestAgent. A LIBRARY that reaches `persistence.js` lazily.
+const claims = require('../cluster/cluster_claims');
 
 const status = rpc.grpc.status;
 
@@ -840,6 +843,8 @@ const agentHandlers = {
     // different bugs in a client and reading one message for all three would
     // send somebody looking in the wrong place.
     // ---------------------------------------------------------------------
+    // The claim a checked join token is spent through, when there is one.
+    let joinTokenClaim = null;
     if (attestationType === 'join_token' && auth.authRequired()) {
       const presented = String(Buffer.from(data.payload || [])
                                      .toString('utf8')).trim();
@@ -876,22 +881,69 @@ const agentHandlers = {
           '. A join token created for a named agent may only attest that ' +
           'agent.');
       }
+      // -------------------------------------------------------------------
+      // SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+      //
+      // The token is deleted from `joinTokens` at the SUCCESSFUL attestation
+      // below, and that store replicates to the other nodes a moment later.
+      // Two AttestAgent calls carrying one token at two nodes inside that
+      // moment both found it and both attested — two agents, each with an
+      // SVID, from a credential that is single-use by definition. So it is
+      // CLAIMED here, once every check that refuses without side effects has
+      // passed and before anything is signed; the claim lives until the token
+      // would have expired, plus a minute of skew. A claim another call holds
+      // is the refusal a spent token always was (`STS-SPIFFE-0055`); an
+      // attestation that fails after the claim gives it back, so the token is
+      // still spendable exactly as it was on one node.
+      // -------------------------------------------------------------------
+      const claimed = await claims.claim({
+        scope: 'spiffe.join-token', value: joinTokenKey(presented),
+        ttlMs: Math.max(60 * 1000, held.expiresAt
+          ? (held.expiresAt - nowSec()) * 1000 + 60 * 1000 : 0)
+      });
+      if (!claimed.ok && claimed.reason === 'used') {
+        errorCodes.mark(call, 'STS-SPIFFE-0055');
+        throw rpc.permissionDenied('That join token was not issued by this ' +
+                                   'server, or it has already been spent — a ' +
+                                   'join token is single-use. Ask for a new ' +
+                                   'one with CreateJoinToken.');
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-SPIFFE-0075') + 'spiffe: a join token ' +
+                  'could not be proved unspent (' + claimed.why + '); the ' +
+                  'attestation is refused.');
+        errorCodes.mark(call, 'STS-SPIFFE-0075');
+        throw rpc.unavailable('This server could not check the join token ' +
+                              'just now. Retry.');
+      }
+      joinTokenClaim = claimed.handle;
     }
-    // `spiffe.agentSvidTtl`, where 0 — its default, and the literal this was —
-    // means spiffe.svidTtl. See agentSvidTtl().
-    const svid = await ca.signCsr(Buffer.from(csr), agentId,
-                                  { ttl: agentSvidTtl() });
-    const recorded = registry.recordAttestation(agentId, {
-      attestationType: attestationType,
-      selectors: selectorsFromAttestation(attestationType, data.payload),
-      canReattest: attestationType !== 'join_token',
-      svidHash: crypto.createHash('sha256').update(svid.certificateDer)
-        .digest('hex').slice(0, 32),
-      expiresAt: svid.expiresAt
-    });
-    if (recorded && recorded.banned) {
-      errorCodes.mark(call, 'STS-SPIFFE-0052');
-      throw rpc.permissionDenied('The agent ' + agentId + ' is banned.');
+    let svid = null;
+    try {
+      // `spiffe.agentSvidTtl`, where 0 — its default, and the literal this
+      // was — means spiffe.svidTtl. See agentSvidTtl().
+      svid = await ca.signCsr(Buffer.from(csr), agentId,
+                              { ttl: agentSvidTtl() });
+      const recorded = registry.recordAttestation(agentId, {
+        attestationType: attestationType,
+        selectors: selectorsFromAttestation(attestationType, data.payload),
+        canReattest: attestationType !== 'join_token',
+        svidHash: crypto.createHash('sha256').update(svid.certificateDer)
+          .digest('hex').slice(0, 32),
+        expiresAt: svid.expiresAt
+      });
+      if (recorded && recorded.banned) {
+        errorCodes.mark(call, 'STS-SPIFFE-0052');
+        throw rpc.permissionDenied('The agent ' + agentId + ' is banned.');
+      }
+    } catch (e) {
+      // THE CLAIM IS GIVEN BACK: nothing was attested, so the token is not
+      // spent. The error is the call's answer, unchanged.
+      log.debug("Caught in AttestAgent: " + ((e && e.message) || e));
+      if (joinTokenClaim) {
+        claims.release(joinTokenClaim);
+      }
+      throw e;
     }
     // A join token is spent HERE, at the successful attestation, and not when
     // it is looked up — the same reasoning that puts oauth2_bcp.js's

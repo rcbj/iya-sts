@@ -112,6 +112,9 @@ const pqc = require('./vendored/pqc');
 // certificate whose key OpenSSL does not parse, which `certificateHoldsKey()`
 // compares against a registered post-quantum JWK.
 const pkijs = require('pkijs');
+// The table of what active-active mode depends on, for `pki.agreement` (at the
+// bottom of this file). A LEAF over config and bunyan.
+const capabilities = require('../cluster/cluster_capabilities');
 
 // ---------------------------------------------------------------------------
 // THE THREE TIERS. The `profile` names an entry in the vendored module's
@@ -901,11 +904,17 @@ async function ensureRoot(opts) {
   log.debug("Entering ensureRoot().");
   log.debug("Leaving ensureRoot().");
   return oneBuildAtATime(SERVICE_SCOPE, function () {
-    const held = serviceRoot();
-    if (held) {
-      return { ok: true, root: describeTier(held), existing: true };
-    }
-    return buildRootNow(opts);
+    const existing = function () {
+      log.debug("Entering existing().");
+      const held = serviceRoot();
+      log.debug("Leaving existing().");
+      return held ? { ok: true, root: describeTier(held), existing: true }
+                  : null;
+    };
+    return existing() || oneBuildInTheCluster(SERVICE_SCOPE, 'root', existing,
+                                              function () {
+                                                return buildRootNow(opts);
+                                              });
   });
 }
 
@@ -916,8 +925,168 @@ async function buildRoot(opts) {
   log.debug("Entering buildRoot().");
   log.debug("Leaving buildRoot().");
   return oneBuildAtATime(SERVICE_SCOPE, function () {
-    return buildRootNow(opts);
+    return oneBuildInTheCluster(SERVICE_SCOPE, 'root', null, function () {
+      return buildRootNow(opts);
+    });
   });
+}
+
+// ---------------------------------------------------------------------------
+// ONE BUILD OF A SCOPE AT A TIME IN THE CLUSTER, AND THE STORE READ FIRST
+// (2026-09-14, #46 section 1).
+//
+// `oneBuildAtATime()` below is per PROCESS, and `ensureRoot()` asked THIS
+// process's copy of the hierarchy whether a Root existed — which on a cold
+// start of several nodes against an empty store was "no" on every one of
+// them, so each built a Root, each built a process branch and a default-realm
+// branch under it, each certified its listener, and the last save of each row
+// won. Nothing failed; the nodes simply had different anchors.
+//
+// Two things close it, and they are different kinds of guard:
+//
+//   * **A CLAIM, so only one node builds a scope at a time**
+//     (`cluster/cluster_claims.js`, scope `pki.build`). A node that finds it
+//     held waits, re-reading the row, and takes the other node's build the
+//     moment it is committed. The claim has a lifetime, so a node that died
+//     holding it costs one lifetime and not a service with no CA.
+//   * **THE WRITE ITSELF, which is the arbiter the claim is only an
+//     optimisation of.** `keystore.js` merges the row under its lock and a CA
+//     tier is first writer wins (`common/pki_merge.js`), so a build that
+//     somehow ran anyway — a claim that expired mid-build — cannot replace a
+//     Root another node already issued under. The build's caller is told: an
+//     ENSURE takes the other node's tier as its answer; a DELIBERATE build is
+//     refused, because the operator's Build did not happen.
+//
+// The claim is a mutual exclusion and not a fence, which is why it is not
+// `cluster.withLease()`: a lease there is a ROLE a node keeps and renews, and
+// a Build pressed on a node that does not hold it would be refused for as long
+// as the holder lives. The fence every write already carries (the node's
+// membership, checked in the transaction) is what stops a deposed node.
+//
+// Where the store does not arbitrate — development, `ldif`, one process —
+// this is `build()` and nothing else.
+// ---------------------------------------------------------------------------
+const CLUSTER_BUILD_CLAIM_MS = 120000;
+const CLUSTER_BUILD_WAIT_MS = 180000;
+const CLUSTER_BUILD_POLL_MS = 250;
+
+function sleepMs(ms) {
+  log.debug("Entering sleepMs().");
+  log.debug("Leaving sleepMs().");
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+function lostTier(outcome, tiers) {
+  log.debug("Entering lostTier().");
+  const wanted = [].concat(tiers);
+  log.debug("Leaving lostTier().");
+  return ((outcome && outcome.lost) || []).some(function (one) {
+    return wanted.some(function (tier) {
+      return one === tier || one.indexOf(tier + '.') === 0;
+    });
+  });
+}
+
+// `options.claim` names the claim when what is built is not the branch itself
+// (a certificate kept in the scope's row — the SCEP RA's), and must, because a
+// build of that thing may repair the branch under the branch's own claim;
+// `options.label` is how the log and a refusal name it.
+async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
+  log.debug("Entering oneBuildInTheCluster(). scope=" + scopeId);
+  if (typeof keystore.arbitrates !== 'function' || !keystore.arbitrates()) {
+    log.debug("Leaving oneBuildInTheCluster(). Nothing to coordinate.");
+    return build();
+  }
+  // Required lazily: `cluster_claims.js` reaches the store through
+  // `persistence.js`, which requires the keystore this file sits on.
+  const claims = require('../cluster/cluster_claims');
+  const opts = options || {};
+  const label = opts.label ? String(opts.label)
+    : scopeId === SERVICE_SCOPE ? 'the service Root'
+    : scopeId === PROCESS_SCOPE ? 'the process branch'
+    : 'the "' + (scopeId || 'default') + '" branch';
+  const began = Date.now();
+  let announced = false;
+  for (;;) {
+    await keystore.refreshPki(scopeId);
+    const before = existing ? existing() : null;
+    if (before) {
+      log.debug("Leaving oneBuildInTheCluster(). Another node built it.");
+      return before;
+    }
+    const claim = await claims.claim({ scope: 'pki.build',
+                                       value: opts.claim ||
+                                              'scope:' + String(scopeId),
+                                       ttlMs: CLUSTER_BUILD_CLAIM_MS,
+                                       realm: '' });
+    if (claim.ok) {
+      try {
+        // READ AGAIN WITH THE CLAIM HELD: a build that finished between the
+        // read above and the claim is committed now.
+        await keystore.refreshPki(scopeId);
+        const under = existing ? existing() : null;
+        if (under) {
+          log.debug("Leaving oneBuildInTheCluster(). Built meanwhile.");
+          return under;
+        }
+        const made = await build();
+        const outcome = await keystore.pkiSettled(scopeId);
+        if (made && made.ok && lostTier(outcome, tier)) {
+          const theirs = existing ? existing() : null;
+          if (theirs) {
+            log.warn(errorCodes.tag('STS-PKI-0182') + 'pki: ' + label + ' ' +
+                     'was built here and by another node at the same ' +
+                     'moment; the other node\'s committed first and is ' +
+                     'the one this node now holds.');
+            log.debug("Leaving oneBuildInTheCluster(). Adopted theirs.");
+            return Object.assign({}, theirs, { adoptedFromCluster: true });
+          }
+          log.debug("Leaving oneBuildInTheCluster(). Lost to another build.");
+          return errorCodes.mark({ ok: false,
+            errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' was ' +
+                     'made again by another node at the same moment and ' +
+                     'that one committed first, so this one was NOT kept. ' +
+                     'Reload the page to see what the service holds, and ' +
+                     'build again if it is still not what you want.'] },
+                                 'STS-PKI-0182');
+        }
+        log.debug("Leaving oneBuildInTheCluster(). Built.");
+        return made;
+      } finally {
+        await claims.release(claim.handle);
+      }
+    }
+    if (claim.reason === 'store') {
+      log.error(errorCodes.tag('STS-PKI-0183') + 'pki: ' + label + ' could ' +
+                'not be built, because the store could not be asked whether ' +
+                'another node is building it (' + claim.why + ').');
+      log.debug("Leaving oneBuildInTheCluster(). The store refused.");
+      return errorCodes.mark({ ok: false,
+        errors: [label.charAt(0).toUpperCase() + label.slice(1) + ' was ' +
+                 'not built: the store could not be asked whether another ' +
+                 'node is building it, and two nodes building one would ' +
+                 'publish two authorities of one name.'] }, 'STS-PKI-0183');
+    }
+    if (Date.now() - began > CLUSTER_BUILD_WAIT_MS) {
+      log.error(errorCodes.tag('STS-PKI-0184') + 'pki: ' + label + ' is ' +
+                'being built by another node and has not appeared in ' +
+                (CLUSTER_BUILD_WAIT_MS / 1000) + 's; this node gives up ' +
+                'waiting.');
+      log.debug("Leaving oneBuildInTheCluster(). Waited too long.");
+      return errorCodes.mark({ ok: false,
+        errors: ['Another node has been building ' + label + ' for longer ' +
+                 'than ' + (CLUSTER_BUILD_WAIT_MS / 1000) + 's and it has ' +
+                 'not appeared in the store.'] }, 'STS-PKI-0184');
+    }
+    if (!announced) {
+      announced = true;
+      log.info('pki: another node is building ' + label + '; this node ' +
+               'waits for it rather than building a second one.');
+    }
+    await sleepMs(CLUSTER_BUILD_POLL_MS);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,7 +1238,11 @@ async function buildScope(scopeId, opts) {
   log.debug("Entering buildScope().");
   log.debug("Leaving buildScope().");
   return oneBuildAtATime(String(scopeId), function () {
-    return buildScopeNow(scopeId, opts);
+    return oneBuildInTheCluster(String(scopeId), ['intermediate', 'issuing'],
+                                null,
+                                function () {
+                                  return buildScopeNow(scopeId, opts);
+                                });
   });
 }
 
@@ -1184,7 +1357,12 @@ async function buildScopeNow(scopeId, opts) {
     supersede(pki_rootScopeOf(), 'root', existing.intermediate,
               'the "' + (id || 'default') + '" branch was rebuilt');
   }
-  const row = Object.assign({}, existing, {
+  // **ON THE ROW AS IT IS NOW, NOT AS IT WAS READ (2026-09-14, #46).** The
+  // tiers above took several awaits, and `supersede()` and a row adopted from
+  // another node both replace what `rawRowFor()` answers in the meantime — a
+  // row built from the copy read before them would write their revocations
+  // and certificates back out of it.
+  const row = Object.assign({}, rawRowFor(id) || existing, {
     version: 2,
     scope: id,
     realm: kind === 'realm' ? id : null,
@@ -1198,7 +1376,7 @@ async function buildScopeNow(scopeId, opts) {
     // Everything the workbench authored is left alone — those are somebody's
     // key pairs and a button labelled "build the certificate authority" has no
     // business discarding them.
-    objects: existing.objects || [],
+    objects: (rawRowFor(id) || existing).objects || [],
     // **THE COUNT RESETS, because the Issuing CA it counts for is new.** It is
     // how many leaves THIS hierarchy has signed, and a rebuild replaces the
     // authority that signed them — everything it issued chains to nothing from
@@ -3586,6 +3764,10 @@ function describeCertificate(one) {
 // would not start because a certificate could not be minted for a key it
 // already has would be trading a working mock for a cosmetic one.
 // ---------------------------------------------------------------------------
+// How many times `certify()` signs again when the authority it signed with was
+// replaced during the signature — see the block above its `saveRow()`.
+const CERTIFY_ISSUER_MOVED_RETRIES = 3;
+
 async function certify(scopeId, useCaseId, spec) {
   log.debug('Entering certify(). scope=' + scopeId + ' use=' + useCaseId +
             ' slot=' + (spec && spec.slot));
@@ -3790,6 +3972,53 @@ async function certify(scopeId, useCaseId, spec) {
     record.publicKeyPem = spec.publicKeyPem;
   }
   const fresh = rawRowFor(id) || {};
+  // -------------------------------------------------------------------------
+  // **THE AUTHORITY THIS WAS SIGNED BY MAY HAVE BEEN REPLACED WHILE IT WAS
+  // BEING SIGNED (2026-09-15, #46).** The signature above is an await, and a
+  // branch rebuild (`buildScopeNow()`) or a reissue of this use case can land
+  // inside it — the realm watcher certifies a new realm's keys in the same
+  // moment `POST /admin-api/pki/build` rebuilds that realm's branch, and the
+  // rebuild's re-certification only re-mints what was recorded BEFORE it ran.
+  // Recording this one would publish a certificate from a superseded Issuing
+  // CA, with the superseded Intermediate as its chain, for as long as nothing
+  // certifies that slot again.
+  //
+  // So it is signed again by the authority the row holds NOW. Nothing is
+  // superseded: the certificate just made was never recorded, returned or
+  // published, so no relying party can hold it. Bounded, because a branch
+  // rebuilt faster than a certificate can be signed is a loop rather than a
+  // race. No await between this read and `saveRow()`, so what is checked is
+  // what is written over.
+  // -------------------------------------------------------------------------
+  const caNow = fresh.issuing ? fresh.issuing[uc.id] : null;
+  const intermediateNow = fresh.intermediate || null;
+  const moved = !!caNow &&
+    (caNow.certificatePem !== ca.certificatePem ||
+     (intermediateNow ? intermediateNow.certificatePem : '') !==
+     (row.intermediate ? row.intermediate.certificatePem : ''));
+  if (moved) {
+    const attempts = Number(spec.issuerMovedAttempts) || 0;
+    if (attempts < CERTIFY_ISSUER_MOVED_RETRIES) {
+      log.info('pki: the ' + uc.label + ' Issuing CA of "' +
+               (id || 'default') + '" was replaced while the certificate ' +
+               'for "' + spec.slot + '" was being signed; signing it again ' +
+               'from the authority the branch holds now.');
+      log.debug('Leaving certify(). Signing again from the current CA.');
+      return certify(scopeId, useCaseId,
+                     Object.assign({}, spec,
+                                   { issuerMovedAttempts: attempts + 1 }));
+    }
+    log.warn(errorCodes.tag('STS-PKI-0186') + 'pki: the ' + uc.label + ' ' +
+             'Issuing CA of "' + (id || 'default') + '" was replaced ' +
+             (attempts + 1) + ' times while the certificate for "' +
+             spec.slot + '" was being signed, so it was not recorded.');
+    log.debug('Leaving certify(). The authority kept moving.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The ' + uc.label + ' Issuing CA was replaced while ' +
+                      'the certificate was being signed, ' + (attempts + 1) +
+                      ' times, so none was recorded. Try again.'] },
+                           'STS-PKI-0186');
+  }
   fresh.certs = Object.assign({}, fresh.certs || {});
   fresh.certs[slotKey(uc.id, record.slot)] = record;
   saveRow(id, fresh);
@@ -6009,45 +6238,68 @@ async function ensureScope(scopeId, opts) {
   // Looked for INSIDE the queue — see `oneBuildAtATime()`. Looking first and
   // queueing the build afterwards is the race it exists to remove.
   return oneBuildAtATime(String(scopeId), function () {
-    const row = rawRowFor(scopeId);
     const wanted = useCasesFor(scopeKindOf(String(scopeId)));
-    if (row && row.intermediate && row.issuing &&
-        wanted.every(function (uc) {
-          return !!row.issuing[uc.id];
-        })) {
-      return { ok: true, existing: true, scope: describeScope(scopeId) };
+    const complete = function () {
+      log.debug("Entering complete().");
+      const held = rawRowFor(scopeId);
+      log.debug("Leaving complete().");
+      return (held && held.intermediate && held.issuing &&
+              wanted.every(function (uc) {
+                return !!held.issuing[uc.id];
+              }))
+        ? { ok: true, existing: true, scope: describeScope(scopeId) }
+        : null;
+    };
+    // THE CLUSTER'S BUILD, where there is one to take part in — see
+    // `oneBuildInTheCluster()`. Present here and complete: nothing to ask.
+    const already = complete();
+    if (already) {
+      return already;
     }
-    // -----------------------------------------------------------------------
-    // **A BRANCH MISSING ONLY A USE CASE ADDED SINCE IT WAS BUILT IS TOPPED
-    // UP, NOT REBUILT (2026-09-13).** This fell through to `buildScopeNow()`
-    // for any incomplete branch, which was right while "incomplete" could only
-    // mean a build that failed half way. It stopped being the only meaning the
-    // day a use case was added to `USE_CASES` (`pep-tls`): every branch already
-    // in a PRODUCT-mode store is then incomplete on the next start, and a
-    // rebuild replaces its Intermediate — superseding every Issuing CA under it
-    // and every certificate those issued, the realm's JOSE and XML signing
-    // certificates included — to add one authority nobody had used yet. That
-    // is a restart revoking a realm's published chain, which is the one thing
-    // this function's header says a restart must not do.
-    //
-    // **ONLY WHERE THE EXISTING INTERMEDIATE CAN SIGN WHAT IS MISSING.** A
-    // missing Issuing CA that carries `pathLen: 0` fits under any Intermediate
-    // this service has built (they are all at least 1); one needing room
-    // beneath it (the way `spiffe` does) may not fit the depth the stored
-    // Intermediate was issued with, and a CA it cannot sign is a chain every
-    // path builder refuses — so that case rebuilds, as it always did.
-    // -----------------------------------------------------------------------
-    const missing = wanted.filter(function (uc) {
-      return !(row && row.issuing && row.issuing[uc.id]);
-    });
-    if (row && row.intermediate && row.issuing && missing.length &&
-        missing.length < wanted.length &&
-        missing.every(function (uc) { return issuingPathLen(uc.id) === 0; })) {
-      return topUpScopeNow(String(scopeId), missing);
-    }
-    return buildScopeNow(scopeId, opts || {
-      organisation: config.value('pki.organisation')
-    });
+    return oneBuildInTheCluster(String(scopeId), ['intermediate', 'issuing'],
+                                complete,
+                                function () {
+                                  return ensureScopeNow(scopeId, opts,
+                                                        wanted);
+                                });
+  });
+}
+
+async function ensureScopeNow(scopeId, opts, wanted) {
+  log.debug("Entering ensureScopeNow(). scope=" + scopeId);
+  const row = rawRowFor(scopeId);
+  // -----------------------------------------------------------------------
+  // **A BRANCH MISSING ONLY A USE CASE ADDED SINCE IT WAS BUILT IS TOPPED
+  // UP, NOT REBUILT (2026-09-13).** This fell through to `buildScopeNow()`
+  // for any incomplete branch, which was right while "incomplete" could only
+  // mean a build that failed half way. It stopped being the only meaning the
+  // day a use case was added to `USE_CASES` (`pep-tls`): every branch already
+  // in a PRODUCT-mode store is then incomplete on the next start, and a
+  // rebuild replaces its Intermediate — superseding every Issuing CA under it
+  // and every certificate those issued, the realm's JOSE and XML signing
+  // certificates included — to add one authority nobody had used yet. That
+  // is a restart revoking a realm's published chain, which is the one thing
+  // this function's header says a restart must not do.
+  //
+  // **ONLY WHERE THE EXISTING INTERMEDIATE CAN SIGN WHAT IS MISSING.** A
+  // missing Issuing CA that carries `pathLen: 0` fits under any Intermediate
+  // this service has built (they are all at least 1); one needing room
+  // beneath it (the way `spiffe` does) may not fit the depth the stored
+  // Intermediate was issued with, and a CA it cannot sign is a chain every
+  // path builder refuses — so that case rebuilds, as it always did.
+  // -----------------------------------------------------------------------
+  const missing = wanted.filter(function (uc) {
+    return !(row && row.issuing && row.issuing[uc.id]);
+  });
+  if (row && row.intermediate && row.issuing && missing.length &&
+      missing.length < wanted.length &&
+      missing.every(function (uc) { return issuingPathLen(uc.id) === 0; })) {
+    log.debug("Leaving ensureScopeNow(). A top-up.");
+    return topUpScopeNow(String(scopeId), missing);
+  }
+  log.debug("Leaving ensureScopeNow(). A build.");
+  return buildScopeNow(scopeId, opts || {
+    organisation: config.value('pki.organisation')
   });
 }
 
@@ -6294,5 +6546,25 @@ module.exports = {
   issuers: issuers,
   issuerFor: issuerFor,
   thumbprintOf: thumbprintOf,
+  // THE CLUSTER'S BUILD AND READ (2026-09-14, #46), for a module that keeps
+  // something in a scope's row which one node must make for all of them —
+  // `scep/scep_ra.js`'s RA certificate. `refreshScope()` lands this process's
+  // queued writes of the row and takes what the store holds.
+  oneBuildInTheCluster: oneBuildInTheCluster,
+  refreshScope: function (scopeId) {
+    log.debug("Entering refreshScope().");
+    log.debug("Leaving refreshScope().");
+    return typeof keystore.arbitrates === 'function' && keystore.arbitrates()
+      ? keystore.refreshPki(String(scopeId))
+      : Promise.resolve(null);
+  },
   report: report
 };
+
+// DECLARED AT REQUIRE TIME (cluster/CLAUDE.md). The Root, the Intermediates
+// and the Issuing CAs are built once for the cluster — one build of a scope at
+// a time across nodes, the store read before and after the claim, a tier first
+// writer wins in the merge — and a row another node wrote is adopted and
+// reconciled with the listener (`keystore.applyStoredChange()`,
+// `request_pool.js`'s `hierarchyArrived()`).
+capabilities.provide('pki.agreement');

@@ -139,6 +139,11 @@ const forge = require('node-forge');
 const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const helpers = require('../common/helpers');
+// THE CLUSTER BARRIER (2026-09-14, #46 section 4), for this listener's own
+// handler: these two sockets are not the express app, so `app.js` installing
+// it there never covered them. See makeHandler(). A library; app.js has
+// already loaded it.
+const clusterBarrier = require('../cluster/cluster_barrier');
 
 // The input validator. A LEAF (rule 3): it registers no route and closes no
 // cycle. Both `/tls` pages take exactly one parameter and it is a closed set.
@@ -165,6 +170,9 @@ const authn = require('../authn/authn');
 // port are ordinary routes and mark the response.
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
+// The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY: installed on both
+// listeners in listen(), and asked by whoami what the header said.
+const proxyProtocol = require('../common/proxy_protocol');
 // REVOCATION, CONSULTED (2026-09-12). A LIBRARY that registers no route; it
 // requires `common/pki.js`, which this module already loads at require time to
 // register its certificate with it. A verified certificate on either listener
@@ -2540,7 +2548,12 @@ function describeConnection(req, mode, revocation, identity) {
       remoteAddress: socket.remoteAddress || null,
       remotePort: socket.remotePort || null,
       localPort: socket.localPort || null,
-      secure: true
+      secure: true,
+      // WHAT A PROXY PROTOCOL HEADER SAID, when one was read: the balancer's
+      // own address (`via`) beside the client above, which the header put
+      // there. Null with global.proxyProtocol off, and for a connection from
+      // this host, which is served plain.
+      proxyProtocol: proxyProtocol.describe(socket)
     },
     tls: {
       listener: mode,
@@ -2859,8 +2872,21 @@ function makeHandler(mode) {
     // CRL may be fetched), never rejects, and is cached per list rather than
     // per connection, so a revocation made mid-connection is seen by the next
     // request on it.
-    checkedSocket(req.socket).then(function (revocation) {
-      answer(req, res, mode, revocation);
+    // ---------------------------------------------------------------------
+    // BEHIND THE CLUSTER BARRIER (2026-09-14, #46 section 4). A verified
+    // certificate here STARTS A SESSION, and this handler is not the express
+    // app `app.js` installs the barrier on — so in active-active mode a
+    // certificate sign-in on node A was answered before its session
+    // committed, and a global sign-out answered by node B a moment later
+    // listed the sessions B had and missed that one. The same two rules as
+    // every HTTP request: catch up with what other nodes committed first, and
+    // hold the answer until this request's own writes have committed. Outside
+    // active-active the middleware calls straight through.
+    // ---------------------------------------------------------------------
+    clusterBarrier.middleware()(req, res, function () {
+      checkedSocket(req.socket).then(function (revocation) {
+        answer(req, res, mode, revocation);
+      });
     });
     log.debug('Leaving the TLS listener handler. The answer follows the ' +
               'check.');
@@ -4050,11 +4076,14 @@ const FORWARDING_HEADERS = [
   { name: 'x-forwarded-port', what: 'READ BY NOTHING HERE. The port is taken ' +
       'from x-forwarded-host, which carries one where it matters — two ' +
       'sources for one value is two values that will eventually disagree.' },
-  { name: 'x-forwarded-for', what: 'The client\'s address. READ BY NOTHING ' +
-      'HERE, and the audit log deliberately records the CHANNEL rather than ' +
-      'an address: on a mock reached over a compose bridge an address is a ' +
-      'fact about docker, and a column right on a laptop and quietly wrong ' +
-      'everywhere else is worse than none.' },
+  { name: 'x-forwarded-for', what: 'The client\'s address. Read by the ' +
+      'rate limiter\'s address bucket and nothing else, and only with ' +
+      'global.trustProxy on — from any peer while global.trustedProxies is ' +
+      'empty, and otherwise only from a peer in those ranges, taking the ' +
+      'right-most hop that is not one of them (common/client_address.js). ' +
+      'The audit log deliberately records the CHANNEL rather than an ' +
+      'address: on a mock reached over a compose bridge an address is a ' +
+      'fact about docker.' },
   { name: 'forwarded', what: 'RFC 7239\'s single-header form. NOT PARSED — ' +
       'this service reads the X- forms only, which is what every proxy in ' +
       'front of it emits as well.' }
@@ -4226,6 +4255,16 @@ function listen() {
   // re-certified under the hierarchy has already had it re-applied; one serving
   // a supplied certificate never is, and would otherwise bind without it.
   applyAnchors();
+  // THE PROXY PROTOCOL HEADER COMES OFF BEFORE THE HANDSHAKE (2026-09-14):
+  // installed on the server objects themselves, so the client-certificate
+  // listeners, the `secureConnection` recording and `tlsClientError` all see
+  // the header's address and none of them changed. A no-op when it is off.
+  proxyProtocol.install(permissiveServer, {
+    label: 'the optional-client-certificate listener (' + TLS_PORT + ')',
+    channel: 'tls' });
+  proxyProtocol.install(strictServer, {
+    label: 'the required-client-certificate listener (' + MTLS_PORT + ')',
+    channel: 'tls' });
   const whenReady = Promise.all([
     start(permissiveServer, TLS_PORT, 'optional-client-certificate'),
     start(strictServer, MTLS_PORT, 'required-client-certificate')

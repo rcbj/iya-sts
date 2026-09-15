@@ -208,8 +208,8 @@ const { slugOf } = require('./saml2_sso');
 // `sessionsOf` since 2026-09-12, for the responder's AuthenticationQuery: an
 // answer about an authentication has to be read off a session that exists,
 // and that store is authn.js's alone. See respond().
-const { sessionOf, sessionsOf, beginAuthentication, notePresented } =
-  require('../authn/authn');
+const { sessionOf, sessionsOf, beginAuthentication, notePresented,
+        noteSessionChanged } = require('../authn/authn');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
 // nothing about the route order this module's position in server.js fixes.
@@ -223,6 +223,11 @@ const authnContext = require('./authn_context');
 const documentSettings = require('./document_settings');
 const returnAddress = require('./return_address');
 const personAttributes = require('./person_attributes');
+// THE CLUSTER CLAIM (2026-09-14, #46), which an artifact is spent through so
+// two nodes against one store cannot both resolve it — the same arrangement as
+// saml2_sso.js's spendArtifact(), whose comment argues it. A library that
+// registers no route and requires persistence lazily.
+const clusterClaims = require('../cluster/cluster_claims');
 
 // --- the vocabulary --------------------------------------------------------
 // SAML 1.1's namespaces carry `1.0` and that is not a typo anywhere in this
@@ -352,6 +357,10 @@ const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows' });
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const artifacts = realms.map({ persist: 'saml11_sso.artifacts' });
+// How much longer than an artifact's own remaining lifetime its cluster claim
+// lives: two nodes' clocks may disagree about when it expired (#46). See
+// respond().
+const ARTIFACT_CLAIM_SKEW_MS = 60 * 1000;
 
 // AssertionID -> the assertion, for <samlp:AssertionIDReference>. It is a
 // SEPARATE map from the artifacts above and outlives them on purpose: an
@@ -1591,6 +1600,9 @@ function issueSignIn(res, req, ctx) {
     acs: ctx.acsUrl, providerId: ctx.providerId, profile: ctx.profile,
     at: Date.now()
   };
+  // AND THE STORE IS TOLD (2026-09-14, #46), so /admin/saml11 on another node
+  // lists it too: `authn.noteSessionChanged()` carries the argument.
+  noteSessionChanged(session);
 
   deliver(res, {
     profile: ctx.profile, destination: ctx.acsUrl, assertion: assertion,
@@ -1745,11 +1757,61 @@ function respond(req, res) {
     // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is
     // sent, so that two requests arriving together cannot both find it.
     artifacts.delete(artifact);
-    log.debug("Leaving respond(). An artifact was resolved and destroyed.");
-    // Decision 3: the Response is built HERE, so it carries InResponseTo naming
-    // this SOAP request and a Recipient naming whoever asked.
-    return answer(STATUS_SUCCESS, '', held.assertion, requestId,
-                  scoped.id || held.rpId, scoped.id || held.rpId);
+    // AND SPENT ACROSS THE CLUSTER before it is answered (2026-09-14, #46):
+    // the delete above reaches another node a moment later, and inside that
+    // moment the other node would resolve it too. saml2_sso.js's
+    // spendArtifact() argues the lifetime, the refusal and why nothing
+    // releases the claim; this is the same decision for the other profile.
+    const remaining = Math.max(0, Number(held.expires) - Date.now()) || 0;
+    log.debug("Leaving respond(). Claiming the artifact.");
+    return clusterClaims.claim({ scope: 'saml11.artifact', value: artifact,
+                                 ttlMs: remaining + ARTIFACT_CLAIM_SKEW_MS })
+      .then(function (claimed) {
+        log.debug("Entering respond()'s artifact claim answer.");
+        if (!claimed.ok && claimed.reason === 'used') {
+          log.warn(errorCodes.tag('STS-SAML-0058') + 'saml11: artifact ' +
+                   String(artifact).slice(0, 12) + '… was still held here ' +
+                   'but has ALREADY BEEN RESOLVED by another node against ' +
+                   'the same store. Refused: saml-bindings-1.1 section 3.2.3 ' +
+                   'allows one resolution.');
+          errorCodes.mark(res, 'STS-SAML-0058');
+          log.debug("Leaving respond()'s artifact claim answer. Used.");
+          return answer(STATUS_REQUESTER,
+                        'that artifact does not resolve: it has already ' +
+                        'been resolved — an artifact is one-shot (section ' +
+                        '3.2.3).', '', requestId, '');
+        }
+        if (!claimed.ok) {
+          log.error(errorCodes.tag('STS-SAML-0059') + 'saml11: whether ' +
+                    'artifact ' + String(artifact).slice(0, 12) + '… was ' +
+                    'already resolved could not be asked of the claim store ' +
+                    '(' + (claimed.why || 'no reason given') + '). It is ' +
+                    'refused.');
+          errorCodes.mark(res, 'STS-SAML-0059');
+          log.debug("Leaving respond()'s artifact claim answer. Store.");
+          return answer(STATUS_RESPONDER,
+                        'the identity provider could not confirm that ' +
+                        'artifact is unresolved, so it is not resolved.',
+                        '', requestId, '');
+        }
+        log.debug("Leaving respond()'s artifact claim answer. An artifact " +
+                  "was resolved and destroyed.");
+        // Decision 3: the Response is built HERE, so it carries InResponseTo
+        // naming this SOAP request and a Recipient naming whoever asked.
+        return answer(STATUS_SUCCESS, '', held.assertion, requestId,
+                      scoped.id || held.rpId, scoped.id || held.rpId);
+      }).catch(function (e) {
+        // `claim()` never rejects; this is the answer failing to be built or
+        // sent, which a synchronous throw here used to hand to Express.
+        log.error(errorCodes.tag('STS-SAML-0060') + 'saml11: the artifact ' +
+                  'request could not be answered after its claim: ' +
+                  ((e && e.message) || e));
+        if (!res.headersSent) {
+          errorCodes.mark(res, 'STS-SAML-0060');
+          answer(STATUS_RESPONDER, 'the artifact could not be resolved.', '',
+                 requestId, '');
+        }
+      });
   }
 
   // --- an assertion by id --------------------------------------------------

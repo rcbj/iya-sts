@@ -2498,3 +2498,70 @@ changed with it:
   either subject form through `helpers.nameForSubject()`.
 
 `tests/stable_subject.js` section D drives all three over HTTP.
+
+## SEVERAL NODES: EVERY OAUTH SINGLE-USE VALUE IS SPENT THROUGH A CLAIM (2026-09-14, #46)
+
+Issue #46 section 2's OAuth items. Each was a read, then a write, on a store that reaches
+the other nodes a moment later — and in every case but DPoP, an `await` sat between the
+read and the write inside ONE process as well, so two concurrent requests to one node
+could already both win. Each is now spent through `cluster/cluster_claims.js`
+(`cluster/CLAUDE.md`): one `INSERT … ON CONFLICT` on postgres, this process's memory
+otherwise. The capability rows `oauth.codes-once`, `oauth.refresh-rotation` and
+`oauth.dpop-jti` are provided by `oauth2.js`, `oauth2_bcp.js` and `dpop.js`.
+
+| Value | Scope | Where it is spent | The loser |
+|---|---|---|---|
+| authorization code | `oauth.code` | `tokenGrant()`, below every check and above the mint; bound to the response | waits (≤5s, catching up through `cluster_barrier.syncShared()`) for the winner's `redeemedCodes` record, then goes down `replayOrRefuseRedemption()` — the same token set outside RFC 9700 mode, refusal and revocation inside it; no record in time is `STS-OAUTH-0512` |
+| PAR `request_uri` | `oauth.par` | `issueAuthorizationResponse()`, where `par.spend()` was; bound to the response | `invalid_request_uri` 400, `STS-OAUTH-0514` |
+| rotated refresh token (RFC 9700 / 2.1 mode) | `oauth.refresh` | `bcp.spendRefreshToken()`, just before the mint; bound to the response | a replay: family revoked by id and by the members known, `STS-OAUTH-0516` |
+| a revoked family | `oauth.refresh-family-revoked` | `bcp.revokeFamily()`, on every replay (local or claimed) | any member presented later, including one no node listed, `STS-OAUTH-0517` |
+| DPoP proof `jti` | `oauth.dpop-jti` | reserved on arrival by `dpop.proofClaims()`; kept by `verifyProof()` on acceptance, released otherwise | `invalid_dpop_proof`, `STS-OAUTH-0519` |
+| hosted-surface renewal | `oidc_rp.renewal` | `common/oidc_rp.js` `renewOnce()` | does not redeem; waits for the winner's tokens on the session |
+
+**AND TWO STORES LEAVE A TOMBSTONE (#46 section 3).** `oauth2.authzCodes` and
+`oauth2_bcp.refreshTokens` are declared `tombstone: true`, so a code or a refresh
+token record another node deleted is not written back by a node holding an
+older copy; `refreshTokens` also declares a `mergeRow` that keeps `rotated`
+moving forward only, because a record written back unrotated makes the replay it
+marks undetectable. `persistence/CLAUDE.md`, *Several nodes writing one row*.
+
+A store that cannot be asked refuses in every row (`STS-OAUTH-0513`, `-0515`, `-0518`,
+`-0520`; the renewal logs `STS-AUTHN-0190` and does not renew). A single-use value this
+service cannot prove unspent is not one it may accept.
+
+**The refresh family changed shape, for three reasons that are each a lost update.**
+(1) A child whose parent this node had not heard of started a family of its own and split
+the chain — so the family id now travels IN the refresh token (`refresh_family`, RFC 9700
+mode only, inside the JWE) and `familyForIssuance()` prefers it. (2) `members.push()` on a
+row written whole lost a child when two nodes added one each — so no `members` array is
+written; `membersOf()` derives the list from each token's own `refreshTokens` record (one
+key per jti, which two nodes cannot overwrite), and still reads an array on a restored row.
+(3) A replay revoked the members one node knew, and a child minted elsewhere in the same
+instant was in nobody's list — so the family is also revoked BY ID, and the claim is asked
+before a refresh is spent. That member is refused at its first use rather than at the
+replay; it still introspects as active until then, which is the one thing the by-id mark
+does not reach.
+
+**Why DPoP is claimed on ARRIVAL and not in `verifyProof()`.** The verifier is synchronous
+and `presentedAccessToken()` has synchronous callers in three other families (the
+credential endpoints, SCIM, Shared Signals) besides UserInfo; an async verifier would be a
+change to every one, and a caller that forgot the `await` would be a resource server that
+checks nothing. So `oauth2.js` registers `dpop.proofClaims()` with `app.use()` above its
+first route — above every route that reads a proof, since nothing required before it
+does — and that middleware reserves the proof's unverified `jti`. `verifyProof()` refuses a
+refused reservation at the place the local replay check already sits (so every earlier
+check keeps its own code, and a same-process replay keeps `STS-OAUTH-0110`) and keeps the
+reservation only when it accepts: `seenJtis`' rule, that only an accepted proof is
+remembered, is unchanged. **A caller of `verifyProof()` must pass `req`** for the
+cross-node half; one that does not gets the local check only. **The server nonce needs
+nothing**: `issuedNonces` is persisted, a nonce is not single use, the response carrying
+one is held by the barrier until it commits, and the retry passes the barrier's catch-up
+on whichever node it reaches.
+
+**What is still open.** The code loser's wait is bounded: a winner whose commit takes
+longer than five seconds has bought tokens the loser could not find to revoke (it is
+refused all the same). The OID4VCI pre-authorized code grant in `tokenGrant()` is the
+`oid4vc` family's (`oid4vc.once`), not this one. `tests/oauth_cluster_once.js` holds
+all of it in process — including a control store that answers every claim "yes", under
+which two concurrent redemptions of one code are both issued, and which fails six of its
+assertions.

@@ -513,8 +513,13 @@ function haveDocker() {
 async function refreshTrust(url, current) {
   log.debug('Entering refreshTrust().');
   let pem = '';
+  let read = null;
   try {
-    pem = await trust.fetchCertificate(url);
+    // readTrust() rather than fetchCertificate() since 2026-09-14: the same
+    // one fetch in every mode but `cluster`, where it gathers every node's
+    // leaf — see its header in tools/trust.js.
+    read = await trust.readTrust(url);
+    pem = read.pem;
   } catch (e) {
     // NOT fatal and named rather than swallowed: the service may be mid-restart
     // or simply gone, and the job about to run will say so far more usefully
@@ -538,7 +543,7 @@ async function refreshTrust(url, current) {
     log.debug('Leaving refreshTrust(). Unchanged.');
     return null;
   }
-  const pin = trust.spkiPin(pem);
+  const pin = read.pin;
   fs.writeFileSync(current.pemPath, pem);
   // **THE PIN IS USUALLY UNCHANGED AND THE BUNDLE IS NOT, WHICH IS THE WHOLE
   // POINT OF SAYING BOTH.** A rebuild re-certifies the listener over the key
@@ -1774,6 +1779,22 @@ async function main() {
           path.join(__dirname, 'attach-admin-token.js');
         job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
           ? job.env.NODE_OPTIONS + ' ' + preload : preload;
+      }
+      // ------------------------------------------------------------------
+      // A NEW CONNECTION PER REQUEST, IN THE `cluster` MODE (2026-09-14).
+      //
+      // That mode's load balancer picks a node per CONNECTION, and a job
+      // whose client keeps its connection alive would talk to one node for
+      // its whole run. `tools/fresh-connections.js` argues it; the launchers
+      // set the variable for that mode and no other, so every other mode's
+      // jobs start exactly as they did. Appended for the reason the token's
+      // preload above is.
+      // ------------------------------------------------------------------
+      if (process.env.STS_TEST_FRESH_CONNECTIONS === '1') {
+        const fresh = '--require ' +
+          path.join(__dirname, 'fresh-connections.js');
+        job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
+          ? job.env.NODE_OPTIONS + ' ' + fresh : fresh;
       }
       // ------------------------------------------------------------------
       // AND THE CLIENT SECRET, FOR THE ONE JOB THAT MINTS TOKENS OF ITS OWN.

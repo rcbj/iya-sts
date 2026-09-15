@@ -13,7 +13,7 @@ being things this stack wrote into files of its own.
 |---|---|
 | `bao.hcl` | The store's configuration: raft storage, a TLS listener, and `seal "static"` — a real auto-unseal, not dev mode. |
 | `generate-tls.js` | Mints the listener's certificate BEFORE the store starts, with this repository's own encoder. Runs in the image this repository builds. |
-| `seed.js` | One shot, idempotent: initialise, write the two secrets (**the key is written once and never replaced** — everything sealed under it would be unreadable), build a CA inside the store, issue this service its client certificate, bind it to the policy — and then PROVE the policy by using it. |
+| `seed.js` | One shot, idempotent: initialise, write the two secrets (**the key is written once, with KV v2 check-and-set, and never replaced** — everything sealed under it would be unreadable), build a CA inside the store, issue this service its client certificate, bind it to the policy — and then PROVE the policy by using it. A second stack against an initialised store proves its credential instead. |
 | `read-only.hcl` | What that identity may do: read two paths. Everything else is denied, because Vault denies by default. |
 
 ---
@@ -102,6 +102,55 @@ which fails the whole stack before anything starts.
 It is there rather than only in a test because of what it protects: a stack that
 came up with a writable identity is a stack somebody deployed. A test that runs
 afterwards reports it; this stops it.
+
+### Several stacks against one store: check-and-set, and a second stack that only proves (2026-09-14, #46)
+
+The seeder was written for one stack. A cluster is several containers against
+ONE store, and a stack per container brings a seeder per container:
+
+* **Two seeders on an empty store raced the key-encryption key** — each read
+  nothing, generated a key and wrote it, the later write won, and a node that had
+  started against the earlier key sealed rows the store could no longer open: a
+  node that never starts again, silently. The write is KV version 2's
+  **check-and-set** now: `cas: 0` for a new key (written only if the path has no
+  version), `cas: <version read>` when refreshing the database password beside an
+  existing key. A refusal (`check-and-set parameter did not match`) means somebody
+  else wrote first; the seeder re-reads and keeps theirs. A path whose latest
+  version is DELETED is refused outright rather than given a new key — `bao kv
+  undelete` recovers it.
+* **Initialisation is the store's own check-and-set**: of two seeders calling
+  `sys/init` exactly one gets a root token; the other re-reads `initialized` and
+  carries on as a second stack.
+* **A second stack's seeder no longer refuses to finish.** Its volume holds no
+  root token. With `STS_BAO_TOKEN` (an operator token) it re-declares
+  everything as usual; with none, but a client credential already in
+  `/openbao/client`, it **proves** that credential (`proveReadOnly()`) and
+  succeeds without changing the store; with neither it refuses and says which to
+  supply.
+* **The shape to deploy is one seeding, out of band**: a one-shot init job run
+  once against the store (or an operator doing the same by hand), with each
+  node's container handed the client credential it produced — not a seeder in
+  every stack. Per-container seeders are now safe, and still the wrong place for
+  a root token.
+* **The client certificate is issued for a year and nothing in the running
+  service renews it.** A seeder holding a token re-issues it when it has
+  `STS_BAO_RENEW_WITHIN_DAYS` (30) or fewer left; a proving-only seeder warns.
+  A stack that is never re-seeded stops reading its secrets the day it expires —
+  `/admin/secrets` shows the expiry. Schedule the init job, or renew by hand
+  (`bao write pki/issue/sts-client common_name=sts ttl=8760h`).
+* **Verified against a STUB of the API, not a real store** (2026-09-14; the
+  OpenBao image was not available on the machine that day): a scratch HTTPS
+  server answering the endpoints this file calls, with KV v2's `cas` rule. Two
+  seeders holding a token started together on an initialised, empty store:
+  the seeder as committed wrote TWO different keys in two of three runs; this
+  one wrote one key in three of three, the loser logging that another seeder
+  wrote first. Two seeders on an UNinitialised store: one initialised, the
+  other carried on as a second stack; with no token and no credential it
+  refused with the sentence above, and with a copied credential it proved it
+  and exited 0. A re-run holding the root token refreshed the password and
+  left the key. **What a stub cannot show** is that OpenBao's own wording of a
+  `cas` refusal matches `casRefused()`'s `/check-and-set/` — it is the message
+  KV v2 has documented, and it is worth one run against a real store.
 
 ---
 

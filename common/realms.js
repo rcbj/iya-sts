@@ -296,6 +296,66 @@ function matchPath(pathname) {
 }
 
 // ---------------------------------------------------------------------------
+// COULD THIS PATH NAME A REALM THIS PROCESS HAS NOT HEARD OF YET? (2026-09-14,
+// #46)
+//
+// True when the path opens with the realm prefix and an id that is a valid
+// realm id and is not defined here. `common/app.js`'s realm middleware asks it
+// before letting such a path fall through to Express's 404, because on an
+// active-active node "not defined here" can mean "defined on the other node a
+// moment ago": a realm created on node A answered 404 on node B's first
+// request two times in six, since the realm middleware runs before the cluster
+// barrier that would have applied the realm. The middleware catches up and
+// matches again; this only says when that is worth a round trip.
+//
+// Deliberately NOT `realms.enabled`-and-`active()` gated like matchPath(): a
+// node whose FIRST realm is the one being created elsewhere has no realms, so
+// `active()` is false there until it catches up — which is exactly the case.
+//
+// **WITH AN EMPTY `realms.pathSegment` EVERY PATH OPENS "/<id>"**, so the first
+// segment of every registered route is excluded (the same list realm creation
+// refuses, read from the router once and kept: routes are all registered
+// before the first request) — or every mistyped path would be a barrier.
+// ---------------------------------------------------------------------------
+let routePrefixes = null;
+
+function unknownRealmPath(pathname) {
+  log.debug("Entering unknownRealmPath().");
+  if (!config.value('realms.enabled')) {
+    log.debug("Leaving unknownRealmPath(). Realms are off.");
+    return false;
+  }
+  const segment = pathSegment();
+  let head = String(pathname || '');
+  if (segment) {
+    if (head.indexOf('/' + segment + '/') !== 0) {
+      log.debug("Leaving unknownRealmPath(). No realm prefix.");
+      return false;
+    }
+    head = head.slice(segment.length + 1);
+  }
+  const slash = head.indexOf('/', 1);
+  const id = slash < 0 ? head.slice(1) : head.slice(1, slash);
+  if (!ID_PATTERN.test(id) || realms.has(id) || id === DEFAULT_ID) {
+    log.debug("Leaving unknownRealmPath(). Not an unknown realm id.");
+    return false;
+  }
+  if (!segment) {
+    if (!routePrefixes) {
+      routePrefixes = new Set(reserved().map(function (one) {
+        return String(one).toLowerCase();
+      }));
+    }
+    if (routePrefixes.has(id)) {
+      log.debug("Leaving unknownRealmPath(). A route, not a realm.");
+      return false;
+    }
+  }
+  log.debug("Leaving unknownRealmPath(). Possibly a realm not yet here.");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // READING THE REGISTRY.
 // ---------------------------------------------------------------------------
 function get(id) {
@@ -1147,6 +1207,35 @@ function declareHandle(options, shape, accessors) {
     // are increments, and there is no "last one".
     // -----------------------------------------------------------------------
     merge: options.merge === 'own' ? 'own' : 'replace',
+    // -----------------------------------------------------------------------
+    // TWO MORE THINGS A STORE SAYS ABOUT ITS ROWS WHEN SEVERAL NODES WRITE
+    // THEM (2026-09-14, #46 section 3), both argued in
+    // `persistence/persistence_minted.js`:
+    //
+    //   `tombstone: true`  A deleted key is ENDED, not merely absent: the
+    //              store keeps a tombstone and refuses a later write of the
+    //              key, so a node holding an old copy cannot bring back a
+    //              session another node signed out. Only for keys that are
+    //              random handles and never legitimately written again —
+    //              never for a counter or anything keyed by a name.
+    //   `mergeRow(mine, theirs)`  The row is edited IN PLACE and two nodes can
+    //              each edit it; the flush reads the stored row under a lock
+    //              and writes what this returns rather than its own copy.
+    //              Must be pure and must converge: merging the answer with
+    //              either side again gives the answer.
+    // -----------------------------------------------------------------------
+    tombstone: options.tombstone === true,
+    mergeRow: typeof options.mergeRow === 'function' ? options.mergeRow : null,
+    // ---------------------------------------------------------------------
+    // `observation: true` (2026-09-15, #46): a write to this store is a TALLY
+    // of what a request did — a decision counted — and not a thing the
+    // request did. It is journalled and flushed like any other row, but it
+    // does not by itself make a request one that WROTE, so the cluster
+    // barrier does not hold a read for it (`cluster/CLAUDE.md`, rcbj's
+    // decision 6). A request that wrote anything else is held, and the tally
+    // rides that commit. `persistence_minted.js`'s `note()` keeps the count.
+    // ---------------------------------------------------------------------
+    observation: options.observation === true,
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
@@ -1526,6 +1615,14 @@ function map(options) {
 function arr(options) {
   log.debug("Entering arr().");
   const per = keyed(function () { return []; });
+  // A SEGMENTED ARRAY IS A DIFFERENT SET OF ACCESSORS — see segmentedArr().
+  const segment = options && options.persist &&
+                  Number(options.segment) > 0
+    ? Math.floor(Number(options.segment)) : 0;
+  if (segment) {
+    log.debug("Leaving arr(). Segmented by " + segment + ".");
+    return segmentedArr(options, per, segment);
+  }
   // ONE ROW FOR THE WHOLE ARRAY, under the empty key. An array's key is its
   // POSITION, and a `splice` renumbers every row after it — so a row per index
   // would need the flush to work out which positions moved, which is the diff
@@ -1636,6 +1733,269 @@ function arr(options) {
       // has no such property, and the target here is a permanently empty array.
       // Marking every descriptor configurable is what keeps Object.keys() and
       // the spread operator legal over this.
+      return d ? Object.assign({}, d, { configurable: true }) : undefined;
+    },
+    defineProperty: function (target, prop, desc) {
+      log.debug("Entering defineProperty().");
+      Object.defineProperty(per(), prop, desc);
+      log.debug("Leaving defineProperty().");
+      return true;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A PERSISTED ARRAY IN SEGMENTS: `realms.arr({ persist, segment: N })`
+// (2026-09-14, #46).
+//
+// **ONE ROW FOR THE WHOLE ARRAY WAS THE COST OF A CLUSTER.** The audit ring is
+// 5,000 events, about 2.3 MB of JSON, and it moves on every request — so every
+// flush sealed and wrote 2.3 MB, and every OTHER node read it back, opened it
+// and parsed it to learn about one event. In `postgres` mode that was paid
+// once per burst, behind the response. In active-active mode the cluster
+// barrier holds a writing response until its commit, so it was paid per
+// request, twice: measured on two nodes, a management-API create took 180ms
+// against 2ms on one `postgres` node, and the audit ring was 3.3 MB of the
+// 3.4 MB of minted rows those creates wrote.
+//
+// So a store that is APPENDED TO AT ONE END AND TRIMMED AT THE OTHER — which is
+// what a ring is, and nothing else should declare this — can be stored as rows
+// of N elements, keyed by ABSOLUTE position: the index an element would have
+// if nothing had ever been removed from the front. Absolute positions do not
+// renumber on a `shift`, which is exactly the property whole-array storage
+// was chosen to avoid needing.
+//
+//   * `push` rewrites the one segment the new element lands in — at most N
+//     elements, whatever the length of the array.
+//   * `shift` WRITES NOTHING until a whole segment has left, and then deletes
+//     that segment's row. Until then the stored head segment still carries the
+//     elements already dropped here, so a copy restored or read from the store
+//     can hold up to N-1 elements more than this process does. That is the
+//     trade, and it is why this is for a CAPPED ring: its reader trims to the
+//     cap (audit.js's merged()), and its own trim removes them locally.
+//   * `pop` rewrites the last segment; every other mutation (`splice`, `sort`,
+//     an index assignment, `length = 0`) renumbers positions, so every segment
+//     the array covered before or after is rewritten — correct, and the whole
+//     cost the one-row design always paid.
+//
+// A segment's value is `{ start, rows }` — its first element's absolute
+// position and its elements — so the store can be put back in order without
+// the key. What another process contributed under a segmented `merge: 'own'`
+// handle is read back with `persistence_replication.remoteSegmentedRows()`.
+// ---------------------------------------------------------------------------
+function segmentedArr(options, per, size) {
+  log.debug("Entering segmentedArr().");
+  // Partition id -> absolute position of element 0.
+  const bases = new Map();
+  // Partition id -> key -> { start, rows }, for restore() only.
+  const restored = new Map();
+  onRemove(function (id) {
+    bases.delete(id);
+    restored.delete(id);
+  });
+
+  function baseOf(id) {
+    log.debug("Entering baseOf().");
+    log.debug("Leaving baseOf().");
+    return bases.get(id) || 0;
+  }
+
+  // The keys of the segments absolute positions [from, to) fall in.
+  function keysOver(from, to) {
+    log.debug("Entering keysOver().");
+    const out = [];
+    if (to <= from) {
+      log.debug("Leaving keysOver(). None.");
+      return out;
+    }
+    for (let k = Math.floor(from / size); k <= Math.floor((to - 1) / size);
+         k++) {
+      out.push(String(k));
+    }
+    log.debug("Leaving keysOver().");
+    return out;
+  }
+
+  function segmentOf(id, key) {
+    log.debug("Entering segmentOf().");
+    const real = per.of(id);
+    const base = baseOf(id);
+    const start = Number(key) * size;
+    const lo = Math.max(start, base);
+    const hi = Math.min(start + size, base + real.length);
+    if (!/^\d+$/.test(String(key)) || lo >= hi) {
+      log.debug("Leaving segmentOf(). Empty.");
+      return null;
+    }
+    log.debug("Leaving segmentOf().");
+    return { start: lo, rows: real.slice(lo - base, hi - base) };
+  }
+
+  const handle = declareHandle(options, 'arr', {
+    dump: function (realmId) {
+      log.debug("Entering dump().");
+      const id = partitionId(realmId);
+      const base = baseOf(id);
+      const out = keysOver(base, base + per.of(id).length)
+        .map(function (key) {
+          return { key: key, value: segmentOf(id, key) };
+        });
+      log.debug("Leaving dump().");
+      return out;
+    },
+    read: function (realmId, key) {
+      log.debug("Entering read().");
+      const value = segmentOf(partitionId(realmId), key);
+      log.debug("Leaving read().");
+      return value ? { present: true, value: value }
+                   : { present: false };
+    },
+    // Only a row this process wrote in a life with the same origin reaches
+    // here for a `merge: 'own'` store; another origin's is contributed. The
+    // array is rebuilt from every segment restored so far, in position order.
+    restore: function (realmId, key, value) {
+      log.debug("Entering restore().");
+      const id = partitionId(realmId);
+      if (!acceptsRows(realmId)) {
+        log.debug("Leaving restore(). The realm was removed here.");
+        return;
+      }
+      if (!restored.has(id)) {
+        restored.set(id, new Map());
+      }
+      const segments = restored.get(id);
+      if (Array.isArray(value)) {
+        // A whole-array row written before this store was segmented.
+        segments.set(String(key), { start: 0, rows: value });
+      } else if (value && Array.isArray(value.rows)) {
+        segments.set(String(key), { start: Number(value.start) || 0,
+                                    rows: value.rows });
+      } else {
+        segments.delete(String(key));
+      }
+      rebuild(id, segments);
+      log.debug("Leaving restore().");
+    },
+    remove: function (realmId, key) {
+      log.debug("Entering remove().");
+      const id = partitionId(realmId);
+      const segments = restored.get(id);
+      if (segments && key !== undefined && key !== null && key !== '') {
+        segments.delete(String(key));
+        rebuild(id, segments);
+      } else {
+        per.of(id).length = 0;
+        bases.delete(id);
+      }
+      log.debug("Leaving remove().");
+    }
+  });
+
+  function rebuild(id, segments) {
+    log.debug("Entering rebuild().");
+    const ordered = Array.from(segments.values()).sort(function (a, b) {
+      return a.start - b.start;
+    });
+    const real = per.of(id);
+    real.length = 0;
+    ordered.forEach(function (one) {
+      one.rows.forEach(function (row) {
+        real.push(row);
+      });
+    });
+    bases.set(id, ordered.length ? ordered[0].start : 0);
+    log.debug("Leaving rebuild().");
+  }
+
+  function journal(id, keys) {
+    log.debug("Entering journal().");
+    keys.forEach(function (key) {
+      noteWrite(handle, key);
+    });
+    log.debug("Leaving journal().");
+  }
+
+  // Which segments a mutation moved, per the table in the header.
+  function mutated(prop, id, before) {
+    log.debug("Entering mutated().");
+    const real = per.of(id);
+    const base = baseOf(id);
+    if (prop === 'push') {
+      journal(id, keysOver(base + before, base + real.length));
+    } else if (prop === 'shift') {
+      if (before > 0) {
+        const next = base + 1;
+        bases.set(id, next);
+        if (next % size === 0) {
+          journal(id, [String(next / size - 1)]);
+        }
+      }
+    } else if (prop === 'pop') {
+      if (before > 0) {
+        journal(id, keysOver(base + before - 1, base + before));
+      }
+    } else {
+      journal(id, keysOver(base, base + Math.max(before, real.length)));
+    }
+    log.debug("Leaving mutated().");
+  }
+
+  log.debug("Leaving segmentedArr().");
+  return new Proxy([], {
+    get: function (target, prop) {
+      log.debug("Entering get().");
+      const real = per();
+      const v = Reflect.get(real, prop, real);
+      if (typeof v !== 'function') {
+        log.debug("Leaving get().");
+        return v;
+      }
+      if (!handle || MUTATORS.indexOf(prop) < 0) {
+        log.debug("Leaving get().");
+        return v.bind(real);
+      }
+      log.debug("Leaving get().");
+      // See arr()'s `get` trap: a bound mutator never reaches `set`.
+      return function () {
+        const id = currentId();
+        const before = per.of(id).length;
+        const out = v.apply(per.of(id), arguments);
+        mutated(prop, id, before);
+        return out;
+      };
+    },
+    set: function (target, prop, value) {
+      log.debug("Entering set().");
+      const id = currentId();
+      const before = per.of(id).length;
+      per.of(id)[prop] = value;
+      mutated('set', id, before);
+      log.debug("Leaving set().");
+      return true;
+    },
+    has: function (target, prop) {
+      log.debug("Entering has().");
+      log.debug("Leaving has().");
+      return prop in per();
+    },
+    deleteProperty: function (target, prop) {
+      log.debug("Entering deleteProperty().");
+      const id = currentId();
+      const before = per.of(id).length;
+      delete per.of(id)[prop];
+      mutated('delete', id, before);
+      log.debug("Leaving deleteProperty().");
+      return true;
+    },
+    ownKeys: function () {
+      log.debug("Entering ownKeys().");
+      log.debug("Leaving ownKeys().");
+      return Reflect.ownKeys(per());
+    },
+    getOwnPropertyDescriptor: function (target, prop) {
+      log.debug("Entering getOwnPropertyDescriptor().");
+      const d = Object.getOwnPropertyDescriptor(per(), prop);
+      log.debug("Leaving getOwnPropertyDescriptor().");
       return d ? Object.assign({}, d, { configurable: true }) : undefined;
     },
     defineProperty: function (target, prop, desc) {
@@ -2193,6 +2553,7 @@ module.exports = {
   obj: obj,
   sharedMap: sharedMap,
   setPersistObserver: setPersistObserver,
+  unknownRealmPath: unknownRealmPath,
   handles: handles,
   handleFor: handleFor,
   realmSupport: realmSupport

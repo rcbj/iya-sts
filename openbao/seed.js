@@ -54,6 +54,38 @@
 // after configuring an auth method for its operators — and this seeder then
 // reports that it cannot reconfigure, which is the correct answer rather than
 // a surprise.
+//
+// ---------------------------------------------------------------------------
+// SEVERAL STACKS AGAINST ONE STORE (2026-09-14, #46 section 8).
+//
+// This was written for one stack, and a cluster is several containers — and
+// several seeders, if each stack brings one — against ONE store. Two things
+// went wrong there and one was data loss:
+//
+//   * **TWO SEEDERS ON AN EMPTY STORE RACED THE KEY-ENCRYPTION KEY.** Each read
+//     `secret/sts`, found nothing, generated a key and wrote it: the later
+//     write won the path, and a service that had started against the earlier
+//     one sealed rows under a key the store no longer held — a node that can
+//     never start again, and nothing said so. The write is now KV version 2's
+//     CHECK-AND-SET: `cas: 0` writes only if the path has no version at all,
+//     and a refusal means another seeder won, so this one READS BACK and keeps
+//     theirs. A key already there is updated (the database password) with
+//     `cas` set to the version read, so a concurrent writer is never
+//     overwritten either.
+//   * **A SECOND STACK'S SEEDER REFUSED TO FINISH** — "already initialised and
+//     there is no root token" — because the root token lives in the FIRST
+//     stack's volume. It now finishes where it honestly can: with an
+//     operator's token in `STS_BAO_TOKEN` it re-declares everything as usual,
+//     and with none but a client credential already in its own volume it
+//     PROVES that credential (`proveReadOnly()`) and succeeds without
+//     changing the store. Only a stack with neither is refused, and the
+//     sentence says which of the two to supply.
+//
+// **THE DEPLOYMENT SHAPE THIS POINTS AT** is one seeding, out of band — a
+// one-shot init job run once against the store, handing each node its client
+// credential — rather than a seeder per container. `openbao/CLAUDE.md` says
+// so, and says that the client certificate's one-year lifetime is renewed
+// only when a seeder runs (`ensureClientCertificate()`).
 // ===========================================================================
 
 const fs = require('fs');
@@ -76,6 +108,11 @@ const POLICY_FILE = process.env.STS_BAO_POLICY_FILE ||
                     '/openbao/config/read-only.hcl';
 const POLICY_NAME = 'sts-read';
 const WAIT_SECONDS = Number(process.env.STS_BAO_WAIT_SECONDS || 60);
+// An operator's token for a store this stack did not initialise — see the
+// header's section on several stacks. Never written anywhere by this script.
+const OPERATOR_TOKEN = String(process.env.STS_BAO_TOKEN || '').trim();
+// A client certificate this close to expiry is re-issued by a seeder that can.
+const RENEW_WITHIN_DAYS = Number(process.env.STS_BAO_RENEW_WITHIN_DAYS || 30);
 
 let ca = null;
 
@@ -201,23 +238,34 @@ async function waitForActive() {
                   'within ' + WAIT_SECONDS + ' seconds.');
 }
 
+// The token for a store that is ALREADY initialised: the root token this
+// stack's own volume kept, an operator's `STS_BAO_TOKEN`, or null — which
+// `main()` turns into proving the credential this stack already holds.
+function tokenForInitialisedStore(tokenFile) {
+  log.debug("Entering tokenForInitialisedStore().");
+  if (fs.existsSync(tokenFile)) {
+    say('the store is already initialised; reusing the root token from its ' +
+        'own volume.');
+    log.debug("Leaving tokenForInitialisedStore(). The kept root token.");
+    return String(fs.readFileSync(tokenFile, 'utf8')).trim();
+  }
+  if (OPERATOR_TOKEN) {
+    say('the store is already initialised and this stack holds no root ' +
+        'token; using the operator token in STS_BAO_TOKEN.');
+    log.debug("Leaving tokenForInitialisedStore(). The operator's token.");
+    return OPERATOR_TOKEN;
+  }
+  log.debug("Leaving tokenForInitialisedStore(). None.");
+  return null;
+}
+
 async function rootToken() {
   log.debug("Entering rootToken().");
   const tokenFile = path.join(SEED_DIR, 'root.token');
   const status = await call('GET', '/v1/sys/init');
   if (status.body && status.body.initialized) {
-    if (!fs.existsSync(tokenFile)) {
-      throw new Error('the secret store is already initialised and there is ' +
-                      'no root token in ' + tokenFile + ' — so this seeder ' +
-                      'cannot configure it. That is the correct answer for a ' +
-                      'store somebody else initialised; for a stack that has ' +
-                      'lost its volume state, `docker compose down ' +
-                      '--volumes` is the way back.');
-    }
-    say('the store is already initialised; reusing the root token from its ' +
-        'own volume.');
-    log.debug("Leaving rootToken().");
-    return String(fs.readFileSync(tokenFile, 'utf8')).trim();
+    log.debug("Leaving rootToken(). Already initialised.");
+    return tokenForInitialisedStore(tokenFile);
   }
   // ONE RECOVERY SHARE. With an auto seal the shares are RECOVERY keys rather
   // than unseal keys — they exist to rekey or to recover, never to start the
@@ -226,6 +274,17 @@ async function rootToken() {
   const made = await call('PUT', '/v1/sys/init',
                           { recovery_shares: 1, recovery_threshold: 1 });
   if (made.status !== 200 || !made.body || !made.body.root_token) {
+    // **ANOTHER SEEDER MAY HAVE INITIALISED IT A MOMENT AGO** — two stacks
+    // started together both read "not initialised". Initialisation is the
+    // store's own check-and-set: exactly one of them gets a root token. The
+    // other is an ordinary second stack, not a failure.
+    const again = await call('GET', '/v1/sys/init');
+    if (again.body && again.body.initialized) {
+      say('another seeder initialised the store while this one was asking ' +
+          'to; carrying on as a second stack.');
+      log.debug("Leaving rootToken(). Initialised by somebody else.");
+      return tokenForInitialisedStore(tokenFile);
+    }
     refuse(made, 'the secret store could not be initialised');
   }
   fs.mkdirSync(SEED_DIR, { recursive: true });
@@ -270,16 +329,36 @@ function upgrading(answer) {
   return /Upgrading from non-versioned/i.test(said);
 }
 
-async function ensureSecrets(token) {
-  log.debug("Entering ensureSecrets().");
+// Is this answer KV version 2 refusing a check-and-set? A 400 whose message
+// names it; every other 400 is a real refusal.
+function casRefused(answer) {
+  log.debug("Entering casRefused().");
+  const said = JSON.stringify((answer && answer.body) || '');
+  log.debug("Leaving casRefused().");
+  return !!answer && answer.status === 400 && /check-and-set/i.test(said);
+}
+
+// The secret as it stands: its data, its version, and whether its latest
+// version was deleted (KV v2 answers a soft-deleted version 404 WITH its
+// metadata, which is a different fact from "never written").
+async function readSecrets(token) {
+  log.debug("Entering readSecrets().");
+  const held = await call('GET', '/v1/secret/data/' + SECRET_PATH, undefined,
+                          token);
+  const body = held.body || {};
+  const metadata = (body.data && body.data.metadata) || {};
+  log.debug("Leaving readSecrets().");
+  return {
+    status: held.status,
+    data: (held.status === 200 && body.data && body.data.data) || {},
+    version: Number(metadata.version) || 0,
+    deleted: !!(metadata.deletion_time || metadata.destroyed)
+  };
+}
+
+async function writeSecrets(token, data, cas) {
+  log.debug("Entering writeSecrets(). cas=" + cas);
   const at = '/v1/secret/data/' + SECRET_PATH;
-  const held = await call('GET', at, undefined, token);
-  const existing = (held.status === 200 && held.body && held.body.data &&
-                    held.body.data.data) || {};
-  // THE KEK IS KEPT IF IT IS THERE. See the header: replacing it destroys
-  // everything this service has sealed.
-  const kek = existing.kek ||
-              nodeCrypto.randomBytes(32).toString('base64');
   // ---------------------------------------------------------------------
   // **THE FIRST WRITE AFTER ENABLING THE ENGINE CAN BE REFUSED, AND IT IS NOT
   // A FAILURE (2026-09-12).**
@@ -299,9 +378,10 @@ async function ensureSecrets(token) {
   //
   // **RETRIED ONLY FOR THAT MESSAGE.** Every other 400 is a real refusal — a
   // bad path, a bad payload, a policy — and retrying those would turn a
-  // mistake into a ten-second pause followed by the same mistake.
+  // mistake into a ten-second pause followed by the same mistake. A
+  // check-and-set refusal is returned to the caller, which re-reads.
   // ---------------------------------------------------------------------
-  const body = { data: { kek: kek, databasePassword: DB_PASSWORD } };
+  const body = { options: { cas: cas }, data: data };
   let wrote = await call('POST', at, body, token);
   for (let attempt = 0; attempt < 20 && upgrading(wrote); attempt++) {
     if (attempt === 0) {
@@ -312,15 +392,89 @@ async function ensureSecrets(token) {
     await new Promise(function (r) { setTimeout(r, 500); });
     wrote = await call('POST', at, body, token);
   }
-  if (wrote.status !== 200 && wrote.status !== 204) {
-    refuse(wrote, 'the secrets could not be written');
+  log.debug("Leaving writeSecrets(). status=" + wrote.status);
+  return wrote;
+}
+
+async function ensureSecrets(token) {
+  log.debug("Entering ensureSecrets().");
+  for (let round = 0; round < 10; round++) {
+    const held = await readSecrets(token);
+    if (!held.data.kek && held.version && held.deleted) {
+      // A KEY THAT WAS THERE AND IS DELETED is not a key to replace. Whatever
+      // this service sealed is sealed under it, and `bao kv undelete` brings it
+      // back; generating a new one here would make that impossible to notice.
+      throw new Error('the latest version (' + held.version + ') of secret/' +
+                      SECRET_PATH + ' is deleted or destroyed. This seeder ' +
+                      'will not write a new key-encryption key over it: ' +
+                      'everything sealed under the old one would be ' +
+                      'unreadable. Undelete it (`bao kv undelete -versions=' +
+                      held.version + ' secret/' + SECRET_PATH + '`), or, for ' +
+                      'a store nothing was ever sealed under, delete its ' +
+                      'metadata (`bao kv metadata delete secret/' +
+                      SECRET_PATH + '`) and run this again.');
+    }
+    if (held.data.kek) {
+      // THE KEK IS KEPT. The database password is refreshed from the
+      // environment when it differs — pinned to the version just read, so a
+      // concurrent writer's change is re-read rather than overwritten.
+      if (held.data.databasePassword === DB_PASSWORD) {
+        say('the key-encryption key was already in the store (version ' +
+            held.version + ') and was left alone; the database password ' +
+            'already matches the environment.');
+        log.debug("Leaving ensureSecrets(). Nothing to write.");
+        return;
+      }
+      const updated = await writeSecrets(token,
+        Object.assign({}, held.data, { databasePassword: DB_PASSWORD }),
+        held.version);
+      if (casRefused(updated)) {
+        say('secret/' + SECRET_PATH + ' changed while this seeder was ' +
+            'updating it; reading it again.');
+        continue;
+      }
+      if (updated.status !== 200 && updated.status !== 204) {
+        refuse(updated, 'the secrets could not be written');
+      }
+      say('the key-encryption key was already in the store and was left ' +
+          'alone; the database password was refreshed from the environment.');
+      log.debug("Leaving ensureSecrets(). Password refreshed.");
+      return;
+    }
+    // NO KEY YET. Offered with `cas: 0` — written only if the path has no
+    // version at all — so of two seeders racing an empty store exactly one
+    // writes, and the other is told so and reads back the winner's.
+    const offered = nodeCrypto.randomBytes(32).toString('base64');
+    const created = await writeSecrets(token,
+      { kek: offered, databasePassword: DB_PASSWORD },
+      held.version ? held.version : 0);
+    if (casRefused(created)) {
+      say('another seeder wrote secret/' + SECRET_PATH + ' first; reading ' +
+          'back the key-encryption key it wrote, which is the one every ' +
+          'node will use.');
+      continue;
+    }
+    if (created.status !== 200 && created.status !== 204) {
+      refuse(created, 'the secrets could not be written');
+    }
+    const confirmed = await readSecrets(token);
+    if (confirmed.data.kek !== offered) {
+      // Not expected after a successful `cas` write, and said rather than
+      // assumed: what is stored is what the service will read.
+      say('the key-encryption key stored is not the one this seeder offered; ' +
+          'the stored one stands.');
+    } else {
+      say('generated a key-encryption key and wrote it with the database ' +
+          'password (check-and-set: nobody had written one). It will never ' +
+          'be replaced by this seeder.');
+    }
+    log.debug("Leaving ensureSecrets(). Created.");
+    return;
   }
-  say(existing.kek
-    ? 'the key-encryption key was already in the store and was left alone; ' +
-      'the database password was refreshed from the environment.'
-    : 'generated a key-encryption key and wrote it with the database ' +
-      'password. It will never be replaced by this seeder.');
-  log.debug("Leaving ensureSecrets().");
+  log.debug("Leaving ensureSecrets(). Gave up.");
+  throw new Error('secret/' + SECRET_PATH + ' kept changing under this ' +
+                  'seeder\'s check-and-set for ten rounds; something else is ' +
+                  'writing it continuously.');
 }
 
 async function ensurePki(token) {
@@ -409,6 +563,21 @@ async function ensureCertAuth(token, caPem) {
   log.debug("Leaving ensureCertAuth().");
 }
 
+// Days until a certificate file expires, or null when it cannot be read.
+function daysLeft(certFile) {
+  log.debug("Entering daysLeft().");
+  try {
+    const cert = new nodeCrypto.X509Certificate(fs.readFileSync(certFile));
+    const out = (Date.parse(cert.validTo) - Date.now()) / 86400000;
+    log.debug("Leaving daysLeft().");
+    return Number.isFinite(out) ? out : null;
+  } catch (e) {
+    log.debug("Caught in daysLeft(): " + ((e && e.message) || e));
+    log.debug("Leaving daysLeft(). Unreadable.");
+    return null;
+  }
+}
+
 async function ensureClientCertificate(token, caPem) {
   log.debug("Entering ensureClientCertificate().");
   fs.mkdirSync(CLIENT_DIR, { recursive: true });
@@ -420,10 +589,21 @@ async function ensureClientCertificate(token, caPem) {
   // certificate, and the two are different CAs here on purpose.
   fs.writeFileSync(caOut, fs.readFileSync(CA_FILE), { mode: 0o644 });
   if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
-    say('the client certificate is already in the shared volume; it was not ' +
-        're-issued.');
-    log.debug("Leaving ensureClientCertificate().");
-    return;
+    const left = daysLeft(certFile);
+    if (left === null || left > RENEW_WITHIN_DAYS) {
+      say('the client certificate is already in the shared volume' +
+          (left === null ? '' : ' (' + Math.floor(left) + ' days left)') +
+          '; it was not re-issued.');
+      log.debug("Leaving ensureClientCertificate().");
+      return;
+    }
+    // RENEWED HERE AND NOWHERE ELSE (2026-09-14). The certificate is issued
+    // for a year and nothing in the running service renews it, so a stack
+    // that is never re-seeded stops reading its secrets on the day it
+    // expires. A seeder run inside the last RENEW_WITHIN_DAYS re-issues it.
+    say('the client certificate in the shared volume expires in ' +
+        Math.floor(left) + ' days (STS_BAO_RENEW_WITHIN_DAYS is ' +
+        RENEW_WITHIN_DAYS + '); issuing a new one.');
   }
   const issued = await call('POST', '/v1/pki/issue/sts-client',
                             { common_name: COMMON_NAME, ttl: '8760h' }, token);
@@ -545,6 +725,41 @@ async function main() {
   await waitForListener();
   const token = await rootToken();
   await waitForActive();
+  if (!token) {
+    // A SECOND STACK WITH NO TOKEN (see the header). Nothing is re-declared;
+    // what this stack needs is a client credential the store accepts, and that
+    // can be proved without any token at all.
+    const certFile = path.join(CLIENT_DIR, 'client.crt');
+    if (!fs.existsSync(certFile) ||
+        !fs.existsSync(path.join(CLIENT_DIR, 'client.key'))) {
+      throw new Error('the secret store is already initialised, this stack ' +
+                      'holds no root token in ' + SEED_DIR + ', ' +
+                      'STS_BAO_TOKEN is not set, and there is no client ' +
+                      'certificate in ' + CLIENT_DIR + ' to prove — so this ' +
+                      'seeder can neither configure the store nor show that ' +
+                      'this stack can read it. Either set STS_BAO_TOKEN to ' +
+                      'an operator token for this store, or put the client ' +
+                      'credential the store was seeded with (client.crt, ' +
+                      'client.key, bao-ca.crt) in ' + CLIENT_DIR + '. For a ' +
+                      'stack that has lost its own volume state, ' +
+                      '`docker compose down --volumes` is the way back.');
+    }
+    fs.writeFileSync(path.join(CLIENT_DIR, 'bao-ca.crt'),
+                     fs.readFileSync(CA_FILE), { mode: 0o644 });
+    await proveReadOnly();
+    const left = daysLeft(certFile);
+    if (left !== null && left <= RENEW_WITHIN_DAYS) {
+      log.warn('the client certificate in ' + CLIENT_DIR + ' expires in ' +
+               Math.floor(left) + ' days, and this seeder holds no token to ' +
+               'renew it. Run the seeder that holds one, or set ' +
+               'STS_BAO_TOKEN.');
+    }
+    say('the secret store was initialised by another stack; nothing was ' +
+        're-declared, and the client credential this stack holds was proved ' +
+        'against it.');
+    log.debug("Leaving main(). Proved only.");
+    return;
+  }
   await ensureMount(token, 'secret', 'kv', { options: { version: '2' } });
   await ensureSecrets(token);
   const caPem = await ensurePki(token);

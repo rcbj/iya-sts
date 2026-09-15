@@ -24,7 +24,8 @@
 
 const express = require('express');
 const bodyParser = require('body-parser');
-const { log, headersOf, bodyOf } = require('./helpers');
+const helpers = require('./helpers');
+const { log, headersOf, bodyOf } = helpers;
 // TRUST REALMS. Required here rather than anywhere else because the realm has
 // to be established BEFORE any other middleware runs — the call log records the
 // realm's statistics, the audit log records the realm's rows, and the CORS
@@ -73,6 +74,11 @@ const validation = require('./validation');
 // route and requires only `config` plus node builtins, so it can neither join a
 // cycle nor move a route. Its middleware is installed below the realm one.
 const requestPool = require('./request_pool');
+// THE CLUSTER BARRIER (2026-09-14, #46). A LIBRARY with a middleware, and a
+// LEAF as far as the require order goes: it requires config, the error-code
+// table and the capability table at load, and `persistence.js` only inside a
+// request. Installed directly below the pool's middleware — see there.
+const clusterBarrier = require('../cluster/cluster_barrier');
 // --- express app -----------------------------------------------------------
 const app = express();
 
@@ -124,7 +130,8 @@ const app = express();
 // asking twice cannot wrap them twice.
 function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
-  const match = realms.matchPath(String(req.url || '').split('?')[0]);
+  const pathname = String(req.url || '').split('?')[0];
+  const match = realms.matchPath(pathname);
 
   // Not in a realm — including a path that opens with the realm SEGMENT and an
   // id nobody defined. That case deliberately falls through to Express's own
@@ -134,12 +141,47 @@ function enterRealm(req, res, next) {
   // refusal for unknown realms would break that distinction for every path
   // under the segment. `GET /realms` is where somebody finds out what the
   // realms are.
+  //
+  // ---------------------------------------------------------------------
+  // **UNLESS ANOTHER NODE HAS JUST DEFINED IT (2026-09-14, #46).** This
+  // middleware runs before the cluster barrier — nothing may be registered
+  // above it — so on an active-active node a realm created on the other node
+  // a moment ago was not here yet when its first request was matched, and
+  // `/realm/<new>/admin-api/status` answered Express's 404 two times in six.
+  // So when the node is active-active and the path names a realm id this
+  // process does not hold, the barrier is run HERE, and the path matched
+  // again. A realm that still does not exist falls through exactly as before,
+  // to the same `Cannot GET` body. The barrier middleware below is told, so
+  // one request catches up once.
+  // ---------------------------------------------------------------------
+  if (!match && clusterBarrier.isActive() &&
+      realms.unknownRealmPath(pathname)) {
+    clusterBarrier.syncShared().then(function (answer) {
+      clusterBarrier.markSynced(req, answer);
+      const again = realms.matchPath(pathname);
+      if (!again) {
+        log.debug("Leaving enterRealm(). Still in no realm.");
+        next();
+        return;
+      }
+      log.debug("Leaving enterRealm(). The realm arrived.");
+      enterMatchedRealm(req, res, next, again);
+    });
+    log.debug("Leaving enterRealm(). Catching up first.");
+    return;
+  }
   if (!match) {
     log.debug("Leaving enterRealm(). Not in a realm.");
     next();
     return;
   }
+  log.debug("Leaving enterRealm().");
+  enterMatchedRealm(req, res, next, match);
+}
 
+// The realm middleware's work once a path has matched a realm.
+function enterMatchedRealm(req, res, next, match) {
+  log.debug("Entering enterMatchedRealm().");
   const query = String(req.url || '').slice(String(req.url || '').split(
       '?')[0].length);
   // `req.originalUrl` is left ALONE and that is deliberate twice over: the call
@@ -211,7 +253,7 @@ function enterRealm(req, res, next) {
     return send.apply(res, arguments);
   };
 
-  log.debug("Leaving enterRealm(). In realm " + match.realm + ".");
+  log.debug("Leaving enterMatchedRealm(). In realm " + match.realm.id + ".");
   realms.run(match.realm, next);
 }
 
@@ -308,6 +350,40 @@ realms.reserve(function () {
 // everything and the service behaves exactly as it did.
 // ---------------------------------------------------------------------------
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
+
+// ---------------------------------------------------------------------------
+// AND DIRECTLY BELOW IT, THE CLUSTER BARRIER (2026-09-14, #46).
+//
+// Below the pool's middleware so that it runs in the process that SERVES the
+// request — a worker, or this process for a request it keeps — and never in a
+// front process that only proxies. Above everything else, because every
+// middleware below here may read a store: the arrival session, the CSRF check,
+// the rate limiter. It does nothing unless the node is active-active.
+// cluster/cluster_barrier.js argues both of its rules.
+// ---------------------------------------------------------------------------
+app.use(clusterBarrier.middleware());
+
+// ---------------------------------------------------------------------------
+// AND THE REQUEST'S REALM'S KEY SET, MADE OFF THE EVENT LOOP BEFORE A HANDLER
+// READS IT (2026-09-14, #46).
+//
+// A realm this process holds no keys for — one created at runtime, here or on
+// another node — used to have them generated inside the first handler that
+// read `STS`: four RSA generations, ~470ms of a stopped process. A burst of
+// such requests, or one list of such realms, stopped a cluster node past its
+// membership lifetime and it exited. `helpers.prepareKeySet()` argues it.
+//
+// BELOW THE BARRIER, so a set another node already wrote has been adopted and
+// there is nothing to make; in the process that SERVES the request, for the
+// barrier's reason. After the first request a realm's keys are held, so this
+// is one map lookup — the reason it is a bare callback and logs nothing (a
+// hot path: an Entering/Leaving pair on every request would drown the log).
+// ---------------------------------------------------------------------------
+app.use(function (req, res, next) {
+  helpers.prepareKeySet(realms.currentId()).then(function () {
+    next();
+  });
+});
 
 // CORS preflight carrying Access-Control-Request-Private-Network and require
 // this header on the response. Answer it so the call isn't blocked. Registered
@@ -667,39 +743,42 @@ app.use(function (req, res, next) {
     log.debug("Leaving json().");
     return json.apply(res, arguments);
   };
-  res.end = function (chunk) {
-    log.debug("Entering end().");
-    if (!responseBody &&
-        chunk) responseBody = bodyOf(Buffer.isBuffer(chunk) ?
-                                     chunk.toString('utf8') : chunk);
-    log.debug("Leaving end().");
-    return end.apply(res, arguments);
-  };
-
   // ---------------------------------------------------------------------
-  // THE REALM IS RE-ENTERED HERE, EXPLICITLY, AND IT IS NOT BELT AND BRACES.
+  // THE CALL IS RECORDED WHEN THE ANSWER IS HANDED OVER, NOT WHEN IT HAS GONE
+  // (2026-09-14, #46). It was recorded from `finish`, and with a cluster that
+  // is too late in one precise way: the barrier holds a writing response until
+  // its writes have committed (cluster/cluster_barrier.js, rule 2), and a row
+  // recorded after the response left was never one of them. A refused
+  // `POST /healthcheck` on node A answered 404 and its audit row was committed
+  // a moment later — after the client had already asked node B for the audit
+  // log, which did not list it (the `admin_api` job, in the suite's `cluster`
+  // mode). Recorded here, in `end()`, the row is in the journal when the
+  // barrier decides, so a request that wrote anyway carries its row in the
+  // commit it was already waiting for, and a REFUSAL — the row somebody opens
+  // the audit log to find — is held for its row's commit even when it wrote
+  // nothing else. What the barrier does with it is argued there.
   //
-  // Everything below runs from a `finish` event, and an EventEmitter's
-  // listeners run in the async context of whatever EMITTED the event — not the
-  // one they were added in. The realm middleware's AsyncLocalStorage therefore
-  // may or may not still be entered by the time this fires, depending on
-  // whether the response was flushed synchronously or from a socket write
-  // callback. The statistics and the audit row would then land in whichever
-  // realm the process happened to be in, which under load is a different one.
-  //
-  // `req.realm` is what the middleware recorded on the request, and re-entering
-  // it here makes the answer the same every time rather than usually right.
+  // Everything the old comment said about the timing still holds: the status
+  // is set before `end()`, `req.route` holds the matched pattern, and the
+  // elapsed time is taken here. `finish` records a call that somehow reached
+  // it without `end()` passing through here, and logs the response as before.
   // ---------------------------------------------------------------------
-  res.on('finish', realms.bind(req.realm, function () {
-    // Counted here rather than at the top of the middleware because the two
-    // things worth counting — the status code and how long it took — do not
-    // exist until the response has gone out. `req.route` is set by Express when
-    // it dispatches into a route, so by now it holds the PATTERN that matched
-    // ("/oauth2/register/:client_id") rather than the URL that was requested;
-    // the metrics table is keyed on it so that one row means one endpoint
-    // instead of one row per client id. A request that matched nothing has no
-    // pattern, which is what `matched` records: those are 404s, and they are
-    // the ones the table's cap collapses when a scanner starts inventing paths.
+  let recorded = false;
+  const recordTheCall = realms.bind(req.realm, function () {
+    // Counted when the answer goes out rather than at the top of the
+    // middleware because the two things worth counting — the status code and
+    // how long it took — do not exist before. `req.route` is set by Express
+    // when it dispatches into a route, so by now it holds the PATTERN that
+    // matched ("/oauth2/register/:client_id") rather than the URL that was
+    // requested; the metrics table is keyed on it so that one row means one
+    // endpoint instead of one row per client id. A request that matched
+    // nothing has no pattern, which is what `matched` records: those are 404s,
+    // and they are the ones the table's cap collapses when a scanner starts
+    // inventing paths.
+    if (recorded) {
+      return null;
+    }
+    recorded = true;
     const matchedPath = (req.route && req.route.path) || '';
     stats.recordCall({
       method: req.method,
@@ -708,23 +787,50 @@ app.use(function (req, res, next) {
       status: res.statusCode,
       durationMs: Date.now() - started
     });
-    // The same event, as one ROW rather than as a number that went up. It is
-    // recorded here and not at the top of the middleware for the same reason
-    // the counting is: the status and the elapsed time do not exist until the
-    // response has gone out. `req` is still live — the body has been flushed,
-    // the request object has not gone anywhere — which is what lets audit.js
-    // resolve the signed-in user without that having to be threaded through
-    // every handler.
+    // The same event, as one ROW rather than as a number that went up. `req`
+    // is live, which is what lets audit.js resolve the signed-in user without
+    // that having to be threaded through every handler.
     //
     // Nothing out of the request or response BODY is recorded, deliberately:
     // those carry passwords, bearer tokens and assertions on this service, and
     // the debug log above is where a person who wants them looks. The one field
     // read out of an admin body is `action`, by name — see audit.js.
-    audit.recordHttp(req, res, {
+    return audit.recordHttp(req, res, {
       route: matchedPath,
       matched: !!matchedPath,
       durationMs: Date.now() - started
     });
+  });
+
+  res.end = function (chunk) {
+    log.debug("Entering end().");
+    if (!responseBody && chunk) {
+      responseBody = bodyOf(Buffer.isBuffer(chunk) ?
+                            chunk.toString('utf8') : chunk);
+    }
+    if (!recorded) {
+      clusterBarrier.callLogStarts(res);
+      const row = recordTheCall();
+      clusterBarrier.callLogRecorded(res, !!(row && row.errorCode));
+    }
+    log.debug("Leaving end().");
+    return end.apply(res, arguments);
+  };
+
+  // ---------------------------------------------------------------------
+  // THE REALM IS RE-ENTERED, EXPLICITLY, AND IT IS NOT BELT AND BRACES.
+  //
+  // A `finish` listener runs in the async context of whatever EMITTED the
+  // event — not the one it was added in. The realm middleware's
+  // AsyncLocalStorage therefore may or may not still be entered by the time
+  // it fires, depending on whether the response was flushed synchronously or
+  // from a socket write callback, and a row recorded there would land in
+  // whichever realm the process happened to be in. `recordTheCall` is bound
+  // to `req.realm` for that reason, and so is `end()`'s call of it: a handler
+  // may answer from a callback outside the realm's context too.
+  // ---------------------------------------------------------------------
+  res.on('finish', realms.bind(req.realm, function () {
+    recordTheCall();
     log.debug({ response: { path: req.originalUrl,
                             method: req.method,
                             status: res.statusCode,
@@ -735,8 +841,8 @@ app.use(function (req, res, next) {
               req.originalUrl +
               ' in ' + (Date.now() - started) + 'ms');
   }));
-  log.debug("Leaving the call-log middleware. The response will be logged " +
-            "from its finish event.");
+  log.debug("Leaving the call-log middleware. The call will be recorded " +
+            "when the answer is handed over.");
   next();
 });
 

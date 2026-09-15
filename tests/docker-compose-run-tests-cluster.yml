@@ -1,0 +1,91 @@
+# ===========================================================================
+# tests/docker-compose-run-tests-cluster.yml — THE `cluster` MODE'S STACK FOR
+# THE CONTAINERIZED RUNNER, LAYERED OVER docker-compose-run-tests.yml BY
+# ./docker-run-tests.sh (2026-09-14, issue #46).
+#
+# The twin of tests/docker-compose-cluster.yml, and its header is the argument
+# for both: node B extends node A, node B starts once node A is healthy, the
+# balancer (tests/cluster/haproxy.cfg) starts once both are, and node B adds
+# no SPIFFE addresses. What differs is only what differs between the two base
+# files: nothing is published here at all, because the runner is a container
+# on this network and dials the balancer by name.
+#
+# **THE ADDRESSES THE RUNNER IS HANDED ARE THE LAUNCHER'S**, as they are in
+# every mode: STS_TEST_SERVICE_URL, STS_LDAP_URL, STS_PUBLIC_BASE_URL and the
+# two PKI distribution values arrive through the compose environment naming
+# `sts-lb`. This file adds what the base file has no variable for.
+# ===========================================================================
+services:
+  sts:
+    environment:
+      - STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-active-active}
+      - STS_CLUSTER_NODE_NAME=node-a
+      # PROXY PROTOCOL v2 from the balancer and from nowhere else, when the
+      # mode turns it on (tests/tools/modes.sh); the trusted proxy is the
+      # balancer's pinned address below.
+      - STS_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}
+      - STS_TRUSTED_PROXIES=${STS_TRUSTED_PROXIES:-}
+      - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-https://sts-lb:8081}
+      # `sts-lb` among the names, because it is the name every client here
+      # verifies; the rest are the default list's.
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-sts-lb,localhost,sts,sts2,sts-mock,sts.example.com}
+
+  sts2:
+    extends:
+      # Relative to the project directory, as every path in a layered file is.
+      file: docker-compose-run-tests.yml
+      service: sts
+    container_name: ${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}
+    hostname: sts2
+    networks:
+      default:
+        ipv4_address: ${STS2_ADDRESS:-172.30.0.20}
+    depends_on:
+      sts:
+        condition: service_healthy
+    environment:
+      - STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-active-active}
+      - STS_CLUSTER_NODE_NAME=node-b
+      - STS_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}
+      - STS_TRUSTED_PROXIES=${STS_TRUSTED_PROXIES:-}
+      - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-https://sts-lb:8081}
+      - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-sts-lb,localhost,sts,sts2,sts-mock,sts.example.com}
+      - STS_SPIFFE_GRPC_HOST=${STS2_ADDRESS:-172.30.0.20}
+      - STS_EXTRA_IPS=
+
+  sts-lb:
+    container_name: ${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}
+    hostname: sts-lb
+    # PINNED, because it is the one address both nodes trust a PROXY header
+    # from (STS_TRUSTED_PROXIES).
+    networks:
+      default:
+        ipv4_address: ${STS_LB_ADDRESS:-172.30.0.30}
+    environment:
+      # Read by haproxy.cfg's `.if`: `v2` adds send-proxy-v2 to every server.
+      - STS_LB_PROXY_PROTOCOL=${STS_PROXY_PROTOCOL:-off}
+    image: haproxy:3.2.23-alpine
+    volumes:
+      - ./tests/cluster/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      sts:
+        condition: service_healthy
+      sts2:
+        condition: service_healthy
+
+  xacml-pep:
+    environment:
+      - PEP_PDP_URL=https://sts-lb:8081/realm/${XACML_PEP_REALM:-pep-e2e}
+    depends_on:
+      sts-lb:
+        condition: service_started
+
+  tests:
+    environment:
+      # tools/fresh-connections.js and sts_cluster_alternation.js — the mode
+      # names both (modes.sh); the base file has no line to carry them.
+      - STS_TEST_FRESH_CONNECTIONS=${STS_TEST_FRESH_CONNECTIONS:-1}
+      - STS_TEST_CLUSTER_NODES=${STS_TEST_CLUSTER_NODES:-2}
+    depends_on:
+      sts-lb:
+        condition: service_started

@@ -83,6 +83,14 @@ const config = require('../common/config');
 // meets what the resource requires. A library requiring only `common/`
 // modules and `oauth2_monitor.js`, neither of which requires this file.
 const stepUp = require('./step_up');
+// SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46): the atomic "once" a
+// proof's `jti` is reserved through, and the capability table. Libraries that
+// register nothing; `cluster_claims.js` requires `config`, `realms`,
+// `error_codes` and the table and `persistence.js` only LAZILY inside its
+// calls, so this file still requires no store module at load and joins no
+// cycle. `oauth2_bcp.js` above already requires both.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 const log = helpers.log;
 const b64u = helpers.b64u;
 const jsonFromB64u = helpers.jsonFromB64u;
@@ -158,6 +166,115 @@ function iatSkewSeconds() {
 // service with no realms defined, there is exactly one partition and this
 // behaves as the plain Map it replaced. See common/realms.js.
 const seenJtis = realms.map({ persist: 'dpop.seenJtis' });
+
+// ---------------------------------------------------------------------------
+// THE REPLAY CHECK ACROSS NODES (2026-09-14, #46).
+//
+// **WHAT WAS WRONG.** `seenJtis` is a store that converges: a proof accepted
+// on node A is written there and reaches node B a moment later, so the same
+// proof presented to both at once was accepted by both — `persistence/
+// CLAUDE.md` recorded it as the one DPoP gap before the cluster work began.
+// Inside one process the check and the set are synchronous, so it was never a
+// problem there.
+//
+// **WHY THE CLAIM IS NOT IN `verifyProof()`.** An atomic "once" in a shared
+// store is a round trip, and `verifyProof()` is synchronous with synchronous
+// callers: `presentedAccessToken()` answers UserInfo, the step-up stand-in
+// and three more families (the credential endpoints, SCIM, Shared Signals),
+// each of which reads its return value on the next line. Making it async
+// would be a change to every one of those files, and a caller that forgot the
+// `await` would be a resource server that silently checks nothing — the
+// per-endpoint copy this file's history already warns about.
+//
+// **SO IT IS CLAIMED AT THE ASYNC BOUNDARY EVERY CALLER SHARES: THE REQUEST'S
+// ARRIVAL.** `proofClaims()` is a middleware `oauth2.js` registers above every
+// route that verifies a proof. For a request carrying a `DPoP` header it reads
+// the proof's `jti` WITHOUT verifying anything and reserves it through
+// `cluster_claims.claim()`; `verifyProof()`, given the request, then refuses a
+// proof whose reservation was refused, at the place the local replay check
+// already sits (so every check before it keeps its own refusal), and KEEPS the
+// reservation when it accepts. A reservation that was not kept — the proof was
+// refused for something else, or never verified at all — is given back when
+// the response finishes, which is `seenJtis`' rule exactly: only an ACCEPTED
+// proof is remembered.
+//
+// Reading an unverified `jti` is safe for the reason the claims module keys by
+// digest: the worst a forged header can do is reserve a value of its own
+// making, for one request.
+//
+// **THE SERVER NONCE NEEDS NOTHING (checked, 2026-09-14).** A nonce is not
+// single use: `nonceIsCurrent()` asks only whether this service issued it
+// recently. `issuedNonces` is persisted with what is minted, the response that
+// carries a new nonce is a writing response the barrier holds until its commit
+// lands, and the retry that carries it back — to any node — passes the
+// barrier's catch-up first. So a nonce issued on A is current on B by the time
+// B can be asked.
+// ---------------------------------------------------------------------------
+const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
+
+// The `jti` of a compact JWS, read without verifying it, or '' where there is
+// none to read. Anything malformed is left to `verifyProof()` to refuse.
+function unverifiedJtiOf(rawHeader) {
+  log.debug("Entering unverifiedJtiOf().");
+  const raw = String(rawHeader || '').trim();
+  const parts = raw.split('.');
+  if (parts.length !== 3 || raw.indexOf(',') >= 0) {
+    log.debug("Leaving unverifiedJtiOf(). Not a compact JWS.");
+    return '';
+  }
+  let payload = null;
+  try {
+    payload = jsonFromB64u(parts[1]);
+  } catch (e) {
+    log.debug("Caught in unverifiedJtiOf(): " + ((e && e.message) || e));
+    payload = null;
+  }
+  const jti = payload && typeof payload.jti === 'string' ? payload.jti : '';
+  log.debug("Leaving unverifiedJtiOf().");
+  return jti;
+}
+
+function proofClaims() {
+  log.debug("Entering proofClaims().");
+  log.debug("Leaving proofClaims().");
+  return function dpopProofClaim(req, res, next) {
+    log.debug("Entering dpopProofClaim().");
+    const jti = req.headers['dpop'] === undefined ? ''
+      : unverifiedJtiOf(req.headers['dpop']);
+    if (!jti) {
+      log.debug("Leaving dpopProofClaim(). No proof jti to reserve.");
+      next();
+      return;
+    }
+    clusterClaims.claim({
+      scope: 'oauth.dpop-jti', value: jti,
+      // A proof is refused outside `iat` ± the skew, so twice the skew is
+      // every moment it could be presented — `pruneJtis()`'s window.
+      ttlMs: iatSkewSeconds() * 2 * 1000
+    }).then(function (answer) {
+      const held = { jti: jti, answer: answer, kept: false };
+      req[PROOF_CLAIM] = held;
+      if (answer.ok && typeof res.once === 'function') {
+        let settled = false;
+        const settle = function () {
+          log.debug("Entering settle().");
+          if (!settled) {
+            settled = true;
+            if (!held.kept) {
+              clusterClaims.release(answer.handle);
+            }
+          }
+          log.debug("Leaving settle().");
+        };
+        res.once('finish', settle);
+        res.once('close', settle);
+      }
+      log.debug("Leaving dpopProofClaim(). " +
+                (answer.ok ? "Reserved." : "Refused: " + answer.reason + "."));
+      next();
+    });
+  };
+}
 
 // Server-supplied nonces (sections 8 and 9). OFF by default: the mechanism is a
 // second round trip on the first request of every session, so a deployment opts
@@ -607,6 +724,23 @@ function verifyProof(rawHeader, opts) {
                 '). ' +
                 'A proof is good for one request.');
   }
+  // AND ACROSS NODES (#46): the reservation `proofClaims()` made when the
+  // request arrived. After the local check, so a replay this process can see
+  // keeps its own code.
+  const reservation = options.req ? options.req[PROOF_CLAIM] : null;
+  const reserved = reservation && reservation.jti === String(claims.jti)
+    ? reservation : null;
+  if (reserved && !reserved.answer.ok) {
+    log.debug("Leaving verifyProof().");
+    return reserved.answer.reason === 'used'
+      ? fail('STS-OAUTH-0519',
+             'This DPoP proof has already been used (jti ' + claims.jti +
+             ') by another request. A proof is good for one request.')
+      : fail('STS-OAUTH-0520',
+             'Whether this DPoP proof (jti ' + claims.jti + ') has already ' +
+             'been used could not be recorded, so it is refused. Send a ' +
+             'fresh proof.');
+  }
 
   // Check 12, first half: ath, when an access token came with the proof.
   const jkt = thumbprint(jwk);
@@ -636,6 +770,9 @@ function verifyProof(rawHeader, opts) {
   }
 
   seenJtis.set(String(claims.jti), nowSec());
+  if (reserved) {
+    reserved.kept = true;
+  }
   log.debug('Leaving verifyProof(). Accepted. jkt=' + jkt);
   return { ok: true, jkt: jkt, jwk: jwk, claims: claims, header: header };
 }
@@ -923,7 +1060,9 @@ function presentedAccessToken(req, res, where, options) {
     htm: req.method,
     htu: htuOf(req),
     accessToken: accessToken,
-    expectedJkt: boundTo
+    expectedJkt: boundTo,
+    // For the reservation `proofClaims()` made on arrival (#46).
+    req: req
   });
   if (!checked.ok) {
     // RFC 9449 section 9: a RESOURCE server asks for a nonce with a 401 and
@@ -988,6 +1127,11 @@ function stepUpChallenged(res, claims, scheme, opts, where) {
   return true;
 }
 
+// #46: a proof's jti is reserved across the cluster on arrival and refused by
+// `verifyProof()` when another request holds it; the nonce needs nothing (see
+// above `PROOF_CLAIM`). At require time — see cluster/CLAUDE.md.
+capabilities.provide('oauth.dpop-jti');
+
 module.exports = {
   PROOF_TYP: PROOF_TYP,
   SIGNING_ALGS: SIGNING_ALGS,
@@ -1003,6 +1147,8 @@ module.exports = {
   htuOf: htuOf,
   normalizeHtu: normalizeHtu,
   verifyProof: verifyProof,
+  // #46: the middleware that reserves a proof's jti across the cluster.
+  proofClaims: proofClaims,
   jktOf: jktOf,
   setNonceMode: setNonceMode,
   nonceModeOn: nonceModeOn,

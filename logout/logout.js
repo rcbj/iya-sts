@@ -691,7 +691,10 @@ const FAMILIES = [
           label: c.dn,
           detail: 'bound on ' + (c.secure ? 'LDAPS ' : 'plain ') + c.port +
               ', ' +
-              'connection ' + c.id
+              'connection ' + c.id +
+              // ANOTHER NODE'S (2026-09-14, #46): listed from the cluster
+              // table, and ending it is an instruction that node carries out.
+              (c.remote ? ', on node ' + (c.nodeName || c.node) : '')
         });
       });
     },
@@ -705,6 +708,20 @@ const FAMILIES = [
       // dropConnectionsFor() closes every connection for this person, which is
       // what a logout means — so a second row for the same person finds nothing
       // left and says so rather than reporting a failure.
+      // A ROW ON ANOTHER NODE IS INSTRUCTED AND NOT CLOSED (2026-09-14, #46),
+      // and the sentence says so: the instruction committed with this
+      // sign-out, and that node closes the socket when it applies the change
+      // log — after this answer, which does not wait for it. See
+      // ldap/ldap_cluster_connections.js.
+      if (dropped.length && dropped[0].remote) {
+        return { ok: true, pending: true,
+          message: 'the directory connection ' + r.handle + ' bound as ' +
+            dropped[0].dn + ' is on node ' +
+            (dropped[0].nodeName || dropped[0].node) + ', which was ' +
+            'instructed to close it; the instruction is committed with this ' +
+            'sign-out and that node closes the socket when it applies it, ' +
+            'normally within a second — this answer does not wait for it' };
+      }
       return dropped.length
         ? { ok: true, message: 'the directory connection ' + r.handle + ' ' +
             'bound as ' +
@@ -1383,7 +1400,12 @@ function liveSessions() {
       acr: '',
       carries: [],
       detail: 'bound as ' + (c.dn || '(no DN)') + ' on ' +
-              (c.secure ? 'LDAPS ' : 'plain ') + c.port,
+              (c.secure ? 'LDAPS ' : 'plain ') + c.port +
+              // A CONNECTION ANOTHER NODE HOLDS (2026-09-14, #46), from the
+              // cluster table: listed as of that node's last publish, and
+              // ending it is an instruction that node carries out.
+              (c.remote ? ' on node ' + (c.nodeName || c.node) + ' (as it ' +
+                'last published; ending it instructs that node)' : ''),
       // A BOUND CONNECTION IS A BIND THAT SUCCEEDED. This service refuses no
       // bind, so that is a low bar — but it is still a credential having been
       // presented and accepted, which is the distinction this column draws.
@@ -1611,12 +1633,39 @@ function terminate(key, selection, opts) {
                     why: e.message } });
         outcome = { ok: false, message: 'ending this failed: ' + e.message };
       }
-      (outcome.ok ? done : skipped).push({
+      const entry = {
         id: r.id, family: family.id, kind: r.kind, label: r.label,
         message: outcome.message
-      });
+      };
+      // ASKED OF ANOTHER NODE, NOT YET DONE (2026-09-14, #46). Only present
+      // when true, so a single node's answer is exactly what it was.
+      if (outcome.pending) {
+        entry.pending = true;
+      }
+      (outcome.ok ? done : skipped).push(entry);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // A GLOBAL SIGN-OUT REACHES EVERY NODE EVEN WHERE THIS ONE LISTED NOTHING
+  // (2026-09-14, #46 section 4). The ldap family above instructs only when it
+  // has a row to end, and a connection another node accepted a moment ago has
+  // not reached its table yet — so a global logout with directory disconnects
+  // on sends the instruction regardless. It is by identity, and repeating it
+  // for a key the rows above already instructed is one journal key, one row.
+  // Nothing in a single node or an active-passive cluster: the call answers
+  // null there and nothing is added to the result.
+  // ---------------------------------------------------------------------------
+  const acrossCluster = [];
+  if (global && config.value('logout.ldapDisconnect') && ctx.key) {
+    const instructed = ldapServer.signOutAcrossCluster(ctx.key);
+    if (instructed) {
+      acrossCluster.push({ family: 'ldap', at: instructed.at,
+        message: 'every other node was instructed to close the directory ' +
+                 'connections bound as ' + ctx.key + '; each does when it ' +
+                 'applies the change log, after this answer' });
+    }
+  }
 
   const unknownIds = Object.keys(unknown);
 
@@ -1677,8 +1726,16 @@ function terminate(key, selection, opts) {
              (skipped.length ? ', ' + skipped.length + ' that could not be' :
               '') +
              (unknownIds.length ? ', ' + unknownIds.length + ' that named ' +
-                 'nothing' : '') + '.'
+                 'nothing' : '') + '.' +
+             (acrossCluster.length
+               ? ' Other nodes were instructed to close this identity\'s ' +
+                 'directory connections and do so as they apply the change ' +
+                 'log.'
+               : '')
   };
+  if (acrossCluster.length) {
+    result.acrossCluster = acrossCluster;
+  }
   log.info('logout: ' + result.message);
   log.debug("Leaving terminate(). " + done.length + " ended.");
   return result;

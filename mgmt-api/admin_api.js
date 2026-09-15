@@ -88,7 +88,11 @@ const app = require('../common/app');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 const errorCodes = require('../common/error_codes');
-const { log, parseBody, baseUrlOf, STS } = require('../common/helpers');
+// Whether a create can race another node's, and the sentence a refused one
+// carries (#46 section 3). A LIBRARY that registers nothing.
+const createClaims = require('../ldap/directory_create_claims');
+const helpers = require('../common/helpers');
+const { log, parseBody, baseUrlOf, STS } = helpers;
 // BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
 // cannot move one or join a cycle. `crypto.js` is THE one place this service
 // verifies a signature, and `roles.js` is what turns an access token's scopes
@@ -497,6 +501,69 @@ function sendJson(res, status, body) {
 // over whatever the body carried so that a body copied from the console's form
 // — which does carry `action` — cannot mean something other than the URL it was
 // sent to.
+// ---------------------------------------------------------------------------
+// A CREATE CLAIMS ITS NAME ACROSS NODES FIRST (2026-09-14, #46 section 3), for
+// `POST /admin-api/users/create` and `/admin-api/groups/create` —
+// `ldap/directory_create_claims.js` argues it. The directory module is looked
+// up in the require CACHE and never required from here: it registers routes,
+// it is below this module in the route order, and a process that never loaded
+// it has no directory to race for (the action refuses on its own).
+// Resolves to `{ ok, settle }` or the refusal; inert where nothing can race.
+// ---------------------------------------------------------------------------
+function claimForCreate(what) {
+  log.debug("Entering claimForCreate().");
+  let directory = null;
+  try {
+    const cached = require.cache[require.resolve('../ldap/ldap_server')];
+    directory = cached && cached.loaded ? cached.exports : null;
+  } catch (e) {
+    log.debug("Caught in claimForCreate(): " + ((e && e.message) || e));
+  }
+  if (!directory || typeof directory.claimCreate !== 'function') {
+    log.debug("Leaving claimForCreate(). No directory in this process.");
+    return Promise.resolve({ ok: true, settle: function () {} });
+  }
+  log.debug("Leaving claimForCreate().");
+  return directory.claimCreate(what);
+}
+
+// ---------------------------------------------------------------------------
+// RUN AN ACTION, CLAIMING ITS NAME FIRST WHEN THERE IS ONE TO CLAIM. `what` is
+// null for an action that creates nothing, and then — and wherever a create
+// cannot race (`createClaims.active()` false, which is every single-process
+// service) — `run` is called SYNCHRONOUSLY, exactly as the handler did before.
+// Otherwise the claim is awaited, a refusal answered in this API's shape
+// (409, or 503 when the store could not be asked), and `run` handed the claim
+// to settle with the action's outcome.
+// ---------------------------------------------------------------------------
+function runClaimed(res, what, run) {
+  log.debug("Entering runClaimed().");
+  const idle = { ok: true, settle: function () {} };
+  if (!what || !createClaims.active()) {
+    log.debug("Leaving runClaimed(). Nothing to claim.");
+    return run(idle);
+  }
+  log.debug("Leaving runClaimed(). Claiming first.");
+  return claimForCreate(what).then(function (held) {
+    if (!held.ok) {
+      errorCodes.mark(res, held.code);
+      sendJson(res, held.reason === 'store' ? 503 : 409,
+               { ok: false, errors: [createClaims.refusalMessage(held)] });
+      return;
+    }
+    try {
+      run(held);
+    } catch (e) {
+      held.settle(false);
+      log.error(errorCodes.tag('STS-API-0113') + 'admin-api: a create that ' +
+                'had claimed its name threw: ' + ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-API-0113');
+      sendJson(res, 500, { ok: false, errors: ['The create failed: ' +
+                                               ((e && e.message) || e)] });
+    }
+  });
+}
+
 function withAction(req, body) {
   log.debug("Entering withAction().");
   log.debug("Leaving withAction().");
@@ -1118,6 +1185,33 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'back in `status` — it carries a password, so the host, ' +
                  'port, database and user are parsed out of it and reported ' +
                  'instead.' },
+  // THE CLUSTER (2026-09-14, #46). Like `/persistence`, a `status` member beside
+  // the settings, because `cluster.mode` SET and a cluster WORKING are two
+  // facts. See admin.js's clusterStatusBlock().
+  { path: '/cluster', console: '/admin/cluster', tag: 'Cluster',
+    operationId: 'getClusterSettings',
+    summary: 'Whether several nodes against one store behave as one ' +
+             'service, and what active-active mode still waits for',
+    description: 'The five `cluster.*` settings AND a `status` member: this ' +
+                 'node\'s resolved mode, identity, heartbeat and leases; a ' +
+                 'snapshot of every member row and every lease, read by the ' +
+                 'database clock and at most one heartbeat old ' +
+                 '(`status.snapshotAgeMs`); the capability table ' +
+                 'active-active mode is held to (`status.self.capabilities`, ' +
+                 'with `missing` and `acceptedMissing`); where each shared ' +
+                 'secret\'s value came from (never the value); and the read ' +
+                 'barrier\'s counters.\n\nIN ACTIVE-PASSIVE MODE ONE NODE ' +
+                 'SERVES and every other node waits before it restores or ' +
+                 'binds anything, so a standby never answers this operation ' +
+                 '— what answers is the active node. IN ACTIVE-ACTIVE MODE ' +
+                 'EVERY NODE SERVES, and a node refuses to start while a ' +
+                 'capability is missing and not named in ' +
+                 '`cluster.acceptMissingCapabilities`.\n\nEVERY CLUSTERED ' +
+                 'WRITE IS FENCED by the node\'s membership (and in ' +
+                 'active-passive mode by the service lease\'s token), and a ' +
+                 'node that has lost either exits. A node\'s settings ' +
+                 'fingerprint is never returned — only whether it agrees ' +
+                 'with the node answering (`nodes[].agrees`).' },
   { path: '/wstrust', console: '/admin/wstrust', tag: 'WS-Trust',
     operationId: 'getWsTrustSettings',
     summary: 'The security token service\'s own setting',
@@ -2083,20 +2177,28 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API users action endpoint.");
       const body = parseBody(req);
-      // `via: 'api'` and whatever actor the caller named, for the audit rows
-      // the two second-factor clears write — the same honesty `rbacAction`'s
-      // caller keeps: this API authenticates a CLIENT rather than a person, so
-      // an empty actor is the true answer rather than an inconvenient one.
-      const result = adminActions.usersAction(withAction(req, body),
-                                       { via: 'api', actor: '',
-                                         // The address a password reset
-                                         // link is built on (2026-09-13).
-                                         base: baseUrlOf(req) });
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
-      }
-      sendJson(res, result.ok ? 200 : 400, result);
-      log.debug("Leaving the management API users action endpoint.");
+      const request = withAction(req, body);
+      // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
+      return runClaimed(res, request.action === 'create'
+        ? { username: String(request.username || request.user || '') }
+        : null, function (held) {
+        // `via: 'api'` and whatever actor the caller named, for the audit rows
+        // the two second-factor clears write — the same honesty
+        // `rbacAction`'s caller keeps: this API authenticates a CLIENT rather
+        // than a person, so an empty actor is the true answer rather than an
+        // inconvenient one.
+        const result = adminActions.usersAction(request,
+                                         { via: 'api', actor: '',
+                                           // The address a password reset
+                                           // link is built on (2026-09-13).
+                                           base: baseUrlOf(req) });
+        held.settle(!!result.ok);
+        if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
+        }
+        sendJson(res, result.ok ? 200 : 400, result);
+        log.debug("Leaving the management API users action endpoint.");
+      });
     },
     actions: [
       { action: 'issue-activation', operationId: 'issueActivationLink',
@@ -3070,12 +3172,20 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API groups action endpoint.");
       const body = parseBody(req);
-      const result = adminActions.groupsAction(withAction(req, body));
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0033');
-      }
-      sendJson(res, result.ok ? 200 : 400, result);
-      log.debug("Leaving the management API groups action endpoint.");
+      const request = withAction(req, body);
+      // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
+      return runClaimed(res, request.action === 'create'
+        ? { group: String(request.group || request.displayName ||
+                          request.cn || '') }
+        : null, function (held) {
+        const result = adminActions.groupsAction(request);
+        held.settle(!!result.ok);
+        if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0033');
+        }
+        sendJson(res, result.ok ? 200 : 400, result);
+        log.debug("Leaving the management API groups action endpoint.");
+      });
     },
     actions: [
       { action: 'create', operationId: 'createGroup',
@@ -4306,10 +4416,24 @@ const ROUTES = [
                  'over the console or the authorization server.',
     mirrors: 'GET /admin/realms',
     responseDescription: 'The realms, and the support table.',
-    handler: function (req, res) {
+    handler: function (req, res, next) {
       log.debug("Entering the management API trust realms endpoint.");
-      sendJson(res, 200, adminViews.realmsJson(req));
-      log.debug("Leaving the management API trust realms endpoint.");
+      // EVERY ROW SHOWS ITS REALM'S `kid`, and reading one MAKES the key set
+      // of a realm this node holds none for — twenty realms created on
+      // another node were twenty back-to-back generations inside this call,
+      // long enough to cost the node its cluster membership (#46). So the
+      // sets are made off the event loop first; `prepareKeySets()` never
+      // rejects.
+      helpers.prepareKeySets(realms.list().map(function (one) {
+        return one.id;
+      })).then(function () {
+        sendJson(res, 200, adminViews.realmsJson(req));
+        log.debug("Leaving the management API trust realms endpoint.");
+      }).catch(function (e) {
+        log.debug("Caught in the management API trust realms endpoint: " +
+                  ((e && e.message) || e));
+        next(e);
+      });
     } },
 
   { method: 'POST', route: BASE + '/realms/:action', tag: 'Trust realms',

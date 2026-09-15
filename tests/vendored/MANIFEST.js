@@ -200,6 +200,12 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // JOB — they are changed HERE, and only here.
 // ---------------------------------------------------------------------------
 const JOBS = [
+  // FIRST, AND ABOUT THE STACK RATHER THAN THE SERVICE (2026-09-14, #46): that
+  // the `cluster` mode's jobs really reach both nodes — both kinds of client,
+  // round robin through the load balancer — and that every other mode's reach
+  // one. A mode that is not what it says would otherwise be reported green by
+  // every job after it. Its header argues why it is local and why it is first.
+  { file: 'sts_cluster_alternation.js',  browser: false, local: true },
   { file: 'admin_api.js',                browser: false, local: true },
   { file: 'ldp_vc_issuance.js',          browser: false },
   { file: 'ldp_vc_refresh.js',           browser: false },

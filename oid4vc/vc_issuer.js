@@ -78,6 +78,11 @@ const { issuerDidFor, stsDid } = require('./vc_did');
 const vcClaims = require('./vc_claims');
 const { deferredIntervalS, deferredReadyMs, OFFER_TTL_MS, deferredAccessTokens,
         deferredTransactions, offerTtlMs } = require('./vc_offers');
+// THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" a c_nonce is spent
+// through — see spendProofNonces(). A LIBRARY that registers no route and
+// requires persistence lazily, so it moves no route and closes no cycle.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 // c_nonce values this issuer has handed out and not yet seen used. A nonce is
 // single-use (RFC-conformant behaviour, and it makes replay visible in a test).
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -1092,9 +1097,34 @@ function requestedClaimPaths(accessToken, configId) {
 // ---------------------------------------------------------------------------
 // The nonces a set of proofs quoted, spent together: one Credential Request,
 // one c_nonce, however many proofs.
-function spendProofNonces(proofJwts) {
+//
+// **ACROSS THE CLUSTER SINCE 2026-09-14 (#46), AND SO ASYNCHRONOUS.** The
+// delete below is the whole of "once" in one process, and in several it is a
+// write another node reads a moment later — two Credential Requests quoting
+// one c_nonce, sent to two nodes inside that moment, both verified their
+// proofs against a nonce each node still held and both were issued a
+// credential. So each distinct nonce is deleted here as before (the fast path,
+// and every other process's eventual refusal) and then SPENT THROUGH
+// `cluster_claims.claim()`: exactly one request wins it, on any node.
+//
+// That also closes the same race inside ONE process, which the delete alone
+// never did: `verifyProofJwt()` awaits the signature check, so two concurrent
+// requests could both find the nonce before either deleted it, and both were
+// answered. The claim is set before its first await, so the second is refused.
+//
+// The claim lives for what is left of the nonce's own lifetime plus
+// CLAIM_SKEW_MS for clocks that disagree. A store that cannot be asked refuses
+// (fail closed). Nothing releases the claim: the nonce is already gone from
+// this process's map, and a claim given back without it would only let another
+// node that still holds it accept the replay.
+//
+// Resolves to `{ ok: true }` or `{ ok: false, errorCode, description }`.
+const CLAIM_SKEW_MS = 60 * 1000;
+
+async function spendProofNonces(proofJwts) {
   log.debug("Entering spendProofNonces(). " + proofJwts.length + " proof(s).");
   const spent = [];
+  const lifetimes = {};
   proofJwts.forEach(function (proof) {
     let nonce;
     try {
@@ -1102,15 +1132,47 @@ function spendProofNonces(proofJwts) {
     } catch (e) {
       // Unreadable proofs never got this far; ignore it rather than throwing
       // after the credential has already been decided on.
-      log.debug("spendProofNonces(): a proof payload could not be read: " +
-                e.message);
+      log.debug("Caught in spendProofNonces(): a proof payload could not be " +
+                "read: " + ((e && e.message) || e));
       return;
     }
-    if (nonce && vciNonces.delete(nonce) &&
-        spent.indexOf(nonce) === -1) spent.push(nonce);
+    if (!nonce || spent.indexOf(nonce) !== -1) {
+      return;
+    }
+    const expires = Number(vciNonces.get(nonce));
+    lifetimes[nonce] = isFinite(expires) && expires > 0
+      ? Math.max(0, expires - Date.now()) : cNonceTtlMs();
+    vciNonces.delete(nonce);
+    spent.push(nonce);
   });
+  for (const nonce of spent) {
+    const claimed = await clusterClaims.claim({
+      scope: 'oid4vci.c_nonce', value: nonce,
+      ttlMs: lifetimes[nonce] + CLAIM_SKEW_MS });
+    if (!claimed.ok && claimed.reason === 'used') {
+      log.warn(errorCodes.tag('STS-VC-0050') + 'vc_issuer: a c_nonce the ' +
+               'proofs verified against was ALREADY SPENT by another ' +
+               'Credential Request, on this node or another against the same ' +
+               'store. Refused.');
+      log.debug("Leaving spendProofNonces(). Used elsewhere.");
+      return { ok: false, errorCode: 'STS-VC-0050',
+               description: 'the proof nonce is not one this issuer handed ' +
+                            'out (or was already used).' };
+    }
+    if (!claimed.ok) {
+      log.error(errorCodes.tag('STS-VC-0051') + 'vc_issuer: whether a ' +
+                'c_nonce was already spent could not be asked of the claim ' +
+                'store (' + (claimed.why || 'no reason given') + '). The ' +
+                'Credential Request is refused.');
+      log.debug("Leaving spendProofNonces(). Store unavailable.");
+      return { ok: false, errorCode: 'STS-VC-0051',
+               description: 'this issuer could not confirm the proof nonce ' +
+                            'is unused; request a new c_nonce and retry.' };
+    }
+  }
   log.debug("Leaving spendProofNonces(). Spent " + spent.length + " distinct " +
       "nonce(s).");
+  return { ok: true };
 }
 
 function grantedIdentifiers(accessToken) {
@@ -1333,14 +1395,35 @@ function decryptJweRequest(compact) {
 // `/realm/acme/oid4vci/last_request` answered with however the DEFAULT realm's
 // last request had arrived — including the `kid` of a key acme does not hold —
 // and a wallet under test in one realm could be told it had encrypted by a
-// request made in another. It is `realms.keyed()` rather than `realms.obj()`
+// request made in another. It was `realms.keyed()` rather than `realms.obj()`
 // because the record is REPLACED whole on every request rather than edited, and
-// a holder object is the honest shape for that. In memory and not persisted: it
-// describes one request as seen by one process, which is what a debugging
-// endpoint reading it back wants.
-const lastCredentialRequests = realms.keyed(function () {
-  return { value: { seen: false } };
-});
+// a holder object was the honest shape for that. ~~In memory and not persisted:
+// it describes one request as seen by one process~~ — **PERSISTED SINCE
+// 2026-09-14 (#46)**, and the struck sentence is why: behind a balancer the
+// wallet's Credential Request is answered by one node and its read-back of
+// `/oid4vci/last_request` by another, which answered `seen: false` or an
+// older request, so a wallet that DID encrypt was told it had not — the one
+// question this endpoint exists to answer truthfully. It is now a
+// `realms.map()` with one key, `LAST_REQUEST_KEY`, the record still replaced
+// whole (so it owes no `touch()`), and "last" means the last one the SERVICE
+// saw, which is what a wallet under test is asking. The record names a media
+// type, a kid, an alg and an enc and never the request itself.
+const LAST_REQUEST_KEY = 'last';
+const lastCredentialRequestStore = realms.map({
+  persist: 'vc_issuer.lastCredentialRequest' });
+
+function lastCredentialRequestRecord() {
+  log.debug("Entering lastCredentialRequestRecord().");
+  log.debug("Leaving lastCredentialRequestRecord().");
+  return lastCredentialRequestStore.get(LAST_REQUEST_KEY) || { seen: false };
+}
+
+// Written WHOLE through the store's `set()`, which is the journalled door.
+function recordLastCredentialRequest(record) {
+  log.debug("Entering recordLastCredentialRequest().");
+  lastCredentialRequestStore.set(LAST_REQUEST_KEY, record);
+  log.debug("Leaving recordLastCredentialRequest().");
+}
 
 function readPossiblyEncryptedRequest(req) {
   log.debug("Entering readPossiblyEncryptedRequest().");
@@ -1365,10 +1448,10 @@ function readPossiblyEncryptedRequest(req) {
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') :
                    (req.body || {});
-      lastCredentialRequests().value = {
+      recordLastCredentialRequest({
         seen: true, encrypted: false, path: req.path,
         contentType: contentType || null, at: new Date().toISOString()
-      };
+      });
       log.debug("Leaving readPossiblyEncryptedRequest(). Plain JSON.");
       return { body: body, encrypted: false };
     } catch (e) {
@@ -1396,11 +1479,11 @@ function readPossiblyEncryptedRequest(req) {
       // somehow does.
       log.debug('readPossiblyEncryptedRequest(): the header would not re-read: ' + e2.message);
     }
-    lastCredentialRequests().value = {
+    recordLastCredentialRequest({
       seen: true, encrypted: true, path: req.path,
       kid: header.kid || null, alg: header.alg || null, enc: header.enc || null,
       at: new Date().toISOString()
-    };
+    });
     log.debug("Leaving readPossiblyEncryptedRequest(). Decrypted.");
     return { body: body, encrypted: true };
   } catch (e) {
@@ -1648,8 +1731,16 @@ app.post('/oid4vci/credential', async function (req, res) {
   }
   // Every proof in this request quoted the same c_nonce, and it is single use:
   // spend it now that they have all been accepted, so replaying the request is
-  // refused while a batch inside one request is not.
-  spendProofNonces(proofJwts);
+  // refused while a batch inside one request is not — on every node against
+  // the store, since 2026-09-14 (see spendProofNonces()).
+  const nonceSpent = await spendProofNonces(proofJwts);
+  if (!nonceSpent.ok) {
+    log.debug("Leaving the OID4VCI credential endpoint. The c_nonce was " +
+              "refused at its spend.");
+    // STS-VC-0050 (spent elsewhere) or STS-VC-0051 (the store).
+    errorCodes.mark(res, nonceSpent.errorCode);
+    return vciError(res, 400, 'invalid_proof', nonceSpent.description);
+  }
   const holderJwk = holderJwks[0];
 
 
@@ -1865,7 +1956,7 @@ app.post('/oid4vci/notification', function (req, res) {
 app.get('/oid4vci/last_request', function (req, res) {
   log.debug("Entering the (non-spec) last credential request endpoint.");
   res.set('Cache-Control', 'no-store');
-  const last = lastCredentialRequests().value;
+  const last = lastCredentialRequestRecord();
   res.status(200).type('application/json').send(JSON.stringify(last, null, 2));
   log.debug("Leaving the (non-spec) last credential request endpoint. " +
             "encrypted=" +
@@ -1894,8 +1985,20 @@ app.get('/oid4vci/notification/:id', function (req, res) {
   log.debug("Leaving the notification inspection endpoint.");
 });
 
+// #46: a pre-authorized code and a c_nonce are spent once across the cluster,
+// and Transaction Code failures are counted against one budget — the c_nonce
+// by spendProofNonces() above, the other two by vc_offers.js's
+// spendPreAuthorizedCode() and checkTxCode(), which this module requires and
+// the token endpoint calls. Provided here because the capability row names
+// this file.
+capabilities.provide('oid4vc.once');
+
 module.exports = {
   vciMetadata: vciMetadata,
+  // For tests/cluster_single_use_protocols.js: the c_nonce's spend, driven
+  // twice with the local map restored between, which is what another node
+  // that has not yet caught up looks like.
+  spendProofNonces: spendProofNonces,
   buildCredentialFor: buildCredentialFor,
   subjectClaimsFrom: subjectClaimsFrom,
   vciNonces: vciNonces,
@@ -1910,6 +2013,6 @@ module.exports = {
   lastCredentialRequest: function () {
     log.debug("Entering lastCredentialRequest().");
     log.debug("Leaving lastCredentialRequest().");
-    return lastCredentialRequests().value;
+    return lastCredentialRequestRecord();
   }
 };

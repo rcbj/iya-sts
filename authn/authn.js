@@ -136,6 +136,10 @@ const bcp = require('../oauth-oidc/oauth2_bcp');
 // This module also FILLS audit.js's actor slot at the bottom of this file,
 // which is what puts a name on every console and management API row.
 const audit = require('../common/audit');
+// ONE END PER SESSION IN THE CLUSTER (2026-09-14, #46 section 6). A library:
+// it requires `persistence.js` lazily and registers nothing. See
+// sessionEndOnce() below.
+const clusterClaims = require('../cluster/cluster_claims');
 // The error codes (common/error_codes.js). A refusal here is marked on the
 // RESPONSE before the page or redirect is sent; a verdict from the credential
 // libraries arrives carrying its own code non-enumerably, and this module
@@ -296,6 +300,48 @@ function noteSessionUsed(store, id, session) {
 }
 
 // ---------------------------------------------------------------------------
+// A PROTOCOL EDITED A SESSION IN PLACE, AND THE STORE HAS TO BE TOLD
+// (2026-09-14, #46).
+//
+// Four modules record, ON the session object, the parties it signed into —
+// `saml2_sso.js`'s `saml2ServiceProviders`, `saml11_sso.js`'s
+// `saml11RelyingParties`, `wsfed.js`'s `wsfedRealms`, and
+// `frontchannel_logout.js`'s `oidcClients` — and each did it with a plain
+// assignment. `sessions` journals a `set()`, never an edit to an object it
+// holds (`persistence/CLAUDE.md`, the `touch()` rule), so the list reached the
+// store only if something else re-set the row later, and with no idle timeout
+// nothing does. One node was fine — its own copy had the list. Two were not:
+// a SAML sign-in response issued through node A and `GET /saml2/slo` answered
+// by node B offered NO LogoutRequest for that service provider
+// (`sts_saml_encryption`, the suite's `cluster` mode), because B's copy of the
+// session came from a row written before the list was.
+//
+// **IT DOES NOT BRING BACK A SESSION THAT IS GONE**, and that is why it looks
+// the row up rather than setting blindly: a session another request ended
+// between the caller's read and this write stays ended. Where the store holds
+// a DIFFERENT object for the id — replication replaced it mid-request — the two
+// are merged with `mergeSessionRows()`, the rule the flush applies to two
+// nodes' copies, so neither this edit nor the newer row is lost.
+// ---------------------------------------------------------------------------
+function noteSessionChanged(session) {
+  log.debug("Entering noteSessionChanged().");
+  if (!session || !session.id) {
+    log.debug("Leaving noteSessionChanged(). No session.");
+    return false;
+  }
+  const held = sessions.get(session.id);
+  if (!held) {
+    log.debug("Leaving noteSessionChanged(). The session is gone.");
+    return false;
+  }
+  sessions.set(session.id, held === session
+    ? session
+    : mergeSessionRows(session, held));
+  log.debug("Leaving noteSessionChanged(). Re-set.");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // THE ONE NAME AN UNAUTHENTICATED SESSION EVER CARRIES (2026-09-05).
 //
 // A STABLE principal rather than one per session, and that is the decision
@@ -333,7 +379,116 @@ function pendingTtlMs() {
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // session id -> the signed-in user
-const sessions = realms.map({ persist: 'authn.sessions' });
+//
+// **TOMBSTONED AND MERGED WHEN SEVERAL NODES WRITE IT (2026-09-14, #46).** A
+// session ended on one node was written back by another holding an older copy
+// — `noteSessionUsed()` and `touchArrivalSession()` re-set the row to stamp a
+// time — so a sign-out did not hold; an arrival upgraded to a sign-in on one
+// node was written back as the arrival by another; and a relying party added
+// to one copy's front-channel list was lost from the row by the other copy's
+// write. `tombstone` makes an ended session stay ended in the store, and
+// `mergeSessionRows()` below is what two copies of one live session become.
+// `persistence/persistence_minted.js` carries the mechanism.
+const sessions = realms.map({ persist: 'authn.sessions', tombstone: true,
+                              mergeRow: mergeSessionRows });
+
+// ---------------------------------------------------------------------------
+// TWO COPIES OF ONE SESSION, MERGED (2026-09-14, #46 section 3).
+//
+// `mine` is this process's copy and `theirs` the stored one another node
+// wrote. The rule, in three parts, each chosen so that merging the answer with
+// either side again gives the answer (two nodes merging in either order
+// converge):
+//
+//   * **THE COPY FURTHER ALONG IS THE BASE.** An arrival nobody chose
+//     (`chosen: false`) is behind a session somebody signed in to or chose;
+//     then a later sign-in (`authTime`) is ahead of an earlier one — a
+//     re-authentication rotated the handle and changed the methods — then a
+//     later handle rotation, then a later hosted-surface token renewal. A
+//     state only moves forward, so a stale copy can never undo an upgrade.
+//   * **THE CLOCKS TAKE THE LATEST.** `lastSeenAt` always; `expires` only
+//     when both copies are the same sign-in, because an arrival's short
+//     sliding window must not be carried onto the session it became.
+//   * **THE LISTS ARE UNIONS.** The relying parties each protocol records for
+//     its sign-out (`oidcClients`, `wsfedRealms`, `saml2ServiceProviders`,
+//     `saml11RelyingParties`) keep every party either copy saw — a client
+//     missing from the list is a client whose logout iframe is never drawn —
+//     and `relyingParties` and `events` keep every entry either copy holds.
+// ---------------------------------------------------------------------------
+function mergeSessionRows(mine, theirs) {
+  log.debug("Entering mergeSessionRows().");
+  if (!mine || typeof mine !== 'object') {
+    log.debug("Leaving mergeSessionRows(). Nothing of mine.");
+    return theirs;
+  }
+  if (!theirs || typeof theirs !== 'object') {
+    log.debug("Leaving mergeSessionRows(). Nothing stored.");
+    return mine;
+  }
+  const rank = function (s) {
+    return [s.chosen === false ? 0 : 1, Number(s.authTime) || 0,
+            Number(s.handleIssuedAt) || 0, Number(s.rpRenewedAt) || 0];
+  };
+  const a = rank(mine);
+  const b = rank(theirs);
+  let mineAhead = true;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      mineAhead = a[i] > b[i];
+      break;
+    }
+  }
+  const base = mineAhead ? mine : theirs;
+  const other = mineAhead ? theirs : mine;
+  const out = Object.assign({}, base);
+  out.lastSeenAt = Math.max(Number(mine.lastSeenAt) || 0,
+                            Number(theirs.lastSeenAt) || 0) || base.lastSeenAt;
+  if (a[0] === b[0] && a[1] === b[1]) {
+    out.expires = Math.max(Number(mine.expires) || 0,
+                           Number(theirs.expires) || 0) || base.expires;
+  }
+  ['wsfedRealms', 'saml2ServiceProviders', 'saml11RelyingParties']
+    .forEach(function (field) {
+      if (other[field] && typeof other[field] === 'object') {
+        out[field] = Object.assign({}, other[field], base[field] || {});
+      }
+    });
+  if (other.oidcClients && typeof other.oidcClients === 'object') {
+    const clients = Object.assign({}, base.oidcClients || {});
+    Object.keys(other.oidcClients).forEach(function (clientId) {
+      const there = other.oidcClients[clientId] || {};
+      const here = clients[clientId];
+      clients[clientId] = !here ? there : {
+        first: Math.min.apply(null, [Number(here.first) || 0,
+                                     Number(there.first) || 0]
+          .filter(Boolean).concat([Date.now()])),
+        last: Math.max(Number(here.last) || 0, Number(there.last) || 0),
+        count: Math.max(Number(here.count) || 0, Number(there.count) || 0)
+      };
+    });
+    out.oidcClients = clients;
+  }
+  ['relyingParties', 'events'].forEach(function (field) {
+    if (!Array.isArray(other[field]) || !Array.isArray(base[field])) {
+      return;
+    }
+    const seen = new Set(base[field].map(function (one) {
+      return JSON.stringify(one);
+    }));
+    const union = base[field].slice(0);
+    other[field].forEach(function (one) {
+      const text = JSON.stringify(one);
+      if (!seen.has(text)) {
+        seen.add(text);
+        union.push(one);
+      }
+    });
+    out[field] = union;
+  });
+  log.debug("Leaving mergeSessionRows(). " +
+            (mineAhead ? "Mine is ahead." : "The stored copy is ahead."));
+  return out;
+}
 
 // The requests waiting at the login screen: what to do with the person once
 // they have signed in, and what to tell them they are signing in FOR.
@@ -1646,6 +1801,83 @@ function notifySession(kind, session, extra) {
 const SESSION_SWEEP_MS = 30 * 1000;
 let sweepTimer = null;
 
+// ---------------------------------------------------------------------------
+// A SESSION'S END IS REPORTED ONCE, HOWEVER MANY PROCESSES NOTICE IT
+// (2026-09-14, #46 section 6).
+//
+// Every process runs the sweep below over its own copy of the session store,
+// and the lazy expiry in `sessionOf()` ends a session wherever it is next
+// presented. With several processes against one store — a container's request
+// workers, or several containers — two of them find the SAME expired session
+// in the same half-minute and each writes a `session.end` audit row and emits
+// CAEP's `session-revoked`: a receiver told twice that one session ended, and
+// an audit log counting two ends of one session. A sweep led by one elected
+// node would fix the timer and not the lazy lookup, and leaves a container's
+// own workers sweeping each other's sessions; a CLAIM fixes both.
+//
+// So the DELETE stays synchronous and local — a process that has noticed an
+// expiry must stop honouring the session at once, whatever the store says —
+// and the REPORT (the audit row and the event) goes out only once the claim
+// `authn.session-end` on the realm and session id is won. An explicit sign-out
+// (`dropSession()`) takes the same claim, so a sign-out racing the sweep on
+// another node reports one end and not two; the loser records its sign-out as
+// refused (`STS-AUTHN-0191`) with no event.
+//
+// **ON A STORE THAT CANNOT BE SHARED THIS IS SYNCHRONOUS, EXACTLY AS BEFORE.**
+// No claim store means one process, and `emit` runs inline, so a single
+// process's audit row is written before the function returns, as every test
+// and every caller has always seen it.
+//
+// **A CLAIM THAT CANNOT BE ASKED REPORTS ANYWAY**, which is the opposite of
+// `cluster_claims.js`'s fail-closed rule and deliberately so: that rule is for
+// a value that must not be ACCEPTED twice, and this is a notice that must not
+// be LOST. A duplicate `session-revoked` costs a receiver an idempotent
+// repeat; a missing one leaves a receiver trusting a session that ended.
+// ---------------------------------------------------------------------------
+const SESSION_END_CLAIM_TTL_MS = 60 * 60 * 1000;
+
+function sessionEndOnce(id, emit, onLost) {
+  log.debug("Entering sessionEndOnce(). id=" + id);
+  let shared = null;
+  try {
+    shared = require('../persistence/persistence').clusterStore();
+  } catch (e) {
+    log.debug("Caught in sessionEndOnce(): " + ((e && e.message) || e));
+    shared = null;
+  }
+  if (!shared || !id) {
+    emit();
+    log.debug("Leaving sessionEndOnce(). One process; reported inline.");
+    return;
+  }
+  clusterClaims.claim({ scope: 'authn.session-end', value: String(id),
+                        ttlMs: SESSION_END_CLAIM_TTL_MS })
+    .then(function (answer) {
+      if (answer.ok) {
+        emit();
+        return;
+      }
+      if (answer.reason === 'store') {
+        log.warn(errorCodes.tag('STS-AUTHN-0192') + 'authn: whether another ' +
+                 'process already reported the end of session ' + id +
+                 ' could not be asked (' + (answer.why || '') + '); it is ' +
+                 'reported here, and a receiver may be told twice.');
+        emit();
+        return;
+      }
+      log.debug('sessionEndOnce(): the end of session ' + id + ' was ' +
+                'already reported by another process.');
+      if (typeof onLost === 'function') {
+        onLost();
+      }
+    }).catch(function (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0192') + 'authn: reporting the ' +
+                'end of session ' + id + ' failed: ' +
+                ((e && e.message) || e));
+    });
+  log.debug("Leaving sessionEndOnce(). Claiming.");
+}
+
 // ONE PLACE A SESSION ENDS BY RUNNING OUT, called by the two lazy lookups and
 // by the sweep. `via` says which, because "it expired and somebody came back to
 // find out" and "it expired and the sweep noticed" are the same act at
@@ -1659,6 +1891,18 @@ function expireSession(store, id, session, via, why) {
   // tell somebody, and a receiver may treat them differently.
   const idle = why === 'idle';
   store.delete(id);
+  // THE REPORT ONCE FOR THE CLUSTER; the delete above is this process's own.
+  // See sessionEndOnce().
+  sessionEndOnce(id, function () {
+    reportExpiry(id, session, via, idle);
+  });
+  log.debug("Leaving expireSession().");
+}
+
+// The audit row and the event for an expiry — what sessionEndOnce() lets out
+// once for the cluster. Split from expireSession() for that reason only.
+function reportExpiry(id, session, via, idle) {
+  log.debug("Entering reportExpiry(). id=" + id);
   audit.audit({
     action: 'session.end',
     outcome: 'success',
@@ -1704,7 +1948,7 @@ function expireSession(store, id, session, via, why) {
         'stopped honouring the session because its absolute expiry ' +
         'passed, and it is not extended by use.',
     req: null });
-  log.debug("Leaving expireSession().");
+  log.debug("Leaving reportExpiry().");
 }
 
 function sweepExpiredSessions() {
@@ -1801,6 +2045,9 @@ function notePresented(session, via, req) {
   }
   if (session.firstPresentationIsTheSignIn) {
     session.firstPresentationIsTheSignIn = false;
+    // SPENT IN THE STORE TOO (2026-09-14, #46), or a node whose copy still
+    // says true swallows the next real presentation's event as well.
+    noteSessionChanged(session);
     log.debug("Leaving notePresented(). The sign-in's own return trip.");
     return false;
   }
@@ -2682,6 +2929,32 @@ function dropSession(id, via, cookiePresented, req) {
   // and the id to name the subject — and a sign-out that emitted while the
   // session was still in the store would be a transmitter telling a receiver
   // to stop trusting something this service still honoured.
+  // ONCE FOR THE CLUSTER (2026-09-14, #46 section 6): the delete above is
+  // this process's, and the event and the audit row go out only if no other
+  // process has already reported this session's end — the sweep on another
+  // node, or a sign-out racing this one. See sessionEndOnce(). A sign-out that
+  // found nothing to end has nothing to claim and is recorded as it was.
+  if (session) {
+    sessionEndOnce(session.id, function () {
+      reportSignOut(session, id, via, cookiePresented, req);
+    }, function () {
+      reportSignOutAlreadyEnded(session, via, cookiePresented);
+    });
+  } else {
+    reportSignOut(null, id, via, cookiePresented, req);
+  }
+  log.debug("Leaving dropSession(). " +
+            (session ? 'Dropped the session for ' + session.user.username + '.'
+                                                 : 'There was no session to ' +
+                                                   'drop.'));
+  return session || null;
+}
+
+// The event and the audit row for a sign-out — what sessionEndOnce() lets out
+// once for the cluster. Split from dropSession() for that reason only; the
+// order inside is dropSession()'s own, argued there.
+function reportSignOut(session, id, via, cookiePresented, req) {
+  log.debug("Entering reportSignOut().");
   notifySession('revoked', session, { via: via || 'a sign-out endpoint',
     byAdmin: /admin|console/i.test(String(via || '')),
     // THE REQUEST, WHERE THERE IS ONE, AND IT IS NOT A CONVENIENCE. The
@@ -2720,11 +2993,32 @@ function dropSession(id, via, cookiePresented, req) {
       acr: session ? (session.acr || '') : ''
     }
   });
-  log.debug("Leaving dropSession(). " +
-            (session ? 'Dropped the session for ' + session.user.username + '.'
-                                                 : 'There was no session to ' +
-                                                   'drop.'));
-  return session || null;
+  log.debug("Leaving reportSignOut().");
+}
+
+// A sign-out that lost the claim: another process had already reported this
+// session's end. Recorded — somebody did ask — with no event, because a
+// receiver has already been told.
+function reportSignOutAlreadyEnded(session, via, cookiePresented) {
+  log.debug("Entering reportSignOutAlreadyEnded().");
+  audit.audit({
+    action: 'session.end',
+    outcome: 'refused',
+    errorCode: 'STS-AUTHN-0191',
+    actor: session.user ? session.user.username : '',
+    channel: 'http',
+    target: session.id,
+    summary: 'a sign-out of ' + (session.user ? session.user.username : '') +
+             '\'s session ' + session.id + ' found its end already ' +
+             'reported by another process',
+    detail: {
+      sessionId: session.id,
+      cookiePresented: cookiePresented ? 'yes' : 'no',
+      via: via || 'a sign-out endpoint',
+      sessionFound: 'yes, and already ended elsewhere'
+    }
+  });
+  log.debug("Leaving reportSignOutAlreadyEnded().");
 }
 
 // Every session this service holds for one person, newest first. The comparison
@@ -4576,7 +4870,9 @@ function finishPasswordSignIn(req, res, base, record, username, passwordless,
   return undefined;
 }
 
-app.post(LOGIN_PATH, function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46), for one line: the rate limit below
+// counts in the cluster's shared window, which is a round trip.
+app.post(LOGIN_PATH, async function (req, res) {
   log.debug("Entering the authentication endpoint.");
   const base = baseUrlOf(req);
   // `parseBody()` and not `req.body`: this service's body parser is
@@ -4794,7 +5090,11 @@ app.post(LOGIN_PATH, function (req, res) {
     // endpoint hundreds of times, which is exactly how a limit that is too
     // tight gets found. The default of 5 per identity per minute is generous
     // enough for a person and stops a script.
-    const allowed = websecurity.attempt('sign-in', req, username);
+    //
+    // **ONE BUDGET FOR THE CLUSTER SINCE 2026-09-14 (#46)** —
+    // `attemptShared()`, which counts in the store every node shares and is
+    // `attempt()` where none is shared.
+    const allowed = await websecurity.attemptShared('sign-in', req, username);
     if (!allowed.ok) {
       log.warn('authn: too many sign-in attempts for "' + username + '" (' +
                allowed.kind + ' bucket). Refusing for ' + allowed.retryAfterS +
@@ -4821,7 +5121,7 @@ app.post(LOGIN_PATH, function (req, res) {
     // A SUCCESSFUL SIGN-IN FORGETS THE COUNTERS, so somebody who mistyped
     // their password four times is not one attempt from a lockout the moment
     // they get it right.
-    websecurity.succeeded('sign-in', req, username);
+    await websecurity.succeededShared('sign-in', req, username);
   }
 
   // ---------------------------------------------------------------------
@@ -5348,7 +5648,8 @@ app.post(MFA_SETUP_PATH, async function (req, res) {
     return sendMfaSetupPage(res, mfaSetupPage(setupId, step.username, offered,
       'Choose a second factor to set up first.'), 400);
   }
-  const allowed = websecurity.attempt('mfa-code', req, step.username);
+  const allowed = await websecurity.attemptShared('mfa-code', req,
+                                                  step.username);
   if (!allowed.ok) {
     errorCodes.mark(res, 'STS-AUTHN-0040');
     log.debug('Leaving the second-factor set-up endpoint. Rate limited.');
@@ -5374,7 +5675,7 @@ app.post(MFA_SETUP_PATH, async function (req, res) {
       offered, 'That set-up expired before it was confirmed. Start it again.'),
       400);
   }
-  websecurity.succeeded('mfa-code', req, step.username);
+  await websecurity.succeededShared('mfa-code', req, step.username);
   pendingMfa.delete(setupId);
   audit.audit({
     action: 'authn.mfa.enrolled', outcome: 'success',
@@ -6148,6 +6449,11 @@ app.post(WEBAUTHN_PATH, function (req, res) {
   const expectedOrigin = expectedOriginFor(base, credential);
   const expectedRpId = rpIdOf(base);
   let verdict;
+  // An assertion that verified and still has to be SPENT. See below.
+  let toSpend = null;
+  // A registration that verified and still has to be WRITTEN through its
+  // credential-id claim (2026-09-14). See below.
+  let toRegister = null;
   try {
     if (String(body.mode || '') === 'create') {
       // ENROLMENT IS WHAT `webauthn.enabled` GATES, AND ONLY ENROLMENT
@@ -6253,7 +6559,10 @@ app.post(WEBAUTHN_PATH, function (req, res) {
           // reach it.
           // ---------------------------------------------------------------
           const role = step.passwordless ? 'primary' : 'mfa';
-          const stored = credentials.addKey(step.username, {
+          // WRITTEN BELOW, THROUGH `credentials.addKeyClaimed()`, since
+          // 2026-09-14: the credential id is claimed across nodes before the
+          // row is written, and this block cannot await. Recorded here.
+          toRegister = { username: step.username, role: role, record: {
             credentialId: verdict.credentialId,
             publicKeyJwk: verdict.publicKeyJwk,
             signCount: verdict.signCount,
@@ -6271,22 +6580,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
             userVerified: !!(verdict.flags && verdict.flags.uv),
             aaguid: verdict.aaguid || null,
             algorithm: verdict.algorithm || null
-          }, role);
-          if (!stored.ok) {
-            // **A REFUSED WRITE IS A REFUSED CEREMONY.** The old code could
-            // not fail here — a map takes anything — so there was no branch
-            // for it, and reporting success on a credential that was not
-            // recorded would sign somebody in with a key that will not work
-            // the next time. The sentence is `addKey()`'s own, which names
-            // the setting or the missing entry.
-            log.info('authn: the security key "' + step.username + '" just ' +
-                     'registered was NOT stored: ' +
-                     (stored.errors || []).join(' '));
-            verdict = errorCodes.mark({ ok: false,
-                                        why: (stored.errors || []).join(' ') },
-                                      errorCodes.codeOf(stored) ||
-                                      'STS-AUTHN-0068');
-          }
+          } };
         }
       }
     } else {
@@ -6333,22 +6627,24 @@ app.post(WEBAUTHN_PATH, function (req, res) {
         previousSignCount: known.signCount
       });
       if (verdict.ok) {
-        // THROUGH `noteKeyUsed()` AND NOT A WRITE OF ITS OWN, which is the
-        // same argument `removeKey()` carries: that function is the one place
-        // the signature counter is recorded, and a second writer here would be
-        // a second answer to what the last counter was — with the replay
-        // defence quietly stopping at whichever one lost. **A failure to
-        // record it is LOGGED and does not undo the sign-in**, for
-        // `noteTotpUsed()`'s reason: the authentication has already succeeded,
-        // and the cost is that one assertion could be replayed rather than
-        // that somebody is refused.
-        if (!credentials.noteKeyUsed(step.username, known.credentialId,
-                                     verdict.signCount)) {
-          log.warn(errorCodes.tag('STS-AUTHN-0038') +
-                   'authn: the signature counter for "' + step.username +
-                   '" could not be recorded. The sign-in stands; the replay ' +
-                   'defence has nothing new to check against next time.');
-        }
+        // THROUGH `credentials.spendAssertion()` AND NOT A WRITE OF ITS OWN,
+        // which is the same argument `removeKey()` carries: that file is the
+        // one place the signature counter is recorded, and a second writer
+        // here would be a second answer to what the last counter was — with
+        // the replay defence quietly stopping at whichever one lost.
+        //
+        // **SPENT AFTER THIS BLOCK, ASYNCHRONOUSLY, SINCE 2026-09-14 (#46).**
+        // It used to be `noteKeyUsed()` right here, which on several nodes let
+        // the counter go BACKWARDS and one assertion sign in twice. The spend
+        // claims the challenge and advances the counter in the store before
+        // the sign-in stands; `spendAssertion()` argues both. It is recorded
+        // here and run below because this block is synchronous and a refusal
+        // must reach the same page every other refusal does.
+        toSpend = { username: step.username,
+                    credentialId: known.credentialId,
+                    signCount: verdict.signCount,
+                    challenge: step.challenge,
+                    ttlMs: mfaStepTtlMs() };
       }
     }
   } catch (e) {
@@ -6362,6 +6658,79 @@ app.post(WEBAUTHN_PATH, function (req, res) {
                          e.message));
   }
 
+  if (toRegister) {
+    credentials.addKeyClaimed(toRegister.username, toRegister.record,
+                              toRegister.role).then(function (stored) {
+      if (!stored.ok) {
+        // **A REFUSED WRITE IS A REFUSED CEREMONY.** The old code could not
+        // fail here — a map takes anything — so there was no branch for it,
+        // and reporting success on a credential that was not recorded would
+        // sign somebody in with a key that will not work the next time. The
+        // sentence is `addKey()`'s own, which names the setting or the missing
+        // entry — or the claim's, when another request registered that key.
+        log.info('authn: the security key "' + step.username + '" just ' +
+                 'registered was NOT stored: ' +
+                 (stored.errors || []).join(' '));
+        verdict = errorCodes.mark({ ok: false,
+                                    checks: verdict.checks,
+                                    failed: [(stored.errors || []).join(' ')],
+                                    why: (stored.errors || []).join(' ') },
+                                  errorCodes.codeOf(stored) ||
+                                  'STS-AUTHN-0068');
+      }
+      finishWebauthn(req, res, base, body, step, verdict);
+    }).catch(function (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0068') + 'authn: recording the ' +
+                'security key "' + step.username + '" registered threw: ' +
+                (e && e.stack ? e.stack : e));
+      errorCodes.mark(res, 'STS-AUTHN-0068');
+      sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id),
+        step.username, 'The security key could not be recorded. Try again.'));
+    });
+    log.debug("Leaving the WebAuthn endpoint. Writing the registration.");
+    return undefined;
+  }
+  if (!toSpend) {
+    log.debug("Leaving the WebAuthn endpoint. Nothing to spend.");
+    return finishWebauthn(req, res, base, body, step, verdict);
+  }
+  credentials.spendAssertion(toSpend).then(function (spent) {
+    if (!spent.ok) {
+      // A REFUSAL LIKE EVERY OTHER CHECK THE CEREMONY FAILS, so it reaches the
+      // same page with the check that failed named — "the signature counter
+      // did not increase" is worth a person reading.
+      verdict = errorCodes.mark({ ok: false, checks: verdict.checks,
+                                  failed: [spent.detail] },
+                                errorCodes.codeOf(spent) || 'STS-AUTHN-0182');
+    } else if (!spent.recorded) {
+      // **A failure to record it on the ENTRY is LOGGED and does not undo the
+      // sign-in**, as before: the counter is advanced in the store, which is
+      // what the next assertion is decided by, so all that is lost is the
+      // "last used" a page draws.
+      log.warn(errorCodes.tag('STS-AUTHN-0038') +
+               'authn: the signature counter for "' + step.username +
+               '" could not be recorded on the entry. The sign-in stands; ' +
+               'the counter is advanced in the store.');
+    }
+    finishWebauthn(req, res, base, body, step, verdict);
+  }).catch(function (e) {
+    // Express 4 does not look at what a handler returns; see the recovery code
+    // door for the trap this is.
+    log.error(errorCodes.tag('STS-AUTHN-0182') + 'authn: spending a ' +
+              'security-key assertion for "' + step.username + '" threw: ' +
+              (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-AUTHN-0182');
+    sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id),
+      step.username, 'The second factor could not be checked. Try again.'));
+  });
+  log.debug("Leaving the WebAuthn endpoint. Spending the assertion.");
+  return undefined;
+});
+
+// The rest of the WebAuthn door, split out so the asynchronous spend above
+// reads as one act. Everything below is what the endpoint always did.
+function finishWebauthn(req, res, base, body, step, verdict) {
+  log.debug("Entering finishWebauthn().");
   logArtifact('WebAuthn ' +
               (String(body.mode) === 'create' ? 'registration' : 'assertion'),
               'as verified by this server', { ok: verdict.ok,
@@ -6373,7 +6742,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
     errorCodes.mark(res,
                     errorCodes.codeOf(verdict) ||
                     webauthnPolicy.failureCodeFor(verdict));
-    log.debug("Leaving the WebAuthn endpoint. Refused: " +
+    log.debug("Leaving finishWebauthn(). Refused: " +
               verdict.failed.join('; '));
     return sendWebauthnPage(res,
                             webauthnPage(base, String(body.mfa_id),
@@ -6411,10 +6780,10 @@ app.post(WEBAUTHN_PATH, function (req, res) {
   // session now records what happened, and the request that was interrupted
   // runs again and sees it.
   returnToCaller(res, step.authn, null, null);
-  log.debug("Leaving the WebAuthn endpoint. " + step.username +
+  log.debug("Leaving finishWebauthn(). " + step.username +
             (step.passwordless ? " signed in with a security key alone."
                                : " completed the second factor."));
-});
+}
 
 // ===========================================================================
 // THE ONE-TIME CODE STEP (RFC 6238), 2026-09-10.
@@ -6626,7 +6995,8 @@ app.get(TOTP_PATH, function (req, res) {
 //
 // **THE STEP IS SPENT ON SUCCESS AND ONLY ON SUCCESS.**
 // ---------------------------------------------------------------------------
-app.post(TOTP_PATH, function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46) for the rate limit's shared window.
+app.post(TOTP_PATH, async function (req, res) {
   log.debug('Entering the one-time code endpoint.');
   const base = baseUrlOf(req);
   const posted = validation.checkParsed(parseBody(req), 'body', TOTP_FORM);
@@ -6646,7 +7016,8 @@ app.post(TOTP_PATH, function (req, res) {
       'application that sent you here.');
   }
 
-  const allowed = websecurity.attempt('mfa-code', req, step.username);
+  const allowed = await websecurity.attemptShared('mfa-code', req,
+                                                  step.username);
   if (!allowed.ok) {
     log.warn('authn: too many one-time code attempts for "' + step.username +
              '" (' + allowed.kind + ' bucket). Refusing for ' +
@@ -6657,8 +7028,31 @@ app.post(TOTP_PATH, function (req, res) {
                                       allowed.detail, ''));
   }
 
-  const verdict = credentials.verifyTotp(step.username,
-                                         String(body.code || ''));
+  // **THE ASYNCHRONOUS DOOR SINCE 2026-09-14 (#46)**, because the step is now
+  // spent in the store as well as on the entry: two nodes reading "last step
+  // 41" off their own copies both accepted step 42. `common/credentials.js`'s
+  // `verifyTotpAsync()` argues it; everything it refuses before the store is
+  // what the synchronous door refused, in the same order.
+  credentials.verifyTotpAsync(step.username, String(body.code || ''))
+    .then(function (verdict) {
+      finishTotp(req, res, base, mfaId, step, verdict);
+    })
+    .catch(function (e) {
+      // Caught here for the recovery-code door's reason below: Express 4 does
+      // not look at what a handler returns.
+      log.error(errorCodes.tag('STS-AUTHN-0182') +
+                'authn: checking a one-time code for "' + step.username +
+                '" threw: ' + (e && e.stack ? e.stack : e));
+      errorCodes.mark(res, 'STS-AUTHN-0182');
+      sendTotpPage(res, totpPage(base, mfaId, step.username,
+        'That code could not be checked. Try the next one.', ''));
+    });
+  log.debug('Leaving the one-time code endpoint. Checking.');
+  return undefined;
+});
+
+function finishTotp(req, res, base, mfaId, step, verdict) {
+  log.debug('Entering finishTotp().');
   if (!verdict.ok) {
     // THE REASON IS SHOWN HERE, WHERE THE SIGN-IN SCREEN SHOWS NONE. That
     // screen hides which of "wrong password" and "no such person" happened,
@@ -6669,13 +7063,14 @@ app.post(TOTP_PATH, function (req, res) {
     // between waiting thirty seconds and thinking your authenticator is broken.
     log.info('authn: the one-time code for "' + step.username +
              '" was refused (' + verdict.reason + ').');
-    log.debug('Leaving the one-time code endpoint. Refused: ' + verdict.reason +
-              '.');
+    log.debug('Leaving finishTotp(). Refused: ' + verdict.reason + '.');
     errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0105');
     return sendTotpPage(res, totpPage(base, mfaId, step.username,
                                       verdict.detail, ''));
   }
-  websecurity.succeeded('mfa-code', req, step.username);
+  // Not awaited: this function answers synchronously, and a clear that lands
+  // a moment after the page is only a count forgotten slightly late.
+  websecurity.succeededShared('mfa-code', req, step.username);
   pendingMfa.delete(mfaId);
 
   logArtifact('RFC 6238 one-time code', 'as verified by this server',
@@ -6694,9 +7089,9 @@ app.post(TOTP_PATH, function (req, res) {
   startSession(res, step.username, amr, 'mfa', step.authn.protocol,
                { request: req });
   returnToCaller(res, step.authn, null, null);
-  log.debug('Leaving the one-time code endpoint. ' + step.username +
+  log.debug('Leaving finishTotp(). ' + step.username +
             ' completed the second factor with a one-time code.');
-});
+}
 
 // ===========================================================================
 // /authn/backup-code — THE WAY BACK IN WHEN THE SECOND FACTOR IS NOT TO HAND
@@ -6925,7 +7320,8 @@ app.get(BACKUP_CODE_PATH, function (req, res) {
 // fails to write can be replayed inside ninety seconds, and a recovery code
 // that cannot be marked spent works for ever.
 // ---------------------------------------------------------------------------
-app.post(BACKUP_CODE_PATH, function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46) for the rate limit's shared window.
+app.post(BACKUP_CODE_PATH, async function (req, res) {
   log.debug('Entering the recovery code endpoint.');
   const base = baseUrlOf(req);
   const posted = validation.checkParsed(parseBody(req), 'body',
@@ -6946,7 +7342,8 @@ app.post(BACKUP_CODE_PATH, function (req, res) {
       'application that sent you here.');
   }
 
-  const allowed = websecurity.attempt('mfa-code', req, step.username);
+  const allowed = await websecurity.attemptShared('mfa-code', req,
+                                                  step.username);
   if (!allowed.ok) {
     log.warn('authn: too many recovery code attempts for "' + step.username +
              '" (' + allowed.kind + ' bucket). Refusing for ' +
@@ -7010,7 +7407,8 @@ function finishBackupCode(req, res, base, mfaId, step, verdict) {
     return sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
                                                   verdict.detail, ''));
   }
-  websecurity.succeeded('mfa-code', req, step.username);
+  // Not awaited, for finishTotp()'s reason.
+  websecurity.succeededShared('mfa-code', req, step.username);
   pendingMfa.delete(mfaId);
 
   logArtifact('recovery code', 'as verified and spent by this server',
@@ -7101,6 +7499,12 @@ audit.setActorResolver(auditActorOf);
 // four lines repeated per call site for the reason written above them.
 // ---------------------------------------------------------------------------
 module.exports = {
+  // What two nodes' copies of one session become, for
+  // `tests/cluster_lww_stores.js` — the merge is declared on the store and
+  // the store is reached through the persistence layer, so the rule itself is
+  // asserted here directly.
+  mergeSessionRows: mergeSessionRows,
+  noteSessionChanged: noteSessionChanged,
   LOGIN_PATH: LOGIN_PATH,
   MFA_SETUP_PATH: MFA_SETUP_PATH,
   // WHICH ENROLLED KEY AN ASSERTION IS CHECKED AGAINST, exported for

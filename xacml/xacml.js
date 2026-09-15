@@ -1663,7 +1663,9 @@ function pipScalarProblem(what, value, cap) {
   return '';
 }
 
-app.post('/xacml/pip', function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46): the rate limit below counts in the
+// cluster's shared window, which is a round trip. Everything else is as it was.
+app.post('/xacml/pip', async function (req, res) {
   log.debug('Entering POST /xacml/pip.');
   // ---------------------------------------------------------------------
   // `remotePepOffCheck()` AND NOT `offCheck()`, WHICH IS A DECISION AND WAS
@@ -1724,9 +1726,9 @@ app.post('/xacml/pip', function (req, res) {
   // a limiter keyed on one would let an attacker mint a fresh bucket per
   // request by changing a string.
   // ---------------------------------------------------------------------
-  const within = websecurity.attempt('xacml-pip', req,
-                                     identity.verified ? identity.dn : '',
-                                     config.value('xacml.pipMaxPerWindow'));
+  const within = await websecurity.attemptShared('xacml-pip', req,
+    identity.verified ? identity.dn : '',
+    config.value('xacml.pipMaxPerWindow'));
   if (!within.ok) {
     log.debug('Leaving POST /xacml/pip. Rate limited.');
     res.set('Retry-After', String(within.retryAfterS));
@@ -1950,16 +1952,77 @@ app.post('/xacml/pip', function (req, res) {
 // server would be exactly the mistake `saml/CLAUDE.md` records about not
 // dialling a service provider's metadata URL while issuing. What each PEP
 // answered is recorded on its own row and read on /admin/xacml/peps.
+//
+// ON AN ACTIVE-ACTIVE NODE THE NUDGE WAITS FOR THE COMMIT (2026-09-15, #46).
+//
+// The observer runs inside `xacml_store.write()`, so the nudge left while the
+// policy was in this node's memory and not yet in the store. The PEP answers
+// 204 and pulls at once — through the load balancer, on whatever node its
+// connection lands — and a node that is not this one serves from what has
+// COMMITTED: it answered the old sync token (304), and the PEP converged on its
+// next heartbeat or poll instead. The suite's `cluster` mode measured 2018ms
+// and 916ms for a nudge that takes tens of milliseconds on one node.
+//
+// So a clustered node dispatches it once `persistence.commitThrough()` says
+// the write has reached the store: after `setImmediate`, so the request that
+// made the change has usually answered and its barrier's commit is the flush in
+// flight this shares, rather than a second transaction started mid-request.
+// A commit that fails still nudges — the nudge is an optimisation, and the
+// PEP's pull then converges as it would have. Everywhere else (one node, the
+// cluster off, a dispatched pool) nothing changes: the nudge goes at once.
 // ---------------------------------------------------------------------------
+function afterCommit(dispatch) {
+  log.debug("Entering afterCommit().");
+  const barrier = require('../cluster/cluster_barrier');
+  if (!barrier.isActive()) {
+    log.debug("Leaving afterCommit(). Not active-active; at once.");
+    dispatch();
+    return;
+  }
+  setImmediate(function () {
+    const persistence = require('../persistence/persistence');
+    Promise.resolve().then(function () {
+      return persistence.commitThrough(persistence.writeGeneration());
+    }).then(function (results) {
+      const failed = (results || []).filter(function (one) {
+        return one && one.error;
+      });
+      if (failed.length) {
+        log.debug('xacml: the policy change did not commit before the ' +
+                  'nudge (' + failed.map(function (one) {
+                    return one.error;
+                  }).join('; ') + '); nudging anyway.');
+      }
+    }, function (e) {
+      log.debug("Caught in afterCommit(): " + ((e && e.message) || e));
+    }).then(dispatch).catch(function (error) {
+      // What `changed()` in xacml_store.js catches when the nudge goes at
+      // once, caught here because a deferred dispatch has left that frame.
+      log.warn(errorCodes.tag('STS-XACML-0060') +
+               'xacml: the repository change observer threw and the change ' +
+               'itself was fine: ' + ((error && error.message) || error));
+    });
+  });
+  log.debug("Leaving afterCommit(). Deferred until the commit.");
+}
+
 function nudgeRegisteredPeps(what) {
   log.debug('Entering nudgeRegisteredPeps(). what=' + what);
   if (!pepHttp.notifyAllowed() || !remotePepsEnabled()) {
     log.debug('Leaving nudgeRegisteredPeps(). Turned off.');
     return;
   }
+  afterCommit(function () {
+    dispatchNudge(what);
+  });
+  log.debug('Leaving nudgeRegisteredPeps().');
+}
+
+function dispatchNudge(what) {
+  log.debug('Entering dispatchNudge(). what=' + what);
   const rows = peps.notifiable();
   if (!rows.length) {
-    log.debug('Leaving nudgeRegisteredPeps(). Nobody to nudge.');
+    log.debug('Leaving dispatchNudge(). Nobody to nudge.');
     return;
   }
   log.info('xacml: ' + what + '; nudging ' + rows.length +
@@ -1984,7 +2047,7 @@ function nudgeRegisteredPeps(what) {
              'xacml: the nudge dispatcher threw, which is a bug here rather ' +
              'than a PEP being unreachable: ' + error.message);
   });
-  log.debug('Leaving nudgeRegisteredPeps(). Dispatched.');
+  log.debug('Leaving dispatchNudge(). Dispatched.');
 }
 
 store.setChangeObserver(nudgeRegisteredPeps);
@@ -2228,4 +2291,8 @@ module.exports = { decide: decide, enforce: enforce, description: description,
                    enabled: enabled,
                    // The designator cap a PIP query is held to, for
                    // `tests/scan_and_rate_limits.js` (2026-09-12).
-                   pipMaxDesignators: pipMaxDesignators };
+                   pipMaxDesignators: pipMaxDesignators,
+                   // The repository change observer, for
+                   // `tests/cluster_observation_counters.js` (2026-09-15):
+                   // a clustered node nudges only after the commit.
+                   nudgeRegisteredPeps: nudgeRegisteredPeps };

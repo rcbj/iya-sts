@@ -129,7 +129,7 @@ const { VCI_CONFIGS, VCI_CONFIG_ID, VCI_SCOPE,
 // that registers no route, so this adds nothing to the require order.
 const vcClaims = require('../oid4vc/vc_claims');
 const { deferredAccessTokens, issuerStates, preAuthorizedCodes,
-        checkTxCode } = require('../oid4vc/vc_offers');
+        checkTxCode, spendPreAuthorizedCode } = require('../oid4vc/vc_offers');
 // The issuer identifier and everything else settable at runtime.
 const config = require('../common/config');
 // The authentication service. It requires nothing from this module, which is
@@ -277,6 +277,17 @@ const debuggerAccess = require('../debugger/debugger_access');
 // uses, required for the same grant and on the same argument.
 const credentials = require('../common/credentials');
 const websecurity = require('../common/websecurity');
+// SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46). Two LIBRARIES: the
+// atomic "once" an authorization code and a PAR request_uri are spent through,
+// and the barrier a request that lost that race waits on to see what the
+// winner wrote. Neither registers a route; `cluster_claims.js` requires
+// `config`, `realms`, `error_codes` and the capability table, and requires
+// `persistence.js` LAZILY; `cluster_barrier.js` requires the same three and
+// `persistence.js` lazily too — so neither can move a route or close a cycle.
+// `capabilities` is the table this module declares `oauth.codes-once` in.
+const clusterClaims = require('../cluster/cluster_claims');
+const clusterBarrier = require('../cluster/cluster_barrier');
+const capabilities = require('../cluster/cluster_capabilities');
 // ---------------------------------------------------------------------------
 // RFC 8414 — OAuth 2.0 Authorization Server Metadata
 //
@@ -939,6 +950,20 @@ function sendAsMetadata(req, res) {
   log.debug("Leaving sendAsMetadata().");
 }
 
+// ---------------------------------------------------------------------------
+// A DPoP PROOF'S `jti`, RESERVED ACROSS THE CLUSTER ON ARRIVAL (2026-09-14,
+// #46). `dpop.js` registers nothing (rule 3), so the middleware it builds is
+// registered HERE, above this module's first route — and so above every route
+// that verifies a proof: the token endpoint, the PAR endpoint, UserInfo and
+// the step-up stand-in below, and the credential endpoints, SCIM and Shared
+// Signals, all required after this module (rule 1: middleware
+// applies only to routes added after it). Nothing required above this module
+// reads a DPoP header. It does nothing for a request without one. Why the
+// reservation is made on arrival rather than inside `verifyProof()` is argued
+// above `PROOF_CLAIM` in `dpop.js`.
+// ---------------------------------------------------------------------------
+app.use(dpop.proofClaims());
+
 app.get('/.well-known/oauth-authorization-server', sendAsMetadata);
 
 // Issuer-with-path form, e.g. /.well-known/oauth-authorization-server/tenant1 —
@@ -1470,7 +1495,11 @@ function authCodeTtlMs() {
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // code -> the authorization request it came from
-const authzCodes = realms.map({ persist: 'oauth2.authzCodes' });
+// TOMBSTONED (2026-09-14, #46): a redeemed or expired code's delete leaves a
+// tombstone in the store, so a node holding an older copy of the row cannot
+// write it back. `persistence/persistence_minted.js` carries the mechanism.
+const authzCodes = realms.map({ persist: 'oauth2.authzCodes',
+                                tombstone: true });
 
 // ---------------------------------------------------------------------------
 // NON-SPEC: what happens when the SAME authorization code arrives twice.
@@ -1905,6 +1934,16 @@ function refreshToken(base, opts) {
   if (opts.request) {
     payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
   }
+  // THE FAMILY THIS TOKEN BELONGS TO, IN THE TOKEN (2026-09-14, #46). RFC
+  // 9700 mode only — the family is that mode's bookkeeping — and inside the
+  // JWE, so no client reads it. It is what lets a node that never heard of
+  // the parent mint the child into the parent's family, where looking the
+  // parent up here would start a new one and split the chain. See
+  // `oauth2_bcp.js` above `familyForIssuance()`.
+  if (bcp.enabled()) {
+    payload[bcp.FAMILY_CLAIM] = bcp.familyForIssuance(
+      refreshJti, opts.parent_refresh_jti, opts.parent_refresh_family);
+  }
   // SIGNED, THEN ENCRYPTED (2026-09-12): the JWS is what `signJwt()` records
   // and what the refresh grant verifies once it has decrypted; the JWE around
   // it is what leaves this service. See `refresh_token_crypto.js`.
@@ -1918,7 +1957,8 @@ function refreshToken(base, opts) {
   // grant, so an empty one means this token is the root of its own family: an
   // authorization code or a pre-authorized code redeemed for the first time.
   // A no-op while the mode is off.
-  bcp.noteRefreshIssued(refreshJti, opts.parent_refresh_jti, opts.client_id);
+  bcp.noteRefreshIssued(refreshJti, opts.parent_refresh_jti, opts.client_id,
+                        opts.parent_refresh_family);
   log.debug("Leaving refreshToken().");
   return token;
 }
@@ -3885,8 +3925,46 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   // decision 2). Below every refusal above, so a request refused for its
   // audience or its role is not also a request_uri thrown away; above the
   // minting, so a replay racing this response finds it spent.
+  //
+  // THROUGH A CLAIM FIRST (2026-09-14, #46). `par.spend()` marks the record,
+  // and `resolve()` refusing a marked one is the fast refusal — but two
+  // authorization responses on one request_uri racing on two nodes both read
+  // an unmarked record, and the mark reaches the other node a moment after it
+  // is written. The claim is atomic in the store, so exactly one of them
+  // issues. Bound to the response like the code's: a redirect or a form_post
+  // page keeps it, a failure after this line gives it back.
   if (req.stsJar && req.stsJar.source === 'par' && req.stsJar.pushed) {
-    par.spend(req.stsJar.pushed.requestUri);
+    const pushedUri = req.stsJar.pushed.requestUri;
+    const parClaim = await clusterClaims.claim({
+      scope: 'oauth.par', value: pushedUri,
+      ttlMs: Math.max(0, Number(req.stsJar.pushed.expiresAt || 0) -
+                         Date.now()) +
+             Number(tokenClockSkew() || 0) * 1000
+    });
+    if (!parClaim.ok) {
+      const stored = parClaim.reason === 'used';
+      log.warn(errorCodes.tag(stored ? 'STS-OAUTH-0514' : 'STS-OAUTH-0515') +
+               'oauth2: an authorization response on a pushed request_uri ' +
+               'was refused: ' + (stored ? 'another response was issued on ' +
+               'it at the same moment' : 'the claim store could not be ' +
+               'asked (' + (parClaim.why || 'no reason given') + ')') + '.');
+      log.debug("Leaving issueAuthorizationResponse(). The request_uri's " +
+                "claim was refused.");
+      if (stored) {
+        errorCodes.mark(res, 'STS-OAUTH-0514');
+        return oauthError(res, 400, 'invalid_request_uri',
+          'the request_uri was already used: an authorization response was ' +
+          'issued on it by another request at the same moment. A client ' +
+          '"MUST only use a request_uri value once" (RFC 9126 section 4); ' +
+          'push the request again.');
+      }
+      errorCodes.mark(res, 'STS-OAUTH-0515');
+      return oauthError(res, 500, 'server_error',
+        'This authorization server could not record that the request_uri is ' +
+        'being used, so it has issued nothing on it.');
+    }
+    clusterClaims.releaseUnlessSucceeded(res, parClaim.handle);
+    par.spend(pushedUri);
   }
 
   // THE APPLICATION. Recorded here and not at the authentication funnel,
@@ -6687,6 +6765,124 @@ function replayOrRefuseRedemption(res, code, fingerprint, respond) {
   return respond(done.response);
 }
 
+// ---------------------------------------------------------------------------
+// TWO REDEMPTIONS OF ONE CODE AT ONCE (2026-09-14, #46).
+//
+// **WHAT WAS WRONG.** A code is looked up in `authzCodes`, every check runs,
+// the tokens are minted — `await issue()`, which may take seconds for a
+// post-quantum ID Token — and only then is the code deleted. Inside one
+// process that await was already a window: two Token Requests for one code
+// both found the record and both were issued tokens. Across nodes the window
+// is the change log as well, because the delete reaches the other node a
+// moment after it is written. And RFC 9700 section 4.5's "revoke what the code
+// bought" never fired, because each redemption found a live code rather than
+// a redemption record.
+//
+// **WHAT IT IS NOW.** The code is SPENT through `cluster_claims.claim()`
+// immediately before the tokens are minted — below every check, so a request
+// refused for its code_verifier or its redirect_uri spends nothing (the
+// comment above the checks says why that matters) — and the claim is bound to
+// the response: a mint that fails (the role gate, a signing error) gives the
+// code back. On postgres the claim is one `INSERT … ON CONFLICT`, so exactly
+// one node wins however many race.
+//
+// **THE LOSER IS A REPLAY, AND A REPLAY NEEDS THE WINNER'S RECORD.** The
+// winner writes `redeemedCodes` when its tokens exist, and the barrier holds
+// its response until that write has committed. So the loser waits — catching
+// up with the change log between looks (`cluster_barrier.syncShared()`, the
+// same pull the barrier makes at a request's arrival) — until the record is
+// there, and then goes down `replayOrRefuseRedemption()` exactly as a
+// sequential replay does: an identical request is answered with the same
+// token set outside RFC 9700 mode, and inside it the repeat is refused and
+// everything the first redemption bought is revoked.
+//
+// **BOUNDED, AND WHAT THE BOUND COSTS.** `CONCURRENT_REDEMPTION_WAIT_MS`. A
+// winner whose mint FAILED writes no record and releases its claim, and a
+// loser waiting on it would otherwise wait for ever; after the bound the loser
+// is refused (`STS-OAUTH-0512`) and the code is left to whoever retries. The
+// residue: a winner whose commit takes longer than the bound has bought tokens
+// the loser could not find to revoke. The replication hole wait is four
+// seconds for the same reason, and a commit slower than that is already a
+// condition `STS-CLUSTER-0018` reports.
+// ---------------------------------------------------------------------------
+const CONCURRENT_REDEMPTION_WAIT_MS = 5000;
+const CONCURRENT_REDEMPTION_POLL_MS = 50;
+
+function pause(ms) {
+  log.debug("Entering pause().");
+  log.debug("Leaving pause().");
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+// The winner's redemption record, once it can be seen from here, or null when
+// the bound runs out first.
+async function awaitRedemptionRecord(code) {
+  log.debug("Entering awaitRedemptionRecord().");
+  const deadline = Date.now() + CONCURRENT_REDEMPTION_WAIT_MS;
+  for (;;) {
+    const done = redeemedCodes.get(code);
+    if (done) {
+      log.debug("Leaving awaitRedemptionRecord(). Found.");
+      return done;
+    }
+    if (Date.now() >= deadline) {
+      log.debug("Leaving awaitRedemptionRecord(). The bound ran out.");
+      return null;
+    }
+    // Resolves rather than rejects, and at once where nothing coordinates.
+    await clusterBarrier.syncShared();
+    await pause(CONCURRENT_REDEMPTION_POLL_MS);
+  }
+}
+
+// The code's claim was refused. `store` fails closed; `used` is a replay.
+async function refuseConcurrentRedemption(res, code, fingerprint, respond,
+                                          answer) {
+  log.debug("Entering refuseConcurrentRedemption(). reason=" + answer.reason);
+  if (answer.reason !== 'used') {
+    log.error(errorCodes.tag('STS-OAUTH-0513') + 'oauth2: an authorization ' +
+              'code could not be spent because the claim store could not be ' +
+              'asked (' + (answer.why || 'no reason given') + '); the Token ' +
+              'Request is refused and the code is left unspent.');
+    errorCodes.mark(res, 'STS-OAUTH-0513');
+    log.debug("Leaving refuseConcurrentRedemption(). The store failed.");
+    return oauthError(res, 500, 'server_error',
+      'This authorization server could not record that the authorization ' +
+      'code is being redeemed, so it has not redeemed it. The code has not ' +
+      'been spent; retry the Token Request.');
+  }
+  log.warn('oauth2: an authorization code is being redeemed by another ' +
+           'request at the same moment' +
+           (answer.existing && answer.existing.origin
+             ? ' (' + answer.existing.origin + ')' : '') +
+           '; this one waits for that redemption and is answered as a ' +
+           'replay of it.');
+  const done = await awaitRedemptionRecord(code);
+  if (!done) {
+    errorCodes.mark(res, 'STS-OAUTH-0512');
+    log.debug("Leaving refuseConcurrentRedemption(). No record appeared.");
+    return oauthError(res, 400, 'invalid_grant',
+      'This authorization code is being redeemed by another Token Request ' +
+      'at the same moment, and that redemption had not completed within ' +
+      Math.round(CONCURRENT_REDEMPTION_WAIT_MS / 1000) + ' second(s). An ' +
+      'authorization code is single use (RFC 6749 section 4.1.2).');
+  }
+  log.debug("Leaving refuseConcurrentRedemption(). Answered as a replay.");
+  return replayOrRefuseRedemption(res, code, fingerprint, respond);
+}
+
+// The claim's lifetime: the rest of the code's own life and the clock skew
+// every expiry check here allows. After that the code is refused as expired
+// by its own record, so a longer claim would guard nothing.
+function codeClaimTtlMs(record) {
+  log.debug("Entering codeClaimTtlMs().");
+  const rest = Math.max(0, Number(record.expires || 0) - Date.now());
+  log.debug("Leaving codeClaimTtlMs().");
+  return rest + Number(tokenClockSkew() || 0) * 1000;
+}
+
 // ASYNCHRONOUS, AND THE TWO REASONS ARE THE TWO SLOW THINGS A CLIENT CAN ASK
 // THIS ENDPOINT FOR: an ID Token signed with a post-quantum algorithm it
 // registered, and a `private_key_jwt` client assertion signed with one. Both
@@ -6898,15 +7094,61 @@ function secretPresented(presented, registered) {
             (presented.assertion && method === 'client_secret_jwt'));
 }
 
+// **COUNTED IN THE CLUSTER'S SHARED WINDOW SINCE 2026-09-14 (#46)**, and
+// returns the count's promise so a caller awaits it before answering: a
+// guesser's next request, on whichever node, then reads a count that includes
+// this failure. `websecurity.attemptShared()` is `attempt()` where no store is
+// shared.
+//
+// **AND IT DECIDES THE ANSWER (2026-09-14, #46 follow-up).** The check before
+// the secret is looked at reads the count; the count is added after — so forty
+// concurrent guesses all read a count under the limit, all had their secrets
+// checked and all were told `invalid_client`: measured 19 to 34 of 40 against a
+// limit of 5. The count returned by the one atomic increment is the same
+// number on every node, so a failure whose increment took the bucket PAST the
+// limit is answered with the lockout rather than with "wrong secret": at most
+// `limit` failures per window are ever answered as failures, however many
+// arrive at once and wherever. Resolves to that refusal, or null.
+// `websecurity.failedShared()` argues the rest, including why the check
+// before verification stays (and why a success is not reserved).
 function countSecretFailure(req, clientId, presented, registered) {
   log.debug("Entering countSecretFailure().");
   if (!clientId || !secretPresented(presented, registered)) {
     log.debug("Leaving countSecretFailure(). No secret was presented.");
-    return;
+    return Promise.resolve(null);
   }
   const key = secretLimitKey(req, clientId);
-  websecurity.attempt(key.what, req, key.identity);
   log.debug("Leaving countSecretFailure().");
+  return websecurity.failedShared(key.what, req, key.identity);
+}
+
+// THE OTHER HALF: a secret that VERIFIED is answered only while the bucket is
+// under the limit, so a right guess racing a burst of wrong ones that already
+// spent the budget is refused exactly like them and teaches nothing. Otherwise
+// the bucket is cleared as before. Resolves to the refusal, or null.
+function settleSecretSuccess(req, clientId, presented, registered) {
+  log.debug("Entering settleSecretSuccess().");
+  if (!clientId || !secretPresented(presented, registered)) {
+    log.debug("Leaving settleSecretSuccess(). No secret was presented.");
+    return Promise.resolve(null);
+  }
+  const key = secretLimitKey(req, clientId);
+  log.debug("Leaving settleSecretSuccess().");
+  return websecurity.succeededShared(key.what, req, key.identity,
+                                     { keepAddress: true,
+                                       unlessBlocked: true });
+}
+
+// The lockout a secret failure or a racing success is answered with — the
+// same 429 the check before verification gives.
+function secretLockout(res, clientId, lockedOut) {
+  log.debug("Entering secretLockout().");
+  res.set('Retry-After', String(lockedOut.retryAfterS));
+  errorCodes.mark(res, 'STS-OAUTH-0284');
+  log.debug("Leaving secretLockout().");
+  return oauthError(res, 429, 'invalid_client',
+    'Too many failed client authentications for client "' + clientId +
+    '" from this address. ' + lockedOut.detail);
 }
 
 async function tokenGrant(req, res) {
@@ -6958,7 +7200,8 @@ async function tokenGrant(req, res) {
   // is answered before its secret is looked at. See secretLimitKey().
   if (client.client_id && secretPresented(presented, registeredClient)) {
     const key = secretLimitKey(req, client.client_id);
-    const lockedOut = websecurity.blocked(key.what, req, key.identity);
+    const lockedOut = await websecurity.blockedShared(key.what, req,
+                                                      key.identity);
     if (lockedOut) {
       res.set('Retry-After', String(lockedOut.retryAfterS));
       log.debug("Leaving the token endpoint. Too many failed client secrets.");
@@ -6980,7 +7223,9 @@ async function tokenGrant(req, res) {
   let dpopJkt = '';
   if (req.headers['dpop'] !== undefined) {
     const checked = dpop.verifyProof(req.headers['dpop'], {
-      htm: req.method, htu: dpop.htuOf(req)
+      htm: req.method, htu: dpop.htuOf(req),
+      // The reservation `dpop.proofClaims()` made on arrival (#46).
+      req: req
     });
     if (!checked.ok) {
       // Section 8: when the server wants a nonce it does not refuse outright —
@@ -7102,7 +7347,12 @@ async function tokenGrant(req, res) {
     if (/^Basic\s+/i.test(req.headers['authorization'] || '')) {
       res.set('WWW-Authenticate', basicChallenge());
     }
-    countSecretFailure(req, client.client_id, presented, registeredClient);
+    const overLimit = await countSecretFailure(req, client.client_id,
+                                               presented, registeredClient);
+    if (overLimit) {
+      log.debug("Leaving tokenGrant(). Past the secret limit.");
+      return secretLockout(res, client.client_id, overLimit);
+    }
     log.debug("Leaving the token endpoint. RFC 9700 mode refused the client (" +
               clientAuth.requirement + ").");
     errorCodes.mark(res, clientAuth.errorCode || 'STS-OAUTH-0137');
@@ -7330,10 +7580,13 @@ async function tokenGrant(req, res) {
   });
   // THE SECRET RATE LIMIT'S LAST HALF: a success clears this client's bucket
   // at this address, and leaves the address bucket alone.
-  if (clientObservation.authenticated && client.client_id &&
-      secretPresented(presented, registeredClient)) {
-    const key = secretLimitKey(req, client.client_id);
-    websecurity.succeeded(key.what, req, key.identity, { keepAddress: true });
+  if (clientObservation.authenticated && client.client_id) {
+    const racedOut = await settleSecretSuccess(req, client.client_id,
+                                               presented, registeredClient);
+    if (racedOut) {
+      log.debug("Leaving tokenGrant(). A verified secret past the limit.");
+      return secretLockout(res, client.client_id, racedOut);
+    }
   }
 
   // OAUTH 2.1 — WHAT THE CLIENT PRESENTED. A credential that was included must
@@ -7343,7 +7596,12 @@ async function tokenGrant(req, res) {
     grant: grant, observation: clientObservation, presented: presented
   });
   if (authentication) {
-    countSecretFailure(req, client.client_id, presented, registeredClient);
+    const overLimit = await countSecretFailure(req, client.client_id,
+                                               presented, registeredClient);
+    if (overLimit) {
+      log.debug("Leaving tokenGrant(). Past the secret limit.");
+      return secretLockout(res, client.client_id, overLimit);
+    }
     if (presented.basic) {
       res.set('WWW-Authenticate', basicChallenge());
     }
@@ -7400,7 +7658,12 @@ async function tokenGrant(req, res) {
     log.info('oauth2: product mode refused the token request from "' +
              String(client.client_id || '(unnamed)') + '": ' +
              clientObservation.why);
-    countSecretFailure(req, client.client_id, presented, registeredClient);
+    const overLimit = await countSecretFailure(req, client.client_id,
+                                               presented, registeredClient);
+    if (overLimit) {
+      log.debug("Leaving tokenGrant(). Past the secret limit.");
+      return secretLockout(res, client.client_id, overLimit);
+    }
     // RFC 6749 section 5.2's challenge when the client used Basic, which this
     // refusal did not send until 2026-09-13.
     if (presented.basic) {
@@ -7673,6 +7936,21 @@ async function tokenGrant(req, res) {
       return oauthError(res, 400, 'invalid_authorization_details',
                         detailsProblem);
     }
+    // SPENT HERE, below every refusal and above the mint — see the block
+    // above `refuseConcurrentRedemption()` (#46). The in-memory lookup at the
+    // top of this branch stays as the fast refusal; this is the one that
+    // holds when two requests found the record at once, on one node or two.
+    const codeClaim = await clusterClaims.claim({
+      scope: 'oauth.code', value: code, ttlMs: codeClaimTtlMs(record)
+    });
+    if (!codeClaim.ok) {
+      log.debug("Leaving tokenGrant(). The code's claim was refused.");
+      return refuseConcurrentRedemption(res, code, fingerprint, respond,
+                                        codeClaim);
+    }
+    // Kept when the response is 2xx; given back otherwise, because a code
+    // whose tokens were never issued has not been used.
+    clusterClaims.releaseUnlessSucceeded(res, codeClaim.handle);
     const issued = await issue({
       jkt: dpopJkt,
       // One value where there is one, an array where the client asked for the
@@ -7755,9 +8033,19 @@ async function tokenGrant(req, res) {
     // because that module owns the record they write to: constant time in both
     // modes, and in product the wrong code that reaches
     // `oid4vci.txCodeMaxAttempts` spends the pre-authorized code. What a
-    // refusal says stays here, where the response is.
-    const tx = checkTxCode(code, record, body.tx_code);
+    // refusal says stays here, where the response is. ASYNCHRONOUS since
+    // 2026-09-14: a wrong code is counted in the cluster claim store (#46).
+    const tx = await checkTxCode(code, record, body.tx_code);
     if (!tx.ok) {
+      if (tx.store) {
+        log.debug("Leaving the token endpoint. The tx_code attempt could not " +
+                  "be counted.");
+        errorCodes.mark(res, 'STS-VC-0051');
+        log.debug("Leaving tokenGrant().");
+        return oauthError(res, 400, 'invalid_grant',
+          'The Transaction Code could not be checked against this ' +
+          'pre-authorized code\'s attempt limit. Try again shortly.');
+      }
       if (tx.missing) {
         log.debug("Leaving the token endpoint. The grant was refused: no " +
                   "tx_code.");
@@ -7787,8 +8075,19 @@ async function tokenGrant(req, res) {
                                     'pre-authorized code is spent.'
           : ''));
     }
-    // Single use, like an authorization code.
+    // Single use, like an authorization code — and across the cluster since
+    // 2026-09-14 (#46): the delete is this process's, the claim is every
+    // node's. `vc_offers.spendPreAuthorizedCode()` argues it.
     preAuthorizedCodes.delete(code);
+    const preAuthSpent = await spendPreAuthorizedCode(code, record);
+    if (!preAuthSpent.ok) {
+      log.debug("Leaving the token endpoint. The pre-authorized code was " +
+                "refused at its spend.");
+      // STS-VC-0049 (redeemed elsewhere) or STS-VC-0051 (the store).
+      errorCodes.mark(res, preAuthSpent.errorCode);
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, 400, 'invalid_grant', preAuthSpent.description);
+    }
     // The End-User was identified out of band, so there is a subject and no
     // sign-on session — and the users page has to be able to say that
     // difference rather than report a missing session as an unknown one.
@@ -7899,6 +8198,11 @@ async function tokenGrant(req, res) {
         stats.revoke(jti, 'RFC 9700 section 2.2.2: a replayed refresh token ' +
                           'revoked its family');
       });
+      // AND BY ID (#46): a child minted on another node in the same instant
+      // is in no list here, and is refused at its first use instead.
+      if (refreshCheck.family) {
+        await bcp.revokeFamily(refreshCheck.family, refreshCheck.clientId);
+      }
       log.debug("Leaving the token endpoint. RFC 9700 mode refused the " +
                 "refresh (" +
                 refreshCheck.requirement + ").");
@@ -8026,10 +8330,35 @@ async function tokenGrant(req, res) {
         'The person this refresh token was issued for is no longer in this ' +
         'service\'s directory.');
     }
+    // RFC 9700 section 2.2.2, ONCE ACROSS THE CLUSTER (#46): the presented
+    // token is spent through a claim immediately before the mint, below every
+    // refusal above, so a refused refresh spends nothing. A claim already held
+    // is a replay that `checkRefreshRequest()`'s local mark could not see —
+    // another request at the same moment, on this node or another. A no-op
+    // while the mode is off. See `bcp.spendRefreshToken()`.
+    const spent = await bcp.spendRefreshToken({ claims: claims, res: res });
+    if (!spent.ok) {
+      (spent.revoke || []).forEach(function (jti) {
+        stats.revoke(jti, 'RFC 9700 section 2.2.2: a replayed refresh token ' +
+                          'revoked its family');
+      });
+      if (spent.errorCode === 'STS-OAUTH-0516' && spent.family) {
+        await bcp.revokeFamily(spent.family, spent.clientId);
+      }
+      log.debug("Leaving the token endpoint. RFC 9700 mode refused the " +
+                "refresh at its claim (" + spent.requirement + ").");
+      errorCodes.mark(res, spent.errorCode || 'STS-OAUTH-0518');
+      log.debug("Leaving tokenGrant().");
+      return oauthError(res, spent.status || 400, spent.error,
+                        spent.description);
+    }
     const refreshed = await issue({
       // The presented token's jti, so the one it mints belongs to the same
       // FAMILY. Only this grant sets it; a root refresh token has none.
       parent_refresh_jti: claims.jti,
+      // And the family its own token names, so a node that has not heard of
+      // the parent still mints into the right family (#46).
+      parent_refresh_family: claims[bcp.FAMILY_CLAIM] || '',
       // Carried forward, and narrowed where the request asked for less. The
       // AUDIENCE of the access token about to be minted comes from the same
       // list, so the two cannot come to describe different resource servers.
@@ -8225,7 +8554,9 @@ async function tokenGrant(req, res) {
     //     `credentials.js`'s own rule about its `detail`.
     // -----------------------------------------------------------------------
     if (mode.verifiesCredentials()) {
-      const allowed = websecurity.attempt('sign-in', req, username);
+      // One budget for the cluster (#46), the sign-in screen's own bucket.
+      const allowed = await websecurity.attemptShared('sign-in', req,
+                                                      username);
       if (!allowed.ok) {
         log.warn('oauth2: too many password-grant attempts for "' + username +
                  '" (' + allowed.kind + ' bucket). Refusing for ' +
@@ -8267,7 +8598,7 @@ async function tokenGrant(req, res) {
           'requires a second factor, which the password grant cannot carry; ' +
           'use the authorization code flow, whose sign-in screen asks for it.');
       }
-      websecurity.succeeded('sign-in', req, username);
+      await websecurity.succeededShared('sign-in', req, username);
     }
     // A password grant is an authentication: the credential was presented here,
     // to this endpoint, and this is where it succeeded. No session is created —
@@ -9323,7 +9654,7 @@ async function parRequest(req, res) {
   // client's allowance.
   const perClient = Math.max(1, Math.floor(Number(
     config.value('oauth2.parRequestsPerMinute')) || 1));
-  const limited = websecurity.attempt(
+  const limited = await websecurity.attemptShared(
     'par-push:' + (realms.currentId() || 'default'), req,
     clientId + '|' + websecurity.addressOf(req),
     { identity: perClient, address: perClient * 10 });
@@ -9336,7 +9667,8 @@ async function parRequest(req, res) {
   }
   if (secretPresented(presented, registered)) {
     const key = secretLimitKey(req, clientId);
-    const lockedOut = websecurity.blocked(key.what, req, key.identity);
+    const lockedOut = await websecurity.blockedShared(key.what, req,
+                                                      key.identity);
     if (lockedOut) {
       log.debug("Leaving parRequest(). Too many failed client secrets.");
       return refuse(429, 'invalid_client', 'Too many failed client ' +
@@ -9353,7 +9685,9 @@ async function parRequest(req, res) {
   let dpopJkt = '';
   if (req.headers['dpop'] !== undefined) {
     const checked = dpop.verifyProof(req.headers['dpop'], {
-      htm: req.method, htu: dpop.htuOf(req)
+      htm: req.method, htu: dpop.htuOf(req),
+      // The reservation `dpop.proofClaims()` made on arrival (#46).
+      req: req
     });
     if (!checked.ok) {
       if (checked.needNonce) {
@@ -9404,7 +9738,15 @@ async function parRequest(req, res) {
   };
   const policy = await bcp.checkClientAuthentication(authentication);
   if (!policy.ok) {
-    countSecretFailure(req, clientId, presented, registered);
+    const overLimit = await countSecretFailure(req, clientId, presented,
+                                               registered);
+    if (overLimit) {
+      log.debug("Leaving parRequest(). Past the secret limit.");
+      return refuse(429, 'invalid_client', 'Too many failed client ' +
+        'authentications for client "' + clientId + '" from this address. ' +
+        overLimit.detail, 'STS-OAUTH-0284',
+        { 'Retry-After': String(overLimit.retryAfterS) });
+    }
     log.debug("Leaving parRequest(). RFC 9700 mode refused the client.");
     return refuse(401, policy.error, policy.description,
                   policy.errorCode || 'STS-OAUTH-0422',
@@ -9423,16 +9765,31 @@ async function parRequest(req, res) {
                                   : null);
   }
   const observation = await bcp.observeClientAuthentication(authentication);
-  if (observation.authenticated && secretPresented(presented, registered)) {
-    const key = secretLimitKey(req, clientId);
-    websecurity.succeeded(key.what, req, key.identity, { keepAddress: true });
+  if (observation.authenticated) {
+    const racedOut = await settleSecretSuccess(req, clientId, presented,
+                                               registered);
+    if (racedOut) {
+      log.debug("Leaving parRequest(). A verified secret past the limit.");
+      return refuse(429, 'invalid_client', 'Too many failed client ' +
+        'authentications for client "' + clientId + '" from this address. ' +
+        racedOut.detail, 'STS-OAUTH-0284',
+        { 'Retry-After': String(racedOut.retryAfterS) });
+    }
   }
   const presentedRefusal = oauth21.tokenClientAuthenticationRefusal({
     grant: 'authorization_code', observation: observation,
     presented: presented
   });
   if (presentedRefusal) {
-    countSecretFailure(req, clientId, presented, registered);
+    const overLimit = await countSecretFailure(req, clientId, presented,
+                                               registered);
+    if (overLimit) {
+      log.debug("Leaving parRequest(). Past the secret limit.");
+      return refuse(429, 'invalid_client', 'Too many failed client ' +
+        'authentications for client "' + clientId + '" from this address. ' +
+        overLimit.detail, 'STS-OAUTH-0284',
+        { 'Retry-After': String(overLimit.retryAfterS) });
+    }
     log.debug("Leaving parRequest(). OAuth 2.1 refused the credential.");
     return refuse(401, presentedRefusal.error, presentedRefusal.description,
                   presentedRefusal.errorCode || 'STS-OAUTH-0280',
@@ -9453,7 +9810,15 @@ async function parRequest(req, res) {
                   declared.errorCode, null);
   }
   if (mode.requiresClientSecret() && !observation.authenticated) {
-    countSecretFailure(req, clientId, presented, registered);
+    const overLimit = await countSecretFailure(req, clientId, presented,
+                                               registered);
+    if (overLimit) {
+      log.debug("Leaving parRequest(). Past the secret limit.");
+      return refuse(429, 'invalid_client', 'Too many failed client ' +
+        'authentications for client "' + clientId + '" from this address. ' +
+        overLimit.detail, 'STS-OAUTH-0284',
+        { 'Retry-After': String(overLimit.retryAfterS) });
+    }
     log.debug("Leaving parRequest(). Product mode refused a public client.");
     return refuse(401, 'invalid_client', 'This service is in product mode, ' +
       'where every application must authenticate — at the pushed ' +
@@ -9853,7 +10218,8 @@ async function introspectRequest(req, res) {
     // past the limit is answered before its secret is looked at.
     if (clientId && secretPresented(presented, registered)) {
       const key = secretLimitKey(req, clientId);
-      const lockedOut = websecurity.blocked(key.what, req, key.identity);
+      const lockedOut = await websecurity.blockedShared(key.what, req,
+                                                        key.identity);
       if (lockedOut) {
         res.set('Retry-After', String(lockedOut.retryAfterS));
         log.debug("Leaving introspectRequest(). Too many failed client " +
@@ -9902,7 +10268,12 @@ async function introspectRequest(req, res) {
       registered: registered
     });
     if (!observed.authenticated) {
-      countSecretFailure(req, clientId, presented, registered);
+      const overLimit = await countSecretFailure(req, clientId, presented,
+                                                 registered);
+      if (overLimit) {
+        log.debug("Leaving introspectRequest(). Past the secret limit.");
+        return secretLockout(res, clientId, overLimit);
+      }
       const code = wantsJwt ? 'STS-OAUTH-0291' : 'STS-OAUTH-0292';
       const why = clientId ? observed.why
         : 'the request carried no client credential — no Authorization: ' +
@@ -9933,9 +10304,12 @@ async function introspectRequest(req, res) {
         'the resource server that asks for it, so the caller must ' +
         'authenticate as a client — and ' + why);
     }
-    if (secretPresented(presented, registered)) {
-      const key = secretLimitKey(req, clientId);
-      websecurity.succeeded(key.what, req, key.identity, { keepAddress: true });
+    const racedOut = await settleSecretSuccess(req, clientId, presented,
+                                               registered);
+    if (racedOut) {
+      log.debug("Leaving introspectRequest(). A verified secret past the " +
+                "limit.");
+      return secretLockout(res, clientId, racedOut);
     }
     authenticated = true;
     log.debug("introspectRequest(): client " + clientId + " authenticated " +
@@ -10538,6 +10912,11 @@ app.get('/tos', function (req, res) {
                               '(op_tos_uri). Test data only.\n');
   log.debug("Leaving the terms of service endpoint.");
 });
+
+// #46: an authorization code and a PAR request_uri are spent through a claim
+// (`refuseConcurrentRedemption()`, `issueAuthorizationResponse()`). At require
+// time — see cluster/CLAUDE.md on why a capability is the code.
+capabilities.provide('oauth.codes-once');
 
 module.exports = {
   asMetadata: asMetadata,

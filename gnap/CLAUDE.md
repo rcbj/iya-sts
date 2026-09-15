@@ -135,6 +135,58 @@ the old reference names nobody — RFC 9635 section 3.4's "SHOULD NOT reuse" hel
 directory edit. Every identifier minted before the change moves once. `account` (an
 `acct:` URI, RFC 7565) is a name by definition and still changes with one.
 `tests/stable_subject.js` D9–D10.
+## Spent once across the cluster (2026-09-14, #46) — capability `gnap.once`
+
+Every one-time value here was spent in `gnap_store.js`'s persisted maps — once
+per NODE against one store, because the maps replicate rather than share. Each
+caller keeps its in-memory check first and then asks `store.spend(kind, value,
+lifetimeS, usedCode)`, one `cluster/cluster_claims.js` claim in scope
+`gnap.<kind>`; `gnap_store.js` provides the capability.
+
+| Value | Where it is spent | Refused |
+|---|---|---|
+| continuation access token | `continueGrant()`, after the caller's proof | `invalid_continuation` 401, `STS-GNAP-0710` |
+| interaction reference | `continueAccepted()` | `invalid_interaction`, `0711` |
+| redirect / app start link | `startMode()` in `gnap_interact.js` | page 400, `0712` |
+| user code (both modes of a grant, one claim) | `POST /gnap/code` | page 400, `0713` |
+| token management access token | `manageVerified()`, after the proof | `invalid_rotation` / `invalid_request` 401, `0714` |
+| key proof (httpsig nonce, JWS) | `proof.verifyRequestOnce()` / `spendProof()` | the caller's proof refusal, `0715` |
+| the resource owner's DECISION on one interaction (2026-09-14) | `claimDecision()` in `gnap_interact.js`, before `grants.decide()` on `POST /gnap/approve/:id` and the remembered approval, and before the cancelled sign-in's finish | page 400, `0717` |
+
+A store that cannot be asked refuses with `STS-GNAP-0716`. What is decided:
+
+* **A DECISION IS CLAIMED PER INTERACTION** (grant id and approval id, for the
+  interaction's lifetime): `activeForInteraction()` reads `interaction.decided`
+  off a REPLICATED grant, so two answers to one approval page — a double
+  submit, or the form posted to two nodes — each recorded a decision and
+  enacted the finish method, and the grant kept whichever write landed last. A
+  decision that then throws gives its claim back; one that completes keeps it.
+
+* **A CONTINUATION OR MANAGEMENT TOKEN'S CLAIM IS GIVEN BACK WHEN THE TOKEN IS
+  STILL LIVE AFTERWARDS** (`store.grantByContinuation()` /
+  `tokenByManagement()` still answer). Every accepted continuation rotates or
+  drops its token, so a refusal that did neither — a malformed body, a wrong
+  state — left it usable here and must leave it usable on every node. The test
+  is the store's own answer, so it cannot drift from what rotation does.
+* **The replay cache's cluster half is at the ASYNC BOUNDARY.**
+  `store.remember()` stays synchronous and first, deep inside a synchronous
+  verification; the keys it remembered are collected on the context
+  (`noteReplayKey()`), returned as `replayKeys`, and spent by
+  `verifyRequestOnce()`, which every acting caller awaits — so `identifyCaller()`,
+  `continuationCaller()`, `introspect()` and `register()` became asynchronous.
+  `presentation()` stays synchronous because `ssf/ssf_auth.js` calls it that
+  way; `authenticate()` spends its keys. **The SSF gate's GNAP scheme is
+  therefore still the in-memory check only** — the fix is one `await
+  proof.spendProof(presented)` in `ssf_auth.js`, SSF's file.
+* Lifetimes: a key proof `2 × gnap.signatureMaxAgeS`, an interaction value its
+  `expiresAt`, a token with no expiry of its own a day — past every replication
+  delay, including the ten minutes the change log waits for a late commit — each
+  plus 60 s of clock disagreement.
+
+`tests/cluster_single_use_protocols.js` section 3 drives a real grant over HTTP
+in process: a continuation refused without rotating gives its claim back, a
+node still holding a rotated token or a followed start link refuses it, the
+empty-store control accepts, and a proof another node accepted is refused.
 
 ## Error codes
 
@@ -149,7 +201,8 @@ directory edit. Every identifier minted before the change moves once. `account` 
 | 0500–0599 | the RS-facing endpoints and the demonstration resource server |
 | 0600–0649 | the push finish |
 | 0650–0699 | the console, the monitor, application entries |
-| 0700–0749 | signals |
+| 0700–0709 | signals |
+| 0710–0719 | single-use values spent across the cluster (#46) |
 
 `tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
 failure patterns.

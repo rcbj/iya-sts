@@ -816,6 +816,7 @@ Two rules that are not optional here:
 | `jose_certificate_header.js` | **A SIGNED TOKEN NAMES THE CERTIFICATE CHAIN OF ITS KEY** (2026-09-13). Three sections: the use-case table against the eleven `config.js` rows (an enum of exactly none/x5c/x5u/both, `x5u` by default, runtime so per realm, in a group a protocol page draws, no stray row); a SOURCE SCAN failing on any JWS signing call outside `common/crypto.js` that names no use case and carries no `// certificate-header: none — <why>`, and on a row no signer names; and, in a CHILD PROCESS for `refresh_token_encryption.js`'s reason, the whole path — a token from `/oauth2/token` carrying `x5u`, that address answering the PEM chain leaf to Root with every link verified by OpenSSL, the token verifying with the key IN the leaf, the leaf naming its CRL and OCSP responder, then `x5c`, `both`, `none` byte for byte, one use case moving without another, a realm's override staying in its realm, `signed_metadata`'s cache seeing the setting, ES256, HMAC, no request, a pinned base, a register row over another key giving nothing, the refresh token's inner JWS, a SET, and the endpoint's 404s. Eleven service mutants through a require hook, one source mutant on disk, all caught. **Its first protocol run found the Domain Linkage Credential must be exempt** — `vc_did.js` holds its header to the DIF rule of `alg` and `kid` only |
 | `jose_kid.js` | **A SIGNED TOKEN'S `kid` MAY BE ITS KEY'S RFC 9278 THUMBPRINT URI** (2026-09-13). In process: RFC 7638 section 3.1's example key to its published thumbprint and RFC 9278's URI, an AKP key hashing exactly `alg`, `kty` and `pub`, `keys.kidFormat` an enum of exactly the library's formats (internal by default, runtime, not per-process, in a drawn group), and `common/jose_kid.js` off and on — the published kid, the second JWKS entry over the same key, a key with no thumbprint falling back with no entry, a lookup accepting either name and neither a foreign URI nor a foreign kid. In a CHILD PROCESS: an access token and ID Token under the internal kid, then the URI; the JWKS listing every signing key twice with the RSA key still first and the second entries before the encryption keys; the token verified by node against the entry its kid names and an earlier token against the internal one; `x5u` unchanged; ES256 and ML-DSA-44 under their keys' URIs; RS256 and ES256 SETs verified by `ssf_events.verifySet()`; `/gnap/keys` naming the URI; off again restoring both while a URI still names the key here; and a realm's own override reaching that realm and not the default one. **Its first run failed C17 on the FIXTURE**: a process-wide override reaches every realm, as any setting does. **Writing the `signed_metadata` check found a real defect**: that document's cache key named the algorithm and the certificate header and not the kid format, so a switch went unseen for a minute — C1b fetches it before the switch so C4b meets a cached copy. Fourteen mutants through a require hook, all caught (the AKP row removed is caught as a throw, which the harness reports as a test that could not run) |
 | `used_assertions.js` | **AN RFC 7523 OR RFC 7522 ASSERTION IS ACCEPTED ONCE, EVER** (2026-09-13). Six claims about `common/used_assertions.js` and its callers: ONE history keyed by the document and not the use (a grant then a client assertion is a replay; a SAML `ID` equal to a `jti` is not); spent only when the response finishes 2xx, released on a non-2xx and on a `close` before `finish`, with a racing replay refused on the reservation; the ldif store keeping a claim across a restart **with no other write after it** — the first version claimed three assertions and a claim that was never written survived, because the second one's RELEASE rewrote the whole file; the postgres claim as ONE `INSERT … ON CONFLICT` whose update touches only an expired row, against a `pg` that records statements; the token endpoint's two questions about one client assertion getting one answer per request, and the same JWT then refused at the grant verifier's key; and none of the three verifiers keeping a cache of its own. **The live half is not here and could not be**: twenty-five concurrent claims against a real PostgreSQL, the least-privilege role, and a version-3 database refused until `schema.sql` is re-run were run by hand against a throwaway container and are recorded in `common/CLAUDE.md` 3ae. Thirteen mutants: nine at the first round, two after the fixture above, one by the source check, one equivalent |
+| `cluster_single_use_credentials.js` | **SECOND FACTORS, LINKS, ENROLLMENT CREDENTIALS AND THE BOOTSTRAP, SPENT ONCE ACROSS NODES** (2026-09-14, #46). `persistence.clusterStore()` is replaced by a stub with postgres's semantics answering on a later tick, so two calls genuinely interleave; a second node is a second concurrent call or a STALE COPY of the entry written back. Seven claims: `cluster_counters.advance()` refuses a repeat and a lower value, accepts an always-zero counter and fails closed; one TOTP code at two nodes is accepted once and an entry whose `lastCounter` went backwards does not reopen the step; one recovery code twice is accepted once, a code a stale write-back resurrected is refused and the entry repaired, a spend writes back another node's code, and the reconcile repairs one nobody presents; a WebAuthn challenge answered once, a counter below the highest refused with the challenge given back, a synced passkey's zero accepted; an activation and a reset link spent once and a released claim taken again; one EAB key bound by one of two accounts, one SCEP challenge redeemed once, a nonce another node claimed refused; one bootstrap for two cold-starting nodes, the loser running nothing, a store that cannot be asked running nothing. What it does not reach: the portal, ACME finalize, the SCEP transaction wait and the SPIFFE join token handlers, which are argued in their files and were not run against two nodes |
 | `cert_enrollment.js` | **THE CERTIFICATE-ENROLLMENT CORE ACME, EST AND SCEP ISSUE THROUGH (2026-09-13)**, in process: the nine issued profiles and the five refused as a TABLE, the PKCS#10 proof of possession for RSA, ECDSA, Ed25519 and ML-DSA and a CSR signed with a different key (which no honest client library produces), an ML-KEM key refused and accepted as a template, the identity rule, every name rule refused BY NAME, all nine profiles issued with their extended key usages read by OpenSSL and their chains verified by node, what is kept on the entry (and a server-generated key withheld from the directory dump), the per-entry cap, re-enrollment superseding, both credentials single-use, and realm isolation of credentials AND certificate authentication. The administrator roster is STUBBED, because a member left in `admin-write` closes the console's empty-roster door for every later file. Fifteen mutants: fourteen caught (two after the fixture was fixed — a non-canonical kid that never passed the regex, and no certificate presented that its entry did not hold) and one EQUIVALENT, recorded in the file |
 | `acme_jws.js` | **THE ACME ENVELOPE, READ STRICTLY** (2026-09-13): the flattened JWS and its protected header, account keys against RFC 7638's published thumbprint, the self-describing Replay-Nonce's MAC and realm, the External Account Binding, RFC 9773 certificate identifiers against the RFC's example, and ACME's seven stores per realm. **And that the nonce secret is in the environment when the module is REQUIRED**, asserted in a child process with the variable removed: `request_pool.js` forks eagerly, so a secret generated on the first nonce was one every worker generated for itself — caught by removing the require-time call |
 | `acme_protocol.js` | ACME end to end in a CHILD PROCESS on plain HTTP, driven by `vendored/acme_client.js`, plus the console handlers called directly — including the product-mode plain-HTTP refusal no HTTPS stack can reach |
@@ -837,6 +838,7 @@ Two rules that are not optional here:
 | `directory_write_authorization.js` | **WHO MAY WRITE THE DIRECTORY OVER ITS OWN SOCKET, IN PRODUCT MODE** (2026-09-12). Every operation goes through `ldapServer.performOperation()` — the function a request worker runs a dispatched operation with — so the one fact a worker cannot derive, the BOUND DN, is shown to reach the check. Development still refuses nothing; an anonymous write is 50 with `STS-LDAP-0052`; a person on their own entry may change what `ldap.selfWritableAttributes` names (case-insensitively, the setting honoured when edited) and nothing else, and a modify mixing the two is refused WHOLE; add, delete, rename and another person's entry are 50 with `STS-LDAP-0053`; an administrator writes anything; a self-service `userPassword` still meets the password policy (19, not 50) and is announced to the Kerberos key register once, after the commit. **Two assertions guard the two ways this would be quietly wrong.** The ESCALATION: `admin_rbac.js` reads a person's own `memberOf`, so the file writes `memberOf: cn=admin-write` on its own entry and checks both the refusal and that nothing landed. And the EMPTY ROSTER: while no role group has a member the console treats everybody as holding Admin Write, which must not make them an administrator of the directory — asserted with that state as a checked PRECONDITION. Plus a DN in another realm carrying an administrator's name. Eleven mutants, ten caught; the eleventh — an explicit is-this-DN-in-the-default-realm test — was EQUIVALENT (a foreign DN is never an entry in the default realm's store) and was deleted rather than counted. It grants and revokes Admin Write and removes its realm in a `finally`, because a left-over member closes the console's empty-roster door for every later file |
 | `webauthn_addresses.js` | **`webauthn.allowedOrigins`, AND AN RP ID THAT DOES NOT FIT REFUSED IN PRODUCT** (2026-09-12). The list is the whole answer where it is set — the request's own origin is not accepted just for being the request's — and product mode refuses a ceremony whose configured RP ID is not the host or a label-boundary suffix of it, where development falls back to the host. Section 3 reads both ceremonies' SOURCE for the same two calls, `/portal/keys` included, because the only other evidence is a ceremony a browser performs. Five mutants, all caught |
 | `pki_defaults.js` | **THE CA'S SETTINGS ARE THE DEFAULTS OF EVERY BUILD** (2026-09-12): `pki.signatureAlgorithm` read by `algorithmsFrom()` (the auto-build, a runtime realm and the drift repair all passed `{}`), the three tier lifetimes with zero meaning the profile's, `pki.leafLifetimeDays` read by `issueSigningKeyPair()` (it had the literal 365), and a full workbench store REFUSING rather than discarding its oldest object's private key. Nine mutants, all caught; the replacement-has-room branch survived until the file asked about an id already held |
+| `pki_rebuild_recertifies.js` | **A REALM BRANCH REBUILT UNDER ITS SIGNING KEYS LEAVES THEM PUBLISHING CERTIFICATES FROM THE NEW BRANCH** (2026-09-15, #46). Two claims `sts_pki_distribution_points` found the absence of over HTTP: `pki_admin.js`'s `build` action — the one `/admin-api/pki/build` reaches — re-mints the realm's JOSE and XML certificates from the new Issuing CAs, so the key set publishes a certificate and chain from the NEW Intermediate (the keys are certified BEFORE the rebuild, the order #46's `app.js` now runs a runtime realm in); and `certify()` signs again from the current authority when the Issuing CA was replaced between its signature and its record, driven deterministically by reissuing the use case from inside a wrapped `x509.issueCertificate`, with an authority replaced on every signature refused, bounded, as `STS-PKI-0186`. Two mutants (the re-mint removed; the sign-again branch disabled), both caught. |
 | `pki_scope_builds.js` | **A REALM'S CERTIFICATE BRANCH AND THE SERVICE ROOT ARE BUILT ONCE, HOWEVER MANY CALLERS ASK AT ONCE** (2026-09-12). Three concurrent `ensureRoot()` calls on a service with no Root, four concurrent `ensureScope()` calls for one realm, and an `ensureScope()` beside a deliberate `buildScope()` — each compared by CERTIFICATE SERIAL rather than by answer, because every racing caller answers `ok: true`: one built, all were told about the one the store still holds, and the deliberate rebuild still replaces. Then the realm watcher: it builds for a realm created in the process and NOT for one `realms.create()` was told arrived `restored`, which is how a replicated realm reaches every other process. In a child process, because a fresh process has no Root and no watcher and both are under test. Four mutants, all caught — the queue not waited on, `ensureRoot()` outside it, the restored skip removed, and the flag not passed |
 | `scan_and_rate_limits.js` | **A RATE LIMIT PER BUCKET, AND THREE SCAN CAPS AS SETTINGS** (2026-09-12). `websecurity.attempt()` taking `{ identity, address }` so the portal's signing-key door stops giving everybody behind one NAT a shared five; `credentials.factorScanLimit`, `portal.applicationScanLimit` and `xacml.pipMaxDesignators` read from their rows. The two whose bound is only reachable with a signed-in session and a thousand applications, or five RSA key generations, are read as source |
 | `mode_hardcoded_foundation.js` | **THE SHARED HALF OF THE 2026-09-12 SWEEP FOR HARD-CODED VALUES** — what every protocol family was handed before its own fixes. The four new `common/mode.js` predicates answering the OPPOSITE of product mode (one answering `isProduct()` would turn every demo seed on in product and off in development with every page still rendering); `userFor()` inventing nothing in product and exactly what it always invented in development, which is the half that keeps the parent suite green; `global.publicBaseUrl` pinning `baseUrlOf()` whatever `Host` a request carried; the bind and loopback host helpers; `pki.crlLifetimeMinutes` honouring its own declared floor of one minute rather than a silent sixty; and **a SIGHTING being refused a return address in product** — `applications.seen()` would otherwise write the ACS URL a request named into the very attribute product mode checks that request against. Mutation-tested against the sighting guard removed |
@@ -1044,6 +1046,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | Test | What it covers |
 |---|---|
 | `tests/vendored/sts_metadata.js` **(ours)** | the `/admin/sts-metadata` drift checks — that the page lists exactly what the router registers, that every method reaches a handler, that every link resolves, and that no specification claim is idle |
+| `tests/vendored/sts_cluster_alternation.js` **(ours)** | **THE MODE IS WHAT THE LAUNCHER SAYS IT IS** (2026-09-14, #46): in the `cluster` mode both nodes answer `GET /admin-api/cluster` through `fetch()` and `https.request()`, a quarter each at least, and both are live members; in every other mode one identity answers everything. First in the manifest. The keep-alive mutant is caught only because of a 20ms pause between requests — *THE `cluster` MODE* below |
 | `tests/vendored/sts_metadata_anonymous.js` **(ours)** | **EVERY METADATA DOCUMENT THIS SERVICE PUBLISHES, FETCHED BY A CALLER HOLDING NOTHING** — nineteen of them across ten protocol families, plus the two RFC 8414 issuer-path forms and the per-partner SAML documents. The row above is about the INDEX and this one is about the documents, and they fail for opposite reasons: one goes red when the page and the router disagree, the other when a document a client must read BEFORE it can authenticate stops answering somebody who cannot yet authenticate. Five questions of each: 200 with no redirect, the media type the specification names, a shape (the issuer this service claims, a non-empty key set, a signature on the SAML metadata, and no PRIVATE member on any published key), no `Set-Cookie` **except the request pool's own routing pin**, and `Cache-Control: no-store` — that last one found `/sts/cert` served without it, which is a certificate this process regenerates on every start being cacheable. **The cookie exemption is the one thing in this job that is about the DEPLOYMENT rather than the document** (2026-09-11): in `dispatch` mode `common/request_pool.js` is a load balancer in front of three workers and appends a sticky-routing cookie to any response whose request arrived with nothing to route it by — which every document here is — so this job was red in that mode and green in the two single-process ones over a cookie no handler set and no handler can see. It is not a session: it names a worker, nothing is authorized by it, and the pool STRIPS it from the request before a worker sees it. The exempt name is **read off `common/request_pool.js`** rather than written down, the way the `PROTOCOLS` coverage check is, so a rename there closes the exemption instead of widening it into "any cookie at all". **Four gated surfaces are driven as CONTROLS** (`/admin-api/status`, `/scim/v2/Users`, `/xacml/policies`, `/admin/sts-metadata`), each refusing differently, because the failure this file has to rule out is its own: a fetch that follows redirects reports the console open to strangers, since `/admin/sts-metadata`'s 303 ends at a sign-in screen answering 200. **The /admin-api control sends `Authorization: none`** and a section of its own says why — `tools/attach-admin-token.js` is preloaded into every job and would otherwise attach the run's admin token to a request written to carry nothing. Coverage is checked against THIS TREE: every family in `sts_metadata.js`'s `PROTOCOLS` either publishes a document here or is named in `NO_PUBLIC_METADATA` with its reason (Kerberos and SPNEGO have no such document, LDAP's is the rootDSE on a socket no stack publishes to this job), and every `/.well-known` path this tree REGISTERS is accounted for |
 | `tests/vendored/admin_api.js` **(ours)** | the management API at `/admin-api`: its OpenAPI document, the PARITY it exists to keep — every `/admin` page and every action of its four handlers has an operation, read off this service's own answers rather than off a list in the test — every documented schema property checked against a live reply, and that a revocation made through the API is dead at `/oauth2/introspect`. It restores everything it changes, including the tokens its bulk revocations touched |
 | `tests/sts_dpop.js` | RFC 9449 end to end over HTTP: all twelve section 4.3 checks, the `cnf.jkt` binding on access and refresh tokens, `dpop_jkt`, `jti` replay, and the nonce handshake in both shapes. Almost entirely negatives, because a DPoP server that issues bound tokens and accepts good proofs looks finished and can be worth nothing |
@@ -2306,6 +2309,149 @@ leaving the feature covered only on a developer's machine.
   read at all` about a service behaving exactly as the mode defines. The key
   half is gated on the report saying a key is present, the floor is per mode,
   and the run says which half it is doing.
+
+## THE `cluster` MODE: TWO NODES BEHIND A LOAD BALANCER (2026-09-14, issue #46)
+
+`tests/tools/modes.sh` has a FOURTH mode, and it is **asked for by name**
+(`--modes=cluster`, either launcher) rather than run by default — a fourth whole
+run of the suite and two services' worth of memory, on a bare run that is
+already an hour. The three default modes differ in what shares state INSIDE one
+container; this one is the first in which the thing under test is BETWEEN
+containers, which is what `cluster/` exists for and what nothing in the suite
+exercised until now (`cluster/CLAUDE.md` listed it as not done).
+
+**THE STACK** is an override layered over the mode's usual compose files and
+read in no other mode, so `memory`, `postgres` and `dispatch` start exactly the
+stacks they started before:
+
+| | What it is |
+|---|---|
+| node A | the existing `sts` service, with `STS_CLUSTER_MODE=active-active` and `STS_CLUSTER_NODE_NAME=node-a` |
+| node B | `sts2`, which `extends` node A — one definition, so nothing the override does not name can differ — started only once node A is HEALTHY, so a cold start's first key set is never a race the suite depends on |
+| the store | ONE postgres and ONE OpenBao, shared; the key-encryption key comes out of OpenBao (`STS_KEYS_SOURCE=persisted`), without which active-active refuses to start (`STS-CLUSTER-0008`) |
+| `sts-lb` | HAProxy (`haproxy:3.2.23-alpine`, pinned), `mode tcp`, round robin, **TLS passed through**, `send-proxy-v2` (below), on 8081, 8082, 8443, 9443, 389, 636, 88/tcp and 8444, a TCP-connect health check on each. It owns every published port under the variables the service used to, so every address a launcher computes is the balancer's with no second set of names |
+| the files | `tests/docker-compose-cluster.yml` (over `docker-compose.yml` and the LDAP layer, `./local-run-tests.sh`), `tests/docker-compose-run-tests-cluster.yml` (over `docker-compose-run-tests.yml`, `./docker-run-tests.sh`), `tests/cluster/haproxy.cfg` (both) |
+
+Both nodes are **development mode** (the suite signs people in with no
+password — the `postgres` arm of `modes.sh` says why), **one process each**
+(request workers are `dispatch`'s axis, and two nodes of four processes is a
+stack this machine has been killed for memory running), on the balancer's
+`global.publicBaseUrl` and with `sts-lb` in `tls.hostnames`, and identical in
+every setting on `cluster/cluster.js`'s `AGREEMENT_SETTINGS` — a node that
+differed would refuse to join, which is a stack that does not start rather than
+a quiet difference. **`STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES` is not set**:
+the gate has to pass with nothing accepted, and a node that refuses is a finding.
+
+**WHAT A RESULT MEANS.** Red here and green in `postgres` is a CLUSTER defect —
+something one node holds that the other cannot see, or two nodes deciding one
+thing twice. The comparison is the point, and it is why a failure in this mode
+is not triaged until the same job has been run in `postgres`.
+
+### A new connection per request, or the mode tests one node
+
+The balancer picks a node per CONNECTION, and node's clients keep connections
+alive — `fetch()` in its global dispatcher and, since node 19, `http.globalAgent`
+too. **A job would then make every request on its first connection, and the mode
+would report two nodes of which each job saw one**, green and meaningless. So in
+this mode `run-report.js` preloads `tools/fresh-connections.js` into every
+protocol job (`STS_TEST_FRESH_CONNECTIONS=1`, named by the mode): every `fetch()`
+is dispatched with undici's `reset: true` and both global agents stop keeping
+alive. A preload because most of the clients are in VENDORED files, which are
+not edited here — `tools/attach-admin-token.js` is the precedent. What it cannot
+reach is said here: **Chrome's own connections** (the browser jobs are balanced
+per connection Chrome opens) and a socket that is one connection by definition
+(an LDAP session).
+
+**`tests/vendored/sts_cluster_alternation.js` IS WHAT WOULD GO RED IF EITHER
+HALF STOPPED WORKING**, and it is first in `MANIFEST.js` for that reason. It asks
+`GET /admin-api/cluster` — whose `status.self` is the answering node — through
+`fetch()` and through `https.request()`, and in this mode asserts both nodes
+answered each client, neither took under a quarter, and both are live members;
+in every other mode it asserts one identity answered everything, so it runs in
+all four. **Its first mutation run passed the `fetch()` half with keep-alive
+back ON**: back-to-back requests let undici's pool open a second connection
+before the first was idle, and two pooled connections on two nodes alternate
+exactly like fresh ones. A twenty-millisecond pause between requests is what
+makes a keeping-alive client reuse its connection and pin; with it, the mutant
+(`STS_TEST_FRESH_CONNECTIONS=0`) fails three runs out of three and the real
+thing alternates node-a, node-b for every request.
+
+### Each node presents a leaf of its own, and Chrome pins keys
+
+Both nodes serve one Root, Intermediate and Issuing CA and **different listener
+keys** — a node's listener is the node's. The node-driven jobs never notice,
+because `NODE_EXTRA_CA_CERTS` terminates at the shared Root whichever node's
+bundle was fetched. The browser jobs would: `STS_SPKI_PIN` is a truststore of
+one key, so every connection the balancer gave the other node would meet an
+interstitial. `tools/trust.js`'s `readTrust()` therefore fetches the
+certificate on fresh connections until it has seen a leaf per node, and hands
+over every bundle and a comma-separated pin list, which is
+`--ignore-certificate-errors-spki-list`'s own syntax; in every other mode it is
+the one fetch it always was.
+
+### What this mode does not cover
+
+* **UDP 88.** HAProxy balances TCP; the KDC's datagram socket is node A's alone.
+  The suite speaks Kerberos over MS-KKDCP and TCP.
+* **Per-node sockets**: a realm's SPIFFE listeners bind addresses of their own,
+  node B adds none, and they are node A's.
+* **Anything that reaches a node AROUND the balancer.** PROXY protocol v2 is
+  ON in this mode: HAProxy sends a header naming the real peer and both nodes
+  run `global.proxyProtocol=v2` with the balancer's pinned address (`.30`) as
+  their ONE trusted proxy — not the subnet, which would let any container on
+  the network name its own client address. So a non-loopback connection to a
+  node from anywhere else is refused, and the suite has no such client (the
+  healthchecks are loopback, the remote PEP dials `sts-lb`).
+  `STS_TEST_CLUSTER_PROXY_PROTOCOL=off` on either launcher runs the mode
+  without it, which is how a PROXY-protocol failure is told from a cluster
+  one. The rate limits needed no raising either way: the suite already came
+  from ONE address (the runner's), and the budget is shared by both nodes
+  (`cluster_counters.js`).
+* **Failure.** Nothing stops a node mid-run; takeover and fail-stop are verified
+  by hand in `cluster/CLAUDE.md`.
+* **Workers inside a node, and product mode**, which are `dispatch`'s and the
+  in-process files' respectively.
+
+### What its first runs found (2026-09-14)
+
+**THE FIRST RUN FAILED 42 OF 58 PROTOCOL JOBS FOR ONE REASON**: a development
+node with no request workers did not persist what it MINTED
+(`persistence_minted.js`'s `enabled()` asked about several PROCESSES, not
+several NODES), so a sign-in pending on one node was unknown to the other —
+pinning every hop of the console sign-in to one node passed, alternating
+failed with `STS-AUTHN-0003` — and nothing refused the configuration. Fixed the
+same day, with `cluster.js` now refusing an explicit cluster mode with
+`persistence.minted` off. **Before trusting a run, `GET /admin-api/persistence`
+must report `status.minted.persisting: true` on both nodes.**
+
+With that fixed, 17 jobs failed here and passed in `postgres` (whose own 8
+failures came from test files older than the service they drive), from six
+causes each measured rather than inferred where it says so: a realm created on
+one node answering 404 on the other's first request (the realm middleware runs
+before the barrier; 2 of 6 across nodes, 0 of 6 on one); the BBS key pair made
+per node; three pending-enrolment stores in `common/credentials.js` never
+persisted; the audit read-back of a refused request; SAML IdP-initiated logout;
+and throughput — a directory create through SCIM went from 16ms to ~500ms and
+through `/admin-api` from 2.3ms to 190ms, so two bulk loads outran their
+watchdog and their token. **Which jobs a timing cause catches differs run to
+run**: the realm race caught six jobs in one pass and eight in the next. The
+PROXY v2 pass changed no outcome that was not that race; a connection to a node
+around the balancer was reset in 36ms and a loopback one served.
+
+### And the image tag was the fourth thing a project name failed to scope
+
+Building this mode in a second checkout while another session ran the suite
+from the first found it: both launchers built and ran `rcbj/sts`, a tag is
+machine-wide exactly as a `container_name` and a subnet are, and
+`./docker-run-tests.sh` builds once and `up`s each later mode from whatever the
+tag points at by then. A named project (`STS_TEST_COMPOSE_PROJECT`,
+`STS_DOCKER_TEST_PROJECT`) now builds and runs `rcbj/sts:<project>` and its
+PEP and runner twins; `image: ${STS_IMAGE:-rcbj/sts}` in both compose files
+keeps an unnamed run exactly as it was.
+
+The service logs are `logs/00-mock-sts-service.log` (node A, the name every mode
+uses), `logs/00-mock-sts-service-node-b.log` and `logs/00-load-balancer.log`.
+`!reset` in the local override needs docker compose 2.24 or later.
 
 ## APPLICATION CREDENTIALS: THE PAIR, AND THE SPLIT (2026-09-13)
 

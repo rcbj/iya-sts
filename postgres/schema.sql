@@ -272,6 +272,87 @@ CREATE TABLE IF NOT EXISTS sts_used_assertions (
 
 CREATE INDEX IF NOT EXISTS sts_used_assertions_expiry ON sts_used_assertions (realm, expires_at);
 
+-- THE CLUSTER (2026-09-14, #46): several containers against this one store.
+-- Membership with a heartbeat, named leases with a fencing token, atomic
+-- claims, and the secrets every node must agree on (sealed before they arrive).
+-- Every time is the DATABASE's clock in milliseconds. `cluster/CLAUDE.md`
+-- argues all four; `persistence_postgres.js` holds the statements.
+CREATE TABLE IF NOT EXISTS sts_cluster_nodes (
+  node_id      text   PRIMARY KEY,
+  name         text   NOT NULL DEFAULT '',
+  mode         text   NOT NULL,
+  version      text   NOT NULL DEFAULT '',
+  fingerprint  text   NOT NULL DEFAULT '',
+  started_at   bigint NOT NULL,
+  heartbeat_at bigint NOT NULL,
+  expires_at   bigint NOT NULL,
+  left_at      bigint NOT NULL DEFAULT 0,
+  info         jsonb  NOT NULL DEFAULT '{}'::jsonb);
+
+CREATE INDEX IF NOT EXISTS sts_cluster_nodes_expiry ON sts_cluster_nodes (expires_at);
+
+CREATE TABLE IF NOT EXISTS sts_cluster_leases (
+  name        text   PRIMARY KEY,
+  holder      text   NOT NULL,
+  token       bigint NOT NULL,
+  acquired_at bigint NOT NULL,
+  expires_at  bigint NOT NULL);
+
+CREATE TABLE IF NOT EXISTS sts_cluster_claims (
+  scope       text   NOT NULL,
+  realm       text   NOT NULL,
+  key         text   NOT NULL,
+  reservation text   NOT NULL,
+  origin      text   NOT NULL DEFAULT '',
+  claimed_at  bigint NOT NULL,
+  expires_at  bigint NOT NULL,
+  PRIMARY KEY (scope, realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_cluster_claims_expiry ON sts_cluster_claims (expires_at);
+
+CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
+  name       text   PRIMARY KEY,
+  material   text   NOT NULL,
+  created_by text   NOT NULL DEFAULT '',
+  created_at bigint NOT NULL);
+
+-- A VALUE THAT ONLY GOES UP (#46 section 2): a WebAuthn signature counter and
+-- the last RFC 6238 step spent, advanced by one conditional upsert so a lower
+-- value never overwrites a higher one. `cluster/cluster_counters.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_counters (
+  scope      text   NOT NULL,
+  realm      text   NOT NULL,
+  key        text   NOT NULL,
+  value      bigint NOT NULL,
+  origin     text   NOT NULL DEFAULT '',
+  updated_at bigint NOT NULL,
+  PRIMARY KEY (scope, realm, key));
+
+-- A COUNT INSIDE A FIXED WINDOW (#46 section 2): the rate limiter's buckets,
+-- counted by every node against one budget with one conditional upsert, so
+-- two nodes counting at once never overwrite each other's count.
+-- `cluster/cluster_counters.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_windows (
+  scope          text   NOT NULL,
+  realm          text   NOT NULL,
+  key            text   NOT NULL,
+  count          bigint NOT NULL,
+  window_ends_at bigint NOT NULL,
+  origin         text   NOT NULL DEFAULT '',
+  PRIMARY KEY (scope, realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON sts_cluster_windows (window_ends_at);
+
+-- WHERE EVERY PROCESS READING THE CHANGE LOG HAS GOT TO (#46 section 8): the
+-- low-water mark each coordinating process reports, which `sts_changes` is
+-- trimmed below. `persistence/persistence_replication.js` argues the bound.
+CREATE TABLE IF NOT EXISTS sts_change_readers (
+  origin      text   PRIMARY KEY,
+  node_id     text   NOT NULL DEFAULT '',
+  applied     bigint NOT NULL,
+  started_at  bigint NOT NULL,
+  reported_at bigint NOT NULL);
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -279,7 +360,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (4) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (5) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

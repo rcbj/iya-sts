@@ -302,7 +302,7 @@ services:
   # ===========================================================================
   openbao-tls:
     container_name: ${STS_BAO_TLS_CONTAINER_NAME:-sts-openbao-tls}
-    image: rcbj/sts
+    image: ${STS_IMAGE:-rcbj/sts}
     build:
       context: .
     # It has to exist before the store starts and it must not be restarted
@@ -369,7 +369,7 @@ services:
 
   openbao-seed:
     container_name: ${STS_BAO_SEED_CONTAINER_NAME:-sts-openbao-seed}
-    image: rcbj/sts
+    image: ${STS_IMAGE:-rcbj/sts}
     build:
       context: .
     restart: "no"
@@ -397,7 +397,14 @@ services:
     hostname: sts
     # Same image name the parent project builds, so a local `docker compose up`
     # here and the suite there produce the one image rather than two that drift.
-    image: rcbj/sts
+    #
+    # **AND A TEST RUN NAMES ITS OWN TAG (2026-09-14)**, because an image tag is
+    # MACHINE-WIDE exactly as a `container_name` is. `up` of a later mode reuses
+    # whatever `rcbj/sts` points at by then, so a second checkout building the
+    # same name between two modes of another run swapped the code under that run
+    # with nothing said. `STS_IMAGE` unset is the name above, unchanged; the
+    # launchers set it when a compose project is named.
+    image: ${STS_IMAGE:-rcbj/sts}
     # -----------------------------------------------------------------------
     # THE KEY-ENCRYPTION KEY IS MADE ON THE FIRST START THAT FINDS NONE.
     #
@@ -932,7 +939,8 @@ services:
     container_name: ${XACML_PEP_CONTAINER_NAME:-xacml-pep}
     hostname: xacml-pep
     profiles: ["xacml"]
-    image: rcbj/xacml-pep
+    # Scoped per run like STS_IMAGE above, and for its reason.
+    image: ${XACML_PEP_IMAGE:-rcbj/xacml-pep}
     build:
       # THE REPOSITORY ROOT, because the Dockerfile copies the seven engine
       # modules out of xacml/ at build time — there is one copy of the

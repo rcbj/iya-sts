@@ -1648,6 +1648,28 @@ is handed scope ids and has no opinion about which exist — the same reason
 `rebuildEveryScope()` lives on this side — so *which branches does a reader in
 this realm get* is asked exactly once, where the page is.
 
+#### A rebuild re-mints what the old branch certified for the realm's keys — all THREE doors (2026-09-15, #46)
+
+`build-scope` and *Replace the Root* (`rebuildEveryScope()`) always followed the
+build with `recertifyScope()`. **`build` — the action `POST /admin-api/pki/build`
+reaches — did not**, and `common/pki.js`'s `buildScopeNow()` carries the row's
+recorded certificates over the rebuild (so the workbench's objects survive). So
+the realm's JWKS `x5c`, its SAML metadata and its signature headers went on
+publishing the signing keys' certificates from the SUPERSEDED Issuing CAs, with
+the old Intermediate in the chain — and the old Issuing CAs name the same
+`intermediate.crl` as the new ones, so one list was named by two issuers.
+`tests/vendored/sts_pki_distribution_points.js` failed on it in every mode.
+
+**It was there on `develop` and was hidden by timing.** A runtime realm's keys
+were made by the first handler that read them, which for a realm created and
+immediately rebuilt came AFTER the rebuild, so nothing had been certified from
+the old branch. #46's `app.js` makes the request realm's key set BEFORE the
+handler, so the realm watcher's `certifyKeySet()` finds them held and certifies
+them from the branch the rebuild then replaces. The fix is the missing
+`recertifyScope()` in `build`, and `certify()`'s refusal to record a certificate
+from an authority replaced while it was being signed (`common/CLAUDE.md`) for
+the certification still in flight. `tests/pki_rebuild_recertifies.js`.
+
 #### And the store spells the default realm `default`, not `''`
 
 Found in the same change and worth more than the narrowing. `common/pki.js`'s

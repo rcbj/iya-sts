@@ -178,6 +178,34 @@ half-finished exchange begun at `/spnego/protected` by anybody sharing the
 address — a NAT, a proxy, a container network — and the accepted client on that
 entry is what the session would be minted for.
 
+**SINCE 2026-09-14 (#46 section 5) IT IS KEYED BY A NEGOTIATION ID, NOT THE
+ADDRESS** — capability `spnego.pending`, provided by `spnego_exchange.js`.
+Behind a load balancer every client has the balancer's address and every
+browser of a kind sends the same mechanism list, so two people's negotiations
+were one key and the second overwrote the first. Neither RFC 4559's header nor
+RFC 4178's NegTokenResp can carry a context handle, so:
+
+* the `request-mic` answer sets `sts_spnego_negotiation` (HttpOnly, SameSite=Lax,
+  Secure over TLS, for `krb5.spnegoPendingTtlSeconds`), and a continuation that
+  carries it is matched by it — and cleared;
+* a continuation WITHOUT it (a client with no cookie jar — the parent's
+  `krb5_spnego_http.js` job is one) is matched by its MIC: the candidates for the
+  door are tried, the caller's own address first, and the MIC verifies against
+  exactly one, because it is keyed by that negotiation's session key. A MIC
+  that fits none deletes nothing — the address key let one bad token from
+  behind the same NAT delete somebody else's negotiation;
+* the row holds its keys and mechanism list as HEX: the store was persisted
+  already, and a `Uint8Array` through JSON comes back as `{"0":…}`, so a
+  negotiation that reached another process could never have verified;
+* the continuation is SPENT through `cluster/cluster_claims.js` before it is
+  accepted (`STS-KRB-0119` another process completed it, `STS-KRB-0120` the
+  store could not be asked — both the `no-pending-continuation` outcome, so no
+  caller's switch changed).
+
+`tests/cluster_limits_challenges_retention.js` section D holds all four; the
+parent's `tests/krb5_spnego_http.js` passed against this tree
+(`MOCK_STS_DIR`), request-mic included.
+
 ---
 
 ## The KDC's listeners start from `listen()`, not at require time
@@ -335,6 +363,39 @@ sts/common/error_codes.js ./sts/common/` in the parent's `tests/Dockerfile`, or
 the four in-process Kerberos jobs die at load with `Cannot find module
 './error_codes'`. It is a leaf and requires nothing, so it is one line and no
 more.
+
+**AND OWED AGAIN AS OF 2026-09-14: `cluster/cluster_claims.js`** (#46).
+`krb5_service.js` requires it to spend an Authenticator across the cluster, so
+the commit that bumps the `sts/` pin across it needs `COPY
+sts/cluster/cluster_claims.js ./sts/cluster/`. Everything it requires —
+`config`, `realms`, `error_codes`, `cluster_capabilities`, and
+`persistence/persistence.js` LAZILY — is already in that closure through
+`common/app.js`, which requires `cluster/cluster_barrier.js`; if the parent's set
+does not yet carry `cluster/` at all, the whole directory is owed with it. With
+no store a claim is that process's memory, so the four in-process jobs behave
+exactly as before.
+
+**AND OWED AGAIN AS OF 2026-09-14: `common/client_address.js`** (#46 section 8).
+`common/helpers.js` requires it to decide whether a request's forwarded headers
+are believed, so the commit that bumps the `sts/` pin across it needs `COPY
+sts/common/client_address.js ./sts/common/`. It requires only `net`, bunyan and
+`config`, which is already in the closure. `spnego_exchange.js`'s new requires
+of `cluster/cluster_claims.js` and `cluster/cluster_capabilities.js` add nothing:
+`krb5_service.js` already requires both. `common/websecurity.js` now requires
+`cluster/cluster_counters.js`, which is owed only if websecurity is in the
+parent's set (it is reached from `authn.js`, not from the three Kerberos
+modules).
+
+**AND NOT OWED FOR THE PROXY PROTOCOL (2026-09-14, #46), ON PURPOSE.** The
+KDC's TCP listener takes a PROXY protocol v2 header when `global.proxyProtocol`
+is `v2`, and `common/proxy_protocol.js` is installed on it from `server.js`
+(`proxyProtocol.install(kdcListeners.tcp, …)` right after `krb5.listen()`)
+rather than from `krb5_kdc.js`, so the closure gains nothing. That is not a race:
+`listen()` returns before any `connection` event can be delivered. `startTcp()`
+now reads `socket.remoteAddress` once per connection for its debug line and its
+two refusal warnings, which is the header's source when one was read. The UDP
+socket is not covered — a datagram has no stream to put a header in front of —
+so behind a load balancer Kerberos clients use TCP.
 
 `MOCK_STS_DIR=/path/to/mock-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
@@ -764,3 +825,59 @@ refusing 4 while 5 is accepted. Sixteen mutants, fifteen caught; **M4 (the princ
 expiry check removed) survives** because the source filters by the same clock in the same
 synchronous call — a belt-and-braces guard, recorded rather than counted. Untested: the
 S4U2Proxy evidence path under a kept version, and a drop racing a derivation.
+
+---
+
+## THE REPLAY CACHE ACROSS THE CLUSTER (2026-09-14, #46) — capability `kerberos.replay-cache`
+
+`replayCache` is a persisted `realms.sharedMap()`, which REPLICATES: a captured
+AP-REQ delivered to a second node inside the replication window found an empty
+cache there and was accepted — and with a load balancer or DNS round-robin on
+the service name, delivery to another node is the default, not the attack.
+
+`accept()` step 7 now keeps the cache check (and the full-cache refusal) first,
+sets the entry before any await, and then SPENDS the Authenticator's
+(client, ctime, cusec) key through `cluster/cluster_claims.js` (scope
+`krb5.authenticator`, `realm: ''` — the acceptor has no realm, like the cache).
+**The claim is inside `accept()` because that is the async boundary**: it is
+already asynchronous (every decryption is awaited), it is the one place any
+transport accepts a ticket — the raw socket and both SPNEGO doors — and it comes
+after every other check, so a bad ticket takes no slot. The claim lives
+`2 × krb5.clockSkew` (the cache's own window) plus 60 s of clock disagreement.
+A replay seen by another node is `KRB_AP_ERR_REPEAT` with `STS-KRB-0116`; a store
+that cannot be asked is refused `KRB_ERR_GENERIC` with `STS-KRB-0117` **and the
+local entry is forgotten**, because an Authenticator refused unproven was not
+used and its retry is not a replay. `tests/cluster_single_use_protocols.js`
+section 4 holds all three, with the empty-store control.
+
+
+## A SIGN-OUT INSTANT ON ANOTHER NODE (2026-09-14, #46 section 4)
+
+`signedOutAt` is a field of a replicated `krb5.principals` row, so a TGS-REQ
+that DNS round-robin sent to a node which had not yet applied a sign-out
+committed elsewhere was answered from a copy without the stamp, and the
+signed-out ticket was honoured. Every HTTP request is held to the cluster
+barrier; these raw TCP and UDP sockets are not the express app. So
+`handleMessage()` now calls `catchUpWithCluster()` before an AS-REQ or a
+TGS-REQ: in active-active mode, with `logout.kerberosSignOut` on, it awaits
+`cluster_barrier.syncShared()` — the barrier's rule 1, one shared read of the
+change log's head — and a barrier that gave up is logged (`STS-KRB-0118`) and
+the request answered anyway. The sign-out itself is HTTP, so its answer is held
+until the stamp commits; a TGS-REQ that follows it on any node sees it. MS-KKDCP
+goes through the same dispatcher and is already behind the HTTP barrier; the
+second shared read costs nothing.
+
+**What is left is a race, not a window**: an AS-REQ CLEARS the stamp by writing
+the whole principal back, and one that caught up just before a concurrent
+sign-out on another node committed can land its clear after that stamp — last
+writer wins on the row, which is issue section 3's. **`signedOutAt` survives
+`reconcileRestored()`**, which the issue left unverified: it is the one member
+of `RUNTIME_FIELDS`, so a configured principal takes it from the incoming row
+and a runtime-made one is restored whole.
+
+The two requires are LAZY and guarded. `cluster/cluster_barrier.js` is already
+in the parent project's COPY closure through `common/app.js`, and
+`cluster/cluster.js` with it (the barrier requires it lazily); if that set does
+not carry `cluster/` yet, it is the directory already owed above, not a new
+line. Not measured on a live pair: the sign-out probe in `ldap/CLAUDE.md` ran
+against LDAP only.

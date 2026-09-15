@@ -775,7 +775,13 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain array it replaced. See common/realms.js.
-const events = realms.arr({ persist: 'audit.events', merge: 'own' });
+// IN SEGMENTS OF 32 SINCE 2026-09-14 (#46): one row for the whole ring was
+// 2.3 MB sealed, written and read back by every other node on every request
+// once a cluster barrier held responses for their commit. realms.js's
+// segmentedArr() argues it, including the one segment of already-dropped
+// events a stored copy can carry — which merged() below trims.
+const events = realms.arr({ persist: 'audit.events', merge: 'own',
+                            segment: 32 });
 
 // ---------------------------------------------------------------------
 // PER TRUST REALM, like the ring above it. A sequence number shared between
@@ -1364,7 +1370,13 @@ function list() {
 function merged() {
   log.debug("Entering merged().");
   const mine = events.slice(0);
-  const others = replication.remoteRows('audit.events', undefined, '');
+  // Each other process's events, trimmed to the cap: a segmented store can
+  // hand back up to one segment that process has already dropped.
+  const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
+  const others = replication.remoteSegmentedRows('audit.events')
+    .map(function (rows) {
+      return rows.length > cap ? rows.slice(rows.length - cap) : rows;
+    });
   if (!others.length) {
     log.debug("Leaving merged().");
     // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
@@ -1433,7 +1445,8 @@ function summary() {
     // number that does not match `wc -l` on one container's log needs to be
     // able to see why.
     heldHere: events.length,
-    processes: 1 + replication.remoteRows('audit.events', undefined, '').length,
+    processes: 1 +
+      replication.remoteSegmentedRows('audit.events').length,
     dropped: dropped,
     maxEvents: maxEvents(),
     protocolCalls: protocolCallsRecorded(),

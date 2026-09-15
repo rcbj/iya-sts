@@ -147,9 +147,41 @@ function estError(req, res, ctx, status, sentence, headers) {
   const code = errorCodes.codeOf(res) || '';
   // error-code: none — the monitor row carries the code the caller marked.
   counted(ctx, { outcome: 'refused', status: status, errorCode: code });
+  if (COUNTED_STATUSES.indexOf(status) >= 0 && core.sharesThrottle() &&
+      status !== 429) {
+    // WHERE THE THROTTLE IS SHARED THE COUNT DECIDES THE ANSWER (2026-09-14):
+    // a refusal whose count took the caller past the limit is answered with
+    // the throttle's 429, so a burst of wrong credentials across nodes gets at
+    // most `limit` answers about the credential. `core.countFailureShared()`.
+    core.countFailureShared(FAMILY, req, ctx.identity || '')
+      .then(function (overLimit) {
+        if (!overLimit) {
+          sendEstError(res, status, sentence, headers);
+          return;
+        }
+        errorCodes.mark(res, 'STS-ENROLL-0061');
+        sendEstError(res, 429, overLimit.why,
+                     { 'Retry-After': String(core.retryAfterOf(overLimit)) });
+      });
+    log.info('est: ' + ctx.op + ' refused ' + status + ' ' + code + ' for ' +
+             (ctx.identity || 'an unauthenticated client') +
+             ' (counted against the shared throttle first)');
+    log.debug("Leaving estError(). Counting first.");
+    return undefined;
+  }
   if (COUNTED_STATUSES.indexOf(status) >= 0) {
     core.countFailure(FAMILY, req, ctx.identity || '');
   }
+  sendEstError(res, status, sentence, headers);
+  log.info('est: ' + ctx.op + ' refused ' + status + ' ' + code + ' for ' +
+           (ctx.identity || 'an unauthenticated client'));
+  log.debug("Leaving estError().");
+  return undefined;
+}
+
+// The bytes of an EST refusal.
+function sendEstError(res, status, sentence, headers) {
+  log.debug("Entering sendEstError(). status=" + status);
   if (!res.headersSent) {
     Object.keys(headers || {}).forEach(function (name) {
       res.set(name, headers[name]);
@@ -159,10 +191,7 @@ function estError(req, res, ctx, status, sentence, headers) {
        .type('text/plain')
        .send(String(sentence || 'The request was refused.') + '\n');
   }
-  log.info('est: ' + ctx.op + ' refused ' + status + ' ' + code + ' for ' +
-           (ctx.identity || 'an unauthenticated client'));
-  log.debug("Leaving estError().");
-  return undefined;
+  log.debug("Leaving sendEstError().");
 }
 
 // A refusal the core returned, answered with its own status and sentence. A 401
@@ -266,9 +295,12 @@ function refusedBeforeAuthentication(req, res, ctx) {
 
 // The checks an enrollment makes of the REQUEST before its credential: the rate
 // limit, the media type, the size.
-function refusedBeforeBody(req, res, ctx) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46): the throttle is the cluster's one
+// budget (`throttledShared()`), which is a round trip.
+async function refusedBeforeBody(req, res, ctx) {
   log.debug("Entering refusedBeforeBody().");
-  const throttled = core.throttled(FAMILY, req, ctx.identity || '');
+  const throttled = await core.throttledShared(FAMILY, req,
+                                               ctx.identity || '');
   if (throttled) {
     refuseWith(req, res, ctx, throttled);
     log.debug("Leaving refusedBeforeBody(). Throttled.");
@@ -437,7 +469,7 @@ async function enrollmentRequest(req, res, ctx, parseOptions) {
   log.debug("Entering enrollmentRequest().");
   ctx.basic = basicCredentialOf(req);
   ctx.identity = identityHintOf(req, ctx.basic);
-  if (refusedBeforeBody(req, res, ctx)) {
+  if (await refusedBeforeBody(req, res, ctx)) {
     log.debug("Leaving enrollmentRequest(). Refused before the body.");
     return null;
   }

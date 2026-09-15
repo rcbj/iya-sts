@@ -98,7 +98,7 @@ function isTls(url) {
 // building an undici Agent, and this module must load in the container image
 // too, where the runner has no dependency on undici's public API.
 // ---------------------------------------------------------------------------
-function fetchCertificate(url, timeoutMs) {
+function fetchCertificate(url, timeoutMs, options) {
   log.debug("Entering fetchCertificate().");
   log.debug("Leaving fetchCertificate().");
   return new Promise(function (resolve, reject) {
@@ -116,7 +116,10 @@ function fetchCertificate(url, timeoutMs) {
       port: target.port || 443,
       path: target.pathname,
       rejectUnauthorized: false,
-      timeout: timeoutMs || 10000
+      timeout: timeoutMs || 10000,
+      // A NEW CONNECTION when asked (the `cluster` mode, below); otherwise the
+      // default agent, exactly as before.
+      agent: options && options.fresh ? false : undefined
     }, function (res) {
       let body = '';
       res.setEncoding('utf8');
@@ -167,6 +170,61 @@ function spkiPin(pem) {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT TO TRUST, FROM EVERY NODE BEHIND THE ADDRESS (2026-09-14, issue #46).
+//
+// In every mode but `cluster` this is one fetch and its pin — the code path
+// this file always had. In the `cluster` mode the address is a load balancer
+// in front of `STS_TEST_CLUSTER_NODES` nodes, and **each node presents a leaf
+// of its own**: the same Root, Intermediate and Issuing CA, a different key.
+// That is legitimate — a node's listener is the node's — and it is invisible
+// to the node-driven jobs, whose NODE_EXTRA_CA_CERTS terminates at the shared
+// Root whichever node's bundle it came from. It is NOT invisible to Chrome:
+// the SPKI pin is a truststore of ONE KEY, so a browser job pinned to node A's
+// leaf meets an interstitial on every connection the balancer gives node B,
+// and fails naming a sign-in form.
+//
+// So a cluster fetch is repeated, each on a NEW connection (the balancer picks
+// a node per connection), until as many distinct leaves as there are nodes
+// have been seen, and both outputs carry all of them: the bundles one after
+// another, and the pins comma-separated — which is the list syntax of
+// `--ignore-certificate-errors-spki-list`, and `browser_flags.js` puts the
+// variable into that list verbatim. SORTED BY PIN, so the same nodes give the
+// same bytes and refreshTrust() does not report a rotation that is only a
+// different order. Bounded at four attempts a node; fewer leaves than nodes is
+// said out loud and the ones seen are used.
+// ---------------------------------------------------------------------------
+async function readTrust(url, nodes) {
+  log.debug("Entering readTrust().");
+  const want = Number(nodes || process.env.STS_TEST_CLUSTER_NODES || 1);
+  if (!(want > 1)) {
+    const pem = await fetchCertificate(url);
+    log.debug("Leaving readTrust(). One node.");
+    return { pem: pem, pin: spkiPin(pem), leaves: 1 };
+  }
+  const byPin = new Map();
+  for (let attempt = 0; attempt < want * 4 && byPin.size < want;
+       attempt += 1) {
+    const pem = await fetchCertificate(url, 10000, { fresh: true });
+    byPin.set(spkiPin(pem), pem);
+  }
+  const pins = Array.from(byPin.keys()).sort();
+  if (pins.length < want) {
+    log.warn('trust: ' + want + ' nodes are expected behind ' + url +
+             ' and ' + pins.length + ' distinct listener key(s) answered in ' +
+             (want * 4) + ' fetches; trusting what was seen. A browser job ' +
+             'will meet an interstitial on a node whose key is not here.');
+  }
+  log.debug("Leaving readTrust(). n=" + pins.length);
+  return {
+    pem: pins.map(function (pin) {
+      return byPin.get(pin).replace(/\s*$/, '\n');
+    }).join(''),
+    pin: pins.join(','),
+    leaves: pins.length
+  };
+}
+
+// ---------------------------------------------------------------------------
 // THE ONE CALL A LAUNCHER MAKES.
 //
 // Returns an object of ENVIRONMENT VARIABLES to merge into a child's
@@ -187,8 +245,9 @@ async function trustTheService(url, dir, log) {
     log.debug('Leaving trustTheService(). Not TLS; nothing to trust.');
     return { url: url, tls: false, variables: {} };
   }
-  const pem = await fetchCertificate(url);
-  const pin = spkiPin(pem);
+  const read = await readTrust(url);
+  const pem = read.pem;
+  const pin = read.pin;
   fs.mkdirSync(dir, { recursive: true });
   const pemPath = path.join(dir, 'sts-certificate.pem');
   fs.writeFileSync(pemPath, pem);
@@ -211,6 +270,7 @@ module.exports = {
   isTls: isTls,
   spkiPin: spkiPin,
   fetchCertificate: fetchCertificate,
+  readTrust: readTrust,
   trustTheService: trustTheService,
   CERTIFICATE_PATH: CERTIFICATE_PATH
 };

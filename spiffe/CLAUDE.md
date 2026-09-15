@@ -659,6 +659,39 @@ leaving the front process.
 unchanged by any of it: what a handler ANSWERS is not asserted here, only that
 the answer is the same through the codec.
 
+## ONE AUTHORITY PER REALM FOR THE CLUSTER (2026-09-14, #46)
+
+`spiffe.authority-agreement`. The X.509 authority is the realm's SPIFFE Issuing
+CA, which `common/pki.js` now builds once for the cluster and every node adopts
+from the store — so `spiffe_auth.js` on B verifies an X509-SVID A issued against
+the same CA, and the comment in `buildTrustMaterial()` that the row "is
+replicated by the same mechanism" holds across containers rather than within
+one. The JWT authority, and the self-signed X.509 fallback of a realm with no
+hierarchy, raced on first use: each node generated one and the later minted
+write won, and a JWT-SVID minted by the loser in between was refused everywhere.
+`establishOnce()` makes them once where the store arbitrates: claim
+`spiffe.authority` per realm and kind, sync, make only if still missing, commit
+(`flushMinted()`) before releasing; a node that finds the claim held syncs until
+the authority arrives. A store that cannot be asked, or a claim held past two
+minutes, makes nothing (`STS-SPIFFE-0076`). **Not covered: two ROTATIONS at
+once on two nodes** — `rotateJwtAuthority()` reads, prepends and writes back,
+and the later write wins; a rotation is an operator act and the barrier
+serialises a sequential pair. `tests/cluster_key_pki_agreement.js` section 13
+pins the claim (and its control); the live probe did not discriminate — the
+control converged too, through replication, before anything was minted.
+
+## A JOIN TOKEN IS SPENT ONCE ACROSS NODES (2026-09-14, #46)
+
+`joinTokens` replicates, and the token was deleted from it at the SUCCESSFUL
+attestation — so two AttestAgent calls with one token at two nodes inside the
+change log's window both attested, two agents from a single-use credential.
+In product mode (`auth.authRequired()`) the token is CLAIMED once every check
+that refuses without side effects has passed and before the CSR is signed; a
+claim another call holds is `STS-SPIFFE-0055`, the spent-token refusal it
+always was, a store that cannot be asked is `UNAVAILABLE` (`STS-SPIFFE-0075`),
+and an attestation that throws after the claim (the CSR, a ban recorded
+between) gives it back. Development mode checks no join token and claims none.
+
 ## THE SPIRE SERVER API ASKS THE ACCESS POLICY, AFTER SPIRE'S OWN TABLE (2026-09-06)
 
 In `spiffe_grpc.js`'s `prepareCall()`, as `auth.authorize(caller, method) ||

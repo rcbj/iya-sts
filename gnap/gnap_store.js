@@ -45,6 +45,12 @@
 const nodeCrypto = require('crypto');
 const { log, randomId, nowSec } = require('../common/helpers');
 const realms = require('../common/realms');
+// THE CLUSTER CLAIM (2026-09-14, #46) — see spend() below. A LIBRARY that
+// registers no route and requires persistence lazily, so this file stays a
+// leaf of the family.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
+const errorCodes = require('../common/error_codes');
 
 const grants = realms.map({ persist: 'gnap.grants' });
 const continuations = realms.map({ persist: 'gnap.continuations' });
@@ -454,6 +460,77 @@ function remember(key, lifetimeS) {
 }
 
 // ---------------------------------------------------------------------------
+// SPENDING A SINGLE-USE VALUE ACROSS THE CLUSTER (2026-09-14, #46).
+//
+// Every one-time value in this family — a continuation access token, an
+// interaction reference, an interaction start link, a user code, a token
+// management access token, a key proof — is spent in THIS file's maps, which
+// are `realms.map({ persist })`: once in one process, and a replicated write
+// in several. Two requests carrying one value, landing on two nodes inside the
+// replication window, both found it live and both were answered — two
+// continuations issuing two successor tokens for one grant, two rotations of
+// one access token, a signature nonce accepted twice (RFC 9635 section 7.3.1
+// says MUST be unique).
+//
+// So each caller keeps its in-memory check first, exactly as it was, and then
+// asks `spend(kind, value, lifetimeS)` before acting: one
+// `cluster_claims.claim()` in the scope `gnap.<kind>`, which exactly one
+// caller on any node wins. On a store that cannot be shared the claim is this
+// process's memory, which is as atomic as the maps it sits beside.
+//
+// The lifetime is the value's own — `lifetimeS` — plus CLAIM_SKEW_S for clocks
+// that disagree. A value with no expiry of its own (a continuation or
+// management token lives until it is used) is claimed for UNBOUNDED_LIFETIME_S:
+// the claim has to outlive only the window in which another node could still
+// hold the value, and a day is far past every replication delay, including a
+// transaction the change log gives up on after ten minutes.
+//
+// Resolves to `{ ok: true, handle }`, or `{ ok: false, reason, errorCode }`
+// where `reason` is `used` (the caller refuses with the protocol's own error
+// and `usedCode`) or `store` (STS-GNAP-0716, fail closed). It never rejects.
+// ---------------------------------------------------------------------------
+const CLAIM_SKEW_S = 60;
+const UNBOUNDED_LIFETIME_S = 24 * 60 * 60;
+
+function spend(kind, value, lifetimeS, usedCode) {
+  log.debug("Entering spend(). kind=" + kind);
+  const seconds = Number(lifetimeS);
+  const ttlS = (Number.isFinite(seconds) && seconds > 0 ? seconds :
+                UNBOUNDED_LIFETIME_S) + CLAIM_SKEW_S;
+  log.debug("Leaving spend(). Asking the claim store.");
+  return clusterClaims.claim({ scope: 'gnap.' + kind, value: value,
+                               ttlMs: ttlS * 1000 })
+    .then(function (claimed) {
+      log.debug("Entering spend()'s answer.");
+      if (claimed.ok) {
+        log.debug("Leaving spend()'s answer. Spent here.");
+        return claimed;
+      }
+      if (claimed.reason === 'used') {
+        log.warn(errorCodes.tag(usedCode) + 'gnap: a single-use value ("' +
+                 kind + '") this process still accepted was ALREADY SPENT, ' +
+                 'on this node or another against the same store. Refused.');
+        log.debug("Leaving spend()'s answer. Used.");
+        return { ok: false, reason: 'used', errorCode: usedCode };
+      }
+      log.error(errorCodes.tag('STS-GNAP-0716') + 'gnap: whether a ' +
+                'single-use value ("' + kind + '") was already spent could ' +
+                'not be asked of the claim store (' +
+                (claimed.why || 'no reason given') + '). It is refused.');
+      log.debug("Leaving spend()'s answer. Store unavailable.");
+      return { ok: false, reason: 'store', errorCode: 'STS-GNAP-0716' };
+    });
+}
+
+// Gives a claim back when what it guarded did not happen — see the callers,
+// which release only where the value is still live in this process's map.
+function unspend(handle) {
+  log.debug("Entering unspend().");
+  log.debug("Leaving unspend().");
+  return clusterClaims.release(handle);
+}
+
+// ---------------------------------------------------------------------------
 // OPPORTUNISTIC PRUNE of rows that can no longer be used. Bounded work per
 // call, so a store with a large backlog is cleaned over several writes rather
 // than stalling one.
@@ -490,8 +567,15 @@ function prune() {
   log.debug("Leaving prune().");
 }
 
+// #46: every GNAP single-use value is spent once across the cluster — the
+// helper above, called from gnap_grants.js, gnap_interact.js, gnap_proof.js
+// and gnap_rs.js. Provided here because the capability row names this file.
+capabilities.provide('gnap.once');
+
 module.exports = {
   STATE: STATE,
+  spend: spend,
+  unspend: unspend,
   digest: digest,
   mint: mint,
   newGrant: newGrant,

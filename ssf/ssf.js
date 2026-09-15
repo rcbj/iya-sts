@@ -156,6 +156,10 @@ const transport = require('./ssf_http');
 // tells it what each sweep found, and the console slot hands its report out.
 const deadLetterReport = require('./ssf_dead_letter_report');
 const ssfAuth = require('./ssf_auth');
+// SEVERAL NODES (2026-09-14, #46 section 6): one report per stream health
+// transition, one prober for the cluster, and a GNAP key proof spent across
+// every node before the gate reads it. A LIBRARY; see its header.
+const ssfCluster = require('./ssf_cluster');
 // The error-code registry, a LEAF. An HTTP refusal is marked on the response
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
@@ -621,30 +625,48 @@ function transmit(record, options) {
 // ---------------------------------------------------------------------------
 function streamDeclaredDead(record, moved) {
   log.debug('Entering streamDeclaredDead(). ' + record.stream_id);
+  // ONCE FOR THE CLUSTER (2026-09-14, #46): two nodes pushing to one dead
+  // receiver both cross the timeout. See ssf_cluster.js's transitionOnce().
+  // What is captured is what the row says NOW, before any await.
+  const realmId = realms.currentId();
+  const reason = record.deadReason || '?';
+  const endpoint = record.delivery.endpoint_url;
+  const streamId = record.stream_id;
+  ssfCluster.transitionOnce('dead', streamId, function () {
+    reportStreamDead(streamId, realmId, endpoint, moved, reason);
+  });
+  log.debug('Leaving streamDeclaredDead().');
+}
+
+function reportStreamDead(streamId, realmId, endpoint, moved, reason) {
+  log.debug('Entering reportStreamDead(). ' + streamId);
   // The audit row's code writes the one log line (audit.js's logFailure()).
   audit.audit({ action: 'ssf.stream.dead', category: 'signals',
     protocol: 'SSF', channel: 'http', outcome: 'failure',
-    errorCode: 'STS-SSF-0093', target: record.stream_id,
-    summary: 'ssf: stream ' + record.stream_id + ' in the "' +
-      realms.currentId() + '" realm was declared DEAD after ' +
+    errorCode: 'STS-SSF-0093', target: streamId,
+    summary: 'ssf: stream ' + streamId + ' in the "' +
+      realmId + '" realm was declared DEAD after ' +
       config.value('ssf.deadStreamTimeoutS') + 's of failed pushes to ' +
-      record.delivery.endpoint_url + '; ' + moved + ' waiting SET(s) moved ' +
+      endpoint + '; ' + moved + ' waiting SET(s) moved ' +
       'to its dead-letter queue and nothing more is pushed until a probe or ' +
-      'an operator revives it. Last failure: ' + (record.deadReason || '?'),
-    detail: { endpoint: record.delivery.endpoint_url, moved: moved,
-      why: record.deadReason } });
-  log.debug('Leaving streamDeclaredDead().');
+      'an operator revives it. Last failure: ' + reason,
+    detail: { endpoint: endpoint, moved: moved, why: reason } });
+  log.debug('Leaving reportStreamDead().');
 }
 
 function streamRevived(record, how) {
   log.debug('Entering streamRevived(). ' + record.stream_id);
-  audit.audit({ action: 'ssf.stream.revived', category: 'signals',
-    protocol: 'SSF', channel: 'http', outcome: 'success',
-    target: record.stream_id,
-    summary: 'The dead stream ' + record.stream_id + ' was revived: ' + how });
-  log.info('ssf: stream ' + record.stream_id + ' in the "' +
-           realms.currentId() + '" realm is alive again (' + how + ') and ' +
-           'is pushed to as before.');
+  const streamId = record.stream_id;
+  const realmId = realms.currentId();
+  // Once for the cluster, for streamDeclaredDead()'s reason.
+  ssfCluster.transitionOnce('revived', streamId, function () {
+    audit.audit({ action: 'ssf.stream.revived', category: 'signals',
+      protocol: 'SSF', channel: 'http', outcome: 'success',
+      target: streamId,
+      summary: 'The dead stream ' + streamId + ' was revived: ' + how });
+    log.info('ssf: stream ' + streamId + ' in the "' + realmId + '" realm ' +
+             'is alive again (' + how + ') and is pushed to as before.');
+  });
   log.debug('Leaving streamRevived().');
 }
 
@@ -660,6 +682,13 @@ function streamRevived(record, how) {
 // sets `nextProbeAtMs` on the record before it pushes, which replicates, so
 // processes rarely probe the same stream in the same period — and one extra
 // probe is harmless.
+//
+// **BUT IN ACTIVE-ACTIVE MODE ONE PROCESS PROBES (2026-09-14, #46).** "Rarely"
+// was a replication interval inside one container and became every node at
+// once across several, each probe a signed push at a receiver already known
+// to be down, and each half-open decision a whole-record write the others
+// could revert. `ssfCluster.leadsProbes()` names one front process for the
+// cluster; every other process still sweeps its letters and logs its summary.
 // ---------------------------------------------------------------------------
 function probeDeadStream(record, now) {
   log.debug('Entering probeDeadStream(). ' + record.stream_id);
@@ -732,9 +761,9 @@ function sweepSignalsRealm(now) {
              'deleted streams were removed in the "' + realms.currentId() +
              '" realm; ' + summary.held + ' held.');
   }
-  const due = dead.filter(function (record) {
+  const due = ssfCluster.leadsProbes() ? dead.filter(function (record) {
     return !(Number(record.nextProbeAtMs) > now);
-  });
+  }) : [];
   // THE MONITORING PAGE'S SWEEP HISTORY. Noted here and not in
   // `sweepDeadLetters()`, because the dead-stream and probe counts are only
   // known here — and before the probes run, so a probe that throws cannot
@@ -793,6 +822,21 @@ function scheduleSweep() {
 }
 
 scheduleSweep();
+
+// ---------------------------------------------------------------------------
+// `ssf.delivery` (#46 section 6), AT REQUIRE TIME like every capability — the
+// code being loaded is the capability (cluster/CLAUDE.md). What it stands for,
+// and where each half is: an acknowledged SET is not delivered again by
+// another node (the barrier for a sequential ack then poll, and
+// `ssf_streams.js`'s poll no longer writing a row back on a shared store for a
+// concurrent one); a session's end emits one event (`authn.js`'s
+// sessionEndOnce()); stream health is reported once and probed by one node,
+// and a GNAP proof on these endpoints is spent across the cluster
+// (`ssf_cluster.js`). `ssf/CLAUDE.md` argues all four and what stays per
+// process.
+// ---------------------------------------------------------------------------
+const capabilities = require('../cluster/cluster_capabilities');
+capabilities.provide('ssf.delivery');
 
 // ---------------------------------------------------------------------------
 // THE TRANSMITTER CONFIGURATION METADATA (SSF 1.0 section 6).
@@ -870,7 +914,7 @@ function streamView(req, record, decision) {
   return view;
 }
 
-app.post('/ssf/stream', function (req, res) {
+app.post('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/stream.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/stream. Off.');
@@ -939,7 +983,7 @@ app.post('/ssf/stream', function (req, res) {
   log.debug('Leaving POST /ssf/stream. ' + created.stream.stream_id);
 });
 
-app.get('/ssf/stream', function (req, res) {
+app.get('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering GET /ssf/stream.');
   if (offCheck(res)) {
     log.debug('Leaving GET /ssf/stream. Off.');
@@ -1020,19 +1064,19 @@ function updateRoute(req, res, mode) {
   log.debug('Leaving updateRoute(). ' + id);
 }
 
-app.put('/ssf/stream', function (req, res) {
+app.put('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering PUT /ssf/stream.');
   updateRoute(req, res, 'replace');
   log.debug('Leaving PUT /ssf/stream.');
 });
 
-app.patch('/ssf/stream', function (req, res) {
+app.patch('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering PATCH /ssf/stream.');
   updateRoute(req, res, 'merge');
   log.debug('Leaving PATCH /ssf/stream.');
 });
 
-app.delete('/ssf/stream', function (req, res) {
+app.delete('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering DELETE /ssf/stream.');
   if (offCheck(res)) {
     log.debug('Leaving DELETE /ssf/stream. Off.');
@@ -1073,7 +1117,7 @@ app.delete('/ssf/stream', function (req, res) {
 // receiver agreed that type — which is the one event a receiver gets without
 // asking for it, and the one whose absence is hardest to notice.
 // ---------------------------------------------------------------------------
-app.get('/ssf/status', function (req, res) {
+app.get('/ssf/status', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering GET /ssf/status.');
   if (offCheck(res)) {
     log.debug('Leaving GET /ssf/status. Off.');
@@ -1099,7 +1143,7 @@ app.get('/ssf/status', function (req, res) {
   log.debug('Leaving GET /ssf/status. ' + record.status);
 });
 
-app.post('/ssf/status', function (req, res) {
+app.post('/ssf/status', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/status.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/status. Off.');
@@ -1162,7 +1206,7 @@ app.post('/ssf/status', function (req, res) {
 // receiver tidying up after a crash must not have to know what it had already
 // removed.
 // ---------------------------------------------------------------------------
-app.post('/ssf/subjects/add', function (req, res) {
+app.post('/ssf/subjects/add', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/subjects/add.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/subjects/add. Off.');
@@ -1205,7 +1249,8 @@ app.post('/ssf/subjects/add', function (req, res) {
   log.debug('Leaving POST /ssf/subjects/add.');
 });
 
-app.post('/ssf/subjects/remove', function (req, res) {
+app.post('/ssf/subjects/remove', ssfCluster.spendGnapProof,
+  function (req, res) {
   log.debug('Entering POST /ssf/subjects/remove.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/subjects/remove. Off.');
@@ -1264,7 +1309,7 @@ app.post('/ssf/subjects/remove', function (req, res) {
 // verify as often as it likes, and turning the second one on makes the 429
 // reachable.
 // ---------------------------------------------------------------------------
-app.post('/ssf/verify', function (req, res) {
+app.post('/ssf/verify', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/verify.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/verify. Off.');
@@ -1348,7 +1393,7 @@ app.post('/ssf/verify', function (req, res) {
 // a request open. RFC 8936 permits a transmitter to answer immediately in any
 // case, and long-polling a mock would tie up a socket to demonstrate nothing.
 // ---------------------------------------------------------------------------
-app.post('/ssf/poll', function (req, res) {
+app.post('/ssf/poll', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/poll.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/poll. Off.');
@@ -1503,7 +1548,7 @@ app.post('/ssf/receive', function (req, res) {
   log.debug('Leaving POST /ssf/receive. Accepted.');
 });
 
-app.get('/ssf/received', function (req, res) {
+app.get('/ssf/received', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering GET /ssf/received.');
   if (offCheck(res)) {
     log.debug('Leaving GET /ssf/received. Off.');

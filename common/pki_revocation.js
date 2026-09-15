@@ -810,6 +810,67 @@ function crlNumberAt(scopeId, caId, whenMs) {
   return number;
 }
 
+// ---------------------------------------------------------------------------
+// A CRL NUMBER NO NODE HAS USED FOR THIS AUTHORITY (2026-09-14, #46 section 1).
+//
+// `crlNumberAt()` above is monotonic IN ONE PROCESS and needs no coordination
+// there, which was its whole argument. With several nodes signing one
+// authority's list it is a clock per node: a node whose clock is a second
+// behind signs a NEWER list with a LOWER number than one a client already
+// holds, and RFC 5280 section 5.2.3 lets that client keep the older list.
+//
+// So where a store is shared the number is ADVANCED in it —
+// `cluster/cluster_counters.js`, one conditional upsert that only ever moves a
+// counter up — starting from this process's clock-based candidate and stepping
+// past whatever another node already used. It never goes below what the clock
+// scheme would have issued, so a list signed before this existed is still
+// older. A store that cannot be asked answers null and the caller signs
+// nothing: a duplicate or backwards number is exactly what this exists to stop.
+//
+// **ONLY WHERE `persistence.js` IS ALREADY LOADED**, read from require's cache
+// rather than required: every running service has loaded it long before a CRL
+// is built, and an in-process test of this module that never opened a store
+// must not have one opened underneath it by requiring the store module.
+// ---------------------------------------------------------------------------
+async function agreedCrlNumber(scopeId, caId, candidate) {
+  log.debug("Entering agreedCrlNumber().");
+  const loaded = require.cache[require.resolve('../persistence/persistence')];
+  const shared = loaded && loaded.exports &&
+                 typeof loaded.exports.clusterStore === 'function' &&
+                 loaded.exports.clusterStore();
+  if (!shared) {
+    log.debug("Leaving agreedCrlNumber(). One process's clock.");
+    return candidate;
+  }
+  const counters = require('../cluster/cluster_counters');
+  const key = String(scopeId) + '/' + String(caId);
+  let wanted = candidate;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const answer = await counters.advance({ scope: 'pki.crlNumber', key: key,
+                                            value: wanted, realm: '' });
+    if (answer.ok) {
+      lastCrlNumbers.set(key, Math.max(lastCrlNumbers.get(key) || 0, wanted));
+      log.debug("Leaving agreedCrlNumber(). " + wanted);
+      return wanted;
+    }
+    if (answer.reason !== 'behind') {
+      log.error(errorCodes.tag('STS-PKI-0185') + 'pki_revocation: the "' +
+                caId + '" CRL in "' + (String(scopeId) || 'default') + '" ' +
+                'was not signed — the CRL number could not be advanced in ' +
+                'the store: ' + (answer.why || answer.reason));
+      log.debug("Leaving agreedCrlNumber(). The store refused.");
+      return null;
+    }
+    wanted = Math.max(wanted, Number(answer.highest) + 1);
+  }
+  log.error(errorCodes.tag('STS-PKI-0185') + 'pki_revocation: the "' + caId +
+            '" CRL in "' + (String(scopeId) || 'default') + '" was not ' +
+            'signed — eight attempts to advance its number were overtaken by ' +
+            'other nodes.');
+  log.debug("Leaving agreedCrlNumber(). Overtaken.");
+  return null;
+}
+
 async function buildCrl(scopeId, caId) {
   log.debug('Entering buildCrl(). scope=' + scopeId + ' ca=' + caId);
   const authority = authorityFor(scopeId, caId);
@@ -874,7 +935,17 @@ async function buildCrl(scopeId, caId) {
   // would need, since several processes sign lists for one authority at once
   // — and it can never go below a number the register-based scheme issued,
   // because that one counted revocations and this one counts milliseconds.
-  const number = crlNumberAt(scopeId, caId, Date.now());
+  const number = await agreedCrlNumber(scopeId, caId,
+                                       crlNumberAt(scopeId, caId, Date.now()));
+  if (number === null) {
+    log.debug('Leaving buildCrl(). No CRL number the cluster agrees on.');
+    return errorCodes.mark({ ok: false,
+             errors: ['That CRL was not signed: the store that keeps CRL ' +
+                      'numbers going up across this service\'s nodes could ' +
+                      'not be asked, and a list whose number another node ' +
+                      'may already have used is the ambiguity the number ' +
+                      'exists to remove.'] }, 'STS-PKI-0185');
+  }
   const extensions = [
     new pkijs.Extension({
       extnID: '2.5.29.20', critical: false,
@@ -946,8 +1017,18 @@ function serialBytes(serialHex) {
   }
   const bytes = Buffer.from(hex, 'hex');
   if (bytes[0] & 0x80) {
+    // **THE SLICE IS BOUNDED BY THE BUFFER'S OWN OFFSET AND LENGTH (fixed
+    // 2026-09-14).** It was `.buffer.slice(0)` — and `Buffer.concat()` of a
+    // few bytes allocates from node's shared 8 KB pool, so `.buffer` is THE
+    // POOL: every CRL entry for a serial with its high bit set carried the
+    // whole pool as its serial number — whatever this process had recently put
+    // there, SQL text and change-log payloads among it, in a document served
+    // to anybody. Found by `#46`'s two-node revocation probe, which read a
+    // "serial" beginning `SELECT seq, origin, realm, key FROM sts_changes`.
+    const padded = Buffer.concat([Buffer.from([0]), bytes]);
     log.debug("Leaving serialBytes().");
-    return Buffer.concat([Buffer.from([0]), bytes]).buffer.slice(0);
+    return padded.buffer.slice(padded.byteOffset,
+                               padded.byteOffset + padded.byteLength);
   }
   log.debug("Leaving serialBytes().");
   return bytes.buffer.slice(bytes.byteOffset,
@@ -1497,6 +1578,16 @@ function issuedHere(scopeId, caId, serialHex) {
     return one.serialHex === wanted;
   });
 }
+
+module.exports.agreedCrlNumber = agreedCrlNumber;
+
+// DECLARED AT REQUIRE TIME (cluster/CLAUDE.md). Both halves of the row: a
+// revocation or an issued serial recorded on one node survives another node's
+// save of the same authority (the union in `common/pki_merge.js`, applied
+// under the row's lock by `keystore.js`), and a CRL number is advanced in the
+// shared store so it only goes up across nodes (`agreedCrlNumber()` above).
+const capabilities = require('../cluster/cluster_capabilities');
+capabilities.provide('pki.revocation-register');
 
 module.exports.answerOcsp = answerOcsp;
 module.exports.issuedHere = issuedHere;

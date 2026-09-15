@@ -370,13 +370,13 @@ app.get('/.well-known/gnap-as-rs', rsDiscovery(false));
 app.get('/.well-known/gnap-as-rs/:as', rsDiscovery(true));
 
 app.post('/gnap/introspect',
-         guarded('the introspection endpoint', function (req, res) {
+         guarded('the introspection endpoint', async function (req, res) {
   log.debug("Entering the introspection endpoint.");
   if (offCheck(res)) {
     log.debug("Leaving the introspection endpoint. Off.");
     return;
   }
-  const result = rs.introspect(req);
+  const result = await rs.introspect(req);
   if (!result.ok) {
     log.debug("Leaving the introspection endpoint. Refused: " + result.why);
     refuse(res, result, 'STS-GNAP-0168', true);
@@ -387,13 +387,14 @@ app.post('/gnap/introspect',
 }));
 
 app.post('/gnap/resource',
-         guarded('the resource registration endpoint', function (req, res) {
+         guarded('the resource registration endpoint',
+                 async function (req, res) {
   log.debug("Entering the resource registration endpoint.");
   if (offCheck(res)) {
     log.debug("Leaving the resource registration endpoint. Off.");
     return;
   }
-  const result = rs.register(req);
+  const result = await rs.register(req);
   if (!result.ok) {
     log.debug("Leaving the resource registration endpoint. Refused: " +
               result.why);

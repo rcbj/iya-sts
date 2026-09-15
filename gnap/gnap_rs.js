@@ -96,7 +96,7 @@ function rsNamesOf(app, extra) {
 // ---------------------------------------------------------------------------
 // RFC 9767 SECTION 3.3.
 // ---------------------------------------------------------------------------
-function introspect(req) {
+async function introspect(req) {
   log.debug("Entering introspect().");
   if (config.value('gnap.introspection') === false) {
     log.debug("Leaving introspect(). Off.");
@@ -114,8 +114,9 @@ function introspect(req) {
     log.debug("Leaving introspect(). Request refused.");
     return parsed;
   }
-  const caller = grants.identifyCaller(req, body, parsed.request.resourceServer,
-                                       grants.KIND_RS);
+  const caller = await grants.identifyCaller(req, body,
+                                             parsed.request.resourceServer,
+                                             grants.KIND_RS);
   if (!caller.ok) {
     log.debug("Leaving introspect(). Resource server refused.");
     return Object.assign(caller,
@@ -185,7 +186,7 @@ function introspect(req) {
 // ---------------------------------------------------------------------------
 // RFC 9767 SECTION 3.4.
 // ---------------------------------------------------------------------------
-function register(req) {
+async function register(req) {
   log.debug("Entering register().");
   if (config.value('gnap.resourceRegistration') === false) {
     log.debug("Leaving register(). Off.");
@@ -203,8 +204,8 @@ function register(req) {
     return parsed;
   }
   const asked = parsed.request;
-  const caller = grants.identifyCaller(req, body, asked.resourceServer,
-                                       grants.KIND_RS);
+  const caller = await grants.identifyCaller(req, body, asked.resourceServer,
+                                             grants.KIND_RS);
   if (!caller.ok) {
     log.debug("Leaving register(). Resource server refused.");
     return Object.assign(caller,
@@ -378,6 +379,7 @@ function presentation(req) {
   }
   let presentedKey = null;
   let method = 'bearer';
+  let replayKeys = [];
   if (!bearer) {
     const descriptor = keys.describe(record.key,
                                      { resolveReference:
@@ -401,10 +403,13 @@ function presentation(req) {
     }
     presentedKey = keys.confirmationOf(descriptor);
     method = descriptor.proof.method;
+    replayKeys = verified.replayKeys || [];
   }
   log.debug("Leaving presentation(). " + record.format + " via " + method);
+  // `replayKeys` are what the replay cache remembered for this proof, for an
+  // asynchronous caller to spend across the cluster (#46) — see authenticate().
   return { ok: true, record: record, value: value, presentedKey: presentedKey,
-           method: method };
+           method: method, replayKeys: replayKeys };
 }
 
 // `options`: `{ audience, requiredAccess, base }`. Answers `{ ok, record,
@@ -416,6 +421,19 @@ async function authenticate(req, options) {
   if (!presented.ok) {
     log.debug("Leaving authenticate(). The presentation was refused.");
     return presented;
+  }
+  // THE PROOF, SPENT ACROSS THE CLUSTER (2026-09-14, #46). `presentation()`
+  // stays synchronous because ssf/ssf_auth.js calls it synchronously, so the
+  // cluster half of its replay check is made here, at the first asynchronous
+  // caller, before the token is honoured — gnap_proof.js's spendProof() argues
+  // it.
+  const once = await proof.spendProof(presented);
+  if (!once.ok) {
+    monitor.record(presented.record.instanceId, 'proof.failed',
+                   { gnapError: 'invalid_token' });
+    log.debug("Leaving authenticate(). The proof was refused at its spend.");
+    return refusal(errorCodes.codeOf(once) || 'STS-GNAP-0716', 'the key ' +
+                   'proof does not verify: ' + once.why, 'invalid_token', 401);
   }
   const record = presented.record;
   const value = presented.value;

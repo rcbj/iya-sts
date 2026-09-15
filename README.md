@@ -243,6 +243,43 @@ two sockets bind **independently**: 389 up and 636 down is the ordinary outcome 
 host run, and `GET /admin/ldap/service` reports each of them separately rather than through one flag
 that would have to lie about one.
 
+### Behind an L4 load balancer — the PROXY protocol
+
+**Put this service behind a Network Load Balancer, not an Application Load
+Balancer**, and pass TLS through. An L7 balancer terminates TLS, and every
+feature here that reads the client's certificate — RFC 8705
+`tls_client_auth` and certificate-bound tokens, certificate sign-in, 9443, the
+XACML certificate gates, the SPIRE Server API — needs the handshake to happen on
+the node; no forwarded certificate header is believed, in any mode. An L7
+balancer also cannot carry LDAP, LDAPS or Kerberos at all.
+
+At L4 the node sees the balancer as every connection's peer. `global.proxyProtocol`
+set to `v2` is how the client's address still arrives: the balancer writes a
+binary header at the front of each TCP connection, and this service takes it off
+before TLS, LDAP or the KDC read a byte. For an **AWS Network Load Balancer**:
+
+* **TCP listeners** (not TLS listeners) for 443→8081, 8443, 9443, 389, 636 and 88,
+  each forwarding to a **TCP target group** on the node's port. The KDC's UDP 88
+  cannot carry a header; put Kerberos clients on TCP.
+* **`proxy_protocol_v2.enabled = true`** on every one of those target groups.
+  AWS documents that health checks then carry the header too, with no client
+  information in it — they are accepted, and keep the balancer's address.
+* **`preserve_client_ip.enabled = false`** (the default for IP targets, not for
+  instance targets), so connections come from the balancer's own private
+  addresses, and **`global.trustedProxies`** set to the CIDRs of the subnets the
+  balancer is in. With client IP preservation on, the peer is the client and
+  every connection is refused as untrusted.
+* `global.publicBaseUrl` set to the name clients use, as for any deployment.
+
+A connection from an address outside `global.trustedProxies` is **closed**, not
+served — a node reachable around the balancer is a network fault, and closing it
+makes the balancer the only way in. A trusted address that sends no header is
+closed too (`STS-PROXY-0002`). The one exception is **this host**: loopback, or a
+peer on the node's own address, is served plain, because the console's and the
+portal's OpenID Connect back channel and the Shared Signals push dial the main
+port on loopback without a header. `common/proxy_protocol.js` argues each of
+these; the refusals are `STS-PROXY-0001`–`0009` in `docs/error-codes.md`.
+
 ### Configuration
 
 `CONFIG_FILE` selects a configuration from `env/`, and that file carries **every
@@ -647,9 +684,12 @@ are refused at both ends.
 |---|---|---|---|---|
 | `global.mode` | `STS_MODE` | `development` | yes — and it is **per trust realm**, so one process can serve a development realm and a product realm at once | What this service IS. `development` is every release before 2026-09-06 and is what makes it a mock: no password is checked, anything named is created, and there are no public-client restrictions. `product` runs the SAME protocol implementations with the permissiveness taken out — a presented password is verified against the hashed `userPassword` on the person's own entry, nothing is created because it was named, every OAuth application holds a secret, and `/admin-api` is gated. **It replaced `admin.authRequired`, `scim.authRequired`, `spiffe.authRequired` and `ssf.authRequired`, which are gone**: "is authentication required here" had four answers and now has one. Those four gates are ON in BOTH modes — what the mode changes is whether the credential they ask for is CHECKED. |
 | `global.host` | `STS_HOST` | `0.0.0.0` | **restart** — the listener is bound when the process starts | The address the HTTP listener binds. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines this service to the machine it runs on. |
-| `global.port` | `STS_PORT` | `8081` | **restart** — the listener is bound when the process starts | The port everything HTTP here answers on: the protocol endpoints, the console and this API. The two TLS listeners are separate and are under TLS below. |
+| `global.port` | `STS_PORT` | `8081` | **restart** — the listener is bound when the process starts | The port everything HTTP here answers on: the protocol endpoints, the console and this API. The two TLS listeners are separate and are under TLS below. **Several nodes against one store must all use the same value**: the console's and portal's own Shared Signals receivers are seeded at `<loopback>:<global.port>` and every node pushes to that address on its own loopback (`ssf/CLAUDE.md`, *Several nodes*). |
 | `global.https` *(derived)* | `STS_HTTPS` | `false`, but **`true` in every appconfig file shipped here** — see *Running it* | **restart** — the listener is bound when the process starts, and its scheme is decided there | Serve the main port over HTTPS, with the SAME certificate and key the 8443, 9443 and LDAPS 636 listeners use — one self-signed pair generated per start, so a caller trusts this service once rather than four times. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe X-Forwarded-Proto and X-Forwarded-Host — which is what a TLS-terminating reverse proxy sets to say what the CLIENT used. |
+| `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDR ranges this deployment's own proxies connect from. Read for forwarded headers only with `global.trustProxy` on, and for a PROXY protocol header whenever `global.proxyProtocol` is `v2` — where empty trusts nobody and the service does not start. **Empty keeps the old rule** — forwarded headers believed from any caller, the rate limiter taking the left-most `X-Forwarded-For` entry. Set, they are believed only from a peer in a range and the client is the right-most hop outside them, so a caller reaching a node directly cannot choose its own rate-limit address or this service's URL. `common/CLAUDE.md`, *Several nodes*, also says why mutual TLS needs L4 passthrough. |
+| `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | **restart** — installed on each listener when it binds | `v2` reads a HAProxy PROXY protocol version 2 header at the front of every connection to the main port, 8443, 9443, 389, 636, the KDC's TCP 88 (not UDP), the debugger and 8082 — **before TLS**, so the client's address reaches the rate limiter, LDAP, `/tls/whoami` and the request workers while TLS and mutual TLS still terminate on the node. A connection from `global.trustedProxies` must carry a valid header (a `LOCAL` one — a health check — keeps the balancer's address); any other address is closed, except this host's own, which is served plain. Version 1 is refused; the SPIFFE gRPC listeners are not covered. See *Behind an L4 load balancer* above. |
+| `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `5000` | yes | How long a trusted proxy may take to send its complete header before the connection is closed. |
 | `global.corsOrigins` | `STS_CORS_ORIGINS` | *(empty)* | yes | Origins CORS treats as this deployment's OWN, comma-separated — allowed on every path whichever client a request names, beside this service's listeners, `global.publicBaseUrl` and the embedded debugger. **Empty adds none**; every other origin must be listed in an application's `appCorsOrigin`. A value that is not an origin is ignored and logged. |
 | `global.logLevel` | `STS_LOG_LEVEL` | `info` | yes | debug is the useful level for a mock whose job is to show what it did: every endpoint call, and every token and assertion both before and after it was signed. |
 | `workers.count` | `STS_WORKERS_COUNT` | `2` | yes — the pool is reconciled on the next signature | How many child processes the post-quantum signing, verification and key generation are handed to, so that the process holding the sockets is never the one computing an SLH-DSA signature — which takes SECONDS, during which node answers nothing at all, the KDC on port 88 included. `0` means compute in this process, which is what this service did before the pool existed: correct, identical byte for byte, and blocking for as long as each signature takes. Nothing is forked until the first post-quantum job, so a process that never signs one never pays for a pool. **A realm may not carry this**: a pool belongs to the OS process. |
@@ -1435,8 +1475,8 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `ssf.pushMaxResponseBytes` | `STS_SSF_PUSH_MAX_RESPONSE_BYTES` | `65536` | yes | How much of a receiver's answer to a push is read before the push counts as failed. |
 | `ssf.pushRetries` | `STS_SSF_PUSH_RETRIES` | `0` | yes | How many times a failed push is tried again. `0` is what this service always did. Only a connection failure, a timeout, a 5xx or a 429 is retried — never a receiver's 400 refusal. |
 | `ssf.pushRetryDelayMs` | `STS_SSF_PUSH_RETRY_DELAY_MS` | `1000` | yes | The wait before a retry, times the attempt number. |
-| `ssf.pushConcurrency` | `STS_SSF_PUSH_CONCURRENCY` | `8` | yes | How many pushes one process makes at once; the rest wait in order. `0` removes the cap. |
-| `ssf.pushBacklog` | `STS_SSF_PUSH_BACKLOG` | `2000` | yes | How many pushes may wait for a slot. Past it the SET goes to the stream's dead-letter queue instead of being pushed. |
+| `ssf.pushConcurrency` | `STS_SSF_PUSH_CONCURRENCY` | `8` | yes | How many pushes one process makes at once; the rest wait in order. `0` removes the cap. **Per process, not per cluster**: N nodes of P processes push up to N×P× this at once. |
+| `ssf.pushBacklog` | `STS_SSF_PUSH_BACKLOG` | `2000` | yes | How many pushes may wait for a slot. Past it the SET goes to the stream's dead-letter queue instead of being pushed. Per process, like the cap. |
 | `ssf.deadStreamTimeoutS` | `STS_SSF_DEAD_STREAM_TIMEOUT_S` | `300` | yes | A push stream whose pushes have all failed for this long is declared **dead**: nothing more is pushed, its SETs go to its dead-letter queue, and one is pushed as a probe each period — a success revives it (so does `POST /admin-api/ssf/revive`). `0` turns it off. |
 | `ssf.deadLetterRetentionS` | `STS_SSF_DEAD_LETTER_RETENTION_S` | `3600` | yes | How long an undeliverable SET is kept on its stream's dead-letter queue, with the reason, for inspection on `/admin/ssf` and counted on Monitoring → Shared Signals → Dead letters (`/admin/ssf/dead-letters`). |
 | `ssf.deadLetterMaxPerStream` | `STS_SSF_DEAD_LETTER_MAX_PER_STREAM` | `1000` | yes | The most dead letters one stream keeps; past it the oldest is deleted. |
@@ -1461,6 +1501,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `persistence.databasePasswordRegion` | `STS_DATABASE_PASSWORD_REGION` | *(empty)* | **restart** | The AWS region for the database password. Empty means `keys.kekRegion`. |
 | `persistence.databasePasswordToken` | `STS_DATABASE_PASSWORD_TOKEN` | *(empty)* | **restart** | A Vault token for the database password. Empty means `keys.kekToken`; ignored where a client certificate is configured. |
 | `persistence.writeDelay` | `STS_PERSISTENCE_WRITE_DELAY` | `1500` | yes | How long a change waits before the `ldif` files are rewritten, so a burst — a realm build writes thirteen entries — costs one file write. What it risks is that many milliseconds of writes on a `kill -9`, which no process can trap; SIGTERM and SIGINT flush first. **Postgres ignores it** and uses 0: the unit of writing there is a transaction, so every change made while handling one request commits as one transaction the moment that request is done. |
+| `persistence.changeLogRetentionS` | `STS_PERSISTENCE_CHANGE_LOG_RETENTION_S` | `3600` | yes | How long a row of `sts_changes` is kept at least. A row is removed only when older than this AND below the lowest position every process still reading the change log has reported; a reader silent this long, or whose cluster node is gone, is taken to be gone. `0` never trims, which is what the log did before 2026-09-14. |
 | `persistence.realms` | `STS_PERSISTENCE_REALMS` | `true` | **restart** — the realm rows are restored before the listener binds | Whether trust realm definitions — names, descriptions and per-realm settings — are written down beside the directory. Turning it off is a half-persisted service rather than a smaller one: a realm holds its own directory, so its entries would be stored with no realm to restore them into, and the next run's first write would remove them. |
 | `persistence.appconfig` | `STS_PERSISTENCE_APPCONFIG` | `true` | **restart** — the saved overrides are applied before the listener binds | Whether a setting changed through the console or the management API survives a restart. It adds NO LAYER: the saved values are re-applied at startup through the same `setOverride()` a caller uses, so the five layers above are unchanged and a runtime override is simply durable. Only a runtime-changeable setting can be saved, because only one can be set — which is what makes applying them after every module has loaded safe. |
 
@@ -7703,6 +7744,10 @@ npm test                          # the in-process suite: one process, under
                                     # on this machine instead of a container
 ./local-run-tests.sh --keep-stack   # leave the container up afterwards, to
                                     # read /admin or re-run one job by hand
+./local-run-tests.sh --modes=cluster  # a fourth mode, only when named: two
+                                      # service containers active-active on one
+                                      # postgres behind an HAProxy, every job's
+                                      # requests alternating between them
 ./run-coverage.sh                 # the same run, with coverage collected —
                                   # in containers too, with the RUNNER in the
                                   # container rather than the service

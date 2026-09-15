@@ -1529,6 +1529,22 @@ function countEvent(record, uri) {
       'type.');
 }
 
+// Whether this store is shared by processes that do not see each other's
+// writes at once: a claim store exists (postgres). LAZY, because this file is
+// a library several tests load alone.
+function sharesAcrossNodes() {
+  log.debug('Entering sharesAcrossNodes().');
+  let shared = false;
+  try {
+    shared = !!require('../persistence/persistence').clusterStore();
+  } catch (e) {
+    log.debug('Caught in sharesAcrossNodes(): ' + ((e && e.message) || e));
+    shared = false;
+  }
+  log.debug('Leaving sharesAcrossNodes(). ' + shared);
+  return shared;
+}
+
 // RFC 8936's poll. `ack` names what the receiver has now stored, so those come
 // off the queue; `setErrs` names what it REFUSED, and those come off too — a
 // receiver that cannot process an event will not process it next time either,
@@ -1569,6 +1585,7 @@ function poll(record, request) {
     ? Math.min(wanted, cap) : cap;
   const sets = {};
   const waiting = queueOf(record);
+  const shared = sharesAcrossNodes();
   waiting.slice(0, take).forEach(function (one) {
     sets[one.jti] = one.token;
     // THE FIRST DELIVERY IS WRITTEN AND A REDELIVERY IS NOT. `deliveredAt` is
@@ -1576,11 +1593,24 @@ function poll(record, request) {
     // a write of a SET's row is the one thing that could put back a SET
     // another worker has just deleted on an acknowledgement, so a poll that
     // hands out what it already handed out changes nothing and writes nothing.
+    //
+    // **AND ON A STORE SHARED BY SEVERAL NODES IT IS NOT WRITTEN AT ALL
+    // (2026-09-14, #46).** "Just deleted" is a replication interval between
+    // two workers and a CONCURRENT acknowledgement between two nodes: a poll
+    // on B handing out a SET for the first time while the receiver's ack of
+    // it commits on A writes the row back after the delete, and the SET is
+    // queued again for ever — until it is acknowledged a second time. So
+    // there the mark stays in this process's memory: `deliveredAt` is what
+    // this node saw, and `counters.delivered` may count one SET once per node
+    // that first handed it out, which is a number on a page. What is never
+    // done is resurrect an acknowledged SET.
     if (!one.counted) {
       one.counted = true;
       one.deliveredAt = iso();
       record.counters.delivered += 1;
-      queued.set(queueKey(record.stream_id, one.jti), one);
+      if (!shared) {
+        queued.set(queueKey(record.stream_id, one.jti), one);
+      }
     }
   });
   const more = waiting.length > take;

@@ -60,6 +60,9 @@ const monitor = require('../common/enrollment_monitor');
 const validation = require('../common/validation');
 const jws = require('./acme_jws');
 const store = require('./acme_store');
+// The atomic "once" a finalize is held to across nodes. A LIBRARY that reaches
+// `persistence.js` lazily; see the finalize handler.
+const claims = require('../cluster/cluster_claims');
 
 const FAMILY = 'acme';
 const PREFIX = '/enroll/acme';
@@ -182,8 +185,41 @@ function acmeProblem(ctx, status, type, code, detail, extra) {
       return Object.assign({}, one, { type: jws.ERROR_PREFIX + one.type });
     });
   }
-  if (type !== 'badNonce' && type !== 'rateLimited' && status !== 405) {
+  const counts = type !== 'badNonce' && type !== 'rateLimited' &&
+                 status !== 405;
+  if (counts && core.sharesThrottle()) {
+    // WHERE THE THROTTLE IS SHARED THE COUNT DECIDES THE ANSWER (2026-09-14):
+    // a refusal whose count took the caller past the limit is answered
+    // `rateLimited` (RFC 8555 section 6.6) — `core.countFailureShared()`.
+    core.countFailureShared(FAMILY, ctx.req, ctx.identity || '')
+      .then(function (overLimit) {
+        if (!overLimit) {
+          sendProblem(ctx, status, code, body);
+          return;
+        }
+        ctx.res.set('Retry-After', String(core.retryAfterOf(overLimit)));
+        sendProblem(ctx, 429, 'STS-ENROLL-0061',
+                    { type: jws.ERROR_PREFIX + 'rateLimited',
+                      detail: overLimit.why, status: 429 });
+      });
+    log.debug("Leaving acmeProblem(). Counting first.");
+    return null;
+  }
+  if (counts) {
     core.countFailure(FAMILY, ctx.req, ctx.identity || '');
+  }
+  sendProblem(ctx, status, code, body);
+  log.debug("Leaving acmeProblem().");
+  return null;
+}
+
+// The bytes of a problem document, with the headers every ACME answer carries.
+function sendProblem(ctx, status, code, body) {
+  log.debug("Entering sendProblem(). status=" + status);
+  if (ctx.res.headersSent) {
+    // A problem answered while an earlier one was still being counted.
+    log.debug("Leaving sendProblem(). Already answered.");
+    return;
   }
   // error-code: none — the code is the caller's, forwarded; this is the helper
   record(ctx, { outcome: 'refused', status: status, errorCode: code });
@@ -191,8 +227,7 @@ function acmeProblem(ctx, status, type, code, detail, extra) {
   errorCodes.mark(ctx.res, code);
   ctx.res.status(status).type('application/problem+json')
      .send(JSON.stringify(body, null, 2));
-  log.debug("Leaving acmeProblem().");
-  return null;
+  log.debug("Leaving sendProblem().");
 }
 
 // A refusal object from acme_jws.js or the enrollment core, sent.
@@ -278,14 +313,17 @@ function gateRefused(ctx) {
     coreRefusal(ctx, transport, 'STS-ACME-0002');
     return true;
   }
-  const throttled = core.throttled(FAMILY, ctx.req, ctx.identity || '');
-  if (throttled) {
-    log.debug("Leaving gateRefused(). Throttled.");
-    coreRefusal(ctx, throttled, 'STS-ACME-0003');
-    return true;
-  }
-  log.debug("Leaving gateRefused().");
-  return false;
+  // ASYNCHRONOUS SINCE 2026-09-14 (#46): the throttle is the cluster's one
+  // budget, which is a round trip. What it answers is unchanged.
+  log.debug("Leaving gateRefused(). Asking the throttle.");
+  return core.throttledShared(FAMILY, ctx.req, ctx.identity || '')
+    .then(function (throttled) {
+      if (throttled) {
+        coreRefusal(ctx, throttled, 'STS-ACME-0003');
+        return true;
+      }
+      return false;
+    });
 }
 
 // An exception a handler did not expect is a 500 problem, never a stack trace.
@@ -295,7 +333,9 @@ function guarded(operation, handler) {
   return function (req, res) {
     const ctx = contextOf(req, res, operation);
     Promise.resolve().then(function () {
-      if (gateRefused(ctx)) {
+      return gateRefused(ctx);
+    }).then(function (refused) {
+      if (refused) {
         return null;
       }
       return handler(ctx);
@@ -359,7 +399,7 @@ function methodNotAllowed(req, res, next) {
 // only after the signature verifies — so a forged request cannot burn a nonce a
 // client is holding, and two copies of one signed request cannot both pass.
 // ---------------------------------------------------------------------------
-function authenticate(ctx, spec) {
+async function authenticate(ctx, spec) {
   log.debug("Entering authenticate(). key=" + spec.key);
   const req = ctx.req;
   if (!jws.isJoseJson(req.headers['content-type'])) {
@@ -473,13 +513,26 @@ function authenticate(ctx, spec) {
     log.debug("Leaving authenticate(). Signature.");
     return sendRefusal(ctx, verified, 'STS-ACME-0024');
   }
-  if (!store.spendNonce(nonce.id, nonce.expiresS)) {
+  // SPENT ACROSS THE CLUSTER SINCE 2026-09-14 (#46): the local map first, then
+  // a claim in the store, so two copies of one signed request at two nodes
+  // cannot both pass. `acme_store.js`'s `spendNonceOnce()` argues it, and it is
+  // why this function is asynchronous.
+  const spent = await store.spendNonceOnce(nonce.id, nonce.expiresS);
+  if (!spent.ok && spent.reason === 'store') {
+    log.error(errorCodes.tag('STS-ACME-0099') + 'acme: a Replay-Nonce could ' +
+              'not be proved unspent (' + spent.why + '); the request is ' +
+              'refused.');
+    log.debug("Leaving authenticate(). Nonce store.");
+    return acmeProblem(ctx, 500, 'serverInternal', 'STS-ACME-0099', 'The ' +
+                       'server could not check the Replay-Nonce. Retry.');
+  }
+  if (!spent.ok) {
     log.debug("Leaving authenticate(). Nonce replayed.");
     return acmeProblem(ctx, 400, 'badNonce', 'STS-ACME-0018', 'That ' +
                        'Replay-Nonce has already been used. Retry with the ' +
                        'one on this response.');
   }
-  const throttled = core.throttled(FAMILY, req, ctx.identity);
+  const throttled = await core.throttledShared(FAMILY, req, ctx.identity);
   if (throttled) {
     log.debug("Leaving authenticate(). Identity throttled.");
     return coreRefusal(ctx, throttled, 'STS-ACME-0003');
@@ -688,7 +741,7 @@ app.get(PREFIX + '/new-nonce', guarded('new-nonce', function (ctx) {
 // ---------------------------------------------------------------------------
 app.post(PREFIX + '/new-account', guarded('new-account', async function (ctx) {
   log.debug("Entering the ACME new-account.");
-  const signed = authenticate(ctx, { key: 'jwk' });
+  const signed = await authenticate(ctx, { key: 'jwk' });
   if (!signed) {
     log.debug("Leaving the ACME new-account. Refused.");
     return;
@@ -766,7 +819,10 @@ app.post(PREFIX + '/new-account', guarded('new-account', async function (ctx) {
                        'entry that External Account Binding key was issued ' +
                        'for no longer exists in this realm.');
   }
-  const bound = core.bindEab(eab.kid, thumbprint);
+  // ONCE ACROSS THE CLUSTER (2026-09-14, #46): the key id is claimed before
+  // the binding is written, so two accounts at two nodes cannot both bind it.
+  // `common/cert_enrollment.js`'s `bindEabOnce()` argues it.
+  const bound = await core.bindEabOnce(eab.kid, thumbprint);
   if (!bound.ok) {
     log.debug("Leaving the ACME new-account. Bind refused.");
     return acmeProblem(ctx, 403, 'unauthorized',
@@ -801,9 +857,9 @@ app.post(PREFIX + '/new-account', guarded('new-account', async function (ctx) {
 // ---------------------------------------------------------------------------
 // POST /enroll/acme/account/:id (sections 7.3.2 and 7.3.6).
 // ---------------------------------------------------------------------------
-app.post(PREFIX + '/account/:id', guarded('account', function (ctx) {
+app.post(PREFIX + '/account/:id', guarded('account', async function (ctx) {
   log.debug("Entering the ACME account.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   if (!signed || !sameAccount(ctx, signed, String(ctx.req.params.id))) {
     log.debug("Leaving the ACME account. Refused.");
     return;
@@ -853,7 +909,8 @@ app.post(PREFIX + '/account/:id', guarded('account', function (ctx) {
 // ---------------------------------------------------------------------------
 // POST /enroll/acme/account/:id/orders (section 7.1.2.1), paged with `page`.
 // ---------------------------------------------------------------------------
-app.post(PREFIX + '/account/:id/orders', guarded('orders', function (ctx) {
+app.post(PREFIX + '/account/:id/orders', guarded('orders',
+                                                          async function (ctx) {
   log.debug("Entering the ACME orders list.");
   const query = validation.check(ctx.req, 'query', ORDERS_QUERY);
   if (!query.ok) {
@@ -862,7 +919,7 @@ app.post(PREFIX + '/account/:id/orders', guarded('orders', function (ctx) {
                        'list takes one query parameter, "page": ' +
                        query.detail);
   }
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   if (!signed || !sameAccount(ctx, signed, String(ctx.req.params.id)) ||
       !requirePostAsGet(ctx, signed)) {
     log.debug("Leaving the ACME orders list. Refused.");
@@ -917,9 +974,9 @@ function ownershipProblem(resolved, identifier) {
   return names.ok ? null : String((names.errors || [])[0]);
 }
 
-app.post(PREFIX + '/new-order', guarded('new-order', function (ctx) {
+app.post(PREFIX + '/new-order', guarded('new-order', async function (ctx) {
   log.debug("Entering the ACME new-order.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   if (!signed) {
     log.debug("Leaving the ACME new-order. Refused.");
     return;
@@ -1107,9 +1164,9 @@ function ownedOrder(ctx, signed) {
   return order;
 }
 
-app.post(PREFIX + '/order/:id', guarded('order', function (ctx) {
+app.post(PREFIX + '/order/:id', guarded('order', async function (ctx) {
   log.debug("Entering the ACME order.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   if (!signed || !requirePostAsGet(ctx, signed)) {
     log.debug("Leaving the ACME order. Refused.");
     return;
@@ -1221,7 +1278,7 @@ function csrNamesProblem(csr, order, entry) {
 app.post(PREFIX + '/order/:id/finalize', guarded('finalize',
                                                  async function (ctx) {
   log.debug("Entering the ACME finalize.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   if (!signed) {
     log.debug("Leaving the ACME finalize. Refused.");
     return;
@@ -1270,6 +1327,38 @@ app.post(PREFIX + '/order/:id/finalize', guarded('finalize',
     log.debug("Leaving the ACME finalize. CSR names.");
     return acmeProblem(ctx, 400, 'badCSR', 'STS-ACME-0053', mismatch);
   }
+  // ---------------------------------------------------------------------
+  // ONE FINALIZE PER ORDER, ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+  //
+  // The "ready" check above and the "processing" write below are an await
+  // apart (the CSR is parsed in between), and on several nodes the order row
+  // reaches the others a moment after it is written. So two finalize requests
+  // for one order — each signed with its own fresh nonce, so the nonce does
+  // not join them — at two nodes, or racing on one, both saw "ready" and both
+  // ISSUED: two certificates for one order, the second recorded over the
+  // first. The order is CLAIMED here, once everything that can refuse without
+  // side effects has run; a finalize that finds it claimed is told the order
+  // is not ready, which is what it will read once the other request's
+  // "processing" arrives. A refused issuance puts the order back to "ready"
+  // below and gives the claim back, so the client may finalize again.
+  // ---------------------------------------------------------------------
+  const lifetimeMs = new Date(order.expires).getTime() - Date.now();
+  const finalizing = await claims.claim({
+    scope: 'acme.finalize', value: order.id,
+    ttlMs: Math.max(60 * 1000, (lifetimeMs || 0) + 60 * 1000) });
+  if (!finalizing.ok && finalizing.reason === 'used') {
+    log.debug("Leaving the ACME finalize. Being finalized elsewhere.");
+    return acmeProblem(ctx, 403, 'orderNotReady', 'STS-ACME-0098', 'The ' +
+                       'order is already being finalized (RFC 8555 section ' +
+                       '7.4). Poll the order.');
+  }
+  if (!finalizing.ok) {
+    log.error(errorCodes.tag('STS-ACME-0099') + 'acme: an order could not ' +
+              'be claimed for finalize (' + finalizing.why + '); refused.');
+    log.debug("Leaving the ACME finalize. The store.");
+    return acmeProblem(ctx, 500, 'serverInternal', 'STS-ACME-0099', 'The ' +
+                       'server could not finalize the order just now. Retry.');
+  }
   const account = signed.account;
   const entry = account.entry;
   const requested = {
@@ -1309,6 +1398,7 @@ app.post(PREFIX + '/order/:id/finalize', guarded('finalize',
   if (!issued.ok) {
     order.status = 'ready';
     store.saveOrder(order);
+    claims.release(finalizing.handle);
     log.debug("Leaving the ACME finalize. Issuance refused.");
     return coreRefusal(ctx, issued, 'STS-ACME-0054');
   }
@@ -1365,9 +1455,9 @@ function ownedAuthz(ctx, signed) {
   return authz;
 }
 
-app.post(PREFIX + '/authz/:id', guarded('authz', function (ctx) {
+app.post(PREFIX + '/authz/:id', guarded('authz', async function (ctx) {
   log.debug("Entering the ACME authorization.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   const authz = signed ? ownedAuthz(ctx, signed) : null;
   if (!authz) {
     log.debug("Leaving the ACME authorization. Refused.");
@@ -1392,9 +1482,9 @@ app.post(PREFIX + '/authz/:id', guarded('authz', function (ctx) {
   return sendJson(ctx, 200, authzJson(ctx, authz));
 }));
 
-app.post(PREFIX + '/challenge/:id', guarded('challenge', function (ctx) {
+app.post(PREFIX + '/challenge/:id', guarded('challenge', async function (ctx) {
   log.debug("Entering the ACME challenge.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   const authz = signed ? ownedAuthz(ctx, signed) : null;
   if (!authz) {
     log.debug("Leaving the ACME challenge. Refused.");
@@ -1432,9 +1522,9 @@ function isSelfSigned(pem) {
   return self;
 }
 
-app.post(PREFIX + '/cert/:id', guarded('cert', function (ctx) {
+app.post(PREFIX + '/cert/:id', guarded('cert', async function (ctx) {
   log.debug("Entering the ACME certificate.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   if (!signed || !requirePostAsGet(ctx, signed)) {
     log.debug("Leaving the ACME certificate. Refused.");
     return;
@@ -1480,7 +1570,7 @@ app.post(PREFIX + '/cert/:id', guarded('cert', function (ctx) {
 app.post(PREFIX + '/revoke-cert', guarded('revoke-cert',
                                           async function (ctx) {
   log.debug("Entering the ACME revoke-cert.");
-  const signed = authenticate(ctx, { key: 'either' });
+  const signed = await authenticate(ctx, { key: 'either' });
   if (!signed) {
     log.debug("Leaving the ACME revoke-cert. Refused.");
     return;
@@ -1557,9 +1647,9 @@ app.post(PREFIX + '/revoke-cert', guarded('revoke-cert',
 // ---------------------------------------------------------------------------
 // POST /enroll/acme/key-change (section 7.3.5).
 // ---------------------------------------------------------------------------
-app.post(PREFIX + '/key-change', guarded('key-change', function (ctx) {
+app.post(PREFIX + '/key-change', guarded('key-change', async function (ctx) {
   log.debug("Entering the ACME key-change.");
-  const signed = authenticate(ctx, { key: 'kid' });
+  const signed = await authenticate(ctx, { key: 'kid' });
   if (!signed) {
     log.debug("Leaving the ACME key-change. Refused.");
     return;

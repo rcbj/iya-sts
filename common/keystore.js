@@ -113,6 +113,12 @@ const secrets = require('./secrets');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. NOT audit.js, which requires helpers.js, which requires this.
 const errorCodes = require('./error_codes');
+// THE THREE-WAY MERGE OF A CERTIFICATE AUTHORITY ROW (#46). A LEAF that
+// requires config and bunyan and nothing here, so it cannot close a cycle.
+const pkiMerge = require('./pki_merge');
+// The table of what active-active mode depends on, for the one row this file
+// provides (at the bottom). A LEAF requiring config and bunyan.
+const capabilities = require('../cluster/cluster_capabilities');
 
 // The KEK, read once in `start()` and held for the life of the process. Never
 // written anywhere, never logged, and never handed out — `encryptWithKek()` and
@@ -675,6 +681,9 @@ async function start() {
     // ---------------------------------------------------------------------
     if (realmId.indexOf(PKI_ROW_PREFIX) === 0) {
       pkiHeld.set(realmId.slice(PKI_ROW_PREFIX.length), blob);
+      // THE BASE THIS PROCESS'S FIRST SAVE OF THE ROW MERGES FROM (#46) —
+      // see `writePki()`.
+      pkiBase.set(realmId.slice(PKI_ROW_PREFIX.length), row.material);
       pkiLoaded += 1;
       return;
     }
@@ -828,7 +837,27 @@ function adoptShared(realmId, blob) {
     return false;
   }
   const id = String(realmId || '');
-  const replacing = shared.has(id) && shared.get(id) !== blob;
+  let replacing = shared.has(id) && shared.get(id) !== blob;
+  // **AND A SET HELD ONLY AS STORED MATERIAL IS REPLACED TOO (2026-09-14,
+  // #46).** A process that RESTORED a realm's keys has nothing in `shared`, so
+  // the line above called a confirmed set from the store "not replacing" and
+  // left the cached key set in place — whose PUBLIC half is copied out once,
+  // while its private half is read from `material`, which the hold below is
+  // about to change. A JWKS naming one key and signatures made with another.
+  // A DIFFERENT set only (another certificate): the same set gaining a member
+  // leaves every public half the cache copied true, and
+  // `tests/vci_request_encryption_key.js` holds that such a set is NOT dropped
+  // — the backfill asks the keystore for the member instead.
+  if (!replacing && !shared.has(id) && material.has(id) && kek) {
+    try {
+      const entry = material.get(id);
+      const heldBlob = entry.plain || openBlob(entry.cipher, 'signing-keys');
+      replacing = !heldBlob || heldBlob.certB64 !== blob.certB64;
+    } catch (e) {
+      log.debug("Caught in adoptShared(): " + ((e && e.message) || e));
+      replacing = true;
+    }
+  }
   shared.set(id, blob);
   // ---------------------------------------------------------------------
   // **AND THE STORED SET HAS TO GO TOO, OR THE ADOPTION IS UNDONE ON THE
@@ -1307,20 +1336,10 @@ function hold(id, blob, why) {
                      plain: blob, parsed: null, buffer: null,
                      timer: null, immediate: false });
   armPurge(id);
-  Promise.resolve()
-    .then(function () {
-      return store.saveKeys(id, cipher);
-    })
-    .then(function () {
-      log.info('keystore: the "' + id + '" realm\'s signing keys were ' +
-               why + ' and written to the store, encrypted.');
-    })
-    .catch(function (e) {
-      log.error(errorCodes.tag('STS-KEYS-0035') +
-                'keystore: the "' + id + '" realm\'s signing keys could not ' +
-                'be written: ' + e.message + '. They will be different after ' +
-                'the next restart.');
-    });
+  // QUEUED PER REALM AND DECIDED BY THE STORE (2026-09-14, #46) — see
+  // `writeKeys()` below. It was a bare `saveKeys()` upsert here, and the
+  // later of two nodes' upserts won the row while the earlier went on signing.
+  queueWrite(id, { cipher: cipher, blob: blob, why: why }, writeKeys);
   log.debug('Leaving hold().');
 }
 
@@ -1349,6 +1368,9 @@ async function rotate(realmId) {
   // a `setTimeout` holding a closure over the id of a realm that no longer has
   // one, which fires harmlessly and is exactly the kind of thing that is read
   // as a leak six months later.
+  // A WRITE OF THIS REALM'S KEYS STILL QUEUED WOULD PUT THEM BACK after the
+  // delete below (2026-09-14, #46), so it lands first.
+  await settle(id);
   purgeFor(id);
   material.delete(id);
   // AND THE SHARED COPY, or rotation hands back the key it just removed. The
@@ -1356,6 +1378,17 @@ async function rotate(realmId) {
   // a removal and not a gap: `tests/keystore.js` asserts the new kid differs
   // from the old, and it did not until this line existed.
   shared.delete(id);
+  // AND THE CACHED SET — which nothing dropped until rotation reached other
+  // nodes, because the only caller was a console button followed by a
+  // restart-shaped test. A node told by the change log that the row is gone
+  // drops it the same way (`applyStoredChange()`).
+  if (adoptListener) {
+    try {
+      adoptListener(id);
+    } catch (e) {
+      log.debug("Caught in rotate(): " + ((e && e.message) || e));
+    }
+  }
   if (store && typeof store.deleteKeys === 'function') {
     try {
       await store.deleteKeys(id);
@@ -1422,6 +1455,7 @@ realms.onRemove(function (id) {
   // under the same name must not inherit the last one's CA, or certificates
   // issued to the applications of a realm that is gone would go on chaining.
   pkiHeld.delete(realmId);
+  pkiBase.delete(realmId);
   if (!store || typeof store.deleteKeys !== 'function') {
     log.debug('Leaving the keystore realm purge. Nothing is stored.');
     return;
@@ -1610,6 +1644,34 @@ function sealed() {
   return !!kek;
 }
 
+// ---------------------------------------------------------------------------
+// A KEYED DIGEST UNDER THE KEY-ENCRYPTION KEY (2026-09-14, #46), or null when
+// there is none.
+//
+// `cluster/cluster.js` writes a fingerprint of the settings every node must
+// agree on into the membership table, and several of those settings are
+// PASSWORDS — `krb5.krbtgtPassword` IS the key every ticket is sealed under. A
+// bare SHA-256 of a password in a database row is a password a dictionary can
+// read back; an HMAC under a key the database never holds is not. The HMAC key
+// is DERIVED (HKDF, with the label as its info) rather than the KEK itself, so
+// this use can never produce a value that means anything to the sealing path.
+// ---------------------------------------------------------------------------
+function keyedDigest(label, text) {
+  log.debug("Entering keyedDigest().");
+  if (!kek) {
+    log.debug("Leaving keyedDigest(). No key-encryption key.");
+    return null;
+  }
+  const nodeCrypto = require('crypto');
+  const derived = Buffer.from(nodeCrypto.hkdfSync('sha256',
+    crypto.kekBytes(kek), Buffer.alloc(0),
+    Buffer.from('sts-keyed-digest:' + String(label), 'utf8'), 32));
+  const out = nodeCrypto.createHmac('sha256', derived)
+    .update(String(text), 'utf8').digest('base64url');
+  log.debug("Leaving keyedDigest().");
+  return out;
+}
+
 // **THE `label` IS FOR ACCOUNTING AND FOR NOTHING ELSE**, which is why it is
 // optional and why nothing here validates it: `/admin/encryption` breaks the
 // operation count down by what KIND of data was sealed, and the only party
@@ -1769,40 +1831,628 @@ function attachPki(realmId, chain) {
     log.debug('Leaving attachPki(). Nowhere to write.');
     return;
   }
-  const row = PKI_ROW_PREFIX + id;
-  Promise.resolve()
-    .then(function () {
-      if (!chain) {
-        return typeof store.deleteKeys === 'function'
-          ? store.deleteKeys(row)
-          // A driver with no delete is told to store an EMPTY hierarchy rather
-          // than being left with the old one. `start()` reads a falsy `tiers`
-          // back as no hierarchy, so the two spellings mean the same thing.
-          : store.saveKeys(row, crypto.encryptWithKek(kek, JSON.stringify({}),
-                                                     'pki-hierarchy'));
+  // QUEUED PER ROW, COALESCED, AND MERGED UNDER THE ROW'S LOCK (2026-09-14,
+  // #46) — see `writePki()`. `gen` is how the write knows, when it lands,
+  // whether this process has attached something newer since.
+  const gen = (pkiLocalGen.get(id) || 0) + 1;
+  pkiLocalGen.set(id, gen);
+  queueWrite(PKI_ROW_PREFIX + id, { chain: chain || null, gen: gen },
+             writePki);
+  log.debug('Leaving attachPki(). Queued a write.');
+}
+
+// ===========================================================================
+// THE STORE IS THE ARBITER BETWEEN NODES (2026-09-14, #46 section 1).
+//
+// Everything above this line was built for ONE container, where the request
+// pool's IPC channels made every process agree — first generator wins for a
+// key set, last write wins for a certificate authority — and the store was a
+// mirror each process wrote whole. Between containers the only link is the
+// store, and the issue's worst section is what that did:
+//
+//   * two nodes cold-starting against an empty store each generated a realm's
+//     signing keys, and the later UPSERT won the row while the earlier node
+//     went on signing — one JWKS per node, a token from A refused at B, and
+//     everything the loser signed stranded at the next restart;
+//   * `applyKeysChange()` did nothing, so a rotation, a realm created on A and
+//     first used on B, and a rebuilt Root each reached one node;
+//   * the whole certificate authority of a scope is one row, and any node's
+//     next save of its copy threw another node's revocations out of it.
+//
+// **THE ANSWER IS ONE RULE: A WRITE ASKS THE STORE WHAT IS THERE, UNDER THE
+// ROW'S LOCK, AND EVERY NODE ENDS UP HOLDING WHAT THE STORE HOLDS.**
+// `persistence_postgres.js`'s `mergeKeys()` locks the row and calls back with
+// its current ciphertext; this file decides, because it alone holds the
+// key-encryption key:
+//
+//   * **a key set is FIRST WRITER WINS** (`decideKeys()`) — a different set in
+//     the row is kept and THIS process adopts it; the same set is JOINED, the
+//     members one side lacks (the post-quantum keys, the three encryption key
+//     pairs) taken from the other, because they are made lazily and either
+//     node may make them first;
+//   * **a certificate authority is a THREE-WAY MERGE** (`common/pki_merge.js`
+//     argues every rule, and why a merge rather than a row per revocation);
+//   * **and a row another node wrote is ADOPTED** (`applyStoredChange()`,
+//     which `persistence.js`'s `keys` applier calls), reading the CURRENT row
+//     rather than replaying an operation — the replication rule every other
+//     applier already keeps.
+//
+// **WHAT ADOPTING STRANDS, AND WHY THAT IS THE RIGHT TRADE.** A process that
+// signed with keys it then adopts away from has signed something no JWKS will
+// publish. `applyKeysChange()` refused to adopt for exactly that reason. But
+// the keys it would refuse are, by construction, the ones the store REJECTED
+// — every other node is already signing with the winner — so refusing strands
+// the same tokens for ever instead of for a window. The window is the round
+// trip of the first write: a cold start closes it by settling BEFORE anything
+// is served (`common/service_state.js`), and a realm created at runtime keeps
+// the one this service already had inside a container, from generation to the
+// commit that says who won. There are no retained keys to fall back on: this
+// service publishes one key per realm per algorithm (`rotate()` says so, and
+// overlapping keys are in `mode.js`'s `NOT_YET`).
+//
+// **A STORE THAT CANNOT ARBITRATE CHANGES NOTHING.** `arbitrates()` is false on
+// `ldif` (one process's file), in development (nothing persists), with a
+// driver from before this, and with `cluster.mode=off`, and every write below
+// is then the `saveKeys()` upsert it always was.
+// ===========================================================================
+const writes = new Map();        // row key -> { tail, queued, pending }
+const lastOutcome = new Map();   // row key -> what its last write decided
+const pkiBase = new Map();       // scope id -> ciphertext last read or written
+const pkiLocalGen = new Map();   // scope id -> attachPki() calls so far
+
+// **AND ONLY WHERE THIS SERVICE IS A CLUSTER** — `cluster.mode` resolved to
+// anything but `off`, which in product mode on postgres is the default
+// (`cluster/CLAUDE.md`). `off` is the operator saying this is one container,
+// and one container already agrees over the request pool's channels, so it
+// keeps the upsert it had: the brief for #46 was that nothing about a single
+// node changes. Required lazily, because `cluster.js` is a library this leaf
+// has no other reason to load.
+function arbitrates() {
+  log.debug("Entering arbitrates().");
+  if (!persists() || !store || !kek ||
+      typeof store.mergeKeys !== 'function' ||
+      typeof store.loadKey !== 'function') {
+    log.debug("Leaving arbitrates(). No arbitrating store.");
+    return false;
+  }
+  let clustered = false;
+  try {
+    clustered = require('../cluster/cluster').mode() !== 'off';
+  } catch (e) {
+    log.debug("Caught in arbitrates(): " + ((e && e.message) || e));
+    clustered = false;
+  }
+  log.debug("Leaving arbitrates(). " + clustered);
+  return clustered;
+}
+
+// ---------------------------------------------------------------------------
+// ONE WRITE OF A ROW AT A TIME, AND A WRITE NOT YET STARTED TAKES THE LATEST
+// PAYLOAD. A realm's branch build saves its row a dozen times in one turn; a
+// merge per save would be a dozen locked round trips, and two in flight at
+// once from one process would merge against each other. So a row has a queue
+// of one running write and at most one waiting, and the waiting one is handed
+// whatever was attached last — which is cumulative, because every attach is
+// the whole row.
+// ---------------------------------------------------------------------------
+function queueWrite(rowKey, payload, perform) {
+  log.debug("Entering queueWrite(). row=" + rowKey);
+  let slot = writes.get(rowKey);
+  if (!slot) {
+    slot = { tail: Promise.resolve(null), queued: null, pending: 0 };
+    writes.set(rowKey, slot);
+  }
+  if (slot.queued) {
+    slot.queued.payload = payload;
+    log.debug("Leaving queueWrite(). Coalesced into the waiting write.");
+    return slot.queued.promise;
+  }
+  const entry = { payload: payload, promise: null };
+  slot.queued = entry;
+  slot.pending += 1;
+  entry.promise = slot.tail.then(function () {
+    if (slot.queued === entry) {
+      slot.queued = null;
+    }
+    return perform(rowKey, entry.payload);
+  }).then(function (outcome) {
+    return outcome;
+  }, function (e) {
+    // `perform` reports its own failures with their codes; this is the net
+    // under a bug in one, so the queue behind it still runs.
+    log.error(errorCodes.tag('STS-KEYS-0056') + 'keystore: a write of the "' +
+              rowKey + '" row failed unexpectedly: ' +
+              ((e && e.message) || e));
+    return { ok: false, error: (e && e.message) || String(e) };
+  }).then(function (outcome) {
+    lastOutcome.set(rowKey, outcome);
+    slot.pending -= 1;
+    if (!slot.pending && writes.get(rowKey) === slot) {
+      writes.delete(rowKey);
+    }
+    return outcome;
+  });
+  slot.tail = entry.promise;
+  log.debug("Leaving queueWrite(). Queued.");
+  return entry.promise;
+}
+
+// Whether any row this process holds is not yet written — for the cluster
+// barrier's commit-before-respond, through `persistence.pendingWrites()`.
+function pendingWrites() {
+  log.debug("Entering pendingWrites().");
+  log.debug("Leaving pendingWrites().");
+  return writes.size > 0;
+}
+
+// The outcome of the last write of one row, once everything queued for it has
+// landed.
+function settle(rowKey) {
+  log.debug("Entering settle().");
+  const slot = writes.get(String(rowKey));
+  log.debug("Leaving settle().");
+  return slot ? slot.tail : Promise.resolve(lastOutcome.get(String(rowKey)) ||
+                                            null);
+}
+
+function settleAll() {
+  log.debug("Entering settleAll().");
+  const tails = [];
+  writes.forEach(function (slot) {
+    tails.push(slot.tail);
+  });
+  log.debug("Leaving settleAll(). " + tails.length + " row(s).");
+  return Promise.all(tails);
+}
+
+function pkiSettled(scopeId) {
+  log.debug("Entering pkiSettled().");
+  log.debug("Leaving pkiSettled().");
+  return settle(PKI_ROW_PREFIX + String(scopeId || ''));
+}
+
+// ---------------------------------------------------------------------------
+// TWO BLOBS, ONE KEY SET? The certificate a set was born with names it (see
+// `serialise()`), and the MEMBERS are the parts made lazily and independently.
+// ---------------------------------------------------------------------------
+const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
+                         'requestObjectEncKeys'];
+
+function hasMember(blob, member) {
+  log.debug("Entering hasMember().");
+  const value = blob && blob[member];
+  log.debug("Leaving hasMember().");
+  return member === 'pqKeys' ? !!(value && value.length) : !!value;
+}
+
+function sameKeySet(a, b) {
+  log.debug("Entering sameKeySet().");
+  if (!a || !b || a.certB64 !== b.certB64) {
+    log.debug("Leaving sameKeySet(). Different sets.");
+    return false;
+  }
+  const differing = KEY_SET_MEMBERS.filter(function (member) {
+    return hasMember(a, member) !== hasMember(b, member) ||
+           (hasMember(a, member) &&
+            JSON.stringify(a[member]) !== JSON.stringify(b[member]));
+  });
+  log.debug("Leaving sameKeySet(). " + differing.length + " member(s) differ.");
+  return !differing.length;
+}
+
+// What the row should hold, given what is in it (`stored`, or null for no row)
+// and what this process offers. `{ keep: true }` leaves the row alone.
+function decideKeys(stored, offered) {
+  log.debug("Entering decideKeys().");
+  if (!stored) {
+    log.debug("Leaving decideKeys(). No row: first writer.");
+    return { outcome: 'won', blob: offered, write: true };
+  }
+  if (stored.certB64 !== offered.certB64) {
+    log.debug("Leaving decideKeys(). Another set was first.");
+    return { outcome: 'lost', blob: stored, write: false };
+  }
+  const joined = Object.assign({}, stored);
+  let added = 0;
+  KEY_SET_MEMBERS.forEach(function (member) {
+    if (!hasMember(stored, member) && hasMember(offered, member)) {
+      joined[member] = offered[member];
+      added += 1;
+    }
+  });
+  log.debug("Leaving decideKeys(). " + added + " member(s) added.");
+  return { outcome: added ? 'joined' : 'kept', blob: added ? joined : stored,
+           write: added > 0 };
+}
+
+function openBlob(cipher, label) {
+  log.debug("Entering openBlob().");
+  log.debug("Leaving openBlob().");
+  return JSON.parse(crypto.decryptWithKek(kek, cipher, label));
+}
+
+// ---------------------------------------------------------------------------
+// ADOPT A KEY SET THE STORE HOLDS, replacing whatever this process built.
+// Every place a set is dropped for another goes through here, because each of
+// the three halves has a defect behind it when skipped: the SHARED blob
+// (`sharedFor()`), the STORED material (`adoptShared()`'s 2026-09-12 note), and
+// the CACHED set `helpers.js` signs with (the adopt listener).
+// ---------------------------------------------------------------------------
+function adoptStoredKeys(id, blob, cipher, options) {
+  log.debug("Entering adoptStoredKeys(). realm=" + id);
+  purgeFor(id);
+  material.set(id, { cipher: cipher, createdAt: blob.createdAt || 0,
+                     plain: null, parsed: null, buffer: null, timer: null,
+                     immediate: false });
+  shared.set(id, blob);
+  if (adoptListener) {
+    try {
+      adoptListener(id);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KEYS-0030') + 'keystore: the "' + id +
+                '" realm\'s cached key set could not be dropped after ' +
+                'adopting the one the store holds: ' + e.message + '. This ' +
+                'process is still signing with its own.');
+    }
+  }
+  // **CONFIRMED**, so the request pool's arbitration adopts it rather than
+  // telling this process to take the set the front process happened to hear
+  // about first — see `request_pool.js`'s `receivePublishedKeys()`.
+  if (options && options.publish && publisher) {
+    publisher(id, blob, { confirmed: true });
+  }
+  log.debug("Leaving adoptStoredKeys().");
+}
+
+function writeKeys(id, payload) {
+  log.debug("Entering writeKeys(). realm=" + id);
+  if (!arbitrates()) {
+    log.debug("Leaving writeKeys(). An upsert.");
+    return Promise.resolve().then(function () {
+      return store.saveKeys(id, payload.cipher);
+    }).then(function () {
+      log.info('keystore: the "' + id + '" realm\'s signing keys were ' +
+               payload.why + ' and written to the store, encrypted.');
+      return { ok: true, outcome: 'written' };
+    }, function (e) {
+      log.error(errorCodes.tag('STS-KEYS-0035') +
+                'keystore: the "' + id + '" realm\'s signing keys could not ' +
+                'be written: ' + e.message + '. They will be different after ' +
+                'the next restart.');
+      return { ok: false, error: e.message };
+    });
+  }
+  let decided = null;
+  log.debug("Leaving writeKeys(). A merge under the row's lock.");
+  return Promise.resolve().then(function () {
+    return store.mergeKeys(id, payload.cipher, function (current) {
+      log.debug("Entering the key-set merge. realm=" + id);
+      decided = decideKeys(current ? openBlob(current, 'signing-keys') : null,
+                           payload.blob);
+      log.debug("Leaving the key-set merge. " + decided.outcome);
+      if (!decided.write) {
+        return null;
       }
-      return store.saveKeys(row, crypto.encryptWithKek(kek,
-                                                       JSON.stringify(chain),
+      return decided.blob === payload.blob
+        ? payload.cipher
+        : crypto.encryptWithKek(kek, JSON.stringify(decided.blob),
+                                'signing-keys');
+    });
+  }).then(function (result) {
+    if (!decided) {
+      // `mergeKeys()` always asks; a driver that did not has written nothing
+      // this process can reason about, and the next start reads the row.
+      return { ok: true, outcome: 'unknown' };
+    }
+    const stored = result.material;
+    const entry = material.get(id);
+    // A NEWER WRITE OF THIS REALM IS WAITING, or the realm's keys were rotated
+    // or removed while this one was in flight: that write, or that removal,
+    // decides what this process holds.
+    const superseded = !entry || (writes.get(id) && writes.get(id).queued);
+    if (superseded) {
+      return { ok: true, outcome: decided.outcome, superseded: true };
+    }
+    if (sameKeySet(decided.blob, payload.blob)) {
+      // What this process holds IS what the store holds. The ciphertext is
+      // taken from the store so the bytes match, and nothing is rebuilt.
+      entry.cipher = stored;
+      log.info('keystore: the "' + id + '" realm\'s signing keys were ' +
+               payload.why + ' and ' + (decided.outcome === 'kept'
+                 ? 'were already in the store'
+                 : 'written to the store, encrypted') + '.');
+      return { ok: true, outcome: decided.outcome };
+    }
+    // THE STORE HOLDS OTHER KEYS — another node's set, or this set with a
+    // member another node made first — and they are the ones every node uses.
+    adoptStoredKeys(id, decided.blob, stored, { publish: true });
+    log.warn('keystore: the "' + id + '" realm\'s signing keys ' +
+             (decided.outcome === 'lost'
+               ? 'were generated here and ANOTHER NODE\'S were already in ' +
+                 'the store; this process adopted those'
+               : 'gained members another node had made first; this process ' +
+                 'adopted them') + '. Anything this process signed with what ' +
+             'it held in between will not verify against the published keys.');
+    return { ok: true, outcome: decided.outcome, adopted: true };
+  }, function (e) {
+    log.error(errorCodes.tag('STS-KEYS-0035') +
+              'keystore: the "' + id + '" realm\'s signing keys could not ' +
+              'be written: ' + e.message + '. They will be different after ' +
+              'the next restart, and another node may hold different ones.');
+    return { ok: false, error: e.message };
+  });
+}
+
+function writePki(rowKey, payload) {
+  log.debug("Entering writePki(). row=" + rowKey);
+  const id = rowKey.slice(PKI_ROW_PREFIX.length);
+  const chain = payload.chain;
+  if (!chain) {
+    log.debug("Leaving writePki(). A removal.");
+    return Promise.resolve().then(function () {
+      return typeof store.deleteKeys === 'function'
+        ? store.deleteKeys(rowKey)
+        // A driver with no delete is told to store an EMPTY hierarchy rather
+        // than being left with the old one. `start()` reads a falsy `tiers`
+        // back as no hierarchy, so the two spellings mean the same thing.
+        : store.saveKeys(rowKey, crypto.encryptWithKek(kek, JSON.stringify({}),
                                                        'pki-hierarchy'));
-    })
-    .then(function () {
+    }).then(function () {
+      pkiBase.delete(id);
       log.info('keystore: the "' + id + '" realm\'s certificate authority ' +
-               'was ' + (chain ? 'written to the store, encrypted'
-                               : 'removed from the store') + '.');
-    })
-    .catch(function (e) {
+               'was removed from the store.');
+      return { ok: true, removed: true, lost: [] };
+    }, function (e) {
+      log.error(errorCodes.tag('STS-KEYS-0042') +
+                'keystore: the "' + id + '" realm\'s certificate authority ' +
+                'could not be removed from the store: ' + e.message + '.');
+      return { ok: false, error: e.message, lost: [] };
+    });
+  }
+  const text = JSON.stringify(chain);
+  const cipher = crypto.encryptWithKek(kek, text, 'pki-hierarchy');
+  if (!arbitrates()) {
+    log.debug("Leaving writePki(). An upsert.");
+    return Promise.resolve().then(function () {
+      return store.saveKeys(rowKey, cipher);
+    }).then(function () {
+      log.info('keystore: the "' + id + '" realm\'s certificate authority ' +
+               'was written to the store, encrypted.');
+      return { ok: true, merged: false, lost: [] };
+    }, function (e) {
       log.error(errorCodes.tag('STS-KEYS-0042') +
                 'keystore: the "' + id + '" realm\'s certificate authority ' +
                 'could not be written: ' + e.message + '. It will be ' +
                 'different after the next restart.');
+      return { ok: false, error: e.message, lost: [] };
     });
-  log.debug('Leaving attachPki(). Queued a write.');
+  }
+  const baseCipher = pkiBase.has(id) ? pkiBase.get(id) : null;
+  let decided = null;
+  log.debug("Leaving writePki(). A merge under the row's lock.");
+  return Promise.resolve().then(function () {
+    return store.mergeKeys(rowKey, cipher, function (current) {
+      log.debug("Entering the hierarchy merge. scope=" + id);
+      // NOBODY ELSE HAS WRITTEN THE ROW SINCE THIS PROCESS LAST SAW IT — the
+      // ordinary case, and a comparison of ciphertexts rather than a decrypt:
+      // every seal has a fresh IV, so equal bytes are the same write.
+      if (current === baseCipher) {
+        decided = { merged: false, lost: [], displaced: 0 };
+        log.debug("Leaving the hierarchy merge. Unchanged underneath.");
+        return cipher;
+      }
+      const base = baseCipher ? openBlob(baseCipher, 'pki-hierarchy') : null;
+      const theirs = current ? openBlob(current, 'pki-hierarchy') : {};
+      const answer = pkiMerge.merge(base, JSON.parse(text), theirs);
+      decided = { merged: true, lost: answer.lost,
+                  displaced: answer.displaced, row: answer.row };
+      log.debug("Leaving the hierarchy merge. Merged.");
+      return crypto.encryptWithKek(kek, JSON.stringify(answer.row),
+                                   'pki-hierarchy');
+    });
+  }).then(function (result) {
+    pkiBase.set(id, result.material);
+    if (!decided) {
+      return { ok: true, merged: false, lost: [] };
+    }
+    const newer = pkiLocalGen.get(id) !== payload.gen;
+    if (decided.merged && !newer) {
+      // WHAT THE STORE NOW HOLDS IS WHAT THIS PROCESS HOLDS — held, shared
+      // with the rest of this container, and reconciled with the listener
+      // where this process has one, exactly as a row another node wrote is.
+      pkiHeld.set(id, decided.row);
+      if (pkiPublisher) {
+        pkiPublisher(id, decided.row);
+      }
+      notifyHierarchyAdopted(id);
+    }
+    if (decided.lost.length) {
+      log.warn(errorCodes.tag('STS-KEYS-0057') + 'keystore: the "' + id +
+               '" certificate authority was changed by another node at the ' +
+               'same moment, and ITS ' + decided.lost.join(', ') + ' ' +
+               (decided.lost.length === 1 ? 'was' : 'were') + ' kept — the ' +
+               'first to commit wins a CA tier or a certificate slot, ' +
+               'because the other has already issued under it.' +
+               (decided.displaced ? ' ' + decided.displaced + ' displaced ' +
+                'certificate serial(s) were kept in the issued register.'
+                                  : ''));
+    } else {
+      log.info('keystore: the "' + id + '" realm\'s certificate authority ' +
+               'was ' + (decided.merged
+                 ? 'MERGED with a copy another node had written, and stored'
+                 : 'written to the store, encrypted') + '.');
+    }
+    return { ok: true, merged: decided.merged, lost: decided.lost,
+             displaced: decided.displaced };
+  }, function (e) {
+    log.error(errorCodes.tag('STS-KEYS-0042') +
+              'keystore: the "' + id + '" realm\'s certificate authority ' +
+              'could not be written: ' + e.message + '. It will be ' +
+              'different after the next restart, and another node may hold ' +
+              'a different one.');
+    return { ok: false, error: e.message, lost: [] };
+  });
+}
+
+function notifyHierarchyAdopted(id) {
+  log.debug("Entering notifyHierarchyAdopted().");
+  if (store && typeof store.hierarchyAdopted === 'function') {
+    try {
+      store.hierarchyAdopted(id);
+    } catch (e) {
+      log.debug("Caught in notifyHierarchyAdopted(): " +
+                ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving notifyHierarchyAdopted().");
+}
+
+// ---------------------------------------------------------------------------
+// A ROW ANOTHER PROCESS WROTE. `persistence.js`'s `keys` applier calls this
+// for every change row, and `pki.js` before it builds anything, so a node does
+// not build what the store already has.
+//
+// **IT READS THE CURRENT ROW**, never an operation, which is what makes a late
+// change, a duplicate and an out-of-order pair all safe. **AND IT DEFERS TO A
+// WRITE OF ITS OWN IN FLIGHT**, whose merge is about to decide against the
+// same row and will adopt the answer — adopting underneath it would replace
+// this process's unwritten change with a copy that lacks it.
+// ---------------------------------------------------------------------------
+function applyStoredChange(rowKey) {
+  log.debug("Entering applyStoredChange(). row=" + rowKey);
+  const key = String(rowKey || '');
+  const isPki = key.indexOf(PKI_ROW_PREFIX) === 0;
+  const id = isPki ? key.slice(PKI_ROW_PREFIX.length) : key;
+  const kind = isPki ? 'pki' : 'keys';
+  // ONLY WHERE THE STORE ARBITRATES. With `cluster.mode=off` every write is
+  // still the last-writer-wins upsert, and adopting rows under that would be
+  // two processes each adopting the other's set in the same moment and ending
+  // as split as they started — which is the argument `applyKeysChange()` used
+  // to make for doing nothing, and it still holds there.
+  if (!arbitrates()) {
+    log.debug("Leaving applyStoredChange(). The store does not arbitrate.");
+    return Promise.resolve({ kind: kind, realm: id, adopted: false });
+  }
+  if (writes.has(key)) {
+    log.debug("Leaving applyStoredChange(). A write of ours is in flight.");
+    return Promise.resolve({ kind: kind, realm: id, adopted: false,
+                             pending: true });
+  }
+  log.debug("Leaving applyStoredChange(). Reading the row.");
+  return Promise.resolve().then(function () {
+    return store.loadKey(key);
+  }).then(function (cipher) {
+    if (writes.has(key)) {
+      return { kind: kind, realm: id, adopted: false, pending: true };
+    }
+    try {
+      return isPki ? adoptPkiRow(id, cipher) : adoptKeyRow(id, cipher);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KEYS-0058') + 'keystore: the "' + key +
+                '" row another process wrote could not be opened: ' +
+                e.message + '. This process keeps what it holds.');
+      return { kind: kind, realm: id, adopted: false, error: e.message };
+    }
+  });
+}
+
+function adoptKeyRow(id, cipher) {
+  log.debug("Entering adoptKeyRow(). realm=" + id);
+  const entry = material.get(id);
+  if (!cipher) {
+    if (!entry && !shared.has(id)) {
+      log.debug("Leaving adoptKeyRow(). Nothing held, nothing stored.");
+      return { kind: 'keys', realm: id, adopted: false };
+    }
+    // ROTATED OR REMOVED ON ANOTHER NODE. The set is dropped here as
+    // `rotate()` drops it there, and whichever node signs next makes the
+    // next one — which the store then arbitrates.
+    purgeFor(id);
+    material.delete(id);
+    shared.delete(id);
+    if (adoptListener) {
+      adoptListener(id);
+    }
+    log.warn('keystore: the "' + (id || 'default') + '" realm\'s signing ' +
+             'keys were REMOVED by another node (a rotation, or the realm ' +
+             'went); this process dropped them too.');
+    log.debug("Leaving adoptKeyRow(). Removed.");
+    return { kind: 'keys', realm: id, adopted: true, removed: true };
+  }
+  if (entry && entry.cipher === cipher) {
+    log.debug("Leaving adoptKeyRow(). Already held.");
+    return { kind: 'keys', realm: id, adopted: false };
+  }
+  const stored = openBlob(cipher, 'signing-keys');
+  const held = entry ? (entry.plain || openBlob(entry.cipher, 'signing-keys'))
+                     : shared.get(id);
+  if (held && sameKeySet(held, stored)) {
+    if (entry) {
+      entry.cipher = cipher;
+    } else {
+      material.set(id, { cipher: cipher, createdAt: stored.createdAt || 0,
+                         plain: null, parsed: null, buffer: null, timer: null,
+                         immediate: false });
+    }
+    log.debug("Leaving adoptKeyRow(). The same set.");
+    return { kind: 'keys', realm: id, adopted: false };
+  }
+  adoptStoredKeys(id, stored, cipher, { publish: false });
+  log.info('keystore: the "' + (id || 'default') + '" realm\'s signing keys ' +
+           'were written by another node' + (held ? ', replacing the set ' +
+           'this process held' : '') + '; this process uses them now.');
+  log.debug("Leaving adoptKeyRow(). Adopted.");
+  return { kind: 'keys', realm: id, adopted: true };
+}
+
+function adoptPkiRow(id, cipher) {
+  log.debug("Entering adoptPkiRow(). scope=" + id);
+  if (cipher === (pkiBase.has(id) ? pkiBase.get(id) : null)) {
+    log.debug("Leaving adoptPkiRow(). Already the base.");
+    return { kind: 'pki', realm: id, adopted: false };
+  }
+  const chain = cipher ? openBlob(cipher, 'pki-hierarchy') : null;
+  const empty = !chain || !Object.keys(chain).length;
+  if (empty) {
+    pkiBase.delete(id);
+    if (!pkiHeld.has(id)) {
+      log.debug("Leaving adoptPkiRow(). Nothing held, nothing stored.");
+      return { kind: 'pki', realm: id, adopted: false };
+    }
+    pkiHeld.delete(id);
+  } else {
+    pkiHeld.set(id, chain);
+    pkiBase.set(id, cipher);
+  }
+  notifyHierarchyAdopted(id);
+  log.info('keystore: the "' + (id || 'default') + '" certificate authority ' +
+           'was ' + (empty ? 'removed' : 'written') + ' by another node; ' +
+           'this process holds what the store holds.');
+  log.debug("Leaving adoptPkiRow().");
+  return { kind: 'pki', realm: id, adopted: true, removed: empty };
+}
+
+// For `pki.js`: land this process's queued writes of a scope's row, then take
+// what the store holds. Resolves the adoption answer.
+function refreshPki(scopeId) {
+  log.debug("Entering refreshPki().");
+  const rowKey = PKI_ROW_PREFIX + String(scopeId || '');
+  log.debug("Leaving refreshPki().");
+  return settle(rowKey).then(function () {
+    return applyStoredChange(rowKey);
+  });
 }
 
 function reset() {
   log.debug("Entering reset().");
   shared.clear();
   pkiHeld.clear();
+  // What the store arbitration holds (#46): a test doing what a restart does
+  // starts with nothing queued and no base to merge from.
+  writes.clear();
+  lastOutcome.clear();
+  pkiBase.clear();
+  pkiLocalGen.clear();
   publisher = null;
   pkiPublisher = null;
   ephemeral = false;
@@ -1835,6 +2485,7 @@ module.exports = {
   setStore: setStore,
   persists: persists,
   sealed: sealed,
+  keyedDigest: keyedDigest,
   seal: seal,
   open: open,
   start: start,
@@ -1857,5 +2508,21 @@ module.exports = {
   pkiAll: pkiAll,
   pkiFor: pkiFor,
   attachPki: attachPki,
+  // THE STORE AS THE ARBITER BETWEEN NODES (#46). See the block above
+  // `arbitrates()`.
+  arbitrates: arbitrates,
+  applyStoredChange: applyStoredChange,
+  refreshPki: refreshPki,
+  pendingWrites: pendingWrites,
+  settle: settle,
+  settleAll: settleAll,
+  pkiSettled: pkiSettled,
   report: report
 };
+
+// DECLARED AT REQUIRE TIME (cluster/CLAUDE.md): the code that makes a realm's
+// signing keys one set for the cluster — the first-writer-wins write, the
+// adoption of a row another node wrote, rotation reaching every node — is
+// this file, and a cold start settles through it before anything is served
+// (`common/service_state.js`).
+capabilities.provide('keys.agreement');

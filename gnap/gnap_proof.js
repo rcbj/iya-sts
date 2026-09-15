@@ -352,6 +352,7 @@ function checkJwsLayer(compact, descriptor, ctx, allowedTypes, payloadCheck) {
     log.debug("Leaving checkJwsLayer(). Replay.");
     return refusal('STS-GNAP-0271', 'this key proof has already been used.');
   }
+  noteReplayKey(ctx, 'jws|' + parts[2]);
   log.debug("Leaving checkJwsLayer().");
   return { ok: true, header: header, payload: parts[1] };
 }
@@ -497,6 +498,10 @@ function verifyHttpsig(req, descriptor, ctx) {
     return refusal('STS-GNAP-0276', 'the signature nonce has already been ' +
                    'used (RFC 9635 section 7.3.1).');
   }
+  if (chosen.params.nonce) {
+    noteReplayKey(ctx, 'httpsig|' + descriptor.identity + '|' +
+                  chosen.params.nonce);
+  }
   log.debug("Leaving verifyHttpsig(). label=" + chosen.label);
   return { ok: true, verified: result.verified };
 }
@@ -559,7 +564,11 @@ function verifyRequest(req, body, descriptor, options) {
   }
   const ctx = { method: req.method, targetUri: targetUriOf(req),
                 accessToken: opts.accessToken || null,
-                hadContent: body.hadContent, raw: body.raw };
+                hadContent: body.hadContent, raw: body.raw,
+                // What the replay cache remembered for this request, so that
+                // verifyRequestOnce() can spend the same keys across the
+                // cluster. Shared by reference with a rotation's second ctx.
+                replayKeys: [] };
   const method = descriptor.proof.method;
   if (descriptor.format === 'cert#S256' && method !== 'mtls') {
     log.debug("Leaving verifyRequest(). Thumbprint-only key with a signature " +
@@ -603,7 +612,80 @@ function verifyRequest(req, body, descriptor, options) {
       ? outcome.gnapError : 'invalid_rotation';
   }
   log.debug("Leaving verifyRequest(). ok=" + outcome.ok);
-  return Object.assign(outcome, { method: method });
+  return Object.assign(outcome, { method: method,
+                                  replayKeys: ctx.replayKeys });
+}
+
+// ---------------------------------------------------------------------------
+// THE REPLAY CACHE ACROSS THE CLUSTER (2026-09-14, #46).
+//
+// `store.remember()` is synchronous and is where a replay is refused first —
+// inside `checkJwsLayer()` and `verifyHttpsig()`, several calls deep in a
+// verification that is synchronous from its five callers down. Its map is
+// replicated, not shared, so a proof accepted on one node was accepted again
+// on another inside the replication window: exactly the replay section 7.3.1's
+// "MUST determine that the nonce value is unique" is there to stop.
+//
+// A database answer cannot be had inside a synchronous function, and making
+// the whole verification asynchronous would put an await between every layer
+// of a rotation's two signatures for no reason. So the keys the cache
+// remembered are COLLECTED on the verification's context (`noteReplayKey()`),
+// returned on its outcome, and SPENT AT THE ASYNC BOUNDARY:
+// `verifyRequestOnce()` is `verifyRequest()` followed by one cluster claim per
+// key, and every caller that acts on a verified request calls it instead,
+// before it acts. The in-memory check therefore stays first and unchanged,
+// and a proof this process had never seen is refused as a replay when another
+// node has already accepted it. A claim lives for the window the cache
+// remembers a key (twice `gnap.signatureMaxAgeS`), plus the store's skew.
+//
+// `presentation()` in gnap_rs.js keeps the synchronous call, because
+// ssf/ssf_auth.js calls it synchronously; its asynchronous caller spends the
+// keys it returns (see there).
+// ---------------------------------------------------------------------------
+function noteReplayKey(ctx, key) {
+  log.debug("Entering noteReplayKey().");
+  if (ctx && Array.isArray(ctx.replayKeys)) {
+    ctx.replayKeys.push(key);
+  }
+  log.debug("Leaving noteReplayKey().");
+}
+
+async function spendProof(verified) {
+  log.debug("Entering spendProof().");
+  const replayKeys = (verified && verified.replayKeys) || [];
+  for (const key of replayKeys) {
+    const spent = await store.spend('proof', key, maxAgeS() * 2,
+                                    'STS-GNAP-0715');
+    if (!spent.ok && spent.reason === 'used') {
+      log.debug("Leaving spendProof(). Replayed on another node.");
+      return refusal('STS-GNAP-0715', 'this key proof has already been ' +
+                     'used (RFC 9635 section 7.3.1).');
+    }
+    if (!spent.ok) {
+      log.debug("Leaving spendProof(). The claim store could not be asked.");
+      return refusal('STS-GNAP-0716', 'this authorization server could not ' +
+                     'confirm the key proof is unused; retry with a fresh ' +
+                     'signature.');
+    }
+  }
+  log.debug("Leaving spendProof(). " + replayKeys.length + " key(s) spent.");
+  return { ok: true };
+}
+
+async function verifyRequestOnce(req, body, descriptor, options) {
+  log.debug("Entering verifyRequestOnce().");
+  const verified = verifyRequest(req, body, descriptor, options);
+  if (!verified.ok) {
+    log.debug("Leaving verifyRequestOnce(). Refused locally.");
+    return verified;
+  }
+  const spent = await spendProof(verified);
+  if (!spent.ok) {
+    log.debug("Leaving verifyRequestOnce(). Refused at the spend.");
+    return Object.assign(spent, { method: verified.method });
+  }
+  log.debug("Leaving verifyRequestOnce().");
+  return verified;
 }
 
 function verifyJwsd(req, descriptor, ctx) {
@@ -757,6 +839,8 @@ function verifyJwsRotation(req, body, oldKey, newKey, ctx) {
 module.exports = {
   readBody: readBody,
   verifyRequest: verifyRequest,
+  verifyRequestOnce: verifyRequestOnce,
+  spendProof: spendProof,
   presentedToken: presentedToken,
   targetUriOf: targetUriOf,
   athOf: athOf,

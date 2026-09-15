@@ -208,6 +208,28 @@ still never hand-rolls a signature check.
 | A post-quantum ACCOUNT key | Its key type has no RFC 7638 thumbprint (the certificate KEY may still be ML-DSA or composite: the core verifies those CSRs) |
 | An X.509 attribute certificate, a CA-signed CSR template, arbitrary extensions | The certificate's content is decided by the profile and the entry, never the CSR (`core` ignores requested KU/EKU/BC) |
 
+## Several nodes: the nonce, the finalize and the EAB binding (2026-09-14, #46)
+
+Three things this family spent by reading a replicated store and writing it
+back, which two nodes both did inside the change log's window:
+
+* **A Replay-Nonce** — `authenticate()` is ASYNCHRONOUS now (every handler
+  that calls it is `async` and awaits it) because the nonce is spent through
+  `acme_store.spendNonceOnce()`: the local `usedNonces` map first (no round
+  trip for the ordinary replay), then a claim in the store. A claim another
+  request holds is the replay it always was (`STS-ACME-0018`); a store that
+  cannot be asked is `serverInternal` (`STS-ACME-0099`) — never `badNonce`, which
+  would send a client round a retry loop against a store that is down.
+* **A finalize** — the "ready" check and the "processing" write are an await
+  apart (the CSR parse), so two finalizes of one order, each with its own fresh
+  nonce, issued TWICE even on one node. The order is claimed once everything
+  that refuses without side effects has run; a claimed order is
+  `orderNotReady` (`STS-ACME-0098`), and a refused issuance gives the claim back
+  with the order.
+* **The EAB binding** — `core.bindEabOnce()` (`common/CLAUDE.md`). Its one
+  cost: the same account retrying newAccount at a second node before the
+  binding has replicated is refused once as a second account.
+
 ## Error codes
 
 `STS-ACME-NNNN` in `common/error_codes.js`, between `// ===== ACME ====` and
@@ -227,6 +249,7 @@ error type and marks the core's code.
 | 0070–0074 | key change |
 | 0080–0082 | renewal information, the orders list |
 | 0090–0097 | the console, the management API, an unexpected throw |
+| 0098–0099 | several nodes: a finalize already claimed, a claim store that could not be asked |
 
 `tests/error_codes.js` carries `acmeProblem(ctx` and `refusal('<type>', <status>`
 as failure patterns.
@@ -235,6 +258,7 @@ as failure patterns.
 
 | File | What it holds |
 |---|---|
+| `tests/cluster_single_use_credentials.js` | a nonce another node claimed refused here, and one EAB key bound by one of two concurrent accounts, against a stub store with postgres's semantics |
 | `tests/acme_jws.js` | the envelope's refusals one by one, RFC 7638's and RFC 9773's published values, the nonce's proof (another realm, a flipped bit, a version, an expiry at a chosen instant), the EAB's five shapes and a wrong MAC key, identifier values, and the seven stores per realm and purged with it |
 | `tests/acme_protocol.js` | a CHILD PROCESS running the whole stack on a plain-HTTP port, driven by the independent client: every refusal by type, realm isolation at the door, finalize and the chain verified by OpenSSL, revocation (by account, by key, alreadyRevoked), key change and its 409, deactivation, renewal information, the monitor, `acme.enabled`, **product mode refusing plain HTTP** (which the HTTPS job cannot reach), and the console pages through their own handlers — the EAB key answered once on a 200 no-store page and absent from every view |
 | `tests/vendored/sts_acme_enrollment.js` | over HTTPS against the running service: all nine profiles chained to the realm Intermediate and the Root with their EKUs, the UPN equal to the person's mail, an application for itself, OCSP `good` then `revoked`, the serial on `/pki/crl/{realm}/acme.crl` after revokeCert and after the console action, every refusal the brief lists, the expired nonce and the expired EAB key, the throttle, and a product-mode realm over TLS |

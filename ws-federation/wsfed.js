@@ -109,7 +109,7 @@ const { buildSaml11Assertion } = require('../saml/saml11');
 // lands in has to be the same one — single sign-on between the two protocols
 // is the interesting behaviour, and two stores would each look right alone.
 const { sessionOf, startSession, endSession, beginAuthentication,
-        notePresented } = require('../authn/authn');
+        notePresented, noteSessionChanged } = require('../authn/authn');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
 // nothing about the route order this module's position in server.js fixes.
@@ -1144,6 +1144,9 @@ function issueSignInResponse(req, res, params, session, realm, wreply,
   // have: when the session goes, so does the list, and nothing has to be swept.
   session.wsfedRealms = session.wsfedRealms || {};
   session.wsfedRealms[realm] = wreply;
+  // AND THE STORE IS TOLD (2026-09-14, #46), or the list reaches no other
+  // node: `authn.noteSessionChanged()` carries the argument.
+  noteSessionChanged(session);
 
   sendSignInResponse(res,
                      signInResponsePage(wreply, wresult, params.wctx, realm,

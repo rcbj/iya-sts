@@ -183,7 +183,11 @@
 #                    narrows the jobs — a pass in `memory` alone says nothing
 #                    about persistence or dispatch, which is the whole reason
 #                    the other two exist.
-#   --list           Name what would run, and run none of it.
+#                    `--modes=cluster` is the FOURTH, never run unless named
+#                    (2026-09-14): two service containers active-active on one
+#                    postgres behind an HAProxy load balancer, every job's
+#                    requests alternating between them. It needs docker.
+#   --list          Name what would run, and run none of it.
 #   --protocol       Run the parent project's mock-only jobs as well. The
 #                    DEFAULT since 2026-08-28; the flag is kept because
 #                    scripts and fingers still pass it.
@@ -391,7 +395,21 @@ STS_TEST_BAO_SEED_CONTAINER="sts-tests-openbao-seed"
 # overlaps with other one on this address space` and nothing brought up. It is
 # chosen per run now, in composeUp() beside the three ports; the same sentence
 # reaching one more thing.
+#
+# **AND THE IMAGE TAG WAS THE FOURTH, ON 2026-09-14.** `docker-compose.yml`
+# names `rcbj/sts`, a tag is machine-wide, and `up` of a later mode uses
+# whatever that tag points at BY THEN — so a second checkout's build between
+# two modes of another run put the second checkout's code under the first run,
+# with every job still green about the wrong tree. A named project now builds
+# and runs `rcbj/sts:<project>`; a plain run is untouched.
+#
+# THE `cluster` MODE'S TWO EXTRA CONTAINERS (2026-09-14) are named here with
+# the rest for the same reason: node B and the load balancer.
 # ---------------------------------------------------------------------------
+STS_TEST_NODE_B_CONTAINER="sts-tests-node-b"
+STS_TEST_LB_CONTAINER="sts-tests-lb"
+STS_TEST_IMAGE=""
+STS_TEST_PEP_IMAGE=""
 if [ -n "${STS_TEST_COMPOSE_PROJECT:-}" ];
 then
   STS_TEST_CONTAINER="${COMPOSE_PROJECT}-sts"
@@ -399,7 +417,17 @@ then
   STS_TEST_BAO_CONTAINER="${COMPOSE_PROJECT}-openbao"
   STS_TEST_BAO_TLS_CONTAINER="${COMPOSE_PROJECT}-openbao-tls"
   STS_TEST_BAO_SEED_CONTAINER="${COMPOSE_PROJECT}-openbao-seed"
+  STS_TEST_NODE_B_CONTAINER="${COMPOSE_PROJECT}-sts-node-b"
+  STS_TEST_LB_CONTAINER="${COMPOSE_PROJECT}-sts-lb"
+  STS_TEST_IMAGE="rcbj/sts:${COMPOSE_PROJECT}"
+  STS_TEST_PEP_IMAGE="rcbj/xacml-pep:${COMPOSE_PROJECT}"
 fi
+# ---------------------------------------------------------------------------
+# THE `cluster` MODE'S LAYER (2026-09-14, issue #46): node B and an HAProxy
+# that takes every published port, over the two files above. Layered by
+# composeFileArgsFor() only when the mode is `cluster`, so no other mode's
+# stack reads it. tests/docker-compose-cluster.yml argues its contents.
+CLUSTER_COMPOSE_FILE="tests/docker-compose-cluster.yml"
 # ---------------------------------------------------------------------------
 # THE REMOTE XACML PEP THIS STACK ALSO BRINGS UP (2026-09-06).
 #
@@ -754,6 +782,23 @@ captureContainerLog()
   dest="$(runLogPath "${mode}" "00-mock-sts-service.log")"
   docker_compose "${COMPOSE_FILE_ARGS[@]}" logs --no-color sts > "${dest}" 2>&1 || true
   echo "Service log: ${dest}"
+  # THE `cluster` MODE HAS TWO MORE ACCOUNTS AND BOTH ARE GONE WITH THEIR
+  # CONTAINERS (2026-09-14): node B's, since a request a job made may have been
+  # answered by either node and the failure is in whichever log that was; and
+  # the balancer's, which is where a node taken out of rotation, or a
+  # connection it could not place, is written down. Node A keeps the file name
+  # every other mode uses, so a report reads the same in all four.
+  if stsModeIsCluster "${mode}";
+  then
+    dest="$(runLogPath "${mode}" "00-mock-sts-service-node-b.log")"
+    docker_compose "${COMPOSE_FILE_ARGS[@]}" logs --no-color sts2 \
+      > "${dest}" 2>&1 || true
+    echo "Node B log:  ${dest}"
+    dest="$(runLogPath "${mode}" "00-load-balancer.log")"
+    docker_compose "${COMPOSE_FILE_ARGS[@]}" logs --no-color sts-lb \
+      > "${dest}" 2>&1 || true
+    echo "Balancer log: ${dest}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -944,6 +989,23 @@ composePepUp()
 
 composeUp()
 {
+  # ---- ONE STACK OR TWO NODES? (2026-09-14) -------------------------------
+  #
+  # The `cluster` mode layers its file over the other two and is reached, by
+  # the jobs and by the remote PEP alike, through the load balancer — which
+  # publishes the SAME host ports under the SAME variables, so everything
+  # below that computes an address computes the balancer's without knowing.
+  # The one address that is not a published port is the PEP's, which dials a
+  # compose hostname: `sts-lb` in that mode, `sts` otherwise.
+  local serviceHost="sts"
+  local upServices=(sts)
+  COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}" -f "${LDAP_COMPOSE_FILE}")
+  if stsModeIsCluster "${STS_MODE_NAME:-memory}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${CLUSTER_COMPOSE_FILE}")
+    serviceHost="sts-lb"
+    upServices=(sts sts2 sts-lb)
+  fi
   STS_HOST_PORT="${STS_PORT_ARG}"
   if [ -z "${STS_HOST_PORT}" ];
   then
@@ -1165,7 +1227,7 @@ composeUp()
     "XACML_PEP_CONTAINER_NAME=${XACML_PEP_CONTAINER}"
     "XACML_PEP_HOST_PORT=${XACML_PEP_HOST_PORT}"
     "XACML_PEP_NAME=${XACML_PEP_NAME}"
-    "XACML_PEP_PDP_URL=$(stsScheme)://sts:8081/realm/${XACML_PEP_REALM}"
+    "XACML_PEP_PDP_URL=$(stsScheme)://${serviceHost}:8081/realm/${XACML_PEP_REALM}"
     "XACML_PEP_POLL_INTERVAL_MS=5000"
     "XACML_PEP_HEARTBEAT_INTERVAL_MS=2000"
     # The credential composePepUp() writes, mounted read-only at /certs.
@@ -1191,6 +1253,42 @@ composeUp()
   if [ -n "${STS_LOG_LEVEL:-}" ];
   then
     COMPOSE_ENV+=("STS_LOG_LEVEL=${STS_LOG_LEVEL}")
+  fi
+  # THE IMAGE TAGS, when this run named a project — see the project-name block
+  # near the top of this file. Unset leaves the compose files' own names.
+  if [ -n "${STS_TEST_IMAGE}" ];
+  then
+    COMPOSE_ENV+=("STS_IMAGE=${STS_TEST_IMAGE}"
+                  "XACML_PEP_IMAGE=${STS_TEST_PEP_IMAGE}")
+  fi
+  # ---- THE `cluster` MODE'S OWN VALUES (2026-09-14) -----------------------
+  #
+  # Node B's name and address (`.20`, clear of the service's `.10` and the
+  # SPIFFE `.11`-`.13`), the balancer's name, and the ONE base URL both nodes
+  # issue under: the balancer's, as the jobs on this machine dial it. It is on
+  # the cluster's must-agree list, and it is also the audience of the
+  # `/admin-api` token minted below, which is minted against ${STS_URL} — the
+  # same string, so the two cannot disagree. STS_CLUSTER_MODE itself is the
+  # mode's (modes.sh) and reaches compose through the environment the mode
+  # loop exported, like every other mode variable; it is named here as well
+  # for the `sudo` reason every other entry in this array carries.
+  if stsModeIsCluster "${STS_MODE_NAME:-memory}";
+  then
+    COMPOSE_ENV+=(
+      "STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-active-active}"
+      "STS_PUBLIC_BASE_URL=${STS_URL}"
+      "STS2_CONTAINER_NAME=${STS_TEST_NODE_B_CONTAINER}"
+      "STS2_ADDRESS=${STS_NETWORK_PREFIX}.20"
+      "STS_LB_CONTAINER_NAME=${STS_TEST_LB_CONTAINER}"
+      # PROXY PROTOCOL v2 (the mode's `v2`, or STS_TEST_CLUSTER_PROXY_PROTOCOL
+      # to run without it) and the ONE address both nodes believe a header
+      # from: the balancer's, pinned at `.30`. A trusted list that named the
+      # whole subnet would let any container on this network forge a client
+      # address, which is the thing the setting exists to stop.
+      "STS_PROXY_PROTOCOL=${STS_TEST_CLUSTER_PROXY_PROTOCOL:-${STS_PROXY_PROTOCOL:-off}}"
+      "STS_LB_ADDRESS=${STS_NETWORK_PREFIX}.30"
+      "STS_TRUSTED_PROXIES=${STS_NETWORK_PREFIX}.30/32"
+    )
   fi
 
   # ---------------------------------------------------------------------------
@@ -1263,6 +1361,13 @@ composeUp()
     echo "Starting the mock STS container on ${STS_URL} (project"
     echo "${COMPOSE_PROJECT}, container ${STS_TEST_CONTAINER}, with postgres,"
     echo "persistence=${STS_PERSISTENCE_MODE:-memory})."
+    if stsModeIsCluster "${STS_MODE_NAME:-memory}";
+    then
+      echo "CLUSTER: node B is ${STS_TEST_NODE_B_CONTAINER} and ${STS_URL} is"
+      echo "the load balancer ${STS_TEST_LB_CONTAINER} (HAProxy, TCP, round"
+      echo "robin per connection), cluster.mode=${STS_CLUSTER_MODE:-active-active},"
+      echo "PROXY protocol ${STS_TEST_CLUSTER_PROXY_PROTOCOL:-${STS_PROXY_PROTOCOL:-off}}."
+    fi
   else
     depsArgs=(--no-deps)
     echo "Starting the mock STS container on ${STS_URL} (project"
@@ -1270,7 +1375,13 @@ composeUp()
   fi
   # --force-recreate so that a container from a previous run is never reused
   # with a new image.
-  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d ${depsArgs[@]+"${depsArgs[@]}"} --force-recreate sts;
+  #
+  # IN THE `cluster` MODE, THREE SERVICES, and compose's own depends_on puts
+  # them in order: node A healthy, then node B, then the balancer once both
+  # are healthy (tests/docker-compose-cluster.yml). `up -d` waits on those
+  # conditions, so a node that refuses to join — the capability gate, a
+  # settings disagreement — is a stack that did not start, here.
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d ${depsArgs[@]+"${depsArgs[@]}"} --force-recreate "${upServices[@]}";
   then
     echo "The stack would not start."
     STACK_UP=1   # something may exist; let the teardown and the log reach it
@@ -1415,7 +1526,7 @@ stackTeardown()
     echo ""
     echo "The stack is still up (the default; --tear-down removes it):"
     echo "  service:  ${STS_URL}    console: ${STS_URL}/admin"
-    echo "  logs:     ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} logs -f sts"
+    echo "  logs:     ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} logs -f sts"
     # THE SECOND CONTAINER IS PART OF THE RECIPE TOO. Somebody who kept the
     # stack to poke at it will find a remote PEP in it and no explanation
     # anywhere on screen otherwise — and the realm it polls is gone by then,
@@ -1428,9 +1539,15 @@ stackTeardown()
       echo "            which sts_xacml_remote_pep.js creates and REMOVES again — so a"
       echo "            kept stack shows it stale and still enforcing what it last pulled,"
       echo "            which is the state that job's last section asserts)"
-      echo "  pep logs: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} logs -f xacml-pep"
+      echo "  pep logs: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} --profile xacml logs -f xacml-pep"
     fi
-    echo "  stop it:  ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} down -v"
+    if stsModeIsCluster "${MODE:-memory}";
+    then
+      echo "  cluster:  node B ${STS_TEST_NODE_B_CONTAINER} (logs -f sts2), the"
+      echo "            balancer ${STS_TEST_LB_CONTAINER} (logs -f sts-lb); ${STS_URL}"
+      echo "            alternates between the nodes per connection"
+    fi
+    echo "  stop it:  ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} --profile xacml down -v"
     # THE CERTIFICATE IS PART OF THE RECIPE NOW. With the main port on TLS a
     # job run by hand meets a self-signed certificate this machine has no
     # anchor for and fails with DEPTH_ZERO_SELF_SIGNED_CERT, which names
@@ -1813,6 +1930,18 @@ do
   if [ "${LIST}" != "1" ] && needsService;
   then
     resolveServiceMode || exit 1
+    # THE `cluster` MODE IS TWO CONTAINERS AND A BALANCER, and there is no
+    # host-process form of that: a `--no-docker` run would start one service
+    # and report two nodes' worth of green about it. Refused, loudly, rather
+    # than quietly becoming the `postgres` mode.
+    if stsModeIsCluster "${MODE}" && [ "${SERVICE}" != "docker" ];
+    then
+      echo ""
+      echo "Mode ${MODE} needs docker: it is two service containers behind a"
+      echo "load balancer, and --no-docker (or a machine without docker) can"
+      echo "start only one service. Nothing was run."
+      exit 1
+    fi
     if [ "${SERVICE}" = "docker" ];
     then
       if ! composeUp;

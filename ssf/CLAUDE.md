@@ -153,6 +153,83 @@ was waiting at creation.
 two accessor calls `persistence_minted.js`'s `applyLocally()` makes, in a child
 process with a real persist observer. Four mutants, all caught.
 
+## SEVERAL NODES (2026-09-14, #46 section 6) — capability `ssf.delivery`
+
+The section above made the queue correct between the workers of ONE container.
+Between containers four things were still decided by whichever process was
+looking. `ssf_cluster.js` holds three of them; `ssf.js` provides the capability.
+
+* **AN ACKNOWLEDGED SET, POLLED ON ANOTHER NODE.** A SEQUENTIAL ack on A then a
+  poll on B needed nothing new: the ack's response is held until its row delete
+  commits and B's poll catches up first (the cluster barrier). A CONCURRENT
+  poll on B that hands a SET out for the first time while its ack commits on A
+  used to write the row back (the first-delivery write above), after the
+  delete — the SET queued again until acknowledged a second time. **On a store
+  a claim store is shared by (`persistence.clusterStore()`) `poll()` writes no
+  first-delivery row**: `deliveredAt` stays the local node's view and
+  `counters.delivered` may count one SET once per node that first handed it
+  out — a number on a page, where the other was a resurrected event. Two
+  concurrent polls on two nodes both RETURNING one unacknowledged SET is left
+  alone, and deliberately: one node already returns it on every poll until it
+  is acknowledged, and RFC 8936 section 2.4 lets a transmitter redeliver ("MAY
+  redeliver SETs it has previously delivered") and tells the recipient it
+  "SHOULD accept repeat SETs and acknowledge the SETs regardless". What the RFC
+  frames as done is acknowledgement (section 2.1, "redelivery is no longer
+  required"), and that is now never undone. A claim per delivery would make a
+  poll asynchronous to stop a repeat the receiver is told to expect.
+* **A SESSION'S END, ONCE.** `authn/authn.js`'s `sessionEndOnce()`; see
+  `authn/CLAUDE.md`. Every `session-revoked` this family sends starts there.
+* **STREAM HEALTH.** Declared dead and revived are each REPORTED once
+  (`transitionOnce()`: a claim on the realm, stream and transition for half
+  `ssf.deadStreamTimeoutS` — the same transition cannot recur inside one
+  timeout); a store that cannot be asked reports anyway (`STS-SSF-0098`). **One
+  process PROBES**: `leadsProbes()` is the front process of the node holding the
+  `ssf.dead-stream-probes` lease (`cluster.lead()` at require time, campaigned
+  on each heartbeat), never a request worker, and every process outside
+  active-active as before; half-open goes with the probe. **The four dead-stream
+  members stay on the record, which is last writer wins**: a node whose copy
+  predates a declaration and writes the record for a counter can revert it. It
+  does not oscillate — `failingSinceMs` is already past the timeout on every
+  copy, so the next failure anywhere declares it again at once, and the claim
+  keeps that from being reported twice — and lost updates to the record are
+  section 3's.
+* **GNAP ON THESE ENDPOINTS.** `ssf_auth.js` judged a GNAP token with the
+  synchronous `gnap_rs.presentation()`, whose key-proof replay check is this
+  process's memory. `ssfCluster.spendGnapProof` is middleware on the twelve
+  gated routes: it runs the presentation and `gnap_proof.spendProof()` (a claim
+  per replay key) before the handler and leaves both on the request, and
+  `attemptGnap()` reads that rather than presenting again — which the in-memory
+  cache would refuse as a replay. A spend that lost refuses with the GNAP code
+  (`STS-GNAP-0715`/`0716`); on a shared store a GNAP request that reached the
+  gate without the middleware is refused (`STS-SSF-0099`).
+
+**WHAT STAYS PER PROCESS, STATED FOR SIZING A CLUSTER.** `ssf.pushConcurrency`
+and `ssf.pushBacklog` are a gate in each process: N nodes of P processes push up
+to N×P×`pushConcurrency` at once. Each sweep's `STS-SSF-0094` summary counts the
+SETs its own process dead-lettered, so N nodes log N lines about N different
+sets of pushes — a sum, never a duplicate. Both are left per process: a shared
+cap would be a database round trip per push, to bound a number an operator can
+set per node.
+
+**TWO DEPLOYMENT REQUIREMENTS, which no node can check for another.**
+* **Every node needs the same `global.port`.** The console's and portal's own
+  receiver streams are seeded with `https://<loopback>:<global.port>/…`
+  (`ssf_http.js`'s `loopbackOrigin()`); the stream is shared, so a node pushes
+  to the SEEDING node's port on its own loopback. With different ports that is
+  nothing — ECONNREFUSED, a dead stream, two empty inbox pages. (A same-host test
+  with two ports works by accident: node B's loopback reaches node A.)
+* **`global.publicBaseUrl` must be pinned.** Unpinned, a seeded stream's `iss`
+  and every request-derived issuer is whichever address the seeding node or the
+  client used; `publicBaseUrl` is in the cluster agreement fingerprint, so
+  pinned it is also checked. **Active-active refuses to start with it empty
+  (`STS-CLUSTER-0026`, 2026-09-14)**: every issuer a client verifies — tokens,
+  the SSF `iss`, the management API's audience — needs one name for the
+  cluster, and an empty value "agrees" on every node while meaning a different
+  name on each. The refusal is in `cluster/cluster.js`'s `resolve()`.
+
+`tests/cluster_signout_signals.js` sections 3–6 hold the four, each with its
+control (the old behaviour on a store that is not shared); five mutants caught.
+
 ## THE ONE PARAGRAPH TO READ FIRST: SSF IS THE PIPE AND NOT THE VOCABULARY
 
 SSF says how a RECEIVER and a TRANSMITTER agree a **stream**, who the events on
@@ -677,7 +754,8 @@ by stream and by code (`STS-SSF-0094`); and on the stream's own log one line
 when a run of failures STARTS, not per failure. `ssf.event.refused` is no longer
 written by a push. **Every process sweeps**: deletes are idempotent, the counts
 summarised are each process's own, and `nextProbeAtMs` is set before a probe so
-processes rarely probe one stream twice in a period.
+processes rarely probe one stream twice in a period. **In active-active mode
+one process of the cluster probes** (#46; *Several nodes*, above).
 
 **Where to look**: `/admin/ssf` (a DEAD marker, the dead letters, *Revive* and
 *Drop its dead letters*), `GET /admin-api/ssf` (`streamDetail[].dead`,

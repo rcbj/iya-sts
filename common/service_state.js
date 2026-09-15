@@ -34,9 +34,80 @@ const realms = require('./realms');
 // For the key sets `pki.start()` certifies. Required here and NOT from
 // `pki.js` — see the `keySetFor` note below.
 const helpers = require('./helpers');
+// THE CLUSTER (2026-09-14, #46): the settings agreement and the shared secrets,
+// both of which need the key-encryption key the keystore opens. Libraries; see
+// cluster/cluster.js and cluster/cluster_secrets.js.
+const cluster = require('../cluster/cluster');
+const clusterSecrets = require('../cluster/cluster_secrets');
 
 // The service's shared logger.
 const log = helpers.log;
+
+// ---------------------------------------------------------------------------
+// ONE KEY SET PER REALM BEFORE ANYTHING IS SERVED (2026-09-14, #46 section 1).
+//
+// A realm's signing keys are made inside a PROPERTY READ and written
+// afterwards, and since #46 the write is where the store decides whose set a
+// realm has (`keystore.js`, first writer wins) — so between the generation and
+// the commit a process may hold a set it is about to be told to drop. For a
+// realm made at runtime that window is the one this service always had inside
+// a container. For a COLD START it would be every node's first seconds: N
+// nodes against an empty store, N sets, each node signing with its own until
+// its write lands.
+//
+// So the keys are made — or restored — here, and the writes are AWAITED,
+// after the change log is being followed and before the certificate authority
+// certifies them and the listener binds. Every realm in active-active mode,
+// where another node may be serving any of them; the default realm alone
+// otherwise, which `pki.start()` below makes anyway and which is the one a
+// person waits on. Where nothing arbitrates — development, `ldif`, keys not
+// persisted — nothing is made here that was not made before.
+// ---------------------------------------------------------------------------
+function settleSigningKeys() {
+  log.debug("Entering settleSigningKeys().");
+  if (typeof keystore.arbitrates !== 'function' || !keystore.arbitrates()) {
+    log.debug("Leaving settleSigningKeys(). The store does not arbitrate.");
+    return Promise.resolve(null);
+  }
+  const ids = cluster.isActiveActive()
+    ? realms.list().map(function (one) {
+      return one.id === realms.DEFAULT_ID ? '' : one.id;
+    })
+    : [''];
+  if (ids.indexOf('') < 0) {
+    ids.unshift('');
+  }
+  log.debug("Leaving settleSigningKeys(). " + ids.length + " realm(s).");
+  // **THE SETS A NODE HAS TO MAKE ARE MADE OFF THE EVENT LOOP FIRST**
+  // (2026-09-14). This node has JOINED by now and is heartbeating, and a
+  // realm with nothing stored — every realm created at runtime and never used
+  // — used to be generated here back to back on this thread: twenty of them
+  // are longer than `cluster.nodeTtlMs`, and the node lost the membership it
+  // had just taken. `helpers.prepareKeySet()` argues it; what the loop below
+  // then does is a restore or a map lookup.
+  return helpers.prepareKeySets(ids).then(function () {
+    ids.forEach(function (id) {
+      try {
+        helpers.stsKeysFor.of(id);
+      } catch (e) {
+        // A realm that went between list() and here. Its keys, if it comes
+        // back, are made on first use the way a runtime realm's are.
+        log.debug("Caught in settleSigningKeys(): " +
+                  ((e && e.message) || e));
+      }
+    });
+    return keystore.settleAll();
+  }).then(function (outcomes) {
+    const adopted = (outcomes || []).filter(function (one) {
+      return one && one.adopted;
+    }).length;
+    log.info('service_state: the signing keys of ' + ids.length + ' realm(s) ' +
+             'are settled with the store before anything is served' +
+             (adopted ? '; ' + adopted + ' set(s) another node had written ' +
+                        'first were adopted' : '') + '.');
+    return outcomes;
+  });
+}
 
 function start() {
   log.debug("Entering start().");
@@ -57,6 +128,25 @@ function start() {
   // is the only honest answer, and it is the same argument persistence makes
   // about its own store one line up.
   return keystore.start().then(function (keys) {
+    // -----------------------------------------------------------------------
+    // THE CLUSTER'S TWO STEPS THAT NEED THE KEY-ENCRYPTION KEY (2026-09-14,
+    // #46), and both are FATAL like the keystore above.
+    //
+    // AGREEMENT: this node's keyed fingerprint of the settings every node must
+    // share is compared with every live node's. A node with a different
+    // krbtgt password seals tickets nobody else can open, and it must find
+    // that out here rather than from a client.
+    //
+    // THE SHARED SECRETS: the CSRF key, the ACME nonce key and their siblings
+    // are read (or, first, written) before anything is served, so this
+    // process's first form is already one every node can verify.
+    // -----------------------------------------------------------------------
+    return cluster.agree(keystore).then(function () {
+      return clusterSecrets.start(keystore);
+    }).then(function () {
+      return keys;
+    });
+  }).then(function (keys) {
     // -----------------------------------------------------------------------
     // AND THEN WHAT THIS PROCESS MINTED — A THIRD ASYNCHRONOUS STEP, AND IT
     // CANNOT BE ANYTHING ELSE (2026-09-06).
@@ -99,6 +189,10 @@ function start() {
       // starts, says so loudly, and keeps trying on its timer.
       // ---------------------------------------------------------------------
       return persistence.coordinate().then(function (coordinating) {
+        return settleSigningKeys().then(function () {
+          return coordinating;
+        });
+      }).then(function (coordinating) {
       // ---------------------------------------------------------------------
       // AND THEN THE CERTIFICATE AUTHORITY — A FIFTH STEP, AFTER THE KEYSTORE
       // AND BEFORE ANYTHING BINDS (2026-09-11).

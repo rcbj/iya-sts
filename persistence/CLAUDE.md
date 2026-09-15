@@ -6,8 +6,9 @@
 |---|---|
 | `persistence.js` | The driver interface, the mode selection, the diff, the flush scheduler, the restore, the appliers, and the status object three surfaces render. A LIBRARY — it registers no route. |
 | `persistence_ldif.js` | The `ldif` driver, and the RFC 2849 codec under it. `tests/ldif_codec.js` guards the codec. It deliberately has NO `loadMinted`/`saveMinted`/`purgeMinted`, and the absence is the answer — see below. |
-| `persistence_postgres.js` | The `postgres` driver: seven tables, one transaction per flush, and a `pg_notify` that something listens to now. The seventh, `sts_used_assertions` (2026-09-13), is written by ATOMIC CLAIM rather than by the flush — see below. |
+| `persistence_postgres.js` | The `postgres` driver: seven tables, one transaction per flush, and a `pg_notify` that something listens to now. The seventh, `sts_used_assertions` (2026-09-13), is written by ATOMIC CLAIM rather than by the flush — see below. **`sts_keys` is written by `mergeKeys()` since 2026-09-14 (#46)** — the row locked, the caller's merge decides, a change row only when it moved — and `loadKey()` reads one row; `common/CLAUDE.md` argues it. |
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
+| **`directory_merge.js`** | **One directory entry written by two nodes** (2026-09-14, #46 section 3): the three-way merge (base = the shadow, mine = live, theirs = the row under `FOR UPDATE`) the postgres driver writes a directory upsert through, and `persistence.js` applies again to a write that raced the flush or a replicated row. A LEAF with no requires. See *Several nodes writing one row* below. |
 | **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
 
 ## THE METRICS SURFACE, AND THE PROCESS EXIT IT EXPOSED (2026-09-11)
@@ -185,6 +186,25 @@ every request that touched it.
 `persistence_minted.js` carries all of it at length, including the two
 carve-outs: `oauth2.signedMetadataCache` and `xacml_store.parsed` are CACHES,
 and a cache is not minted state.
+
+**THE SWEEP OF 2026-09-14 (#46): EVERY UNDECLARED STORE, AND WHY.** The
+suite's `cluster` mode found flow state that had never been declared — a store
+read back by a LATER request of the same browser or client, which behind a
+balancer is another node. Every `realms.map()` / `arr()` / `obj()` /
+`sharedMap()` / `keyed()` without `persist` was then read, and this is the
+verdict for each; a new undeclared store owes a row here.
+
+| Store | Verdict |
+|---|---|
+| `credentials.js` `pendingTotp`, `pendingBackupCodes`, `pendingKeys` | **Persisted** — flow state (`common/CLAUDE.md`, *Enrolment is two steps*). |
+| `vc_issuer.js` `lastCredentialRequests` | **Persisted** as `vc_issuer.lastCredentialRequest` — a wallet's read-back (`oid4vc/CLAUDE.md`). |
+| a session's `saml2ServiceProviders`, `saml11RelyingParties`, `wsfedRealms`, `oidcClients` | Not a store: in-place edits of a persisted row, now told to it (`authn/CLAUDE.md`, `noteSessionChanged()`). |
+| `scim_auth.js` `digestCounts`, `hobaSeen` | Fine — this process's fast refusal; the claim decides (`scim/CLAUDE.md`). |
+| `request_object.js` `requestUriCache`, `oauth2.js` `signedMetadataCache`, `applications.js` `ssfAllowedCache` | Fine — caches of something re-derivable. |
+| `ldap_server.js` `entries` | Persisted another way — the directory's diff, above. |
+| `ldap_server.js` `usernameIndexes`, `subtreeClocks`, `groupIndexes`, `uuidIndexes`; `federation.js` `releaseIndexes` | Fine — derived from the directory and rebuilt from it. |
+| `helpers.js` `stsKeysFor` | Persisted another way — `keystore.js`. |
+| `ssf_streams.js` `deadCounts`, `tally`; `ssf_dead_letter_report.js` `sweepNotes` | Fine — this process's estimate and its own sweep report; the letters themselves are persisted. |
 
 `memory` is still the default. A run that says nothing about persistence behaves
 exactly as every run before this existed — which is the whole compatibility
@@ -552,7 +572,10 @@ The old checklist, as it was answered:
 
 A row is whole-valued, so a later write replaces an earlier one — which is
 EXACTLY the semantics a single process already has for two concurrent requests,
-so nothing anybody relies on changes. Two shapes are not like that, and both
+so nothing anybody relies on changes. (**Between NODES it is not**, and three
+kinds of row no longer work this way — the directory, the realm registry and
+settings, and ended or jointly edited minted rows: *Several nodes writing one
+row*, below.) Two shapes are not like that, and both
 declare it (`merge: 'own'` in `common/realms.js`):
 
 * **A COUNTER.** `nums.callTotal++` is this process's tally. Two processes
@@ -679,6 +702,204 @@ across a whole dispatched run, one of them a session.
 four mutants caught, two recorded as equivalent (both clear the marker in a
 branch the waiter's own clear makes redundant).
 
+### SEVERAL CONTAINERS, NOT ONLY SEVERAL PROCESSES (2026-09-14, #46)
+
+Everything above was argued for the processes of ONE container, which agree
+through the front process's IPC. `cluster/CLAUDE.md` carries what several
+containers against this store need, and three things changed here for it:
+
+* **The origin is a UUID** (`pid-<uuid>`), not `pid-Date.now()`: identical
+  containers hold identical pids, and a shared origin silently drops the other
+  node's rows for ever.
+* **`withTransaction()` checks the cluster fence first** when `cluster/cluster.js`
+  has installed one — the node's membership, and any lease the write needs, under
+  `FOR SHARE` — and a fenced transaction calls back into cluster.js, which exits
+  the process or fails the one write.
+* **The pull no longer stops at a hole.** It applies everything visible above
+  `highest`, remembers each hole, re-asks for them with `changesAt()` on every
+  pull, and gives one up after ten minutes (`STS-STORE-0049`) instead of four
+  seconds — which is what "### ONLY THE CONTIGUOUS RUN" in the replication file's
+  history used to do, and why a transaction slower than four seconds used to be
+  lost in every process that skipped it. `applied` is a low-water mark now and
+  `highest` is beside it; `/admin/persistence` reports both and the hole count.
+
+`persistence.clusterStore()` hands the driver to `cluster/cluster_claims.js` and
+`cluster/cluster_secrets.js`. The four `sts_cluster_*` tables are schema version
+5.
+
+**WHAT THE CLUSTER BARRIER HOLDS A RESPONSE ON (2026-09-14, #46 follow-up).** It
+was `persistence.pendingWrites()` — anything dirty, journalled, scheduled or in
+flight anywhere in the process — and that held nearly every request behind the
+previous request's audit row. Now there are WRITE POSITIONS:
+`persistence.writeGeneration()` is `{ directory, minted }`, each a counter bumped
+wherever a dirty bit is set (persistence.js) or a key journalled
+(`persistence_minted.js`'s `note()`); a flush records the generation its take
+covered and, on success, the highest such is the COMMITTED generation.
+`persistence.commitThrough(position)` resolves once both halves have committed
+that far: `directoryThrough()` waits on the flush in flight when its take covers
+the target and otherwise asks `flush()` (the queued flush takes the target);
+`persistence_minted.flushThrough()` returns the minted flush in flight when its
+take covers the target — not the one queued behind it, which under concurrent
+writers is a second transaction holding none of that response's writes — and
+`flush()` otherwise. A failed write resolves its waiters with `error`; a
+position already committed costs no flush. `pendingWrites()` is kept for a
+persistence double with no positions. `tests/cluster_barrier_throughput.js`
+sections 2 and 4.
+
+**AND AN OBSERVATION IS COUNTED APART (2026-09-15, #46).** A store declared
+`observation: true` at `realms.map()` (`common/realms.js`) holds tallies of what
+requests did — `xacml_monitor.counters` is the one — and `persistence_minted.js`'s
+`note()` counts its keys in `observedGeneration` as well as `generation`, cached
+per handle because `note()` is on every store write. `writeGeneration()` carries
+it as `observed`; the barrier subtracts it before asking whether a request WROTE
+(`cluster/CLAUDE.md`, *What the barrier cost*). The rows are journalled, flushed
+and replicated exactly like any other; only the barrier's question changes.
+`tests/cluster_observation_counters.js` section 2.
+
+**AND `syncNow()` NO LONGER READS THE LOG'S HEAD.** A pull that STARTED after the
+call reads with snapshots taken after it, so its pages and its hole re-check
+apply everything committed before the call; `highest >= latestBlockingChangeSeq()`
+added nothing to that, and the query (`MAX(seq) WHERE kind <> 'minted-own' AND
+origin <> $1`) walked back past every row the node itself had written — on a
+node answering alone, the whole log: a read went from 4ms to 68ms as the log
+grew. A pull in flight at the call is waited out on its promise (it was polled
+every 5ms) and is not accepted as the proof; section 3 of the test pins that
+with a page read before a row committed, which `cluster_foundation.js` section 2
+recorded it could not time. The driver keeps `latestBlockingChangeSeq()`;
+nothing in the barrier calls it.
+
+**`audit.events` IS STORED IN SEGMENTS OF 32** (`realms.arr({ segment })`,
+`common/CLAUDE.md`): a whole-array `merge: 'own'` row was 2.3 MB sealed and
+written per flush and read back by every other process. Another origin's
+segments are put back together by `persistence_replication.remoteSegmentedRows()`;
+a whole-array row an older build wrote is read as one list beside them and ages
+out under `persistence.mintedRetention` like any dead origin's row.
+
+### A MINTED WRITE ASKS FOR A FLUSH (2026-09-14)
+
+**Nothing ever called `persistence.mintedChanged()`.** It was written as "the
+one door that marks nothing and only schedules", and `persistence_minted.js`'s
+`note()` journalled every key without asking for a flush — so a minted row
+reached the store only when something else flushed: a directory, realm or
+settings change in the same process, or an explicit `flushMinted()` (the
+cluster barrier's commit-before-respond, a request worker's commit
+announcement, a credential spend). A sign-in usually writes the directory, so
+sessions were stored; a SIGN-OUT writes nothing else, so its tombstone waited
+in the journal and the ended session stayed live in `sts_minted` — for the next
+node to read and for a restart to restore.
+
+It was the unexplained half of section 3's session probe (the cluster OFF: 8 of
+8 revoked sessions live in the store), and it was not a race: with no other
+node touching the session 4 of 4 stayed live, on ONE node alone 4 of 4, and in
+single-container dispatch mode (two request workers) 8 of 8. Active-active
+read 0 of 8 only because its barrier flushes every writing response. Now the
+first key journalled after a flush calls the scheduler `persistence.js` hands
+over with `minted.setScheduler(mintedChanged)`: 0 of 8 with two nodes off, 0 of
+4 untouched, 0 of 8 in dispatch, 0 of 4 on one node. Once per flush rather than
+per write (`flushAsked`, cleared where the journal is taken), and a key put
+back after a FAILED write does not ask, so a database outage is not a loop of
+zero-delay retries — the next write retries, as `STS-STORE-0021` says.
+
+**So the tombstone and the merge hold whenever processes share a postgres
+store**, cluster or not: neither was ever gated on the cluster mode (the SQL is
+the driver's, the declarations the store's); what failed was the write that
+carries them. Two NODES with `cluster.mode=off` remain unsupported for every
+other reason `cluster/CLAUDE.md` gives.
+
+### SEVERAL NODES WRITING ONE ROW (2026-09-14, #46 section 3)
+
+Last writer wins (above) was the semantics of one process and became data loss
+with two: the later write carried the writer's whole copy of a row or a table,
+and what another node had put there went with it. Three families of it, and
+the capability rows are `store.no-foreign-deletes` and
+`directory.concurrent-writes` (both provided by `persistence_postgres.js`) and
+`sessions.no-resurrection` (`persistence_minted.js`).
+
+**A SAVE NEVER DELETES A ROW FOR BEING ABSENT FROM THIS PROCESS'S COPY.**
+`saveRealms()` and `saveOverrides()` ran `DELETE … WHERE NOT (id = ANY(<what I
+hold>))`: a realm created on node B was deleted by any realm change node A saved
+before B's row reached it, and a setting written on B by A's next save of any
+setting. And `diff()` reported as REMOVED every realm in the directory shadow
+that the registry lacked — which is also a realm another node created whose
+entries replicated here before its registry row — so the same flush deleted its
+directory and everything it had minted. Now:
+
+* the realm registry and the settings each have a SHADOW (`realmShadow`,
+  `appconfigShadow`) primed from the restore and advanced by every write and
+  every apply, and a flush sends a DELTA against it: the realms whose name,
+  description or overrides moved (overrides set and cleared BY KEY and merged in
+  SQL — `(stored - cleared) || set` — so a setting another node made on the
+  same realm stays), the settings set and cleared. The driver interface grew a
+  second argument, `saveRealms(rows, delta)` and `saveOverrides(map, delta)`;
+  the `ldif` driver ignores it and writes its whole file, which is right for a
+  store one process owns.
+* a realm is DELETED only when `realms.remove()` was called in this process
+  (`removedHere`, filled by the `onChange()` watcher unless restoring), and the
+  directory's `removedRealms` is the same list.
+* a stored realm this process could not restore (`STS-STORE-0007`) is left out
+  of the shadow, so it is neither overwritten nor deleted — the wholesale write
+  used to delete it at the first flush.
+* the appliers merge what this process has changed and not yet written ON TOP of
+  what they read (`applyRealmsChange()`, `applyAppconfigChange()`,
+  `applyDirectoryChange()`): each used to apply the stored value whole, which
+  erased a local change made a moment earlier and left the diff with nothing to
+  write. And a realm another node REMOVED is removed here, which nothing did
+  before — this process's next save used to write it straight back.
+
+A reset-all in one process still clears every stored setting, because there the
+shadow is the table; in a cluster it clears what this node knew was stored.
+
+**A DIRECTORY UPSERT IS A THREE-WAY MERGE WITH THE ROW AS IT IS NOW.** An upsert
+carries `base` (the shadow's JSON, or null), and `saveDirectory()` locks every
+existing row the flush touches with ONE `SELECT … ORDER BY realm, dn_key FOR
+UPDATE` before it writes — a single lock order, `saveMinted()`'s deadlock
+argument — then writes `directory_merge.js`'s answer: an attribute one side
+changed takes that side; both changed, a list (`member`, `objectClass`, the
+security keys, or any attribute with more than one value on some side) is merged
+by value and anything else takes mine, a credential never becoming a union; two
+adds of one DN under different `entryUUID`s keep the FIRST committed
+(`STS-STORE-0052`); a change to an entry deleted elsewhere is dropped
+(`STS-STORE-0053`). A new row is `INSERT … ON CONFLICT DO NOTHING`, and losing
+that race locks the row and merges again. The driver answers `{ outcomes }` —
+what the store decided that this process does not hold — and
+`applyDirectoryOutcomes()` puts each into the live directory with the journal
+suppressed and the shadow set to the STORED row; a local write made while the
+flush was out is merged once more and journalled, not overwritten.
+
+The merge cannot tell a client that its add lost. So the create DOORS claim
+their names first — `ldap/CLAUDE.md`, *Several nodes: a create claims its name*.
+
+**AN ENDED MINTED ROW STAYS ENDED, AND A ROW TWO NODES EDIT IS MERGED.** A
+session ended on A was written back by B's older copy the next time B touched it
+(`noteSessionUsed()`, `touchArrivalSession()` re-set the row), so a sign-out
+did not hold; B's arrival copy undid A's sign-in upgrade; and a relying party A
+added to the session's front-channel list was lost to B's write. A store now
+declares two things at `realms.map()` (`common/realms.js`):
+
+* `tombstone: true` — a delete is written as a row whose body is the marker
+  `$tombstone$1`, an upsert of a key holding one does nothing (`… DO UPDATE …
+  WHERE sts_minted.body <> $tombstone`), every reader (`loadMinted`,
+  `readMinted`, `readMintedMany`) treats it as absent, and what was refused is
+  dropped from this process too (`STS-STORE-0054`). ONLY for random-handle keys
+  that are never legitimately written again: `authn.sessions`,
+  `oauth2.authzCodes`, `oauth2_bcp.refreshTokens`. A counter, a per-origin row
+  or anything keyed by a name must not.
+* `mergeRow(mine, theirs)` — the driver reads the row `FOR UPDATE`, hands it to
+  a closure `persistence_minted.js` builds (open, merge, seal: the driver never
+  holds a key), writes the answer and reports it, and this process takes it
+  unless a newer local write is already journalled. `authn/CLAUDE.md` carries
+  the session rule; `oauth2_bcp.refreshTokens` keeps `rotated` moving forward
+  only. A merge that cannot open the row writes this copy (`STS-STORE-0056`).
+
+Tombstones expire with `persistence.mintedRetention` (0 keeps them with
+everything else): `purgeTombstones()`, at most every ten minutes from a
+successful minted flush, any node (`STS-STORE-0055` when it fails).
+
+`tests/cluster_lww_stores.js` holds all three against a `pg` double both
+"nodes'" drivers share, and `persistence.js` itself over it; five mutants
+caught (the wholesale realm delete, `removedHere` ignored, the tombstone guard,
+the list merge, the session rank).
+
 ### What still does not coordinate
 
 * **The sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's
@@ -692,12 +913,65 @@ branch the waiter's own clear makes redundant).
   worker inside that window was accepted, and it is a table claimed with one
   atomic statement now, under the primary key's own lock. Measured against a
   real server: twenty-five concurrent claims of one assertion, one accepted.
-  What is left here is the DPoP `jti` set, the Kerberos acceptor's replay cache
-  and SCIM's Digest and HOBA state.
-* **A realm's signing keys are not adopted mid-life.** `applyKeysChange()` logs
-  and does nothing: taking a new key would strand everything this process has
-  already signed. Rotation across processes is a rolling restart, which is what
-  it is everywhere else.
+  What is left here is the Kerberos acceptor's replay cache and SCIM's Digest
+  and HOBA state. **SCIM's Digest and HOBA state left it too on 2026-09-14
+  (#46 section 5)** — `scim/CLAUDE.md`, *Several nodes*. **The DPoP `jti` set left the list on 2026-09-14 (#46)**, with
+  the authorization code, the PAR `request_uri` and the rotated refresh token:
+  each is spent through `cluster/cluster_claims.js` on a postgres store —
+  `oauth-oidc/CLAUDE.md`, *Several nodes*.
+* ~~**A realm's signing keys are not adopted mid-life.**~~ **Reversed
+  2026-09-14 (#46 section 1)** wherever the store arbitrates (`cluster.mode`
+  not `off`): `applyKeysChange()` hands every `keys` change to
+  `keystore.applyStoredChange()`, which reads the current row and adopts a key
+  set or a certificate authority another process wrote — a rotation included,
+  because `deleteKeys()` now logs a change row. The argument that it strands
+  what this process signed is answered in `common/CLAUDE.md` (*Between nodes the
+  store is the arbiter*): the set adopted away from is one the store already
+  refused. With the cluster off it still logs and does nothing.
+
+### THE CHANGE LOG IS TRIMMED (2026-09-14, #46 section 8)
+
+`sts_changes` grew for ever: `purgeChanges()` existed and nothing called it.
+`persistence_replication.js`'s RETENTION block argues the design; the facts:
+
+* **Every process that reads the log reports its low-water mark** into
+  `sts_change_readers` (`reportChangeReader()`) — at start, after a pull at most
+  every 15 seconds, and removed at a clean stop. A request worker reports its
+  own: it is an origin with its own `applied`, and its front process cannot see
+  it.
+* **The trim is one statement** (`purgeChangeLog()`): readers that have not
+  reported for `max(retention, 2 minutes)`, or that name a cluster node which is
+  no longer a live member, are declared gone; a change is deleted only below the
+  lowest remaining mark AND older than `persistence.changeLogRetentionS` (3600
+  by default, 0 turns it off) by the database clock; with no reader, nothing.
+  Every five minutes, by the holder of the `ops.change-log-purge` lease in a
+  cluster, and by every front process outside one — two trims agree, because
+  the bound is the readers' and not the trimmer's.
+* **A process declared gone that was only paused** finds its row missing on its
+  next report and logs `STS-STORE-0057`: trimmed changes may be missing from what
+  it holds, and a restart restores from the store.
+* **Measured against a real postgres** (2026-09-14, the driver against
+  `sts_ops_agent`): with no reader nothing was trimmed; with readers at 6 and 13
+  the rows below 6 went and 6 stayed; rows younger than the retention stayed
+  below the bound; a reader backdated past its lifetime was declared gone and
+  the next report re-inserted it (`inserted: true`); a reader naming a node
+  that is not a member was declared gone.
+* **And against two live active-active nodes** (2 request workers each, a
+  private postgres): six readers reported; four rows left by the previous run's
+  request workers — a worker is stopped by its front process and never runs
+  `leaveChangeReader()` — were declared gone by the node rule on the first trim,
+  because their nodes had left. A trim run by hand with a one-second retention
+  removed 2426 of 2427 rows below the lowest live mark while both nodes served,
+  and afterwards a user created on one node was seen on the other 20 of 20 and
+  no node logged `STS-STORE-0057`. So a stopped worker's row is removed by the
+  node rule in a cluster, and by the reader lifetime outside one.
+* **What is NOT trimmed**: `sts_minted`'s `merge: 'own'` rows written by
+  origins that no longer exist — every restart is a new origin, so a dead
+  origin's counters and audit ring stay until `persistence.mintedRetention`
+  removes them, and a console fan-in keeps counting them until then. Nor
+  `sts_cluster_nodes` rows, which `joinCluster()` sweeps.
+* The capability `ops.change-log-retention` is provided by
+  `persistence_replication.js`, not `persistence.js` as the row first named.
 
 ## Adding a driver
 
@@ -711,7 +985,9 @@ Implement the contract `persistence.js` calls — `open`, `close`,
 `loadMinted`/`saveMinted`/`purgeMinted` (minted state — `persistence_minted.js`'s
 `supports()`), and `origin`/`latestChangeSeq`/`changesSince`/`readEntry`/
 `readMinted`/`watchChanges`/`purgeChanges` (coordination —
-`persistence_replication.js`'s). **A THIRD SINCE 2026-09-13**, and it is
+`persistence_replication.js`'s; `reportChangeReader`/`leaveChangeReader`/
+`purgeChangeLog` beside them since 2026-09-14, and a driver without them is
+never trimmed). **A THIRD SINCE 2026-09-13**, and it is
 two alternatives rather than one list: `claimUsedAssertion`/
 `settleUsedAssertion`/`listUsedAssertions`/`purgeUsedAssertions`/
 `removeUsedAssertions` for a DATABASE store, or `loadUsedAssertions`/
@@ -722,6 +998,14 @@ A driver missing either of the first two groups is REPORTED on
 `/admin/persistence` with the reason rather than silently doing less. Those two
 lists are two copies of one fact; `start()` checks them against each other and
 says so rather than trusting them.
+
+**THE SAVES TAKE A DELTA AND ANSWER WHAT THE STORE DECIDED (2026-09-14, #46).**
+`saveRealms(rows, delta)` and `saveOverrides(map, delta)` — a snapshot driver
+writes the first argument, a database the second and must delete nothing the
+delta does not name; `saveDirectory()` may answer `{ outcomes }` and
+`saveMinted()` `{ refused, merged }`, and a driver that answers nothing is read
+as having written exactly what it was handed. See *Several nodes writing one
+row*.
 
 `saveDirectory()` is handed both a per-entry diff and the whole live picture. A
 database driver uses `upserts`/`deletes`; a snapshot driver uses `all` and reads

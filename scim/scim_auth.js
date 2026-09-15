@@ -192,6 +192,12 @@ const errorCodes = require('../common/error_codes');
 // which has no response of its own to be marked on. `audit.js` requires only
 // `helpers`, `config` and the registry, so it closes no cycle.
 const audit = require('../common/audit');
+// ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 5): a Digest nonce count
+// and a HOBA signature are spent through an atomic claim, and the table
+// active-active mode is held to. Both LIBRARIES; `cluster_claims.js` requires
+// `persistence.js` lazily, so neither closes a cycle.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 
 // ---------------------------------------------------------------------------
 // THE SETTINGS, READ WHERE THEY ARE USED.
@@ -912,10 +918,49 @@ function digestAlgorithms() {
 // and — the half with a consequence — one realm's unauthenticated challenges
 // counted against the SAME cap, so a caller hammering `/realm/acme/scim/v2`
 // could evict the nonce a client of the default realm was about to answer.
-// In memory and NOT persisted: a record carries a `Set` of nonce-counts, which
-// does not survive JSON, and a nonce outliving the process that issued it buys
-// a Digest client nothing — it is sent a fresh one with `stale=true`.
-const digestNonces = realms.map();
+// ---------------------------------------------------------------------------
+// **PERSISTED SINCE 2026-09-14 (#46 section 5)**, where this said "in memory
+// and NOT persisted: a nonce outliving the process that issued it buys a
+// Digest client nothing". That was true of a restart and false of every other
+// process: `/scim/v2` FANS OUT across request workers (`request_pool.js`), so
+// in one dispatched container a challenge issued by one worker was answered at
+// another, which had never issued it — `stale=true`, a fresh nonce from THAT
+// worker, and the retry landing on a third. Across containers it was every
+// request. So the nonce is a persisted row and the read barrier makes it
+// visible wherever the answer lands.
+//
+// **THE NONCE COUNTS ARE NOT IN THE ROW.** They were a `Set` on the record,
+// which does not survive JSON, and a count written back into a replicated row
+// is last writer wins — two nodes each adding their `nc` keep one. So the row
+// is `{ at }`, the counts this process has seen are `digestCounts` below (the
+// fast refusal, no round trip), and the count is SPENT through
+// `cluster_claims.js` before a credential is accepted (`spendPresented()`),
+// which is what decides a replay presented at two nodes at once.
+// ---------------------------------------------------------------------------
+const digestNonces = realms.map({ persist: 'scim.digestNonces' });
+// nonce -> Set of nonce-counts this process has accepted. Not persisted: see
+// above. Per realm for `digestNonces`'s reason.
+const digestCounts = realms.map();
+
+// The Set of counts for a nonce, made on first use — a nonce another process
+// issued arrives with none.
+function countsOf(nonce) {
+  log.debug("Entering countsOf().");
+  let counts = digestCounts.get(nonce);
+  if (!counts) {
+    counts = new Set();
+    digestCounts.set(nonce, counts);
+  }
+  log.debug("Leaving countsOf().");
+  return counts;
+}
+
+function forgetDigestNonce(nonce) {
+  log.debug("Entering forgetDigestNonce().");
+  digestNonces.delete(nonce);
+  digestCounts.delete(nonce);
+  log.debug("Leaving forgetDigestNonce().");
+}
 
 function maxDigestNonces() {
   log.debug("Entering maxDigestNonces().");
@@ -927,18 +972,21 @@ function issueDigestNonce() {
   log.debug("Entering issueDigestNonce().");
   const now = Date.now();
   const ttl = digestNonceSeconds() * 1000;
+  const expired = [];
   digestNonces.forEach(function (record, key) {
     if (now - record.at > ttl) {
-      digestNonces.delete(key);
+      expired.push(key);
     }
   });
+  expired.forEach(forgetDigestNonce);
   while (digestNonces.size >= maxDigestNonces()) {
     // The oldest first. A Map iterates in insertion order, so the first key is
     // the least recently issued.
-    digestNonces.delete(digestNonces.keys().next().value);
+    forgetDigestNonce(digestNonces.keys().next().value);
   }
   const nonce = crypto.randomBytes(18).toString('base64');
-  digestNonces.set(nonce, { at: now, counts: new Set() });
+  // `{ at }` only — the counts are not in the row (see the declaration).
+  digestNonces.set(nonce, { at: now });
   log.debug("Leaving issueDigestNonce(). " + digestNonces.size + " nonce(s) " +
       "outstanding.");
   return nonce;
@@ -1059,7 +1107,7 @@ function attemptDigest(req, ctx) {
       { stale: true }));
   }
   if (Date.now() - record.at > digestNonceSeconds() * 1000) {
-    digestNonces.delete(String(params.nonce));
+    forgetDigestNonce(String(params.nonce));
     log.debug("Leaving attemptDigest(). The nonce is stale.");
     return coded('STS-SCIM-0043', unauthenticated(req,
       'This nonce is older than ' + digestNonceSeconds() + ' seconds ' +
@@ -1083,7 +1131,7 @@ function attemptDigest(req, ctx) {
         'same credential being replayed, which is most of what the nonce is ' +
         'for.'));
     }
-    if (record.counts.has(nc)) {
+    if (countsOf(String(params.nonce)).has(nc)) {
       log.debug("Leaving attemptDigest(). nc=" + nc +
                 " has been used already.");
       return coded('STS-SCIM-0045', unauthenticated(req,
@@ -1145,7 +1193,7 @@ function attemptDigest(req, ctx) {
         : ' (scim.digestPassword). It is not repeated here.')));
   }
   if (qop === 'auth') {
-    record.counts.add(String(params.nc));
+    countsOf(String(params.nonce)).add(String(params.nc));
   }
 
   // RFC 7616 section 3.5, the Authentication-Info response header. It is what
@@ -1158,7 +1206,10 @@ function attemptDigest(req, ctx) {
     : '';
 
   log.debug("Leaving attemptDigest(). " + username + " is accepted.");
-  return {
+  // WHAT IS SPENT ACROSS THE CLUSTER, and only with qop=auth: without a nonce
+  // count RFC 7616 lets a nonce be reused until it expires, which is what
+  // this door has always allowed. The claim lives as long as the nonce could.
+  return withSpend({
     ok: true, scheme: 'digest', principal: username, isClient: false,
     scopes: '',
     headers: rspauth
@@ -1167,7 +1218,16 @@ function attemptDigest(req, ctx) {
                                  params.cnonce + '", nc=' + params.nc }
       : {},
     note: 'HTTP Digest (' + algorithm + '), and the password really was checked'
-  };
+  }, qop === 'auth' ? {
+    scope: 'scim.digest-nonce-count',
+    value: String(params.nonce) + '\n' + String(params.nc),
+    ttlMs: Math.max(1000, digestNonceSeconds() * 1000 -
+                          (Date.now() - record.at)),
+    code: 'STS-SCIM-0076',
+    detail: 'This nonce count (nc=' + params.nc + ') has been used with this ' +
+            'nonce already, at another node of this service. That is a ' +
+            'replay, and it is refused WITHOUT stale=true. Increment nc.'
+  } : null);
 }
 
 // ---------------------------------------------------------------------------
@@ -1221,9 +1281,16 @@ const HOBA_ALG_RSA_SHA256 = '0';
 // be evictable by somebody else, and a process-wide one let a second realm's
 // traffic push a live (kid, challenge, nonce) triple out — at which point this
 // file's own rule forgets the challenge too, so the harm is a refusal rather
-// than a replay, but it is a refusal one realm inflicted on another. Not
-// persisted, for `digestNonces`'s reason.
-const hobaChallenges = realms.map();
+// than a replay, but it is a refusal one realm inflicted on another.
+//
+// **THE CHALLENGES ARE PERSISTED SINCE 2026-09-14 (#46 section 5)**, for
+// `digestNonces`'s reason: a challenge issued by one worker or node and
+// answered at another was "not one this server issued". The row is the
+// issue time and nothing else. **THE SEEN SET IS NOT**: it is this process's
+// fast refusal, and a signature presented at two nodes at once is decided by
+// the claim `spendPresented()` makes, which is atomic where a replicated Set
+// is last writer wins.
+const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges' });
 const hobaSeen = realms.map();
 
 function maxHobaChallenges() {
@@ -1522,10 +1589,20 @@ function attemptHoba(req, ctx) {
 
   const username = usernameOfEntry(registered.entry);
   log.debug("Leaving attemptHoba(). " + username + " is accepted.");
-  return {
+  return withSpend({
     ok: true, scheme: 'hoba', principal: username, isClient: false, scopes: '',
     note: 'HOBA, RSA-SHA256 over the RFC 7486 blob (kid ' + kid + ')'
-  };
+  }, {
+    scope: 'scim.hoba-signature',
+    value: triple,
+    ttlMs: Math.max(1000, hobaMaxAgeSeconds() * 1000 -
+                          (Date.now() - issuedAt)),
+    code: 'STS-SCIM-0077',
+    detail: 'This exact credential has been presented before (same key id, ' +
+            'challenge and nonce), at another node of this service. The ' +
+            'nonce is what makes each signature single-use — generate a ' +
+            'fresh one per request.'
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1936,6 +2013,100 @@ function registerHobaKey(req) {
 function authenticate(req, need) {
   log.debug("Entering authenticate(). need=" + need);
   const wanted = String(need || 'none');
+  const first = presentedDecision(req, wanted);
+  if (first.final) {
+    log.debug("Leaving authenticate(). Decided on what was presented.");
+    return first.final;
+  }
+  log.debug("Leaving authenticate().");
+  return settleDecision(req, wanted, first.decision);
+}
+
+// ---------------------------------------------------------------------------
+// authenticateSpent(req, need) — `authenticate()`, with the credential SPENT
+// ACROSS THE CLUSTER before it is accepted (2026-09-14, #46 section 5).
+//
+// A Digest nonce count and a HOBA (kid, challenge, nonce) are single-use, and
+// the checks in `attemptDigest()` and `attemptHoba()` are this process's own
+// memory — exact on one process, and on several a replay presented at two
+// nodes at once is accepted by both. So a decision that carries a spend (the
+// `SPEND` symbol, `withSpend()`) is claimed through `cluster_claims.js` here,
+// BEFORE the session and the policy run, so a replay mints no session: `used`
+// is the scheme's own replay refusal, `store` is 503 — a credential this
+// service cannot prove unspent is not one it accepts. With no shared store the
+// claim is this process's memory, as atomic as the Set it stands behind.
+//
+// `scim.js` calls this; `authenticate()` stays synchronous for the callers
+// that read a decision in one tick, and does everything else identically.
+// ---------------------------------------------------------------------------
+function authenticateSpent(req, need) {
+  log.debug("Entering authenticateSpent(). need=" + need);
+  const wanted = String(need || 'none');
+  const first = presentedDecision(req, wanted);
+  if (first.final) {
+    log.debug("Leaving authenticateSpent(). Decided on what was presented.");
+    return Promise.resolve(first.final);
+  }
+  log.debug("Leaving authenticateSpent(). Spending what was presented.");
+  return spendPresented(req, first.decision).then(function (refused) {
+    return refused || settleDecision(req, wanted, first.decision);
+  });
+}
+
+// The spend a decision carries. NON-ENUMERABLE, under a Symbol, for the reason
+// `errorCodes.mark()` uses one: `req.scimAuth` is the decision, the monitor
+// and the audit row read it, and nothing about it serialises differently.
+const SPEND = Symbol('scim.spend');
+
+function withSpend(decision, spend) {
+  log.debug("Entering withSpend().");
+  if (spend) {
+    Object.defineProperty(decision, SPEND, { value: spend, enumerable: false });
+  }
+  log.debug("Leaving withSpend().");
+  return decision;
+}
+
+// Resolves null when the credential was spent here (or spends nothing), or
+// the refusal to answer with.
+function spendPresented(req, decision) {
+  log.debug("Entering spendPresented().");
+  const spend = decision && decision[SPEND];
+  if (!spend) {
+    log.debug("Leaving spendPresented(). Nothing to spend.");
+    return Promise.resolve(null);
+  }
+  log.debug("Leaving spendPresented(). Claiming.");
+  return clusterClaims.claim({ scope: spend.scope, value: spend.value,
+                               ttlMs: spend.ttlMs }).then(function (res) {
+    if (res.ok) {
+      return null;
+    }
+    if (res.reason === 'used') {
+      log.info('scim: a ' + decision.scheme + ' credential was refused as a ' +
+               'replay another process had already accepted.');
+      return coded(spend.code, unauthenticated(req, spend.detail));
+    }
+    log.error(errorCodes.tag('STS-SCIM-0078') + 'scim: a ' + decision.scheme +
+              ' credential could not be proved unspent (' + res.why + '); it ' +
+              'is refused.');
+    // 500 and not 503: RFC 7644 section 3.12's list of statuses has no 503,
+    // and scim.js sends anything off it as 500 anyway (STS-SCIM-0075).
+    return coded('STS-SCIM-0078', {
+      ok: false, status: 500, scimType: null,
+      detail: 'This ' + decision.scheme + ' credential could not be checked ' +
+              'against the credentials already used, because the store that ' +
+              'records them could not be asked. It is refused rather than ' +
+              'accepted unchecked. Retry with a fresh one.'
+    });
+  });
+}
+
+// THE FIRST HALF: which scheme spoke, and whether the request is already
+// decided — a presented credential refused, or nothing presented. Answers
+// `{ final }` or `{ decision }`, the accepted credential.
+function presentedDecision(req, wanted) {
+  log.debug("Entering presentedDecision().");
   let decision = null;
   const rows = enabledSchemes();
   for (let i = 0; i < rows.length && !decision; i++) {
@@ -1946,9 +2117,9 @@ function authenticate(req, need) {
   }
 
   if (decision && !decision.ok) {
-    log.debug("Leaving authenticate(). A credential was presented and " +
+    log.debug("Leaving presentedDecision(). A credential was presented and " +
               "refused.");
-    return decision;
+    return { final: decision };
   }
 
   if (!decision) {
@@ -1956,38 +2127,40 @@ function authenticate(req, need) {
     const mustAuthenticate = authRequired() &&
                              (wanted !== 'none' || authDiscovery());
     if (!mustAuthenticate) {
-      log.debug("Leaving authenticate(). Nothing was presented and nothing " +
-                "is required.");
-      return { ok: true, scheme: 'anonymous', principal: '', anonymous: true,
-               scopes: '', isClient: false,
-               note: authRequired()
-                 ? 'a discovery endpoint, which is open (scim.authDiscovery)'
-                 : 'authentication is turned off' };
+      log.debug("Leaving presentedDecision(). Nothing was presented and " +
+                "nothing is required.");
+      return { final: {
+        ok: true, scheme: 'anonymous', principal: '', anonymous: true,
+        scopes: '', isClient: false,
+        note: authRequired()
+          ? 'a discovery endpoint, which is open (scim.authDiscovery)'
+          : 'authentication is turned off' } };
     }
     if (scheme === 'digest' && schemeOn('scim.authDigest') &&
         !digestAllowedByMode()) {
-      log.debug("Leaving authenticate(). Digest is not offered in product " +
-                "mode.");
-      return coded('STS-SCIM-0056', unauthenticated(req,
+      log.debug("Leaving presentedDecision(). Digest is not offered in " +
+                "product mode.");
+      return { final: coded('STS-SCIM-0056', unauthenticated(req,
         'HTTP Digest is not offered in product mode. RFC 7616 requires the ' +
         'server to hold each password or its digest hash, and this service ' +
         'holds a person\'s password only as a salted scrypt hash, from which ' +
         'neither can be computed; the one Digest it could perform would ' +
         'share scim.digestPassword across every user. Use a Bearer token, ' +
         'HTTP Basic over TLS, HOBA or a client certificate — the ' +
-        'WWW-Authenticate headers list them.'));
+        'WWW-Authenticate headers list them.')) };
     }
     if (scheme) {
-      log.debug("Leaving authenticate(). The scheme " + scheme + " is not " +
-          "offered here.");
-      return coded('STS-SCIM-0057', unauthenticated(req,
+      log.debug("Leaving presentedDecision(). The scheme " + scheme +
+                " is not offered here.");
+      return { final: coded('STS-SCIM-0057', unauthenticated(req,
         'This request carries an "' + scheme + '" credential and this ' +
                                                'service offers ' +
         enabledSchemes().map(function (row) { return row.name; }).join(', ') +
-        '. The WWW-Authenticate headers on this response say what to send.'));
+        '. The WWW-Authenticate headers on this response say what to ' +
+        'send.')) };
     }
-    log.debug("Leaving authenticate(). Nothing was presented.");
-    return coded('STS-SCIM-0058', unauthenticated(req,
+    log.debug("Leaving presentedDecision(). Nothing was presented.");
+    return { final: coded('STS-SCIM-0058', unauthenticated(req,
       'These endpoints create, change and delete accounts, and they now ' +
       'require a credential. ' +
       (mode.verifiesCredentials()
@@ -2005,8 +2178,17 @@ function authenticate(req, need) {
           'with any password but one over Basic, any username over Digest ' +
           'with the shared password, or a HOBA key anybody may register. ') +
       'The ServiceProviderConfig at /scim/v2/ServiceProviderConfig ' +
-      'lists them, and it is readable without a credential for that reason.'));
+      'lists them, and it is readable without a credential for that ' +
+      'reason.')) };
   }
+  log.debug("Leaving presentedDecision(). Accepted.");
+  return { decision: decision };
+}
+
+// THE SECOND HALF: the scope, the funnel, the session and the policy, for a
+// credential that was accepted.
+function settleDecision(req, wanted, decision) {
+  log.debug("Entering settleDecision().");
 
   // Accepted. The access control policy, which is two lines and is published in
   // both of them: an OAuth credential may do what its scopes say, and anything
@@ -2017,12 +2199,12 @@ function authenticate(req, need) {
   if (row && row.scoped && wanted !== 'none') {
     const required = wanted === 'write' ? scopeWrite() : scopeRead();
     if (!hasScope(decision.scopes, required)) {
-      log.debug("Leaving authenticate(). The token lacks " + required + ".");
+      log.debug("Leaving settleDecision(). The token lacks " + required + ".");
       const challenge = (decision.scheme === 'dpop' ? 'DPoP' : 'Bearer') +
         ' realm="' + realm() + '", error="insufficient_scope", ' +
         'error_description="this operation needs ' +
         'the ' + required + ' scope", scope="' + required + '"';
-      log.debug("Leaving authenticate().");
+      log.debug("Leaving settleDecision().");
       return coded('STS-SCIM-0059', {
         ok: false, status: 403, scimType: null,
         detail: 'This operation needs the "' + required + '" scope and the ' +
@@ -2097,7 +2279,7 @@ function authenticate(req, need) {
     log.info('scim: the access policy refused ' + req.method + ' ' +
              (req.originalUrl || req.url) + ' for ' +
              (decision.principal || '(nobody)') + '. ' + answer.why);
-    log.debug("Leaving authenticate().");
+    log.debug("Leaving settleDecision().");
     return coded(errorCodes.codeOf(answer) || 'STS-SCIM-0060', {
       ok: false, status: 403, scimType: null,
       detail: 'The access policy refused this request. ' + answer.why +
@@ -2107,7 +2289,7 @@ function authenticate(req, need) {
     });
   }
 
-  log.debug("Leaving authenticate(). " + decision.scheme + " for " +
+  log.debug("Leaving settleDecision(). " + decision.scheme + " for " +
             (decision.principal || '(nobody)') + ".");
   return decision;
 }
@@ -2367,6 +2549,12 @@ log.info('scim: the SCIM endpoints authenticate through ' +
           'off)') + '; every one of them is permissive, ' +
          'and the access control policy is on GET /scim.');
 
+// DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason: the Digest
+// nonces and HOBA challenges are persisted stores, and a nonce count or a
+// signature is spent through a claim in `authenticateSpent()`, which `scim.js`
+// calls.
+capabilities.provide('scim.challenge-state');
+
 module.exports = {
   SCHEMES: SCHEMES,
   // The two algorithm tables, for `admin-ui/crypto_metadata.js`.
@@ -2384,6 +2572,7 @@ module.exports = {
   scopeWrite: scopeWrite,
   challenges: challenges,
   authenticate: authenticate,
+  authenticateSpent: authenticateSpent,
   registerHobaKey: registerHobaKey,
   schemesForConfig: schemesForConfig,
   schemesBeyondTheCanonicalList: schemesBeyondTheCanonicalList,

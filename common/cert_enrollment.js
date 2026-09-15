@@ -61,6 +61,12 @@ const realms = require('./realms');
 const x509 = require('./vendored/x509');
 const adminRbac = require('../admin-ui/admin_rbac');
 const mtls = require('../oauth-oidc/mtls');
+// SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46 section 2): the atomic
+// "once" the two entry-bound credentials below are spent through, and the
+// capability table this file declares its row in. Both LIBRARIES that reach
+// `persistence.js` lazily, so neither can close a cycle from here.
+const claims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 
 const FAMILIES = ['acme', 'est', 'scep'];
 
@@ -1863,6 +1869,72 @@ function bindEab(kid, accountThumbprint) {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// BINDING AN EAB KEY ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// `bindEab()` reads the key's record off the entry, sees `boundAccount: null`,
+// and writes the account in. Two ACME newAccount requests signed by two
+// DIFFERENT account keys, with one EAB key, arriving at two nodes at once both
+// read null — and RFC 8555 section 7.3.4's "bound to one account" became two
+// accounts, each issued certificates for the entry the key names. The entry
+// is last writer wins, so it even ends up naming only one of them.
+//
+// **THE KEY ID IS CLAIMED BEFORE THE BINDING IS WRITTEN.** The claim lives as
+// long as a claim can (thirty days): its job is the window before every node
+// holds the entry that says the key is bound, and after that the entry's own
+// `boundAccount` refuses a second account as it always did. A bind that is
+// refused after the claim (the key expired under it) gives the claim back.
+//
+// **WHAT IT COSTS**: the SAME account retrying newAccount at a second node
+// before the first node's binding has reached it is refused as a second
+// account (`STS-ENROLL-0081`) rather than answered idempotently — the claim
+// cannot say which account holds it. The client's retry once the entry has
+// replicated finds its account (section 7.3.1) and is answered. A key bound
+// twice is a certificate for somebody else's entry; a retry refused once is a
+// retry.
+// ---------------------------------------------------------------------------
+const EAB_CLAIM_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function bindEabOnce(kid, accountThumbprint) {
+  log.debug("Entering bindEabOnce().");
+  const known = findEab(kid);
+  if (known && known.boundAccount === String(accountThumbprint)) {
+    log.debug("Leaving bindEabOnce(). Already this account's.");
+    return Promise.resolve(bindEab(kid, accountThumbprint));
+  }
+  log.debug("Leaving bindEabOnce(). Claiming.");
+  return claims.claim({ scope: 'acme.eab-bind', value: String(kid),
+                        ttlMs: EAB_CLAIM_TTL_MS })
+    .then(function (claimed) {
+      if (!claimed.ok && claimed.reason === 'used' && known &&
+          known.boundAccount) {
+        // The binding has already reached this node: the refusal it always
+        // was, under the code it always had.
+        log.debug("Leaving bindEabOnce(). Bound, on the entry.");
+        return bindEab(kid, accountThumbprint);
+      }
+      if (!claimed.ok && claimed.reason === 'used') {
+        log.warn('cert_enrollment: an External Account Binding key was ' +
+                 'presented for a new account while it is being or has ' +
+                 'been bound to another, on this node or another. Refused.');
+        return refuse('STS-ENROLL-0081', 401, 'That External Account ' +
+                      'Binding key has already bound another account.');
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-ENROLL-0091') + 'cert_enrollment: an ' +
+                  'External Account Binding key could not be proved unbound (' +
+                  (claimed.why || claimed.reason) + '), so it was refused.');
+        return refuse('STS-ENROLL-0091', 503, 'The External Account Binding ' +
+                      'key could not be checked just now. Try again.');
+      }
+      const bound = bindEab(kid, accountThumbprint);
+      if (!bound.ok) {
+        claims.release(claimed.handle);
+      }
+      return bound;
+    });
+}
+
 function deleteEab(kid, by) {
   log.debug("Entering deleteEab().");
   const entry = entryOfCredentialId('eab', kid);
@@ -2013,6 +2085,56 @@ function redeemScepChallenge(challenge, options) {
   }
   log.debug("Leaving redeemScepChallenge(). Accepted.");
   return { ok: true, id: id, entry: entry, profile: record.profile };
+}
+
+// ---------------------------------------------------------------------------
+// A SCEP CHALLENGE, SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// `redeemScepChallenge()` is "read `usedAt: null` off the entry, write the
+// time in", and two PKCSReq messages carrying one challenge password — two
+// transactionIDs, so `scep.js`'s transaction guard does not join them — at two
+// nodes both read null and both issued. The challenge is CLAIMED between the
+// look that proves it is right and the write that spends it; the claim lives
+// as long as the challenge could still verify, plus a minute of skew. The
+// synchronous `redeemScepChallenge()` is unchanged and is still what marks the
+// entry, which every page reads.
+// ---------------------------------------------------------------------------
+async function redeemScepChallengeOnce(challenge) {
+  log.debug("Entering redeemScepChallengeOnce().");
+  const peek = redeemScepChallenge(challenge, { peek: true });
+  if (!peek.ok) {
+    log.debug("Leaving redeemScepChallengeOnce(). Refused on the entry.");
+    return peek;
+  }
+  const record = parseJsonValues(readAttribute(peek.entry, 'challenge') || [])
+    .filter(function (one) { return one.id === peek.id; })[0] || {};
+  const remaining = new Date(record.expiresAt).getTime() - Date.now();
+  const claimed = await claims.claim({
+    scope: 'scep.challenge', value: peek.id,
+    ttlMs: Math.max(60 * 1000, (remaining || 0) + 60 * 1000)
+  });
+  if (!claimed.ok && claimed.reason === 'used') {
+    log.warn('cert_enrollment: a SCEP challenge password was presented ' +
+             'while another request is spending it or has spent it, on this ' +
+             'node or another. Refused.');
+    log.debug("Leaving redeemScepChallengeOnce(). Claimed elsewhere.");
+    return refuse('STS-ENROLL-0084', 401, 'That challenge password has ' +
+                  'already been used.');
+  }
+  if (!claimed.ok) {
+    log.error(errorCodes.tag('STS-ENROLL-0091') + 'cert_enrollment: a SCEP ' +
+              'challenge password could not be proved unspent (' +
+              (claimed.why || claimed.reason) + '), so it was refused.');
+    log.debug("Leaving redeemScepChallengeOnce(). The store.");
+    return refuse('STS-ENROLL-0091', 503, 'The challenge password could not ' +
+                  'be checked just now. Try again.');
+  }
+  const spent = redeemScepChallenge(challenge);
+  if (!spent.ok) {
+    claims.release(claimed.handle);
+  }
+  log.debug("Leaving redeemScepChallengeOnce(). ok=" + !!spent.ok);
+  return spent;
 }
 
 function deleteScepChallenge(id, by) {
@@ -2377,16 +2499,98 @@ function throttled(family, req, identity) {
   return null;
 }
 
+// The same question against ONE BUDGET FOR THE CLUSTER (2026-09-14, #46):
+// `websecurity.blockedShared()`, which is `blocked()` where no store is
+// shared. Every door in the three families asks this one; `throttled()` stays
+// for a caller that cannot wait.
+function throttledShared(family, req, identity) {
+  log.debug("Entering throttledShared(). family=" + family);
+  const ws = websecurityModule();
+  if (typeof ws.blockedShared !== 'function') {
+    log.debug("Leaving throttledShared(). No shared limiter.");
+    return Promise.resolve(throttled(family, req, identity));
+  }
+  log.debug("Leaving throttledShared().");
+  return ws.blockedShared('enroll-' + family, req, identity || '',
+                          limitsOf(family)).then(function (blocked) {
+    if (blocked && blocked.ok === false) {
+      return refuse('STS-ENROLL-0061', 429, 'Too many refused ' +
+                    FAMILY_LABELS[family] + ' requests. Wait ' +
+                    (blocked.retryAfterS || 60) + ' seconds and try again.');
+    }
+    return null;
+  }, function (e) {
+    log.debug("Caught in throttledShared(): " + ((e && e.message) || e));
+    return throttled(family, req, identity);
+  });
+}
+
 // Count one refused request against the caller.
+//
+// **IN THE CLUSTER'S WINDOW WHEN ONE IS SHARED (#46), AND NOT AWAITED.** Every
+// caller is a refusal writer that has already decided and is sending; the
+// count is not a decision, `throttledShared()` on the NEXT request is. The
+// count is one statement and lands well before a client can come back.
 function countFailure(family, req, identity) {
   log.debug("Entering countFailure(). family=" + family);
   try {
-    websecurityModule().attempt('enroll-' + family, req, identity || '',
-                                limitsOf(family));
+    const ws = websecurityModule();
+    const counting = typeof ws.attemptShared === 'function'
+      ? ws.attemptShared('enroll-' + family, req, identity || '',
+                         limitsOf(family))
+      : ws.attempt('enroll-' + family, req, identity || '', limitsOf(family));
+    Promise.resolve(counting).catch(function (e) {
+      log.debug("Caught in countFailure(): " + ((e && e.message) || e));
+    });
   } catch (e) {
     log.debug("Caught in countFailure(): " + ((e && e.message) || e));
   }
   log.debug("Leaving countFailure().");
+}
+
+// ---------------------------------------------------------------------------
+// COUNT A REFUSAL AND DECIDE WHETHER IT IS STILL ANSWERED AS ONE (2026-09-14,
+// #46 follow-up). `countFailure()` above counts after the answer has been
+// chosen, and `throttledShared()` on the next request reads the count — so a
+// burst of concurrent wrong passwords, challenge passwords or bindings all
+// read a count under the limit and were all answered as refusals of the
+// credential. Where the count is SHARED (`websecurity.sharesLimits()`) a
+// refusal writer asks this instead and waits: the one atomic increment's
+// answer is the same on every node, and an increment past the limit is
+// answered with the throttle's 429 rather than with what the credential got
+// wrong — `websecurity.failedShared()` argues it. Resolves to that refusal, or
+// null. Where nothing is shared, `sharesLimits()` is false and the writers keep
+// `countFailure()`, synchronously, exactly as before.
+// ---------------------------------------------------------------------------
+function countFailureShared(family, req, identity) {
+  log.debug("Entering countFailureShared(). family=" + family);
+  const ws = websecurityModule();
+  if (typeof ws.failedShared !== 'function') {
+    countFailure(family, req, identity);
+    log.debug("Leaving countFailureShared(). No shared limiter.");
+    return Promise.resolve(null);
+  }
+  log.debug("Leaving countFailureShared().");
+  return ws.failedShared('enroll-' + family, req, identity || '',
+                         limitsOf(family)).then(function (overLimit) {
+    if (!overLimit) {
+      return null;
+    }
+    return refuse('STS-ENROLL-0061', 429, 'Too many refused ' +
+                  FAMILY_LABELS[family] + ' requests. Wait ' +
+                  (overLimit.retryAfterS || 60) + ' seconds and try again.');
+  }, function (e) {
+    log.debug("Caught in countFailureShared(): " + ((e && e.message) || e));
+    return null;
+  });
+}
+
+// Whether a refusal writer should wait for `countFailureShared()`.
+function sharesThrottle() {
+  log.debug("Entering sharesThrottle().");
+  const ws = websecurityModule();
+  log.debug("Leaving sharesThrottle().");
+  return typeof ws.sharesLimits === 'function' && !!ws.sharesLimits();
 }
 
 // The retry-after of a throttled refusal, for a Retry-After header.
@@ -2398,12 +2602,23 @@ function retryAfterOf(refusal) {
   return match ? Number(match[1]) : 60;
 }
 
+// DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason. The row is
+// four fixes and this file holds two of them; the other two are the ACME
+// Replay-Nonce and finalize claims in `acme/acme.js` (through
+// `acme/acme_store.js`) and the SPIFFE join token claim in
+// `spiffe/spiffe_api.js`. The row names this file because the capability is
+// "an enrollment credential is spent once", and this is where they live.
+capabilities.provide('enrollment.credentials-once');
+
 module.exports = {
   FAMILIES: FAMILIES,
   withheldValues: withheldValues,
   transportRefusal: transportRefusal,
   throttled: throttled,
+  throttledShared: throttledShared,
   countFailure: countFailure,
+  countFailureShared: countFailureShared,
+  sharesThrottle: sharesThrottle,
   retryAfterOf: retryAfterOf,
   keyAlgName: keyAlgName,
   FAMILY_LABELS: FAMILY_LABELS,
@@ -2449,10 +2664,12 @@ module.exports = {
   createEab: createEab,
   findEab: findEab,
   bindEab: bindEab,
+  bindEabOnce: bindEabOnce,
   deleteEab: deleteEab,
   eabsOf: eabsOf,
   createScepChallenge: createScepChallenge,
   redeemScepChallenge: redeemScepChallenge,
+  redeemScepChallengeOnce: redeemScepChallengeOnce,
   deleteScepChallenge: deleteScepChallenge,
   scepChallengesOf: scepChallengesOf,
   hostNamesOf: hostNamesOf,

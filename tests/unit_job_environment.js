@@ -60,7 +60,8 @@ function modesFromTheShell() {
   const byMode = {};
   let current = null;
   lines.forEach(function (line) {
-    const arm = /^\s{4}(memory|postgres|dispatch)\)\s*$/.exec(line);
+    // `cluster` since 2026-09-14 (#46): a fourth block, asked for by name.
+    const arm = /^\s{4}(memory|postgres|dispatch|cluster)\)\s*$/.exec(line);
     if (arm) {
       current = arm[1];
       byMode[current] = [];
@@ -83,8 +84,8 @@ function run(t) {
   log.debug("Entering run().");
   const byMode = modesFromTheShell();
   const modes = Object.keys(byMode);
-  t.check(modes.length === 3,
-          'modes.sh defines three modes, each as a block of NAME=value lines',
+  t.check(modes.length === 4,
+          'modes.sh defines four modes, each as a block of NAME=value lines',
           modes.join(', '));
 
   // ---------------------------------------------------------------------

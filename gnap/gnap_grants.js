@@ -381,7 +381,7 @@ function resolveKeyReference(reference) {
 // `member` is `{ reference, key, classId, display }` (gnap_request.js).
 // `kind` is KIND_CLIENT or KIND_RS.
 // ---------------------------------------------------------------------------
-function identifyCaller(req, body, member, kind, options) {
+async function identifyCaller(req, body, member, kind, options) {
   log.debug("Entering identifyCaller(). kind=" + kind);
   const opts = options || {};
   let descriptor;
@@ -425,9 +425,11 @@ function identifyCaller(req, body, member, kind, options) {
     log.debug("Leaving identifyCaller().");
     return descriptor;
   }
-  const verified = proof.verifyRequest(req, body, descriptor,
-                                       { accessToken: opts.accessToken ||
-                                                      null });
+  // ONCE ACROSS THE CLUSTER (#46): the proof's replay keys are spent before
+  // anything is done for this caller — gnap_proof.js's verifyRequestOnce().
+  const verified = await proof.verifyRequestOnce(req, body, descriptor,
+                                                 { accessToken:
+                                                   opts.accessToken || null });
   if (!verified.ok) {
     log.debug("Leaving identifyCaller(). Proof refused: " + verified.why);
     monitor.record(app ? app.identifier : '(unidentified)', 'proof.failed',
@@ -1026,7 +1028,7 @@ async function createGrant(req, asId) {
   }
   const asked = parsed.request;
   const proofList = capabilityList(req, asId, 'key_proofs_supported');
-  const caller = identifyCaller(req, body, asked.client,
+  const caller = await identifyCaller(req, body, asked.client,
                                 asked.existingAccessToken ? KIND_RS :
                                 KIND_CLIENT);
   if (!caller.ok) {
@@ -1407,7 +1409,7 @@ async function finishInteraction(req, grant) {
 // ---------------------------------------------------------------------------
 // CONTINUATION (section 5). `method` is POST, PATCH or DELETE.
 // ---------------------------------------------------------------------------
-function continuationCaller(req, grantId) {
+async function continuationCaller(req, grantId) {
   log.debug("Entering continuationCaller().");
   const token = proof.presentedToken(req);
   const grant = store.getGrant(grantId);
@@ -1440,8 +1442,8 @@ function continuationCaller(req, grantId) {
     return Object.assign(descriptor,
                          { status: 401, gnapError: 'invalid_client' });
   }
-  const verified = proof.verifyRequest(req, body, descriptor,
-                                       { accessToken: token });
+  const verified = await proof.verifyRequestOnce(req, body, descriptor,
+                                                 { accessToken: token });
   if (!verified.ok) {
     monitor.record(grant.client.identifier, 'proof.failed',
                    { gnapError: 'invalid_client' });
@@ -1468,43 +1470,93 @@ function finalize(grant, note) {
   log.debug("Leaving finalize().");
 }
 
+// ---------------------------------------------------------------------------
+// THE CONTINUATION ACCESS TOKEN, SPENT ONCE ACROSS THE CLUSTER (2026-09-14,
+// #46).
+//
+// Every continuation this service answers either ROTATES the token
+// (`continueMember()` issues a successor and deletes the old hash) or ends it
+// (`finalize()`), so a continuation token is a single-use value in practice —
+// and the rotation is a write to a replicated map. Two requests carrying one
+// token, on two nodes inside the replication window, were both answered: two
+// successor tokens for one grant, one of which the client never sees, and a
+// poll counted twice as once.
+//
+// So after the caller is identified (the in-memory lookup and the proof, both
+// unchanged and first) the token is SPENT through `store.spend()`, and the
+// continuation runs only for the one request that won it. **THE CLAIM IS GIVEN
+// BACK WHEN THE TOKEN IS STILL LIVE AFTERWARDS** — a refusal that neither
+// rotated nor dropped it (a malformed body, a wrong state) leaves the token
+// usable in this process, and the claim must leave it usable everywhere, or a
+// client's retry of a request it got wrong would be refused on every node as
+// a replay. The test is the store's own answer, `grantByContinuation()`, so
+// the rule cannot drift from what rotation actually does.
+// ---------------------------------------------------------------------------
 async function continueGrant(req, grantId) {
   log.debug("Entering continueGrant(). method=" + req.method);
-  const caller = continuationCaller(req, grantId);
+  const caller = await continuationCaller(req, grantId);
   if (!caller.ok) {
     log.debug("Leaving continueGrant(). Caller refused.");
     return caller;
   }
+  const spent = await store.spend('continuation', caller.token, 0,
+                                  'STS-GNAP-0710');
+  if (!spent.ok) {
+    log.debug("Leaving continueGrant(). The continuation token was refused " +
+              "at its spend.");
+    return spent.reason === 'used'
+      ? refusal('STS-GNAP-0710', 'the continuation URI and access token do ' +
+                'not identify an active grant request (RFC 9635 section 5).',
+                'invalid_continuation', 401)
+      : refusal('STS-GNAP-0716', 'this authorization server could not ' +
+                'confirm the continuation access token is unused; retry ' +
+                'shortly.', 'invalid_continuation', 401);
+  }
+  let result;
+  try {
+    result = await continueAccepted(req, caller);
+  } finally {
+    const stillLive = store.grantByContinuation(caller.token);
+    if (stillLive) {
+      await store.unspend(spent.handle);
+    }
+  }
+  log.debug("Leaving continueGrant().");
+  return result;
+}
+
+async function continueAccepted(req, caller) {
+  log.debug("Entering continueAccepted(). method=" + req.method);
   const grant = caller.grant;
   const identifier = grant.client.identifier;
   if (expired(grant)) {
     finalize(grant, 'expired');
-    log.debug("Leaving continueGrant(). Expired.");
+    log.debug("Leaving continueAccepted(). Expired.");
     return refusal('STS-GNAP-0132', 'this grant request expired before it ' +
                                     'was approved.',
                    'invalid_continuation');
   }
   if (req.method === 'DELETE') {
-    log.debug("Leaving continueGrant().");
+    log.debug("Leaving continueAccepted().");
     return revokeGrant(req, grant);
   }
   if (grant.continueNotBefore && nowSec() < grant.continueNotBefore) {
     monitor.record(identifier, 'continue.too_fast', { gnapError: 'too_fast' });
     const keepGoing = { continue: continueMember(req, grant) };
     store.saveGrant(grant, 'continued too fast');
-    log.debug("Leaving continueGrant(). Too fast.");
+    log.debug("Leaving continueAccepted(). Too fast.");
     return Object.assign(refusal('STS-GNAP-0133', 'the client continued ' +
                          'before the wait period ended (RFC 9635 section ' +
                          '5).', 'too_fast'), { extra: keepGoing });
   }
   if (req.method === 'PATCH') {
-    log.debug("Leaving continueGrant().");
+    log.debug("Leaving continueAccepted().");
     return modifyGrant(req, grant, caller.body);
   }
   const parsed = request.parseContinuation(caller.body.json,
                                            caller.body.hadContent);
   if (!parsed.ok) {
-    log.debug("Leaving continueGrant(). Continuation body refused.");
+    log.debug("Leaving continueAccepted(). Continuation body refused.");
     return parsed;
   }
   if (parsed.interactRef) {
@@ -1515,7 +1567,7 @@ async function continueGrant(req, grantId) {
                       'state');
       monitor.record(identifier, 'grant.refused',
                      { gnapError: 'too_many_attempts' });
-      log.debug("Leaving continueGrant(). interact_ref when not pending.");
+      log.debug("Leaving continueAccepted(). interact_ref when not pending.");
       return refusal('STS-GNAP-0134', 'an interaction reference was ' +
                      'presented for a grant request that is not pending (RFC ' +
                      '9635 section 5.1).', 'too_many_attempts');
@@ -1524,16 +1576,34 @@ async function continueGrant(req, grantId) {
         interaction.interactRef !== parsed.interactRef) {
       const keepGoing = { continue: continueMember(req, grant) };
       store.saveGrant(grant, 'wrong interaction reference presented');
-      log.debug("Leaving continueGrant(). Wrong interact_ref.");
+      log.debug("Leaving continueAccepted(). Wrong interact_ref.");
       return Object.assign(refusal('STS-GNAP-0135', 'the interaction ' +
                            'reference is not the one issued for this grant ' +
                            'request.', 'invalid_interaction'),
                            { extra: keepGoing });
     }
+    // ONCE ACROSS THE CLUSTER (#46). The continuation token's claim already
+    // serialises this request, and the reference is claimed as well because
+    // it is the value section 5.1 names single-use: a second presentation of
+    // it must be refused on every node even if a node were ever to hold two
+    // live continuation tokens for one grant.
+    const refSpent = await store.spend('interact-ref',
+                                       grant.id + '|' + parsed.interactRef,
+                                       (Number(interaction.expiresAt) || 0) -
+                                       nowSec(), 'STS-GNAP-0711');
+    if (!refSpent.ok) {
+      log.debug("Leaving continueAccepted(). interact_ref already spent.");
+      return refSpent.reason === 'used'
+        ? refusal('STS-GNAP-0711', 'the interaction reference has already ' +
+                  'been used (RFC 9635 section 5.1).', 'invalid_interaction')
+        : refusal('STS-GNAP-0716', 'this authorization server could not ' +
+                  'confirm the interaction reference is unused; retry ' +
+                  'shortly.', 'invalid_interaction');
+    }
     interaction.interactRef = null;
     interaction.refUsed = true;
     monitor.record(identifier, 'continue.interact_ref', {});
-    log.debug("Leaving continueGrant().");
+    log.debug("Leaving continueAccepted().");
     return settle(req, grant);
   }
   // A POLL (section 5.2).
@@ -1542,7 +1612,7 @@ async function continueGrant(req, grantId) {
   const maxPolls = Number(config.value('gnap.maxPolls')) || 60;
   if (grant.state === STATE.PENDING && grant.polls > maxPolls) {
     finalize(grant, 'too many polls');
-    log.debug("Leaving continueGrant(). Too many polls.");
+    log.debug("Leaving continueAccepted(). Too many polls.");
     return refusal('STS-GNAP-0136',
                    'the client polled more than ' + maxPolls + ' ' +
                    'times before the resource owner decided (RFC 9635 ' +
@@ -1556,7 +1626,7 @@ async function continueGrant(req, grantId) {
     const keepGoing = { continue: continueMember(req, grant) };
     store.saveGrant(grant,
                     'polled before presenting the interaction reference');
-    log.debug("Leaving continueGrant(). Poll before the interaction " +
+    log.debug("Leaving continueAccepted(). Poll before the interaction " +
               "reference.");
     return Object.assign(refusal('STS-GNAP-0137', 'this grant request ' +
                                                   'finishes with a ' +
@@ -1565,7 +1635,7 @@ async function continueGrant(req, grantId) {
                          'rather than poll (RFC 9635 section 3.3.5).',
                          'invalid_continuation'), { extra: keepGoing });
   }
-  log.debug("Leaving continueGrant().");
+  log.debug("Leaving continueAccepted().");
   return settle(req, grant);
 }
 
@@ -1721,12 +1791,61 @@ function revokeGrant(req, grant) {
 // ---------------------------------------------------------------------------
 // TOKEN MANAGEMENT (section 6).
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE MANAGEMENT ACCESS TOKEN, SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46).
+//
+// A rotation issues a new management access token and deletes the old one's
+// hash, and a revocation drops both — so, like a continuation token, the value
+// is single-use in practice and its spending is a replicated write. Two
+// rotations of one token on two nodes inside the window both rotated it: two
+// live successor access tokens where section 6.1 describes one. The spend is
+// made in manageVerified() right after the proof verifies, and given back here
+// when the management token is still live afterwards, for the reason
+// continueGrant() gives.
+// ---------------------------------------------------------------------------
 async function manageToken(req, handle) {
   log.debug("Entering manageToken(). method=" + req.method);
+  const spentBox = { handle: null };
+  let result;
+  try {
+    result = await manageVerified(req, handle, spentBox);
+  } finally {
+    const presented = proof.presentedToken(req);
+    if (spentBox.handle && presented &&
+        store.tokenByManagement(handle, presented)) {
+      await store.unspend(spentBox.handle);
+    }
+  }
+  log.debug("Leaving manageToken().");
+  return result;
+}
+
+async function spendManagement(req, presented, spentBox) {
+  log.debug("Entering spendManagement().");
+  const spent = await store.spend('management', presented, 0,
+                                  'STS-GNAP-0714');
+  if (spent.ok) {
+    spentBox.handle = spent.handle;
+    log.debug("Leaving spendManagement(). Spent.");
+    return { ok: true };
+  }
+  const gnapError = req.method === 'DELETE' ? 'invalid_request'
+    : 'invalid_rotation';
+  log.debug("Leaving spendManagement(). Refused.");
+  return spent.reason === 'used'
+    ? refusal('STS-GNAP-0714', 'the token management URI and access token ' +
+              'do not identify a token (RFC 9635 section 6).', gnapError, 401)
+    : refusal('STS-GNAP-0716', 'this authorization server could not confirm ' +
+              'the token management access token is unused; retry shortly.',
+              gnapError, 401);
+}
+
+async function manageVerified(req, handle, spentBox) {
+  log.debug("Entering manageVerified(). method=" + req.method);
   const presented = proof.presentedToken(req);
   const record = presented ? store.tokenByManagement(handle, presented) : null;
   if (!record) {
-    log.debug("Leaving manageToken(). Unknown management URI or token.");
+    log.debug("Leaving manageVerified(). Unknown management URI or token.");
     return refusal('STS-GNAP-0150', 'the token management URI and access ' +
                    'token do not identify a token (RFC 9635 section ' +
                    '6).', req.method === 'DELETE' ? 'invalid_request'
@@ -1735,7 +1854,7 @@ async function manageToken(req, handle) {
   const grant = store.getGrant(record.grantId);
   const body = proof.readBody(req);
   if (!body.ok) {
-    log.debug("Leaving manageToken(). Body refused.");
+    log.debug("Leaving manageVerified(). Body refused.");
     return body;
   }
   // Section 7.3: bound to the token's own key or, for a bearer token, the
@@ -1744,19 +1863,24 @@ async function manageToken(req, handle) {
   const descriptor = keys.describe(keyJson,
                                    { resolveReference: resolveKeyReference });
   if (!descriptor.ok) {
-    log.debug("Leaving manageToken(). No key to verify with.");
+    log.debug("Leaving manageVerified(). No key to verify with.");
     return Object.assign(descriptor,
                          { status: 401, gnapError: 'invalid_client' });
   }
   if (req.method === 'DELETE') {
-    const verified = proof.verifyRequest(req, body, descriptor,
-                                         { accessToken: presented });
+    const verified = await proof.verifyRequestOnce(req, body, descriptor,
+                                                   { accessToken: presented });
     if (!verified.ok) {
       monitor.record(record.instanceId, 'proof.failed',
                      { gnapError: 'invalid_client' });
-      log.debug("Leaving manageToken(). DELETE proof refused.");
+      log.debug("Leaving manageVerified(). DELETE proof refused.");
       return Object.assign(verified,
                            { status: 401, gnapError: 'invalid_client' });
+    }
+    const deleteOnce = await spendManagement(req, presented, spentBox);
+    if (!deleteOnce.ok) {
+      log.debug("Leaving manageVerified(). DELETE refused at the spend.");
+      return deleteOnce;
     }
     record.revoked = true;
     record.revokedAt = nowSec();
@@ -1774,26 +1898,26 @@ async function manageToken(req, handle) {
       summary: 'A GNAP access token was revoked by its client instance',
       detail: { jti: record.jti, format: record.format } });
     signals.tokenRevoked(req, record, grant);
-    log.debug("Leaving manageToken(). Revoked.");
+    log.debug("Leaving manageVerified(). Revoked.");
     return { ok: true, status: 204, body: null };
   }
   // POST: rotation, optionally with a new key.
   const parsed = request.parseRotation(body.json, body.hadContent);
   if (!parsed.ok) {
-    log.debug("Leaving manageToken(). Rotation body refused.");
+    log.debug("Leaving manageVerified(). Rotation body refused.");
     return parsed;
   }
   let newDescriptor = null;
   if (parsed.key) {
     if (!config.value('gnap.keyRotation') ||
         capabilities(req, record.as).key_rotation_supported === false) {
-      log.debug("Leaving manageToken(). Key rotation off.");
+      log.debug("Leaving manageVerified(). Key rotation off.");
       return refusal('STS-GNAP-0151', 'this authorization server does not ' +
                      'allow rotating an access token\'s key (RFC 9635 ' +
                      'section 6.1.1).', 'key_rotation_not_supported');
     }
     if (!record.key) {
-      log.debug("Leaving manageToken(). Bearer token has no key to rotate.");
+      log.debug("Leaving manageVerified(). Bearer token has no key to rotate.");
       return refusal('STS-GNAP-0152', 'a bearer token has no key to rotate ' +
                                       '(RFC 9635 section 6.1.1).',
                      'invalid_rotation');
@@ -1801,30 +1925,35 @@ async function manageToken(req, handle) {
     newDescriptor = keys.describe(parsed.key,
                                   { resolveReference: resolveKeyReference });
     if (!newDescriptor.ok) {
-      log.debug("Leaving manageToken(). New key refused.");
+      log.debug("Leaving manageVerified(). New key refused.");
       return Object.assign(newDescriptor, { gnapError: 'invalid_rotation' });
     }
   }
-  const verified = proof.verifyRequest(req, body, descriptor,
-                                       { accessToken: presented,
-                                         rotation: newDescriptor });
+  const verified = await proof.verifyRequestOnce(req, body, descriptor,
+                                                 { accessToken: presented,
+                                                   rotation: newDescriptor });
   if (!verified.ok) {
     monitor.record(record.instanceId, 'proof.failed',
                    { gnapError: verified.gnapError });
-    log.debug("Leaving manageToken(). Rotation proof refused.");
+    log.debug("Leaving manageVerified(). Rotation proof refused.");
     return Object.assign(verified,
                          { status: verified.gnapError === 'key_rotation_not_supported' ? 400 : 401,
                                      gnapError: newDescriptor ?
                                                 verified.gnapError :
                                                 'invalid_client' });
   }
+  const rotateOnce = await spendManagement(req, presented, spentBox);
+  if (!rotateOnce.ok) {
+    log.debug("Leaving manageVerified(). Rotation refused at the spend.");
+    return rotateOnce;
+  }
   if (record.revoked || tokens.isRevokedJti(record.jti)) {
-    log.debug("Leaving manageToken(). Revoked tokens do not rotate.");
+    log.debug("Leaving manageVerified(). Revoked tokens do not rotate.");
     return refusal('STS-GNAP-0153', 'a revoked access token cannot be rotated.',
                    'invalid_rotation');
   }
   if (grant && grant.state === STATE.FINALIZED) {
-    log.debug("Leaving manageToken(). The grant is finalized.");
+    log.debug("Leaving manageVerified(). The grant is finalized.");
     return refusal('STS-GNAP-0154', 'the grant this token belongs to is ' +
                                     'finalized.', 'invalid_rotation');
   }
@@ -1853,7 +1982,7 @@ async function manageToken(req, handle) {
     log.error(errorCodes.tag('STS-GNAP-0155') + 'gnap: a rotated ' +
               record.format + ' ' +
               'token could not be minted: ' + e.message);
-    log.debug("Leaving manageToken().");
+    log.debug("Leaving manageVerified().");
     return refusal('STS-GNAP-0155', 'the token could not be rotated.',
                    'invalid_rotation');
   }
@@ -1907,7 +2036,7 @@ async function manageToken(req, handle) {
   if (next.flags && next.flags.length) {
     response.flags = next.flags;
   }
-  log.debug("Leaving manageToken(). Rotated.");
+  log.debug("Leaving manageVerified(). Rotated.");
   return { ok: true, status: 200, body: { access_token: response } };
 }
 

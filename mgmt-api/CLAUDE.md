@@ -1525,3 +1525,14 @@ reads or regenerates it on their realm's console
 pinned-secret refusal on `regenerate-secret` applies in the default realm only.
 With `adminApi.authRequired` off, a console SESSION reaching this API is confined
 the same way when its authority is a realm's.
+
+## Several nodes: users/create and groups/create claim their names (2026-09-14, #46 section 3)
+
+`runClaimed()` wraps the two action endpoints: for `action=create` where a
+create can race another process (`directory_create_claims.active()`), the name
+is claimed across nodes first and a loser answers 409 (`STS-LDAP-0092`) or 503
+when the store cannot be asked (`STS-LDAP-0093`); an action that threw after
+claiming gives the claim back and answers 500 (`STS-API-0113`). Everywhere else
+the handler runs synchronously as it did. The directory module is found in the
+require CACHE, never required: it is below this module in the route order. The
+design is `ldap/CLAUDE.md`'s, *Several nodes: a create claims its name*.

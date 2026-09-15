@@ -694,6 +694,21 @@ first. The timeout is SHORTER (2s against SSF's 10s) and that is the difference
 that follows from the argument: a lost push is a lost event, so SSF waits; a
 lost nudge costs one polling interval, so waiting is the expensive mistake.
 
+**On an active-active node the nudge waits for the COMMIT, and only there
+(2026-09-15, #46).** It is fired from inside `xacml_store.write()`, and the PEP
+answers 204 and pulls at once — through the load balancer, on whichever node
+its connection lands. A node that is not the writer serves what has COMMITTED,
+so it answered the old sync token with 304 and the PEP converged on its next
+heartbeat: the suite's `cluster` mode measured 2018ms and 916ms against a
+nudge worth tens of milliseconds (`sts_xacml_remote_pep` section 6). So
+`afterCommit()` in `xacml.js` dispatches it after `setImmediate` (the saving
+request has usually answered, so its barrier's commit is the flush in flight)
+and `persistence.commitThrough(writeGeneration())`. A failed commit still
+nudges. One node, the cluster off and a dispatched pool dispatch at once as
+before; this is not "waiting on somebody else's web server" — nothing awaits
+the nudge, it only leaves later. `tests/cluster_observation_counters.js`
+section 4.
+
 ## What is authenticated, and what deliberately is not
 
 **EVERY ENDPOINT IN THIS FAMILY ASKS NOW.** This section said otherwise —
@@ -1571,6 +1586,30 @@ a number somebody might have zeroed — and the durable record of a refusal is t
 AUDIT LOG, which cannot be reset either. The counters are in memory, per trust
 realm (like `ou=policies` itself), and start with the process; the page prints
 the timestamp, because a count with no epoch is a count somebody will misread.
+
+### Several processes or nodes: every decision is journalled (2026-09-15, #46)
+
+Where minted state is persisted, `counters` is a `merge: 'own'` store — each
+process writes its own row and `merge()` adds the other processes' rows in. **It
+was journalled only when a process's row was CREATED**: `record()` changed the
+object `rowFor()` handed back, in place, and a `realms.map()` hears only
+`set()` and `delete()`. So `sts_minted` held each process's first decision and
+nothing after, and each node's page added its own live tally to the OTHER
+node's frozen row. The suite's `cluster` mode caught it in
+`sts_portal_sessions`: the issuance PEP read 126 on node A and 142 on node B
+around one page load that decided nothing — and 21 then 17 in a run of that job
+alone, a number going DOWN that no late-arriving decision can explain. One
+process never reads its own row, so `postgres` mode could not see it.
+`record()` now sets the row back; `oauth2_monitor.js` always had.
+
+**The store is declared `observation: true`**, because the access PEP decides on
+every console, portal and `/admin-api` request, and a journalled row would
+otherwise make each of those reads a writing request the cluster barrier holds
+for a commit — which rcbj's decision 6 refuses (`cluster/CLAUDE.md`, *What the
+barrier cost*). A request that wrote anything else is held and its tally rides
+that commit; one whose only row is a tally is answered at once, and its row
+reaches the other node within one flush. `tests/cluster_observation_counters.js`
+sections 1-3.
 
 ### THE SEVENTEENTH DEFECT: the access PEP refused things and audited nothing
 

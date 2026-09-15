@@ -33,12 +33,19 @@
 // on the Issuing CA's list as `superseded`, which is `pki.js`'s own rule for a
 // slot that is reissued.
 //
-// **THE ONE RACE IS ACROSS PROCESSES AND IT IS STATED RATHER THAN SOLVED.** In
-// `dispatch` mode two workers that both find the RA stale may both issue one;
-// the PKI row is last-write-wins over the keystore's channel, so a client that
-// fetched the loser's certificate encrypts to a key nobody holds and is
-// answered FAILURE badMessageCheck (`STS-SCEP-0027`) — GetCACert again fixes
-// it. Inside one process the re-issue is serialised per realm below.
+// **THE RACE ACROSS PROCESSES WAS STATED RATHER THAN SOLVED, AND ACROSS NODES
+// IT STOPPED BEING A RACE (fixed 2026-09-14, #46).** Two processes that both
+// found the RA stale both issued one, and the PKI row was last write wins — so
+// a client that fetched one node's RA in GetCACert and sent PKIOperation to
+// another was answered FAILURE badMessageCheck (`STS-SCEP-0027`) on EVERY
+// alternation, not in a window: each container issued its own lazily. Now,
+// where the store arbitrates, one process in the cluster issues it
+// (`pki.oneBuildInTheCluster()`, under a claim of its own), the row is read
+// from the store before deciding and again once the claim is held, and a
+// certificate slot is first writer wins in the row's merge — so a node that
+// issued one at the same moment as another takes the other's. Inside one
+// process the re-issue is still serialised per realm below; where nothing
+// arbitrates this is what it was.
 // ===========================================================================
 
 const nodeCrypto = require('crypto');
@@ -48,6 +55,8 @@ const config = require('../common/config');
 const errorCodes = require('../common/error_codes');
 const pki = require('../common/pki');
 const core = require('../common/cert_enrollment');
+// The table active-active mode is held to, for the row this file provides.
+const capabilities = require('../cluster/cluster_capabilities');
 
 const SLOT = 'scep-ra';
 
@@ -172,6 +181,34 @@ async function issue(realmId, previous, reason) {
   return { ok: true, record: recordOf(realmId) };
 }
 
+// ---------------------------------------------------------------------------
+// ONE RA CERTIFICATE FOR THE CLUSTER. The row is read from the store first —
+// another node may already have issued a current one — and the issue runs
+// under a claim of its own (`scep-ra:<realm>`, never the branch's: `certify()`
+// may repair the branch under that). `force` is the console's Reissue, which
+// replaces a current certificate and so has no "already there" answer.
+// ---------------------------------------------------------------------------
+function issueInTheCluster(realmId, held, why, force) {
+  log.debug("Entering issueInTheCluster().");
+  const existing = force ? null : function () {
+    log.debug("Entering existing().");
+    const now = recordOf(realmId);
+    log.debug("Leaving existing().");
+    return now && !staleness(realmId, now) ? { ok: true, record: now } : null;
+  };
+  log.debug("Leaving issueInTheCluster().");
+  return pki.oneBuildInTheCluster(realmId, 'certs.scep:' + SLOT, existing,
+    function () {
+      // THE RECORD BEING REPLACED IS READ AGAIN: the row may have come from
+      // the store since `ensure()` looked.
+      const current = recordOf(realmId) || held;
+      return issue(realmId, current, why);
+    },
+    { claim: 'scep-ra:' + String(realmId),
+      label: 'the SCEP RA certificate of realm "' + (realmId || 'default') +
+             '"' });
+}
+
 // The RA to use now: `{ ok, certificatePem, privateKeyPem, record }`, issuing
 // one first when the held one is stale. `options.force` re-issues regardless.
 async function ensure(realmId, options) {
@@ -193,9 +230,10 @@ async function ensure(realmId, options) {
   }
   const key = String(realmId);
   if (!building.has(key)) {
-    building.set(key, issue(realmId, held, why).finally(function () {
-      building.delete(key);
-    }));
+    building.set(key, issueInTheCluster(realmId, held, why, !!opts.force)
+      .finally(function () {
+        building.delete(key);
+      }));
   }
   const made = await building.get(key);
   if (!made.ok) {
@@ -240,6 +278,10 @@ function describe(realmId) {
     certificatePem: held.certificatePem
   };
 }
+
+// DECLARED AT REQUIRE TIME (cluster/CLAUDE.md): every node presents the RA
+// certificate one node issued — `issueInTheCluster()` above.
+capabilities.provide('scep.ra-agreement');
 
 module.exports = {
   SLOT: SLOT,

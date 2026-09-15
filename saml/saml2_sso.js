@@ -145,8 +145,8 @@ const { buildSamlAssertion, encryptElement, decryptElement,
 const spMetadata = require('./sp_metadata');
 // The session, from the service that owns it. This profile starts none of its
 // own: `beginAuthentication()` sends the browser to authn.js's screen and back.
-const { sessionOf, endSession, beginAuthentication, notePresented } =
-  require('../authn/authn');
+const { sessionOf, endSession, beginAuthentication, notePresented,
+        noteSessionChanged } = require('../authn/authn');
 // THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, so it
 // can be required from 10a without moving a route or closing a cycle — which
 // is the whole reason `common/issuance_gate.js` exists rather than this module
@@ -166,6 +166,13 @@ const authnContext = require('./authn_context');
 const documentSettings = require('./document_settings');
 const returnAddress = require('./return_address');
 const personAttributes = require('./person_attributes');
+// THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an artifact is spent
+// through, so that two nodes against one store cannot both resolve it. A
+// LIBRARY that registers no route and requires persistence lazily, so it
+// neither moves a route nor closes a cycle. See resolveArtifact(), and the
+// capability this file provides below for both profiles.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 
 // --- the vocabulary --------------------------------------------------------
 const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
@@ -1988,6 +1995,11 @@ function issueSignInResponse(res, ctx) {
   session.saml2ServiceProviders[ctx.spEntityId] = {
     acs: ctx.acsUrl, idpEntityId: ctx.idpEntityId, at: Date.now()
   };
+  // AND THE STORE IS TOLD (2026-09-14, #46): the line above edits an object
+  // the session store holds, which it does not journal, so without this the
+  // list never reached another node and its `/saml2/slo` offered nothing.
+  // `authn.noteSessionChanged()` carries the argument.
+  noteSessionChanged(session);
 
   deliver(res, {
     binding: ctx.binding, destination: ctx.acsUrl, field: 'SAMLResponse',
@@ -2130,6 +2142,99 @@ function resolveArtifact(req, res) {
   // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is sent,
   // so that two ArtifactResolve calls arriving together cannot both find it.
   artifacts.delete(artifact);
+  log.debug("Leaving resolveArtifact(). Claiming the artifact.");
+  return spendArtifact(artifact, held).then(function (spent) {
+    log.debug("Entering resolveArtifact()'s claim answer.");
+    if (!spent.ok) {
+      errorCodes.mark(res, spent.errorCode);
+      log.debug("Leaving resolveArtifact()'s claim answer. Refused.");
+      return answer(spent.reason === 'used' ? STATUS_REQUESTER :
+                    STATUS_RESPONDER, spent.message, '', inResponseTo);
+    }
+    log.debug("Leaving resolveArtifact()'s claim answer. Spent.");
+    return answerResolved(held, spEntityId, artifact, inResponseTo, answer);
+  }).catch(function (e) {
+    // `claim()` never rejects, so what lands here is the answer failing to be
+    // built or sent — which is also what a synchronous throw from this
+    // handler used to be, and Express's own handler answered that 500.
+    log.error(errorCodes.tag('STS-SAML-0060') + 'saml2: the ArtifactResolve ' +
+              'could not be answered after its claim: ' +
+              ((e && e.message) || e));
+    if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-SAML-0060');
+      answer(STATUS_RESPONDER, 'the artifact could not be resolved.', '',
+             inResponseTo);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// SPENDING AN ARTIFACT ACROSS THE CLUSTER (2026-09-14, #46).
+//
+// The delete above is atomic in ONE process and nowhere else: `artifacts` is a
+// `realms.map({ persist })`, so the delete reaches another node through the
+// change log a moment later, and a service provider that retries its
+// ArtifactResolve against a load balancer — or an attacker who read the
+// artifact out of a browser history and races the service provider — can land
+// both requests inside that moment on two nodes, and both would answer with the
+// assertion. Section 3.6.4.1 allows one.
+//
+// So the in-memory check stays FIRST (the fast refusal for the common replay,
+// and exactly the behaviour a single process always had), and an artifact this
+// process still holds is then SPENT THROUGH `cluster_claims.claim()` before it
+// is answered. On a postgres store that is one INSERT under the primary key, so
+// exactly one node wins; on any other store it is this process's memory, which
+// is as atomic as the delete it follows and changes nothing a single process
+// did.
+//
+// The claim lives as long as the artifact could still be found by a node whose
+// map has not caught up — its own remaining lifetime — plus CLAIM_SKEW_MS for
+// two nodes' clocks disagreeing about when it expired. A store that cannot be
+// asked REFUSES (fail closed, cluster_claims.js's rule): an artifact this
+// service cannot prove unresolved is not one it may resolve. Nothing releases
+// the claim: the delete above has already spent the artifact in this process
+// whatever the answer, and a claim released where the map is not restored
+// would only be a second node's licence to resolve it again.
+// ---------------------------------------------------------------------------
+const CLAIM_SKEW_MS = 60 * 1000;
+
+function spendArtifact(artifact, held) {
+  log.debug("Entering spendArtifact().");
+  const remaining = Math.max(0, Number(held && held.expires) - Date.now()) || 0;
+  log.debug("Leaving spendArtifact(). Asking the claim store.");
+  return clusterClaims.claim({ scope: 'saml2.artifact', value: artifact,
+                               ttlMs: remaining + CLAIM_SKEW_MS })
+    .then(function (claimed) {
+      log.debug("Entering spendArtifact()'s answer.");
+      if (claimed.ok) {
+        log.debug("Leaving spendArtifact()'s answer. Spent here.");
+        return { ok: true };
+      }
+      if (claimed.reason === 'used') {
+        log.warn(errorCodes.tag('STS-SAML-0057') + 'saml2: artifact ' +
+                 String(artifact).slice(0, 12) + '… was still held here but ' +
+                 'has ALREADY BEEN RESOLVED by another node against the same ' +
+                 'store. Refused: section 3.6.4.1 allows one resolution.');
+        log.debug("Leaving spendArtifact()'s answer. Used elsewhere.");
+        return { ok: false, reason: 'used', errorCode: 'STS-SAML-0057',
+                 message: 'that artifact does not resolve: it has already ' +
+                          'been resolved — an artifact is one-shot (section ' +
+                          '3.6.4.1).' };
+      }
+      log.error(errorCodes.tag('STS-SAML-0059') + 'saml2: whether artifact ' +
+                String(artifact).slice(0, 12) + '… was already resolved ' +
+                'could not be asked of the claim store (' +
+                (claimed.why || 'no reason given') + '). It is refused.');
+      log.debug("Leaving spendArtifact()'s answer. Store unavailable.");
+      return { ok: false, reason: 'store', errorCode: 'STS-SAML-0059',
+               message: 'the identity provider could not confirm that ' +
+                        'artifact is unresolved, so it is not resolved.' };
+    });
+}
+
+// The success half of resolveArtifact(), after the artifact is spent.
+function answerResolved(held, spEntityId, artifact, inResponseTo, answer) {
+  log.debug("Entering answerResolved().");
   if (spEntityId && held.spEntityId && spEntityId !== held.spEntityId) {
     // Recorded rather than refused, which is this service's posture everywhere:
     // the artifact was minted for one service provider and another is resolving
@@ -2144,7 +2249,7 @@ function resolveArtifact(req, res) {
              'answers, which is what a mock is for. The artifact is spent ' +
              'either way.');
   }
-  log.debug("Leaving resolveArtifact(). Resolved and destroyed.");
+  log.debug("Leaving answerResolved(). Resolved and destroyed.");
   return answer(STATUS_SUCCESS, '', held.xml, inResponseTo);
 }
 
@@ -3358,6 +3463,13 @@ app.post(SP_PATH, function (req, res) {
                   base + SP_PATH);
   log.debug("Leaving the mock service provider (POST).");
 });
+
+// #46: an artifact is resolved once across the cluster — here by
+// spendArtifact(), and in saml11_sso.js by respond()'s claim. Provided from
+// THIS file for both profiles because the capability row names it, and
+// saml11_sso.js requires this module, so the 1.1 half is always loaded with
+// it in the protocol stack.
+capabilities.provide('saml.artifacts-once');
 
 module.exports = {
   BINDING_REDIRECT: BINDING_REDIRECT,

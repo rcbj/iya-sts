@@ -363,6 +363,12 @@ const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 // asks for no slot, both ways round. `/admin/persistence` renders its
 // `status()` and `GET /admin/ldap/service` publishes the same object.
 const persistence = require('../persistence/persistence');
+// THE CLUSTER (2026-09-14, #46), for /admin/cluster's status block. Libraries:
+// they register no route, and every one of them is already loaded by
+// persistence.js, app.js or service_state.js, so these are cache hits.
+const cluster = require('../cluster/cluster');
+const clusterSecrets = require('../cluster/cluster_secrets');
+const clusterBarrier = require('../cluster/cluster_barrier');
 // WHERE THE TWO PRIMORDIAL SECRETS COME FROM, and whether the keystore is
 // reading one at all — for the runtime line at the foot of every page
 // (`runtimeFooter()`). Both are LEAVES (rule 3): `secrets.js` requires only
@@ -376,6 +382,11 @@ const keystore = require('../common/keystore');
 // no route, and is already loaded by helpers.js — so its position is not a
 // position at all.
 const realms = require('../common/realms');
+// A CREATE CLAIMS ITS NAME ACROSS NODES (2026-09-14, #46 follow-up) — the
+// console's own user and group forms, as `/admin-api` already did. A LIBRARY
+// (rule 3): it registers no route, and reaches the directory module through
+// the require cache, so this require moves nothing in the route order.
+const createClaims = require('../ldap/directory_create_claims');
 const stats = require('../common/admin_stats');
 // The browser sign-on sessions, from the authentication service that creates
 // them — shared between the OAuth 2.0 / OIDC flow, WS-Federation and SAML 2.0.
@@ -2317,6 +2328,12 @@ const SECTIONS = [
                'the default; ldif, a file per realm and no database; and ' +
                'postgres. It is PERSISTENCE and not COORDINATION — one ' +
                'process per store.' },
+      { path: '/admin/cluster', label: 'Cluster',
+        blurb: 'Whether several containers against one postgres store ' +
+               'behave as one service: which node is a member, which holds ' +
+               'which lease, and what active-active mode still refuses to ' +
+               'start without. Every clustered write is fenced by the ' +
+               'node\'s membership, and a node that loses it exits.' },
       { path: '/admin/rbac', label: 'Admin roles',
         blurb: 'Who holds the two roles that grant this console — Admin ' +
                'Read and Admin Write — granted and revoked here. They are ' +
@@ -2610,6 +2627,11 @@ const SETTING_HOMES = [
   // LDAP / LDAPS would have told a reader looking for "does my realm survive a
   // restart" to look at the wrong page.
   { group: 'Persistence', pages: ['/admin/persistence'] },
+  // THE CLUSTER'S SETTINGS (2026-09-14, #46), on the page that shows the
+  // members, the leases and the capabilities those settings decide about —
+  // `cluster.acceptMissingCapabilities` read anywhere but beside the list of
+  // what is missing would be a list of ids with no meaning.
+  { group: 'Cluster', pages: ['/admin/cluster'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another
@@ -17728,9 +17750,27 @@ app.get('/admin/users', function (req, res) {
   log.debug("Leaving the admin users page. " + view.title + ".");
 });
 
-app.post('/admin/users', function (req, res) {
+app.post('/admin/users', function (req, res, next) {
   log.debug("Entering the admin users action endpoint.");
   const body = parseBody(req);
+  // A CREATE CLAIMS ITS NAME FIRST where several processes write one store —
+  // `ldap/directory_create_claims.js`. Everywhere else `runClaimed()` runs the
+  // body below synchronously, exactly as before.
+  const creating = String(body.action || '') === 'create'
+    ? { username: String(body.username || body.user || '') } : null;
+  createClaims.runClaimed(creating, function (held) {
+    usersPost(req, res, body, held);
+  }, function (held) {
+    errorCodes.mark(res, held.code);
+    respondToAction(req, res, '/admin/users' +
+      queryWith(listViewFromBack('/admin/users', body.back), {}),
+      { ok: false, errors: [createClaims.refusalMessage(held)] });
+  }, next);
+  log.debug("Leaving the admin users action endpoint.");
+});
+
+function usersPost(req, res, body, held) {
+  log.debug("Entering usersPost().");
   // The actor is the person whose session got them through the gate, read here
   // rather than inside the action because the management API calls the same
   // function with an actor of its own — a function that reached for a cookie
@@ -17740,6 +17780,7 @@ app.post('/admin/users', function (req, res) {
   const state = gateStateFor(req);
   const result = usersAction(body, { via: 'console', actor: state.username,
                                      base: baseUrlOf(req) });
+  held.settle(!!result.ok);
   // Back to the list carrying whatever filter and page the form came from, so
   // that creating somebody does not cost the reader their place — the rule
   // every form on this console follows. A control drawn on a PERSON'S page
@@ -17761,12 +17802,12 @@ app.post('/admin/users', function (req, res) {
             credentialResetPage(result, back),
             upTo('/admin/users', 'Credential reset',
                  listViewFromBack('/admin/users', body.back)));
-    log.debug("Leaving the admin users action endpoint. A one-time page.");
+    log.debug("Leaving usersPost(). A one-time page.");
     return;
   }
   respondToAction(req, res, back, result);
-  log.debug("Leaving the admin users action endpoint.");
-});
+  log.debug("Leaving usersPost().");
+}
 
 // THE PAGE A RESET ANSWERS WITH (2026-09-13): the generated password or the
 // reset link, once, and what else the reset did.
@@ -18366,7 +18407,7 @@ app.get('/admin/users/new', function (req, res) {
   log.debug("Leaving the admin new-user page.");
 });
 
-app.post('/admin/users/new', function (req, res) {
+app.post('/admin/users/new', function (req, res, next) {
   log.debug("Entering the admin new-user action endpoint.");
   const body = parseBody(req);
   // FILL IS READ FIRST AND NOT AS A VALUE OF `action`. See the two buttons in
@@ -18479,14 +18520,38 @@ app.post('/admin/users/new', function (req, res) {
   // audit row for a create and for a password set names the administrator, and
   // a value taken from the form would be whatever the poster typed. The same
   // way `/admin/delegation` and `/admin/sessions` name their actor.
+  createClaims.runClaimed({ username: posted.username }, function (held) {
+    newUserCreate(req, res, body, posted, wantsJson, held);
+  }, function (held) {
+    errorCodes.mark(res, held.code);
+    const refusal = { ok: false,
+                      errors: [createClaims.refusalMessage(held)] };
+    if (wantsJson) {
+      respondToAction(req, res, '/admin/users/new', refusal);
+      return;
+    }
+    const view = newUserPage(req, posted);
+    respond(req, res, Object.assign({ created: false,
+                                      errors: refusal.errors }, view.json),
+            'New user', '/admin/users',
+            warn('<strong>Nobody was created.</strong> ' +
+                 esc(refusal.errors[0])) + view.inner, newUserUp());
+  }, next);
+  log.debug("Leaving the admin new-user action endpoint. Create.");
+});
+
+// The create half of `POST /admin/users/new`, run with its name claimed.
+function newUserCreate(req, res, body, posted, wantsJson, held) {
+  log.debug("Entering newUserCreate().");
   const state = gateStateFor(req);
   const result = usersAction(Object.assign({}, body, {
     action: 'create',
     actor: (state && state.username) || ''
   }));
+  held.settle(!!result.ok);
   if (wantsJson) {
     respondToAction(req, res, '/admin/users/new', result);
-    log.debug("Leaving the admin new-user action endpoint. Answered JSON.");
+    log.debug("Leaving newUserCreate(). Answered JSON.");
     return;
   }
   if (!result.ok) {
@@ -18505,15 +18570,15 @@ app.post('/admin/users/new', function (req, res) {
                  esc((result.errors || []).join(' ') || String(
                      result.why || ''))) +
             view.inner, newUserUp());
-    log.debug("Leaving the admin new-user action endpoint. Refused.");
+    log.debug("Leaving newUserCreate(). Refused.");
     return;
   }
   respond(req, res, Object.assign({ created: true }, result),
           'User created', '/admin/users', createdUserPage(req, result),
           newUserUp('User created'));
-  log.debug("Leaving the admin new-user action endpoint. Created " + result.dn +
+  log.debug("Leaving newUserCreate(). Created " + result.dn +
             ".");
-});
+}
 
 // ---------------------------------------------------------------------------
 // GET /admin/groups — every group in the embedded directory, and one of them in
@@ -23392,10 +23457,29 @@ app.get('/admin/groups', function (req, res) {
 // choice. The two forms live on different pages — Create on the list, Add
 // member on the drill-down — and both post here, which is why the redirect
 // below has to work out which of the two to go back to.
-app.post('/admin/groups', function (req, res) {
+app.post('/admin/groups', function (req, res, next) {
   log.debug("Entering the admin groups action endpoint.");
   const body = parseBody(req);
+  // A CREATE CLAIMS ITS NAME FIRST where several processes write one store —
+  // `ldap/directory_create_claims.js`; synchronous everywhere else.
+  const creating = String(body.action || '') === 'create'
+    ? { group: String(body.group || body.displayName || body.cn || '') }
+    : null;
+  createClaims.runClaimed(creating, function (held) {
+    groupsPost(req, res, body, held);
+  }, function (held) {
+    errorCodes.mark(res, held.code);
+    respondToAction(req, res, '/admin/groups' +
+      queryWith(listViewFromBack('/admin/groups', body.back), {}),
+      { ok: false, errors: [createClaims.refusalMessage(held)] });
+  }, next);
+  log.debug("Leaving the admin groups action endpoint.");
+});
+
+function groupsPost(req, res, body, held) {
+  log.debug("Entering groupsPost().");
   const result = groupsAction(body);
+  held.settle(result.ok !== false);
   // WHERE THE READER GOES AFTERWARDS. A create lands on the group it just made,
   // because the next thing anybody does with a new group is put somebody in it
   // and that control is on the drill-down; an add-member stays where it was, on
@@ -23409,8 +23493,8 @@ app.post('/admin/groups', function (req, res) {
     ? '/admin/groups' + queryWith(listView, { group: landOn })
     : '/admin/groups' + queryWith(listView, {});
   respondToAction(req, res, back, result);
-  log.debug("Leaving the admin groups action endpoint.");
-});
+  log.debug("Leaving groupsPost().");
+}
 
 // ---------------------------------------------------------------------------
 // GET /admin/rbac, POST /admin/rbac — WHO MAY USE THIS CONSOLE.
@@ -27037,15 +27121,28 @@ app.get('/admin/realm-switch', function (req, res) {
   res.set('Cache-Control', 'no-store').redirect(303, to);
 });
 
-app.get('/admin/realms', function (req, res) {
+app.get('/admin/realms', function (req, res, next) {
   log.debug("Entering the admin trust realms page.");
-  const view = realmsView(req);
-  if (view.missing) {
-    errorCodes.mark(res, 'STS-ADMIN-0021');
-  }
-  respond(req, res, view.json, view.title, '/admin/realms', view.inner,
-          view.up);
-  log.debug("Leaving the admin trust realms page.");
+  // The list and the drill-down both show a realm's `kid`, which MAKES the key
+  // set of a realm this process holds none for — made off the event loop
+  // first, `GET /admin-api/realms`'s reason (#46). Never rejects.
+  require('../common/helpers').prepareKeySets(realms.list().map(function (one) {
+    return one.id;
+  })).then(function () {
+    const view = realmsView(req);
+    if (view.missing) {
+      errorCodes.mark(res, 'STS-ADMIN-0021');
+    }
+    respond(req, res, view.json, view.title, '/admin/realms', view.inner,
+            view.up);
+    log.debug("Leaving the admin trust realms page.");
+  }).catch(function (e) {
+    log.debug("Caught in the admin trust realms page: " +
+              ((e && e.message) || e));
+    // Express 4 does not look at a returned promise; handed on, a throw is
+    // the 500 it was before the page awaited anything.
+    next(e);
+  });
 });
 
 app.post('/admin/realms', function (req, res) {
@@ -33136,6 +33233,165 @@ function persistenceStatusBlock() {
 }
 
 // ===========================================================================
+// /admin/cluster's STATUS BLOCK (2026-09-14, #46).
+//
+// The `status` member of a row in PROTOCOL_SETTINGS_PAGES, for the reason
+// `/admin/persistence` has one: `cluster.mode` SET and a cluster WORKING are two
+// facts. It computes nothing — `cluster.status()` and `cluster.snapshot()` are
+// that module's own account of itself — and it draws four answers: what this
+// node is, who else is a member and who holds which lease, what active-active
+// mode is still waiting for, and which secrets every node shares.
+//
+// **THE NODE AND LEASE TABLES ARE A SNAPSHOT**, read on every heartbeat by a
+// front process and at most once a heartbeat by the process drawing this page,
+// and the page says how old it is. A synchronous page cannot wait for a query,
+// and a page that silently showed an hour-old membership would be worse than
+// one that says "as of two seconds ago".
+// ===========================================================================
+function clusterStatusBlock() {
+  log.debug("Entering clusterStatusBlock().");
+  const self = cluster.status();
+  const snap = cluster.snapshot();
+  const state = snap.state;
+  const secrets = clusterSecrets.describe();
+  const barrier = clusterBarrier.report();
+  const off = self.mode === 'off';
+  const nameOf = {};
+  ((state && state.nodes) || []).forEach(function (node) {
+    nameOf[node.nodeId] = node.name;
+  });
+  const ago = function (at) {
+    if (!state || !at) {
+      return '—';
+    }
+    const ms = state.now - at;
+    return ms >= 0 ? esc(String(Math.round(ms / 100) / 10)) + 's ago'
+                   : 'in ' + esc(String(Math.round(-ms / 100) / 10)) + 's';
+  };
+
+  const rows = [
+    ['Mode', '<strong>' + esc(self.mode) + '</strong> — ' + esc(self.why) +
+      (self.refused ? '. ' + warn(esc(self.refused)) : '')],
+    ['This node', off ? 'not a member of anything'
+      : '<code>' + esc(self.nodeId) + '</code> (' + esc(self.name) + '), ' +
+        esc(self.role === 'worker' ? 'a request worker of that node'
+                                   : 'the front process') +
+        (self.joinedAt ? ', joined ' + esc(self.joinedAt) : '')],
+    ['Heartbeat', off ? '—'
+      : 'every ' + esc(String(self.heartbeatMs)) + 'ms, lifetime ' +
+        esc(String(self.ttlMs)) + 'ms by the database clock' +
+        (self.msSinceRenewal !== null
+          ? '; last renewed ' + esc(String(self.msSinceRenewal)) + 'ms ago'
+          : '') +
+        (self.heartbeatFailures
+          ? '. <strong>' + esc(String(self.heartbeatFailures)) +
+            ' consecutive failure(s)</strong>: ' +
+            esc(String(self.lastHeartbeatError)) +
+            '. A node that cannot renew within its lifetime exits.'
+          : '')],
+    ['Leases held here', off || !self.leases.length ? 'none'
+      : self.leases.map(function (lease) {
+        return '<code>' + esc(lease.name) + '</code> at token ' +
+               esc(String(lease.token));
+      }).join(', ')],
+    ['Read barrier', barrier.active
+      ? esc(String(barrier.requests)) + ' request(s) waited a mean ' +
+        esc(String(Math.round(barrier.meanWaitMs * 10) / 10)) + 'ms to ' +
+        'catch up; ' + esc(String(barrier.gaveUp)) + ' were served before ' +
+        'catching up; ' + esc(String(barrier.heldForCommit)) + ' response(s) ' +
+        'were held a mean ' +
+        esc(String(Math.round(barrier.meanHoldMs * 10) / 10)) + 'ms for ' +
+        'their writes to commit' + (barrier.commitFailures
+          ? ', <strong>' + esc(String(barrier.commitFailures)) +
+            ' of which failed</strong>' : '')
+      : 'off — only active-active nodes wait for each other\'s writes']
+  ];
+
+  const nodeTable = off || !state ? ''
+    : '<h2>Members</h2><p>As of ' + esc(String(Math.round((snap.ageMs || 0) /
+        100) / 10)) + 's ago. A row whose lifetime has passed is DEAD and ' +
+      'stays dead: its node exits rather than renew it.</p>' +
+      '<table><tr><th>Node</th><th>Mode</th><th>Version</th>' +
+      '<th>Started</th><th>Heartbeat</th><th>Expires</th>' +
+      '<th>Settings agree</th></tr>' +
+      state.nodes.map(function (node) {
+        const dead = node.leftAt || node.expiresAt <= state.now;
+        return '<tr><td><strong>' + esc(node.name) + '</strong><br><code>' +
+          esc(node.nodeId) + '</code>' +
+          (node.nodeId === self.nodeId ? ' (this node)' : '') + '</td><td>' +
+          esc(node.mode) + '</td><td>' + esc(node.version) + '</td><td>' +
+          ago(node.startedAt) + '</td><td>' + ago(node.heartbeatAt) +
+          '</td><td>' + (node.leftAt ? 'left ' + ago(node.leftAt)
+            : (dead ? '<strong>expired</strong> ' : '') +
+              ago(node.expiresAt)) + '</td><td>' +
+          (node.agrees === null ? 'not known here'
+            : (node.agrees ? 'yes' : '<strong>NO</strong>')) + '</td></tr>';
+      }).join('') + '</table>' +
+      '<h2>Leases</h2><table><tr><th>Lease</th><th>Holder</th>' +
+      '<th>Token</th><th>Expires</th></tr>' +
+      (state.leases.length ? state.leases.map(function (lease) {
+        const lapsed = lease.expiresAt <= state.now;
+        return '<tr><td><code>' + esc(lease.name) + '</code></td><td>' +
+          esc(nameOf[lease.holder] || lease.holder) + '</td><td>' +
+          esc(String(lease.token)) + '</td><td>' +
+          (lapsed ? 'released or expired' : ago(lease.expiresAt)) +
+          '</td></tr>';
+      }).join('') : '<tr><td colspan="4">none</td></tr>') + '</table>';
+
+  const caps = self.capabilities;
+  const capabilityTable = '<h2>What active-active depends on</h2><p>' +
+    (caps.ready
+      ? 'Every capability is provided' + (caps.acceptedMissing.length
+        ? ' or accepted as missing (<code>' +
+          esc(caps.acceptedMissing.join(', ')) + '</code>)' : '') + '.'
+      : '<strong>' + esc(String(caps.missing.length)) + ' of ' +
+        esc(String(caps.rows.length)) + ' are missing</strong>, so ' +
+        '<code>cluster.mode=active-active</code> refuses to start. Each is a ' +
+        'way two nodes give different answers, described under the section ' +
+        'of issue #46 named beside it.') +
+    (caps.unknownAccepted.length
+      ? ' <strong>cluster.acceptMissingCapabilities names ids this build ' +
+        'does not know:</strong> <code>' +
+        esc(caps.unknownAccepted.join(', ')) + '</code>.' : '') +
+    '</p><table><tr><th>Capability</th><th>#46</th><th>State</th>' +
+    '<th>What</th><th>Where</th></tr>' +
+    caps.rows.map(function (row) {
+      return '<tr><td><code>' + esc(row.id) + '</code></td><td>' +
+        esc(row.section) + '</td><td>' +
+        (row.provided ? 'provided'
+          : (row.accepted ? '<strong>accepted as missing</strong>'
+                          : '<strong>missing</strong>')) + '</td><td>' +
+        esc(row.what) + '</td><td><code>' + esc(row.by) + '</code></td></tr>';
+    }).join('') + '</table>';
+
+  const secretTable = '<h2>Shared secrets</h2><table><tr><th>Secret</th>' +
+    '<th>Where this process\'s value came from</th><th>What</th></tr>' +
+    secrets.secrets.map(function (one) {
+      return '<tr><td><code>' + esc(one.name) + '</code></td><td>' +
+        esc(one.source) + '</td><td>' + esc(one.what) + '</td></tr>';
+    }).join('') + '</table>';
+
+  const html = '<h2>Right now</h2>' +
+    (off ? note('This process is not clustered: <code>cluster.mode</code> ' +
+                'resolved to <code>off</code>. That is correct for one ' +
+                'container and WRONG for several against one store — see the ' +
+                'first paragraph above.') : '') +
+    '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
+    rows.map(function (row) {
+      return '<tr><th>' + esc(row[0]) + '</th><td>' + row[1] + '</td></tr>';
+    }).join('') + '</table>' + nodeTable + capabilityTable + secretTable;
+
+  log.debug("Leaving clusterStatusBlock(). mode=" + self.mode);
+  return {
+    html: html,
+    json: { self: self, snapshotAgeMs: snap.ageMs,
+            nodes: state ? state.nodes : [], leases: state ? state.leases : [],
+            databaseNow: state ? state.now : null,
+            secrets: secrets, barrier: barrier }
+  };
+}
+
+// ===========================================================================
 // THE TWO SECOND-FACTOR PAGES' STATUS BLOCKS (2026-09-10).
 //
 // Each is the `status` member of a row in PROTOCOL_SETTINGS_PAGES below — the
@@ -33834,6 +34090,52 @@ const PROTOCOL_SETTINGS_PAGES = [
             ['/admin/realms', 'the realms that are written down with it'],
             ['/admin/config', 'the whole settings table'],
             ['/admin/users', 'the people, restored and otherwise']] },
+
+  // -------------------------------------------------------------------------
+  // /admin/cluster (2026-09-14, #46) — several containers against one store.
+  // A settings page with a status block, for /admin/persistence's reason: the
+  // five cluster.* settings, and what the membership, the leases and the
+  // capability table actually say right now.
+  // -------------------------------------------------------------------------
+  { path: '/admin/cluster', title: 'Cluster',
+    lead: '<strong>Whether several copies of this service against one ' +
+          'postgres store behave as one service.</strong> Inside one ' +
+          'container the processes agree because the front process ' +
+          'coordinates them; between containers the only link used to be the ' +
+          'change log, so a second container started, looked healthy and ' +
+          'gave wrong answers — a code redeemed twice, a signing key one ' +
+          'node did not publish, a revocation another node\'s save threw ' +
+          'away. <code>cluster.mode</code> decides what happens instead: ' +
+          '<code>active-passive</code> (the default in product mode on ' +
+          'postgres) lets ONE node serve and makes the others wait before ' +
+          'they restore or bind anything; <code>active-active</code> lets ' +
+          'every node serve and refuses to start while anything in the ' +
+          'capability table below is missing.',
+    also: ['<strong>EVERY WRITE IS FENCED.</strong> A clustered node renews a ' +
+           'membership row by the database\'s clock, and every transaction ' +
+           'it opens checks that row — and, in active-passive mode, the ' +
+           'service lease at the token it was acquired with — before it ' +
+           'writes anything. A node that paused past its lifetime, lost its ' +
+           'lease or lost its database EXITS rather than carrying on, ' +
+           'because a node that has lost its right to write and keeps ' +
+           'running would try again on every change.',
+           '<strong>A TAKEOVER IS ONE HEARTBEAT AFTER A CLEAN STOP</strong> — ' +
+           'a stopping node releases its leases — and one lifetime ' +
+           '(<code>cluster.nodeTtlMs</code>) after a crash. A standby has ' +
+           'restored nothing while it waited, so it restores the store when ' +
+           'it takes over; that is seconds, and it is the price of a standby ' +
+           'that can never write to a store another node owns.',
+           '<strong>THE SETTINGS EVERY NODE MUST SHARE ARE CHECKED.</strong> ' +
+           'The Kerberos keys, the mode, the public address and the rest of ' +
+           'the list below are compared, as a digest keyed by the ' +
+           'key-encryption key, with every live node\'s at startup; a node ' +
+           'that differs does not start, because two nodes with different ' +
+           'krbtgt keys seal tickets neither can open for the other.'],
+    status: clusterStatusBlock,
+    links: [['/admin/persistence', 'the store the cluster is built on'],
+            ['/admin/database', 'the database itself'],
+            ['/admin/secrets', 'where the key-encryption key comes from'],
+            ['/admin/config', 'the whole settings table']] },
 
   { path: '/admin/ldap', title: 'LDAP / LDAPS',
     lead: '<strong>The embedded directory: RFC 4511 on raw TCP 389, and the ' +

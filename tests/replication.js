@@ -353,14 +353,26 @@ async function run(t) {
           'supported configuration rather than a degraded one');
 
   // -------------------------------------------------------------------------
-  // 8b. A READ BARRIER WAITS OUT A TRANSACTION STILL COMMITTING (2026-09-15).
+  // 8b. A ROW COMMITTED BEHIND A HOLE IS NOT LEFT UNAPPLIED (2026-09-15).
   //
   // `syncNow()` gave up after two hundred pulls, and a pull that meets a hole
-  // returns at once — so the barrier gave up in a few hundred milliseconds
-  // while the transaction behind the hole was still open, and answered from a
-  // copy missing a row committed after it. `sts_acme_enrollment` met it in
-  // `dispatch` mode as "There is no such order". Here the hole fills 400ms
-  // later, which the old loop exhausted long before.
+  // returned at once without applying anything past it — so the barrier gave
+  // up in a few hundred milliseconds while the transaction behind the hole was
+  // still open, and answered from a copy missing a row COMMITTED after it.
+  // `sts_acme_enrollment` met it in `dispatch` mode as "There is no such
+  // order".
+  //
+  // **REWRITTEN WHEN feature/46 WAS REBASED ONTO develop.** This section
+  // arrived asserting the old reader: that the barrier waits for the hole to
+  // fill and applies both rows IN ORDER before the reader is released. The
+  // cluster work (#46) replaced that reader — it applies every visible row past
+  // a hole at once and asks for the hole again on every pull
+  // (`persistence_replication.js`, *PAST THE HOLES, AND BACK FOR THEM*), which
+  // is safe because every applier reads the current row — so the failure this
+  // section was written about cannot happen: the order row is applied the
+  // moment it is visible, hole or no hole. What a reader is owed is every row
+  // committed BEFORE it asked; a transaction that commits 400ms after is a
+  // concurrent write, and it is applied by the next pull.
   // -------------------------------------------------------------------------
   t.log.info('=== a read barrier waits out a transaction still committing ===');
   // Section 8 turned coordination off; a barrier with none resolves at once.
@@ -388,14 +400,19 @@ async function run(t) {
   const barrier = await replication.syncNow();
   await filled;
   t.check(barrier.caughtUp === true,
-          'THE BARRIER CAUGHT UP ACROSS A HOLE THAT FILLED 400MS LATER — it ' +
-          'gave up after two hundred millisecond pulls and answered from a ' +
-          'copy missing the row behind the hole',
+          'THE BARRIER CAUGHT UP WITH A HOLE STILL OPEN — it used to give up ' +
+          'after two hundred millisecond pulls and answer from a copy missing ' +
+          'the row behind the hole',
           JSON.stringify(barrier) + ' after ' +
           (Date.now() - barrierStarted) + 'ms');
-  t.equal(seen.join(','), 'cn=committing,cn=behind-the-hole',
-          'and both rows were applied, in order, before the reader was ' +
-          'released');
+  t.check(seen.indexOf('cn=behind-the-hole') >= 0,
+          'AND THE ROW COMMITTED BEHIND THE HOLE WAS APPLIED BEFORE THE READER ' +
+          'WAS RELEASED — the order row of the ACME failure',
+          seen.join(','));
+  await replication.pull();
+  t.check(seen.indexOf('cn=committing') >= 0,
+          'and the row that committed later is applied by the next pull, not ' +
+          'skipped', seen.join(','));
 
   // -------------------------------------------------------------------------
   // 9. THE ldif STORE CANNOT COORDINATE AND SAYS SO.

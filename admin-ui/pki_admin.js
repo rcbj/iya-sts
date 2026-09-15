@@ -1164,12 +1164,42 @@ async function pkiAction(body) {
       log.debug('Leaving pkiAction(). The build failed.');
       return refusedBy(built, 'STS-PKI-0105');
     }
+    // -----------------------------------------------------------------------
+    // **AND WHAT THE OLD BRANCH HAD CERTIFIED FOR THIS REALM'S OWN KEYS IS
+    // RE-MINTED FROM THE NEW ONE (2026-09-15, #46)** — as `build-scope` below
+    // and `rebuildEveryScope()` have always done, and as this action, the one
+    // `POST /admin-api/pki/build` reaches, never did.
+    //
+    // A rebuild replaces the Intermediate and every Issuing CA and KEEPS the
+    // row's recorded certificates (`buildScopeNow()` carries the row over, so
+    // the workbench's objects survive). The realm's JWKS `x5c`, its SAML
+    // metadata and every signature header then went on publishing the signing
+    // keys' certificates from the SUPERSEDED Issuing CAs, with those CAs and
+    // the old Intermediate beside them in the chain — the old Issuing CAs are
+    // on the new Intermediate's revocation list, and name the same
+    // `intermediate.crl` address as the new ones, so one list was named by
+    // certificates of two issuers. `sts_pki_distribution_points` is what saw
+    // it.
+    //
+    // **IT WAS ALWAYS THERE AND WAS HIDDEN BY WHEN A RUNTIME REALM'S KEYS WERE
+    // MADE.** Until #46 they were made by the first handler that read them,
+    // which for a realm created and then rebuilt at once was AFTER the
+    // rebuild, so nothing had been certified from the old branch. `app.js`
+    // now makes the request realm's key set before the handler, so the realm
+    // watcher's `certifyKeySet()` finds them held and certifies them from the
+    // branch the rebuild is about to replace — a whole branch of stale
+    // certificates, every time. A certification still IN FLIGHT when the
+    // rebuild lands is `certify()`'s to catch, and it does.
+    // -----------------------------------------------------------------------
+    const remint = await recertifyScope(scopeFrom({}));
     log.debug('Leaving pkiAction(). Built.');
     return { ok: true,
              why: 'A three-tier certificate authority was built for the "' +
-                  realmLabel() + '" realm. Anything issued from a PREVIOUS ' +
-                  'hierarchy now chains to nothing — this service keeps no ' +
-                  'copy of what it issued, so none of it can be listed.',
+                  realmLabel() + '" realm, and ' + remint + ' certificate(s) ' +
+                  'this realm\'s own signing keys publish were re-minted ' +
+                  'from it. Anything else issued from a PREVIOUS hierarchy ' +
+                  'now chains to nothing — this service keeps no copy of ' +
+                  'what it issued, so none of it can be listed.',
              chain: built.chain };
   }
 

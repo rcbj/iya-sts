@@ -39,6 +39,9 @@
 const nodeCrypto = require('crypto');
 const { log } = require('../common/helpers');
 const realms = require('../common/realms');
+// The atomic "once" a nonce is spent through across nodes — see
+// `spendNonceOnce()`. A LIBRARY that reaches `persistence.js` lazily.
+const claims = require('../cluster/cluster_claims');
 
 const accounts = realms.map({ persist: 'acme.accounts' });
 // thumbprint -> account id. An account IS its key (section 7.3.1), and a key
@@ -303,6 +306,45 @@ function spendNonce(id, expiresS) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// A NONCE, SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// `spendNonce()` is one synchronous step IN THIS PROCESS, which is what its
+// comment says and all it says. `usedNonces` is persisted and replicated, so a
+// nonce spent on one node reaches the others — a moment later. Inside that
+// moment two copies of one signed request (a retry that raced its original, a
+// captured request replayed at a second node) both passed, and RFC 8555
+// section 6.5's replay protection held per node.
+//
+// **THE LOCAL MAP STAYS THE FIRST CHECK** (no round trip for the ordinary
+// replay), and a nonce it accepts is then CLAIMED; a claim that another
+// request holds is the replay. The claim lives until the nonce itself expires
+// plus a minute of skew — after that `acme_jws.checkNonce()` refuses it as
+// expired and the claim guards nothing.
+//
+// Resolves `{ ok: true }`, `{ ok: false, reason: 'used' }` or
+// `{ ok: false, reason: 'store', why }`.
+// ---------------------------------------------------------------------------
+function spendNonceOnce(id, expiresS) {
+  log.debug("Entering spendNonceOnce().");
+  if (!spendNonce(id, expiresS)) {
+    log.debug("Leaving spendNonceOnce(). Spent here.");
+    return Promise.resolve({ ok: false, reason: 'used' });
+  }
+  const remaining = Number(expiresS) * 1000 - nowMs();
+  log.debug("Leaving spendNonceOnce(). Claiming.");
+  return claims.claim({ scope: 'acme.nonce', value: String(id),
+                        ttlMs: Math.max(60 * 1000,
+                                        (remaining || 0) + 60 * 1000) })
+    .then(function (claimed) {
+      if (claimed.ok) {
+        return { ok: true };
+      }
+      return { ok: false, reason: claimed.reason,
+               why: claimed.why || '' };
+    });
+}
+
 module.exports = {
   MAX_USED_NONCES: MAX_USED_NONCES,
   createAccount: createAccount,
@@ -322,5 +364,6 @@ module.exports = {
   saveCertificate: saveCertificate,
   certificateByCertId: certificateByCertId,
   certificateBySerial: certificateBySerial,
-  spendNonce: spendNonce
+  spendNonce: spendNonce,
+  spendNonceOnce: spendNonceOnce
 };

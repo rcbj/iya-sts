@@ -161,6 +161,15 @@ const realms = require('../common/realms');
 // far ahead of `admin.js`, and exactly the failure rule 1 exists to prevent.
 // ---------------------------------------------------------------------------
 const persistence = require('../persistence/persistence');
+// THE DIRECTORY CONNECTIONS OF OTHER NODES (2026-09-14, #46 section 4): the
+// cluster table and the sign-out instruction. A LIBRARY that registers nothing
+// and requires nothing of this file — the sockets reach it through hooks
+// installed below boundConnections(). See ldap_cluster_connections.js.
+const clusterConnections = require('./ldap_cluster_connections');
+// ONE CREATE OF A NAME AT A TIME ACROSS NODES (2026-09-14, #46 section 3). A
+// LIBRARY that registers nothing and requires nothing of this file; the names
+// it claims are computed here by `createClaimSpec()`.
+const createClaims = require('./directory_create_claims');
 // The revocation register, for the CRL container below. A LEAF (rule 3): it
 // registers no route, so requiring it here moves nothing.
 const pkiRevocation = require('../common/pki_revocation');
@@ -235,6 +244,9 @@ const audit = require('../common/audit');
 // Every refusal an LDAP handler answers, and every failure this module has on
 // its own, carries an STS-LDAP-* code — see common/error_codes.js. A leaf.
 const errorCodes = require('../common/error_codes');
+// The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY: installed on the
+// net.Server and tls.Server ldapjs built, in listen().
+const proxyProtocol = require('../common/proxy_protocol');
 // The admin console, for ONE reason: to hand it the reader below so that a
 // user's page can show that user's directory entry. It is required here rather
 // than the other way round because server.js requires ./admin BEFORE this
@@ -2276,6 +2288,21 @@ const ENTRY_UUID_NAMESPACE = Buffer.from('3b2f8c4e6d1a4e9f8a7c5d2e1f0b9a86',
 const UUID_SHAPED =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Whether another process can create the same entry at the same moment: this
+// process is a node of a cluster (asked of `cluster/cluster.js` LAZILY — a leaf
+// this file needs only at this one decision), or one of several request
+// workers answering one port (`workers.requestCount` with something in
+// `workers.dispatch`, the question `persistence_minted.js` asks the same way).
+// See putEntry()'s note on a sign-in's entry.
+function clusteredNode() {
+  log.debug("Entering clusteredNode().");
+  const cluster = require('../cluster/cluster');
+  const workers = (Number(config.value('workers.requestCount')) || 0) > 0 &&
+    String(config.value('workers.dispatch') || '').trim() !== '';
+  log.debug("Leaving clusteredNode().");
+  return cluster.mode() !== 'off' || workers;
+}
+
 // RFC 9562 section 5.5: SHA-1 over the namespace and the name, the version and
 // variant bits set. Node has a v4 generator and no v5 one.
 function nameBasedUuid(name) {
@@ -2515,8 +2542,23 @@ function putEntry(dn, attributes, options) {
   // THE ENTRY'S OWN, CARRIED, NEVER THE CALLER'S — see `entryUUID` above. A
   // writer that rebuilt the attribute set from a copy of the entry may well be
   // handing one back, and one that did not is handing none; neither decides.
+  //
+  // **AND AN ENTRY A SIGN-IN CREATED ON A CLUSTERED NODE (2026-09-14, #46)**
+  // takes the seed's deterministic value too — rcbj's choice, narrowed to the
+  // one case that needs it. `autoCreateUser()` runs synchronously inside every
+  // protocol's credential check, so two nodes seeing a name's first sign-in at
+  // once both create `uid=<name>,ou=users` and cannot claim it first; with a
+  // random value each, the directory merge keeps one entry and the other
+  // node's tokens carry a `sub` naming nobody. With the value derived from the
+  // realm and the DN both nodes create the SAME entry, and the merge makes them
+  // one. The cost is the one the rule above was written against — a person
+  // deleted and signing in again under the same name gets the same subject —
+  // and it is taken only where two processes can race (a cluster, or a
+  // dispatched pool): auto-create is development mode's (`mode.autoCreates()`),
+  // and a single process keeps random values.
   stored.attributes.entryuuid = [entryUuidOf(previous) ||
-    (stored.origin === 'seed'
+    (stored.origin === 'seed' || (stored.origin === 'authentication' &&
+                                  clusteredNode())
       ? backfilledEntryUuid(realms.currentId(), normalizeDn(dn))
       : crypto.randomUUID())];
   // And its aliases, the same way: the entry's, never the caller's.
@@ -8968,6 +9010,58 @@ function inRealmOfRequest(handler) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// AN ADD CLAIMS WHAT IT CREATES (2026-09-14, #46 section 3). Outside the
+// realm wrapper and the request pool, so the claim is made once by the process
+// holding the socket whichever process runs the handler; inert (no round trip)
+// unless several processes write one store — `directory_create_claims.js`.
+// Released when the add is refused, and after the write is flushed when it
+// succeeded, which is what `res.end()` without a preceding error means.
+// ---------------------------------------------------------------------------
+function claimingTheAdd(handler) {
+  log.debug("Entering claimingTheAdd().");
+  log.debug("Leaving claimingTheAdd().");
+  return function (req, res, next) {
+    if (!createClaims.active()) {
+      return handler(req, res, next);
+    }
+    const dn = req && req.dn ? req.dn.toString() : '';
+    const uids = (req.attributes || []).filter(function (attr) {
+      return String(attr.type).toLowerCase() === 'uid';
+    }).reduce(function (all, attr) {
+      return all.concat(attr.values || []);
+    }, []);
+    return inRealmOf(dn, function () {
+      return claimCreate({ dn: dn, uids: uids });
+    }).then(function (held) {
+      if (!held.ok) {
+        return inRealmOf(dn, function () {
+          if (held.reason === 'store') {
+            return next(ldapRefusal(req, 'STS-LDAP-0093', 'an add of ' + dn +
+              ' was refused: ' + createClaims.refusalMessage(held),
+              new ldap.UnavailableError(createClaims.refusalMessage(held)),
+              dn));
+          }
+          return next(ldapRefusal(req, 'STS-LDAP-0092', 'an add of ' + dn +
+            ' was refused: ' + createClaims.refusalMessage(held),
+            new ldap.EntryAlreadyExistsError(dn), dn));
+        });
+      }
+      const end = res.end;
+      res.end = function () {
+        held.settle(true);
+        return end.apply(res, arguments);
+      };
+      return handler(req, res, function (err) {
+        if (err) {
+          held.settle(false);
+        }
+        return next(err);
+      });
+    });
+  };
+}
+
 const server = {};
 OPERATIONS.forEach(function (operation) {
   server[operation] = function () {
@@ -8999,6 +9093,13 @@ OPERATIONS.forEach(function (operation) {
       LOCAL_HANDLERS[operation] = args[args.length - 1];
       args[args.length - 1] = throughTheRequestPool(operation,
                                                     LOCAL_HANDLERS[operation]);
+    }
+    // AND THE THIRD, OUTERMOST, FOR AN ADD ONLY (2026-09-14, #46): the DN
+    // and the username it takes are claimed before anything else runs, in the
+    // process that holds the socket, so two adds of one name on two nodes
+    // cannot both succeed. See `claimingTheAdd()`.
+    if (operation === 'add') {
+      args[args.length - 1] = claimingTheAdd(args[args.length - 1]);
     }
     servers.forEach(function (one) {
       one[operation].apply(one, args);
@@ -9160,29 +9261,59 @@ servers.forEach(function (one) {
   // twice is a Set member added twice, which is once.
   ['connection', 'secureConnection'].forEach(function (event) {
     one.server.on(event, function (socket) {
-      liveConnections.add(socket);
-      publishConnectionsSoon();
-      socket.on('close', function () {
-        liveConnections.delete(socket);
-        publishConnectionsSoon();
-      });
+      holdSocket(socket);
     });
   });
 });
+
+// A socket this process now holds, until it closes. A function of its own so
+// that `tests/ldap_cluster_signout.js` can hand it a socket without a listener:
+// the cross-node close is only worth asserting against the real Set.
+function holdSocket(socket) {
+  log.debug("Entering holdSocket().");
+  liveConnections.add(socket);
+  publishConnectionsSoon();
+  socket.on('close', function () {
+    liveConnections.delete(socket);
+    publishConnectionsSoon();
+  });
+  log.debug("Leaving holdSocket().");
+}
+
+// ---------------------------------------------------------------------------
+// AND THE SAME QUESTION ASKED ACROSS NODES (2026-09-14, #46 section 4).
+//
+// `boundConnections()` answers for the WHOLE CLUSTER in active-active mode:
+// this process's own connections (its sockets, or its front process's mirror)
+// followed by what every other node has published — rows without a socket,
+// marked `remote` and naming their node. `localBoundConnections()` is this
+// node's alone, and it is what the in-container mirror and the cluster table
+// publish, because a row another node published must never be re-published as
+// this node's. `ldap_cluster_connections.js` argues the table and the
+// instruction; the hooks below are the only way it reaches a socket.
+// ---------------------------------------------------------------------------
+function boundConnections() {
+  log.debug("Entering boundConnections().");
+  const local = localBoundConnections();
+  const remote = clusterConnections.remoteRows();
+  log.debug("Leaving boundConnections(). " + local.length + " local, " +
+            remote.length + " on other nodes.");
+  return remote.length ? local.concat(remote) : local;
+}
 
 // Every connection this process currently holds, with who is bound on it. The
 // DN is read live, per the note above; `key` is the console's identity key for
 // that person, derived the same way every other door here derives it, so a row
 // on /logout and a row on /admin/users name one person rather than two.
-function boundConnections() {
-  log.debug("Entering boundConnections().");
+function localBoundConnections() {
+  log.debug("Entering localBoundConnections().");
   // A PROCESS WITH NO LISTENER ANSWERS OUT OF THE MIRROR. See the block above:
   // the Set below can only ever be empty here, and answering "none" out of it
   // is how a sign-out came to report that it had ended everything while a bound
   // connection stayed open.
   if (connectionMirror) {
     const mirrored = mirroredConnections();
-    log.debug("Leaving boundConnections(). " + mirrored.length +
+    log.debug("Leaving localBoundConnections(). " + mirrored.length +
               " mirrored connection(s).");
     return mirrored;
   }
@@ -9215,8 +9346,50 @@ function boundConnections() {
       socket: socket
     });
   });
-  log.debug("Leaving boundConnections(). " + out.length + " connection(s).");
+  log.debug("Leaving localBoundConnections(). " + out.length +
+            " connection(s).");
   return out;
+}
+
+// What the cluster table needs of this module. `holdsSockets` is true only in
+// the process that owns the listeners: a mirrored worker's rows are its front
+// process's, which that process publishes itself.
+clusterConnections.install({
+  holdsSockets: function () {
+    log.debug("Entering holdsSockets().");
+    log.debug("Leaving holdsSockets().");
+    return !connectionMirror &&
+           (listening || tlsListening || liveConnections.size > 0);
+  },
+  localRows: function () {
+    log.debug("Entering localRows().");
+    log.debug("Leaving localRows().");
+    return localBoundConnections();
+  },
+  closeLocal: function (key) {
+    log.debug("Entering closeLocal().");
+    log.debug("Leaving closeLocal().");
+    return dropConnectionsFor(key, { localOnly: true });
+  }
+});
+
+// The rows of OTHER nodes bound as `wanted`, as a sign-out reports them: asked
+// for, not closed. Forgotten once reported, for `forgetMirrored()`'s reason —
+// the next call in the same sign-out must not report them again.
+function remoteDropsFor(wanted) {
+  log.debug("Entering remoteDropsFor().");
+  const rows = clusterConnections.remoteRows().filter(function (row) {
+    return row.key && row.key === wanted;
+  }).map(function (row) {
+    return { id: row.id, dn: row.dn, secure: row.secure, port: row.port,
+             node: row.node, nodeName: row.nodeName, remote: true,
+             pending: true };
+  });
+  if (rows.length) {
+    clusterConnections.forgetRemote(wanted);
+  }
+  log.debug("Leaving remoteDropsFor(). " + rows.length + ".");
+  return rows;
 }
 
 // Close every connection bound as this person, and say which. It is the only
@@ -9230,9 +9403,23 @@ function boundConnections() {
 // UNSOLICITED NOTICE OF DISCONNECTION (RFC 4511 section 4.4.1) would be the
 // polite form and ldapjs has no way to send one, which is stated on /logout
 // rather than left as a difference somebody discovers.
-function dropConnectionsFor(key) {
+//
+// **AND ON EVERY OTHER NODE, IN ACTIVE-ACTIVE MODE (2026-09-14, #46).** Unless
+// `options.localOnly` — which is how the front process acts on a worker's
+// header and how another node's instruction is carried out, both of which
+// already had their instruction written — a sign-out writes the cluster
+// instruction for this identity FIRST, whatever this process can see, and the
+// rows other nodes have published are returned after this node's with
+// `remote: true, pending: true`: instructed, closed when that node applies the
+// change log. See ldap_cluster_connections.js.
+function dropConnectionsFor(key, options) {
   log.debug("Entering dropConnectionsFor(). key=" + key);
   const wanted = String(key || '');
+  const opts = options || {};
+  if (!opts.localOnly) {
+    clusterConnections.instructSignOut(wanted);
+  }
+  const remote = opts.localOnly ? [] : remoteDropsFor(wanted);
   // -------------------------------------------------------------------------
   // IN A REQUEST WORKER, SAY WHAT IS TO BE CLOSED AND LET THE OWNER CLOSE IT.
   //
@@ -9280,10 +9467,10 @@ function dropConnectionsFor(key) {
     forgetMirrored(wanted);
     log.debug("Leaving dropConnectionsFor(). " + mine.length +
               " asked of the front process.");
-    return mine;
+    return remote.length ? mine.concat(remote) : mine;
   }
   const dropped = [];
-  boundConnections().forEach(function (row) {
+  localBoundConnections().forEach(function (row) {
     if (!row.key || row.key !== wanted) return;
     dropped.push({ id: row.id, dn: row.dn, secure: row.secure,
                    port: row.port });
@@ -9306,7 +9493,7 @@ function dropConnectionsFor(key) {
              'protocol has.');
   }
   log.debug("Leaving dropConnectionsFor(). " + dropped.length + " dropped.");
-  return dropped;
+  return remote.length ? dropped.concat(remote) : dropped;
 }
 
 // NOT fanned out: an error says which listener it came from. Two sockets and
@@ -9787,11 +9974,35 @@ function performOperation(operation, shape) {
   const req = operationContext(operation, shape);
   const res = collectingResponse();
   let failure = null;
+  let called = false;
+  let signal = null;
+  const finished = new Promise(function (resolve) {
+    signal = resolve;
+  });
   handler(req, res, function (err) {
+    called = true;
     if (err) {
       failure = err;
     }
+    signal();
   });
+  // A HANDLER THAT SAID IT WENT ASYNCHRONOUS (2026-09-14, #46): the bind asks
+  // the cluster's shared rate limiter before it looks at a password. The
+  // answer is a promise then — `request_worker.js`'s `handleOperation()`
+  // resolves whatever an operation returns — and the same reading below.
+  if (!called && req.stsAsyncOperation) {
+    log.debug('Leaving performOperation(). Waiting for the handler.');
+    return finished.then(function () {
+      return operationOutcome(operation, req, res, failure);
+    });
+  }
+  log.debug('Leaving performOperation(). Reading the outcome.');
+  return operationOutcome(operation, req, res, failure);
+}
+
+// What `performOperation()` answers once its handler has ended or failed.
+function operationOutcome(operation, req, res, failure) {
+  log.debug('Entering operationOutcome(). operation=' + operation);
   if (failure) {
     // ---------------------------------------------------------------------
     // THE ENTRIES ALREADY SENT TRAVEL WITH THE REFUSAL, AND DROPPING THEM WAS
@@ -9819,27 +10030,27 @@ function performOperation(operation, shape) {
     // `tests/vendored/sts_directory_bulk_load_ldap.js` — over a socket, in a
     // stack, with operations off.
     // ---------------------------------------------------------------------
-    log.debug('Leaving performOperation(). Refused with ' +
+    log.debug('Leaving operationOutcome(). Refused with ' +
               res.collected.entries.length + ' entry/entries already sent.');
     return { ok: false, errorName: failure.name || 'OperationsError',
              error: failure.message || '',
              entries: res.collected.entries };
   }
   if (!res.collected.ended) {
-    log.debug('Leaving performOperation(). The handler ended nothing.');
+    log.debug('Leaving operationOutcome(). The handler ended nothing.');
     audit.failure('STS-LDAP-0024', {
       channel: ldapChannelOf(req), protocol: 'LDAP', target: operation,
       summary: 'the LDAP "' + operation + '" handler finished without ' +
                'sending a result message or failing',
       outcome: 'error'
     });
-    log.debug("Leaving performOperation().");
+    log.debug("Leaving operationOutcome().");
     return { ok: false, errorName: 'OperationsError',
              error: 'the "' + operation + '" handler finished without ' +
                'sending a result message. See ldap/CLAUDE.md — a handler ' +
                'that neither ends nor fails hangs the client for ever.' };
   }
-  log.debug('Leaving performOperation(). ' + res.collected.entries.length +
+  log.debug('Leaving operationOutcome(). ' + res.collected.entries.length +
             ' entry/entries.');
   return { ok: true, entries: res.collected.entries,
            endArg: res.collected.endArg };
@@ -10082,22 +10293,71 @@ server.bind('', function (req, res, next) {
   // **FAILED BINDS ARE RATE LIMITED**, and this reads the buckets without
   // counting. A caller over either limit is refused whether or not this
   // password is right, so a correct guess during a lockout teaches nothing.
+  //
+  // **ONE BUDGET FOR THE CLUSTER SINCE 2026-09-14 (#46)**: the buckets are read
+  // with `blockedShared()`, which counts in the store every node shares and is
+  // `blocked()` where none is shared. That is a round trip, so the rest of the
+  // bind is `finishBind()` below, run when the answer is in — ldapjs's `next`
+  // is a callback and does not care which tick it is called on.
+  //
+  // **AND ONLY WHERE A STORE IS SHARED.** With none, `blocked()` answers in the
+  // same tick exactly as before — so a bind stays synchronous in memory mode,
+  // which `performOperation()`'s callers and every in-process test rely on.
+  // Where it does go asynchronous the request says so
+  // (`stsAsyncOperation`), and `performOperation()` waits for `next`.
   const bindLimited = mode.limitsDirectoryBindFailures();
-  if (bindLimited) {
+  if (!bindLimited) {
+    log.debug('Leaving the LDAP bind handler. Unlimited; finishing.');
+    return finishBind();
+  }
+  const refuseLockedOut = function (lockedOut) {
+    log.debug("Entering refuseLockedOut().");
+    log.info('ldap: refusing a bind as ' + dn + '; too many failed ' +
+             'binds (' + lockedOut.kind + ' limit ' + lockedOut.limit + ').');
+    log.debug("Leaving refuseLockedOut().");
+    return next(ldapRefusal(req, 'STS-LDAP-0073', 'a bind as ' + dn +
+      ' was refused without checking its password: too many failed ' +
+      'binds for this ' + (lockedOut.kind === 'address' ? 'address' : 'DN') +
+      ' (limit ' + lockedOut.limit + ')',
+      new ldap.UnwillingToPerformError('too many failed binds; retry in ' +
+        lockedOut.retryAfterS + ' seconds'), dn));
+  };
+  if (!websecurity.sharesLimits()) {
     const lockedOut = websecurity.blocked('ldap-bind', limiterRequestOf(req),
                                           dn);
-    if (lockedOut) {
-      log.info('ldap: refusing a bind as ' + dn + '; too many failed binds (' +
-               lockedOut.kind + ' limit ' + lockedOut.limit + ').');
-      log.debug('Leaving the LDAP bind handler. Rate limited.');
-      return next(ldapRefusal(req, 'STS-LDAP-0073', 'a bind as ' + dn + ' ' +
-        'was refused without checking its password: too many failed binds ' +
-        'for this ' + (lockedOut.kind === 'address' ? 'address' : 'DN') +
-        ' (limit ' + lockedOut.limit + ')',
-        new ldap.UnwillingToPerformError('too many failed binds; retry in ' +
-          lockedOut.retryAfterS + ' seconds'), dn));
-    }
+    log.debug('Leaving the LDAP bind handler. Limited in this process.');
+    return lockedOut ? refuseLockedOut(lockedOut) : finishBind();
   }
+  req.stsAsyncOperation = true;
+  // `next` from here on is called once, whichever path answers.
+  let nextCalled = false;
+  const answerOnce = next;
+  next = function (err) {
+    nextCalled = true;
+    return answerOnce(err);
+  };
+  websecurity.blockedShared('ldap-bind', limiterRequestOf(req), dn)
+    .then(function (lockedOut) {
+      return lockedOut ? refuseLockedOut(lockedOut) : finishBind();
+    })
+    .catch(function (e) {
+      log.error(errorCodes.tag('STS-LDAP-0094') + 'ldap: a bind as ' + dn +
+                ' could not be completed: ' + ((e && e.stack) || e));
+      // EXACTLY ONE RESULT: a throw from inside a `next` that already ran
+      // (the refusal or `finishBind()`'s own) must not send a second.
+      if (nextCalled) {
+        return undefined;
+      }
+      return next(coded('STS-LDAP-0094',
+        new ldap.OperationsError('the bind could not be completed')));
+    });
+  log.debug('Leaving the LDAP bind handler. Asking the rate limiter.');
+  return undefined;
+
+  // EVERYTHING AFTER THE RATE LIMIT, unchanged but for its exits. Hoisted, so
+  // both paths above reach it; it closes over the handler's own names.
+  function finishBind() {
+  log.debug("Entering finishBind().");
   if (credentials_value === REFUSED_PASSWORD) {
     // The one refusal. See the header: it is the service's convention, not a
     // policy, and it is what makes result code 49 reachable.
@@ -10126,10 +10386,24 @@ server.bind('', function (req, res, next) {
                         REFUSED_PASSWORD + '", the one this service refuses ' +
                         'in every protocol' }
     });
+    if (bindLimited && websecurity.sharesLimits()) {
+      // AWAITED WHERE THE COUNT IS SHARED (2026-09-14): a failure whose
+      // increment took the bucket past the limit is answered with the
+      // lockout — `websecurity.failedShared()` argues it.
+      log.debug("Leaving finishBind(). Counting the failure first.");
+      return websecurity.failedShared('ldap-bind', limiterRequestOf(req), dn)
+        .then(function (overLimit) {
+          return overLimit ? refuseLockedOut(overLimit)
+            : next(coded('STS-LDAP-0001', new ldap.InvalidCredentialsError()));
+        });
+    }
     if (bindLimited) {
-      websecurity.attempt('ldap-bind', limiterRequestOf(req), dn);
+      // In this process's buckets, where nothing is shared: synchronous, and
+      // one process cannot race itself.
+      websecurity.attemptShared('ldap-bind', limiterRequestOf(req), dn);
     }
     log.debug('Leaving the LDAP bind handler. LDAP_INVALID_CREDENTIALS.');
+    log.debug("Leaving finishBind().");
     return next(coded('STS-LDAP-0001', new ldap.InvalidCredentialsError()));
   }
   // ---------------------------------------------------------------------
@@ -10175,17 +10449,46 @@ server.bind('', function (req, res, next) {
       });
       // COUNTED, and only here and at the literal-password refusal above: a
       // FAILURE is what the limit is about. See `websecurity.blocked()`.
-      if (bindLimited) {
-        websecurity.attempt('ldap-bind', limiterRequestOf(req), dn);
+      if (bindLimited && websecurity.sharesLimits()) {
+        // Awaited, as at the literal-password refusal above.
+        log.debug("Leaving finishBind(). Counting the failure first.");
+        return websecurity.failedShared('ldap-bind', limiterRequestOf(req), dn)
+          .then(function (overLimit) {
+            return overLimit ? refuseLockedOut(overLimit)
+              : next(coded(errorCodes.codeOf(checked) || 'STS-LDAP-0002',
+                           new ldap.InvalidCredentialsError()));
+          });
       }
+      if (bindLimited) {
+        websecurity.attemptShared('ldap-bind', limiterRequestOf(req), dn);
+      }
+      log.debug("Leaving finishBind(). The credential was refused.");
       return next(coded(errorCodes.codeOf(checked) || 'STS-LDAP-0002',
                         new ldap.InvalidCredentialsError()));
     }
+    if (bindLimited && websecurity.sharesLimits()) {
+      // A VERIFIED PASSWORD IS ANSWERED ONLY WHILE THE BUCKETS ARE UNDER THE
+      // LIMIT (2026-09-14): a right guess racing a burst that spent the budget
+      // is refused like the burst. A read, so a pool binding fifty connections
+      // at once costs nothing. `websecurity.failedShared()` argues it.
+      log.debug("Leaving finishBind(). Settling the success first.");
+      return websecurity.succeededShared('ldap-bind', limiterRequestOf(req),
+        dn, { keepAddress: true, unlessBlocked: true })
+        .then(function (racedOut) {
+          return racedOut ? refuseLockedOut(racedOut) : bindAccepted();
+        });
+    }
     if (bindLimited) {
-      websecurity.succeeded('ldap-bind', limiterRequestOf(req), dn,
-                            { keepAddress: true });
+      websecurity.succeededShared('ldap-bind', limiterRequestOf(req), dn,
+                                  { keepAddress: true });
     }
   }
+  log.debug("Leaving finishBind(). Accepted.");
+  return bindAccepted();
+
+  // THE ACCEPTED BIND, split out so the shared limiter's answer can come first.
+  function bindAccepted() {
+  log.debug("Entering bindAccepted().");
   // A successful bind writes TWO audit rows and they are not duplicates: this
   // one says an LDAP bind happened on this socket, and the `authentication` row
   // recordAuthentication() writes below says a credential was accepted — the
@@ -10237,7 +10540,10 @@ server.bind('', function (req, res, next) {
   publishConnectionsSoon();
   res.end();
   log.debug('Leaving the LDAP bind handler. The bind succeeded.');
+  log.debug("Leaving bindAccepted().");
   return next();
+  }
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -10269,7 +10575,9 @@ function setConnectionWatcher(fn) {
 // but dropConnectionsFor() has ever used.
 function connectionSnapshot() {
   log.debug("Entering connectionSnapshot().");
-  const rows = boundConnections().map(function (row) {
+  // THIS NODE'S ONLY: another node's rows reach a worker through the cluster
+  // table, and mirrored as well they would be listed twice.
+  const rows = localBoundConnections().map(function (row) {
     return { id: row.id, dn: row.dn, key: row.key, secure: row.secure,
              port: row.port, boundAt: row.boundAt };
   });
@@ -10317,6 +10625,9 @@ let publishScheduled = false;
 
 function publishConnectionsSoon() {
   log.debug("Entering publishConnectionsSoon().");
+  // The cluster table first, and whatever the in-container watcher is doing:
+  // a node with no request workers has no watcher and still has a table row.
+  clusterConnections.noteLocalChange();
   if (!connectionWatcher || publishScheduled) {
     log.debug("Leaving publishConnectionsSoon().");
     return;
@@ -13491,6 +13802,61 @@ function groupDnFor(displayName) {
   return 'cn=' + escapeDnValue(String(displayName)) + ',' + groupsDn();
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A CREATE IS ABOUT TO TAKE, for `directory_create_claims.js` (#46
+// section 3) — in the AMBIENT realm, and computed here because a DN and a
+// username are this file's to decide. `username` is a person created by name
+// (`createUser()`'s DN and the name itself), `group` a group by display name,
+// `dn` an entry by DN with the `uid` values an LDAP add carries — the names
+// the add handler's one-entry-per-person check reads.
+// ---------------------------------------------------------------------------
+function createClaimSpec(what) {
+  log.debug("Entering createClaimSpec().");
+  const o = what || {};
+  const dns = [];
+  const usernames = [];
+  if (o.username) {
+    const name = String(o.username).trim();
+    if (name && nameUsableInDn(name)) {
+      dns.push(normalizeDn(namePlan(name).dn));
+    }
+    usernames.push(name);
+  }
+  if (o.group) {
+    dns.push(normalizeDn(groupDnFor(String(o.group).trim())));
+  }
+  if (o.dn) {
+    dns.push(normalizeDn(o.dn));
+    if (normalizeDn(parentDn(o.dn)) === normalizeDn(usersDn())) {
+      usernames.push(usernameOfEntry({ dn: String(o.dn) }));
+      (o.uids || []).forEach(function (uid) {
+        usernames.push(String(uid));
+      });
+    }
+  }
+  log.debug("Leaving createClaimSpec().");
+  return { realm: realms.currentId(), dns: dns,
+           usernames: usernames.filter(Boolean) };
+}
+
+// The same, claimed. Resolves to the answer `directory_create_claims.claim()`
+// gives.
+function claimCreate(what) {
+  log.debug("Entering claimCreate().");
+  let spec = null;
+  try {
+    spec = createClaimSpec(what);
+  } catch (e) {
+    log.debug("Caught in claimCreate(): " + ((e && e.message) || e));
+    // A name this file cannot place is refused by the create itself, with its
+    // own sentence; there is nothing to claim for it.
+    log.debug("Leaving claimCreate(). Nothing placeable.");
+    return Promise.resolve({ ok: true, settle: function () {} });
+  }
+  log.debug("Leaving claimCreate().");
+  return createClaims.claim(spec);
+}
+
 // `origin` says WHICH DOOR wrote it, and it is a parameter rather than the
 // constant it used to be because there are now three: SCIM (the caller this
 // function was written for), the admin console's RBAC screen, and the
@@ -15154,6 +15520,11 @@ function listen() {
                '(LDAP_PLAIN_LISTENER) to false to answer over LDAPS ' +
                'on ' + LDAPS_PORT + ' only.');
     }
+    // THE PROXY PROTOCOL (2026-09-14): on ldapjs's own net.Server, so the
+    // connection ldapjs builds its `c.ldap.id` from, the bind limiter and the
+    // audit all read the header's address. A no-op when it is off.
+    proxyProtocol.install(plainServer.server, {
+      label: 'LDAP (' + LDAP_PORT + ')', channel: 'ldap' });
     plainServer.listen(LDAP_PORT, ldapListenHost(), function () {
       const address = plainServer.address();
       boundPort = address ? address.port : LDAP_PORT;
@@ -15237,6 +15608,9 @@ function listen() {
                'one built at require time, which may not be the one 8443, ' +
                '9443 and the main port present.');
     }
+    // Before TLS, on the tls.Server ldapjs built — see the plain listener.
+    proxyProtocol.install(secureServer.server, {
+      label: 'LDAPS (' + LDAPS_PORT + ')', channel: 'ldaps' });
     secureServer.listen(LDAPS_PORT, ldapListenHost(), function () {
       const address = secureServer.address();
       boundTlsPort = address ? address.port : LDAPS_PORT;
@@ -15300,6 +15674,9 @@ function close() {
 module.exports = {
   listen: listen,
   close: close,
+  // WHAT A CREATE TAKES, CLAIMED ACROSS NODES (#46 section 3), for the SCIM
+  // and management-API doors. See `directory_create_claims.js`.
+  claimCreate: claimCreate,
   // THE ENTRY UUID (2026-09-14): the lookups a person's `sub` and a SCIM id
   // go through, exported for SCIM and for the tests.
   entryByUuid: entryByUuid,
@@ -15381,6 +15758,24 @@ module.exports = {
   // block above boundConnections().
   boundConnections: boundConnections,
   dropConnectionsFor: dropConnectionsFor,
+  // This node's connections alone, and the door a socket is held through —
+  // the second for tests/ldap_cluster_signout.js, which hands it a socket
+  // without binding a port. See the block above boundConnections().
+  localBoundConnections: localBoundConnections,
+  holdSocket: holdSocket,
+  // A global sign-out's instruction to every other node, whether or not this
+  // process listed anything for the identity (logout.js's terminate()). Null
+  // outside active-active. See ldap_cluster_connections.js.
+  signOutAcrossCluster: function (key) {
+    log.debug("Entering signOutAcrossCluster().");
+    log.debug("Leaving signOutAcrossCluster().");
+    return clusterConnections.instructSignOut(key);
+  },
+  clusterConnectionsReport: function () {
+    log.debug("Entering clusterConnectionsReport().");
+    log.debug("Leaving clusterConnectionsReport().");
+    return clusterConnections.report();
+  },
   // THE FOUR THAT MAKE BOTH OF THE ABOVE WORK IN A PROCESS THAT HOLDS NO
   // SOCKET (2026-09-09). `setConnectionWatcher()` and `connectionSnapshot()`
   // are the FRONT process's half, filled and read by common/request_pool.js;

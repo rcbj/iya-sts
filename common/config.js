@@ -661,6 +661,73 @@ const SETTINGS = [
                  'a forwarded certificate is a certificate anybody can ' +
                  'forge.' },
 
+  // Added 2026-09-14 (#46 section 8). `global.trustProxy` alone believed a
+  // forwarded header from anybody who could reach a node, including past the
+  // load balancer; `common/client_address.js` argues the boundary.
+  { key: 'global.trustedProxies', group: 'Global',
+    label: 'Trusted proxy addresses',
+    env: 'STS_TRUSTED_PROXIES', type: 'csv', dflt: '', runtime: true,
+    description: 'The addresses or CIDR ranges this deployment\'s own ' +
+                 'proxies and load balancers connect from, comma-separated ' +
+                 '(10.0.0.0/8, fd00::/8). Read only when global.trustProxy ' +
+                 'is on. EMPTY, the default, keeps the old rule: forwarded ' +
+                 'headers are believed from any caller, and the rate ' +
+                 'limiter takes the left-most X-Forwarded-For entry, which ' +
+                 'the client writes itself. SET, X-Forwarded-For, ' +
+                 'X-Forwarded-Proto and X-Forwarded-Host are believed only ' +
+                 'from a connection whose peer is in one of these ranges, ' +
+                 'and the client is the right-most X-Forwarded-For entry ' +
+                 'that is not — so a caller reaching a node directly can ' +
+                 'neither pick its own rate-limit address nor this ' +
+                 'service\'s idea of its own URL. A value that is not an ' +
+                 'address or a range is ignored and logged, never widened. ' +
+                 'With global.proxyProtocol on it is ALSO the list a PROXY ' +
+                 'protocol header is believed from, whatever ' +
+                 'global.trustProxy says — and there an empty list trusts ' +
+                 'nobody, so the service refuses to start.' },
+
+  // Added 2026-09-14 (#46). Behind an L4 load balancer with TLS passthrough —
+  // an AWS Network Load Balancer is the case — the peer of every connection is
+  // the balancer, and no forwarded header can exist below TLS.
+  // `common/proxy_protocol.js` argues the three kinds of peer and where the
+  // address is put.
+  { key: 'global.proxyProtocol', group: 'Global',
+    label: 'PROXY protocol on the TCP listeners',
+    env: 'STS_PROXY_PROTOCOL', type: 'enum', enumValues: ['off', 'v2'],
+    dflt: 'off', runtime: false, perProcess: true,
+    restartReason: 'it is installed on each listener when that listener ' +
+                   'binds, and a connection half-way through a header ' +
+                   'cannot be told the rules changed',
+    description: 'Whether every TCP listener this service owns expects a ' +
+                 'HAProxy PROXY protocol version 2 header at the front of ' +
+                 'each connection: the main port, 8443 and 9443, LDAP 389 ' +
+                 'and LDAPS 636, the KDC\'s TCP 88 (not UDP), the embedded ' +
+                 'debugger and the plain-HTTP revocation listener. `off`, ' +
+                 'the default, reads no header. `v2` reads it BEFORE TLS, ' +
+                 'so the client\'s address reaches the rate limiter, the ' +
+                 'audit, LDAP and /tls/whoami while TLS — and mutual TLS — ' +
+                 'still terminates here; it is what an AWS Network Load ' +
+                 'Balancer sends with the target group attribute ' +
+                 'proxy_protocol_v2.enabled, and HAProxy with send-proxy-v2. ' +
+                 'A connection from global.trustedProxies MUST begin with a ' +
+                 'valid header (a LOCAL header, which health checks send, ' +
+                 'keeps the balancer\'s address); a connection from any ' +
+                 'other address is CLOSED, except one from this host itself, ' +
+                 'which is served plain because the service dials its own ' +
+                 'main port. Version 1 is refused. The SPIFFE gRPC listeners ' +
+                 'are not covered.' },
+
+  { key: 'global.proxyProtocolTimeoutMs', group: 'Global',
+    label: 'PROXY protocol header timeout (ms)',
+    env: 'STS_PROXY_PROTOCOL_TIMEOUT_MS', type: 'int', dflt: 5000,
+    min: 100, max: 60000, runtime: true, perProcess: true,
+    description: 'How long a connection from a trusted proxy may take to ' +
+                 'send its complete PROXY protocol header before it is ' +
+                 'closed. A balancer writes the header in the first segment, ' +
+                 'so this bounds a slow or stalled sender holding a socket ' +
+                 'open, not a real client. Read only with ' +
+                 'global.proxyProtocol on.' },
+
   // Added 2026-09-12. `baseUrlOf()` read the request's Host header and nothing
   // else could pin it, so a caller chose what this service believed its own
   // issuer, callback addresses and WebAuthn origin were — and `/admin` wrote a
@@ -9523,7 +9590,119 @@ const SETTINGS = [
                  'the nudge normally arrives first and a shorter interval ' +
                  'buys nothing but queries; 250ms is the floor. It is also ' +
                  'the size of the replay-cache window described under ' +
-                 'persistence.coordinate.' }
+                 'persistence.coordinate.' },
+
+  // Added 2026-09-14 (#46 section 8): `sts_changes` was never trimmed.
+  // `persistence/persistence_replication.js` argues the bound this is half of.
+  { key: 'persistence.changeLogRetentionS', group: 'Persistence',
+    label: 'Change log retention (s)',
+    env: 'STS_PERSISTENCE_CHANGE_LOG_RETENTION_S', type: 'int', dflt: 3600,
+    min: 0, runtime: true,
+    description: 'How long a row of the change log (sts_changes) is kept ' +
+                 'at least, by the database clock. A row is removed only ' +
+                 'when it is older than this AND below the lowest position ' +
+                 'every process still reading the log has reported — a ' +
+                 'process that has not reported for this long, or whose ' +
+                 'cluster node is no longer a member, is taken to be gone. ' +
+                 'Keep it well above the longest pause a live process could ' +
+                 'survive and above ten minutes, which is how long a reader ' +
+                 'waits for a change that committed late. 0 turns the trim ' +
+                 'off, and the log grows for ever, which is what it did ' +
+                 'before 2026-09-14.' },
+
+  // -------------------------------------------------------------------------
+  // THE CLUSTER (2026-09-14, #46): several containers against one postgres
+  // store. `cluster/CLAUDE.md` argues every one of these; they are all
+  // restart-only, because membership is decided before the store is restored
+  // and a node that changed its mind part-way would be a different node.
+  // -------------------------------------------------------------------------
+  { key: 'cluster.mode', group: 'Cluster', label: 'Cluster mode',
+    env: 'STS_CLUSTER_MODE', type: 'enum',
+    enumValues: ['auto', 'off', 'active-passive', 'active-active'],
+    dflt: 'auto', runtime: false, perProcess: true,
+    restartReason: 'a node joins the cluster, and in active-passive mode ' +
+                   'waits for the service lease, before anything is restored ' +
+                   'from the store or any listener binds',
+    description: 'How several copies of this service against ONE postgres ' +
+                 'store behave. `off`: nothing is coordinated beyond the ' +
+                 'change log, which is correct for one container and gives ' +
+                 'wrong answers silently for two. `active-passive`: every ' +
+                 'node joins, ONE holds the service lease and serves, and the ' +
+                 'others wait before restoring or binding anything — so a ' +
+                 'second container is a standby rather than a second writer, ' +
+                 'and takes over within one heartbeat of a clean stop or ' +
+                 'cluster.nodeTtlMs of a crash. `active-active`: every node ' +
+                 'serves; it needs persisted keys under an operator ' +
+                 'key-encryption key and REFUSES TO START while any capability ' +
+                 'it depends on is missing from this build (see ' +
+                 'cluster.acceptMissingCapabilities). `auto`, the default, is ' +
+                 'active-passive in product mode on a postgres store and off ' +
+                 'everywhere else. Every write a clustered node makes is ' +
+                 'FENCED: it checks that the node is still a member, and in ' +
+                 'active-passive mode that it still holds the service lease, ' +
+                 'and a node that has lost either exits.' },
+
+  { key: 'cluster.nodeName', group: 'Cluster', label: 'Node name',
+    env: 'STS_CLUSTER_NODE_NAME', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the name is written on the membership row when the node ' +
+                   'joins',
+    description: 'What /admin/cluster calls this node. Empty means the host ' +
+                 'name, which in a container is the container id. It ' +
+                 'identifies nothing: membership is a UUID made at every ' +
+                 'start, so two nodes given one name are still two nodes.' },
+
+  { key: 'cluster.heartbeatMs', group: 'Cluster',
+    label: 'Heartbeat interval (ms)',
+    env: 'STS_CLUSTER_HEARTBEAT_MS', type: 'int', dflt: 2000, min: 250,
+    runtime: false, perProcess: true,
+    restartReason: 'the heartbeat timer is started when the node joins',
+    description: 'How often a node renews its membership row and every lease ' +
+                 'it holds, in one statement. It must be well under ' +
+                 'cluster.nodeTtlMs — a third or less — or one slow ' +
+                 'round trip costs a node its membership.' },
+
+  { key: 'cluster.nodeTtlMs', group: 'Cluster',
+    label: 'Node lifetime (ms)',
+    // 30000 SINCE 2026-09-14 (it was 10000), for a measured reason: a
+    // heartbeat is a JavaScript timer, and anything that holds this thread
+    // longer than the lifetime less one heartbeat costs the node its
+    // membership. The largest such computation a supported console action
+    // still makes on the thread is an SLH-DSA-SHAKE-128s signature on
+    // /admin/pki's authoring pane — 13.7s measured with the vendored signer
+    // — past 10000 − 2000 and inside 30000 − 2000 with twice its length to
+    // spare. The cost is a crashed ACTIVE-PASSIVE node's takeover (up to 30s
+    // rather than 10s); a clean stop hands its lease over in one heartbeat
+    // either way. `cluster/CLAUDE.md`, *A node's thread and its lifetime*.
+    env: 'STS_CLUSTER_NODE_TTL_MS', type: 'int', dflt: 30000, min: 1000,
+    runtime: false, perProcess: true,
+    restartReason: 'the lifetime is written with every heartbeat and checked ' +
+                   'by every fenced write',
+    description: 'How long a membership row and a lease stay valid after ' +
+                 'their last renewal, by the DATABASE\'s clock. It is the ' +
+                 'longest a crashed node\'s leases block a takeover, and the ' +
+                 'longest a node that cannot reach the store keeps serving ' +
+                 'before it exits. Must be at least three heartbeats. It is ' +
+                 'ALSO the longest this node\'s event loop may be blocked: a ' +
+                 'heartbeat cannot run while it is, so a stall longer than ' +
+                 'this less one heartbeat costs the node its membership and ' +
+                 'it exits (a stall of a heartbeat or more is logged as ' +
+                 'STS-CLUSTER-0025).' },
+
+  { key: 'cluster.acceptMissingCapabilities', group: 'Cluster',
+    label: 'Capabilities accepted as missing',
+    env: 'STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES', type: 'csv', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the capability check runs once, when the node joins',
+    description: 'Active-active mode refuses to start while a capability it ' +
+                 'depends on is missing from this build. Each one is a known ' +
+                 'way two nodes disagree — a single-use value accepted twice, ' +
+                 'a signing key one node does not publish — and /admin/cluster ' +
+                 'lists them with the section of issue #46 that describes the ' +
+                 'failure. Naming a capability id here accepts THAT failure ' +
+                 'and nothing else; the node starts, and says at every start ' +
+                 'which ones it is running without. There is no "accept all": ' +
+                 'a list somebody has to write is a list somebody has read.' }
 ];
 
 // Indexed once. A linear scan per read would be invisible on a mock and the

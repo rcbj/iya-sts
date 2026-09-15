@@ -102,6 +102,8 @@ const realms = require('../common/realms');
 // A LEAF with no requires: the failure codes on the log lines below. NOT
 // audit.js, which requires THIS file — a require back would close a cycle.
 const errorCodes = require('../common/error_codes');
+// The table active-active mode is held to. A LEAF.
+const capabilities = require('../cluster/cluster_capabilities');
 
 const log = bunyan.createLogger({ name: 'sts-persistence-replication' });
 
@@ -125,23 +127,88 @@ let origin = '';
 // applied here. Set at startup to whatever the log's maximum was at the moment
 // the restore finished, because a process that has just read the whole store
 // is up to date with everything committed before that instant by definition.
+//
+// **SINCE 2026-09-14 (#46) IT IS A LOW-WATER MARK AND `highest` IS BESIDE
+// IT.** `applied` is "every seq at or below this is applied or given up on";
+// `highest` is the newest seq applied; the seqs between them that were not yet
+// visible are `holes`. See page() for why the reader no longer stops at a hole.
 let applied = 0;
+let highest = 0;
+// seq -> when this process first saw it missing (Date.now()).
+const holes = new Map();
 
 let timer = null;
 let unwatch = null;
 let running = false;   // one catch-up at a time
-// The seq a pull is waiting to see, and since when. See page() below: a hole is
-// an in-flight transaction until it has lasted long enough to be a rolled back
-// one.
-let holeAt = 0;
-let holeSince = 0;
-const HOLE_WAIT_MS = 4000;
-// How long syncNow() waits to reach its target, and how long it pauses after a
-// pull that advanced nothing. The first is HOLE_WAIT_MS plus room for the skip
-// to be applied, and below request_pool.js's five-second round bound; see
-// syncNow() for the run that measured a count of attempts falling short.
-const SYNC_DEADLINE_MS = HOLE_WAIT_MS + 600;
-const SYNC_IDLE_PAUSE_MS = 10;
+// HOW LONG A HOLE IS ASKED FOR. A hole is a transaction still committing, or
+// one that rolled back and burnt its seq. Until 2026-09-14 the reader STOPPED at
+// a hole for four seconds and then skipped it for ever — so a transaction that
+// took longer than four seconds to commit, which under a busy database and a
+// large directory flush is not exotic, was never applied in that process until
+// it restarted. Now the reader applies what it can see and keeps asking for the
+// hole, for long enough that a transaction still open at the end of it is not a
+// transaction this service holds (every statement it issues is short).
+const HOLE_EXPIRE_MS = 10 * 60 * 1000;
+// A ceiling on the holes remembered, so a pathological run of rollbacks cannot
+// make every pull ask for an unbounded array. The oldest are given up on first.
+const MAX_HOLES = 10000;
+let holesAbandoned = 0;
+// How long syncNow() may spend reaching its guarantee. See step() in syncNow().
+const SYNC_DEADLINE_MS = 4600;
+// How many pulls have STARTED, and the start number of the newest one that
+// FINISHED. See syncNow(): a barrier waits for a pull that began after it read
+// its target.
+let pullsStarted = 0;
+let lastCompletedStartNo = 0;
+
+// Holes older than HOLE_EXPIRE_MS, and the oldest beyond MAX_HOLES, are given
+// up on. ONE log line per pass however many went, with the count, because a
+// burst of rollbacks would otherwise be a line per burnt sequence number.
+function expireHoles(now) {
+  log.debug("Entering expireHoles().");
+  const gone = [];
+  holes.forEach(function (since, seq) {
+    if (now - since >= HOLE_EXPIRE_MS) {
+      gone.push(seq);
+    }
+  });
+  if (holes.size - gone.length > MAX_HOLES) {
+    const oldest = Array.from(holes.keys()).sort(function (a, b) {
+      return a - b;
+    });
+    for (let i = 0; i < oldest.length &&
+         holes.size - gone.length > MAX_HOLES; i++) {
+      if (gone.indexOf(oldest[i]) < 0) {
+        gone.push(oldest[i]);
+      }
+    }
+  }
+  gone.forEach(function (seq) {
+    holes.delete(seq);
+  });
+  if (gone.length) {
+    holesAbandoned += gone.length;
+    log.warn(errorCodes.tag('STS-STORE-0049') + 'persistence: ' +
+             gone.length + ' change-log sequence number(s) never became ' +
+             'visible (the oldest was ' + Math.min.apply(null, gone) + ') and ' +
+             'are no longer asked for; they were transactions that rolled ' +
+             'back. ' + holes.size + ' hole(s) are still being asked for.');
+  }
+  log.debug("Leaving expireHoles().");
+}
+
+// `applied` is just below the oldest hole still asked for, or `highest`.
+function settleWatermark() {
+  log.debug("Entering settleWatermark().");
+  let oldest = 0;
+  holes.forEach(function (since, seq) {
+    if (!oldest || seq < oldest) {
+      oldest = seq;
+    }
+  });
+  applied = oldest ? Math.max(applied, oldest - 1) : highest;
+  log.debug("Leaving settleWatermark().");
+}
 // THE PULL THAT IS RUNNING, so a caller that needs one CAN WAIT for it rather
 // than being told there is nothing to do. `pull()` answers immediately when one
 // is already in flight — right for a timer, and wrong for `syncNow()`, which is
@@ -219,6 +286,8 @@ function start(theDriver, theAppliers) {
   log.debug("Leaving start().");
   return driver.latestChangeSeq().then(function (seq) {
     applied = seq;
+    highest = seq;
+    holes.clear();
     startedAt = new Date().toISOString();
     // THE NUDGE FIRST, THE TIMER SECOND, and neither is load-bearing on its
     // own: the timer is the contract and the listener only makes it prompt.
@@ -226,6 +295,13 @@ function start(theDriver, theAppliers) {
       ? driver.watchChanges(function () { nudges++; wake(); })
       : null;
     schedule();
+    // WHERE THIS PROCESS STARTS READING, said before anything is trimmed
+    // below it — see RETENTION below. Not awaited: a report that fails is
+    // retried after the next pull, and the trim never goes below a reader
+    // nobody has declared gone, which a process that has not reported yet is
+    // not (the retention period covers it).
+    reportPosition(true);
+    startRetention();
     log.info('persistence: coordinating with other processes against this ' +
              'store, from change ' + applied + '. The change log is the ' +
              'contract and is polled every ' + intervalMs() + 'ms; the ' +
@@ -349,143 +425,99 @@ function syncNow() {
     return Promise.resolve({ caughtUp: false, applied: applied,
                              coordinating: false });
   }
-  // THE TARGET IS WHAT A READER HAS TO SEE, WHICH IS NOT EVERY ROW. A driver
-  // that can tell them apart says so; one that cannot answers with all of them,
-  // which is the old behaviour and is correct, just slower.
-  const target = typeof driver.latestBlockingChangeSeq === 'function'
-    ? driver.latestBlockingChangeSeq()
-    : driver.latestChangeSeq();
-  log.debug("Leaving syncNow().");
-  return Promise.resolve(target).then(function (target) {
-    const want = Number(target) || 0;
-    // ----------------------------------------------------------------------
-    // ONE PULL PASS EVEN WHEN THE TARGET IS ALREADY MET (2026-09-08).
-    //
-    // The target deliberately excludes `minted-own` — see the driver — and the
-    // consequence was that a barrier which found `applied >= want` returned
-    // having applied NOTHING, leaving every per-process tally exactly as stale
-    // as it was. The caller only reached this function because the pool
-    // decided it was behind, and the generation moves for counter writes too,
-    // so "already at the target" here nearly always means "the outstanding
-    // changes are all counters" — which is precisely the case the console is
-    // about to read.
-    //
-    // `admin_api` measured it: three probes of `/healthcheck` across three
-    // workers, and the metrics page counted ONE of them, because the reader
-    // was released against a target those three writes were excluded from.
-    //
-    // It is one pass and not a wait: nobody's correctness depends on a tally,
-    // so this catches up what it can and never blocks on it. That keeps the
-    // reason the exclusion exists — a target that moves faster than it can be
-    // reached cost 224 barrier timeouts in one run, every one a stale answer.
-    // ----------------------------------------------------------------------
-    // UNCONDITIONALLY, AND IT WAS CONDITIONAL FOR AN HOUR — which fixed half
-    // the problem and read as though it fixed all of it. Running this only when
-    // `applied >= want` covers a reader whose outstanding changes are ALL
-    // excluded rows; it does nothing for the commoner case where there is also
-    // a blocking row, because `step()` below then waits for the blocking target
-    // and returns the moment it is reached, with the excluded rows still
-    // unapplied. `sts_global_logout` measured exactly that: a global sign-out
-    // could not revoke the Kerberos ticket another worker had issued, because
-    // the artifact register it walks is `merge: 'own'` and its rows are the
-    // excluded kind — so the sign-out swept a register that did not contain the
-    // thing it was there to end, reported success, and left the session live.
-    // AND IT WAITS FOR A PULL THAT IS ALREADY RUNNING BEFORE STARTING ITS OWN.
-    // `pull()` answers at once when one is in flight, which is right for the
-    // poll timer and useless here: this pass would then apply NOTHING at
-    // exactly the moment it is needed, `step()` would find the blocking target
-    // already met, and the reader would be released against rows still in the
-    // page being applied. That is not theoretical — it is why the audit row
-    // for a request could be missing from the very next read, which
-    // `admin_api` reported as "NO /healthcheck row of any kind came back".
-    const inFlight = runningPull || Promise.resolve();
-    const opening = inFlight.catch(function (e) {
-      // A pull that failed is the timer's business to report; this pass only
-      // needs to know it has finished.
+  // -------------------------------------------------------------------------
+  // NO HEAD QUERY, SINCE 2026-09-14 (#46) — THE PROOF IS THE PULL.
+  //
+  // This read the log's head first (`latestBlockingChangeSeq()`) and then
+  // pulled until `highest` reached it AND a pull that began after the read had
+  // finished. The second condition, added on 2026-09-14 for late commits, is a
+  // proof on its own and makes the first redundant: a pull that STARTED after
+  // this call reads with snapshots taken after it, and every row committed
+  // before this call is visible to every such snapshot — so its pages take
+  // every such row above `highest`, and its hole re-check takes every such row
+  // below it that an earlier pull stepped over. (A seq one of ITS pages steps
+  // over was not committed when that page was read, so was not committed
+  // before this call either, and is not owed.) When it finishes, everything
+  // committed before this call is applied; the head adds nothing.
+  //
+  // **AND THE HEAD WAS THE MOST EXPENSIVE QUERY A NODE RAN.** It was
+  // `MAX(seq) WHERE kind <> 'minted-own' AND origin <> $1` — a backward walk
+  // of the primary key past every row this process wrote and every
+  // `minted-own` row, which on a node answering alone is every row in the log:
+  // measured on one active-active node, a read that took 4ms without the
+  // barrier took 23ms, then 68ms as the log grew. Waiting on the target also
+  // tied a reader to rows it does not need (rule 1 of cluster_barrier.js is
+  // "what was committed before it arrived", and the pull applies exactly
+  // that, `minted-own` included — which is what audit read-back needs).
+  //
+  // What it costs now is one pull: one page query, and a hole query when an
+  // earlier pull stepped over a seq that has not appeared yet. Concurrent
+  // callers share it (cluster_barrier.js's syncShared()).
+  //
+  // WHAT IT STILL WAITS FOR, AND WHY: a pull already in flight when this was
+  // called is not a proof — its page may have been read before a row committed
+  // — so it is waited out and a new one is started; and a pull that FAILS
+  // proves nothing either, so the loop below starts another, up to a bound.
+  // -------------------------------------------------------------------------
+  const needNo = pullsStarted;
+
+  function settled() {
+    log.debug("Entering settled().");
+    log.debug("Leaving settled().");
+    return (runningPull || Promise.resolve()).catch(function (e) {
+      // A pull that failed is the timer's business to report; this only needs
+      // to know it has finished.
       log.debug("Caught in syncNow(): a pull in flight failed: " +
                 ((e && e.message) || e));
-    }).then(function () {
-      return pull();
-    }).catch(function (e) {
-      // Swallowed with a reason: this pass is a courtesy to the rows the
-      // target excludes and must never turn a barrier that would have
-      // succeeded into a failure.
-      log.debug('syncNow(): the catch-up pass did not run: ' + e.message);
     });
-    return opening.then(function () {
+  }
 
-    // ----------------------------------------------------------------------
-    // A DEADLINE, NOT A COUNT OF ATTEMPTS (2026-09-15).
-    //
-    // This was `step(200)`: two hundred pulls, and it gave up after the last.
-    // A pull that meets a HOLE — a sequence value allocated by a transaction
-    // still committing in another process — applies nothing and returns in a
-    // millisecond or two, so two hundred of them were over in a few hundred
-    // milliseconds while that transaction was still open. `pull()` itself waits
-    // `HOLE_WAIT_MS` (four seconds) before calling a hole a rollback, so the
-    // bound fired an order of magnitude sooner than the thing it was bounding.
-    // Measured in `dispatch` mode: `sts_acme_enrollment`'s finalize reached a
-    // worker whose barrier "gave up at 20799 of 20804", was answered from a
-    // copy without the order another worker had created and committed moments
-    // earlier (behind the hole), and got `There is no such order` — the one
-    // STS-STORE-0039 in the run.
-    //
-    // So the bound is TIME: long enough for a hole to be skipped as a rollback
-    // (`HOLE_WAIT_MS`) with a little to spare, and still inside the pool's own
-    // round bound (`request_pool.js`'s BARRIER_TIMEOUT_MS, five seconds), so a
-    // reader is answered by this rather than abandoned by that. A pull that
-    // advanced nothing is followed by a short pause rather than another query
-    // at once, which is what kept the old loop busy for no gain.
-    // ----------------------------------------------------------------------
-    const deadline = Date.now() + SYNC_DEADLINE_MS;
+  // A DEADLINE, NOT A COUNT OF ATTEMPTS — carried over from develop's
+  // 2026-09-15 change when feature/46 was rebased. It was `step(200)`, and a
+  // pull that fails (a database that blinked) returns in a millisecond, so two
+  // hundred of them could be spent long before the store came back. Develop's
+  // version bounded the old wait for a hole; this reader never waits for a
+  // hole, so what the deadline bounds here is a run of failing pulls. It stays
+  // inside `request_pool.js`'s five-second BARRIER_TIMEOUT_MS so a reader is
+  // answered by this rather than abandoned by that.
+  const deadline = Date.now() + SYNC_DEADLINE_MS;
 
-    function step() {
-      log.debug("Entering step().");
-      if (applied >= want) {
-        log.debug("Leaving step().");
-        return { caughtUp: true, applied: applied, target: want,
-                 coordinating: true };
-      }
-      if (Date.now() >= deadline) {
-        // A BOUND rather than a spin. Reaching it means something is wrong
-        // with the store rather than that more time is needed, and a request
-        // held for ever is worse than one answered from a copy that is a
-        // moment behind.
-        log.warn(errorCodes.tag('STS-STORE-0039') +
-                 'persistence: a read barrier gave up at ' + applied +
-                 ' of ' + want + '. The request is being answered from what ' +
-                 'this process has.');
-        log.debug("Leaving step().");
-        return { caughtUp: false, applied: applied, target: want,
-                 coordinating: true };
-      }
-      if (running) {
-        log.debug("Leaving step().");
-        // A pull is in flight and will advance `applied`. Waited out rather
-        // than duplicated — see the header.
-        return new Promise(function (resolve) {
-          setTimeout(resolve, 5);
-        }).then(function () {
-          return step();
-        });
-      }
-      const before = applied;
-      log.debug("Leaving step().");
-      return pull().then(function () {
-        if (applied > before) {
-          return step();
-        }
-        return new Promise(function (resolve) {
-          setTimeout(resolve, SYNC_IDLE_PAUSE_MS);
-        }).then(function () {
-          return step();
-        });
-      });
+  function step() {
+    log.debug("Entering step().");
+    if (lastCompletedStartNo > needNo) {
+      log.debug("Leaving step(). Caught up.");
+      return Promise.resolve({ caughtUp: true, applied: applied,
+                               target: highest, coordinating: true });
     }
-
-    return step();
+    if (Date.now() >= deadline) {
+      // A BOUND rather than a spin. Reaching it means something is wrong with
+      // the store rather than that more time is needed, and a request held for
+      // ever is worse than one answered from a copy that is a moment behind.
+      log.warn(errorCodes.tag('STS-STORE-0039') +
+               'persistence: a read barrier gave up at ' + highest +
+               ': no change pull started after it completed. The request is ' +
+               'being answered from what this process has.');
+      log.debug("Leaving step(). Gave up.");
+      return Promise.resolve({ caughtUp: false, applied: applied,
+                               target: highest, coordinating: true });
+    }
+    log.debug("Leaving step().");
+    // WAITED OUT RATHER THAN POLLED. This slept 5ms per turn while a pull ran,
+    // which added up to 5ms to every barrier that met one — and under load
+    // nearly every barrier meets one. `runningPull` settles when that pull's
+    // pages have been applied.
+    return settled().then(function () {
+      if (lastCompletedStartNo > needNo) {
+        return null;
+      }
+      return pull();
+    }).then(function () {
+      return step();
     });
-  }).catch(function (err) {
+  }
+
+  log.debug("Leaving syncNow().");
+  return step().catch(function (err) {
     log.warn(errorCodes.tag('STS-STORE-0040') +
              'persistence: a read barrier could not read the change log: ' +
              err.message + '. The request is being answered from what this ' +
@@ -505,89 +537,111 @@ function pull() {
   let settle = null;
   runningPull = new Promise(function (resolve) { settle = resolve; });
 
+  // THE NUMBER OF THIS PULL, for syncNow(): a barrier is satisfied only by a
+  // pull that STARTED after it read its target, because only such a pull's
+  // queries could see every row committed before that read.
+  const startNo = ++pullsStarted;
+
   function page() {
     log.debug("Entering page().");
     log.debug("Leaving page().");
-    return driver.changesSince(applied, PAGE).then(function (rows) {
+    // -----------------------------------------------------------------------
+    // PAST THE HOLES, AND BACK FOR THEM (2026-09-14, #46).
+    //
+    // `seq` is allocated at INSERT and becomes visible at COMMIT, so a reader
+    // can see 105 while 103 is still committing. Until this date the reader
+    // took only the unbroken run from `applied + 1`, waited up to four seconds
+    // for the hole, then skipped it for ever — correct for one busy process
+    // and wrong for a cluster, where several nodes commit at once and there is
+    // nearly always a hole: every node's view stalled behind every other
+    // node's slowest transaction, and a transaction slower than four seconds
+    // was lost in every process that skipped it.
+    //
+    // Reading past a hole is safe BECAUSE EVERY APPLIER READS THE CURRENT ROW
+    // rather than replaying an operation: applying 105 before 103 and 103
+    // afterwards leaves exactly the state applying them in order would, since
+    // each re-reads what its key holds NOW. So this page takes everything
+    // visible above `highest`, remembers each gap it steps over as a hole,
+    // asks for the holes again on every pull, and gives a hole up only after
+    // HOLE_EXPIRE_MS — ten minutes, not four seconds.
+    // -----------------------------------------------------------------------
+    return driver.changesSince(highest, PAGE).then(function (rows) {
       if (!rows.length) {
         return 0;
       }
-      // ---------------------------------------------------------------------
-      // ONLY THE CONTIGUOUS RUN, AND NEVER PAST A HOLE (2026-09-08).
-      //
-      // `seq` is allocated at INSERT and the row appears at COMMIT, so the two
-      // orders differ: reading while 105 is visible and 103 is not, then
-      // advancing to 105, skips 103 for ever — it is only ever asked for as
-      // `seq > applied`. Silent, permanent, and shaped exactly like the
-      // failures that chased this service round all day: one worker of three
-      // missing one directory entry that the store plainly holds.
-      //
-      // So the watermark advances only through an unbroken run from
-      // `applied + 1`. A hole is an in-flight transaction and the next poll
-      // finds it committed. `changesSince()` no longer filters by origin
-      // precisely so that a hole means that and nothing else.
-      //
-      // A HOLE THAT NEVER FILLS IS SKIPPED, because one exists: a ROLLED BACK
-      // transaction burns its sequence value and leaves a permanent gap.
-      // Waiting for it for ever would wedge replication at that seq while the
-      // status page went on saying "coordinating". So the wait is bounded and
-      // the skip says so out loud.
-      // ---------------------------------------------------------------------
-      const want = applied + 1;
-      let usable = rows;
-      if (rows[0].seq !== want) {
-        const now = Date.now();
-        if (holeAt !== want) {
-          holeAt = want;
-          holeSince = now;
+      const now = Date.now();
+      let expect = highest + 1;
+      rows.forEach(function (row) {
+        while (expect < row.seq) {
+          if (!holes.has(expect)) {
+            holes.set(expect, now);
+          }
+          expect += 1;
         }
-        if (now - holeSince < HOLE_WAIT_MS) {
-          log.debug('pull(): waiting for change ' + want + '; the log starts ' +
-                    'at ' + rows[0].seq + '. An in-flight transaction, not a ' +
-                    'lost row.');
-          return 0;
-        }
-        log.warn('persistence: change ' + want + ' never appeared after ' +
-                 HOLE_WAIT_MS + 'ms, so it was a transaction that rolled ' +
-                 'back rather than one still committing. Skipping to ' +
-                 rows[0].seq + '.');
-        holeAt = 0;
-      } else {
-        holeAt = 0;
-      }
-      // The unbroken run from the first row.
-      let expect = rows[0].seq;
-      let end = 0;
-      while (end < rows.length && rows[end].seq === expect) {
-        end += 1;
-        expect += 1;
-      }
-      usable = rows.slice(0, end);
-      if (!usable.length) {
-        return 0;
-      }
-      return applyRows(usable).then(function () {
+        expect = row.seq + 1;
+      });
+      return applyRows(rows).then(function () {
         // ADVANCED ONLY AFTER THE APPLY, so a failure part-way re-reads the
         // same page rather than skipping it. Applying a row twice is
         // harmless — every applier is idempotent by construction, because it
         // writes a whole value read from the store — and skipping one is not.
-        applied = usable[usable.length - 1].seq;
-        rowsApplied += usable.length;
-        // Another page only when this one was full AND wholly contiguous —
-        // otherwise the rest is waiting on a commit and belongs to the next
-        // poll.
-        return (usable.length === rows.length && rows.length === PAGE)
-          ? page() : usable.length;
+        highest = rows[rows.length - 1].seq;
+        rowsApplied += rows.length;
+        return rows.length === PAGE ? page() : rows.length;
       });
+    });
+  }
+
+  // THE HOLES, ASKED FOR AGAIN. One query for all of them. A hole that has
+  // appeared is applied and forgotten; one that has lasted HOLE_EXPIRE_MS is
+  // given up on, out loud; and `applied` moves up to just below the oldest
+  // hole still being asked for.
+  function recheckHoles() {
+    log.debug("Entering recheckHoles().");
+    if (!holes.size) {
+      applied = highest;
+      log.debug("Leaving recheckHoles(). None.");
+      return Promise.resolve(0);
+    }
+    const asked = Array.from(holes.keys());
+    // A DRIVER THAT CANNOT BE ASKED FOR ONE SEQ is asked for everything above
+    // the oldest hole instead, and only the holes are kept. It used to age the
+    // hole out without ever reading it again, which loses a late commit in
+    // exactly the way this function exists to prevent — found when a test
+    // arriving from develop drove the late-commit case through a stub with no
+    // `changesAt()`. A page is bounded, so a hole buried under more than a
+    // page of newer rows waits for the page to reach it.
+    const lookup = typeof driver.changesAt === 'function'
+      ? driver.changesAt(asked)
+      : driver.changesSince(Math.min.apply(null, asked) - 1, PAGE);
+    log.debug("Leaving recheckHoles().");
+    return Promise.resolve(lookup).then(function (found) {
+      const rows = (found || []).filter(function (row) {
+        return holes.has(row.seq);
+      });
+      return (rows.length ? applyRows(rows) : Promise.resolve())
+        .then(function () {
+          rows.forEach(function (row) {
+            holes.delete(row.seq);
+          });
+          rowsApplied += rows.length;
+          expireHoles(Date.now());
+          settleWatermark();
+          return rows.length;
+        });
     });
   }
 
   log.debug("Leaving pull().");
   return page().then(function () {
+    return recheckHoles();
+  }).then(function () {
     pulls++;
+    lastCompletedStartNo = Math.max(lastCompletedStartNo, startNo);
     lastPullAt = new Date().toISOString();
     lastError = '';
     running = false;
+    reportPosition(false);
     if (settle) { settle(); settle = null; runningPull = null; }
     if (pendingWake) {
       pendingWake = false;
@@ -827,6 +881,60 @@ function remoteRows(handle, realmId, key) {
   return Array.from(byOrigin.values());
 }
 
+// ---------------------------------------------------------------------------
+// THE SAME FAN-IN FOR A SEGMENTED ARRAY (`realms.arr({ segment })`, 2026-09-14,
+// #46): one array of elements per other process, put back together from that
+// process's segments in position order. A contribution under a segmented
+// handle is `{ start, rows }` per key; a bare array is a whole-array row an
+// older build wrote, and is taken as it is, ahead of any segment.
+//
+// THE CALLER TRIMS. A process drops a stored segment only once every element
+// in it has left its ring (see realms.js), so what comes back can carry up to
+// one segment more than that process holds — `audit.js` keeps the newest
+// `audit.maxEvents` of each.
+// ---------------------------------------------------------------------------
+function remoteSegmentedRows(handle, realmId) {
+  log.debug("Entering remoteSegmentedRows().");
+  const byRealm = contributions.get(handle);
+  const byKey = byRealm
+    ? byRealm.get(String(realmId === undefined
+                         ? realms.currentId() : (realmId || '')))
+    : null;
+  if (!byKey) {
+    log.debug("Leaving remoteSegmentedRows(). None.");
+    return [];
+  }
+  const parts = new Map();
+  byKey.forEach(function (byOrigin) {
+    byOrigin.forEach(function (value, from) {
+      if (!parts.has(from)) {
+        parts.set(from, []);
+      }
+      if (Array.isArray(value)) {
+        parts.get(from).push({ start: -Infinity, rows: value });
+      } else if (value && Array.isArray(value.rows)) {
+        parts.get(from).push({ start: Number(value.start) || 0,
+                               rows: value.rows });
+      }
+    });
+  });
+  const out = [];
+  parts.forEach(function (segments) {
+    segments.sort(function (a, b) {
+      return a.start - b.start;
+    });
+    const rows = [];
+    segments.forEach(function (one) {
+      one.rows.forEach(function (row) {
+        rows.push(row);
+      });
+    });
+    out.push(rows);
+  });
+  log.debug("Leaving remoteSegmentedRows(). " + out.length + " origin(s).");
+  return out;
+}
+
 // Every key another process has contributed under this handle in this realm.
 // What a MAP-shaped counter store needs before it can ask for each: another
 // process may be counting a path this one has never served.
@@ -860,6 +968,253 @@ function origins() {
   return Array.from(all);
 }
 
+// ===========================================================================
+// RETENTION: TRIMMING THE LOG BELOW WHAT EVERY READER HAS APPLIED (2026-09-14,
+// #46 section 8).
+//
+// `sts_changes` was never trimmed — `purgeChanges()` in the driver had no
+// caller — so it was the one table that grew for ever, a row per write of
+// every kind by every process. The difficulty is not the DELETE; it is
+// knowing which rows nobody will ask for again, and the only honest source
+// of that is the readers themselves.
+//
+// **EVERY PROCESS THAT READS THE LOG SAYS WHERE IT HAS GOT TO.** A front
+// process AND each of its request workers — a worker is an origin of its own
+// with its own `applied`, and the front process cannot see a worker's
+// position, so the worker must report it itself; routing it through the
+// front would be a second path that could fall behind the first. The report
+// is `applied` — the LOW-water mark, below the oldest hole still asked for —
+// into `sts_change_readers`, at start, after a pull at most every
+// REPORT_INTERVAL_MS, and removed at a clean stop.
+//
+// **THE BOUND.** A row is removed when BOTH hold:
+//
+//   1. its seq is below the lowest `applied` of every reader NOT DECLARED
+//      GONE — and with no reader at all nothing is removed;
+//   2. it is older than `persistence.changeLogRetentionS` by the database's
+//      clock.
+//
+// A reader is gone when it has not reported for READER_TTL (the retention,
+// never less than READER_TTL_FLOOR_MS), or when the cluster node it names is
+// no longer a live member — a node whose membership lapsed exits
+// (`cluster/cluster.js`), and its workers with it. Why each half is needed:
+//
+//   * (1) alone would delete a row that committed LATE, below a reader's mark
+//     only because it was a hole the reader gave up on — impossible under ten
+//     minutes (HOLE_EXPIRE_MS) and harmless after; and a process that has
+//     just started and not yet reported sits at `latestChangeSeq()`, which
+//     only rows younger than its start can be above. (2) covers both for as
+//     long as the retention is longer than a start and a hole.
+//   * (2) alone would delete what a live but slow reader has not applied.
+//
+// **A PROCESS THAT WAS DECLARED GONE AND IS NOT** — paused past READER_TTL,
+// with its node still a member — finds its row missing on its next report
+// (`inserted`) and says so, `STS-STORE-0057`: rows it had not applied may have
+// been trimmed, and it should be restarted, which restores from the store.
+// It is not made to exit: a request worker's exit is not a restart here, and
+// a pause that long is already a process nothing else trusts.
+//
+// **ONE TRIM FOR THE CLUSTER**: the lease `ops.change-log-purge`, led by one
+// node (`cluster.lead()`); outside a cluster every FRONT process runs it,
+// which is safe because the bound comes from the reports and not from the
+// trimmer — two trims agree. A request worker never trims.
+//
+// **WHAT THIS DOES NOT TRIM**: the `merge: 'own'` rows of `sts_minted` that
+// dead origins wrote (their counters and audit rings) — a separate table with
+// its own `mintedRetention`, and every restart still leaves one more origin's
+// rows behind until that removes them. `persistence/CLAUDE.md` says so.
+// ===========================================================================
+const REPORT_INTERVAL_MS = 15 * 1000;
+const PURGE_INTERVAL_MS = 5 * 60 * 1000;
+const READER_TTL_FLOOR_MS = 2 * 60 * 1000;
+const PURGE_LEASE = 'ops.change-log-purge';
+let lastReportAt = 0;
+let reportedOnce = false;
+let reportInFlight = false;
+let lastReportError = '';
+let declaredGoneAt = null;
+let purgeTimer = null;
+let purging = false;
+let lastPurge = null;
+
+function retentionMs() {
+  log.debug("Entering retentionMs().");
+  const seconds = Number(config.value('persistence.changeLogRetentionS'));
+  log.debug("Leaving retentionMs().");
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+}
+
+function readerTtlMs() {
+  log.debug("Entering readerTtlMs().");
+  log.debug("Leaving readerTtlMs().");
+  return Math.max(READER_TTL_FLOOR_MS, retentionMs());
+}
+
+// `cluster/cluster.js`, for which node this process is and one leader for the
+// trim. REQUIRED LAZILY: it closes no cycle either way, but this file is in
+// the parent project's in-process Kerberos closure (through `admin_stats.js`)
+// and a top-level require would add `cluster.js` to the COPY set that project
+// owes (kerberos/CLAUDE.md). Only a process that coordinates reaches it.
+function clusterModule() {
+  log.debug("Entering clusterModule().");
+  log.debug("Leaving clusterModule().");
+  return require('../cluster/cluster');
+}
+
+function nodeIdOf() {
+  log.debug("Entering nodeIdOf().");
+  let id = '';
+  try {
+    const cluster = clusterModule();
+    id = cluster.enabled() ? String(cluster.nodeId() || '') : '';
+  } catch (e) {
+    log.debug("Caught in nodeIdOf(): " + ((e && e.message) || e));
+    id = '';
+  }
+  log.debug("Leaving nodeIdOf().");
+  return id;
+}
+
+// Says where this process has got to. `force` skips the interval — the report
+// at start. Never rejects; returns the promise so a test can wait for it.
+function reportPosition(force) {
+  log.debug("Entering reportPosition().");
+  if (!driver || stopped || typeof driver.reportChangeReader !== 'function' ||
+      reportInFlight) {
+    log.debug("Leaving reportPosition(). Not reporting.");
+    return Promise.resolve(null);
+  }
+  const now = Date.now();
+  if (!force && now - lastReportAt < REPORT_INTERVAL_MS) {
+    log.debug("Leaving reportPosition(). Not due.");
+    return Promise.resolve(null);
+  }
+  reportInFlight = true;
+  lastReportAt = now;
+  const position = applied;
+  log.debug("Leaving reportPosition(). Reporting " + position + ".");
+  return Promise.resolve().then(function () {
+    return driver.reportChangeReader(position, nodeIdOf());
+  }).then(function (answer) {
+    reportInFlight = false;
+    lastReportError = '';
+    if (answer && answer.inserted && reportedOnce) {
+      declaredGoneAt = new Date().toISOString();
+      log.error(errorCodes.tag('STS-STORE-0057') + 'persistence: this ' +
+                'process\'s place in the change log had been REMOVED since ' +
+                'it last reported — another process declared it gone after ' +
+                'it went ' + Math.round(readerTtlMs() / 1000) + 's without ' +
+                'reporting — so changes it had not applied may already have ' +
+                'been trimmed. It is at change ' + position + ' and carries ' +
+                'on, but what it holds may be missing other processes\' ' +
+                'writes: restart it, which restores from the store.');
+    }
+    reportedOnce = true;
+    return answer;
+  }, function (e) {
+    reportInFlight = false;
+    lastReportError = (e && e.message) || String(e);
+    log.warn(errorCodes.tag('STS-STORE-0058') + 'persistence: this ' +
+             'process\'s position in the change log could not be reported (' +
+             lastReportError + '); it is tried again after the next pull. ' +
+             'Until it lands the log is not trimmed past where this process ' +
+             'last said it was.');
+    return null;
+  });
+}
+
+// One trim. Resolves the driver's answer, or null when there was nothing to
+// do. Never rejects.
+function purgeOnce() {
+  log.debug("Entering purgeOnce().");
+  if (!driver || stopped || purging ||
+      typeof driver.purgeChangeLog !== 'function') {
+    log.debug("Leaving purgeOnce(). Not trimming.");
+    return Promise.resolve(null);
+  }
+  const keep = retentionMs();
+  if (!keep) {
+    log.debug("Leaving purgeOnce(). Retention is off.");
+    return Promise.resolve(null);
+  }
+  purging = true;
+  log.debug("Leaving purgeOnce(). Trimming.");
+  return Promise.resolve().then(function () {
+    return driver.purgeChangeLog({ retentionMs: keep,
+                                   readerTtlMs: readerTtlMs() });
+  }).then(function (answer) {
+    purging = false;
+    lastPurge = Object.assign({ at: new Date().toISOString(), error: null },
+                              answer || {});
+    if (answer && (answer.trimmed || answer.readersGone)) {
+      log.info('persistence: trimmed ' + answer.trimmed + ' change-log ' +
+               'row(s) below change ' + answer.bound + ', the lowest ' +
+               'position of ' + answer.readers + ' reader(s); ' +
+               answer.readersGone + ' reader(s) that stopped reporting were ' +
+               'declared gone.');
+    }
+    return answer;
+  }, function (e) {
+    purging = false;
+    lastPurge = { at: new Date().toISOString(),
+                  error: (e && e.message) || String(e) };
+    log.warn(errorCodes.tag('STS-STORE-0059') + 'persistence: trimming the ' +
+             'change log failed (' + lastPurge.error + '); it is tried again ' +
+             'in ' + Math.round(PURGE_INTERVAL_MS / 1000) + 's.');
+    return null;
+  });
+}
+
+function schedulePurge() {
+  log.debug("Entering schedulePurge().");
+  if (purgeTimer || stopped) {
+    log.debug("Leaving schedulePurge().");
+    return;
+  }
+  purgeTimer = setTimeout(function () {
+    purgeTimer = null;
+    purgeOnce().then(function () {
+      schedulePurge();
+    });
+  }, PURGE_INTERVAL_MS);
+  if (purgeTimer.unref) {
+    purgeTimer.unref();
+  }
+  log.debug("Leaving schedulePurge().");
+}
+
+function stopPurging() {
+  log.debug("Entering stopPurging().");
+  if (purgeTimer) {
+    clearTimeout(purgeTimer);
+    purgeTimer = null;
+  }
+  log.debug("Leaving stopPurging().");
+}
+
+// Who trims: see RETENTION. Asked once, at start.
+function startRetention() {
+  log.debug("Entering startRetention().");
+  if (process.env.STS_REQUEST_WORKER || !driver ||
+      typeof driver.purgeChangeLog !== 'function') {
+    log.debug("Leaving startRetention(). This process does not trim.");
+    return;
+  }
+  clusterModule().lead(PURGE_LEASE, {
+    onGain: function () {
+      log.debug("Entering onGain().");
+      schedulePurge();
+      log.debug("Leaving onGain().");
+    },
+    onLose: function () {
+      log.debug("Entering onLose().");
+      stopPurging();
+      log.debug("Leaving onLose().");
+    }
+  });
+  log.debug("Leaving startRetention().");
+}
+
 function stop() {
   log.debug('Entering stop().');
   stopped = true;
@@ -871,8 +1226,18 @@ function stop() {
     unwatch();
     unwatch = null;
   }
+  stopPurging();
+  const leaving = driver && typeof driver.leaveChangeReader === 'function' &&
+    reportedOnce ? driver.leaveChangeReader() : null;
   log.debug('Leaving stop().');
-  return Promise.resolve();
+  // A clean stop takes this process's place out of the log's readers, so the
+  // trim is not held back for READER_TTL by a process that no longer exists.
+  return Promise.resolve(leaving).then(function () {
+    return undefined;
+  }, function (e) {
+    log.debug("Caught in stop(): " + ((e && e.message) || e));
+    return undefined;
+  });
 }
 
 function status() {
@@ -883,6 +1248,9 @@ function status() {
     supported: supports(driver),
     startedAt: startedAt,
     appliedSeq: applied,
+    highestSeq: highest,
+    holes: holes.size,
+    holesAbandoned: holesAbandoned,
     pollIntervalMs: intervalMs(),
     pulls: pulls,
     nudges: nudges,
@@ -892,6 +1260,15 @@ function status() {
     lastPullAt: lastPullAt,
     lastError: lastError || null,
     otherProcesses: origins().length,
+    retention: {
+      retentionS: Math.round(retentionMs() / 1000),
+      readerTtlS: Math.round(readerTtlMs() / 1000),
+      reportedAt: lastReportAt ? new Date(lastReportAt).toISOString() : null,
+      reportError: lastReportError || null,
+      declaredGoneAt: declaredGoneAt,
+      trimming: !!purgeTimer,
+      lastTrim: lastPurge
+    },
     // Said on the page rather than only in a comment, because it is the one
     // thing about this feature that can be got wrong in a way that matters.
     note: 'Coordination shares STATE and not SOCKETS. The KDC, the LDAP ' +
@@ -910,6 +1287,11 @@ function reset() {
   appliers = null;
   origin = '';
   applied = 0;
+  highest = 0;
+  holes.clear();
+  holesAbandoned = 0;
+  pullsStarted = 0;
+  lastCompletedStartNo = 0;
   stopped = false;
   running = false;
   runningPull = null;
@@ -931,8 +1313,22 @@ function reset() {
   rowsApplied = 0;
   nudges = 0;
   Object.keys(byKind).forEach(function (k) { delete byKind[k]; });
+  stopPurging();
+  lastReportAt = 0;
+  reportedOnce = false;
+  reportInFlight = false;
+  lastReportError = '';
+  declaredGoneAt = null;
+  purging = false;
+  lastPurge = null;
   log.debug("Leaving reset().");
 }
+
+// AT REQUIRE TIME, like every capability — see cluster/cluster.js. Reading past
+// a hole and re-asking for it is what this is (page(), recheckHoles()).
+capabilities.provide('replication.late-commits');
+// And the log is trimmed below what every reader has applied — RETENTION above.
+capabilities.provide('ops.change-log-retention');
 
 module.exports = {
   start: start,
@@ -941,8 +1337,11 @@ module.exports = {
   supports: supports,
   pull: pull,
   wake: wake,
+  reportPosition: reportPosition,
+  purgeOnce: purgeOnce,
   contribute: contribute,
   remoteRows: remoteRows,
+  remoteSegmentedRows: remoteSegmentedRows,
   remoteKeys: remoteKeys,
   origins: origins,
   status: status,

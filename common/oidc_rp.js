@@ -151,6 +151,13 @@ const authn = require('../authn/authn');
 // marked on the response where this file holds one, so the call-log row
 // carries the specific reason whichever of the two callers forgets.
 const errorCodes = require('./error_codes');
+// SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46): the atomic "once" a
+// renewal is single-flight across nodes through, and the barrier the node that
+// lost that race waits on to see the winner's renewed tokens. Libraries that
+// register nothing; both require `config`, `error_codes` and the capability
+// table and reach `persistence.js` only lazily, so neither closes a cycle.
+const clusterClaims = require('../cluster/cluster_claims');
+const clusterBarrier = require('../cluster/cluster_barrier');
 
 function coded(code, answer, res) {
   log.debug("Entering coded().");
@@ -1546,6 +1553,23 @@ function sessionFor(req, surfaceId) {
 // mode a refresh token is rotated on use, so the second redemption is a
 // REPLAY, and a replay revokes the whole family. `renewing` holds the promise
 // for the length of one round trip and every concurrent caller waits on it.
+//
+// **AND ONE ACROSS NODES (2026-09-14, #46).** `renewing` is this process's, so
+// a page's requests spread over two nodes each found no renewal in flight,
+// both redeemed the refresh token, and in RFC 9700 mode the second redemption
+// revoked the family and ended the console session — which is exactly what
+// the paragraph above exists to prevent, one load balancer later. So the
+// renewal is also CLAIMED (`renewOnce()`): scope `oidc_rp.renewal`, keyed by
+// the session and the ACCESS TOKEN being replaced — not the refresh token,
+// which a renewal outside RFC 9700 mode may hand back unchanged, and which
+// would then make the next renewal an hour later look like this one. The node
+// that wins renews; a node that loses does not touch the token endpoint at
+// all, catches up with the change log (`cluster_barrier.syncShared()`) and
+// re-reads the session until the winner's tokens are on it, and the request
+// goes on with them. A winner that takes longer than the wait leaves the
+// request to go on with the tokens it has (`STS-AUTHN-0189`) rather than
+// redeem the refresh token a second time, and a store that cannot be asked
+// does the same (`STS-AUTHN-0190`): in both cases the next request asks again.
 // ---------------------------------------------------------------------------
 const RENEW_BEFORE_EXPIRY_S = 60;
 // Keyed by the realm the session lives in and the session id. Process-wide
@@ -1704,6 +1728,76 @@ async function renewNow(req, res, surface, session, sessionRealmId) {
                                           'renewed' };
 }
 
+// How long a node that lost the renewal race waits for the winner's tokens,
+// and how long the claim is held: the winner's two back-channel round trips
+// (the token endpoint and the JWKS), each bounded by the same timeout, and a
+// second's slack for its commit.
+function renewalWaitMs() {
+  log.debug("Entering renewalWaitMs().");
+  log.debug("Leaving renewalWaitMs().");
+  return backChannelTimeoutMs() * 2 + 1000;
+}
+
+const RENEWAL_POLL_MS = 50;
+
+// The single-flight across nodes described above `renewing`. Runs in the flow
+// realm, like `renewNow()`; the claim is in the SESSION's realm, where the
+// session it guards lives.
+async function renewOnce(req, res, surface, session, sessionRealmId) {
+  log.debug("Entering renewOnce(). session=" + session.id);
+  const replacing = String((session.rpTokens &&
+                            session.rpTokens.accessToken) || '');
+  const answer = await clusterClaims.claim({
+    scope: 'oidc_rp.renewal', realm: sessionRealmId,
+    value: session.id + '\n' + replacing,
+    ttlMs: renewalWaitMs()
+  });
+  if (answer.ok) {
+    log.debug("Leaving renewOnce(). This node renews.");
+    return renewNow(req, res, surface, session, sessionRealmId);
+  }
+  if (answer.reason !== 'used') {
+    log.warn(errorCodes.tag('STS-AUTHN-0190') + 'oidc_rp: the ' +
+             surface.label + ' did not renew the tokens of session ' +
+             session.id + ', because the claim store could not be asked (' +
+             (answer.why || 'no reason given') + '). The request goes on ' +
+             'with the tokens it has, and the next one asks again.');
+    log.debug("Leaving renewOnce(). The store failed.");
+    return { renewed: false, why: 'the renewal could not be claimed' };
+  }
+  const deadline = Date.now() + renewalWaitMs();
+  for (;;) {
+    // Resolves rather than rejects, and at once where nothing coordinates.
+    await clusterBarrier.syncShared();
+    const now = authn.relyingPartySessionOf(req, surface.cookie,
+                                            sessionRealmId);
+    if (!now) {
+      log.debug("Leaving renewOnce(). The session ended while another node " +
+                "renewed it.");
+      return { renewed: false, why: 'the session ended while it was renewed' };
+    }
+    if (now.id === session.id && now.rpTokens &&
+        String(now.rpTokens.accessToken || '') !== replacing) {
+      log.debug("Leaving renewOnce(). Another node renewed it.");
+      return { renewed: true, session: now, elsewhere: true };
+    }
+    if (Date.now() >= deadline) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, RENEWAL_POLL_MS);
+    });
+  }
+  log.warn(errorCodes.tag('STS-AUTHN-0189') + 'oidc_rp: the ' + surface.label +
+           ' found the renewal of session ' + session.id + ' in flight ' +
+           'elsewhere, and its renewed tokens had not arrived within ' +
+           renewalWaitMs() + 'ms. The request goes on with the tokens it ' +
+           'has rather than redeem the refresh token a second time.');
+  log.debug("Leaving renewOnce(). The wait ran out.");
+  return { renewed: false, why: 'another node\'s renewal did not arrive in ' +
+                                'time' };
+}
+
 // Is this session's renewal due, and may it happen? Answers what to do rather
 // than doing it, so the one decision is readable in one place:
 //   `none`   — nothing to do (no tokens, or not due yet)
@@ -1780,7 +1874,7 @@ async function renewIfDue(req, res, surfaceId) {
     return renewing.get(key);
   }
   const work = realms.run(flowRealm, function () {
-    return renewNow(req, res, surface, session, sessionRealmId);
+    return renewOnce(req, res, surface, session, sessionRealmId);
   });
   renewing.set(key, work);
   try {

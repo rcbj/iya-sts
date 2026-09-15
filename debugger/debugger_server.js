@@ -85,6 +85,9 @@ const mode = require('../common/mode');
 const realms = require('../common/realms');
 const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
+// The PROXY protocol v2 reader (2026-09-14, #46), a LIBRARY, installed in
+// listen() like every TCP listener's.
+const proxyProtocol = require('../common/proxy_protocol');
 const audit = require('../common/audit');
 const websecurity = require('../common/websecurity');
 const oidcRp = require('../common/oidc_rp');
@@ -967,6 +970,9 @@ function listen() {
     tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
                                                 port + ')');
   }
+  // Before TLS, like the main port's — see common/proxy_protocol.js.
+  proxyProtocol.install(server, {
+    label: 'the protocol debugger (' + port + ')', channel: 'http' });
   const whenReady = new Promise(function (resolve, reject) {
     server.once('error', function (err) {
       listenError = err.message;

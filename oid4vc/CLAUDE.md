@@ -126,9 +126,9 @@ second catalogue. What is more than a number, and what
   `Math.random()`, whose generator is recoverable from its outputs and this
   service prints its outputs on a page — of `oid4vci.txCodeLength` digits with no
   leading zero, compared in constant time by `vc_offers.checkTxCode()`. **In
-  product mode** a wrong code is counted on the pre-authorized code's own record
-  (through the store, so request workers share the count) and the one that
-  reaches `oid4vci.txCodeMaxAttempts` SPENDS it.
+  product mode** a wrong code is counted — in cluster claims since 2026-09-14,
+  see the section below — and the one that reaches `oid4vci.txCodeMaxAttempts`
+  SPENDS it.
 * **`GET /issuer/offer` MINTS FOR THE SIGNED-IN PERSON WHERE TEST CONTROLS ARE
   CLOSED.** A cross-device or deferred offer carries a pre-authorized code, which
   IS an authorization: minting one for `oid4vci.offerUsername` for anybody who
@@ -185,8 +185,53 @@ second catalogue. What is more than a number, and what
   (`keystore.enriches()`). `tests/vci_request_encryption_key.js` pins all of it.
 * **`/oid4vci/last_request` IS PER REALM TOO (2026-09-12).** It was one `let`, so
   a realm's debugging endpoint reported however another realm's last Credential
-  Request had arrived, kid included. And **`vc_offers.deferredAccessTokens` is a
+  Request had arrived, kid included. **Persisted since 2026-09-14 (#46)**
+  (`vc_issuer.lastCredentialRequest`, one key): behind a balancer the wallet's
+  request and its read-back land on different nodes, and the other node said
+  `seen: false` to a wallet that had encrypted. And **`vc_offers.deferredAccessTokens` is a
   persisted `realms.map()`** keyed by a SHA-256 of the token: it was a `new Set()`
   beside four per-realm stores, so a deferred token minted in one realm was
   deferred in every realm, and in a dispatched service on one worker only.
+
+---
+
+## SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46) — capability `oid4vc.once`
+
+Three values were a check and a delete (or a write) on a replicated
+`realms.map({ persist })`, so once per NODE against one store. Each keeps its
+in-memory check first and is then spent through `cluster/cluster_claims.js`;
+`vc_issuer.js` provides the capability, which the row names.
+
+* **The pre-authorized code** — `vc_offers.spendPreAuthorizedCode()`, called by
+  the token endpoint in `oauth2.js` right after its delete (scope
+  `oid4vci.pre-authorized-code`). Refused `invalid_grant`, `STS-VC-0049`.
+  Nothing releases it: a refused token request spent the code before this too.
+* **The c_nonce** — `vc_issuer.spendProofNonces()`, now asynchronous, once per
+  distinct nonce of a request (scope `oid4vci.c_nonce`). Refused
+  `invalid_proof`, `STS-VC-0050`. This also closed the same race INSIDE one
+  process: `verifyProofJwt()` awaits the signature, so two concurrent requests
+  could both find the nonce before either deleted it.
+* **Transaction Code failures** — `checkTxCode()` is asynchronous and counts in
+  CLAIMS, not on the record: each wrong code claims the next free slot
+  `<code>#1 … #limit` (scope `oid4vci.tx-code-failure`), and the slot it won is
+  its number, so concurrent failures on N nodes take different slots and share
+  one budget. The record's `txCodeFailures` is only where the probe starts —
+  safe because a node writes n only after winning slot n — and what the console
+  shows. The last slot spends the code through `spendPreAuthorizedCode()`, so a
+  node still holding the record refuses the right code too. **A claims variant
+  rather than a counter table** because the limit is at most 100 (five by
+  default): no schema, no driver statement, and memory mode counts exactly as
+  the record did.
+
+Every claim lives for the value's remaining lifetime plus 60 s of clock
+disagreement. A store that cannot be asked refuses (`STS-VC-0051`): the
+redemption, the proof, or the wrong-code attempt uncounted.
+`tests/cluster_single_use_protocols.js` section 2 holds each against a node
+still holding the value, with the empty-store control.
+
+**OpenID4VP is not in this list, and not by omission.** Its `request_uri` is
+served as often as it is fetched and a second `direct_post` response overwrites
+the verdict — neither is single-use even in one process, so there is no "once"
+for a cluster to break. Making them single-use would be a behaviour change of
+its own, not a clustering fix.
 

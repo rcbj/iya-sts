@@ -56,6 +56,11 @@ const stsCrypto = require('../common/crypto');
 // is marked on the response object and never written into a response.
 const errorCodes = require('../common/error_codes');
 const { VCI_CONFIG_ID, vciConfigIds } = require('./vc_configs');
+// THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" a pre-authorized
+// code is spent through and a Transaction Code failure is counted with — see
+// spendPreAuthorizedCode() and checkTxCode(). A LIBRARY that registers no
+// route and requires persistence lazily, so it closes no cycle.
+const clusterClaims = require('../cluster/cluster_claims');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 const validation = require('../common/validation');
@@ -237,18 +242,28 @@ function newTxCode() {
 // `mode.verifiesCredentials()`: a Transaction Code is a credential this service
 // verifies, and five digits inside a ten-minute offer are guessable at the
 // token endpoint by anybody holding the offer. So in product each wrong code
-// is counted ON THE RECORD, through the store (a request worker that counted in
-// its own memory would give every worker its own five), and the one that
+// is counted — on the record through the store until 2026-09-14, in claims
+// since (below; a request worker that counted in its own memory would give
+// every worker its own five, and a node every node its own), and the one that
 // reaches `oid4vci.txCodeMaxAttempts` SPENDS the pre-authorized code. The
 // End-User asks for a new offer. Development counts nothing, so a wallet's
 // wrong-code path can be driven as often as a test likes — which is what that
 // mode is for.
 //
-// Returns `{ ok }`, or `{ ok: false, missing | spent, attemptsLeft }`, and
-// writes to `preAuthorizedCodes` itself so the caller cannot forget either the
-// count or the spending.
+// **COUNTED ACROSS THE CLUSTER SINCE 2026-09-14 (#46), AND SO ASYNCHRONOUS.**
+// The count lived on the record alone, and a record is replicated rather than
+// shared: every node read its own copy, so N nodes gave a guesser N times
+// `oid4vci.txCodeMaxAttempts`, and two wrong codes at once on two nodes wrote
+// `failures = 1` twice, so concurrent guesses were not counted at all. The
+// count is now COUNTED IN CLAIMS — see countTxCodeFailure() — and the record's
+// `txCodeFailures` is kept only as the hint that saves the next count its
+// probes and as what the console shows.
+//
+// Returns `{ ok }`, or `{ ok: false, missing | spent | store, attemptsLeft }`,
+// and writes to `preAuthorizedCodes` itself so the caller cannot forget either
+// the count or the spending.
 // ---------------------------------------------------------------------------
-function checkTxCode(code, record, presented) {
+async function checkTxCode(code, record, presented) {
   log.debug("Entering checkTxCode().");
   if (!record.txCode) {
     log.debug("Leaving checkTxCode(). This offer carries no Transaction Code.");
@@ -270,9 +285,20 @@ function checkTxCode(code, record, presented) {
   const limit = Math.max(1,
                          Number(config.value('oid4vci.txCodeMaxAttempts')) ||
                          5);
-  const failures = (Number(record.txCodeFailures) || 0) + 1;
+  const counted = await countTxCodeFailure(code, record, limit);
+  if (counted.store) {
+    log.debug("Leaving checkTxCode(). The failure could not be counted.");
+    return { ok: false, store: true };
+  }
+  const failures = counted.failures;
   if (failures >= limit) {
     preAuthorizedCodes.delete(code);
+    // SPENT ON EVERY NODE, not only in this process's map: a node whose copy
+    // of the record has not caught up would otherwise still redeem the code
+    // with the right Transaction Code after the budget was exhausted here. A
+    // store failure here changes nothing the caller can do — the code is
+    // refused either way — so its answer is logged by the spend and ignored.
+    await spendPreAuthorizedCode(code, record);
     log.warn(errorCodes.tag('STS-VC-0030') +
              'vc_offers: a pre-authorized code was SPENT after ' + failures +
              ' wrong Transaction Code(s) (oid4vci.txCodeMaxAttempts = ' +
@@ -280,12 +306,127 @@ function checkTxCode(code, record, presented) {
     log.debug("Leaving checkTxCode(). Spent.");
     return { ok: false, spent: true, attemptsLeft: 0 };
   }
+  const current = preAuthorizedCodes.get(code) || record;
   preAuthorizedCodes.set(code,
-                         Object.assign({}, record,
-                                       { txCodeFailures: failures }));
+                         Object.assign({}, current,
+                                       { txCodeFailures: Math.max(failures,
+                                         Number(current.txCodeFailures) ||
+                                         0) }));
   log.debug("Leaving checkTxCode(). Wrong; " + (limit - failures) + " " +
       "attempt(s) left.");
   return { ok: false, attemptsLeft: limit - failures };
+}
+
+// ---------------------------------------------------------------------------
+// ONE WRONG TRANSACTION CODE, COUNTED ATOMICALLY ACROSS THE CLUSTER (#46).
+//
+// A counter is a number every node agrees on, and `cluster_claims.js` already
+// is one — just not a number: each failure CLAIMS THE NEXT SLOT, `<code>#1`,
+// `<code>#2`, … up to the limit, and the slot this failure won is its number.
+// A slot is claimed by exactly one caller on any node, so two concurrent wrong
+// codes take slots 1 and 2 rather than both writing "1", and N nodes share one
+// budget of `limit` slots. When every slot is already taken the budget is
+// gone, and the answer is `limit` — the caller spends the code.
+//
+// **A CLAIMS VARIANT RATHER THAN A COUNTER TABLE**, and the choice is the
+// bound: `oid4vci.txCodeMaxAttempts` is at most 100 and five by default, so
+// the worst probe is a few statements, on the wrong-code path only, and it
+// costs no schema, no driver statement and no second memory fallback — on a
+// store that cannot be shared the claims are this process's memory, which
+// counts exactly as the record always did.
+//
+// **THE RECORD'S COUNT IS WHERE THE PROBE STARTS**, and that is safe in one
+// direction only, which is the direction it is used: a node writes
+// `txCodeFailures = n` after it has won slot n, and it reached slot n only
+// having found every slot below it taken, so a replicated count never claims
+// more slots were taken than were. A lost update makes the hint LOWER, which
+// costs a probe and nothing else.
+//
+// The slots live as long as the code can still be redeemed, plus the skew.
+// `{ failures }`, or `{ store: true }` when the store cannot be asked — the
+// caller refuses the attempt rather than letting it go uncounted.
+// ---------------------------------------------------------------------------
+const CLAIM_SKEW_MS = 60 * 1000;
+
+function remainingLifetimeMs(record) {
+  log.debug("Entering remainingLifetimeMs().");
+  const expires = Number(record && record.expires);
+  log.debug("Leaving remainingLifetimeMs().");
+  return isFinite(expires) && expires > 0 ? Math.max(0, expires - Date.now())
+    : offerTtlMs();
+}
+
+async function countTxCodeFailure(code, record, limit) {
+  log.debug("Entering countTxCodeFailure().");
+  const known = Math.floor(Number(record && record.txCodeFailures) || 0);
+  const first = Math.max(1, Math.min(limit, known + 1));
+  const ttlMs = remainingLifetimeMs(record) + CLAIM_SKEW_MS;
+  for (let slot = first; slot <= limit; slot++) {
+    const claimed = await clusterClaims.claim({
+      scope: 'oid4vci.tx-code-failure', value: code + '#' + slot,
+      ttlMs: ttlMs });
+    if (claimed.ok) {
+      log.debug("Leaving countTxCodeFailure(). Failure " + slot + ".");
+      return { failures: slot };
+    }
+    if (claimed.reason !== 'used') {
+      log.error(errorCodes.tag('STS-VC-0051') + 'vc_offers: a wrong ' +
+                'Transaction Code could not be counted, because the claim ' +
+                'store could not be asked (' + (claimed.why ||
+                'no reason given') + '). The attempt is refused uncounted.');
+      log.debug("Leaving countTxCodeFailure(). Store unavailable.");
+      return { store: true };
+    }
+  }
+  log.debug("Leaving countTxCodeFailure(). Every slot was already taken.");
+  return { failures: limit };
+}
+
+// ---------------------------------------------------------------------------
+// SPENDING A PRE-AUTHORIZED CODE ACROSS THE CLUSTER (2026-09-14, #46).
+//
+// The token endpoint deletes the code from `preAuthorizedCodes`, which is
+// "once" in one process and a replicated write in several: two token requests
+// carrying one code, on two nodes inside the replication window, both found
+// it and both were issued an access token for a credential somebody else was
+// offered. The delete stays where it is and first; this is then the atomic
+// half, called by oauth2.js right after it. Exactly one caller on any node
+// gets `{ ok: true }`.
+//
+// Nothing releases it: the code is gone from this process's map whatever the
+// token response turns out to be, which is how a refused request spent it
+// before this, and a claim given back without the map restored would only let
+// another node redeem it. A store that cannot be asked refuses (fail closed).
+//
+// `{ ok: true }` or `{ ok: false, errorCode, description }`.
+// ---------------------------------------------------------------------------
+async function spendPreAuthorizedCode(code, record) {
+  log.debug("Entering spendPreAuthorizedCode().");
+  const claimed = await clusterClaims.claim({
+    scope: 'oid4vci.pre-authorized-code', value: code,
+    ttlMs: remainingLifetimeMs(record) + CLAIM_SKEW_MS });
+  if (claimed.ok) {
+    log.debug("Leaving spendPreAuthorizedCode(). Spent here.");
+    return { ok: true };
+  }
+  if (claimed.reason === 'used') {
+    log.warn(errorCodes.tag('STS-VC-0049') + 'vc_offers: a pre-authorized ' +
+             'code this process still held was ALREADY REDEEMED (or spent by ' +
+             'wrong Transaction Codes) on another node against the same ' +
+             'store. Refused.');
+    log.debug("Leaving spendPreAuthorizedCode(). Used elsewhere.");
+    return { ok: false, errorCode: 'STS-VC-0049',
+             description: 'Unknown or already-used pre-authorized code.' };
+  }
+  log.error(errorCodes.tag('STS-VC-0051') + 'vc_offers: whether a ' +
+            'pre-authorized code was already redeemed could not be asked of ' +
+            'the claim store (' + (claimed.why || 'no reason given') + '). ' +
+            'It is refused.');
+  log.debug("Leaving spendPreAuthorizedCode(). Store unavailable.");
+  return { ok: false, errorCode: 'STS-VC-0051',
+           description: 'The issuer could not confirm this pre-authorized ' +
+                        'code is unused; ask the issuer for a new Credential ' +
+                        'Offer.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -720,6 +861,7 @@ module.exports = {
   OFFER_TTL_MS: OFFER_TTL_MS,
   offerTtlMs: offerTtlMs,
   checkTxCode: checkTxCode,
+  spendPreAuthorizedCode: spendPreAuthorizedCode,
   walletFor: walletFor,
   vciOfferUsername: vciOfferUsername,
   buildCredentialOffer: buildCredentialOffer,

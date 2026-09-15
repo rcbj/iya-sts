@@ -1115,6 +1115,96 @@ const readyPromise = initialise().catch(function (err) {
 // ---------------------------------------------------------------------------
 const building = new Map();
 
+// ---------------------------------------------------------------------------
+// ONE AUTHORITY FOR THE CLUSTER, NOT ONE PER NODE (2026-09-14, #46 section 1).
+//
+// The paragraph at the top of `buildTrustMaterial()` below says two processes
+// that race both write, the later wins, and both then READ the winner — "the
+// disagreement is a window rather than a state". Inside one container that
+// window is the IPC round trip. Across containers it is replication, and in
+// it a JWT-SVID minted by the node whose authority is about to be overwritten
+// is refused by every other node's `validateJwtSvid()` — and by the minting
+// node too, the moment the other write arrives. The issue measured the same
+// shape one level down: `spiffe_auth.js` refused on B an X509-SVID A issued.
+//
+// Where the store arbitrates, an authority is established ONCE: the node that
+// takes the claim (`spiffe.authority`, per realm and kind) reads the store
+// again, makes the authority only if it is still missing, and COMMITS it
+// before letting the claim go; a node that finds the claim held waits for that
+// commit to replicate and takes the authority it brings. Everywhere else —
+// development, `ldif`, one process — `make()` runs as it always did.
+//
+// The X.509 half is normally not built here at all: it IS the realm's SPIFFE
+// Issuing CA, which `common/pki.js` builds once for the cluster. This guards
+// the self-signed fallback of a realm with no hierarchy.
+// ---------------------------------------------------------------------------
+const ESTABLISH_CLAIM_MS = 60000;
+const ESTABLISH_WAIT_MS = 120000;
+const ESTABLISH_POLL_MS = 250;
+
+async function establishOnce(realmId, kind, present, make) {
+  log.debug("Entering establishOnce(). realm=" + realmId + " kind=" + kind);
+  const keystore = require('../common/keystore');
+  // FROM REQUIRE'S CACHE AND NOT REQUIRED: a running service loaded the store
+  // module long before a SPIFFE call, and an in-process test of this module
+  // that opened no store must not have one loaded underneath it.
+  const loaded = require.cache[require.resolve('../persistence/persistence')];
+  const persistence = loaded && loaded.exports;
+  if (typeof keystore.arbitrates !== 'function' || !keystore.arbitrates() ||
+      !persistence || typeof persistence.clusterStore !== 'function' ||
+      !persistence.clusterStore()) {
+    if (!present()) {
+      await make();
+    }
+    log.debug("Leaving establishOnce(). Nothing to coordinate.");
+    return;
+  }
+  const claims = require('../cluster/cluster_claims');
+  const began = Date.now();
+  for (;;) {
+    await persistence.syncNow();
+    if (present()) {
+      log.debug("Leaving establishOnce(). Present.");
+      return;
+    }
+    const claim = await claims.claim({ scope: 'spiffe.authority',
+                                       value: kind + ':' + String(realmId),
+                                       ttlMs: ESTABLISH_CLAIM_MS, realm: '' });
+    if (claim.ok) {
+      try {
+        await persistence.syncNow();
+        if (!present()) {
+          await make();
+          // COMMITTED BEFORE THE CLAIM GOES, or the next node to take it
+          // reads a store without it and makes a second one.
+          await persistence.flushMinted();
+        }
+      } finally {
+        await claims.release(claim.handle);
+      }
+      log.debug("Leaving establishOnce(). Established here.");
+      return;
+    }
+    if (claim.reason === 'store' || Date.now() - began > ESTABLISH_WAIT_MS) {
+      log.error(errorCodes.tag('STS-SPIFFE-0076') + 'spiffe: the "' +
+                (realmId || 'default') + '" realm\'s ' + kind + ' authority ' +
+                'could not be established once for the cluster (' +
+                (claim.reason === 'store'
+                  ? 'the store could not be asked: ' + claim.why
+                  : 'another node held it for ' +
+                    (ESTABLISH_WAIT_MS / 1000) + 's') + ').');
+      log.debug("Leaving establishOnce(). Refused.");
+      throw new Error('the "' + (realmId || 'default') + '" realm\'s ' +
+                      kind + ' SPIFFE authority could not be established ' +
+                      'once for this service\'s nodes, so none was made — ' +
+                      'two would be two trust anchors for one trust domain.');
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, ESTABLISH_POLL_MS);
+    });
+  }
+}
+
 async function buildTrustMaterial(realmId) {
   log.debug('Entering buildTrustMaterial(). realm=' + (realmId || 'default'));
   // ------------------------------------------------------------------------
@@ -1169,7 +1259,12 @@ async function buildTrustMaterial(realmId) {
              'is ' + spiffeId.trustDomainId(domain) + '. It is fixed now, ' +
              'because what follows names it in certificates.');
   }
-  if (!jwtList(id).length) {
+  await establishOnce(id, 'jwt', function () {
+    log.debug("Entering the JWT authority's presence check.");
+    log.debug("Leaving the JWT authority's presence check.");
+    return jwtList(id).length > 0;
+  }, async function () {
+    log.debug("Entering the JWT authority's build.");
     const jwtAuthority = await makeJwtAuthority(settings.jwtKeyType);
     if (!jwtList(id).length) {
       setJwtList(id, [jwtAuthority]);
@@ -1182,7 +1277,8 @@ async function buildTrustMaterial(realmId) {
                jwtList(id)[0].id + '); adopting it rather than the key just ' +
                'generated. One service is one trust domain.');
     }
-  }
+    log.debug("Leaving the JWT authority's build.");
+  });
   // THE X.509 HALF. Nothing to do when the realm has a SPIFFE Issuing CA —
   // that IS the authority. The fallback is built only when it has none.
   if (pki.describeIssuer(id, SPIFFE_USE_CASE)) {
@@ -1193,10 +1289,26 @@ async function buildTrustMaterial(realmId) {
     log.debug('Leaving buildTrustMaterial(). A self-signed authority is held.');
     return;
   }
-  const x509Authority = await makeX509Authority(
-    settings.x509KeyType, settings.caTtl, 1, domain, settings.caSubject);
-  if (!x509List(id).length) {
-    setX509List(id, [x509Authority]);
+  let x509Authority = null;
+  await establishOnce(id, 'x509', function () {
+    log.debug("Entering the X.509 authority's presence check.");
+    log.debug("Leaving the X.509 authority's presence check.");
+    return x509List(id).length > 0 || !!pki.describeIssuer(id,
+                                                           SPIFFE_USE_CASE);
+  }, async function () {
+    log.debug("Entering the X.509 authority's build.");
+    x509Authority = await makeX509Authority(
+      settings.x509KeyType, settings.caTtl, 1, domain, settings.caSubject);
+    if (!x509List(id).length) {
+      setX509List(id, [x509Authority]);
+    }
+    log.debug("Leaving the X.509 authority's build.");
+  });
+  if (!x509Authority) {
+    log.debug('Leaving buildTrustMaterial(). Another node established it.');
+    return;
+  }
+  if (x509List(id)[0] && x509List(id)[0].id === x509Authority.id) {
     log.warn('spiffe: the "' + (id || 'default') + '" realm has no SPIFFE ' +
              'Issuing CA, so its X.509 authority is SELF-SIGNED (' +
              x509Authority.id + ', ' + x509Authority.keyType + ', valid ' +
@@ -2549,6 +2661,14 @@ function state(realmId) {
   };
 }
 
+// DECLARED AT REQUIRE TIME (cluster/CLAUDE.md): a realm's JWT authority and
+// its self-signed X.509 fallback are established once for the cluster
+// (`establishOnce()`), and its X.509 authority proper is the realm's SPIFFE
+// Issuing CA, which `common/pki.js` builds once and every node adopts — so
+// every node issues from, and `spiffe_auth.js` verifies against, the same one.
+const capabilities = require('../cluster/cluster_capabilities');
+capabilities.provide('spiffe.authority-agreement');
+
 module.exports = {
   KEY_TYPES: KEY_TYPES,
   // A GETTER, so that `admin-core/admin_views.js` — which reads this member to
@@ -2606,5 +2726,9 @@ module.exports = {
     log.debug("Entering sequence().");
     log.debug("Leaving sequence().");
     return sequenceNow(realmId);
-  }
+  },
+  // For tests/cluster_key_pki_agreement.js (#46): that two establishments
+  // racing across nodes make ONE authority is a protocol over a claim, a sync
+  // and a commit, asserted with those three stubbed.
+  establishOnce: establishOnce
 };

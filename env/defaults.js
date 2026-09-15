@@ -48,11 +48,14 @@ var config = {
 
   // --- Global ----------------------------------------------------------
   global: {
-    host: "0.0.0.0",   // HTTP bind address; restart to apply
-    port: 8081,        // HTTP port; restart to apply
-    trustProxy: false, // Trust forwarded headers
-    publicBaseUrl: "", // Public base URL
-    corsOrigins: ""    // Origins treated as this service's own
+    host: "0.0.0.0",              // HTTP bind address; restart to apply
+    port: 8081,                   // HTTP port; restart to apply
+    trustProxy: false,            // Trust forwarded headers
+    trustedProxies: "",           // Trusted proxy addresses
+    proxyProtocol: "off",         // PROXY protocol on the TCP listeners; restart to apply
+    proxyProtocolTimeoutMs: 5000, // PROXY protocol header timeout (ms)
+    publicBaseUrl: "",            // Public base URL
+    corsOrigins: ""               // Origins treated as this service's own
   },
 
   // --- Admin console ---------------------------------------------------
@@ -827,7 +830,17 @@ var config = {
     minted: true,                                         // Persist sessions, tokens and the audit log; restart to apply
     mintedRetention: 604800000,                           // Minted state retention (ms)
     coordinate: true,                                     // Coordinate with other processes; restart to apply
-    pollInterval: 5000                                    // Change poll interval (ms)
+    pollInterval: 5000,                                   // Change poll interval (ms)
+    changeLogRetentionS: 3600                             // Change log retention (s)
+  },
+
+  // --- Cluster ---------------------------------------------------------
+  cluster: {
+    mode: "auto",                  // Cluster mode; restart to apply
+    nodeName: "",                  // Node name; restart to apply
+    heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
+    nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
+    acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
   },
 };
 

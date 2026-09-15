@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2542** of them, in **32** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2656** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -50,33 +50,35 @@ is an ordinary outcome.
 ## Contents
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
-* [Service core (`STS-CORE`)](#sts-core) — 45
+* [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
+* [Service core (`STS-CORE`)](#sts-core) — 46
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 48
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 55
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 168
-* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 50
-* [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 70
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 59
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 58
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 173
+* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 51
+* [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
-* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 44
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 165
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 385
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 56
+* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 176
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 394
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 60
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
 * [Federation (`STS-FED`)](#sts-fed) — 74
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 115
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 65
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 70
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 74
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 120
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 70
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 76
 * [TLS listeners (`STS-TLS`)](#sts-tls) — 31
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 48
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 89
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 264
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 51
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 167
-* [Management API (`STS-API`)](#sts-api) — 68
+* [Management API (`STS-API`)](#sts-api) — 69
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 92
@@ -108,6 +110,24 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0021` | A cross-origin request named a client this realm has no application for (a client_id, Basic user name, client assertion or access token client_id), so its answer carried no Access-Control-Allow-Origin. | none — the endpoint answers; the browser withholds the answer from the page (a CORS error in place of the protocol's own error) |
 | `STS-HTTP-0022` | A cross-origin request named a client whose appCorsOrigin does not list the request's origin, so its answer carried no Access-Control-Allow-Origin. | none — the endpoint answers; the browser withholds the answer from the page |
 | `STS-HTTP-0023` | A value of global.corsOrigins is not an origin, and was ignored rather than widened. | — |
+
+## STS-PROXY
+
+**PROXY protocol.** The HAProxy PROXY protocol v2 header read at the front of every TCP connection when global.proxyProtocol is v2: who may send one (global.trustedProxies), the header itself, and the startup refusal when nobody is trusted.
+
+Raised from: common/proxy_protocol.js, server.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-PROXY-0001` | A connection from an address outside global.trustedProxies (and not this host) was closed, because with global.proxyProtocol on every connection must come through a trusted proxy. One audit row per address per minute; the rest are counted. | the TCP connection is closed before any protocol byte is read |
+| `STS-PROXY-0002` | A connection from a trusted proxy did not begin with the PROXY protocol v2 signature — a balancer without proxy protocol enabled, or a plain client on the proxy's address — and was closed. | the TCP connection is closed |
+| `STS-PROXY-0003` | A connection from a trusted proxy began with a PROXY protocol version 1 (text) header; only version 2 is accepted, and it was closed. | the TCP connection is closed |
+| `STS-PROXY-0004` | A PROXY protocol v2 header was malformed — a version other than 2, an unknown command, family or transport, an address block shorter than its family needs, or a TLV running past the declared length — and the connection was closed. | the TCP connection is closed |
+| `STS-PROXY-0005` | A PROXY protocol v2 header declared more address and TLV bytes than this service reads (4096), and the connection was closed before they were buffered. | the TCP connection is closed |
+| `STS-PROXY-0006` | A PROXY protocol v2 header carried a CRC32C TLV that does not match the header, and the connection was closed. | the TCP connection is closed |
+| `STS-PROXY-0007` | A connection from a trusted proxy did not complete its PROXY protocol header within global.proxyProtocolTimeoutMs, and was closed. | the TCP connection is closed |
+| `STS-PROXY-0008` | A connection from a trusted proxy closed part-way through its PROXY protocol header. | — |
+| `STS-PROXY-0009` | The service refused to start: global.proxyProtocol is v2 and global.trustedProxies holds no usable address or range, so no header could be believed. | — |
 
 ## STS-CORE
 
@@ -162,6 +182,7 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 | `STS-CORE-0043` | The plain-HTTP revocation listener (pki.httpPort) could not bind, so every http:// CRL, OCSP and caIssuers address in this service's certificates answers nothing. | — |
 | `STS-CORE-0090` | setSubjectResolver() was given an object without both subjectFor() and nameFor(), so no person in this process is issued a subject. | none — logged |
 | `STS-CORE-0091` | The subject resolver threw, and the person was given no subject (or a subject was treated as naming nobody). | none — logged |
+| `STS-CORE-0092` | A realm's key set could not be generated off the event loop; the first read of it generates it on the loop instead. | none — logged |
 
 ## STS-WORKER
 
@@ -269,6 +290,53 @@ Raised from: persistence/.
 | `STS-STORE-0046` | The database store could not be asked whether an assertion has been used; the assertion is refused. | — |
 | `STS-STORE-0047` | Sweeping expired used-assertion rows, or removing a removed realm's, failed; the rows are ignored by every read and expire. | — |
 | `STS-STORE-0048` | Confirming or releasing a used-assertion claim when its response finished failed; the row stays reserved until the assertion expires. | — |
+| `STS-STORE-0049` | A change-log sequence number this process stepped past never became visible within the hole lifetime, and is no longer asked for; it was a transaction that rolled back. | — |
+| `STS-STORE-0050` | A conditional write of a signing-key or certificate-authority row found the row inserted and removed by other writers twice while it waited, and wrote nothing. | — |
+| `STS-STORE-0051` | A certificate authority another node wrote was adopted and the TLS listener could not be reconciled with it. | — |
+| `STS-STORE-0052` | A directory entry this process added was already in the store as a DIFFERENT entry another node created first; the stored entry was kept and this process's copy replaced by it. | none — logged |
+| `STS-STORE-0053` | A change to a directory entry was not written because another node deleted the entry after this process last saw it; the entry was removed here too. | none — logged |
+| `STS-STORE-0054` | A minted row (a session, a code, a token) was not written back because another node had already ended it and the store holds its tombstone; this process's copy was dropped. | none — logged |
+| `STS-STORE-0055` | Expired tombstones of ended minted rows could not be swept from the store. | none — logged |
+| `STS-STORE-0056` | A minted row another node had changed could not be merged with this process's copy (it would not open or the merge threw), so this process's copy was written as it was. | none — logged |
+| `STS-STORE-0057` | A process found its place among the change log's readers removed since it last reported: it had been declared gone, so changes it had not applied may have been trimmed. It should be restarted. | — |
+| `STS-STORE-0058` | A process could not report its position in the change log; the log is not trimmed past where it last said it was, and the report is retried after the next pull. | — |
+| `STS-STORE-0059` | Trimming the change log below every reader's position failed; it is retried on the next interval. | — |
+
+## STS-CLUSTER
+
+**Cluster membership and agreement.** Several containers against one store: membership and its heartbeat, leases and the fence every write checks, the gate in front of active-passive and active-active mode, atomic claims, the secrets every node shares, and the barrier that makes a request see what other nodes committed before it arrived.
+
+Raised from: cluster/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-CLUSTER-0001` | A write transaction was refused by the fence: this node's membership row had expired, or a lease the write needed was no longer held at the token it was acquired with. | — |
+| `STS-CLUSTER-0002` | This node was refused membership because a live node is running a different cluster mode or a different fingerprint of the settings every node must share; it does not start. | — |
+| `STS-CLUSTER-0003` | A heartbeat could not be written; the node keeps serving until its membership would expire. | — |
+| `STS-CLUSTER-0004` | This node could not renew its membership within its lifetime and exits, because the others may already treat it as dead. | — |
+| `STS-CLUSTER-0005` | This node's membership row had already expired when it tried to renew it, so it exits rather than come back. | — |
+| `STS-CLUSTER-0006` | This node lost a lease that its role depends on (the service lease in active-passive mode) and exits. | — |
+| `STS-CLUSTER-0007` | A cluster mode other than off was configured without a postgres persistence store; the service does not start. | — |
+| `STS-CLUSTER-0008` | Active-active mode was configured without persisted keys under an operator key-encryption key, which every node must share; the service does not start. | — |
+| `STS-CLUSTER-0009` | Active-active mode was refused because capabilities it depends on are not provided by this build and were not accepted as missing; the service does not start. | — |
+| `STS-CLUSTER-0010` | Leaving the cluster on shutdown failed; this node's row and leases expire on their own. | — |
+| `STS-CLUSTER-0011` | A write was fenced and this process exits, because a process that has lost its right to write would try again on the next change. | — |
+| `STS-CLUSTER-0012` | Asking the store for a lease failed; the role is not taken and is asked for again on the next heartbeat. | — |
+| `STS-CLUSTER-0013` | The claim store could not be asked; the single-use value is refused rather than accepted unrecorded. | — |
+| `STS-CLUSTER-0014` | Releasing a claim failed; it stays held until it expires. | — |
+| `STS-CLUSTER-0015` | Sweeping expired claims failed; they are ignored by every read and swept on the next attempt. | — |
+| `STS-CLUSTER-0016` | A secret every node must share could not be written to or read from the store; the service does not start. | — |
+| `STS-CLUSTER-0017` | A shared secret could not be sealed or opened with the key-encryption key; the service does not start. | — |
+| `STS-CLUSTER-0018` | A request could not catch up with the other nodes' committed writes before it was served; it is answered from this process's copy. | — |
+| `STS-CLUSTER-0019` | A response held until its writes committed could not commit them; it is sent anyway and the writes are retried. | — |
+| `STS-CLUSTER-0020` | Active-active mode is running with capabilities an operator accepted as missing; each named one is a known way nodes disagree. | — |
+| `STS-CLUSTER-0021` | A request worker could not attach to its node's cluster membership; the worker does not start. | — |
+| `STS-CLUSTER-0022` | A counter that may only go up (a WebAuthn signature counter, a one-time code step) could not be advanced because the store could not be asked; the credential is refused. | — |
+| `STS-CLUSTER-0023` | A rate-limit window every node counts in could not be counted, read or cleared because the store could not be asked; the limiter decided on this process's own buckets for that attempt. | — |
+| `STS-CLUSTER-0024` | Sweeping the rate-limit windows whose time has passed failed; they are swept on a later count. | — |
+| `STS-CLUSTER-0025` | A node's heartbeat ran late by a heartbeat or more because its event loop was busy; a stall past the membership lifetime costs the node its membership. | — |
+| `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
+| `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
 
 ## STS-KEYS
 
@@ -333,6 +401,9 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0053` | The database password read from its secret provider is empty and was refused. | — |
 | `STS-KEYS-0054` | The file holding a secret is readable by group or other. | — |
 | `STS-KEYS-0055` | keys.kidFormat asks for an RFC 9278 JWK Thumbprint URI and none could be computed for a signing key, so its tokens carry the internal kid. Logged once per key. | none — the token is signed under its internal kid |
+| `STS-KEYS-0056` | A queued write of a signing-key or certificate-authority row failed in a way its own handler did not report. | — |
+| `STS-KEYS-0057` | A certificate authority row was changed by another node at the same moment, and that node's CA tier or certificate slot was kept over this one's (first writer wins). | — |
+| `STS-KEYS-0058` | A signing-key or certificate-authority row another process wrote could not be decrypted or parsed, so it was not adopted. | — |
 
 ## STS-PKI
 
@@ -510,6 +581,11 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 | `STS-PKI-0171` | A TLS client certificate revocation named a serial the signed-in person holds no certificate under. | the caller's refusal: /portal/signing-key HTTP 400 page |
 | `STS-PKI-0180` | An application already holds pki.applicationTlsClientCertificateMax valid TLS client certificates, so another was not issued. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0181` | A TLS client certificate revocation named a serial the application holds no certificate under. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0182` | A certificate authority tier was built on this node and on another at the same moment; the other committed first and was kept. | the caller's refusal (errors on a console or /admin-api reply) for a deliberate build; none for a startup build, which adopts it |
+| `STS-PKI-0183` | A certificate authority was not built because the store could not be asked whether another node is building it. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0184` | Another node held the build of a certificate authority for longer than this node waits, and nothing appeared in the store. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0185` | A CRL was not signed because its CRL number could not be advanced in the store shared by this service's nodes. | HTTP 500 from the CRL distribution point |
+| `STS-PKI-0186` | A certificate was not recorded because the Issuing CA that signed it was replaced, repeatedly, while it was being signed. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-ENROLL
 
@@ -569,6 +645,7 @@ Raised from: common/cert_enrollment.js, common/enrollment_monitor.js.
 | `STS-ENROLL-0084` | A SCEP challenge password that had already been redeemed was presented again. | SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0085` | A SCEP challenge password was presented after it expired. | SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0090` | An enrollment monitor counter could not be recorded (the request it counted is unaffected). | none (log only) |
+| `STS-ENROLL-0091` | An ACME External Account Binding key or a SCEP challenge password could not be proved unspent because the cluster store could not be asked, so it was refused. | ACME unauthorized / SCEP CertRep FAILURE badRequest |
 
 ## STS-ACME
 
@@ -648,6 +725,8 @@ Raised from: acme/.
 | `STS-ACME-0095` | An ACME endpoint, console action or management API action threw unexpectedly. | HTTP 500, ACME serverInternal problem; console error notice |
 | `STS-ACME-0096` | An ACME console or management API revoke-certificate named a certificate that is already revoked. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-ACME-0097` | The query string of an ACME console page failed validation. | HTTP 400 text/plain |
+| `STS-ACME-0098` | An ACME finalize was refused because the order is already being finalized by another request, on this node or another. | HTTP 403, ACME orderNotReady problem |
+| `STS-ACME-0099` | An ACME Replay-Nonce or an order's finalize could not be claimed because the cluster store could not be asked, so the request was refused. | HTTP 500, ACME serverInternal problem |
 
 ## STS-EST
 
@@ -735,6 +814,8 @@ Raised from: scep/.
 | `STS-SCEP-0061` | A /admin/scep or /admin-api/scep action body failed input validation. | the console redirect with error=, or HTTP 400 { ok: false, errors } |
 | `STS-SCEP-0062` | A /admin/scep or /admin-api/scep action named no action, or one that does not exist. | the console redirect with error=, or HTTP 400 { ok: false, errors } |
 | `STS-SCEP-0063` | A SCEP certificate revocation from the console or /admin-api named an unknown RFC 5280 reason. | the console redirect with error=, or HTTP 400 { ok: false, errors } |
+| `STS-SCEP-0064` | A SCEP message was refused because another request with the same transactionID was still being answered, on this node or another, when the wait ran out. | SCEP CertRep FAILURE badRequest |
+| `STS-SCEP-0065` | A SCEP message was refused because its transaction could not be claimed: the cluster store could not be asked. | SCEP CertRep FAILURE badRequest |
 
 ## STS-AUTHN
 
@@ -909,6 +990,17 @@ Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.
 | `STS-AUTHN-0176` | An authenticator app enrolment at sign-in could not be started. | HTTP 400 page |
 | `STS-AUTHN-0177` | The code confirming an authenticator app enrolled at sign-in was refused; the same secret is drawn again. | HTTP 400 page |
 | `STS-AUTHN-0180` | A signed-in session was refused because the directory holds no entry for the person, so there is no subject to give it (ldap.autocreateUsers off, or a federation relationship with dynamic provisioning off and nobody provisioned). | the calling door's own refusal |
+| `STS-AUTHN-0181` | A security-key assertion verified and was refused because its ceremony challenge had already been answered, by another node or a request racing this one (#46). | HTTP 200 security-key page with the reason |
+| `STS-AUTHN-0182` | A single-use credential (a one-time code step, a recovery code, a security-key assertion, an activation or password reset link) could not be proved unspent because the cluster store could not be asked, so it was refused. | the calling door's own refusal page |
+| `STS-AUTHN-0183` | An activation or password reset link was refused because another request, on this node or another, is spending it or has spent it. | HTTP 400 portal page (one sentence for every link failure) |
+| `STS-AUTHN-0184` | Recovery codes another node spent could not be written as spent on the person's entry; their claims still refuse them. | none (log only) |
+| `STS-AUTHN-0185` | The product-mode bootstrap was not attempted on this node: the store could not be asked whether another node is running it. | none (log only) |
+| `STS-AUTHN-0189` | A hosted surface's token renewal was in flight on another node (its claim was held) and its renewed tokens had not reached this node within the wait; this request went on without renewing. | none — logged only |
+| `STS-AUTHN-0190` | A hosted surface could not renew a session's tokens because the claim store could not be asked; the request went on without renewing, rather than risk a second redemption of the refresh token. | none — logged only |
+| `STS-AUTHN-0191` | A sign-out ended a session whose end another process had already reported, so no second event or success row was written. | none — audit row only; the sign-out is answered as usual |
+| `STS-AUTHN-0192` | Whether another process had already reported a session's end could not be asked, so it was reported here and a receiver may be told twice. | none — logged |
+| `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
+| `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
 
 ## STS-OAUTH
 
@@ -1303,6 +1395,15 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0509` | An authorization request's acr_values carries a value that cannot be an acr value (a double quote, a backslash or a control character). | invalid_request (redirected error) |
 | `STS-OAUTH-0510` | A password or assertion grant was refused because the directory holds no entry for the person, so there is no subject to issue a token about. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0511` | A refresh was refused because the subject of the refresh token names nobody in the directory any more (the person was deleted, or deleted and re-created). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0512` | An authorization code was being redeemed by another Token Request at the same moment (its claim was held), and that redemption's record did not appear within the wait, so this one was refused. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0513` | An authorization code could not be spent because the claim store could not be asked; the Token Request was refused and the code left unspent (fail closed). | server_error (HTTP 500) |
+| `STS-OAUTH-0514` | An authorization response on a pushed request_uri was refused because another response was issued on it at the same moment (its claim was held) (RFC 9126 section 4). | invalid_request_uri (HTTP 400) |
+| `STS-OAUTH-0515` | A pushed request_uri could not be spent because the claim store could not be asked, so nothing was issued on it (fail closed). | server_error (HTTP 500) |
+| `STS-OAUTH-0516` | In RFC 9700 mode, a refresh token was redeemed by another request, on this node or another, at the same moment or before this node heard of it (its claim was held); treated as a replay and its family revoked (section 2.2.2). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0517` | In RFC 9700 mode, a refresh token was presented whose family had already been revoked by a replay — possibly a token minted on another node that the revoking node never saw. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0518` | In RFC 9700 mode, a refresh token could not be redeemed because the claim store could not be asked; refused, and left unspent (fail closed). | server_error (HTTP 500) |
+| `STS-OAUTH-0519` | A DPoP proof was refused because another request carrying the same jti claimed it first, on this node or another (RFC 9449 section 11.1). | invalid_dpop_proof (HTTP 400 / 401) |
+| `STS-OAUTH-0520` | A DPoP proof was refused because the claim store could not be asked whether its jti had been used (fail closed). | invalid_dpop_proof (HTTP 400 / 401) |
 
 ## STS-SAML
 
@@ -1368,6 +1469,10 @@ Raised from: saml/.
 | `STS-SAML-0054` | The application entry refused the metadata and encryption certificate a refresh fetched. | — |
 | `STS-SAML-0055` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen without a fresh authentication (ForceAuthn) or without a session, and was answered AuthnFailed rather than sent again. | Response status AuthnFailed |
 | `STS-SAML-0056` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen with a session that still does not meet the RequestedAuthnContext, and was answered NoAuthnContext. | Response status NoAuthnContext |
+| `STS-SAML-0057` | A SAML 2.0 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); section 3.6.4.1 allows one resolution. | ArtifactResponse with StatusCode Requester (HTTP 200) |
+| `STS-SAML-0058` | A SAML 1.1 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution. | samlp:Response with StatusCode samlp:Requester (HTTP 200) |
+| `STS-SAML-0059` | The cluster claim store could not be asked whether a SAML artifact (2.0 or 1.1) was already resolved, so it was refused rather than resolved unproven. | StatusCode Responder (HTTP 200) |
+| `STS-SAML-0060` | An artifact resolution (2.0 or 1.1) failed while its answer was being built or sent, after the artifact had been spent. | StatusCode Responder (HTTP 200) when nothing was sent yet |
 
 ## STS-WSTRUST
 
@@ -1626,6 +1731,11 @@ Raised from: kerberos/.
 | `STS-KRB-0113` | A replicated removal named a CONFIGURED principal and was refused; a configured account exists because the settings build it. | — |
 | `STS-KRB-0114` | A restored or replicated runtime-made principal carries a RID another principal in this database already holds; neither was renumbered, and a service authorizing on the PAC cannot tell them apart. | — |
 | `STS-KRB-0115` | A ticket presented in a TGS-REQ (the ticket-granting ticket or an S4U2Proxy evidence ticket) names a key version of a stored-key principal that is neither its current kvno nor a previous version still retained (krb5.retainedKeyVersions, krb5.retainedKeyTtlS), or one retained without that enctype. | KRB-ERROR KRB_AP_ERR_BADKEYVER (44) |
+| `STS-KRB-0116` | An Authenticator this process had not seen was already accepted by another process against the same store (the cluster claim, #46) — a replay delivered to a different node. | KRB-ERROR KRB_AP_ERR_REPEAT (34) |
+| `STS-KRB-0117` | The cluster claim store could not be asked whether an Authenticator was already accepted, so it was refused rather than accepted unproven. | KRB-ERROR KRB_ERR_GENERIC (60) |
+| `STS-KRB-0118` | A KDC request was answered before this node caught up with the other nodes' committed changes, so a sign-out committed elsewhere in the last moment may not be honoured by it. | none — logged; the request is answered |
+| `STS-KRB-0119` | A SPNEGO request-mic continuation was refused because another process of this service had already completed that negotiation. | RFC 4178 section 4.2.2, a reject NegTokenResp; HTTP 401 |
+| `STS-KRB-0120` | A SPNEGO request-mic continuation could not be proved unspent because the store that records completed negotiations could not be asked; it was refused (fail closed). | RFC 4178 section 4.2.2, a reject NegTokenResp; HTTP 401 |
 
 ## STS-LDAP
 
@@ -1700,6 +1810,11 @@ Raised from: ldap/.
 | `STS-LDAP-0078` | A flag of the bootstrap administrator (pwdReset, stsBootstrapAdministrator or stsConsoleClaimedAt) could not be written because the account has no entry in this realm. | none — logged |
 | `STS-LDAP-0090` | A person was refused creation under a username that is a subject identifier (urn:uuid: or a bare UUID). | action result ok:false (console, /admin-api HTTP 400, SCIM 400) |
 | `STS-LDAP-0091` | No entry was created for an authentication whose identity is a urn:uuid: subject naming nobody in this realm's directory. | none — logged |
+| `STS-LDAP-0092` | A create was refused because the same DN or username is being created at this moment by another request, on this node or another one, whose write has not committed yet. | LDAP_ENTRY_ALREADY_EXISTS (68); HTTP 409 on SCIM and /admin-api |
+| `STS-LDAP-0093` | A create was refused because the store that decides whether a DN or username is already being created elsewhere could not be asked (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
+| `STS-LDAP-0094` | A bind could not be completed after the shared rate limiter was asked; the bind is answered operationsError. | RFC 4511 section 4.1.9, operationsError (1) |
+| `STS-LDAP-0095` | This node's bound directory connections could not be read for, or committed to, the cluster connection table; other nodes list what it published last (a sign-out still reaches them by identity). | none — logged |
+| `STS-LDAP-0096` | Another node signed an identity out and this node could not close the directory connections bound as it; they may still be open. | none — logged |
 
 ## STS-SCIM
 
@@ -1779,6 +1894,9 @@ Raised from: scim/.
 | `STS-SCIM-0073` | The account a HOBA key registration created could not be read back. | HTTP 500 JSON |
 | `STS-SCIM-0074` | A HOBA public key could not be written onto the account's entry, for a reason the directory did not name with a code of its own. | HTTP 507 or 400 JSON |
 | `STS-SCIM-0075` | A SCIM error carried an HTTP status or scimType RFC 7644 section 3.12 does not allow, which is a defect in this service; it was sent as 500 rather than ending the process. | HTTP 500 (SCIM Error) |
+| `STS-SCIM-0076` | An HTTP Digest credential was refused because its nonce count had already been accepted with that nonce by another process of this service (a replay). | RFC 7616 section 3.4; HTTP 401 with a fresh challenge |
+| `STS-SCIM-0077` | A HOBA credential was refused because the same key id, challenge and nonce had already been accepted by another process of this service (a replay). | RFC 7486 section 6; HTTP 401 with a fresh challenge |
+| `STS-SCIM-0078` | A Digest or HOBA credential could not be proved unspent because the store that records spent credentials could not be asked; it was refused (fail closed). | HTTP 500 (SCIM Error) |
 
 ## STS-SPIFFE
 
@@ -1862,6 +1980,8 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0072` | A realm's SPIFFE issuing authority failed while its listeners were starting; every call there will be refused with the reason. | — |
 | `STS-SPIFFE-0073` | A realm's seed SPIFFE registration entries could not be created. | — |
 | `STS-SPIFFE-0074` | The SPIFFE listeners could not be reconciled after a trust realm changed. | — |
+| `STS-SPIFFE-0075` | A join token at AttestAgent could not be proved unspent because the cluster store could not be asked, so the attestation was refused. | gRPC UNAVAILABLE |
+| `STS-SPIFFE-0076` | A realm's SPIFFE JWT authority or self-signed X.509 authority could not be established once for the cluster, so none was made. | the SPIFFE call fails as when no authority could be built |
 
 ## STS-TLS
 
@@ -1959,6 +2079,9 @@ Raised from: oid4vc/.
 | `STS-VC-0046` | The DID generator was asked for a method other than jwk or web. | invalid_request (HTTP 400) |
 | `STS-VC-0047` | The embedded directory threw while being read for a person's credential claims; the credential is built without directory values. | — |
 | `STS-VC-0048` | Populating the embedded directory for the current credential claim set threw. | — |
+| `STS-VC-0049` | A pre-authorized code this process still held was already redeemed by another process against the same store (the cluster claim, #46). | invalid_grant (HTTP 400) |
+| `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_proof (HTTP 400) |
+| `STS-VC-0051` | The cluster claim store could not be asked about an OpenID4VCI single-use value — a pre-authorized code, a c_nonce or a Transaction Code attempt — so the request was refused rather than accepted unproven. | invalid_grant or invalid_proof (HTTP 400) |
 
 ## STS-SSF
 
@@ -2057,6 +2180,8 @@ Raised from: ssf/.
 | `STS-SSF-0095` | A stream was asked to be revived and is not dead. | HTTP 400 on /admin-api/ssf/revive |
 | `STS-SSF-0096` | A SET for a dead push stream was put on its dead-letter queue unsigned instead of being pushed. | — |
 | `STS-SSF-0097` | The dead-letter sweep failed in a realm; it is tried again at the next interval. | — |
+| `STS-SSF-0098` | Whether another process had already reported a stream as dead or revived could not be asked, so it was reported here and may be reported twice. | none — logged |
+| `STS-SSF-0099` | A GNAP key proof on a Shared Signals endpoint could not be confirmed unused across the cluster, so the token was refused. | HTTP 401 {err: invalid_token} |
 
 ## STS-GNAP
 
@@ -2330,6 +2455,14 @@ Raised from: gnap/.
 | `STS-GNAP-0665` | A GNAP management API action was refused and the refusal carried no more specific code. | HTTP 400 {ok: false, errors} |
 | `STS-GNAP-0700` | The approver of a GNAP grant could not be recorded for the Shared Signals subject scope; the approval went ahead. | — |
 | `STS-GNAP-0701` | A CAEP event about a GNAP grant or token could not be delivered. | — |
+| `STS-GNAP-0710` | A continuation access token this process still held was already used by another process against the same store (the cluster claim, #46). | invalid_continuation (HTTP 401) |
+| `STS-GNAP-0711` | An interaction reference this process still held was already presented to another process against the same store (the cluster claim, #46). | invalid_interaction (HTTP 400) |
+| `STS-GNAP-0712` | An interaction start link (redirect or app) this process still held was already followed at another process against the same store (the cluster claim, #46). | HTML page (HTTP 400) |
+| `STS-GNAP-0713` | A user code this process still held was already entered at another process against the same store (the cluster claim, #46). | HTML page (HTTP 400) |
+| `STS-GNAP-0714` | A token management access token this process still held was already used by another process against the same store (the cluster claim, #46). | invalid_rotation or invalid_request (HTTP 401) |
+| `STS-GNAP-0715` | A key proof (an HTTP message signature nonce or a JWS) this process had not seen was already accepted by another process against the same store (the cluster claim, #46). | invalid_client, invalid_resource_server or invalid_token (HTTP 401) |
+| `STS-GNAP-0716` | The cluster claim store could not be asked about a GNAP single-use value, so the request was refused rather than accepted unproven. | the refusal of the value it guarded |
+| `STS-GNAP-0717` | A resource owner's decision on a GNAP grant was refused because a decision on the same interaction had already been recorded, by another request or another node against the same store (the cluster claim, #46). | RFC 9635 section 4 (an interaction is answered once) |
 
 ## STS-XACML
 
@@ -2705,6 +2838,7 @@ Raised from: mgmt-api/.
 | `STS-API-0110` | An /admin-api access token bound to a client certificate (RFC 8705 cnf x5t#S256) was presented on a connection without that certificate. | invalid_token (HTTP 401) |
 | `STS-API-0111` | A trust realm's own access token was presented at /admin-api by a client other than that realm's sts-management-api. | HTTP 403 forbidden |
 | `STS-API-0112` | A trust realm's own token or administrator reached a service-wide /admin-api operation, or another realm's. | HTTP 403 forbidden |
+| `STS-API-0113` | A users or groups create that had claimed its name across nodes threw before it could answer; the claim was given back. | HTTP 500 |
 
 ## STS-PORTAL
 

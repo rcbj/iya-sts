@@ -68,6 +68,11 @@ const log = require('bunyan').createLogger({ name: 'teardown_bounds',
 
 const ROOT = path.join(__dirname, '..');
 
+// How a launcher names its compose files on one call: the array every call in
+// ./docker-run-tests.sh has used since the `cluster` mode layered a second
+// file (2026-09-14), or the single `-f` it used before.
+const FILES = '(?:"\\$\\{COMPOSE_FILE_ARGS\\[@\\]\\}"|-f "\\$\\{COMPOSE_FILE\\}")';
+
 function read(rel) {
   log.debug("Entering read().");
   log.debug("Leaving read().");
@@ -155,8 +160,14 @@ function checkTheLauncherIsBounded(t) {
           'fails a run for being slow');
 
   // The mode's `up` — the suite itself, and the call that hung.
-  t.check(/docker_compose_bounded "\$\{STS_MODE_TIMEOUT\}" -f "\$\{COMPOSE_FILE\}" up/
-    .test(launcher),
+  //
+  // THE FILES ARE `"${COMPOSE_FILE_ARGS[@]}"` SINCE 2026-09-14, when the
+  // `cluster` mode began layering a second file over the first; `FILES`
+  // accepts that and the older `-f "${COMPOSE_FILE}"`, so the three checks
+  // below go on matching the calls they were written about rather than
+  // passing because nothing is spelt the old way any more.
+  t.check(new RegExp('docker_compose_bounded "\\$\\{STS_MODE_TIMEOUT\\}" ' +
+                     FILES + ' up').test(launcher),
           'the mode\'s `up` runs under STS_MODE_TIMEOUT',
           'that single call runs the suite AND stops the stack afterwards, ' +
           'and it is the second half that wedged');
@@ -171,9 +182,13 @@ function checkTheLauncherIsBounded(t) {
   const oneShots = composeFile.split(/\n(?=  [a-z][a-z0-9-]*:\n)/)
     .filter(function (block) { return /\n    restart: "no"/.test(block); })
     .map(function (block) { return block.match(/^\s*([a-z][a-z0-9-]*):/)[1]; });
-  const runnerUp = (launcher.match(
-    /docker_compose_bounded "\$\{STS_MODE_TIMEOUT\}" -f "\$\{COMPOSE_FILE\}" up[\s\S]*?--exit-code-from tests/) ||
-    [''])[0];
+  // `FILES` for the reason the check above uses it: this check arrived from
+  // develop spelling the files `-f "${COMPOSE_FILE}"`, and the cluster mode's
+  // `"${COMPOSE_FILE_ARGS[@]}"` made it match nothing and fail for a launcher
+  // that does exactly what it asks.
+  const runnerUp = (launcher.match(new RegExp(
+    'docker_compose_bounded "\\$\\{STS_MODE_TIMEOUT\\}" ' + FILES +
+    ' up[\\s\\S]*?--exit-code-from tests')) || [''])[0];
   t.check(oneShots.length >= 2 && oneShots.every(function (name) {
     return runnerUp.indexOf('--no-attach ' + name) >= 0;
   }),
@@ -194,7 +209,7 @@ function checkTheLauncherIsBounded(t) {
   // NO unbounded `down` may remain. This is the check that a later edit
   // trips: adding a teardown is easy and adding a bounded one is a decision.
   const unbounded = launcher.split('\n').filter(function (line) {
-    return /docker_compose\s+-f "\$\{COMPOSE_FILE\}" down/.test(line);
+    return new RegExp('docker_compose\\s+' + FILES + ' down').test(line);
   });
   t.check(unbounded.length === 0,
           'no unbounded `down` is left in the launcher',
@@ -205,7 +220,7 @@ function checkTheLauncherIsBounded(t) {
 
   // The container logs are collected from a stack that has just been stopped,
   // which is precisely the stack whose stop may not have gone well.
-  t.check(!/docker_compose\s+-f "\$\{COMPOSE_FILE\}" logs/.test(launcher),
+  t.check(!new RegExp('docker_compose\\s+' + FILES + ' logs').test(launcher),
           'and the log capture is bounded too',
           'it runs against the stopped stack, so the case worth having a ' +
           'log for is the case where this call is the one that hangs');

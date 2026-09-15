@@ -1410,6 +1410,60 @@ process this service ran in until dispatching was turned on.
 `tests/ldap_logout.js` holds all of it in process, and `sts_global_logout`
 drives a real bind over 389 in the containerized stack.
 
+### And across NODES, which neither mechanism reaches (2026-09-14, #46 section 4)
+
+The mirror and the response header both stop at the front process of ONE
+container. With several nodes in `cluster.mode=active-active`, a bind held on
+node A was not listed by `/admin/sessions` answered by B, and a global sign-out
+answered by B ended what B could see, said so, and left A's socket bound.
+`ldap_cluster_connections.js` is the fix, and it is two things for the same
+reason the in-container fix was two:
+
+* **CLOSING is an INSTRUCTION BY IDENTITY.** `dropConnectionsFor(key)` first
+  writes `ldap.clusterSignOuts[key]` (a shared minted row: the key, the instant,
+  the writing node), and a global sign-out writes it even when nothing was
+  listed — a bind another node accepted a moment ago has not reached any list.
+  It rides the minted journal of the process answering the sign-out, which is
+  the commit the cluster barrier holds that answer for. Every other node's
+  replication applier hands the row to the store's `reconcile.restore`, and the
+  socket-holding process there closes every connection bound as that identity
+  (`closeLocal()` → `dropConnectionsFor(key, { localOnly: true })`). The front
+  process acting on a worker's header passes `localOnly` too, so the
+  instruction is written once. **It closes what is bound when the row arrives**
+  rather than comparing a bind instant on A with a sign-out instant on B —
+  two clocks, and the skew would let an older bind survive — which can close a
+  bind made in the replication window after the sign-out (one reconnect, the
+  safe direction). A node ignores its own instruction and any older than two
+  minutes.
+* **LISTING is a PER-NODE TABLE.** The socket-holding process writes
+  `ldap.clusterConnections[nodeId]` — its bound connections without sockets —
+  250ms after a connect, close or bind (a change noted while one is pending
+  publishes again after it), and **flushes the minted journal itself**, because
+  a socket event is not a request and nothing else would commit it; the first
+  live run missed three binds of six for exactly that. `boundConnections()` is
+  now this node's (`localBoundConnections()`: sockets or mirror) followed by
+  other live members' rows, marked `remote` with a node-prefixed id.
+  `connectionSnapshot()` publishes only the local half, so a remote row is never
+  mirrored as this node's. A row of a node the last membership read does not
+  list is not shown, and maintenance (every 15s) deletes it.
+
+**A sign-out reports another node's connection as INSTRUCTED, never as
+closed** (`pending: true` on the terminated entry, `acrossCluster` on the
+result): the instruction is committed before the answer; the close happens when
+that node applies the change log, after it. Outside active-active nothing here
+writes or lists anything.
+
+Measured against a real postgres, two product nodes, a bind over LDAPS held on
+node 5 and a global sign-out through node 6's `/admin-api`: **active-active,
+10 of 10 listed on node 6 within 215–330ms and 10 of 10 sockets closed 4–22ms
+after node 6 answered**, with and without two request workers per node
+dispatching HTTP; **`cluster.mode=off`, 0 of 10 listed and 0 of 10 closed in
+the same probe**, which closes all of them when the sign-out goes to node 5.
+The dispatched-LDAP run (`workers.dispatch=*`) could not bind at the time —
+another change's asynchronous bind handler — so the dispatched-operation path
+was not measured. `tests/cluster_signout_signals.js` sections 1–2 hold it in
+process (three mutants caught).
+
 ## AND SINCE 2026-09-12 THE WORK ITSELF GOES TO A WORKER, AS AN OPERATION
 
 The section above is about a sign-out reaching a socket a worker does not hold.
@@ -2070,6 +2124,20 @@ in the `setSecureContext()` re-key.
 seeded at require time in the mode the process starts in); mutation-tested against the
 demo gate forced on.
 
+**THE PROXY PROTOCOL (2026-09-14, #46).** With `global.proxyProtocol` at `v2`,
+`listen()` installs `common/proxy_protocol.js` on `plainServer.server` and
+`secureServer.server` — the `net.Server` and `tls.Server` ldapjs built — before
+each binds, so the header comes off before the first LDAP message and, on 636,
+before the handshake. Nothing in this file reads the address differently: ldapjs's
+`c.ldap.id`, the bind limiter and every audit row read the connection's
+`remoteAddress`, which that module has already set to the header's source.
+`tests/proxy_protocol.js` 3k holds it through a real ldapjs server and a hand-built
+BindRequest. Found while probing it, NOT fixed: `secureServer.once('error')` above
+is still attached after a successful bind, so the first ldapjs `error` the LDAPS
+server emits later — a client's malformed BindRequest is enough — is logged as
+`STS-LDAP-0028` "could not bind" and sets `tlsListening` false on a listener that
+is still answering.
+
 ## `ou=passwordPolicies`, `pwdHistory`, AND THE ONE DOOR THAT WROTE A PASSWORD IN THE CLEAR (2026-09-12)
 
 **A NINTH CONTAINER**, seeded in both modes beside `ou=roles`, holding the
@@ -2208,6 +2276,25 @@ because a request worker has no socket to read it off and a stub without it
 would put every dispatched bind in one bucket — which is one attacker locking
 out everybody.
 
+**ONE BUDGET FOR THE CLUSTER SINCE 2026-09-14 (#46 section 2).** Where a store is
+shared the buckets are read with `websecurity.blockedShared()` and failures
+counted with `attemptShared()` in `sts_cluster_windows`, so N nodes are one
+limit rather than N (`common/CLAUDE.md`, *Several nodes: one rate-limit
+budget*). That read is a round trip, so the handler finishes in `finishBind()`
+when it is in, and marks the request `stsAsyncOperation`; `performOperation()`
+then answers a PROMISE, which `request_worker.js`'s `handleOperation()` already
+resolves. **With no shared store the bind is synchronous exactly as before** —
+every in-process caller of `performOperation()` reads its answer in the same
+tick. **Since 2026-09-14 the shared count also decides the ANSWER**: a failure
+is counted and awaited (`failedShared()`), and one whose increment took a bucket
+past the limit is refused as a lockout (`STS-LDAP-0073`) rather than answered
+49; a verified password is answered only while the buckets are under the limit
+(`succeededShared({ unlessBlocked })` — a read, so a pool binding fifty
+connections costs nothing), the rest of the bind in `bindAccepted()`.
+`common/CLAUDE.md`, *Several nodes: one rate-limit budget*, argues why these
+doors verify before they reserve. `tests/cluster_limits_challenges_retention.js`
+section F, `tests/cluster_followups.js` section H.
+
 **THE PLAIN LISTENER STILL BINDS**, and answers the root DSE and nothing else in
 product mode. Refusing a bind there cannot protect the password that was just
 sent in the clear; what it does is make 389 a port where a correct password
@@ -2269,3 +2356,54 @@ and `clearPassword`, which is `clearStoredPassword()`: it deletes
 stamps `pwdChangedTime` and calls `touchDirectory()`. **Removing the hash is
 also what retires the person's stored Kerberos keys**, because
 `krb5_person_keys.js` refuses keys whose password stamp no longer matches.
+
+## SEVERAL NODES: A CREATE CLAIMS ITS NAME (2026-09-14, #46 section 3)
+
+Every door that creates an entry asks this directory first (`getEntry(dn)`,
+`existingUserEntry(name)`) and refuses a hit. On one node the check and the
+write cannot be separated; on two they can, and two `POST /scim/v2/Users` for
+`dave`, one to each node, both answered 201. The flush then keeps the FIRST add
+and replaces the second node's copy with it (`persistence/CLAUDE.md`, *Several
+nodes writing one row*) — the right repair, and a client already holding an id
+that names nothing.
+
+So the doors that can wait claim what they are about to create BEFORE they
+check, through `directory_create_claims.js` over `cluster/cluster_claims.js`:
+the normalised DN, and for a person the lower-cased username, both computed by
+`createClaimSpec()` here. The second of two concurrent creates is refused
+exactly as if the first had been visible — `STS-LDAP-0092`, LDAP 68 / HTTP 409 —
+and a store that cannot be asked refuses too (`STS-LDAP-0093`, LDAP 52 / HTTP
+503 on `/admin-api`, 500 on SCIM, whose section 3.12 has no 503). The doors: an LDAP add (`claimingTheAdd()`, the OUTERMOST wrapper at
+registration, so the process holding the socket claims whichever process runs
+the handler), a SCIM create of a User or a Group, and `POST
+/admin-api/users/create` and `/admin-api/groups/create`.
+
+* **The claim guards the window, not the name.** It is released when the create
+  is refused, and after the write is flushed when it succeeded — and the winner
+  of a claim CATCHES UP with the store before its door checks, so whoever held
+  the claim before it has committed and the ordinary check refuses a duplicate
+  (without that, a request that arrived before the first create committed could
+  win the released claim and ask a directory not yet holding the entry), and a person deleted and created again a moment later is not
+  refused by the claim of their first life. The two-minute lifetime is only the
+  ceiling for a process that dies holding one.
+* **Inert unless several processes write one store** (active-active, or
+  dispatched request workers on a shared store): no round trip on a single node,
+  so a bulk load is as fast as it was, and the console's and admin API's create
+  answer synchronously as before.
+* **Claimed since 2026-09-14 too**: a SCIM Bulk create (in the ingress, which
+  scimmy awaits — `scim/CLAUDE.md`) and the console's own forms, `POST
+  /admin/users` and `/admin/users/new` and `POST /admin/groups` with
+  `action=create`, through `runClaimed()` — synchronous where nothing can race,
+  as the `/admin-api` doors are. "One person at a keyboard" was the reason they
+  were left, and it is two administrators on two nodes as easily.
+* **Still not claimed: an entry created by a SIGN-IN**, and the reason this file
+  gave is half wrong since a person's `sub` became `urn:uuid:<entryUUID>`: the
+  merge keeps the FIRST entry, so the node whose copy lost has issued a session
+  and tokens naming a subject that names nobody. It stays unclaimed because
+  `autoCreateUser()` is `recordAuthentication()`'s SYNCHRONOUS observer inside
+  every protocol's credential check, and because it is development mode only
+  (`mode.autoCreates()`), reachable with several processes in a development
+  dispatch run or cluster. The synchronous fix — a name-derived `entryUUID` for
+  an auto-created entry, so both nodes create the same entry — reuses a subject
+  for a name deleted and signed in again, which is the identity model's owner's
+  call (`authn/CLAUDE.md`). `directory_create_claims.js`'s header has it.

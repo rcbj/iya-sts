@@ -132,6 +132,15 @@ const SUBSYSTEMS = [
           'funnel that records the ' +
           'answer. The three generic codes below are what that funnel ' +
           'records for a failed response nothing more specific claimed.' },
+  // THE PROXY PROTOCOL (2026-09-14, #46): below HTTP and below TLS, so a
+  // subsystem of its own rather than HTTP's — a refusal here happens before
+  // any listener's protocol has read a byte, on every TCP listener at once.
+  { id: 'PROXY', label: 'PROXY protocol',
+    where: 'common/proxy_protocol.js, server.js',
+    what: 'The HAProxy PROXY protocol v2 header read at the front of every ' +
+          'TCP connection when global.proxyProtocol is v2: who may send one ' +
+          '(global.trustedProxies), the header itself, and the startup ' +
+          'refusal when nobody is trusted.' },
   { id: 'CORE', label: 'Service core',
     where: 'server.js, common/protocol_stack.js, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
@@ -147,6 +156,13 @@ const SUBSYSTEMS = [
     where: 'persistence/',
     what: 'The memory, LDIF and PostgreSQL stores, the minted-row flush, and ' +
           'the change log several processes coordinate through.' },
+  { id: 'CLUSTER', label: 'Cluster membership and agreement',
+    where: 'cluster/',
+    what: 'Several containers against one store: membership and its ' +
+          'heartbeat, leases and the fence every write checks, the gate in ' +
+          'front of active-passive and active-active mode, atomic claims, ' +
+          'the secrets every node shares, and the barrier that makes a ' +
+          'request see what other nodes committed before it arrived.' },
   { id: 'KEYS', label: 'Cryptography, keys and secrets',
     where: 'common/crypto.js, common/pq_jose.js, common/keystore.js, ' +
            'common/secrets.js',
@@ -420,6 +436,51 @@ const CODES = [
     summary: 'A value of global.corsOrigins is not an origin, and was ' +
       'ignored rather than widened.',
     spec: '' },
+  // ===== PROXY =============================================================
+  { code: 'STS-PROXY-0001',
+    summary: 'A connection from an address outside global.trustedProxies ' +
+      '(and not this host) was closed, because with global.proxyProtocol on ' +
+      'every connection must come through a trusted proxy. One audit row ' +
+      'per address per minute; the rest are counted.',
+    spec: 'the TCP connection is closed before any protocol byte is read' },
+  { code: 'STS-PROXY-0002',
+    summary: 'A connection from a trusted proxy did not begin with the ' +
+      'PROXY protocol v2 signature — a balancer without proxy protocol ' +
+      'enabled, or a plain client on the proxy\'s address — and was closed.',
+    spec: 'the TCP connection is closed' },
+  { code: 'STS-PROXY-0003',
+    summary: 'A connection from a trusted proxy began with a PROXY protocol ' +
+      'version 1 (text) header; only version 2 is accepted, and it was ' +
+      'closed.',
+    spec: 'the TCP connection is closed' },
+  { code: 'STS-PROXY-0004',
+    summary: 'A PROXY protocol v2 header was malformed — a version other ' +
+      'than 2, an unknown command, family or transport, an address block ' +
+      'shorter than its family needs, or a TLV running past the declared ' +
+      'length — and the connection was closed.',
+    spec: 'the TCP connection is closed' },
+  { code: 'STS-PROXY-0005',
+    summary: 'A PROXY protocol v2 header declared more address and TLV ' +
+      'bytes than this service reads (4096), and the connection was closed ' +
+      'before they were buffered.',
+    spec: 'the TCP connection is closed' },
+  { code: 'STS-PROXY-0006',
+    summary: 'A PROXY protocol v2 header carried a CRC32C TLV that does not ' +
+      'match the header, and the connection was closed.',
+    spec: 'the TCP connection is closed' },
+  { code: 'STS-PROXY-0007',
+    summary: 'A connection from a trusted proxy did not complete its PROXY ' +
+      'protocol header within global.proxyProtocolTimeoutMs, and was closed.',
+    spec: 'the TCP connection is closed' },
+  { code: 'STS-PROXY-0008',
+    summary: 'A connection from a trusted proxy closed part-way through its ' +
+      'PROXY protocol header.',
+    spec: '' },
+  { code: 'STS-PROXY-0009',
+    summary: 'The service refused to start: global.proxyProtocol is v2 and ' +
+      'global.trustedProxies holds no usable address or range, so no ' +
+      'header could be believed.',
+    spec: '' },
   // ===== CORE ==============================================================
   { code: 'STS-CORE-0001',
     summary: 'The appconfig file CONFIG_FILE names could not be loaded, so ' +
@@ -605,6 +666,10 @@ const CODES = [
   { code: 'STS-CORE-0091',
     summary: 'The subject resolver threw, and the person was given no ' +
       'subject (or a subject was treated as naming nobody).',
+    spec: 'none — logged' },
+  { code: 'STS-CORE-0092',
+    summary: 'A realm\'s key set could not be generated off the event loop; ' +
+      'the first read of it generates it on the loop instead.',
     spec: 'none — logged' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
@@ -996,6 +1061,178 @@ const CODES = [
       'response finished failed; the row stays reserved until the assertion ' +
       'expires.',
     spec: '' },
+  { code: 'STS-STORE-0049',
+    summary: 'A change-log sequence number this process stepped past never ' +
+      'became visible within the hole lifetime, and is no longer asked for; ' +
+      'it was a transaction that rolled back.',
+    spec: '' },
+  { code: 'STS-STORE-0050',
+    summary: 'A conditional write of a signing-key or certificate-authority ' +
+      'row found the row inserted and removed by other writers twice while ' +
+      'it waited, and wrote nothing.',
+    spec: '' },
+  { code: 'STS-STORE-0051',
+    summary: 'A certificate authority another node wrote was adopted and the ' +
+      'TLS listener could not be reconciled with it.',
+    spec: '' },
+  { code: 'STS-STORE-0052',
+    summary: 'A directory entry this process added was already in the store ' +
+      'as a DIFFERENT entry another node created first; the stored entry ' +
+      'was kept and this process\'s copy replaced by it.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0053',
+    summary: 'A change to a directory entry was not written because another ' +
+      'node deleted the entry after this process last saw it; the entry ' +
+      'was removed here too.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0054',
+    summary: 'A minted row (a session, a code, a token) was not written back ' +
+      'because another node had already ended it and the store holds its ' +
+      'tombstone; this process\'s copy was dropped.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0055',
+    summary: 'Expired tombstones of ended minted rows could not be swept from ' +
+      'the store.',
+    spec: 'none — logged' },
+  { code: 'STS-STORE-0056',
+    summary: 'A minted row another node had changed could not be merged with ' +
+      'this process\'s copy (it would not open or the merge threw), so this ' +
+      'process\'s copy was written as it was.',
+    spec: 'none — logged' },
+  // #46 section 8 (2026-09-14): change-log retention,
+  // persistence/persistence_replication.js.
+  { code: 'STS-STORE-0057',
+    summary: 'A process found its place among the change log\'s readers ' +
+      'removed since it last reported: it had been declared gone, so changes ' +
+      'it had not applied may have been trimmed. It should be restarted.',
+    spec: '' },
+  { code: 'STS-STORE-0058',
+    summary: 'A process could not report its position in the change log; ' +
+      'the log is not trimmed past where it last said it was, and the ' +
+      'report is retried after the next pull.',
+    spec: '' },
+  { code: 'STS-STORE-0059',
+    summary: 'Trimming the change log below every reader\'s position failed; ' +
+      'it is retried on the next interval.',
+    spec: '' },
+  // ===== CLUSTER ===========================================================
+  { code: 'STS-CLUSTER-0001',
+    summary: 'A write transaction was refused by the fence: this node\'s ' +
+      'membership row had expired, or a lease the write needed was no longer ' +
+      'held at the token it was acquired with.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0002',
+    summary: 'This node was refused membership because a live node is ' +
+      'running a different cluster mode or a different fingerprint of the ' +
+      'settings every node must share; it does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0003',
+    summary: 'A heartbeat could not be written; the node keeps serving until ' +
+      'its membership would expire.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0004',
+    summary: 'This node could not renew its membership within its lifetime ' +
+      'and exits, because the others may already treat it as dead.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0005',
+    summary: 'This node\'s membership row had already expired when it tried ' +
+      'to renew it, so it exits rather than come back.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0006',
+    summary: 'This node lost a lease that its role depends on (the service ' +
+      'lease in active-passive mode) and exits.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0007',
+    summary: 'A cluster mode other than off was configured without a ' +
+      'postgres persistence store; the service does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0008',
+    summary: 'Active-active mode was configured without persisted keys under ' +
+      'an operator key-encryption key, which every node must share; the ' +
+      'service does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0009',
+    summary: 'Active-active mode was refused because capabilities it depends ' +
+      'on are not provided by this build and were not accepted as missing; ' +
+      'the service does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0010',
+    summary: 'Leaving the cluster on shutdown failed; this node\'s row and ' +
+      'leases expire on their own.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0011',
+    summary: 'A write was fenced and this process exits, because a process ' +
+      'that has lost its right to write would try again on the next change.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0012',
+    summary: 'Asking the store for a lease failed; the role is not taken and ' +
+      'is asked for again on the next heartbeat.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0013',
+    summary: 'The claim store could not be asked; the single-use value is ' +
+      'refused rather than accepted unrecorded.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0014',
+    summary: 'Releasing a claim failed; it stays held until it expires.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0015',
+    summary: 'Sweeping expired claims failed; they are ignored by every read ' +
+      'and swept on the next attempt.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0016',
+    summary: 'A secret every node must share could not be written to or read ' +
+      'from the store; the service does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0017',
+    summary: 'A shared secret could not be sealed or opened with the ' +
+      'key-encryption key; the service does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0018',
+    summary: 'A request could not catch up with the other nodes\' committed ' +
+      'writes before it was served; it is answered from this process\'s ' +
+      'copy.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0019',
+    summary: 'A response held until its writes committed could not commit ' +
+      'them; it is sent anyway and the writes are retried.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0020',
+    summary: 'Active-active mode is running with capabilities an operator ' +
+      'accepted as missing; each named one is a known way nodes disagree.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0021',
+    summary: 'A request worker could not attach to its node\'s cluster ' +
+      'membership; the worker does not start.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0022',
+    summary: 'A counter that may only go up (a WebAuthn signature counter, ' +
+      'a one-time code step) could not be advanced because the store could ' +
+      'not be asked; the credential is refused.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0023',
+    summary: 'A rate-limit window every node counts in could not be counted, ' +
+      'read or cleared because the store could not be asked; the limiter ' +
+      'decided on this process\'s own buckets for that attempt.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0024',
+    summary: 'Sweeping the rate-limit windows whose time has passed failed; ' +
+      'they are swept on a later count.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0025',
+    summary: 'A node\'s heartbeat ran late by a heartbeat or more because ' +
+      'its event loop was busy; a stall past the membership lifetime costs the ' +
+      'node its membership.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0026',
+    summary: 'Active-active mode was refused because global.publicBaseUrl is ' +
+      'empty, so each node would name itself by the address it was reached ' +
+      'on.',
+    spec: '' },
+  { code: 'STS-CLUSTER-0040',
+    summary: 'A cluster mode was configured with persistence.minted off, so ' +
+      'nodes would not share sessions, pending sign-ins, codes or tokens; ' +
+      'the service does not start.',
+    spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
@@ -1226,6 +1463,19 @@ const CODES = [
       'none could be computed for a signing key, so its tokens carry the ' +
       'internal kid. Logged once per key.',
     spec: 'none — the token is signed under its internal kid' },
+  { code: 'STS-KEYS-0056',
+    summary: 'A queued write of a signing-key or certificate-authority row ' +
+      'failed in a way its own handler did not report.',
+    spec: '' },
+  { code: 'STS-KEYS-0057',
+    summary: 'A certificate authority row was changed by another node at the ' +
+      'same moment, and that node\'s CA tier or certificate slot was kept ' +
+      'over this one\'s (first writer wins).',
+    spec: '' },
+  { code: 'STS-KEYS-0058',
+    summary: 'A signing-key or certificate-authority row another process ' +
+      'wrote could not be decrypted or parsed, so it was not adopted.',
+    spec: '' },
   // ===== PKI ===============================================================
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -2052,6 +2302,27 @@ const CODES = [
     summary: 'A TLS client certificate revocation named a serial the ' +
       'application holds no certificate under.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0182',
+    summary: 'A certificate authority tier was built on this node and on ' +
+      'another at the same moment; the other committed first and was kept.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply) ' +
+      'for a deliberate build; none for a startup build, which adopts it' },
+  { code: 'STS-PKI-0183',
+    summary: 'A certificate authority was not built because the store could ' +
+      'not be asked whether another node is building it.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0184',
+    summary: 'Another node held the build of a certificate authority for ' +
+      'longer than this node waits, and nothing appeared in the store.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0185',
+    summary: 'A CRL was not signed because its CRL number could not be ' +
+      'advanced in the store shared by this service\'s nodes.',
+    spec: 'HTTP 500 from the CRL distribution point' },
+  { code: 'STS-PKI-0186',
+    summary: 'A certificate was not recorded because the Issuing CA that ' +
+      'signed it was replaced, repeatedly, while it was being signed.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // ===== ENROLL ============================================================
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
@@ -2203,6 +2474,11 @@ const CODES = [
   { code: 'STS-ENROLL-0090',
     summary: 'An enrollment monitor counter could not be recorded (the request it counted is unaffected).',
     spec: 'none (log only)' },
+  { code: 'STS-ENROLL-0091',
+    summary: 'An ACME External Account Binding key or a SCEP challenge ' +
+      'password could not be proved unspent because the cluster store ' +
+      'could not be asked, so it was refused.',
+    spec: 'ACME unauthorized / SCEP CertRep FAILURE badRequest' },
   // ===== ACME ==============================================================
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
@@ -2414,6 +2690,15 @@ const CODES = [
   { code: 'STS-ACME-0097',
     summary: 'The query string of an ACME console page failed validation.',
     spec: 'HTTP 400 text/plain' },
+  { code: 'STS-ACME-0098',
+    summary: 'An ACME finalize was refused because the order is already ' +
+      'being finalized by another request, on this node or another.',
+    spec: 'HTTP 403, ACME orderNotReady problem' },
+  { code: 'STS-ACME-0099',
+    summary: 'An ACME Replay-Nonce or an order\'s finalize could not be ' +
+      'claimed because the cluster store could not be asked, so the request ' +
+      'was refused.',
+    spec: 'HTTP 500, ACME serverInternal problem' },
   // ===== EST ===============================================================
   { code: 'STS-EST-0001',
     summary: 'An EST request reached a realm whose est.enabled is off.',
@@ -2623,6 +2908,15 @@ const CODES = [
   { code: 'STS-SCEP-0063',
     summary: 'A SCEP certificate revocation from the console or /admin-api named an unknown RFC 5280 reason.',
     spec: 'the console redirect with error=, or HTTP 400 { ok: false, errors }' },
+  { code: 'STS-SCEP-0064',
+    summary: 'A SCEP message was refused because another request with the ' +
+      'same transactionID was still being answered, on this node or ' +
+      'another, when the wait ran out.',
+    spec: 'SCEP CertRep FAILURE badRequest' },
+  { code: 'STS-SCEP-0065',
+    summary: 'A SCEP message was refused because its transaction could not ' +
+      'be claimed: the cluster store could not be asked.',
+    spec: 'SCEP CertRep FAILURE badRequest' },
   // ===== AUTHN =============================================================
   { code: 'STS-AUTHN-0001',
     summary: 'A request to the sign-in screen or the federation chooser ' +
@@ -3324,6 +3618,61 @@ const CODES = [
       '(ldap.autocreateUsers off, or a federation relationship with ' +
       'dynamic provisioning off and nobody provisioned).',
     spec: 'the calling door\'s own refusal' },
+  // ----- #46: the hosted surfaces renew once across the cluster -------------
+  { code: 'STS-AUTHN-0181',
+    summary: 'A security-key assertion verified and was refused because its ' +
+      'ceremony challenge had already been answered, by another node or a ' +
+      'request racing this one (#46).',
+    spec: 'HTTP 200 security-key page with the reason' },
+  { code: 'STS-AUTHN-0182',
+    summary: 'A single-use credential (a one-time code step, a recovery ' +
+      'code, a security-key assertion, an activation or password reset link) ' +
+      'could not be proved unspent because the cluster store could not be ' +
+      'asked, so it was refused.',
+    spec: 'the calling door\'s own refusal page' },
+  { code: 'STS-AUTHN-0183',
+    summary: 'An activation or password reset link was refused because ' +
+      'another request, on this node or another, is spending it or has ' +
+      'spent it.',
+    spec: 'HTTP 400 portal page (one sentence for every link failure)' },
+  { code: 'STS-AUTHN-0184',
+    summary: 'Recovery codes another node spent could not be written as ' +
+      'spent on the person\'s entry; their claims still refuse them.',
+    spec: 'none (log only)' },
+  { code: 'STS-AUTHN-0185',
+    summary: 'The product-mode bootstrap was not attempted on this node: the ' +
+      'store could not be asked whether another node is running it.',
+    spec: 'none (log only)' },
+  { code: 'STS-AUTHN-0189',
+    summary: 'A hosted surface\'s token renewal was in flight on another ' +
+      'node (its claim was held) and its renewed tokens had not reached ' +
+      'this node within the wait; this request went on without renewing.',
+    spec: 'none — logged only' },
+  { code: 'STS-AUTHN-0190',
+    summary: 'A hosted surface could not renew a session\'s tokens because ' +
+      'the claim store could not be asked; the request went on without ' +
+      'renewing, rather than risk a second redemption of the refresh token.',
+    spec: 'none — logged only' },
+  { code: 'STS-AUTHN-0191',
+    summary: 'A sign-out ended a session whose end another process had ' +
+      'already reported, so no second event or success row was written.',
+    spec: 'none — audit row only; the sign-out is answered as usual' },
+  { code: 'STS-AUTHN-0192',
+    summary: 'Whether another process had already reported a session\'s end ' +
+      'could not be asked, so it was reported here and a receiver may be ' +
+      'told twice.',
+    spec: 'none — logged' },
+  { code: 'STS-AUTHN-0193',
+    summary: 'A security key registration was refused because the same ' +
+      'credential id was being (or had just been) registered by another ' +
+      'request or node.',
+    spec: 'WebAuthn Level 3 section 7.1 step 26 (a credential id already ' +
+      'registered is refused)' },
+  { code: 'STS-AUTHN-0194',
+    summary: 'A security key registration was refused because the store that ' +
+      'decides whether its credential id is already registered elsewhere ' +
+      'could not be asked.',
+    spec: 'none — fail closed' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -4984,6 +5333,52 @@ const CODES = [
       'token names nobody in the directory any more (the person was ' +
       'deleted, or deleted and re-created).',
     spec: 'invalid_grant (HTTP 400)' },
+  // ----- #46: single-use OAuth values spent through a cluster claim ---------
+  { code: 'STS-OAUTH-0512',
+    summary: 'An authorization code was being redeemed by another Token ' +
+      'Request at the same moment (its claim was held), and that ' +
+      'redemption\'s record did not appear within the wait, so this one ' +
+      'was refused.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0513',
+    summary: 'An authorization code could not be spent because the claim ' +
+      'store could not be asked; the Token Request was refused and the code ' +
+      'left unspent (fail closed).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0514',
+    summary: 'An authorization response on a pushed request_uri was refused ' +
+      'because another response was issued on it at the same moment (its ' +
+      'claim was held) (RFC 9126 section 4).',
+    spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-0515',
+    summary: 'A pushed request_uri could not be spent because the claim ' +
+      'store could not be asked, so nothing was issued on it (fail closed).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0516',
+    summary: 'In RFC 9700 mode, a refresh token was redeemed by another ' +
+      'request, on this node or another, at the same moment or before this ' +
+      'node heard of it (its claim was held); treated as a replay and its ' +
+      'family revoked (section 2.2.2).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0517',
+    summary: 'In RFC 9700 mode, a refresh token was presented whose family ' +
+      'had already been revoked by a replay — possibly a token minted on ' +
+      'another node that the revoking node never saw.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0518',
+    summary: 'In RFC 9700 mode, a refresh token could not be redeemed because ' +
+      'the claim store could not be asked; refused, and left unspent (fail ' +
+      'closed).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-OAUTH-0519',
+    summary: 'A DPoP proof was refused because another request carrying the ' +
+      'same jti claimed it first, on this node or another (RFC 9449 section ' +
+      '11.1).',
+    spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
+  { code: 'STS-OAUTH-0520',
+    summary: 'A DPoP proof was refused because the claim store could not be ' +
+      'asked whether its jti had been used (fail closed).',
+    spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -5227,6 +5622,25 @@ const CODES = [
       'screen with a session that still does not meet the ' +
       'RequestedAuthnContext, and was answered NoAuthnContext.',
     spec: 'Response status NoAuthnContext' },
+  { code: 'STS-SAML-0057',
+    summary: 'A SAML 2.0 artifact this process still held was already ' +
+      'resolved by another process against the same store (the cluster ' +
+      'claim, #46); section 3.6.4.1 allows one resolution.',
+    spec: 'ArtifactResponse with StatusCode Requester (HTTP 200)' },
+  { code: 'STS-SAML-0058',
+    summary: 'A SAML 1.1 artifact this process still held was already ' +
+      'resolved by another process against the same store (the cluster ' +
+      'claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution.',
+    spec: 'samlp:Response with StatusCode samlp:Requester (HTTP 200)' },
+  { code: 'STS-SAML-0059',
+    summary: 'The cluster claim store could not be asked whether a SAML ' +
+      'artifact (2.0 or 1.1) was already resolved, so it was refused rather ' +
+      'than resolved unproven.',
+    spec: 'StatusCode Responder (HTTP 200)' },
+  { code: 'STS-SAML-0060',
+    summary: 'An artifact resolution (2.0 or 1.1) failed while its answer ' +
+      'was being built or sent, after the artifact had been spent.',
+    spec: 'StatusCode Responder (HTTP 200) when nothing was sent yet' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -6174,6 +6588,32 @@ const CODES = [
       'still retained (krb5.retainedKeyVersions, krb5.retainedKeyTtlS), or ' +
       'one retained without that enctype.',
     spec: 'KRB-ERROR KRB_AP_ERR_BADKEYVER (44)' },
+  { code: 'STS-KRB-0116',
+    summary: 'An Authenticator this process had not seen was already ' +
+      'accepted by another process against the same store (the cluster ' +
+      'claim, #46) — a replay delivered to a different node.',
+    spec: 'KRB-ERROR KRB_AP_ERR_REPEAT (34)' },
+  { code: 'STS-KRB-0117',
+    summary: 'The cluster claim store could not be asked whether an ' +
+      'Authenticator was already accepted, so it was refused rather than ' +
+      'accepted unproven.',
+    spec: 'KRB-ERROR KRB_ERR_GENERIC (60)' },
+  { code: 'STS-KRB-0118',
+    summary: 'A KDC request was answered before this node caught up with the ' +
+      'other nodes\' committed changes, so a sign-out committed elsewhere in ' +
+      'the last moment may not be honoured by it.',
+    spec: 'none — logged; the request is answered' },
+  // #46 section 5 (2026-09-14): a request-mic continuation spent through a
+  // cluster claim in kerberos/spnego_exchange.js.
+  { code: 'STS-KRB-0119',
+    summary: 'A SPNEGO request-mic continuation was refused because another ' +
+      'process of this service had already completed that negotiation.',
+    spec: 'RFC 4178 section 4.2.2, a reject NegTokenResp; HTTP 401' },
+  { code: 'STS-KRB-0120',
+    summary: 'A SPNEGO request-mic continuation could not be proved unspent ' +
+      'because the store that records completed negotiations could not be ' +
+      'asked; it was refused (fail closed).',
+    spec: 'RFC 4178 section 4.2.2, a reject NegTokenResp; HTTP 401' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
@@ -6441,6 +6881,30 @@ const CODES = [
   { code: 'STS-LDAP-0091',
     summary: 'No entry was created for an authentication whose identity is ' +
       'a urn:uuid: subject naming nobody in this realm\'s directory.',
+    spec: 'none — logged' },
+  { code: 'STS-LDAP-0092',
+    summary: 'A create was refused because the same DN or username is being ' +
+      'created at this moment by another request, on this node or another ' +
+      'one, whose write has not committed yet.',
+    spec: 'LDAP_ENTRY_ALREADY_EXISTS (68); HTTP 409 on SCIM and ' +
+      '/admin-api' },
+  { code: 'STS-LDAP-0093',
+    summary: 'A create was refused because the store that decides whether a ' +
+      'DN or username is already being created elsewhere could not be ' +
+      'asked (fail closed).',
+    spec: 'LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM' },
+  { code: 'STS-LDAP-0094',
+    summary: 'A bind could not be completed after the shared rate limiter ' +
+      'was asked; the bind is answered operationsError.',
+    spec: 'RFC 4511 section 4.1.9, operationsError (1)' },
+  { code: 'STS-LDAP-0095',
+    summary: 'This node\'s bound directory connections could not be read ' +
+      'for, or committed to, the cluster connection table; other nodes list ' +
+      'what it published last (a sign-out still reaches them by identity).',
+    spec: 'none — logged' },
+  { code: 'STS-LDAP-0096',
+    summary: 'Another node signed an identity out and this node could not ' +
+      'close the directory connections bound as it; they may still be open.',
     spec: 'none — logged' },
   // ===== SCIM ==============================================================
   { code: 'STS-SCIM-0001',
@@ -6716,6 +7180,23 @@ const CODES = [
     summary: 'A SCIM error carried an HTTP status or scimType RFC 7644 ' +
       'section 3.12 does not allow, which is a defect in this service; it ' +
       'was sent as 500 rather than ending the process.',
+    spec: 'HTTP 500 (SCIM Error)' },
+  // #46 section 5 (2026-09-14): a Digest nonce count and a HOBA signature
+  // spent through a cluster claim in `authenticateSpent()`.
+  { code: 'STS-SCIM-0076',
+    summary: 'An HTTP Digest credential was refused because its nonce count ' +
+      'had already been accepted with that nonce by another process of ' +
+      'this service (a replay).',
+    spec: 'RFC 7616 section 3.4; HTTP 401 with a fresh challenge' },
+  { code: 'STS-SCIM-0077',
+    summary: 'A HOBA credential was refused because the same key id, ' +
+      'challenge and nonce had already been accepted by another process of ' +
+      'this service (a replay).',
+    spec: 'RFC 7486 section 6; HTTP 401 with a fresh challenge' },
+  { code: 'STS-SCIM-0078',
+    summary: 'A Digest or HOBA credential could not be proved unspent because ' +
+      'the store that records spent credentials could not be asked; it was ' +
+      'refused (fail closed).',
     spec: 'HTTP 500 (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
@@ -7011,6 +7492,15 @@ const CODES = [
     summary: 'The SPIFFE listeners could not be reconciled after a trust ' +
       'realm changed.',
     spec: '' },
+  { code: 'STS-SPIFFE-0075',
+    summary: 'A join token at AttestAgent could not be proved unspent ' +
+      'because the cluster store could not be asked, so the attestation was ' +
+      'refused.',
+    spec: 'gRPC UNAVAILABLE' },
+  { code: 'STS-SPIFFE-0076',
+    summary: 'A realm\'s SPIFFE JWT authority or self-signed X.509 authority ' +
+      'could not be established once for the cluster, so none was made.',
+    spec: 'the SPIFFE call fails as when no authority could be built' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +
@@ -7341,6 +7831,21 @@ const CODES = [
     summary: 'Populating the embedded directory for the current credential ' +
       'claim set threw.',
     spec: '' },
+  { code: 'STS-VC-0049',
+    summary: 'A pre-authorized code this process still held was already ' +
+      'redeemed by another process against the same store (the cluster ' +
+      'claim, #46).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-VC-0050',
+    summary: 'A c_nonce every proof verified against was already spent by ' +
+      'another process against the same store (the cluster claim, #46).',
+    spec: 'invalid_proof (HTTP 400)' },
+  { code: 'STS-VC-0051',
+    summary: 'The cluster claim store could not be asked about an OpenID4VCI ' +
+      'single-use value — a pre-authorized code, a c_nonce or a Transaction ' +
+      'Code attempt — so the request was refused rather than accepted ' +
+      'unproven.',
+    spec: 'invalid_grant or invalid_proof (HTTP 400)' },
   // ===== SSF ===============================================================
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
@@ -7738,6 +8243,15 @@ const CODES = [
     summary: 'The dead-letter sweep failed in a realm; it is tried again at ' +
       'the next interval.',
     spec: '' },
+  { code: 'STS-SSF-0098',
+    summary: 'Whether another process had already reported a stream as dead ' +
+      'or revived could not be asked, so it was reported here and may be ' +
+      'reported twice.',
+    spec: 'none — logged' },
+  { code: 'STS-SSF-0099',
+    summary: 'A GNAP key proof on a Shared Signals endpoint could not be ' +
+      'confirmed unused across the cluster, so the token was refused.',
+    spec: 'HTTP 401 {err: invalid_token}' },
   // ===== GNAP ==============================================================
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
@@ -8901,6 +9415,47 @@ const CODES = [
     summary: 'A CAEP event about a GNAP grant or token could not be ' +
       'delivered.',
     spec: '' },
+  { code: 'STS-GNAP-0710',
+    summary: 'A continuation access token this process still held was ' +
+      'already used by another process against the same store (the cluster ' +
+      'claim, #46).',
+    spec: 'invalid_continuation (HTTP 401)' },
+  { code: 'STS-GNAP-0711',
+    summary: 'An interaction reference this process still held was already ' +
+      'presented to another process against the same store (the cluster ' +
+      'claim, #46).',
+    spec: 'invalid_interaction (HTTP 400)' },
+  { code: 'STS-GNAP-0712',
+    summary: 'An interaction start link (redirect or app) this process still ' +
+      'held was already followed at another process against the same store ' +
+      '(the cluster claim, #46).',
+    spec: 'HTML page (HTTP 400)' },
+  { code: 'STS-GNAP-0713',
+    summary: 'A user code this process still held was already entered at ' +
+      'another process against the same store (the cluster claim, #46).',
+    spec: 'HTML page (HTTP 400)' },
+  { code: 'STS-GNAP-0714',
+    summary: 'A token management access token this process still held was ' +
+      'already used by another process against the same store (the cluster ' +
+      'claim, #46).',
+    spec: 'invalid_rotation or invalid_request (HTTP 401)' },
+  { code: 'STS-GNAP-0715',
+    summary: 'A key proof (an HTTP message signature nonce or a JWS) this ' +
+      'process had not seen was already accepted by another process against ' +
+      'the same store (the cluster claim, #46).',
+    spec: 'invalid_client, invalid_resource_server or invalid_token ' +
+          '(HTTP 401)' },
+  { code: 'STS-GNAP-0716',
+    summary: 'The cluster claim store could not be asked about a GNAP ' +
+      'single-use value, so the request was refused rather than accepted ' +
+      'unproven.',
+    spec: 'the refusal of the value it guarded' },
+  { code: 'STS-GNAP-0717',
+    summary: 'A resource owner\'s decision on a GNAP grant was refused ' +
+      'because a decision on the same interaction had already been recorded, by ' +
+      'another request or another node against the same store (the cluster ' +
+      'claim, #46).',
+    spec: 'RFC 9635 section 4 (an interaction is answered once)' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
@@ -10386,6 +10941,10 @@ const CODES = [
     summary: 'A trust realm\'s own token or administrator reached a ' +
       'service-wide /admin-api operation, or another realm\'s.',
     spec: 'HTTP 403 forbidden' },
+  { code: 'STS-API-0113',
+    summary: 'A users or groups create that had claimed its name across ' +
+      'nodes threw before it could answer; the claim was given back.',
+    spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

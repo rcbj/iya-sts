@@ -78,6 +78,16 @@ const applications = require('../common/applications');
 // two SPNEGO doors (spnego_exchange.js carries it onto the verdict).
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
+// THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an Authenticator is
+// spent through after the replay cache below accepts it — see accept(), step
+// 7. A LIBRARY that registers no route and requires persistence lazily, so it
+// moves no route and closes no cycle. **IT IS ONE FILE ADDED TO THE PARENT
+// PROJECT'S COPY SET**, `cluster/cluster_claims.js`: everything it requires
+// (config, realms, error_codes, cluster_capabilities, and persistence lazily)
+// is already in that closure through `common/app.js`. kerberos/CLAUDE.md
+// records what is owed.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 
 const SERVICE_PORT = config.value('krb5.servicePort');
 const SERVICE_PRINCIPAL = config.value('krb5.servicePrincipal').split('/');
@@ -127,6 +137,10 @@ function maxReplayEntries() {
 // not allowed to be accidentally permissive about replay.
 const replayCache = realms.sharedMap({ persist: 'krb5.replayCache',
                                        scope: 'shared' });
+
+// How much longer than the replay window an Authenticator's cluster claim
+// lives: two nodes' clocks may disagree about when the window ends (#46).
+const CLAIM_SKEW_MS = 60 * 1000;
 
 function replayKey(authenticator) {
   log.debug("Entering replayKey().");
@@ -457,8 +471,64 @@ async function accept(tokenBytes, opts) {
              checks: checks, ok: false };
   }
   replayCache.set(key, nowDate.getTime());
+  // AND ACROSS THE CLUSTER (2026-09-14, #46). The cache above is a replicated
+  // map, and the change log carries this `set` to another node a moment
+  // later — which the issue calls out as the case clustering makes the
+  // DEFAULT: a load balancer, or DNS round-robin on the service name, delivers
+  // a captured AP-REQ to a different node than the original, and inside that
+  // moment the other node's cache has never seen it. So the Authenticator is
+  // then SPENT through `cluster_claims.claim()`, which exactly one caller on
+  // any node wins.
+  //
+  // THE ASYNC BOUNDARY IS HERE, and that is why the claim is inside accept()
+  // rather than in the socket handler or the two SPNEGO doors: accept() is
+  // already asynchronous (every decryption above is awaited), it is the ONE
+  // place a ticket is accepted on any transport, and the claim is made after
+  // every check that could refuse the Authenticator for another reason, so a
+  // bad ticket never takes a slot. The local `set` above stays BEFORE the
+  // await, so two copies arriving at this process together are still refused
+  // by the cache; the claim then decides between processes.
+  //
+  // SHARED, NOT PER REALM (`realm: ''`), for the reason the cache is: this
+  // acceptor has no realm, and a replay must be refused whichever path it
+  // arrives on. The claim lives for the cache's own window — twice the skew,
+  // see pruneReplayCache() — plus CLAIM_SKEW_MS for two nodes' clocks. A
+  // store that cannot be asked refuses (fail closed), and forgets the local
+  // entry, because an Authenticator refused unproven has not been used and a
+  // retry of it once the store answers is not a replay.
+  const claimed = await clusterClaims.claim({
+    scope: 'krb5.authenticator', value: key, realm: '',
+    ttlMs: replayWindowSeconds() * 1000 + CLAIM_SKEW_MS });
+  if (!claimed.ok && claimed.reason === 'used') {
+    check('not a replay', false, 'this Authenticator (client, ctime, cusec) ' +
+                                 'was already accepted by another node ' +
+                                 'against the same store');
+    log.warn(errorCodes.tag('STS-KRB-0116') + 'krb5-service: an ' +
+             'Authenticator this process had not seen was ALREADY ACCEPTED ' +
+             'by another node — a replay delivered to a different node.');
+    log.debug("Leaving accept().");
+    return { errorCode: 'STS-KRB-0116', reply: errorReply(34, 'this ' +
+      'Authenticator has been seen before — a replay. The triple (client, ' +
+      'ctime, cusec) is what identifies one, per RFC 4120 section 3.2.3.'),
+             checks: checks, ok: false };
+  }
+  if (!claimed.ok) {
+    replayCache.delete(key);
+    check('not a replay', false, 'whether this Authenticator was already ' +
+                                 'accepted could not be asked of the claim ' +
+                                 'store (' + (claimed.why || 'no reason') +
+                                 ')');
+    log.error(errorCodes.tag('STS-KRB-0117') + 'krb5-service: the claim ' +
+              'store could not be asked about an Authenticator (' +
+              (claimed.why || 'no reason given') + '). It is refused.');
+    log.debug("Leaving accept().");
+    return { errorCode: 'STS-KRB-0117', reply: errorReply(60, 'this ' +
+      'acceptor could not confirm the Authenticator is not a replay; retry ' +
+      'shortly.'), checks: checks, ok: false };
+  }
   check('not a replay', true, 'the cache holds ' + replayCache.size + ' ' +
-      'recent Authenticator(s)');
+      'recent Authenticator(s), and no node against the store has accepted ' +
+      'this one');
 
   // 8. The 0x8003 checksum: the GSS flags, and whether mutual authentication
   //    was
@@ -812,6 +882,11 @@ const acceptAndRecord = async function (bytes, opts) {
   log.debug('Leaving acceptAndRecord().');
   return result;
 };
+
+// #46: an AP-REQ Authenticator is accepted once across the cluster — the claim
+// in accept(), step 7, which every transport (the raw socket and both SPNEGO
+// doors) goes through.
+capabilities.provide('kerberos.replay-cache');
 
 module.exports = {
   listen: listen,

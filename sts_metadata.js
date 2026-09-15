@@ -5242,6 +5242,20 @@ const ENDPOINTS = [
           'came up is /admin/ldap/service. No setting here can make a bind ' +
           'be refused — none is missing, there is no such behaviour. Add ' +
           '?format=json.' },
+  { path: '/admin/cluster', group: 'Admin', name: 'Cluster',
+    specs: [],
+    effect: 'changes how several nodes against one store behave — on the ' +
+            'next start, for all five settings',
+    what: 'NON-SPEC. The five cluster.* settings (#46), plus a status block ' +
+          'saying what the cluster is actually doing: this node\'s resolved ' +
+          'mode, membership, heartbeat and leases; every member row and ' +
+          'lease, by the database clock; the capability table active-active ' +
+          'mode refuses to start without; and where each shared secret came ' +
+          'from, never its value. active-passive — the default in product ' +
+          'mode on postgres — serves from ONE node and makes the others wait ' +
+          'before restoring or binding anything; every clustered write is ' +
+          'fenced, and a node that loses its membership exits. Add ' +
+          '?format=json.' },
   { path: '/admin/persistence', group: 'Admin', name: 'Persistence',
     specs: ['rfc2849', 'rfc4511'],
     effect: 'changes what survives a restart, and where it is written — on ' +
@@ -6606,6 +6620,14 @@ const ENDPOINTS = [
           'disagree, and nothing else here can report that — this page is ' +
           'built by walking the express router and a raw TCP listener is not ' +
           'on it. Read-only.' },
+  { path: '/admin-api/cluster', group: 'Management API',
+    name: 'Cluster',
+    specs: ['openapi'],
+    what: 'GET /admin/cluster over JSON: the five cluster.* settings and a ' +
+          '`status` member — this node, a snapshot of every member and ' +
+          'lease, the active-active capability table and the shared ' +
+          'secrets\' sources. Read-only; the settings are written through ' +
+          'POST /admin-api/config/set-many like every other.' },
   { path: '/admin-api/persistence', group: 'Management API',
     name: 'Persistence',
     specs: ['rfc2849', 'openapi'],

@@ -1012,7 +1012,10 @@ const ENROL_KEY_FORM = vz.object({
 // ---------------------------------------------------------------------------
 app.use(BASE, oidcRp.renewal('portal'));
 
-app.get(ACTIVATE, function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46): the rate limit below counts in the
+// cluster's shared window (`websecurity.attemptShared()`), a round trip. Every
+// limiter on this file's pages does the same, for one budget across nodes.
+app.get(ACTIVATE, async function (req, res) {
   log.debug('Entering GET ' + ACTIVATE + '.');
   const asked = validation.check(req, 'query', ACTIVATE_QUERY);
   if (!asked.ok) {
@@ -1024,7 +1027,7 @@ app.get(ACTIVATE, function (req, res) {
   // RATE LIMITED even on the GET: this endpoint takes a credential, and an
   // endpoint that takes a credential must not be the one place in this service
   // that answers guesses at network speed.
-  const allowed = websecurity.attempt('activation', req, username);
+  const allowed = await websecurity.attemptShared('activation', req, username);
   if (!allowed.ok) {
     log.debug('Leaving GET ' + ACTIVATE + '. Rate limited.');
     errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0002');
@@ -1054,6 +1057,58 @@ app.get(ACTIVATE, function (req, res) {
               activationForm(baseUrlOf(req), username, token, null, null));
 });
 
+// ---------------------------------------------------------------------------
+// A LINK'S CLAIM, HELD FOR THE LIFE OF ONE RESPONSE (2026-09-14, #46).
+//
+// `credentials.spendActivation()` / `spendPasswordReset()` claim a link in the
+// store before the door sets anything, so two requests carrying one link — on
+// two nodes, or racing on one — cannot both set a password. The claim is KEPT
+// only by the request that FINISHES (`finishActivation()`, or the reset's
+// success page), which marks the response; every other answer — a mismatched
+// password, a refused code, the authenticator step drawn before the link is
+// spent, a dropped connection — gives it back when the response ends, so the
+// link works again exactly as it did on one node. `common/credentials.js`
+// argues the rest beside the two functions.
+// ---------------------------------------------------------------------------
+const LINK_SPENT = Symbol('portal.linkSpent');
+
+function holdLinkClaim(res, handle) {
+  log.debug("Entering holdLinkClaim().");
+  let settled = false;
+  const settle = function () {
+    log.debug("Entering settle().");
+    if (settled) {
+      log.debug("Leaving settle(). Already settled.");
+      return;
+    }
+    settled = true;
+    if (!res[LINK_SPENT]) {
+      credentials.releaseLink(handle);
+    }
+    log.debug("Leaving settle().");
+  };
+  res.once('finish', settle);
+  res.once('close', settle);
+  log.debug("Leaving holdLinkClaim().");
+}
+
+function refuseSpentLink(req, res, username, spent, action, refusal, title) {
+  log.debug("Entering refuseSpentLink().");
+  audit.record({
+    category: 'authentication', action: action,
+    errorCode: innerCode(spent) || 'STS-AUTHN-0183',
+    actor: username, outcome: 'failure',
+    summary: 'a link was refused: another request is spending it or has ' +
+             'spent it',
+    detail: { reason: spent.reason || '', address: websecurity.addressOf(req) }
+  });
+  errorCodes.mark(res, innerCode(spent) || 'STS-AUTHN-0183');
+  log.debug("Leaving refuseSpentLink().");
+  return send(res, 400, page(title,
+    '<div class="card"><h1>' + esc(title) + '</h1><div class="err">' +
+    esc(refusal) + '</div></div>'));
+}
+
 app.post(ACTIVATE, async function (req, res) {
   log.debug('Entering POST ' + ACTIVATE + '.');
   // `parseBody()` and not `req.body`: this service parses every body as raw
@@ -1068,7 +1123,7 @@ app.post(ACTIVATE, async function (req, res) {
   const token = String(body.token || '');
   const base = baseUrlOf(req);
 
-  const allowed = websecurity.attempt('activation', req, username);
+  const allowed = await websecurity.attemptShared('activation', req, username);
   if (!allowed.ok) {
     log.debug('Leaving POST ' + ACTIVATE + '. Rate limited.');
     errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0002');
@@ -1089,6 +1144,18 @@ app.post(ACTIVATE, async function (req, res) {
       '<div class="card"><h1>Activation link</h1><div class="err">' +
       esc(ACTIVATION_REFUSAL) + '</div></div>'));
   }
+  // **SPENT IN THE STORE BEFORE ANYTHING IS SET**, and given back unless this
+  // request finishes the activation — see `holdLinkClaim()`.
+  const spent = await credentials.spendActivation(username, token);
+  if (!spent.ok) {
+    log.info('portal: an activation POST was refused for "' + username +
+             '" (' + spent.reason + ').');
+    log.debug('Leaving POST ' + ACTIVATE + '. The link is being spent.');
+    return refuseSpentLink(req, res, username, spent,
+                           'portal.activate.refused', ACTIVATION_REFUSAL,
+                           'Activation link');
+  }
+  holdLinkClaim(res, spent.handle);
 
   const password = String(body.password || '');
   const confirm = String(body.confirm || '');
@@ -1249,7 +1316,9 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
                           req, warning, recovery) {
   log.debug('Entering finishActivation(). username=' + username);
   // **THE LINK IS SPENT HERE**, once the account really can be used. Spending
-  // it earlier would strand somebody whose password was refused.
+  // it earlier would strand somebody whose password was refused. The mark
+  // keeps the claim the POST took in the store (`holdLinkClaim()`).
+  res[LINK_SPENT] = true;
   credentials.consumeActivation(username);
   audit.record({
     category: 'authentication', action: 'portal.activate',
@@ -1445,7 +1514,8 @@ function refuseResetLink(res, status, code) {
     esc(RESET_REFUSAL) + '</div></div>'));
 }
 
-app.get(RESET_PASSWORD, function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46), for GET ACTIVATE's reason.
+app.get(RESET_PASSWORD, async function (req, res) {
   log.debug('Entering GET ' + RESET_PASSWORD + '.');
   const asked = validation.check(req, 'query', RESET_QUERY);
   if (!asked.ok) {
@@ -1455,7 +1525,8 @@ app.get(RESET_PASSWORD, function (req, res) {
   }
   const username = String(asked.value.user || '').trim();
   const token = String(asked.value.token || '');
-  const allowed = websecurity.attempt('password-reset', req, username);
+  const allowed = await websecurity.attemptShared('password-reset', req,
+                                                  username);
   if (!allowed.ok) {
     errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0070');
     log.debug('Leaving GET ' + RESET_PASSWORD + '. Rate limited.');
@@ -1482,7 +1553,7 @@ app.get(RESET_PASSWORD, function (req, res) {
                                           null));
 });
 
-app.post(RESET_PASSWORD, function (req, res) {
+app.post(RESET_PASSWORD, async function (req, res) {
   log.debug('Entering POST ' + RESET_PASSWORD + '.');
   const posted = validation.checkParsed(parseBody(req), 'body', RESET_FORM);
   if (!posted.ok) {
@@ -1494,7 +1565,8 @@ app.post(RESET_PASSWORD, function (req, res) {
   const username = String(body.user || '').trim();
   const token = String(body.token || '');
   const base = baseUrlOf(req);
-  const allowed = websecurity.attempt('password-reset', req, username);
+  const allowed = await websecurity.attemptShared('password-reset', req,
+                                                  username);
   if (!allowed.ok) {
     errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0070');
     log.debug('Leaving POST ' + RESET_PASSWORD + '. Rate limited.');
@@ -1536,6 +1608,16 @@ app.post(RESET_PASSWORD, function (req, res) {
       'That password is reserved and is refused at every sign-in, so it ' +
       'cannot be yours.'));
   }
+  // **SPENT IN THE STORE BEFORE THE PASSWORD IS SET**, and given back unless
+  // the password is stored — see `holdLinkClaim()`.
+  const spent = await credentials.spendPasswordReset(username, token);
+  if (!spent.ok) {
+    log.debug('Leaving POST ' + RESET_PASSWORD + '. The link is being spent.');
+    return refuseSpentLink(req, res, username, spent,
+                           'portal.password-reset.refused', RESET_REFUSAL,
+                           'Password reset link');
+  }
+  holdLinkClaim(res, spent.handle);
   const set = credentials.setPassword(username, password);
   if (!set.ok) {
     errorCodes.mark(res, innerCode(set) || 'STS-PORTAL-0073');
@@ -1543,9 +1625,10 @@ app.post(RESET_PASSWORD, function (req, res) {
     return send(res, 400, resetPasswordForm(base, username, token,
       (set.errors || ['The password could not be set.'])[0]));
   }
+  res[LINK_SPENT] = true;
   credentials.consumePasswordReset(username);
   credentials.setPasswordResetRequired(username, false);
-  websecurity.succeeded('password-reset', req, username);
+  await websecurity.succeededShared('password-reset', req, username);
   audit.record({
     category: 'authentication', action: 'portal.password-reset',
     actor: username, target: username, outcome: 'success',
@@ -4254,7 +4337,8 @@ app.post(BASE + '/mfa', async function (req, res) {
     // RATE LIMITED. Six digits is a million values and this endpoint checks
     // them for real; the sign-in door's own code step is limited for the same
     // reason and with the same buckets.
-    const allowed = websecurity.attempt('mfa-code', req, username);
+    const allowed = await websecurity.attemptShared('mfa-code', req,
+                                                    username);
     if (!allowed.ok) {
       log.debug('Leaving POST ' + BASE + '/mfa. Rate limited.');
       errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0018');
@@ -4287,7 +4371,7 @@ app.post(BASE + '/mfa', async function (req, res) {
       summary: username + ' set up an authenticator app as a second factor',
       detail: { address: websecurity.addressOf(req) }
     });
-    websecurity.succeeded('mfa-code', req, username);
+    await websecurity.succeededShared('mfa-code', req, username);
     log.info('portal: ' + username + ' set up an authenticator app. A ' +
              'password alone will no longer sign them in.');
     // ---------------------------------------------------------------------
@@ -4563,8 +4647,8 @@ app.post(BASE + '/signing-key', async function (req, res) {
       return send(res, 400, signingKeyPage(session, null, passwordSaid, null,
                                            base));
     }
-    const allowedTls = websecurity.attempt('portal-signing-key', req,
-                                           username, {
+    const allowedTls = await websecurity.attemptShared('portal-signing-key',
+                                                       req, username, {
       identity: config.value('pki.personSelfServicePerIdentity'),
       address: config.value('pki.personSelfServicePerAddress')
     });
@@ -4680,7 +4764,8 @@ app.post(BASE + '/signing-key', async function (req, res) {
     // per-address number is its own row now so a deployment whose people
     // arrive from one address can raise it without raising what one person may
     // do.
-    const allowed = websecurity.attempt('portal-signing-key', req, username, {
+    const allowed = await websecurity.attemptShared('portal-signing-key', req,
+                                                    username, {
       identity: config.value('pki.personSelfServicePerIdentity'),
       address: config.value('pki.personSelfServicePerAddress')
     });
@@ -4767,7 +4852,8 @@ app.post(BASE + '/signing-key', async function (req, res) {
                                        null, base));
 });
 
-app.post(BASE + '/password', function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46), for GET ACTIVATE's reason.
+app.post(BASE + '/password', async function (req, res) {
   log.debug('Entering POST ' + BASE + '/password.');
   const session = requireSignIn(req, res, BASE, accessGate.ACTION.MANAGE_OWN);
   if (!session) return undefined;
@@ -4795,7 +4881,8 @@ app.post(BASE + '/password', function (req, res) {
     return send(res, 403, passwordPage(session, null, csrf.detail));
   }
 
-  const allowed = websecurity.attempt('password-change', req, username);
+  const allowed = await websecurity.attemptShared('password-change', req,
+                                                  username);
   if (!allowed.ok) {
     log.debug('Leaving POST ' + BASE + '/password. Rate limited.');
     errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0019');
@@ -4842,7 +4929,7 @@ app.post(BASE + '/password', function (req, res) {
     return send(res, 400, passwordPage(session, null,
       (set.errors || ['The password could not be changed.'])[0]));
   }
-  websecurity.succeeded('password-change', req, username);
+  await websecurity.succeededShared('password-change', req, username);
   audit.record({
     category: 'authentication', action: 'portal.password.changed',
     actor: username, outcome: 'success',
@@ -4974,41 +5061,54 @@ app.post(BASE + '/keys', function (req, res) {
       errorCodes.mark(res, 'STS-PORTAL-0035');
       return sendKeysPage(res, 400, keysPage(session, null, rpRefusal, base));
     }
-    const done = credentials.confirmKeyEnrolment(username,
+    // A PROMISE SINCE 2026-09-14: the write claims the credential id across
+    // nodes first (`credentials.addKeyClaimed()`), so two posts of one
+    // attestation cannot leave two rows for one key.
+    credentials.confirmKeyEnrolment(username,
       String(body.enrolment_id || ''), credential,
       { origin: authn.expectedOriginFor(base, credential),
-        rpId: authn.rpIdOf(base) });
-    if (!done.ok) {
+        rpId: authn.rpIdOf(base) }).then(function (done) {
+      if (!done.ok) {
+        audit.record({
+          category: 'authentication', action: 'portal.key.refused',
+          errorCode: innerCode(done) || 'STS-PORTAL-0036',
+          actor: username, outcome: 'failure',
+          summary: 'a security key enrolment was not completed for ' + username,
+          detail: { reason: done.reason || '',
+                    address: websecurity.addressOf(req) }
+        });
+        log.debug('Leaving POST ' + BASE + '/keys. Refused: ' + done.reason);
+        errorCodes.mark(res, innerCode(done) || 'STS-PORTAL-0036');
+        return sendKeysPage(res, 400, keysPage(session, null,
+          (done.errors || ['The security key could not be registered.'])[0],
+          base));
+      }
       audit.record({
-        category: 'authentication', action: 'portal.key.refused',
-        errorCode: innerCode(done) || 'STS-PORTAL-0036',
-        actor: username, outcome: 'failure',
-        summary: 'a security key enrolment was not completed for ' + username,
-        detail: { reason: done.reason || '',
+        category: 'authentication', action: 'portal.key.enrolled',
+        actor: username, outcome: 'success',
+        summary: username + ' enrolled a security key as a ' + done.role +
+                 ' credential',
+        detail: { role: done.role, held: done.held,
                   address: websecurity.addressOf(req) }
       });
-      log.debug('Leaving POST ' + BASE + '/keys. Refused: ' + done.reason);
-      errorCodes.mark(res, innerCode(done) || 'STS-PORTAL-0036');
-      return sendKeysPage(res, 400, keysPage(session, null,
-        (done.errors || ['The security key could not be registered.'])[0],
-        base));
-    }
-    audit.record({
-      category: 'authentication', action: 'portal.key.enrolled',
-      actor: username, outcome: 'success',
-      summary: username + ' enrolled a security key as a ' + done.role +
-               ' credential',
-      detail: { role: done.role, held: done.held,
-                address: websecurity.addressOf(req) }
+      log.info('portal: ' + username + ' enrolled a "' + done.role +
+               '" security key and now holds ' + done.held + '.');
+      res.status(303).set('Location', BASE + '/keys?done=' +
+        encodeURIComponent(done.held > 1
+          ? 'That key is registered. You hold ' + done.held +
+            ' — if one is lost the others still sign you in.'
+          : 'That key is registered. Add a second one on a different ' +
+            'device so that losing this one is not a locked account.')).end();
+      return undefined;
+    }).catch(function (e) {
+      log.debug('Caught in POST ' + BASE + '/keys: ' +
+                ((e && e.message) || e));
+      // Express 4 does not look at a returned promise; a throw here must still
+      // answer the page.
+      errorCodes.mark(res, 'STS-PORTAL-0036');
+      sendKeysPage(res, 500, keysPage(session, null,
+        'The security key could not be registered. Try again.', base));
     });
-    log.info('portal: ' + username + ' enrolled a "' + done.role +
-             '" security key and now holds ' + done.held + '.');
-    res.status(303).set('Location', BASE + '/keys?done=' +
-      encodeURIComponent(done.held > 1
-        ? 'That key is registered. You hold ' + done.held +
-          ' — if one is lost the others still sign you in.'
-        : 'That key is registered. Add a second one on a different device so ' +
-          'that losing this one is not a locked account.')).end();
     return undefined;
   }
 

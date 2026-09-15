@@ -2638,6 +2638,65 @@ async function handleTgsReq(request) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A KDC REQUEST CATCHES UP WITH THE OTHER NODES FIRST, IN ACTIVE-ACTIVE MODE
+// (2026-09-14, #46 section 4).
+//
+// A sign-out stamps `signedOutAt` on the principal, and a TGS-REQ presenting a
+// ticket authenticated before it is refused KDC_ERR_TGT_REVOKED. The stamp is
+// a replicated row, so a TGS-REQ that DNS round-robin sent to another node
+// inside the replication window was answered from a copy without it and the
+// signed-out ticket was honoured. Every HTTP request is held to the cluster
+// barrier (`cluster/cluster_barrier.js`); these raw TCP and UDP sockets are
+// not the express app and never were. So both exchanges that read or clear
+// the stamp first apply everything other nodes had committed when the request
+// arrived — the barrier's rule 1, one shared read of the change log's head per
+// batch. The sign-out's own answer is held until its stamp commits (rule 2,
+// on the HTTP side), so a TGS-REQ that follows it on any node sees it.
+//
+// **WHAT IS LEFT, AND IT IS A RACE RATHER THAN A WINDOW**: an AS-REQ on one
+// node CLEARS the stamp by writing the principal back, and one that caught up
+// a moment BEFORE a concurrent sign-out on another node committed can write
+// its clear after that sign-out's stamp — last writer wins on the whole row,
+// section 3 of the issue. Milliseconds wide, not a replication interval.
+//
+// Only with `logout.kerberosSignOut` on, and only in active-active: nothing
+// else reads replicated state here, and a single node is exactly as it was.
+// The requires are LAZY and guarded, because the parent project loads this
+// file in-process from a COPY set (kerberos/CLAUDE.md); both modules are
+// already in that closure through common/app.js.
+// ---------------------------------------------------------------------------
+async function catchUpWithCluster() {
+  log.debug('Entering catchUpWithCluster().');
+  if (!config.value('logout.kerberosSignOut')) {
+    log.debug('Leaving catchUpWithCluster(). Sign-out stamps are off.');
+    return null;
+  }
+  let cluster = null;
+  let barrier = null;
+  try {
+    cluster = require('../cluster/cluster');
+    barrier = require('../cluster/cluster_barrier');
+  } catch (e) {
+    log.debug('Caught in catchUpWithCluster(): ' + ((e && e.message) || e));
+    log.debug('Leaving catchUpWithCluster(). No cluster layer here.');
+    return null;
+  }
+  if (!cluster.isActiveActive() || !cluster.enabled()) {
+    log.debug('Leaving catchUpWithCluster(). Not active-active.');
+    return null;
+  }
+  const answer = await barrier.syncShared();
+  if (!answer || !answer.caughtUp) {
+    log.warn(errorCodes.tag('STS-KRB-0118') + 'krb5: a KDC request is ' +
+             'answered before this node caught up with the others (' +
+             JSON.stringify(answer || {}) + '); a sign-out committed on ' +
+             'another node in the last moment may not be honoured by it.');
+  }
+  log.debug('Leaving catchUpWithCluster().');
+  return answer;
+}
+
 // The dispatcher. Anything that is not a request this KDC serves gets an error
 // rather than silence: a client waiting for a reply that never comes learns
 // nothing, and "I do not do that yet" is information.
@@ -2649,11 +2708,13 @@ async function handleMessage(bytes) {
     if (!identified) throw new Error('no [APPLICATION n] tag');
     if (identified.applicationNumber === msgs.APPLICATION.AS_REQ) {
       const request = msgs.readKdcReq(bytes);
+      await catchUpWithCluster();
       log.debug("Leaving handleMessage().");
       return await handleAsReq(request);
     }
     if (identified.applicationNumber === msgs.APPLICATION.TGS_REQ) {
       const request = msgs.readKdcReq(bytes);
+      await catchUpWithCluster();
       log.debug("Leaving handleMessage().");
       return await handleTgsReq(request);
     }
@@ -2679,6 +2740,13 @@ function startTcp(port) {
   log.debug('Entering startTcp().');
   const server = net.createServer(function (socket) {
     let buffer = Buffer.alloc(0);
+    // THE CLIENT'S ADDRESS, read off the socket — which, with
+    // global.proxyProtocol on, `common/proxy_protocol.js` (installed from
+    // server.js, so this file gains no require) has already set to the
+    // address in the PROXY header rather than the load balancer's.
+    const peer = (socket.remoteAddress || '?') + ':' +
+                 (socket.remotePort || '?');
+    log.debug('krb5: a TCP connection from ' + peer);
     socket.on('error', function (err) {
       // A client that disappears mid-exchange is ordinary, not exceptional. An
       // unhandled 'error' on a socket takes the whole process down.
@@ -2687,7 +2755,8 @@ function startTcp(port) {
     socket.on('data', function (chunk) {
       buffer = Buffer.concat([buffer, chunk]);
       if (buffer.length > maxRequestBytes()) {
-        log.warn('krb5: a TCP client sent more than ' + maxRequestBytes() +
+        log.warn('krb5: a TCP client at ' + peer + ' sent more than ' +
+                 maxRequestBytes() +
                  ' bytes (krb5.maxRequestBytes); closing');
         audit.failure('STS-KRB-0049', {
           protocol: 'Kerberos', channel: 'kerberos',
@@ -2702,8 +2771,8 @@ function startTcp(port) {
       if (buffer.length < 4) return;
       const declared = buffer.readUInt32BE(0);
       if (declared & 0x80000000) {
-        log.warn('krb5: a TCP client sent a length prefix with the reserved ' +
-                 'top bit set; closing');
+        log.warn('krb5: a TCP client at ' + peer + ' sent a length prefix ' +
+                 'with the reserved top bit set; closing');
         audit.failure('STS-KRB-0050', {
           protocol: 'Kerberos', channel: 'kerberos',
           target: 'KDC TCP ' + port,

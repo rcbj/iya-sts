@@ -87,6 +87,9 @@ const realms = require('../common/realms');
 const validation = require('../common/validation');
 const core = require('../common/cert_enrollment');
 const monitor = require('../common/enrollment_monitor');
+// The atomic "once" the transaction guard and nothing else here is held to
+// across nodes. A LIBRARY that reaches `persistence.js` lazily.
+const claims = require('../cluster/cluster_claims');
 const cms = require('./scep_cms');
 const ra = require('./scep_ra');
 
@@ -127,6 +130,111 @@ const transactions = realms.map({ persist: 'scep.transactions' });
 // client that retries before the first reply arrives meets the stored result
 // rather than a second redemption of its challenge.
 const inflight = new Map();
+
+// ---------------------------------------------------------------------------
+// AND ONE AT A TIME ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+//
+// `inflight` is a Map in this process, so a client that retried its PKCSReq
+// at a SECOND node while the first was still answering it met no guard at
+// all: the second node found no stored result, redeemed nothing (the
+// challenge is claimed — `redeemScepChallengeOnce()`) and answered FAILURE,
+// and the client discarded the certificate the first node was issuing it. The
+// guard is therefore also a CLAIM on the transaction, held while one node
+// answers it:
+//
+//   * a node that finds it claimed WAITS (polling every
+//     `TRANSACTION_POLL_MS`, for at most `TRANSACTION_WAIT_MS`) rather than
+//     refusing, because the ordinary cause is a client's own retry and what
+//     it deserves is the stored result;
+//   * the node that holds it gives it back only after its writes have
+//     COMMITTED, and the waiter catches up with the store before it runs the
+//     handler — without both, the waiter would take the claim, not yet see
+//     the stored transaction, and refuse the retry it waited for;
+//   * a wait that runs out answers FAILURE (`STS-SCEP-0064`), and a store
+//     that cannot be asked answers FAILURE (`STS-SCEP-0065`): a transaction
+//     this node cannot prove nobody else is answering is not one it answers.
+//
+// The claim lives `TRANSACTION_CLAIM_TTL_MS`, far beyond any issuance, so a
+// node that died holding it blocks that one transactionID for two minutes and
+// nothing else.
+// ---------------------------------------------------------------------------
+const TRANSACTION_CLAIM_TTL_MS = 2 * 60 * 1000;
+const TRANSACTION_WAIT_MS = 20 * 1000;
+const TRANSACTION_POLL_MS = 250;
+
+function persistenceModule() {
+  log.debug("Entering persistenceModule().");
+  log.debug("Leaving persistenceModule().");
+  // LAZY: this module is required at 23e–g and the store module's own
+  // position (#4a) is not this file's to assume.
+  return require('../persistence/persistence');
+}
+
+function pause(ms) {
+  log.debug("Entering pause().");
+  log.debug("Leaving pause().");
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function acrossNodes(key, fn) {
+  log.debug("Entering acrossNodes().");
+  const began = Date.now();
+  const ask = function () {
+    log.debug("Entering ask().");
+    log.debug("Leaving ask().");
+    return claims.claim({ scope: 'scep.transaction', value: key,
+                          ttlMs: TRANSACTION_CLAIM_TTL_MS });
+  };
+  let claimed = await ask();
+  let waited = false;
+  while (!claimed.ok && claimed.reason === 'used' &&
+         Date.now() - began < TRANSACTION_WAIT_MS) {
+    waited = true;
+    await pause(TRANSACTION_POLL_MS);
+    claimed = await ask();
+  }
+  if (!claimed.ok && claimed.reason === 'used') {
+    log.warn(errorCodes.tag('STS-SCEP-0064') + 'scep: a transaction was ' +
+             'still being answered by another request after ' +
+             TRANSACTION_WAIT_MS + 'ms; this copy of it is refused.');
+    log.debug("Leaving acrossNodes(). Held elsewhere.");
+    return failed('STS-SCEP-0064', 'Another request with this transactionID ' +
+                  'is still being answered. Retry, or poll with CertPoll.',
+                  cms.FAIL_INFO.badRequest);
+  }
+  if (!claimed.ok) {
+    log.error(errorCodes.tag('STS-SCEP-0065') + 'scep: a transaction could ' +
+              'not be claimed (' + claimed.why + '); it is refused.');
+    log.debug("Leaving acrossNodes(). The store.");
+    return failed('STS-SCEP-0065', 'This server could not check whether ' +
+                  'the transaction is already being answered.',
+                  cms.FAIL_INFO.badRequest);
+  }
+  const store = persistenceModule();
+  const shared = !!store.clusterStore();
+  try {
+    if (waited && shared && typeof store.syncNow === 'function') {
+      try {
+        await store.syncNow();
+      } catch (e) {
+        log.debug("Caught in acrossNodes(): " + ((e && e.message) || e));
+      }
+    }
+    log.debug("Leaving acrossNodes(). Answering.");
+    return await fn();
+  } finally {
+    if (shared) {
+      try {
+        await Promise.all([store.flush(), store.flushMinted()]);
+      } catch (e) {
+        log.debug("Caught in acrossNodes(): " + ((e && e.message) || e));
+      }
+    }
+    claims.release(claimed.handle);
+  }
+}
 
 const FAIL_NAMES = {};
 Object.keys(cms.FAIL_INFO).forEach(function (name) {
@@ -211,7 +319,12 @@ function remember(id, result) {
 function serialized(key, fn) {
   log.debug("Entering serialized().");
   const before = inflight.get(key) || Promise.resolve();
-  const run = before.then(fn, fn);
+  const guarded = function () {
+    log.debug("Entering guarded().");
+    log.debug("Leaving guarded().");
+    return acrossNodes(key, fn);
+  };
+  const run = before.then(guarded, guarded);
   const settled = run.then(function () {
     return undefined;
   }, function () {
@@ -356,7 +469,7 @@ async function pkcsReq(ctx) {
   }
   const identity = password.slice(0, Math.max(0, password.lastIndexOf('.')))
     .slice(0, 400);
-  const blocked = core.throttled('scep', ctx.req, identity);
+  const blocked = await core.throttledShared('scep', ctx.req, identity);
   if (blocked) {
     log.debug("Leaving pkcsReq(). Throttled.");
     return { ok: false, http: blocked, identity: identity };
@@ -375,7 +488,11 @@ async function pkcsReq(ctx) {
                   { identity: identity, profile: peek.profile,
                     principal: entryUri });
   }
-  const spent = core.redeemScepChallenge(password);
+  // SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46): claimed in the store
+  // between the look above and the write, so one challenge in two PKCSReqs
+  // with two transactionIDs at two nodes issues once. See
+  // `common/cert_enrollment.js`'s `redeemScepChallengeOnce()`.
+  const spent = await core.redeemScepChallengeOnce(password);
   if (!spent.ok) {
     log.debug("Leaving pkcsReq(). Spent between the two looks.");
     return fromCore(spent, { identity: identity });
@@ -443,7 +560,7 @@ async function renewalReq(ctx) {
   const principal = auth.principal;
   const entryUri = core.entryUri(principal);
   const identity = principal.certificateSerial;
-  const blocked = core.throttled('scep', ctx.req, identity);
+  const blocked = await core.throttledShared('scep', ctx.req, identity);
   if (blocked) {
     log.debug("Leaving renewalReq(). Throttled.");
     return { ok: false, http: blocked, identity: identity };
@@ -769,7 +886,7 @@ function messageBytes(req, res, operation) {
 
 async function pkiOperation(req, res, operation, urlProfile) {
   log.debug("Entering pkiOperation().");
-  const early = core.throttled('scep', req, '');
+  const early = await core.throttledShared('scep', req, '');
   if (early) {
     record({ operation: operation, outcome: 'refused', status: 429,
              errorCode: errorCodes.codeOf(early) });
@@ -862,8 +979,25 @@ async function pkiOperation(req, res, operation, urlProfile) {
     log.debug("Leaving pkiOperation(). No CertRep.");
     return;
   }
-  if (!result.ok) {
+  if (!result.ok && core.sharesThrottle()) {
+    // WHERE THE THROTTLE IS SHARED THE COUNT DECIDES THE ANSWER (2026-09-14):
+    // a FAILURE whose count took the caller past the limit is answered with
+    // the throttle's 429 rather than a CertRep naming what the challenge
+    // password got wrong — `core.countFailureShared()` argues it.
+    const overLimit = await core.countFailureShared('scep', req,
+                                                    result.identity || '');
+    if (overLimit) {
+      record({ operation: opName, outcome: 'refused', status: 429,
+               errorCode: 'STS-ENROLL-0061', principal: result.identity });
+      scepError(res, 429, 'STS-ENROLL-0061', overLimit.why,
+                { 'Retry-After': String(core.retryAfterOf(overLimit)) });
+      log.debug("Leaving pkiOperation(). Past the shared throttle.");
+      return;
+    }
+  } else if (!result.ok) {
     core.countFailure('scep', req, result.identity || '');
+  }
+  if (!result.ok) {
     if (!result.audited) {
       audit.failure(result.code, { protocol: 'SCEP',
         actor: result.principal || '', target: result.principal || '',

@@ -101,11 +101,21 @@ days, a different key size from the setting, or no longer chaining to the
 realm's current SCEP Issuing CA. The certificate it replaces goes on that CA's
 list as `superseded`.
 
-**The one race is across processes and is stated, not solved**: in `dispatch`
-mode two workers finding the RA stale may each issue one, the PKI row is
-last-write-wins, and a client that fetched the loser's certificate is answered
-`STS-SCEP-0027` badMessageCheck until it fetches GetCACert again. In one
-process a re-issue is serialised per realm.
+**One RA for the cluster since 2026-09-14 (#46, `scep.ra-agreement`).** The race
+used to be stated and not solved — two processes finding the RA stale each
+issued one, the PKI row was last write wins, and across CONTAINERS each issued
+its own lazily, so GetCACert on A and PKIOperation on B failed with
+`STS-SCEP-0027` on every alternation. Where the store arbitrates, the issue runs
+through `pki.oneBuildInTheCluster()` under its own claim (`scep-ra:<realm>`,
+never the branch's — `certify()` may repair the branch under that): the row is
+read from the store, and again once the claim is held, and a current RA another
+node issued is served instead. A certificate slot is first writer wins in the
+row's merge (`common/pki_merge.js`), so an issue that ran anyway adopts the
+other; a console Reissue that lost is refused (`STS-PKI-0182`). The write
+commits before the response (the cluster barrier waits for the keystore's
+queued rows), so B's catch-up sees A's RA. Measured: GetCACert on two
+active-active nodes at once returns one RA; with the cluster off, two. In one
+process a re-issue is still serialised per realm.
 
 ### The transaction store
 
@@ -143,6 +153,24 @@ result.
 
 A PKCSReq must be signed by a certificate over **the CSR's own key** (RFC 8894
 section 2.3; `STS-SCEP-0034`).
+
+## Several nodes: the challenge and the transaction (2026-09-14, #46)
+
+* **A challenge password is claimed** between the peek that proves it right and
+  the write that spends it (`core.redeemScepChallengeOnce()`), so one challenge
+  in two PKCSReqs with two transactionIDs at two nodes issues once. A claimed
+  challenge is the refusal a spent one always was (`STS-ENROLL-0084`).
+* **The transaction guard is also a claim** (`acrossNodes()` under
+  `serialized()`). `inflight` is a Map in one process, so a client's retry at a
+  second node met no guard, found no stored result, and was refused on the
+  already-claimed challenge while the first node issued the certificate it then
+  discarded. A node that finds the transaction claimed WAITS (every 250ms, up
+  to 20s); the holder releases only after its writes COMMIT, and the waiter
+  catches up with the store before running the handler — without both the
+  waiter takes the claim, does not yet see the stored result, and refuses the
+  retry it waited for. A wait that runs out is `STS-SCEP-0064`, a store that
+  cannot be asked `STS-SCEP-0065`; the claim lives two minutes, so a node that
+  died holding it blocks that one transactionID and nothing else.
 
 ## Documented exceptions
 

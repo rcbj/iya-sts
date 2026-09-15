@@ -188,7 +188,11 @@ contract:
   both ways by the subject resolver `ldap/ldap_server.js` fills into `helpers.js`.
   `ldap/CLAUDE.md` carries the directory's rules — assigned in `putEntry()`, kept through
   an overwrite and a rename, new on a re-create, deterministic for seeded entries,
-  backfilled deterministically, unwritable by a client in either mode.
+  backfilled deterministically, unwritable by a client in either mode. **One exception
+  (rcbj, 2026-09-14, #46):** an entry a development-mode sign-in auto-creates is
+  deterministic too wherever two processes can race to create it (a cluster mode or a
+  dispatched pool), so a re-created name keeps its subject there — `ldap/ldap_server.js`
+  `putEntry()` argues it.
 * **No signed-in session without an entry.** `startSession()` records the authentication
   BEFORE the session is built — that is what makes the directory create the entry — and
   refuses a signed-in session whose person has none (`STS-AUTHN-0180`). A keyed API caller,
@@ -1538,3 +1542,93 @@ SCIM Basic. A session that already exists is not ended. **The enrolment emits
 no CAEP event**, because the signals the request asked for are the ADMIN doors'
 (`admin-core/admin_actions.js`); the portal's own enrolment pages do not emit
 either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
+
+## SEVERAL NODES: A SIGN-OUT HOLDS, AND TWO COPIES OF A SESSION MERGE (2026-09-14, #46 section 3)
+
+`sessions` is declared `realms.map({ persist: 'authn.sessions', tombstone: true,
+mergeRow: mergeSessionRows })`, and `persistence/CLAUDE.md` (*Several nodes
+writing one row*) carries the mechanism. What is this file's is the rule
+`mergeSessionRows()` applies to two copies of one live session, because every
+one of the failures it answers was a node writing its copy back:
+
+* **the copy further along is the base** — a chosen session over an arrival
+  (`chosen: false`), then the later `authTime`, then the later handle rotation,
+  then the later hosted-surface renewal — so a stale arrival copy touched by
+  `touchArrivalSession()` cannot undo a sign-in another node made;
+* **`lastSeenAt` is the later of the two**, and `expires` too only when both are
+  the same sign-in: an arrival's ten-minute slide must not land on the session
+  it became;
+* **the relying-party lists are unions** — `oidcClients` (earliest `first`,
+  latest `last`, larger `count`), `wsfedRealms`, `saml2ServiceProviders`,
+  `saml11RelyingParties`, and `relyingParties` and `events` by value — because a
+  client missing from the list never gets its front-channel logout iframe.
+
+An ended session leaves a tombstone, so `noteSessionUsed()` or
+`touchArrivalSession()` on a node a moment behind cannot bring it back; the
+copy is dropped there instead (`STS-STORE-0054`). What this does NOT do is make
+two nodes that each END one session emit one event — that is Shared Signals'
+row (`ssf.delivery`), and the next section.
+
+**A merge only helps a list that reached the store, and until 2026-09-14 none
+of the four did on its own.** Each protocol records the party ON the session
+object — `saml2_sso.js`, `saml11_sso.js`, `wsfed.js`, and
+`frontchannel_logout.js`'s `noteClient()` — and `sessions` journals a `set()`,
+never an edit to an object it holds, so the list was written only if something
+re-set the row later (with no idle timeout, nothing did). Identity-provider
+initiated SAML logout on the node that had not issued the response offered no
+LogoutRequest (`sts_saml_encryption`, the suite's `cluster` mode). Each now
+calls **`noteSessionChanged(session)`** right after its edit: it re-sets the
+row by id, **merges** with `mergeSessionRows()` when replication has replaced
+the stored object meanwhile, and **refuses to write a session that is no longer
+there**, so it cannot resurrect one ended in between. `notePresented()` spends
+`firstPresentationIsTheSignIn` through it too. An in-place edit of a session
+anywhere else owes the same call; `tests/cluster_node_state_sharing.js` holds
+the four call sites to it.
+
+## SEVERAL NODES: A SESSION'S END IS REPORTED ONCE (2026-09-14, #46 section 6)
+
+Every process runs the sweep over its own copy, and `sessionOf()` expires a
+session wherever it is next presented, so two processes — a container's
+workers, or two containers — found the same expired session and each wrote
+`session.end` and emitted CAEP `session-revoked`. A sweep led by one elected
+node would have fixed the timer and not the lazy lookup, and not a container's
+own workers; **a claim fixes all three**. `sessionEndOnce(id, emit, onLost)`:
+
+* **The delete stays synchronous and local.** A process that noticed the end
+  stops honouring the session at once, whatever the store says.
+* **The report goes out once.** `reportExpiry()` (from `expireSession()`) and
+  `reportSignOut()` (from `dropSession()`) run only for the process that wins
+  `authn.session-end` on the realm and session id (one hour). An explicit
+  sign-out takes the same claim, so a sign-out racing the sweep on another node
+  reports one end; the loser writes its sign-out as `refused`
+  (`STS-AUTHN-0191`, `reportSignOutAlreadyEnded()`) with no event. A sign-out
+  that found no session claims nothing and is recorded as it always was.
+* **No shared claim store means one process, and `emit` runs inline** — the
+  audit row is written before the function returns, exactly as before.
+* **A store that cannot be asked REPORTS ANYWAY** (`STS-AUTHN-0192`) — the
+  opposite of `cluster_claims.js`'s fail-closed rule, on purpose: that rule is
+  for a value that must not be accepted twice, and this is a notice that must
+  not be lost. A duplicate `session-revoked` is an idempotent repeat at a
+  receiver; a missing one leaves it trusting an ended session.
+
+On a shared store the report is therefore a claim's round trip after the
+delete, not before the function returns. `tests/cluster_signout_signals.js`
+section 3 holds it: two ends of one session with a shared stub store report
+once (with the losing row coded), the same without one report twice (the
+control), and an unreachable store still reports.
+
+## SEVERAL NODES: THE THREE SECOND-FACTOR DOORS SPEND IN THE STORE (2026-09-14, #46)
+
+`POST /authn/totp` and the assertion branch of `POST /authn/webauthn` are
+ASYNCHRONOUS now, like `/authn/backup-code` already was, because each spends
+its credential in the store before the sign-in stands: a TOTP step through
+`credentials.verifyTotpAsync()` (a counter that only goes up), a security-key
+assertion through `credentials.spendAssertion()` (its challenge claimed, its
+signature counter advanced), and a recovery code inside
+`verifyBackupCodeAsync()` (claimed, and the entry made to converge on the
+claims). The tails are `finishTotp()` and `finishWebauthn()`, and every refusal
+reaches the page it always did, with the check that failed named. The argument
+for each is `common/CLAUDE.md`'s *Several nodes* section; what is this file's is
+that **a refusal after a verification that passed is still a refusal of the
+step, not an error page**, and that a catch sits on each promise because
+Express 4 does not look at what a handler returns (`STS-AUTHN-0182`).

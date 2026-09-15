@@ -78,13 +78,33 @@ const realms = require('./realms');
 const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
-// THE CSRF KEY. Per PROCESS and regenerated on every start, exactly like the
-// signing key — and unlike the signing key it is deliberately NOT persisted in
-// product mode. A CSRF token is only meaningful for the life of a session, a
-// session does not survive a restart, so a key that did would be protecting
-// nothing and would be one more secret at rest.
+// THE CSRF KEY, FROM `cluster/cluster_secrets.js` SINCE 2026-09-14 (#46).
+//
+// It was `randomBytes(32)` here, per process and regenerated on every start,
+// with the argument that a CSRF token means nothing past its session and a
+// session did not survive a restart. Both halves moved: product mode on
+// postgres persists sessions, and several containers serve one session. A form
+// drawn by one node and posted to another carried a token the second could not
+// verify, and without sticky sessions that is most of every console's forms —
+// `STS-HTTP-0016` on (N-1)/N of them, never converging, because neither key was
+// wrong. So the key is the cluster's: generated once, sealed in the store, and
+// read by every process before it serves. Where nothing can share it, it is per
+// process exactly as before — that module says which. READ PER TOKEN rather
+// than captured here, because the shared value arrives after this file loads.
 // ---------------------------------------------------------------------------
-const CSRF_KEY = nodeCrypto.randomBytes(32);
+const clusterSecrets = require('../cluster/cluster_secrets');
+// The table active-active mode is held to, a LEAF. The CSRF key here, the ACME
+// nonce key in acme/acme_jws.js and the SSF receiver secret in
+// ssf/ssf_receivers.js were moved onto the cluster's shared secrets together,
+// and this is where the capability for all three is declared.
+const capabilities = require('../cluster/cluster_capabilities');
+capabilities.provide('secrets.protocol-keys');
+// ONE BUDGET FOR EVERY NODE (2026-09-14, #46 section 2): the windows the
+// limiter counts in when a store is shared. A LIBRARY that requires
+// `persistence.js` lazily, so this closes no cycle. See `attemptShared()`.
+const clusterCounters = require('../cluster/cluster_counters');
+// Who a request came from. A LEAF. See `addressOf()`.
+const clientAddress = require('./client_address');
 const CSRF_FIELD = 'csrf_token';
 
 // The token for a session. A pure function of the id, so it is the same on
@@ -97,7 +117,7 @@ function tokenFor(sessionId) {
     return '';
   }
   log.debug("Leaving tokenFor().");
-  return nodeCrypto.createHmac('sha256', CSRF_KEY)
+  return nodeCrypto.createHmac('sha256', clusterSecrets.get('csrf'))
                    .update(id)
                    .digest('base64url');
 }
@@ -188,22 +208,19 @@ function limitFor(kind) {
 // The address a request came from, honouring the proxy setting this service
 // already has — a limiter that counted every request from one load balancer as
 // one address would lock out the world on the first attacker.
+//
+// **`common/client_address.js`'S ANSWER SINCE 2026-09-14 (#46).** The rule
+// that was here — the left-most `X-Forwarded-For` entry whenever
+// `global.trustProxy` was on, the socket otherwise — let a caller that reached
+// a node directly choose a fresh address per guess, and answered `unknown` for
+// every caller in a request worker, whose socket has no peer address. That
+// file argues the boundary; with `global.trustedProxies` empty it is the old
+// rule exactly, outside a request worker.
 function addressOf(req) {
   log.debug("Entering addressOf().");
-  if (!req) {
-    log.debug("Leaving addressOf().");
-    return 'unknown';
-  }
-  if (config.value('global.trustProxy')) {
-    const forwarded = String((req.headers || {})['x-forwarded-for'] || '');
-    const first = forwarded.split(',')[0].trim();
-    if (first) {
-      log.debug("Leaving addressOf().");
-      return first;
-    }
-  }
+  const address = clientAddress.clientAddressOf(req);
   log.debug("Leaving addressOf().");
-  return String((req.socket && req.socket.remoteAddress) || 'unknown');
+  return address;
 }
 
 function prune(now) {
@@ -402,6 +419,260 @@ function succeeded(what, req, identity, options) {
   log.debug("Leaving succeeded().");
 }
 
+// ---------------------------------------------------------------------------
+// ONE BUDGET FOR EVERY NODE: `attemptShared()`, `blockedShared()` AND
+// `succeededShared()` (2026-09-14, #46 section 2).
+//
+// The three functions above are right for one process and wrong for several,
+// in two ways that multiply. Each node refused only on ITS OWN count, so a
+// guesser spreading attempts over N nodes had N budgets; and the buckets are a
+// replicated Map whose rows are whole values, so two nodes counting one bucket
+// at once each read 3 and each wrote 4 — last writer wins on a counter — and
+// even the counts that did replicate were short. `sts_est_enrollment` had
+// already met the one-container half of it (see the comment in `attempt()`),
+// and the fix there, writing the row down on every count, made the count
+// visible and left it racy.
+//
+// So when the store is shared these count in `cluster/cluster_counters.js`'s
+// windows: one conditional upsert per bucket, under the row lock, returning
+// the count THIS attempt made. The decision is taken on that number, which is
+// the same number whichever node asked, and a burst of concurrent guesses
+// across nodes is refused at exactly the limit — every one of them landed in
+// the one row.
+//
+// **SAME BUCKETS, SAME WINDOW, SAME LIMITS, SAME REFUSALS**, and the same
+// codes (`STS-HTTP-0017` / `-0018`): the key is the string the synchronous
+// functions use, digested, and the realm is '' for the reason the header of
+// this section gives. A caller changes one name and an `await`.
+//
+// **WITH NO SHARED STORE THEY ARE THE SYNCHRONOUS FUNCTIONS**, resolved — memory
+// and ldif stores, development mode, `npm test` — so nothing that does not
+// share a store changes by a byte.
+//
+// **A STORE THAT CANNOT BE ASKED FALLS BACK TO THIS PROCESS'S BUCKETS**, logged
+// `STS-CLUSTER-0023`, and that is a deliberate difference from a claim, which
+// refuses. A claim that cannot be proven spent must not be accepted, because
+// the harm is a credential used twice. A limiter that cannot reach the shared
+// count still has a count — its own, which is what every node had before this
+// — and refusing every sign-in for as long as the database is unreachable
+// would turn a database blip into a sign-in outage nobody caused. For that
+// window the budget is per node again, and the log says so.
+//
+// **`blockedShared()` + a counted failure was still not atomic**, exactly as
+// `blocked()` + `attempt()` is not on one node: concurrent attempts all read
+// the count before any failure is added — measured with forty concurrent
+// wrong client secrets against a limit of 5 on two nodes: 19 to 34 answered
+// `invalid_client`. **SINCE 2026-09-14 THE ANSWER IS DECIDED ON THE ATOMIC
+// COUNT** — `failedShared()` and `succeededShared({ unlessBlocked })` below —
+// and the check before verification stays as the cheap refusal it was.
+//
+// **WHY NOT COUNT BEFORE CHECKING — THE RESERVATION `attemptShared()` IS —
+// AT THESE DOORS.** Counting every attempt at admission bounds guesses
+// exactly, and it also counts every SUCCESS that is still in flight: a
+// confidential client making six concurrent token requests from one host
+// (the secret bucket is client and address), or an LDAP connection pool
+// binding fifty connections as one DN, would be refused for being busy —
+// the reason `blocked()` exists at all. So these doors verify first and
+// decide the ANSWER after, atomically:
+//
+//   * a failure increments; an increment that took the bucket PAST the limit
+//     is answered with the lockout, not with "wrong" — so at most `limit`
+//     failures per window are ever answered as failures, across every node
+//     and every concurrent request;
+//   * a success is answered only while the bucket is under the limit (a
+//     read, so concurrent successes cost nothing); at the limit it gets the
+//     same lockout, so a right guess racing a burst that spent the budget
+//     teaches nothing. What is left is the right guess that lands before the
+//     burst's failures have counted — the race a lockout decided before
+//     verification had too, bounded by the same `limit`.
+//
+// A door whose successes are rare and sequential (a sign-in screen, a
+// one-time code) keeps `attemptShared()`, which is the stricter property.
+// ---------------------------------------------------------------------------
+const SHARED_SCOPE = 'security.rate-limit';
+
+function bucketChecks(what, req, identity, limit) {
+  log.debug("Entering bucketChecks().");
+  log.debug("Leaving bucketChecks().");
+  return [
+    { kind: 'identity',
+      key: what + '|id|' + String(identity || '').toLowerCase(),
+      limit: namedLimit(limit, 'identity') || limitFor('identity'),
+      on: !!identity },
+    { kind: 'address', key: what + '|ip|' + addressOf(req),
+      limit: namedLimit(limit, 'address') || limitFor('address'), on: true }
+  ].filter(function (check) {
+    return check.on;
+  });
+}
+
+function sharedRefusal(refusal, detailLead) {
+  log.debug("Entering sharedRefusal().");
+  const code = refusal.kind === 'address' ? 'STS-HTTP-0018' : 'STS-HTTP-0017';
+  log.debug("Leaving sharedRefusal().");
+  return errorCodes.mark({ ok: false, kind: refusal.kind,
+           limit: refusal.limit, retryAfterS: refusal.retryAfterS,
+           shared: true,
+           detail: detailLead + ' Wait ' + refusal.retryAfterS +
+                   ' seconds and try again.' }, code);
+}
+
+function secondsLeft(remainingMs) {
+  log.debug("Entering secondsLeft().");
+  log.debug("Leaving secondsLeft().");
+  return Math.max(1, Math.ceil((Number(remainingMs) || 0) / 1000));
+}
+
+function attemptShared(what, req, identity, limit) {
+  log.debug('Entering attemptShared(). what=' + what);
+  if (!clusterCounters.sharesWindows()) {
+    log.debug('Leaving attemptShared(). No shared store: attempt().');
+    return Promise.resolve(attempt(what, req, identity, limit));
+  }
+  const checks = bucketChecks(what, req, identity, limit);
+  const span = windowMs();
+  log.debug('Leaving attemptShared(). Counting in the store.');
+  return Promise.all(checks.map(function (check) {
+    return clusterCounters.countInWindow({ scope: SHARED_SCOPE,
+                                           key: check.key, realm: '',
+                                           windowMs: span });
+  })).then(function (answers) {
+    if (answers.some(function (answer) { return !answer.ok; })) {
+      log.warn(errorCodes.tag('STS-CLUSTER-0023') + 'websecurity: the "' +
+               what + '" attempt could not be counted in the shared store; ' +
+               'it is counted in this process\'s buckets, so for now the ' +
+               'budget is per node.');
+      return attempt(what, req, identity, limit);
+    }
+    let refusal = null;
+    checks.forEach(function (check, i) {
+      if (!refusal && answers[i].count > check.limit) {
+        refusal = { kind: check.kind, limit: check.limit,
+                    retryAfterS: secondsLeft(answers[i].remainingMs) };
+      }
+    });
+    if (!refusal) {
+      return { ok: true, shared: true };
+    }
+    log.warn(errorCodes.tag(refusal.kind === 'address' ? 'STS-HTTP-0018'
+                                                      : 'STS-HTTP-0017') +
+             'websecurity: too many "' + what + '" attempts across the ' +
+             'cluster (' + refusal.kind + ' bucket, limit ' + refusal.limit +
+             ' per ' + Math.round(span / 1000) + 's). Refusing for another ' +
+             refusal.retryAfterS + 's.');
+    return sharedRefusal(refusal, 'Too many attempts.');
+  });
+}
+
+function blockedShared(what, req, identity, limit) {
+  log.debug('Entering blockedShared(). what=' + what);
+  if (!clusterCounters.sharesWindows()) {
+    log.debug('Leaving blockedShared(). No shared store: blocked().');
+    return Promise.resolve(blocked(what, req, identity, limit));
+  }
+  const checks = bucketChecks(what, req, identity, limit);
+  log.debug('Leaving blockedShared(). Reading the store.');
+  return Promise.all(checks.map(function (check) {
+    return clusterCounters.peekWindow({ scope: SHARED_SCOPE, key: check.key,
+                                        realm: '' });
+  })).then(function (answers) {
+    if (answers.some(function (answer) { return !answer.ok; })) {
+      log.warn(errorCodes.tag('STS-CLUSTER-0023') + 'websecurity: the "' +
+               what + '" buckets could not be read from the shared store; ' +
+               'this process\'s own buckets decide, so for now the budget ' +
+               'is per node.');
+      return blocked(what, req, identity, limit);
+    }
+    let refusal = null;
+    // AT the limit, for `blocked()`'s reason: this counts nothing.
+    checks.forEach(function (check, i) {
+      if (!refusal && answers[i].count >= check.limit) {
+        refusal = { kind: check.kind, limit: check.limit,
+                    retryAfterS: secondsLeft(answers[i].remainingMs) };
+      }
+    });
+    return refusal ? sharedRefusal(refusal, 'Too many failed attempts.')
+      : null;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// failedShared() — COUNT A FAILURE AND SAY WHETHER IT IS STILL ANSWERABLE AS
+// ONE (2026-09-14). Resolves to null while the increment this failure made is
+// within the limit, and to the lockout refusal once it is past it. The count
+// is `attemptShared()`'s — the one atomic increment — so the decision is the
+// same whichever node, however many at once. See the block above.
+// ---------------------------------------------------------------------------
+function failedShared(what, req, identity, limit) {
+  log.debug('Entering failedShared(). what=' + what);
+  log.debug('Leaving failedShared().');
+  return attemptShared(what, req, identity, limit).then(function (counted) {
+    return counted && counted.ok === false ? counted : null;
+  });
+}
+
+// Whether the shared functions above count in a store every process shares —
+// for a caller that must stay synchronous where nothing is shared (the LDAP
+// bind, whose operation is run synchronously by its in-process callers).
+function sharesLimits() {
+  log.debug("Entering sharesLimits().");
+  log.debug("Leaving sharesLimits().");
+  return clusterCounters.sharesWindows();
+}
+
+// Resolves when the store has forgotten the buckets (or could not be asked,
+// which is logged). This process's own buckets are cleared first and always,
+// so a count made while the store was unreachable is forgotten too.
+//
+// `options.unlessBlocked` (2026-09-14): a verified credential is answered only
+// while the bucket is under the limit — see the block above `failedShared()`.
+// Resolves to the lockout refusal, clearing nothing, when it is at the limit;
+// null otherwise.
+function succeededShared(what, req, identity, options) {
+  log.debug("Entering succeededShared().");
+  if (options && options.unlessBlocked) {
+    log.debug("Leaving succeededShared(). Asking first.");
+    return blockedShared(what, req, identity,
+                         options.limit).then(function (lockedOut) {
+      if (lockedOut) {
+        return lockedOut;
+      }
+      return succeededShared(what, req, identity,
+                             { keepAddress: !!options.keepAddress })
+        .then(function () {
+          return null;
+        });
+    });
+  }
+  succeeded(what, req, identity, options);
+  if (!clusterCounters.sharesWindows()) {
+    log.debug("Leaving succeededShared(). No shared store.");
+    return Promise.resolve();
+  }
+  const keys = [];
+  if (identity) {
+    keys.push(what + '|id|' + String(identity).toLowerCase());
+  }
+  if (!(options && options.keepAddress)) {
+    keys.push(what + '|ip|' + addressOf(req));
+  }
+  log.debug("Leaving succeededShared(). Clearing " + keys.length +
+            " window(s).");
+  return Promise.all(keys.map(function (key) {
+    return clusterCounters.clearWindow({ scope: SHARED_SCOPE, key: key,
+                                         realm: '' });
+  })).then(function () {
+    return undefined;
+  });
+}
+
+// DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason. The three
+// functions above are the fix; every door that counts — the sign-in screen,
+// the password grant, the second-factor steps, the portal's links and forms,
+// client secrets, the enrollment throttles, GNAP's user code, the PIP and the
+// LDAP bind — calls them.
+capabilities.provide('security.rate-limits');
+
 // For the console and the tests.
 function report() {
   log.debug("Entering report().");
@@ -417,7 +688,10 @@ function report() {
       perIdentity: limitFor('identity'),
       perAddress: limitFor('address'),
       bucketsHeld: buckets.size,
-      cap: MAX_BUCKETS
+      cap: MAX_BUCKETS,
+      // Whether the count is the cluster's (`sts_cluster_windows`) rather than
+      // `bucketsHeld` above, which is then only what a fallback counted here.
+      sharedAcrossNodes: clusterCounters.sharesWindows()
     }
   };
 }
@@ -437,6 +711,11 @@ module.exports = {
   attempt: attempt,
   blocked: blocked,
   succeeded: succeeded,
+  attemptShared: attemptShared,
+  blockedShared: blockedShared,
+  succeededShared: succeededShared,
+  failedShared: failedShared,
+  sharesLimits: sharesLimits,
   addressOf: addressOf,
   report: report,
   reset: reset

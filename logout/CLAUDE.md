@@ -369,3 +369,17 @@ stay strings.
 exactly when `authn.js` would refuse it. A comparison of its own here would be a
 second answer to *has this ended*, which is the thing this module exists not to
 have.
+
+## ANOTHER NODE'S DIRECTORY CONNECTION IS INSTRUCTED, NOT ENDED (2026-09-14, #46 section 4)
+
+In active-active mode `ldapServer.boundConnections()` lists other nodes'
+connections too (`ldap/CLAUDE.md`, *And across NODES*), so the `ldap` family's
+rows and `/admin/sessions` name the node, and ending one is an instruction that
+node carries out when it applies the change log — after this module has
+answered. Two things say so rather than a success that has not happened yet:
+a terminated entry carries **`pending: true`** (only when true, so a single
+node's answer is unchanged) with a sentence saying the close is asynchronous,
+and a GLOBAL logout with `logout.ldapDisconnect` on sends the instruction even
+when nothing was listed and adds **`acrossCluster`** to the result and a
+sentence to `message`. `pending` and `acrossCluster` are additive; nothing that
+read the old shape loses a member.

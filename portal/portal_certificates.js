@@ -363,8 +363,9 @@ function register(context) {
         return refused(403, 'STS-PORTAL-0050', core.FAMILY_LABELS[family] +
                        ' is turned off in this realm.');
       }
-      const allowed = ctx.websecurity.attempt('portal-enrollment', req,
-                                              entry.id, {
+      // One budget for the cluster (#46): `attemptShared()`.
+      const allowed = await ctx.websecurity.attemptShared('portal-enrollment',
+                                                          req, entry.id, {
         identity: ctx.config.value('pki.personSelfServicePerIdentity'),
         address: ctx.config.value('pki.personSelfServicePerAddress')
       });

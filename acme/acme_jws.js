@@ -39,6 +39,8 @@ const asn1js = require('asn1js');
 const pkijs = require('pkijs');
 const { log } = require('../common/helpers');
 const stsCrypto = require('../common/crypto');
+// The secrets every node shares (2026-09-14, #46). A LIBRARY; see nonceSecret().
+const clusterSecrets = require('../cluster/cluster_secrets');
 const validation = require('../common/validation');
 
 const vz = validation.z;
@@ -565,18 +567,15 @@ const CHALLENGE_RESPONSE = vz.looseObject({});
 const NONCE_VERSION = 1;
 const NONCE_SECRET_VAR = 'STS_ACME_NONCE_SECRET';
 
+// **THE CLUSTER'S SINCE 2026-09-14 (#46).** Per run and per container, every
+// other container refused this one's nonces as forged and a client alternating
+// between them looped on `badNonce`. `cluster/cluster_secrets.js` now owns the
+// value — the store's, sealed, where one can be shared; this environment
+// variable, per run, where none can — and keeps the environment channel below
+// working, which is why `NONCE_SECRET_VAR` is still named here.
 function nonceSecret() {
   log.debug("Entering nonceSecret().");
-  let held = String(process.env[NONCE_SECRET_VAR] || '');
-  if (!held) {
-    held = nodeCrypto.randomBytes(32).toString('base64');
-    // Into the environment BEFORE any worker is forked: the front process
-    // requires the protocol stack, and therefore this file's first caller,
-    // before `request_pool.js` forks anything.
-    process.env[NONCE_SECRET_VAR] = held;
-    log.debug('nonceSecret(): a per-run secret was generated for ACME ' +
-              'Replay-Nonce values.');
-  }
+  const held = clusterSecrets.text('acme-nonce');
   log.debug("Leaving nonceSecret().");
   return held;
 }

@@ -61,6 +61,9 @@
 #   ./docker-run-tests.sh --modes=dispatch    # one mode of tests/tools/modes.sh
 #                                             # rather than all three, in that
 #                                             # file's own spelling
+#   ./docker-run-tests.sh --modes=cluster     # the fourth, never run unless
+#                                             # named: two nodes behind a load
+#                                             # balancer (2026-09-14)
 #   ./docker-run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -125,6 +128,15 @@ fi
 . "${COMPOSE_SH}"
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
+# ---------------------------------------------------------------------------
+# THE `cluster` MODE'S LAYER (2026-09-14, issue #46): a second service
+# container and an HAProxy load balancer, over the file above, and the runner
+# and the remote PEP pointed at the balancer. Every compose command in this
+# file goes through COMPOSE_FILE_ARGS, which the mode loop sets per mode, so
+# no other mode's stack reads the layer. The layer's own header argues its
+# contents; tests/tools/modes.sh defines the mode.
+CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
+COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
 # so two runs sharing one would tear down each other's stack.
@@ -138,6 +150,24 @@ STS_BAO_CONTAINER_NAME="${STS_BAO_CONTAINER_NAME:-sts-docker-tests-openbao}"
 STS_BAO_TLS_CONTAINER_NAME="${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}"
 STS_BAO_SEED_CONTAINER_NAME="${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}"
 STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
+# The `cluster` mode's node B and load balancer (2026-09-14), named for the
+# same reason.
+STS2_CONTAINER_NAME="${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}"
+STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
+# ---------------------------------------------------------------------------
+# AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
+# machine-wide like a container name: this launcher builds once and then
+# `up`s each mode from whatever `rcbj/sts` points at by then, so another
+# checkout building that name mid-run changed the code under the remaining
+# modes with every job still green. A named project builds its own tags; an
+# unnamed run keeps the compose files' names.
+# ---------------------------------------------------------------------------
+if [ -n "${STS_DOCKER_TEST_PROJECT:-}" ];
+then
+  STS_IMAGE="${STS_IMAGE:-rcbj/sts:${COMPOSE_PROJECT}}"
+  XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-rcbj/xacml-pep:${COMPOSE_PROJECT}}"
+  STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-rcbj/mock-sts-tests:${COMPOSE_PROJECT}}"
+fi
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -428,6 +458,8 @@ COMPOSE_ENV=(
   # `dispatch` mode is what makes the key-encryption key come out of the store.
   "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"
   "STS_TESTS_CONTAINER_NAME=${STS_TESTS_CONTAINER_NAME}"
+  "STS2_CONTAINER_NAME=${STS2_CONTAINER_NAME}"
+  "STS_LB_CONTAINER_NAME=${STS_LB_CONTAINER_NAME}"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # ---------------------------------------------------------------------
@@ -503,6 +535,31 @@ if [ -n "${LOG_LEVEL:-}" ];
 then
   COMPOSE_ENV+=("LOG_LEVEL=${LOG_LEVEL}")
 fi
+if [ -n "${STS_IMAGE:-}" ];
+then
+  COMPOSE_ENV+=("STS_IMAGE=${STS_IMAGE}")
+fi
+if [ -n "${XACML_PEP_IMAGE:-}" ];
+then
+  COMPOSE_ENV+=("XACML_PEP_IMAGE=${XACML_PEP_IMAGE}")
+fi
+if [ -n "${STS_TESTS_IMAGE:-}" ];
+then
+  COMPOSE_ENV+=("STS_TESTS_IMAGE=${STS_TESTS_IMAGE}")
+fi
+# ---------------------------------------------------------------------------
+# WHERE THE SERVICE IS, AS THE LAUNCHER'S OWN ONE-SHOT CONTAINERS DIAL IT
+# (2026-09-14). `sts` in every mode but `cluster`, where it is the balancer —
+# the token is minted and the PEP's anchor posted THROUGH it, like everything
+# a job does. Set per mode by the loop.
+# ---------------------------------------------------------------------------
+SERVICE_HOST="sts"
+serviceUrl()
+{
+  printf '%s://%s:8081' \
+    "$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)" \
+    "${SERVICE_HOST}"
+}
 
 # ---------------------------------------------------------------------------
 # THE CONTAINERS' OWN LOGS, KEPT BESIDE THE JOBS'.
@@ -540,6 +597,15 @@ captureContainerLogs()
     return 0
   fi
   captureOneContainerLog "${mode}" sts   "00-mock-sts-service.log" "Service log"
+  # The `cluster` mode's node B and balancer, whose logs go with their
+  # containers too (2026-09-14). Node A keeps the name every mode uses.
+  if stsModeIsCluster "${mode}";
+  then
+    captureOneContainerLog "${mode}" sts2   "00-mock-sts-service-node-b.log" \
+      "Node B log"
+    captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
+      "Balancer log"
+  fi
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
 
@@ -587,7 +653,7 @@ captureOneContainerLog()
   # that has just been stopped, and the case worth collecting a log for is
   # exactly the case where that stop did not go well.
   docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-    -f "${COMPOSE_FILE}" logs --no-color "${service}" \
+    "${COMPOSE_FILE_ARGS[@]}" logs --no-color "${service}" \
     > "${dest}" 2>&1 || true
   printf '%-12s %s\n' "${label}:" "${dest}"
 }
@@ -613,7 +679,7 @@ teardown()
   # open after everything it was asked to do is finished and reported — which
   # is the shape of the 2026-09-10 incident, one function along.
   docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-    -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+    "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
     > /dev/null 2>&1 || true
 }
 trap teardown EXIT
@@ -623,7 +689,7 @@ trap teardown EXIT
 # reaches `mock-sts-docker-tests` and can never reach the `sts` container a
 # plain `docker compose up` in this directory creates.
 docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-  -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+  "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
   > /dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
@@ -639,7 +705,7 @@ docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
 if [ "${BUILD}" = "1" ];
 then
   echo "Building the service and test images from this working tree..."
-  if ! docker_compose -f "${COMPOSE_FILE}" build;
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" build;
   then
     echo "" >&2
     echo "The images would not build. Nothing was run." >&2
@@ -720,7 +786,7 @@ mintAdminApiToken()
        -w /usr/src/sts \
        "${STS_IMAGE:-rcbj/sts}" \
        node /repo/tests/tools/admin-api-token.js \
-         "$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)://sts:8081" \
+         "$(serviceUrl)" \
        2>&1)";
   then
     echo "" >&2
@@ -791,7 +857,7 @@ mintThePepCredential()
        -w /usr/src/sts \
        "${STS_IMAGE:-rcbj/sts}" \
        node /repo/tests/tools/pep-credential.js \
-         --url="$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)://sts:8081" \
+         --url="$(serviceUrl)" \
          --out=/out --subject="${XACML_PEP_SUBJECT}" > /dev/null;
   then
     echo "" >&2
@@ -989,6 +1055,38 @@ do
   # is what every mode of this launcher did on its first run. That function
   # already prefixes COMPOSE_ENV onto the compose command for the `sudo` reason
   # its own header gives, so a mode has a channel and needs no second one.
+  # ---- THE `cluster` MODE: TWO NODES AND A BALANCER (2026-09-14) ---------
+  #
+  # The layer, the three services `up -d` has to start, and every address the
+  # runner is handed moved to the balancer — the service URL, the directory,
+  # the base URL both nodes issue under (on the cluster's must-agree list, and
+  # the audience of the token minted below through the same URL) and the
+  # revocation addresses inside every certificate. These entries come AFTER the
+  # base array's, and `env` applies assignments in order, so they win.
+  COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
+  UP_SERVICES=(sts)
+  SERVICE_HOST="sts"
+  if stsModeIsCluster "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${CLUSTER_COMPOSE_FILE}")
+    UP_SERVICES=(sts sts2 sts-lb)
+    SERVICE_HOST="sts-lb"
+    MODE_ENV+=(
+      "STS_TEST_SERVICE_URL=$(serviceUrl)"
+      "STS_PUBLIC_BASE_URL=$(serviceUrl)"
+      "STS_LDAP_URL=ldap://sts-lb:389"
+      "PKI_DISTRIBUTION_BASE_URL=http://sts-lb:8082"
+      "PKI_DISTRIBUTION_LDAP_HOST=sts-lb"
+      "STS2_ADDRESS=${STS_NETWORK_PREFIX}.20"
+      # PROXY protocol v2 and its one trusted source, the balancer pinned at
+      # `.30` — see ./local-run-tests.sh's cluster block for why not the subnet.
+      # STS_TEST_CLUSTER_PROXY_PROTOCOL=off runs the mode without it.
+      "STS_PROXY_PROTOCOL=${STS_TEST_CLUSTER_PROXY_PROTOCOL:-v2}"
+      "STS_LB_ADDRESS=${STS_NETWORK_PREFIX}.30"
+      "STS_TRUSTED_PROXIES=${STS_NETWORK_PREFIX}.30/32"
+    )
+  fi
+
   COMPOSE_ENV=(
     ${BASE_COMPOSE_ENV[@]+"${BASE_COMPOSE_ENV[@]}"}
     ${MODE_ENV[@]+"${MODE_ENV[@]}"}
@@ -1000,7 +1098,7 @@ do
   # report from an earlier mode or run is never taken for this one's.
   mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
   touch "${MODE_MARKER}"
-  if ! docker_compose -f "${COMPOSE_FILE}" up -d sts;
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d "${UP_SERVICES[@]}";
   then
     echo "The mock STS would not start in mode ${MODE}. Nothing was run." >&2
     MODE_RC=1
@@ -1053,7 +1151,7 @@ do
       # exit out of that rule; the runner's exit is still what ends the mode.
       # Reproduced with a two-step `up` against a toy stack before this was
       # written.
-      docker_compose_bounded "${STS_MODE_TIMEOUT}" -f "${COMPOSE_FILE}" up \
+      docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up \
         --no-attach openbao-tls --no-attach openbao-seed \
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
@@ -1088,7 +1186,7 @@ do
   # that a stack which will not come down costs the next mode a warning rather
   # than the whole run's remaining budget.
   if ! docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-       -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+       "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
        > /dev/null 2>&1;
   then
     echo "The stack did not come down cleanly after mode ${MODE}." >&2

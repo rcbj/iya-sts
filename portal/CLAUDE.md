@@ -1144,3 +1144,16 @@ three differences:
   `ssf/account_signals.js`. It signs nobody in: the page links to `/portal`,
   where the ordinary sign-in happens with the new password, for
   `/portal/activate`'s magic-link argument.
+
+## SEVERAL NODES: A LINK IS CLAIMED BEFORE ANYTHING IS SET (2026-09-14, #46)
+
+`POST /portal/activate` and `POST /portal/reset-password` claim their link in
+the store (`credentials.spendActivation()` / `spendPasswordReset()`) after the
+link has checked out and before a password is set, so one link POSTed to two
+nodes at once sets one password. **`holdLinkClaim()` keeps the claim only for
+the response that FINISHES** — `finishActivation()` and the reset's success
+page mark it — and gives it back on every other answer: a mismatch, a refused
+code, the authenticator step drawn before the link is spent (a 200 that does
+not finish), a dropped connection. So a link behaves exactly as it did on one
+node except that two requests cannot both finish it. A claimed link is the one
+sentence every link failure is, audited under `STS-AUTHN-0183`.
