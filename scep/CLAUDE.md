@@ -79,7 +79,10 @@ their failInfo with them.
    refuses `privateDecrypt()` with `RSA_PKCS1_PADDING` outright (CVE-2023-46809,
    Marvin). A failed unwrap is replaced with random key bytes so a padding error
    and a wrong key are one answer (`STS-SCEP-0030`) — the implicit rejection.
-   OAEP (SHA-1/256/384/512) goes through node.
+   OAEP (SHA-1/256/384/512) goes through node. **A plaintext that is not one
+   DER value is 0030 too** (2026-09-15): a random AES key passes CBC's padding
+   check about one time in 256, and until then that one time came back `ok`
+   with garbage — `tests/scep_enrollment.js` failed on it in a dispatch run.
 4. **Signed attributes are verified over the bytes that arrived**, tag swapped
    to SET; the ones this service signs are DER-sorted.
 

@@ -832,6 +832,17 @@ function readEnvelope(bytes, raCertificatePem, raPrivateKeyPem) {
     log.debug("Caught in readEnvelope(): " + ((e && e.message) || e));
     plain = null;
   }
+  // AND THE PLAINTEXT MUST BE ONE DER VALUE. Every content a pkcsPKIEnvelope
+  // holds is a SEQUENCE — a PKCS#10, an IssuerAndSubject, an
+  // IssuerAndSerialNumber — and a wrong key (or the implicit rejection's
+  // random one) passes AES-CBC's padding check about one time in 256. Without
+  // this, that one time came back ok with garbage and the refusal arrived
+  // later under a different code, so a padding failure and a wrong key were
+  // two answers again (`tests/scep_enrollment.js` saw it as a flake).
+  if (plain && !readOne(plain)) {
+    log.debug("readEnvelope(): the content decrypted to no single DER value.");
+    plain = null;
+  }
   if (!plain) {
     log.debug("Leaving readEnvelope(). It did not decrypt.");
     return refusal('STS-SCEP-0030', 'The content did not decrypt with this ' +
