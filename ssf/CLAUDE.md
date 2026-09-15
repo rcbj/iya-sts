@@ -9,18 +9,226 @@ family here and the first one that TALKS BACK.
 | `ssf.js` | The routes. The metadata document, the stream management API, status, subjects, verification, poll delivery, and the two endpoints that are not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, which are this service acting as a RECEIVER so that a client can be the transmitter. |
 | `ssf_subjects.js` | **RFC 9493** subject identifiers: the eight formats with their CLOSED member sets, SSF's complex subject, and the nesting ban. A LIBRARY. |
 | `ssf_events.js` | The event vocabulary — SSF's two — and the **RFC 8417** Security Event Token they travel in. A LIBRARY. |
-| `ssf_streams.js` | The streams, their subjects and their queues, per trust realm. A LIBRARY. |
+| `ssf_streams.js` | The streams, their subjects and their queues, per trust realm — the queue as a row per SET since 2026-09-13. A LIBRARY. |
 | `ssf_http.js` | **THE SECOND OUTBOUND REQUEST IN THIS REPOSITORY.** RFC 8935 push delivery. A LIBRARY. |
 | `ssf_auth.js` | Who may drive a stream: two schemes and two scopes. A LIBRARY. |
 | `caep.js` | **CAEP's session register**: what state CAEP believes each session is in, and how many events of which type have been sent about it. A LIBRARY, and one of the two files here that are not vocabulary. |
 | `risc.js` | **RISC's account register**: the three states RISC tracks per account, the opt-out gate, and how many events of which type have been sent. A LIBRARY, and `caep.js`'s SIBLING rather than a generalization of it — see below. |
+| `ssf_receivers.js` | **THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS** (2026-09-10): the seeded streams, the inboxes, what a receive endpoint checks, and the per-person filter the portal narrows with. A LIBRARY — the two receive endpoints and the two inbox pages are registered by the SURFACES, because a receiver hosts its own endpoint. |
 
-Seven of the eight register nothing (rule 3), so their position in the route
+Eight of the nine register nothing (rule 3), so their position in the route
 order is not a position. `ssf.js` is required at **23b in `server.js`** — after
 `admin-ui/admin.js`, whose eighth slot it fills, and before `sts_metadata.js`,
 which is last for everybody.
 
 ---
+
+## ONE STREAM PER SURFACE, HOWEVER MANY PROCESSES SEED IT (2026-09-12)
+
+**This is the second half of the fix the receiver TOKEN got on 2026-09-11, and
+the first half is why the second was needed at all.** That day made the token
+derived — an HMAC over the realm and the surface — because each process seeded
+its own random one and every loopback push was refused as the wrong
+authorization header: 132,546 refused pushes in half an hour.
+
+What it left random was the stream's IDENTITY. `createStream()` minted `'ssf-'
++ randomId(12)`, so each process still created a stream **of its own**. In
+development mode that is invisible: minted state is per process, nothing
+reconciles it, and the token fix made the pushes land. With a **persisted,
+coordinated store** the duplicates are shared and they SURVIVE — the front
+process and every request worker seed a pair per start, and every start adds
+more.
+
+**AND `emitProtocolEvent()` FANS OUT TO EVERY STREAM THAT ASKS FOR THE TYPE**,
+so the cost of a single session event grows with how many times this service
+has ever started. Measured on a four-hour test stack in `dispatch` mode:
+
+| | |
+|---|---|
+| streams in the default realm | **14**, where 2 belong — seven pairs, at seven timestamps |
+| events in one bulk-load run | 16,421, each logged `went to 12 of 12 stream(s)` |
+| loopback pushes that implies | ~197,000, each signing a JWS and opening a TLS connection to this service from itself |
+| `connect EAGAIN` on the worker sockets | **19,737** in the worst run, and it appeared in all eight dispatch runs that day (3,930 to 19,737) |
+
+The front process pinned at a full core and stopped answering; four bulk-load
+jobs failed on a **10-second connect timeout** rather than on any assertion,
+which reads as a hang rather than as a fan-out.
+
+### The fix is to derive the id, and its two rules are NOT the token's
+
+`internalStreamId()` is `'ssf-internal-' + realm + '-' + surface`, and
+`createStream()` takes it **on the context and never from the body** — that
+argument is in `ssf_streams.js` beside the line: `body` is the request body at
+`POST /ssf/streams`, so an id read from there would let a receiver name its own
+stream and therefore somebody else's. The store writes with
+`store.set(stream_id, …)`, so a second process seeding the same id overwrites
+rather than adds.
+
+Two rules it has to satisfy that the token does not:
+
+* **IT MUST NOT USE `internalSecret()`.** That secret is per RUN — generated at
+  startup, put in the environment so a forked worker inherits it — which is
+  right for a credential and fatal here: an id derived from it agrees across
+  the processes of ONE run and mints a fresh set on the next start, which is
+  this defect moved one level along.
+* **IT IS NOT A SECRET AND MUST NOT LOOK LIKE ONE.** A stream id is published
+  on `/admin/ssf` and in every stream configuration, so it is the realm and the
+  surface written out rather than a hash of them. A reader who sees
+  `ssf-internal-default-admin-console` knows what it is; a hash would only have
+  hidden which of fourteen streams was which.
+
+### Two things came with it
+
+**`streamFor()` asks for the derived id FIRST and the marker second**, and the
+order is the point. `internalSurface` is set on the record after
+`createStream()` returns and is not an SSF member, so it is the half of that
+lookup a persisted round-trip can lose — and a lookup that missed would now
+seed again, which with a derived id means OVERWRITING the stream that is there.
+That would quietly undo a pause, and *an existing stream is left exactly as it
+is* is that function's whole job.
+
+**`sweepDuplicates()` removes what already accumulated**, because the fix stops
+new duplicates and does nothing about a store carried over. It identifies them
+by **where they deliver** rather than by the marker — the endpoint is a core
+member of every stream configuration and cannot have been lost, which the
+marker can — refuses to touch anything carrying the derived id, and says out
+loud what it removed, since a stream disappearing is otherwise
+indistinguishable from a receiver that was never registered.
+
+**What `tests/ssf_receivers.js` could not see before, and now does.** Its
+existing check seeds twice and asserts nothing is made — which passes in ONE
+process and always will, because the second call finds the first call's record
+in the same in-memory store. Section B2 is the arrangement that actually
+happens: a process that never set the marker, a legacy duplicate delivering to
+the same path, and the per-run secret rotated under it. Three mutants, all
+caught.
+
+
+## THE QUEUE IS ONE ROW PER SET, AND A STREAM RECORD IS TOUCHED (2026-09-13)
+
+**A stream's queue was an array on the record, and nothing that changed it was
+ever written down.** `realms.map()` journals a `set()` and a `delete()`;
+`enqueue()` pushed onto `record.queue` and `poll()` filtered it, and neither
+called either — nor did a PATCH, a status change or a subject added. In one
+process that is invisible. In `dispatch` mode it made the queue PER WORKER:
+`sts_ssf_allowed_events` emitted through `/admin-api/risc/emit` (one worker),
+polled a control stream (another) and got `[]`; `sts_gnap_signals` acknowledged
+a SET on one worker and was handed it again by the next, which RFC 8936 section
+2.4 forbids. Both green in the two single-process modes, red in the last three
+dispatch runs. **Six parallel polls against the kept stack after one
+acknowledgement answered 0, 0, 1, 1, 1, 1** — two workers had the ack and four
+had the SET. Sequential polls from an idle client all landed on one worker and
+passed, which is why re-running either job alone never reproduced it.
+
+**THE FIX IS TWO THINGS AND THE SECOND IS THE ONE THAT NEEDED ARGUING.**
+
+* **`touch()` on the record**, `caep.js`'s precedent, at every in-place edit —
+  and `liveRecord()` beside it for the two places in `transmit()` that cross an
+  `await` (the signature, the push), because a record another worker's write
+  has REPLACED in the meantime is a copy `touch()` refuses to write back.
+* **The queue moved to `ssf_streams.queued`, a store of its own keyed
+  `<stream_id> <jti>`.** A `touch()` alone would have made the queue replicate
+  and left it WRONG: a record is whole-valued, the later write wins, and a SET
+  is often queued by a transmission that runs AFTER its request answered (a
+  GNAP revocation answers and then signs) on a worker that has not yet applied
+  an acknowledgement committed a moment earlier — so its whole-record write
+  puts the acknowledged SET back, and the reverse race loses one outright.
+  With a row per SET, queueing is a new key nobody else writes and an
+  acknowledgement is a DELETE of one key, and the two cannot overwrite each
+  other in either order. **A poll writes a SET's row only on its FIRST
+  delivery**, because a row write is the one thing that could resurrect a SET
+  another worker has just deleted.
+
+**What is still whole-valued** is the rest of the record — counters, the log,
+`eventCounts`, the agreement — so a concurrent write can still lose an
+increment or revert a field another process changed in the same instant. That
+is a number on a console page rather than a security event delivered twice.
+**Nothing reads `record.queue` any more**: `queueOf()` is the reader,
+`tests/ssf_queue_rows.js` fails on the member coming back, and a record an
+earlier build wrote has it dropped at its first `touch()` rather than adopted —
+nothing ever journalled a change to it, so what a stored one holds is whatever
+was waiting at creation.
+
+`tests/ssf_queue_rows.js` holds it by making "another worker wrote this" the
+two accessor calls `persistence_minted.js`'s `applyLocally()` makes, in a child
+process with a real persist observer. Four mutants, all caught.
+
+## SEVERAL NODES (2026-09-14, #46 section 6) — capability `ssf.delivery`
+
+The section above made the queue correct between the workers of ONE container.
+Between containers four things were still decided by whichever process was
+looking. `ssf_cluster.js` holds three of them; `ssf.js` provides the capability.
+
+* **AN ACKNOWLEDGED SET, POLLED ON ANOTHER NODE.** A SEQUENTIAL ack on A then a
+  poll on B needed nothing new: the ack's response is held until its row delete
+  commits and B's poll catches up first (the cluster barrier). A CONCURRENT
+  poll on B that hands a SET out for the first time while its ack commits on A
+  used to write the row back (the first-delivery write above), after the
+  delete — the SET queued again until acknowledged a second time. **On a store
+  a claim store is shared by (`persistence.clusterStore()`) `poll()` writes no
+  first-delivery row**: `deliveredAt` stays the local node's view and
+  `counters.delivered` may count one SET once per node that first handed it
+  out — a number on a page, where the other was a resurrected event. Two
+  concurrent polls on two nodes both RETURNING one unacknowledged SET is left
+  alone, and deliberately: one node already returns it on every poll until it
+  is acknowledged, and RFC 8936 section 2.4 lets a transmitter redeliver ("MAY
+  redeliver SETs it has previously delivered") and tells the recipient it
+  "SHOULD accept repeat SETs and acknowledge the SETs regardless". What the RFC
+  frames as done is acknowledgement (section 2.1, "redelivery is no longer
+  required"), and that is now never undone. A claim per delivery would make a
+  poll asynchronous to stop a repeat the receiver is told to expect.
+* **A SESSION'S END, ONCE.** `authn/authn.js`'s `sessionEndOnce()`; see
+  `authn/CLAUDE.md`. Every `session-revoked` this family sends starts there.
+* **STREAM HEALTH.** Declared dead and revived are each REPORTED once
+  (`transitionOnce()`: a claim on the realm, stream and transition for half
+  `ssf.deadStreamTimeoutS` — the same transition cannot recur inside one
+  timeout); a store that cannot be asked reports anyway (`STS-SSF-0098`). **One
+  process PROBES**: `leadsProbes()` is the front process of the node holding the
+  `ssf.dead-stream-probes` lease (`cluster.lead()` at require time, campaigned
+  on each heartbeat), never a request worker, and every process outside
+  active-active as before; half-open goes with the probe. **The four dead-stream
+  members stay on the record, which is last writer wins**: a node whose copy
+  predates a declaration and writes the record for a counter can revert it. It
+  does not oscillate — `failingSinceMs` is already past the timeout on every
+  copy, so the next failure anywhere declares it again at once, and the claim
+  keeps that from being reported twice — and lost updates to the record are
+  section 3's.
+* **GNAP ON THESE ENDPOINTS.** `ssf_auth.js` judged a GNAP token with the
+  synchronous `gnap_rs.presentation()`, whose key-proof replay check is this
+  process's memory. `ssfCluster.spendGnapProof` is middleware on the twelve
+  gated routes: it runs the presentation and `gnap_proof.spendProof()` (a claim
+  per replay key) before the handler and leaves both on the request, and
+  `attemptGnap()` reads that rather than presenting again — which the in-memory
+  cache would refuse as a replay. A spend that lost refuses with the GNAP code
+  (`STS-GNAP-0715`/`0716`); on a shared store a GNAP request that reached the
+  gate without the middleware is refused (`STS-SSF-0099`).
+
+**WHAT STAYS PER PROCESS, STATED FOR SIZING A CLUSTER.** `ssf.pushConcurrency`
+and `ssf.pushBacklog` are a gate in each process: N nodes of P processes push up
+to N×P×`pushConcurrency` at once. Each sweep's `STS-SSF-0094` summary counts the
+SETs its own process dead-lettered, so N nodes log N lines about N different
+sets of pushes — a sum, never a duplicate. Both are left per process: a shared
+cap would be a database round trip per push, to bound a number an operator can
+set per node.
+
+**TWO DEPLOYMENT REQUIREMENTS, which no node can check for another.**
+* **Every node needs the same `global.port`.** The console's and portal's own
+  receiver streams are seeded with `https://<loopback>:<global.port>/…`
+  (`ssf_http.js`'s `loopbackOrigin()`); the stream is shared, so a node pushes
+  to the SEEDING node's port on its own loopback. With different ports that is
+  nothing — ECONNREFUSED, a dead stream, two empty inbox pages. (A same-host test
+  with two ports works by accident: node B's loopback reaches node A.)
+* **`global.publicBaseUrl` must be pinned.** Unpinned, a seeded stream's `iss`
+  and every request-derived issuer is whichever address the seeding node or the
+  client used; `publicBaseUrl` is in the cluster agreement fingerprint, so
+  pinned it is also checked. **Active-active refuses to start with it empty
+  (`STS-CLUSTER-0026`, 2026-09-14)**: every issuer a client verifies — tokens,
+  the SSF `iss`, the management API's audience — needs one name for the
+  cluster, and an empty value "agrees" on every node while meaning a different
+  name on each. The refusal is in `cluster/cluster.js`'s `resolve()`.
+
+`tests/cluster_signout_signals.js` sections 3–6 hold the four, each with its
+control (the old behaviour on a store that is not shared); five mutants caught.
 
 ## THE ONE PARAGRAPH TO READ FIRST: SSF IS THE PIPE AND NOT THE VOCABULARY
 
@@ -142,6 +350,133 @@ each fall out of that and none of them is a preference:
   credential standing, moving independently: an account can be opted out and
   perfectly healthy, or compromised and still enabled. A CAEP row has one
   `state` because a session is alive or it is not.
+
+---
+
+## THE ADMIN CONSOLE AND THE USER PORTAL ARE RECEIVERS (2026-09-10)
+
+Each has a **stream of its own**, seeded per trust realm, asking for every CAEP
+and every RISC event type; each hosts a **receive endpoint**; and each draws
+what arrived on a page of its own — `/admin/signals` and `/portal/signals`.
+`ssf_receivers.js` is the module and carries the design at length. Six things
+about it reach outside that file and this is the index of them.
+
+**THE ARGUMENT IS `common/oidc_rp.js`'s, MADE A SECOND TIME.** That file turned
+these same two surfaces into OpenID Connect relying parties on 2026-09-06, and
+its complaint was that this service's own two applications were the only
+applications in the process that did not use the protocol this service exists
+to demonstrate — a real relying party has no access to the provider's session
+store and these two read it. The same sentence was true here: a page drawing a
+security event by reaching into `caep.js`'s register is not a receiver, it is
+this service reading its own notes. A receiver is something a stream was agreed
+with, that gets a signed document it has to verify, addressed to an audience it
+has to recognise.
+
+**1. DELIVERY IS A REAL RFC 8935 PUSH OVER THE LOOPBACK INTERFACE, AND THE
+IN-PROCESS VERSION WAS WRITTEN FIRST AND TAKEN OUT.** Handing the SET to the
+inbox by function call would have skipped the body, the media type, the
+authorization header and the signature — everything a receiver does, leaving
+only the part that looks run. So `ssf_http.js` dials this service's own address
+like any other receiver.
+
+**2. TWO OF `ssf_http.js`'s FOUR BOUNDS DO NOT APPLY TO THAT ONE ADDRESS, AND A
+THIRD DELIBERATELY DOES.** `ssf.pushAllowedHosts` exists to stop this service
+dialling a host somebody named in a stream configuration, and this host is not
+named by anybody — it is computed from `global.port`. The https rule exists
+because a SET is somebody's security posture in transit, and a request from this
+process to itself does not traverse a network. **`ssf.pushDelivery` is NOT
+exempt**: with it off both internal receivers go silent, which is said at
+seeding time, on both inbox pages and in `status()`. `isOwnLoopback()` is an
+ORIGIN comparison and never a substring match, and `tests/ssf_receivers.js`
+asserts the refusal rather than the match.
+
+**3. THE CERTIFICATE IS PINNED RATHER THAN THE CHECK RELAXED.** The listener's
+certificate is generated per start and signed by nobody, so the ordinary check
+would refuse every internal push — and `ssf.pushAllowInsecure` is NOT the way
+round it, because that setting turns the check off for every receiver in the
+world to fix a connection to ourselves. Our own certificate as the trust anchor,
+the hostname check skipped: `oidc_rp.js`'s back channel does exactly this and
+these are the same three lines.
+
+**4. THE STREAMS ARE IN EVERY REALM AND THE CONSOLE'S CLIENT ENTRY IS IN ONE.**
+That disagreement is the interesting part. `applications.js` seeds
+`sts-admin-console` in the default realm only, because the console's gate reads
+the default realm's session wherever it is reached. A stream is not that kind of
+thing: events happen in the realm they happen in, streams are per realm, and the
+console draws one realm at a time — so a console with no stream in `acme` would
+show an empty page in `acme` while `acme`'s sessions were being revoked. **A
+client entry is about signing somebody IN and a stream is about what HAPPENED.**
+
+**5. THE RECEIVE ENDPOINTS ARE GUARDED BY THE STREAM'S OWN
+`authorization_header`**, minted per stream and per start and given to nothing
+but this service's own transmitter, compared in constant time; then the `aud`,
+refusing `invalid_audience`; then the signature. **That member had never been
+set by anything here before** — a receiver supplies it, and this service had
+never been one — so the code path that sends it had never run against a receiver
+that reads it. It is what lets `/admin/signals/receive` sit outside the console's
+gate without being a hole, which `admin-ui/CLAUDE.md` argues as the console's
+third gate exemption.
+
+**AND IT IS DERIVED RATHER THAN RANDOM SINCE 2026-09-11, WHICH IS THE ONE PLACE
+"per start" WAS NOT A COMPLETE SENTENCE.** `seedStreams()` runs at startup in
+whichever process is starting, and a dispatched service starts FOUR: the front
+process and every request worker load the whole protocol stack. These streams
+are minted state, which development mode neither persists nor coordinates, so
+nothing reconciled them afterwards — each process seeded its own pair with its
+own `randomId(32)`. The transmitter ran in the process the event happened in and
+the loopback push landed on whichever worker the front process routed it to, so
+the two almost never agreed: **every push this service made to itself was
+refused with "the wrong authorization header"**.
+
+Measured on 2026-09-11 in `dispatch` mode: **132,546 refused pushes in half an
+hour** across eight realms, while the SCIM bulk load ran — a real HTTP request
+each, through the proxy, competing with the traffic under test for the workers'
+unix sockets until they answered `EAGAIN`. That job died on the suite's
+thirty-minute bound.
+
+**NOTHING COULD SEE IT, AND THAT IS THE part worth keeping.** No assertion
+anywhere fails when a receiver hears nothing: an inbox that was never delivered
+to and an inbox that refused everything are the same empty page, and
+`ssf/CLAUDE.md`'s own list of what an empty inbox can mean did not have this on
+it. The only signal was a `warn` line in a log nobody reads while the suite is
+green.
+
+So the token is DERIVED — one per-run secret in the environment, which a forked
+worker inherits, and an HMAC over the realm and the surface, so every process
+arrives at the same answer without being told and the console's token is still
+not the portal's. `crypto.js`'s `deriveSharedCredential()` is the derivation,
+because that is the one place this service does cryptography.
+`tests/ssf_receivers.js` asserts it by computing what a SECOND process would
+derive rather than by starting one — the property is that two processes agree
+WITHOUT talking, so a test that made them talk would be testing something else.
+
+**6. THE PORTAL'S FILTER FAILS CLOSED AND THAT IS A RULE RATHER THAN A
+SETTING.** One stream carries events about everybody the portal serves, so the
+narrowing is on the way out and the person is composed from the session and from
+nothing else. An identifier the filter cannot resolve to an account — a phone
+number, an opaque id this service did not compose — is **not** a match: showing
+one person another person's account lockout is a disclosure, and failing to show
+somebody one of their own is an incomplete page, and those are not the same size
+of mistake. The page says so out loud. `portal/CLAUDE.md` argues it as this
+directory's hardest A01 case.
+
+**AND ONE THING IT COST OUTSIDE SHARED SIGNALS ENTIRELY, WHICH NOTHING HERE
+WOULD HAVE PREDICTED.** `authn.js` mints an ARRIVAL SESSION on the front doors,
+matched by prefix, and both receive endpoints are registered UNDER a front door
+— `/admin` and `/portal`. So every delivered event minted a browser session for
+a machine that will never send the cookie back: a service telling its own
+console about every sign-in minted a second session for every session. That is
+the failure that file's own comment names ("one row per metadata poll, for
+ever") arriving from a direction a prefix match cannot see, and it is fixed by
+`NOT_ARRIVAL_PATHS` there rather than by moving the endpoints, because the path
+is what says which receiver a SET was delivered to. **It was found by running
+the thing, not by reading it.**
+
+**WHAT THE READING OF A SET COST THIS DIRECTORY** is three functions moving:
+`readSet()`, `verifySet()` and `publicKeyForHeader()` are `ssf_events.js`'s now
+and were private to `ssf.js`, because three receivers reading a SET three ways
+would be three opinions about what arrived. Building a SET and reading one back
+are the two directions of one format and belong in one file.
 
 ---
 
@@ -338,25 +673,154 @@ address a caller chose, and these are the four bounds:
    and the receiver's authorization header — wherever the Location said.
 
 **One thing is NOT a bound and must not be mistaken for one.** The management
-API is gated by `ssf.authRequired`, which ships ON, but every credential this
-service accepts is a turnstile: anybody can get a token with either SSF scope,
-and any username with any password but `invalid` passes Basic. "A receiver
+API is gated unconditionally — `mode.gatesSharedSignals()`, where this was
+`ssf.authRequired` until 2026-09-06 — but every credential this
+service accepts is a turnstile in development: anybody can get a token with
+either SSF scope, and any username with any password but `invalid` passes Basic
+(in product mode the Basic password is verified — see *Two schemes* below). "A receiver
 created the stream" is therefore not evidence of much.
 
 ---
 
-## IT DOES NOT RETRY A FAILED PUSH, AND THAT IS DELIBERATE
+## IT DOES NOT RETRY A FAILED PUSH BY DEFAULT, AND THAT IS DELIBERATE
 
-RFC 8935 section 2.4 lets a transmitter retry. This service does not, because a
-mock that retried would make a receiver's ONE-SHOT failure invisible: a client
-under test that answers 500 to the first push and 202 to the second looks, from
-its own logs, like a client that works.
+RFC 8935 section 2.4 lets a transmitter retry. This service does not unless
+`ssf.pushRetries` says to — **0 by default since that setting arrived on
+2026-09-12, which is exactly the old behaviour** — because a mock that retried
+would make a receiver's ONE-SHOT failure invisible: a client under test that
+answers 500 to the first push and 202 to the second looks, from its own logs,
+like a client that works. A deployment is the other case, and
+`ssf_http.js`'s `pushSetWithRetries()` retries only what could go differently
+(no connection, a timeout, a 5xx, a 429) and never a 400 refusal, with a linear
+`ssf.pushRetryDelayMs` between attempts.
 
-The failure is recorded on the stream's own log, the event stays on the queue,
-and `POST /admin-api/ssf/transmit` sends another when somebody asks. It is on
-`GET /ssf`'s *what it deliberately does not do* list in those words.
+~~The failure is recorded on the stream's own log, the event stays on the queue,
+and `POST /admin-api/ssf/transmit` sends another when somebody asks.~~ **Since
+2026-09-14 a final failure goes to the stream's DEAD-LETTER QUEUE**, with the
+reason, for inspection — see the next section. Nothing resends it; `POST
+/admin-api/ssf/transmit` still sends another when somebody asks.
 
 ---
+
+## UNDELIVERABLE SETs, DEAD STREAMS AND THE PUSH CAP (2026-09-14)
+
+**What asked for it.** A `dispatch` run's SCIM bulk load emitted two events per
+directory write to forty-two push streams — forty of them other realms' console
+and portal receivers, put in the default realm by the partition leak
+`common/CLAUDE.md` records under `realms.js` — all at once through
+`emitProtocolEvent()`'s `Promise.all()`. Every refused SET stayed on the live
+queue for ever (`queueOf()` is a scan and a sort on every event sent), wrote an
+`ssf.event.refused` audit row whose code put a line in the log (30,698 in one
+second when a session sweep revoked 1,398 sessions), and the pushes back into
+this service's own receivers filled every worker. The service answered nothing
+for fourteen minutes. rcbj chose all four answers below.
+
+**THE PUSH CAP** (`ssf_http.js`'s `pushSetGated()`): `ssf.pushConcurrency` (8)
+pushes in flight per PROCESS, the rest waiting in order, at most
+`ssf.pushBacklog` (2000) of them; past that the push is not made and the SET is
+dead-lettered with `STS-SSF-0092`. A retry waits for a slot of its own. The
+dispatcher's batch lane (`common/CLAUDE.md`, `request_pool.js`) is the other
+half: the receive endpoints are batch paths.
+
+**THE DEAD-LETTER QUEUE** (`ssf_streams.deadLetters`, a store of its own keyed
+`<stream_id> <jti>` for `queued`'s reason). In: a push that failed after
+`ssf.pushRetries`, a push over the backlog, everything waiting when a stream is
+declared dead, and every SET sent to a dead stream — the last UNSIGNED, because
+signing what nothing will receive is the cost this exists to stop. Each letter
+keeps the claims, the token if signed, the reason, the code and the receiver's
+status. Out: after `ssf.deadLetterRetentionS` (3600), the oldest past
+`ssf.deadLetterMaxPerStream` (1000), a delivered probe, a deleted stream, or
+`clear-dead-letters`. **Nothing resends a dead letter** except a probe.
+
+**DEAD STREAMS** (`notePushFailure()` / `notePushSuccess()`). A push stream whose
+pushes have all failed for `ssf.deadStreamTimeoutS` (300; 0 off) is DEAD —
+four members on the record (`failingSinceMs`, `deadSinceMs`, `nextProbeAtMs`,
+`deadReason`) so the state replicates with it. **It is not an SSF status**: the
+stream stays `enabled`, because `paused`/`disabled` are the receiver's and the
+operator's words and rewriting one would tell a receiver somebody paused it. A
+dead stream is not pushed to; once per timeout the SWEEP pushes its oldest dead
+letter (signing it if it was not) and a success revives it. With no letter left
+it goes HALF-OPEN: the next SET is pushed and one failure kills it again. A
+`verification` event is pushed to a dead stream anyway — a receiver asking to
+verify is the probe it asked for. `revive` by hand refuses a live stream
+(`STS-SSF-0095`).
+
+**LOGGING IS PER STREAM OR PER SWEEP, NEVER PER SET** — rcbj's rule, "do not log
+every undeliverable signal". One audit row and log line when a stream is
+declared dead (`ssf.stream.dead`, `STS-SSF-0093`) and one when it revives
+(`ssf.stream.revived`); one line per realm per sweep
+(`ssf.deadLetterSweepS`, 60) counting what was dead-lettered since the last,
+by stream and by code (`STS-SSF-0094`); and on the stream's own log one line
+when a run of failures STARTS, not per failure. `ssf.event.refused` is no longer
+written by a push. **Every process sweeps**: deletes are idempotent, the counts
+summarised are each process's own, and `nextProbeAtMs` is set before a probe so
+processes rarely probe one stream twice in a period. **In active-active mode
+one process of the cluster probes** (#46; *Several nodes*, above).
+
+**Where to look**: `/admin/ssf` (a DEAD marker, the dead letters, *Revive* and
+*Drop its dead letters*), `GET /admin-api/ssf` (`streamDetail[].dead`,
+`deadLetters`, and `deadLetters.pushes` — this process's cap), and `POST
+/admin-api/ssf/revive` / `/clear-dead-letters`. `tests/ssf_dead_letters.js`
+holds it, eight mutants caught. **The counts over every stream at once are
+Monitoring → Shared Signals → Dead letters** — the next section.
+
+**AND THE SEEDER SWEEPS ANOTHER REALM'S RECEIVER STREAMS**:
+`ssf_receivers.js`'s `sweepDuplicates()` also removes a stream whose id is
+`ssf-internal-<other realm>-<surface>`, so a store that already holds the leaked
+copies heals at the next start or realm creation. By id, because the endpoint of
+a leaked copy names the other realm's prefix. `tests/ssf_receivers.js` B3.
+
+## MONITORING → SHARED SIGNALS → DEAD LETTERS (2026-09-14)
+
+`/admin/ssf/dead-letters` and `GET /admin-api/ssf/dead-letters`: every held
+dead letter in the ambient realm COUNTED — by cause, error code, the receiver's
+HTTP status, event type, time and stream — and the letters searched
+(`dlq`, exact `dlstream` and `dlcause`) and paged (`lettersPage`). rcbj asked
+for it as a new section of Monitoring → SSF; Monitoring had no such group, so
+the three Shared Signals pages already there became one (`admin-ui/CLAUDE.md`).
+rcbj chose: the group, all four sets of numbers, read-only with the controls a
+link away on each stream's card, and the ambient realm only.
+
+**`ssf_dead_letter_report.js` IS THE ONE PLACE THE NUMBERS ARE COMPUTED**, a
+library registering nothing, reached through a `deadLetters` member of
+`setSignalsReporter()` rather than a slot of its own — rule 3e's test for a
+new slot is a new cycle or a moved route, and a second reader of one family
+through one require adds neither. `admin-core/admin_views.js`'s
+`ssfDeadLettersJson()` adds only the narrowing and the slice, for both doors.
+
+* **THE QUEUE IS PER REALM, NOT A GLOBAL QUEUE WITH A REALM ON EACH ROW.**
+  `deadLetters` is a `realms.map()` — one Map per realm partition; in
+  PostgreSQL the rows share `sts_minted` with the realm in the primary key.
+  rcbj asked for that to be confirmed, and it is what the page's first
+  sentence says.
+* **FOUR CAUSES, NOT ONE PER CODE.** `STS-SSF-0092` (backlog full), `-0093`
+  (waiting when declared dead) and `-0096` (sent to a dead stream) say this
+  service decided not to push; every other code is a push that FAILED, and the
+  code is still on every row and in `byCode`. The cause is what an operator
+  acts on differently.
+* **THREE THINGS ARE PER PROCESS AND SAY SO**: the push cap — per process and
+  SHARED BY EVERY REALM, the one limit here that is not per realm, so a storm
+  in one realm dead-letters another's with 0092 — the recent-sweep history, and
+  the since-start totals. In a dispatched service the console is answered by a
+  SURFACE worker whose push gate is not the protocol workers', which is why the
+  reply names the pid and the role. A sweep's *held*, *expired* and *orphaned*
+  are the shared store; its *new* is its own process's pushes.
+  `sweepSignalsRealm()` calls `noteSweep()` before the probes run.
+* **NO TOKEN LEAVES**, as on `/admin/ssf`; a row says whether it was signed.
+* **STREAM STATES ARE FOUR WORDS**: `dead` (`isDead()`), `half-open` (failing
+  for at least `ssf.deadStreamTimeoutS` without being dead — what `halfOpen()`
+  leaves, and one more failure kills it), `failing`, and — for letters whose
+  stream this process does not hold — `unknown`. A delivering stream with no
+  letters is not a row.
+* **THE TIMELINE** is the retention window in round buckets (sixty at most,
+  epoch-aligned); a letter older than the window is counted beside it as
+  `olderThanWindow`, not piled into the first bucket.
+
+`tests/ssf_dead_letter_report.js` holds the report and the narrowing, five
+mutants caught. Verified over HTTP by hand against an isolated instance: real
+refused and 503 pushes, a stream declared dead and sent to, and
+`sts_metadata.js`, `admin_api.js`, `sts_admin_api_operations.js` and
+`sts_admin_console.js` passing with the page and operation in their lists.
 
 ## THE THREE OUTCOMES OF A PUSH ARE THREE AND NOT TWO
 
@@ -423,7 +887,7 @@ next person to "fix" the paths will reach for the colon.
 
 Two separate decisions, both deliberate.
 
-**Never gated**, whatever `ssf.authRequired` says: a receiver has to be able to
+**Never gated**, whatever the endpoints it describes require: a receiver has to be able to
 read what the endpoints are and which schemes they take BEFORE it can
 authenticate to one, and a transmitter whose discovery document needs a
 credential is one nothing can bootstrap against. It is the rule
@@ -461,7 +925,67 @@ Basic grants BOTH, and says so: a scheme with no scope in it cannot express the
 difference, and returning a read-only decision would be a refusal with nothing
 a client could send to get past it.
 
+**IN PRODUCT MODE THE BASIC PASSWORD IS VERIFIED, SINCE 2026-09-12**, through
+`common/credentials.js` — the call `scim_auth.js` makes. Until then this file
+never asked the mode, so a product deployment's streams could be driven with
+any name and any password. A verified person still gets both scopes, which is
+SCIM's identical grant; `ssf.authBasic` turns the scheme off (and out of
+`authorization_schemes`) for a deployment that wants the scope split enforced
+for every caller.
+
+**A THIRD SCHEME SINCE 2026-09-12: GNAP.** `ssf_auth.js`'s `attemptGnap()` accepts
+a key-bound GNAP access token whose access names `ssf:read` / `ssf:write`, so a
+GNAP web application owns a stream as ITSELF — which is what
+`gnap/gnap_signals.js`'s subject scope needs. It takes only the `GNAP` scheme;
+`Bearer` on these endpoints stays OAuth 2.0.
+
+## `ssfAllowedEvents`: THE ONE PLACE AN APPLICATION ENTRY LIMITS A STREAM (2026-09-12)
+
+rcbj asked for it after asking whether ticking Shared Signals on the application
+screen enabled CAEP and RISC. It did not, because no declaration does anything:
+a receiver chose its event types in `events_requested` and nothing on its entry
+could narrow that. **This attribute can**, and it is the first thing on an
+application entry that limits this family — so the registry's "declaring grants
+nothing" sentence now names it as one of two exceptions.
+
+* **Values** are `caep`, `risc`, or event type URIs this transmitter knows;
+  anything else is refused at both write doors (`STS-REG-0053`), and the
+  attribute is family-scoped to `ssf` like `oauthTokenExchangeRefreshToken` is
+  to OAuth (`STS-REG-0010`). **Empty means unrestricted**, which is every entry
+  that existed before it.
+* **The owner is `createdBy`** — whatever authenticated to `/ssf/stream` —
+  matched as an application identifier or among an entry's `ssfReceiverId`s.
+* **It is asked twice, and a mutation run showed why both matter.**
+  `ssf_streams.js` narrows `events_delivered` when a stream is created or
+  updated, and `deliversEvent()` asks again at every delivery — the candidate
+  filters in `ssf.js`, `transmit()` itself (`STS-SSF-0081`), and the per-receiver
+  "takes" columns all go through it, and `streamConfiguration()` reports the
+  effective list. Delivery alone would let a limit lifted later hand back types
+  withheld at agreement; agreement alone would let a receiver escape a tightened
+  limit by having created its stream first.
+* **SSF's own two events are always allowed**, because a receiver refused its
+  verification event cannot learn that its stream works.
+
+`tests/vendored/sts_ssf_allowed_events.js` holds all of it against an
+unrestricted control stream; six mutants, all caught, two only after the job
+was tightened.
+
 ---
+
+## THE OWNER LOOKUP IS CHEAP AND CACHED (2026-09-14), AND IT WAS A 58-SECOND STALL
+
+`deliversEvent()` asks `allowedEventsFor()` for every event on every stream, and
+it called `applications.get()` then `applications.list()` — a whole view of every
+application, sealed keys opened — to read one attribute. The console's and
+portal's own streams are owned by `internal`, which names no application, so
+every call walked the registry. A postgres-mode session sweep that expired 2,412
+sessions (a session-revoked each, to two streams) blocked the one process for 58
+seconds and an LDAP modify in `sts_directory_bulk_load_ldap` timed out.
+`applications.ssfAllowedEventsFor()` reads raw attributes and keeps its answer
+per realm until the directory's `applicationsVersion()` — the `ou=applications`
+subtree clock — moves: 2,400 expiries with 300 applications registered take
+344ms. `tests/ssf_allowed_events_cache.js` asserts every change is seen at once,
+the LDAP modify handler's unlocated touch included; two mutants caught.
 
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO
 
@@ -506,10 +1030,13 @@ the half a reader cannot discover from a protocol trace.
 * **A `verified: true` on an Add Subject request is believed.** SSF lets a
   receiver say it has already confirmed the subject; a real transmitter may then
   skip a confirmation step, and there is none here to skip.
-* **Streams are in memory and die with the process**, like everything else this
-  service mints. `persistence/CLAUDE.md`'s rule decides it and the reason is the
-  one it gives everywhere: the signing key is regenerated on every start, so a
-  queue restored from disk would be tokens nothing can verify.
+* **Streams are in memory and die with the process IN DEVELOPMENT**, like
+  everything else this service mints. `persistence/CLAUDE.md`'s rule decides it:
+  the signing key is regenerated there, so a queue restored from disk would be
+  tokens nothing can verify. In product mode on postgres `ssf_streams.streams`
+  persists with the rest — and so, since 2026-09-12, do the CAEP and RISC
+  registers (below), and since 2026-09-13 the queue, as rows of its own (see
+  *THE QUEUE IS ONE ROW PER SET* below).
 
 ---
 
@@ -591,7 +1118,9 @@ management API's own and of ldap, scim and spiffe.
 
 The slot carries ONE object, validated whole, because a filler that installed
 the reader without the action would leave that page able to LIST streams and
-unable to change any of them.
+unable to change any of them. **It carries `deadLetters` since 2026-09-14**, the
+dead-letter report for Monitoring's page — a member and not a ninth slot, see
+the section on that page above.
 
 **`action` returns a PROMISE and it is the only slot here that does.** Every
 other action function in that console answers from memory; transmitting a
@@ -686,20 +1215,39 @@ own way turns both checks off with nothing failing.
 
 ---
 
-## THE THREE ACTS THIS SERVICE CAN OBSERVE, AND THE FIVE IT CANNOT
+## THE ACTS THIS SERVICE CAN OBSERVE, AND THE EVENTS IT CANNOT CAUSE
 
-`caep.autoEmitTypes` names the first three and drops anything else with a
-warning, and the division is not arbitrary:
+`caep.autoEmitTypes` names the observable ones and drops anything else with a
+warning, and the division is not arbitrary. This heading said THREE until two
+more acts arrived: `credential-change` on 2026-09-13 (the section on
+administrator credential acts below) and `assurance-level-change` on
+2026-09-14.
 
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a session is created | `session-established` | `authn.startSession()` |
 | a session is presented and honoured | `session-presented` | `oauth-oidc/oauth2.js`'s authorization endpoint, through `authn.notePresented()` |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
+| the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
 
-The other five — token claims change, credential change, assurance level
-change, device compliance change, risk level change — have **no act here that
-could cause them**. No device reports compliance to this service and no risk
+**A RE-AUTHENTICATION IS NOT A SESSION EVENT, AND THAT IS WHY THE FOURTH ROW
+EXISTS.** Until 2026-09-14 the same person stepping up in the same browser went
+through the change-of-person path, and a receiver was told `session-revoked`
+then `session-established` about a session nobody had signed out of. Now
+`observe()` emits `assurance-level-change` only when `acr` actually moved. A
+re-authentication that leaves it where it was (an elapsed `max_age` answered
+the same way) emits nothing and still updates the row. The scale is
+**`urn:sts:acr`**, with levels spelt the way every token here carries `acr`
+(`0`, `1`, `mfa`), because mapping them onto NIST's AALs would assert a
+conformance nobody assessed (rcbj's choice). `caep.assuranceNamespace` stays
+the default for an event emitted BY HAND. `change_direction` comes from
+`oauth-oidc/step_up.js`'s `LEVELS`, required rather than copied so that step-up
+and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
+an authenticated identity is here*, carries the design and the probe.
+
+What remains — token claims change, device compliance change, risk level
+change, and credential changes other than an administrator's — has **no act
+here that could cause it**. No device reports compliance to this service and no risk
 engine talks to it, so an automatic emission of one would be this service
 inventing a fact. They are emitted by hand from `/admin/caep` or
 `POST /admin-api/caep/emit`, and a row in `caep.autoEmitTypes` naming one is
@@ -728,6 +1276,23 @@ The two can also disagree the other way — a session this service still holds
 whose row says `revoked` means somebody emitted a revocation by hand — and the
 page says so rather than reconciling, because which of the two is wrong is
 exactly the question.
+
+**BOTH REGISTERS ARE PER TRUST REALM AND PERSISTED WHERE MINTED STATE IS, SINCE
+2026-09-12, AND BOTH WERE ONE `new Map()` FOR THE PROCESS.** The streams they
+count against have been per realm since this family arrived and the session
+store and the directory they describe are too, so every realm's
+`/admin/caep-sessions` listed every realm's sessions and a deletion in `acme`'s
+directory put a `purged` row on the default realm's `/admin/risc-accounts`. They
+are `realms.map({ persist: 'caep.register' })` and `'risc.register'`, merged by
+replacement (a row is whole-valued), and the cap is per realm. **The ambient
+realm is the right one on every path**: `observe()` is reached from inside the
+request or the realm-scoped expiry sweep, `noteTransmitted()` from `transmit()`,
+and a directory write on the LDAP socket runs inside
+`realms.run(realmFor(dn))`. **Each file has a `touch()`**, because the state
+machines edit a row already in the map and `realms.map()` journals only a
+`set()` — without it product mode would write every row as it was created.
+`tests/realm_isolation.js` holds both registers both ways round, across a purge,
+and against a real persistence observer.
 
 ---
 
@@ -857,6 +1422,106 @@ legitimate — so the table carries both and says "the same" where they agree.
 with NO STREAM is the commonest state a receiver under test is in, and a list
 that showed only receivers with streams would answer "where is my application"
 with silence. And a row for streams belonging to no application at all is what
-`ssf.authRequired` off produces — no principal, nothing recorded, and the events
+a stream agreed unauthenticated produces — no principal, nothing recorded, and the events
 are real; dropping them would make this table's totals disagree with the two
 above it.
+
+## THE 2026-09-12 AUDIT OF HARD-CODED VALUES, AND WHAT IT CHANGED HERE
+
+`tests/ssf_spiffe_scim_hardening.js` holds every item below.
+
+* **THE REALM PREFIX WAS ADDED TWICE.** `helpers.baseUrlOf()` already carries
+  it, and `ssf.js` appended `realms.currentPrefix()` again for the issuer, every
+  endpoint in the metadata, `jwks_uri` and `metadataUrl`, as did the seeded
+  streams' issuer in `ssf_receivers.js`. In any realm but the default one a
+  receiver discovered `…/realm/acme/realm/acme/ssf/stream` and matched every
+  SET's `iss` against a string no SET carried. Fixed in every mode.
+* **THE ISSUER WITH NO REQUEST** was `baseUrlOf(null)` — `http://localhost:<port>`
+  whatever `global.https` said — for a seeded stream and for the CAEP expiry
+  sweep. `ssf_http.js`'s `ownBaseUrl()` is `global.publicBaseUrl` where set,
+  else the loopback origin in the listener's own scheme, prefixed once; and
+  `transmitterIssuer()` beside it is now the ONE computation `ssf.js` and
+  `ssf_receivers.js` share.
+* **A CONFIGURED `ssf.issuer` IS PER REALM.** It was returned verbatim in every
+  realm — two transmitters under one name. A value the REALM carries is used as
+  it stands; a process-wide one gets the realm's prefix. Not in `realms.js`'s
+  NAMED_BY_REALM, which seeds at creation and would miss every realm created
+  before the setting was pinned.
+* **THE INTERNAL PUSH DIALLED `127.0.0.1` LITERALLY**, which reaches nothing when
+  `global.host` binds one interface or IPv6 only. `loopbackOrigin()` uses
+  `helpers.loopbackHost()` and `hostForUrl()`.
+* **SUBJECTS INVENTED ADDRESSES.** `subjectForUser()` knew only a username, so
+  an `email` subject was `<name>@example.com` and a DID `did:example:<name>`
+  even where RISC's row held a real `mail`. It takes `facts` (`mail`, `phone`,
+  `did`) and a real value wins in both modes; where there is none,
+  `mode.inventsClaimValues()` decides — development invents as before, product
+  falls back to the issuer/subject pair. RISC's two identifier events, whose
+  subject MUST be an address or a number, get NO subject in product when there
+  is neither, and `transmit()` refuses them. The portal filter's invented-address
+  match is development-only for the same reason.
+* **A FOREIGN RS256 SET READ "INVALID".** `publicKeyForHeader()` sent every
+  RS256 SET to this service's RSA key whatever its `kid`; it matches on the
+  `kid` and falls back to the algorithm only when there is none, so a SET
+  somebody else signed is *not verifiable here*.
+* **SETTINGS FOR LITERALS**: `ssf.pushMaxResponseBytes` (65536),
+  `ssf.pushRetries` (0), `ssf.pushRetryDelayMs` (1000), `ssf.authBasic` (true),
+  `caep.eventsPerSession` (25), `caep.historyPerSession` (10),
+  `risc.eventsPerAccount` (25), `risc.historyPerAccount` (10).
+  `risc.EVENTS_PER_ACCOUNT` is a getter over the setting now.
+
+**Left alone and said so**: the two internal surfaces' audiences
+(`sts-admin-console`, `sts-user-portal`) and receive paths. They are the seeded
+client ids and the routes the surfaces register; deriving them from
+`common/oidc_rp.js`'s table would put a require from this directory into a
+module at 8b for two strings that change only with those files.
+
+## CREDENTIAL CHANGES FROM THE ADMIN DOORS: `account_signals.js` (2026-09-13)
+
+A person's `/admin/users` page gained controls that reset passwords, issue
+reset links and remove second factors, and each owes a signal. The acts are:
+
+| Door | CAEP `credential-change` | RISC |
+|---|---|---|
+| reset-password, set-password | `password`, `update` | reset only: `account-credential-change-required` |
+| issue-password-reset | `password`, `revoke` (if one was removed) | `account-credential-change-required` |
+| `/portal/reset-password` completed | `password`, `create`, initiated by `user` | — |
+| disable-primary-keys, clear-key | `fido2-roaming`, `delete`, per key, label as `friendly_name` | — |
+| disable-mfa | `app` and `fido2-roaming`, `delete`, per credential | `recovery-information-changed` if codes went |
+| clear-totp | `app`, `delete` | — |
+| clear-backup-codes | — | `recovery-information-changed` |
+
+**`ssf/account_signals.js` IS A LIBRARY THAT READS `ssf.js` OUT OF
+`require.cache`**, because the doors are at 18 (the actions layer) and 8b (the
+portal) and a require of `ssf.js` from either would register every `/ssf` route
+ahead of theirs and close a cycle through the console. Not a slot: there is no
+require at all, only a cache lookup — `admin-core/protocol_endpoints.js`'s
+arrangement. A process that never loaded SSF gets a no-op that says so. Nothing
+in it throws and callers do not await it: a slow receiver must not hold a page,
+and a failed emission must not undo a credential change already written.
+
+**`ssf.js` gained `emitCredentialChange()` and `emitRiscAccountAct()`**
+(`STS-SSF-0090`, `-0091`). The first builds the SET through `caep.buildPayload`
+and sends it with a complex user subject (`issuer_subject_id`) to the streams
+that asked for the type and cover the person; it obeys `caep.autoEmitTypes`
+through `caep.autoEmitActs()`, which gained `credential`. The second goes
+through `risc.observeAct()` — `observe()`'s loop extracted into `dueForActs()`,
+so an admin act meets the same `risc.autoEmitTypes` switch and the same opt-out
+gate a directory write does — and `sendOneRiscEvent()`. `risc.js`'s
+`applyActLocally()`, `reasonFor()` and `reasonForUser()` know the two new acts.
+**Both `autoEmitTypes` defaults name the new types**, so an unedited service
+sends them; a deployment that pinned the old list sends none.
+
+**The key credential type is `fido2-roaming` for every key**, because a stored
+key records no authenticator attachment, and the label goes out as
+`friendly_name` so two keys can be told apart. **The portal's own credential
+pages and the LDAP socket emit nothing**, which is the scope that was asked for
+(the admin user-page doors and the reset link), not a claim that nothing else
+changes a credential.
+
+## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
+
+The RISC register is keyed by the account's name, and a rename reaches `observe()` as an
+update naming the NEW one. Where no row holds that name, the entry's subject (off the
+snapshot) finds the row already recorded under the old name; it is re-keyed, its counts
+and state move with it, and the old name joins `formerIdentifiers` so an event naming it
+still matches. `tests/stable_subject.js` D13.

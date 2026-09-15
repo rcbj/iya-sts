@@ -70,6 +70,12 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_pep',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 const PEP_DIR = path.join(ROOT, 'xacml-pep');
 
@@ -93,34 +99,46 @@ const model = require('../xacml/xacml_model');
 // wrote would make every reader here pass and the real one fail.
 // ---------------------------------------------------------------------------
 function fakeDirectory() {
+  log.debug("Entering fakeDirectory().");
   const entries = new Map();
   function lower(attributes) {
+    log.debug("Entering lower().");
     const out = {};
     Object.keys(attributes || {}).forEach(function (key) {
       const value = attributes[key];
       out[key.toLowerCase()] = Array.isArray(value) ? value.slice(0)
                                                     : [String(value)];
     });
+    log.debug("Leaving lower().");
     return out;
   }
+  log.debug("Leaving fakeDirectory().");
   return {
     entries: entries,
     allPeps: function () {
+      log.debug("Entering allPeps().");
+      log.debug("Leaving allPeps().");
       return Array.from(entries.entries()).map(function (pair) {
         return { name: pair[0], dn: 'cn=' + pair[0] + ',ou=peps',
                  attributes: pair[1] };
       });
     },
     writePep: function (name, attributes) {
+      log.debug("Entering writePep().");
       entries.set(name, lower(attributes));
+      log.debug("Leaving writePep().");
       return true;
     },
     deletePep: function (name) {
+      log.debug("Entering deletePep().");
+      log.debug("Leaving deletePep().");
       return entries.delete(name);
     },
     certificateIdentity: function (certificate) {
+      log.debug("Entering certificateIdentity().");
       const subject = String((certificate || {}).subject || '');
       const cn = /CN=([^,]+)/i.exec(subject);
+      log.debug("Leaving certificateIdentity().");
       return { dn: 'cn=' + (cn ? cn[1] : 'unknown') + ',ou=users',
                commonName: cn ? cn[1] : '', subject: subject };
     }
@@ -128,8 +146,12 @@ function fakeDirectory() {
 }
 
 function fakePolicyDirectory(documents) {
+  log.debug("Entering fakePolicyDirectory().");
+  log.debug("Leaving fakePolicyDirectory().");
   return {
     allPolicies: function () {
+      log.debug("Entering allPolicies().");
+      log.debug("Leaving allPolicies().");
       return Object.keys(documents).map(function (name) {
         return { name: name, dn: 'cn=' + name + ',ou=policies',
                  attributes: {
@@ -143,8 +165,16 @@ function fakePolicyDirectory(documents) {
                  } };
       });
     },
-    writePolicy: function () { return true; },
-    deletePolicy: function () { return true; }
+    writePolicy: function () {
+      log.debug("Entering writePolicy().");
+      log.debug("Leaving writePolicy().");
+      return true;
+    },
+    deletePolicy: function () {
+      log.debug("Entering deletePolicy().");
+      log.debug("Leaving deletePolicy().");
+      return true;
+    }
   };
 }
 
@@ -152,6 +182,8 @@ function fakePolicyDirectory(documents) {
 // purpose: what this file asserts about a policy is that its BYTES move the
 // sync token, not anything about what it decides.
 function policyXml(id, effect) {
+  log.debug("Entering policyXml().");
+  log.debug("Leaving policyXml().");
   return '<?xml version="1.0" encoding="UTF-8"?>' +
     '<Policy xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:wd-17" ' +
     'PolicyId="' + id + '" Version="1.0" ' +
@@ -169,6 +201,7 @@ function policyXml(id, effect) {
 // exactly the case this test exists for and its stack is the information.
 // ---------------------------------------------------------------------------
 function askTheContainer(source) {
+  log.debug("Entering askTheContainer().");
   const script = 'const out = (function () {\n' + source + '\n})();\n' +
                  'process.stdout.write("<<<" + JSON.stringify(out) + ">>>");';
   const text = execFileSync(process.execPath, ['-e', script], {
@@ -183,10 +216,12 @@ function askTheContainer(source) {
   if (!found) {
     throw new Error('the child produced no answer: ' + text.slice(0, 500));
   }
+  log.debug("Leaving askTheContainer().");
   return JSON.parse(found[1]);
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -------------------------------------------------------------------------
   // 1. THE ENGINE LOADS IN A PROCESS WITH NO IDENTITY SERVICE IN IT.
   // -------------------------------------------------------------------------
@@ -253,12 +288,13 @@ async function run(t) {
   try {
     there = askTheContainer(
       'const engine = require("./engine");\n' +
-      'const policy = engine.xml.parsePolicy(' + JSON.stringify(permit) + ');\n' +
-      'const answer = engine.pdp.evaluate(policy, { returnPolicyIdList: ' +
-      'false, combinedDecision: false, categories: [{ category: ' +
+      'const policy = engine.xml.parsePolicy(' + JSON.stringify(permit) +
+      ');\nconst ' +
+      'answer = engine.pdp.evaluate(policy, { returnPolicyIdList: false, ' +
+      'combinedDecision: false, categories: [{ category: ' +
       'engine.model.CATEGORY.ACCESS_SUBJECT, id: null, content: null, ' +
-      'attributes: [] }] }, {});\n' +
-      'return { decision: answer.decision, status: answer.status.code };');
+      'attributes: [] }] }, {});\nreturn { decision: answer.decision, ' +
+      'status: answer.status.code };');
   } catch (error) {
     t.bad('the container could not evaluate a policy', error.message);
   }
@@ -362,6 +398,18 @@ async function run(t) {
           'one copy of the module in this tree, the way the engine is copied ' +
           'rather than checked in');
 
+  // THE ERROR-CODE REGISTRY, ON THE SAME ARGUMENT. Every failure this
+  // container logs leads with an `STS-XPEP-` code from `common/error_codes.js`,
+  // and `pep.js` falls back to a local tag when the module is absent — written
+  // to survive, like the version, so nothing at runtime goes red when the COPY
+  // line goes. This is where it goes red instead.
+  t.check(/^COPY\s+common\/error_codes\.js\s+\.\/error_codes\.js\s*$/m
+            .test(dockerfile),
+          'and copies common/error_codes.js to the container ROOT as ' +
+          'error_codes.js',
+          'the one table of error codes, copied at build time beside ' +
+          'version.js and never into ./common/, which is the shim');
+
   // AND IT IS STAMPED, which is the whole reason the build number means
   // anything: an unstamped container computes its number when the process
   // starts, so it renumbers itself on every restart and comparing it against
@@ -417,6 +465,17 @@ async function run(t) {
           'image, ../common/version in a checkout',
           'neither layout has both, so a single hard-coded path is broken in ' +
           'one of the two places this file is read');
+  // AND THE REGISTRY THE SAME WAY, for the same reason — `./error_codes` is
+  // where the COPY line above puts it and `../common/error_codes` is where a
+  // checkout has it. A resolution that named one would log every failure in
+  // the other layout under the fallback tag and say so on every start.
+  t.check(/loadErrorCodes\s*\(\)/.test(pepSource) &&
+          pepSource.indexOf("'../common/error_codes'") >= 0 &&
+          pepSource.indexOf("'./error_codes'") >= 0,
+          'and it resolves the error-code registry across BOTH layouts — ' +
+          './error_codes in the image, ../common/error_codes in a checkout',
+          'neither layout has both, so a single hard-coded path is broken in ' +
+          'one of the two places this file is read');
 
   // -------------------------------------------------------------------------
   // 3b. THE PIP CLIENT'S WALK, WHICH IS THE HALF OF IT THAT NEEDS NO NETWORK.
@@ -442,9 +501,92 @@ async function run(t) {
   // does the one level that is actually needed.
   // -------------------------------------------------------------------------
   t.log.info('--- The PIP client, in the container, with no network ---');
-  const OUTER_POLICY = "<PolicySet xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" PolicySetId=\"outer\" Version=\"1.0\" PolicyCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:policy-combining-algorithm:deny-unless-permit\"><Target><AnyOf><AllOf><Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">x</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inTarget\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Match></AllOf></AnyOf></Target><Policy PolicyId=\"inner\" Version=\"1.0\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\"><VariableDefinition VariableId=\"v\"><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inVariable\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></VariableDefinition><Rule RuleId=\"r\" Effect=\"Permit\"><Condition><Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\"><Function FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">y</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inCondition\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Apply></Condition><ObligationExpressions><ObligationExpression ObligationId=\"o\" FulfillOn=\"Permit\"><AttributeAssignmentExpression AttributeId=\"a\"><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inObligation\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></AttributeAssignmentExpression></ObligationExpression></ObligationExpressions></Rule></Policy><PolicyIdReference>referenced</PolicyIdReference></PolicySet>";
-  const REFERENCED_POLICY = "<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" PolicyId=\"referenced\" Version=\"1.0\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\"><Target><AnyOf><AllOf><Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:anyURI-equal\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\">r</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:resource\" AttributeId=\"inResource\" DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\" MustBePresent=\"false\"/></Match></AllOf></AnyOf></Target><Rule RuleId=\"r2\" Effect=\"Permit\"><Condition><Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\"><Function FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">z</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inReference\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Apply></Condition></Rule></Policy>";
-  const PIP_REPLY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><PIPResponse xmlns=\"urn:sts-mock:xacml:pip:1.0\"><Attributes xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\"><Attribute AttributeId=\"employeeType\" IncludeInResult=\"false\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">admin</AttributeValue><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">staff</AttributeValue></Attribute></Attributes><Unresolved><Designator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"departmentNumber\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"><Reason>the entry does not hold it</Reason></Designator></Unresolved></PIPResponse>";
+  const OUTER_POLICY = "<PolicySet " +
+                       "xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" " +
+                       "PolicySetId=\"outer\" Version=\"1.0\" " +
+                       "PolicyCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:policy-combining-algorithm:deny-unless-permit\">" +
+                       "<Target><AnyOf><AllOf><Match " +
+                       "MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">" +
+                       "<AttributeValue " +
+                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
+                       "x</AttributeValue><AttributeDesignator " +
+                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
+                       "AttributeId=\"inTarget\" " +
+                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
+                       "MustBePresent=\"false\"/></Match></AllOf></AnyOf>" +
+                       "</Target><Policy PolicyId=\"inner\" Version=\"1.0\" " +
+                       "RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\">" +
+                       "<VariableDefinition " +
+                       "VariableId=\"v\"><AttributeDesignator " +
+                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
+                       "AttributeId=\"inVariable\" " +
+                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
+                       "MustBePresent=\"false\"/></VariableDefinition><Rule " +
+                       "RuleId=\"r\" Effect=\"Permit\"><Condition><Apply " +
+                       "FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\">" +
+                       "<Function " +
+                       "FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/>" +
+                       "<AttributeValue " +
+                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
+                       "y</AttributeValue><AttributeDesignator " +
+                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
+                       "AttributeId=\"inCondition\" " +
+                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
+                       "MustBePresent=\"false\"/></Apply></Condition>" +
+                       "<ObligationExpressions><ObligationExpression " +
+                       "ObligationId=\"o\" " +
+                       "FulfillOn=\"Permit\"><AttributeAssignmentExpression " +
+                       "AttributeId=\"a\"><AttributeDesignator " +
+                       "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
+                       "AttributeId=\"inObligation\" " +
+                       "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
+                       "MustBePresent=\"false\"/>" +
+                       "</AttributeAssignmentExpression>" +
+                       "</ObligationExpression></ObligationExpressions>" +
+                       "</Rule></Policy><PolicyIdReference>" +
+                       "referenced</PolicyIdReference></PolicySet>";
+  const REFERENCED_POLICY = "<Policy " +
+                            "xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" " +
+                            "PolicyId=\"referenced\" Version=\"1.0\" " +
+                            "RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\">" +
+                            "<Target><AnyOf><AllOf><Match " +
+                            "MatchId=\"urn:oasis:names:tc:xacml:1.0:function:anyURI-equal\">" +
+                            "<AttributeValue " +
+                            "DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\">" +
+                            "r</AttributeValue><AttributeDesignator " +
+                            "Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:resource\" " +
+                            "AttributeId=\"inResource\" " +
+                            "DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\" " +
+                            "MustBePresent=\"false\"/></Match></AllOf>" +
+                            "</AnyOf></Target><Rule RuleId=\"r2\" " +
+                            "Effect=\"Permit\"><Condition><Apply " +
+                            "FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\">" +
+                            "<Function " +
+                            "FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/>" +
+                            "<AttributeValue " +
+                            "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
+                            "z</AttributeValue><AttributeDesignator " +
+                            "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
+                            "AttributeId=\"inReference\" " +
+                            "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
+                            "MustBePresent=\"false\"/></Apply></Condition>" +
+                            "</Rule></Policy>";
+  const PIP_REPLY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><PIPResponse " +
+                    "xmlns=\"urn:sts:xacml:pip:1.0\"><Attributes " +
+                    "xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" " +
+                    "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\">" +
+                    "<Attribute AttributeId=\"employeeType\" " +
+                    "IncludeInResult=\"false\"><AttributeValue " +
+                    "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
+                    "admin</AttributeValue><AttributeValue " +
+                    "DataType=\"http://www.w3.org/2001/XMLSchema#string\">" +
+                    "staff</AttributeValue></Attribute></Attributes>" +
+                    "<Unresolved><Designator " +
+                    "Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" " +
+                    "AttributeId=\"departmentNumber\" " +
+                    "DataType=\"http://www.w3.org/2001/XMLSchema#string\" " +
+                    "MustBePresent=\"false\"><Reason>the entry does not hold " +
+                    "it</Reason></Designator></Unresolved></PIPResponse>";
 
   const walk = askTheContainer(
     'const pip = require("./pip");\n' +
@@ -472,12 +614,12 @@ async function run(t) {
   // on an answer that is always empty and would put a permanent entry in the
   // <Unresolved> list of every reply.
   t.check(walk.ids.indexOf('inResource') < 0,
-          'and does NOT ask about a RESOURCE designator, which that PIP never ' +
-          'resolves',
+          'and does NOT ask about a RESOURCE designator, which that PIP ' +
+          'never resolves',
           walk.ids.join(','));
 
   t.check(walk.query.indexOf('<PIPRequest') >= 0 &&
-          walk.query.indexOf('urn:sts-mock:xacml:pip:1.0') > 0,
+          walk.query.indexOf('urn:sts:xacml:pip:1.0') > 0,
           'the query it builds is a <PIPRequest> in the PDP\'s own namespace');
   t.check(walk.query.indexOf('subject:subject-id') > 0 &&
           walk.query.indexOf('>carol<') > 0,
@@ -550,7 +692,7 @@ async function run(t) {
     { decision: model.DECISION.INDETERMINATE, obligations: [] },
     { decision: model.DECISION.NOT_APPLICABLE, obligations: [] },
     { decision: model.DECISION.PERMIT,
-      obligations: [{ id: 'urn:sts-mock:xacml:obligation:log',
+      obligations: [{ id: 'urn:sts:xacml:obligation:log',
                       assignments: [] }] },
     { decision: model.DECISION.PERMIT,
       obligations: [{ id: 'urn:test:cannot-do-this', assignments: [] }] },
@@ -879,6 +1021,7 @@ async function run(t) {
   try {
     store.remove('two');
   } catch (error) {
+    log.debug("Caught in run(): " + ((error && error.message) || error));
     survived = false;
   }
   t.check(survived,
@@ -890,6 +1033,7 @@ async function run(t) {
   registry.setDirectory(registryWas);
 
   assert.ok(true);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

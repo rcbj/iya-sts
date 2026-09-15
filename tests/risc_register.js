@@ -64,18 +64,28 @@ const config = require('../common/config');
 const events = require('../ssf/ssf_events');
 const risc = require('../ssf/risc');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'risc_register',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const P = events.RISC_PREFIX;
 
 // A directory write, in the shape `ldap_server.js`'s observer hands one over.
 // The attribute names are LOWER CASE because that is how the store keys them,
 // and getting that wrong is a comparison that silently never fires.
 function wrote(username, before, after) {
+  log.debug("Entering wrote().");
+  log.debug("Leaving wrote().");
   return { kind: 'updated', dn: 'uid=' + username + ',ou=users,dc=example,' +
     'dc=com', username: username, realm: 'default',
     before: before, after: after };
 }
 
 function deleted(username, before) {
+  log.debug("Entering deleted().");
+  log.debug("Leaving deleted().");
   return { kind: 'deleted:' + username,
     dn: 'uid=' + username + ',ou=users,dc=example,dc=com',
     username: username, realm: 'default', before: before, after: {} };
@@ -83,6 +93,7 @@ function deleted(username, before) {
 
 // What `ssf.js`'s transmit() hands back to the register once the SET exists.
 function transmitted(row, uri, payload, streamId) {
+  log.debug("Entering transmitted().");
   risc.noteTransmitted({ stream_id: streamId || 'st-1' }, {
     jti: 'jti-' + Math.random().toString(16).slice(2, 10),
     iss: 'https://sts.example.com',
@@ -93,9 +104,11 @@ function transmitted(row, uri, payload, streamId) {
       return map;
     })()
   });
+  log.debug("Leaving transmitted().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   risc.clear();
   config.setOverride('risc.enabled', 'true');
   config.setOverride('risc.autoEmit', 'true');
@@ -452,6 +465,7 @@ function run(t) {
   const gone = risc.clear();
   t.check(gone > 0, 'clearing drops every row, and says how many');
   t.equal(risc.list().length, 0, 'the register is empty');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

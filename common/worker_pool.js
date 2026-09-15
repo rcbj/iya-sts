@@ -73,17 +73,26 @@ const child_process = require('child_process');
 const bunyan = require('bunyan');
 const config = require('./config');
 const worker = require('./worker');
+// A LEAF with no requires — the failure codes in the log lines below. See
+// common/error_codes.js.
+const errorCodes = require('./error_codes');
 
+let logLevelProblem = null;
 const log = bunyan.createLogger({
   name: 'worker_pool',
   level: (function () {
     try {
       return config.value('global.logLevel') || 'info';
     } catch (e) {
+      logLevelProblem = e;
       return 'info';
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug('No log level could be read, so info: ' +
+            logLevelProblem.message);
+}
 
 const WORKER_MODULE = path.join(__dirname, 'worker.js');
 
@@ -123,6 +132,7 @@ function size() {
   try {
     wanted = parseInt(config.value('workers.count'), 10);
   } catch (e) {
+    log.debug("Caught in size(): " + ((e && e.message) || e));
     // A module loaded with no configuration at all — which is how the parent
     // project's in-process jobs load this tree. Computing here is the right
     // answer for one of those and not a fallback that hides anything.
@@ -134,6 +144,31 @@ function size() {
   }
   log.debug('Leaving size(). ' + wanted + '.');
   return wanted;
+}
+
+// ---------------------------------------------------------------------------
+// HOW LONG A JOB MAY TAKE. `workers.jobTimeoutS`, read LIVE on every dispatch
+// for the reason `size()` above is: a value captured at require time is the one
+// thing a runtime override cannot change, and this is a setting somebody turns
+// up precisely because something is taking too long.
+//
+// Zero means no bound, which is what this pool did until 2026-09-11.
+// ---------------------------------------------------------------------------
+function jobTimeoutMs() {
+  log.debug("Entering jobTimeoutMs().");
+  let seconds = 0;
+  try {
+    seconds = parseInt(config.value('workers.jobTimeoutS'), 10);
+  } catch (e) {
+    log.debug("Caught in jobTimeoutMs(): " + ((e && e.message) || e));
+    log.debug("Leaving jobTimeoutMs().");
+    // A module loaded with no configuration — the parent project's in-process
+    // jobs, `env/generate_defaults.js`, this repository's own unit tests. No
+    // bound is the honest answer there and matches what those callers had.
+    return 0;
+  }
+  log.debug("Leaving jobTimeoutMs().");
+  return (seconds > 0) ? seconds * 1000 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +207,8 @@ function fork() {
     // An error on the channel is not necessarily fatal to the child, but it is
     // fatal to anything this process is waiting on: it means a message did not
     // get there or did not come back.
-    log.warn('worker_pool: the channel to worker ' + entry.pid +
+    log.warn(errorCodes.tag('STS-WORKER-0001') +
+             'worker_pool: the channel to worker ' + entry.pid +
              ' failed: ' + err.message);
   });
   child.on('exit', function (code, signal) {
@@ -238,14 +274,16 @@ function reap(entry, code, signal) {
       'again.'));
   });
   if (lost.length) {
-    log.warn('worker_pool: worker ' + entry.pid + ' ' + how + ' with ' +
+    log.warn(errorCodes.tag('STS-WORKER-0002') +
+             'worker_pool: worker ' + entry.pid + ' ' + how + ' with ' +
              lost.length + ' job(s) in flight; all of them were failed.');
   } else {
     log.info('worker_pool: worker ' + entry.pid + ' ' + how + '.');
   }
   if (quickExits >= QUICK_EXIT_LIMIT && !givenUpOnChildren) {
     givenUpOnChildren = true;
-    log.error('worker_pool: ' + quickExits + ' worker processes in a row ' +
+    log.error(errorCodes.tag('STS-WORKER-0003') +
+      'worker_pool: ' + quickExits + ' worker processes in a row ' +
       'exited within ' + QUICK_EXIT_MS + 'ms without finishing a job, so ' +
       'this service has STOPPED FORKING THEM and is computing post-quantum ' +
       'signatures in the process that holds the sockets — which is what ' +
@@ -408,14 +446,81 @@ function run(kind, job, opts) {
     // the answer is how long the event loop was busy producing it.
     log.debug('Leaving run(). Computing in this process.');
     try {
+      log.debug("Leaving run().");
       return Promise.resolve(worker.runJob(kind, job));
     } catch (e) {
+      log.debug("Leaving run().");
       return Promise.reject(e);
     }
   }
   const id = nextJobId++;
   const promise = new Promise(function (resolve, reject) {
-    entry.inFlight.set(id, { resolve: resolve, reject: reject, kind: kind });
+    // ---------------------------------------------------------------------
+    // **THE BOUND, AND THE HEADER ABOVE IS WHAT IT IS FOR** (2026-09-11).
+    //
+    // `reap()` rejects everything on a worker that DIES, because "a promise
+    // nobody settles is a request that hangs". Nothing covered a worker that
+    // stays ALIVE and never answers — and one did: five idle children, no CPU
+    // anywhere in the process tree, the service answering every other request
+    // in eleven milliseconds, and one HTTP request parked until a test
+    // runner's 300-second watchdog killed the job.
+    //
+    // **IT IS A BACKSTOP AND NOT A DIAGNOSIS.** Why the reply went missing is
+    // not known. What this changes is that the caller is told, with a sentence
+    // naming the worker and the job kind, instead of waiting for ever.
+    //
+    // **THE TIMER IS UNREFERENCED.** Every other handle in this file is
+    // unreferenced while idle so that a pool never holds the front process
+    // open; a referenced timer here would undo that for the length of the
+    // bound, which on the default is two minutes per job. `unref()` means it
+    // fires only while something else is keeping the process alive — and if
+    // nothing is, the process was exiting anyway and the request is going with
+    // it.
+    //
+    // The entry is deleted before the rejection for `receive()`'s reason: a
+    // late answer then finds nothing waiting and is dropped, rather than
+    // resolving a promise that has already been settled.
+    // ---------------------------------------------------------------------
+    const limit = jobTimeoutMs();
+    let timer = null;
+    if (limit > 0) {
+      timer = setTimeout(function () {
+        const late = entry.inFlight.get(id);
+        if (!late) {
+          return;
+        }
+        entry.inFlight.delete(id);
+        unrefIfIdle(entry);
+        log.error(errorCodes.tag('STS-WORKER-0004') +
+                  'worker_pool: worker ' + entry.pid + ' has not answered a ' +
+                  kind + ' job in ' + limit + 'ms, so the request waiting on ' +
+                  'it is being failed rather than left to hang. The worker ' +
+                  'is left alone — it is alive, and it holds no state, so it ' +
+                  'is kept for the next job. If this recurs, ' +
+                  'workers.jobTimeoutS is the bound and 0 removes it.');
+        reject(new Error('the ' + kind + ' job sent to worker ' + entry.pid +
+          ' did not come back within ' + limit + 'ms. A worker holds no ' +
+          'state, so this request can simply be made again.'));
+      }, limit);
+      if (timer.unref) {
+        timer.unref();
+      }
+    }
+    entry.inFlight.set(id, {
+      kind: kind,
+      resolve: function (value) {
+        log.debug("Entering resolve().");
+        if (timer) { clearTimeout(timer); }
+        resolve(value);
+        log.debug("Leaving resolve().");
+      },
+      reject: function (err) {
+        log.debug("Entering reject().");
+        if (timer) { clearTimeout(timer); }
+        reject(err);
+        log.debug("Leaving reject().");
+      }
+    });
   });
   refWhileWorking(entry);
   try {
@@ -456,6 +561,7 @@ function stop(timeoutMs) {
     return Promise.resolve({ stopped: 0, killed: 0 });
   }
   log.info('worker_pool: draining ' + going.length + ' worker(s).');
+  log.debug("Leaving stop().");
   return new Promise(function (resolve) {
     let killed = 0;
     // NOT unreferenced, for the same reason the children are referenced below:
@@ -467,7 +573,8 @@ function stop(timeoutMs) {
       going.forEach(function (entry) {
         if (entry.child.exitCode === null && entry.child.signalCode === null) {
           killed++;
-          log.warn('worker_pool: worker ' + entry.pid + ' did not finish ' +
+          log.warn(errorCodes.tag('STS-WORKER-0005') +
+                   'worker_pool: worker ' + entry.pid + ' did not finish ' +
                    'within ' + limit + 'ms and was killed. Whatever it was ' +
                    'computing is lost, which costs nothing: a worker holds ' +
                    'no state.');
@@ -478,12 +585,14 @@ function stop(timeoutMs) {
     }, limit);
     let left = going.length;
     function done() {
+      log.debug("Entering done().");
       left = 0;
       clearTimeout(timer);
       workers = [];
       affinity.clear();
       log.debug('Leaving stop().');
       resolve({ stopped: going.length - killed, killed: killed });
+      log.debug("Leaving done().");
     }
     going.forEach(function (entry) {
       // REFERENCED FOR THE LENGTH OF THE DRAIN, and this is the one place that

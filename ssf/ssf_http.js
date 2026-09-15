@@ -55,10 +55,11 @@
 //    header, wherever the Location said.
 //
 // **AND ONE THING THAT IS NOT A BOUND AND IS WORTH NOT MISTAKING FOR ONE.**
-// The management API is not gated by default (`ssf.authRequired` gates it and
-// ships ON, but every credential this service accepts is a turnstile — see
-// `ssf/CLAUDE.md`). So "a receiver created the stream" is not evidence of
-// anything much. The bounds above are the bounds; the gate is not one of them.
+// These endpoints are gated — unconditionally, since `global.mode` replaced
+// `ssf.authRequired` on 2026-09-06 — but every credential this service accepts
+// is a turnstile, see `ssf/CLAUDE.md`. So "a receiver created the stream" is
+// not evidence of anything much. The bounds above are the bounds; the gate is
+// not one of them.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT DOES NOT DO, AND THE ONE THAT SURPRISES PEOPLE.
@@ -67,9 +68,10 @@
 // failed push and this service does not, because a mock that retried would
 // make a receiver's ONE-SHOT failure invisible: a client under test that
 // answers 500 to the first push and 202 to the second looks, from its own
-// logs, like a client that works. The failure is recorded on the stream, the
-// event stays on the queue, and `POST /admin-api/ssf/redeliver` sends it
-// again when somebody asks. Deliberate rather than unfinished, and
+// logs, like a client that works. The failed SET goes to the stream's
+// dead-letter queue with the reason (2026-09-14; it stayed on the live queue
+// before, and the `redeliver` operation this comment named never existed).
+// `ssf.pushRetries` turns retries on. Deliberate rather than unfinished, and
 // `ssf/CLAUDE.md` lists it under what this family does not do.
 //
 // ---------------------------------------------------------------------------
@@ -82,7 +84,11 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const config = require('../common/config');
-const { log } = require('../common/helpers');
+const { log, PORT, loopbackHost, hostForUrl, pinnedBaseUrl, baseUrlOf } =
+  require('../common/helpers');
+// For the realm prefix on `ownBaseUrl()`. A leaf with respect to this
+// directory: it requires nothing here.
+const realms = require('../common/realms');
 // WHO IS CALLING, AND WHICH BUILD OF IT. A Security Event Token arrives at a
 // receiver unasked — that is what RFC 8935 push IS — so the receiver's log is
 // the only place its operator can find out what has been talking to them. RFC
@@ -90,10 +96,26 @@ const { log } = require('../common/helpers');
 // Built once at require time: the version cannot change while the process runs.
 const USER_AGENT = require('../common/version').userAgent('ssf-transmitter');
 
+// THE ERROR CODES (common/error_codes.js). Every way a push can fail carries
+// its code on the result as `errorCode`, which `ssf.js`'s transmit() puts on
+// the SET's dead letter, and the sweep counts by code in its one summary line
+// (2026-09-14; it was an audit row per failure). That result is read field by
+// field there
+// and never serialised to anybody, so the code reaches no receiver and no
+// caller — which is why this file needs no require of the registry at all.
+
 // A receiver that answers a push with more than this is not answering RFC
 // 8935. A success is 202 with an EMPTY body and a failure is a small JSON
 // object; 64 KiB is three orders of magnitude of headroom and still a bound.
+// `ssf.pushMaxResponseBytes` since 2026-09-12, read per push; this constant is
+// its default and is kept as an export for what printed it.
 const MAX_BODY_BYTES = 64 * 1024;
+
+function maxBodyBytes() {
+  log.debug("Entering maxBodyBytes().");
+  log.debug("Leaving maxBodyBytes().");
+  return config.value('ssf.pushMaxResponseBytes');
+}
 
 // The media type of a SET on the wire (RFC 8417 section 2.3). It is not
 // `application/jwt` and a receiver that dispatches on the type — several do —
@@ -135,6 +157,131 @@ function allowedHosts() {
   return out;
 }
 
+// ===========================================================================
+// THIS PROCESS'S OWN ADDRESS, AND THE ONE ENDPOINT FAMILY THAT IS NOT
+// SOMEBODY ELSE'S (2026-09-10).
+//
+// The admin console and the user portal are SSF receivers now — each with a
+// seeded stream and a receive endpoint of its own — and the stream's
+// `delivery.endpoint_url` is this service's own loopback address. That was a
+// decision with an alternative, and the alternative was rejected for
+// `common/oidc_rp.js`'s reason: handing the SET to the inbox by function call
+// would have been a receiver that never parses a body, never checks a media
+// type, never presents an authorization header and never verifies a
+// signature — the half of a receiver that only looks run. `ssf/CLAUDE.md`
+// argues it beside that file's own.
+//
+// **SO TWO OF THE FOUR BOUNDS IN THE HEADER DO NOT APPLY TO THIS ONE ADDRESS,
+// AND BOTH EXEMPTIONS ARE ABOUT WHAT THEY WERE PROTECTING.**
+//
+//   * The ALLOWLIST (`ssf.pushAllowedHosts`) exists to stop this service
+//     dialling a host somebody named in a stream configuration. This host is
+//     not named by anybody — it is computed here, from `global.port`, and it
+//     is the process making the request. A deployment that narrows the list to
+//     its own receivers would otherwise silently take its own console offline,
+//     and the failure would read as "the console shows nothing" rather than as
+//     a setting.
+//
+//   * The https RULE exists because a Security Event Token is somebody's
+//     security posture IN TRANSIT and the receiver's `authorization_header`
+//     travels beside it. A request from this process to itself over
+//     127.0.0.1 does not traverse a network — the same reading RFC 8252
+//     section 8.3 gives the loopback interface — so with `global.https` off,
+//     where the listener genuinely is http, the internal push is dialled
+//     rather than refused. Nothing else about http changes.
+//
+// **WHAT IS NOT EXEMPT IS `ssf.pushDelivery`.** With it off this service makes
+// no outbound request at all, including this one, and the two internal
+// receivers go quiet. That is stated at seeding time and on both inbox pages
+// rather than left to be discovered — see `ssf_receivers.js`.
+//
+// It is a computed ORIGIN comparison and never a substring match: a receiver
+// whose endpoint is `https://evil.example/?x=https://127.0.0.1:8081/` is not
+// this service and must not inherit either exemption.
+// ===========================================================================
+function loopbackOrigin() {
+  log.debug('Entering loopbackOrigin().');
+  const scheme = config.value('global.https') ? 'https' : 'http';
+  // An address rather than `localhost`, which resolves to ::1 first on some
+  // hosts while this service binds 0.0.0.0 — a connection refused on a name
+  // that pings, which is among the least obvious failures available.
+  //
+  // **`helpers.loopbackHost()` AND NOT THE LITERAL `127.0.0.1` (2026-09-12).**
+  // The literal reached nothing when `global.host` bound one interface address
+  // or IPv6 only, so every push to this service's own two receivers failed with
+  // ECONNREFUSED and both inbox pages stayed empty for a reason nothing named.
+  // `loopbackHost()` is how this process dials itself — a wildcard bind maps to
+  // the loopback address of its own family — and `hostForUrl()` brackets an
+  // IPv6 literal, which a URL needs and a bind does not.
+  const out = scheme + '://' + hostForUrl(loopbackHost()) + ':' + PORT;
+  log.debug('Leaving loopbackOrigin(). ' + out);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THIS SERVICE'S OWN BASE URL WHEN THERE IS NO REQUEST TO READ ONE FROM
+// (2026-09-12).
+//
+// Two things here name an issuer with no request behind them — a stream seeded
+// at startup, and a CAEP event sent by the expiry sweep's timer — and both used
+// `helpers.baseUrlOf(null)`, which falls back to `http://localhost:<port>`:
+// HTTP whatever `global.https` says, and a host nothing dials. So a seeded
+// stream on an HTTPS service carried an `iss` in the wrong scheme.
+//
+// `global.publicBaseUrl` wins where it is set — it is the operator saying what
+// this service is called, and every other issuer here already takes it. Where
+// it is not, the loopback origin in the scheme this listener really speaks. The
+// realm's prefix goes on the end ONCE, which is `baseUrlOf()`'s own contract.
+// ---------------------------------------------------------------------------
+function ownBaseUrl() {
+  log.debug('Entering ownBaseUrl().');
+  const pinned = pinnedBaseUrl();
+  const out = (pinned || loopbackOrigin()) + realms.currentPrefix();
+  log.debug('Leaving ownBaseUrl(). ' + out);
+  return out;
+}
+
+// The `iss` of this transmitter in the ambient realm. `ssf.js`'s `issuerFor()`
+// argues the three rules; it is here, beside `ownBaseUrl()`, because both
+// `ssf.js` and `ssf_receivers.js` need it and the second cannot require the
+// first. A value the REALM carries is used as it stands; a process-wide value
+// gets the realm's prefix; an empty one is the base URL, which carries the
+// prefix already.
+function transmitterIssuer(req) {
+  log.debug('Entering transmitterIssuer().');
+  const configured = String(config.value('ssf.issuer') || '').trim();
+  let value;
+  if (configured) {
+    const realm = realms.current();
+    const ownValue = !!(realm && realm.overrides &&
+      Object.prototype.hasOwnProperty.call(realm.overrides, 'ssf.issuer'));
+    value = ownValue ? configured
+                     : configured.replace(/\/+$/, '') + realms.currentPrefix();
+  } else {
+    value = req ? baseUrlOf(req) : ownBaseUrl();
+  }
+  log.debug('Leaving transmitterIssuer(). ' + value);
+  return value;
+}
+
+function isOwnLoopback(raw) {
+  log.debug('Entering isOwnLoopback().');
+  let parsed = null;
+  try {
+    parsed = new URL(String(raw || '').trim());
+  } catch (e) {
+    log.debug("Caught in isOwnLoopback(): " + ((e && e.message) || e));
+    // Not a URL at all. `urlProblem()` says so properly a few lines down; here
+    // the only question is whether it is OURS, and an unparseable string is
+    // not.
+    log.debug('Leaving isOwnLoopback(). It will not parse.');
+    return false;
+  }
+  const mine = parsed.origin === loopbackOrigin();
+  log.debug('Leaving isOwnLoopback(). ' + mine);
+  return mine;
+}
+
 // ---------------------------------------------------------------------------
 // WHETHER THIS URL MAY BE DIALLED, as a sentence rather than a boolean.
 //
@@ -166,7 +313,8 @@ function urlProblem(raw) {
     return 'its scheme is "' + parsed.protocol.replace(':', '') + '", and a ' +
            'push endpoint is https (or http, with ssf.pushAllowInsecure on)';
   }
-  if (parsed.protocol === 'http:' && !allowInsecure()) {
+  const ours = isOwnLoopback(text);
+  if (parsed.protocol === 'http:' && !allowInsecure() && !ours) {
     log.debug('Leaving urlProblem(). http, refused.');
     return 'it is an http:// URL and ssf.pushAllowInsecure is off. A ' +
            'Security Event Token is somebody\'s security posture in ' +
@@ -175,7 +323,8 @@ function urlProblem(raw) {
            'otherwise';
   }
   const hosts = allowedHosts();
-  if (hosts.length && hosts.indexOf(parsed.hostname.toLowerCase()) < 0) {
+  if (hosts.length && !ours &&
+      hosts.indexOf(parsed.hostname.toLowerCase()) < 0) {
     log.debug('Leaving urlProblem(). Not on the allowlist.');
     return 'its host "' + parsed.hostname + '" is not in ' +
            'ssf.pushAllowedHosts (' + hosts.join(', ') + '). That list is ' +
@@ -210,6 +359,7 @@ function pushSet(url, token, options) {
   if (!pushAllowed()) {
     log.debug('Leaving pushSet(). ssf.pushDelivery is off.');
     return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+      errorCode: 'STS-SSF-0033',
       why: 'ssf.pushDelivery is off, so this service makes no outbound ' +
            'request at all. Poll delivery (urn:ietf:rfc:8936) needs none — ' +
            'the receiver comes here.' });
@@ -218,11 +368,62 @@ function pushSet(url, token, options) {
   if (problem) {
     log.debug('Leaving pushSet(). ' + problem);
     return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+      errorCode: 'STS-SSF-0034',
       why: 'the delivery endpoint cannot be dialled: ' + problem });
   }
   const target = new URL(String(url).trim());
   const secure = target.protocol === 'https:';
-  if (!secure) {
+  const ours = isOwnLoopback(url);
+  // ---------------------------------------------------------------------
+  // THE PIN, FOR THIS SERVICE'S OWN RECEIVERS ONLY (2026-09-10).
+  //
+  // The certificate on 8081 is generated per start and signed by nobody, so
+  // the ordinary check below would refuse every push to the console's and the
+  // portal's receive endpoints — and `ssf.pushAllowInsecure` is NOT the way
+  // round it, because that setting turns the check off for every receiver in
+  // the world to fix a connection to ourselves.
+  //
+  // So: our own certificate as the trust anchor — it is self-signed, so it is
+  // its own root — and the hostname check skipped, because the certificate
+  // names this service and the connection names the loopback interface.
+  // Pinning the key is the stronger half of the two. `common/oidc_rp.js`'s
+  // back channel does exactly this and these are the same three lines.
+  //
+  // **THE REQUIRE IS LAZY AND HAS TO BE.** `tls/tls_server.js` registers three
+  // routes (rule 1), and this file is required by `ssf.js` at 23b — but also,
+  // through `ssf_receivers.js`, by `admin-ui/admin.js` at 18 and
+  // `portal/portal.js` at 8c, either of which would drag /tls ahead of the
+  // management API's own routes. Here every module is loaded and it is a
+  // cache hit.
+  // ---------------------------------------------------------------------
+  let anchor = null;
+  if (ours && secure) {
+    try {
+      // THE ANCHOR AND NOT THE CERTIFICATE — see common/oidc_rp.js's
+      // back channel, which pinned the leaf and stopped being able to reach
+      // this service at all the hour that leaf acquired an issuer.
+      anchor = require('../tls/tls_server').serverCertificate().trustAnchorPem;
+    } catch (e) {
+      // Reported as a push failure rather than thrown, like every other
+      // outcome here: the stream's log is where a receiver's operator finds
+      // out, and a throw would have to be caught at every call site.
+      log.debug('Leaving pushSet(). No server certificate: ' + e.message);
+      return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+        errorCode: 'STS-SSF-0035',
+        why: 'this is one of this service\'s own receivers, on the loopback ' +
+             'address, and its TLS certificate could not be read to verify ' +
+             'the connection against: ' + e.message });
+    }
+  }
+  if (!secure && ours) {
+    // NOT the warning below. That one is about a Security Event Token
+    // travelling in clear across a network; this request does not leave the
+    // host. Said at debug so that a reader chasing a push can still see which
+    // branch it took.
+    log.debug('pushSet(): ' + target.origin + ' is this process, so plain ' +
+              'http is not a transit exposure. See isOwnLoopback().');
+  }
+  if (!secure && !ours) {
     // Every insecure request, not just the setting. See federation_http.js's
     // header, point 2 — a check disabled six months ago and forgotten is the
     // worst kind of leftover.
@@ -242,12 +443,17 @@ function pushSet(url, token, options) {
     headers.Authorization = String(opts.authorizationHeader);
   }
 
+  // Read once per push, so a runtime change cannot move the bound half way
+  // through one response.
+  const limit = maxBodyBytes();
   log.debug('Leaving pushSet(). Dialling ' + target.origin + '.');
   return new Promise(function (resolve) {
     const done = function (result) {
+      log.debug("Entering done().");
       log.debug('pushSet() finished. ok=' + result.ok + ', status=' +
                 result.status);
       resolve(Object.assign({ url: String(url) }, result));
+      log.debug("Leaving done().");
     };
     let request = null;
     try {
@@ -263,13 +469,22 @@ function pushSet(url, token, options) {
         // is the receiver's authorization_header and the fact that somebody's
         // session was revoked. `ssf.pushAllowInsecure` turns it off for
         // localhost work and is warned about above.
-        rejectUnauthorized: secure && !allowInsecure()
+        //
+        // For one of this service's own receivers it stays ON and the anchor
+        // above is what it checks against — a PIN rather than a relaxation,
+        // which is the whole difference between this and setting that
+        // setting.
+        rejectUnauthorized: secure && (!!anchor || !allowInsecure()),
+        ca: anchor ? [anchor] : undefined,
+        checkServerIdentity: anchor ? function () { return undefined; }
+                                    : undefined
       }, function (response) {
         const status = response.statusCode || 0;
         const location = response.headers.location;
         if (status >= 300 && status < 400 && location) {
           response.destroy();
           return done({ ok: false, status: status, err: '', description: '',
+            errorCode: 'STS-SSF-0036',
             why: 'it answered ' + status + ' redirecting to "' + location +
                  '", and this service does not follow a redirect on a push. ' +
                  'The event and the receiver\'s authorization_header would ' +
@@ -284,7 +499,7 @@ function pushSet(url, token, options) {
             return;
           }
           bytes += Buffer.byteLength(chunk);
-          if (bytes > MAX_BODY_BYTES) {
+          if (bytes > limit) {
             overflowed = true;
             response.destroy();
             return;
@@ -294,11 +509,11 @@ function pushSet(url, token, options) {
         response.on('end', function () {
           if (overflowed) {
             return done({ ok: false, status: status, err: '',
-              description: '',
-              why: 'it answered with more than ' + MAX_BODY_BYTES +
-                   ' bytes. RFC 8935 makes a success an EMPTY 202 and a ' +
-                   'failure a small JSON object, so this is not a push ' +
-                   'endpoint answering.' });
+              description: '', errorCode: 'STS-SSF-0037',
+              why: 'it answered with more than ' + limit +
+                   ' bytes (ssf.pushMaxResponseBytes). RFC 8935 makes a ' +
+                   'success an EMPTY 202 and a failure a small JSON object, ' +
+                   'so this is not a push endpoint answering.' });
           }
           if (status === 202 || status === 200 || status === 204) {
             // 202 is what RFC 8935 section 2.3 specifies. 200 and 204 are
@@ -317,6 +532,8 @@ function pushSet(url, token, options) {
           try {
             json = JSON.parse(text);
           } catch (e) {
+            log.debug("Caught in a callback in pushSet(): " +
+                      ((e && e.message) || e));
             // Not JSON. A proxy in front of the receiver serving an HTML
             // error page is the ordinary case, and the TEXT is then the
             // diagnosis — so it is carried rather than discarded.
@@ -325,15 +542,21 @@ function pushSet(url, token, options) {
           if (status === 400 && json && json.err) {
             return done({ ok: false, status: status, err: String(json.err),
               description: String(json.description || ''),
+              errorCode: 'STS-SSF-0038',
               why: 'the receiver REFUSED the event: ' + String(json.err) +
                    ' — ' + String(json.description || '(no description)') });
           }
           return done({ ok: false, status: status, err: '', description: '',
+            errorCode: 'STS-SSF-0039',
+            // A 5xx or a 429 is the receiver not coping rather than refusing,
+            // which is the one kind of answer `ssf.pushRetries` may try again.
+            retryable: status >= 500 || status === 429,
             why: 'it answered ' + status + (text
               ? ': ' + text.slice(0, 200) : ' with no body') });
         });
         response.on('error', function (e) {
           done({ ok: false, status: status, err: '', description: '',
+            errorCode: 'STS-SSF-0040',
             why: 'the response failed: ' + e.message });
         });
       });
@@ -341,11 +564,13 @@ function pushSet(url, token, options) {
       // A malformed option rather than a network failure — new URL() has
       // already succeeded by here, so this is a bug in the caller.
       return done({ ok: false, status: 0, err: '', description: '',
+        errorCode: 'STS-SSF-0041',
         why: 'the request could not be built: ' + e.message });
     }
     request.setTimeout(timeoutMs(), function () {
       request.destroy();
-      done({ ok: false, status: 0, err: '', description: '',
+      done({ ok: false, status: 0, err: '', description: '', retryable: true,
+        errorCode: 'STS-SSF-0042',
         why: 'it did not answer within ' + timeoutMs() +
              'ms (ssf.pushTimeoutMs)' });
     });
@@ -358,6 +583,10 @@ function pushSet(url, token, options) {
         e.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
         e.code === 'SELF_SIGNED_CERT_IN_CHAIN';
       done({ ok: false, status: 0, err: '', description: '',
+        errorCode: selfSigned ? 'STS-SSF-0044' : 'STS-SSF-0043',
+        // A connection that failed may succeed; a certificate nothing trusts
+        // will not, and retrying it is only delay.
+        retryable: !selfSigned,
         why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') +
              e.message + (selfSigned
           ? '. Set ssf.pushAllowInsecure to push to a receiver whose ' +
@@ -368,7 +597,160 @@ function pushSet(url, token, options) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// PUSH ONE SET, TRYING AGAIN WHERE `ssf.pushRetries` SAYS TO (2026-09-12).
+//
+// `ssf/CLAUDE.md` argues why this service does not retry, and **the default is
+// still 0, which is exactly that**: a mock that retried would make a receiver's
+// one-shot failure invisible. A deployment is the other case — a receiver that
+// restarts for thirty seconds should not lose every event sent in them — so the
+// count is a setting rather than a rewrite of the argument.
+//
+// ONLY A FAILURE THAT COULD GO DIFFERENTLY IS RETRIED: no connection, a
+// timeout, a 5xx or a 429. A 400 with `{err, description}` is the receiver
+// REFUSING — it read the SET and will read it the same way next time, and RFC
+// 8935 section 2.4 makes that a final answer. Nor is a push this service
+// refused to make (delivery off, a URL it may not dial) retried: nothing about
+// it changes with time. The delay is linear — `ssf.pushRetryDelayMs` times the
+// attempt number — and every attempt's result is returned in `attempts`, so the
+// stream's log says how many were made rather than only how the last one went.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PUSH CAP (2026-09-14): at most `ssf.pushConcurrency` pushes in flight in
+// this process, the rest waiting in order, at most `ssf.pushBacklog` of them.
+//
+// `emitProtocolEvent()` fans one event out to every stream that takes it with
+// `Promise.all()`, and a directory write is two events — so a SCIM bulk load
+// against forty-two push streams asked for eighty-four pushes per person, all
+// at once. Most were to this service's OWN receivers, which is a request back
+// into the worker pool, so the burst was load on the service itself and it
+// stopped answering. The cap makes that fan-out a queue.
+//
+// **A PUSH THAT CANNOT WAIT IS NOT MADE**, and says so with a code: the SET is
+// dead-lettered by `transmit()`, which is where the bound on memory comes from.
+// **A RETRY WAITS FOR A SLOT OF ITS OWN**, and gives its slot back during the
+// delay, so a receiver being retried does not hold a slot it is not using.
+// **THE CAP IS PER PROCESS**: the four processes of a dispatched service have
+// four, which is the arithmetic a per-process setting states rather than
+// hides.
+// ---------------------------------------------------------------------------
+let pushesActive = 0;
+const pushesWaiting = [];
+
+function pushConcurrency() {
+  log.debug("Entering pushConcurrency().");
+  const raw = Number(config.value('ssf.pushConcurrency'));
+  log.debug("Leaving pushConcurrency().");
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
+function pushBacklog() {
+  log.debug("Entering pushBacklog().");
+  const raw = Number(config.value('ssf.pushBacklog'));
+  log.debug("Leaving pushBacklog().");
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2000;
+}
+
+// Resolves with a release function once a slot is free, or with null when the
+// backlog is full.
+function acquirePushSlot() {
+  log.debug("Entering acquirePushSlot().");
+  const cap = pushConcurrency();
+  const release = function () {
+    log.debug("Entering release().");
+    pushesActive = Math.max(0, pushesActive - 1);
+    while (pushesWaiting.length && (!pushConcurrency() ||
+           pushesActive < pushConcurrency())) {
+      pushesActive += 1;
+      pushesWaiting.shift()(release);
+    }
+    log.debug("Leaving release().");
+  };
+  if (!cap || pushesActive < cap) {
+    pushesActive += 1;
+    log.debug("Leaving acquirePushSlot(). A slot at once.");
+    return Promise.resolve(release);
+  }
+  if (pushesWaiting.length >= pushBacklog()) {
+    log.debug("Leaving acquirePushSlot(). The backlog is full.");
+    return Promise.resolve(null);
+  }
+  log.debug("Leaving acquirePushSlot(). Waiting behind " +
+            pushesWaiting.length + ".");
+  return new Promise(function (resolve) {
+    pushesWaiting.push(resolve);
+  });
+}
+
+// One push, inside a slot. What every push this module makes goes through.
+function pushSetGated(url, token, options) {
+  log.debug("Entering pushSetGated().");
+  log.debug("Leaving pushSetGated().");
+  return acquirePushSlot().then(function (release) {
+    if (!release) {
+      return { ok: false, status: 0, err: '', description: '',
+        retryable: false, errorCode: 'STS-SSF-0092',
+        why: 'the push was not made: ' + pushesWaiting.length + ' pushes ' +
+             'were already waiting for one of ' + pushConcurrency() +
+             ' slots (ssf.pushConcurrency, ssf.pushBacklog)' };
+    }
+    return pushSet(url, token, options).then(function (result) {
+      release();
+      return result;
+    }, function (e) {
+      log.debug("Caught in pushSetGated(): " + ((e && e.message) || e));
+      release();
+      throw e;
+    });
+  });
+}
+
+// For a report: how busy the cap is in this process right now.
+function pushGateState() {
+  log.debug("Entering pushGateState().");
+  log.debug("Leaving pushGateState().");
+  return { active: pushesActive, waiting: pushesWaiting.length,
+           concurrency: pushConcurrency(), backlog: pushBacklog() };
+}
+
+function pushSetWithRetries(url, token, options) {
+  log.debug('Entering pushSetWithRetries().');
+  const retries = config.value('ssf.pushRetries');
+  const delay = config.value('ssf.pushRetryDelayMs');
+  const attempts = [];
+  function attempt(n) {
+    log.debug("Entering attempt().");
+    log.debug("Leaving attempt().");
+    return pushSetGated(url, token, options).then(function (result) {
+      attempts.push({ status: result.status, why: result.why });
+      if (result.ok || !result.retryable || n >= retries) {
+        log.debug('pushSetWithRetries() finished after ' + (n + 1) +
+                  ' attempt(s). ok=' + result.ok);
+        return Object.assign({}, result, { attempts: attempts });
+      }
+      log.info('ssf: a push to ' + url + ' failed (' + result.why + '); ' +
+               'trying again in ' + (delay * (n + 1)) + 'ms, attempt ' +
+               (n + 2) + ' of ' + (retries + 1) + ' (ssf.pushRetries).');
+      return new Promise(function (resolve) {
+        const timer = setTimeout(resolve, delay * (n + 1));
+        // A retry must not keep a process that is shutting down alive.
+        if (timer.unref) timer.unref();
+      }).then(function () { return attempt(n + 1); });
+    });
+  }
+  log.debug('Leaving pushSetWithRetries(). ' + retries + ' retr(ies) allowed.');
+  return attempt(0);
+}
+
 module.exports = {
+  pushSetWithRetries: pushSetWithRetries,
+  pushSetGated: pushSetGated,
+  pushGateState: pushGateState,
+  loopbackOrigin: loopbackOrigin,
+  ownBaseUrl: ownBaseUrl,
+  transmitterIssuer: transmitterIssuer,
+  maxBodyBytes: maxBodyBytes,
+  isOwnLoopback: isOwnLoopback,
   MAX_BODY_BYTES: MAX_BODY_BYTES,
   SET_MEDIA_TYPE: SET_MEDIA_TYPE,
   pushAllowed: pushAllowed,

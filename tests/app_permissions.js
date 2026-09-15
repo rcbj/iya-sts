@@ -53,6 +53,12 @@ const applications = require('../common/applications');
 const permissions = require('../common/app_permissions');
 const map = require('../admin-ui/delegation_map');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'app_permissions',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The two colours the ACTS picture uses to say impersonation and delegation,
 // quoted here from `delegation_map.js`'s palette. A configured line must never
 // take either: they are a judgement about a MECHANISM, and a permission nobody
@@ -67,8 +73,11 @@ const GREEN = '#0b6b4f';
 // through the register, because the register reads `ou=applications` and the
 // point of this file is the states a directory will not hand over.
 function grant(client, resource, name, options) {
+  log.debug("Entering grant().");
   const opts = options || {};
-  const base = opts.baseUri === undefined ? 'https://example.com/' : opts.baseUri;
+  const base = opts.baseUri === undefined ? 'https://example.com/' :
+               opts.baseUri;
+  log.debug("Leaving grant().");
   return {
     client: client,
     clientName: opts.clientName || client,
@@ -88,6 +97,7 @@ function grant(client, resource, name, options) {
 // one, so an absent attribute is reported as `''` rather than dropped — the
 // distinction IS the assertion.
 function edgeDashes(svg, colour) {
+  log.debug("Entering edgeDashes().");
   const out = [];
   const paths = svg.match(/<path [^>]*>/g) || [];
   paths.forEach(function (one) {
@@ -98,6 +108,7 @@ function edgeDashes(svg, colour) {
     const dash = /stroke-dasharray="([^"]*)"/.exec(one);
     out.push(dash ? dash[1] : '');
   });
+  log.debug("Leaving edgeDashes().");
   return out;
 }
 
@@ -109,6 +120,8 @@ function edgeDashes(svg, colour) {
 // permission, which is what `register()` means by one; `defined` is the
 // permissions on them, as [resource, name] pairs.
 function registerOf(grants, resources, defined) {
+  log.debug("Entering registerOf().");
+  log.debug("Leaving registerOf().");
   return {
     resources: (resources || []).map(function (identifier) {
       return { identifier: identifier, name: identifier,
@@ -125,6 +138,7 @@ function registerOf(grants, resources, defined) {
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   t.log.info('a permission identifier is the base and the name, joined once');
   // -----------------------------------------------------------------------
@@ -133,9 +147,10 @@ function run(t) {
           'a base that already ends in a separator is used as it stands');
   t.equal(applications.permissionIdOf('https://example.com', 'write'),
           'https://example.com/write',
-          'AND ONE THAT DOES NOT GETS A SEPARATOR — without this the two join ' +
-          'into "https://example.comwrite", which is the failure the whole ' +
-          'feature turns on and which nothing downstream could ever notice');
+          'AND ONE THAT DOES NOT GETS A SEPARATOR — without this the two ' +
+          'join into "https://example.comwrite", which is the failure the ' +
+          'whole feature turns on and which nothing downstream could ever ' +
+          'notice');
   t.equal(applications.permissionIdOf('api://8f2c/', 'Widgets.ReadWrite.All'),
           'api://8f2c/Widgets.ReadWrite.All',
           'Entra ID\'s own spelling composes the same way — nothing here ' +
@@ -192,16 +207,18 @@ function run(t) {
   ]);
   t.equal(graph.nodes.length, 3, 'three applications, three boxes');
   t.check(graph.nodes.every(function (n) { return n.kind === 'party'; }),
-          'THERE IS NO ISSUER BOX. The hexagon is on the acts picture because ' +
-          'every line there exists because this service issued or refused ' +
-          'something; not one line here has been asked for, so a hexagon ' +
-          'would be a box with no edges — a drawing of a claim nobody made',
+          'THERE IS NO ISSUER BOX. The hexagon is on the acts picture ' +
+          'because every line there exists because this service issued or ' +
+          'refused something; not one line here has been asked for, so a ' +
+          'hexagon would be a box with no edges — a drawing of a claim ' +
+          'nobody made',
           JSON.stringify(graph.nodes.map(function (n) { return n.kind; })));
   t.check(graph.nodes.every(function (n) { return !n.key && !!n.application; }),
-          'AND NO BOX IS A PERSON. `delegationNodeLook()` reaches for a stick ' +
-          'figure when a node carries an identity key, and a configured ' +
-          'permission has nobody in it — it says "this client may reach that ' +
-          'API as whoever is signed in", and there is no whoever yet');
+          'AND NO BOX IS A PERSON. `delegationNodeLook()` reaches for a ' +
+          'stick figure when a node carries an identity key, and a ' +
+          'configured permission has nobody in it — it says "this client may ' +
+          'reach that API as whoever is signed in", and there is no whoever ' +
+          'yet');
   t.check(graph.nodes.every(function (n) { return n.acts === 0; }),
           'and every box records nought acts, which is load-bearing: ' +
           'edgeLook() paints an edge RED when acts && !issued, so a box that ' +
@@ -215,9 +232,12 @@ function run(t) {
           'two grants between webapp1 and api1 are TWO lines. One labelled ' +
           '"2" would hide which permissions were granted, which is the only ' +
           'thing the picture is being asked');
-  t.check(graph.edges.every(function (e) { return e.relation === 'may-reach'; }),
-          'every line says MAY reach rather than `reaches` — that word is the ' +
-          'acts picture\'s claim that a credential was issued for something');
+  t.check(graph.edges.every(function (e) {
+    return e.relation === 'may-reach';
+  }),
+          'every line says MAY reach rather than `reaches` — that word is ' +
+          'the acts picture\'s claim that a credential was issued for ' +
+          'something');
   t.check(graph.edges.every(function (e) { return !e.mode; }),
           'and no line carries a mode, because impersonation and delegation ' +
           'are properties of a mechanism and none has been performed');
@@ -232,7 +252,8 @@ function run(t) {
   t.equal(dangling.edges.length, 1,
           'the grant naming a permission nobody defines draws nothing — a ' +
           'line to nowhere would be a drawing of a resource that is there');
-  const orphan = dangling.nodes.filter(function (n) { return n.id === 'webapp1'; })[0];
+  const orphan = dangling.nodes.filter(function (
+      n) { return n.id === 'webapp1'; })[0];
   t.equal(orphan && orphan.dangling, 1,
           'but the client\'s own box counts it, so the state is carried out ' +
           'of the graph rather than dropped on the floor of it');
@@ -251,7 +272,8 @@ function run(t) {
           'an S4U2Self');
 
   // -----------------------------------------------------------------------
-  t.log.info('and the picture draws an unused grant differently from a used one');
+  t.log.info('and the picture draws an unused grant differently from a used ' +
+             'one');
   // -----------------------------------------------------------------------
   // THE JOIN. Everything above would pass with a renderer that drew all three
   // lines identically; this is the assertion that the one bit a configured
@@ -264,7 +286,8 @@ function run(t) {
           'been asked for against the two that never have. A grant nobody ' +
           'needed draws no act at all, so this is a reading the acts diagram ' +
           'cannot give and the single most useful thing on this one');
-  t.equal(edgeDashes(drawn.svg, AMBER).length + edgeDashes(drawn.svg, GREEN).length, 0,
+  t.equal(edgeDashes(drawn.svg, AMBER).length +
+          edgeDashes(drawn.svg, GREEN).length, 0,
           'AND NOT ONE LINE IS AMBER OR GREEN. Those two say impersonation ' +
           'and delegation on the acts picture, and colouring a permission ' +
           'that has never been exercised would tell a reader who has learnt ' +
@@ -317,6 +340,8 @@ function run(t) {
       ['api5', 'call'], ['lonely', 'peek']]);
   const parts = permissions.clusters(mesh);
   const groupOf = function (identifier) {
+    log.debug("Entering groupOf().");
+    log.debug("Leaving groupOf().");
     return permissions.clusterFor(identifier, parts);
   };
 
@@ -380,8 +405,8 @@ function run(t) {
   t.equal(groupOf('selfy').counts.lines, 0,
           'and no line, because `graph()` draws no arrow from a box back to ' +
           'itself — the count on the group and the picture beside it have to ' +
-          'agree, and a table reading `1 grant` above an empty diagram is the ' +
-          'console disagreeing with itself about one row');
+          'agree, and a table reading `1 grant` above an empty diagram is ' +
+          'the console disagreeing with itself about one row');
   t.equal(groupOf('selfy').counts.selfGrants, 1,
           'it is reported as what it is instead');
 
@@ -408,8 +433,8 @@ function run(t) {
       filed[one.client + '|' + one.permissionId] =
         (filed[one.client + '|' + one.permissionId] || 0) + 1;
       t.check(group.members.indexOf(one.client) >= 0,
-              'the client of every grant is a member of the group it is filed ' +
-              'under: ' + one.client + ' in ' + group.key);
+              'the client of every grant is a member of the group it is ' +
+              'filed under: ' + one.client + ' in ' + group.key);
       t.check(!one.resource || group.members.indexOf(one.resource) >= 0,
               'and so is its resource, where it has one: ' +
               (one.resource || '(dangling)') + ' in ' + group.key);
@@ -424,7 +449,8 @@ function run(t) {
           JSON.stringify(filed));
 
   // -----------------------------------------------------------------------
-  t.log.info('a group\'s picture is the whole picture narrowed and nothing else');
+  t.log.info('a group\'s picture is the whole picture narrowed and nothing ' +
+             'else');
   // -----------------------------------------------------------------------
   // THE JOIN, and it is what makes the count on the console a claim about the
   // renderer rather than about this module's arithmetic.
@@ -454,13 +480,14 @@ function run(t) {
   t.log.info('and an identifier is matched exactly, here as everywhere else');
   // -----------------------------------------------------------------------
   t.equal(groupOf('WebApp1'), null,
-          'NOTHING HERE CASE-FOLDS AN IDENTIFIER. `applications.js` does not, ' +
-          'an audience that differs by a character is a different audience, ' +
-          'and a lookup that matched loosely would be this module deciding a ' +
-          'comparison rule on that one\'s behalf — and would hand a reader the ' +
-          'group of an application they did not name');
+          'NOTHING HERE CASE-FOLDS AN IDENTIFIER. `applications.js` does ' +
+          'not, an audience that differs by a character is a different ' +
+          'audience, and a lookup that matched loosely would be this module ' +
+          'deciding a comparison rule on that one\'s behalf — and would hand ' +
+          'a reader the group of an application they did not name');
   t.equal(groupOf(''), null,
           'and an empty name is not the first group in the list');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

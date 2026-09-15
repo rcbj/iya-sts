@@ -88,16 +88,21 @@ Object.keys(datatypes.TYPES).forEach(function (uri) {
 });
 
 function resolveType(name) {
+  log.debug("Entering resolveType().");
   if (!name) {
+    log.debug("Leaving resolveType().");
     return null;
   }
   const text = String(name);
   if (datatypes.typeOf(text)) {
+    log.debug("Leaving resolveType().");
     return model.canonicalType(text);
   }
   if (SHORT_TYPE[text]) {
+    log.debug("Leaving resolveType().");
     return SHORT_TYPE[text];
   }
+  log.debug("Leaving resolveType().");
   return null;
 }
 
@@ -207,12 +212,16 @@ function readAttribute(source, numbers, counter) {
 // evaluation. A JSON boolean is `true`/`false` rather than `True`, and a JSON
 // number is its own decimal text.
 function lexicalOf(raw, type) {
+  log.debug("Entering lexicalOf().");
   if (raw === null || raw === undefined) {
+    log.debug("Leaving lexicalOf().");
     return '';
   }
   if (typeof raw === 'boolean') {
+    log.debug("Leaving lexicalOf().");
     return raw ? 'true' : 'false';
   }
+  log.debug("Leaving lexicalOf().");
   return String(raw);
 }
 
@@ -246,7 +255,9 @@ function parseRequest(body) {
   const categories = [];
 
   function addCategory(categoryId, source) {
+    log.debug("Entering addCategory().");
     if (!source) {
+      log.debug("Leaving addCategory().");
       return;
     }
     const list = Array.isArray(source) ? source : [source];
@@ -270,6 +281,7 @@ function parseRequest(body) {
         })
       });
     });
+    log.debug("Leaving addCategory().");
   }
 
   // The shorthand names first, then the generic array — a request may use
@@ -348,10 +360,13 @@ function writeResponse(decision) {
 }
 
 function referenceOf(one) {
+  log.debug("Entering referenceOf().");
+  log.debug("Leaving referenceOf().");
   return { Id: one.id, Version: one.version };
 }
 
 function writeObligation(obligation) {
+  log.debug("Entering writeObligation().");
   const written = { Id: obligation.id };
   if (obligation.assignments && obligation.assignments.length) {
     written.AttributeAssignment = obligation.assignments.map(function (one) {
@@ -367,6 +382,7 @@ function writeObligation(obligation) {
       return assignment;
     });
   }
+  log.debug("Leaving writeObligation().");
   return written;
 }
 
@@ -374,7 +390,9 @@ function writeObligation(obligation) {
 // examples use and what a reader of a response can act on. The URI is correct
 // and unreadable.
 function shortNameOf(uri) {
+  log.debug("Entering shortNameOf().");
   const row = datatypes.typeOf(uri);
+  log.debug("Leaving shortNameOf().");
   return row ? row.name : uri;
 }
 

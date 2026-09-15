@@ -14,17 +14,18 @@
 //
 // So this page exists, and it is deliberately SHORT. It carries the logo of the
 // project this service was extracted from, says what this service is called,
-// and offers four links — the repository, its issues, the documentation site,
-// and the admin console on THIS instance. It is a signpost, not a second
-// documentation site.
+// and offers five links — the repository, its issues, the documentation site,
+// and the two surfaces on THIS instance that a person rather than a client
+// goes to: the admin console and the user portal. It is a signpost, not a
+// second documentation site.
 //
-// **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.**
-// `GET /admin/sts-metadata` builds that list by walking the running Express
-// router, so it cannot go stale by omission, and the parent project's
-// `tests/vendored/sts_metadata.js` fails on drift in either direction. A hand-written
-// list of highlights here would be a second, unchecked copy of it — wrong
-// within a month, on the page most likely to be read first and least likely to
-// be re-read. The documentation site makes the same argument in
+// **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.** `GET
+// /admin/sts-metadata` builds that list by walking the running Express router,
+// so it cannot go stale by omission, and the parent project's
+// `tests/vendored/sts_metadata.js` fails on drift in either direction. A
+// hand-written list of highlights here would be a second, unchecked copy of it
+// — wrong within a month, on the page most likely to be read first and least
+// likely to be re-read. The documentation site makes the same argument in
 // `docs/endpoints.md` and this page holds to it: LINK to the thing that
 // generates the list.
 //
@@ -47,9 +48,9 @@
 // rather than at require time — and a missing image is the least important
 // thing that could go wrong here. With no image the page is drawn without one
 // and `/logo.png` answers 404 with a sentence saying why, which is also what
-// keeps that route honest for the link check in `tests/vendored/sts_metadata.js`: it
-// fails on Express's own `Cannot GET`, so an endpoint answering for itself is
-// the distinction it is looking for.
+// keeps that route honest for the link check in
+// `tests/vendored/sts_metadata.js`: it fails on Express's own `Cannot GET`, so
+// an endpoint answering for itself is the distinction it is looking for.
 //
 // ---------------------------------------------------------------------------
 // THE IMAGE IS ON A BLACK BAND AND THAT IS NOT A STYLE CHOICE.
@@ -113,12 +114,14 @@ const mode = require('../common/mode');
 // ever made and told a reader nothing about which one they were looking at.
 // `load()` reads the record the image build stamped. See common/version.js.
 const version = require('../common/version');
+// The registry of failure codes, a LEAF — see common/error_codes.js.
+const errorCodes = require('../common/error_codes');
 const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;
 const BUILD_INFO = version.buildInfo(APP_VERSION);
 
 // ---------------------------------------------------------------------------
-// THE FOUR LINKS.
+// THE FIVE LINKS.
 //
 // Three of them name the repository this service lives in, and they are
 // written out rather than derived from `package.json` — that manifest carries
@@ -140,6 +143,21 @@ const DOCS_URL = 'https://rcbj.github.io/mock-sts/';
 // because documents that carry absolute URLs have to follow the request. A
 // same-origin link does not have to know any of that.
 const CONSOLE_PATH = '/admin';
+// THE FIFTH LINK, AND IT IS THE SECOND SAME-ORIGIN ONE (2026-09-10). Relative
+// for the reason above rather than for a reason of its own.
+//
+// It is here because the four links above answer *what is this service* and
+// none of them answered *and what is it for ME*. The user portal has existed
+// since 2026-09-06 and the only ways to reach it were to already know the
+// path or to be redirected there by an activation link somebody sent you —
+// so the one surface in this service built for a person rather than for an
+// operator or a client was the one surface with no door on the front page.
+//
+// It lists none of the portal's pages, and that is the same rule this page
+// keeps about endpoints one paragraph up: `portal/portal.js`'s `NAV` is the
+// page list, `sts_metadata.js` reports it, and a set of highlights here would
+// be a second copy that goes stale the first time a page is added there.
+const PORTAL_PATH = '/portal';
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'debugger-logo.png');
 const LOGO_ROUTE = '/logo.png';
@@ -156,7 +174,8 @@ try {
   // service that speaks sixteen protocols from starting, so it is reported at
   // error level — where it is visible — and the page is drawn without it.
   logoBytes = null;
-  log.error('home: the logo could not be read from ' + LOGO_PATH + ': ' +
+  log.error(errorCodes.tag('STS-CORE-0037') +
+            'home: the logo could not be read from ' + LOGO_PATH + ': ' +
             e.message + '. The front page will be drawn without it and ' +
             LOGO_ROUTE + ' will answer 404.');
 }
@@ -167,7 +186,38 @@ try {
 // like a different service.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ONE COPY OF WHAT SIGNING IN HERE MEANS.
+//
+// Both same-origin links below send a reader to a sign-in screen, and what
+// that screen actually CHECKS is a property of the mode rather than of either
+// surface — so it is written once here rather than twice down there, where the
+// two copies would disagree the first time somebody corrected one of them.
+//
+// **IT USED TO BE A CLAUSE ON THE CONSOLE'S ROW READING "it asks you to sign
+// in, and nothing else here does".** That was true when it was written and had
+// stopped being true on 2026-09-06, when the user portal arrived; putting a
+// link to the portal on the same page is what made it wrong in a place a
+// reader could see. It also said "no password checked" unconditionally, which
+// is a DEVELOPMENT-mode fact — `mode.verifiesCredentials()` is what decides it
+// — so the sentence was two small lies on one line in a product deployment.
+//
+// Read per request rather than captured at require time, for the reason this
+// page reads every other conditional fact about the running service that way:
+// it is a front door, and it is drawn from what is true now.
+// ---------------------------------------------------------------------------
+function signInMeans() {
+  log.debug("Entering signInMeans().");
+  log.debug("Leaving signInMeans().");
+  return mode.verifiesCredentials()
+    ? 'It asks you to sign in, and this instance is in product mode, so the ' +
+      'password is checked against the account.'
+    : 'It asks you to sign in — any username, and no password is checked.';
+}
+
 function linkRow(href, label, external, note) {
+  log.debug("Entering linkRow().");
+  log.debug("Leaving linkRow().");
   return '<li><a href="' + xmlEscape(href) + '"' +
     (external ? ' target="_blank" rel="noopener noreferrer"' : '') + '>' +
     xmlEscape(label) + '</a><span class="note">' + xmlEscape(note) +
@@ -181,14 +231,14 @@ function homePage() {
       'height="240" alt="OAuth2 / OIDC / SAML2 Debugger — Iya Cyber ' +
       'Security"></div>'
     : '';
-  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>mock-sts</title><style>' +
-    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
-    'background:#f4f4f7;margin:0;padding:2rem 1rem;color:#222;line-height:1.45}' +
-    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;' +
-    'padding:0 0 26px;max-width:44rem;margin:0 auto;overflow:hidden;' +
-    'box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
+    'initial-scale=1"><title>mock-sts</title><style>' +
+    'body{font-family:system-ui,-apple-system,"Segoe ' +
+    'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
+    '1rem;color:#222;line-height:1.45}.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:0 0 26px;max-width:44rem;margin:0 ' +
+    'auto;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
     // The band the artwork was drawn for. See the header.
     '.hero{background:#000;padding:22px 24px;text-align:center}' +
     '.hero img{width:100%;max-width:360px;height:auto;display:inline-block}' +
@@ -231,11 +281,17 @@ function homePage() {
             'Everything this process has done, and the settings that change ' +
             'what its protocol endpoints do. ' +
             (mode.gatesConsole()
-              ? 'It asks you to sign in, and nothing else here does — any ' +
-                'username, no password checked.'
-              : 'It is open: admin.authRequired is off on this instance.') +
+              ? signInMeans() + ' It also asks for one of two roles.'
+              : 'It is open on this instance.') +
             ' Every endpoint this service registered is listed inside it, ' +
             'at /admin/sts-metadata.') +
+    linkRow(PORTAL_PATH, 'The user portal on this instance', false,
+            'The account pages of whoever is looking at them: how they sign ' +
+            'in to this service, what it holds about them, and where it will ' +
+            'sign them in. ' + signInMeans() + ' It asks for no role, which ' +
+            'is the whole difference from the console above: every page of ' +
+            'it is about the person looking at it, so saying who you are is ' +
+            'the entire question.') +
     '</ul></div></div></body></html>\n';
   log.debug('Leaving homePage().');
   return html;
@@ -283,12 +339,12 @@ app.get('/realms', function (req, res) {
     // one, in a test — needs the rule and not just the answers.
     pathSegment: realms.pathSegment(),
     // TWO FLAGS RATHER THAN ONE, because they answer different questions and a
-    // single `enabled` was ambiguous in exactly the case that matters. `enabled`
-    // is the `realms.enabled` SETTING — whether an operator has switched the
-    // feature off. `active` is whether any prefix actually answers, which is
-    // false when the setting is on and nobody has defined a realm. A client
-    // told "enabled: false" when the truth was "nobody has defined one yet"
-    // would look for the wrong problem.
+    // single `enabled` was ambiguous in exactly the case that matters.
+    // `enabled` is the `realms.enabled` SETTING — whether an operator has
+    // switched the feature off. `active` is whether any prefix actually
+    // answers, which is false when the setting is on and nobody has defined a
+    // realm. A client told "enabled: false" when the truth was "nobody has
+    // defined one yet" would look for the wrong problem.
     enabled: config.value('realms.enabled'),
     active: realms.active(),
     current: realms.currentId(),
@@ -311,7 +367,9 @@ app.get('/realms', function (req, res) {
   };
   res.set('Cache-Control', 'no-store').type('application/json')
      .send(JSON.stringify(body, null, 2));
-  log.debug('Leaving the realm directory endpoint. ' + body.realms.length + ' realm(s).');
+  log.debug('Leaving the realm directory endpoint. ' + body.realms.length +
+      ' ' +
+      'realm(s).');
 });
 
 app.get(LOGO_ROUTE, function (req, res) {
@@ -319,8 +377,10 @@ app.get(LOGO_ROUTE, function (req, res) {
   if (!logoBytes) {
     // 404 in this service's own words rather than Express's. The difference is
     // load-bearing for the link check in the parent project's
-    // tests/vendored/sts_metadata.js, which fails on `Cannot GET` and passes on an
-    // endpoint answering for itself — and it is the more useful answer anyway.
+    // tests/vendored/sts_metadata.js, which fails on `Cannot GET` and passes on
+    // an endpoint answering for itself — and it is the more useful answer
+    // anyway.
+    errorCodes.mark(res, 'STS-CORE-0038');
     res.status(404).type('text/plain')
       .send('The logo could not be read from disk at startup. The service ' +
             'log says why; nothing else about this service is affected.\n');

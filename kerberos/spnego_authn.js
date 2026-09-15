@@ -71,12 +71,12 @@
 // password anywhere — the username typed at `/authn/login` IS the identity —
 // and Kerberos is the one family where that is impossible, because the password
 // there IS the key. So a session minted here is the ONLY kind in this service
-// that rests on a credential the service genuinely verified. `krb5_principals.js`
-// makes the KDC as permissive as the protocol allows (one password shared by
-// every user account, an account created for any name on first sight), which
-// keeps the mock a mock — but the verification is real, and the difference
-// between "any name is accepted" and "any name is accepted once it has been to
-// the KDC" is the whole of what this door adds.
+// that rests on a credential the service genuinely verified.
+// `krb5_principals.js` makes the KDC as permissive as the protocol allows (one
+// password shared by every user account, an account created for any name on
+// first sight), which keeps the mock a mock — but the verification is real, and
+// the difference between "any name is accepted" and "any name is accepted once
+// it has been to the KDC" is the whole of what this door adds.
 //
 // ---------------------------------------------------------------------------
 // TRUST REALMS: THIS DOOR IS PER REALM AND THE KDC BEHIND IT IS NOT.
@@ -124,6 +124,9 @@ const exchange = require('./spnego_exchange.js');
 // The shell and the check table. See that module's export list for why the
 // sign-in door wears the debugger page's look rather than the sign-in screen's.
 const spnegoPage = require('./spnego.js');
+// ERROR CODES, a leaf. A negotiation's refusal is marked by
+// exchange.applyVerdict(); the three marked here are this door's own.
+const errorCodes = require('../common/error_codes');
 
 const page = spnegoPage.page;
 const checksTable = spnegoPage.checksTable;
@@ -148,7 +151,8 @@ const VIA = 'Kerberos v5 (SPNEGO)';
 // is `alice`, when and only when that realm is THIS KDC's own.
 //
 // **THE STRIPPING IS THE POINT AND IT IS NOT COSMETIC.** The session's username
-// becomes `sub: urn:sts-mock:user:<username>` in every token, assertion and
+// names the entry whose `urn:uuid:<entryUUID>` is the `sub` of every token,
+// assertion and
 // credential that follows. Leaving the realm on would mean that somebody who
 // types `alice` at the sign-in screen and the same person arriving with a
 // ticket are TWO SUBJECTS as far as every relying party is concerned — which is
@@ -249,8 +253,8 @@ function factorsFor(ticketFlags) {
     (password && hardware
        ? ' (the KDC required pre-authentication AND hardware)'
        : password
-         ? ' (the KDC required pre-authentication, so a long-term key derived ' +
-           'from a password was proven to it)'
+         ? ' (the KDC required pre-authentication, so a long-term key ' +
+           'derived from a password was proven to it)'
          : hardware
            ? ' (the KDC required hardware for the initial authentication)'
            : ' (the ticket claims no pre-authentication at all, so nothing ' +
@@ -264,6 +268,8 @@ function factorsFor(ticketFlags) {
 // setting is settable at runtime and a value read at require time would be the
 // one the process started with.
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return !!config.value('krb5.spnegoAuthentication');
 }
 
@@ -348,17 +354,18 @@ async function handleSignIn(req, res) {
     // setting it was, for the same reason.
     log.info('krb5-spnego-authn: refused a sign-in because ' +
       'krb5.spnegoAuthentication is off.');
+    errorCodes.mark(res, 'STS-KRB-0097');
     res.status(403).type('html').set('Cache-Control', 'no-store').send(
       page('Integrated authentication is off',
-        '<h1>403 &mdash; integrated authentication is off</h1>' +
-        '<div class="err">This service can sign people in with a Kerberos ' +
-        'ticket, and <code>krb5.spnegoAuthentication</code> is set to ' +
-        'false.</div>' +
-        '<p>Turn it on at <a href="/admin/kerberos">/admin/kerberos</a>, or with ' +
-        '<code>POST /admin-api/config/set</code>. Nothing else changes when ' +
-        'it is off: <a href="/spnego/protected">/spnego/protected</a> still ' +
-        'performs the whole handshake and shows you both halves of it &mdash; ' +
-        'what it will not do is give you a session.</p>' +
+        '<h1>403 &mdash; integrated authentication is off</h1><div ' +
+        'class="err">This service can sign people in with a Kerberos ticket, ' +
+        'and <code>krb5.spnegoAuthentication</code> is set to ' +
+        'false.</div><p>Turn it on at <a ' +
+        'href="/admin/kerberos">/admin/kerberos</a>, or with <code>POST ' +
+        '/admin-api/config/set</code>. Nothing else changes when it is off: ' +
+        '<a href="/spnego/protected">/spnego/protected</a> still performs ' +
+        'the whole handshake and shows you both halves of it &mdash; what it ' +
+        'will not do is give you a session.</p>' +
         fallbackHtml(record)));
     log.debug('Leaving handleSignIn(). The door is closed.');
     return;
@@ -407,8 +414,8 @@ async function handleSignIn(req, res) {
         : '<div class="' + (waiting ? 'ok' : 'err') + '">' +
           xmlEscape(verdict.reason) + '</div>') +
       (waiting && !first
-        ? '<p>Your client should answer this reply with another token. If you ' +
-          'are reading this page, it did not &mdash; the exchange is ' +
+        ? '<p>Your client should answer this reply with another token. If ' +
+          'you are reading this page, it did not &mdash; the exchange is ' +
           'unfinished rather than refused.</p>'
         : '') +
       (verdict.checks ? '<h2>What this service checked</h2>' +
@@ -436,10 +443,11 @@ async function handleSignIn(req, res) {
     protocol: 'Kerberos v5',
     method: factors.method,
     note: 'A Kerberos service ticket for ' + exchange.SPN + '@' +
-          principals.REALM + ' was accepted over SPNEGO and a browser session ' +
-          'was started for the principal inside it. This is the one sign-in ' +
-          'in this service that rests on a credential it genuinely verified — ' +
-          'every other one takes the name it is given. Ticket flags: ' +
+          principals.REALM + ' was accepted over SPNEGO and a browser ' +
+          'session was started for the principal inside it. This is the one ' +
+          'sign-in in this service that rests on a credential it genuinely ' +
+          'verified — every other one takes the name it is given. Ticket ' +
+          'flags: ' +
           ((verdict.ticketFlags || []).join(', ') || 'none') + '.' +
           (record ? ' The request it completes is a ' +
                     (record.protocol || 'unnamed') + ' one' +
@@ -451,7 +459,9 @@ async function handleSignIn(req, res) {
   const session = authn.startSession(res, username, factors.amr, factors.acr,
                                      VIA,
                                      Object.assign({ request: req,
-                                                     application: record ? (record.application || '') : '' },
+                                                     application: record ?
+                                                         (record.application ||
+                                                             '') : '' },
                                                    detail));
   // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06). A null is how
   // `startSession()` says so; it never throws, because two of its callers wrap
@@ -465,19 +475,21 @@ async function handleSignIn(req, res) {
   if (!session) {
     log.info('krb5-spnego-authn: the issuance policy refused a session for ' +
              username + ' after a valid ticket from ' + verdict.client + '.');
+    errorCodes.mark(res, 'STS-KRB-0098');
     res.status(403).type('html').set('Cache-Control', 'no-store').send(
       page('Not permitted',
-        '<h1>403 &mdash; the issuance policy refused this sign-in</h1>' +
-        '<div class="err">Your Kerberos ticket verified. This service will ' +
-        'not start a session for this identity.</div>' +
-        '<p>That is a POLICY decision rather than anything wrong with the ' +
-        'ticket, the KDC or the service principal &mdash; presenting it again ' +
-        'will not change it. The role an application requires is on ' +
-        '<code>/admin/roles</code> and the document that decides is on ' +
-        '<code>/admin/xacml</code>.</p>'));
+        '<h1>403 &mdash; the issuance policy refused this sign-in</h1><div ' +
+        'class="err">Your Kerberos ticket verified. This service will not ' +
+        'start a session for this identity.</div><p>That is a POLICY ' +
+        'decision rather than anything wrong with the ticket, the KDC or the ' +
+        'service principal &mdash; presenting it again will not change it. ' +
+        'The role an application requires is on <code>/admin/roles</code> ' +
+        'and the document that decides is on <code>/admin/xacml</code>.</p>'));
+    log.debug("Leaving handleSignIn().");
     return undefined;
   }
-  log.info('krb5-spnego-authn: ' + username + ' signed in as ' + verdict.client +
+  log.info('krb5-spnego-authn: ' + username + ' signed in as ' +
+    verdict.client +
     ' over ' + spnego.mechName(verdict.selected) +
     (verdict.micVerified ? ', mechListMIC verified' : '') +
     (verdict.rawKerberos ? ' (a bare Kerberos token, no negotiation)' : '') +
@@ -522,8 +534,8 @@ async function handleSignIn(req, res) {
       (factors.amr.length ? '' : ' &mdash; the ticket claims no ' +
         'pre-authentication, so this service claims no authentication method') +
       '</td></tr>' +
-    '<tr><td>acr</td><td><code>' + xmlEscape(factors.acr) + '</code></td></tr>' +
-    '<tr><td>Mechanism</td><td><code>' +
+    '<tr><td>acr</td><td><code>' + xmlEscape(factors.acr) +
+    '</code></td></tr><tr><td>Mechanism</td><td><code>' +
       xmlEscape(spnego.mechName(verdict.selected)) + '</code>' +
       (verdict.rawKerberos ? ' &mdash; a bare Kerberos token, no negotiation'
                            : '') + '</td></tr>' +
@@ -533,9 +545,9 @@ async function handleSignIn(req, res) {
     '</table>' +
     (verdict.checks ? '<h2>What this service checked</h2>' +
       checksTable(verdict.checks) : '') +
-    '<p class="sub"><a href="/admin/users">/admin/users</a> now has a row for ' +
-    'this person, and the embedded directory has an entry. ' +
-    '<a href="/logout">/logout</a> ends it.</p>'));
+    '<p class="sub"><a href="/admin/users">/admin/users</a> now has a row ' +
+    'for this person, and the embedded directory has an entry. <a ' +
+    'href="/logout">/logout</a> ends it.</p>'));
   log.debug('Leaving handleSignIn(). Signed in with nothing to return to.');
 }
 
@@ -546,8 +558,10 @@ app.get(SPNEGO_PATH, function (req, res) {
     // would leave the browser holding an open request in the middle of a
     // sign-in, which reads as an unreachable service rather than as a fault
     // here.
-    log.error('krb5-spnego-authn: unhandled failure: ' + (e.stack || e.message));
+    log.error('krb5-spnego-authn: unhandled failure: ' +
+              (e.stack || e.message));
     if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-KRB-0099');
       res.status(500).type('html').send(page('Failed',
         '<h1>500</h1><div class="err">' + xmlEscape(e.message) + '</div>'));
     }

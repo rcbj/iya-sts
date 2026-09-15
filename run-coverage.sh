@@ -243,8 +243,9 @@ unset STS_TEST_SERVICE_URL
 # `require(process.env.CONFIG_FILE).logLevel`, never seeing STS_LOG_LEVEL. So
 # the file is chosen the same way ./local-run-tests.sh chooses it, and by the
 # same rule — the level picks it, a STS_TEST_CONFIG_FILE named in the
-# environment wins, and trace or debug asks for the whole record and gets the
-# `debug` file with it.
+# environment wins, and trace or debug asks for the whole record and gets
+# env/local.js with it — which is at `info` itself since 2026-09-12, like every
+# appconfig file in env/, so the vendored modules stay at info on that run.
 # ---------------------------------------------------------------------------
 STS_TEST_CONFIG_FILE="${STS_TEST_CONFIG_FILE:-}"
 [ -n "${STS_LOG_LEVEL_ARG}" ] && STS_LOG_LEVEL="${STS_LOG_LEVEL_ARG}"
@@ -434,6 +435,11 @@ else
     # from a launcher's answer, and that is the whole reason this line has to
     # exist rather than being inferred.
     -e STS_LDAP_URL=
+    # AND THE GNAP PUSH HOST, THE FOURTH OF THE SAME KIND (2026-09-12): the
+    # compose file names `tests`, the runner's name on the two-container
+    # bridge. Here the service is a child of this container, so `localhost`
+    # — the job's own default — is where it has to dial.
+    -e GNAP_PUSH_HOST=
     -e "STS_TEST_CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     -e "LOG_LEVEL=${LOG_LEVEL:-info}"
   )

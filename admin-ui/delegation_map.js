@@ -11,12 +11,12 @@
 // route is missing. `admin.js` registers `/admin/delegation/map` and calls
 // `render()`; this file holds the geometry and none of the console's HTML.
 //
-// It requires `../common/helpers` (for `log` and `xmlEscape`) and `@dagrejs/dagre`,
-// and NOTHING ELSE IN THIS SERVICE — no config, no directory, no store. That is
-// deliberate and it is the whole reason this is a separate file: everything it
-// draws arrives as an argument, so the picture can be drawn of any graph the
-// caller can build, and a change to how the console decides what a box IS
-// cannot reach the code that decides where a box GOES.
+// It requires `../common/helpers` (for `log` and `xmlEscape`) and
+// `@dagrejs/dagre`, and NOTHING ELSE IN THIS SERVICE — no config, no directory,
+// no store. That is deliberate and it is the whole reason this is a separate
+// file: everything it draws arrives as an argument, so the picture can be drawn
+// of any graph the caller can build, and a change to how the console decides
+// what a box IS cannot reach the code that decides where a box GOES.
 //
 // ---------------------------------------------------------------------------
 // WHY THERE IS A DEPENDENCY HERE AT ALL, WEIGHED THE WAY `scimmy` AND
@@ -64,44 +64,46 @@
 //   * A PERSON is a stick figure. Anything with an entry under `ou=users`.
 //   * AN APPLICATION is a rectangle. Anything with an entry under
 //     `ou=applications`.
-//   * THIS SERVICE is a hexagon, and it carries the TRUST REALM, because a realm
-//     is a whole logical copy of this service and the picture of one realm is
-//     not the picture of another.
+//   * THIS SERVICE is a hexagon, and it carries the TRUST REALM, because a
+//     realm is a whole logical copy of this service and the picture of one
+//     realm is not the picture of another.
 //   * A PARTY THE DIRECTORY HAS NEVER HEARD OF is drawn in the shape its ROLE
 //     implies — an initial identity as a person, a target as an application —
 //     with a DASHED outline and a note saying so. That is the three-state rule
 //     `delegationPartyCell()` already follows in the table, kept rather than
 //     collapsed: an RFC 8693 `audience` nobody has otherwise mentioned is an
 //     ordinary and interesting thing to see, and a picture that drew it exactly
-//     like a registered application would be the one place in this console where
-//     that distinction was lost.
+//     like a registered application would be the one place in this console
+//     where that distinction was lost.
 //
-// **THE ONE THAT NEEDED A DECISION IS `both`, AND IT IS THE COMMONEST BOX ON THE
-// PICTURE.** `HTTP/frontend.example.com` has an entry under `ou=users` (it
+// **THE ONE THAT NEEDED A DECISION IS `both`, AND IT IS THE COMMONEST BOX ON
+// THE PICTURE.** `HTTP/frontend.example.com` has an entry under `ou=users` (it
 // authenticates, so the funnel files it with the people) AND an entry under
 // `ou=applications` (tickets are issued FOR it) — the middle tier of every
 // Kerberos chain is both, which is the fact `delegationPartyCell()` exists to
 // show and the fact a shape-per-kind picture has no room for. Drawing it as one
 // or the other would send half the readers to the wrong page and would quietly
-// assert that this service's own model has one slot where it has two. So it is a
-// RECTANGLE WITH A FIGURE INSIDE IT: the application's shape, with the person in
-// it, which is what the party is.
+// assert that this service's own model has one slot where it has two. So it is
+// a RECTANGLE WITH A FIGURE INSIDE IT: the application's shape, with the person
+// in it, which is what the party is.
 // ---------------------------------------------------------------------------
 
 const { log, xmlEscape } = require('../common/helpers');
+// The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
+const errorCodes = require('../common/error_codes');
 const dagre = require('@dagrejs/dagre');
 
 // ---------------------------------------------------------------------------
 // THE PALETTE. The console's own, taken from `page()`'s stylesheet in admin.js
-// rather than chosen again here, so that a line in the picture and a word in the
-// table beside it mean the same thing by being the same colour.
+// rather than chosen again here, so that a line in the picture and a word in
+// the table beside it mean the same thing by being the same colour.
 //
 // Two of them are load-bearing rather than decorative and both come off
-// `modeCell()`: an IMPERSONATION is amber (`.state-expired`) and a DELEGATION is
-// green (`.state-valid`), which is the judgement that file states at length —
-// impersonation is the louder of the two not because it is worse but because it
-// is the one whose consequence is invisible everywhere else. A reader who has
-// learnt that pairing from the table reads it unprompted here.
+// `modeCell()`: an IMPERSONATION is amber (`.state-expired`) and a DELEGATION
+// is green (`.state-valid`), which is the judgement that file states at length
+// — impersonation is the louder of the two not because it is worse but because
+// it is the one whose consequence is invisible everywhere else. A reader who
+// has learnt that pairing from the table reads it unprompted here.
 // ---------------------------------------------------------------------------
 const INK = '#222';
 const INDIGO = '#12107c';
@@ -122,6 +124,8 @@ const WASH = '#eceaf6';
 const ARROW_COLOURS = [INDIGO, GREEN, AMBER, RED, GREY];
 
 function markerId(colour) {
+  log.debug("Entering markerId().");
+  log.debug("Leaving markerId().");
   return 'dm-arrow-' + colour.replace('#', '');
 }
 
@@ -179,6 +183,8 @@ const TAIL_SIZE = 5;
 const TAIL_R = 4;
 
 function tailId(colour) {
+  log.debug("Entering tailId().");
+  log.debug("Leaving tailId().");
   return 'dm-tail-' + colour.replace('#', '');
 }
 
@@ -188,8 +194,9 @@ function tailId(colour) {
 // Nothing on the server can measure a string in a font the browser has not
 // chosen yet, and every box here has to be sized before dagre is asked where to
 // put it. So the width is ESTIMATED, per character, and the estimate is
-// deliberately generous: a box slightly too wide is a picture with a little more
-// air in it, and a box too narrow is a label sticking out of its own rectangle.
+// deliberately generous: a box slightly too wide is a picture with a little
+// more air in it, and a box too narrow is a label sticking out of its own
+// rectangle.
 //
 // The table is three buckets rather than a real font metric because that is all
 // the accuracy the decision needs — the label is capped at MAX_LABEL_CHARS and
@@ -226,10 +233,10 @@ function textWidth(text, size) {
 const MAX_LABEL_CHARS = 30;
 
 // WRAPPING AN IDENTIFIER, WHICH IS NOT WRAPPING A SENTENCE. There are no spaces
-// in `HTTP/frontend.example.com@EXAMPLE.COM`, so a word-wrap would put the whole
-// of it on one line and give up. It breaks AFTER a separator instead — the
-// characters an identifier is actually built out of — and falls back to a hard
-// cut in the middle of an unbroken run, which is what a base64 subject is.
+// in `HTTP/frontend.example.com@EXAMPLE.COM`, so a word-wrap would put the
+// whole of it on one line and give up. It breaks AFTER a separator instead —
+// the characters an identifier is actually built out of — and falls back to a
+// hard cut in the middle of an unbroken run, which is what a base64 subject is.
 const BREAK_AFTER = '/@.-_:+';
 
 function wrapLabel(text, maxChars, maxLines) {
@@ -269,6 +276,8 @@ function wrapLabel(text, maxChars, maxLines) {
 }
 
 function esc(v) {
+  log.debug("Entering esc().");
+  log.debug("Leaving esc().");
   return xmlEscape(v == null ? '' : String(v));
 }
 
@@ -299,8 +308,8 @@ const MARGIN = 18;
 // ---------------------------------------------------------------------------
 // THE TWO BANDS, AND WHY THE ISSUER IS NOT IN THE LAYOUT AT ALL.
 //
-// Until 2026-08-26 the hexagon was one node among the others and dagre gave it a
-// rank of its own, so it sat in the FLOW: a person on the left, the issuer in
+// Until 2026-08-26 the hexagon was one node among the others and dagre gave it
+// a rank of its own, so it sat in the FLOW: a person on the left, the issuer in
 // the second column, and the applications strung out to the right of it. That
 // puts the one box every line touches in the middle of the chain and makes the
 // picture a staircase — the parties of one delegation ended up on four
@@ -352,12 +361,14 @@ const STS_BAND_SEP = RANK_SEP;
 //
 //   * STRAIGHT, along the row, when the two boxes are neighbours on it and the
 //     gap between them holds the label. That is the common case and it is the
-//     one that reads best — a chain becomes a row of boxes joined left to right.
+//     one that reads best — a chain becomes a row of boxes joined left to
+//     right.
 //   * AN ARC UNDER THE ROW otherwise: when a box sits between the two ends,
-//     when the pair already has a straight line (two mechanisms between one pair
-//     are two lines, and `multigraph` is why they both exist), or when the label
-//     is wider than the gap it would have to sit in. It leaves the bottom of one
-//     box and enters the bottom of the other, and its label sits at the apex.
+//     when the pair already has a straight line (two mechanisms between one
+//     pair are two lines, and `multigraph` is why they both exist), or when the
+//     label is wider than the gap it would have to sit in. It leaves the bottom
+//     of one box and enters the bottom of the other, and its label sits at the
+//     apex.
 //
 // The arcs get LANES, assigned exactly the way the issuer's labels above are:
 // greedily by x-overlap, fewest first. Two arcs in one lane cannot overlap
@@ -424,9 +435,9 @@ const GAP_PAD = 20;
 // ---------------------------------------------------------------------------
 // WHERE THE ISSUER'S LABELS GO, WHICH IS THE ONE HARD PART OF DRAWING THE BAND.
 //
-// Every one of those lines starts at the SAME point. Put their labels all at one
-// fraction along and they are only as far apart as their boxes are — which on a
-// picture with four applications in a row is not far enough, and the first
+// Every one of those lines starts at the SAME point. Put their labels all at
+// one fraction along and they are only as far apart as their boxes are — which
+// on a picture with four applications in a row is not far enough, and the first
 // version of this band had `signed in` written across `issued to`.
 //
 // So the labels are given ROWS in the gap, and a line's label is drawn where
@@ -532,8 +543,10 @@ function measure(node, look) {
   // https://esb.example.com` is 44 characters and would otherwise be cut to
   // `entityID / AppliesTo: https://…`, which keeps the half a reader already
   // knew and throws away the half they opened the picture for.
-  const subLines = (look.sublabel ? wrapLabel(look.sublabel, MAX_LABEL_CHARS + 6, 1) : [])
-    .concat(look.identifier ? wrapLabel(look.identifier, MAX_LABEL_CHARS + 6, 2) : []);
+  const subLines = (look.sublabel ?
+                    wrapLabel(look.sublabel, MAX_LABEL_CHARS + 6, 1) : [])
+    .concat(look.identifier ?
+            wrapLabel(look.identifier, MAX_LABEL_CHARS + 6, 2) : []);
   let textW = 0;
   lines.forEach(function (one) {
     textW = Math.max(textW, textWidth(one, LABEL_SIZE));
@@ -561,7 +574,8 @@ function measure(node, look) {
     log.debug("Leaving measure().");
     return {
       shape: 'sts',
-      width: Math.min(MAX_BOX_W + 40, Math.max(MIN_BOX_W + 40, textW + HEX_PAD_X * 2 + 26)),
+      width: Math.min(MAX_BOX_W + 40,
+                      Math.max(MIN_BOX_W + 40, textW + HEX_PAD_X * 2 + 26)),
       height: Math.max(58, textH + BOX_PAD_Y * 2 + 8),
       lines: lines, subLines: subLines
     };
@@ -572,15 +586,16 @@ function measure(node, look) {
   log.debug("Leaving measure().");
   return {
     shape: look.shape === 'both' ? 'both' : 'application',
-    width: Math.min(MAX_BOX_W, Math.max(MIN_BOX_W, textW + BOX_PAD_X * 2 + inset)),
+    width: Math.min(MAX_BOX_W,
+                    Math.max(MIN_BOX_W, textW + BOX_PAD_X * 2 + inset)),
     height: Math.max(36, textH + BOX_PAD_Y * 2),
     lines: lines, subLines: subLines
   };
 }
 
 // A STICK FIGURE. Head, spine, arms, legs, drawn around (0,0) at its own top
-// left. `stroke-linecap:round` is what stops the limbs looking like a diagram of
-// a bridge.
+// left. `stroke-linecap:round` is what stops the limbs looking like a diagram
+// of a bridge.
 function personGlyph(x, y, colour, dashed, scale) {
   log.debug("Entering personGlyph().");
   const s = scale || 1;
@@ -597,21 +612,26 @@ function personGlyph(x, y, colour, dashed, scale) {
   log.debug("Leaving personGlyph().");
   return '<g fill="none" stroke="' + colour + '" stroke-width="' + (1.6 * s) +
     '" stroke-linecap="round"' + dash + '>' +
-    '<circle cx="' + round(cx) + '" cy="' + round(headY) + '" r="' + round(headR) + '"/>' +
-    '<path d="M' + round(cx) + ' ' + round(neck) + 'V' + round(hip) +
+    '<circle cx="' + round(cx) + '" cy="' + round(headY) + '" r="' +
+    round(headR) + '"/><path ' +
+    'd="M' + round(cx) + ' ' + round(neck) + 'V' + round(hip) +
       'M' + round(cx - arm) + ' ' + round(neck + 4 * s) +
       'H' + round(cx + arm) +
-      'M' + round(cx) + ' ' + round(hip) + 'L' + round(cx - arm) + ' ' + round(foot) +
-      'M' + round(cx) + ' ' + round(hip) + 'L' + round(cx + arm) + ' ' + round(foot) +
+      'M' + round(cx) + ' ' + round(hip) + 'L' + round(cx - arm) + ' ' +
+    round(foot) +
+      'M' + round(cx) + ' ' + round(hip) + 'L' + round(cx + arm) + ' ' +
+    round(foot) +
     '"/>' +
     '</g>';
 }
 
-// A HEXAGON, for this service. Flat-topped, which is the shape nothing else here
-// is: a rectangle is an application, a rounded rectangle would read as one, and
-// a circle beside a stick figure's head reads as a second person.
+// A HEXAGON, for this service. Flat-topped, which is the shape nothing else
+// here is: a rectangle is an application, a rounded rectangle would read as
+// one, and a circle beside a stick figure's head reads as a second person.
 function hexPath(x, y, w, h) {
+  log.debug("Entering hexPath().");
   const cut = Math.min(22, w / 4);
+  log.debug("Leaving hexPath().");
   return 'M' + round(x + cut) + ' ' + round(y) +
     'H' + round(x + w - cut) +
     'L' + round(x + w) + ' ' + round(y + h / 2) +
@@ -621,6 +641,8 @@ function hexPath(x, y, w, h) {
 }
 
 function round(n) {
+  log.debug("Entering round().");
+  log.debug("Leaving round().");
   return Math.round(n * 10) / 10;
 }
 
@@ -695,11 +717,11 @@ function crossingPoint(from, aim, centre, size) {
 // and a polyline through them has a corner at every one.
 //
 // So they are smoothed: a curve through the MIDPOINTS of consecutive segments,
-// with each original point as the control. That is the standard trick and it has
-// one property worth the two lines it costs — the curve touches the first and
-// last points exactly, so a line still starts on the edge of the box it leaves
-// and ends on the edge of the box it enters, which is the one thing a reader
-// would notice if it were approximate.
+// with each original point as the control. That is the standard trick and it
+// has one property worth the two lines it costs — the curve touches the first
+// and last points exactly, so a line still starts on the edge of the box it
+// leaves and ends on the edge of the box it enters, which is the one thing a
+// reader would notice if it were approximate.
 // ---------------------------------------------------------------------------
 function edgePath(points) {
   log.debug("Entering edgePath().");
@@ -810,16 +832,18 @@ function edgeLook(edge) {
     // delegation reaches its target through a service this KDC was never told
     // the name of, and a solid line would assert a hop that nobody can name.
     log.debug("Leaving edgeLook().");
-    return { colour: colour, dash: (edge.skipped || []).length ? '7 4' : '', weight: 1.8 };
+    return { colour: colour, dash: (edge.skipped || []).length ? '7 4' : '',
+             weight: 1.8 };
   }
   log.debug("Leaving edgeLook().");
-  return { colour: INDIGO, dash: (edge.skipped || []).length ? '7 4' : '', weight: 1.6 };
+  return { colour: INDIGO, dash: (edge.skipped || []).length ? '7 4' : '',
+           weight: 1.6 };
 }
 
 // The words on a line. Up to three short ones — what kind of relationship, the
-// mechanism, and how it came out — because everything else is in the <title> and
-// in the tables under the picture. A fourth line was tried and it is what turns
-// a diagram into a page of text laid out badly.
+// mechanism, and how it came out — because everything else is in the <title>
+// and in the tables under the picture. A fourth line was tried and it is what
+// turns a diagram into a page of text laid out badly.
 //
 // THE ONE EXCEPTION IS THE SIGN-IN LINE, which is allowed a fourth and a fifth
 // because it is the one line that ABSORBED others: there was a line per
@@ -899,7 +923,8 @@ function edgeLabelLines(edge, labelOf) {
   // carries three delegations, which are not comparable numbers.
   if (edge.relation === 'issued-for') {
     if (edge.credentials) {
-      counts.push(edge.credentials + ' credential' + (edge.credentials === 1 ? '' : 's'));
+      counts.push(edge.credentials + ' credential' +
+                  (edge.credentials === 1 ? '' : 's'));
     }
   } else if (edge.relation === 'signed-in') {
     // NOTHING. The count used to be here — `2 times` — and it is now on each
@@ -915,7 +940,8 @@ function edgeLabelLines(edge, labelOf) {
     // of no delegation act at all, so its act count can be zero while it is the
     // busiest line on the page.
     if (!edge.acts && edge.credentials) {
-      counts.push(edge.credentials + ' credential' + (edge.credentials === 1 ? '' : 's'));
+      counts.push(edge.credentials + ' credential' +
+                  (edge.credentials === 1 ? '' : 's'));
     }
   }
   if (counts.length) {
@@ -994,20 +1020,25 @@ function signedInLines(edge) {
 // The mechanism's label, minus the parenthetical the table has room for. Every
 // one of the eight is a phrase; the picture wants the noun.
 function shortType(label) {
-  return trim(String(label).replace(/\s*\(.*\)\s*$/, '').replace(/\s+—.*$/, ''), 26);
+  log.debug("Entering shortType().");
+  log.debug("Leaving shortType().");
+  return trim(String(label).replace(/\s*\(.*\)\s*$/, '').replace(/\s+—.*$/, ''),
+              26);
 }
 
 function trim(text, max) {
+  log.debug("Entering trim().");
   const value = String(text == null ? '' : text);
+  log.debug("Leaving trim().");
   return value.length > max ? value.slice(0, max - 1) + '…' : value;
 }
 
 // ---------------------------------------------------------------------------
 // WHAT THE CALLER SAYS ABOUT A BOX.
 //
-// `resolve(node)` is supplied by admin.js and answers the ONE question this file
-// deliberately cannot: what is this party, as far as the embedded directory is
-// concerned. It comes back as
+// `resolve(node)` is supplied by admin.js and answers the ONE question this
+// file deliberately cannot: what is this party, as far as the embedded
+// directory is concerned. It comes back as
 //
 //   { shape, label, sublabel, title, href, dashed }
 //
@@ -1019,10 +1050,13 @@ function trim(text, max) {
 // the directory reader are, and where a box GOES belongs here.
 // ---------------------------------------------------------------------------
 function defaultResolve(node) {
+  log.debug("Entering defaultResolve().");
   if (node.kind === 'sts') {
+    log.debug("Leaving defaultResolve().");
     return { shape: 'sts', label: 'mock STS', sublabel: '', dashed: false };
   }
   const person = node.chiefRole === 'initial';
+  log.debug("Leaving defaultResolve().");
   return {
     shape: person ? 'person' : 'application',
     label: node.id,
@@ -1051,13 +1085,16 @@ function defaultResolve(node) {
 function render(graph, options) {
   log.debug("Entering render().");
   try {
-    const svg = renderUnguarded(graph || { nodes: [], edges: [] }, options || {});
+    const svg = renderUnguarded(graph || { nodes: [], edges: [] },
+                                options || {});
     log.debug("Leaving render(). " + svg.svg.length + " bytes of SVG, " +
               svg.width + "x" + svg.height + ".");
     return svg;
   } catch (e) {
-    log.error('delegation map: the picture could not be drawn and the page was ' +
-              'left alone: ' + e.message);
+    log.error(errorCodes.tag('STS-ADMIN-0600') +
+              'delegation map: the picture could not be drawn and the page ' +
+              'was left alone: ' + e.message);
+    log.debug("Leaving render().");
     return {
       svg: '<p class="err">The picture could not be drawn: ' + esc(e.message) +
            '. Everything below is unaffected — the tables are built from the ' +
@@ -1069,7 +1106,8 @@ function render(graph, options) {
 
 function renderUnguarded(graph, options) {
   log.debug("Entering renderUnguarded().");
-  const resolve = typeof options.resolve === 'function' ? options.resolve : defaultResolve;
+  const resolve = typeof options.resolve === 'function' ? options.resolve :
+                  defaultResolve;
   // What a party is CALLED, for the one place a line names a party that is
   // neither of its ends: a `reaches` edge says whose name the credential
   // carries. The caller supplies it because it is the same question `resolve()`
@@ -1086,8 +1124,13 @@ function renderUnguarded(graph, options) {
   // THE ISSUER IS DRAWN, NOT LAID OUT — see the note on STS_BAND_SEP. It comes
   // out of the graph handed to dagre along with every line that touches it, and
   // is put back afterwards in a band of its own above everything else.
-  const stsNode = nodes.filter(function (one) { return one.kind === 'sts'; })[0] || null;
-  const isSts = function (id) { return !!stsNode && id === stsNode.id; };
+  const stsNode =
+      nodes.filter(function (one) { return one.kind === 'sts'; })[0] || null;
+  const isSts = function (id) {
+    log.debug("Entering isSts().");
+    log.debug("Leaving isSts().");
+    return !!stsNode && id === stsNode.id;
+  };
   const partyNodes = nodes.filter(function (one) { return one !== stsNode; });
   const partyEdges = edges.filter(function (one) {
     return !isSts(one.from) && !isSts(one.to);
@@ -1118,14 +1161,16 @@ function renderUnguarded(graph, options) {
   // together. `assignNodeIntersects()` then subtracts that NaN, finds neither a
   // dx nor a dy, and throws `Not possible to find intersection inside of the
   // rectangle` out of the whole render — so the page said the picture could not
-  // be drawn, of a graph that draws perfectly. Neither ingredient does it alone:
-  // parallel lines in one direction are fine, and a pair in both directions is
-  // fine. Collapsing is what removes the one this file does not need.
+  // be drawn, of a graph that draws perfectly. Neither ingredient does it
+  // alone: parallel lines in one direction are fine, and a pair in both
+  // directions is fine. Collapsing is what removes the one this file does not
+  // need.
   //
-  // So the lines are collapsed to ONE per ordered pair on the way in, with their
-  // weights SUMMED — which is what dagre's own `simplify()` does before ranking,
-  // for the same reason — and `partyEdges` is untouched, so every one of the
-  // forty is still drawn. `compound` is off — there are no nested boxes here.
+  // So the lines are collapsed to ONE per ordered pair on the way in, with
+  // their weights SUMMED — which is what dagre's own `simplify()` does before
+  // ranking, for the same reason — and `partyEdges` is untouched, so every one
+  // of the forty is still drawn. `compound` is off — there are no nested boxes
+  // here.
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: 'LR', nodesep: NODE_SEP, edgesep: EDGE_SEP, ranksep: RANK_SEP,
@@ -1166,8 +1211,9 @@ function renderUnguarded(graph, options) {
       width = Math.max(width, textWidth(one, EDGE_SIZE));
     });
     // The key is the ORDERED pair: `a -> b` and `b -> a` are two lines to dagre
-    // and always were, and collapsing those two would be collapsing a cycle into
-    // an edge — which is the one thing that WOULD change the order it answers.
+    // and always were, and collapsing those two would be collapsing a cycle
+    // into an edge — which is the one thing that WOULD change the order it
+    // answers.
     const key = edge.from + ' ' + edge.to;
     let pair = pairs.get(key);
     if (!pair) {
@@ -1196,8 +1242,8 @@ function renderUnguarded(graph, options) {
       labelpos: 'c',
       weight: pair.weight,
       // A minimum length of 1 everywhere: the picture's ranks are the three
-      // LAYERS of the model, and a longer minlen on any one of them would open a
-      // gap that says something the model does not.
+      // LAYERS of the model, and a longer minlen on any one of them would open
+      // a gap that says something the model does not.
       minlen: 1
     });
   });
@@ -1205,12 +1251,13 @@ function renderUnguarded(graph, options) {
   dagre.layout(g);
 
   // ---------------------------------------------------------------------------
-  // ONE CENTRELINE FOR THE PARTIES — see the note on ARC_LANE_H. dagre's ranking
-  // and its ordering are kept; its coordinate pass is overwritten, which is done
-  // by writing back into dagre's OWN nodes rather than into a map beside them so
-  // that everything downstream — the label fitting, the placement loop, the
-  // routing — reads one answer. A second copy of a node's position is how a
-  // picture comes to have a line that ends slightly beside its own box.
+  // ONE CENTRELINE FOR THE PARTIES — see the note on ARC_LANE_H. dagre's
+  // ranking and its ordering are kept; its coordinate pass is overwritten,
+  // which is done by writing back into dagre's OWN nodes rather than into a map
+  // beside them so that everything downstream — the label fitting, the
+  // placement loop, the routing — reads one answer. A second copy of a node's
+  // position is how a picture comes to have a line that ends slightly beside
+  // its own box.
   // ---------------------------------------------------------------------------
   let rowH = 0;
   partyNodes.forEach(function (node) {
@@ -1233,22 +1280,22 @@ function renderUnguarded(graph, options) {
   // dagre puts on one rank has the SAME x and is told apart only by the y —
   // which is the coordinate that was just thrown away. A chain has one node per
   // rank and came out perfect; a FAN — one person, four applications, which is
-  // the ordinary shape of a busy person's picture — came out as four boxes drawn
-  // exactly on top of each other. `tests/delegation_map_bands.js` had that
-  // fixture already and caught it.
+  // the ordinary shape of a busy person's picture — came out as four boxes
+  // drawn exactly on top of each other. `tests/delegation_map_bands.js` had
+  // that fixture already and caught it.
   //
   // So the row owns both coordinates and dagre is left with the ONE thing it is
-  // being kept for: the ORDER. Its rank assignment is the depth of the chain and
-  // its ordering pass is the arrangement within a rank that crosses fewest
+  // being kept for: the ORDER. Its rank assignment is the depth of the chain
+  // and its ordering pass is the arrangement within a rank that crosses fewest
   // lines, so sorting by (x, then y) is that whole result read off as a
   // sequence — rank by rank, and inside a rank in the order it chose.
   //
-  // Then the boxes are packed left to right along it, and the GAP between two of
-  // them is the label of the line that will lie between them. That inverts what
-  // dagre was doing: `ranksep` reserved a rank for an edge label and hoped it
-  // fitted, and this measures the label and leaves exactly that much. It is also
-  // what makes the straight-line rule below decidable at all — "are these two
-  // neighbours" is a question about a sequence, not about geometry.
+  // Then the boxes are packed left to right along it, and the GAP between two
+  // of them is the label of the line that will lie between them. That inverts
+  // what dagre was doing: `ranksep` reserved a rank for an edge label and hoped
+  // it fitted, and this measures the label and leaves exactly that much. It is
+  // also what makes the straight-line rule below decidable at all — "are these
+  // two neighbours" is a question about a sequence, not about geometry.
   // ---------------------------------------------------------------------------
   const order = partyNodes.filter(function (node) { return !!g.node(node.id); })
     .slice(0).sort(function (a, b) {
@@ -1264,10 +1311,12 @@ function renderUnguarded(graph, options) {
   // How wide a line's label is, which is what decides both the gap it sits in
   // and the room an arc's lane has to hold.
   function labelWidthOf(edge) {
+    log.debug("Entering labelWidthOf().");
     let widest = 0;
     (edgeLabels[edge.id] || []).forEach(function (one) {
       widest = Math.max(widest, textWidth(one, EDGE_SIZE));
     });
+    log.debug("Leaving labelWidthOf().");
     return widest;
   }
 
@@ -1324,7 +1373,8 @@ function renderUnguarded(graph, options) {
     }
     const a = g.node(edge.from);
     const b = g.node(edge.to);
-    const widest = Math.max(drawn[edge.from].size.width, drawn[edge.to].size.width);
+    const widest = Math.max(drawn[edge.from].size.width,
+                            drawn[edge.to].size.width);
     const left = Math.min(a.x, b.x) - widest / 2;
     const right = Math.max(a.x, b.x) + widest / 2;
     // The label sits at the apex, so it is part of what the lane has to hold.
@@ -1333,7 +1383,8 @@ function renderUnguarded(graph, options) {
     const claim = { left: middle - need / 2, right: middle + need / 2 };
     let lane = 0;
     while (arcLanes[lane] && arcLanes[lane].filter(function (held) {
-      return claim.left < held.right + ARC_GUTTER && claim.right > held.left - ARC_GUTTER;
+      return claim.left < held.right + ARC_GUTTER &&
+             claim.right > held.left - ARC_GUTTER;
     }).length) {
       lane++;
     }
@@ -1347,10 +1398,10 @@ function renderUnguarded(graph, options) {
   // ---------------------------------------------------------------------------
   // HOW DEEP EACH LANE IS, which is decided by the LABELS in it and not by a
   // constant — the same answer `fitLabels()` reaches above and for the same
-  // reason. An arc's label sits at its apex, so two lanes a fixed distance apart
-  // have their labels a fixed distance apart, and three lines of text at
-  // `LINE_HEIGHT` do not fit in `ARC_LANE_H`. The first version of this used the
-  // constant and the picture came back with `acts for / Token exchange / 1
+  // reason. An arc's label sits at its apex, so two lanes a fixed distance
+  // apart have their labels a fixed distance apart, and three lines of text at
+  // `LINE_HEIGHT` do not fit in `ARC_LANE_H`. The first version of this used
+  // the constant and the picture came back with `acts for / Token exchange / 1
   // issued` written across the arc under it — which is the failure the issuer's
   // label rows were invented to fix, one band lower.
   //
@@ -1407,7 +1458,8 @@ function renderUnguarded(graph, options) {
   }
 
   const stsSize = stsNode ? drawn[stsNode.id].size : null;
-  const width = Math.max(partyW, stsNode ? Math.ceil(stsSize.width) + MARGIN * 2 : 0);
+  const width = Math.max(partyW,
+                         stsNode ? Math.ceil(stsSize.width) + MARGIN * 2 : 0);
   // Centred over the parties when they are wider than the hexagon, and the
   // parties centred under IT when they are not — which is what a picture of one
   // application looks like.
@@ -1488,6 +1540,8 @@ function renderUnguarded(graph, options) {
   }).sort(function (a, b) { return a.partyX - b.partyX; });
 
   function placedFor(edge) {
+    log.debug("Entering placedFor().");
+    log.debug("Leaving placedFor().");
     return !!(drawn[edge.from] && drawn[edge.to]);
   }
 
@@ -1514,7 +1568,8 @@ function renderUnguarded(graph, options) {
         const y = bandTop + LABEL_ROW_PAD + r * LABEL_ROW_H + LABEL_ROW_H / 2;
         // Where this line is when it crosses that row. The party's centre is
         // below the whole band, so the denominator cannot be zero.
-        const span = (partyAt.y + (stsSize ? stsSize.height : 0) + gap) - stsCentre.y;
+        const span = (partyAt.y + (stsSize ? stsSize.height :
+                                   0) + gap) - stsCentre.y;
         // From the point this line is AIMED at rather than from the issuer's
         // centre — the same aim the routing below clips to, so the two cannot
         // disagree about where the line is.
@@ -1523,7 +1578,8 @@ function renderUnguarded(graph, options) {
         const left = x - one.width / 2;
         const right = x + one.width / 2;
         const clash = taken[r].filter(function (held) {
-          return left < held.right + LABEL_GUTTER && right > held.left - LABEL_GUTTER;
+          return left < held.right + LABEL_GUTTER &&
+                 right > held.left - LABEL_GUTTER;
         }).length > 0;
         if (!clash) {
           taken[r].push({ left: left, right: right });
@@ -1551,8 +1607,8 @@ function renderUnguarded(graph, options) {
     // band taller than the diagram — see the note on MAX_LABEL_ROWS.
     log.warn('delegation_map: ' + stsLabelled.length + ' lines out of the ' +
              'issuer could not be labelled in ' + MAX_LABEL_ROWS + ' rows ' +
-             'without overlapping. They are drawn anyway; the tooltip and the ' +
-             'relationship table under the picture carry the same words.');
+             'without overlapping. They are drawn anyway; the tooltip and ' +
+             'the relationship table under the picture carry the same words.');
     fitted = fitLabels(MAX_LABEL_ROWS) || { gap: STS_BAND_SEP, at: {} };
   }
 
@@ -1590,9 +1646,9 @@ function renderUnguarded(graph, options) {
         berths[at] = [];
       }
       berths[at].push({ id: edge.id, end: pair[0], lane: how.lane || 0,
-                        // Which way this arc leaves. `placed[at].x` is the box's
-                        // own centre, so this is the side of it the far end is
-                        // on and nothing subtler.
+                        // Which way this arc leaves. `placed[at].x` is the
+                        // box's own centre, so this is the side of it the far
+                        // end is on and nothing subtler.
                         rightward: placed[pair[1]].x >= placed[at].x });
     });
   });
@@ -1628,7 +1684,8 @@ function renderUnguarded(graph, options) {
       if (one.rightward !== other.rightward) {
         return one.rightward ? 1 : -1;
       }
-      const byLane = one.rightward ? other.lane - one.lane : one.lane - other.lane;
+      const byLane = one.rightward ? other.lane - one.lane :
+                     one.lane - other.lane;
       return byLane || (one.id < other.id ? -1 : one.id > other.id ? 1 : 0);
     });
     const size = drawn[id].size;
@@ -1647,19 +1704,22 @@ function renderUnguarded(graph, options) {
   // the page down, and a line a third of the way off centre is a worse picture
   // and still a picture.
   const berthX = function (id, edgeId, end, at, size, towards) {
+    log.debug("Entering berthX().");
     const held = berthAt[edgeId + '|' + end];
     if (held !== undefined) {
+      log.debug("Leaving berthX().");
       return held;
     }
     const dx = towards.x - at.x;
     const step = Math.min(size.width / 3, Math.abs(dx) / 3);
+    log.debug("Leaving berthX().");
     return at.x + (dx < 0 ? -step : step);
   };
 
   // ---------------------------------------------------------------------------
   // THE PARTY LINES, drawn from the decision made above rather than from what
-  // dagre routed. Its routes described the staircase and every one of them would
-  // now leave its box sideways into empty space.
+  // dagre routed. Its routes described the staircase and every one of them
+  // would now leave its box sideways into empty space.
   //
   // A straight line is clipped to both boxes so the arrowhead lands on an edge,
   // which is `boundaryPoint()`'s whole job. An arc is a cubic that leaves the
@@ -1681,8 +1741,10 @@ function renderUnguarded(graph, options) {
       height: lines.length * (LINE_HEIGHT - 2) + 6
     };
     if (how.straight) {
-      const from = boundaryPoint(placed[edge.from], drawn[edge.from].size, placed[edge.to]);
-      const to = boundaryPoint(placed[edge.to], drawn[edge.to].size, placed[edge.from]);
+      const from = boundaryPoint(placed[edge.from], drawn[edge.from].size,
+                                 placed[edge.to]);
+      const to = boundaryPoint(placed[edge.to], drawn[edge.to].size,
+                               placed[edge.from]);
       routed[edge.id] = {
         points: [from, to],
         x: (from.x + to.x) / 2, y: (from.y + to.y) / 2,
@@ -1705,17 +1767,17 @@ function renderUnguarded(graph, options) {
     // whose two controls share a y is at ((y0 + y1) / 8) + (3 / 4)c when it is
     // halfway along, which is where its lowest point is when the ends are level
     // — and they are NOT always level here, because two boxes on one centreline
-    // have different heights when one of their labels wrapped. So the control is
-    // computed from the lane's apex instead of the apex from the control: the
-    // label goes at the apex, and a label a box-height away from its own line is
-    // a label belonging to nothing.
+    // have different heights when one of their labels wrapped. So the control
+    // is computed from the lane's apex instead of the apex from the control:
+    // the label goes at the apex, and a label a box-height away from its own
+    // line is a label belonging to nothing.
     const apex = bandH + laneApex[how.lane].y;
     const control = (apex - (from.y + to.y) / 8) / 0.75;
     routed[edge.id] = {
       points: [from, to],
       // The exact curve, handed over rather than approximated through
-      // `edgePath()`'s smoothing — which is built for a polyline with corners in
-      // it and would round this one away from its own lane.
+      // `edgePath()`'s smoothing — which is built for a polyline with corners
+      // in it and would round this one away from its own lane.
       path: 'M' + round(from.x) + ' ' + round(from.y) +
             'C' + round(from.x) + ' ' + round(control) + ' ' +
             round(to.x) + ' ' + round(control) + ' ' +
@@ -1771,9 +1833,10 @@ function renderUnguarded(graph, options) {
   }
 
   const defs = '<defs>' + ARROW_COLOURS.map(function (colour) {
-    return '<marker id="' + prefix + '-' + markerId(colour) + '" viewBox="0 0 10 10" ' +
-      'refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
-      '<path d="M0 0L10 5L0 10z" fill="' + colour + '"/></marker>' +
+    return '<marker id="' + prefix + '-' + markerId(colour) + '" viewBox="0 ' +
+      '0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" ' +
+      'orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" ' +
+      'fill="' + colour + '"/></marker>' +
       // The tail. See tailId() for why there is one and why it is the shape and
       // the size it is. `orient="auto"` looks pointless on a disc and is not:
       // it is what makes `refX="0"` mean "forward ALONG THE LINE" rather than
@@ -1781,10 +1844,12 @@ function renderUnguarded(graph, options) {
       // beside the start of a line that leaves downwards instead of below it —
       // straddling the box's own bottom edge, where the box (painted after the
       // edges) covered its upper half and drew it as a half moon.
-      '<marker id="' + prefix + '-' + tailId(colour) + '" viewBox="0 0 10 10" ' +
-      'refX="0" refY="5" markerWidth="' + TAIL_SIZE + '" markerHeight="' + TAIL_SIZE +
+      '<marker id="' + prefix + '-' + tailId(colour) + '" viewBox="0 0 10 ' +
+      '10" refX="0" refY="5" ' +
+      'markerWidth="' + TAIL_SIZE + '" markerHeight="' + TAIL_SIZE +
       '" orient="auto">' +
-      '<circle cx="5" cy="5" r="' + TAIL_R + '" fill="' + colour + '"/></marker>';
+      '<circle cx="5" cy="5" r="' + TAIL_R + '" fill="' + colour +
+      '"/></marker>';
   }).join('') + '</defs>';
 
   // EDGES FIRST, so that a line passing near a box goes UNDER it rather than
@@ -1841,7 +1906,8 @@ function renderUnguarded(graph, options) {
     const label = lines.length
       ? '<g><rect x="' + round((laid.x || 0) - (laid.width || 0) / 2) +
         '" y="' + round((laid.y || 0) - (laid.height || 0) / 2) +
-        '" width="' + round(laid.width || 0) + '" height="' + round(laid.height || 0) +
+        '" width="' + round(laid.width || 0) + '" height="' +
+        round(laid.height || 0) +
         '" rx="3" fill="' + PAPER + '" fill-opacity=".88"/>' +
         lines.map(function (one, i) {
           return '<text x="' + round(laid.x || 0) + '" y="' +
@@ -1853,16 +1919,22 @@ function renderUnguarded(graph, options) {
       : '';
     return {
       line: '<g><title>' + esc(title) + '</title>' +
-        '<path d="' + d + '" fill="none" stroke="' + look.colour + '" stroke-width="' +
-        look.weight + '"' + (look.dash ? ' stroke-dasharray="' + look.dash + '"' : '') +
+        '<path d="' + d + '" fill="none" stroke="' + look.colour + '" ' +
+            'stroke-width="' +
+        look.weight + '"' +
+        (look.dash ? ' stroke-dasharray="' + look.dash + '"' : '') +
         ' marker-start="url(#' + prefix + '-' + tailId(look.colour) + ')"' +
-        ' marker-end="url(#' + prefix + '-' + markerId(look.colour) + ')"/></g>',
-      label: label ? '<g><title>' + esc(title) + '</title>' + label + '</g>' : ''
+        ' marker-end="url(#' + prefix + '-' + markerId(look.colour) +
+        ')"/></g>',
+      label: label ? '<g><title>' + esc(title) + '</title>' + label + '</g>' :
+             ''
     };
   }).filter(function (one) { return !!one; });
 
-  const edgeMarkup = edgeParts.map(function (one) { return one.line; }).join('') +
-                     edgeParts.map(function (one) { return one.label; }).join('');
+  const edgeMarkup = edgeParts.map(function (one) { return one.line; })
+                              .join('') +
+                     edgeParts.map(function (one) { return one.label; })
+                              .join('');
 
   const nodeMarkup = nodes.map(function (node) {
     const at = placed[node.id];
@@ -1873,9 +1945,13 @@ function renderUnguarded(graph, options) {
   }).join('');
 
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" ' +
-    'viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height +
-    '" role="img" aria-label="' + esc(options.label || 'Delegation relationships') + '">' +
-    '<title>' + esc(options.label || 'Delegation relationships') + '</title>' +
+    'viewBox="0 0 ' + width + ' ' + height + '" width="' + width +
+    '" height="' + height +
+    '" role="img" aria-label="' + esc(options.label || 'Delegation ' +
+                                                       'relationships') +
+    '"><title>' + esc(options.label || 'Delegation ' +
+                                                        'relationships') +
+    '</title>' +
     defs +
     '<g font-family="system-ui,-apple-system,Segoe UI,Arial,sans-serif">' +
     edgeMarkup + nodeMarkup +
@@ -1913,15 +1989,18 @@ function edgeTitle(edge) {
     if (edge.permissionId) {
       parts.push('The permission is ' + edge.permissionId +
                  '. A client sends that string as an OAuth scope; the access ' +
-                 'token comes back audienced to ' + (edge.baseUri || 'the base URI') +
-                 ' with "' + (edge.permissionName || '') + '" on its scope claim.');
+                 'token comes back audienced to ' + (edge.baseUri || 'the ' +
+                     'base URI') +
+                 ' with "' + (edge.permissionName || '') + '" on its scope ' +
+                     'claim.');
     }
     if (edge.description) {
       parts.push(edge.description);
     }
     parts.push(edge.asked
       ? 'This client HAS asked for it: the scope is recorded on its entry.'
-      : 'This client has NEVER asked for it — the grant is configured and unused.');
+      : 'This client has NEVER asked for it — the grant is configured and ' +
+        'unused.');
   } else if (edge.relation === 'acts-for') {
     parts.push('Acts on behalf of.');
   } else {
@@ -1949,20 +2028,22 @@ function edgeTitle(edge) {
       parts.push('Carries the delegated permission' +
                  (edge.permissions.length === 1 ? ' ' : 's ') +
                  edge.permissions.join(', ') + ' — the names on the token\'s ' +
-                 'scope claim that this resource DEFINES. A client asks for one ' +
-                 'by sending the whole identifier (the base URI followed by the ' +
-                 'name) as a scope; the token comes back audienced to the base ' +
-                 'with the bare name on its scope claim. Whether the client was ' +
-                 'GRANTED it is the configured register\'s question and is at ' +
-                 '/admin/delegation/allowed — this line is what was issued, and ' +
+                 'scope claim that this resource DEFINES. A client asks for ' +
+                 'one by sending the whole identifier (the base URI followed ' +
+                 'by the name) as a scope; the token comes back audienced to ' +
+                 'the base with the bare name on its scope claim. Whether ' +
+                 'the client was GRANTED it is the configured register\'s ' +
+                 'question and is at /admin/delegation/allowed — this line ' +
+                 'is what was issued, and ' +
                  'oauth2.delegatedPermissionsEnforced is off by default.');
     } else if (edge.permissions) {
-      parts.push('DEFAULT PERMISSIONS: the token names this resource and none ' +
-                 'of its delegated permissions. That is what a scope naming the ' +
-                 'resource\'s client_id produces — the value becomes the ' +
-                 'audience and comes off the scope claim, so nothing on the ' +
-                 'token asks for anything in particular. It is also what a ' +
-                 'resource that defines no permissions can ever produce.');
+      parts.push('DEFAULT PERMISSIONS: the token names this resource and ' +
+                 'none of its delegated permissions. That is what a scope ' +
+                 'naming the resource\'s client_id produces — the value ' +
+                 'becomes the audience and comes off the scope claim, so ' +
+                 'nothing on the token asks for anything in particular. It ' +
+                 'is also what a resource that defines no permissions can ' +
+                 'ever produce.');
     }
     if (edge.scopes && edge.scopes.length) {
       parts.push('The scope claim carries: ' + edge.scopes.join(' ') + '.');
@@ -1998,7 +2079,8 @@ function edgeTitle(edge) {
     // exchanged" is an observation about acts on a line that describes no act.
     // What such a line has to say is whether the client has ever ASKED, and
     // the `may-reach` branch above has already said it.
-    log.debug("Leaving edgeTitle(). may-reach; no act or credential count belongs on it.");
+    log.debug("Leaving edgeTitle(). may-reach; no act or credential count " +
+              "belongs on it.");
     return parts.join('\n');
   }
   if (edge.relation === 'issued-for') {
@@ -2025,7 +2107,8 @@ function edgeTitle(edge) {
   (edge.produced || []).forEach(function (one) {
     parts.push('Produced ' + one.count + ' × ' + one.kind +
                (one.identifiers.length ? ' (' + one.identifiers.join(', ') +
-                (one.moreIdentifiers ? ', +' + one.moreIdentifiers + ' more' : '') + ')'
+                (one.moreIdentifiers ? ', +' + one.moreIdentifiers + ' more' :
+                 '') + ')'
               : '') + '.');
   });
   if (edge.authorizedBy) {
@@ -2059,20 +2142,24 @@ function nodeMarkupFor(entry, at, options) {
     shape = personGlyph(at.x - FIGURE_W / 2, y, stroke, dashed, 1);
     textTop = y + FIGURE_H + 6 + LABEL_SIZE - 2;
   } else if (size.shape === 'sts') {
-    shape = '<path d="' + hexPath(x, y, size.width, size.height) + '" fill="' + WASH +
+    shape = '<path d="' + hexPath(x, y, size.width, size.height) + '" fill="' +
+      WASH +
       '" stroke="' + INDIGO + '" stroke-width="1.8"/>';
     textTop = at.y - ((size.lines.length + size.subLines.length - 1) *
                       LINE_HEIGHT) / 2 + LABEL_SIZE / 2 - 1;
   } else {
-    shape = '<rect x="' + round(x) + '" y="' + round(y) + '" width="' + round(size.width) +
-      '" height="' + round(size.height) + '" rx="5" fill="' + fill + '" stroke="' +
+    shape = '<rect x="' + round(x) + '" y="' + round(y) + '" width="' +
+      round(size.width) +
+      '" height="' + round(size.height) + '" rx="5" fill="' + fill + '" ' +
+          'stroke="' +
       stroke + '" stroke-width="1.5"' + dash + '/>';
     if (size.shape === 'both') {
       // The person INSIDE the application's rectangle — see the header. Scaled
       // to fit the box's height rather than the figure's own, so a one-line
       // label and a two-line label do not get different-sized people.
       const scale = Math.min(1, (size.height - 8) / FIGURE_H);
-      shape += personGlyph(x + 6, at.y - (FIGURE_H * scale) / 2, stroke, dashed, scale);
+      shape += personGlyph(x + 6, at.y - (FIGURE_H * scale) / 2, stroke, dashed,
+                           scale);
       textX = x + 6 + FIGURE_W * scale + 6;
       anchor = 'start';
     }
@@ -2081,24 +2168,29 @@ function nodeMarkupFor(entry, at, options) {
   }
 
   const texts = size.lines.map(function (one, i) {
-    return '<text x="' + round(textX) + '" y="' + round(textTop + i * LINE_HEIGHT) +
-      '" text-anchor="' + anchor + '" font-size="' + LABEL_SIZE + '" font-weight="600" ' +
+    return '<text x="' + round(textX) + '" y="' +
+      round(textTop + i * LINE_HEIGHT) +
+      '" text-anchor="' + anchor + '" font-size="' + LABEL_SIZE + '" ' +
+      'font-weight="600" ' +
       'fill="' + (look.ink || INK) + '">' + esc(one) + '</text>';
   }).join('') + size.subLines.map(function (one, i) {
     return '<text x="' + round(textX) + '" y="' +
       round(textTop + (size.lines.length + i) * LINE_HEIGHT - 1) +
-      '" text-anchor="' + anchor + '" font-size="' + SUB_SIZE + '" fill="' + QUIET +
+      '" text-anchor="' + anchor + '" font-size="' + SUB_SIZE + '" fill="' +
+      QUIET +
       '">' + esc(one) + '</text>';
   }).join('');
 
-  const body = '<title>' + esc(look.title || node.id) + '</title>' + shape + texts;
+  const body = '<title>' + esc(look.title || node.id) + '</title>' + shape +
+               texts;
 
   // A LINK ONLY WHEN THE CALLER ASKED FOR ONE. The picture is served two ways —
   // inline in the console page, where a box should go to that party's page, and
   // as a standalone document at ?format=svg, where the href would be a
-  // root-relative path in a file somebody has saved. app.js rewrites root-relative
-  // links into the current realm on the way out of a text/html response ONLY, so
-  // a link in a standalone SVG would also be a link that quietly left the realm.
+  // root-relative path in a file somebody has saved. app.js rewrites
+  // root-relative links into the current realm on the way out of a text/html
+  // response ONLY, so a link in a standalone SVG would also be a link that
+  // quietly left the realm.
   if (options.links && look.href) {
     log.debug("Leaving nodeMarkupFor().");
     return '<a href="' + esc(look.href) + '">' + body + '</a>';
@@ -2124,6 +2216,7 @@ function nodeMarkupFor(entry, at, options) {
 // changed and the other not.
 // ---------------------------------------------------------------------------
 function edgeSample(colour, dash, weight) {
+  log.debug("Entering edgeSample().");
   const stroke = weight || 1.8;
   // What the markers come out as at this stroke width. `markerUnits` is left at
   // its default of `strokeWidth` on both, so both scale with the line.
@@ -2131,6 +2224,7 @@ function edgeSample(colour, dash, weight) {
   const head = 7 * stroke;
   const x1 = 4 + tail * 2;
   const x2 = 58 - head;
+  log.debug("Leaving edgeSample().");
   return '<circle cx="' + round(4 + tail) + '" cy="20" r="' + round(tail) +
     '" fill="' + colour + '"/>' +
     '<path d="M' + round(x1) + ' 20H' + round(x2) + '" stroke="' + colour +

@@ -72,8 +72,8 @@ const TYPE = model.TYPE;
 // ASSERTS them (`xacml/xacml_role_pep.js`) and the policy that READS them —
 // which is the one below, and any policy anybody writes afterwards. They are
 // exported so there is ONE spelling of each: a template that built a policy
-// reading `urn:sts-mock:xacml:roles` while the PEP asserted
-// `urn:sts-mock:xacml:role` would produce an empty bag, an empty bag is no
+// reading `urn:sts:xacml:roles` while the PEP asserted
+// `urn:sts:xacml:role` would produce an empty bag, an empty bag is no
 // intersection, and no intersection is a Deny — a policy that refuses
 // everybody for a reason invisible in both files.
 //
@@ -86,28 +86,28 @@ const TYPE = model.TYPE;
 const ISSUANCE_ATTRIBUTE = {
   // On the SUBJECT: the roles the party being authenticated holds, from the
   // register and from the six built-in ones.
-  ROLE: 'urn:sts-mock:xacml:role',
+  ROLE: 'urn:sts:xacml:role',
   // On the SUBJECT: the roles found in a token the caller PRESENTED, read out
   // of the claim `roles.claimName` names. Separate from the above rather than
   // unioned into it, and that separation is the whole reason it is visible in
   // the policy: these two are not equally trustworthy. The register is this
   // service's own record; a claim is whatever was in a token, and this service
   // does not verify access tokens it did not issue.
-  TOKEN_ROLE: 'urn:sts-mock:xacml:role-from-token',
+  TOKEN_ROLE: 'urn:sts:xacml:role-from-token',
   // ON THE SUBJECT: whether anybody actually authenticated for the session the
   // decision is being made in. It is on the SESSION rather than worked out
   // again here — see authn.js — and it is what separates a person who signed
   // in from one who pressed "continue without signing in".
-  AUTHENTICATED: 'urn:sts-mock:xacml:authenticated',
+  AUTHENTICATED: 'urn:sts:xacml:authenticated',
   // ON THE RESOURCE: WHOSE it is, where that is a person. The User Portal sets
   // it; nothing else does yet. It is what lets a policy say "the subject is the
   // owner" — and, later, "or the subject holds a helpdesk role", which is the
   // whole reason the portal's own-data rule goes through a policy at all rather
   // than being an `if` in a handler.
-  OWNER: 'urn:sts-mock:xacml:resource-owner',
+  OWNER: 'urn:sts:xacml:resource-owner',
   // On the RESOURCE: the roles the application demands. `appRequiredRole` on
   // its entry, or EVERYBODY where it names none.
-  REQUIRED_ROLE: 'urn:sts-mock:xacml:required-role'
+  REQUIRED_ROLE: 'urn:sts:xacml:required-role'
 };
 
 // ---------------------------------------------------------------------------
@@ -118,15 +118,21 @@ const ISSUANCE_ATTRIBUTE = {
 // know the element names — that is the writer's problem.
 // ---------------------------------------------------------------------------
 function value(type, lexical) {
+  log.debug("Entering value().");
+  log.debug("Leaving value().");
   return { kind: 'value', type: type, lexical: String(lexical) };
 }
 
 function designator(category, attributeId, type) {
+  log.debug("Entering designator().");
+  log.debug("Leaving designator().");
   return { kind: 'designator', category: category, attributeId: attributeId,
            dataType: type, issuer: null, mustBePresent: false };
 }
 
 function match(matchId, literal, reference) {
+  log.debug("Entering match().");
+  log.debug("Leaving match().");
   return { matchId: matchId, value: literal, reference: reference };
 }
 
@@ -134,6 +140,7 @@ function match(matchId, literal, reference) {
 // `AnyOf` per group, since a Target ANDs its AnyOf children. Each group is a
 // list of alternatives, ORed, since an AnyOf ORs its AllOf children.
 function targetOf(groups) {
+  log.debug("Entering targetOf().");
   const anyOf = groups.filter(function (group) {
     return group && group.length;
   }).map(function (group) {
@@ -141,10 +148,13 @@ function targetOf(groups) {
       return { matches: [one] };
     }) };
   });
+  log.debug("Leaving targetOf().");
   return anyOf.length ? { anyOf: anyOf } : null;
 }
 
 function apply(functionId, args) {
+  log.debug("Entering apply().");
+  log.debug("Leaving apply().");
   return { kind: 'apply', functionId: functionId, args: args };
 }
 
@@ -152,6 +162,8 @@ function apply(functionId, args) {
 // every template parameter of list type, so that "a, b" and "a\nb" cannot mean
 // different things on two different templates.
 function listOf(raw) {
+  log.debug("Entering listOf().");
+  log.debug("Leaving listOf().");
   return String(raw || '').split(/[,\n]/).map(function (one) {
     return one.trim();
   }).filter(function (one) {
@@ -165,16 +177,21 @@ function listOf(raw) {
 // a policy that permits slightly more than intended — while misreading one as
 // a no builds the issuance policy without an arm and refuses people.
 function yes(answer, dflt) {
+  log.debug("Entering yes().");
   const text = String(answer === undefined || answer === null ? '' : answer)
     .trim().toLowerCase();
   if (!text) {
+    log.debug("Leaving yes().");
     return dflt !== false;
   }
+  log.debug("Leaving yes().");
   return !(text === 'no' || text === 'false' || text === 'off' ||
            text === '0' || text === 'n');
 }
 
 function slug(text) {
+  log.debug("Entering slug().");
+  log.debug("Leaving slug().");
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'x';
 }
@@ -261,6 +278,8 @@ const TEMPLATES = [
       // ANY pair — which is exactly the question, and which no ordinary
       // two-argument predicate can ask.
       function intersects(subjectAttribute) {
+        log.debug("Entering intersects().");
+        log.debug("Leaving intersects().");
         return apply(F3 + 'any-of-any', [
           { kind: 'function', functionId: F1 + 'string-equal' },
           designator(model.CATEGORY.ACCESS_SUBJECT, subjectAttribute,
@@ -378,17 +397,17 @@ const TEMPLATES = [
            'admin console, the management API, the User Portal, SCIM or the ' +
            'SPIRE Server API.',
     what: 'Produces ONE Permit rule whose condition conjoins two questions: ' +
-          'does the subject satisfy the resource\'s ROLE requirement (holding ' +
-          'one it names, or it naming none), AND does it satisfy the ' +
-          'resource\'s OWNERSHIP requirement (the resource naming no owner, ' +
-          'or the subject being that owner). Both must hold, so ownership is ' +
-          'a constraint rather than a way round the roles. The combining ' +
-          'algorithm is deny-unless-permit, so anything not permitted is ' +
-          'refused rather than left to the PEP\'s bias. Because the ' +
-          'requirement and the owner both travel in the REQUEST, one document ' +
-          'decides for every surface — and adding a helpdesk role that may ' +
-          'manage somebody else\'s account is a SECOND RULE in this policy ' +
-          'rather than a change to this one or to any handler.',
+          'does the subject satisfy the resource\'s ROLE requirement ' +
+          '(holding one it names, or it naming none), AND does it satisfy ' +
+          'the resource\'s OWNERSHIP requirement (the resource naming no ' +
+          'owner, or the subject being that owner). Both must hold, so ' +
+          'ownership is a constraint rather than a way round the roles. The ' +
+          'combining algorithm is deny-unless-permit, so anything not ' +
+          'permitted is refused rather than left to the PEP\'s bias. Because ' +
+          'the requirement and the owner both travel in the REQUEST, one ' +
+          'document decides for every surface — and adding a helpdesk role ' +
+          'that may manage somebody else\'s account is a SECOND RULE in this ' +
+          'policy rather than a change to this one or to any handler.',
     parameters: [
       { name: 'permitOwner',
         label: 'Permit a subject to act on a resource they own',
@@ -559,13 +578,13 @@ const TEMPLATES = [
                      (permitEmpty ? ', or the resource requiring none' : '') +
                      ' — AND satisfies its OWNERSHIP requirement: the ' +
                      'resource names no owner' +
-                     (permitOwner ? ', or the subject IS that owner, which is ' +
-                                    'how a person reaches their own account ' +
-                                    'and nobody else\'s' : '') +
-                     (requireAuth ? '. A subject that did not authenticate is ' +
-                                    'refused whatever else is true' : '') +
-                     '. Everything else is denied: the combining algorithm is ' +
-                     'deny-unless-permit, so an access decision does not ' +
+                     (permitOwner ? ', or the subject IS that owner, which ' +
+                                    'is how a person reaches their own ' +
+                                    'account and nobody else\'s' : '') +
+                     (requireAuth ? '. A subject that did not authenticate ' +
+                                    'is refused whatever else is true' : '') +
+                     '. Everything else is denied: the combining algorithm ' +
+                     'is deny-unless-permit, so an access decision does not ' +
                      'depend on a PEP\'s bias.',
         combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
         // NO TARGET, for `role-issuance`'s reason: one caller asks this
@@ -900,6 +919,8 @@ const TEMPLATES = [
 ];
 
 function lookup(id) {
+  log.debug("Entering lookup().");
+  log.debug("Leaving lookup().");
   return TEMPLATES.filter(function (one) {
     return one.id === id;
   })[0] || null;
@@ -935,7 +956,7 @@ function build(id, answers, options) {
   });
   const name = settings.name || template.id;
   const policy = template.build(filled, {
-    idBase: settings.idBase || 'urn:sts-mock:xacml:policy:' + slug(name)
+    idBase: settings.idBase || 'urn:sts:xacml:policy:' + slug(name)
   });
   // A PolicySet HAS NO `rules`, and this line said `undefined rule(s)` for
   // one from the moment the blank template could build one. What a document
@@ -949,6 +970,8 @@ function build(id, answers, options) {
 // What the console and the management API list. Derived, so a template added
 // to the table above appears in both with no second edit.
 function catalogue() {
+  log.debug("Entering catalogue().");
+  log.debug("Leaving catalogue().");
   return TEMPLATES.map(function (one) {
     return { id: one.id, label: one.label, blurb: one.blurb, what: one.what,
              parameters: one.parameters.map(function (parameter) {

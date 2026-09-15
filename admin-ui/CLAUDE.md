@@ -7,6 +7,7 @@ The admin console at `/admin`. Four files now:
 | `admin.js` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
 | `admin_rbac.js` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
 | `delegation_map.js` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
+| `pki_admin.js` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.js`. It draws its own page (like `crypto_metadata.js`) and is required at **18a**, which is why it needs no slot. |
 | `crypto_metadata.js` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.js`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
 | `federation_diagram.js` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.js`'s palette, hexagon and text metric. |
 
@@ -100,12 +101,15 @@ It also reads the SESSION store, which `../authn/authn.js` owns.
    **PROTOCOLS HAS A THIRD LEVEL AND NOTHING ELSE DOES.** An item in a section's
    `items` is either a page (`path` + `label`) or a GROUP (`title` + `what` +
    `items`), and `isNavGroup()` is the single predicate that decides which.
-   There are four groups, all under Protocols — **OAuth2 / OIDC** (authorization
+   Under Protocols the groups are **OAuth2 / OIDC** (authorization
    servers, token lifetimes, custom claims), **SAML** (SAML 2.0 identity
    provider, SAML 1.1 identity provider, custom SAML attributes),
    **Verifiable Credentials** (credential
-   claims, verifier request) and **SPIFFE** (SPIFFE, registration entries,
-   agents) — with SCIM left ungrouped beside them. **SAML USED TO BE THE
+   claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
+   agents), **XACML**, and — since 2026-09-13 — **Kerberos** (Kerberos
+   settings, principals; the settings page was renamed from `Kerberos` so the
+   heading does not say its label twice) — with SCIM left ungrouped beside
+   them. **SAML USED TO BE THE
    EXCEPTION HERE and no longer is**: it held ONE page, and the argument for
    keeping the heading anyway was that it names a protocol family this service
    speaks in two versions and two profiles while the page under it configured
@@ -152,6 +156,243 @@ It also reads the SESSION store, which `../authn/authn.js` owns.
 
 
 ---
+
+## THE ACTIONS LEFT THIS DIRECTORY ON 2026-09-12
+
+Thirty-one of them, with the tables they dispatch on and the pure helpers they
+share — about 3,100 lines with their comments — to
+`admin-core/admin_actions.js`. `admin.js` went from 36,197 lines to 33,125.
+
+**They were not moved because they were wrong.** Not one of them had ever
+touched `req`, `res` or markup; each took a parsed body and an actor and
+returned a result object. They were a shared logic layer already, and this
+directory was simply the wrong address for it — `mgmt-api/admin_api.js`
+required this module to reach them, which made the surface a machine drives
+downstream of the surface a person reads.
+
+**WHAT STAYED IS TRANSPORT, AND THE LINE IS WORTH KNOWING.**
+`respondToAction()` turns a result into a 303 back to the page or into JSON;
+`respondToApplicationAction()` does the same and reaches for this console's
+paging; `listField()` reads `req` for the repeated-checkbox parse that
+`helpers.parseBody()` cannot answer. All three belong to the surface that has
+a page. **`listField()` staying is the fact the whole move rested on**:
+`applicationsAction(body, protocols)` takes those parsed values as a parameter
+because the route parses them and hands them down — a boundary somebody drew
+long before there was anywhere to move to.
+
+**AND THEN THE INTERLEAVED ONES WERE SPLIT, FAMILY BY FAMILY.** Every page that
+computed a dozen facts, drew markup from them and assembled a json at the
+bottom now takes the facts from `admin-core/admin_views.js` in one call and
+renders them — its markup untouched, its json handed back as `view.json`. The
+page a person reads and the resource a machine fetches are one computation.
+`mfaView()` left entirely: the page it belonged to had split into
+`/admin/totp` and `/admin/webauthn` and its columns had moved onto
+`/admin/users`, so nothing here drew from it any more.
+
+**THE PURE VIEWS WENT FIRST, AND THE LINE THERE WAS A MEASUREMENT.** Of the
+eighty-nine view-shaped functions here, forty-six return a json half and **only
+three separate at a clean boundary** — the rest build row markup part-way
+through the computation. So what moved to `admin-core/admin_views.js` is the
+thirty-eight that were already pure: they answer a question and reach no markup
+at all. The forty-three that render stayed, because `{ json, inner }` computed
+in one pass is the strongest form of rule 7 there is and splitting it is
+bespoke work on interleaved code.
+
+**AND SO DID THIS CONSOLE'S OWN STRUCTURE, WHICH IS PURE AND STILL BELONGS
+HERE**: `consoleJson()` (which pages exist, out of `NAV`), `configJson()` and
+`settingsGroupsFor()` (where a settings group is edited, out of
+`SETTING_HOMES`), `protocolSettingsJsonFor()` and `configSettingsJson()`. A
+caller asking what pages this console has is asking the console about itself.
+Purity was not the test; ownership was. `configSettingsJson` is handed to the
+read layer, because `scimJson()` embeds this console's settings block and the
+alternative was for the page and `/admin-api/scim` to build it separately.
+
+**THEY ARE ALIASED BACK RATHER THAN REWRITTEN AT EVERY CALL SITE**, in one
+block under the requires. This file calls those names several hundred times —
+from the routes, from the views that draw the buttons an action dispatches on,
+and from each other — so rewriting each into `adminActions.x` would have made
+the move a diff nobody could read, in which a behaviour change and a rename
+look identical. **They are deliberately not RE-EXPORTED**: aliasing keeps this
+file's own call sites working, and re-exporting would publish a second way to
+reach the same function.
+
+**`api_explorer.js` REQUIRES THE READ LAYER DIRECTLY**, and that is the one
+console page that does. It asks `gateStateFor()` which roles the reader holds,
+so the token it mints carries those scopes and no others — and that function
+moved. It called `admin.gateStateFor()` for a while after it stopped existing:
+the module loaded fine and threw a `TypeError` when somebody opened the page.
+
+The seven inverted hooks that the actions need — `setLogoutReader()`,
+`setDirectoryWriter()`, `setGroupWriter()`, the three signals reporters and
+`setXacmlPages()` — **stay here**, and forward what they were handed from
+inside the setter the filler already calls. Every filler in the tree names this
+module, and so does every rule 3e sentence in the root file; moving the slots
+would have meant editing four fillers to say something no more useful.
+`admin-core/CLAUDE.md` argues the rest.
+
+
+## `/admin/database`: EVERYTHING POSTGRESQL WILL SAY, AND THE SCHEMA IN IT (2026-09-11)
+
+Filed under **Monitoring** and not beside `/admin/persistence`, on this file's
+own rule that a page goes where the QUESTION it answers goes. That page is
+under Settings and answers *what is this service configured to write down,
+where, and is the connection encrypted* — configuration, plus the eighteen
+`persistence.*` settings, and it reads the same on a service that started a
+second ago. This one answers *what has that database been DOING*, and the
+numbers move while a reader watches. Same argument as `/admin/xacml/monitor`,
+`/admin/scim/monitor` and `/admin/encryption`, made a fourth time rather than
+cited.
+
+**THE PAGE HOLDS NO SQL, NO COLUMN NAMES AND NO CONNECTION**, and each of those
+is a separation rather than a coincidence — `persistence/CLAUDE.md` argues the
+first and the third. The second is this file's: **the columns drawn are the
+keys the server handed back, in its order**, so the shape of the page is
+decided by the database it is pointed at. That is what lets "pull everything
+available" stay true across a major version, and it is why the renderer has a
+`cell()` function that has to handle a value it has never heard of — a `null`
+that is not a zero, a `bigint` that arrives as a string because it does not fit
+in a double, a `Date`, and PostgreSQL's own `<insufficient privilege>` string,
+which is the one value on the page that would otherwise be mistaken for
+somebody's query.
+
+**FOUR NUMBERS ARE COMPUTED HERE AND NOT READ**, and they are the four a reader
+would otherwise do in their head and get wrong: cache hit, rollback share,
+dead-tuple share, and indexes nothing has ever scanned. PostgreSQL keeps
+counters and not ratios on purpose — a counter can be subtracted between two
+readings and a ratio cannot — so the page computes them and says, once and
+prominently, that every one of them is cumulative since `stats_reset`. A cache
+hit ratio over the life of a server tells you nothing about the last hour, and
+a reader taking it for a current figure is the one misunderstanding this page
+can actually cause.
+
+**A PRIMARY KEY WITH NO SCANS IS NEVER CALLED AN UNUSED INDEX.** It is an
+ordinary state, and flagging it would make the one actionable number on the
+page noise.
+
+**AND ONE BLOCK IS AN ASSERTION RATHER THAN A MEASUREMENT**: the schema drift
+check, which compares the objects the driver DECLARES against the ones the
+server actually has. Nothing else in this service makes it —
+`tests/postgres_schema.js` compares the driver against `postgres/schema.sql`
+character for character, and neither of those is ever compared against a
+RUNNING SERVER, so a database built by an older copy of that file satisfies
+both and is missing a table. The reverse is deliberately not reported: a table
+in that schema the driver never heard of is an operator's business, and a page
+calling it an error would be this service claiming a namespace it does not own.
+
+
+
+## `/admin/secrets`: WHERE THE PRIMORDIAL SECRETS COME FROM (2026-09-12)
+
+Filed under **Monitoring**, and it is the page this file's filing rule was
+hardest to apply to, because **three** pages touch the subject and each answers
+a different question:
+
+| Page | Section | The question |
+|---|---|---|
+| `/admin/config` | Server configuration | What is this service SET UP to read, and from where? The `keys.*` rows. |
+| `/admin/encryption` | Monitoring | What is SEALED, and with what? The key-encryption key is one paragraph in it, because there the key is a fact about the sealing rather than the subject. |
+| `/admin/secrets` | Monitoring | What is at the other end of that paragraph, and is it working? |
+
+**AND THE THIRD QUESTION IS THE ONE NOTHING COULD ANSWER.** Everything on this
+page can be broken while every settings row is right: the file may not be
+there, the store may be sealed, the client certificate may have expired, the
+policy may have been widened, the secret may have been rotated to a version
+nothing here can read. `/admin/config` reads identically in all of those cases
+and so does `/admin/encryption`.
+
+**THERE ARE TWO SECRETS AND THERE IS NO THIRD**: the key-encryption key, and
+the database password. Both are READ from outside — this service generates
+neither and writes neither down — so they are the one part of its configuration
+whose correctness depends on a system nobody here controls.
+
+### The page holds no probe, no SDK and no credential
+
+`common/secrets.js` owns the providers, the client and the login; this page
+asks it for `storeReport()` and draws what comes back. That is
+`/admin/database`'s separation, and it is load-bearing here for a second reason
+beyond the first: **the login a probe makes must be the same login a startup
+read makes**, or the page is right about something nobody is running. It is one
+function (`vaultConnect()`), extracted from the read path on the day this page
+was written and shared by both.
+
+### What is drawn, per provider
+
+* **`file`** — the path, whether it is there, its mode, owner and mtime, its
+  symlink target where it has one (a Kubernetes Secret mount is a symlink into
+  a `..data` directory that is REPLACED on rotation, so the target is how an
+  operator sees that a rotation landed), and whether it holds a JSON object —
+  **the member NAMES and never the values**.
+* **`vault`** — the whole state the store will publish: seal status and seal
+  TYPE, initialised or not, the version and build, the cluster and its leader,
+  the health summary with **the store's clock against this process's**, the
+  certificate this service presents and when it expires, the token the login
+  produced, the engines the identity can see, and **what that identity may
+  ACTUALLY do, asked of the store rather than quoted from a policy file**.
+* **`aws`, `gcp`, `azure`** — the metadata each publishes about the secret:
+  rotation and the KMS key, version states, staging labels, replication.
+  Through `DescribeSecret`, `getSecretVersion` and
+  `listPropertiesOfSecretVersions` — never through the call that returns the
+  value.
+
+### Three refusals, and each is the page
+
+* **NO SECRET VALUE, and the guard is asserted twice.** Every probe names the
+  fields it returns, and `secrets.js` then deletes a deny-list of member names
+  from whatever came out. That duplication is deliberate: this is the one page
+  in this console where being wrong is unrecoverable — a key-encryption key
+  drawn once is a key that has to be rotated, and rotating it means everything
+  sealed under it is gone. **The guard has fired in anger once already**: the
+  `mounts` probe answered `{}` against a store with four engines mounted,
+  because it had named its members `secret` and `auth` and both are on the
+  list. The rule that came out of it is that a probe names its OWN members and
+  never echoes a provider's.
+* **NO CONTROL.** No reveal, no rotate, no test-read. A reveal is the end of
+  the key. A rotate is a deployment act and this service has no re-sealing
+  pass, which is why `openbao/seed.js` writes the key once and refuses to
+  replace it. And a test-read would be this console causing the one thing the
+  whole design avoids — the key in this process's memory because somebody
+  opened a page.
+* **NO PROBE READS A SECRET.** Every one is metadata: a stat, a `sys`
+  endpoint, a KV version history, a describe. Opening a page must not change
+  what this process is holding.
+
+### A failed probe is a row, and here half of them are supposed to fail
+
+`/admin/database`'s rule, and it matters more here. The identity this service
+holds in a secret store is deliberately bound to two read paths and nothing
+else, so **a 403 against anything else is the policy working** — and a page
+that hid the refusal would be hiding the evidence for the claim
+`openbao/read-only.hcl` makes. The page says that at the top, in amber, rather
+than leaving a reader to conclude that the store is broken.
+
+**THE BOUND IS A TIMER, WHERE `/admin/database`'s DELIBERATELY IS NOT ONE.**
+There it had to be PostgreSQL's own `statement_timeout`, because abandoning the
+promise left a statement running and a connection pinned out of a pool every
+protocol endpoint writes through. Nothing here is pooled and there is no
+equivalent to ask for: an abandoned HTTPS request to somebody else's store
+closes its own socket. `keys.storeProbeTimeoutMs` bounds ONE probe, and they
+run in parallel — measured against a store that was down: **100ms for all nine,
+not nine times the bound.**
+
+### Two things the report does once that it would naturally do twice
+
+Both were measured against a real OpenBao rather than reasoned about:
+
+* **ONE LOGIN PER RENDER.** Each of the eight Vault probes made its own
+  certificate login at first — eight round trips and eight service tokens
+  minted in the store, each with an hour to live, every time somebody opened
+  the page. A `session` object is threaded through every probe and memoizes
+  the connection.
+* **ONE PROBE PER LOCATION, NOT PER SECRET.** The commonest configuration
+  there is — the compose stack — keeps both secrets at `secret/data/sts`, and
+  the version history of that path is one answer, not two. **The scope is the
+  PROVIDER's to declare** (`PROBES.<id>.scope()`), because the report cannot
+  know what a probe's answer depends on: the file provider's is per MEMBER and
+  every other is per stored object, and a key guessed centrally would silently
+  either ask twice or answer the wrong question once.
+
+`tests/secret_store_report.js` holds everything about this page that needs no
+store, and `common/CLAUDE.md` argues the module underneath it.
 
 ## EVERY SETTING IS DRAWN ON THE PAGE FOR THE PROTOCOL IT CONFIGURES (2026-08-27)
 
@@ -291,7 +532,12 @@ Three things about them:
   families answers on paths this file would have to keep in step by hand, and
   `/admin/sts-metadata` already derives exactly that list from the running
   router. A table here would be the drift that page exists to catch, on a page
-  nothing can check.
+  nothing can check. **REVERSED 2026-09-13, AND THE ARGUMENT IS WHAT SHAPED
+  THE REVERSAL**: rcbj asked for every Protocols page to list its realm's
+  concrete endpoints, as `/admin/gnap` did. So the list is not in this file
+  and not hand-kept: see *Every Protocols page lists its realm's endpoints*
+  at the foot, where the table names ROUTES, the names and methods come from
+  `sts_metadata.js` and the router, and a test fails on both drifts.
 
 **Where the two grouped families' pages went in the sidebar** is argued in
 `SECTIONS` beside the rows: the OAuth 2.0 / OIDC settings page is FIRST in its
@@ -948,6 +1194,29 @@ divs rather than two — `.meta`, `.card`, `.main`, `.shell` — and one missing
 nests the next page's sidebar inside the last one's card, which looks like a CSS
 bug rather than a markup one.
 
+### The foot of every page says what this process is running as (2026-09-13)
+
+Under the version line, `runtimeFooter()` draws four facts: whether requests are
+DISPATCHED to request workers or answered by a single process
+(`workers.requestCount` and `workers.dispatch`, and which worker drew the page),
+the realm's MODE (`mode.current()`), the PERSISTENCE store that is open
+(`persistence.status()` — host, port and database for postgres, the data
+directory for ldif), and where the two primordial secrets come from
+(`secrets.describe()` for the key-encryption key — or *not read* where
+`keystore.persists()` is false — and `secrets.describeDatabasePassword()`).
+
+* **Every fact is read from the module that owns it, per render**, so the line
+  cannot disagree with `/admin/persistence` or `/admin/secrets`, which it links
+  to. It says WHERE a secret comes from and never WHAT it is.
+* **The store fact is the OPEN store**: `status().mode` is `memory` until the
+  configured store has opened, and a store that cannot open stops the service,
+  so a mismatch is only a process that has not opened it — and it is said.
+* **It is not drawn for a reader with no session** (`gate.enforced &&
+  !gate.session`), for `refreshLink()`'s rule: the shell draws the sign-out
+  page and the 401s, and a database host and secret-store paths belong to people
+  who may read those two pages.
+* **A fact that throws is drawn as `unknown`**; a footer must not cost a page.
+
 ### The head row, and the one control that is on every page
 
 Under `.card` the first thing is `.pagehead`: the page's `<h1>`, and a
@@ -1095,6 +1364,14 @@ back through the codec's own `etypeName()` (those modules are VENDORED and
 cannot be edited to export a list), the SPIFFE key types are `spiffeCa.KEY_TYPES`,
 and so on for eleven modules.
 
+**`crypto_metadata.js` is required at 20a, after `tls/tls_server`, and that is
+the constraint that decides the line.** It reads an algorithm table out of
+eleven modules — `common/crypto`, `pq_jose`, the vendored `xmldsig`,
+`krb5_crypto`, `webauthn`, `oauth2`/`dpop`/`client_auth`/`mtls`, `spiffe_ca`,
+`scim_auth` and `tls_server` — and requiring one it has not yet loaded would
+REGISTER ITS ROUTES THERE (rule 1). At 20a every one of them is a cache hit.
+Also after `admin-ui/admin` for the shell and the gate.
+
 **Only two things on the page are written by hand, and both are things no table
 can hold**: the per-family prose in `FAMILIES` (what each identity service signs,
 and why) and `STANDARDS` (which document an envelope comes from, and how much of
@@ -1202,6 +1479,14 @@ the one that makes "every table is derived" mean something: reading the report
 on its own says nothing, because a hand-written list is well-formed too. All
 three assertions were mutation-tested before they were committed.
 
+**The nineteenth family is PKI (2026-09-10)** and it paid all three;
+what it also owed, and what nothing checks, is a row in `admin-ui/admin.js`'s
+`SETTING_HOMES` — `checkSettingHomes()` refuses a settings GROUP with no page,
+so a `pki.*` group with no `/admin/pki` row would have been reported at startup
+and drawn nowhere. **`ssf/CLAUDE.md` carries the full
+list of what adding the seventeenth family actually cost, which was nine files
+rather than three** — it is the record of one family, where this is the rule.
+
 ## `/admin/keys` IS THE ONE PAGE HERE WHERE READING IS TAKING (2026-08-30)
 
 Added in `crypto_metadata.js` — the same module, because it already requires
@@ -1247,7 +1532,12 @@ this console, and `mayWrite()` exists for that one caller. It goes through
   for it here, and the private seed handling is still moving. A file no library
   reads is worse than a refusal that says why. They are also not GENERATED by
   this page — they are made on first use, and a metadata screen costing two
-  seconds a view is one people learn not to open.
+  seconds a view is one people learn not to open. **Since 2026-09-13 each is a
+  leaf of the realm's JOSE Issuing CA**, so its row carries `certifiedBy` like
+  the curve keys' and the export returns the certificate and its chain as a
+  SECOND file — which `/admin-api` hands over and the page's one-file download
+  does not, and the status line says so. Still no PKCS#12: that format wraps a
+  PRIVATE key, and having a certificate does not give an AKP key an encoding.
 * **The POST answers with the FILE**, which is the only form in this console
   that does not come back as a page. A download IS the response body; a 303 to a
   page saying "your key is ready" would be a page with nothing on it. A REFUSAL
@@ -1285,9 +1575,12 @@ service the signing key OUTLIVES the process — so the page was offering the
 reassurance a reader acts on, about a key for which it was not true. Both are
 computed from `keystore.report()` now, and the persisted branch says the
 opposite out loud: a key exported here goes on signing after a restart and
-anything signed with a copy goes on verifying against the live JWKS. **The TLS
-and SPIFFE keys really are per start**, which is why the rows carry the
-distinction rather than the report as a whole.
+anything signed with a copy goes on verifying against the live JWKS. **The TLS certificate and the SPIFFE
+JWT authority really are per start**, which is why the rows carry the
+distinction rather than the report as a whole. **The SPIFFE X.509 authority
+stopped being one of them on 2026-09-11**: it is this realm's SPIFFE Issuing CA
+under the service Root now, so it persists wherever the rest of the hierarchy
+does.
 
 ### TWO NAME COLLISIONS IN ONE FILE, AND THE SECOND ONE WAS A 500
 
@@ -1302,6 +1595,349 @@ threw `report.keys.map is not a function`. It is `renderKeyPairs()` now.
 lesson.** A file this long holds names nine hundred lines apart, `node --check`
 catches a duplicate `const` and says nothing about a duplicate `function`, and
 the browser suite is what found it. Check for the name before adding one.
+
+## `/admin/pki` IS THE THIRD PAGE THIS FILE DOES NOT DRAW, AND THE FIRST THAT NEEDED NO SLOT (2026-09-10)
+
+`admin-ui/pki_admin.js`, under **Protocols → PKI**, ungrouped, next to TLS. It
+builds a certificate authority for the trust realm it is reached in and issues
+signing key pairs from the bottom of it to applications — which is what makes
+[RFC 7521 and RFC 7523](../oauth-oidc/CLAUDE.md) usable here without an operator
+moving key material by hand.
+
+### IT SHOWS ONE REALM'S AUTHORITIES, AND FOR A DAY IT SHOWED EVERY REALM'S (2026-09-11)
+
+The page draws the **Root**, the **process branch** and **this realm's
+Intermediate** with its Issuing CAs — and no other realm's. `GET
+/admin-api/pki` answers exactly the same, because the page and the API are one
+function (`pkiJson()`), and a view that answered more than the page drew would
+be two answers to *what is this realm's certificate authority*.
+
+**WHAT WAS WRONG WITH THE WHOLE-TREE PAGE IS NOT THAT IT WAS BIG.** Every other
+surface on this console shows ONE REALM AT A TIME and the switcher is how you
+change it; this page read the whole process, so an operator in one realm was
+handed a **Rebuild** button for another realm's certificate authority and a
+**Revoke** for certificates issued in it. A revocation is permanent and is made
+BY AN ISSUER — the issuer's name on the row is the only thing that says which
+realm is about to change — so that was the row where the leak was more than
+untidy. Nothing failed while it was there: every tier was correct and every
+path verified, which is why it read as thoroughness.
+
+**THE PROCESS BRANCH IS DRAWN IN EVERY REALM AND THAT IS DELIBERATE.** The TLS
+authority certifies sockets every realm answers on, so it is this realm's front
+door as much as anybody's; it belongs to no realm, so no realm's page is more
+its home than another's; and it has no other surface anywhere, so hiding it from
+every realm would make that authority unreadable and unmanageable from this
+console. (**It carried the SPIFFE authority too until 2026-09-11**, when that
+one moved to a realm's branch — a realm signs its own X509-SVIDs, and the four
+SPIFFE sockets do not prevent it because the anchor those SVIDs verify against
+is the service Root that every realm shares.) The Root is there for the same kind of reason and a stronger one:
+narrowing the branches must not narrow the ANCHOR, or the page shows an
+Intermediate signed by nothing.
+
+**THE WRITE PATH HAD TO MOVE WITH THE DRAWING, AND THAT IS THE HALF WORTH
+COPYING.** `SCOPED_ACTIONS` is the seven actions that carry a `scope`, and one
+naming a realm this page does not draw is REFUSED — not silently redirected to
+this realm's own branch, because a caller that named `acme` meant `acme` and
+quietly rebuilding something else is the one outcome worse than saying no. The
+refusal names the realm switcher, because switching is how to do what was
+asked. **A page that hides a branch while its actions still edit it is worse
+than the leak it replaced**: the operator cannot see what they changed.
+
+**THE NARROWING IS IN `pki_admin.js` AND NOT IN `common/pki.js`.** That module
+is handed scope ids and has no opinion about which exist — the same reason
+`rebuildEveryScope()` lives on this side — so *which branches does a reader in
+this realm get* is asked exactly once, where the page is.
+
+#### A rebuild re-mints what the old branch certified for the realm's keys — all THREE doors (2026-09-15, #46)
+
+`build-scope` and *Replace the Root* (`rebuildEveryScope()`) always followed the
+build with `recertifyScope()`. **`build` — the action `POST /admin-api/pki/build`
+reaches — did not**, and `common/pki.js`'s `buildScopeNow()` carries the row's
+recorded certificates over the rebuild (so the workbench's objects survive). So
+the realm's JWKS `x5c`, its SAML metadata and its signature headers went on
+publishing the signing keys' certificates from the SUPERSEDED Issuing CAs, with
+the old Intermediate in the chain — and the old Issuing CAs name the same
+`intermediate.crl` as the new ones, so one list was named by two issuers.
+`tests/vendored/sts_pki_distribution_points.js` failed on it in every mode.
+
+**It was there on `develop` and was hidden by timing.** A runtime realm's keys
+were made by the first handler that read them, which for a realm created and
+immediately rebuilt came AFTER the rebuild, so nothing had been certified from
+the old branch. #46's `app.js` makes the request realm's key set BEFORE the
+handler, so the realm watcher's `certifyKeySet()` finds them held and certifies
+them from the branch the rebuild then replaces. The fix is the missing
+`recertifyScope()` in `build`, and `certify()`'s refusal to record a certificate
+from an authority replaced while it was being signed (`common/CLAUDE.md`) for
+the certification still in flight. `tests/pki_rebuild_recertifies.js`.
+
+#### And the store spells the default realm `default`, not `''`
+
+Found in the same change and worth more than the narrowing. `common/pki.js`'s
+`realmIdOf()` resolves an empty scope to the **ambient** realm, so `''` does not
+name the default realm there — it names *whichever realm is asking*. The page's
+realm list converted `default` to `''`, which is invisible in the default realm
+(the two coincide) and wrong everywhere else.
+
+It bit on the REBUILD: *Replace the Root* walks every branch, and pressed while
+in `acme` it walked `['*process', '', 'acme']` — `''` was acme again, so acme's
+branch was rebuilt twice and **the default realm's was never rebuilt at all**,
+leaving it chained to a Root that no longer exists. `realms.DEFAULT_ID` is the
+store's own spelling and resolves to the same row from every realm.
+
+### It is at 18a, and that is the whole of why there is no thirteenth slot
+
+Rule 3e's test is whether a require would close a cycle **or move a route**. A
+require from `admin.js` to that module WOULD close a cycle — it requires this
+one for the shell — so the obvious direction is out. But a require from
+`mgmt-api/admin_api.js` (19) to it moves NOTHING: the only route it registers is
+`/admin/pki`, and it requires only `admin.js` and `common/pki.js`, which is a
+LIBRARY (rule 3).
+
+So it is required in `common/protocol_stack.js` at **18a**, immediately after
+this file and BEFORE the management API — which makes that module's own require
+a cache hit that registers nothing.
+
+**`crypto_metadata.js` COULD NOT DO THIS AND THAT IS THE CONTRAST TO KEEP.** It
+sits at 20a because it reads an algorithm table out of `tls/tls_server.js` at 20,
+so requiring it from `admin_api.js` would drag every `/tls*` route in front of
+the management API's own — which is why that one has the seventh slot and this
+one has none. **A slot costs a reader an indirection every time**, and rule 3e
+says not to pay for one by analogy.
+
+### The `script-src` argument is made from scratch, for the tenth time
+
+`admin-ui/CLAUDE.md`'s standing rule is that the argument has to be MADE each
+time and that "the page next door does it" is not one. The test is whether the
+page CANNOT work without a script.
+
+It plainly can. Generating a key pair and issuing a certificate are things this
+process does far better than a browser — **it holds the CA private keys, and a
+browser must never** — so the button is a POST and the result is a re-rendered
+page. That is the exact inversion of the parent project's *PKI / X.509* page,
+whose whole point is that the key never leaves the browser; what is mirrored
+here is the MODEL (the same three tiers, the same profiles, the same encoder,
+from `common/vendored/x509.js` byte-identical) and not the mechanism.
+
+### The two columns are two different facts, and the page says which
+
+Holding a key pair and being TRUSTED TO ASSERT are separate acts, and an
+application commonly has one and not the other. A key pair lets it SIGN, which
+is all RFC 7523 section 2.2 needs; a declared `iss` on `oauthAssertionIssuer` is
+what section 2.1 needs. Drawing one column would have made the page say
+something untrue about whichever half was missing.
+
+### A THIRD FACT ARRIVED WITH RFC 7522: WHICH PROFILE (2026-09-11)
+
+The Issue control takes a **Profile** — RFC 7523's JWT assertion or RFC 7522's
+SAML 2.0 one — and they are two key pairs on two disjoint attribute sets. An
+application may hold both.
+
+**THE TABLE IS ONE ROW PER APPLICATION PER PROFILE, so an application holding
+both appears twice.** A single row with a pair of columns was the first shape of
+this and was wrong for a reason worth keeping: **every fact on such a row is per
+profile** — the key handle, the expiry, the declared issuer, and the *Take the
+key pair off* button — so one row would have had to say which of two things each
+of its controls meant. Taking one profile's key pair off leaves the other
+working, and the reply says so; a control that cleared both would be a button
+whose label said one thing and did two.
+
+**The key handle column is headed differently per row and that is not a
+cosmetic difference**: a `kid` for the JWT profile and a THUMBPRINT for the SAML
+one, because those are the handles the two formats actually carry — a JWS header
+names a `kid` and an XML Signature carries the certificate itself, so what
+matches a presented `<ds:KeyInfo>` against what is registered is a thumbprint.
+`admin-ui/pki_admin.js`'s `PURPOSE_WRITES` is the one table that says which
+attributes each profile writes; `oauth-oidc/CLAUDE.md` 3z argues why the two
+sets may never be merged.
+
+### THE TWO KEY-PAIR TABLES ARE PAGED (2026-09-13)
+
+*Applications* and *People* drew every row they had. They page now, separately,
+on `issuedPage` and `personsPage` with one shared `per` (twenty-five by default,
+not the console's fifty, because this page carries eight sections), with one
+*Rows per table* control under the Applications heading. `keyPairPaging()` in
+`pki_admin.js` is the one slice both the page and the JSON use.
+
+* **THE NAMES ARE THE JSON MEMBERS'** — `issued` and `persons` with `Page` on
+  the end, answered by `issuedPaging` and `personsPaging` — which is
+  `/admin-api`'s one-name-per-list rule rather than the table headings.
+* **APPLICATIONS PAGES ROWS AND PEOPLE PAGES PEOPLE.** `issued` is already a row
+  per application per profile; `persons` is a member per person with the SAML
+  key pair nested, drawn as up to two rows. Paging drawn rows there would give
+  `personsPaging` numbers that index into nothing the reply holds.
+* **THE REPLY KEEPS BOTH LISTS WHOLE**, `/admin/delegation`'s rule: the tiles
+  count them, and `sts_jwt_bearer_grant.js` looks its client up in `issued` by
+  identifier.
+* **EVERY TAKE-OFF BUTTON CARRIES BOTH TABLES' STATE AS `back`**, and
+  `pkiReturnTo()` rebuilds it — the three names, positive integers only — into a
+  303 to the same pages at `#pki-applications` or `#pki-people`. A control that
+  carries no `back` (Build, the pane, the revocation pane) still gets the bare
+  page.
+
+`tests/pki_key_pair_paging.js` pins all of it.
+
+### Two limits, drawn as a `warn()` rather than left as absences
+
+**THE FIRST OF THEM REVERSED ON 2026-09-11 AND THE `warn()` DID NOT GO AWAY.**
+It read *nothing is ever revoked — no CRL, no OCSP.* Every authority on this
+page now signs one and answers the other, and the page grew a REVOCATION PANE
+(below). What the warning says instead is the narrower thing, which is the one
+a reader can be hurt by: **revocation here is PUBLISHED and never CONSULTED**,
+so a certificate revoked on this page still authenticates to this service.
+
+**AND THE PAGE NOW CARRIES TWO CONTROLS WITH THE WORD *REVOKE* ON THEM.** The
+older one, in the Applications table, takes a key pair OFF an application's
+directory entry: this service stops ACCEPTING what that key signs, the
+certificate goes on chaining, and nothing lands on any list. The newer one, in
+the revocation pane, puts a SERIAL on an issuer's list: nothing changes about
+who holds what, and what changes is what this service's CRL and OCSP responder
+say from that moment. Somebody dealing with a compromised key pair wants both,
+and they are two buttons because they are two acts with different blast radii —
+the first is undone by issuing again and the second only for a
+`certificateHold`. The pane says all of that where an operator reads it; the
+reply of each says what it did rather than reporting a success that would be
+read as more than it is, which is the same distinction `/admin/logout` draws
+about an assertion already issued.
+
+**And in development mode the hierarchy dies with the process**, which is the
+rule the signing key already follows. Both sentences come from
+`common/pki.js`'s `report()` rather than being written here, so every surface
+that draws them repeats one wording.
+
+### Four actions, and the refusal sentence is read by a test
+
+`PKI_ACTIONS` is `build`, `clear`, `issue` and `revoke`, and the count in the
+refusal comes from that list rather than being written out. **The sentence is
+read** — `tests/vendored/sts_admin_api_operations.js` matches `Unknown action
+"x". <prose>: a, b, c.` out of `errors` on every action resource, and
+`tests/vendored/admin_api.js` reads the same sentence for the parity check — so
+a handler that phrased it its own way, or answered with a `why` alone, turns
+both of those off for its own resource with nothing failing. **The first version
+of this file did exactly that and went red on its first run**, which is what the
+check is for. `refuse()` is the one place both shapes are built, from one string.
+
+### THE CERTIFICATE & KEY CONFIGURATION PANE (2026-09-10)
+
+The page above is the hierarchy this SERVICE maintains for itself. The pane
+below it is the parent project's *PKI / X.509* workflow — an arbitrary
+certificate, from any authority whose private key is here, with every field and
+every extension exposed. `common/pki_authoring.js` (rule 3aa) is the model and
+argues it; what belongs here is the four decisions the PAGE makes.
+
+**IT IS ONE FORM, AND THAT IS LOAD-BEARING RATHER THAN TIDY.** A hundred and
+fifteen fields, three columns, twenty-two extension cards AND the store table,
+all inside one `<form>`. Two things need it. *Apply the profile* has to rewrite
+twenty-two boxes with nothing kept between requests, which it can only do if the
+browser hands the whole form back. And *Use this key pair*, in the store, has to
+load a key into the boxes WITHOUT discarding the subject somebody has been
+typing — a second form around the table would have made that impossible.
+
+**THE BUTTONS DO NOT SHARE A NAME, and `/admin/users/new` is why.** That page
+records what two submit buttons both called `action` cost: `form.elements.action`
+becomes a `RadioNodeList` whose value is empty, and the console suite — which
+finds a form by the action it posts — reads the page's main button as a control
+that reaches nothing. So the Issue button is UNNAMED behind a hidden
+`action=issue-certificate`, and `defaults`, `generate`, `generatealt`, `use`,
+`remove` and `clearstore` each have a name of their own that `paneActionFrom()`
+reads FIRST.
+
+**THE DOWNLOAD BUTTON USES `formaction`**, which is markup rather than script:
+it posts the same form, with the same CSRF token, to `/admin/pki/export`. A
+form has one `action`, and the alternative was a second form around the export
+row — which would have cost it the key boxes it exports when nothing is
+selected.
+
+#### `POST /admin/pki/certificate` ANSWERS WITH A PAGE, WHICH ALMOST NOTHING HERE DOES
+
+Every other control in this console goes through `respondToAction()`, which 303s
+back with a message on the query string. **This one cannot**: what it has to hand
+back is the FORM — the profile applied, the key pair generated, the refusal with
+every field still in it — and a query string is not where a hundred and fifteen
+fields go. `/admin/users/new` made exactly this argument first and for the same
+reason.
+
+A JSON caller still gets JSON, so `/admin-api` is unchanged and a test may drive
+either door.
+
+**A REFUSAL CARRIES THE DRAFT.** A form of that size redrawn empty because one
+line of a `subjectAltName` would not parse is not a refusal anybody can act on.
+
+#### `POST /admin/pki/person` IS THE SECOND, AND ITS REASON IS THE OPPOSITE ONE (2026-09-11)
+
+That page issues a signing key pair to a PERSON now as well as to an
+application — the same `issue` action with a `target` field, because the two
+differ in exactly two things (which subjectAltName the certificate carries, and
+which entry the result is written onto) and a second action would be a second
+answer to *how does this service issue a signing key pair*.
+
+**IT HAS A POST ROUTE OF ITS OWN BECAUSE WHAT IT HANDS BACK IS A PRIVATE KEY.**
+The pane's route above renders a page because its answer is a FORM; this one
+renders a page because `respondToAction()` 303s with its message on the query
+string, and a private key on a query string is a private key in the browser
+history, in this service's own access log, and in the `Referer` header of the
+next request the browser makes. It is shown ONCE, in a block under the banner
+that says so, and there is no read door for it afterwards — the value is sealed
+on the entry and nothing in this console or in `/admin-api` opens it.
+
+**AND THAT IS A DELIBERATE DIFFERENCE FROM THE APPLICATION ARM**, which returns
+no key at all. An application's private key is readable through
+`applications.view()`, which opens the seal for `/admin/applications` and
+`GET /admin-api/applications`; a person's entry is drawn through no module that
+would. The alternatives were a console page that prints somebody's private key
+on every visit, or a key this service holds that no human can collect.
+`common/person_assertions.js` (rule 3ab) argues it, along with the one refusal
+the feature exists for: a person's key may assert about that person and about
+nobody else.
+
+**THE TAKE-OFF CONTROL IS THE SAME `revoke` ACTION with the same `target`**, and
+it clears the `stsAssertionIssuer` declaration with the key pair where the
+application arm deliberately leaves `oauthAssertionIssuer` alone. An application
+may hold a JWKS it registered itself beside the one this service issued; a
+person may not, so leaving the declaration would leave somebody declared as an
+issuer with no key to issue with. Both say, in as many words, that this is NOT
+revocation.
+
+#### It is `script-src 'none'`, and the argument is made from scratch
+
+The rule in this file is that the argument has to be made each time and that
+"the page next door does it" is not one. The test is whether the page CANNOT
+work without a script, and this one plainly can: generating a key pair and
+issuing a certificate are things this process does far better than a browser —
+it holds the CA private keys, and a browser must never — so every button is a
+POST and every answer is a re-rendered page.
+
+**The debugger's page needs a script because its whole point is that the key
+never leaves the browser. This page's whole point is the opposite.** What the
+refusal costs is written down rather than hidden: two *Apply* buttons where that
+page has an event handler, no Copy buttons (a textarea selects), and an
+algorithm menu that is narrowed by a round trip.
+
+#### The ten CSS rules are in `admin.js` and not here
+
+This console has ONE stylesheet. A page with a `<style>` of its own would be the
+second place a reader has to look for why something is laid out as it is, and
+`script-src 'none'` is already the reason there is no third.
+
+Two of the ten are decisions rather than appearance. **`.pki-cols` is a grid
+with an `auto-fit` 22rem floor**, so the three blocks drop to two columns and
+then to one on a narrow window with no media query — stacked at full width, the
+button at the top of the second column is nine screens above the extensions it
+applies to. **`.pki-extlist` is a COLUMN FLOW and not a grid**, because a grid
+lays its items out in ROW order and twenty-two cards of different heights leave
+a ragged gap under every short one.
+
+The third is an override and has to be: this console's default textarea is
+`min-height: 7rem`, which is right for a policy document and wrong for twenty-odd
+one-item-per-line boxes — at 7rem each the pane is about four screens of empty
+box.
+
+### `pkiAction()` RESOLVES, which only one other action function here does
+
+Issuing a certificate is Web Crypto all the way down. `ssfAction` is the first
+that resolves and the reason is related — it signs and then POSTs — and both
+call sites `await` and turn a rejection into a refusal: Express 4 does not look
+at what a handler returns, so an unhandled rejection is a request that never
+gets an answer.
 
 ## `/admin/ssf` IS THE FIRST PAGE HERE WHOSE ACTION HANDLER AWAITS
 
@@ -1338,6 +1974,47 @@ been rather than leaving its absence to be noticed.
 The four actions that DO exist — set a status, transmit an event, delete a
 stream, clear what has been received — each have their operation on
 `/admin-api/ssf/:action`, through the same function.
+
+---
+
+## `/admin/tls/trust` AND THE THIRTEENTH SLOT (2026-09-12)
+
+The client-certificate truststore: every anchor 8443, 9443, LDAPS 636 and the main port
+verify a client certificate against, with its subject, issuer, serial, validity, SHA-256
+fingerprint and SOURCE (`file` from `tls.trustAnchorsFile`, `runtime` otherwise), paged,
+with an add form (a textarea of PEM blocks) and a Remove button on every row. It is the
+runtime door product mode did not have — `POST /tls/trust` needs no credential, so product
+mode refuses it — and `GET /admin-api/tls/trust` / `POST /admin-api/tls/trust/{add,remove}`
+mirror it (rule 7). `tls/CLAUDE.md` argues what the truststore does; four things are this
+file's.
+
+* **FILED UNDER PROTOCOLS, DIRECTLY BENEATH `/admin/tls`, UNGROUPED.** It is configuration
+  of those listeners, which is the question that section answers. A `TLS` group heading over
+  `TLS / mutual TLS` would say the label twice, which is `SECTIONS`' test for a group.
+* **THERE IS DELIBERATELY NO CLEAR BUTTON**, and the page says why where one would be: a
+  clear's reach is every client certificate every other caller relies on. The controls are
+  drawn for a reader holding Admin Write; the GATE refuses a POST without it whatever the
+  page drew. Removing a `file` anchor is allowed and the reply says it comes back.
+* **THE SLOT IS `setTruststore()` AND IT PASSES RULE 3e'S TEST BOTH WAYS ROUND.** A require
+  from this file to `tls/tls_server.js` would move `/tls*` routes on the documented order
+  and make the console the reason they are where they are; a require from that module back
+  to this one at its top level is a REAL cycle, not a theoretical one — `tls_server.js` is
+  first loaded from inside this file's own require, through `admin-core/admin_views.js` →
+  `spiffe/spiffe_auth.js`, so it would find no `setTruststore` on the half-built exports.
+  **So it is the one slot here NOT filled by the module that owns what it carries**:
+  `common/protocol_stack.js` fills it on the line after it requires `tls_server.js`. It
+  carries one object (`list`, `add`, `remove`), is validated whole for `setLogoutReader()`'s
+  reason, and forwards to both `admin-core/` halves from inside the setter;
+  `tests/admin_actions_layer.js`'s `FORWARDED` holds the single writer in each.
+* **WITH REQUEST WORKERS THE PAGE IS ANSWERED BY THE FRONT PROCESS**, pinned in
+  `common/request_pool.js`'s `NEVER_DISPATCHED`, because the array is configuration of
+  listeners only that process holds. It therefore takes that process's session, read out of
+  the store after the barrier the front process runs for a non-dispatched request.
+
+`tests/vendored/sts_admin_console.js`'s `theTruststorePageAddsAndRemoves()` presses both
+controls in a browser with a CA it mints — the Remove it presses is the one on the row
+carrying THAT CA's subject, which is what catches a button rendered with the wrong
+fingerprint — and asserts the truststore afterwards is exactly what it was before.
 
 ---
 
@@ -1430,9 +2107,10 @@ owns the store, and reimplementing any of it here is how the console and an
   presented to this service in an interaction that SUCCEEDED, across all twelve
   families, and drills into one's sessions and the tokens issued on each. Two rules
   hold it up and both are easy to break by accident: **one row is one local name**
-  (`alice`, `urn:sts-mock:user:alice` and `alice@REALM` are one identity — the prefix
-  is derived from `userFor()` rather than written down, so changing that function
-  cannot silently split every user in two), and **a token is placed under a session by
+  (`alice`, `alice@REALM` and her `urn:uuid:<entryUUID>` are one identity — a
+  subject is resolved through the directory's subject resolver rather than
+  parsed, so a rename cannot silently split a user in two, and the retired
+  `urn:sts:user:alice` is still read), and **a token is placed under a session by
   the optional third argument to `signJwt()`**, never by a claim — no token here
   carries a session identifier and adding one would change what every client receives.
   A new authentication point needs one `stats.recordAuthentication()` call at the
@@ -2266,8 +2944,9 @@ was checked against.
 
 ## 8. THE GATE, AND WHY THE OLD SENTENCE IS QUALIFIED RATHER THAN DELETED
 
-`admin.authRequired` is ON by default. Every page and every form under `/admin`
-needs a session and one of two roles. The rest of the numbered rules are
+The console gate is UNCONDITIONAL — `mode.gatesConsole()`, where this read
+`admin.authRequired` until that setting was removed on 2026-09-06. Every page
+and every form under `/admin` needs a session and one of two roles. The rest of the numbered rules are
 unchanged by it; this is the eighth because nothing it says was true before.
 
 **AND SINCE 2026-09-06 THE SESSION IS THIS CONSOLE'S OWN, GOT THROUGH THE
@@ -2277,7 +2956,7 @@ provider's cookie directly. It is a RELYING PARTY now — `sts-admin-console`,
 an ordinary entry under `ou=applications` — so a gated request with no console
 session is answered with a redirect to `/oauth2/authorize`, and what comes back
 is a code that buys an ID Token that establishes a session of the console's
-own, in a cookie of its own (`sts_mock_admin`). `common/oidc_rp.js` runs the
+own, in a cookie of its own (`sts_admin`). `common/oidc_rp.js` runs the
 flow and argues it; four things about it are this file's.
 
 * **THE ROLES DID NOT MOVE.** `gateStateFor()` still asks `admin_rbac.js`
@@ -2301,9 +2980,45 @@ flow and argues it; four things about it are this file's.
   GATE.** That function reads the SIGN-ON session and the console now reports
   on it rather than being let in by it. `consoleRpSession()` is what the gate
   and every page read.
+* **THIS CONSOLE AUTHENTICATES IN THE AMBIENT REALM SINCE 2026-09-11 AND ITS
+  SESSION IS STILL THE DEFAULT REALM'S.** Those are two questions and this
+  console used to answer both with "default", which cost the thing the move onto
+  the code flow was supposed to buy: an authorization endpoint can only answer
+  out of the realm it is reached in, so a console authorizing in the default
+  realm and a portal authorizing in `acme` could not see each other's sign-on
+  session — **two sign-ins for one person in one browser, in both directions,
+  everywhere but the default realm.** The FLOW moved; the SESSION did not, which
+  is what keeps one console session readable from every realm and the realm
+  switcher switching without a prompt. The ROLE check did not move either: the
+  roster is still the default realm's `ou=groups`, so a realm nobody could
+  create still makes nobody an administrator. `common/oidc_rp.js`'s surface
+  table argues the split, `sts-admin-console` is seeded in every realm now
+  because the ambient authorization server has to be able to find the client,
+  and `tests/cross_surface_sso.js` pins the partitions.
 * **AND THERE IS A WAY OUT SINCE 2026-09-06: `POST /admin/signout`**, the Sign
   out button in the shell. It is the second exemption in this gate and the
   section below argues it.
+* **AND A THIRD SINCE 2026-09-10: `POST /admin/signals/receive`.** This console
+  is a Shared Signals RECEIVER now (see *Signals received*, below), and that is
+  where its own stream's Security Event Tokens are POSTed. A push is a
+  server-to-server request and carries no console session **by construction**
+  — it must not present a browser's credentials, which is the same thing the
+  OIDC back channel says about itself — so the gate could only ever refuse it,
+  and the symptom would be an inbox page that stays empty while the stream's
+  log fills with 401s.
+
+  **IT IS NOT A HOLE, AND THE REASON IS NOT "IT IS ONLY A READ" — IT IS A
+  WRITE.** What guards it is the stream's own `delivery.authorization_header`:
+  a bearer token minted per stream and per start, compared in constant time,
+  that nothing but this service's own transmitter is ever given. The endpoint
+  refuses without it, refuses a SET addressed to another audience with
+  `invalid_audience`, and records both. **The check moved rather than went
+  away, and that is the test a fourth exemption has to pass.**
+
+  It is exempt from the CSRF check too, which is the half `/admin/signout`
+  deliberately does not take: a CSRF token defends a form submitted by a
+  browser holding a cookie, and there is neither here. It is an exemption IN
+  the gate for `/admin/callback`'s reason.
 
 **WHAT THE MOVE COST is one thing and it is worth naming**: the four `details`
 the old redirect handed the sign-in screen — what you are signing in to, the
@@ -2338,7 +3053,9 @@ question no other module here may is in `../authn/CLAUDE.md`, beside the
 function.
 
 **WHAT IT ASKS IS "DOES THE DEFAULT REALM HOLD THIS SESSION", NOT "DOES ANY
-REALM"**, and this paragraph said the second until 2026-08-25. The embedded
+REALM"**, and this paragraph said the second until 2026-08-25. (Since
+2026-09-14 the ROSTER is the one of the realm the session was signed in through,
+confined to that realm — 8d. The session store is unchanged.) The embedded
 directory became a subtree per realm on that date, so the two roles this guard
 decides from are groups in the DEFAULT realm's `ou=groups` and nowhere else —
 `ldap_server.js` pins the whole RBAC directory there. If an `acme` session still
@@ -2383,11 +3100,17 @@ first and disagreed within the hour.
 
 ## 8c. THE SIGN OUT BUTTON, AND THE THREE THINGS IT COST (2026-09-06)
 
-Every page of this console draws a **Sign out** form in its shell, beside
-Refresh, and it posts to `POST /admin/signout`. It is drawn only when somebody
-is signed in — a button that signs nobody out is a control whose only outcome is
-a refusal, which is the same test `newUserPage()` applies to a form on a process
-with no directory.
+Every page of this console draws a **Sign out** form in its shell, and it posts
+to `POST /admin/signout`. It is drawn only when somebody is signed in — a button
+that signs nobody out is a control whose only outcome is a refusal, which is the
+same test `newUserPage()` applies to a form on a process with no directory.
+
+**IT SAT BARE BESIDE REFRESH UNTIL 2026-09-10 AND IS THE SECOND ROW OF THE
+ACCOUNT MENU NOW.** Nothing below changed with the move — it is the same form,
+the same POST, the same CSRF token, the same exemption in the gate — and 8c-iii
+argues the menu. What did change is that a test has to OPEN the menu before it
+can press the button, because a control inside a closed `<details>` is not
+displayed.
 
 **A FORM AND NOT A LINK, WHICH IS THE OPPOSITE OF `refreshLink()` BESIDE IT.**
 The two are worth reading together. A refresh is a GET of the page you are on:
@@ -2446,6 +3169,106 @@ run's session. What it asserts is where the browser stops afterwards — the
 sign-in screen, and not the console — because that, and nothing on the page it
 lands on, is what tells the two-session sign-out from the one-session one.
 
+### 8c-iii. THE ACCOUNT MENU (2026-09-10)
+
+**THE HEAD ROW HOLDS TWO CONTROLS AND ONE OF THEM IS NOW A MENU.** Refresh is
+still a link beside the heading; the Sign out form moved into a drop-down whose
+summary is the username and whose first row is a link to this person's own
+account in the **user portal**.
+
+**WHAT IT IS FOR IS THE LINK RATHER THAN THE MENU.** `/portal` is where an
+administrator changes their OWN password, enrols their OWN authenticator app,
+removes their OWN security key and sees which applications they can be signed in
+to — and until now this console named that surface in prose on a page or two and
+linked it from nowhere in its shell, so the way there was to know the path. The
+menu exists because the link needed somewhere to live: these two are the only
+controls on this console that are about the READER, and everything else on every
+page here changes what some protocol endpoint does for somebody else.
+
+**IT IS A `<details>`, WHICH IS TO SAY IT IS NOT A SCRIPT.** This console is
+`script-src 'none'` on every page but `/admin/api-explorer`, and the test for an
+exception is that the page CANNOT work without one — which a menu plainly can.
+It is the same answer the collapsible prose got, and the root `CLAUDE.md` lists
+it beside the other refusals: **"it is a menu and menus have scripts" is not an
+argument**, and neither is "the page next door relaxes the policy".
+
+**WHAT THAT COSTS IS SAID OUT LOUD**: an open `<details>` does not close when
+you click elsewhere on the page, because closing it would take a listener on the
+document. It closes on a second click of the summary and is closed on every page
+load, since nothing remembers it. That is the trade the two pictures made when
+they lost pan and zoom.
+
+**THE PORTAL LINK IS THE DEFAULT REALM'S IN EVERY REALM, AND IT IS THE ONLY
+PART OF THIS THAT CAN BE WRONG WHILE LOOKING RIGHT.** The console's session is
+the default realm's whichever realm the page is read in — `consoleRpSession()`,
+and the rule that the role roster lives in one realm — while `/portal` runs in
+the AMBIENT one. So a link written `/portal` is rewritten by `app.js` to
+`/realm/<id>/portal` on a realm's console page, which is a portal this person
+holds no session in: following it runs the code flow in that realm, meets
+nothing, and asks them to sign in again as an account that is not theirs.
+`realmRoot()` takes the prefix back off and the href is ABSOLUTE, which is the
+one form that rewrite cannot prefix again. `theAccountMenuIsTheReaderSOwnCorner()`
+in `tests/vendored/sts_admin_console.js` asserts it in the realm that run
+creates — and asserts that **Refresh beside it still carries the prefix**, so
+the check cannot pass because the rewrite stopped working.
+
+**ONE MEASUREMENT IS WORTH KEEPING, BECAUSE THE OBVIOUS ASSERTION IS WRONG.** A
+closed `<details>` in Chrome does not hide its children with `display:none` — it
+uses `content-visibility:hidden` — so the panel of a CLOSED menu reports a
+non-null `offsetParent` and a bounding box 113px tall. Measured while writing
+that test: `{open:false, offsetParent:true, rects:1, h:113}`. The signal that
+tells the truth is `checkVisibility({contentVisibilityAuto:true,
+visibilityProperty:true})`, which answers false. A check written the obvious way
+fails against a menu that is behaving perfectly.
+
+### 8c-ii. THE SHELL WITH NOBODY IN IT (2026-09-10)
+
+**THE SIGN-OUT PAGE IS DRAWN BY THE SAME `page()` AS EVERY OTHER, AND FOR AN
+HOUR AFTER THE BUTTON SHIPPED IT DREW THE WHOLE CONSOLE AROUND IT.** The gate
+state is read again before it is drawn, which is right and is what takes the
+button out of the corner — and everything ELSE the shell puts on a page went on
+being drawn: the navigation column, the realm switcher inside it, and Refresh.
+
+That is the same test the button already passed, applied one control further
+out. **A control whose only possible outcome is a refusal does not belong on the
+page**, and in this state every one of those is:
+
+* **the navigation column** — forty links, every one a console page behind the
+  gate, so every one of them answers a redirect to the sign-in screen. `nav`
+  goes with the `<aside>` rather than being emptied, because `.main` is
+  `flex:1 1 32rem` and the card simply takes the width; a column keeping its two
+  brand lines would be an inch of white space saying which REALM some absent
+  pages are about.
+* **the realm switcher in it**, which is worse than the links and is why this is
+  not cosmetic: it is a FORM, so using it POSTed to a console that no longer had
+  a session for it.
+* **Refresh**, whose href is the page you are on — and this page is the answer to
+  a POST, so following it is a GET of `/admin/signout`, which has no GET: the
+  gate sees no session and starts a fresh sign-in. A control labelled *load this
+  page again* that instead signs you in is worse than one that is missing.
+* **and the banner acquired a FOURTH state rather than losing one.**
+  `gateBanner()` had three and none of them was "nobody is signed in", so this
+  page fell through to the last and read **"Signed in as `(nobody)`, holding no
+  console role. This is a READ-ONLY view"** — directly above a page whose whole
+  text is that you have just signed out. The navigation goes and the SENTENCE
+  stays, which is the difference between a control that cannot work and a fact
+  about why.
+
+**THREE PAGES ARE DRAWN IN THIS STATE AND ONLY ONE OF THEM IS ABOUT IT**: the
+sign-out confirmation, the OIDC callback's refusal, and the 401 a form POSTed
+without a session gets. The other two had the same shell and the same empty
+breadcrumb leaf — `Admin console ›` with nothing after it, because `active` is
+`''` on a page that is not in `NAV` — which is now the page's title.
+
+**WHAT DECIDES IT IS THE GATE AND NOT THE SESSION.** `gate.enforced &&
+!gate.session`, in that order: a service with the console gate off has no
+session either and every page in that nav is reachable. `sideColumn()`,
+`refreshLink()` and `gateBanner()` each apply it, and
+`tests/vendored/sts_admin_console.js` asserts the column's absence beside the
+button's, off the survey's own `nav` count — with the count on the page BEFORE
+the sign-out asserted too, because a check that only reads zero passes just as
+well on a console that has lost its nav everywhere.
+
 ## 8a. THE ROLES ARE DIRECTORY GROUPS, AND THAT IS THE DECISION MOST LIKELY TO BE UNDONE
 
 `cn=admin-read` and `cn=admin-write` under `ou=groups`, both renameable. NOT a
@@ -2470,13 +3293,38 @@ refuses a partial object with an error naming what was missing.
 asks from. A role that could post a form to a page it could not see would be a
 trap rather than a permission.
 
-**THE EMPTY ROSTER OPENS.** While NEITHER group has a member, anybody who signs
-in holds both roles. This service has no password anywhere and the roster dies
-with the process, so there is no bootstrap administrator and no way to make one
-out of band: a service started with the gate on and an empty roster would
-otherwise have a console no browser could ever reach. `admin.openWhenEmpty` turns
-it off for somebody who wants the locked case, and `/admin-api` is the way back
-out of it. **"No members" and "no group at all" are deliberately the same state** —
+**THE CONSOLE IS OPEN UNTIL THE BOOTSTRAP ADMINISTRATOR SIGNS IN (2026-09-13).**
+This rule replaced *the empty roster opens*. That rule had a trap: the first
+grant closed the console for everybody. Somebody who granted themselves only
+Admin Read then had a console on which they could change nothing. rcbj's
+design:
+
+* `seedBootstrapAdministrator()` runs from `server.js` inside the default realm,
+  before `credentials.bootstrap()`. It creates `admin.bootstrapUsername` if
+  absent, marks it `stsBootstrapAdministrator`, and grants both roles
+  (`via: 'bootstrap'`). It sets `pwdReset: TRUE` **only on an account it
+  created**, so a restart does not force a password change again, and neither
+  does an existing `admin`.
+* **The window is open until `stsConsoleClaimedAt` is written**, which
+  `noteConsoleSignIn()` does at that account's first console sign-in, from a
+  session derived in the default realm. It is a directory attribute and not a
+  process flag, so it persists wherever the directory does.
+* **A roster that already named somebody else closes the window at seed time.**
+  An upgraded deployment with administrators already in place must not re-open.
+* **Undeletable, not un-demotable.** `deletePerson()` and the LDAP delete and
+  modifyDN handlers refuse that entry (`STS-LDAP-0077`), and SCIM turns the
+  refusal into a 403. Revoking its roles is still allowed. The account is the
+  way in, and the roster stays an operator's to edit.
+* **`rolesOf()` keeps the older rule where nothing was seeded**
+  (`bootstrap.seeded` false), which is every in-process test that never runs
+  `server.js`. Those tests still see *an empty roster opens*.
+
+Why this and not "the first person to sign in gets both roles": every
+development test job signs in under a random username. The first of them would
+have become the administrator, and the next job would have been refused. No job
+signs in as `admin`, so the window stays open for the whole suite.
+`tests/admin_bootstrap.js` holds it (`authn/CLAUDE.md` has the forced password
+change). **"No members" and "no group at all" are deliberately the same state** —
 the group is created by the first grant, and treating the empty group a revoke
 leaves behind as *closed* would mean the console locking itself the moment
 somebody tidied up.
@@ -2500,6 +3348,102 @@ these two groups grant **this console and nothing else** — no token's scopes
 change, no assertion gains an attribute, no Kerberos PAC is affected, no protocol
 endpoint reads them, and `groups.claim` carries `admin-write` into an access token
 exactly as it carries any other group, where still nothing reads it.
+
+## 8d. A TRUST REALM HAS ADMINISTRATORS OF ITS OWN (2026-09-14, #32)
+
+**THIS REVERSED A DOCUMENTED NON-GOAL**, *give a trust realm its own
+administrator*, whose argument was that a per-realm roster would let anybody who
+can create a realm administer the service. That argument was about what a
+realm's roster could REACH, and it is answered by narrowing the reach rather
+than by refusing the roster. rcbj's four decisions are the design:
+
+| Question | Answer |
+|---|---|
+| Who is on a realm's roster | the realm's own `cn=admin-read` and `cn=admin-write`, and a seeded `admin` with a forced password change |
+| What a realm administrator reaches | their realm; service pages, actions and settings are hidden and refused |
+| How the plain `/admin` and `/portal` pick a realm | a chooser — a list in development, a text box in product |
+| The machine door | a realm-scoped `sts-management-api` token per realm |
+
+**THE DEFAULT REALM'S ROSTER IS STILL THE SERVICE ROSTER** and administers every
+realm exactly as before, which rcbj stated as a requirement in its own right.
+
+### Two authorities, decided in `gateStateFor()` from the SESSION
+
+`admin-core/admin_views.js`'s `gateStateFor()` reads the realm the session was
+SIGNED IN THROUGH (`session.derivedFromRealm`, empty meaning the default) and
+asks THAT realm's roster: `authority` is `service` for the default realm and
+`realm` otherwise, and `identityRealm` names it. The name alone decides nothing
+— `admin` in `acme` and `admin` in the default realm are two people, asked two
+rosters, and `tests/realm_administrators.js` holds that collision. The console's
+session still lives in the default realm's partition, as 8 argues; only the
+roster it is asked against moved.
+
+A realm authority reading ANOTHER realm is `outsideRealm`: every role is zeroed
+and the gate answers 403 `outside_realm` (`STS-ADMIN-0786`) with a link to their
+own realm's console, before the role check, so the page says the true reason.
+
+### `admin_scope.js` IS THE ONE PLACE THE LINE IS DRAWN
+
+For the console AND `/admin-api`, so rule 7 cannot come apart here. Three
+tables, each refused only to a realm authority (`refusalFor()`):
+
+* **`SERVICE_PAGES`** — persistence, database, encryption, secrets, debugger,
+  TLS (and its truststore), Kerberos, the LDAP service page, the API explorer.
+  Hidden from the nav and `consoleGuide()` (`pageVisible()`), refused whatever
+  the method (`STS-ADMIN-0787`).
+* **`SERVICE_ACTIONS`** — creating or removing a realm, or naming another realm
+  on `/admin/realms`; `build-root` or a `*` scope on `/admin/pki`; exporting the
+  `tls-server` key. `REALM_READS` refuses `/admin/realms?realm=<another>`.
+* **SETTINGS** — every `perProcess` row (a realm write of one lands PROCESS-WIDE
+  in `config.setOverride()`, so a Save on a realm's page would change the
+  process), the `admin.`, `adminApi.`, `realms.`, `workers.`, `persistence.`,
+  `debugger.`, `tls.`, `krb5.`, `keys.` prefixes, `security.passwordHash*`, and
+  a short key list (`global.mode`, `global.publicBaseUrl`, listener and file
+  settings). Any field of a body naming one is refused (`STS-ADMIN-0788`).
+  **The `admin.*` and `adminApi.*` gate settings were made `perProcess` for the
+  same reason** — a realm override of the console's own groups would otherwise
+  be a way round the roster.
+
+**A NEW SERVICE PAGE OWES A ROW IN `SERVICE_PAGES`.** Nothing detects a missing
+one; the page is simply visible and reachable to every realm administrator.
+
+### The bootstrap `admin`, per realm
+
+`admin_rbac.seedBootstrapAdministrator(realmId)` runs for every realm at startup
+(`server.js`) and when a realm is created (`realmsAction()`), with the same
+rules as the default realm's (8a): both roles, `pwdReset` on an account it
+created, and a window open until THAT account signs in through its realm —
+`noteConsoleSignIn()` closes the window of `session.derivedFromRealm`. While a
+realm's window is open, anybody signed in through that realm holds both of that
+realm's roles, and nothing outside it. A realm whose roster already named
+somebody seeds with its window closed. **In product mode a create generates the
+password** (`STS-ADMIN-0789` if it cannot), and `POST /admin/realms` answers a
+one-time page carrying it rather than a redirect, for `/admin/users/new`'s
+reason. The account is protected from deletion in its realm
+(`isBootstrapAdministratorEntry()`).
+
+### The realm chooser, `common/realm_chooser.js`
+
+A GET of exactly `/admin` or `/portal`, in the default realm, with no session,
+while realms are defined, draws a chooser (`STS-ADMIN-0790` / `STS-PORTAL-0074`
+for an unknown id). `?realm=<id>` 303s to that realm's surface, BUILT from the
+registry and never echoed; `?realm=default` signs in where it is. A deep link is
+never asked. **`mode.listsRealmsBeforeSignIn()`** decides list versus text box,
+because listing every tenant's name to anonymous readers is a development
+convenience. **Every owned job signs in through `?realm=default`** since the
+suite nearly always has realms — the doors are named constants in each job.
+
+### What it does not do yet
+
+The API explorer mints only the SERVICE token, so it is a service page. The LDAP
+socket's write authorization recognises a realm administrator in their realm
+(`ldap_server.js`'s `boundDnIsRealmAdministrator()`), and certificate
+enrollment (`common/cert_enrollment.js`'s `adminFor()` and `sessionIsAdmin()`)
+asks the ambient realm's roster after the service's; no other protocol door was
+widened, and SCIM changed only the wording of the bootstrap account's delete
+refusal. `tests/realm_administrators.js` holds the in-process half
+(ten mutants, all caught); `sts_realm_administrators.js` over HTTP is not
+written yet.
 
 ## Every page here shows ONE trust realm
 
@@ -2609,13 +3553,17 @@ would cost an afternoon:
   says so on every page: a form that read one realm and wrote another is the
   surprise this arrangement exists to avoid, and the only way a reader can tell
   which realm they are in is if it is named where they are looking.
-* **THE TWO ROLES ARE NOT PER REALM.** They are groups in the embedded
-  directory, which is shared by every realm in the process, so somebody who
-  holds Admin Write holds it everywhere. `/admin/rbac` reached under a realm
-  prefix is the same roster as the one reached without. Rule 8 is unchanged and
-  there is deliberately no per-realm administrator; if there is ever to be one,
-  it is a per-realm container in the directory rather than a second store here.
-* **AND NEITHER IS THE CONSOLE'S SIGN-ON, which follows from the line above.**
+* **THE TWO ROLES ARE PER REALM SINCE 2026-09-14, AND THE DEFAULT REALM'S ARE
+  THE SERVICE ROSTER.** This bullet said *there is deliberately no per-realm
+  administrator; if there is ever to be one, it is a per-realm container in the
+  directory rather than a second store here* — and that is what was built: each
+  realm's own `cn=admin-read` and `cn=admin-write`, no second store, confined to
+  the realm by `admin_scope.js`. `/admin/rbac` under a realm prefix is that
+  realm's roster. 8d argues it.
+* **THE CONSOLE'S SESSION IS STILL THE DEFAULT REALM'S, AND WHICH ROSTER IT IS
+  ASKED IS THE REALM IT WAS SIGNED IN THROUGH (8d).** The paragraph below
+  predates both that and the 2026-09-11 move of the flow to the ambient realm,
+  and is kept for its account of `consoleSession()`.
   The guard resolves the one session cookie in the DEFAULT realm — that is
   `consoleSession()`, and the name it had while it accepted any realm's session
   was `sessionAnywhere()`. Switching realm therefore switches rather than asking
@@ -3947,6 +4895,11 @@ So the one page in this service whose entire purpose is to be opened in a
 browser became the one page a browser could not open — this console linked to
 it, and the link answered 401.
 
+**So "this console is `script-src 'none'`" is now "every page of this console
+except one"** — the claim is qualified wherever it is made, and the XACML
+editor's version of it is unaffected because that page genuinely has no script
+and would still not have one if this page had never moved.
+
 **THE MOVE IS A STRONGER GATE AND NOT A WEAKER ONE**, which is worth saying
 because "we moved it out of the authenticated API" reads the other way round.
 Before: no credential at all. After: a sign-on session, plus Admin Read or Admin
@@ -4023,3 +4976,792 @@ the old whole-document builder is kept and exported, because the STYLE, the
 SCRIPT and the prefix argument are the same in both shapes and a second copy of
 any of them is what that file exists to prevent. Nothing registers a route for
 `page()` any more.
+
+## THE TWO SECOND FACTORS: `/admin/totp`, `/admin/webauthn`, AND THE ROSTER ON `/admin/users` (2026-09-10)
+
+**THIS SECTION DESCRIBED ONE PAGE, `/admin/mfa`, AND THAT PAGE LASTED HOURS.**
+It is the shortest life anything in this console has had, and the record of why
+is worth more than the page was: it did TWO things and could only be filed by
+one of them.
+
+  * It edited the eight `totp.*` settings. `config.js` declared a group called
+    `Multi-factor authentication` and `checkSettingHomes()` refuses a group with
+    no page, so those rows had to live somewhere.
+  * It drew a ROSTER — who holds a second factor, across this realm — with a
+    Clear button on every row, because nothing else in the service could answer
+    *who is configured for MFA*.
+
+The old section argued at length that the page belonged under Identities,
+because *where a page is FILED is decided by the question it answers* and this
+one answered a question about PEOPLE. **That argument was right about the roster
+and wrong about the settings**, and one page cannot be filed by both halves: a
+reader looking for the skew window and a reader looking for *who has no second
+factor* landed on the same screen and read past each other.
+
+So it split along the question each half answers, which is the same rule applied
+properly:
+
+| Half | Where it went | The question |
+|---|---|---|
+| the `totp.*` settings | **`/admin/totp`**, Protocols | what does the MECHANISM do |
+| the `webauthn.*` settings — **which did not exist** | **`/admin/webauthn`**, Protocols | the same, for the other one |
+| the roster, the counts, the filter | columns on **`/admin/users`**, Directory | who holds what |
+| the per-person detail and both Clear buttons | that person's own row under `/admin/users` | what does THIS person hold |
+
+### WebAuthn had no settings at all, and the sentence that explained why was wrong
+
+The old section said it plainly: *what a ceremony does is decided by the
+specification and by the browser*, so there was nothing to put on a page.
+`common/config.js` said the same thing above the TOTP rows.
+
+**It is true of the cryptography and false of the ceremony.** What a browser
+does with `navigator.credentials.create()` is decided almost entirely by the
+`PublicKeyCredentialCreationOptions` the relying party hands it — the RP name,
+the algorithms offered, the user verification requirement, the attestation
+conveyance, the timeout, the CTAP2 attachment and resident-key preferences —
+and every one of those was a literal inside a string in `authn/authn.js`. A
+client author trying to find out what their client does with `attestation:
+"none"`, or with a discoverable credential, had no way to ask this service for
+one.
+
+There are thirteen rows now, in three kinds, and `/admin/webauthn` says which
+kind each is because the difference decides what it means:
+
+  * **CEREMONY** — handed to the browser and no more.
+  * **CTAP2** — handed to the browser, and translated by it into what it asks
+    the AUTHENTICATOR for. Same standing: a request, not a check.
+  * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`, `maxKeysPerPerson`.
+    Not WebAuthn at all: what THIS service will do with a key once the ceremony
+    is over.
+
+**ONE OF THEM IS ENFORCED AND THE REST ARE REQUESTS**, which is the sentence to
+keep. `webauthn.userVerification` is sent to the browser AND checked against the
+UV flag when the ceremony returns, because that flag is inside the bytes the
+authenticator signed. Nothing signed says what the browser was asked about
+attestation, the resident key or the attachment — so a check on those would be a
+comparison against a value this service itself supplied. What it does instead is
+RECORD what came back.
+
+**RAISING USER VERIFICATION DOES NOT CHANGE WHAT A SESSION CLAIMS.** A
+passwordless sign-in still records `amr ["hwk"]` and `acr "1"` even under
+`required`. RFC 8176 has no value for *the authenticator verified the user* that
+this service could honestly assert, and claiming `mfa` because the ceremony was
+phishing-resistant would be the exact fake this profile refuses everywhere else.
+The page says so rather than leaving it to be discovered.
+
+### The mechanism report is the reason either page is worth having
+
+Both pages carry a `status` block — the same optional member `/admin/persistence`
+has, and invented for its reason: a settings page describes what this service is
+CONFIGURED to do, and these two also have to say what the MECHANISM is. Which
+digests exist as against which one is in use; which COSE algorithms this relying
+party can VERIFY as against which two it is offering.
+
+**Every table in it is read from the module that performs the algorithm** —
+`common/totp.js`'s `report()` and `authn/webauthn_policy.js`'s — which is the
+rule `/admin/crypto-metadata` is built on, one layer down. A page that wrote the
+list out would describe something this service does not do the first time one
+was added. `tests/vendored/sts_second_factor_pages.js` is what makes that mean
+something: it CHANGES a setting and requires the report to move with it, because
+reading the report on its own says nothing — a hand-written table is well-formed
+too.
+
+### The roster widened the Users page's POPULATION, and that was not optional
+
+`/admin/users` listed identities this service had SEEN authenticate, and its own
+lead paragraph said so. The roster it absorbed is the union of that with this
+realm's DIRECTORY people — and the difference is exactly the people the roster
+is for, because **the people most likely to hold no second factor are the ones
+who have never signed in.**
+
+The gap is smaller than it looks and it is not zero. Every door that creates a
+directory person — the console, `POST /admin-api/users/create`, a SCIM create,
+an LDAP add, a restore from the store — calls `stats.noteKnownIdentity()`, so on
+a small service the union adds nothing at all. **But the registry is capped at
+`stats.MAX_USERS` and the directory is not**: two thousand against
+`ldap.maxEntries`, so a realm that has been bulk loaded has thousands of people
+invisible to every console page that asks a question about people. `peopleRows()`
+is the union and it is keyed by the IDENTITY KEY rather than by the name, because
+this page's premise is that one row is one local name across every protocol.
+
+**And the drill-down had to learn to answer for somebody the registry has never
+seen.** Until it did, clicking one of the new rows landed on *nothing here has
+authenticated as alice* — a true sentence and a useless page, since that is
+exactly the person whose second factor an operator came to look at, and both
+Clear buttons are on it.
+
+### The reset is the point of the write half, and it is not a convenience
+
+Unchanged from the old page, and it is now on the person's own row.
+
+A one-time password secret lives on a DEVICE. **There is no *forgot my
+authenticator* flow anywhere in this service and there cannot be one** — a
+self-service reset of a second factor is a second factor anybody can remove,
+which is no second factor. So when somebody loses their phone, an operator
+clearing the enrolment is the ONLY way back, and a service that enforces a
+factor it cannot clear has a support queue rather than a security control. It is
+`credentials.removeKey()`'s argument about the last way in, made from the other
+end.
+
+**The two removals are not the same act and the buttons say so.** Clearing an
+authenticator CANNOT lock anybody out: a one-time code is never a primary
+credential, so it drops an account to one factor and never to none. Removing a
+security KEY can — it may be the only credential there is — so it goes through
+`credentials.removeKey()`, which refuses to remove the last way in. An operator
+must not be able to do what the owner is stopped from doing.
+
+**There is deliberately NO enrol action**, here or on `/admin-api`. Enrolling an
+authenticator means being SHOWN a shared secret, and an administrative door that
+handed one out would mint a working second factor for any account. A WebAuthn
+ceremony happens in the person's own browser against their own authenticator,
+which no console can stand in for. Both are `/portal`, or an activation link.
+
+### The unreadable row is the one to look for
+
+`totpUsable: false` means an enrolment exists that this process cannot read —
+almost always a secret sealed under a key-encryption key that has since been
+rotated. Those people are REFUSED at the code step rather than let through on
+one factor, so they cannot sign in AT ALL until it is cleared. `/admin/users`
+says so in a banner with a link to `?factor=unreadable`, rather than in a
+column, because it is the one state on the page that needs acting on.
+
+### The refusal sentence has to name the actions, and the first version did not
+
+`mfaAction()` checked for a missing `username` before it checked the action, so
+a probe posting an unknown action with no body was answered *name the person*.
+**`tests/vendored/sts_admin_api_operations.js` reads the refusal sentence from
+every action resource** to check that it NAMES the actions it knows — which is
+how `tests/vendored/admin_api.js`'s parity check discovers what to look for — so
+a resource that answers something else turns that check off for itself with
+nothing failing. It went red immediately, which is the whole reason that
+assertion exists.
+
+**The rule outlived the function.** `mfaAction()` is `usersAction()`'s
+`clear-totp` and `clear-key` now, and that switch's refusal is built from
+`USERS_ACTIONS` rather than typed — so the five it knows are named by
+construction and a sixth added tomorrow cannot be short by one.
+
+### `GET /admin-api/mfa` is kept and its page is gone
+
+Rule 7 says a console control owes an API operation. It says nothing about an
+operation whose page moved, and deleting a working one to tidy a table would be
+a regression dressed as consistency — the argument `mgmt-api/CLAUDE.md` already
+makes about `GET /admin-api/users/new`.
+
+**It answers OUT OF THE USERS VIEW**, so there is ONE tally: a second scan of the
+credential store would be a second answer to how many people hold a second
+factor, and the two would agree until the day they did not. The reply keeps its
+own flat `people` shape, because a caller reading `people[].mfaRequired` is not a
+caller who should have to learn that a console page moved. `GET
+/admin-api/users` is where the rows carry `factors` instead, and both clear
+actions answer on both paths.
+
+---
+
+## `/admin/signals` — THIS CONSOLE IS A SHARED SIGNALS RECEIVER (2026-09-10)
+
+It has a **stream of its own** — `sts-admin-console`, seeded in every trust
+realm — asking for every CAEP and every RISC event type; each event is POSTed
+to `/admin/signals/receive` over RFC 8935 push carrying that stream's own
+bearer token; and this page draws what arrived. `ssf/ssf_receivers.js` holds the
+design and `ssf/CLAUDE.md` argues it. Four things belong here.
+
+**IT IS FILED UNDER `Monitoring`, WHICH IS THE FIFTH INSTANCE OF THE RULE AND
+NEEDED NO DELIBERATION.** Where a page is filed is decided by the question it
+answers. This one answers *what has this console been told* — traffic, in
+memory, since the process started, with the audit log as the durable half —
+which is the same shape of question `/admin/xacml/monitor` and `/admin/scim`'s
+metrics page answer. The Shared Signals settings and every stream, including
+this one, stay at `/admin/ssf` under Protocols: that is where somebody goes to
+change what arrives here rather than to read it.
+
+**IT IS THE ONE PAGE IN THIS CONSOLE ABOUT SOMETHING THIS CONSOLE WAS SENT.**
+Every other page here reads a store this process holds. This one reads a queue
+delivered to it over HTTP, signed, addressed to it by name, which it verified —
+and that is the whole difference between a console showing its own notes and an
+application that is a receiver. **It is therefore the only one of the four
+Shared Signals pages that goes empty when delivery is broken, and so the only
+one that can report that it is.** `/admin/ssf` shows what was SENT;
+`/admin/caep-sessions` and `/admin/risc-accounts` show what this service
+BELIEVES about a session and an account; all three are full and correct while
+nothing reaches anybody.
+
+**AN EMPTY PAGE HAS FIVE CAUSES AND ONLY ONE OF THEM IS "NOTHING HAS
+HAPPENED",** so the ones that apply are drawn above the table rather than left
+to be guessed: `ssf.enabled` off, `ssf.internalReceivers` off, the stream
+deleted, `ssf.pushDelivery` off, or `caep.enabled` / `risc.enabled` off under
+it. That is `status().why` and it is drawn even when rows ARE present, because a
+stream paused since this morning explains a page that STOPS rather than a page
+that is empty. It is the same argument `caep.js`'s "no stream takes it" line
+makes: *nothing arrived* is the commonest report about any Shared Signals
+deployment and it is almost never what it looks like.
+
+**ITS ONE CONTROL CLEARS WHAT IS HELD AND NEVER THE STREAM.** Clearing what a
+receiver has been shown and tearing down the agreement to send it more are two
+different acts, and the second is `/admin/ssf`'s. The audit log's
+`ssf.event.receive` row for every delivery stays either way, there being no
+clear operation for that anywhere — which is what makes it the durable half.
+
+**Rule 7 is paid by `GET /admin-api/signals` and `POST
+/admin-api/signals/:action`**, both over the same two functions this page uses.
+The portal's copy of this page has **no** management API operation and that is
+deliberate: it is a person's own account page, narrowed to them by their
+session, and an administrative door onto "what was alice shown" would be a
+second answer to a question `/admin/signals` already answers completely.
+
+## MONITORING → SHARED SIGNALS: A GROUP, AND `/admin/ssf/dead-letters` (2026-09-14)
+
+**THE FIRST GROUP UNDER MONITORING.** CAEP sessions, RISC accounts and Signals
+received were three loose rows, each filed there on its own argument; a
+dead-letter page made four answers to one family's *what happened*, and rcbj
+asked for it as Monitoring → SSF, which did not exist. So `SECTIONS` grew a
+`Shared Signals` group where the first two were, beside Delegation, and Signals
+received moved into it from after SCIM metrics. **No path moved** — `NAV` is
+derived, so nothing but that table changed for the three pages. The filing rule
+is untouched: Protocols → Shared Signals is what the streams are configured to
+do and holds every control; the group is what happened.
+
+**`/admin/ssf/dead-letters` IS READ-ONLY** (rcbj's choice). Revive and Drop its
+dead letters act on one stream and stay on that stream's card, which every
+stream row links to at `/admin/ssf#stream-<id>` — the card's `<h3>` carries that
+id now, and its dead-letter note links back filtered to the stream. Rule 7 is
+`GET /admin-api/ssf/dead-letters` with no POST beside it. `ssf/CLAUDE.md` argues
+the numbers.
+
+**IT DRAWS THE FIRST CHART IN THIS CONSOLE**, and three choices were made rather
+than inherited:
+
+* **A stacked column per time bucket, one colour per CAUSE** (four), not per
+  error code (more than a dozen). The colours were checked with a colour-vision
+  validator: worst adjacent pair ΔE 9.1 under protanopia, 22.9 in normal vision.
+  Two are under 3:1 against the white card, so no value is carried by colour
+  alone — the legend names each cause and count in text, and the same numbers
+  are a table under the chart.
+* **No script, so the hover is an SVG `<title>`** on a hit area the full height
+  of the plot, and the SVG has `role="img"` with a sentence for `aria-label`.
+* **Laid out on the server** like the delegation and federation pictures; the
+  stylesheet gained only `.chart`, `.legend` and `code.ec` (an error code that
+  never breaks inside itself).
+
+The page's own `LIST_PARAMS` row carries `dlq`, `dlstream`, `dlcause`, `per` and
+`lettersPage`, spent by its links between tables.
+
+## `/admin/backup-codes`: THE THIRD MECHANISM PAGE, AND THE ONLY ONE ON THIS CONSOLE THAT IMPLEMENTS NO SPECIFICATION (2026-09-10)
+
+Recovery codes — the way back in when the second factor is not to hand. A page
+of its own beside `/admin/totp` and `/admin/webauthn`, under Protocols, with the
+group `Backup codes` in `SETTING_HOMES`.
+
+**It is not a section of `/admin/totp`**, and the reason is the filing rule this
+console already applies: a recovery code stands in for EITHER of the two
+mechanisms above it, so putting its settings under one of them would put them
+where half the people looking would not look. The question this page answers —
+*how does somebody get back in* — is neither of those pages' question.
+
+**THE `status` BLOCK HAS NO SPECIFICATION COLUMN BECAUSE THERE IS NO
+SPECIFICATION.** Every other mechanism block here reports what a document says
+this service does; nobody ever wrote one for a recovery code. So every field in
+`backupCodesMechanismBlock()` is a decision this service made, read from
+`common/backup_codes.js` — the module that generates and compares a code — the
+way every `status` block on this page is read from the module that performs the
+thing. `bitsPerCode` is the field to read first: it is the number that decides
+whether the mechanism is worth anything, and a length and an alphabet size left
+for a reader to multiply is a number nobody works out.
+
+### The per-person block on `/admin/users`, and what this console must never draw
+
+A third block on that person's row, beside the authenticator and the keys, built
+entirely from `credentials.mechanismsFor().backupCodes` — a STATUS object that
+carries counts and no codes.
+
+**THERE IS NO CALL ANYWHERE IN THIS CONSOLE TO `credentials.revealBackupCodes()`
+AND THERE MUST NOT BE.** Showing a set here would hand a working second factor
+to whoever holds Admin Read, which is the same door this console already refuses
+to open for an authenticator enrolment: *enrolling means being shown a shared
+secret, and an administrative door that handed one out would mint a working
+second factor for any account.* The person reads their own set on
+`/portal/mfa`, and `common/credentials.js` splits the two questions into two
+functions precisely so that a page which wanted the count cannot render the
+codes by accident.
+
+### The Clear is an ISSUING control as well as a removal, which the other two are not
+
+Clearing an authenticator app or a key takes a factor away and that is all it
+does. **Clearing the recovery codes takes the way BACK away and, by doing so,
+re-arms the automatic issue**: `credentials.ensureBackupCodes()` does nothing
+while a set exists, so the next second factor that person enrols creates a new
+one. That is the whole route to a second set, and it is deliberately an
+operator's act — a way back a person can reissue for themselves is one an
+attacker who reached their session can reissue too.
+
+It cannot lock anybody out: a recovery code is never a way in on its own. What
+it removes is the thing that stops a lost phone being final, which is why the
+button says so and why the act is audited like the other two
+(`admin.mfa.backup-codes.cleared`).
+
+**`USERS_ACTIONS` gained `clear-backup-codes` in the same change**, which is not
+cosmetic: `tests/vendored/sts_admin_api_operations.js` reads the refusal
+sentence that list builds in order to discover what to check for, so a list
+short by one turns the parity check off for that action.
+
+## `/admin/policies`: DIRECTORY → POLICIES, AND A GENERATED PASSWORD BY DEFAULT (2026-09-12)
+
+Asked for by rcbj as *Directory → Policies*, with the password policy as the
+first kind of policy it configures. `common/CLAUDE.md` 3ac argues the model and
+the store; three things are this console's.
+
+**IT IS IN DIRECTORY BECAUSE ITS STORE IS, AND IT IS A DESTINATION.** Every page
+in that section draws something the directory holds, and this draws
+`ou=passwordPolicies`. It is not a drill-down — nothing else here leads to it as
+a next step — which is the test the two `/new` pages failed and this one passes.
+**The label is shared with `/admin/xacml/policies` and the `/admin/ldap/policies`
+group row**, and the blurb says the difference on the Overview rather than
+renaming what rcbj asked for: those draw `ou=policies`, documents a PDP
+evaluates; this draws profiles `credentials.setPassword()` checks.
+
+**THE FORM IS THE FIELD TABLE, AND THE RESET IS A SECOND FORM.** Every row of
+`password_policy.FIELDS` is one input — a `number` carrying the field's `min` and
+`max`, or a checkbox — so the browser's refusal and the server's are the same
+numbers. A save REPLACES the profile and posts every field; the action is told
+`via: 'console'` so an unticked checkbox (which posts nothing) reads as "no"
+there and as a missing field from an API caller. **Put the built-in defaults
+back** is its own `<form>` rather than a second submit button, for
+`/admin/users/new`'s two-buttons trap. The page shows, beside the form, the rules
+as the portal prints them, every door the policy is enforced at, what the history
+costs in scrypt comparisons, the generator, the paged profile list and the
+container's schema.
+
+**THE NEW-USER FORM PRESELECTS `generate`**, and `DEFAULT_CREDENTIAL` is declared
+in `admin-core/admin_actions.js` because the action is what applies it and the
+require between the two layers goes views to actions; `admin_views.js`
+re-exports it and `newUserJson()` publishes it with the rules. The note under
+the password boxes said *there is no strength rule and that is deliberate* and
+now says which rules apply and whether this realm enforces them.
+
+Rule 7 is `GET /admin-api/policies` and `POST /admin-api/policies/{action}`, in
+the same change, over the same two functions.
+
+
+## `/admin/error-codes`: THE ERROR CODE TABLE, UNDER MONITORING (2026-09-12)
+
+The table is `common/error_codes.js` (rule 3ac in `common/CLAUDE.md`) and
+`docs/error-codes.md` is generated from it, so this page is not a third copy of
+the catalogue: it is the table FILTERED and PAGED with the one column a
+document cannot have — how many rows in this realm's held audit log carry each
+code, each count a link to `/admin/audit?code=`. **That column is why it is
+filed under Monitoring beside the audit log** and not under Server
+configuration: a reader arrives holding a code off a row or a log line, and the
+page answers both *what does it mean* and *which failures has this service been
+producing*.
+
+Three things about it are decisions:
+
+* **The count is of the HELD rows in the ambient realm**, the ones
+  `/admin/audit` lists, so it falls as that ring's cap discards the oldest, and
+  it is zero for a failure recorded only as a log line — a startup refusal, and
+  everything the remote PEP container logs. The page says so, because a zero
+  reads as "never happens" otherwise.
+* **A code on a held row that the table does not hold is listed**, never
+  dropped: `mark()` and `audit()` record an unregistered code as given exactly
+  so that this row survives.
+* **No control.** A code's meaning is source; renumbering one at runtime would
+  make every alert rule written against it describe a different condition.
+
+`admin-core/admin_views.js`'s `errorCodesView()` builds it and
+`GET /admin-api/error-codes` answers from the same function — rule 7 with no
+POST beside the GET, because the page has nothing to change.
+
+## `/admin/kerberos/principals`: WHO THE KDC HOLDS A STORED KEY FOR (2026-09-12)
+
+Under Protocols, directly beside `/admin/kerberos`, and **Admin Write** for its
+controls. Two tables — directory people whose keys were derived from their own
+password, and service principals created here with a random key — each paged on
+a parameter of its own (`peoplePage`, `servicesPage`) because one `page` cannot
+page two lists. **Until 2026-09-13 neither was read**: the view passed
+`pagedRows()` a `param` option, which `pagingOf()` does not read (it builds the
+name from `name`), so both lists followed a bare `?page=` while the links wrote
+the other two, and every next link reloaded page 1
+(`tests/kerberos_principals_paging.js`). A row carries enctypes, kvno, salt and when; **never a key**.
+`kerberos/CLAUDE.md` argues the feature; three decisions are this page's.
+
+* **A CREATE OR A ROTATE ANSWERS WITH A PAGE AND NOT A DOWNLOAD.** The keytab is
+  the one time key material leaves this service, and a raw `application/octet-
+  stream` reply would be a file with nothing beside it saying which kvno it
+  holds, which enctypes, or that it cannot be fetched again. So the reply is a
+  "Kerberos keytab" page — the warning that it is shown once, the principal and
+  kvno, a `data:` link to save it and the base64 in a read-only textarea — which
+  is `/admin/pki/person`'s arrangement for a person's private key, and for its
+  reason: `respondToAction()` 303s with a message on the query string, and key
+  material on a query string lands in history, logs and the next `Referer`. It
+  is also what lets `sts_admin_console.js` assert the page rather than a
+  download the browser would swallow.
+* **A JSON CALLER GETS THE ACTION RESULT**, keytab included, through
+  `respondToAction()` exactly as before; only a browser form gets the page.
+* **THE TRUST REALM IS THE DEFAULT ONE WHEREVER THE PAGE IS REACHED**, and the
+  page says so — the KDC is one process-wide socket family, and drawing a realm
+  prefix's own directory here would describe people the KDC will never ask
+  about.
+
+`encryption_admin.js`'s `DATA_CLASSES` gained a `kerberos-keys` row, because the
+two key attributes are sealed under that label and the encryption report refuses
+a label with no row.
+
+**PREVIOUS KEY VERSIONS (later the same day).** Each table grew a *Previous
+versions* column — kvno, enctypes and when each stops being accepted — and each
+row a **Drop previous versions** button, drawn only while a version is kept,
+because a button that could only ever answer `dropped: 0` is a control that
+reads as broken. The keytab page a rotate answers with names every version in
+the keytab. The note above the tiles states the bounds as they stand now, with
+zero in `krb5.retainedKeyTtlS` already turned into the seconds it means, since a
+reader of that page is deciding whether to press Drop.
+
+## `/admin/applications?application=…` HAS A CREDENTIALS SECTION (2026-09-13)
+
+Asked for by rcbj: the application's page shows its client secret and the key
+pairs mapped to it, and replaces a key pair either by issuing one from the
+realm's CA or by uploading a certificate — an external CA's with its full
+chain. `common/CLAUDE.md` 3w argues the chain rules; four things are this
+console's.
+
+* **THREE KEY-PAIR CONTROLS PER PROFILE AND ONE NEW ACTION.** Issue and Take off
+  post to `/admin/pki`'s existing `issue` and `revoke`; Upload posts the new
+  `upload-certificate` beside them. All three carry `from=/admin/applications`,
+  and `pki_admin.js`'s `pkiReturnTo()` sends the reader back through the new
+  export `admin.applicationReturnTo()` — which rebuilds the destination from
+  the identifier and the `back` list state rather than echoing a URL, for
+  `permissionsReturnTo()`'s reason. **Moving a form is not moving an action**,
+  so `/admin-api/pki/{issue,revoke,upload-certificate}` mirror all three with no
+  second operation. The Issue control is not drawn where the realm has no CA,
+  because its only outcome there is a refusal; Upload still is.
+* **MUTUAL TLS (RFC 8705) IS THE THIRD SUBSECTION** (2026-09-13),
+  `applicationMtlsSection()` over `adminViews.applicationMtlsState()` (JSON as
+  `credentials.mtls`): the declared method, the TLS client certificates this
+  realm issued the application with a Revoke form each, the Issue form, the five
+  subject parameters and the bound-tokens flag. Drawn only where `oauthDeclared`,
+  for the assertion profiles' reason. **An ISSUE is answered with a PAGE and
+  never a redirect** — `answerIssuedTlsClientCertificate()`, three `data:`
+  downloads under `no-store` — because the reply carries the only copy of the
+  private key; the route catches the promise and redirects a refusal as every
+  other action does (`STS-ADMIN-0724` for a throw). `oauth-oidc/CLAUDE.md` 3an
+  argues the feature.
+* **THE SECRET IS REGENERATED THROUGH THE APPLICATIONS HANDLER** —
+  `regenerate-secret`, an arm of `applicationsAction()` over
+  `applications.regenerateClientSecret()` — and the redirect carries the
+  message only, landing on `#credentials`. The new value is on the page behind
+  the same `<details>` the old one was, and in the API reply; a secret in a
+  query string would be in the history and every log on the way.
+* **THE SECTION RENDERS `adminViews.applicationCredentialsState()`**, whose
+  JSON half is `credentials` on `GET /admin-api/applications?application=` and
+  deliberately carries NO secret and NO private key — both are already in that
+  reply's `fields`, and a second copy is one more place to pick them up. The
+  attribute names per profile come from `applications.KEY_PAIR_ATTRIBUTES`,
+  which `pki_admin.js`'s `PURPOSE_WRITES` reads too, because the view layer
+  cannot require `pki_admin.js` (it would close a cycle through this file).
+* **IT SITS ABOVE THE RAW ENTRY TABLE**, which still prints every attribute,
+  private keys and secrets included, as it always has.
+* **`POST /admin/pki` NOW MAPS A SUCCESS'S `why` TO `message`.** Every PKI
+  action says what it did in `why`, and `respondToAction()` redirects with
+  `message` — so every notice from that handler was `notice=undefined`.
+  `/admin/pki` draws no notice and nobody saw it; the application page does.
+
+`tests/vendored/sts_admin_console.js` presses every button it finds, and on an
+application page that now includes Regenerate and Take off: both are safe to
+press on any entry the walk reaches (the console's and portal's own clients
+read their secret fresh on every sign-in, and `sts-management-api` is refused
+while `adminApi.clientSecret` pins it).
+
+## THE CERTIFICATE DETAILS DIALOG, ON `/admin/pki` AND `/admin/crypto-metadata` (2026-09-13)
+
+Every certificate row on both pages carries a **View details** link, and it
+opens a dialog over the page — in the same tab, with an **X** at the top and a
+**Close** button at the foot — holding the certificate's every X.509 field and
+its trust chain. `certificate_dialog.js` is the ONE renderer both pages call;
+`admin-core/certificate_views.js` decides which certificates may be opened and
+`common/certificate_details.js` is the model.
+
+**IT HAS NO SCRIPT, AND THE ROOT CLAUDE.md'S TEST FOR ONE WAS PASSED RATHER
+THAN ARGUED AROUND.** A dialog is the thing a reader most expects a script
+behind, and this one needs none: the link adds `?certificate=<SHA-256>&from=<section>`
+to the page it is on, the route resolves that certificate and draws the page
+with the dialog over it, and the X and the Close button both go back to the page
+without the parameter, at the section the link was pressed in. So both pages are
+still `script-src 'none'`, the URL is the open dialog (bookmarkable, reloadable,
+closed by Back), and only the certificate asked for is parsed. **The CSS
+`:target` alternative was refused** because it pre-renders every dialog on every
+render, and `/admin/pki` holds dozens of certificates.
+
+**THE CLOSE BUTTON IS A REAL `<button>` IN A GET FORM**, because a button was
+asked for and a keyboard and a screen reader announce one; its address gains a
+bare `?`, which is what a GET form with no fields submits. The X is a labelled
+link. Neither carries a `target`.
+
+**WHAT IT COSTS**: a round trip per open, which every control here already pays.
+And the dialog is drawn at the foot of the page's own body, after every form, so
+it cannot be adopted into an open `<form>` by the parser — `--dump-dom` is the
+check, and `formsInDialog` is one.
+
+**`renderPki()` TAKES A SIXTH ARGUMENT** — the resolved view — and
+`/admin/crypto-metadata`'s route does the same inline. Both put the answer on
+their JSON as `certificateDetails`, so `?format=json&certificate=` answers for a
+page exactly as `GET /admin-api/certificates?certificate=` does. The crypto
+report grew `certificateFingerprint` on the signing key, every curve key and
+every post-quantum key, `tls.certificates[]` and `spiffe.authorityFingerprint`;
+the signing key's `certificate` string had said *self-signed, SHA-256, serial 02,
+five years* since before the hierarchy existed, and says which it is now.
+
+A refused open (a fingerprint not held, or not a fingerprint) still draws the
+dialog, saying why, and marks the response `STS-ADMIN-0640`/`0641`; a link that
+did nothing would read as a broken control. `tests/certificate_details.js` pins
+the renderer in a child process.
+
+## THE POST-QUANTUM ICON ON `/admin/pki` AND `/admin/keys` (2026-09-13)
+
+Every key pair that uses a post-quantum algorithm carries a small lattice icon
+with a word beside it: `PQC` (ML-DSA, SLH-DSA), `PQC+` (a composite),
+`PQC KEM` (ML-KEM) and a dashed `PQC alt` (a classical key whose certificate
+carries an alternative post-quantum key). Hovering names the algorithm and the
+standard. On `/admin/pki` it is on every row of the tree, the three-tier view,
+the workbench store, and the application and person key-pair tables; on
+`/admin/keys` it is in each key's Type cell and heading; and the certificate
+details dialog shows it beside the key.
+
+**WHETHER is `common/pqc_support.js` and HOW IT LOOKS is `pqc_badge.js`**, and
+nothing else decides or draws either — a page that classified for itself would
+classify with whichever of four spellings it happened to hold. Each page draws
+`pqcBadge.legend()` once, and the legend draws its samples WITH the renderer so
+it cannot describe a mark the rows do not use.
+
+Four decisions, each argued in the file:
+
+* **A LATTICE AND NOT A SHIELD OR PADLOCK.** The icon says "a different kind of
+  mathematics"; a shield would claim "secure", which an algorithm choice does
+  not make a key pair.
+* **THE HYBRID IS DRAWN WEAKER** (white, dashed), because its key is not
+  post-quantum and a reader who saw the same mark as an ML-DSA key would be told
+  something false.
+* **THE KEY DECIDES, NOT THE CERTIFICATE'S SIGNATURE** — which is also why a
+  certificate is asked first where there is one: only the certificate can show
+  an alternative key.
+* **NO SCRIPT, NO STYLESHEET, NO IMAGE REQUEST.** An inline SVG with its style
+  on the element, so both pages stay `script-src 'none'` and a page that forgot
+  a `<style>` block could not render the badge unstyled. `title` for a pointer,
+  `aria-label` with `role="img"` for a screen reader.
+
+**`pqc` IS ON THE JSON AS WELL AS THE PAGE**, so rule 7 holds for the icon:
+every row of `GET /admin-api/keys` (`keyInventory()` adds it), and every
+application and person key-pair row of `GET /admin-api/pki` (`pkiJson()`). The
+tree and workbench rows carry their certificates already, and their icon is read
+off those — the same function, so the JSON and the page cannot disagree.
+
+## `/admin/users?user=…` HAS A CREDENTIALS SECTION TOO (2026-09-13)
+
+The application page's section, for a person: `userCredentialsSection()` draws
+`adminViews.personCredentialsState()` — per profile, RFC 7523 and RFC 7522, the
+certificate, chain, handle, source, whether a private key is HELD, and the issuer
+asserted as — after the second factors and before the sign-out buttons. Four
+differences from the application's, each a fact about the holder:
+
+* **NO PRIVATE KEY, EVER.** A person's has no read door; the model reports
+  `privateKeyHeld` and nothing else, and the attribute table the application page
+  points at does not exist here.
+* **ISSUE POSTS TO `/admin/pki/person`**, because what comes back is the private
+  key. That route, given `from=/admin/users`, answers in the console shell — the
+  key once, and a *Back to <name>* link built by the new export `userReturnTo()` —
+  rather than drawing the PKI page. Upload and Take off post to `/admin/pki` with
+  `target=person`, and `pkiReturnTo()` sends them back through `userReturnTo()`.
+  `upTo` is exported for that page's trail.
+* **THE CONTROLS ARE DRAWN FOR ADMIN WRITE ONLY**, the second-factor section's
+  rule beside it.
+* **`/admin/pki`'s person table is a row per profile held**, and its person form
+  gained a Profile select.
+
+`sts_admin_console.js`'s `thePersonCredentialsSectionIsPressed()` presses all
+three and asserts where the browser lands, including that the Issue page's way
+back names this person in this realm.
+
+## `/admin/used-assertions`: WHAT THIS REALM WAS HANDED AND SPENT (2026-09-13)
+
+Under **Monitoring**, immediately after **Tokens**, and the pair is the filing
+argument: that page is what this service HANDED OUT and this one is what it was
+HANDED and spent — every RFC 7523 JWT and RFC 7522 SAML assertion accepted, as
+client authentication or as a grant, and not yet expired. It answers *has this
+assertion been used, as what, by whom, and until when is that remembered*,
+which is a question about what happened rather than about how either profile is
+configured. `common/CLAUDE.md` 3ae argues the history; three things are this
+page's.
+
+* **IT HAS NO CONTROL, AND THAT IS THE PAGE.** A Forget button would make an
+  assertion still inside its validity usable a second time, which is the one
+  thing the history exists to prevent. A row goes when the assertion expires.
+  Rule 7 is `GET /admin-api/used-assertions` with no POST beside it.
+* **THE ROUTE AWAITS A PROMISE.** On a postgres store the history is the
+  database's rather than this process's, so `adminViews.usedAssertionsView()`
+  is a query and the page and the operation both `.then` it; a store that
+  cannot be read is a page saying so (`STS-ADMIN-0643`) rather than a request
+  that never answers.
+* **IT SAYS WHETHER THE HISTORY SURVIVES A RESTART**, as a note where it does
+  and a warning where it does not — the one thing an operator reading a list of
+  spent assertions most needs to know about the list.
+
+## `/admin/rbac`'s PERSON PICKER IS A SEARCH, NOT A `<select>` (2026-09-13)
+
+The *Grant a role* form picked the person from a `<select>` holding every
+candidate — everybody in the default realm's directory unioned with everybody
+who has signed in (`admin_rbac.candidates()`). Once that directory held
+thousands of people the control could not be used. It is `chooserPane()` now,
+the search and paged results pane `/admin/delegation` uses for people and
+applications: `personq` searches, `personfrom` pages twenty at a time with a
+stale offset clamped, and **a result is a link that picks** — `person=<name>`,
+which opens a grant form (`#grant-picked`) for that person with the name in a
+hidden input and a role select beside it. The typed-name form below it is
+unchanged, and the header comment's two-forms argument is unchanged with it.
+
+Three things are decisions:
+
+* **`person` is resolved against the candidates, never echoed.** A name the
+  list does not hold gets a sentence pointing at the typed form, because the
+  picked form's whole promise is that it names somebody the list offered.
+* **`personq` and `personfrom` are in `LIST_PARAMS`; `person` is not.** A grant
+  or a Revoke lands back on the results the reader was working through, and
+  not on a grant form for somebody who now holds the role. The grants table's
+  filter form and its pager carry all three, so narrowing the table does not
+  clear the search.
+* **`GET /admin-api/rbac`'s `candidates` is paged**, by `candidatesPage` and
+  the shared `per`, answered in `candidatesPaging` — twenty by default, the
+  pane's size, so without `per` the reply and the pane show the same people;
+  `personfrom` is honoured as the page it falls on. `candidateSearch` (total,
+  matched) and `picked` sit beside it. It was the whole list, which on a large
+  directory was thousands of rows on every read of the roster. `CHOOSER_HITS`
+  moved to `admin-core/admin_views.js` so the pane and the reply share one
+  number. **`roles` lost `members` and `claimed` in the same change**: every
+  membership, unpaged, and the same rows `grants` pages (`?role=` narrows it).
+
+`tests/vendored/sts_admin_console.js` searches for the person on the pane's own
+form, clicks the result, and grants on the form that opens.
+
+## EVERY PROTOCOLS PAGE LISTS ITS REALM'S ENDPOINTS (2026-09-13)
+
+rcbj asked that each page under Protocols list the concrete endpoints the
+current trust realm answers on for that protocol, using `/admin/gnap`'s
+*Endpoints* table as the model. Thirty-seven pages have one now; GNAP keeps its
+own, which `gnap/gnap_console.js` writes.
+
+**THE TABLE IS `admin-core/protocol_endpoints.js` AND NOT THIS FILE**, which is
+how the paragraph that refused an endpoint list (under *The eight new pages*)
+was answered rather than ignored. A row names Express ROUTES; the name comes
+from `sts_metadata.js`'s `ENDPOINTS`, the methods from the router, the URL from
+`baseUrlOf(req)` so it carries the realm prefix. Sockets the router cannot see
+(KDC, Kerberos service, LDAP/LDAPS at the realm's base DN, 8443/9443, SPIFFE's
+gRPC bindings for this realm) are built from their settings. `:param` is shown
+as `{param}`, and a named authorization server's routes are repeated per server
+by id.
+
+Four decisions belong to this file:
+
+* **IT IS DRAWN IN `respond()`, NOT BY FORTY PAGES.** `withProtocolEndpoints()`
+  adds `protocolEndpoints` to the JSON of any page the table names and splices
+  the section in before the page's first `<h2>` — GNAP's place, after the lead
+  notes. A page added to the table needs no edit of its own.
+* **ONLY WHEN `req.path` IS THE PAGE.** A page drawn under another page's tab
+  with a path of its own (the keytab, a PEP's listener certificate) gets
+  nothing.
+* **A DRILL-DOWN KEEPS THE JSON AND LOSES THE SECTION**, where a drill-down is
+  `up` as `upTo()`'s OBJECT. The XACML sub-pages pass a path STRING as `up` on
+  the page itself (the latent defect recorded under *THE XACML MONITOR*), and
+  must not lose the section for it.
+* **`/admin/scim`'S OWN TABLE IS "What each operation does" NOW.** It was also
+  headed *Endpoints*, and it describes operations by path under `/scim/v2`
+  rather than the realm's addresses.
+
+`protocolEndpointDrift()` is exported for `tests/protocol_endpoints.js`, which
+fails on a Protocols page with neither a row nor an exemption and on a row
+naming a page not under Protocols. **A new page under Protocols therefore owes
+a row in that table**, or an entry in its `EXEMPT` with the reason.
+
+## `/admin/applications/new` IMPORTS RFC 9728 PROTECTED RESOURCE METADATA (2026-09-13)
+
+A checkbox reveals three ways to give a protected resource's metadata document
+— paste, upload, URL — and Load answers with the page redrawn: the document in
+three tabs (raw JSON, a table of values, the fields read from it, editable) and
+the create form filled in from `oauth-oidc/protected_resource_metadata.js`'s
+plan. The `resource` is the default name, `oauthPermissionBaseUri` and
+`oauthAudience`; `scopes_supported` becomes `oauthPermission` with the resource
+prefix taken off; `oauthClientId` and the identifier are a random client_id in
+the registration shape; OAuth 2.0 is ticked. rcbj chose all four recommended
+answers: Admin Write plus the outbound policy with internal addresses refused in
+product, section 3.3 refused in product and warned in development, the document
+kept on the entry (`oauthResourceMetadata`, `oauthResourceMetadataUrl`), and
+the prefix stripped.
+
+Five decisions are this file's:
+
+* **THE PATH TAKES A POST NOW.** Load and the create from a loaded document both
+  post to `/admin/applications/new`, because a refused create has to come back
+  HERE with the document and every edit kept, which the list page's 303 cannot
+  carry. The ordinary form with nothing loaded still posts to
+  `/admin/applications`. Both reach `applicationsAction()`, whose third argument
+  (`context`: the realm's authorization servers, computed by the route from the
+  request) is the one thing the load needs that a body cannot carry.
+* **THE UPLOAD IS multipart/form-data AND `helpers.parseBody()` READS IT**, so
+  the gate's CSRF check finds the token in an upload; `multipartParts()` gives
+  the route the filename.
+* **THE TABS ARE CSS AND THE RADIOS POST NOTHING.** Three radios carry
+  `form="prm-tabs-not-a-form"` (no form owner, still one group) and the general
+  sibling combinator shows a panel — no `:has()`, so no fallback. The third
+  tab's boxes are fields of the create form whichever tab shows; a redraw after
+  a refusal opens that tab.
+* **THE PANE OWNS SIX ATTRIBUTES** (`RESOURCE_METADATA_OWNED`), and the
+  declarations section omits `oauthClientId` while it is drawn: two boxes with
+  one name post twice and `parseBody()` keeps the last, the empty one.
+* **THE BANNERS ARE NOT `warn()`.** The authorization-server comparison, the
+  section 3.3 verdict and the warnings are plain `div.warn`/`div.ok`, because a
+  fold would hide the unmatched issuers behind a summary. A matching issuer is
+  green in the table (`state-valid`), a foreign one amber, and a mismatch never
+  refuses the create.
+
+The third tab edits only members the document carried; `documentFromForm()`
+rebuilds the stored document from the original plus those boxes, keeps
+extension members and never touches `signed_metadata`.
+
+`POST /admin-api/applications/load-resource-metadata` mirrors Load (rule 7),
+and that resource's `mirrors` names both console paths.
+`tests/protected_resource_metadata.js` holds the library, the fetch policy in
+both modes against a local server, multipart parsing and the create-time
+checks (13 mutants, 12 caught, 1 equivalent). **No owned over-HTTP job presses
+the import yet**: it was driven end to end by hand against a throwaway
+instance (API paste and URL, console sign-in, upload, refused and accepted
+create, read-back) and the tab states were checked by screenshot.
+
+## `/admin/users?user=…` HAS A *PASSWORD AND SECOND FACTORS* SECTION (2026-09-13)
+
+Asked for as a reset-password button whose password the administrator notes, an
+option to generate a reset link to send to the person, buttons to disable
+passkeys as a primary mechanism, to disable all MFA and to force enrolment, and
+the CAEP and RISC signals each owes. `userCredentialControlsSection()` draws it
+after the Credentials section; the six actions are `usersAction()`'s and
+`admin-core/admin_actions.js`'s `credentialAdminAction()` argues each. Four
+things are this console's.
+
+* **A STATE TABLE COMES FIRST AND THE CONTROLS ARE CONDITIONAL ON IT.** Whether
+  a password is held, whether it must be changed, whether a reset link is
+  outstanding (and until when), how many keys can sign in on their own, and
+  whether a second factor is required (by the account, by the realm, or both).
+  **Disable passkeys** is drawn only while the person holds a primary key AND a
+  password — without the password it would lock them out, so the section warns
+  instead; **Disable all MFA** only while a second factor is held; **Require**
+  and **Stop requiring** swap on the account flag. Everything is for Admin
+  Write only, the rule the two sections above follow.
+* **A RESET AND A RESET LINK ANSWER WITH A PAGE.** `credentialResetPage()`, from
+  the `POST /admin/users` handler, whenever the result carries `password` or
+  `resetUrl` and the request is not JSON — `/admin/users/new`'s argument: a
+  generated password and a reset link exist once, and a 303's query string is
+  the browser history and every log on the way. A JSON caller gets the result.
+* **`from=user` BRINGS EVERY OTHER CONTROL BACK TO THE PERSON**, through
+  `userReturnTo(body, who, '#credential-controls')`, which gained that anchor
+  (and `#credentials`) beside the ones it already allowed.
+* **`base: baseUrlOf(req)` IS HANDED TO THE ACTION**, so the reset link names
+  the address the administrator is using. `mgmt-api/admin_api.js` passes the
+  same, which is what keeps the link realm-prefixed from both doors.
+
+`tests/admin_credential_controls.js` drives the actions, the portal page and the
+enrolment step in a child process; no owned browser job presses the section yet.

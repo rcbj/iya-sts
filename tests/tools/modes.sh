@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # ===========================================================================
-# tests/tools/modes.sh — THE THREE CONFIGURATIONS THE SUITE IS RUN IN.
+# tests/tools/modes.sh — THE CONFIGURATIONS THE SUITE IS RUN IN: THREE BY
+# DEFAULT, AND A FOURTH (`cluster`) ON REQUEST.
 #
 # `./local-run-tests.sh` and `./docker-run-tests.sh` both run the whole suite
 # once per mode, and this file is the ONE place the modes are defined. Two
@@ -38,13 +39,30 @@
 #             distinction is the whole reason the three are separate runs
 #             rather than one run with more turned on.
 #
+#   cluster   TWO CONTAINERS, ACTIVE-ACTIVE, ON ONE POSTGRES AND ONE OPENBAO
+#             (2026-09-14, issue #46), each a single process, behind an HAProxy
+#             in TCP mode that owns every port the suite reaches. Every job's
+#             client opens a new connection per request, so its requests
+#             alternate between the nodes: a write on one and the read-back
+#             on the other is the ordinary case rather than a race. A failure
+#             here and a pass in `postgres` is a CLUSTER defect — something a
+#             node holds that the other cannot see, or two nodes deciding one
+#             thing twice. tests/CLAUDE.md says what it does not cover.
+#
+#             NOT IN STS_ALL_MODES, and that is a decision about cost rather
+#             than about importance: it is a fourth whole run of the suite and
+#             two services' worth of memory, and a bare run is already an
+#             hour. `--modes=cluster` asks for it; `--modes=memory,postgres,
+#             dispatch,cluster` is everything.
+#
 # ---------------------------------------------------------------------------
 # THE ORDER IS DELIBERATE: cheapest and most fundamental first, so that a break
 # in the service itself is reported before twenty minutes of the two modes that
 # would fail for the same reason and say something more complicated about it.
 # ===========================================================================
 
-# The mode names, in the order they run.
+# The mode names a bare run runs, in the order they run. `cluster` is defined
+# below and is asked for by name — see the header.
 STS_ALL_MODES=(memory postgres dispatch)
 
 # ---------------------------------------------------------------------------
@@ -89,8 +107,14 @@ STS_MODE=development
 STS_PERSISTENCE_MODE=memory
 STS_PERSISTENCE_COORDINATE=false
 STS_WORKERS_REQUEST_COUNT=0
+STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=generated
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
 EOF
       ;;
     postgres)
@@ -115,8 +139,14 @@ STS_MODE=development
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=0
+STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=generated
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
 EOF
       ;;
     dispatch)
@@ -130,13 +160,93 @@ EOF
       # which spread across workers by design — without the barrier those are
       # racing the change log, and a suite that raced would fail intermittently
       # and teach nobody anything.
+      #
+      # AND THE SECRET STORE IS READ HERE (2026-09-12), which is the third axis
+      # this mode carries. `STS_KEYS_SOURCE=persisted` turns the keystore ON
+      # WITHOUT product mode — `tests/keystore.js` records that as the reason
+      # the setting exists — so the key-encryption key is really fetched, from
+      # the OpenBao container the stack brings up, with the client certificate
+      # that store issued and a policy that lets it read and not write.
+      #
+      # The DATABASE PASSWORD comes out of that store in every mode, because
+      # the compose file's connection string no longer carries one at all. What
+      # is particular to this mode is the KEK, which needs a keystore to be on
+      # before anything reads it.
+      #
+      # AND THE CONSOLE AND THE PORTAL ON A POOL OF THEIR OWN (2026-09-13),
+      # which is a fourth axis: `STS_WORKERS_SURFACE_COUNT=1`. ONE worker and
+      # not three, and the argument above for three does not carry over. What
+      # a second pool can get WRONG is the crossing — a console sign-in minted
+      # in a protocol worker and read in a surface worker, and the OIDC back
+      # channel reaching the protocol worker that holds the code — and one
+      # surface worker is enough to cross on every sign-in. Choosing among
+      # several workers WITHIN a pool is the same code the three protocol
+      # workers already exercise, and every extra worker is a whole copy of the
+      # service in a mode that has been killed for memory before.
       cat <<'EOF'
 STS_MODE=development
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
 STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+EOF
+      ;;
+    cluster)
+      # TWO NODES, ACTIVE-ACTIVE, BEHIND A LOAD BALANCER (2026-09-14, #46).
+      # The stack is tests/docker-compose-cluster.yml (or its containerized
+      # twin) layered over the mode's usual one; what follows is what each
+      # NODE is, and both are given exactly the same.
+      #
+      # DEVELOPMENT MODE, for the reason the `postgres` arm gives: the suite
+      # signs people in with no password. That is also why this mode names
+      # `active-active` rather than leaving `cluster.mode=auto` to decide —
+      # auto is `off` outside product mode.
+      #
+      # THE KEY-ENCRYPTION KEY FROM OPENBAO (`STS_KEYS_SOURCE=persisted`), as in
+      # `dispatch`, and here it is not optional: active-active refuses to start
+      # without an operator key-encryption key (STS-CLUSTER-0008), because a
+      # key made per container is a different key on every node.
+      #
+      # REQUEST WORKERS OFF ON BOTH NODES. The axis under test is BETWEEN
+      # containers; within one, `dispatch` already covers the workers, and two
+      # nodes of four processes each is a stack this machine has been killed
+      # for memory running before. So each node is one process, and anything
+      # that fails here and passes in `postgres` is a cross-node defect.
+      #
+      # PROXY PROTOCOL v2 ON, as behind the NLB this imitates: the balancer
+      # sends a header naming the real peer and both nodes require it from the
+      # balancer's address, which the launcher names as the one trusted proxy
+      # (STS_TRUSTED_PROXIES, an address it pins). `off` in the other three
+      # modes, which have no proxy. A launcher run with
+      # STS_TEST_CLUSTER_PROXY_PROTOCOL=off turns it off for both halves, to
+      # tell a PROXY-protocol failure from a cluster one.
+      #
+      # NOTHING IS ACCEPTED AS MISSING: no STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES.
+      # The gate must pass on its own, and a node that refuses is a finding.
+      #
+      # THE TWO `STS_TEST_*` NAMES ARE THE RUNNER'S, not the service's:
+      # a new connection per request (tools/fresh-connections.js), and how many
+      # nodes `sts_cluster_alternation.js` must see answer.
+      cat <<'EOF'
+STS_MODE=development
+STS_PERSISTENCE_MODE=postgres
+STS_PERSISTENCE_COORDINATE=true
+STS_WORKERS_REQUEST_COUNT=0
+STS_WORKERS_SURFACE_COUNT=0
+STS_WORKERS_DISPATCH=
+STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=active-active
+STS_PROXY_PROTOCOL=v2
+STS_TEST_FRESH_CONNECTIONS=1
+STS_TEST_CLUSTER_NODES=2
 EOF
       ;;
     *)
@@ -154,7 +264,8 @@ stsModeDescription()
   case "$1" in
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
     postgres) echo "one process, persisted and coordinating through the change log" ;;
-    dispatch) echo "3 request workers, every path dispatched, read-your-write on" ;;
+    dispatch) echo "3 request workers + 1 for the console and portal, every path dispatched, read-your-write on" ;;
+    cluster)  echo "2 single-process nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
     *)        echo "unknown" ;;
   esac
 }
@@ -167,5 +278,21 @@ stsModeNeedsPostgres()
   case "$1" in
     memory) return 1 ;;
     *)      return 0 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Whether a mode is the TWO-NODE stack (2026-09-14). Asked by both launchers
+# at every place the answer changes what they do — which compose files are
+# layered, which containers come up and are logged, and which address the
+# runner and the jobs are handed (the balancer's rather than a node's). One
+# question here rather than `[ "${MODE}" = cluster ]` in a dozen places, so a
+# second multi-node mode is one line.
+# ---------------------------------------------------------------------------
+stsModeIsCluster()
+{
+  case "$1" in
+    cluster) return 0 ;;
+    *)       return 1 ;;
   esac
 }

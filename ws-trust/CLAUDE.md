@@ -97,13 +97,74 @@ inside the branches that happen to need a subject, and look for a credential in
 else's token, since a document with four identities in it answers "which comes
 first" and not "who is asking".
 
+## PRODUCT MODE, AND FOUR DEFECTS FIXED IN EVERY MODE (2026-09-12)
+
+**Product mode (`mode.verifiesCredentials()`) refuses, with a SOAP Fault naming
+what to present:**
+
+* a request with **no credential** — which also closes the Renew that issued a
+  token for whoever its RenewTarget named, and Validate and Cancel, because every
+  operation authenticates above the branch;
+* a **SAML assertion as the credential** unless it verifies against THIS REALM'S
+  OWN signing certificate and is inside its Conditions (`oauth2.clockSkewS`
+  tolerance). That is the smallest real answer to "which issuer is trusted": the
+  key this STS already publishes at `/sts/cert`, covering what an assertion is
+  presented here for — renewing or exchanging a token this STS issued. A register
+  of foreign issuers is the next step and does not exist; `checkedAssertion()`
+  serialises the ONE element before verifying, because a SOAP document carries the
+  requester's assertion and the delegated one;
+* an **`OnBehalfOf` / `ActAs` with no requester credential**, and one whose inner
+  token is not such an assertion — a name alone is not evidence of anybody;
+* **`?encrypt=1` that cannot encrypt** (`opensTestControls()` — the flag is a
+  non-spec test control and its plaintext fallback is the lenient half);
+* no subject is invented: `saml-subject` and `delegated-subject` are development's.
+* **a presented password is verified against `userPassword`** — WS-Trust had
+  been checking only the reserved string `invalid` in both modes until
+  2026-09-12.
+
+**Fixed in both modes:**
+
+* **The requested lifetime is clamped** to `wstrust.maxTokenLifetimeMin` (1440).
+  A `wst:Lifetime` replaced the default with no bound, so a caller could mint a
+  year-long bearer token by asking; WS-Trust 1.4 §4.1 makes it a request the STS
+  decides. The default is `wstrust.tokenLifetimeMin` (60).
+* **The issued assertion's AuthnContext names the credential** —
+  PasswordProtectedTransport for a UsernameToken (as before), PreviousSession for
+  an assertion, `unspecified` for a delegation or nothing. It was
+  PasswordProtectedTransport for everything, an anonymous request included.
+* **A delegation starts no session.** `signIn` was built from `auth.subject`,
+  which on OnBehalfOf/ActAs is the DELEGATED subject — so the response to whoever
+  asked carried a session cookie in the name of somebody who was not there. A
+  session from an assertion credential has an empty amr rather than `pwd`.
+* **The JWT carries a `jti` and a `kid`**, signed through `helpers.signJwtAs()`
+  with `wstrust.jwtAlgorithm` (RS256 by default; RS*/PS*/ES*/EdDSA). It is still
+  not in the token register — that funnel is RS256 by construction — but
+  `/admin/delegation` can now name what a JWT exchange produced.
+* **`?encrypt=1` honours `saml2.encryptionAlgorithm` / `saml2.keyTransportAlgorithm`**,
+  answered for the AppliesTo as `/saml2` answers them for a service provider.
+* **`wstrust.issuer` and `saml.issuer` disagreeing is SAID** — on `GET /sts` and
+  in the startup log — rather than reconciled, because the split is deliberate.
+
+`tests/saml_family_hardcoded.js` section E pins all of it in process.
+
 ## There is no test for this in either repository
 
 The parent project has `tests/wstrust.js` and
 `tests/wstrust_schema_validate.js`, which drive the DEBUGGER's client side
-against this endpoint. Nothing tests this module on its own, and the negatives
+against this endpoint. Nothing tested this module on its own until `tests/saml_family_hardcoded.js`
+(2026-09-12), which holds the product-mode refusals above; the negatives below
 are where the value is: `Validate` and `Cancel` answering above the
 `authenticate()` call, a document carrying both a UsernameToken and an
 `OnBehalfOf`, a `Renew` with no security header. Every one of those is drivable
 over HTTP, so by the root `CLAUDE.md`'s rule they belong in the PARENT project's
 suite.
+
+## A JWT'S `sub` IS A SUBJECT, AND THERE IS NONE WITHOUT AN ENTRY (2026-09-14)
+
+A JWT is issued with `sub: urn:uuid:<entryUUID>`. For a person the directory does not
+hold — `ldap.autocreateUsers` off and nobody provisioned — it is refused with a SOAP
+Fault (`STS-WSTRUST-0017`) rather than issued with the bare name, which is the rule the
+OAuth 2.0 grants follow (`STS-OAUTH-0510`): a bare name is a `sub` a relying party links
+on and a person created later under the name would inherit. An `anonymous` request names
+nobody by design and is unaffected, and so is a SAML assertion, whose `NameID` is the
+username. A process with no directory still uses the name. `tests/stable_subject.js` D5b.

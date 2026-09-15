@@ -55,12 +55,20 @@ const pool = require('../common/request_pool');
 const worker = require('../common/request_worker');
 const config = require('../common/config');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'ldap_logout',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // A CONNECTION AS THE FRONT PROCESS PUBLISHES ONE. The shape is
 // `connectionSnapshot()`'s: everything boundConnections() reports except the
 // socket, which is the one member that cannot cross a process boundary.
 // ---------------------------------------------------------------------------
 function connectionRow(id, key, dn) {
+  log.debug("Entering connectionRow().");
+  log.debug("Leaving connectionRow().");
   return { id: id, dn: dn || ('uid=' + key + ',ou=users,dc=example,dc=com'),
            key: key, secure: false, port: 389, boundAt: Date.now() };
 }
@@ -71,9 +79,11 @@ function connectionRow(id, key, dn) {
 // every later file in the run reads through them; see tests/CLAUDE.md's rule
 // about process-wide state.
 function asAWorker(rows, dropper, fn) {
+  log.debug("Entering asAWorker().");
   ldapServer.setConnectionMirror(rows);
   ldapServer.setRemoteDropper(dropper);
   try {
+    log.debug("Leaving asAWorker().");
     return fn();
   } finally {
     // BACK TO A PROCESS THAT OWNS ITS OWN SOCKETS. Anything that is not an
@@ -93,22 +103,26 @@ function asAWorker(rows, dropper, fn) {
 // front process's list rather than with its own empty one.
 // ---------------------------------------------------------------------------
 function checkTheMirrorIsRead(t) {
-  t.log.info('=== a process with no listener reads the front process\'s list ===');
+  log.debug("Entering checkTheMirrorIsRead().");
+  t.log.info('=== a process with no listener reads the front process\'s list ' +
+             '===');
 
   const local = ldapServer.boundConnections();
-  t.check(Array.isArray(local), 'a process with no mirror reads its own sockets',
-          'boundConnections() returned ' + typeof local + '; this test process ' +
-          'binds nothing, so the honest answer here is an empty list — what ' +
-          'matters is that it is the LOCAL one');
+  t.check(Array.isArray(local),
+          'a process with no mirror reads its own sockets',
+          'boundConnections() returned ' + typeof local + '; this test ' +
+          'process binds nothing, so the honest answer here is an empty list ' +
+          '— what matters is that it is the LOCAL one');
 
-  asAWorker([connectionRow('c-1', 'alice'), connectionRow('c-2', 'bob')], function () {},
+  asAWorker([connectionRow('c-1', 'alice'), connectionRow('c-2', 'bob')],
+    function () {},
     function () {
       const seen = ldapServer.boundConnections();
       t.check(seen.length === 2,
               'a mirrored process reports the connections it was published',
-              'expected 2, got ' + seen.length + '. This is the assertion the ' +
-              'dispatch-mode bug would have failed: the worker answered 0 and ' +
-              'a sign-out therefore had nothing to end');
+              'expected 2, got ' + seen.length + '. This is the assertion ' +
+              'the dispatch-mode bug would have failed: the worker answered ' +
+              '0 and a sign-out therefore had nothing to end');
       t.check(seen.some(function (c) { return c.key === 'alice'; }) &&
               seen.some(function (c) { return c.key === 'bob'; }),
               'and carries the identity key each connection is bound as',
@@ -128,6 +142,7 @@ function checkTheMirrorIsRead(t) {
           'and the local view is back afterwards',
           'these hooks are module-wide; expected ' + local.length + ' as ' +
           'before, got ' + after.length);
+  log.debug("Leaving checkTheMirrorIsRead().");
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +154,7 @@ function checkTheMirrorIsRead(t) {
 // call it about.
 // ---------------------------------------------------------------------------
 function checkTheDropIsAsked(t) {
+  log.debug("Entering checkTheDropIsAsked().");
   t.log.info('=== a sign-out in a worker asks the front process ===');
 
   const on = config.value('logout.ldapDisconnect');
@@ -147,6 +163,7 @@ function checkTheDropIsAsked(t) {
             'it is off in this configuration, so a sign-out leaves directory ' +
             'connections alone by policy and the rest of this section would ' +
             'be asserting the wrong thing');
+    log.debug("Leaving checkTheDropIsAsked().");
     return;
   }
 
@@ -164,8 +181,8 @@ function checkTheDropIsAsked(t) {
       t.check(asked.length === 1 && asked[0] === 'carol',
               'the front process is asked to close that person\'s connections',
               'expected one ask for carol, got ' + JSON.stringify(asked) +
-              '. Nothing in this process can close the socket, so an ask that ' +
-              'is never made is a connection that stays open');
+              '. Nothing in this process can close the socket, so an ask ' +
+              'that is never made is a connection that stays open');
       t.check(ldapRows.length === 1,
               'and the sign-out reports the connection as ended',
               'expected one ldap row in terminated, got ' + ldapRows.length +
@@ -181,6 +198,7 @@ function checkTheDropIsAsked(t) {
               'twice — the front process\'s next push is the authority, and ' +
               'this is about the seconds before it');
     });
+  log.debug("Leaving checkTheDropIsAsked().");
 }
 
 // ---------------------------------------------------------------------------
@@ -193,13 +211,19 @@ function checkTheDropIsAsked(t) {
 // would have ridden out on has already gone).
 // ---------------------------------------------------------------------------
 function checkAFailedAskIsReported(t) {
-  t.log.info('=== a sign-out that cannot reach the socket reports a failure ===');
+  log.debug("Entering checkAFailedAskIsReported().");
+  t.log.info('=== a sign-out that cannot reach the socket reports a failure ' +
+             '===');
 
   [{ what: 'with no way to ask the front process',
      dropper: null,
      expect: /no directory listener/ },
    { what: 'when the ask is refused',
-     dropper: function () { throw new Error('headers have already gone'); },
+     dropper: function () {
+       log.debug("Entering dropper().");
+       log.debug("Leaving dropper().");
+       throw new Error('headers have already gone');
+     },
      expect: /could not be asked/ }].forEach(function (one) {
     asAWorker([connectionRow('c-7', 'dave')], one.dropper, function () {
       const result = logout.terminate('dave', [], { by: 'ldap_logout.js' });
@@ -234,6 +258,7 @@ function checkAFailedAskIsReported(t) {
               'it was never closed, so forgetting it would hide a live ' +
               'session from the next sign-out and from /admin/sessions');
     });
+  log.debug("Leaving checkAFailedAskIsReported().");
 }
 
 // ---------------------------------------------------------------------------
@@ -247,11 +272,13 @@ function checkAFailedAskIsReported(t) {
 // goes back to where it started.
 // ---------------------------------------------------------------------------
 function checkTheHeaderAgrees(t) {
+  log.debug("Entering checkTheHeaderAgrees().");
   t.log.info('=== the worker and the front process name the same header ===');
 
   t.check(!!pool.LDAP_DROP_HEADER && !!worker.LDAP_DROP_HEADER,
           'both ends name a header',
-          'pool=' + pool.LDAP_DROP_HEADER + ', worker=' + worker.LDAP_DROP_HEADER);
+          'pool=' + pool.LDAP_DROP_HEADER + ', worker=' +
+          worker.LDAP_DROP_HEADER);
   t.check(pool.LDAP_DROP_HEADER === worker.LDAP_DROP_HEADER,
           'and it is the same one',
           'a rename in either file is silent — the other end simply stops ' +
@@ -268,7 +295,12 @@ function checkTheHeaderAgrees(t) {
   // username with a comma in it stays one key rather than becoming two.
   const seen = [];
   const realDrop = ldapServer.dropConnectionsFor;
-  ldapServer.dropConnectionsFor = function (key) { seen.push(key); return []; };
+  ldapServer.dropConnectionsFor = function (key) {
+    log.debug("Entering dropConnectionsFor().");
+    seen.push(key);
+    log.debug("Leaving dropConnectionsFor().");
+    return [];
+  };
   try {
     pool.closeDirectoryConnections(encodeURIComponent('a,b') + ',' +
                                    encodeURIComponent('frank'));
@@ -280,11 +312,12 @@ function checkTheHeaderAgrees(t) {
     pool.closeDirectoryConnections(undefined);
     t.check(seen.length === 0,
             'and an answer with no such header closes nothing',
-            'every response in this service passes through that code path, so ' +
-            'a header-less one must be inert: ' + JSON.stringify(seen));
+            'every response in this service passes through that code path, ' +
+            'so a header-less one must be inert: ' + JSON.stringify(seen));
   } finally {
     ldapServer.dropConnectionsFor = realDrop;
   }
+  log.debug("Leaving checkTheHeaderAgrees().");
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +341,7 @@ function checkTheHeaderAgrees(t) {
 // report that the socket was still open.
 // ---------------------------------------------------------------------------
 function checkThePublishIsDeferred(t, done) {
+  log.debug("Entering checkThePublishIsDeferred().");
   t.log.info('=== the snapshot is taken after the bind handler returns ===');
 
   let calledInline = false;
@@ -339,13 +373,16 @@ function checkThePublishIsDeferred(t, done) {
     ldapServer.setConnectionWatcher(null);
     done();
   });
+  log.debug("Leaving checkThePublishIsDeferred().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheMirrorIsRead(t);
   checkTheDropIsAsked(t);
   checkAFailedAskIsReported(t);
   checkTheHeaderAgrees(t);
+  log.debug("Leaving run().");
   // The one section with a tick in it, so `run()` answers a promise the runner
   // awaits — see tests/run.js, which handles both shapes.
   return new Promise(function (resolve) {

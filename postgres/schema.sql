@@ -234,6 +234,125 @@ CREATE TABLE IF NOT EXISTS sts_changes (
 
 CREATE INDEX IF NOT EXISTS sts_changes_at ON sts_changes (at);
 
+-- ---------------------------------------------------------------------------
+-- THE USED-ASSERTION HISTORY (2026-09-13): every RFC 7523 JWT and RFC 7522
+-- SAML assertion this service accepted, kept until it would have expired, so
+-- that none is accepted twice. It persists in both modes, unlike `sts_minted`,
+-- because the key that verifies an assertion is the CLIENT's and outlives a
+-- restart in every store.
+--
+-- A TABLE OF ITS OWN BECAUSE RECORDING A USE IS AN ATOMIC CLAIM: `(realm, key)`
+-- is the primary key and the service inserts with ON CONFLICT, so two processes
+-- against this database cannot both accept one assertion. A journalled row in
+-- `sts_minted` would reach another process only after the change log had been
+-- pulled.
+--
+-- NOT SEALED, AND NOTHING IN IT IS A CREDENTIAL: `key` is a SHA-256 of the
+-- format, issuer and identifier, and the assertion itself is never stored.
+-- Times are milliseconds. A database built by an EARLIER copy of this file has
+-- no such table; running this file again as the owner adds it and changes
+-- nothing else.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sts_used_assertions (
+  realm       text   NOT NULL,
+  key         text   NOT NULL,
+  format      text   NOT NULL,
+  used_as     text   NOT NULL,
+  issuer      text   NOT NULL,
+  identifier  text   NOT NULL,
+  client_id   text   NOT NULL DEFAULT '',
+  subject     text   NOT NULL DEFAULT '',
+  state       text   NOT NULL,
+  reservation text   NOT NULL,
+  origin      text   NOT NULL DEFAULT '',
+  used_at     bigint NOT NULL,
+  spent_at    bigint NOT NULL DEFAULT 0,
+  expires_at  bigint NOT NULL,
+  PRIMARY KEY (realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_used_assertions_expiry ON sts_used_assertions (realm, expires_at);
+
+-- THE CLUSTER (2026-09-14, #46): several containers against this one store.
+-- Membership with a heartbeat, named leases with a fencing token, atomic
+-- claims, and the secrets every node must agree on (sealed before they arrive).
+-- Every time is the DATABASE's clock in milliseconds. `cluster/CLAUDE.md`
+-- argues all four; `persistence_postgres.js` holds the statements.
+CREATE TABLE IF NOT EXISTS sts_cluster_nodes (
+  node_id      text   PRIMARY KEY,
+  name         text   NOT NULL DEFAULT '',
+  mode         text   NOT NULL,
+  version      text   NOT NULL DEFAULT '',
+  fingerprint  text   NOT NULL DEFAULT '',
+  started_at   bigint NOT NULL,
+  heartbeat_at bigint NOT NULL,
+  expires_at   bigint NOT NULL,
+  left_at      bigint NOT NULL DEFAULT 0,
+  info         jsonb  NOT NULL DEFAULT '{}'::jsonb);
+
+CREATE INDEX IF NOT EXISTS sts_cluster_nodes_expiry ON sts_cluster_nodes (expires_at);
+
+CREATE TABLE IF NOT EXISTS sts_cluster_leases (
+  name        text   PRIMARY KEY,
+  holder      text   NOT NULL,
+  token       bigint NOT NULL,
+  acquired_at bigint NOT NULL,
+  expires_at  bigint NOT NULL);
+
+CREATE TABLE IF NOT EXISTS sts_cluster_claims (
+  scope       text   NOT NULL,
+  realm       text   NOT NULL,
+  key         text   NOT NULL,
+  reservation text   NOT NULL,
+  origin      text   NOT NULL DEFAULT '',
+  claimed_at  bigint NOT NULL,
+  expires_at  bigint NOT NULL,
+  PRIMARY KEY (scope, realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_cluster_claims_expiry ON sts_cluster_claims (expires_at);
+
+CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
+  name       text   PRIMARY KEY,
+  material   text   NOT NULL,
+  created_by text   NOT NULL DEFAULT '',
+  created_at bigint NOT NULL);
+
+-- A VALUE THAT ONLY GOES UP (#46 section 2): a WebAuthn signature counter and
+-- the last RFC 6238 step spent, advanced by one conditional upsert so a lower
+-- value never overwrites a higher one. `cluster/cluster_counters.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_counters (
+  scope      text   NOT NULL,
+  realm      text   NOT NULL,
+  key        text   NOT NULL,
+  value      bigint NOT NULL,
+  origin     text   NOT NULL DEFAULT '',
+  updated_at bigint NOT NULL,
+  PRIMARY KEY (scope, realm, key));
+
+-- A COUNT INSIDE A FIXED WINDOW (#46 section 2): the rate limiter's buckets,
+-- counted by every node against one budget with one conditional upsert, so
+-- two nodes counting at once never overwrite each other's count.
+-- `cluster/cluster_counters.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_windows (
+  scope          text   NOT NULL,
+  realm          text   NOT NULL,
+  key            text   NOT NULL,
+  count          bigint NOT NULL,
+  window_ends_at bigint NOT NULL,
+  origin         text   NOT NULL DEFAULT '',
+  PRIMARY KEY (scope, realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_cluster_windows_expiry ON sts_cluster_windows (window_ends_at);
+
+-- WHERE EVERY PROCESS READING THE CHANGE LOG HAS GOT TO (#46 section 8): the
+-- low-water mark each coordinating process reports, which `sts_changes` is
+-- trimmed below. `persistence/persistence_replication.js` argues the bound.
+CREATE TABLE IF NOT EXISTS sts_change_readers (
+  origin      text   PRIMARY KEY,
+  node_id     text   NOT NULL DEFAULT '',
+  applied     bigint NOT NULL,
+  started_at  bigint NOT NULL,
+  reported_at bigint NOT NULL);
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -241,7 +360,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (3) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (5) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.
@@ -271,8 +390,32 @@ SELECT format('ALTER ROLE %I LOGIN PASSWORD %L',
 -- one an operator made by hand, or one an earlier run of a different script
 -- made — and inheriting whatever that role happened to have would make the
 -- sentence at the top of this section false without anything failing.
+--
+-- **BUT ONLY A SUPERUSER MAY SAY THREE OF THEM, EVEN TO SAY NO (2026-09-15).**
+-- PostgreSQL 16 and later refuse `NOSUPERUSER`, `NOREPLICATION` and
+-- `NOBYPASSRLS` from a role that is not a superuser — "Only roles with the
+-- SUPERUSER attribute may change the SUPERUSER attribute" — and a managed
+-- database's master user is not one: this file stopped at this statement on
+-- RDS (issue #51), rolling the whole schema back. So a superuser (the compose
+-- stack's database) still sets all five, and anybody else sets the two it may
+-- and then CHECKS the other three rather than skipping them: an existing role
+-- holding any of them fails the run, because a non-superuser cannot take them
+-- away and the sentence at the top of this section would otherwise be false.
 SELECT format('ALTER ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE ' ||
               'NOREPLICATION NOBYPASSRLS', :'sts_app_role')
+WHERE (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+\gexec
+
+SELECT format('ALTER ROLE %I NOCREATEDB NOCREATEROLE', :'sts_app_role')
+WHERE NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+\gexec
+
+SELECT format('DO $check$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles ' ||
+              'WHERE rolname = %L AND (rolsuper OR rolreplication OR ' ||
+              'rolbypassrls)) THEN RAISE EXCEPTION ''sts-schema: the ' ||
+              'application role holds SUPERUSER, REPLICATION or BYPASSRLS, ' ||
+              'which only a superuser can remove''; END IF; END $check$',
+              :'sts_app_role')
 \gexec
 
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I',

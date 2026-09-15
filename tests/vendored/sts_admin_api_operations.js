@@ -16,11 +16,11 @@
 // in a comment is the first thing to go stale. What keeps the claim honest is
 // the LEDGER at the end of the run: every operation the document declares must
 // have been driven by this file, or hold a row in NOT_DRIVEN_HERE saying who
-// drives it and why. Nothing in the mock can answer that about itself. Every POST there
-// calls the same function the console's form posts to, so the two doors cannot
-// drift from each other — but they can both be wrong together, and the
-// arrangement that makes them one implementation is exactly what stops either
-// of them noticing.
+// drives it and why. Nothing in the mock can answer that about itself. Every
+// POST there calls the same function the console's form posts to, so the two
+// doors cannot drift from each other — but they can both be wrong together, and
+// the arrangement that makes them one implementation is exactly what stops
+// either of them noticing.
 //
 // SIX THINGS IT ASSERTS THAT NOTHING ELSE DOES, and the last two are about
 // THIS FILE rather than about the service — they are what stop the four above
@@ -112,17 +112,23 @@ const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_admin_api_operations",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -165,7 +171,9 @@ const SHAPE_REFUSALS = [
 ];
 
 function isShapeRefusal(message) {
+  log.debug("Entering isShapeRefusal().");
   const text = String(message || "");
+  log.debug("Leaving isShapeRefusal().");
   return SHAPE_REFUSALS.some(function (pattern) { return pattern.test(text); });
 }
 
@@ -179,13 +187,17 @@ const NUMBER_WORDS = {
 };
 
 function wordToNumber(word) {
+  log.debug("Entering wordToNumber().");
   const key = String(word || "").toLowerCase();
   if (Object.prototype.hasOwnProperty.call(NUMBER_WORDS, key)) {
+    log.debug("Leaving wordToNumber().");
     return NUMBER_WORDS[key];
   }
   if (/^\d+$/.test(key)) {
+    log.debug("Leaving wordToNumber().");
     return Number(key);
   }
+  log.debug("Leaving wordToNumber().");
   return null;
 }
 
@@ -196,6 +208,8 @@ function wordToNumber(word) {
 // which is a check that then passes for the wrong reason on every two-action
 // resource in the API.
 function splitList(text) {
+  log.debug("Entering splitList().");
+  log.debug("Leaving splitList().");
   return String(text || "")
       .split(/,\s*|\s+and\s+/)
       .map(function (one) { return one.trim(); })
@@ -246,9 +260,11 @@ const ledger = [];
 // write is not evidence about the write — and the query string is dropped
 // because `/logout?user=x` and `/logout` are one resource read two ways.
 function record(method, path, root, accepted) {
+  log.debug("Entering record().");
   ledger.push({ method: method, path: String(path).split("?")[0],
                 scope: root ? "root" : "realm", at: ledger.length + 1,
                 accepted: accepted });
+  log.debug("Leaving record().");
 }
 
 // ---------------------------------------------------------------------------
@@ -359,13 +375,15 @@ async function theRealmRegistryWorks() {
   log.debug("Entering theRealmRegistryWorks().");
   log.info("=== The realm registry (create, update, set, unset) ===");
   const before = await get("/realms", true);
-  assert.strictEqual(before.status, 200, "GET /admin-api/realms should answer 200.");
+  assert.strictEqual(before.status, 200, "GET /admin-api/realms should " +
+                                         "answer 200.");
   assert.strictEqual(before.body.current, "default",
     "called at the root, the realm registry should say the call arrived in " +
     "the default realm; it said " + before.body.current + ". `current` is " +
     "the one member of this reply that differs per prefix and it is what a " +
     "caller uses to know which service it is talking to.");
-  const existing = (before.body.realms || []).map(function (r) { return r.id; });
+  const existing = (before.body.realms || []).map(
+      function (r) { return r.id; });
   assert.ok(existing.indexOf(REALM) < 0,
     "the realm " + REALM + " should not already exist — the id carries this " +
     "run's stamp so that two concurrent runs cannot collide. Found: " +
@@ -387,7 +405,8 @@ async function theRealmRegistryWorks() {
     "the create should name the realm it made.");
 
   const row = await realmRow();
-  assert.ok(row, "the realm should be in GET /admin-api/realms after being created.");
+  assert.ok(row, "the realm should be in GET /admin-api/realms after being " +
+                 "created.");
   assert.strictEqual(row.name, "Management API operations test",
     "the create's `name` should be on the row; it says " + row.name);
   assert.strictEqual(realmSetting(row, "saml2.entityId"),
@@ -467,9 +486,11 @@ async function realmRow() {
 // overrides plus the six seeded onto every realm so that two realms cannot
 // mint assertions their audiences could not tell apart.
 function realmSetting(row, key) {
+  log.debug("Entering realmSetting().");
   const one = ((row && row.settings) || []).filter(function (setting) {
     return setting && setting.key === key;
   })[0];
+  log.debug("Leaving realmSetting().");
   return one ? one.value : undefined;
 }
 
@@ -491,6 +512,7 @@ function settingValue(config, key) {
 }
 
 function settingRow(config, key) {
+  log.debug("Entering settingRow().");
   let found;
   (config.groups || []).forEach(function (group) {
     (group.settings || []).forEach(function (setting) {
@@ -499,6 +521,7 @@ function settingRow(config, key) {
       }
     });
   });
+  log.debug("Leaving settingRow().");
   return found;
 }
 
@@ -560,7 +583,8 @@ async function theRefusalSentencesAreHonest(doc) {
     const errors = ((reply.body && reply.body.errors) || []).join(" ");
     assert.strictEqual(reply.status, 400,
       "POST /" + resource + "/__no_such_action__ should be refused 400; it " +
-      "answered " + reply.status + " " + JSON.stringify(reply.body).slice(0, 200));
+      "answered " + reply.status + " " +
+      JSON.stringify(reply.body).slice(0, 200));
     // THREE PHRASINGS, one sentence. The mock writes "The six are: …" on most
     // resources, "There are two: …" where two reads better, and "The actions
     // here are: …" on the three SPIFFE ones — all ordinary English, and all
@@ -621,9 +645,11 @@ async function claimSetIdsPerDoor() {
   log.debug("Entering claimSetIdsPerDoor().");
   const out = {};
   for (const resource of ["claims", "saml-attributes", "userinfo-claims"]) {
-    const probe = await post("/" + resource + "/__no_such_action__", { set: "" });
+    const probe = await post("/" + resource + "/__no_such_action__",
+                             { set: "" });
     const errors = ((probe.body && probe.body.errors) || []).join(" ");
-    const carried = errors.match(/(?:carries|carry|are)\s*(?:are)?:\s*([^.]+)\./);
+    const carried =
+        errors.match(/(?:carries|carry|are)\s*(?:are)?:\s*([^.]+)\./);
     const first = carried ? carried[1].split(",")[0].trim() : "";
     assert.ok(first,
       "/" + resource + " asked with no `set` should name the sets it " +
@@ -656,7 +682,8 @@ function documentedActions(doc) {
     out[resource] = out[resource] || [];
     out[resource].push(action);
   });
-  log.debug("Leaving documentedActions(). " + Object.keys(out).length + " resource(s).");
+  log.debug("Leaving documentedActions(). " + Object.keys(out).length + " " +
+      "resource(s).");
   return out;
 }
 
@@ -702,8 +729,38 @@ function documentedActions(doc) {
 //   * `spiffe/rotate` — it replaces the signing authority for the whole
 //                    process and has no opposite. Exercised once, deliberately,
 //                    in the SPIFFE section.
+//   * `tls/trust/*` (2026-09-12) — the client-certificate truststore is ONE
+//                    array for the process, whatever realm prefix a call
+//                    carries, and every job after this one has its TLS
+//                    handshakes judged against it. The documented examples
+//                    are placeholders a replay would only see refused, and a
+//                    rule that depended on that staying true would be one edit
+//                    to a description away from leaving an anchor behind.
+//                    Exercised in theTruststoreRoundTrips(), with a CA this
+//                    file mints and removes.
 // ---------------------------------------------------------------------------
-const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/];
+//   * `kerberos/principals/*` (2026-09-12) — the KDC is ONE for the process,
+//                    so a service principal created under any realm prefix is
+//                    the DEFAULT realm's, and the documented example names a
+//                    fixed SPN a replay would leave holding a random key for
+//                    every later run to meet as "already holds a stored key".
+//                    Exercised in theKerberosPrincipalsRoundTrip(), with an SPN
+//                    carrying this run's realm id, created and deleted.
+//   * `pki/build-root` (2026-09-13) — it replaces the service Root AND the
+//                    leaf the main port is serving, so every TLS handshake
+//                    this process opens after it is judged against an anchor
+//                    NODE_EXTRA_CA_CERTS no longer holds. This file used to
+//                    replay it in the middle and PASSED ONLY BECAUSE undici
+//                    went on reusing a connection opened before the swap: the
+//                    day the rebuild took long enough for that connection to be
+//                    replaced (three more Issuing CAs per realm, for ACME, EST
+//                    and SCEP), the very next read failed with `unable to get
+//                    local issuer certificate`. Driven LAST now, in
+//                    theRootIsReplacedLast(), whose read-back trusts the new
+//                    anchor explicitly.
+const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
+                          /^\/tls\/trust\//, /^\/kerberos\/principals\//,
+                          /^\/pki\/build-root$/];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
@@ -722,7 +779,8 @@ async function everyDocumentedExampleIsAccepted(doc) {
         operation.requestBody.content &&
         operation.requestBody.content["application/json"] &&
         operation.requestBody.content["application/json"].schema;
-    const example = schema && Array.isArray(schema.examples) && schema.examples[0];
+    const example = schema && Array.isArray(schema.examples) &&
+                    schema.examples[0];
     if (!example) {
       return;
     }
@@ -772,11 +830,12 @@ async function everyDocumentedExampleIsAccepted(doc) {
     "that copies the example gets 400 for ever:\n  " +
     shapeFailures.join("\n  "));
 
-  log.info("[examples] OK — " + rows.length + " documented examples replayed: " +
+  log.info("[examples] OK — " + rows.length +
+           " documented examples replayed: " +
            accepted + " accepted outright and read back through their own " +
-           "resource, " + referent + " refused about a referent they name and " +
-           "this service does not hold, none refused about the shape of the " +
-           "body.");
+           "resource, " + referent + " refused about a referent they name " +
+           "and this service does not hold, none refused about the shape of " +
+           "the body.");
   log.debug("Leaving everyDocumentedExampleIsAccepted().");
 }
 
@@ -812,6 +871,77 @@ async function theResourceReadsBack(path, operationId) {
     "answering JSON: httpJson gave back " + typeof reply.body + " — " +
     String(reply.raw).slice(0, 200));
   log.debug("Leaving theResourceReadsBack().");
+}
+
+// ---------------------------------------------------------------------------
+// THE ROOT IS REPLACED LAST (2026-09-13). See the `pki/build-root` note above
+// REPLAY_HELD_BACK. The documented example is posted with the trust this run
+// started with — the handshake happens before anything is replaced — and the
+// read-back that the ledger requires is made over a connection that trusts
+// the certificate the service serves AFTERWARDS, fetched the way
+// `tools/trust.js` fetches it for every job. Nothing runs after this section
+// but the two ledger checks, which make no request.
+// ---------------------------------------------------------------------------
+function getTrusting(path, anchorPem) {
+  log.debug("Entering getTrusting(). path=" + path);
+  const target = new URL(api + path);
+  return new Promise(function (resolve, reject) {
+    const req = require("https").get({
+      host: target.hostname, port: target.port || 443,
+      path: target.pathname + target.search, ca: anchorPem,
+      agent: false,
+      headers: process.env.STS_ADMIN_API_TOKEN
+        ? { Authorization: "Bearer " + process.env.STS_ADMIN_API_TOKEN } : {}
+    }, function (res) {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", function (chunk) {
+        raw += chunk;
+      });
+      res.on("end", function () {
+        let body = raw;
+        try {
+          body = JSON.parse(raw);
+        } catch (e) {
+          log.debug("Caught in getTrusting(): " + ((e && e.message) || e));
+          // A non-JSON answer is reported by the caller's assertion.
+        }
+        record("GET", path, false, res.statusCode === 200);
+        log.debug("Leaving getTrusting(). status=" + res.statusCode);
+        resolve({ status: res.statusCode, body: body, raw: raw });
+      });
+    });
+    req.on("error", reject);
+  });
+}
+
+async function theRootIsReplacedLast(doc) {
+  log.debug("Entering theRootIsReplacedLast().");
+  log.info("=== The service Root, replaced last ===");
+  const operation = doc.paths["/admin-api/pki/build-root"] &&
+                    doc.paths["/admin-api/pki/build-root"].post;
+  const schema = operation && operation.requestBody &&
+    operation.requestBody.content["application/json"].schema;
+  const example = (schema && schema.examples && schema.examples[0]) || {};
+  const replaced = await post("/pki/build-root", example);
+  assert.ok(replaced.status === 200 && replaced.body &&
+            replaced.body.ok !== false,
+    "POST /pki/build-root with the document's own example should replace " +
+    "the Root; it answered " + replaced.status + " " +
+    JSON.stringify(replaced.body).slice(0, 300));
+  const trust = require(require("path").join(__dirname, "..", "tools",
+                                             "trust.js"));
+  const anchor = await trust.fetchCertificate(base);
+  const reply = await getTrusting("/pki", anchor);
+  assert.strictEqual(reply.status, 200,
+    "GET /pki after the Root was replaced answered " + reply.status + " " +
+    String(reply.raw).slice(0, 200));
+  assert.strictEqual(typeof reply.body, "object",
+    "GET /pki after the Root was replaced stopped answering JSON");
+  log.info("[root] OK — the Root was replaced with the document's example " +
+           "and the resource read back over a connection trusting the " +
+           "anchor the service serves afterwards.");
+  log.debug("Leaving theRootIsReplacedLast().");
 }
 
 // ---------------------------------------------------------------------------
@@ -873,8 +1003,8 @@ async function everyReadAnswersAboutThisRealm(doc) {
     }
   }
   log.info("[reads] OK — " + (paths.length - 2) + " read operations answered " +
-           "200 with a JSON object, and the " + withContainer + " that name a " +
-           "directory container all named " + REALM + "'s.");
+           "200 with a JSON object, and the " + withContainer + " that name " +
+           "a directory container all named " + REALM + "'s.");
   log.debug("Leaving everyReadAnswersAboutThisRealm().");
 }
 
@@ -895,7 +1025,8 @@ async function theApplicationsRegistryRoundTrips() {
   log.info("=== Applications: create, set, add, remove, revoke-registration, " +
            "refresh-metadata, forget ===");
   const form = await get("/applications/new");
-  assert.strictEqual(form.status, 200, "GET /applications/new should answer 200.");
+  assert.strictEqual(form.status, 200, "GET /applications/new should answer " +
+                                       "200.");
   const kinds = (form.body.kinds || []).map(function (k) {
     return typeof k === "string" ? k : k.kind;
   });
@@ -990,7 +1121,8 @@ async function theApplicationsRegistryRoundTrips() {
   const multi = { name: declared.attribute };
 
   await ok("/applications/set",
-    { application: identifier, attribute: single.name, value: "set-by-the-test" },
+    { application: identifier, attribute: single.name,
+      value: "set-by-the-test" },
     "set " + single.name);
   assert.ok(fieldValues(await application(identifier), single.name)
       .indexOf("set-by-the-test") >= 0,
@@ -999,10 +1131,12 @@ async function theApplicationsRegistryRoundTrips() {
     JSON.stringify(fieldValues(await application(identifier), single.name)));
 
   await ok("/applications/add",
-    { application: identifier, attribute: multi.name, value: "https://one.example/cb" },
+    { application: identifier, attribute: multi.name,
+      value: "https://one.example/cb" },
     "added a first value to " + multi.name);
   await ok("/applications/add",
-    { application: identifier, attribute: multi.name, value: "https://two.example/cb" },
+    { application: identifier, attribute: multi.name,
+      value: "https://two.example/cb" },
     "added a second value to " + multi.name);
   let values = fieldValues(await application(identifier), multi.name);
   assert.ok(values.indexOf("https://one.example/cb") >= 0 &&
@@ -1013,7 +1147,8 @@ async function theApplicationsRegistryRoundTrips() {
     multi.name + " holds " + JSON.stringify(values));
 
   await ok("/applications/remove",
-    { application: identifier, attribute: multi.name, value: "https://one.example/cb" },
+    { application: identifier, attribute: multi.name,
+      value: "https://one.example/cb" },
     "removed one value from " + multi.name);
   values = fieldValues(await application(identifier), multi.name);
   assert.ok(values.indexOf("https://one.example/cb") < 0 &&
@@ -1047,19 +1182,70 @@ async function theApplicationsRegistryRoundTrips() {
   // it goes stale in the file that is supposed to catch the schema changing.
   // The whole block is skipped, saying so, if nothing is family-scoped — which
   // is the honest answer when the last such row is removed.
-  const scoped = editable.filter(function (row) {
-    return row.families && row.families.length;
-  })[0];
+  //
+  // **THE ROW IS THE FIRST ONE THAT ACCEPTS THE PROBE VALUE, NOT THE FIRST ROW
+  // (2026-09-13).** This took `[0]` until RFC 9701 put three
+  // family-scoped attributes whose VALUES are checked ahead of
+  // `oauthTokenExchangeRefreshToken` in the table, and `always` is not a JWS
+  // algorithm — so the round trip below failed on the value, and the two
+  // refusals before it passed on the VALUE's refusal rather than the family's,
+  // because both sentences name the attribute. The probe is made on an entry
+  // declared for every family any scoped row names, so the only thing that
+  // can refuse it is the value; the first row that takes `always` is the one
+  // this block drives, and no attribute name is typed here.
+  const PROBE_VALUE = "always";
+  const scopedRows = editable.filter(function (row) {
+    return row.families && row.families.length && row.mode === "set" &&
+      !row.sensitive;
+  });
+  let scoped = null;
+  if (scopedRows.length) {
+    const probeId = identifier + "-scope-probe";
+    const probeFamilies = scopedRows.reduce(function (all, row) {
+      row.families.forEach(function (id) {
+        if (all.indexOf(id) < 0 && families.indexOf(id) >= 0) {
+          all.push(id);
+        }
+      });
+      return all;
+    }, []);
+    await ok("/applications/create",
+             { identifier: probeId, protocols: probeFamilies },
+             "created an entry declared for " + probeFamilies.join(", ") +
+             " to find a family-scoped attribute that takes `" +
+             PROBE_VALUE + "`");
+    for (const row of scopedRows) {
+      const r = await post("/applications/set",
+        { application: probeId, attribute: row.name, value: PROBE_VALUE });
+      if (r.status === 200 && r.body && r.body.ok !== false) {
+        scoped = row;
+        break;
+      }
+    }
+    await ok("/applications/forget", { application: probeId },
+             "forgot the scope probe");
+    assert.ok(scoped,
+      "none of the " + scopedRows.length + " family-scoped attributes (" +
+      scopedRows.map(function (row) { return row.name; }).join(", ") +
+      ") accepted `" + PROBE_VALUE + "` on an entry declared for their " +
+      "families, so the family-scope checks below have no attribute to " +
+      "drive. Either a value rule changed or PROBE_VALUE needs a companion.");
+  }
   if (!scoped) {
-    log.info("[applications] no attribute in the published `editable` table is " +
-             "scoped to a protocol family, so the family-scope checks have " +
-             "nothing to drive. That is a fact about the schema rather than a " +
-             "skip: the rule is still enforced by common/applications.js.");
+    log.info("[applications] no attribute in the published `editable` table " +
+             "is scoped to a protocol family, so the family-scope checks " +
+             "have nothing to drive. That is a fact about the schema rather " +
+             "than a skip: the rule is still enforced by " +
+             "common/applications.js.");
   } else {
     const wrong = families.filter(function (id) {
       return scoped.families.indexOf(id) < 0;
     })[0];
     const right = scoped.families[0];
+    // familyRefusal()'s own opening in common/applications.js. The attribute
+    // NAME alone is not enough: a refusal of the VALUE names it too, and that
+    // is how both refusals below passed for the wrong reason once.
+    const familyRefusal = new RegExp('"' + scoped.name + '" applies to the');
     assert.ok(wrong,
       "every protocol family this service has is one `" + scoped.name + "` " +
       "applies to, so there is no entry the refusal could be provoked on. " +
@@ -1073,8 +1259,12 @@ async function theApplicationsRegistryRoundTrips() {
     const wrongId = identifier + "-" + wrong;
     await refused("/applications/create",
       { identifier: wrongId, protocols: [wrong],
-        fields: (function () { const f = {}; f[scoped.name] = "always"; return f; })() },
-      new RegExp(scoped.name),
+        fields: (function () {
+          const f = {};
+          f[scoped.name] = PROBE_VALUE;
+          return f;
+        })() },
+      familyRefusal,
       "a create putting " + scoped.name + " on an entry declared for " + wrong);
     assert.strictEqual((await application(wrongId)).found, false,
       "the refused create must have made NO entry: `" + wrongId + "` is in " +
@@ -1082,13 +1272,15 @@ async function theApplicationsRegistryRoundTrips() {
       "field — which leaves something that reads as a finished declaration.");
 
     // And a `set` onto an entry that already exists in the wrong family.
-    await ok("/applications/create", { identifier: wrongId, protocols: [wrong] },
+    await ok("/applications/create",
+             { identifier: wrongId, protocols: [wrong] },
              "created an application declared for " + wrong + " alone");
     await refused("/applications/set",
-      { application: wrongId, attribute: scoped.name, value: "always" },
-      new RegExp(scoped.name),
+      { application: wrongId, attribute: scoped.name, value: PROBE_VALUE },
+      familyRefusal,
       "setting " + scoped.name + " on an entry declared for " + wrong);
-    assert.deepStrictEqual(fieldValues(await application(wrongId), scoped.name), [],
+    assert.deepStrictEqual(fieldValues(await application(wrongId), scoped.name),
+      [],
       "and the refusal must have written NOTHING — a refusal that recorded " +
       "the value anyway is the one failure mode a 400 cannot be trusted to " +
       "rule out, since the caller never reads the entry.");
@@ -1108,10 +1300,10 @@ async function theApplicationsRegistryRoundTrips() {
       { application: wrongId, attribute: "appAllowedProtocol", value: right },
       "declared " + right + " on it");
     await ok("/applications/set",
-      { application: wrongId, attribute: scoped.name, value: "always" },
+      { application: wrongId, attribute: scoped.name, value: PROBE_VALUE },
       "set " + scoped.name + " now that " + right + " is declared");
     assert.deepStrictEqual(fieldValues(await application(wrongId), scoped.name),
-      ["always"],
+      [PROBE_VALUE],
       "and it must be readable back off the entry: the refusal is about the " +
       "FAMILY and not about the attribute, so declaring the family has to be " +
       "the whole of what was missing.");
@@ -1124,7 +1316,8 @@ async function theApplicationsRegistryRoundTrips() {
   // ones this API answers most often, so their wording is worth pinning: a
   // caller that gets "which application?" when it sent one has a different
   // problem from one whose application is not here.
-  await refused("/applications/revoke-registration", { application: identifier },
+  await refused("/applications/revoke-registration",
+    { application: identifier },
     /no registration to revoke|has no registration/i,
     "revoking a registration that was never made");
   await refused("/applications/refresh-metadata", { application: identifier },
@@ -1134,7 +1327,8 @@ async function theApplicationsRegistryRoundTrips() {
   await ok("/applications/forget", { application: identifier },
     "forgot the application");
   assert.strictEqual((await application(identifier)).found, false,
-    "after `forget` the entry must be gone from the registry; it is still there.");
+    "after `forget` the entry must be gone from the registry; it is still " +
+    "there.");
 
   log.info("[applications] OK — seven actions round-tripped against the " +
            "entry, both refusal vocabularies read off the service, and " +
@@ -1142,9 +1336,281 @@ async function theApplicationsRegistryRoundTrips() {
   log.debug("Leaving theApplicationsRegistryRoundTrips().");
 }
 
+// ---------------------------------------------------------------------------
+// A RETURN ADDRESS A DEVELOPMENT-MODE REQUEST PUT ON AN ENTRY, CONFIRMED AND
+// DISCARDED (2026-09-12).
+//
+// Development writes the SAML 1.1 `shire` a browser flow names onto the relying
+// party's `samlAssertionConsumerService` and MARKS it on
+// `appReturnAddressObserved`; product refuses a marked address until an
+// operator confirms it. `confirm-address` and `discard-address` are the two
+// operations that decide which way it goes, and neither can be driven with a
+// fixture of this file's own making: the mark is DERIVED, so no write through
+// this API can put one there. The sighting has to come from a PROTOCOL, and it
+// is SAML 1.1's inter-site transfer service because that is the one door that
+// records a return address before it needs a session — one POST, no browser.
+//
+// A POST and not a GET, and that is about the pool rather than the protocol:
+// in `dispatch` mode what counts as a write for read-your-write is the METHOD,
+// so a GET sighting could be answered by a worker the read below has not heard
+// from. The read is POLLED anyway, for the modes with no barrier.
+//
+// **THE PRODUCT HALF IS DRIVEN TOO**, through the ROOT API's realm setting so
+// that this realm's own `/admin-api` is never asked anything while the realm is
+// in product mode. Each probe carries the routing cookie the pool hands out, so
+// the probes that compare "refused" with "accepted" are answered by one worker;
+// and each waits until a probe for an address that was NEVER on the entry is
+// refused, which is what says that worker has the product setting at all.
+// ---------------------------------------------------------------------------
+async function theObservedReturnAddressesAreDecided() {
+  log.debug("Entering theObservedReturnAddressesAreDecided().");
+  log.info("=== Applications: confirm-address and discard-address ===");
+  const rpId = "urn:test:" + REALM + ":observed-rp";
+  const ONE = "https://observed-one.example.test/acs";
+  const TWO = "https://observed-two.example.test/acs";
+  const NEVER = "https://never-registered.example.test/acs";
+  const sso = base + "/realm/" + REALM + "/saml11/sso";
+  const jar = {};
+
+  async function sight(shire) {
+    log.debug("Entering sight().");
+    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+    const cookie = Object.keys(jar)
+                         .map(function (k) { return k + "=" + jar[k]; })
+                         .join("; ");
+    if (cookie) {
+      headers.Cookie = cookie;
+    }
+    const r = await fetch(sso, {
+      method: "POST", redirect: "manual", headers: headers,
+      body: new URLSearchParams({ providerId: rpId, shire: shire,
+                                  TARGET: "https://observed-one.example.test/app" }).toString()
+    });
+    const set = typeof r.headers.getSetCookie === "function" ?
+                r.headers.getSetCookie() : [];
+    set.forEach(function (line) {
+      const pair = String(line).split(";")[0];
+      const at = pair.indexOf("=");
+      if (at > 0) {
+        jar[pair.slice(0, at)] = pair.slice(at + 1);
+      }
+    });
+    log.debug("Leaving sight().");
+    return { status: r.status, text: await r.text() };
+  }
+
+  async function observedOn() {
+    log.debug("Entering observedOn().");
+    const entry = await application(rpId);
+    log.debug("Leaving observedOn().");
+    return { entry: entry,
+             rows: (entry && entry.returnAddressesObserved) || [] };
+  }
+
+  async function until(what, predicate, ms) {
+    log.debug("Entering until().");
+    const deadline = Date.now() + (ms || 8000);
+    let last;
+    while (Date.now() < deadline) {
+      last = await predicate();
+      if (last && last.done) {
+        log.debug("Leaving until().");
+        return last;
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    }
+    assert.fail(what + " did not happen within " + (ms || 8000) + "ms. Last: " +
+                JSON.stringify(last && last.detail).slice(0, 400));
+    log.debug("Leaving until().");
+  }
+
+  // --- the sightings, in DEVELOPMENT --------------------------------------
+  for (const shire of [ONE, TWO]) {
+    const seen = await sight(shire);
+    assert.ok(seen.status < 400,
+      "POST " + sso + " naming shire " + shire + " should be accepted in " +
+      "development (a redirect to the sign-in screen); it " +
+      "answered " + seen.status + " " +
+      seen.text.slice(0, 200));
+  }
+  const both = await until("both sighted addresses marked observed on " + rpId,
+                           async function () {
+    const now = await observedOn();
+    const values = now.rows.map(function (row) { return row.value; });
+    return { done: values.indexOf(ONE) >= 0 && values.indexOf(TWO) >= 0,
+             detail: now.rows, now: now };
+  });
+  both.now.rows.forEach(function (row) {
+    assert.strictEqual(row.attribute, "samlAssertionConsumerService",
+      "an observed row names the attribute the address is on; it said " +
+      row.attribute);
+    assert.ok(row.held === true && row.trusted === true,
+      "in DEVELOPMENT an observed address is on the entry and still trusted " +
+      "— the mode's behaviour is unchanged — and the row should say both; it " +
+      "said " + JSON.stringify(row));
+  });
+  assert.ok(Array.isArray(both.now.entry.returnAddressesObservedShown) &&
+            both.now.entry.returnAddressesObservedPaging &&
+            both.now.entry.returnAddressesObservedPaging.total === both.now.rows.length,
+    "the drill-down should carry the page the console draws its buttons from " +
+    "and its paging, totalling the whole list; it carried " +
+    JSON.stringify(both.now.entry.returnAddressesObservedPaging));
+
+  // A mark is DERIVED: nothing may write one.
+  await refused("/applications/add",
+    { application: rpId, attribute: "appReturnAddressObserved",
+      value: "samlAssertionConsumerService " + NEVER },
+    /appReturnAddressObserved|not editable|DERIVED/i, "writing a provenance " +
+                                                      "mark by hand");
+
+  // --- product refuses the observed address ------------------------------
+  await ok("/realms/set", { id: REALM, key: "global.mode", value: "product" },
+    "put the realm in product mode", true);
+  assert.strictEqual(realmSetting(await realmRow(), "global.mode"), "product",
+    "the realm's registry row should carry global.mode=product after `set`.");
+  try {
+    await until("a product-mode worker refusing an address never on the entry",
+                async function () {
+      const probe = await sight(NEVER);
+      return { done: probe.status === 400, detail: probe.status };
+    }, 15000);
+    const observed = await sight(ONE);
+    assert.strictEqual(observed.status, 400,
+      "in PRODUCT mode the shire development recorded must be refused; it " +
+      "answered " +
+      observed.status);
+    assert.ok(/nobody has confirmed it/.test(observed.text) &&
+              /confirm-address/.test(observed.text),
+      "and the refusal should say the address was learnt in development and " +
+      "how to confirm it, rather than that it is not registered anywhere: " +
+      observed.text.replace(/<[^>]+>/g, " ").slice(0, 400));
+  } finally {
+    await ok("/realms/unset", { id: REALM, key: "global.mode" },
+      "put the realm back in development mode", true);
+  }
+  // Outside the `finally`, because an assertion thrown there would replace
+  // whatever failure got the run into it.
+  assert.notStrictEqual(realmSetting(await realmRow(), "global.mode"),
+    "product",
+    "after `unset` the realm's row must no longer carry global.mode=product.");
+  await until("the realm back in development mode", async function () {
+    const probe = await sight(NEVER);
+    return { done: probe.status < 400, detail: probe.status };
+  }, 15000);
+  // That development probe was itself a sighting, which is the behaviour being
+  // kept: it is discarded below rather than left to read as a real address.
+
+  // --- confirm -----------------------------------------------------------
+  await refused("/applications/confirm-address",
+    { application: rpId, attribute: "samlAssertionConsumerService",
+      value: "https://not-on-the-entry.example.test/acs" },
+    /not marked as observed/, "confirming an address that is not marked");
+  await refused("/applications/confirm-address",
+    { application: rpId, attribute: "oauthPostLogoutRedirectUri", value: ONE },
+    /not a return-address attribute|must be equal to one of the allowed values|attribute/i,
+    "confirming on an attribute that holds no return address");
+  const confirmed = await ok("/applications/confirm-address",
+    { application: rpId, attribute: "samlAssertionConsumerService",
+      value: ONE },
+    "confirmed a development-recorded shire");
+  assert.ok(/confirmed/.test(confirmed.message || ""),
+    "the confirm should say what it did; it said " + confirmed.message);
+  const afterConfirm = await until("the confirm read back", async function () {
+    const now = await observedOn();
+    return { done: now.rows.every(function (row) { return row.value !== ONE; }),
+             detail: now.rows,
+             now: now };
+  });
+  assert.ok(fieldValues(afterConfirm.now.entry,
+                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+    "CONFIRM takes the mark off and KEEPS the address; " + ONE + " is gone " +
+        "from " +
+    JSON.stringify(fieldValues(afterConfirm.now.entry,
+                               "samlAssertionConsumerService")));
+
+  // --- product now believes the confirmed one -----------------------------
+  await ok("/realms/set", { id: REALM, key: "global.mode", value: "product" },
+    "put the realm in product mode again", true);
+  assert.strictEqual(realmSetting(await realmRow(), "global.mode"), "product",
+    "the realm's registry row should carry global.mode=product after the " +
+    "second `set`.");
+  try {
+    await until("a product-mode worker refusing an address never registered",
+                async function () {
+      const probe = await sight("https://still-never.example.test/acs");
+      return { done: probe.status === 400, detail: probe.status };
+    }, 15000);
+    const believed = await sight(ONE);
+    assert.ok(believed.status < 400,
+      "in PRODUCT mode the CONFIRMED shire must be delivered to (a redirect " +
+      "to the sign-in screen), from the same worker that has just refused an " +
+      "unregistered one; it answered " +
+      believed.status + " " +
+      believed.text.replace(/<[^>]+>/g, " ").slice(0, 300));
+  } finally {
+    await ok("/realms/unset", { id: REALM, key: "global.mode" },
+      "put the realm back in development mode", true);
+  }
+  // Outside the `finally`, because an assertion thrown there would replace
+  // whatever failure got the run into it.
+  assert.notStrictEqual(realmSetting(await realmRow(), "global.mode"),
+    "product",
+    "after `unset` the realm's row must no longer carry global.mode=product.");
+  await until("the realm back in development mode", async function () {
+    const probe = await sight(ONE);
+    return { done: probe.status < 400 && (await sight(NEVER)).status < 400,
+             detail: probe.status };
+  }, 15000);
+
+  // --- discard -----------------------------------------------------------
+  await ok("/applications/discard-address",
+    { application: rpId, attribute: "samlAssertionConsumerService",
+      value: TWO },
+    "discarded a development-recorded shire");
+  const afterDiscard = await until("the discard read back", async function () {
+    const now = await observedOn();
+    const acs = fieldValues(now.entry, "samlAssertionConsumerService");
+    return { done:
+               now.rows.every(function (row) { return row.value !== TWO; }) &&
+                   acs.indexOf(TWO) < 0,
+             detail: { rows: now.rows, acs: acs }, now: now };
+  });
+  assert.ok(fieldValues(afterDiscard.now.entry,
+                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+    "a discard takes only the address it named; the confirmed one must still " +
+    "be there");
+  await refused("/applications/discard-address",
+    { application: rpId, attribute: "samlAssertionConsumerService",
+      value: ONE },
+    /not marked as observed/, "discarding a REGISTERED address, which " +
+                              "`remove` is the door for");
+
+  // The probes used to find out which mode a worker was in are sightings too
+  // whenever development answered one, which is the development behaviour this
+  // section is not allowed to change. Every mark they left is discarded, so the
+  // entry left standing in the realm says only what the section meant it to.
+  const leftovers = (await observedOn()).rows;
+  for (const row of leftovers) {
+    await ok("/applications/discard-address",
+      { application: rpId, attribute: row.attribute, value: row.value },
+      "discarded a probe's sighting of " + row.value);
+  }
+  await until("every probe sighting discarded", async function () {
+    const now = await observedOn();
+    return { done: now.rows.length === 0, detail: now.rows };
+  });
+
+  log.info("[applications] OK — two shires recorded in development were " +
+           "marked observed, the first refused in product, confirmed and " +
+           "then delivered to in product, and the second discarded; both " +
+           "operations read back through the drill-down.");
+  log.debug("Leaving theObservedReturnAddressesAreDecided().");
+}
+
 async function application(identifier) {
   log.debug("Entering application(). identifier=" + identifier);
-  const reply = await get("/applications?application=" + encodeURIComponent(identifier));
+  const reply = await get("/applications?application=" +
+                          encodeURIComponent(identifier));
   assert.strictEqual(reply.status, 200,
     "GET /applications?application=… should answer 200 whether or not the " +
     "entry is there; it answered " + reply.status);
@@ -1154,19 +1620,22 @@ async function application(identifier) {
 
 // One attribute's values off an application entry. The reply is FLAT — the
 // entry's members at the top level rather than wrapped in an `application`
-// member the way the WRITES answer — which is the shape tests/sts_applications.js
-// already relies on.
+// member the way the WRITES answer — which is the shape
+// tests/sts_applications.js already relies on.
 //
 // `attributes` is the WHOLE entry and `fields` beside it is the narrower
 // editable subset, so the read goes to `attributes` first: an assertion that
 // looked only at `fields` would report an attribute missing whenever the
 // editable table narrowed, which is a change to a form and not to the entry.
 function fieldValues(entry, attribute) {
+  log.debug("Entering fieldValues().");
   const fields = (entry && (entry.attributes || entry.fields)) || {};
   const held = fields[attribute];
   if (held === undefined || held === null) {
+    log.debug("Leaving fieldValues().");
     return [];
   }
+  log.debug("Leaving fieldValues().");
   return Array.isArray(held) ? held.map(String) : [String(held)];
 }
 
@@ -1230,7 +1699,8 @@ async function aClaimSetBelongsToItsRealm() {
   await ok("/claims/add",
     { set: "access_token", name: claim, value: "yes" },
     "added a custom claim in " + REALM);
-  assert.strictEqual(typedClaim(await claimSet("claims", "access_token"), claim),
+  assert.strictEqual(typedClaim(await claimSet("claims", "access_token"),
+                                claim),
     "yes",
     "the claim should be readable back through this realm's own /claims " +
     "before anything is minted — the token below says what the SIGNER did " +
@@ -1244,12 +1714,20 @@ async function aClaimSetBelongsToItsRealm() {
 
   // The default realm's own token endpoint, which nothing in this section
   // configured.
+  // The client is named for this run: it is created in the DEFAULT realm,
+  // which a run does not clean up, so a fixed name met the previous run's
+  // client — holding the previous run's secret — on a long-lived service.
+  const elsewhereUser = names.usernameFor("stsapi-elsewhere");
+  const elsewhereClient = "claim-realm-elsewhere-" + REALM;
+  await ensureTokenParties(elsewhereUser, elsewhereClient, true);
   const elsewhere = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=password&username=" +
-        encodeURIComponent(names.usernameFor("stsapi-elsewhere")) +
-        "&password=x&client_id=claim-realm-elsewhere&scope=openid"
+    body: "grant_type=password&username=" + encodeURIComponent(elsewhereUser) +
+        "&password=" + encodeURIComponent(MINT_PASSWORD) +
+        "&client_id=" + encodeURIComponent(elsewhereClient) +
+        "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
+        "&scope=openid"
   });
   assert.strictEqual(elsewhere.status, 200,
     "the default realm's token endpoint should still mint a token; it " +
@@ -1275,7 +1753,8 @@ async function aClaimSetBelongsToItsRealm() {
 
   await ok("/claims/remove", { set: "access_token", name: claim },
     "removed the realm's custom claim again");
-  assert.strictEqual(typedClaim(await claimSet("claims", "access_token"), claim),
+  assert.strictEqual(typedClaim(await claimSet("claims", "access_token"),
+                                claim),
     undefined,
     "and it should be gone from this realm's claim set afterwards — the " +
     "restore matters here as much as the change, because this door is not " +
@@ -1293,7 +1772,8 @@ async function setsCarriedBy(door) {
   const errors = ((probe.body && probe.body.errors) || []).join(" ");
   const carried = errors.match(/(?:carries|carry|are)\s*(?:are)?:\s*([^.]+)\./);
   assert.ok(carried,
-    "/" + door + " asked with no `set` should name the sets it carries: " + errors);
+    "/" + door + " asked with no `set` should name the sets it carries: " +
+    errors);
   const sets = splitList(carried[1]);
   log.debug("Leaving setsCarriedBy(). " + sets.join(", "));
   return sets;
@@ -1329,11 +1809,12 @@ async function oneClaimSetRoundTrips(door, set) {
     JSON.stringify(typedClaims(held).map(function (c) { return c.name; })));
   await ok("/" + door + "/remove", { set: set, name: claim + "_b" },
     "removed the second claim again");
-  assert.strictEqual(typedClaim(await claimSet(door, set), claim + "_b"), undefined,
+  assert.strictEqual(typedClaim(await claimSet(door, set), claim + "_b"),
+    undefined,
     "`remove` should take the second claim out too — it is read back for the " +
-    "same reason the first one is: `replace` put both there in one call, so a " +
-    "`remove` that only ever removed the LAST claim would pass a check made " +
-    "against a set with one row in it.");
+    "same reason the first one is: `replace` put both there in one call, so " +
+    "a `remove` that only ever removed the LAST claim would pass a check " +
+    "made against a set with one row in it.");
 
   await ok("/" + door + "/remove", { set: set, name: claim },
     "removed a typed claim from " + set);
@@ -1421,14 +1902,18 @@ async function claimSet(door, set) {
 // the same set and is asserted separately, because the two are different
 // stores in different modules and only one of them was ever per realm.
 function typedClaims(set) {
+  log.debug("Entering typedClaims().");
   const held = (set && set.claims) || [];
+  log.debug("Leaving typedClaims().");
   return Array.isArray(held) ? held : [];
 }
 
 function typedClaim(set, name) {
+  log.debug("Entering typedClaim().");
   const row = typedClaims(set).filter(function (one) {
     return one && one.name === name;
   })[0];
+  log.debug("Leaving typedClaim().");
   return row ? row.value : undefined;
 }
 
@@ -1437,7 +1922,9 @@ function typedClaim(set, name) {
 // in — which the mock deliberately keeps in CATALOGUE order rather than in the
 // order they were ticked, because that order reaches the token.
 function selectedAttributes(set) {
+  log.debug("Entering selectedAttributes().");
   const held = (set && set.attributes) || [];
+  log.debug("Leaving selectedAttributes().");
   return Array.isArray(held) ? held.map(String).slice().sort() : [];
 }
 
@@ -1463,7 +1950,8 @@ async function reservedNameFor(door) {
   const reply = await get("/" + door);
   const reserved = reply.body.reservedJwtClaims || reply.body.reservedNames ||
       reply.body.reserved || [];
-  const out = Array.isArray(reserved) && reserved.length ? String(reserved[0]) : "";
+  const out = Array.isArray(reserved) && reserved.length ? String(reserved[0]) :
+              "";
   log.debug("Leaving reservedNameFor(). " + (out || "(none)"));
   return out;
 }
@@ -1511,9 +1999,18 @@ async function theFederationRegisterRoundTrips() {
 
   const id = "fed-" + names.usernameFor("stsapi-fed").toLowerCase()
       .replace(/[^a-z0-9-]/g, "");
+  // WITH ITS PEER, which the create takes as `peer` (2026-09-12). A
+  // relationship naming no partner identifier is not fully configured in ANY
+  // mode now — `fedPeer` is what a service-provider-side relationship checks an
+  // assertion's issuer against — so a create that left it for `set` below would
+  // be building the half-configured relationship this register exists to
+  // refuse. `set` still drives the attribute afterwards, to a different value.
   const created = await ok("/federation/create", {
-    id: id, name: "Test relationship", role: roles[0], protocol: protocols[0]
+    id: id, name: "Test relationship", role: roles[0], protocol: protocols[0],
+    peer: "urn:partner:" + id
   }, "created a federation relationship");
+  assert.strictEqual((await relationship(id)).peer, "urn:partner:" + id,
+    "the peer given to the create should be on the relationship it made.");
   assert.ok(created.relationship,
     "the create should answer with the relationship it made.");
 
@@ -1570,7 +2067,8 @@ async function theFederationRegisterRoundTrips() {
   // fedSsoUrl gets 200 and a fedSsoUrl set to it. Asserting that here would
   // either lock in the behaviour or fail against the service as it stands, so
   // it is reported rather than encoded.
-  const multiField = ((await relationship(id)).editable || []).filter(function (row) {
+  const multiField = ((await relationship(id)).editable || []).filter(
+      function (row) {
     return row.editable === "multi" && row.name !== "description" &&
         (row.role === "both" || row.role === roles[0]);
   })[0];
@@ -1623,7 +2121,8 @@ async function relationship(id) {
   log.debug("Entering relationship(). id=" + id);
   const reply = await get("/federation?relationship=" + encodeURIComponent(id));
   assert.strictEqual(reply.status, 200,
-    "GET /federation?relationship=… should answer 200; it answered " + reply.status);
+    "GET /federation?relationship=… should answer 200; it answered " +
+    reply.status);
   log.debug("Leaving relationship(). found=" + reply.body.found);
   return reply.body;
 }
@@ -1650,7 +2149,8 @@ async function relationship(id) {
 // ---------------------------------------------------------------------------
 async function theDelegatedPermissionsRoundTrip() {
   log.debug("Entering theDelegatedPermissionsRoundTrip().");
-  log.info("=== Delegated permissions: base, define, remove, grant, revoke ===");
+  log.info("=== Delegated permissions: base, define, remove, grant, revoke " +
+           "===");
 
   const resource = "api-" + names.usernameFor("stsapi-resource");
   const client = "app-" + names.usernameFor("stsapi-client");
@@ -1659,8 +2159,10 @@ async function theDelegatedPermissionsRoundTrip() {
     "created the resource application");
   await ok("/applications/create",
     { identifier: client, name: "Portal", protocols: ["oauth2", "oidc"],
-      fields: { oauthClientId: client } },
-    "created the client application");
+      fields: { oauthClientId: client, oauthClientSecret: MINT_CLIENT_SECRET,
+                oauthTokenEndpointAuthMethod: "client_secret_post" } },
+    "created the client application, with the secret its token request " +
+    "presents");
 
   const base = "https://" + resource + ".example.com/";
 
@@ -1713,9 +2215,10 @@ async function theDelegatedPermissionsRoundTrip() {
     "this service composes. It reported: " +
     written.map(function (one) { return one.id; }).join(", "));
   assert.ok(written.every(function (one) { return !one.grantedTo.length; }),
-    "and NOTHING should hold either of them yet: defining a permission grants " +
-    "it to nobody, which is the ordering this whole feature is built on and " +
-    "is the assertion a handler that quietly granted on define would fail.");
+    "and NOTHING should hold either of them yet: defining a permission " +
+    "grants it to nobody, which is the ordering this whole feature is built " +
+    "on and is the assertion a handler that quietly granted on define would " +
+    "fail.");
 
   // AN APPLICATION CANNOT BE GRANTED ITS OWN PERMISSION — the token would be
   // addressed to itself, and the picture would draw a line from a box back to
@@ -1777,7 +2280,8 @@ async function theDelegatedPermissionsRoundTrip() {
     "is the entry a token request identifies, so it is the entry that has to " +
     "answer whether the request may be honoured.");
   assert.deepStrictEqual(fieldValues(clientEntry, "oauthPermission"), [],
-    "and the client exposes nothing: holding a permission is not defining one.");
+    "and the client exposes nothing: holding a permission is not defining " +
+    "one.");
 
   // -----------------------------------------------------------------------
   // AND THE TOKEN, WHICH IS WHAT ALL OF IT IS FOR.
@@ -1788,7 +2292,8 @@ async function theDelegatedPermissionsRoundTrip() {
   // at the API, because a configuration nothing consults is a configuration
   // that can be perfectly correct and worth nothing.
   // -----------------------------------------------------------------------
-  const minted = await mintPermissionToken(client, [base + "write", base + "read"]);
+  const minted = await mintPermissionToken(client,
+                                           [base + "write", base + "read"]);
   assert.strictEqual(audienceOf(minted.access), base,
     "THE ACCESS TOKEN SHOULD BE AUDIENCED TO THE BASE URI. A client asked " +
     "for two permission identifiers and this is the resource they hang off, " +
@@ -1830,11 +2335,11 @@ async function theDelegatedPermissionsRoundTrip() {
     return one.client === client && one.permissionId === base + "write";
   })[0];
   assert.ok(orphan && orphan.dangling === true,
-    "REMOVING A PERMISSION DOES NOT REVOKE THE GRANTS NAMING IT. They stay on " +
-    "the clients' entries and are reported as DANGLING, because tidying them " +
-    "would be one call writing to entries it did not name — and a grant that " +
-    "silently vanished would be worse than one that is visibly broken. The " +
-    "register said: " + JSON.stringify(orphan));
+    "REMOVING A PERMISSION DOES NOT REVOKE THE GRANTS NAMING IT. They stay " +
+    "on the clients' entries and are reported as DANGLING, because tidying " +
+    "them would be one call writing to entries it did not name — and a grant " +
+    "that silently vanished would be worse than one that is visibly broken. " +
+    "The register said: " + JSON.stringify(orphan));
 
   await ok("/permissions/revoke-permission",
     { client: client, permission: base + "write" },
@@ -1858,20 +2363,23 @@ async function permissionRegister() {
   assert.ok(Array.isArray(reply.body.grants) &&
             Array.isArray(reply.body.permissions),
     "and it should carry both directions of the register.");
-  log.debug("Leaving permissionRegister(). " + reply.body.grants.length + " grant(s).");
+  log.debug("Leaving permissionRegister(). " + reply.body.grants.length + " " +
+      "grant(s).");
   return reply.body;
 }
 
-// A token asked for by PERMISSION rather than by scope name. `client_credentials`
-// rather than the password grant `mintTokens()` uses, because what is being
-// asserted is a property of the SCOPE LIST and there is no reason to involve a
-// person in it.
+// A token asked for by PERMISSION rather than by scope name.
+// `client_credentials` rather than the password grant `mintTokens()` uses,
+// because what is being asserted is a property of the SCOPE LIST and there is
+// no reason to involve a person in it.
 async function mintPermissionToken(client, wanted) {
   log.debug("Entering mintPermissionToken(). client=" + client);
   const body = "grant_type=client_credentials&client_id=" +
-      encodeURIComponent(client) + "&scope=" +
-      encodeURIComponent(wanted.join(" "));
-  const reply = await common.httpJson(base + "/realm/" + REALM + "/oauth2/token", {
+      encodeURIComponent(client) +
+      "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
+      "&scope=" + encodeURIComponent(wanted.join(" "));
+  const reply = await common.httpJson(base + "/realm/" + REALM +
+                                      "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body
@@ -1885,10 +2393,14 @@ async function mintPermissionToken(client, wanted) {
 
 // The `aud` as ONE value. RFC 7519 section 4.1.3 allows a string or an array,
 // and this service sends an array when a token is addressed to more than one
-// party — which an `openid` token asking for a permission is. The permission's
-// base URI is the one being asserted about, so the others are not an error.
+// party — several RFC 8707 resources, for instance. (An `openid` token asking
+// for a permission was one until 2026-09-13; RFC 9068 made it a token for the
+// permission's API alone.) The permission's base URI is the one being asserted
+// about, so any others are not an error.
 function audienceOf(jwt) {
+  log.debug("Entering audienceOf().");
   const aud = claimOf(jwt, "aud");
+  log.debug("Leaving audienceOf().");
   return Array.isArray(aud) ? aud[0] : aud;
 }
 
@@ -1903,11 +2415,11 @@ async function theSamlRegistriesRoundTrip() {
   log.debug("Entering theSamlRegistriesRoundTrip().");
   log.info("=== SAML 2.0 (four actions) and SAML 1.1 (one) ===");
   const sp = "urn:test:" + REALM + ":sp";
-  // **`acs` USED TO BE IN THIS BODY AND WAS ALWAYS IGNORED (removed 2026-09-06).**
-  // `saml2Action()`'s register branch reads `sp` and nothing else, there is no
-  // action on this resource that sets an assertion consumer service, and no
-  // assertion below ever looked for one — so the member did nothing from the
-  // day it was written and this job passed regardless.
+  // **`acs` USED TO BE IN THIS BODY AND WAS ALWAYS IGNORED (removed
+  // 2026-09-06).** `saml2Action()`'s register branch reads `sp` and nothing
+  // else, there is no action on this resource that sets an assertion consumer
+  // service, and no assertion below ever looked for one — so the member did
+  // nothing from the day it was written and this job passed regardless.
   //
   // It was found by ENFORCING the operation's own schema: every action here
   // declares a `requestBody` with `additionalProperties: false`, the OpenAPI
@@ -1944,7 +2456,8 @@ async function theSamlRegistriesRoundTrip() {
   await ok("/saml2/set-logout-service",
     { sp: sp, value: "https://sp.example/slo" },
     "added a single logout service");
-  assert.ok(JSON.stringify(await serviceProvider(sp)).indexOf("https://sp.example/slo") > 0,
+  assert.ok(JSON.stringify(await serviceProvider(sp))
+                .indexOf("https://sp.example/slo") > 0,
     "the logout service should be readable back off the service provider.");
   await ok("/saml2/remove-logout-service",
     { sp: sp, value: "https://sp.example/slo" },
@@ -2026,11 +2539,14 @@ async function theAuthorizationServerProfilesRoundTrip() {
   // real field rather than dropped, because exercising it is the point.
   await ok("/authorization-servers/create", { id: id, label: "Test profile" },
     "created an authorization server profile");
-  assert.ok(await profile(id), "the profile should be in the list after create.");
+  assert.ok(await profile(id),
+            "the profile should be in the list after create.");
 
-  await ok("/authorization-servers/set", { id: id, member: member, value: "S256" },
+  await ok("/authorization-servers/set",
+    { id: id, member: member, value: "S256" },
     "set a metadata member");
-  assert.ok(JSON.stringify((await profile(id)).overrides || {}).indexOf("S256") > 0,
+  assert.ok(JSON.stringify((await profile(id)).overrides || {})
+                .indexOf("S256") > 0,
     "`set` should put the value in the profile's overrides; they are " +
     JSON.stringify((await profile(id)).overrides));
 
@@ -2053,7 +2569,8 @@ async function theAuthorizationServerProfilesRoundTrip() {
     "reset a metadata member");
   const reset = await profile(id);
   assert.ok((reset.removed || []).indexOf(member) < 0 &&
-            !Object.prototype.hasOwnProperty.call(reset.overrides || {}, member),
+            !Object.prototype.hasOwnProperty.call(reset.overrides || {},
+                                                  member),
     "`reset` should undo both — neither overridden nor removed. It reads " +
     JSON.stringify({ overrides: reset.overrides, removed: reset.removed }));
 
@@ -2086,7 +2603,8 @@ async function profile(id) {
 // ---------------------------------------------------------------------------
 async function theCredentialResourcesRoundTrip() {
   log.debug("Entering theCredentialResourcesRoundTrip().");
-  log.info("=== Credential claims and the verifier request: five actions each ===");
+  log.info("=== Credential claims and the verifier request: five actions " +
+           "each ===");
 
   const claims = await get("/credential-claims");
   const catalogue = (claims.body.attributes || []).map(function (row) {
@@ -2103,11 +2621,13 @@ async function theCredentialResourcesRoundTrip() {
 
   await ok("/credential-claims/add", { name: catalogue[1] },
     "added a credential claim");
-  assert.ok((await get("/credential-claims")).body.selected.indexOf(catalogue[1]) >= 0,
+  assert.ok((await get("/credential-claims")).body.selected.indexOf(
+      catalogue[1]) >= 0,
     "`add` should put it in.");
   await ok("/credential-claims/remove", { name: catalogue[1] },
     "removed a credential claim");
-  assert.ok((await get("/credential-claims")).body.selected.indexOf(catalogue[1]) < 0,
+  assert.ok((await get("/credential-claims")).body.selected.indexOf(
+      catalogue[1]) < 0,
     "`remove` should take it out.");
 
   await refused("/credential-claims/add", { name: "no_such_attribute_at_all" },
@@ -2149,7 +2669,8 @@ async function theCredentialResourcesRoundTrip() {
     return typeof f === "string" ? f : f.id;
   }).filter(Boolean);
   assert.ok(formats.length > 1,
-    "GET /verifier-request should publish the formats `format` chooses between.");
+    "GET /verifier-request should publish the formats `format` chooses " +
+    "between.");
   const startingFormat = request.body.format;
 
   await ok("/verifier-request/select", { claims: ["given_name"] },
@@ -2159,7 +2680,8 @@ async function theCredentialResourcesRoundTrip() {
     "`select` should REPLACE the whole request rather than add to it — it is " +
     "what a form's save posts, so a partial application leaves a verifier " +
     "asking for claims nobody ticked.");
-  await ok("/verifier-request/add", { name: "not_a_claim_anything_here_issues" },
+  await ok("/verifier-request/add",
+    { name: "not_a_claim_anything_here_issues" },
     "ASKED FOR A CLAIM NOTHING HERE ISSUES, which this resource must ALLOW. " +
     "A verifier that could only ask for claims the issuer beside it happens " +
     "to mint could never test what a wallet does with a request it cannot " +
@@ -2167,7 +2689,8 @@ async function theCredentialResourcesRoundTrip() {
   assert.ok((await get("/verifier-request")).body.requested
       .indexOf("not_a_claim_anything_here_issues") >= 0,
     "and the unsatisfiable claim should really be in the request.");
-  await ok("/verifier-request/remove", { name: "not_a_claim_anything_here_issues" },
+  await ok("/verifier-request/remove",
+    { name: "not_a_claim_anything_here_issues" },
     "removed it again");
   assert.ok((await get("/verifier-request")).body.requested
       .indexOf("not_a_claim_anything_here_issues") < 0,
@@ -2175,7 +2698,8 @@ async function theCredentialResourcesRoundTrip() {
     "accepts a claim nothing here issues, so nothing else would ever fail if " +
     "`remove` quietly kept it.");
 
-  const other = formats.filter(function (f) { return f !== startingFormat; })[0];
+  const other =
+      formats.filter(function (f) { return f !== startingFormat; })[0];
   await ok("/verifier-request/format", { format: other }, "changed the format");
   assert.strictEqual((await get("/verifier-request")).body.format, other,
     "`format` should change which credential format the request asks for.");
@@ -2196,7 +2720,8 @@ async function theCredentialResourcesRoundTrip() {
   // `defaults` had failed to restore it.
   await ok("/verifier-request/format", { format: startingFormat },
     "put the format back");
-  assert.strictEqual((await get("/verifier-request")).body.format, startingFormat,
+  assert.strictEqual((await get("/verifier-request")).body.format,
+    startingFormat,
     "and the format should be back where this section found it.");
 
   log.info("[credentials] OK — both resources' five actions round-tripped, " +
@@ -2223,11 +2748,14 @@ async function theSpiffeDoorsRoundTrip() {
   const before = await get("/spiffe");
   assert.strictEqual(before.status, 200, "GET /spiffe should answer 200.");
   const trustDomain = before.body.trustDomain;
-  assert.ok(trustDomain, "GET /spiffe should name the trust domain it issues for.");
+  assert.ok(trustDomain, "GET /spiffe should name the trust domain it issues " +
+                         "for.");
   const sequenceBefore = Number((before.body.bundle || {}).sequence || 0);
 
   const spiffeId = "spiffe://" + trustDomain + "/test/" +
-      names.usernameFor("stsapi-spiffe").toLowerCase().replace(/[^a-z0-9-]/g, "");
+      names.usernameFor("stsapi-spiffe")
+           .toLowerCase()
+           .replace(/[^a-z0-9-]/g, "");
   const created = await ok("/spiffe/entries/create", {
     spiffeId: spiffeId,
     parentId: "spiffe://" + trustDomain + "/spire/agent/test",
@@ -2252,7 +2780,8 @@ async function theSpiffeDoorsRoundTrip() {
   await ok("/spiffe/entries/update",
     { entry: entryId, field: "hint", value: "changed-by-the-test" },
     "updated one field of the registration entry");
-  const updated = (await get("/spiffe/entries")).body.entries.filter(function (row) {
+  const updated = (await get("/spiffe/entries")).body.entries.filter(
+      function (row) {
     return row.id === entryId;
   })[0];
   assert.ok(updated && String(updated.hint) === "changed-by-the-test",
@@ -2280,7 +2809,8 @@ async function theSpiffeDoorsRoundTrip() {
   // reach — and it must name the AGENT rather than the field, because a body
   // carrying `agent` and getting "which agent?" would mean the document and
   // the handler disagree about the name.
-  const noAgent = "spiffe://" + trustDomain + "/spire/agent/nothing-attested-here";
+  const noAgent = "spiffe://" + trustDomain +
+                  "/spire/agent/nothing-attested-here";
   for (const action of ["ban", "unban", "delete"]) {
     await refused("/spiffe/agents/" + action, { agent: noAgent },
       /No agent has the id/i,
@@ -2296,11 +2826,13 @@ async function theSpiffeDoorsRoundTrip() {
       bundleEndpointProfile: "https_web",
       document: { keys: [], spiffe_sequence: 1, spiffe_refresh_hint: 300 } },
     "recorded a federated bundle");
-  assert.ok(JSON.stringify((await get("/spiffe")).body).indexOf("other.example") > 0,
+  assert.ok(JSON.stringify((await get("/spiffe")).body)
+                .indexOf("other.example") > 0,
     "the federated trust domain should be readable back off GET /spiffe.");
   await ok("/spiffe/federation-remove", { trustDomain: "other.example" },
     "removed the federated bundle");
-  assert.ok(JSON.stringify((await get("/spiffe")).body).indexOf("other.example") < 0,
+  assert.ok(JSON.stringify((await get("/spiffe")).body)
+                .indexOf("other.example") < 0,
     "and the federated trust domain should be gone from GET /spiffe. A " +
     "bundle left behind is a foreign trust domain this authority goes on " +
     "publishing, which is the one thing in this pair that has a consequence " +
@@ -2310,7 +2842,8 @@ async function theSpiffeDoorsRoundTrip() {
   // process. The bundle's sequence number is what says it really happened —
   // a rotation that answered 200 and changed nothing would leave every
   // previously issued SVID verifying, which is the opposite of what was asked.
-  const rotated = await ok("/spiffe/rotate", {}, "rotated the signing authority");
+  const rotated = await ok("/spiffe/rotate", {},
+                           "rotated the signing authority");
   assert.ok(rotated.ok !== false, "the rotation should report success.");
   const after = await get("/spiffe");
   assert.ok(Number((after.body.bundle || {}).sequence || 0) > sequenceBefore,
@@ -2377,7 +2910,8 @@ async function theTokenDoorsRoundTrip() {
   // revoke-user selects by username, and the assertion that matters is the
   // NEGATIVE one: somebody else's token must still be alive. A bulk operation
   // that revoked everything would pass every check but this.
-  await ok("/tokens/revoke-user", { user: user }, "revoked one person's tokens");
+  await ok("/tokens/revoke-user", { user: user },
+           "revoked one person's tokens");
   assert.strictEqual(await introspectActive(mine.access), false,
     "`revoke-user` should kill that person's token.");
   assert.strictEqual(await introspectActive(theirs.access), true,
@@ -2497,13 +3031,16 @@ async function theIssuedListGroupsByIssuance() {
   assert.ok(mySet.setId,
     "the entry should carry the issuer's own set id, which is what says the " +
     "grouping was STATED rather than guessed from these fields.");
-  assert.ok(mySet.members.every(function (m) { return m.setId === mySet.setId; }),
+  assert.ok(mySet.members.every(function (m) {
+    return m.setId === mySet.setId;
+  }),
     "and every member should carry the same one.");
 
   // The flatten. Every member of every set on this page has to be in `issued`,
   // or a caller written against the older shape is quietly reading less.
   const flatJtis = {};
-  (listed.body.issued || []).forEach(function (row) { flatJtis[row.jti] = true; });
+  (listed.body.issued ||
+   []).forEach(function (row) { flatJtis[row.jti] = true; });
   const missingFromFlat = [];
   listed.body.sets.forEach(function (set) {
     set.members.forEach(function (m) {
@@ -2528,7 +3065,9 @@ async function theIssuedListGroupsByIssuance() {
   })[0];
   assert.ok(found,
     "?kind=id_token should find the set CONTAINING an ID Token.");
-  assert.ok(found.members.some(function (m) { return m.kind === "access_token"; }),
+  assert.ok(found.members.some(function (m) {
+    return m.kind === "access_token";
+  }),
     "AND BRING ITS NEIGHBOURS WITH IT. The access token that came back in " +
     "the same reply is part of that reply; a filter that returned the ID " +
     "Token alone would be the old per-credential list wearing this one's " +
@@ -2550,7 +3089,8 @@ async function theIssuedListGroupsByIssuance() {
     "changed a number in the console would leave every one of these tokens " +
     "alive at the endpoint that matters.");
 
-  const opened = await get("/tokens/set?id=" + encodeURIComponent(mySet.setKey));
+  const opened = await get("/tokens/set?id=" +
+                           encodeURIComponent(mySet.setKey));
   assert.strictEqual(opened.body.found, true,
     "GET /tokens/set should open the set by the key the list gave it.");
   assert.strictEqual(opened.body.set.state, "revoked",
@@ -2617,7 +3157,8 @@ async function theIssuedListGroupsByIssuance() {
   await ok("/tokens/restore-set", { set: assertionSet.setKey },
     "stopped disowning it");
 
-  // The single-credential door, which is what the tokens table draws on the row.
+  // The single-credential door, which is what the tokens table draws on the
+  // row.
   const one = assertionSet.members[0];
   const marked = await ok("/tokens/revoke-artifact", { artifact: one.key },
     "disowned one credential by its row handle");
@@ -2655,12 +3196,71 @@ async function theIssuedListGroupsByIssuance() {
 // grant is used because this service checks no password anywhere and it needs
 // no browser — which is the same reason every other node-only job in this
 // suite reaches for it.
+// ---------------------------------------------------------------------------
+// THE PERSON AND THE CLIENT A TOKEN IS MINTED FOR, CREATED FIRST (2026-09-12).
+//
+// This used to name a person nobody had created and a client nobody had
+// registered, with the username as the password — and it worked because
+// development mode creates both on sight, invents a persona for the person,
+// and checks neither the password nor a client secret. Product mode does none
+// of that. So each party is created through this API before the grant names
+// it: the person with the attributes a real account carries, `invent: false`
+// and a password of at least twelve characters; the client with its identifier,
+// a secret and the method that presents it. Both creates are READ BACK through
+// the resource's own GET straight away, which is this file's rule for every
+// accepted write and what keeps the ledger's pairing check true for them.
+// `root` names the default realm's scope, for the one token minted there.
+// ---------------------------------------------------------------------------
+const MINT_PASSWORD = "admin-api-operations-Passw0rd!-" + REALM;
+const MINT_CLIENT_SECRET = "admin-api-operations-client-secret-" + REALM;
+const mintedParties = {};
+
+async function ensureTokenParties(username, client, root) {
+  log.debug("Entering ensureTokenParties(). username=" + username +
+            ", client=" + client);
+  const scope = root ? "root:" : "realm:";
+  if (!mintedParties[scope + "user:" + username]) {
+    await ok("/users/create", {
+      username: username, invent: false,
+      attributes: { cn: "Operations " + username, givenName: "Operations",
+                    sn: username, displayName: "Operations " + username,
+                    mail: username + "@admin-api-operations.test" },
+      credential: "password", password: MINT_PASSWORD
+    }, "created " + username + " before a token is minted for them", root);
+    const back = await get("/users?user=" + encodeURIComponent(username), root);
+    assert.strictEqual(back.status, 200,
+      "GET /users?user=" + username + " should read the person just created; " +
+      "it answered " + back.status);
+    mintedParties[scope + "user:" + username] = true;
+  }
+  if (!mintedParties[scope + "client:" + client]) {
+    await ok("/applications/create", {
+      identifier: client, name: client, protocols: ["oauth2", "oidc"],
+      fields: { oauthClientId: [client], oauthClientSecret: MINT_CLIENT_SECRET,
+                oauthTokenEndpointAuthMethod: "client_secret_post",
+                oauthGrantType: ["password", "client_credentials",
+                                 "refresh_token"] }
+    }, "registered " + client + " before it asks for a token", root);
+    const back = await get("/applications?application=" +
+                           encodeURIComponent(client), root);
+    assert.strictEqual(back.status, 200,
+      "GET /applications?application=" + client + " should read the client " +
+      "just registered; it answered " + back.status);
+    mintedParties[scope + "client:" + client] = true;
+  }
+  log.debug("Leaving ensureTokenParties().");
+}
+
 async function mintTokens(username, client) {
   log.debug("Entering mintTokens(). username=" + username);
+  await ensureTokenParties(username, client, false);
   const body = "grant_type=password&username=" + encodeURIComponent(username) +
-      "&password=" + encodeURIComponent(username) +
-      "&client_id=" + encodeURIComponent(client) + "&scope=openid";
-  const reply = await common.httpJson(base + "/realm/" + REALM + "/oauth2/token", {
+      "&password=" + encodeURIComponent(MINT_PASSWORD) +
+      "&client_id=" + encodeURIComponent(client) +
+      "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
+      "&scope=openid";
+  const reply = await common.httpJson(base + "/realm/" + REALM +
+                                      "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body
@@ -2691,11 +3291,12 @@ async function mintAssertion(username) {
     '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
     '2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
     '<wsse:UsernameToken><wsse:Username>' + username + '</wsse:Username>' +
-    '<wsse:Password>whatever</wsse:Password></wsse:UsernameToken>' +
-    '</wsse:Security></soap:Header><soap:Body>' +
-    '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/' +
-    'ws-trust/200512"><wst:RequestType>http://docs.oasis-open.org/ws-sx/' +
-    'ws-trust/200512/Issue</wst:RequestType>' +
+    '<wsse:Password>' + MINT_PASSWORD +
+    '</wsse:Password></wsse:UsernameToken></wsse:Security></soap:Header>' +
+    '<soap:Body><wst:RequestSecurityToken ' +
+    'xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
+    '<wst:RequestType>' +
+    'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
     '</wst:RequestSecurityToken></soap:Body></soap:Envelope>';
   const reply = await common.httpJson(base + "/realm/" + REALM + "/sts", {
     method: "POST",
@@ -2711,6 +3312,8 @@ async function mintAssertion(username) {
 }
 
 function subjectOf(tokens) {
+  log.debug("Entering subjectOf().");
+  log.debug("Leaving subjectOf().");
   return tokens.sub;
 }
 
@@ -2718,17 +3321,24 @@ function subjectOf(tokens) {
 // service RECORDED about a token, not whether the token is sound — sts_dpop.js
 // and oauth2_sts_endpoints.js own that question.
 function claimOf(jwt, name) {
+  log.debug("Entering claimOf().");
   if (!jwt) {
+    log.debug("Leaving claimOf().");
     return "";
   }
   const parts = String(jwt).split(".");
   if (parts.length < 2) {
+    log.debug("Leaving claimOf().");
     return "";
   }
   try {
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url")
+                                     .toString("utf8"));
+    log.debug("Leaving claimOf().");
     return payload[name] || "";
   } catch (e) {
+    log.debug("Caught in claimOf(): " + ((e && e.message) || e));
+    log.debug("Leaving claimOf().");
     // A token this service minted is always decodable; a body that is not is
     // worth reporting as an empty claim rather than as a crash, because the
     // assertion that follows says more about what went wrong.
@@ -2738,7 +3348,8 @@ function claimOf(jwt, name) {
 
 async function introspectActive(token) {
   log.debug("Entering introspectActive().");
-  const reply = await common.httpJson(base + "/realm/" + REALM + "/oauth2/introspect", {
+  const reply = await common.httpJson(base + "/realm/" + REALM +
+                                      "/oauth2/introspect", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "token=" + encodeURIComponent(token)
@@ -2769,8 +3380,17 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
   log.debug("Entering theDirectoryAndSignOutDoorsRoundTrip().");
   log.info("=== Users, and the sign-out resource's four actions ===");
   const username = names.usernameFor("stsapi-directory");
-  const created = await ok("/users/create", { username: username },
-    "created a person in the directory");
+  // With the attributes a real account carries, nothing invented, and the
+  // password the token minted for them below presents — see
+  // ensureTokenParties(), which then finds this person already made.
+  const created = await ok("/users/create", {
+    username: username, invent: false,
+    attributes: { cn: "Operations " + username, givenName: "Operations",
+                  sn: username, displayName: "Operations " + username,
+                  mail: username + "@admin-api-operations.test" },
+    credential: "password", password: MINT_PASSWORD
+  }, "created a person in the directory");
+  mintedParties["realm:user:" + username] = true;
   assert.ok(String(created.dn || "").indexOf("dc=" + REALM + ",") > 0,
     "the entry should land in THIS realm's ou=users; its DN is " + created.dn);
   const listedUsers = await get("/users?q=" + encodeURIComponent(username));
@@ -2832,9 +3452,9 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
   assert.ok(!(afterEnd.body.rows || []).some(function (one) {
     return one.id === rows[0].id;
   }), "AND THE THING IT ENDED MUST BE GONE FROM THE VIEW. `end` reports what " +
-      "it terminated in its own reply, which is exactly the account a handler " +
-      "that terminated nothing would also give — so the inventory is read " +
-      "again and the row is looked for by id. It still lists " +
+      "it terminated in its own reply, which is exactly the account a " +
+      "handler that terminated nothing would also give — so the inventory is " +
+      "read again and the row is looked for by id. It still lists " +
       JSON.stringify((afterEnd.body.rows || []).map(function (one) {
         return one.id;
       })));
@@ -2903,14 +3523,379 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
 }
 
 // ---------------------------------------------------------------------------
-// THE ADMIN ROLES, WHICH ARE THE ONE THING HERE THAT IS NOT REALM-SCOPED.
+// THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12): add a freshly minted CA,
+// read it back, remove it, read back its absence — and touch nothing else.
 //
-// The two console roles are ordinary groups in the DEFAULT realm's ou=groups,
-// read there from every realm, and a grant made through
-// /realm/<id>/admin-api/rbac/grant lands there too and says so in its reply.
-// That is deliberate: a role is permission to change what EVERY realm does, so
-// a per-realm roster would mean anybody who can create a realm can make
-// themselves an administrator of the service.
+// **THE TRUSTSTORE IS THE PROCESS'S AND NOT THE REALM'S**, so this is the
+// second section here that works at the ROOT and has to clean up by hand. Every
+// job after this one has its client certificates judged against that array —
+// the remote PEP's among them — so two rules are not optional: the anchor this
+// section adds is removed in a `finally` whatever happened above it, and the
+// only anchor it ever removes is the one it added. It names that anchor by the
+// fingerprint of a CA minted a moment earlier, which nobody else can hold.
+//
+// It also asserts the one refusal the gate is responsible for rather than
+// this resource: a token carrying only `admin:read` may LIST the truststore and
+// may not change it. That is `mgmt-api/admin_api.js`'s middleware, by method,
+// and it is asserted HERE because a truststore anybody with a read token could
+// add to would be `POST /tls/trust` all over again with a credential in front.
+// ---------------------------------------------------------------------------
+function trustFingerprintOf(pem) {
+  log.debug("Entering trustFingerprintOf().");
+  log.debug("Leaving trustFingerprintOf().");
+  return new (require("crypto").X509Certificate)(pem).fingerprint256;
+}
+
+async function trustAnchorsHeld() {
+  log.debug("Entering trustAnchorsHeld().");
+  // `per` at the API's cap: the truststore holds at most 32, so one page is
+  // all of it and a fingerprint cannot hide on page two.
+  const reply = await get("/tls/trust?per=100", true);
+  assert.strictEqual(reply.status, 200,
+    "GET /admin-api/tls/trust should answer 200; it answered " + reply.status +
+    " " + String(reply.raw).slice(0, 300));
+  assert.ok(Array.isArray(reply.body.anchors) && reply.body.installed === true,
+    "the truststore resource should be installed and list `anchors`: " +
+    String(reply.raw).slice(0, 300));
+  log.debug("Leaving trustAnchorsHeld().");
+  return reply;
+}
+
+async function theTruststoreRoundTrips() {
+  log.debug("Entering theTruststoreRoundTrips().");
+  log.info("=== The client-certificate truststore: add, read, remove, read " +
+           "===");
+  const credentials = require("../tools/pep-credential.js");
+  const minted = await credentials.mint({
+    rootSubject: "CN=admin-api-operations truststore " + REALM +
+                 ",O=mock-sts tests",
+    subject: "CN=admin-api-operations-truststore-leaf,O=mock-sts tests" });
+  const mine = trustFingerprintOf(minted.anchorPem);
+  const notMine = trustFingerprintOf(minted.issuing.pem);
+
+  const before = await trustAnchorsHeld();
+  const heldBefore = before.body.anchors.map(function (one) {
+    return one.fingerprint256;
+  });
+  assert.ok(heldBefore.indexOf(mine) < 0,
+    "a CA minted this second is already in the truststore, which cannot " +
+    "happen — the read is reporting something other than the truststore");
+
+  let added = false;
+  try {
+    // A READ TOKEN LISTS AND DOES NOT CHANGE.
+    const tokens = require("../tools/admin-api-token.js");
+    const readOnly = await tokens.tokenFor(base, { scope: "admin:read" });
+    const refusedWrite = await common.httpJson(rootApi + "/tls/trust/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json",
+                 Authorization: "Bearer " + readOnly },
+      body: JSON.stringify({ certificates: minted.anchorPem })
+    });
+    assert.strictEqual(refusedWrite.status, 403,
+      "POST /admin-api/tls/trust/add with a token carrying only admin:read " +
+      "must be refused 403 by the gate; it answered " + refusedWrite.status +
+      " " + String(refusedWrite.raw).slice(0, 300));
+
+    // A BLOCK OPENSSL CANNOT READ IS REFUSED, AND ADDS NOTHING.
+    await refused("/tls/trust/add",
+      { certificates: "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n" +
+                      "-----END CERTIFICATE-----\n" },
+      /could not be read by OpenSSL/,
+      "a PEM block OpenSSL cannot parse", true);
+    // A FINGERPRINT THIS TRUSTSTORE DOES NOT HOLD REMOVES NOTHING.
+    await refused("/tls/trust/remove", { fingerprint: notMine },
+      /holds no anchor/, "a fingerprint the truststore does not hold", true);
+
+    const add = await ok("/tls/trust/add", { certificates: minted.anchorPem },
+                         "added a freshly minted CA", true);
+    added = true;
+    assert.strictEqual(add.added, 1,
+      "the add should report one anchor added: " + JSON.stringify(add));
+    // PERSISTED SINCE 2026-09-12: a service with a directory writes a runtime
+    // anchor to ou=trustAnchors, so the reply says so.
+    assert.strictEqual(add.persisted, true,
+      "the add should say the anchor was written down: " + JSON.stringify(add));
+
+    const afterAdd = await trustAnchorsHeld();
+    const row = afterAdd.body.anchors.filter(function (one) {
+      return one.fingerprint256 === mine;
+    })[0];
+    assert.ok(row && row.source === "runtime" && row.ca === true &&
+              /CN=admin-api-operations truststore/.test(row.subject) &&
+              row.pem.replace(/\s+/g, "") === minted.anchorPem.replace(/\s+/g,
+                                                                       ""),
+      "READ BACK THROUGH GET /admin-api/tls/trust, the CA just added must be " +
+      "listed as a runtime CA carrying its own subject and PEM. It listed: " +
+      JSON.stringify(row || null).slice(0, 400));
+    assert.ok(afterAdd.raw.indexOf("PRIVATE KEY") < 0,
+      "the truststore resource must carry no private key");
+    assert.strictEqual(afterAdd.body.total, heldBefore.length + 1,
+      "exactly one anchor should have been added: " + afterAdd.body.total +
+      " against " + heldBefore.length + " before");
+
+    // THE SAME ARRAY UNDER THIS REALM'S PREFIX: the truststore has no realm.
+    const inRealm = await get("/tls/trust?per=100");
+    assert.ok(inRealm.status === 200 &&
+              inRealm.body.anchors.some(function (one) {
+      return one.fingerprint256 === mine;
+    }), "GET /realm/" + REALM + "/admin-api/tls/trust must list the same " +
+      "anchor — the listeners are shared by every realm, so a realm-scoped " +
+      "truststore would be a filter over something with no realm in it.");
+
+    const dup = await ok("/tls/trust/add", { certificates: minted.anchorPem },
+                         "answered a duplicate add", true);
+    assert.ok(dup.added === 0 && dup.duplicates === 1,
+      "the same CA again must be counted as a duplicate and not added twice: " +
+      JSON.stringify(dup));
+
+    // REMOVED BY THE COLON-FREE SPELLING, which most tools print.
+    const removed = await ok("/tls/trust/remove",
+      { fingerprint: mine.replace(/:/g, "").toLowerCase() },
+      "removed the CA this section added", true);
+    added = false;
+    assert.ok(removed.removed === 1 && removed.removedAnchor &&
+              removed.removedAnchor.fingerprint256 === mine,
+      "the remove should name the anchor it removed: " +
+      JSON.stringify(removed));
+  } finally {
+    if (added) {
+      // THE ONE ANCHOR THIS SECTION ADDED, AND NO OTHER. A failure above must
+      // not leave a CA in a process-wide truststore for every later job.
+      await post("/tls/trust/remove", { fingerprint: mine }, true);
+    }
+  }
+
+  const afterRemove = await trustAnchorsHeld();
+  assert.ok(afterRemove.body.anchors.every(function (one) {
+    return one.fingerprint256 !== mine;
+  }), "READ BACK AFTER THE REMOVE, the CA must be gone from GET " +
+    "/admin-api/tls/trust — a remove that answers ok and leaves the anchor " +
+    "listed is the defect this read exists for.");
+  assert.deepStrictEqual(afterRemove.body.anchors.map(function (one) {
+    return one.fingerprint256;
+  }).sort(), heldBefore.slice().sort(),
+    "the truststore must be exactly what it was before this section: it adds " +
+    "one CA and removes that CA, and touches no anchor anybody else put " +
+    "there.");
+  log.info("[truststore] OK — a minted CA added, read back at the root and " +
+           "under the realm prefix, refused as a duplicate, removed by " +
+           "fingerprint and read back absent; a read-only token was refused " +
+           "the write, and every other anchor was left where it was.");
+  log.debug("Leaving theTruststoreRoundTrips().");
+}
+
+// ---------------------------------------------------------------------------
+// THE STORED KERBEROS KEYS (2026-09-12): create, read, rotate, read, delete,
+// read — and a person's clear, which on a development stack clears nothing.
+//
+// **THE KDC IS THE PROCESS'S**, so this is the third section here that works at
+// the ROOT and cleans up by hand: the service principal it creates is the
+// DEFAULT realm's whatever prefix a call carries, and every later job's
+// Kerberos traffic is answered by the same KDC. The SPN carries this run's
+// realm id, so nobody else holds it, and it is deleted in a `finally`.
+//
+// **THE KEYTAB IS THE ONE PIECE OF KEY MATERIAL THIS API EVER RETURNS**, so the
+// assertions that matter are about where it is NOT: the read of the resource
+// after the create carries no part of it, and the rotate's keytab is a
+// different one at the next kvno. The header is checked to be MIT's 0x0502 and
+// no more — `tests/kerberos_person_keys.js` reads the whole file with an
+// independent parser, in process.
+// ---------------------------------------------------------------------------
+async function kerberosPrincipalsHeld(scopeRoot) {
+  log.debug("Entering kerberosPrincipalsHeld().");
+  const reply = await get("/kerberos/principals?per=100", scopeRoot);
+  assert.strictEqual(reply.status, 200,
+    "GET /admin-api/kerberos/principals should answer 200; it answered " +
+    reply.status + " " + String(reply.raw).slice(0, 300));
+  assert.ok(Array.isArray(reply.body.services) &&
+            Array.isArray(reply.body.people),
+    "the resource should list `services` and `people`: " +
+    String(reply.raw).slice(0, 300));
+  log.debug("Leaving kerberosPrincipalsHeld().");
+  return reply;
+}
+
+async function theKerberosPrincipalsRoundTrip() {
+  log.debug("Entering theKerberosPrincipalsRoundTrip().");
+  log.info("=== Kerberos principals: create, rotate, delete a service key ===");
+  const spn = "HTTP/" + REALM + ".example.com";
+  let created = false;
+  try {
+    await refused("/kerberos/principals/create-service",
+      { spn: "krbtgt/EXAMPLE.COM" }, /ticket-granting key/,
+      "a krbtgt principal", true);
+    await refused("/kerberos/principals/create-service", { spn: "not-an-spn" },
+      /is not a service principal name/, "a one-component name", true);
+    await refused("/kerberos/principals/rotate-service", { spn: spn },
+      /holds no stored key to rotate/, "a rotate of a principal nobody made",
+      true);
+
+    const made = await ok("/kerberos/principals/create-service", { spn: spn },
+                          "created a service principal with a random key",
+                          true);
+    created = true;
+    assert.ok(typeof made.keytab === "string" && made.keytab.length > 100,
+      "create-service must return the keytab, base64: " +
+      JSON.stringify(Object.assign({}, made, { keytab: "(" +
+        String(made.keytab || "").length + " chars)" })));
+    const bytes = Buffer.from(made.keytab, "base64");
+    assert.ok(bytes[0] === 0x05 && bytes[1] === 0x02,
+      "the keytab must be MIT's version 0x0502; it starts " +
+      bytes.subarray(0, 2).toString("hex"));
+    assert.strictEqual(made.trustRealm, "default",
+      "the reply must say the principal is the default trust realm's");
+
+    const afterCreate = await kerberosPrincipalsHeld(true);
+    const row = afterCreate.body.services.filter(function (one) {
+      return one.spn === spn;
+    })[0];
+    assert.ok(row && row.kvno === made.kvno && row.held === true &&
+              row.etypes.length === made.etypes.length,
+      "READ BACK THROUGH GET /admin-api/kerberos/principals, the principal " +
+      "must be listed at the kvno the create returned. It listed: " +
+      JSON.stringify(row || null));
+    assert.ok(afterCreate.raw.indexOf(made.keytab.slice(0, 48)) < 0 &&
+              afterCreate.raw.indexOf("$aesgcm$") < 0,
+      "THE READ MUST CARRY NO KEY MATERIAL: neither the keytab nor a sealed " +
+      "value");
+
+    // THE SAME KDC UNDER THIS REALM'S PREFIX.
+    const inRealm = await kerberosPrincipalsHeld(false);
+    assert.ok(inRealm.body.trustRealm === "default" &&
+              inRealm.body.services.some(function (
+                  one) { return one.spn === spn; }),
+      "GET /realm/" + REALM + "/admin-api/kerberos/principals must list the " +
+      "same principal: the KDC is the process's.");
+
+    await refused("/kerberos/principals/create-service", { spn: spn },
+      /already holds a stored key/, "a second create of the same SPN", true);
+
+    const rotated = await ok("/kerberos/principals/rotate-service",
+                             { spn: spn },
+                             "rotated the service principal", true);
+    assert.ok(rotated.kvno === made.kvno + 1 && rotated.keytab !== made.keytab,
+      "rotate-service must move the kvno up by one and return a NEW keytab: " +
+      made.kvno + " -> " + rotated.kvno);
+    const afterRotate = await kerberosPrincipalsHeld(true);
+    const rotatedRow = afterRotate.body.services.filter(function (one) {
+      return one.spn === spn;
+    })[0];
+    assert.ok(rotatedRow && rotatedRow.kvno === rotated.kvno &&
+              !!rotatedRow.rotatedAt,
+      "READ BACK AFTER THE ROTATE, the listed kvno must be the new one: " +
+      JSON.stringify(rotatedRow || null));
+
+    // PREVIOUS KEY VERSIONS (2026-09-12). The rotate KEPT the version it
+    // replaced — the reply's keytab carries both kvnos and `retained` says
+    // until when — and drop-previous-service-keys ends that window, read back
+    // as an empty `retained` with the current kvno unchanged.
+    assert.ok(Array.isArray(rotated.keytabKvnos) &&
+              rotated.keytabKvnos.join(",") === rotated.kvno + "," +
+                                                made.kvno &&
+              Array.isArray(rotated.retained) &&
+              rotated.retained.length === 1 &&
+              rotated.retained[0].kvno === made.kvno,
+      "rotate-service must keep the previous version and put it in the keytab: " +
+      JSON.stringify({ keytabKvnos: rotated.keytabKvnos,
+                       retained: rotated.retained }));
+    assert.ok(Array.isArray(rotatedRow.retained) &&
+              rotatedRow.retained.length === 1 &&
+              rotatedRow.retained[0].kvno === made.kvno &&
+              !isNaN(Date.parse(rotatedRow.retained[0].expiresAt)) &&
+              afterRotate.raw.indexOf(rotated.keytab.slice(0, 48)) < 0,
+      "READ BACK AFTER THE ROTATE, the row must list the kept version with " +
+      "its expiry and no key " +
+      "material: " + JSON.stringify(rotatedRow.retained || null));
+    const droppedPrevious =
+        await ok("/kerberos/principals/drop-previous-service-keys",
+      { spn:
+          spn }, "dropped the service principal's previous key version", true);
+    assert.ok(droppedPrevious.dropped === 1 &&
+              JSON.stringify(droppedPrevious.kvnos) === JSON.stringify(
+                  [made.kvno]),
+      "drop-previous-service-keys must drop the one kept version: " +
+      JSON.stringify(droppedPrevious));
+    const afterDrop = await kerberosPrincipalsHeld(true);
+    const droppedRow = afterDrop.body.services.filter(function (one) {
+      return one.spn === spn;
+    })[0];
+    assert.ok(droppedRow && droppedRow.kvno === rotated.kvno &&
+              Array.isArray(droppedRow.retained) &&
+              droppedRow.retained.length === 0,
+      "READ BACK AFTER THE DROP, the principal must keep its current kvno " +
+      "and list nothing kept: " + JSON.stringify(droppedRow || null));
+    // AND A SECOND DROP FINDS NOTHING. The list above is the PUBLIC half,
+    // written beside the sealed record; this is the one question over HTTP
+    // whose answer comes from inside the seal, so a drop that cleared the list
+    // and kept the versions is caught here rather than only in process.
+    const droppedAgain =
+        await ok("/kerberos/principals/drop-previous-service-keys",
+      { spn: spn }, "answered a second drop with nothing kept", true);
+    assert.strictEqual(droppedAgain.dropped, 0,
+      "a second drop must find nothing kept — the sealed record itself must " +
+      "have lost the version, not only the " +
+      "list: " + JSON.stringify(droppedAgain));
+    await refused("/kerberos/principals/drop-previous-service-keys",
+      { spn: "HTTP/nobody-" + REALM + ".example.com" },
+      /holds no stored Kerberos key/,
+      "a drop for an SPN with no stored key", true);
+    // A PERSON: nobody on a development stack holds keys, so there is nothing
+    // to drop, and that is a refusal naming why.
+    await refused("/kerberos/principals/drop-previous-person-keys",
+      { username: "alice" }, /holds no stored Kerberos key/,
+      "a drop for a person with no stored keys", true);
+
+    const removed = await ok("/kerberos/principals/delete-service",
+                             { spn: spn },
+                             "deleted the service principal's key", true);
+    created = false;
+    assert.ok(/is gone/.test(String(removed.message)),
+      "the delete should say the key is gone: " + JSON.stringify(removed));
+    const afterDelete = await kerberosPrincipalsHeld(true);
+    assert.ok(afterDelete.body.services.every(function (
+        one) { return one.spn !== spn; }),
+      "READ BACK AFTER THE DELETE, the principal must be gone from the list");
+
+    // A PERSON: nobody on a development stack holds keys, so the clear answers
+    // `cleared: false` rather than a refusal — which is what lets a script
+    // clear on every run — and a name nobody holds is refused.
+    await refused("/kerberos/principals/clear-person-keys",
+      { username: "nobody-" + REALM }, /nobody called/,
+      "a clear for somebody not in the directory", true);
+    const cleared = await ok("/kerberos/principals/clear-person-keys",
+      { username: "alice" }, "answered a clear for a person with no keys",
+      true);
+    assert.strictEqual(cleared.cleared, false,
+      "alice holds no Kerberos keys on a development stack: " +
+      JSON.stringify(cleared));
+    await kerberosPrincipalsHeld(true);
+  } finally {
+    if (created) {
+      await post("/kerberos/principals/delete-service", { spn: spn }, true);
+    }
+  }
+  log.info("[kerberos] OK — a service principal created with a keytab, read " +
+           "back at the root and under the realm prefix with no key " +
+           "material, refused a second create, rotated to the next kvno with " +
+           "the previous version kept in the keytab and the list, that " +
+           "version dropped and read back gone, deleted and read back " +
+           "absent; krbtgt, a one-component name and two drops with nothing " +
+           "stored were refused, and a person's clear answered.");
+  log.debug("Leaving theKerberosPrincipalsRoundTrip().");
+}
+
+// ---------------------------------------------------------------------------
+// THE ADMIN ROLES, A ROSTER PER REALM SINCE 2026-09-14 (#32).
+//
+// The two console roles are ordinary groups in the ou=groups of the realm
+// being read: a grant made through /realm/<id>/admin-api/rbac/grant lands in
+// that realm's directory and says so in its reply, and makes a person an
+// administrator of THAT realm alone. The default realm's roster is the
+// SERVICE roster. Until #32 this section asserted the opposite — every grant
+// landed in the default realm — and it now asserts both halves of the new
+// rule: a realm's grant is in the realm, and it leaves the service roster
+// untouched.
 //
 // Which makes this the one section that must clean up after itself by hand, and
 // the one that can lock every other job out of the console if it does not:
@@ -2936,12 +3921,39 @@ async function theAdminRolesRoundTrip() {
     "the whole of this console's authorization model, and a third would be a " +
     "design change rather than a configuration one. It published " +
     JSON.stringify(rolesAvailable));
-  assert.ok(String(before.body.groupsDn || "").indexOf("dc=" + REALM) < 0,
-    "READ FROM INSIDE " + REALM + ", THE ROSTER MUST STILL BE THE DEFAULT " +
-    "REALM'S. The two roles are one roster for the process on purpose: a " +
-    "role is permission to change what every realm does, so a per-realm " +
-    "roster would let anybody who can create a realm administer the whole " +
-    "service. It named " + before.body.groupsDn);
+  assert.ok(String(before.body.groupsDn || "").indexOf("dc=" + REALM) >= 0,
+    "READ FROM INSIDE " + REALM + ", THE ROSTER IS THAT REALM'S (#32): each " +
+    "realm has administrators of its own, and the default realm's are the " +
+    "service's. It named " + before.body.groupsDn);
+  const serviceBefore = await get("/rbac", true);
+  assert.ok(String(serviceBefore.body.groupsDn || "").indexOf("dc=" + REALM) <
+            0,
+    "and read at the root, the roster is the DEFAULT realm's — the service " +
+    "roster. It named " + serviceBefore.body.groupsDn);
+
+  // EVERY LIST IN THE REPLY IS PAGED (2026-09-13). A directory of thousands
+  // made `candidates` thousands of rows and `roles[].members` every
+  // membership, on every read of the roster.
+  const paged = await get("/rbac?per=1&candidatesPage=999999");
+  assert.strictEqual(paged.status, 200, "GET /rbac?per=1 should answer 200.");
+  const cp = paged.body.candidatesPaging || {};
+  assert.ok(Array.isArray(paged.body.candidates) &&
+            paged.body.candidates.length <= 1 && cp.perPage === 1,
+    "`candidates` should be paged by the shared `per`, answered in " +
+    "`candidatesPaging`; with per=1 it answered " +
+    paged.body.candidates.length + " row(s) and " + JSON.stringify(cp));
+  assert.ok(cp.page === cp.pages && cp.page >= 1,
+    "a `candidatesPage` past the end should be CLAMPED to the last page, " +
+    "as `page` is; it answered " + JSON.stringify(cp));
+  assert.strictEqual((paged.body.candidateSearch || {}).matched, cp.total,
+    "`candidatesPaging.total` should be how many candidates matched.");
+  assert.ok((paged.body.grants || []).length <= 1 && paged.body.perPage === 1,
+    "`grants` should be paged by the same `per`.");
+  assert.ok((paged.body.roles || []).every(function (r) {
+    return r.members === undefined && r.claimed === undefined &&
+           typeof r.memberCount === "number";
+  }), "`roles` should carry each role's counts and NOT its unpaged " +
+      "`members` / `claimed` lists, which are the rows `grants` pages.");
 
   const grantedBefore = before.body.grantCount;
   const subject = names.usernameFor("stsapi-role");
@@ -2956,12 +3968,18 @@ async function theAdminRolesRoundTrip() {
     "a grant should name the group it wrote and the member it added, so a " +
     "caller can reach the same membership through the other three doors. It " +
     "answered " + JSON.stringify(granted).slice(0, 300));
-  assert.ok(String(granted.dn).indexOf("dc=" + REALM) < 0 &&
-            String(granted.member).indexOf("dc=" + REALM) < 0,
-    "A GRANT MADE UNDER A REALM PREFIX MUST LAND IN THE DEFAULT REALM, and " +
-    "the DN in the reply is how it says so — a caller who did not read it " +
-    "would reasonably believe it had made a " + REALM + " administrator. It " +
-    "wrote " + granted.dn + " / " + granted.member);
+  assert.ok(String(granted.dn).indexOf("dc=" + REALM) >= 0 &&
+            String(granted.member).indexOf("dc=" + REALM) >= 0,
+    "A GRANT MADE UNDER A REALM PREFIX LANDS IN THAT REALM (#32), and the DN " +
+    "in the reply is how it says so: it made a " + REALM + " administrator " +
+    "and nothing more. It wrote " + granted.dn + " / " + granted.member);
+  const serviceDuring = await get("/rbac", true);
+  assert.strictEqual(serviceDuring.body.grantCount,
+                     serviceBefore.body.grantCount,
+    "AND THE SERVICE ROSTER IS UNTOUCHED BY IT — a realm's grant that reached " +
+    "the default realm's groups would make a realm's administrator the " +
+    "service's. It reads " + serviceDuring.body.grantCount + " against " +
+    serviceBefore.body.grantCount + " before.");
   assert.strictEqual(granted.changed, true,
     "and it should report that it CHANGED the membership rather than " +
     "finding it already there.");
@@ -2982,8 +4000,8 @@ async function theAdminRolesRoundTrip() {
     "here closes the console for every other job in the run, and the job " +
     "that fails is not this one. It reads " + after.body.grantCount +
     " grant(s) against " + grantedBefore + " before.");
-  log.info("[rbac] OK — grant and revoke round-tripped in the default " +
-           "realm's directory, from inside " + REALM + ", and the roster is " +
+  log.info("[rbac] OK — grant and revoke round-tripped in " + REALM + "'s " +
+           "own roster, the service roster untouched, and the roster is " +
            "back where it started.");
   log.debug("Leaving theAdminRolesRoundTrip().");
 }
@@ -3045,7 +4063,8 @@ async function theConfigurationDoorsRoundTrip(doc) {
   // The same setting at the ROOT, to see the other branch. A caller that only
   // ever drove one of the two would never notice them collapsing into each
   // other, and the persistence section below depends on their being different.
-  const rootBefore = settingRow((await get("/config", true)).body, candidate.key);
+  const rootBefore = settingRow((await get("/config", true)).body,
+                                candidate.key);
   await ok("/config/set", { key: candidate.key, value: wanted + 1 },
     "set the same key at the root", true);
   const rootRow = settingRow((await get("/config", true)).body, candidate.key);
@@ -3057,7 +4076,8 @@ async function theConfigurationDoorsRoundTrip(doc) {
     "AND THE REALM'S VALUE MUST BE UNCHANGED BY IT. A realm override sits " +
     "above the process-wide one, so writing the process's must not reach " +
     "into a realm that has its own — which is the whole of what a realm is.");
-  await ok("/config/reset", { key: candidate.key }, "reset it at the root", true);
+  await ok("/config/reset", { key: candidate.key }, "reset it at the root",
+           true);
   assert.strictEqual(settingRow((await get("/config", true)).body,
       candidate.key).source, rootBefore.source,
     "and the root's row should be back to " + rootBefore.source + ".");
@@ -3082,7 +4102,8 @@ async function theConfigurationDoorsRoundTrip(doc) {
     "set a section with an unknown field in it — which a FORM posts all the " +
     "time, and is why this door ignores it");
   assert.strictEqual(
-    Number(settingRow((await get("/config")).body, candidate.key).value), wanted,
+    Number(settingRow((await get("/config")).body, candidate.key).value),
+    wanted,
     "the known key in that section should have been applied.");
   await ok("/config/reset", { key: candidate.key }, "reset it again");
 
@@ -3101,7 +4122,8 @@ async function theConfigurationDoorsRoundTrip(doc) {
   // ledger at the end of this run exists to keep shut.
   // ---------------------------------------------------------------------
   await ok("/config/set", { key: candidate.key, value: wanted },
-    "set " + candidate.key + " again, so that `reset-all` has something to clear");
+    "set " + candidate.key + " again, so that `reset-all` has something to " +
+                             "clear");
   const cleared = await ok("/config/reset-all", {},
     "cleared this realm's runtime overrides");
   assert.ok((cleared.cleared || []).indexOf(candidate.key) >= 0,
@@ -3207,7 +4229,8 @@ async function aNarrowDoorSetsWhatItAccepts(path) {
   })[0];
   assert.strictEqual(Number(after.value), wanted,
     "`" + path + "/set` should change the value it was given: " + row.key +
-    " was " + row.value + ", was sent " + wanted + ", and reads " + after.value +
+    " was " + row.value + ", was sent " + wanted + ", and reads " +
+    after.value +
     ". This is the door that exists BECAUSE /config/set-many answers 200 and " +
     "changes nothing when it does not recognise a key — so a narrow door " +
     "that did the same would be the defect it was built against, wearing the " +
@@ -3220,7 +4243,8 @@ async function aNarrowDoorSetsWhatItAccepts(path) {
     "root — which is why `overridden`, which is about the process-wide one, " +
     "is still false. It says source=" + after.source + ", overridden=" +
     after.overridden);
-  log.debug("Leaving aNarrowDoorSetsWhatItAccepts(). " + row.key + "=" + wanted);
+  log.debug("Leaving aNarrowDoorSetsWhatItAccepts(). " + row.key + "=" +
+            wanted);
 }
 
 // A narrow door after its `defaults`, read back off the rows it publishes.
@@ -3249,7 +4273,8 @@ async function aNarrowDoorIsBackAtItsDefaults(path) {
     "to put back what it changed, so a `defaults` that answers 200 having " +
     "restored nothing leaves the damage AND the report that it was undone. " +
     "Still set: " + stillSet.join(", "));
-  log.debug("Leaving aNarrowDoorIsBackAtItsDefaults(). " + rows.length + " row(s).");
+  log.debug("Leaving aNarrowDoorIsBackAtItsDefaults(). " + rows.length + " " +
+      "row(s).");
 }
 
 // One narrow door: the names it accepts, checked against the document AND
@@ -3303,7 +4328,8 @@ async function aNarrowDoorRefusesByName(doc, path, goodKey, misspelling) {
       "succeeds, changes nothing, and reports success — and this resource " +
       "exists to give a different one.");
   }
-  log.debug("Leaving aNarrowDoorRefusesByName(). " + handlerKeys.length + " key(s).");
+  log.debug("Leaving aNarrowDoorRefusesByName(). " + handlerKeys.length + " " +
+      "key(s).");
 }
 
 // A setting the table marks restart-only, for the refusal above. Like the one
@@ -3318,7 +4344,8 @@ function restartOnlySetting(table) {
       }
     });
   });
-  log.debug("Leaving restartOnlySetting(). " + (chosen ? chosen.key : "(none)"));
+  log.debug("Leaving restartOnlySetting(). " +
+            (chosen ? chosen.key : "(none)"));
   return chosen;
 }
 
@@ -3365,7 +4392,8 @@ function runtimeIntegerSetting(table) {
       chosen = setting;
     });
   });
-  log.debug("Leaving runtimeIntegerSetting(). " + (chosen ? chosen.key : "(none)"));
+  log.debug("Leaving runtimeIntegerSetting(). " +
+            (chosen ? chosen.key : "(none)"));
   return chosen;
 }
 
@@ -3412,11 +4440,12 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     assert.strictEqual(before.writes, 0,
       "and it must not report having WRITTEN anything, which is the one " +
       "claim that would be actively misleading: a mock that reported writes " +
-      "it never made would send somebody looking for a file that is not there.");
-    log.info("[persistence] The store is OFF (persistence.mode=memory), which " +
-             "is the default and what the containerized stack runs. The " +
-             "value round trip above is asserted; the ON-DISK half is not " +
-             "reachable from here and is asserted in mock-sts's own " +
+      "it never made would send somebody looking for a file that is not " +
+      "there.");
+    log.info("[persistence] The store is OFF (persistence.mode=memory), " +
+             "which is the default and what the containerized stack runs. " +
+             "The value round trip above is asserted; the ON-DISK half is " +
+             "not reachable from here and is asserted in mock-sts's own " +
              "tests/appconfig_persistence.js, which drives the store in " +
              "process against a temporary directory.");
     log.debug("Leaving theConfigurationChangeReachesTheStore(). Store off.");
@@ -3444,29 +4473,33 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     "the persistence status and persistence.coordinate must agree about " +
     "whether this process coordinates. The setting says " +
     JSON.stringify(coordinateSetting) + " and the status says " +
-    before.coordinates + ". Two processes pointed at one database that do NOT " +
-    "coordinate each hold their own directory in memory and never see each " +
-    "other's writes, so a status wrong in either direction is the one sentence " +
-    "somebody deploys against.");
+    before.coordinates + ". Two processes pointed at one database that do " +
+    "NOT coordinate each hold their own directory in memory and never see " +
+    "each other's writes, so a status wrong in either direction is the one " +
+    "sentence somebody deploys against.");
 
   // A process-wide override, then a realm one. They take different branches
-  // and land in different places.
-  await ok("/config/set", { key: candidate.key, value: Number(candidate.value) + 2 },
+  // and land in different places. The counters are compared as SNAPSHOTS —
+  // one status per node — for the reason above settleThenStatus().
+  const beforeWrites = await persistenceSnapshot();
+  await ok("/config/set",
+    { key: candidate.key, value: Number(candidate.value) + 2 },
     "set a process-wide setting to be persisted", true);
-  const afterProcess = await settleThenStatus(before);
-  assert.ok(afterProcess.writes > before.writes,
+  const afterProcess = await settleThenStatus(beforeWrites);
+  const wasProcess = comparable(beforeWrites, afterProcess);
+  assert.ok(afterProcess.writes > wasProcess.writes,
     "A PROCESS-WIDE SETTING CHANGE MUST REACH THE STORE. persistence.mode=" +
     before.mode + " and persistsAppconfig=" + before.persistsAppconfig +
-    ", and the write counter went from " + before.writes + " to " +
+    ", and the write counter went from " + wasProcess.writes + " to " +
     afterProcess.writes + ". The flush is scheduled rather than immediate, " +
     "so this waited for it; a counter that never moves means the override " +
     "store's slot in config.js is not filled.");
-  assert.strictEqual(afterProcess.failures, before.failures,
+  assert.strictEqual(afterProcess.failures, wasProcess.failures,
     "and the write must have SUCCEEDED. A failure is recorded rather than " +
     "thrown here — a mock that refused to start because a database blinked " +
     "would be the one failure mode a mock must not have — so the failure " +
     "counter is the only thing that says it did not work. It went from " +
-    before.failures + " to " + afterProcess.failures + ": " +
+    wasProcess.failures + " to " + afterProcess.failures + ": " +
     afterProcess.lastError);
   assert.strictEqual(afterProcess.pending, false,
     "and nothing should still be waiting to be written.");
@@ -3488,14 +4521,15 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     { id: REALM, key: "saml.issuer", value: "urn:test:" + REALM + ":stored" },
     "set a REALM setting to be persisted", true);
   const afterRealm = await settleThenStatus(beforeRealm);
-  assert.ok(afterRealm.writes > beforeRealm.writes,
+  const wasRealm = comparable(beforeRealm, afterRealm);
+  assert.ok(afterRealm.writes > wasRealm.writes,
     "A REALM'S OVERRIDES MUST REACH THE STORE TOO, and by a different route: " +
     "config.js decides whether an override is a realm's or the process's, " +
     "and persistence.js is TOLD which — a realm's lives on the realm row and " +
     "a process-wide one in the appconfig store, which are two different " +
     "files and two different tables. The counter went from " +
-    beforeRealm.writes + " to " + afterRealm.writes);
-  assert.strictEqual(afterRealm.failures, beforeRealm.failures,
+    wasRealm.writes + " to " + afterRealm.writes);
+  assert.strictEqual(afterRealm.failures, wasRealm.failures,
     "and that write must have succeeded too: " + afterRealm.lastError);
   assert.ok(afterRealm.realmsTracked >= 1,
     "and the store should be tracking at least this realm; it tracks " +
@@ -3511,7 +4545,8 @@ async function theConfigurationChangeReachesTheStore(candidate) {
            (before.dataDir || JSON.stringify(before.database)) + ". A " +
            "process-wide setting change and a realm setting change each " +
            "advanced the write counter with no failure and nothing left " +
-           "pending.");
+           "pending, compared node for node across " + afterRealm.nodes +
+           " node(s).");
   log.debug("Leaving theConfigurationChangeReachesTheStore().");
 }
 
@@ -3519,24 +4554,118 @@ async function theConfigurationChangeReachesTheStore(candidate) {
 // is `writeDelayMs` — the store's own, read off it rather than guessed — plus a
 // margin, and it polls rather than sleeping the whole time so that a fast store
 // does not cost the run a second.
+//
+// **BEHIND A LOAD BALANCER THE COUNTERS ARE EACH NODE'S OWN (2026-09-15, #51).**
+// `writes`, `failures` and `pending` are counted by the process that answers,
+// and with `STS_TEST_CLUSTER_NODES` above one every request may reach a
+// different node — so the AWS cluster run compared node A's counter before
+// with node B's after and reported it going from 2880 to 2393, about a store
+// that had written the setting. A status read is therefore a SNAPSHOT: one
+// status per node, keyed by the instant that node's replication started
+// (`replication.startedAt`, which no two processes share), collected until
+// every node has answered. `writes` and `failures` are SUMMED over the nodes
+// both snapshots saw, so a counter still only ever moves forward and "some
+// node wrote" is "the sum went up"; `pending` is any node's. With one node the
+// snapshot is the one status read and nothing is summed, so a single-node run
+// asserts exactly what it asserted before.
+const CLUSTER_NODES =
+  Math.max(1, Math.floor(Number(process.env.STS_TEST_CLUSTER_NODES) || 1));
+
+async function persistenceSnapshot() {
+  log.debug("Entering persistenceSnapshot().");
+  const byNode = {};
+  if (CLUSTER_NODES === 1) {
+    byNode.self = (await get("/persistence", true)).body.status;
+    log.debug("Leaving persistenceSnapshot(). One node.");
+    return snapshotOf(byNode);
+  }
+  // Each read reaches one node the balancer chose, so reading until every
+  // node has answered takes more reads than there are nodes; the cap turns a
+  // node that never answers into a failure naming how many did.
+  const maxReads = CLUSTER_NODES * 25;
+  for (let i = 0; i < maxReads &&
+       Object.keys(byNode).length < CLUSTER_NODES; i++) {
+    const status = (await get("/persistence", true)).body.status;
+    const key = status && status.replication && status.replication.startedAt;
+    assert.ok(key,
+      "IN THE CLUSTER MODE A PERSISTENCE STATUS MUST SAY WHICH PROCESS " +
+      "ANSWERED, and this one carries no replication.startedAt — so its " +
+      "counters cannot be told apart from another node's. " +
+      JSON.stringify(status && status.replication));
+    byNode[String(key)] = status;
+  }
+  assert.strictEqual(Object.keys(byNode).length, CLUSTER_NODES,
+    "the persistence status should have been answered by all " +
+    CLUSTER_NODES + " node(s) (STS_TEST_CLUSTER_NODES) within " + maxReads +
+    " reads, and only " + Object.keys(byNode).length + " answered: " +
+    Object.keys(byNode).join(", "));
+  log.debug("Leaving persistenceSnapshot(). " + CLUSTER_NODES + " nodes.");
+  return snapshotOf(byNode);
+}
+
+// The figures the assertions read, from a snapshot — summed over the nodes
+// `previous` also saw when it is given, so a node answering only one of the
+// two snapshots is never counted against the other.
+function snapshotOf(byNode, previous) {
+  log.debug("Entering snapshotOf().");
+  const keys = Object.keys(byNode).filter(function (key) {
+    return !previous || Object.prototype.hasOwnProperty.call(previous.byNode,
+                                                             key);
+  });
+  const statuses = keys.map(function (key) { return byNode[key]; });
+  const sum = function (member) {
+    return statuses.reduce(function (total, status) {
+      return total + Number(status[member] || 0);
+    }, 0);
+  };
+  const failing = statuses.filter(function (status) {
+    return status.lastError;
+  });
+  const snapshot = {
+    byNode: byNode,
+    nodes: keys.length,
+    writes: sum("writes"),
+    failures: sum("failures"),
+    pending: statuses.some(function (status) { return !!status.pending; }),
+    lastError: failing.length ? failing[0].lastError : null,
+    realmsTracked: statuses.reduce(function (most, status) {
+      return Math.max(most, Number(status.realmsTracked || 0));
+    }, 0)
+  };
+  log.debug("Leaving snapshotOf().");
+  return snapshot;
+}
+
+// `previous` re-summed over the nodes `current` saw, so the two are compared
+// node for node.
+function comparable(previous, current) {
+  log.debug("Entering comparable().");
+  log.debug("Leaving comparable().");
+  return snapshotOf(previous.byNode, current);
+}
+
 async function settleThenStatus(previous) {
   log.debug("Entering settleThenStatus().");
-  const budget = Math.max(3000, Number(previous.writeDelayMs || 0) * 3);
+  const first = previous.byNode[Object.keys(previous.byNode)[0]];
+  const budget = Math.max(CLUSTER_NODES === 1 ? 3000 : 20000,
+                          Number(first.writeDelayMs || 0) * 3);
   const until = Date.now() + budget;
-  let status = previous;
+  let snapshot = previous;
   while (Date.now() < until) {
     await new Promise(function (resolve) { setTimeout(resolve, 150); });
-    status = (await get("/persistence", true)).body.status;
-    if (!status.pending && status.writes > previous.writes) {
+    const read = await persistenceSnapshot();
+    snapshot = snapshotOf(read.byNode, previous);
+    const was = comparable(previous, snapshot);
+    if (!snapshot.pending && snapshot.writes > was.writes) {
       break;
     }
-    if (status.failures > previous.failures) {
+    if (snapshot.failures > was.failures) {
       break;
     }
   }
-  log.debug("Leaving settleThenStatus(). writes=" + status.writes +
-            ", pending=" + status.pending);
-  return status;
+  log.debug("Leaving settleThenStatus(). writes=" + snapshot.writes +
+            ", pending=" + snapshot.pending);
+  return snapshot;
 }
 
 // ---------------------------------------------------------------------------
@@ -3625,10 +4754,11 @@ function everyDocumentedOperationWasDriven(doc) {
   });
   assert.deepStrictEqual(stale, [],
     "NOT_DRIVEN_HERE names operations this API does not have: " +
-    stale.join(", ") + ". A stale exemption excuses an operation that is gone " +
-    "and says nothing about the one that replaced it.");
+    stale.join(", ") + ". A stale exemption excuses an operation that is " +
+    "gone and says nothing about the one that replaced it.");
 
-  log.info("[ledger] OK — all " + (documented.length - Object.keys(NOT_DRIVEN_HERE).length) +
+  log.info("[ledger] OK — all " +
+           (documented.length - Object.keys(NOT_DRIVEN_HERE).length) +
            " of this API's " + documented.length + " operations were driven " +
            "by this run; the " + Object.keys(NOT_DRIVEN_HERE).length +
            " exempt one(s) are the explorer, which tests/admin_api.js drives.");
@@ -3715,10 +4845,164 @@ function everyAcceptedWriteWasReadBack() {
 // or restarts the mock.
 // ---------------------------------------------------------------------------
 function theThrowawayRealmIsLeftBehind() {
+  log.debug("Entering theThrowawayRealmIsLeftBehind().");
   log.info("[teardown] The throwaway realm " + REALM + " is LEFT IN PLACE on " +
            "purpose, with everything this job created inside it. Read it at " +
            base + "/realm/" + REALM + "/admin, or remove it by hand when you " +
            "are done with it.");
+  log.debug("Leaving theThrowawayRealmIsLeftBehind().");
+}
+
+// ---------------------------------------------------------------------------
+// THE CERTIFICATE DETAILS DOOR (2026-09-13): `GET /certificates`, the list and
+// one certificate with every field and its trust chain — what `/admin/pki` and
+// `/admin/crypto-metadata` open in a dialog.
+//
+// The generic read walk above already asks the list for a 200. What is worth
+// asserting here is what that walk cannot: that a certificate is described
+// WHOLE, that its chain is BUILT and ends at the service Root, that the handle
+// is a fingerprint in either spelling, and that the realm boundary holds — a
+// certificate this realm holds is refused at the default realm's door, which
+// is the dialog's version of `verifyLeaf()`'s rule.
+// ---------------------------------------------------------------------------
+async function theCertificateDetailsAnswer() {
+  log.debug("Entering theCertificateDetailsAnswer().");
+  log.info("=== The certificate details door ===");
+  let list = null;
+  let issuing = null;
+  const deadline = Date.now() + 20000;
+  // The realm's branch is built by a watcher when the realm is created, so it
+  // is waited for rather than assumed.
+  while (Date.now() < deadline) {
+    list = await get("/certificates?per=100");
+    issuing = ((list.body && list.body.certificates) || []).filter(function (
+        row) {
+      return row.appearances.some(function (a) {
+        return /Issuing CA \(realm /.test(a.label);
+      });
+    })[0];
+    if (issuing) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+  }
+  assert.strictEqual(list.status, 200,
+    "GET /certificates should answer the list; it answered " + list.status);
+  assert.ok(list.body.certificates.length > 0 &&
+            list.body.certificates.every(function (row) {
+              return /^[0-9a-f]{64}$/.test(row.fingerprint) &&
+                     row.appearances.length > 0;
+            }),
+    "every row of the certificate list should carry a SHA-256 fingerprint " +
+    "and at least one place it appears: " + String(list.raw).slice(0, 400));
+  assert.ok(String(list.raw).indexOf("PRIVATE KEY") < 0,
+    "the certificate list must carry no private key");
+  const root = list.body.certificates.filter(function (row) {
+    return row.appearances.some(function (a) {
+      return a.label === "Service Root CA";
+    });
+  })[0];
+  assert.ok(root, "the list should include the service Root CA");
+  assert.ok(issuing,
+    "the list should include an Issuing CA of " + REALM + "'s own branch " +
+    "within twenty seconds of the realm being created");
+
+  const rootView = await get("/certificates?certificate=" + root.fingerprint);
+  assert.strictEqual(rootView.status, 200,
+    "the Root's details should answer 200; it answered " + rootView.status +
+    " " + String(rootView.raw).slice(0, 300));
+  const rv = rootView.body;
+  assert.ok(rv.ok && rv.chain.length === 1 && rv.chainStatus === "complete" &&
+            rv.chainTrusted === true && /Root CA/.test(rv.chain[0].anchor),
+    "the Root is a one-link chain that ends at itself, trusted as this " +
+    "service's Root: " + JSON.stringify({ status: rv.chainStatus,
+      trusted: rv.chainTrusted, links: (rv.chain || []).length }));
+  const tbs = rv.certificate.fields.tbsCertificate;
+  assert.ok(tbs.version.value === 3 &&
+            /^[0-9a-f]+$/.test(tbs.serialNumber.hex) &&
+            tbs.subject.attributes.length > 0 &&
+            tbs.subjectPublicKeyInfo.publicKeyOctets > 0 &&
+            rv.certificate.fields.signatureValue.octets > 0 &&
+            rv.certificate.fields.signatureAlgorithmsAgree === true,
+    "the details should carry the tbsCertificate and the signature whole");
+  assert.ok(tbs.extensions.some(function (e) {
+    return e.name === "basicConstraints" && e.critical && e.value.ca === true;
+  }) && tbs.extensions.some(function (e) {
+    return e.name === "keyUsage" && e.value.indexOf("keyCertSign") >= 0;
+  }), "the Root's extensions should be decoded, basicConstraints and " +
+      "keyUsage among them");
+  assert.ok(String(rootView.raw).indexOf("PRIVATE KEY") < 0,
+    "a certificate's details must carry no private key");
+
+  const colons = issuing.fingerprint.toUpperCase().match(/.{2}/g).join(":");
+  const issuingView = await get("/certificates?certificate=" + colons);
+  const iv = issuingView.body;
+  assert.ok(issuingView.status === 200 && iv.ok && iv.chain.length === 3 &&
+            iv.chainTrusted === true &&
+            iv.chain[2].fingerprint === root.fingerprint &&
+            iv.chain.every(function (link) {
+              return link.signatureValid === true;
+            }),
+    "an Issuing CA of this realm, named in the colon-separated upper-case " +
+    "spelling, should build a trusted three-link chain ending at the " +
+    "service Root: " + String(issuingView.raw).slice(0, 400));
+
+  const elsewhere = await get("/certificates?certificate=" +
+                              issuing.fingerprint, true);
+  assert.strictEqual(elsewhere.status, 404,
+    "THE REALM BOUNDARY: an Issuing CA of " + REALM + " should be refused " +
+    "404 at the default realm's door, whose catalogue does not hold another " +
+    "realm's branch; it answered " + elsewhere.status);
+  const malformed = await get("/certificates?certificate=not-a-fingerprint");
+  assert.strictEqual(malformed.status, 400,
+    "a value that is not a SHA-256 fingerprint should be refused 400; it " +
+    "answered " + malformed.status);
+  const unknown = await get("/certificates?certificate=" + "0".repeat(64));
+  assert.ok(unknown.status === 404 &&
+            /No certificate/.test((unknown.body.errors || []).join(" ")),
+    "a fingerprint nothing here holds should be refused 404 by name; it " +
+    "answered " + unknown.status + " " + String(unknown.raw).slice(0, 200));
+  log.info("[certificates] OK — " + list.body.total + " certificate(s) held, " +
+           "the Root and a three-link realm chain described and trusted, and " +
+           "another realm's certificate refused.");
+  log.debug("Leaving theCertificateDetailsAnswer().");
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY LIST SAYS WHICH KEY PAIRS ARE POST-QUANTUM (2026-09-13) — the `pqc`
+// member behind the icon `/admin/keys` draws, so a caller reads the same answer
+// the page shows. Every post-quantum signing key row is marked with its kind
+// and the RSA and curve keys are not, which is the two halves a classifier
+// that marked everything, or nothing, would each get wrong.
+// ---------------------------------------------------------------------------
+async function theKeyListMarksPostQuantumKeys() {
+  log.debug("Entering theKeyListMarksPostQuantumKeys().");
+  log.info("=== The key list marks post-quantum key pairs ===");
+  const reply = await get("/keys");
+  assert.strictEqual(reply.status, 200,
+    "GET /keys should answer 200; it answered " + reply.status);
+  const rows = reply.body.keys || [];
+  const wrong = rows.filter(function (row) {
+    const composite = /^ML-DSA-\d+-(ES\d+|Ed\d+)$/.test(row.alg);
+    const pure = /^(ML-DSA-\d+|SLH-DSA-)/.test(row.alg) && !composite;
+    const kind = row.pqc ? row.pqc.kind : null;
+    return !Object.prototype.hasOwnProperty.call(row, "pqc") ||
+           kind !== (composite ? "composite" : (pure ? "pq" : null));
+  }).map(function (row) {
+    return row.alg + " → " + JSON.stringify(row.pqc);
+  });
+  assert.ok(rows.some(function (row) { return row.pqc; }) &&
+            rows.some(function (row) { return row.pqc === null; }),
+    "the key list should hold both marked and unmarked key pairs: " +
+    String(reply.raw).slice(0, 300));
+  assert.deepStrictEqual(wrong, [],
+    "every key row should carry `pqc` — `pq` for ML-DSA and SLH-DSA, " +
+    "`composite` for the six composites, null for RSA and the curves — and " +
+    "these do not: " + wrong.join("; "));
+  log.info("[keys/pqc] OK — " + rows.filter(function (row) {
+    return row.pqc;
+  }).length + " of " + rows.length + " key pairs marked post-quantum.");
+  log.debug("Leaving theKeyListMarksPostQuantumKeys().");
 }
 
 async function test() {
@@ -3740,6 +5024,7 @@ async function test() {
     await everyDocumentedExampleIsAccepted(doc);
     await everyReadAnswersAboutThisRealm(doc);
     await theApplicationsRegistryRoundTrips();
+    await theObservedReturnAddressesAreDecided();
     await theDelegatedPermissionsRoundTrip();
     await theClaimSetDoorsRoundTrip();
     await theFederationRegisterRoundTrips();
@@ -3751,8 +5036,13 @@ async function test() {
     await theIssuedListGroupsByIssuance();
     await theDirectoryAndSignOutDoorsRoundTrip();
     await theAdminRolesRoundTrip();
+    await theTruststoreRoundTrips();
+    await theCertificateDetailsAnswer();
+    await theKeyListMarksPostQuantumKeys();
+    await theKerberosPrincipalsRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
     await theConfigurationChangeReachesTheStore(candidate);
+    await theRootIsReplacedLast(doc);
     everyDocumentedOperationWasDriven(doc);
     everyAcceptedWriteWasReadBack();
   } finally {

@@ -102,17 +102,23 @@ const ldapjs = require("ldapjs");
 const bulk = require("./bulk_load.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_directory_bulk_load_ldap",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -129,12 +135,41 @@ const SIZES = bulk.SIZES;
 // nothing to do with it.
 const STAMP = bulk.stampFor(process.env.BULK_DOOR || "ldap");
 
-// THE BIND. This directory refuses no bind — any DN, any password, anonymous —
-// which `ldap/CLAUDE.md` argues at length, so this is a name in the audit log
-// rather than a credential. It is bound as a DN so that the row says something
-// a reader can act on.
-const BIND_DN = "cn=" + STAMP.prefix + ",ou=users";
-const BIND_PASSWORD = "not-checked-in-development";
+// THE BIND. In development this directory refuses no bind — any DN, any
+// password, anonymous — which `ldap/CLAUDE.md` argues at length, so this is a
+// name in the audit log rather than a credential. It is bound as a DN so that
+// the row says something a reader can act on.
+//
+// **THE BIND IDENTITY IS A PERSON THIS JOB CREATES FIRST (2026-09-12)**, in
+// `createTheBinder()`, with a real password, and the DN bound is that entry's
+// own — read off the service's containers rather than assembled. It was
+// `cn=<prefix>,ou=users` with a password nothing checked, which only a
+// directory that refuses no bind accepts; product mode verifies a simple bind
+// against the entry's `userPassword`. It is one entry, made after the
+// preflight has raised the ceiling and before anything is timed.
+// Named OUTSIDE this run's `uid=<prefix>-*` so no count of the people it adds
+// can ever include it.
+const BIND_USER = "bulk-" + STAMP.door + "-binder-" + STAMP.run;
+const BIND_PASSWORD = "Bulk-ldap-bind-Passw0rd!-" + STAMP.run;
+let BIND_DN = "";
+
+async function createTheBinder(where) {
+  log.debug("Entering createTheBinder().");
+  const made = await http.postJson(http.api("/users/create"), {
+    username: BIND_USER, invent: false,
+    attributes: { cn: "Bulk Load LDAP Binder", givenName: "Bulk",
+                  sn: "LDAP Binder", displayName: "Bulk Load LDAP Binder",
+                  mail: BIND_USER + "@bulk-load.test" },
+    credential: "password", password: BIND_PASSWORD
+  });
+  assert.ok(made.status === 200 && made.body && made.body.ok &&
+            made.body.passwordSet,
+    "POST /admin-api/users/create should create the bind identity " +
+    BIND_USER + " with a password; it answered " + made.status + " " +
+    JSON.stringify(made.body).slice(0, 300));
+  BIND_DN = String(made.body.dn || ("uid=" + BIND_USER + "," + where.usersDn));
+  log.debug("Leaving createTheBinder(). " + BIND_DN);
+}
 
 var http = bulk.httpFor(base, log);
 var checks = bulk.checker(log);
@@ -143,17 +178,21 @@ const check = checks.check;
 // Where the socket is. See the header: the launchers set this, and the fallback
 // is what a hand-run against `node server.js` gets.
 function ldapUrl() {
+  log.debug("Entering ldapUrl().");
   if (process.env.STS_LDAP_URL) {
+    log.debug("Leaving ldapUrl().");
     return String(process.env.STS_LDAP_URL);
   }
   let host = "localhost";
   try {
     host = new URL(base).hostname || "localhost";
   } catch (e) {
+    log.debug("Caught in ldapUrl(): " + ((e && e.message) || e));
     // An unparseable base is somebody's typo and localhost is the useful
     // guess; the connection error below names both this and the variable.
     host = "localhost";
   }
+  log.debug("Leaving ldapUrl().");
   return "ldap://" + host + ":" + (process.env.STS_LDAP_PORT || 389);
 }
 
@@ -189,6 +228,8 @@ function connect() {
 }
 
 function bindTo(client) {
+  log.debug("Entering bindTo().");
+  log.debug("Leaving bindTo().");
   return new Promise(function (resolve, reject) {
     client.bind(BIND_DN, BIND_PASSWORD, function (e) {
       if (e) {
@@ -205,6 +246,8 @@ function bindTo(client) {
 // five thousand rejections through a try/catch each would be the same code with
 // more of it.
 function addEntry(client, dn, attributes) {
+  log.debug("Entering addEntry().");
+  log.debug("Leaving addEntry().");
   return new Promise(function (resolve) {
     const started = process.hrtime.bigint();
     client.add(dn, attributes, function (e) {
@@ -215,6 +258,8 @@ function addEntry(client, dn, attributes) {
 }
 
 function modifyEntry(client, dn, change) {
+  log.debug("Entering modifyEntry().");
+  log.debug("Leaving modifyEntry().");
   return new Promise(function (resolve) {
     const started = process.hrtime.bigint();
     client.modify(dn, change, function (e) {
@@ -257,6 +302,8 @@ function modifyEntry(client, dn, change) {
 const SEARCH_DEADLINE_MS = Number(process.env.BULK_SEARCH_DEADLINE_MS || 60000);
 
 function searchFor(client, dn, options) {
+  log.debug("Entering searchFor().");
+  log.debug("Leaving searchFor().");
   return new Promise(function (resolve, reject) {
     const found = [];
     let settled = false;
@@ -275,12 +322,15 @@ function searchFor(client, dn, options) {
         "before looking anywhere else."));
     }, SEARCH_DEADLINE_MS);
     function settle(fn, value) {
+      log.debug("Entering settle().");
       if (settled) {
+        log.debug("Leaving settle().");
         return;
       }
       settled = true;
       clearTimeout(deadline);
       fn(value);
+      log.debug("Leaving settle().");
     }
     client.search(dn, options || { scope: "base" }, function (e, res) {
       if (e) {
@@ -317,12 +367,14 @@ function searchFor(client, dn, options) {
 // returns `pojo.attributes` as an array of `{type, values}`; the older `object`
 // shape is a flat map. Both are folded here rather than at three call sites.
 function attributesOf(entry) {
+  log.debug("Entering attributesOf().");
   const out = {};
   if (entry && Array.isArray(entry.attributes)) {
     entry.attributes.forEach(function (attribute) {
       out[String(attribute.type).toLowerCase()] =
         [].concat(attribute.values || attribute.vals || []);
     });
+    log.debug("Leaving attributesOf().");
     return out;
   }
   Object.keys(entry || {}).forEach(function (name) {
@@ -331,10 +383,13 @@ function attributesOf(entry) {
     }
     out[name.toLowerCase()] = [].concat(entry[name]);
   });
+  log.debug("Leaving attributesOf().");
   return out;
 }
 
 function dnOf(entry) {
+  log.debug("Entering dnOf().");
+  log.debug("Leaving dnOf().");
   return String((entry && (entry.objectName || entry.dn)) || "");
 }
 
@@ -359,8 +414,8 @@ async function containers() {
   check("the service names its own containers", function () {
     assert.ok(info.usersDn && info.groupsDn,
       "GET /admin-api/groups did not report usersDn and groupsDn. This job " +
-      "writes DNs beneath them and will not assemble one from ldap.baseDn: an " +
-      "assembled DN that is wrong is refused by the add handler's parent " +
+      "writes DNs beneath them and will not assemble one from ldap.baseDn: " +
+      "an assembled DN that is wrong is refused by the add handler's parent " +
       "check, which reports a missing container rather than a bad guess.");
   });
   log.info("Writing into " + info.usersDn + " and " + info.groupsDn +
@@ -455,7 +510,8 @@ async function createTheGroups(client, where) {
     const reply = await addEntry(client, dn, {
       objectClass: ["top", "groupOfNames"],
       cn: displayName,
-      description: "Created by tests/vendored/sts_directory_bulk_load_ldap.js, " +
+      description: "Created by " +
+                   "tests/vendored/sts_directory_bulk_load_ldap.js, " +
                    "run " + STAMP.run + "."
     });
     watch.lap(reply.ms);
@@ -469,8 +525,8 @@ async function createTheGroups(client, where) {
 
   check("every group was added", function () {
     assert.strictEqual(created.length, SIZES.GROUPS,
-      created.length + " of " + SIZES.GROUPS + " groups were added. The first " +
-      "few refusals were:\n  " + failures.join("\n  "));
+      created.length + " of " + SIZES.GROUPS + " groups were added. The " +
+      "first few refusals were:\n  " + failures.join("\n  "));
   });
 
   const summary = bulk.summaryOf(watch);
@@ -566,7 +622,8 @@ async function itReadsBackWhatItWrote(client, people, groups, catalogue,
   // entries, and that is precisely the failure this is here for.
   const step = Math.max(1, Math.floor(people.length / SIZES.SAMPLE));
   const sampled = [];
-  for (let i = 0; i < people.length && sampled.length < SIZES.SAMPLE; i += step) {
+  for (let i = 0; i < people.length &&
+                  sampled.length < SIZES.SAMPLE; i += step) {
     sampled.push(people[i]);
   }
 
@@ -588,9 +645,9 @@ async function itReadsBackWhatItWrote(client, people, groups, catalogue,
         function () {
     assert.strictEqual(missing, 0,
       missing + " of " + sampled.length + " sampled people could not be read " +
-      "back with an LDAP search at their own DN, spread across the whole run. " +
-      "An add that answered success and stored nothing is the defect that " +
-      "makes every timing above meaningless.");
+      "back with an LDAP search at their own DN, spread across the whole " +
+      "run. An add that answered success and stored nothing is the defect " +
+      "that makes every timing above meaningless.");
     assert.deepStrictEqual(wrongValues, [],
       "and each must carry the uid it was created with.");
   });
@@ -628,8 +685,8 @@ async function itReadsBackWhatItWrote(client, people, groups, catalogue,
   check("a one-level search finds this run's people AND FINISHES", function () {
     assert.ok(subtree.length > 0,
       "a one-level search under the users container for `uid=" + STAMP.prefix +
-      "-*` returned nothing, although " + people.length + " entries were just " +
-      "added there and read back one by one.");
+      "-*` returned nothing, although " + people.length + " entries were " +
+      "just added there and read back one by one.");
     // The deadline in searchFor() is what turns the historical defect into a
     // failure rather than a hang; reaching this line at all is the assertion.
     // This one says what SHAPE of answer arrived, so the log records which of
@@ -691,7 +748,8 @@ async function itReadsBackWhatItWrote(client, people, groups, catalogue,
       }
     });
     assert.deepStrictEqual(wrong, [],
-      "THE ENTRY DOES NOT HOLD WHAT THE ADD WAS SENT:\n  " + wrong.join("\n  "));
+      "THE ENTRY DOES NOT HOLD WHAT THE ADD WAS SENT:\n  " +
+      wrong.join("\n  "));
   });
 
   // EVERY GROUP, over `/admin-api` — because `memberCount`, `presentCount` and
@@ -742,6 +800,7 @@ async function test() {
   const ready = await bulk.preflight({ log: log, assert: assert, http: http,
                                        checks: checks });
   const where = await containers();
+  await createTheBinder(where);
 
   const client = connect();
   try {
@@ -829,7 +888,38 @@ if (program.opts().ldapUrl) {
   process.env.STS_LDAP_URL = String(program.opts().ldapUrl);
 }
 
-test().catch(function (e) {
+// ---------------------------------------------------------------------------
+// A RUN THAT NEVER FINISHED IS A FAILURE, EVEN WHEN NOTHING THREW (2026-09-13).
+//
+// The service this job drives was killed by the heap underneath it — `FATAL
+// ERROR: … JavaScript heap out of memory`, reproduced against a postgres-mode
+// service during the fifty-thousand-entry load — and this job EXITED 0. With
+// `reconnect: false` ldapjs drops the socket and never calls back the `add`
+// that was in flight; nothing else holds the event loop open, so node ran out
+// of work with `test()` still pending, and a pending promise is not a
+// rejection. The last line in the log was `48500/50000 added` and the report
+// would have read green.
+//
+// `beforeExit` is emitted exactly when the loop has emptied, which is the one
+// state a job that completed cannot be in before `finished` is set.
+// ---------------------------------------------------------------------------
+let finished = false;
+process.on("beforeExit", function () {
+  if (finished) {
+    return;
+  }
+  finished = true;
+  log.error("THIS JOB STOPPED WITHOUT FINISHING: the event loop emptied with " +
+            "the test still pending, which is what an LDAP operation looks " +
+            "like when the connection under it is gone and no callback will " +
+            "ever come — most often because the service itself stopped. " +
+            "Read the service log for why before reading anything here.");
+  process.exitCode = 1;
+});
+
+test().then(function () {
+  finished = true;
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

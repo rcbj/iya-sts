@@ -129,17 +129,23 @@ const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_delegated_permissions_example",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -177,9 +183,11 @@ const APPS = [1, 2, 3, 4, 5].map(function (n) {
 // the two-argument operation.
 const PERMISSIONS = [
   { name: "read",
-    description: "Read this application's data on the signed-in person's behalf" },
+    description:
+      "Read this application's data on the signed-in person's behalf" },
   { name: "write",
-    description: "Change this application's data on the signed-in person's behalf" }
+    description: "Change this application's data on the signed-in person's " +
+                 "behalf" }
 ];
 
 // THE RING, AS ONE FUNCTION, and it is the only place in this file that
@@ -192,6 +200,8 @@ const PERMISSIONS = [
 // adding a sixth application to `APPS` extends the ring rather than leaving
 // `abcapp6` outside it — the failure a hand-written pair list invites.
 function successorOf(app) {
+  log.debug("Entering successorOf().");
+  log.debug("Leaving successorOf().");
   return APPS[(APPS.indexOf(app) + 1) % APPS.length];
 }
 
@@ -206,6 +216,8 @@ const SPENDER = APPS[0];
 const SPENT_ON = successorOf(SPENDER);
 
 function permissionId(app, name) {
+  log.debug("Entering permissionId().");
+  log.debug("Leaving permissionId().");
   return app.baseUri + name;
 }
 
@@ -374,19 +386,23 @@ async function createTheFiveApplications() {
       fields: {
         oauthClientId: app.id,
         description: [
-          app.name + " — one of five applications in the delegated permission " +
-          "example. It exposes read and write on " + app.baseUri + " and holds " +
-          "both permissions on " + successorOf(app).id + ", the next one round " +
-          "the ring."
+          app.name + " — one of five applications in the delegated " +
+          "permission example. It exposes read and write " +
+          "on " + app.baseUri + " and " +
+          "holds both permissions " +
+          "on " + successorOf(app).id + ", the next one " +
+          "round the ring."
         ],
         oauthRedirectUri: [
           "https://" + host + "/oauth2/callback",
           "https://" + host + "/oidc/callback"
         ],
         oauthPostLogoutRedirectUri: ["https://" + host + "/signed-out"],
-        oauthFrontchannelLogoutUri: "https://" + host + "/oidc/frontchannel-logout",
+        oauthFrontchannelLogoutUri: "https://" + host +
+                                    "/oidc/frontchannel-logout",
         oauthFrontchannelLogoutSessionRequired: "TRUE",
-        oauthGrantType: ["authorization_code", "refresh_token", "client_credentials"],
+        oauthGrantType: ["authorization_code", "refresh_token",
+                         "client_credentials"],
         oauthResponseType: ["code"],
         oauthTokenEndpointAuthMethod: "client_secret_post",
         // A mock's secret, and it is checked nowhere unless RFC 9700 mode is
@@ -432,7 +448,8 @@ async function createTheFiveApplications() {
       "would keep one and lose the other silently.");
   }
   log.info("[create] OK — five applications, declared for OAuth 2.0 and " +
-           "OpenID Connect, with their supporting fields written and read back.");
+           "OpenID Connect, with their supporting fields written and read " +
+           "back.");
   log.debug("Leaving createTheFiveApplications().");
 }
 
@@ -474,14 +491,14 @@ async function exposeReadAndWrite() {
     });
   });
   assert.deepStrictEqual(identifiers, expected.sort(),
-    "AND EACH IDENTIFIER SHOULD BE ITS OWN APPLICATION'S BASE FOLLOWED BY THE " +
-    "NAME. Ten identifiers over five bases is where a lookup that joined the " +
-    "wrong pair — the first base, the last one, the client's rather than the " +
-    "resource's — stops being invisible; with one resource every wrong answer " +
-    "is also the right one.");
+    "AND EACH IDENTIFIER SHOULD BE ITS OWN APPLICATION'S BASE FOLLOWED BY " +
+    "THE NAME. Ten identifiers over five bases is where a lookup that joined " +
+    "the wrong pair — the first base, the last one, the client's rather than " +
+    "the resource's — stops being invisible; with one resource every wrong " +
+    "answer is also the right one.");
   assert.ok(ours.every(function (one) { return !one.grantedTo.length; }),
-    "and NOTHING should hold any of them yet: defining a permission grants it " +
-    "to nobody, which is the ordering this whole feature is built on.");
+    "and NOTHING should hold any of them yet: defining a permission grants " +
+    "it to nobody, which is the ordering this whole feature is built on.");
   assert.ok(ours.every(function (one) { return !!one.description; }),
     "and every one should carry its description, which is written as " +
     "`name|description` on the entry and split back out by the register — a " +
@@ -505,7 +522,8 @@ async function exposeReadAndWrite() {
 // ---------------------------------------------------------------------------
 async function grantTheRing() {
   log.debug("Entering grantTheRing().");
-  log.info("=== Granting the ring: five successor pairs, two permissions each ===");
+  log.info("=== Granting the ring: five successor pairs, two permissions " +
+           "each ===");
 
   await refused("/permissions/grant-permission",
     { client: SPENDER.id, permission: permissionId(SPENDER, "write") },
@@ -534,7 +552,8 @@ async function grantTheRing() {
 // ---------------------------------------------------------------------------
 async function theRegisterReadsBackAsARing() {
   log.debug("Entering theRegisterReadsBackAsARing().");
-  log.info("=== The register: ten grants, five resources, nothing dangling ===");
+  log.info("=== The register: ten grants, five resources, nothing dangling " +
+           "===");
   const register = await permissionRegister();
 
   const ours = register.grants.filter(function (one) {
@@ -562,15 +581,15 @@ async function theRegisterReadsBackAsARing() {
   });
   assert.deepStrictEqual(missing, [],
     "EVERY APPLICATION SHOULD HOLD BOTH OF ITS SUCCESSOR'S PERMISSIONS, and " +
-    "each grant should resolve to the application that EXPOSES it rather than " +
-    "to some other one with a similar base — the five bases here differ only " +
-    "in a digit, so a lookup matching on a prefix or on the bare name lands " +
-    "on the wrong one of the five. These did not: " + missing.join(", "));
+    "each grant should resolve to the application that EXPOSES it rather " +
+    "than to some other one with a similar base — the five bases here differ " +
+    "only in a digit, so a lookup matching on a prefix or on the bare name " +
+    "lands on the wrong one of the five. These did not: " + missing.join(", "));
 
   assert.ok(ours.every(function (one) { return !one.dangling; }),
     "and not one of them should be dangling — a dangling grant names a " +
-    "permission nothing defines, and every one of these was granted after the " +
-    "permission was defined.");
+    "permission nothing defines, and every one of these was granted after " +
+    "the permission was defined.");
   assert.deepStrictEqual(ours.filter(function (one) {
     return one.client === one.resource;
   }), [], "AND NO APPLICATION HOLDS ITS OWN PERMISSION, over the whole ring " +
@@ -584,11 +603,12 @@ async function theRegisterReadsBackAsARing() {
   assert.ok(counts.resources >= APPS.length,
     "the register should count at least our five resources; it said " +
     counts.resources + ".");
-  assert.strictEqual(ours.filter(function (one) { return one.asked; }).length, 0,
+  assert.strictEqual(ours.filter(function (one) { return one.asked; }).length,
+    0,
     "AND NONE OF THEM SHOULD READ AS ASKED FOR YET. That column comes from " +
-    "what HAPPENED — `oauthScope` on the client's entry — and it is the whole " +
-    "difference between this register and the acts register next door. One " +
-    "token at the end of this file moves exactly two of these.");
+    "what HAPPENED — `oauthScope` on the client's entry — and it is the " +
+    "whole difference between this register and the acts register next door. " +
+    "One token at the end of this file moves exactly two of these.");
   log.info("[register] OK — " + ours.length + " grants, every successor pair " +
            "present, none dangling, none self-directed, none yet used.");
   log.debug("Leaving theRegisterReadsBackAsARing().");
@@ -700,9 +720,9 @@ async function theRingIsOneGroup() {
     APPS.map(function (app) { return app.id; }).sort(),
     "AND NOTHING ELSE SHOULD BE IN IT. The default realm holds applications " +
     "this file did not create — the console job's, a SAML service provider, " +
-    "the console's own — and none of them is in the permission register, so a " +
-    "sixth member here would mean the partition had joined applications that " +
-    "share no grant.");
+    "the console's own — and none of them is in the permission register, so " +
+    "a sixth member here would mean the partition had joined applications " +
+    "that share no grant.");
   assert.strictEqual(ring.key, APPS[0].id,
     "the group should be named after the member whose identifier sorts " +
     "first, which for abcapp1..abcapp5 is abcapp1; it was named " + ring.key +
@@ -746,9 +766,9 @@ async function theRingIsOneGroup() {
     assert.ok(one.body.graph.edges.every(function (edge) {
       return edge.relation === "may-reach";
     }), "and every line in a group is `may-reach`, exactly as on the whole " +
-        "register — a group is that picture narrowed, drawn by the same code, " +
-        "so a reader who has learnt what a line means on one has learnt it on " +
-        "the other.");
+        "register — a group is that picture narrowed, drawn by the same " +
+        "code, so a reader who has learnt what a line means on one has " +
+        "learnt it on the other.");
   }
 
   // AN APPLICATION THIS REGISTER HAS NEVER HEARD OF IS A 200 AND NOT A 404,
@@ -779,8 +799,9 @@ async function theRingIsOneGroup() {
     JSON.stringify(shouted.body.group));
 
   log.info("[groups] OK — the five are one group named " + ring.key +
-           ", with " + ring.counts.lines + " lines, and all five applications " +
-           "resolve to it. " + list.body.counts.clusters + " group(s) in the " +
+           ", with " + ring.counts.lines + " lines, and all five " +
+           "applications resolve to " +
+           "it. " + list.body.counts.clusters + " group(s) in the " +
            "register altogether.");
   log.debug("Leaving theRingIsOneGroup().");
 }
@@ -816,16 +837,19 @@ async function thePictureIsARingAndNotAnActsDiagram() {
     "one per pair. Five here would mean the picture had folded `read` and " +
     "`write` between the same two applications into one line labelled `2`, " +
     "which hides the only thing the picture is being asked.");
-  assert.ok(edges.every(function (one) { return one.relation === "may-reach"; }),
+  assert.ok(edges.every(function (one) {
+    return one.relation === "may-reach";
+  }),
     "and every line should be `may-reach` rather than `reaches` — that word " +
     "is the acts picture's claim that a credential was ISSUED for something, " +
     "and nothing here has been issued.");
   assert.ok(edges.every(function (one) { return one.acts === 0; }) &&
             nodes.every(function (one) { return one.acts === 0; }),
     "AND `acts` SHOULD BE ZERO ON EVERY BOX AND EVERY LINE. The renderer " +
-    "colours an edge RED when `acts && !issued` — its way of saying `this was " +
-    "tried and refused` — and a configured grant has been tried nought times, " +
-    "so a non-zero count here would draw ten refusals that never happened.");
+    "colours an edge RED when `acts && !issued` — its way of saying `this " +
+    "was tried and refused` — and a configured grant has been tried nought " +
+    "times, so a non-zero count here would draw ten refusals that never " +
+    "happened.");
   assert.ok(nodes.every(function (one) { return one.selfTarget === false; }),
     "and no box should be marked as its own target: the diagonal was refused.");
   assert.ok(nodes.every(function (one) { return one.dangling === 0; }),
@@ -870,9 +894,15 @@ async function theTokenSaysBothHalves() {
   const wanted = PERMISSIONS.map(function (one) {
     return permissionId(SPENT_ON, one.name);
   });
+  // THE CLIENT AUTHENTICATES WITH THE SECRET ITS ENTRY HOLDS (2026-09-12),
+  // by the method the entry declares. Development checks it nowhere outside
+  // RFC 9700 mode; product mode has no public clients and refuses this request
+  // without it — and this example is meant to be copied.
   const body = "grant_type=client_credentials&client_id=" +
-      encodeURIComponent(SPENDER.id) + "&scope=" +
-      encodeURIComponent(wanted.join(" "));
+      encodeURIComponent(SPENDER.id) +
+      "&client_secret=" +
+      encodeURIComponent(SPENDER.id + "-not-a-real-secret") +
+      "&scope=" + encodeURIComponent(wanted.join(" "));
   const reply = await common.httpJson(tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -880,7 +910,8 @@ async function theTokenSaysBothHalves() {
   });
   assert.strictEqual(reply.status, 200,
     "the default realm's token endpoint should mint a token for a permission " +
-    "scope; it answered " + reply.status + " " + String(reply.raw).slice(0, 300));
+    "scope; it answered " + reply.status + " " +
+    String(reply.raw).slice(0, 300));
 
   const token = reply.body.access_token;
   const audience = claimOf(token, "aud");
@@ -932,7 +963,8 @@ async function permissionRegister() {
   log.debug("Entering permissionRegister().");
   const reply = await get("/permissions");
   assert.strictEqual(reply.status, 200,
-    "GET /admin-api/permissions should answer 200; it answered " + reply.status);
+    "GET /admin-api/permissions should answer 200; it answered " +
+    reply.status);
   assert.ok(Array.isArray(reply.body.grants) &&
             Array.isArray(reply.body.permissions),
     "and it should carry both directions of the register.");
@@ -958,11 +990,14 @@ async function registryEntry(identifier) {
 // report an attribute missing whenever the editable table narrowed, which is a
 // change to a form and not to the entry.
 function fieldValues(entry, attribute) {
+  log.debug("Entering fieldValues().");
   const fields = (entry && (entry.attributes || entry.fields)) || {};
   const held = fields[attribute];
   if (held === undefined || held === null) {
+    log.debug("Leaving fieldValues().");
     return [];
   }
+  log.debug("Leaving fieldValues().");
   return Array.isArray(held) ? held.map(String) : [String(held)];
 }
 
@@ -972,6 +1007,8 @@ function fieldValues(entry, attribute) {
 // service provider, the console's own two entries — and an assertion about a
 // TOTAL would be an assertion about the other jobs.
 function isOurs(identifier) {
+  log.debug("Entering isOurs().");
+  log.debug("Leaving isOurs().");
   return APPS.some(function (app) { return app.id === identifier; });
 }
 
@@ -979,17 +1016,24 @@ function isOurs(identifier) {
 // service put IN the token, not whether the token is sound — sts_dpop.js and
 // oauth2_sts_endpoints.js own that question.
 function claimOf(jwt, name) {
+  log.debug("Entering claimOf().");
   if (!jwt) {
+    log.debug("Leaving claimOf().");
     return "";
   }
   const parts = String(jwt).split(".");
   if (parts.length < 2) {
+    log.debug("Leaving claimOf().");
     return "";
   }
   try {
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url")
+                                     .toString("utf8"));
+    log.debug("Leaving claimOf().");
     return payload[name] === undefined ? "" : payload[name];
   } catch (e) {
+    log.debug("Caught in claimOf(): " + ((e && e.message) || e));
+    log.debug("Leaving claimOf().");
     // A token this service minted is always decodable; a body that is not is
     // worth reporting as an empty claim rather than as a crash, because the
     // assertion that follows says more about what went wrong.

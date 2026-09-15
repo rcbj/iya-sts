@@ -45,7 +45,14 @@
 const app = require('../common/app');
 const { log, xmlEscape, baseUrlOf } = require('../common/helpers');
 const config = require('../common/config');
+// The realm registry, for the per-realm listeners below. A LIBRARY (rule 3)
+// and loaded by `app.js` long before this module, so requiring it here
+// registers nothing and cannot move a route.
+const realms = require('../common/realms');
 const audit = require('../common/audit');
+// A LEAF. The bundle endpoint's refusals are marked on the response for the
+// call log; a listener that could not come up is tagged on its log line.
+const errorCodes = require('../common/error_codes');
 const spiffeId = require('./spiffe_id');
 const ca = require('./spiffe_ca');
 const registry = require('./spiffe_registry');
@@ -78,13 +85,52 @@ const BUNDLE_PATH = config.value('spiffe.bundlePath') || '/spiffe/bundle';
 // beside `listen()` where it is written, because the HTTP views read it and
 // they are registered above `listen()` — the same arrangement `ldap_server.js`
 // and `tls_server.js` both use, and for the same reason.
-let workloadServer = null;
-let apiServer = null;
-let workloadBindings = [];
-let apiBindings = [];
+// ONE ENTRY PER REALM THAT HAS SPIFFE SOCKETS, keyed by realm id with the
+// DEFAULT realm under the empty string — the same key every per-realm store in
+// this service uses, so `''` is a realm here rather than a missing value.
+const listeners = new Map();
 let started = false;
 
-function enabled() { return !!config.value('spiffe.enabled'); }
+// ---------------------------------------------------------------------------
+// **WHETHER SPIFFE ANSWERS HERE, AND THE ONE THING THAT IS NOT A PLAIN
+// SETTING READ (2026-09-12).**
+//
+// For the DEFAULT realm it is `spiffe.enabled`, exactly as it has always been.
+// For every other realm it is that realm's OWN override and nothing else —
+// not the effective value, which would inherit the process's `true`.
+//
+// **THE DIFFERENCE IS NOT PEDANTRY, IT IS WHAT A REALM COSTS.** Turning SPIFFE
+// on for a realm builds that realm's authorities (a key generation each) and
+// binds two listeners. A realm created before this existed, or restored from a
+// store written by an older build, carries no override — so reading the
+// effective value would give every one of them SPIFFE on the next start: a
+// pile of key generations nobody asked for and, because they would all inherit
+// `spiffe.grpcHost` of `0.0.0.0`, a pile of refused binds reported on
+// `/spiffe`. Measured on a stack whose realms a test run had left behind.
+//
+// So a realm OPTS IN. `realms.js` seeds `spiffe.enabled: false` when a realm
+// is created, which makes the state visible on `/admin/realms` and in
+// `/admin-api`; this predicate is what makes a realm that has no such row
+// behave the same way.
+// ---------------------------------------------------------------------------
+function enabledIn(realm) {
+  log.debug("Entering enabledIn().");
+  if (!realm || realm.id === realms.DEFAULT_ID) {
+    log.debug("Leaving enabledIn().");
+    return !!realms.run(realms.DEFAULT_REALM, function () {
+      return config.value('spiffe.enabled');
+    });
+  }
+  const own = (realm.overrides || {})['spiffe.enabled'];
+  log.debug("Leaving enabledIn().");
+  return own === true || String(own).toLowerCase() === 'true';
+}
+
+function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
+  return enabledIn(realms.current());
+}
 
 // ---------------------------------------------------------------------------
 // THE BUNDLE ENDPOINT.
@@ -103,6 +149,7 @@ app.get(BUNDLE_PATH, async function (req, res) {
     // 404 rather than 503, because with SPIFFE off there is no bundle
     // endpoint here at all — a federation partner should see the same thing it
     // would see against a service that never had one.
+    errorCodes.mark(res, 'STS-SPIFFE-0002');
     res.status(404).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify({ error: 'SPIFFE is turned off on this service ' +
                                      '(spiffe.enabled).' }));
@@ -131,6 +178,7 @@ app.get(BUNDLE_PATH, async function (req, res) {
     // The authorities failed to build at startup. 503 rather than 500: it is a
     // state this service can recover from with a restart, and the message says
     // which setting to look at.
+    errorCodes.mark(res, 'STS-SPIFFE-0069');
     res.status(503).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify({ error: 'This service has no trust bundle: ' +
                                      e.message }));
@@ -147,6 +195,7 @@ app.get('/spiffe/federated/:trustDomain', function (req, res) {
   const name = String(req.params.trustDomain || '').trim().toLowerCase();
   const entry = ca.federatedBundle(name);
   if (!entry) {
+    errorCodes.mark(res, 'STS-SPIFFE-0061');
     res.status(404).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify({ error: 'This service holds no bundle for the ' +
                                      'trust domain ' + name + '.',
@@ -164,12 +213,12 @@ app.get('/spiffe/federated/:trustDomain', function (req, res) {
 // ---------------------------------------------------------------------------
 // WHAT THIS IS, FOR A PERSON — and, with ?format=json, for a program.
 //
-// The same shape `GET /admin/ldap/service` and `GET /tls` have, and it carries the same kind
-// of thing: what the surfaces are, where they are, whether the sockets actually
-// bound, and — at length — what is NOT checked. That last part is most of the
-// page on purpose. A mock that quietly issued identities to anybody would teach
-// a client author something false about every SPIFFE deployment they will ever
-// meet.
+// The same shape `GET /admin/ldap/service` and `GET /tls` have, and it carries
+// the same kind of thing: what the surfaces are, where they are, whether the
+// sockets actually bound, and — at length — what is NOT checked. That last part
+// is most of the page on purpose. A mock that quietly issued identities to
+// anybody would teach a client author something false about every SPIFFE
+// deployment they will ever meet.
 // ---------------------------------------------------------------------------
 function description(req) {
   log.debug('Entering description().');
@@ -180,9 +229,9 @@ function description(req) {
           'and the SPIRE Server API. The SPIRE Server API authenticates its ' +
           'caller with mutual TLS and an X509-SVID and authorizes every ' +
           'method against SPIRE\'s own table; the Workload API authenticates ' +
-          'nobody, because its specification says it MUST NOT, and identifies ' +
-          'a caller only by what this service can see of the connection. ' +
-          'Nothing attests a workload or a node.',
+          'nobody, because its specification says it MUST NOT, and ' +
+          'identifies a caller only by what this service can see of the ' +
+          'connection. Nothing attests a workload or a node.',
     enabled: enabled(),
     trustDomain: state.trustDomain,
     trustDomainId: state.trustDomainId,
@@ -200,10 +249,10 @@ function description(req) {
                    'partner using this profile has to trust it explicitly: ' +
                    'fetch it from /tls/server-certificate.',
         https_spiffe: 'The partner verifies this URL with a SPIFFE ID and a ' +
-                      'bundle it already has. Supported in the sense that the ' +
-                      'endpoint serves the right document; the SPIFFE ID this ' +
-                      'service would present on that connection is the TLS ' +
-                      'certificate\'s, which is not an SVID.'
+                      'bundle it already has. Supported in the sense that ' +
+                      'the endpoint serves the right document; the SPIFFE ID ' +
+                      'this service would present on that connection is the ' +
+                      'TLS certificate\'s, which is not an SVID.'
       },
       scheme: config.value('global.https') ? 'https' : 'http',
       schemeNote: config.value('global.https')
@@ -211,28 +260,57 @@ function description(req) {
           'too.'
         : 'THE MAIN PORT IS PLAIN HTTP, so this bundle endpoint is http. A ' +
           'real federation partner will refuse it, and is right to: the ' +
-          'bundle is the root of trust for a whole trust domain, and fetching ' +
-          'it over a channel anybody can rewrite means trusting whoever is in ' +
-          'the middle. Set global.https to serve it over TLS.'
+          'bundle is the root of trust for a whole trust domain, and ' +
+          'fetching it over a channel anybody can rewrite means trusting ' +
+          'whoever is in the middle. Set global.https to serve it over TLS.'
     },
     authorities: {
+      // WHERE THE AUTHORITY CAME FROM, first, because it decides what every
+      // other field here means — see `spiffe_ca.js`'s `state()`.
+      source: state.authoritySource,
+      realm: state.realm,
       x509: state.x509Authorities.map(function (authority) {
         return { id: authority.id, active: authority.active,
+                 source: authority.source,
                  keyType: authority.keyType, subject: authority.subject,
                  notAfter: authority.notAfter };
       }),
+      // WHAT SIGNS an SVID and WHAT A CONSUMER TRUSTS are two lists now and
+      // this document has to publish both: the bundle carries the second, and
+      // a reader with only the first cannot tell what to install.
+      trustAnchors: state.trustAnchors.map(function (anchor) {
+        return { id: anchor.id, source: anchor.source, subject: anchor.subject,
+                 notAfter: anchor.notAfter };
+      }),
+      // The certificates that travel WITH an SVID, between the leaf and the
+      // anchor. Empty on the self-signed path.
+      chainSubjects: state.chainSubjects.slice(),
       jwt: state.jwtAuthorities.map(function (authority) {
         return { kid: authority.id, active: authority.active,
                  keyType: authority.keyType, alg: authority.alg };
       }),
-      note: 'Generated per start and held in memory, exactly like the STS ' +
-            'signing key and the TLS certificate. A workload holding a bundle ' +
-            'from before a restart will fail to verify every SVID minted ' +
-            'after it.'
+      note: state.authoritySource === 'pki'
+        ? 'The X.509 authority is this realm\'s SPIFFE Issuing CA under this ' +
+          'service\'s own Root CA — see /admin/pki — so the trust anchor a ' +
+          'consumer installs is that Root, which every realm shares and ' +
+          'which also covers 8443, 9443, LDAPS 636, the main port and every ' +
+          'token this service signs. An SVID carries the Issuing CA and this ' +
+          'realm\'s Intermediate in its own chain. In DEVELOPMENT mode the ' +
+          'Root is generated per start like every other key here; in PRODUCT ' +
+          'mode the keystore keeps it, so a bundle survives a restart. The ' +
+          'JWT authority has no certificate and is generated per start in ' +
+          'either mode.'
+        : 'This realm has NO certificate authority, so the X.509 authority ' +
+          'is SELF-SIGNED and IS the trust anchor — generated per start and ' +
+          'held in memory, exactly like the STS signing key and the TLS ' +
+          'certificate. A workload holding a bundle from before a restart ' +
+          'will fail to verify every SVID minted after it. Build the ' +
+          'realm\'s certificate authority on /admin/pki to put this ' +
+          'authority under this service\'s Root instead.'
     },
     workloadApi: {
       service: 'SpiffeWorkloadAPI',
-      listeners: workloadBindings,
+      listeners: bindingsNow().workload,
       securityHeader: rpc.SECURITY_HEADER + ': true',
       securityHeaderRequired: !!config.value('spiffe.requireSecurityHeader'),
       methods: rpc.methodsOf('workload').map(function (method) {
@@ -244,7 +322,7 @@ function description(req) {
       })
     },
     serverApi: {
-      listeners: apiBindings,
+      listeners: bindingsNow().api,
       services: serverApi.SERVICE_HANDLERS.map(function (entry) {
         return {
           name: entry.label,
@@ -264,8 +342,8 @@ function description(req) {
       maxEntries: registry.maxEntries(),
       maxAgents: registry.maxAgents(),
       note: 'The store is the embedded LDAP directory. An ldapmodify under ' +
-            'ou=spiffe changes what the next SVID looks like, because nothing ' +
-            'caches these.'
+            'ou=spiffe changes what the next SVID looks like, because ' +
+            'nothing caches these.'
     },
     federated: state.federated,
     // The list every reader of this page needs most, and it is deliberately
@@ -285,9 +363,10 @@ function description(req) {
       'specification rather than this service being permissive. The SPIFFE ' +
       'Workload Endpoint specification says the endpoint "MUST NOT require ' +
       'any direct authentication of its clients" and that "Transport Layer ' +
-      'Security MUST NOT be required" — a workload has no root of trust until ' +
-      'this call gives it one. So spiffe.authRequired deliberately does not ' +
-      'reach this surface.',
+      'Security MUST NOT be required" — a workload has no root of trust ' +
+      'until this call gives it one. So the mutual TLS the SPIRE Server API ' +
+      'requires deliberately does not reach this surface, and no mode ' +
+      'changes that.',
       'NOTHING VERIFIES AN ASSERTED SELECTOR. With ' +
       'spiffe.acceptAssertedSelectors on, a Workload API caller may send its ' +
       'own selectors in a metadata header and they are matched as though ' +
@@ -301,8 +380,8 @@ function description(req) {
       'value for exactly this reason. The ONE exception is a join token, ' +
       'which this server minted and therefore checks: see `refused` below.',
       'A CSR SIGNATURE IS NOT VERIFIED. Only the public key is read out of a ' +
-      'CSR — which is what stops a caller naming itself something it is not — ' +
-      'but proof of possession is not checked.',
+      'CSR — which is what stops a caller naming itself something it is not ' +
+      '— but proof of possession is not checked.',
       'NO REVOCATION, ANYWHERE. SPIFFE has none: the answer is a short ' +
       'lifetime and rotation. The CRL fields in the Workload API responses ' +
       'are empty because that is the conforming value, not because they are ' +
@@ -312,17 +391,17 @@ function description(req) {
       'record a `spiffeCredentialStatus` on an identity whose last ' +
       'registration entry was deleted or whose agent was banned or deleted, ' +
       'and THAT IS NOT A REVOCATION EITHER: nothing reads it back, no ' +
-      'certificate is refused because of it, and it says only that no FURTHER ' +
-      'SVID can be issued here. Read it as a note on the directory entry, ' +
-      'never as a check this service makes.'
+      'certificate is refused because of it, and it says only that no ' +
+      'FURTHER SVID can be issued here. Read it as a note on the directory ' +
+      'entry, never as a check this service makes.'
     ].concat(auth.authRequired() ? [] : [
       'AND, RIGHT NOW, NOTHING ON THE SPIRE SERVER API EITHER. ' +
-      'spiffe.authRequired is OFF, so that port is plain gRPC, no caller is ' +
-      'identified, the per-method table below is not applied, and anybody who ' +
-      'can reach it can create a registration entry granting any identity in ' +
-      'this trust domain and then collect an SVID for it. The `admin` and ' +
-      '`downstream` flags on an entry are recorded and read by nothing while ' +
-      'it is off.'
+      'Authentication is off there, so that port is plain gRPC, no caller is ' +
+      'identified, the per-method table below is not applied, and anybody ' +
+      'who can reach it can create a registration entry granting any ' +
+      'identity in this trust domain and then collect an SVID for it. The ' +
+      '`admin` and `downstream` flags on an entry are recorded and read by ' +
+      'nothing while it is off.'
     ]),
     // WHO IS ASKING, on the surface that asks. The whole table comes from
     // spiffe_auth.js so that this page, /admin/spiffe and the management API
@@ -338,11 +417,11 @@ function description(req) {
       'a bug nothing else will tell them about.',
       'FetchJWTSVID and MintJWTSVID with no audience.',
       'ValidateJWTSVID on anything that does not really verify: signature, ' +
-      'expiry with no leeway, audience, and that the sub belongs to the trust ' +
-      'domain whose key verified it.',
+      'expiry with no leeway, audience, and that the sub belongs to the ' +
+      'trust domain whose key verified it.',
       'A registration entry whose SPIFFE ID is invalid, belongs to another ' +
       'trust domain, or sits under the reserved /spire path.',
-      'AttestAgent for a banned agent, and — with spiffe.authRequired on — a ' +
+      'AttestAgent for a banned agent, and a ' +
       'join token this server did not mint, one that has expired, one ' +
       'presented twice, and one minted for a named agent and presented by ' +
       'another. A join token is the one attestation payload here this ' +
@@ -358,11 +437,12 @@ function description(req) {
       'one signed, one outside its validity window (spiffe.clockSkew), one ' +
       'with no URI subjectAltName, one with several, and one whose SPIFFE ID ' +
       'names a different trust domain from the authority that signed it.',
-      'RenewAgent for a caller that is not the agent it would renew — which ' +
-      'with spiffe.authRequired off is every caller, so the method answers ' +
-      'Unimplemented in that mode with the reason it used to give always.',
-      'Appending an authority to this trust domain\'s own bundle, which would ' +
-      'publish a signing key nothing here holds.',
+      'RenewAgent for a caller that is not the agent it would renew — which, ' +
+      'on a port where nothing identifies a caller, is every caller, so the ' +
+      'method answers Unimplemented there with the reason it used to give ' +
+      'always.',
+      'Appending an authority to this trust domain\'s own bundle, which ' +
+      'would publish a signing key nothing here holds.',
       'RefreshBundle, which would have this service fetch a URL somebody ' +
       'registered — the same refusal it gives WS-Federation\'s wreqptr and a ' +
       'client\'s jwks_uri.'
@@ -386,7 +466,9 @@ function description(req) {
 // is what these pages report: a reader comparing this page with the `.proto`
 // should see the same spelling.
 function protoNameOf(methodPath) {
+  log.debug("Entering protoNameOf().");
   const parts = String(methodPath || '').split('/');
+  log.debug("Leaving protoNameOf().");
   return parts[parts.length - 1] || '';
 }
 
@@ -404,7 +486,11 @@ app.get('/spiffe', function (req, res) {
   log.debug('Leaving the /spiffe view. HTML.');
 });
 
-function esc(value) { return xmlEscape(value == null ? '' : String(value)); }
+function esc(value) {
+  log.debug("Entering esc().");
+  log.debug("Leaving esc().");
+  return xmlEscape(value == null ? '' : String(value));
+}
 
 // A listener, and WHAT A CALLER HAS TO PRESENT ON IT. The third column is not
 // decoration: the four sockets have three different postures — plain, plain and
@@ -415,13 +501,14 @@ function listenerRows(bindings) {
   log.debug('Entering listenerRows().');
   if (!bindings.length) {
     log.debug('Leaving listenerRows().');
-    return '<tr><td colspan="3">Nothing bound. Either this listener is ' +
+    return '<tr><td colspan="4">Nothing bound. Either this listener is ' +
            'turned off in configuration, or <code>listen()</code> has not ' +
            'run yet.</td></tr>';
   }
   log.debug('Leaving listenerRows().');
   return bindings.map(function (binding) {
-    return '<tr><td><code>' + esc(binding.address) + '</code>' +
+    return '<tr><td>' + esc(binding.realm || 'default') + '</td><td><code>' +
+      esc(binding.address) + '</code>' +
       (binding.tls ? ' <span class="note">(mutual TLS)</span>' : '') +
       '</td><td>' +
       (binding.listening
@@ -432,6 +519,8 @@ function listenerRows(bindings) {
 }
 
 function methodRows(methods) {
+  log.debug("Entering methodRows().");
+  log.debug("Leaving methodRows().");
   return methods.map(function (method) {
     return '<tr><td><code>' + esc(method.name) + '</code>' +
       (method.streaming ? ' <span class="note">(stream)</span>' : '') +
@@ -444,16 +533,16 @@ function page(document) {
   log.debug('Entering page().');
   const state = ca.state();
   log.debug('Leaving page().');
-  return '<!doctype html><html><head><meta charset="utf-8">' +
-    '<title>SPIFFE — mock STS</title><style>' +
-    'body{font-family:system-ui,sans-serif;margin:2rem;max-width:60rem;line-height:1.5}' +
-    'table{border-collapse:collapse;margin:1rem 0;width:100%}' +
-    'th,td{border:1px solid #ccc;padding:.4rem .6rem;text-align:left;vertical-align:top}' +
-    'th{background:#f4f4f4}code{background:#f4f4f4;padding:.1rem .3rem}' +
-    '.note{color:#666}.warn{background:#fff6e5;border-left:4px solid #e69500;padding:.6rem 1rem}' +
-    '</style></head><body>' +
-    '<h1>SPIFFE</h1>' +
-    '<p>This service is the issuing authority for the trust domain <code>' +
+  return '<!doctype html><html><head><meta charset="utf-8"><title>SPIFFE — ' +
+    'mock STS</title><style>body{font-family:system-ui,sans-serif;' +
+    'margin:2rem;max-width:60rem;line-height:1.5}' +
+    'table{border-collapse:collapse;margin:1rem ' +
+    '0;width:100%}th,td{border:1px solid #ccc;padding:.4rem .6rem;' +
+    'text-align:left;vertical-align:top}th{background:#f4f4f4}' +
+    'code{background:#f4f4f4;padding:.1rem ' +
+    '.3rem}.note{color:#666}.warn{background:#fff6e5;border-left:4px solid ' +
+    '#e69500;padding:.6rem 1rem}</style></head><body><h1>SPIFFE</h1><p>This ' +
+    'service is the issuing authority for the trust domain <code>' +
     esc(document.trustDomainId) + '</code>. Three server-side surfaces: the ' +
     'bundle endpoint below (plain HTTPS), the <strong>Workload API</strong> ' +
     'and the <strong>SPIRE Server API</strong> (both gRPC, on their own ' +
@@ -479,40 +568,46 @@ function page(document) {
     'credential another service will believe.</p>' +
     '<p class="' + (document.authentication.enforced ? 'note' : 'warn') + '">' +
     (document.authentication.enforced
-      ? '<strong>The SPIRE Server API is the exception, and it is on.</strong> ' +
-        'Its TCP port is mutual TLS, a caller presents an X509-SVID from this ' +
-        'trust domain, and every method is authorized against SPIRE\'s own ' +
-        'table — the whole of which is below. Its Unix socket is the ' +
-        '<code>local</code> entity and needs no credential. The Workload API ' +
-        'is deliberately untouched by this: its specification says a client ' +
-        'MUST NOT be required to authenticate.'
+      ? '<strong>The SPIRE Server API is the exception, and it is ' +
+        'on.</strong> Its TCP port is mutual TLS, a caller presents an ' +
+        'X509-SVID from this trust domain, and every method is authorized ' +
+        'against SPIRE\'s own table — the whole of which is below. Its Unix ' +
+        'socket is the <code>local</code> entity and needs no credential. ' +
+        'The Workload API is deliberately untouched by this: its ' +
+        'specification says a client MUST NOT be required to authenticate.'
       : '<strong>And the SPIRE Server API is not authenticating anybody ' +
-        'either, because <code>spiffe.authRequired</code> is off.</strong> ' +
-        'That port is plain gRPC and anybody who can reach it can create a ' +
-        'registration entry granting any identity here and then collect an ' +
-        'SVID for it. Turn the setting on — it needs a restart, because it ' +
-        'decides how the socket is bound — to get the behaviour of a real ' +
-        'spire-server.') +
+        'either.</strong> That port is plain gRPC and anybody who can reach ' +
+        'it can create a registration entry granting any identity here and ' +
+        'then collect an SVID for it. Restart with it on — the socket is ' +
+        'bound once, because it decides how the socket is bound — to get the ' +
+        'behaviour of a real spire-server.') +
     '</p>' +
 
     '<h2>The bundle endpoint</h2>' +
     '<p><a href="' + esc(document.bundle.url) + '"><code>' +
     esc(document.bundle.url) + '</code></a> — a JWK Set with ' +
-    '<code>spiffe_sequence</code> (' + esc(document.bundle.sequence) + ') and ' +
-    '<code>spiffe_refresh_hint</code> (' + esc(document.bundle.refreshHint) +
-    ' seconds). Each key carries <code>use</code> of <code>x509-svid</code> or ' +
-    '<code>jwt-svid</code>; a consumer MUST IGNORE a key whose <code>use</code> ' +
-    'it does not recognise, which is why a bundle with the member missing ' +
-    'verifies nothing and reports no error.</p>' +
-    '<p class="' + (config.value('global.https') ? 'note' : 'warn') + '">' +
+    '<code>spiffe_sequence</code> (' + esc(document.bundle.sequence) + ') ' +
+    'and <code>spiffe_refresh_hint</code> ' +
+    '(' + esc(document.bundle.refreshHint) +
+    ' seconds). Each key carries <code>use</code> of <code>x509-svid</code> ' +
+    'or <code>jwt-svid</code>; a consumer MUST IGNORE a key whose ' +
+    '<code>use</code> it does not recognise, which is why a bundle with the ' +
+    'member missing verifies nothing and reports no error.</p><p ' +
+    'class="' + (config.value('global.https') ? 'note' : 'warn') + '">' +
     esc(document.bundle.schemeNote) + '</p>' +
 
     '<h2>The trust domain\'s authorities</h2>' +
+    // **THE TABLE ANSWERS "WHAT SIGNS" AND THE ONE BELOW IT ANSWERS "WHAT DO
+    // I TRUST".** They were one table until 2026-09-11, because a self-signed
+    // authority is both. Merging them again would be the single most
+    // misleading thing this page could do about key material: a reader who
+    // installed the SPIFFE Issuing CA as an anchor would have something that
+    // works until the first rotation and then stops, with no error naming it.
     '<table><tr><th>Kind</th><th>Id</th><th>Key</th><th>State</th></tr>' +
     document.authorities.x509.map(function (a) {
       return '<tr><td>X.509</td><td><code>' + esc(a.id) + '</code></td><td>' +
-        esc(a.keyType) + '</td><td>' + (a.active ? 'active' : 'retired, still ' +
-        'published') + ', until ' + esc(a.notAfter) + '</td></tr>';
+        esc(a.keyType) + '</td><td>' + (a.active ? 'active' : 'retired, ' +
+        'still published') + ', until ' + esc(a.notAfter) + '</td></tr>';
     }).join('') +
     document.authorities.jwt.map(function (a) {
       return '<tr><td>JWT</td><td><code>' + esc(a.kid) + '</code></td><td>' +
@@ -520,10 +615,26 @@ function page(document) {
         (a.active ? 'active' : 'retired, still published') + '</td></tr>';
     }).join('') +
     '</table>' +
-    '<p class="note">' + esc(document.authorities.note) + '</p>' +
+    (document.authorities.chainSubjects.length
+      ? '<p>An X509-SVID travels with its chain: ' +
+        document.authorities.chainSubjects.map(function (subject) {
+          return '<code>' + esc(subject) + '</code>';
+        }).join(' &rarr; ') + '. The anchor below is NOT sent with it — it ' +
+        'is what the bundle publishes.</p>'
+      : '') +
+    '<h3>What a consumer trusts</h3>' +
+    '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
+    document.authorities.trustAnchors.map(function (a) {
+      return '<tr><td><code>' + esc(a.id) + '</code></td><td>' +
+        esc(a.subject) + '</td><td>' + esc(a.notAfter) + '</td></tr>';
+    }).join('') +
+    '</table>' +
+    '<p class="' + (document.authorities.source === 'pki' ? 'note' : 'warn') +
+    '">' + esc(document.authorities.note) + '</p>' +
 
     '<h2>The Workload API</h2>' +
-    '<table><tr><th>Address</th><th>State</th><th>What a caller presents</th></tr>' +
+    '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
+    '<th>What a caller presents</th></tr>' +
     listenerRows(document.workloadApi.listeners) + '</table>' +
     '<p>Every call must carry the metadata header <code>' +
     esc(document.workloadApi.securityHeader) + '</code>' +
@@ -537,11 +648,12 @@ function page(document) {
     methodRows(document.workloadApi.methods) + '</table>' +
 
     '<h2>The SPIRE Server API</h2>' +
-    '<table><tr><th>Address</th><th>State</th><th>What a caller presents</th></tr>' +
+    '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
+    '<th>What a caller presents</th></tr>' +
     listenerRows(document.serverApi.listeners) + '</table>' +
     document.serverApi.services.map(function (service) {
-      return '<h3>' + esc(service.name) + '</h3><p>' + esc(service.what) + '</p>' +
-        '<table><tr><th>Method</th><th>Implemented</th><th>What</th></tr>' +
+      return '<h3>' + esc(service.name) + '</h3><p>' + esc(service.what) +
+        '</p><table><tr><th>Method</th><th>Implemented</th><th>What</th></tr>' +
         methodRows(service.methods) + '</table>';
     }).join('') +
 
@@ -549,7 +661,8 @@ function page(document) {
     '<p>' + esc(document.authentication.what) + '</p>' +
     '<p class="note">' + esc(document.authentication.bootstrapping) + '</p>' +
     '<p class="note">' + esc(document.authentication.identityNote) + '</p>' +
-    '<p class="note">' + esc(document.authentication.credentialStatusNote || '') + '</p>' +
+    '<p class="note">' +
+    esc(document.authentication.credentialStatusNote || '') + '</p>' +
     (document.authentication.adminIds.length
       ? '<p>Administrators by configuration (<code>spiffe.adminIds</code>): ' +
         document.authentication.adminIds.map(function (id) {
@@ -583,17 +696,16 @@ function page(document) {
     '<h2>What is not checked</h2><ul>' +
     document.notChecked.map(function (line) {
       return '<li>' + esc(line) + '</li>';
-    }).join('') + '</ul>' +
-
-    '<h2>What is refused</h2>' +
-    '<p>A short list, and it is here because a page that only said "nothing is ' +
-    'checked" would be wrong.</p><ul>' +
+    }).join('') + '</ul><h2>What is refused</h2><p>A short list, and it is ' +
+    'here because a page that only said "nothing is checked" would be ' +
+    'wrong.</p><ul>' +
     document.refused.map(function (line) {
       return '<li>' + esc(line) + '</li>';
     }).join('') + '</ul>' +
 
     '<h2>The registry</h2>' +
-    '<p>' + esc(document.registry.entries) + ' registration entry/entries and ' +
+    '<p>' + esc(document.registry.entries) +
+    ' registration entry/entries and ' +
     esc(document.registry.agents) + ' agent(s). ' +
     esc(document.registry.note) + '</p>' +
 
@@ -617,36 +729,95 @@ function page(document) {
 // only report one of them. That is the lesson `ldap_server.js` records about
 // 389 and 636, applied before it had to be learnt again.
 // ---------------------------------------------------------------------------
-function addressesFor(surface) {
-  log.debug('Entering addressesFor().');
-  const out = [];
-  if (surface === 'workload') {
-    if (config.value('spiffe.workloadSocketEnabled')) {
-      out.push({ address: 'unix://' + config.value('spiffe.workloadSocket'),
-                 socketPath: config.value('spiffe.workloadSocket') });
+// ---------------------------------------------------------------------------
+// **THE ADDRESSES ARE A REALM'S SINCE 2026-09-12, AND THE ENDPOINT ADDRESS IS
+// THE ONLY THING A SPIFFE CLIENT CAN NAME A TENANT WITH.**
+//
+// Every other family here is told which realm it is in by a segment at the
+// front of the path. gRPC has a path — `/SpiffeWorkloadAPI/FetchX509SVID` —
+// and it is the METHOD: the Workload API's service name is fixed by its
+// specification and the SPIRE APIs by theirs, so a realm segment in it would
+// be a method no conforming client calls. That is the whole reason SPIFFE was
+// `none` in `realms.realmSupport()` for as long as it was.
+//
+// So the realm is the SOCKET. A realm with SPIFFE turned on gets a Workload
+// API and a SPIRE Server API of its own — its own Unix socket paths, seeded
+// when the realm was created, and its own bind ADDRESS with the ports
+// unchanged, because a client configured for `:8081`/`:8092` should reach
+// every realm where it expects to. `spiffe.grpcHost` on the realm is the row
+// that does it, and rcbj's instruction was *for the SPIFFE service, a unique
+// IP will be used* — which is this.
+// ---------------------------------------------------------------------------
+function addressesFor(surface, realmId) {
+  log.debug('Entering addressesFor(). surface=' + surface +
+            ' realm=' + (realmId || 'default'));
+  const read = function () {
+    log.debug("Entering read().");
+    const out = [];
+    if (surface === 'workload') {
+      if (config.value('spiffe.workloadSocketEnabled')) {
+        out.push({ address: 'unix://' + config.value('spiffe.workloadSocket'),
+                   socketPath: config.value('spiffe.workloadSocket') });
+      }
+      const port = config.value('spiffe.workloadPort');
+      if (port) {
+        out.push({ address: config.value('spiffe.grpcHost') + ':' + port });
+      }
+    } else {
+      if (config.value('spiffe.serverSocketEnabled')) {
+        out.push({ address: 'unix://' + config.value('spiffe.serverSocket'),
+                   socketPath: config.value('spiffe.serverSocket') });
+      }
+      const port = config.value('spiffe.serverPort');
+      if (port) {
+        out.push({ address: config.value('spiffe.grpcHost') + ':' + port });
+      }
     }
-    const port = config.value('spiffe.workloadPort');
-    if (port) {
-      out.push({ address: config.value('spiffe.grpcHost') + ':' + port });
-    }
-  } else {
-    if (config.value('spiffe.serverSocketEnabled')) {
-      out.push({ address: 'unix://' + config.value('spiffe.serverSocket'),
-                 socketPath: config.value('spiffe.serverSocket') });
-    }
-    const port = config.value('spiffe.serverPort');
-    if (port) {
-      out.push({ address: config.value('spiffe.grpcHost') + ':' + port });
-    }
-  }
-  log.debug('Leaving addressesFor().');
+    log.debug("Leaving read().");
+    return out;
+  };
+  const realm = realms.get(String(realmId || ''));
+  const out = realm ? realms.run(realm, read) : read();
+  log.debug('Leaving addressesFor(). ' + out.length + ' address(es).');
   return out;
 }
 
-async function bindAll(server, surface) {
-  log.debug('Entering bindAll(). surface=' + surface);
+// ---------------------------------------------------------------------------
+// WHICH REALMS HAVE SPIFFE SOCKETS, AND THE ONE ASYMMETRY IN IT.
+//
+// The DEFAULT realm always does. Its four listeners are bound at startup and
+// stay bound with `spiffe.enabled` off — they answer `Unavailable`, which is
+// what this service has always done and is deliberate: a socket that vanished
+// when a setting was turned off is indistinguishable from a service that had
+// stopped, and every client would report a connection error rather than the
+// refusal this service is trying to give it.
+//
+// EVERY OTHER REALM IS THE OPPOSITE, and it is the same argument read the
+// other way: a realm is created with SPIFFE OFF, so a socket that existed
+// before anybody turned it on would be this service binding two ports per
+// realm for realms that will never use them. There is nothing for a client to
+// be confused by, because there was never an endpoint to connect to.
+// ---------------------------------------------------------------------------
+function realmsWithSockets() {
+  log.debug('Entering realmsWithSockets().');
+  const out = [realms.DEFAULT_REALM];
+  realms.list().forEach(function (realm) {
+    if (realm.id === realms.DEFAULT_ID) {
+      return;
+    }
+    if (enabledIn(realm)) {
+      out.push(realm);
+    }
+  });
+  log.debug('Leaving realmsWithSockets(). ' + out.length + ' realm(s).');
+  return out;
+}
+
+async function bindAll(server, surface, realmId) {
+  log.debug('Entering bindAll(). surface=' + surface +
+            ' realm=' + (realmId || 'default'));
   const results = [];
-  const addresses = addressesFor(surface);
+  const addresses = addressesFor(surface, realmId);
   // ---------------------------------------------------------------------
   // WHICH SOCKET GETS TLS, AND WHY IT IS EXACTLY ONE OF THE FOUR.
   //
@@ -664,9 +835,9 @@ async function bindAll(server, surface) {
   //                                  the private socket a real `spire-server`
   //                                  CLI uses, whose access control is the
   //                                  filesystem.
-  //   SPIRE Server API, TCP          MUTUAL TLS when `spiffe.authRequired` is
-  //                                  on, which is the default, and plain when
-  //                                  it is not.
+  //   SPIRE Server API, TCP          MUTUAL TLS, always, since
+  //                                  `spiffe.authRequired` was removed on
+  //                                  2026-09-06.
   //
   // That last line is the one that changes what an existing caller sees, which
   // is why the setting is RESTART-ONLY: a flag that was runtime for its checks
@@ -678,13 +849,21 @@ async function bindAll(server, surface) {
   let secure = null;
   if (surface === 'server' && auth.authRequired()) {
     try {
-      secure = await rpc.serverApiCredentials();
+      // IN THE REALM, because the SVID this listener presents is an identity
+      // in THAT realm's trust domain. A credential minted outside it would
+      // name the default realm's domain on a socket every client reaching it
+      // verifies against the realm's own bundle — a handshake that fails for
+      // a reason neither end can see.
+      secure = await inRealm(realmId, function () {
+        return rpc.serverApiCredentials();
+      });
     } catch (e) {
       // REPORTED, never thrown, and the port still comes up — plain. A
       // listener that refused to bind because its certificate could not be
       // minted would take the surface away for a reason nothing could show,
       // and `GET /spiffe` reports which of the two each address got.
-      log.error('spiffe: the SPIRE Server API could not be given a TLS ' +
+      log.error(errorCodes.tag('STS-SPIFFE-0070') +
+                'spiffe: the SPIRE Server API could not be given a TLS ' +
                 'identity (' + e.message + '), so its TCP port is binding ' +
                 'PLAIN and nothing on it is authenticated. GET /spiffe says ' +
                 'so; this is a fault here rather than a configuration ' +
@@ -694,7 +873,44 @@ async function bindAll(server, surface) {
   }
   for (let i = 0; i < addresses.length; i++) {
     const entry = addresses[i];
-    if (entry.socketPath) rpc.prepareSocketPath(entry.socketPath);
+    // ---------------------------------------------------------------------
+    // **TWO REALMS CANNOT HAVE ONE ADDRESS, AND THE REFUSAL SAYS WHICH ROW TO
+    // CHANGE.** Left to grpc-js this is `Failed to bind`, which is the same
+    // message a port taken by another process gives — and the two need
+    // different things done about them. A realm created without an address of
+    // its own inherits `spiffe.grpcHost`, so this is the ordinary mistake
+    // rather than an exotic one.
+    //
+    // The socket paths are seeded per realm when a realm is created, so a
+    // collision there means somebody set one deliberately; it is refused the
+    // same way, because the alternative is one realm silently taking another
+    // realm's socket away on a restart.
+    // ---------------------------------------------------------------------
+    const taken = claimedBy(entry.address, realmId);
+    if (taken !== null) {
+      const held = addressHeldBy(taken, entry.address);
+      const why = 'the "' + (taken || 'default') + '" realm already answers ' +
+        'on ' + held + ' in this process' +
+        (held === entry.address ? '' : ', which INCLUDES ' + entry.address +
+         ' — 0.0.0.0 is every address on this machine') +
+        '. Give this realm an address of its own — spiffe.grpcHost on the ' +
+        'realm — or a port of its own; and if it is the wildcard in the way, ' +
+        'give the realm that holds it a real address too. Two trust domains ' +
+        'on one endpoint would be one socket issuing SVIDs in two names.';
+      log.error(errorCodes.tag('STS-SPIFFE-0071') +
+                'spiffe: the "' + (realmId || 'default') + '" realm\'s ' +
+                surface + ' listener was NOT bound: ' + why);
+      results.push({ address: entry.address, listening: false, error: why,
+                     port: 0, tls: false, socket: !!entry.socketPath,
+                     realm: realmId || '',
+                     authentication: 'Nothing is listening here.' });
+      continue;
+    }
+    // The SPIRE Server API's socket is PRIVATE — it is the trusted `local`
+    // entity — and the Workload API's is not. See spiffe_grpc.js.
+    if (entry.socketPath) {
+      rpc.prepareSocketPath(entry.socketPath, surface === 'server');
+    }
     // The socket is the `local` entity and is never TLS; see above. `secure`
     // is null for every address but one.
     const tls = !entry.socketPath && secure;
@@ -702,6 +918,9 @@ async function bindAll(server, surface) {
       tls ? secure : rpc.grpc.ServerCredentials.createInsecure());
     bound.tls = !!tls;
     bound.socket = !!entry.socketPath;
+    if (bound.listening && entry.socketPath && surface === 'server') {
+      bound.restricted = rpc.restrictSocket(entry.socketPath);
+    }
     // What a caller has to do to use this address, said on the page rather
     // than left to be met as a handshake failure — the rule `tls_server.js`
     // follows about the main port.
@@ -715,88 +934,362 @@ async function bindAll(server, surface) {
           : 'None, and there must be none: the Workload Endpoint ' +
             'specification forbids requiring one.')
       : (tls
-          ? 'Mutual TLS. Verify this server against the trust bundle, present ' +
-            'your own X509-SVID, and expect to be authorized per method.'
+          ? 'Mutual TLS. Verify this server against the trust bundle, ' +
+            'present your own X509-SVID, and expect to be authorized per ' +
+            'method.'
           : (surface === 'server'
-              ? 'None — spiffe.authRequired is off, so this port is plain ' +
+              ? 'None — authentication is off, so this port is plain ' +
                 'gRPC and every method is open to everybody.'
               : 'None, and there must be none: the Workload Endpoint ' +
                 'specification forbids requiring one. The deployment secures ' +
                 'this port by other means or does not expose it.'));
+    bound.realm = realmId || '';
     results.push(bound);
   }
   log.debug('Leaving bindAll(). ' + results.length + ' address(es).');
   return results;
 }
 
-function listen() {
-  log.debug('Entering listen().');
-  if (started) {
-    log.debug('Leaving listen(). Already started.');
-    return { whenReady: Promise.resolve({ workload: workloadBindings,
-                                          api: apiBindings }) };
-  }
-  started = true;
-  workloadServer = rpc.buildServer([
-    { name: 'workload', handlers: workload.HANDLERS }
-  ]);
-  apiServer = rpc.buildServer(serverApi.SERVICE_HANDLERS.map(function (entry) {
-    return { name: entry.name, handlers: entry.handlers };
-  }));
-  const whenReady = (async function () {
-    // The authorities first: a listener that answered before the CA existed
-    // would refuse every call for a reason that has nothing to do with the
-    // call. Awaited rather than raced, and a failure here is REPORTED — the
-    // listeners still come up, and every call then fails with the real reason
-    // rather than with a connection refused.
-    try {
-      await ca.ready();
-    } catch (e) {
-      log.error('spiffe: the issuing authority failed, so the listeners will ' +
-                'answer and every call will be refused with the reason: ' +
-                e.message);
+// Which realm, if any, is already listening on an address in THIS process.
+// Null when nobody is — not the realm id, because the default realm's id is
+// the empty string and `'' || 'nobody'` is the kind of bug this whole file is
+// written to avoid.
+function claimedBy(address, realmId) {
+  log.debug("Entering claimedBy().");
+  let found = null;
+  listeners.forEach(function (entry, id) {
+    if (String(id) === String(realmId || '')) {
+      return;
     }
-    // The registry's seed entries, once the store exists. Here rather than at
-    // require time because `ldap_server.js` fills the directory slot at ITS
-    // require time, and `server.js` requires this module after it — but
-    // `listen()` is the first moment BOTH are certainly true.
-    try {
-      registry.seed(ca.trustDomain());
-    } catch (e) {
-      // A directory that would not hold the seed entries. Reported, never
-      // fatal: the surfaces work, they simply have nothing in them.
-      log.error('spiffe: the seed registration entries could not be created: ' +
-                e.message);
-    }
-    workloadBindings = await bindAll(workloadServer, 'workload');
-    apiBindings = await bindAll(apiServer, 'server');
-    return { workload: workloadBindings, api: apiBindings };
-  })();
-  log.debug('Leaving listen().');
-  return { whenReady: whenReady };
+    entry.bindings.forEach(function (bound) {
+      if (bound.listening && overlaps(bound.address, address)) {
+        found = id;
+      }
+    });
+  });
+  log.debug("Leaving claimedBy().");
+  return found;
 }
 
-function close() {
-  log.debug('Entering close().');
-  [workloadServer, apiServer].forEach(function (server) {
+// ---------------------------------------------------------------------------
+// **`0.0.0.0:8092` AND `172.29.0.11:8092` ARE THE SAME SOCKET, AND A STRING
+// COMPARISON SAYS THEY ARE NOT.** This is the case that actually happens
+// rather than an edge one: `spiffe.grpcHost` defaults to `0.0.0.0`, which is
+// every address on this machine, so the DEFAULT realm's listeners own the
+// Workload API port on every address a realm could possibly be given — and
+// the second realm's bind fails with `EADDRINUSE` on an address nothing else
+// appears to be using.
+//
+// Measured on the compose stack the hour this was written: a realm configured
+// with `spiffe.grpcHost=172.29.0.11` bound its Unix socket, failed on both TCP
+// ports, and said `address already in use 172.29.0.11:8092` with nothing
+// listening on that address. The fix is in two halves and this is the first:
+// the wildcard is recognised here, so the refusal names the realm and the
+// setting. The second is that the compose files now give the default realm the
+// container's OWN address instead of the wildcard, so the ordinary stack has
+// three addresses free for realms to take.
+//
+// A Unix socket path is compared literally: there is no wildcard for one.
+// ---------------------------------------------------------------------------
+function overlaps(bound, wanted) {
+  log.debug("Entering overlaps().");
+  if (bound === wanted) {
+    log.debug("Leaving overlaps().");
+    return true;
+  }
+  if (bound.indexOf('unix://') === 0 || wanted.indexOf('unix://') === 0) {
+    log.debug("Leaving overlaps().");
+    return false;
+  }
+  const boundCut = bound.lastIndexOf(':');
+  const wantedCut = wanted.lastIndexOf(':');
+  if (boundCut < 0 || wantedCut < 0) {
+    log.debug("Leaving overlaps().");
+    return false;
+  }
+  if (bound.slice(boundCut) !== wanted.slice(wantedCut)) {
+    log.debug("Leaving overlaps().");
+    return false;
+  }
+  const boundHost = bound.slice(0, boundCut);
+  const wantedHost = wanted.slice(0, wantedCut);
+  const WILDCARD = ['0.0.0.0', '::', '[::]', ''];
+  log.debug("Leaving overlaps().");
+  return WILDCARD.indexOf(boundHost) >= 0 || WILDCARD.indexOf(wantedHost) >= 0;
+}
+
+// WHICH of that realm's addresses is in the way, for the message. It is
+// usually the same string; it is not when a wildcard is what overlaps, and
+// that is exactly the case a reader needs told.
+function addressHeldBy(realmId, wanted) {
+  log.debug("Entering addressHeldBy().");
+  const entry = listeners.get(String(realmId || ''));
+  let held = wanted;
+  if (entry) {
+    entry.bindings.forEach(function (bound) {
+      if (bound.listening && overlaps(bound.address, wanted)) {
+        held = bound.address;
+      }
+    });
+  }
+  log.debug("Leaving addressHeldBy().");
+  return held;
+}
+
+// Run something inside a realm. The realm registry takes a RECORD rather than
+// an id, and `realms.get('')` is the default realm's record, so this is the
+// one place that conversion happens.
+function inRealm(realmId, fn) {
+  log.debug("Entering inRealm().");
+  const realm = realms.get(String(realmId || ''));
+  log.debug("Leaving inRealm().");
+  return realm ? realms.run(realm, fn) : fn();
+}
+
+// ---------------------------------------------------------------------------
+// ONE REALM'S FOUR LISTENERS.
+//
+// **THE HANDLERS ARE WRAPPED RATHER THAN PARAMETERISED, WHICH IS THE WHOLE
+// TRICK.** Not one line of `spiffe_workload.js` or `spiffe_api.js` knows about
+// a realm: they call `ca.trustDomain()`, `registry.entriesFor()` and the rest,
+// every one of which reads the AMBIENT realm and falls back to the default —
+// the shape every per-realm store in this service has. So a realm's gRPC
+// server is the same handler table entered through `realms.run()`, and the
+// realm a call is in is decided by the socket it arrived on and nowhere else.
+//
+// That also makes the streaming handlers right for free: `FetchX509SVID` keeps
+// the stream open and re-sends at half the SVID lifetime, and the timer it
+// arms is armed INSIDE the realm context, so the re-send is in the same realm
+// as the call that asked for it. An explicit realm argument threaded through
+// the handlers would have had to be remembered at each of those points.
+// ---------------------------------------------------------------------------
+function handlersInRealm(realmId, table) {
+  log.debug("Entering handlersInRealm().");
+  const realm = realms.get(String(realmId || ''));
+  const out = {};
+  Object.keys(table).forEach(function (name) {
+    const fn = table[name];
+    out[name] = function () {
+      const args = arguments;
+      return realms.run(realm || realms.DEFAULT_REALM, function () {
+        return fn.apply(null, args);
+      });
+    };
+  });
+  log.debug("Leaving handlersInRealm().");
+  return out;
+}
+
+async function startRealm(realm) {
+  log.debug("Entering startRealm().");
+  const realmId = realm.id === realms.DEFAULT_ID ? '' : realm.id;
+  log.debug('Entering startRealm(). realm=' + (realmId || 'default'));
+  const workloadServer = rpc.buildServer([
+    { name: 'workload', handlers: handlersInRealm(realmId, workload.HANDLERS) }
+  ]);
+  const apiServer = rpc.buildServer(
+    serverApi.SERVICE_HANDLERS.map(function (entry) {
+      return { name: entry.name,
+               handlers: handlersInRealm(realmId, entry.handlers) };
+    }));
+  const entry = { realmId: realmId, workloadServer: workloadServer,
+                  apiServer: apiServer, workload: [], api: [], bindings: [] };
+  // REGISTERED BEFORE IT BINDS, so that `claimedBy()` sees this realm while
+  // the next one is being started — the bindings are empty until they are
+  // not, and an address is only claimed once it is listening.
+  listeners.set(realmId, entry);
+  // The authorities first: a listener that answered before the CA existed
+  // would refuse every call for a reason that has nothing to do with the
+  // call. Awaited rather than raced, and a failure here is REPORTED — the
+  // listeners still come up, and every call then fails with the real reason
+  // rather than with a connection refused.
+  try {
+    await inRealm(realmId, function () { return ca.ready(realmId); });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SPIFFE-0072') +
+              'spiffe: the "' + (realmId || 'default') + '" realm\'s issuing ' +
+              'authority failed, so its listeners will answer and every call ' +
+              'will be refused with the reason: ' + e.message);
+  }
+  // The registry's seed entries, once the store exists. Here rather than at
+  // require time because `ldap_server.js` fills the directory slot at ITS
+  // require time, and `server.js` requires this module after it — but
+  // `listen()` is the first moment BOTH are certainly true. IN THE REALM,
+  // because `ou=spiffe` is a container in that realm's own directory.
+  try {
+    inRealm(realmId, function () {
+      registry.seed(ca.trustDomain(realmId));
+    });
+  } catch (e) {
+    // A directory that would not hold the seed entries. Reported, never
+    // fatal: the surfaces work, they simply have nothing in them.
+    log.error(errorCodes.tag('STS-SPIFFE-0073') +
+              'spiffe: the "' + (realmId || 'default') + '" realm\'s seed ' +
+              'registration entries could not be created: ' + e.message);
+  }
+  entry.workload = await bindAll(workloadServer, 'workload', realmId);
+  entry.bindings = entry.workload.slice(0);
+  entry.api = await bindAll(apiServer, 'server', realmId);
+  entry.bindings = entry.workload.concat(entry.api);
+  log.info('spiffe: the "' + (realmId || 'default') + '" realm answers on ' +
+           entry.bindings.filter(function (b) { return b.listening; })
+             .map(function (b) { return b.address; }).join(', ') +
+           ' for the trust domain ' + ca.trustDomainId(realmId) + '.');
+  log.debug('Leaving startRealm().');
+  return entry;
+}
+
+function stopRealm(realmId) {
+  log.debug('Entering stopRealm(). realm=' + (realmId || 'default'));
+  const entry = listeners.get(String(realmId || ''));
+  if (!entry) {
+    log.debug('Leaving stopRealm(). Nothing bound.');
+    return;
+  }
+  [entry.workloadServer, entry.apiServer].forEach(function (server) {
     if (!server) return;
     try {
       server.forceShutdown();
     } catch (e) {
       // Already down, or never came up. Nothing to do about it and nothing
       // depends on it having worked.
-      log.debug('close(): a gRPC server would not shut down: ' + e.message);
+      log.debug('stopRealm(): a gRPC server would not shut down: ' + e.message);
     }
   });
-  workloadServer = null;
-  apiServer = null;
+  listeners.delete(String(realmId || ''));
+  log.info('spiffe: the "' + (realmId || 'default') + '" realm\'s SPIFFE ' +
+           'listeners were closed. Its registration entries and its ' +
+           'authorities are untouched — turning it back on binds them again ' +
+           'under the same trust domain.');
+  log.debug('Leaving stopRealm().');
+}
+
+// ---------------------------------------------------------------------------
+// **RECONCILE, AND WHY IT IS NOT A RESTART.**
+//
+// A realm's SPIFFE is turned on by writing `spiffe.enabled` on the realm, and
+// `realms.setOverride()` fires `realms.onChange()` for it — so this is called
+// with no new mechanism and no polling. What it does is the difference
+// between the set of realms that SHOULD have sockets and the set that HAS
+// them, in both directions.
+//
+// **ONLY THE PROCESS THAT BOUND THEM RECONCILES.** In a dispatched service the
+// request workers load this module too, and they bind nothing: `listen()` is
+// called from `server.js` alone. `started` is the guard, and without it a
+// worker would try to bind the realm's sockets the moment a realm changed —
+// four listeners per worker, all but one failing, and the one that succeeded
+// answering in a process whose own listeners nobody meant to exist.
+// ---------------------------------------------------------------------------
+// **RECONCILES RUN ONE AT A TIME, AND THAT IS NOT TIDINESS.** Two of them
+// overlap in the ordinary case — `realms.setOverride()` fires the change
+// notification and a caller that wants to know the sockets are up asks for one
+// itself — and each computes the difference between what is wanted and what is
+// BOUND. A realm's entry appears only once its `startRealm()` has begun
+// awaiting, so two overlapping passes both decided the realm was missing and
+// both bound it: `EADDRINUSE` on a socket path created seconds earlier, with
+// the second pass's failed bindings overwriting the first's working ones.
+//
+// So the queue, and it is also what makes `await reconcile()` mean what a
+// caller expects: everything asked for up to this point has been done.
+let pending = Promise.resolve([]);
+
+function reconcile() {
+  log.debug('Entering reconcile().');
+  if (!started) {
+    log.debug('Leaving reconcile(). This process binds no SPIFFE socket.');
+    return Promise.resolve([]);
+  }
+  pending = pending.then(reconcileNow, reconcileNow);
+  log.debug('Leaving reconcile(). Queued.');
+  return pending;
+}
+
+function reconcileNow() {
+  log.debug('Entering reconcileNow().');
+  const wanted = realmsWithSockets();
+  const wantedIds = wanted.map(function (realm) {
+    return realm.id === realms.DEFAULT_ID ? '' : realm.id;
+  });
+  const going = [];
+  listeners.forEach(function (entry, id) {
+    if (wantedIds.indexOf(String(id)) < 0) {
+      going.push(String(id));
+    }
+  });
+  going.forEach(stopRealm);
+  const coming = wanted.filter(function (realm) {
+    const id = realm.id === realms.DEFAULT_ID ? '' : realm.id;
+    return !listeners.has(id);
+  });
+  log.debug('Leaving reconcileNow(). ' + coming.length + ' starting, ' +
+            going.length + ' stopped.');
+  // SERIALLY, because `claimedBy()` reads what is already bound and two realms
+  // starting at once would each find the other's addresses unclaimed.
+  return coming.reduce(function (chain, realm) {
+    return chain.then(function (done) {
+      return startRealm(realm).then(function (entry) {
+        return done.concat([entry]);
+      });
+    });
+  }, Promise.resolve([]));
+}
+
+function listen() {
+  log.debug('Entering listen().');
+  if (started) {
+    log.debug('Leaving listen(). Already started.');
+    return { whenReady: Promise.resolve(bindingsNow()) };
+  }
+  started = true;
+  const whenReady = reconcile().then(function () {
+    return bindingsNow();
+  });
+  log.debug('Leaving listen().');
+  return { whenReady: whenReady };
+}
+
+// EVERY REALM'S BINDINGS IN THE TWO LISTS THE REST OF THIS SERVICE ALREADY
+// READS. `/spiffe`, `/admin/spiffe` and `/admin-api` all take
+// `{ workload, api }`, and each row now says which realm it belongs to — the
+// alternative was a second shape everywhere and two things to keep in step.
+function bindingsNow() {
+  log.debug("Entering bindingsNow().");
+  const workloadAll = [];
+  const apiAll = [];
+  listeners.forEach(function (entry) {
+    entry.workload.forEach(function (b) { workloadAll.push(b); });
+    entry.api.forEach(function (b) { apiAll.push(b); });
+  });
+  log.debug("Leaving bindingsNow().");
+  return { workload: workloadAll, api: apiAll };
+}
+
+function close() {
+  log.debug('Entering close().');
+  Array.from(listeners.keys()).forEach(stopRealm);
   started = false;
   log.debug('Leaving close().');
 }
 
+// A realm created, changed or removed. `realms.setOverride()` fires this, so
+// turning a realm's SPIFFE on is what binds its sockets — see reconcile().
+realms.onChange(function () {
+  const running = reconcile();
+  if (running && typeof running.catch === 'function') {
+    // Never thrown into the caller: this is a notification, and the caller is
+    // whoever happened to write a setting. A listener that would not bind is
+    // reported on `GET /spiffe` like every other one.
+    running.catch(function (e) {
+      log.error(errorCodes.tag('STS-SPIFFE-0074') +
+                'spiffe: the listeners could not be reconciled after a realm ' +
+                'changed: ' + e.message);
+    });
+  }
+});
+
 admin.setSpiffeReader(function () {
-  return { workload: workloadBindings.slice(0), api: apiBindings.slice(0),
-           bundlePath: BUNDLE_PATH };
+  const now = bindingsNow();
+  return { workload: now.workload, api: now.api, bundlePath: BUNDLE_PATH };
 });
 
 module.exports = {
@@ -805,6 +1298,18 @@ module.exports = {
   description: description,
   BUNDLE_PATH: BUNDLE_PATH,
   bindings: function () {
-    return { workload: workloadBindings.slice(0), api: apiBindings.slice(0) };
-  }
+    log.debug("Entering bindings().");
+    log.debug("Leaving bindings().");
+    return bindingsNow();
+  },
+  // What a test and `/spiffe` need that the two flat lists cannot carry: which
+  // realms have sockets at all. Exported rather than derived from the rows
+  // because a realm whose every binding FAILED is still a realm with SPIFFE
+  // turned on, and the two states need telling apart.
+  realmsListening: function () {
+    log.debug("Entering realmsListening().");
+    log.debug("Leaving realmsListening().");
+    return Array.from(listeners.keys());
+  },
+  reconcile: reconcile
 };

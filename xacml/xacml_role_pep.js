@@ -24,12 +24,12 @@
 // THE REQUEST IT BUILDS, WHICH IS THE CONTRACT.
 //
 //   access-subject   subject-id                    who is being authenticated
-//                    urn:sts-mock:xacml:role       the roles they hold
-//                    urn:sts-mock:xacml:role-from-token
+//                    urn:sts:xacml:role       the roles they hold
+//                    urn:sts:xacml:role-from-token
 //                                                  roles read out of a token
 //                                                  they PRESENTED
 //   resource         resource-id                   the application
-//                    urn:sts-mock:xacml:required-role
+//                    urn:sts:xacml:required-role
 //                                                  what it demands
 //   action           action-id                     issue-access-token,
 //                                                  start-session, and the rest
@@ -83,6 +83,9 @@
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 const audit = require('../common/audit');
+// The error-code registry (a leaf): a refused issuance's code rides on the
+// audit row and the log line, never on the protocol error the client is sent.
+const errorCodes = require('../common/error_codes');
 const applications = require('../common/applications');
 const roles = require('../common/roles');
 const gate = require('../common/issuance_gate');
@@ -105,6 +108,8 @@ const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
 let warnedAboutMissingPolicy = false;
 
 function issuancePolicyName() {
+  log.debug("Entering issuancePolicyName().");
+  log.debug("Leaving issuancePolicyName().");
   return String(config.value('xacml.issuancePolicy') || 'role-issuance');
 }
 
@@ -213,6 +218,8 @@ function issuancePolicy() {
 // that needed two.
 // ---------------------------------------------------------------------------
 function attribute(attributeId, values, type) {
+  log.debug("Entering attribute().");
+  log.debug("Leaving attribute().");
   return {
     attributeId: attributeId,
     issuer: null,
@@ -298,9 +305,11 @@ let dryRun = false;
 // THE DECISION.
 // ---------------------------------------------------------------------------
 function decide(asked) {
+  log.debug("Entering decide().");
   const outer = dryRun;
   dryRun = !!(asked && asked.preview);
   try {
+    log.debug("Leaving decide().");
     return decideNow(asked);
   } finally {
     dryRun = outer;
@@ -330,7 +339,8 @@ function decideNow(asked) {
     if (!narrowed) {
       if (!warnedAboutMissingPolicy) {
         warnedAboutMissingPolicy = true;
-        log.warn('xacml: ' + loaded.why + '. Issuance is NOT being gated: ' +
+        log.warn(errorCodes.tag('STS-XACML-0043') +
+                 'xacml: ' + loaded.why + '. Issuance is NOT being gated: ' +
                  'every application that has not been narrowed requires ' +
                  'EVERYBODY, which everybody holds, so nothing is refused ' +
                  'that would have been permitted. An application whose entry ' +
@@ -345,6 +355,21 @@ function decideNow(asked) {
                      held, required);
     }
     log.debug('Leaving decide(). No policy, and this application is narrowed.');
+    // FAIL-CLOSED, and until error codes it wrote no audit row at all: the
+    // issuance site answers in its own protocol's words and this is the only
+    // record of WHY. Not on a dry run, for the reason the block above decide()
+    // gives.
+    if (!dryRun) {
+      audit.failure('STS-XACML-0042', {
+        action: 'xacml.issuance.refused',
+        protocol: 'XACML', channel: 'internal',
+        actor: subject.name || '', target: String(asked.application || ''),
+        summary: 'Refused ' + (asked.kind || 'an issuance') + ' for a ' +
+                 'narrowed application because no issuance policy is loaded.',
+        outcome: 'refused'
+      });
+    }
+    log.debug("Leaving decideNow().");
     return refused(
       'This application requires ' + required.join(' or ') + ', and ' +
       loaded.why + ' — so the restriction cannot be evaluated. It is refused ' +
@@ -383,6 +408,9 @@ function decideNow(asked) {
   if (!dryRun) {
     audit.audit({
       action: 'xacml.issuance.refused',
+      errorCode: answer.decision === model.DECISION.DENY ? 'STS-XACML-0039'
+        : (answer.decision === model.DECISION.NOT_APPLICABLE ? 'STS-XACML-0040'
+                                                             : 'STS-XACML-0041'),
       actor: subject.name || '',
       protocol: 'XACML',
       detail: answer.decision + ' for ' + (asked.kind || 'an issuance') +
@@ -399,16 +427,19 @@ function decideNow(asked) {
 }
 
 function reasonFor(answer, held, required, asked) {
+  log.debug("Entering reasonFor().");
   const who = asked.subject && asked.subject.name
     ? '"' + asked.subject.name + '"' : 'the caller';
   if (answer.decision === model.DECISION.DENY ||
       answer.decision === model.DECISION.NOT_APPLICABLE) {
+    log.debug("Leaving reasonFor().");
     return '"' + asked.application + '" requires ' +
       (required.length ? required.join(' or ') : 'a role nothing named') +
       ' and ' + who + ' holds ' +
       (held.length ? held.join(', ') : 'no role at all') + '.';
   }
   const status = (answer.status && answer.status.message) || '';
+  log.debug("Leaving reasonFor().");
   return 'the issuance policy could not be evaluated' +
     (status ? ': ' + status : '') + '. Nothing is issued on an ' +
     'Indeterminate, because the alternative is issuing on an error.';
@@ -429,6 +460,7 @@ function reasonFor(answer, held, required, asked) {
 // causing the outage it exists to show.
 // ---------------------------------------------------------------------------
 function allowed(why, held, required, answer) {
+  log.debug("Entering allowed().");
   const decision = answer ? answer.decision : model.DECISION.NOT_APPLICABLE;
   // NOT ON A DRY RUN. See the block above `decide()`: the monitor answers what
   // this service is actually deciding, and a page asking what WOULD happen is
@@ -437,6 +469,7 @@ function allowed(why, held, required, answer) {
   if (!dryRun) {
     monitor.record('issuance', { decision: decision, allowed: true });
   }
+  log.debug("Leaving allowed().");
   return { allowed: true,
            decision: decision,
            why: why, roles: held || [], required: required || [],
@@ -444,9 +477,11 @@ function allowed(why, held, required, answer) {
 }
 
 function refused(why, decision, held, required, answer) {
+  log.debug("Entering refused().");
   if (!dryRun) {
     monitor.record('issuance', { decision: decision, allowed: false });
   }
+  log.debug("Leaving refused().");
   return { allowed: false, decision: decision, why: why,
            roles: held || [], required: required || [],
            policy: issuancePolicyName(),

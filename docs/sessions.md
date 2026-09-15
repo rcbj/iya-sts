@@ -1,6 +1,6 @@
 ---
 title: Sessions
-nav_order: 7
+nav_order: 10
 ---
 
 # What a session is here, and how it is tracked
@@ -36,7 +36,7 @@ session anywhere in this service.
 
 ### The cookie
 
-`sts_mock_session`, `Path=/`, `HttpOnly`, `SameSite=Lax`, and `Secure` **only
+`sts_session`, `Path=/`, `HttpOnly`, `SameSite=Lax`, and `Secure` **only
 when the port is TLS** (`global.https`). That last one is conditional rather than
 always on for a reason worth knowing: a browser silently *drops* a `Secure`
 cookie that arrives over plain http, so setting it unconditionally would leave a
@@ -78,12 +78,18 @@ to fan out to, so seeing them in advance is the only way to know what a sign-out
 is about to do. SAML 1.1 has no such list because that profile has no Single
 Logout, and SPNEGO and federation add none because neither defines one.
 
-### Lifetime: one hour, absolute, not extended by use
+### Lifetime: an hour by default, absolute, not extended by use
 
-Fixed when the session is created. **There is no idle timeout in this service**,
-so a session in constant use dies at the same instant as one nobody has touched.
-It is not configurable — it is a constant in `authn/authn.js`, which is worth
-knowing before looking for a setting.
+Fixed when the session is created, from **`authn.sessionLifetimeS`** (3600 by
+default); changing it reaches the next session and leaves live ones as they
+were. **There is no idle timeout by default**, so a session in constant use dies
+at the same instant as one nobody has touched — set
+**`authn.sessionIdleTimeoutS`** to end a session that many seconds after it was
+last used, whichever limit comes first. The idle timeout is checked whenever a
+session is read, so it applies to sessions that already exist, and a request to
+the admin console or the user portal counts as use of the sign-on session behind
+it. Until 2026-09-12 both were constants in `authn/authn.js` and neither could
+be changed.
 
 **An expiry ends the session properly**, and until 2026-09-04 it did not: the
 record was deleted with no audit row and no event, and only *lazily* — when
@@ -143,7 +149,8 @@ are the exception in RFC 9700 mode.
 
 Nothing here limits how many a person may hold: two browsers is two sessions.
 They are folded onto one person by an **identity key** — the normalisation that
-makes `alice`, `alice@REALM` and `urn:sts-mock:user:alice` one identity — which
+makes `alice`, `alice@REALM` and a token's `urn:uuid:<entryUUID>` subject one
+identity (the older `urn:sts:user:alice` form is still read) — which
 is what `/admin/users`, `/admin/logout` and `/admin/sessions` all file rows
 under.
 

@@ -5,7 +5,7 @@
 // IT WAS `GET /sts-metadata` AND IT MOVED INTO THE CONSOLE on 2026-08-24, which
 // costs this test two things and is worth knowing before either surprises you:
 //
-//   * **It is behind the console gate** (`admin.authRequired`, on by default).
+//   * **It is behind the console gate**, which is unconditional.
 //     A browser with no session is redirected to the sign-in screen and a
 //     caller asking for `?format=json` is refused `401 login_required` — a
 //     redirect to an HTML login screen is not an answer a program can read. So
@@ -95,11 +95,13 @@ async function signInToTheConsole() {
 
 // One read of the page, carrying the session when there is one.
 function withSession(session, options) {
+  log.debug("Entering withSession().");
   const opts = Object.assign({}, options || {});
   if (session) {
     opts.headers = Object.assign({}, opts.headers || {},
                                  { Cookie: session });
   }
+  log.debug("Leaving withSession().");
   return opts;
 }
 
@@ -118,10 +120,10 @@ async function theDocumentIsServed(session) {
       "/admin/sts-metadata?format=json", withSession(session));
   assert.ok(json.ok,
             "GET /admin/sts-metadata?format=json should answer 200; got " +
-            json.status + ". A 401 or a 403 here is the console's own gate " +
-            "(admin.authRequired): the sign-in above got a session but the " +
+            json.status + ". A 401 or a 403 here is the console's own gate: " +
+            "the sign-in above got a session but the " +
             "roster is enforced and " + CONSOLE_USER + " holds no console " +
-            "role, so grant one or turn the gate off.");
+            "role, so grant one — the gate itself cannot be turned off.");
   const doc = json.body;
   assert.ok(doc && Array.isArray(doc.endpoints) && doc.endpoints.length > 20,
     "the document should list this service's endpoints; got " +
@@ -206,7 +208,8 @@ function theConsoleChromeIsThere(page) {
   // console has no script to do that with. The assertion's INTENT survived
   // that change untouched: the active item is TEXT and not a link. So what is
   // asserted is the intent, and the attributes are free to grow.
-  assert.ok(/<li><span class="here"[^>]*>Service metadata<\/span><\/li>/.test(page),
+  assert.ok(/<li><span class="here"[^>]*>Service metadata<\/span><\/li>/.test(
+      page),
     "and it should mark THIS page as the one being read — the sidebar item " +
     "for the active page is drawn as text rather than as a link.");
   // AND THE TWO THINGS THAT MAKE THAT MARK REACHABLE, which are now part of
@@ -216,7 +219,8 @@ function theConsoleChromeIsThere(page) {
   // because both are invisible — nothing about the rendered page looks wrong
   // if either is dropped, and the sidebar would quietly go back to starting at
   // the top on every navigation.
-  const activeItem = /<li><span class="here"([^>]*)>Service metadata<\/span><\/li>/
+  const activeItem =
+      /<li><span class="here"([^>]*)>Service metadata<\/span><\/li>/
     .exec(page);
   assert.ok(activeItem && /aria-current="page"/.test(activeItem[1]),
     "the active sidebar item should carry aria-current=\"page\"; it had " +
@@ -277,10 +281,39 @@ function theProtocolListIsHonest(doc, page) {
                     // paying that here is cheaper than making the rule
                     // conditional on whether a group is a protocol.
                     "User portal",
+                    // GNAP (2026-09-12): an authorization server of its own
+                    // kind, carded beside XACML because both are families a
+                    // client reaches with a credential it already holds.
+                    "GNAP",
                     "XACML", "Federation", "Shared Signals",
                     "SAML 2.0", "SAML 1.1",
                     "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",
+                    // THE NINETEENTH (2026-09-10): the certificate authority
+                    // each trust realm holds, whose surface is /admin/pki.
+                    // **It is not the "PKI / X.509" card three names down** —
+                    // that one is the TLS group, the two listeners' view of
+                    // what a handshake proved. Two cards, two endpoint
+                    // groups, similar names: this list is deepStrictEqual so
+                    // reading one as the other fails here rather than passing
+                    // for the wrong reason.
+                    "PKI",
+                    // CERTIFICATE ENROLLMENT (2026-09-13), carded beside the
+                    // authority all three issue from.
+                    "ACME", "EST", "SCEP",
                     "SCIM", "LDAP", "PKI / X.509", "WebAuthn / CTAP",
+                    // THE SECOND SECOND FACTOR (2026-09-10). Beside WebAuthn
+                    // rather than under Protocols on its own, because both
+                    // answer the same endpoint group — Authentication — and
+                    // this list is in the page's order.
+                    "One-time passwords (TOTP)",
+                    // THE THIRD SECOND FACTOR (2026-09-10), beside the other
+                    // two for the same reason and answering the same endpoint
+                    // group. **It is the second card on this page that
+                    // implements no specification** — there is no RFC for a
+                    // recovery code — so it carries `notAProtocol` and the
+                    // assertion below about every card naming a spec is what
+                    // makes that marker load-bearing rather than decorative.
+                    "Recovery codes",
                     "Verifiable Credentials (OID4VCI / OID4VP)"];
   assert.ok(Array.isArray(doc.protocols),
     "the document should carry the protocol list; it has none.");
@@ -406,8 +439,9 @@ function specificationsAreHonest(doc) {
   // A specification nothing references is either an overstatement or a missing
   // link on an endpoint. Both are worth knowing about.
   const referenced = new Set();
-  doc.endpoints.forEach(function (e) { (e.specs ||
-                        []).forEach(function (id) { referenced.add(id); }); });
+  doc.endpoints.forEach(function (e) {
+    (e.specs || []).forEach(function (id) { referenced.add(id); });
+  });
   const orphans =
       Array.from(ids).filter(function (id) { return !referenced.has(id); });
   assert.deepStrictEqual(orphans, [],
@@ -455,7 +489,8 @@ async function theMethodsShownActuallyAnswer(doc) {
   let skipped = 0;
   for (const e of doc.endpoints) {
     let path = e.path;
-    if (path === "*") continue;              // the CORS preflight answers every path
+    // the CORS preflight answers every path
+    if (path === "*") continue;
     // ---------------------------------------------------------------------
     // AND THE ONE ENDPOINT THAT IS UNGATED AND DESTRUCTIVE (2026-09-06).
     //

@@ -1,8 +1,121 @@
 # spiffe/
 
-An issuing authority for one trust domain, in all three of its server-side
-shapes: the bundle endpoint over plain HTTPS, and the Workload API and SPIRE
-Server API over gRPC on FOUR MORE SOCKETS — a Unix socket and a TCP port each.
+An issuing authority for one trust domain **per trust realm**, in all three of
+its server-side shapes: the bundle endpoint over plain HTTPS, and the Workload
+API and SPIRE Server API over gRPC on FOUR MORE SOCKETS — a Unix socket and a
+TCP port each, per realm that has SPIFFE turned on.
+
+---
+
+## A TRUST DOMAIN AND A PAIR OF SOCKETS PER REALM (2026-09-12)
+
+**This file said "one trust domain" everywhere until this date, and
+`realms.realmSupport()` reported SPIFFE as the one family here with NO realm
+discriminator at all.** Both are reversed, at rcbj's instruction, and the
+instruction named the shape: *give each realm its own trust domain and socket …
+a common root domain + unique issuer for each domain … for the SPIFFE service,
+a unique IP will be used … a realm should be spun up without the SPIFFE
+protocol enabled … make the trust domain configurable per realm … and issue
+join tokens that are scoped per realm.*
+
+**SPIFFE LEFT THE ROOT `CLAUDE.md`'s LIST OF SHARED SOCKET FAMILIES THAT DAY,
+AND THE SENTENCE IT LEFT BEHIND IS WORTH KEEPING**: it read *SPIFFE's sockets
+are still shared and its X.509 authority is not, since 2026-09-11, and the two
+facts are compatible for exactly one reason — the trust ANCHOR is the service
+Root, which no realm owns … a realm still gets no trust domain, no bundle
+endpoint of its own in any meaningful sense, and no socket.* Every clause was
+true and the last one is what changed.
+
+**THE DISCRIMINATOR IS THE ENDPOINT ADDRESS, AND IT COULD NOT HAVE BEEN
+ANYTHING ELSE.** Every other family in this service is told which realm it is
+in by a segment at the front of the path. gRPC has a path and it is the METHOD:
+`/SpiffeWorkloadAPI/FetchX509SVID` is fixed by the Workload API specification
+and `spire.api.server.entry.v1.Entry/BatchCreateEntry` by SPIRE's, so a realm
+segment in it would be a method no conforming client calls — which is the same
+answer this repository gave when asked whether `/realm/<id>/admin-api` on these
+sockets would be conformant. It is also what a real deployment does: one SPIRE
+server is one trust domain, and several trust domains are several endpoints.
+
+Six things follow, and each is where to look:
+
+1. **THE TRUST DOMAIN IS SEEDED WHEN THE REALM IS CREATED**, as
+   `<realm>.<the process's>` — `acme.example.org` — by the same mechanism that
+   gives a realm its own entityID: `realms.js`'s `NAMED_BY_REALM`, where it is
+   the seventh row and the first that PREFIXES rather than suffixes, because a
+   DNS-shaped name nests the other way round. A realm may name its own outright
+   instead. `spiffe.trustDomain` is `realmRuntime` in config.js — restart-only
+   for the process, settable on a realm — and the argument for the marker's
+   second holder is at the head of the SPIFFE group there.
+2. **IT IS FIXED WHEN THAT REALM'S AUTHORITIES ARE BUILT.** `spiffe_ca.js`
+   records the name in the realm's authority record and goes on using it; a
+   later change is reported as DRIFT on `GET /spiffe` and `/admin/spiffe`
+   rather than acted on, because every certificate that realm has issued names
+   the old one. The way to change it is to turn that realm's SPIFFE off, which
+   discards the authorities, and on again.
+3. **A REALM IS CREATED WITH SPIFFE OFF**, seeded in `realms.js` beside the
+   socket paths. Turning it on BINDS SOCKETS, and a realm that bound two
+   listeners merely by existing would make `POST /admin-api/realms/create` an
+   operation that opens ports — and would hand out credentials from an
+   authority nobody asked to exist. **A REALM OPTS IN, AND THE SEEDED `false`
+   IS NOT WHAT MAKES THAT TRUE**: `enabledIn()` reads the realm's OWN override
+   rather than the effective value, because a realm created before this
+   existed — or restored from a store an older build wrote — carries no row and
+   would otherwise inherit the process's `true`, which is a key generation and
+   a pair of refused binds for every such realm on the next start. The seeded
+   row is what makes the state visible on `/admin/realms`.
+4. **THE SOCKETS ARE RECONCILED, NOT RESTARTED.** `realms.setOverride()` fires
+   `realms.onChange()`, and `spiffe_server.js`'s `reconcile()` binds what is
+   newly wanted and closes what is not. It is QUEUED — two overlapping passes
+   both bound the same realm and the second's failures overwrote the first's
+   working bindings, which is `EADDRINUSE` on a socket created seconds earlier
+   — and it is a no-op in a process that never called `listen()`, which is
+   every request worker.
+5. **TWO REALMS MAY NOT SHARE AN ADDRESS**, and the refusal names the realm
+   that has it and the setting to change. Left to grpc-js this is `Failed to
+   bind`, which is also what a port taken by another process says, and the two
+   need different things done about them.
+6. **JOIN TOKENS ARE PER REALM.** `spiffe_api.js`'s store was `sharedMap()`
+   with `scope: 'shared'`, which was right while there was one trust domain; a
+   join token is a credential for joining a trust domain, and a token minted on
+   one realm's SPIRE Server API and redeemed on another's would attest an agent
+   into a trust domain nobody issued it for.
+
+   **AND THIS SERVICE HOLDS NO JOIN TOKEN IN THE CLEAR (2026-09-12).** The
+   store was keyed by the token, and a persisted row's KEY is written unsealed
+   (`persistence_minted.js` seals only the body), so every unspent token sat in
+   `sts_minted` and `sts_changes` in the clear; the store is keyed by a SHA-256
+   of the token now (`joinTokenKey()`), and the body carries only the expiry and
+   the agent it was minted for. And `selectorsFromAttestation()` put any short
+   printable payload on the agent's entry as `payload:<text>` — which for a join
+   token was the token itself, in the directory; a join token's selector is
+   `token-sha256:<16 hex>` instead, so somebody holding the token can still find
+   the agent it attested and nobody can reconstruct it. Entries written before
+   the change keep the `payload:` selector they were given; the token in one is
+   spent, since only a successful attestation writes it.
+   `tests/spiffe_join_token.js` looks for the token in every key and body of the
+   store, on the agent's entry and in the audit log.
+
+**WHAT IS STILL SHARED**: the DEFAULT realm's four listeners, which are bound
+at startup and stay bound with `spiffe.enabled` off (they answer `Unavailable`;
+a socket that vanished would read as a service that had stopped). **The
+FEDERATED bundles were on this line until the same day and it was a security
+defect rather than a leftover** — see *Federated bundles are a realm's own*
+below.
+
+**HOW THE HANDLERS KNOW.** They do not. Not one line of `spiffe_workload.js` or
+`spiffe_api.js` mentions a realm: they call `ca.trustDomain()`,
+`registry.entriesFor()` and the rest, every one of which reads the AMBIENT
+realm. `spiffe_server.js` builds a realm's gRPC server from the SAME handler
+table wrapped in `realms.run()`, so the realm a call is in is decided by the
+socket it arrived on and nowhere else — and a streaming handler's re-send timer
+is armed inside that context, which an explicit realm argument would have had
+to be remembered at.
+
+`tests/spiffe_realm_domains.js` holds all of it, including the one assertion
+that cannot be made anywhere else: a real gRPC client on a realm's own Unix
+socket gets THAT realm's trust domain back from `FetchX509Bundles`.
+
+---
 
 `protos/` holds the SPIFFE project's own `workloadapi.proto` and the
 `spire-api-sdk`'s, VERBATIM. `spiffe_grpc.js` reads them at module scope through
@@ -29,8 +142,10 @@ that up silently.
    has no secret and no root of trust until this call gives it one. A real SPIRE
    *server*, by contrast, binds a TCP port whose callers present an X509-SVID
    over mutual TLS and authorizes every method against what the caller IS. So:
-   `spiffe.authRequired` reaches the SPIRE Server API and DELIBERATELY NOT the
-   Workload API. Do not "fix" the asymmetry.
+   the mutual TLS requirement reaches the SPIRE Server API and DELIBERATELY NOT
+   the Workload API. Do not "fix" the asymmetry. (`spiffe.authRequired` used to
+   be the name of it; `global.mode` replaced it on 2026-09-06 and the
+   requirement became unconditional.)
 
    **NOTHING ATTESTS A WORKLOAD OR A NODE, WHICH IS A DIFFERENT CLAIM FROM
    "NOBODY IS AUTHENTICATED" AND THE TWO MUST STAY APART.** A real agent reads
@@ -52,7 +167,7 @@ that up silently.
      `unix:` or `k8s:`. Writing `unix:uid:1000` for a uid nothing read would be
      inventing an attested fact, which is the `wauth` argument again. An
      ASSERTED selector — `spiffe.acceptAssertedSelectors`, OFF by default, sent
-     in an `x-sts-mock-workload-selector` header — is passed through VERBATIM,
+     in an `x-sts-workload-selector` header — is passed through VERBATIM,
      because it is the caller's own claim rather than this service's invention,
      and it exists so that a client's "these matched and those did not" path can
      be exercised at all.
@@ -82,8 +197,8 @@ that up silently.
    refusal it replaced is the argument to keep in view: "nothing here
    authenticates the caller, so answering would mean renewing whichever agent
    the caller named". Something does now, so the method renews the agent on the
-   CONNECTION and never one named in the request — and with `spiffe.authRequired`
-   off it answers `Unimplemented` with that same sentence.
+   CONNECTION and never one named in the request — and where nothing identifies
+   the caller it answers `Unimplemented` with that same sentence.
 
    **AN ACCEPTED CREDENTIAL IS AN IDENTITY**, through the funnel every other
    family uses. Three acceptances reach it: an X509-SVID over mutual TLS (ONCE
@@ -172,17 +287,95 @@ that up silently.
    time and the dependency is NOT inverted (rule 3e's test fails both ways
    round: no cycle, no route moves).
 
-   **TWO PKIs IN ONE PROCESS, ON PURPOSE.** The SPIFFE CA is not
-   `tls_server.js`'s certificate and must not become it: that one is a leaf with
-   `CA:FALSE` and `serverAuth`, and a trust domain's root and a host's TLS
-   identity are unrelated trust decisions. The X.509 authority is **EC P-256 by
+   **THE X.509 AUTHORITY IS A LEAF OF THIS SERVICE'S OWN ROOT SINCE
+   2026-09-11, AND THIS PARAGRAPH SAID THE OPPOSITE.** It read: *TWO PKIs IN
+   ONE PROCESS, ON PURPOSE. The SPIFFE CA is not `tls_server.js`'s certificate
+   and must not become it: that one is a leaf with `CA:FALSE` and `serverAuth`,
+   and a trust domain's root and a host's TLS identity are unrelated trust
+   decisions.* Every clause of that is still true and **none of it was ever an
+   argument against a shared ROOT** — it is an argument against the SPIFFE
+   authority being the TLS certificate, which it is not and never becomes.
+   `/admin/pki`'s own page carried the same argument and ended by saying the
+   SPIFFE Issuing CA was built and certifying nothing *so that reversing this is
+   a decision rather than a rebuild*. The decision was taken.
+
+   The shape now, per realm:
+
+   ```
+   Root CA (the service's, shared by every realm)   <- THE BUNDLE
+   └── Intermediate CA — this realm      pathLen 2
+        └── SPIFFE Issuing CA            pathLen 1  <- the X.509 authority
+             ├── X509-SVID               a leaf
+             └── downstream CA           pathLen 0  (NewDownstreamX509CA)
+                  └── a leaf
+   ```
+
+   **THE SHORTEST TRUE DESCRIPTION IS THAT THIS SERVICE'S PKI IS NOW SPIRE'S
+   UpstreamAuthority.** The bundle publishes the ROOT, not the authority — which
+   is exactly what SPIRE publishes with an upstream plugin configured — and an
+   X509-SVID carries the Issuing CA and this realm's Intermediate in its own
+   chain. Three things follow and each is worth knowing before editing anything
+   here:
+
+   * **A ROTATION NO LONGER CHANGES THE BUNDLE.** Re-issuing the Issuing CA
+     leaves the anchor where it is, so an SVID minted a minute ago goes on
+     building a path and nobody has to re-fetch anything. The
+     prepend-and-retain machinery and `MAX_RETAINED_AUTHORITIES` exist for the
+     SELF-SIGNED path alone now, and `rotateX509Authority()` says which
+     mechanism ran rather than reporting the two identically.
+   * **`trustAnchors` AND `x509Authorities` ARE TWO LISTS AND WERE ONE.** What
+     SIGNS an SVID and what a consumer INSTALLS are different certificates now;
+     they coincided only because a self-signed authority is both. Every report
+     — `state()`, `GET /spiffe`, `/admin/spiffe`, the crypto report — carries
+     both, and `spiffe_auth.js` deliberately verifies a presented SVID against
+     the ISSUING one (a direct-issuer check) while `spiffe_grpc.js`'s client
+     truststore takes the ANCHOR (OpenSSL will not treat a non-self-signed
+     certificate as an anchor without `X509_V_FLAG_PARTIAL_CHAIN`).
+   * **THE `pathLen` NUMBERS ARE DERIVED IN `common/pki.js` AND MUST STAY
+     DERIVED.** `NewDownstreamX509CA` asks this authority for a CA, so the
+     `spiffe` use case carries `pathLen: 1` and `intermediatePathLen()` widens
+     the realm Intermediate to 2 from that one number. Setting either by hand
+     is how they come apart, and a chain whose depth exceeds a constraint
+     encodes cleanly and is refused at the far end of somebody else's path
+     builder with a message naming neither certificate.
+
+   **IT IS PER REALM AND THE TRUST DOMAIN IS NOT, WHICH IS THE ONE THING TO
+   GET STRAIGHT.** `spiffe.trustDomain` is read once, service-wide; the
+   AUTHORITY is a realm's, because `common/pki.js`'s SPIFFE Issuing CA is. That
+   is coherent with four shared sockets only because the anchor is shared:
+   every realm's bundle is byte-identical, the gRPC sockets answer in the
+   DEFAULT realm (a socket still has no path to put a segment in), and what the
+   chain adds is which realm issued the SVID. `tests/spiffe_pki.js` asserts all
+   of it.
+
+   **AND THERE IS STILL A SELF-SIGNED PATH, REACHED BY THREE SUPPORTED
+   CONFIGURATIONS**: `pki.autoBuild: false`, a Root that could not be built
+   (never fatal, by `pki.start()`'s own rule), and every in-process caller that
+   does not run `common/service_state.js` — `npm test`, the parent project's
+   in-process Kerberos jobs. There this module does what it always did, says so
+   on every surface that reports an authority, and nothing about SPIFFE stops
+   working. `tests/spiffe_authority.js` holds that path, in a child process
+   because the suite builds a hierarchy before it runs.
+
+   The X.509 authority is **EC P-256 by
    default** — what SPIRE issues — which is why the four PKI modules are
    VENDORED from the debugger: `node-forge`, which `helpers.js` and
-   `tls_server.js` use, cannot sign with an EC key at all. **`spiffe_ca.js`'s
-   initialisation is ASYNC** (Web Crypto), which nothing else in this service is:
-   one promise started at require time, and every entry point awaits `ready()`
-   itself so no caller can forget. `state()` is the one synchronous exception and
-   says why.
+   `tls_server.js` use, cannot sign with an EC key at all. **That survived the
+   move**: the `spiffe` use case carries a key-algorithm PREFERENCE that
+   `common/pki.js` honours when nobody chose one, so out of the box an SVID is
+   still ES256-signed even though the branch above it is RSA. An operator who
+   names an algorithm for their certificate authority gets it for this Issuing
+   CA too, which is what choosing one means.
+
+   **`spiffe_ca.js`'s
+   initialisation is ASYNC** (Web Crypto), which nothing else in this service is.
+   **It is TWO STEPS since 2026-09-11 and the split is forced by the startup
+   order**: `initialise()` validates the trust domain once at require time, and
+   `ensureTrustMaterial(realm)` resolves a realm's authorities on FIRST USE —
+   because `pki.start()` runs after the whole protocol stack is required, so an
+   authority resolved at require time is resolved when there is provably no
+   hierarchy. Every entry point still awaits `ready()` itself so no caller can
+   forget. `state()` is the one synchronous exception and says why.
 
    **A FOREIGN BUNDLE IS PUSHED IN AND NEVER FETCHED.** `RefreshBundle` refuses,
    naming the URL it is not fetching. Same refusal as `wreqptr` and `jwks_uri`,
@@ -286,8 +479,8 @@ that up silently.
   mint or that has expired or been spent or was minted for another agent, an
   X509-SVID that no authority here signed or that is outside its validity
   window, every method the caller's entity is not allowed, and a federated
-  bundle whose JWKs have no `use`. `spiffe.authRequired` off restores the whole
-  of the old posture. See rule 3k, `spiffe_auth.js` and `GET /spiffe`.
+  bundle whose JWKs have no `use`. The old posture is no longer reachable:
+  `spiffe.authRequired` restored it and was removed on 2026-09-06. See rule 3k, `spiffe_auth.js` and `GET /spiffe`.
 
 ## There is no test for this in either repository, and it is the largest untested surface here
 
@@ -313,8 +506,9 @@ with no URI SAN, with two, signed by nothing here, outside its validity window,
 or naming a trust domain the signing authority does not own; a join token never
 minted, expired, replayed, or minted for another agent; `RenewAgent` renewing
 the agent on the CONNECTION and never one named in the request; and the same run
-with `spiffe.authRequired` off, which must behave exactly as the service did
-before any of it existed. Also that one identity presented three ways is ONE
+with the SPIRE Server API unauthenticated, which must behave exactly as the
+service did before any of it existed — a run that needs arranging now that
+`spiffe.authRequired` is gone. Also that one identity presented three ways is ONE
 directory entry — **and now that one identity ISSUED a certificate fifty times
 is still one entry**, with `x509serialNumber` equal to the last SVID and
 `x509svidsIssued` equal to fifty, which is the assertion that catches the
@@ -332,6 +526,171 @@ CLIENT — which is what `tests/sts_dpop.js` does by writing its own DPoP client
 rather than importing the wallet's, and for the same reason: if both ends came
 from one implementation, a shared misunderstanding passes and interoperates with
 nobody.
+
+## FORTY-TWO OF THE FORTY-SEVEN METHODS RUN IN A REQUEST WORKER (2026-09-12)
+
+`common/request_pool.js` dispatches non-HTTP work by OPERATION — a
+`{ kind, args }` pair the front process sends to a worker while keeping the
+socket and the framing. `ldap/ldap_server.js` was the first family to use it and
+this is the second: both unary Workload API methods and all forty of the SPIRE
+Server API's leave the thread that owns every socket this service has. The five
+server streams do not, and that is argued below rather than omitted.
+
+**THE SEAM IS `spiffe_grpc.js`'s `unary()` WRAPPER AND NOTHING ELSE.** Every
+method on both surfaces is registered through `unary()`, `serverStream()` or
+`bidiStream()`, so wrapping there covers all of them by construction — and
+**`spiffe_workload.js` and `spiffe_api.js` are not edited at all**. That is
+`ldap_server.js`'s registration-point argument met again: forty-two handlers
+each remembering to offer themselves to the pool is forty-two chances to forget,
+and what was forgotten would be invisible — the method would run in the front
+process and everything would work, slightly slower, for ever.
+
+### A handler reads exactly two things off the call
+
+Counted across both handler files: `call.request` (35 uses) and
+`call.spiffeCaller` (4). Nothing else — no metadata, no deadline, no peer, no
+headers. So the worker is handed an object with exactly those two on it, and a
+fuller fake would be offering a surface no handler uses.
+
+**AN ERROR NEEDS NO TABLE.** `statusError()` is an `Error` carrying a NUMERIC
+gRPC status, and the number IS the protocol — so a refusal crosses as
+`{ code, message }`. The directory's codec had to look an error class up on
+ldapjs's exports and validate what it found; here there is nothing to look up.
+A refusal carrying NO numeric code is rebuilt as a plain `Error` on purpose, so
+that `errorToStatus()` reaches the same conclusion it would have reached in
+process: a non-status throw is a defect in this service, logged as one and
+answered `UNKNOWN`.
+
+### Three things stay in the front process
+
+* **`prepareCall()`** — it reads the TRANSPORT, the peer address, the peer
+  certificate and the Workload API's selectors, every one of which is a property
+  of a connection this process accepted. What crosses is its ANSWER: a plain
+  `caller` whose DNs `callerOf()` has already rendered with `dnRfc4514()`.
+* **`recordCall()`** — it is called from the wrappers rather than from any
+  handler, so it simply stays. Worth having on purpose rather than by accident:
+  the counters behind `/admin/metrics` and the audit row would otherwise land in
+  whichever worker answered, and `admin_stats.users` is one of the three stores
+  that does not fan in.
+* **The callback**, which writes to the connection.
+
+### The five server streams are not dispatched, and that is a decision
+
+All five are on the Workload API. Two things put them on the socket side of the
+line `unbind` is on in `ldap/CLAUDE.md`:
+
+* **A STREAM HERE IS A SUBSCRIPTION AND NOT A REQUEST.** It is opened once and
+  held for the life of the process — this file's own *THE STREAMS STAY OPEN*
+  says a real client treats it ending as a FAULT — and what feeds it is
+  `pushOnRotation()`'s timer, not a caller. Moving it would mean a worker owning
+  a stream whose file descriptor is here, every `push()` crossing the channel,
+  and **a worker's death silently turning a live subscription into one that
+  never updates again**: a client would go on holding an SVID it believes is
+  being renewed. That is the LDAP connection's problem exactly, and the answer
+  there was the same.
+* **DISPATCHING ONLY THE FIRST MESSAGE WOULD BE WORSE THAN NOT DISPATCHING.**
+  `pushOnRotation()` builds later messages with the same
+  `buildX509SvidResponse()` the first one uses, so the front process must be
+  able to build one anyway — and splitting them would put one response in two
+  processes.
+
+`bidiStream()` is unchanged for the same reason read the other way:
+`AttestAgent` and `SyncAuthorizedEntries` are request/response in practice, but
+the stream and its `data`/`end` events belong to the connection.
+
+**WHAT THAT COSTS IS SMALL AND IS WORTH STATING.** The expensive thing on this
+surface is minting an SVID, and a stream mints on rotation rather than per call.
+
+### The channel had to learn to carry bytes
+
+The request pool forked its workers with node's DEFAULT JSON serialization,
+which was right for LDAP — attribute values are strings — and wrong here.
+**`JSON.stringify(Buffer)` is `{"type":"Buffer","data":[…]}`**: six times the
+bytes, and it arrives as a PLAIN OBJECT. A SPIFFE request and reply carry
+X509-SVIDs, bundles, CSRs and private keys as protobuf `bytes`, so grpc-js would
+have been handed a non-Buffer for a `bytes` field and the failure would have
+landed inside protobuf serialization, naming a field, one process from the
+cause.
+
+It forks `serialization: 'advanced'` now — `common/worker_pool.js`'s argument
+about a 32,000-byte signature, reaching the second pool — and it is a strict
+superset for everything that channel already carried.
+
+**`structuredClone()` IS NOT THAT CHANNEL, and assuming it was cost a test.**
+That is the algorithm the documentation names, and it downgrades a `Buffer` to a
+`Uint8Array` where node's IPC hands back a real Buffer. The first version of
+`tests/spiffe_operations.js` modelled the channel with it and failed against a
+service that was working. It forks an echo child now and asks.
+
+### The worker table is filled only in a worker
+
+Requiring `common/request_worker.js` pulls `common/service_state.js` in at
+module scope. Registering from the front process is therefore a table nothing
+there will ever read, bought with a load of the store, the keys, the minted rows
+and coordination — so `registerWorkerMethod()` returns early unless
+`STS_REQUEST_WORKER` is set.
+
+**IT WAS UNCONDITIONAL FOR TEN MINUTES AND `tests/spiffe_pki.js` WENT RED IN THE
+SUITE WHILE PASSING ALONE.** `run.js` runs every file in one process, so pulling
+that module in at a new point in the load order changed what a later file saw of
+the certificate hierarchy — the process-wide-state hazard `tests/CLAUDE.md`
+warns about, arriving from the one direction nobody watches: a require added for
+a feature that is off. `ldap/ldap_server.js` was given the same gate in the same
+change.
+
+### What is asserted
+
+`tests/spiffe_operations.js` is the in-process half — the codec both ways, a
+real throw carrying its status, the caller reaching the handler, the byte
+channel driven through a real fork, and the stream exclusion read off the loaded
+protos rather than written down. Eight mutants, all caught; **two survived the
+first round and both were the fixture** — the test was building the request
+shape itself, so a codec that sent `caller: null` passed, and it was rebuilding
+a result by hand, so a worker that dropped the status code passed. It drives
+`methodRequest()` and `performMethod()` now.
+
+Driven over real gRPC on 2026-09-12 with two workers: `FetchJWTSVID` and
+`ValidateJWTSVID` answered by two different workers, all six Server API probes
+answered by workers, an 841-byte DER bundle and a 2,912-byte certificate
+crossing intact, `NOT_FOUND` arriving as code 5 — and `FetchX509SVID` never
+leaving the front process.
+
+**The end-to-end claim is still this directory's standing obligation** and is
+unchanged by any of it: what a handler ANSWERS is not asserted here, only that
+the answer is the same through the codec.
+
+## ONE AUTHORITY PER REALM FOR THE CLUSTER (2026-09-14, #46)
+
+`spiffe.authority-agreement`. The X.509 authority is the realm's SPIFFE Issuing
+CA, which `common/pki.js` now builds once for the cluster and every node adopts
+from the store — so `spiffe_auth.js` on B verifies an X509-SVID A issued against
+the same CA, and the comment in `buildTrustMaterial()` that the row "is
+replicated by the same mechanism" holds across containers rather than within
+one. The JWT authority, and the self-signed X.509 fallback of a realm with no
+hierarchy, raced on first use: each node generated one and the later minted
+write won, and a JWT-SVID minted by the loser in between was refused everywhere.
+`establishOnce()` makes them once where the store arbitrates: claim
+`spiffe.authority` per realm and kind, sync, make only if still missing, commit
+(`flushMinted()`) before releasing; a node that finds the claim held syncs until
+the authority arrives. A store that cannot be asked, or a claim held past two
+minutes, makes nothing (`STS-SPIFFE-0076`). **Not covered: two ROTATIONS at
+once on two nodes** — `rotateJwtAuthority()` reads, prepends and writes back,
+and the later write wins; a rotation is an operator act and the barrier
+serialises a sequential pair. `tests/cluster_key_pki_agreement.js` section 13
+pins the claim (and its control); the live probe did not discriminate — the
+control converged too, through replication, before anything was minted.
+
+## A JOIN TOKEN IS SPENT ONCE ACROSS NODES (2026-09-14, #46)
+
+`joinTokens` replicates, and the token was deleted from it at the SUCCESSFUL
+attestation — so two AttestAgent calls with one token at two nodes inside the
+change log's window both attested, two agents from a single-use credential.
+In product mode (`auth.authRequired()`) the token is CLAIMED once every check
+that refuses without side effects has passed and before the CSR is signed; a
+claim another call holds is `STS-SPIFFE-0055`, the spent-token refusal it
+always was, a store that cannot be asked is `UNAVAILABLE` (`STS-SPIFFE-0075`),
+and an attestation that throws after the claim (the CSR, a ban recorded
+between) gives it back. Development mode checks no join token and claims none.
 
 ## THE SPIRE SERVER API ASKS THE ACCESS POLICY, AFTER SPIRE'S OWN TABLE (2026-09-06)
 
@@ -356,8 +715,8 @@ second, coarser split here would invite a policy author to think `read` on this
 resource meant something SPIRE agrees with.
 
 **A CALLER THAT AUTHENTICATED NOBODY GETS NO SESSION.** The local Unix socket is
-trusted by path and presents no credential, and `spiffe.authRequired` off checks
-nothing at all — both reach here with `authenticated` false, and a session
+trusted by path and presents no credential, and a port where nothing is checked
+presents none either — both reach here with `authenticated` false, and a session
 recording a sign-in would be untrue. An authenticated caller gets one through
 `authn.startSession()` keyed on its SPIFFE ID rather than its certificate: an
 agent that rotates its SVID mid-run is the same agent, and keying on the
@@ -368,3 +727,138 @@ why it is that store and not one of this directory's.
 its specification says it MUST NOT — a workload has no root of trust until that
 call gives it one — so there is no subject to decide about and no session to
 record. Only the `server` surface asks.
+
+## A PRESENTED X509-SVID IS LOOKED UP IN THE REVOCATION REGISTER (2026-09-12)
+
+`verifyPresentedCertificate()` asks `common/revocation_status.js`'s SYNCHRONOUS
+door once the signature and the trust domain have passed: the SVID's serial at
+this realm's SPIFFE Issuing CA, that CA's at the realm Intermediate, and the
+Intermediate's at the Root — so revoking the SPIFFE Issuing CA on `/admin/pki`
+refuses every SVID under it at the SPIRE Server API, with `STS-PKI-0118` on the
+refusal's audit row. **The register only, whatever `pki.revocationCheck` says**:
+this runs inside a gRPC handler that cannot wait on a fetch, and a FEDERATED
+SVID has no revocation mechanism but its bundle, which `authorityCertificates()`
+already honours — so a federated one is answered `not-consulted` and never
+refused on it. **An SVID is minted by `issueUnder()`, which records nothing**, so
+revoking one individually means naming its serial by hand; revoking an authority
+is the ordinary case. `common/CLAUDE.md` 3ad argues the check.
+
+## THE 2026-09-12 AUDIT OF HARD-CODED VALUES, AND WHAT IT CHANGED HERE
+
+An audit for literals that decided something went through this directory. Most
+of what it found became a setting; four were defects in every mode and were
+fixed unconditionally; three became mode-dependent through `common/mode.js`'s
+predicates. `tests/ssf_spiffe_scim_hardening.js` holds all of it, twelve
+mutants caught across the three directories it covers.
+
+### Federated bundles are a realm's own, and none may shadow a served domain
+
+`spiffe_ca.js`'s federated store was `realms.sharedMap(... scope: 'shared')`,
+argued as *SPIFFE is one trust domain for the whole service*. That stopped
+being true when each realm got a trust domain, and the store was left behind.
+**The consequence was a realm boundary one API call wide**: realm `acme` could
+register a bundle NAMED `example.org` — the default realm's domain — because
+the "not your own domain" check compared against the CALLING realm only;
+`spiffe_auth.js`'s `authorityCertificates()` then offered that bundle's anchors
+in every realm, and `verifyPresentedCertificate()` matches a signer to a trust
+domain by the LABEL the bundle was stored under — so a certificate acme's
+operator minted for `spiffe://example.org/admin` authenticated on the default
+realm's SPIRE Server API. And `spiffe_workload.js` keyed FetchX509Bundles by
+trust domain, so the federated entry OVERWROTE the realm's own bundle.
+
+**Three halves, and each is needed.** The store is `realms.map()`. A bundle may
+not be registered under ANY trust domain this process serves
+(`servedTrustDomains()`, every realm's, SPIFFE on or off). And every reader —
+`federatedBundles()`, `federatedBundle()`, `federatedX509BundleDer()`,
+`jwkSetFor()` — ignores a row named after a served domain, which is what
+protects a row an older build persisted; the two Workload API bundle maps also
+write the realm's own key LAST. A DELETE of such a name is never refused.
+
+**What it costs**: one realm of this service can no longer be told to trust
+another by federating with its bundle. Two realms here share a Root and a
+process, and the only thing such a federation could add is a way round the
+boundary the Intermediate draws.
+
+### A realm is created without TCP gRPC listeners or administrators
+
+`realms.js` seeded only the socket paths, so a realm inherited 8092, 8181 and
+`0.0.0.0` — addresses the default realm already holds — and turning its SPIFFE
+on produced two refused binds every time. It now also seeds
+`spiffe.workloadPort` and `spiffe.serverPort` to **0** and `spiffe.adminIds` to
+**empty**. Distinct ports were rejected (this file argues a realm is an ADDRESS
+with the ports unchanged, and no port that file could pick is known to be
+free); an address cannot be chosen automatically because nothing knows which
+addresses the host has. So a realm turned on gets its two Unix sockets, and the
+SPIRE Server API — the network-reachable surface that mints credentials — is
+opened on TCP only by somebody setting `spiffe.grpcHost` and the two ports on
+the realm. The inherited admin ids named SPIFFE IDs in another trust domain;
+nothing in the realm could verify them, so they granted nothing and published
+administrators of nothing.
+
+### Mode-dependent, through the predicate that names the question
+
+* **`registry.seed()` asks `mode.seedsDemoData()`** — the three sample entries,
+  one selecting `unix:uid:1000`, are three identities nobody configured.
+* **`entitledEntries()` asks `mode.autoCreates()` AS WELL AS
+  `spiffe.autoCreateEntries`** — in product the setting cannot invent
+  `spiffe://<domain>/workload` for whoever reaches the socket, and the refusal
+  says which of the two decided.
+
+### Defects fixed in every mode
+
+* **The rotation period** was `max(30, spiffe.svidTtl / 2)` while an entry's own
+  `x509SvidTtl` wins at the mint. It is half the SHORTEST lifetime the last
+  response actually carried (read off the minted certificates, which are clamped
+  to their issuer), re-armed after every send, with the 30-second floor gone —
+  below a minute it made the period longer than the lifetime.
+* **`mintX509Svid()` read `spiffe.x509KeyType` in the AMBIENT realm** while
+  minting for `opts.realm`; it reads the target realm's, and the `'ec-p256'`
+  literal behind it — a second default beside config.js's — is gone.
+  `downstreamCa()` read `spiffe.caTtl` the same way and was fixed with it.
+* **Socket permissions.** The SPIRE Server API socket is the trusted `local`
+  entity and nothing had set its mode. A directory created for it is 0700 and
+  the socket is chmod-ed 0600 once bound (connecting needs write on the socket,
+  so 0600 is this uid alone); a directory created for the Workload API socket
+  is 0755 — reachable, as its specification needs, and never writable by
+  others, since a writable directory lets anybody replace the socket. A
+  directory that already existed is warned about and never chmod-ed. There is
+  a window between bind and chmod in which the socket has the umask's mode; the
+  0700 directory is what closes it when this service created the directory.
+* **CreateJoinToken's cap evicted a live token** — the 257th silently
+  invalidated one already handed to an agent. Expired tokens are swept first,
+  a re-set of the same value does not count, and at the cap the NEW request is
+  refused with RESOURCE_EXHAUSTED.
+
+### New settings, each defaulting to the literal it replaced
+
+`spiffe.caSubject` (`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`, the
+self-signed fallback CA and every downstream CA), `spiffe.retainedAuthorities`
+(4, min 2 — `MAX_RETAINED_AUTHORITIES` is a getter over it so the console's
+report follows), `spiffe.agentSvidTtl` (0, meaning `spiffe.svidTtl`),
+`spiffe.joinTokenTtl` (600), `spiffe.maxJoinTokens` (256, per realm),
+`spiffe.maxPageSize` (1000) and `spiffe.maxRecordedConnections` (512,
+`perProcess` — the same number for every realm's partition, which a realm must
+not resize for the others).
+
+### The connections an X509-SVID was recorded for are the LISTENER's realm's (2026-09-12)
+
+`spiffe_auth.js` remembers each accepted mutual-TLS connection so that an
+X509-SVID is ONE authentication per connection. That register was
+`realms.sharedMap(… scope: 'shared')` — right while there was one pair of
+sockets, and a leak once each realm had its own: one realm's connections counted
+against, and evicted, another's from one cap, and every realm's keys sat in one
+row set. It is `realms.map({ persist: 'spiffe.recordedConnections' })` now.
+
+**THE REALM OF A gRPC CONNECTION IS THE LISTENER IT WAS ACCEPTED ON**, and that
+is the only answer available: the path is the method name and the caller sends
+nothing that names a realm. `handlersInRealm()` enters that listener's realm
+around every handler — the default realm's four sockets are started through the
+same `startRealm('')` — and `recordCaller()` runs inside `prepareCall()`, which
+is inside the handler and stays in the front process, so the ambient realm there
+is the socket's. A connection key (thumbprint and peer address) is one connection
+to one socket, so no entry could ever have been legitimately shared.
+`tests/realm_isolation.js` records a caller in a realm, in a child process, and
+reads the partition back.
+
+**Left alone and said so**: the `x-sts-workload-selector` metadata key —
+renaming it breaks every client that sends it.

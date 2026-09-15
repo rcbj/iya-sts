@@ -1,4 +1,5 @@
-// Local (docker-compose / bare `node server.js`) configuration for the STS mock.
+// Local (docker-compose / bare `node server.js`) configuration for the STS
+// mock.
 //
 // Selected with CONFIG_FILE, the same way the api and client services choose
 // theirs — e.g. CONFIG_FILE=./env/local.js node server.js.
@@ -28,8 +29,11 @@
 // generated from the same table this file was, so it is never the one short.
 // See README.md's *Configuration*, which lists every setting and its variable.
 var config = {
-  // Bunyan log level (trace|debug|info|warn|error|fatal).
-  logLevel: "debug",
+  // Bunyan log level (trace|debug|info|warn|error|fatal). INFO SINCE
+  // 2026-09-12, like every appconfig file in this directory: every function now
+  // logs its entry and exit at debug, and a debug run writes all of it.
+  // STS_LOG_LEVEL raises it for a run that wants the whole record.
+  logLevel: "info",
 
   // --- Global ------------------------------------------------------------
   global: {
@@ -43,7 +47,8 @@ var config = {
     // on this port while 8443, 9443 and LDAPS 636 were all TLS. That is one
     // trust decision too many for a mock whose whole certificate story is "one
     // self-signed pair per start, shared by every listener": a caller that had
-    // already trusted the key for three sockets still met an unencrypted fourth.
+    // already trusted the key for three sockets still met an unencrypted
+    // fourth.
     //
     // WHAT IT COSTS is what config.js's own row says it costs: there is then NO
     // plain listener left in this process, and `GET /tls/server-certificate`
@@ -75,6 +80,11 @@ var config = {
     // exercise a client against a server that behaves like a real deployment.
     // GET /oauth2/rfc9700 lists what it does and does not enforce.
     rfc9700: false,
+
+    // OAuth 2.1 (draft-ietf-oauth-v2-1-16). OFF, for the reason above; it
+    // turns RFC 9700 mode on as well, and additionally refuses a client that
+    // has not registered its own redirect URI. GET /oauth2/oauth21 lists it.
+    oauth21: false,
 
     // OpenID Connect Front-Channel Logout 1.0: the two discovery members,
     // the `sid` claim on an ID Token issued on a browser session, and the
@@ -147,9 +157,9 @@ var config = {
   // --- Applications ------------------------------------------------------
   // The registry of every OAuth client, relying party, service provider and
   // Kerberos service this instance has been asked about. It IS the
-  // ou=applications container in the embedded directory — see /admin/ldap/applications
-  // — so this is a directory limit: past it a new application is refused rather
-  // than an old one evicted.
+  // ou=applications container in the embedded directory — see
+  // /admin/ldap/applications — so this is a directory limit: past it a new
+  // application is refused rather than an old one evicted.
   applications: {
     max: 500,
 
@@ -215,7 +225,7 @@ var config = {
 
   // --- OID4VP ------------------------------------------------------------
   oid4vp: {
-    clientId: "sts-mock-verifier",
+    clientId: "sts-verifier",
     // walletUrl: falls back to oid4vci.walletUrl. Uncomment to point the mock
     //   Verifier at a different wallet from the issuer's.
     kbMaxAgeS: 600,
@@ -224,23 +234,36 @@ var config = {
 
   // --- Kerberos ----------------------------------------------------------
   krb5: {
-    realm: "EXAMPLE.COM",                                          // restart to apply
-    kdcPort: 88,                                                   // restart to apply
-    servicePort: 8888,                                             // restart to apply
-    servicePrincipal: "HTTP/web.example.com",                      // restart to apply
+    // restart to apply
+    realm: "EXAMPLE.COM",
+    kdcPort:
+      88,                                                   // restart to apply
+    servicePort:
+      8888,                                             // restart to apply
+    servicePrincipal:
+      "HTTP/web.example.com",                      // restart to apply
     clockSkew: 300,
     clockOffset: 0,
-    userPassword: "password!",                                     // restart to apply
+    // restart to apply
+    userPassword: "password!",
     unknownUsers: "nosuchuser,nobody",
-    // serviceDomains: derived from krb5.realm. Uncomment to replace the whole list;
+    // serviceDomains: derived from krb5.realm. Uncomment to replace the whole
+    // list;
     //   an empty string creates no service accounts at all.
-    autoServicePassword: "auto-service-password",                  // restart to apply
-    krbtgtPassword: "krbtgt-mock-password",                        // restart to apply
-    domainSid: "S-1-5-21-1004336348-1177238915-682003330",         // restart to apply
-    trustedRealm: "PARTNER.COM",                                   // restart to apply
-    trustPassword: "inter-realm-trust-password",                   // restart to apply
-    trustedDomainSid: "S-1-5-21-2035427030-2118130302-1178042555", // restart to apply
-    trustedKrbtgtPassword: "partner-krbtgt-password",              // restart to apply
+    autoServicePassword:
+      "auto-service-password",                  // restart to apply
+    krbtgtPassword:
+      "krbtgt-mock-password",                        // restart to apply
+    domainSid:
+      "S-1-5-21-1004336348-1177238915-682003330",         // restart to apply
+    trustedRealm:
+      "PARTNER.COM",                                   // restart to apply
+    trustPassword:
+      "inter-realm-trust-password",                   // restart to apply
+    trustedDomainSid:
+      "S-1-5-21-2035427030-2118130302-1178042555", // restart to apply
+    trustedKrbtgtPassword:
+      "partner-krbtgt-password",              // restart to apply
     s2kparams: "omit"
   },
 
@@ -391,6 +414,23 @@ var config = {
     activationTtlMinutes: 1440
   },
 
+  // --- ACME's refusal throttle ----------------------------------------------
+  // THE SAME ONE-ADDRESS PROBLEM AS `security` ABOVE, ONE FAMILY ALONG
+  // (2026-09-13). `acme.attemptsPerAddress` counts REFUSED ACME requests from
+  // one address and ships at 120 a window. `tests/vendored/sts_route_inputs.js`
+  // sends every route a malformed request on purpose, and measured against one
+  // instance it leaves 132 refused ACME requests on the runner's address — so
+  // the next job to read `/enroll/acme/directory`, `sts_metadata_anonymous.js`,
+  // got 429 twelve seconds later about a document that was correct. EST and
+  // SCEP were 10 each against 60 and are left alone.
+  //
+  // 5000 is ~40× that peak. It is a LAYER for our own stacks, not the setting:
+  // `env/defaults.js` still ships 120, and the enrollment jobs that assert the
+  // throttle set their own limits inside the realms they create.
+  acme: {
+    attemptsPerAddress: 5000
+  },
+
   // --- SPIFFE / SPIRE ------------------------------------------------------
   //
   // The bundle endpoint, the Workload API and the SPIRE Server API. Four of
@@ -410,26 +450,36 @@ var config = {
     caTtl: 86400,
     // The default X509-SVID lifetime, in seconds.
     svidTtl: 3600,
-    // The default JWT-SVID lifetime, in seconds. Shorter because it is a bearer credential.
+    // The default JWT-SVID lifetime, in seconds. Shorter because it is a bearer
+    // credential.
     jwtSvidTtl: 300,
     // spiffe_refresh_hint in the published bundle, in seconds.
     refreshHint: 300,
-    // The X.501 subject on every SVID. SPIRE's own value; the identity is the URI SAN.
+    // The X.501 subject on every SVID. SPIRE's own value; the identity is the
+    // URI SAN.
     svidSubject: 'C=US,O=SPIRE',
-    // Invent a registration entry for a workload that matches none. Off is how a client's "I have no identity" path is exercised.
+    // Invent a registration entry for a workload that matches none. Off is how
+    // a client's "I have no identity" path is exercised.
     autoCreateEntries: true,
-    // Refuse a Workload API call with no workload.spiffe.io: true header, as every conforming implementation does.
+    // Refuse a Workload API call with no workload.spiffe.io: true header, as
+    // every conforming implementation does.
     requireSecurityHeader: true,
-    // Mutual TLS and SPIRE's own per-method authorization on the SPIRE Server API's TCP port. Restart-only: it decides how the socket is bound.
-    // Trust a caller on the SPIRE Server API's Unix socket as the `local` entity, the way a real spire-server trusts its private socket.
+    // Mutual TLS and SPIRE's own per-method authorization on the SPIRE Server
+    // API's TCP port. Restart-only: it decides how the socket is bound. Trust a
+    // caller on the SPIRE Server API's Unix socket as the `local` entity, the
+    // way a real spire-server trusts its private socket.
     trustLocalSocket: true,
-    // SPIFFE IDs that are administrators of the SPIRE Server API, comma-separated. SPIRE's admin_ids; no registration entry needed.
+    // SPIFFE IDs that are administrators of the SPIRE Server API,
+    // comma-separated. SPIRE's admin_ids; no registration entry needed.
     adminIds: '',
-    // How far out a caller's clock may be when its X509-SVID is checked, in seconds.
+    // How far out a caller's clock may be when its X509-SVID is checked, in
+    // seconds.
     clockSkew: 60,
-    // Answer a Workload API caller with the entries its observable selectors match, rather than with every entry.
+    // Answer a Workload API caller with the entries its observable selectors
+    // match, rather than with every entry.
     attestWorkloads: true,
-    // Believe selectors a workload sends in a metadata header. NOT attestation; it exists so selector matching can be exercised at all.
+    // Believe selectors a workload sends in a metadata header. NOT attestation;
+    // it exists so selector matching can be exercised at all.
     acceptAssertedSelectors: false,
     // How many registration entries may live under ou=spiffe.
     maxEntries: 500,
@@ -439,13 +489,15 @@ var config = {
     maxFederatedBundles: 32,
     // Where the trust bundle is published.
     bundlePath: '/spiffe/bundle',
-    // Serve the Workload API on a Unix socket. What SPIFFE_ENDPOINT_SOCKET means to every real client.
+    // Serve the Workload API on a Unix socket. What SPIFFE_ENDPOINT_SOCKET
+    // means to every real client.
     workloadSocketEnabled: true,
     // Where that socket lives. SPIRE's own default path.
     workloadSocket: '/tmp/spire-agent/public/api.sock',
     // The Workload API over TCP. 0 turns it off.
     workloadPort: 8092,
-    // The SPIRE Server API over gRPC. SPIRE's own default is 8081, which this service's HTTP port already has.
+    // The SPIRE Server API over gRPC. SPIRE's own default is 8081, which this
+    // service's HTTP port already has.
     serverPort: 8181,
     // Also serve the SPIRE Server API on a Unix socket.
     serverSocketEnabled: false,

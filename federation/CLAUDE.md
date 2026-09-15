@@ -49,6 +49,9 @@ it configures is a KEY.**
   rather than half-working, and says which field.
 * An assertion is refused unless it verifies against the certificate configured
   on that relationship — not against a certificate the document brought with it.
+* **Since 2026-09-12, an assertion is refused unless it was ISSUED BY `fedPeer`
+  (now required) and ADDRESSED TO this service** — see *Three checks that could be
+  skipped* below. Both used to lapse with a warning.
 
 **Once past that, everything downstream is as permissive as the rest of this
 service.** Any username in the assertion is accepted. Any attribute is mapped.
@@ -163,6 +166,65 @@ a setting that silently does nothing is worse than one that is refused.
 
 ---
 
+## THREE CHECKS THAT COULD BE SKIPPED, AND ARE REFUSALS NOW (2026-09-12)
+
+**In every mode**, because this is the surface the paragraphs above say cannot be
+permissive, and each of the three was permissive:
+
+1. **THE AUDIENCE.** An `<Audience>` naming a different service provider was
+   logged and ACCEPTED on the argument that a partner configured with another
+   name for us is ordinary. It is — and an assertion the partner minted for ANY
+   of its other relying parties verifies against the same `fedSigningCertificate`,
+   names the same issuer and is inside its window, so accepting it let anybody
+   holding one sign in here as its subject. `audienceCheck()` refuses: every
+   `AudienceRestriction` must name `ourEntityId()` or `fedClientId` (audiences in
+   one restriction are an OR, restrictions an AND — reading only the first
+   `<Audience>` refused legitimate multi-audience assertions too). SAML 2.0 with NO
+   restriction is refused, because the Web Browser SSO profile requires one;
+   SAML 1.1 and WS-Federation with none are accepted with a warning, because
+   their profiles make it optional. **The WS-Federation path checked no audience
+   at all and does now.** The remedy for a partner that calls us something else
+   is `fedLocalEntityId`.
+2. **`fedPeer`.** Empty, it skipped the issuer check with a warning — any issuer
+   the configured key signed for was accepted. It is in every protocol's `needs`
+   now, so `readinessOf()` names it and the relationship is not usable; the
+   endpoint refuses anyway, because the two checks are in two files. A
+   WS-Federation assertion with NO issuer skipped the comparison too, and is
+   refused. **Development jobs that create a relationship without `fedPeer` will
+   find it unusable** — the parent's `federation_*_sso.js` all set it.
+3. **THE PARTNER'S AUTHENTICATION CONTEXT** was read and thrown away
+   (`amr: amr.length ? ['federated'] : ['federated']`). `federatedAmr()` keeps
+   `federated` FIRST — the fact about what this service did — and the partner's
+   values behind it; a SAML partner's class travels on `acr`. `saml/authn_context.js`
+   reads both, so a SAML assertion this service re-issues for a federated session
+   carries the partner's class rather than a password. **A federated OpenID
+   session's `amr` changed from the partner's list to `['federated', …that list]`**,
+   which is visible in an ID Token this service then issues.
+
+**WHAT THIS SERVICE IS CALLED TO A PARTNER** is `ourEntityId()`: derived from
+`baseUrlOf(req)` — the same call on both the outbound Issuer / `wtrealm` /
+`providerId` and the inbound audience comparison, so they cannot disagree — and
+pinned either by `global.publicBaseUrl` for everything, or by the new
+**`fedLocalEntityId`** on one relationship. The ACS URL stays derived: it is an
+address a browser must reach. **The SAML 1.1 outbound request now sends
+`providerId=ourEntityId()`** when `fedSsoUrl` names none, because without it this
+service's own IdP guessed the audience as the TARGET's origin — which the audience
+refusal would now reject.
+
+**Literals that became settings** (default = the literal): `federation.maxContexts`
+(500), `federation.maxApplicationLength` (256), `federation.maxApplicationUse`
+(64, and the export is now `maxApplicationUse()`), `federation.releaseIndexTtlMs`
+(5000; 0 rebuilds per token), `federation.maxResponseBytes` (262144, read once per
+request), `federation.jwtAlgorithms` (the old fixed list, intersected with the
+key's family so it can never add `none` or an HMAC), `federation.spNameIdFormat`.
+A signed outbound AuthnRequest reads `saml.signatureAlgorithm`. `saml/sp_metadata.js`
+now asks `federation_http.js` for the outbound policy — the kill switch, the scheme
+rule and the certificate switch — rather than keeping a copy that had drifted.
+
+`tests/saml_family_hardcoded.js` section F pins the audience rule both ways, the
+OR/AND reading, `fedLocalEntityId`, `federatedAmr()`, the algorithm narrowing and
+`fedPeer` in all five protocols.
+
 ## THE SERVICE-PROVIDER HALF: SIX DECISIONS
 
 These are in `federation_sp.js`'s header at length. The short forms, and the one
@@ -249,6 +311,21 @@ certificate inside the document's own `<ds:KeyInfo>` when it is given no other,
 which is correct for a general-purpose tool and would be the whole hole here,
 since anybody can sign an assertion and attach the key that verifies it. **This
 door reaches that fallback only if somebody stops passing `certPem`.**
+
+**AND SINCE 2026-09-12 A PINNED KEY CAN STILL BE WITHDRAWN BY ITS ISSUER.**
+`signerStillAccepted()` asks `common/revocation_status.js`'s
+`registeredVerdictFor()` about `fedSigningCertificate` — or the `x5c` of the
+partner JWK that verified an OIDC ID Token or a JWT access token — after every
+other check has passed and before `completeSignIn()`, and refuses a revoked one
+(`STS-PKI-0129`, the reason on the page) under `pki.revocationCheck`. It made the
+SAML, SAML 1.1 and WS-Federation branches ASYNCHRONOUS rather than taking a
+register-only check, because a partner's certificate is by definition somebody
+else's; `consume()` already returned the OAuth branch's promise. Pinning still
+decides WHICH key is believed; revocation decides whether its issuer still
+stands behind it. A partner key with no certificate is a bare key with nothing
+to look up, and the opaque-token OAuth 2.0 path verifies no signature at all.
+`tests/revocation_status.js` section 18 asserts the helper and reads the five
+`completeSignIn()` call sites out of the source.
 
 ---
 
@@ -647,6 +724,12 @@ arrives is trusted** — this module returns parsed JSON and a status and makes 
 judgement, because a fetcher that also validated is where both halves of a check
 end up half-written.
 
+**IT IS THE FIRST OF THREE OUTBOUND REQUESTS in this repository**, in a module
+of its own that will not take a URL from anywhere but a relationship entry. It
+is the STRONGEST of the three and the other two each argue their own case rather
+than citing it — SSF's is `ssf/ssf_http.js` and XACML's nudge is
+`xacml/xacml_pep_http.js`.
+
 ---
 
 ## `federation_map.js`: THE OIDC HALF IS DERIVED, NOT WRITTEN
@@ -874,7 +957,7 @@ provider**, which is exactly the moment a deliberate click is worth having.
 | It does not | Why |
 |---|---|
 | Decrypt an `<EncryptedAssertion>` | A partner configured to encrypt produces a Response with no `<Assertion>`, which is refused with that cause NAMED — the failure would otherwise read as "the partner sent nothing". Same gap `/saml2` has in the other direction. |
-| Verify the partner's certificate against a CA, or check its validity dates | `fedSigningCertificate` is trusted because an administrator pasted it there. It is a pinned key, not a chain, and pinning is the stronger of the two for this purpose. |
+| Verify the partner's certificate against a CA, or check its validity dates | `fedSigningCertificate` is trusted because an administrator pasted it there. It is a pinned key, not a chain, and pinning is the stronger of the two for this purpose. **Its REVOCATION is checked since 2026-09-12** — the one question a pin cannot answer — see *The signature check is the line*. |
 | Consume a federated SIGN-OUT | A `wsignout1.0` or a `<LogoutRequest>` arriving at the ACS is refused with that named. This service can END sessions (`/logout`) and can FAN OUT its own sign-outs; being told by a partner that somebody signed out elsewhere is a third thing and is not built. |
 | Refresh anything | The tokens a partner issues are used once, to learn who the person is, and are then discarded. Nothing here holds a refresh token belonging to somebody else's service. |
 | Re-verify a person on a later request | The session is this service's from the moment it is created. A partner that revokes somebody five minutes later is not consulted, and nothing here polls. |
@@ -949,7 +1032,7 @@ That is the per-realm session store being load-bearing rather than tidy.
 here because the fix is in this directory: a foreign `sub` reached
 `startSession()` unnormalised, so `userFor()` applied this service's own subject
 prefix a second time and every downstream token carried
-`urn:sts-mock:user:urn:sts-mock:user:alice`. The doubling was the symptom; the
+`urn:sts:user:urn:sts:user:alice`. The doubling was the symptom; the
 bug was that the identity funnel normalises and the session did not, so
 `/admin/users` said `alice` while the tokens said something else. It would have
 happened with any partner whose subject carried an `@`. See `usernameFor()`,
@@ -964,7 +1047,10 @@ almost entirely NEGATIVES, and a happy path proves close to nothing: an
 assertion that verifies against the key it was signed with is not evidence that
 anything would have been refused.
 
-The list, in the order they would actually go wrong:
+The list, in the order they would actually go wrong (**the audience and the
+empty-`fedPeer` cases are asserted in process since 2026-09-12**, in
+`tests/saml_family_hardcoded.js`, at the function; the end-to-end HTTP half is
+still the parent's to write):
 
 * an assertion signed by **nobody**; by a **different key**; by the right key
   but naming a **different issuer**; with the signature over a **different
@@ -972,7 +1058,9 @@ The list, in the order they would actually go wrong:
   certificate that is NOT the configured one — that last is the one that must
   fail, and it is the one a naive implementation passes;
 * an assertion **outside its validity window** at both ends, and one with no
-  `<Conditions>` at all, which must be ACCEPTED;
+  `<Conditions>` at all, which must be ACCEPTED for SAML 1.1 and WS-Federation and
+  is REFUSED for SAML 2.0 since 2026-09-12, because it then carries no audience
+  restriction and that profile requires one;
 * a `RelayState`/`wctx`/`state` that this service never minted, one that
   **expired**, and one **replayed** — the second use must fail even where the
   partner's own replay window is still open;
@@ -996,7 +1084,8 @@ person federating twice is ONE entry; that a partner's `mail` OVERWRITES an
 invented one and an invented one never overwrites a partner's; that `uid` is
 never written from an assertion; that an attribute the partner stopped sending
 is LEFT ALONE; that `federationAttribute` names exactly the attributes that came
-from the partner; that `fedAutocreateUsers` off gives a session and no entry;
+from the partner; that `fedAutocreateUsers` off REFUSES a person nobody provisioned
+and signs in one who was (`tests/federation_provisioning.js`, 2026-09-14);
 and that `federation.usernamePrefix` changes the NAME and not which incoming
 value was chosen.
 
@@ -1073,3 +1162,32 @@ with the auto-redirect on is a redirect, so an entry naming three partners of
 which two are disabled works perfectly and draws no page at all. There is no
 banner to put those two problems on, and the flow succeeding is exactly why
 nobody would go looking — so `beginAuthentication()` writes them at INFO.
+
+## DYNAMIC PROVISIONING, PRE-PROVISIONING, AND WHETHER A PARTNER'S ATTRIBUTES WIN (2026-09-14)
+
+rcbj wants both shapes on the service-provider side of every relationship, each a switch
+on the relationship's page (the same list of switches every protocol's relationship draws):
+
+| Switch | On (default) | Off |
+|---|---|---|
+| `fedAutocreateUsers` | the first sign-in CREATES the person's entry — no SCIM needed | the entry must ALREADY exist (SCIM, `/admin/users/new`, `/admin-api`); a sign-in for somebody who has none is refused 403 *has not been provisioned* (`STS-FED-0090`, with `STS-AUTHN-0180` on the session refusal) |
+| `fedUpdateUserAttributes` | a returning person's attributes are overwritten from the latest assertion or token — what this service always did | the partner's values are written only when the sign-in CREATES the entry; a pre-provisioned or since-edited person keeps what the directory says |
+
+**Off used to mean "a session and no entry", and a stable subject is why it cannot.** A
+person's `sub` is their entry's `entryUUID` now (`authn/CLAUDE.md`, *What an authenticated
+identity is here*), so a session with no entry has no subject. And the old check ran before
+the entry was looked up, so a person SCIM had already provisioned was never folded onto —
+the pre-provisioned shape did not work at all. `ldap/CLAUDE.md` carries the directory half.
+
+**The username a pre-provisioned person must be created under is whatever the relationship
+maps them to** — `fedUsernameSource` (a `preferred_username` or an `email`), or the
+subject. **A partner's `urn:uuid:` subject becomes `sub-<uuid>`** and is never looked up in
+this directory: it names an entry in the PARTNER's namespace, and resolving it here would
+file the person under a raw URN or, worse, find a local person holding that value
+(`federation_map.js`'s `usernameFor()`). Another instance of this service issues exactly
+that form, so a relationship to one wants `fedUsernameSource` set.
+
+`tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
+of one process — the default realm's OpenID Provider and a service-provider realm of its
+own — through dynamic provisioning, a refused unprovisioned person, a person pre-provisioned
+over SCIM, and the refresh switch in both positions.

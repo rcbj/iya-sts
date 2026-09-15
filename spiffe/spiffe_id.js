@@ -25,15 +25,16 @@
 // accepted by one and understood as naming something else.
 //
 //   * **The trust domain is lower-case.** `spiffe://Example.org/x` is not a
-//     valid SPIFFE ID; it is not the same identifier as `spiffe://example.org/x`
-//     either. The SPIFFE-ID specification says a trust domain name MUST contain
-//     only lower-case letters, digits, dots, dashes and underscores. `new
-//     URL()` will happily lower-case the host for you, which HIDES the defect:
-//     a client that sent the upper-case form gets an SVID naming the lower-case
-//     one and nothing anywhere reports a difference. So the check is made on
-//     the raw text BEFORE any URL parsing, and the upper-case form is REFUSED
-//     rather than normalised — this service exists to show a client author what
-//     a conforming server would do with what they sent.
+//     valid SPIFFE ID; it is not the same identifier as
+//     `spiffe://example.org/x` either. The SPIFFE-ID specification says a trust
+//     domain name MUST contain only lower-case letters, digits, dots, dashes
+//     and underscores. `new URL()` will happily lower-case the host for you,
+//     which HIDES the defect: a client that sent the upper-case form gets an
+//     SVID naming the lower-case one and nothing anywhere reports a difference.
+//     So the check is made on the raw text BEFORE any URL parsing, and the
+//     upper-case form is REFUSED rather than normalised — this service exists
+//     to show a client author what a conforming server would do with what they
+//     sent.
 //
 //   * **The path is NOT a URL path.** Percent-encoding is not permitted, an
 //     empty segment is not permitted (so no trailing slash and no `//`), and
@@ -84,6 +85,8 @@ const PATH_SEGMENT_CHARS = /^[a-zA-Z0-9.\-_]+$/;
 const RESERVED_PREFIX = '/spire';
 
 function byteLength(text) {
+  log.debug("Entering byteLength().");
+  log.debug("Leaving byteLength().");
   return Buffer.byteLength(String(text == null ? '' : text), 'utf8');
 }
 
@@ -115,7 +118,8 @@ function parse(value) {
   if (byteLength(text) > MAX_ID_BYTES) {
     log.debug('Leaving parse(). Too long.');
     return { ok: false, reason: 'A SPIFFE ID may be at most ' + MAX_ID_BYTES +
-                                ' bytes; this one is ' + byteLength(text) + '.' };
+                                ' bytes; this one is ' + byteLength(text) +
+                                '.' };
   }
   // The scheme, case-insensitively, and then everything after it is handled as
   // raw text. Deliberately NOT `new URL()`: that parser lower-cases the host,
@@ -139,7 +143,8 @@ function parse(value) {
   if (!authority) {
     log.debug('Leaving parse(). No trust domain.');
     return { ok: false, reason: 'A SPIFFE ID names a trust domain between ' +
-                                PREFIX + ' and the first /; this one names none.' };
+                                PREFIX + ' and the first /; this one names ' +
+                                         'none.' };
   }
   if (authority.indexOf('@') !== -1) {
     log.debug('Leaving parse(). Userinfo.');
@@ -154,7 +159,8 @@ function parse(value) {
   if (byteLength(authority) > MAX_TRUST_DOMAIN_BYTES) {
     log.debug('Leaving parse(). Trust domain too long.');
     return { ok: false, reason: 'A trust domain name may be at most ' +
-                                MAX_TRUST_DOMAIN_BYTES + ' bytes; this one is ' +
+                                MAX_TRUST_DOMAIN_BYTES +
+                                ' bytes; this one is ' +
                                 byteLength(authority) + '.' };
   }
   if (!TRUST_DOMAIN_CHARS.test(authority)) {
@@ -203,18 +209,22 @@ function parse(value) {
         log.debug('Leaving parse(). Bad path characters.');
         return { ok: false, reason: 'A SPIFFE ID path segment holds only ' +
                                     'letters, digits, dots, dashes and ' +
-                                    'underscores; this one is ' + segment + '.' };
+                                    'underscores; this one is ' + segment +
+                                    '.' };
       }
       segments.push(segment);
     }
   }
-  log.debug('Leaving parse(). trustDomain=' + authority + ', path=' + (path || '(none)'));
+  log.debug('Leaving parse(). trustDomain=' + authority + ', path=' +
+            (path || '(none)'));
   return { ok: true, id: PREFIX + authority + path, trustDomain: authority,
            path: path, segments: segments };
 }
 
 // The plain question, for the many callers that only want yes or no.
 function isValid(value) {
+  log.debug("Entering isValid().");
+  log.debug("Leaving isValid().");
   return parse(value).ok;
 }
 
@@ -249,24 +259,35 @@ function make(trustDomain, path) {
 // with no path. This is what keys a bundle map on both the Workload API and the
 // SPIRE Server API, and it is a valid SPIFFE ID rather than a special case.
 function trustDomainId(trustDomain) {
-  return PREFIX + String(trustDomain == null ? '' : trustDomain).trim().toLowerCase();
+  log.debug("Entering trustDomainId().");
+  log.debug("Leaving trustDomainId().");
+  return PREFIX +
+         String(trustDomain == null ? '' : trustDomain).trim().toLowerCase();
 }
 
 // The trust domain NAME out of an identifier, or '' if it is not one. Named
 // separately from parse() because a great many callers want only this and
 // reading `.trustDomain` off a failed parse silently gives undefined.
 function trustDomainOf(value) {
+  log.debug("Entering trustDomainOf().");
   const parsed = parse(value);
+  log.debug("Leaving trustDomainOf().");
   return parsed.ok ? parsed.trustDomain : '';
 }
 
 // Whether an identifier belongs to a trust domain. A STRING COMPARISON OF THE
 // PARSED TRUST DOMAIN, never a `startsWith()` on the identifier: the prefix
-// `spiffe://example.org` is also a prefix of `spiffe://example.org.attacker.com`,
-// and every implementation that has got this wrong got it wrong that way.
+// `spiffe://example.org` is also a prefix of
+// `spiffe://example.org.attacker.com`, and every implementation that has got
+// this wrong got it wrong that way.
 function isMemberOf(value, trustDomain) {
+  log.debug("Entering isMemberOf().");
   const parsed = parse(value);
-  if (!parsed.ok) return false;
+  if (!parsed.ok) {
+    log.debug("Leaving isMemberOf().");
+    return false;
+  }
+  log.debug("Leaving isMemberOf().");
   return parsed.trustDomain ===
          String(trustDomain == null ? '' : trustDomain).trim().toLowerCase();
 }
@@ -284,14 +305,21 @@ function isMemberOf(value, trustDomain) {
 // starts with `/spire` and is not reserved.
 // ---------------------------------------------------------------------------
 function isReservedPath(value) {
+  log.debug("Entering isReservedPath().");
   const parsed = parse(value);
-  if (!parsed.ok) return false;
+  if (!parsed.ok) {
+    log.debug("Leaving isReservedPath().");
+    return false;
+  }
+  log.debug("Leaving isReservedPath().");
   return parsed.segments.length > 0 && parsed.segments[0] === 'spire';
 }
 
 // This service's own identifier as a SPIFFE server. SPIRE uses exactly this
 // path and so does everything that talks to it.
 function serverId(trustDomain) {
+  log.debug("Entering serverId().");
+  log.debug("Leaving serverId().");
   return make(trustDomain, '/spire/server');
 }
 
@@ -301,19 +329,26 @@ function serverId(trustDomain) {
 // get an identifier of the same shape, and because the attestor name is the
 // only part of it this service chooses.
 function agentId(trustDomain, attestorName, suffix) {
-  const attestor = String(attestorName == null ? '' : attestorName).trim() || 'unknown';
+  log.debug("Entering agentId().");
+  const attestor = String(attestorName == null ? '' : attestorName).trim() ||
+                   'unknown';
   const tail = String(suffix == null ? '' : suffix).trim() || 'unnamed';
+  log.debug("Leaving agentId().");
   return make(trustDomain, '/spire/agent/' + attestor + '/' + tail);
 }
 
 function isAgentId(value) {
+  log.debug("Entering isAgentId().");
   const parsed = parse(value);
+  log.debug("Leaving isAgentId().");
   return parsed.ok && parsed.segments.length >= 3 &&
          parsed.segments[0] === 'spire' && parsed.segments[1] === 'agent';
 }
 
 function isServerId(value) {
+  log.debug("Entering isServerId().");
   const parsed = parse(value);
+  log.debug("Leaving isServerId().");
   return parsed.ok && parsed.segments.length === 2 &&
          parsed.segments[0] === 'spire' && parsed.segments[1] === 'server';
 }
@@ -329,8 +364,13 @@ function isServerId(value) {
 // identifier of `spiffe://spiffe://example.org/x` at the far end.
 // ---------------------------------------------------------------------------
 function toProto(value) {
+  log.debug("Entering toProto().");
   const parsed = parse(value);
-  if (!parsed.ok) return null;
+  if (!parsed.ok) {
+    log.debug("Leaving toProto().");
+    return null;
+  }
+  log.debug("Leaving toProto().");
   return { trust_domain: parsed.trustDomain, path: parsed.path };
 }
 
@@ -355,7 +395,8 @@ function fromProto(message) {
     ? domain.slice(PREFIX.length).split('/')[0]
     : domain;
   const path = String(message.path || '');
-  const parsed = parse(PREFIX + bare + (path && path.charAt(0) !== '/' ? '/' + path : path));
+  const parsed = parse(PREFIX + bare +
+                       (path && path.charAt(0) !== '/' ? '/' + path : path));
   log.debug('Leaving fromProto().');
   return parsed.ok ? parsed.id : '';
 }

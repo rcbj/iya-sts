@@ -304,6 +304,72 @@ const OTHER_SERVICE_ENV =
 // `var baseUrl = "http://localhost:3000"` and drives pages under it, while a
 // job of ours locates the mock through WSTRUST_STS_URL / OID4VCI_ISSUER_URL
 // and never mentions 3000.
+// ---------------------------------------------------------------------------
+// THE STACK'S DEPLOYMENT VARIABLES, WHICH A UNIT JOB MUST NOT INHERIT.
+//
+// `tests/tools/modes.sh` defines the three modes as a block of `NAME=value`
+// lines, and both launchers EXPORT them into the shell this runner is started
+// from — they have to, because that is how `docker compose` and a host-mode
+// service are handed the mode. A unit job is a child of this process, so it
+// inherited them too, and that was silently wrong for as long as no mode set
+// anything a module reads at require time.
+//
+// **`dispatch` MODE STARTED SETTING ONE ON 2026-09-12 AND IT COST EIGHT JOBS.**
+// `STS_KEYS_SOURCE=persisted` turns the keystore on, and a keystore with no
+// persistence store is a refusal by design — so `pki`, `pki_hierarchy`,
+// `pki_revocation`, `spiffe_pki` and `tls_trust_anchor` died at
+// `pki.start()` with *key material is configured to persist … and no
+// persistence store is open*, and `backup_codes`, `encryption_report` and
+// `rfc7523_person_issuer` failed further in, at the seal. Every one of them
+// was passing in `memory` and `postgres` the same minute. The unit half asserts
+// MODULE CONTRACTS in a process with no store, no listener and no container;
+// how the service under the protocol jobs was deployed is not its
+// configuration, and the eight failures said nothing about the service.
+//
+// THE NAMES ARE READ OUT OF `modes.sh` RATHER THAN WRITTEN HERE, because that
+// file says it is the one place the modes are defined and a list copied into
+// this one would drift in the direction nobody notices: a mode grows a fourth
+// variable, the copy here does not, and the next unit job to read it fails for
+// a reason three files away. A unit test that needs one of these sets it
+// itself — every one that does already does, and `tests/database_metrics.js`
+// deletes one — which is what makes stripping them safe as well as correct.
+// ---------------------------------------------------------------------------
+function stackDeploymentVariables() {
+  log.debug('Entering stackDeploymentVariables().');
+  const names = [];
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(__dirname, 'modes.sh'), 'utf8');
+  } catch (e) {
+    // Not fatal: a unit job with the stack's variables is what this repository
+    // did until 2026-09-12, so the degraded state is the old behaviour. It is
+    // said out loud because silence here is eight failures nothing explains.
+    log.warn('could not read tests/tools/modes.sh (' + e.message + '), so ' +
+             'unit jobs will inherit whatever the launcher exported.');
+    log.debug('Leaving stackDeploymentVariables(). Unreadable.');
+    return names;
+  }
+  text.split('\n').forEach(function (line) {
+    // NOT `STS_ALL_MODES`, which is the bash ARRAY of mode names at the top
+    // of that file and is never an environment variable at all. A value
+    // opening with `(` is the discriminator, because it is the only thing
+    // that tells an array apart from a heredoc line here.
+    const m = /^(STS_[A-Z0-9_]+)=([^(]|$)/.exec(line);
+    if (m && names.indexOf(m[1]) < 0) {
+      names.push(m[1]);
+    }
+  });
+  if (!names.length) {
+    log.warn('tests/tools/modes.sh named no STS_* variables, which means its ' +
+             'shape has changed — unit jobs will inherit the launcher\'s ' +
+             'environment as they did before 2026-09-12.');
+  }
+  log.debug('Leaving stackDeploymentVariables(). n=' + names.length);
+  return names;
+}
+
+const STACK_ENV = stackDeploymentVariables();
+
 const SELENIUM_REQUIRE = /require\(\s*["']selenium-webdriver/;
 const DEBUGGER_SITE = /localhost:3000|127\.0\.0\.1:3000/;
 const NEEDS_THE_MOCK = /WSTRUST_STS_URL|OID4VCI_ISSUER_URL/;
@@ -380,10 +446,10 @@ function checkTestDependencies() {
   });
   if (missing.length) {
     log.error('the vendored protocol jobs need ' + missing.join(' and ') +
-              ', which is not installed. They will FAIL to load. Fix it with:' +
-              '\n\n    npm install --prefix tests\n\n' +
-              '(those packages are in tests/package.json and not the root one ' +
-              'because .npmrc carries omit=dev — see tests/package.json.)');
+              ', which is not installed. They will FAIL to load. Fix it ' +
+              'with:\n\n    npm install --prefix tests\n\n(those packages ' +
+              'are in tests/package.json and not the root one because .npmrc ' +
+              'carries omit=dev — see tests/package.json.)');
   }
   log.debug('Leaving checkTestDependencies(). ' + missing.length + ' missing.');
   return missing;
@@ -425,12 +491,91 @@ function haveDocker() {
 }
 
 // ---------------------------------------------------------------------------
+// RE-ESTABLISH THE ANCHOR, IF THE SERVICE HAS ROTATED IT (2026-09-12).
+//
+// Called before every protocol job. It re-fetches `/tls/server-certificate`
+// and, when the bundle differs from the one on disk, writes the new one to the
+// SAME path and recomputes the SPKI pin — so the two variables a job is handed
+// keep naming the certificate the service is actually serving.
+//
+// **THE PATH DOES NOT CHANGE AND THAT IS DELIBERATE.** `NODE_EXTRA_CA_CERTS`
+// is read by node once per child, so a rewritten file is picked up by the next
+// job and by nothing already running; a second path would leave the report
+// directory holding several certificates with nothing saying which was live.
+// What IS kept is the record: every rotation is announced at `warn` naming the
+// job boundary it happened at, because "the certificate changed between job 40
+// and job 41" is the sentence that makes a batch of handshake failures
+// readable.
+//
+// It answers `null` when nothing changed and when the fetch failed, which are
+// the same instruction to the caller: go on using what you have.
+// ---------------------------------------------------------------------------
+async function refreshTrust(url, current) {
+  log.debug('Entering refreshTrust().');
+  let pem = '';
+  let read = null;
+  try {
+    // readTrust() rather than fetchCertificate() since 2026-09-14: the same
+    // one fetch in every mode but `cluster`, where it gathers every node's
+    // leaf — see its header in tools/trust.js.
+    read = await trust.readTrust(url);
+    pem = read.pem;
+  } catch (e) {
+    // NOT fatal and named rather than swallowed: the service may be mid-restart
+    // or simply gone, and the job about to run will say so far more usefully
+    // than a runner that stopped here.
+    log.warn('could not re-read the mock STS\'s certificate from ' + url +
+             trust.CERTIFICATE_PATH + ' (' + e.message + '); the next job ' +
+             'runs with the anchor this run already had.');
+    log.debug('Leaving refreshTrust(). Not fetched.');
+    return null;
+  }
+  let was = '';
+  try {
+    was = fs.readFileSync(current.pemPath, 'utf8');
+  } catch (e) {
+    // The file is ours and was written moments ago; an unreadable one is worth
+    // hearing about, and rewriting it is the right answer either way.
+    log.warn('the anchor this run wrote could not be read back (' + e.message +
+             '); rewriting it.');
+  }
+  if (was === pem) {
+    log.debug('Leaving refreshTrust(). Unchanged.');
+    return null;
+  }
+  const pin = read.pin;
+  fs.writeFileSync(current.pemPath, pem);
+  // **THE PIN IS USUALLY UNCHANGED AND THE BUNDLE IS NOT, WHICH IS THE WHOLE
+  // POINT OF SAYING BOTH.** A rebuild re-certifies the listener over the key
+  // it already had, so the SPKI pin the browser job uses survives it and the
+  // node jobs' anchor does not — the Root above the leaf is a different
+  // certificate and OpenSSL has nothing to terminate a path at. A message
+  // reporting only the pin would say "nothing changed" about the one event
+  // that breaks every node-driven job in the run.
+  log.warn('THE SERVICE HAS ROTATED ITS TLS CERTIFICATE since the last job — ' +
+           'most likely a PKI action on /admin/pki or /admin-api/pki, which ' +
+           'rebuilds the Root and re-issues this listener\'s leaf. The ' +
+           'anchor at ' + current.pemPath + ' has been replaced; every job ' +
+           'from here on is handed the new one. SPKI pin ' + pin +
+           (pin === current.pin
+             ? ' (UNCHANGED — the re-issue was over the same key, so it is ' +
+               'the anchor above it that moved)'
+             : ' (was ' + current.pin + ')') + '.');
+  log.debug('Leaving refreshTrust(). Rotated.');
+  return Object.assign({}, current, {
+    pin: pin,
+    variables: Object.assign({}, current.variables, { STS_SPKI_PIN: pin })
+  });
+}
+
+// ---------------------------------------------------------------------------
 // One job, in a process of its own. Its output is TEED — written to the log
 // file as it arrives and echoed to the console unless --quiet — so a long job
 // is watchable and a finished one is readable.
 // ---------------------------------------------------------------------------
 function runJob(job, opts) {
   log.debug('Entering runJob(). job=' + job.name);
+  log.debug("Leaving runJob().");
   return new Promise(function (resolve) {
     const started = Date.now();
     const stream = fs.createWriteStream(job.logFile, { flags: 'a' });
@@ -444,6 +589,7 @@ function runJob(job, opts) {
     let buffered = '';
     const assertions = [];
     function onData(chunk) {
+      log.debug("Entering onData().");
       const text = chunk.toString();
       stream.write(text);
       if (!opts.quiet) {
@@ -460,6 +606,7 @@ function runJob(job, opts) {
           assertions.push(a);
         }
       });
+      log.debug("Leaving onData().");
     }
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
@@ -493,6 +640,8 @@ function runJob(job, opts) {
           child.kill('SIGKILL');
         } catch (e) {
           // It finished between the timer firing and this line. Nothing to do.
+          log.debug("Caught in a callback in runJob(): " +
+                    ((e && e.message) || e));
         }
       }, jobTimeoutMs);
     }
@@ -560,35 +709,46 @@ function runJob(job, opts) {
 // fully reported by it.
 // ---------------------------------------------------------------------------
 function assertionOf(line) {
+  log.debug("Entering assertionOf().");
   const trimmed = line.trim();
   if (!trimmed || trimmed[0] !== '{') {
+    log.debug("Leaving assertionOf().");
     return null;
   }
   let rec;
   try {
     rec = JSON.parse(trimmed);
   } catch (e) {
+    log.debug("Caught in assertionOf(): " + ((e && e.message) || e));
+    log.debug("Leaving assertionOf().");
     // Not a bunyan record. The service modules under test print plenty that
     // is not, and a parse failure here is the ordinary case rather than a
     // problem.
     return null;
   }
   if (!rec || typeof rec.msg !== 'string') {
+    log.debug("Leaving assertionOf().");
     return null;
   }
   const m = /^\s*([✓✗])\s+([\s\S]*)$/.exec(rec.msg);
   if (!m) {
+    log.debug("Leaving assertionOf().");
     return null;
   }
+  log.debug("Leaving assertionOf().");
   return { ok: m[1] === '✓', what: m[2], test: rec.name || '' };
 }
 
 function escapeHtml(s) {
+  log.debug("Entering escapeHtml().");
+  log.debug("Leaving escapeHtml().");
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function escapeXml(s) {
+  log.debug("Entering escapeXml().");
+  log.debug("Leaving escapeXml().");
   return escapeHtml(s).replace(/'/g, '&apos;')
     // Control characters are not legal in XML 1.0 at all, and a stack trace
     // carrying one makes the whole document unparseable for a CI dashboard —
@@ -597,6 +757,8 @@ function escapeXml(s) {
 }
 
 function slug(s) {
+  log.debug("Entering slug().");
+  log.debug("Leaving slug().");
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '').slice(0, 60);
 }
@@ -610,6 +772,8 @@ function describeTree(dir) {
   log.debug('Entering describeTree(). dir=' + dir);
   const out = { commit: '', subject: '', dirty: null };
   function git(args) {
+    log.debug("Entering git().");
+    log.debug("Leaving git().");
     return execFileSync('git', args, { cwd: dir, encoding: 'utf8',
                                        stdio: ['ignore', 'pipe', 'ignore'] })
       .trim();
@@ -641,22 +805,26 @@ const STYLE = [
   '@media (prefers-color-scheme:dark){:root{--fg:#e6e6e6;--bg:#171717;',
   '--muted:#a0a0a0;--line:#333;--card:#1f1f1f;--pass:#4ac26b;--fail:#ff7b72;',
   '--skip:#d4a72c;}}',
-  'body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,',
+  'body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ' +
+  '-apple-system,',
   'BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}',
   '.wrap{max-width:1100px;margin:0 auto;padding:24px 20px 64px;}',
   'h1{font-size:20px;margin:0 0 4px;} h2{font-size:16px;margin:32px 0 8px;}',
   '.sub{color:var(--muted);margin:0 0 20px;}',
   '.cards{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0 8px;}',
-  '.card{background:var(--card);border:1px solid var(--line);border-radius:8px;',
+  '.card{background:var(--card);border:1px solid ' +
+  'var(--line);border-radius:8px;',
   'padding:10px 14px;min-width:110px;}',
-  '.card .n{font-size:22px;font-weight:600;} .card .l{color:var(--muted);font-size:12px;}',
+  '.card .n{font-size:22px;font-weight:600;} .card ' +
+  '.l{color:var(--muted);font-size:12px;}',
   'table{border-collapse:collapse;width:100%;background:var(--card);',
   'border:1px solid var(--line);border-radius:8px;overflow:hidden;}',
   'th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);',
   'vertical-align:top;} th{font-size:12px;color:var(--muted);font-weight:600;}',
   'tr:last-child td{border-bottom:none;} td.num{text-align:right;',
   'font-variant-numeric:tabular-nums;white-space:nowrap;}',
-  '.pass{color:var(--pass);} .fail{color:var(--fail);} .skip{color:var(--skip);}',
+  '.pass{color:var(--pass);} .fail{color:var(--fail);} ' +
+  '.skip{color:var(--skip);}',
   'code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;',
   'font-size:12px;}',
   'pre{background:var(--card);border:1px solid var(--line);border-radius:6px;',
@@ -670,6 +838,7 @@ const STYLE = [
 ].join('');
 
 function jobRow(j) {
+  log.debug("Entering jobRow().");
   const status = j.status === 'passed'
     ? '<span class="pass">passed</span>'
     : (j.status === 'skipped' ? '<span class="skip">skipped</span>'
@@ -679,6 +848,7 @@ function jobRow(j) {
   const counts = j.assertions.length
     ? ok + ' ✓' + (bad ? ' / <span class="fail">' + bad + ' ✗</span>' : '')
     : '<span class="detail">—</span>';
+  log.debug("Leaving jobRow().");
   return '<tr><td><code>' + escapeHtml(j.name) + '</code>' +
     (j.describe ? '<div class="detail">' + escapeHtml(j.describe) + '</div>'
                 : '') +
@@ -691,7 +861,9 @@ function jobRow(j) {
 }
 
 function assertionList(j) {
+  log.debug("Entering assertionList().");
   if (!j.assertions.length) {
+    log.debug("Leaving assertionList().");
     return '';
   }
   const items = j.assertions.map(function (a) {
@@ -699,6 +871,7 @@ function assertionList(j) {
                           : '<span class="fail">✗</span> ') +
       escapeHtml(a.what) + '</li>';
   }).join('');
+  log.debug("Leaving assertionList().");
   return '<details><summary>' + j.assertions.length + ' assertion(s) — ' +
     escapeHtml(j.name) + '</summary><ul class="assertions">' + items +
     '</ul></details>';
@@ -707,7 +880,8 @@ function assertionList(j) {
 function writeHtml(runDir, results, meta) {
   log.debug('Entering writeHtml().');
   const failed = results.filter(function (j) { return j.status === 'failed'; });
-  const skipped = results.filter(function (j) { return j.status === 'skipped'; });
+  const skipped =
+      results.filter(function (j) { return j.status === 'skipped'; });
   const passed = results.filter(function (j) { return j.status === 'passed'; });
   const asserted = results.reduce(function (n, j) {
     return n + j.assertions.length;
@@ -835,13 +1009,14 @@ function writeHtml(runDir, results, meta) {
 // ---------------------------------------------------------------------------
 function writeXml(runDir, results, meta) {
   log.debug('Entering writeXml().');
-  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="mock-sts"' +
-    ' time="' + (meta.wallMs / 1000).toFixed(3) + '">\n';
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites ' +
+    'name="mock-sts" time="' + (meta.wallMs / 1000).toFixed(3) + '">\n';
   results.forEach(function (j) {
     const cases = [];
     if (j.assertions.length) {
       j.assertions.forEach(function (a) {
-        cases.push('    <testcase classname="' + escapeXml(j.suite + '.' + j.name) +
+        cases.push('    <testcase classname="' +
+          escapeXml(j.suite + '.' + j.name) +
           '" name="' + escapeXml(a.what) + '">' +
           (a.ok ? '' : '<failure message="' + escapeXml(a.what) + '"/>') +
           '</testcase>\n');
@@ -853,11 +1028,13 @@ function writeXml(runDir, results, meta) {
         : (j.status === 'failed'
             ? '<failure message="' + escapeXml(j.failures.join('; ')) + '"/>'
             : '');
-      cases.push('    <testcase classname="' + escapeXml(j.suite + '.' + j.name) +
+      cases.push('    <testcase classname="' +
+        escapeXml(j.suite + '.' + j.name) +
         '" name="' + escapeXml(j.name + ' (the job)') + '" time="' +
         (j.ms / 1000).toFixed(3) + '">' + body + '</testcase>\n');
     }
-    const failures = j.assertions.filter(function (a) { return !a.ok; }).length +
+    const failures = j.assertions.filter(function (
+        a) { return !a.ok; }).length +
       (j.status === 'failed' ? 1 : 0);
     xml += '  <testsuite name="' + escapeXml(j.suite + '.' + j.name) +
       '" tests="' + cases.length + '" failures="' + failures +
@@ -884,6 +1061,7 @@ function pointLatestAt(reportDir, runDir) {
     }
   } catch (e) {
     // Nothing there. That is the ordinary first run.
+    log.debug("Caught in pointLatestAt(): " + ((e && e.message) || e));
   }
   try {
     fs.symlinkSync(path.basename(runDir), link, 'dir');
@@ -938,15 +1116,19 @@ const USAGE = (function () {
 // distinguishes "answered with something" from "nothing there" and 0 is how
 // the second says so.
 function probe(url) {
+  log.debug("Entering probe().");
+  log.debug("Leaving probe().");
   return new Promise(function (resolve) {
     let target;
     try {
       target = new URL(url);
     } catch (e) {
+      log.debug("Caught in a callback in probe(): " + ((e && e.message) || e));
       resolve(0);
       return;
     }
-    const mod = target.protocol === 'https:' ? require('https') : require('http');
+    const mod = target.protocol === 'https:' ? require('https') :
+                require('http');
     const req = mod.get({
       host: target.hostname,
       port: target.port || (target.protocol === 'https:' ? 443 : 80),
@@ -1020,9 +1202,10 @@ async function waitForExternalService(url, log, timeoutMs) {
   if (swapped !== url && (await probe(swapped + '/')) > 0) {
     hint = ' SOMETHING IS ANSWERING AT ' + swapped + ' INSTEAD: in this ' +
            'service the scheme is a property of the LISTENER (global.https, ' +
-           'which every appconfig file here now sets and STS_HTTPS overrides), ' +
-           'so this is a URL that names the wrong one.';
+           'which every appconfig file here now sets and STS_HTTPS ' +
+           'overrides), so this is a URL that names the wrong one.';
   }
+  log.debug("Leaving waitForExternalService().");
   throw new Error('nothing answered at ' + url + '.' + hint +
                   ' It was handed to this runner with --service-url, so ' +
                   'nothing here started it and nothing here can restart it.');
@@ -1085,6 +1268,7 @@ async function waitForExternalService(url, log, timeoutMs) {
 // compose stacks reach this with no `instance`, and their defaults stand.
 // ---------------------------------------------------------------------------
 function chosenPorts(instance) {
+  log.debug("Entering chosenPorts().");
   const out = {};
   const ports = (instance && instance.ports) || {};
   Object.keys(ports).forEach(function (name) {
@@ -1093,6 +1277,7 @@ function chosenPorts(instance) {
     }
     out[name] = String(ports[name]);
   });
+  log.debug("Leaving chosenPorts().");
   return out;
 }
 
@@ -1146,12 +1331,73 @@ async function mintTheManagementApiToken(url) {
   log.debug('Leaving mintTheManagementApiToken().');
 }
 
+// ---------------------------------------------------------------------------
+// A TOKEN THAT WOULD EXPIRE DURING THE NEXT JOB IS REPLACED BEFORE IT
+// (2026-09-15, issue #51).
+//
+// The token is minted once and every job is handed it at spawn, so a run
+// longer than the token's lifetime (an hour by default) sends every later job
+// in with an expired one. Against a local stack a run rarely lasts that long;
+// against the AWS cluster, where every request crosses the internet on a new
+// connection, the first run did — and from the 61st minute twenty jobs failed
+// at once on `GET /admin-api/status answered 401`, reading like twenty defects.
+//
+// So before each job, if this runner can mint (the client secret is in its
+// environment) and the current token's own `exp` is closer than this job's
+// watchdog plus five minutes, a fresh one replaces it. The deadline is read
+// off the token rather than remembered, so a token a launcher handed in is
+// judged the same way. A failure keeps the old token: the job then fails on
+// it, which says the same thing more loudly.
+// ---------------------------------------------------------------------------
+async function refreshAdminApiToken(instance, jobTimeoutMs) {
+  log.debug('Entering refreshAdminApiToken().');
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  const canMint = !!(process.env.STS_ADMIN_API_CLIENT_SECRET ||
+                     process.env.ADMIN_API_CLIENT_SECRET);
+  if (!instance || !token || !canMint) {
+    log.debug('Leaving refreshAdminApiToken(). Nothing to refresh with.');
+    return;
+  }
+  let expMs = 0;
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split('.')[1] || '',
+                                           'base64url').toString('utf8'));
+    expMs = Number(payload.exp) * 1000 || 0;
+  } catch (e) {
+    // Not a JWT this runner can read; judged by nothing, so left alone.
+    log.debug('Caught in refreshAdminApiToken(): ' + ((e && e.message) || e));
+    log.debug('Leaving refreshAdminApiToken(). Unreadable token.');
+    return;
+  }
+  const needMs = (Number(jobTimeoutMs) || 300000) + 5 * 60 * 1000;
+  if (!expMs || expMs - Date.now() > needMs) {
+    log.debug('Leaving refreshAdminApiToken(). Still good.');
+    return;
+  }
+  if (!process.env.STS_ADMIN_API_CLIENT_SECRET) {
+    process.env.STS_ADMIN_API_CLIENT_SECRET =
+      process.env.ADMIN_API_CLIENT_SECRET;
+  }
+  try {
+    process.env.STS_ADMIN_API_TOKEN =
+      await adminApiToken.tokenFor(instance.url);
+    log.info('replaced the /admin-api access token, which had ' +
+             Math.max(0, Math.round((expMs - Date.now()) / 60000)) +
+             ' minute(s) left — less than the next job may take');
+  } catch (e) {
+    log.warn('could not replace the /admin-api access token before it ' +
+             'expires: ' + e.message + '. Jobs from here on may answer 401.');
+  }
+  log.debug('Leaving refreshAdminApiToken().');
+}
+
 async function main() {
   log.debug('Entering main().');
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help || opts.unknown.length) {
     if (opts.unknown.length) {
-      process.stdout.write('Unknown option(s): ' + opts.unknown.join(' ') + '\n');
+      process.stdout.write('Unknown option(s): ' + opts.unknown.join(' ') +
+                           '\n');
     }
     process.stdout.write(USAGE + '\n');
     process.exit(opts.unknown.length ? 2 : 0);
@@ -1284,8 +1530,9 @@ async function main() {
         // STS_LOG_LEVEL alone does NOT quieten a run: the six vendored modules
         // under common/vendored/ each build their own bunyan logger at load
         // from the CONFIG_FILE's logLevel, so a `debug` file goes on writing
-        // every canonicalization however low this level is. ./local-run-tests.sh
-        // picks the file from the level and exports it under this name.
+        // every canonicalization however low this level is.
+        // ./local-run-tests.sh picks the file from the level and exports it
+        // under this name.
         configFile: process.env.STS_TEST_CONFIG_FILE || '',
         coverageDir: wantCoverage ? rawProtocol : '',
         portBase: process.env.STS_TEST_PORT_BASE || ''
@@ -1341,7 +1588,8 @@ async function main() {
   // the service is who can mint against it.
   if (instance && !instance.external && !process.env.STS_ADMIN_API_TOKEN) {
     await mintTheManagementApiToken(instance.url);
-  } else if (instance && instance.external && !process.env.STS_ADMIN_API_TOKEN) {
+  } else if (instance && instance.external &&
+             !process.env.STS_ADMIN_API_TOKEN) {
     log.warn('a service was handed in with --service-url and no ' +
              'STS_ADMIN_API_TOKEN came with it. /admin-api requires an ' +
              'access token, so every job that drives it will answer 401. ' +
@@ -1403,12 +1651,12 @@ async function main() {
                   'container of its own — and no docker daemon answered (' +
                   dockerHere.why + '). BOTH ./local-run-tests.sh and ' +
                   './docker-run-tests.sh bring one up as part of their stack ' +
-                  'and neither takes this branch; a bare run-report.js against ' +
-                  'a service somebody else started is what does. The remote ' +
-                  'XACML PEP therefore has NO end-to-end coverage in this ' +
-                  'run: what stands is tests/xacml_pep.js, which loads that ' +
-                  'container\'s modules in a child process and makes no HTTP ' +
-                  'request, and sts_xacml_endpoints.js, where the TEST ' +
+                  'and neither takes this branch; a bare run-report.js ' +
+                  'against a service somebody else started is what does. The ' +
+                  'remote XACML PEP therefore has NO end-to-end coverage in ' +
+                  'this run: what stands is tests/xacml_pep.js, which loads ' +
+                  'that container\'s modules in a child process and makes no ' +
+                  'HTTP request, and sts_xacml_endpoints.js, where the TEST ' +
                   'impersonates a PEP and nothing evaluates what it pulled.';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
@@ -1432,10 +1680,54 @@ async function main() {
       job.cmd = [process.execPath, path.join(TESTS_DIR, 'run.js'),
                  '--only=' + job.file];
       job.env = Object.assign({}, process.env);
+      // The mode's own variables, taken back off — see STACK_ENV above. This
+      // is what makes the unit half run identically in all three modes rather
+      // than accidentally so.
+      STACK_ENV.forEach(function (name) {
+        delete job.env[name];
+      });
       if (wantCoverage) {
         job.env.NODE_V8_COVERAGE = rawUnit;
       }
     } else {
+      // -------------------------------------------------------------------
+      // **THE ANCHOR IS RE-READ BEFORE EVERY PROTOCOL JOB (2026-09-12), AND
+      // IT IS NOT A PRECAUTION — IT IS THE FIX FOR A WHOLE RUN.**
+      //
+      // The certificate was fetched ONCE above, at the last moment before the
+      // first job, which was right for as long as this service's certificate
+      // could only change when the service restarted. It stopped being right
+      // on 2026-09-11, when `/admin/pki` gave an operator a Root CA to
+      // rebuild: `POST /admin-api/pki/build-root` replaces the Root, every
+      // Intermediate and Issuing CA under it, AND the leaf this listener is
+      // already serving — so a truststore pinned before that request is stale
+      // the moment it returns.
+      //
+      // `sts_admin_api_operations.js` drives every declared operation of that
+      // API, `build-root` among them. On 2026-09-12 that made the twenty-nine
+      // jobs after it in the `memory` and `postgres` modes fail at the TLS
+      // handshake with `unable to get local issuer certificate` — an error
+      // that names a certificate and says nothing about the cause, on a
+      // service that was answering perfectly the whole time.
+      //
+      // **RE-READING RATHER THAN ACCUMULATING.** The bundle is REPLACED, not
+      // appended to: a truststore that kept every anchor this run has ever
+      // seen would go on trusting a hierarchy the service has thrown away,
+      // and this suite contains assertions about certificates being REFUSED.
+      // One live certificate, exactly as trust.js's header argues.
+      //
+      // A failure here is not fatal for the reason the first fetch is not:
+      // the job then runs and fails on the certificate, which is a worse
+      // message than this one but is not a worse outcome than not running.
+      // -------------------------------------------------------------------
+      if (trusted.tls) {
+        const fresh = await refreshTrust(instance.url, trusted);
+        if (fresh) {
+          trusted = fresh;
+        }
+      }
+      await refreshAdminApiToken(instance,
+        Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0));
       job.cwd = job.dir;
       job.cmd = [process.execPath, path.join(job.dir, job.file)];
       job.env = Object.assign({}, process.env, {
@@ -1549,6 +1841,22 @@ async function main() {
           path.join(__dirname, 'attach-admin-token.js');
         job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
           ? job.env.NODE_OPTIONS + ' ' + preload : preload;
+      }
+      // ------------------------------------------------------------------
+      // A NEW CONNECTION PER REQUEST, IN THE `cluster` MODE (2026-09-14).
+      //
+      // That mode's load balancer picks a node per CONNECTION, and a job
+      // whose client keeps its connection alive would talk to one node for
+      // its whole run. `tools/fresh-connections.js` argues it; the launchers
+      // set the variable for that mode and no other, so every other mode's
+      // jobs start exactly as they did. Appended for the reason the token's
+      // preload above is.
+      // ------------------------------------------------------------------
+      if (process.env.STS_TEST_FRESH_CONNECTIONS === '1') {
+        const fresh = '--require ' +
+          path.join(__dirname, 'fresh-connections.js');
+        job.env.NODE_OPTIONS = job.env.NODE_OPTIONS
+          ? job.env.NODE_OPTIONS + ' ' + fresh : fresh;
       }
       // ------------------------------------------------------------------
       // AND THE CLIENT SECRET, FOR THE ONE JOB THAT MINTS TOKENS OF ITS OWN.
@@ -1667,7 +1975,8 @@ async function main() {
 
   // ---- say what happened ------------------------------------------------
   const failed = results.filter(function (j) { return j.status === 'failed'; });
-  const skipped = results.filter(function (j) { return j.status === 'skipped'; });
+  const skipped =
+      results.filter(function (j) { return j.status === 'skipped'; });
   const asserted = results.reduce(function (s, j) {
     return s + j.assertions.length;
   }, 0);
@@ -1685,6 +1994,7 @@ async function main() {
   log.info('report: ' + path.join(runDir, 'report.html'));
   log.debug('Leaving main().');
   process.exit(failed.length ? 1 : 0);
+  log.debug("Leaving main().");
 }
 
 if (require.main === module) {
@@ -1694,4 +2004,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf };
+module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
+                   // EXPORTED FOR tests/unit_job_environment.js AND FOR
+                   // NOTHING ELSE. The list it returns is what a unit job
+                   // must not inherit, and a test that computed it for
+                   // itself would pass while this file read modes.sh
+                   // differently — which is the only way this can break.
+                   stackDeploymentVariables: stackDeploymentVariables };

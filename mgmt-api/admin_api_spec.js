@@ -37,6 +37,10 @@
 // unchanged. `ok` is the only member that is always present; the rest depends
 // on what was asked, which is why this schema is open rather than closed.
 const { log } = require('../common/helpers');
+// Which console pages list their realm's endpoints, so a GET mirroring one
+// can say that its reply carries them (2026-09-13). A library that requires
+// nothing route-registering; see its header.
+const protocolEndpoints = require('../admin-core/protocol_endpoints');
 
 const ACTION_RESULT = {
   type: 'object',
@@ -112,10 +116,10 @@ const ISSUED_RECORD = {
     revocable: {
       type: 'boolean',
       description: 'Whether anything consults this service about it. FALSE ' +
-                   'for every SAML assertion and every Kerberos ticket, which ' +
-                   'is why those are listed without a way to revoke them ' +
-                   'rather than with one that would change a number here and ' +
-                   'nothing out there.'
+                   'for every SAML assertion and every Kerberos ticket, ' +
+                   'which is why those are listed without a way to revoke ' +
+                   'them rather than with one that would change a number ' +
+                   'here and nothing out there.'
     },
     revoked: { type: 'boolean' },
     revokedAt: { type: ['integer', 'null'] },
@@ -209,32 +213,37 @@ const PAGING_PROPERTIES = {
   lastRow: { type: 'integer', description: '1-based and inclusive.' }
 };
 
-// The same members as an OBJECT, for a reply that carries more than one list and
-// therefore cannot put them at the top level. Built from PAGING_PROPERTIES above
-// rather than written out again, because two hand-kept copies of five member
-// names is one copy that will eventually be missing `lastRow`.
+// The same members as an OBJECT, for a reply that carries more than one list
+// and therefore cannot put them at the top level. Built from PAGING_PROPERTIES
+// above rather than written out again, because two hand-kept copies of five
+// member names is one copy that will eventually be missing `lastRow`.
 //
 // `total` is here and not up there for a reason worth stating: at the top level
 // the number is called `matched`, which is the count AFTER a filter. A
 // drill-down's lists have no filter, so the honest name for the number is the
 // plain one.
 function pagingObject(what) {
+  log.debug("Entering pagingObject().");
+  log.debug("Leaving pagingObject().");
   return {
     type: 'object',
-    description: 'Where `' + what + '` came from in the whole list: the page, ' +
-                 'how many there are, and the 1-based row numbers this page ' +
-                 'covers. Same member names the flat lists carry at the top ' +
-                 'level, one level down.',
+    description: 'Where `' + what + '` came from in the whole list: the ' +
+                 'page, how many there are, and the 1-based row numbers this ' +
+                 'page covers. Same member names the flat lists carry at the ' +
+                 'top level, one level down.',
     properties: Object.assign({
       total: { type: 'integer',
-               description: 'How many there are in all, which is what to page ' +
-                            'through rather than the length of this array.' }
+               description: 'How many there are in all, which is what to ' +
+                            'page through rather than the length of this ' +
+                            'array.' }
     }, PAGING_PROPERTIES),
     additionalProperties: false
   };
 }
 
 function openObject(description, properties) {
+  log.debug("Entering openObject().");
+  log.debug("Leaving openObject().");
   return { type: 'object', description: description,
            properties: properties, additionalProperties: true };
 }
@@ -249,9 +258,10 @@ const CONFIG_SETTING = openObject(
   'One setting: what it is, what it is set to, and where that came from.',
   {
     key: { type: 'string',
-           description: 'The dot path, which is BOTH the name every operation ' +
-                        'here takes and the path in the appconfig file. ' +
-                        '`oid4vci.batchSize` is `appconfig.oid4vci.batchSize`.' },
+           description: 'The dot path, which is BOTH the name every ' +
+                        'operation here takes and the path in the appconfig ' +
+                        'file. `oid4vci.batchSize` is ' +
+                        '`appconfig.oid4vci.batchSize`.' },
     group: { type: 'string',
              description: 'The protocol it belongs to, and the console\'s ' +
                           'section heading.' },
@@ -281,25 +291,26 @@ const CONFIG_SETTING = openObject(
                          'to be set short and watched, and below half a ' +
                          'minute a token expires between the response being ' +
                          'written and the client reading it.' },
-    value: { description: 'The effective value, coerced to its type: a number ' +
-                          'for int/port, a boolean for bool, an array of ' +
-                          'strings for csv.' },
+    value: { description: 'The effective value, coerced to its type: a ' +
+                          'number for int/port, a boolean for bool, an array ' +
+                          'of strings for csv.' },
     text: { type: 'string',
-            description: 'The same value on one line — what the console shows ' +
-                         'in its input and what the environment variable ' +
-                         'would carry.' },
+            description: 'The same value on one line — what the console ' +
+                         'shows in its input and what the environment ' +
+                         'variable would carry.' },
     source: {
       type: 'string',
-      enum: ['override', 'env', 'env-legacy', 'appconfig', 'defaults', 'default'],
+      enum: ['override', 'env', 'env-legacy', 'appconfig', 'defaults',
+             'default'],
       description: 'Where the effective value came from, highest first: a ' +
-                   'runtime override set through this API or the console; the ' +
-                   'setting\'s own environment variable; the LEGACY variable ' +
-                   'named in `legacyEnv` (STS_ISSUER still feeds the three ' +
-                   'issuers carved out of it); the appconfig file CONFIG_FILE ' +
-                   'names; `env/defaults.js`, the DEFAULT appconfig file that ' +
-                   'one is unioned on top of. `default` is the sixth and is ' +
-                   'reachable only for the three DERIVED settings ' +
-                   '(`global.https`, `oid4vp.walletUrl`, ' +
+                   'runtime override set through this API or the console; ' +
+                   'the setting\'s own environment variable; the LEGACY ' +
+                   'variable named in `legacyEnv` (STS_ISSUER still feeds ' +
+                   'the three issuers carved out of it); the appconfig file ' +
+                   'CONFIG_FILE names; `env/defaults.js`, the DEFAULT ' +
+                   'appconfig file that one is unioned on top of. `default` ' +
+                   'is the sixth and is reachable only for the three DERIVED ' +
+                   'settings (`global.https`, `oid4vp.walletUrl`, ' +
                    '`krb5.serviceDomains`), whose value is a function of a ' +
                    'neighbouring setting rather than a literal in any file: ' +
                    'for every other setting, no value in either appconfig ' +
@@ -326,15 +337,15 @@ const CONFIG_SETTING = openObject(
     default: { description: 'The built-in default — the `dflt` column of ' +
                             'config.js\'s table, which `env/defaults.js` is ' +
                             'GENERATED from and which the three shipped ' +
-                            'appconfig files were seeded with. It is what the ' +
-                            'value WOULD be with nothing set anywhere, and is ' +
-                            'no longer a source in its own right: see ' +
+                            'appconfig files were seeded with. It is what ' +
+                            'the value WOULD be with nothing set anywhere, ' +
+                            'and is no longer a source in its own right: see ' +
                             '`source`.' },
     overridden: { type: 'boolean',
-                  description: 'Whether a runtime override is in force. Equal ' +
-                               'to `source === "override"`, and reported ' +
-                               'separately so a caller can filter without ' +
-                               'matching a string.' }
+                  description: 'Whether a runtime override is in force. ' +
+                               'Equal to `source === "override"`, and ' +
+                               'reported separately so a caller can filter ' +
+                               'without matching a string.' }
   });
 
 // THE SETTINGS BLOCK EVERY PAGE THAT OWNS SETTINGS CARRIES, written once for
@@ -342,9 +353,10 @@ const CONFIG_SETTING = openObject(
 // pages draw their own settings, and their `settings` member is this shape on
 // every one of them. A caller reads it once.
 const SETTINGS_BLOCK = openObject(
-  'The settings this page draws, described. The same rows GET /config returns, ' +
-  'filtered to the ones this page owns — which is where they are EDITED, not a ' +
-  'second copy of them: every form posts to POST /config/set-many.',
+  'The settings this page draws, described. The same rows GET /config ' +
+  'returns, filtered to the ones this page owns — which is where they are ' +
+  'EDITED, not a second copy of them: every form posts to POST ' +
+  '/config/set-many.',
   {
     page: { type: 'string' },
     groups: {
@@ -371,9 +383,9 @@ const SETTINGS_BLOCK = openObject(
     },
     setWith: {
       type: 'string',
-      description: 'The operation that writes them, named rather than left to ' +
-                   'be inferred: one store, one action, however many pages ' +
-                   'draw the door.'
+      description: 'The operation that writes them, named rather than left ' +
+                   'to be inferred: one store, one action, however many ' +
+                   'pages draw the door.'
     }
   });
 
@@ -474,8 +486,8 @@ const CLAIM_SET_PROPS = {
           memberOfCounts: {
             type: 'boolean',
             description: 'groups.claimFromMemberOf — whether a group named ' +
-                         'by the PERSON\'s own memberOf counts when the group ' +
-                         'entry does not list them back. Nothing here ' +
+                         'by the PERSON\'s own memberOf counts when the ' +
+                         'group entry does not list them back. Nothing here ' +
                          'maintains memberOf, so that disagreement is ' +
                          'reachable in one operation and this is which side ' +
                          'a token believes.'
@@ -634,14 +646,14 @@ const SCHEMAS = {
         type: 'string',
         description: 'The first twelve characters of the commit this was ' +
                      'built from. Absent when the build could not know it — ' +
-                     'the container build context carries no .git, so this is ' +
-                     'present only when GIT_COMMIT was passed in.'
+                     'the container build context carries no .git, so this ' +
+                     'is present only when GIT_COMMIT was passed in.'
       },
       builtAt: {
         type: 'string', format: 'date-time',
         description: 'When the build number was fixed. Read it with ' +
-                     '`stamped`: this is when the ARTIFACT was built, or when ' +
-                     'this PROCESS started if there is no artifact.'
+                     '`stamped`: this is when the ARTIFACT was built, or ' +
+                     'when this PROCESS started if there is no artifact.'
       },
       stamped: {
         type: 'boolean',
@@ -659,7 +671,12 @@ const SCHEMAS = {
                  description: 'Where the console every operation mirrors is.' },
       protected: {
         type: 'boolean',
-        description: 'Always false. Nothing here checks a credential; see ' +
+        description: 'Whether this API requires an access token ' +
+                     '(`adminApi.authRequired`, on by default). It read ' +
+                     '"always false" until 2026-09-10, having been written ' +
+                     'when that was true and left behind when the gate ' +
+                     'arrived — so a client could read this field only by ' +
+                     'presenting the credential it says is unnecessary. See ' +
                      'the description at the top of this document.'
       },
       operations: {
@@ -719,9 +736,9 @@ const SCHEMAS = {
       startedAtIso: { type: 'string', format: 'date-time' },
       now: {
         type: 'integer',
-        description: 'When this snapshot was taken, in milliseconds — so that ' +
-                     'every age in it can be worked out without trusting the ' +
-                     'caller\'s clock.'
+        description: 'When this snapshot was taken, in milliseconds — so ' +
+                     'that every age in it can be worked out without ' +
+                     'trusting the caller\'s clock.'
       },
       uptimeMs: { type: 'integer' },
       claims: {
@@ -828,10 +845,11 @@ const SCHEMAS = {
       terminable: { type: 'boolean' },
       held: { type: 'integer', description: 'How many are live.' },
       notListed: { type: 'integer',
-                   description: 'How many were held back by `logout.maxRows`. ' +
-                                'The cap is on what is LISTED and never on ' +
-                                'what a termination reaches: a global logout ' +
-                                'still ends every one of them.' },
+                   description: 'How many were held back by ' +
+                                '`logout.maxRows`. The cap is on what is ' +
+                                'LISTED and never on what a termination ' +
+                                'reaches: a global logout still ends every ' +
+                                'one of them.' },
       failure: { type: 'string',
                  description: 'Set when this family could not be read. The ' +
                               'rest of the reply is unaffected — a family ' +
@@ -865,20 +883,31 @@ const SCHEMAS = {
         crv: { type: 'string' },
         kid: { type: 'string',
                description: 'Empty for the TLS key, which has a fingerprint ' +
-                            'instead, and for a post-quantum key that has not ' +
-                            'been generated yet.' },
+                            'instead, and for a post-quantum key that has ' +
+                            'not been generated yet.' },
         scope: { type: 'string', description: '`realm` or `process`.' },
         hasCertificate: { type: 'boolean',
-                          description: 'Whether a PKCS#12 is possible: a .p12 ' +
-                                       'wraps a private key in a certificate ' +
-                                       'and this service holds one for the ' +
-                                       'signing key and the TLS key only.' },
+                          description: 'Whether a PKCS#12 is possible: a ' +
+                                       '.p12 wraps a private key in a ' +
+                                       'certificate and this service holds ' +
+                                       'one for the signing key and the TLS ' +
+                                       'key only.' },
         formats: { type: 'array', items: { type: 'string' },
                    description: 'Empty means not exportable, and the page ' +
                                 'says why — a post-quantum key that has not ' +
                                 'been made yet, or one with no interoperable ' +
                                 'encoding.' },
-        usedFor: { type: 'array', items: { type: 'string' } }
+        usedFor: { type: 'array', items: { type: 'string' } },
+        pqc: { type: ['object', 'null'],
+               description: 'Whether this key pair uses a post-quantum ' +
+                            'algorithm — the icon /admin/keys draws. `null` ' +
+                            'for a classical key; otherwise `kind` (`pq` for ' +
+                            'ML-DSA or SLH-DSA, `composite` for a ' +
+                            'post-quantum half and a classical half, `kem` ' +
+                            'for ML-KEM, `hybrid` for a classical key whose ' +
+                            'certificate carries an alternative ' +
+                            'post-quantum key), `algorithm`, `label`, ' +
+                            '`family` and `standard`.' }
       }) }
     }),
 
@@ -889,12 +918,13 @@ const SCHEMAS = {
              description: 'The `id` from GET /admin-api/keys.' },
       format: { type: 'string', enum: ['pem', 'der', 'jwk', 'pkcs12'] },
       password: { type: 'string',
-                  description: 'REQUIRED for `pkcs12`. Optional for the other ' +
-                               'three, where it encrypts the private half — ' +
-                               'PKCS#8 for PEM and DER, PBES2 as a .jwe for ' +
-                               'JWK. Empty means the private key comes out in ' +
-                               'the clear, which is usually what is wanted ' +
-                               'from a mock and never anywhere else.' }
+                  description: 'REQUIRED for `pkcs12`. Optional for the ' +
+                               'other three, where it encrypts the private ' +
+                               'half — PKCS#8 for PEM and DER, PBES2 as a ' +
+                               '.jwe for JWK. Empty means the private key ' +
+                               'comes out in the clear, which is usually ' +
+                               'what is wanted from a mock and never ' +
+                               'anywhere else.' }
     }),
 
   KeyExport: openObject(
@@ -1023,10 +1053,10 @@ const SCHEMAS = {
         'What was asked for, with null where nothing was — so a reply can be ' +
         'read on its own without the request beside it.', {}),
       at: { type: 'integer',
-            description: 'When this answer was computed, epoch ms. It matters ' +
-                         'here more than on most resources: every row is a ' +
-                         'countdown, and `expiresAt` minus this is the ' +
-                         'remaining life at the moment it was read.' },
+            description: 'When this answer was computed, epoch ms. It ' +
+                         'matters here more than on most resources: every ' +
+                         'row is a countdown, and `expiresAt` minus this is ' +
+                         'the remaining life at the moment it was read.' },
       expiryRules: openObject(
         'The sentence saying how each kind\'s expiry is worked out, keyed by ' +
         '`family`. It is here once rather than on every row because it is a ' +
@@ -1063,32 +1093,33 @@ const SCHEMAS = {
                           'kinds that issue no token.' },
       protocol: { type: 'string',
                   description: 'The protocol the sign-in came THROUGH, which ' +
-                               'is not the only one the session serves: every ' +
-                               'browser family here reads the same session. ' +
-                               '`carries` is what has actually signed in on ' +
-                               'it.' },
+                               'is not the only one the session serves: ' +
+                               'every browser family here reads the same ' +
+                               'session. `carries` is what has actually ' +
+                               'signed in on it.' },
       handle: { type: 'string',
                 description: 'The thing itself — a session id, a connection ' +
                              'id, a principal name.' },
       sessionId: { type: 'string',
                    description: 'The browser sign-on session id, which is ' +
-                                'what a token issued under it records — so it ' +
-                                'is the join to `GET /admin-api/tokens?' +
-                                'session=`. Empty on the other two kinds, ' +
-                                'which issue nothing that records one.' },
+                                'what a token issued under it records — so ' +
+                                'it is the join to `GET ' +
+                                '/admin-api/tokens?session=`. Empty on the ' +
+                                'other two kinds, which issue nothing that ' +
+                                'records one.' },
       startedAt: { type: 'integer',
                    description: 'Epoch ms, or 0 when nothing recorded it.' },
       expiresAt: { type: 'integer',
                    description: '**Epoch ms, or 0 for NO EXPIRY — which is ' +
                                 'not an expiry of the epoch.** An LDAP ' +
-                                'connection has none: it lasts until the next ' +
-                                'Bind, an Unbind, or the socket closing. ' +
-                                '`expiryRule` says which arithmetic produced ' +
-                                'this number.' },
+                                'connection has none: it lasts until the ' +
+                                'next Bind, an Unbind, or the socket ' +
+                                'closing. `expiryRule` says which arithmetic ' +
+                                'produced this number.' },
       expiryRule: { type: 'string',
-                    description: 'How this kind\'s expiry is worked out, in a ' +
-                                 'sentence. The same string as the matching ' +
-                                 'member of `expiryRules`.' },
+                    description: 'How this kind\'s expiry is worked out, in ' +
+                                 'a sentence. The same string as the ' +
+                                 'matching member of `expiryRules`.' },
       amr: { type: 'array', items: { type: 'string' } },
       acr: { type: 'string' },
       carries: { type: 'array', items: { type: 'string' },
@@ -1125,7 +1156,8 @@ const SCHEMAS = {
              description: 'The normalised identity key everything is filed ' +
                           'under — what folds `alice`, `alice@REALM` and a ' +
                           '`urn:` subject into one answer.' },
-      sessions: { type: 'integer', description: 'Browser sign-on sessions held.' },
+      sessions: { type: 'integer',
+                  description: 'Browser sign-on sessions held.' },
       total: { type: 'integer', description: 'Live items in every family.' },
       listed: { type: 'integer' },
       notListed: { type: 'integer' },
@@ -1198,12 +1230,38 @@ const SCHEMAS = {
       tokensWithNoSessionPaging: pagingObject('tokensWithNoSession'),
       artifacts: { type: 'array', items: ISSUED_RECORD },
       artifactsPaging: pagingObject('artifacts'),
+      subject: {
+        type: 'string',
+        description: 'The person\'s subject — `urn:uuid:<entryUUID>`, the ' +
+                     '`sub` every token issued to them carries (2026-09-14) ' +
+                     '— or an empty string where the directory holds no ' +
+                     'entry for them. It survives a rename, and a person ' +
+                     'deleted and re-created under the same name has a new ' +
+                     'one.'
+      },
       ldap: {
         description: 'This person\'s directory entry, or null when no ' +
                      'directory is loaded in this process — which is a ' +
                      'different answer from an entry that is not there, and ' +
                      'that one is an object whose `found` is false.'
-      }
+      },
+      credentials: openObject(
+        'This person\'s assertion key pairs (2026-09-13): `keyPairs`, one ' +
+        'per profile — `jwt` (RFC 7523, `stsAssertion*`) and `saml` (RFC ' +
+        '7522, `stsSamlAssertion*`) — each with `held`, `source` (`issued`, ' +
+        '`uploaded-realm-ca`, `uploaded-external-ca`), `privateKeyHeld`, the ' +
+        'parsed `certificate` and `chain`, the key `handle`, the declared ' +
+        'and effective issuers and the attribute names. **No private key is ' +
+        'in it**: a person\'s is shown once, by the issue, and has no read ' +
+        'door. Replaced through POST /admin-api/pki/issue and ' +
+        '/pki/upload-certificate with `target=person`, and taken off with ' +
+        '/pki/revoke.', {
+          keyPairs: { type: 'array',
+                      items: openObject('One profile\'s key pair.', {}) },
+          storable: { type: 'boolean' },
+          found: { type: 'boolean' },
+          caAvailable: { type: 'boolean' }
+        })
     }),
 
   Saml2ServiceProviderList: openObject(
@@ -1224,13 +1282,15 @@ const SCHEMAS = {
                      '`arsUrl`, the counters, and what has been recorded ' +
                      'about it.',
         items: openObject(
-          'One service provider, its endpoints and what has been seen of it.', {})
+          'One service provider, its endpoints and what has been seen of it.',
+          {})
       },
       unscopedMetadata: {
         type: 'string',
         description: 'The document at /saml2/metadata, which names ONE ' +
-                     'identity provider for everybody and works for a service ' +
-                     'provider that does not want a document of its own.'
+                     'identity provider for everybody and works for a ' +
+                     'service provider that does not want a document of its ' +
+                     'own.'
       },
       settings: SETTINGS_BLOCK,
       artifactsAwaitingResolution: {
@@ -1251,32 +1311,32 @@ const SCHEMAS = {
         type: 'boolean',
         description: 'On the ?sp= reply only. FALSE for an entityID that is ' +
                      'not in the registry — whose metadata document is still ' +
-                     'served, and whose AuthnRequest would still be answered, ' +
-                     'because this profile accepts any entityID.'
+                     'served, and whose AuthnRequest would still be ' +
+                     'answered, because this profile accepts any entityID.'
       }
     }, PAGING_PROPERTIES)),
 
   FederationRelationshipList: openObject(
     'THE FEDERATION REGISTER: every relationship this service has been ' +
     'configured with, in either direction and in any of five protocols. With ' +
-    '?relationship= the reply is ONE of them instead, with everything it holds ' +
-    'and the URLs to configure at the partner.\n\n' +
-    '**This is the one resource in this API whose contents are a security ' +
-    'decision rather than a record.** Everywhere else this service accepts ' +
-    'what it is given; it cannot do that at an assertion consumer service, ' +
-    'because what arrives there is an unauthenticated request claiming to be a ' +
-    'person and the session it produces is the one every protocol in this ' +
-    'process reads. So a relationship is created DISABLED and an assertion is ' +
-    'refused unless it verifies against the certificate configured on it.\n\n' +
-    'It holds nothing of its own: every row is an entry under ' +
-    '`ou=federations`, so an `ldapmodify` there is exactly what these ' +
-    'operations do.\n\n' +
-    '`fedClientSecret` is NEVER returned by this API — it is reported as `(set ' +
-    '— not returned)` or empty. That is not a security boundary and is not ' +
-    'claimed as one: an `ldapsearch` of this directory shows it, deliberately ' +
-    'and loudly, exactly as `GET /krb5/principals` prints every Kerberos ' +
-    'password. What it avoids is this API being a SECOND way to read a ' +
-    'credential that belongs to somebody else\'s service out of this process.',
+    '?relationship= the reply is ONE of them instead, with everything it ' +
+    'holds and the URLs to configure at the partner.\n\n**This is the one ' +
+    'resource in this API whose contents are a security decision rather than ' +
+    'a record.** Everywhere else this service accepts what it is given; it ' +
+    'cannot do that at an assertion consumer service, because what arrives ' +
+    'there is an unauthenticated request claiming to be a person and the ' +
+    'session it produces is the one every protocol in this process reads. So ' +
+    'a relationship is created DISABLED and an assertion is refused unless ' +
+    'it verifies against the certificate configured on it.\n\nIt holds ' +
+    'nothing of its own: every row is an entry under `ou=federations`, so an ' +
+    '`ldapmodify` there is exactly what these operations ' +
+    'do.\n\n`fedClientSecret` is NEVER returned by this API — it is reported ' +
+    'as `(set — not returned)` or empty. That is not a security boundary and ' +
+    'is not claimed as one: an `ldapsearch` of this directory shows it, ' +
+    'deliberately and loudly, exactly as `GET /krb5/principals` prints every ' +
+    'Kerberos password. What it avoids is this API being a SECOND way to ' +
+    'read a credential that belongs to somebody else\'s service out of this ' +
+    'process.',
     Object.assign({
       relationships: {
         type: 'array',
@@ -1291,9 +1351,9 @@ const SCHEMAS = {
       roles: {
         type: 'array',
         description: 'The two directions, each with what it means. Named for ' +
-                     'what THIS SERVICE does rather than for what the partner ' +
-                     'does, because every log line and every page here is ' +
-                     'written from this service\'s point of view.',
+                     'what THIS SERVICE does rather than for what the ' +
+                     'partner does, because every log line and every page ' +
+                     'here is written from this service\'s point of view.',
         items: openObject('One role.', {})
       },
       protocols: {
@@ -1314,16 +1374,16 @@ const SCHEMAS = {
       ready: {
         type: 'integer',
         description: 'How many are enabled AND fully configured. A count ' +
-                     'below `relationshipCount` is the ordinary state, since a ' +
-                     'relationship is created disabled.'
+                     'below `relationshipCount` is the ordinary state, since ' +
+                     'a relationship is created disabled.'
       },
       found: {
         type: 'boolean',
         description: 'On the ?relationship= reply only. FALSE for an id that ' +
-                     'is not registered — and unlike almost everything else in ' +
-                     'this API, one does not appear because somebody used it: ' +
-                     'this register is configured, and nothing creates an ' +
-                     'entry in it by turning up.'
+                     'is not registered — and unlike almost everything else ' +
+                     'in this API, one does not appear because somebody used ' +
+                     'it: this register is configured, and nothing creates ' +
+                     'an entry in it by turning up.'
       }
     }, PAGING_PROPERTIES)),
 
@@ -1332,19 +1392,20 @@ const SCHEMAS = {
     'answered for, and the three endpoint URLs each of them is configured ' +
     'from. THE METADATA IS PER RELYING PARTY, exactly as the SAML 2.0 ' +
     'profile\'s is, and it is a SAML 2.0 metadata document describing a SAML ' +
-    '1.1 identity provider — SAML 1.1 never had a metadata specification, and ' +
-    'what every relying party consumes is an EntityDescriptor whose ' +
+    '1.1 identity provider — SAML 1.1 never had a metadata specification, ' +
+    'and what every relying party consumes is an EntityDescriptor whose ' +
     'protocolSupportEnumeration is the 1.1 protocol.\n\n**THERE IS NO ' +
-    'REQUEST MESSAGE IN SAML 1.1**, which is where this resource differs from ' +
-    '`GET /admin-api/saml2` rather than merely being older: a relying party ' +
-    'cannot identify itself in the protocol, so `identifier` may be something ' +
-    'this service GUESSED from the origin of a TARGET — `identifierLooksGuessed` ' +
-    'says so on the ?rp= reply. There is also no logout service to declare ' +
-    'and no request signature to record, because the protocol has neither.\n\n' +
-    'It holds nothing: every row is an entry in `ou=applications`, and the ' +
-    'kind is shared with WS-Federation, so a row here may never have touched ' +
-    '/saml11 — `profiles` says which of the two browser profiles it has ' +
-    'actually used. With ?rp= the reply is ONE of them instead.',
+    'REQUEST MESSAGE IN SAML 1.1**, which is where this resource differs ' +
+    'from `GET /admin-api/saml2` rather than merely being older: a relying ' +
+    'party cannot identify itself in the protocol, so `identifier` may be ' +
+    'something this service GUESSED from the origin of a TARGET — ' +
+    '`identifierLooksGuessed` says so on the ?rp= reply. There is also no ' +
+    'logout service to declare and no request signature to record, because ' +
+    'the protocol has neither.\n\nIt holds nothing: every row is an entry in ' +
+    '`ou=applications`, and the kind is shared with WS-Federation, so a row ' +
+    'here may never have touched /saml11 — `profiles` says which of the two ' +
+    'browser profiles it has actually used. With ?rp= the reply is ONE of ' +
+    'them instead.',
     Object.assign({
       relyingParties: {
         type: 'array',
@@ -1359,22 +1420,22 @@ const SCHEMAS = {
       unscopedMetadata: {
         type: 'string',
         description: 'The document at /saml11/metadata, which names ONE ' +
-                     'identity provider for everybody and works for a relying ' +
-                     'party that does not want a document of its own.'
+                     'identity provider for everybody and works for a ' +
+                     'relying party that does not want a document of its own.'
       },
       settings: SETTINGS_BLOCK,
       artifactsAwaitingResolution: {
         type: 'integer',
         description: 'How many type 0x0001 artifacts are minted and not yet ' +
                      'resolved. An artifact is ONE-SHOT and expires ' +
-                     '(saml11.artifactTtlS), so this rises and falls; a number ' +
-                     'that only ever rises is a leak.'
+                     '(saml11.artifactTtlS), so this rises and falls; a ' +
+                     'number that only ever rises is a leak.'
       },
       assertionsHeldByReference: {
         type: 'integer',
         description: 'Assertions kept so that a <samlp:AssertionIDReference> ' +
-                     'can ask for one again. Unlike the artifacts above it is ' +
-                     'CAPPED rather than swept — a reference is not a ' +
+                     'can ask for one again. Unlike the artifacts above it ' +
+                     'is CAPPED rather than swept — a reference is not a ' +
                      'credential, so it is not one-shot — which means this ' +
                      'number sitting at its ceiling is the healthy state and ' +
                      'not a leak.'
@@ -1382,16 +1443,16 @@ const SCHEMAS = {
       flowsHeldForSignIn: {
         type: 'integer',
         description: 'Flows held while a browser is at the sign-in screen. ' +
-                     'There is no second reason here: a SAML 1.1 flow arrives ' +
-                     'as a top-level GET, so it needs none of the POST-to-GET ' +
-                     'hop the SAML 2.0 profile holds requests for.'
+                     'There is no second reason here: a SAML 1.1 flow ' +
+                     'arrives as a top-level GET, so it needs none of the ' +
+                     'POST-to-GET hop the SAML 2.0 profile holds requests for.'
       },
       found: {
         type: 'boolean',
-        description: 'On the ?rp= reply only. FALSE for an identifier that is ' +
-                     'not in the registry — whose metadata document is still ' +
-                     'served, and whose flow would still be answered, because ' +
-                     'this profile accepts any identifier.'
+        description: 'On the ?rp= reply only. FALSE for an identifier that ' +
+                     'is not in the registry — whose metadata document is ' +
+                     'still served, and whose flow would still be answered, ' +
+                     'because this profile accepts any identifier.'
       }
     }, PAGING_PROPERTIES)),
 
@@ -1407,9 +1468,10 @@ const SCHEMAS = {
         type: 'array',
         description: 'The catalogue of metadata members this service has ' +
                      'something to say about, each with why a client cares. ' +
-                     'HELP RATHER THAN SCHEMA: a member outside it is accepted ' +
-                     'and published just the same, which is the difference ' +
-                     'between this resource and the applications registry.',
+                     'HELP RATHER THAN SCHEMA: a member outside it is ' +
+                     'accepted and published just the same, which is the ' +
+                     'difference between this resource and the applications ' +
+                     'registry.',
         items: openObject('One member: `name`, `group`, `kind`, `what`.', {})
       },
       authorizationServers: {
@@ -1422,31 +1484,31 @@ const SCHEMAS = {
       },
       found: {
         type: 'boolean',
-        description: 'On the ?profile= reply only. FALSE for a profile that is ' +
-                     'not configured — whose discovery URLs still answer.'
+        description: 'On the ?profile= reply only. FALSE for a profile that ' +
+                     'is not configured — whose discovery URLs still answer.'
       },
       drift: {
         type: 'array',
         description: 'THE MEMBERS OF THIS DOCUMENT THAT DO NOT DESCRIBE THIS ' +
                      'SERVICE. Each carries `member`, `published`, `actual`, ' +
-                     'and `kind` — `differs` where this service would publish ' +
-                     'something else, `invented` where it publishes nothing of ' +
-                     'that name, `removed` where the profile hides something ' +
-                     'real. A profile that lies is often the point; one that ' +
-                     'lied without saying so would be a trap.',
+                     'and `kind` — `differs` where this service would ' +
+                     'publish something else, `invented` where it publishes ' +
+                     'nothing of that name, `removed` where the profile ' +
+                     'hides something real. A profile that lies is often the ' +
+                     'point; one that lied without saying so would be a trap.',
         items: openObject('One disagreement.', {})
       }
     }, PAGING_PROPERTIES)),
 
   ApplicationList: openObject(
-    'Every application this service has been asked about — an OAuth client, an ' +
-    'OpenID Connect relying party, a SAML 2.0 or 1.1 service provider, a ' +
+    'Every application this service has been asked about — an OAuth client, ' +
+    'an OpenID Connect relying party, a SAML 2.0 or 1.1 service provider, a ' +
     'WS-Federation application, a WS-Trust relying party, the OpenID4VP ' +
-    'verifier, a Kerberos service — one per unique identifier. THE ENTRIES ARE ' +
-    'THE REGISTRY: they live under ou=applications in the embedded LDAP ' +
-    'directory, nothing caches them, and the RFC 7591 client registrations are ' +
-    'those same entries. With ?application= the reply is ONE of them instead, ' +
-    'shaped as the second block of properties below.',
+    'verifier, a Kerberos service — one per unique identifier. THE ENTRIES ' +
+    'ARE THE REGISTRY: they live under ou=applications in the embedded LDAP ' +
+    'directory, nothing caches them, and the RFC 7591 client registrations ' +
+    'are those same entries. With ?application= the reply is ONE of them ' +
+    'instead, shaped as the second block of properties below.',
     Object.assign({
       applicationCount: { type: 'integer',
                           description: 'How many the registry holds in all.' },
@@ -1485,33 +1547,41 @@ const SCHEMAS = {
         type: 'array',
         description: 'One page of them, newest activity first.',
         items: openObject(
-          'One application: `identifier`, `dn` (WHERE THE ENTRY IS — the key it ' +
-          'is stored under, and what an ldapsearch or ldapmodify is aimed at; ' +
-          'null only where no directory is loaded in this process, in which ' +
-          'case there is no registry at all), `dnLabel` (the RDN, which is a ' +
-          'digest of the identifier when that is too long to read), `name`, ' +
-          '`kinds`, `protocols` (DERIVED — the protocol families it has actually ' +
-          'appeared in, as the prose labels /admin/users spells protocols with), ' +
-          '`allowedProtocols` (DECLARED — the families somebody said it is FOR, as ' +
-          'ids from the closed vocabulary GET /admin-api/applications/new ' +
-          'publishes; nothing in this service reads it, so it grants and refuses ' +
-          'nothing), `recordedProtocols` (the same vocabulary again, worked out ' +
-          'from this entry\'s KINDS — which is what makes the two comparable, since ' +
-          'the labels in `protocols` and the ids in `allowedProtocols` are different ' +
-          'alphabets and matching on the labels would read every OAuth client as a ' +
-          'federation partner. It is NOT "has authenticated": a create takes a kind ' +
-          'too, so a hand-made entry can be recorded in a family it has never ' +
-          'connected in, and `authentications` is the figure that answers that), ' +
-          '`registered`, `firstSeen`, `lastSeen`, ' +
-          '`authentications`, `sessions`, `users`, `descriptions`, `origin`, ' +
-          '`createdAt` and `modifiedAt` (the ENTRY\'s own, which an ldapmodify ' +
-          'moves and firstSeen/lastSeen do not), `operational` (which of the ' +
+          'One application: `identifier`, `dn` (WHERE THE ENTRY IS — the key ' +
+          'it is stored under, and what an ldapsearch or ldapmodify is aimed ' +
+          'at; null only where no directory is loaded in this process, in ' +
+          'which case there is no registry at all), `dnLabel` (the RDN, ' +
+          'which is a digest of the identifier when that is too long to ' +
+          'read), `name`, `kinds`, `protocols` (DERIVED — the protocol ' +
+          'families it has actually appeared in, as the prose labels ' +
+          '/admin/users spells protocols with), `allowedProtocols` (DECLARED ' +
+          '— the families somebody said it is FOR, as ids from the closed ' +
+          'vocabulary GET /admin-api/applications/new publishes; nothing in ' +
+          'this service reads it, so it grants and refuses nothing), ' +
+          '`recordedProtocols` (the same vocabulary again, worked out from ' +
+          'this entry\'s KINDS — which is what makes the two comparable, ' +
+          'since the labels in `protocols` and the ids in `allowedProtocols` ' +
+          'are different alphabets and matching on the labels would read ' +
+          'every OAuth client as a federation partner. It is NOT "has ' +
+          'authenticated": a create takes a kind too, so a hand-made entry ' +
+          'can be recorded in a family it has never connected in, and ' +
+          '`authentications` is the figure that answers that), ' +
+          '`returnAddressesObserved` (the return addresses a ' +
+          'DEVELOPMENT-mode request put on this entry and nobody has ' +
+          'confirmed, each `{attribute, value, held, trusted}` — `trusted` ' +
+          'is whether THIS realm\'s mode believes it, which product never ' +
+          'does; confirm or discard one with POST ' +
+          '/admin-api/applications/confirm-address or /discard-address), ' +
+          '`registered`, `firstSeen`, `lastSeen`, `authentications`, ' +
+          '`sessions`, `users`, `descriptions`, `origin`, `createdAt` and ' +
+          '`modifiedAt` (the ENTRY\'s own, which an ldapmodify moves and ' +
+          'firstSeen/lastSeen do not), `operational` (which of the ' +
           'attributes a SEARCH would have withheld unless asked for by name, ' +
-          'RFC 4511 section 4.5.1.8 — this is a dump of the store rather than a ' +
-          'search, so it carries them always), `attributes` — EVERY attribute ' +
-          'the entry carries, canonically spelled, the operational ones and ' +
-          '`entryDN` included — and `fields`, which is the narrower question of ' +
-          'what this registry has recorded about it.',
+          'RFC 4511 section 4.5.1.8 — this is a dump of the store rather ' +
+          'than a search, so it carries them always), `attributes` — EVERY ' +
+          'attribute the entry carries, canonically spelled, the operational ' +
+          'ones and `entryDN` included — and `fields`, which is the narrower ' +
+          'question of what this registry has recorded about it.',
           {})
       },
       found: {
@@ -1523,15 +1593,30 @@ const SCHEMAS = {
       attributesShown: {
         type: 'array',
         description: 'On the ?application= reply only: one page of the ' +
-                     'entry\'s attributes, each `{name, values, operational}`. ' +
-                     'EVERY attribute the entry carries, not the ' +
-                     'protocol-specific half — objectClass, cn, appIdentifier, ' +
-                     'both timestamps and `entryDN` are among them, and so is ' +
-                     'anything an ldapmodify wrote by hand, because this ' +
-                     'directory is schemaless.',
+                     'entry\'s attributes, each `{name, values, ' +
+                     'operational}`. EVERY attribute the entry carries, not ' +
+                     'the protocol-specific half — objectClass, cn, ' +
+                     'appIdentifier, both timestamps and `entryDN` are among ' +
+                     'them, and so is anything an ldapmodify wrote by hand, ' +
+                     'because this directory is schemaless.',
         items: openObject('One attribute of the directory entry.', {})
       },
-      attributesPaging: pagingObject('attributesShown')
+      attributesPaging: pagingObject('attributesShown'),
+      returnAddressesObservedShown: {
+        type: 'array',
+        description: 'On the ?application= reply only: one page of ' +
+                     '`returnAddressesObserved` — the return addresses a ' +
+                     'development-mode request wrote onto this entry and ' +
+                     'nobody has confirmed, which product mode refuses. It ' +
+                     'is the table the console draws its Confirm and Discard ' +
+                     'buttons in; the whole list is on the application itself.',
+        items: openObject('One observed address: `attribute`, `value`, ' +
+                          '`held` (whether the address is still on the ' +
+                          'attribute) and `trusted` (whether this realm\'s ' +
+                          'mode believes it).', {})
+      },
+      returnAddressesObservedPaging: pagingObject(
+          'returnAddressesObservedShown')
     }, PAGING_PROPERTIES, {
       matched: { type: 'integer', description: 'How many the filter matched.' }
     })),
@@ -1547,10 +1632,11 @@ const SCHEMAS = {
   // doors, so a field on the form and a field this document offers cannot come
   // apart.
   NewUserForm: openObject(
-    'Every attribute a person may be created with, where the entry would land, ' +
-    'and the four ways they can be given a way in. Mirrors GET ' +
-    '/admin/users/new, which is the console page built from exactly this list. ' +
-    'It creates nobody itself: the create is POST /admin-api/users/create.',
+    'Every attribute a person may be created with, where the entry would ' +
+    'land, and the four ways they can be given a way in. Mirrors GET ' +
+    '/admin/users/new, which is the console page built from exactly this ' +
+    'list. It creates nobody itself: the create is POST ' +
+    '/admin-api/users/create.',
     {
       directory: {
         type: 'boolean',
@@ -1561,51 +1647,53 @@ const SCHEMAS = {
                      'different facts.'
       },
       container: { type: 'string',
-                   description: 'The DN a new person would be created under, IN ' +
-                                'THE REALM THIS CALL ARRIVED IN. The directory ' +
-                                'is per realm, so /realm/acme/admin-api/... ' +
-                                'answers with acme\'s ou=users and a person ' +
-                                'created there is invisible to every other ' +
-                                'realm, including to an ldapsearch that does ' +
-                                'not use that realm\'s base DN.' },
+                   description: 'The DN a new person would be created under, ' +
+                                'IN THE REALM THIS CALL ARRIVED IN. The ' +
+                                'directory is per realm, so ' +
+                                '/realm/acme/admin-api/... answers with ' +
+                                'acme\'s ou=users and a person created there ' +
+                                'is invisible to every other realm, ' +
+                                'including to an ldapsearch that does not ' +
+                                'use that realm\'s base DN.' },
       realm: openObject('The trust realm this call arrived in: `id` and `name`.', {}),
       mode: { type: 'string',
               description: 'development or product, from global.mode. It ' +
-                           'decides only whether EXAMPLE DATA is offered; what ' +
-                           'a create may write is the same in both.' },
+                           'decides only whether EXAMPLE DATA is offered; ' +
+                           'what a create may write is the same in both.' },
       offersExampleData: {
         type: 'boolean',
         description: 'Whether the console draws its *Fill with example data* ' +
-                     'button, which is development mode only. Published rather ' +
-                     'than left to be inferred from `mode`, so a caller need ' +
-                     'not know which predicate decides it. THERE IS NO API ' +
-                     'EQUIVALENT OF THAT BUTTON and there should not be: it ' +
-                     'fills a FORM for a person to edit, and the same invented ' +
-                     'values are what `invent: true` on a create writes ' +
-                     'directly — which is this operation\'s default and has ' +
-                     'been since before the button existed.'
+                     'button, which is development mode only. Published ' +
+                     'rather than left to be inferred from `mode`, so a ' +
+                     'caller need not know which predicate decides it. THERE ' +
+                     'IS NO API EQUIVALENT OF THAT BUTTON and there should ' +
+                     'not be: it fills a FORM for a person to edit, and the ' +
+                     'same invented values are what `invent: true` on a ' +
+                     'create writes directly — which is this operation\'s ' +
+                     'default and has been since before the button existed.'
       },
       fields: {
         type: 'array',
-        description: 'THE CLOSED ATTRIBUTE CATALOGUE, in the order the console ' +
-                     'draws it: one row per attribute a person here may be ' +
-                     'given, each `{attribute, label, schema, claim, invented}`. ' +
-                     '`attribute` is the name to send as a key of `attributes` ' +
-                     'on a create AND the name the entry carries, so an ' +
-                     'ldapsearch shows exactly what was sent. `claim` is where ' +
-                     'the value lands in an issued token or credential. ' +
-                     '`schema` is the document the attribute name comes from, ' +
-                     'which matters because THIS DIRECTORY HAS NO SCHEMA and ' +
-                     'would refuse none of them anywhere. `invented` says ' +
-                     'whether this service can make a value up for it — one row ' +
-                     'cannot (`description`, which this service writes itself ' +
-                     'to say why the entry exists), so `invent: true` leaves ' +
-                     'that one alone.\n\n`uid` IS DELIBERATELY NOT ON THIS ' +
-                     'LIST: it is the username, sent as `username`, and a ' +
-                     'second way to set it would allow uid=alice whose uid says ' +
-                     'bob. `userPassword` is not on it either — a password goes ' +
-                     'through `credential`, so that it is hashed rather than ' +
-                     'written down.',
+        description: 'THE CLOSED ATTRIBUTE CATALOGUE, in the order the ' +
+                     'console draws it: one row per attribute a person here ' +
+                     'may be given, each `{attribute, label, schema, claim, ' +
+                     'invented}`. `attribute` is the name to send as a key ' +
+                     'of `attributes` on a create AND the name the entry ' +
+                     'carries, so an ldapsearch shows exactly what was sent. ' +
+                     '`claim` is where the value lands in an issued token or ' +
+                     'credential. `schema` is the document the attribute ' +
+                     'name comes from, which matters because THIS DIRECTORY ' +
+                     'HAS NO SCHEMA and would refuse none of them anywhere. ' +
+                     '`invented` says whether this service can make a value ' +
+                     'up for it — one row cannot (`description`, which this ' +
+                     'service writes itself to say why the entry exists), so ' +
+                     '`invent: true` leaves that one alone.\n\n`uid` IS ' +
+                     'DELIBERATELY NOT ON THIS LIST: it is the username, ' +
+                     'sent as `username`, and a second way to set it would ' +
+                     'allow uid=alice whose uid says bob. `userPassword` is ' +
+                     'not on it either — a password goes through ' +
+                     '`credential`, so that it is hashed rather than written ' +
+                     'down.',
         items: openObject('One attribute a person may be created with.', {})
       },
       credentials: {
@@ -1623,25 +1711,26 @@ const SCHEMAS = {
   // construct a create the service will refuse — the property
   // editableAttributes() gives the console's two selects, reached over HTTP.
   NewApplicationForm: openObject(
-    'The vocabulary a new application entry may be created with, and where it ' +
-    'would land. Mirrors GET /admin/applications/new, which is the console page ' +
-    'built from exactly these lists. It creates nothing itself: the create is ' +
-    'POST /admin-api/applications/create.',
+    'The vocabulary a new application entry may be created with, and where ' +
+    'it would land. Mirrors GET /admin/applications/new, which is the ' +
+    'console page built from exactly these lists. It creates nothing itself: ' +
+    'the create is POST /admin-api/applications/create.',
     {
       directory: {
         type: 'boolean',
         description: 'FALSE when no directory is loaded in this process, in ' +
                      'which case there is no ou=applications container and a ' +
-                     'create would be refused. The call still answers 200: the ' +
-                     'operation exists and the store does not, and those are ' +
-                     'different facts.'
+                     'create would be refused. The call still answers 200: ' +
+                     'the operation exists and the store does not, and those ' +
+                     'are different facts.'
       },
       container: { type: 'string',
-                   description: 'The DN a new entry would be created under, IN ' +
-                                'THE REALM THIS CALL ARRIVED IN. The directory ' +
-                                'is per realm, so /realm/acme/admin-api/... ' +
-                                'answers with acme\'s container and an entry ' +
-                                'created there is invisible to every other realm.' },
+                   description: 'The DN a new entry would be created under, ' +
+                                'IN THE REALM THIS CALL ARRIVED IN. The ' +
+                                'directory is per realm, so ' +
+                                '/realm/acme/admin-api/... answers with ' +
+                                'acme\'s container and an entry created ' +
+                                'there is invisible to every other realm.' },
       max: { type: 'integer',
              description: 'How many entries that container will hold ' +
                           '(applications.max). Past it a create is REFUSED ' +
@@ -1652,70 +1741,73 @@ const SCHEMAS = {
       kinds: {
         type: 'array',
         description: 'The eight kinds, each `{kind, label, what}`. A create ' +
-                     'takes AT MOST ONE, and a value that is not one of these ' +
-                     'is refused rather than recorded.',
+                     'takes AT MOST ONE, and a value that is not one of ' +
+                     'these is refused rather than recorded.',
         items: openObject('One kind.', {})
       },
       protocols: {
         type: 'array',
         description: 'THE CLOSED PROTOCOL VOCABULARY: one row per family an ' +
-                     'application may be DECLARED for, each `{id, label, kind, ' +
-                     'kinds, what}`. `id` is what a create sends and what lands ' +
-                     'on `appAllowedProtocol`; `kind` is what the registry would ' +
-                     'record the application as when a protocol of that family ' +
-                     'finally recognises it; `kinds` is every kind that COUNTS ' +
-                     'as a sighting of the family, which is how ' +
-                     '`recordedProtocols` on an application is worked out — ' +
-                     'usually the same one ' +
-                     'value, except OAuth 2.0, which also counts the OpenID ' +
-                     'Connect kind because a relying party IS an OAuth client. ' +
-                     'BOTH ARE EMPTY for a family in which this service records ' +
-                     'no application identifier at all (LDAP, SCIM, SPIFFE, ' +
-                     'mutual TLS, OpenID4VCI): nothing will ever record one of ' +
-                     'those, which is a different fact from "it has not ' +
-                     'happened yet". The match is on kinds and NOT on the protocol ' +
+                     'application may be DECLARED for, each `{id, label, ' +
+                     'kind, kinds, what}`. `id` is what a create sends and ' +
+                     'what lands on `appAllowedProtocol`; `kind` is what the ' +
+                     'registry would record the application as when a ' +
+                     'protocol of that family finally recognises it; `kinds` ' +
+                     'is every kind that COUNTS as a sighting of the family, ' +
+                     'which is how `recordedProtocols` on an application is ' +
+                     'worked out — usually the same one value, except OAuth ' +
+                     '2.0, which also counts the OpenID Connect kind because ' +
+                     'a relying party IS an OAuth client. BOTH ARE EMPTY for ' +
+                     'a family in which this service records no application ' +
+                     'identifier at all (LDAP, SCIM, SPIFFE, mutual TLS, ' +
+                     'OpenID4VCI): nothing will ever record one of those, ' +
+                     'which is a different fact from "it has not happened ' +
+                     'yet". The match is on kinds and NOT on the protocol ' +
                      'labels in `protocols`, because a federation partner is ' +
-                     'recorded under the protocol its relationship speaks and ' +
-                     'by label is indistinguishable from an ordinary client. ' +
-                     '**DECLARING GRANTS AND REFUSES NOTHING**: no endpoint ' +
-                     'reads this attribute, and an application declared for one ' +
-                     'family may still use every other, because a mock that ' +
-                     'refused a protocol would remove a test case rather than ' +
-                     'add one.',
+                     'recorded under the protocol its relationship speaks ' +
+                     'and by label is indistinguishable from an ordinary ' +
+                     'client. **DECLARING GRANTS AND REFUSES NOTHING**: no ' +
+                     'endpoint reads this attribute, and an application ' +
+                     'declared for one family may still use every other, ' +
+                     'because a mock that refused a protocol would remove a ' +
+                     'test case rather than add one.',
         items: openObject('One protocol family.', {})
       },
       declarations: {
         type: 'array',
-        description: 'THE FIELDS THE CREATE FORM IS DRAWN FROM, in the order it ' +
-                     'draws them: one row per ATTRIBUTE a protocol family names ' +
-                     'as its identifier or as where its responses go back to, ' +
-                     'each `{attribute, role, kind, editable, sensitive, what, ' +
-                     'families}`. `role` is `identifier` or `redirect`; `kind` ' +
-                     'is `multi` where the attribute holds a list; `families` ' +
-                     'names every family the attribute serves.\n\n**It is ' +
-                     'DEDUPED BY ATTRIBUTE, so it is shorter than `protocols` ' +
-                     'above.** Three families name `oauthClientId` — an OpenID ' +
-                     'Connect relying party IS an OAuth client and an OpenID4VCI ' +
-                     'wallet authenticates as one — and both SAML profiles name ' +
+        description: 'THE FIELDS THE CREATE FORM IS DRAWN FROM, in the order ' +
+                     'it draws them: one row per ATTRIBUTE a protocol family ' +
+                     'names as its identifier or as where its responses go ' +
+                     'back to, each `{attribute, role, kind, editable, ' +
+                     'sensitive, what, families}`. `role` is `identifier` or ' +
+                     '`redirect`; `kind` is `multi` where the attribute ' +
+                     'holds a list; `families` names every family the ' +
+                     'attribute serves.\n\n**It is DEDUPED BY ATTRIBUTE, so ' +
+                     'it is shorter than `protocols` above.** Three families ' +
+                     'name `oauthClientId` — an OpenID Connect relying party ' +
+                     'IS an OAuth client and an OpenID4VCI wallet ' +
+                     'authenticates as one — and both SAML profiles name ' +
                      '`samlEntityId`, because those specifications genuinely ' +
-                     'share the identifier. Two attributes for one fact would be ' +
-                     'two spellings that disagree the first time either is ' +
-                     'edited.\n\nThese are the names a create sends in ' +
-                     '`fields`. Publishing them is what stops this document and ' +
-                     'the console offering different fields: both are the same ' +
-                     'walk of the same table.',
-        items: openObject('One declared attribute, and the families it serves.', {})
+                     'share the identifier. Two attributes for one fact ' +
+                     'would be two spellings that disagree the first time ' +
+                     'either is edited.\n\nThese are the names a create ' +
+                     'sends in `fields`. Publishing them is what stops this ' +
+                     'document and the console offering different fields: ' +
+                     'both are the same walk of the same table.',
+        items: openObject('One declared attribute, and the families it serves.',
+                          {})
       },
       editable: {
         type: 'array',
         description: 'EVERY attribute that may be changed — a superset of ' +
                      '`declarations` above, which is the identifier and ' +
-                     'redirect-URI half of it. Each `{name, mode, sensitive}` ' +
-                     'where `mode` is `set` for a single-valued attribute and ' +
-                     '`multi` for a list. A create takes any of them in `fields`, ' +
-                     'and POST /admin-api/applications/set, /add and /remove ' +
-                     'change them afterwards. This is where the configuration ' +
-                     'RFC 9700 mode actually reads goes — the redirect URIs, the ' +
+                     'redirect-URI half of it. Each `{name, mode, ' +
+                     'sensitive}` where `mode` is `set` for a single-valued ' +
+                     'attribute and `multi` for a list. A create takes any ' +
+                     'of them in `fields`, and POST ' +
+                     '/admin-api/applications/set, /add and /remove change ' +
+                     'them afterwards. This is where the configuration RFC ' +
+                     '9700 mode actually reads goes — the redirect URIs, the ' +
                      'grant types, the secret.'
                      ,
         items: openObject('One editable attribute.', {})
@@ -1847,7 +1939,8 @@ const SCHEMAS = {
       count: { type: 'integer' },
       matched: { type: 'integer' },
       shown: { type: 'integer' },
-      max: { type: 'integer', description: 'The cap, federation.maxRelationships.' },
+      max: { type: 'integer', description: 'The cap, ' +
+                                           'federation.maxRelationships.' },
       filter: openObject('What was asked for; null where nothing was.', {}),
       sourceOfTruth: { type: 'string' },
       roles: { type: 'array', items: openObject('One direction.', {}) },
@@ -1878,7 +1971,8 @@ const SCHEMAS = {
                  description: 'HOW MANY registration entries there are, not ' +
                               'the entries themselves — those are ' +
                               '`registrationEntries`.' },
-      agents: { type: 'integer', description: 'How many agents have attested.' },
+      agents: { type: 'integer',
+                description: 'How many agents have attested.' },
       maxEntries: { type: 'integer' },
       maxAgents: { type: 'integer' },
       sourceOfTruth: { type: 'string' },
@@ -1927,11 +2021,11 @@ const SCHEMAS = {
     }, PAGING_PROPERTIES)),
 
   DirectoryPolicyList: openObject(
-    'The XACML policy repository as the directory holds it — `ou=policies` IS ' +
-    'the repository. A WRITE HERE SKIPS THE TYPECHECKER, which is not true of ' +
-    'any other door into it: every write through /admin/xacml and ' +
-    '/admin-api/xacml is statically validated so that a policy which does not ' +
-    'typecheck is refused rather than answering Indeterminate on every ' +
+    'The XACML policy repository as the directory holds it — `ou=policies` ' +
+    'IS the repository. A WRITE HERE SKIPS THE TYPECHECKER, which is not ' +
+    'true of any other door into it: every write through /admin/xacml and ' +
+    '/admin-api/xacml is statically validated so that a policy which does ' +
+    'not typecheck is refused rather than answering Indeterminate on every ' +
     'request, and an ldapmodify reaches the entry directly. Nothing caches ' +
     'these entries.',
     Object.assign({
@@ -1951,14 +2045,14 @@ const SCHEMAS = {
     }, PAGING_PROPERTIES)),
 
   DirectoryPepList: openObject(
-    'The remote Policy Enforcement Points that have registered with this PDP. ' +
-    'Almost every attribute is a RECORD this service wrote rather than ' +
+    'The remote Policy Enforcement Points that have registered with this ' +
+    'PDP. Almost every attribute is a RECORD this service wrote rather than ' +
     'configuration somebody typed — an identity here was taken from the ' +
     'CLIENT CERTIFICATE the PEP presented and never from the body it sent. ' +
     'The two that are not a record are `xacmlPepEnabled`, which an ' +
     'administrator sets and a reconnecting PEP does not clear, and ' +
-    '`xacmlPepNotifyUrl`. An empty `peps` array is not a feature that is off: ' +
-    'a PEP pulls the repository and converges without ever registering.',
+    '`xacmlPepNotifyUrl`. An empty `peps` array is not a feature that is ' +
+    'off: a PEP pulls the repository and converges without ever registering.',
     Object.assign({
       baseDn: { type: 'string' },
       container: { type: 'string', description: 'The ou=peps DN.' },
@@ -1991,7 +2085,8 @@ const SCHEMAS = {
       },
       listenError: { type: 'string' },
       tls: openObject('The LDAPS socket, its certificate and what a client ' +
-                      'certificate presented to it does — which is nothing.', {}),
+                      'certificate presented to it does — which is nothing.',
+                      {}),
       baseDn: { type: 'string' },
       usersDn: { type: 'string' },
       groupsDn: { type: 'string' },
@@ -2031,10 +2126,10 @@ const SCHEMAS = {
     }),
 
   GroupDetail: openObject(
-    'One group, under `group`, with the same directory facts the list carries ' +
-    'around it — which is deliberate rather than untidy: a drill-down that ' +
-    'did not say which directory it came from would be unreadable beside a ' +
-    'second one.',
+    'One group, under `group`, with the same directory facts the list ' +
+    'carries around it — which is deliberate rather than untidy: a ' +
+    'drill-down that did not say which directory it came from would be ' +
+    'unreadable beside a second one.',
     {
       found: {
         type: 'boolean',
@@ -2296,7 +2391,8 @@ const SCHEMAS = {
                      'ones any revocation here affects.'
       },
       revokedCount: { type: 'integer' },
-      sets: { type: 'array', items: { $ref: '#/components/schemas/IssuedSet' } },
+      sets: { type: 'array',
+              items: { $ref: '#/components/schemas/IssuedSet' } },
       issued: {
         type: 'array',
         description: 'The members of `sets`, flattened, in the same order. ' +
@@ -2316,20 +2412,20 @@ const SCHEMAS = {
     {
       configFile: {
         type: 'string',
-        description: 'The CONFIG_FILE this process was started with, which is ' +
-                     'the file to edit to make a change survive a restart. ' +
-                     'Nothing here ever writes to it.'
+        description: 'The CONFIG_FILE this process was started with, which ' +
+                     'is the file to edit to make a change survive a ' +
+                     'restart. Nothing here ever writes to it.'
       },
       defaultsFile: {
         type: 'string',
         description: 'The DEFAULT appconfig file, which `configFile` is ' +
-                     'unioned on top of key by key with the operator\'s value ' +
-                     'winning. It carries a default for every setting, which ' +
-                     'is what lets `configFile` be as small as its author ' +
-                     'likes while a setting with no value ANYWHERE — in ' +
-                     'either file and in no environment variable — stops this ' +
-                     'service from starting. A setting whose `source` is ' +
-                     '`defaults` came from here.'
+                     'unioned on top of key by key with the operator\'s ' +
+                     'value winning. It carries a default for every setting, ' +
+                     'which is what lets `configFile` be as small as its ' +
+                     'author likes while a setting with no value ANYWHERE — ' +
+                     'in either file and in no environment variable — stops ' +
+                     'this service from starting. A setting whose `source` ' +
+                     'is `defaults` came from here.'
       },
       settingCount: { type: 'integer' },
       editableCount: {
@@ -2359,11 +2455,12 @@ const SCHEMAS = {
                      'configures rather than all of them on /admin/config, ' +
                      'and this says which — so a caller can send a person to ' +
                      'the right page instead of to a table of a hundred and ' +
-                     'fifty-four rows. A row may name TWO pages: `saml.issuer` ' +
-                     'governs both SAML profiles and WS-Federation, so it is ' +
-                     'drawn on both SAML pages. Every one of those forms ' +
-                     'posts to the same four actions below, so this changes ' +
-                     'nothing about how a setting is written.',
+                     'fifty-four rows. A row may name TWO pages: ' +
+                     '`saml.issuer` governs both SAML profiles and ' +
+                     'WS-Federation, so it is drawn on both SAML pages. ' +
+                     'Every one of those forms posts to the same four ' +
+                     'actions below, so this changes nothing about how a ' +
+                     'setting is written.',
         items: openObject('One group, and the page or pages that draw it.', {
           group: { type: 'string' },
           pages: { type: 'array', items: { type: 'string' } },
@@ -2400,10 +2497,10 @@ const SCHEMAS = {
       what: { type: 'string',
               description: 'What the page says the family is, as plain text.' },
       notes: { type: 'array', items: { type: 'string' },
-               description: 'The caveats the page carries, in order. On these ' +
-                            'pages the caveats are most of the content — what ' +
-                            'a family does NOT check is the half a client ' +
-                            'author cannot read off a protocol trace.' },
+               description: 'The caveats the page carries, in order. On ' +
+                            'these pages the caveats are most of the content ' +
+                            '— what a family does NOT check is the half a ' +
+                            'client author cannot read off a protocol trace.' },
       links: { type: 'array',
                items: openObject('One link the page offers.', {
                  href: { type: 'string' },
@@ -2433,8 +2530,9 @@ const SCHEMAS = {
                          'exchange, the DPoP-bound access token check, and ' +
                          'the state reported here and on the console. It ' +
                          'never changes what goes INTO a token, and it is a ' +
-                         'different setting from oauth2.clientAssertionSkewS, ' +
-                         'which is about a CLIENT\'s clock.'
+                         'different setting from ' +
+                         'oauth2.clientAssertionSkewS, which is about a ' +
+                         'CLIENT\'s clock.'
           }
         }),
       settings: {
@@ -2613,8 +2711,8 @@ const SCHEMAS = {
     }, CLAIM_SET_PROPS)),
 
   UserInfoClaimSets: openObject(
-    'The `userinfo` claim set — what every UserInfo response carries — and the ' +
-    'OpenID Connect Core section 5.5 vocabulary a CLIENT may add to it. ' +
+    'The `userinfo` claim set — what every UserInfo response carries — and ' +
+    'the OpenID Connect Core section 5.5 vocabulary a CLIENT may add to it. ' +
     'Everything except `claimsRequest` is the shape GET /admin-api/claims ' +
     'answers for the two JWT sets; one store answers all three resources.',
     Object.assign({
@@ -2622,32 +2720,32 @@ const SCHEMAS = {
         type: 'array', items: { type: 'string' },
         description: 'Claim names this service sets itself. Adding one is ' +
                      'REFUSED. The list IS enforced here, unlike on the two ' +
-                     'SAML sets, and the reason is not a copy-paste: `sub` is ' +
-                     'required in this response by OIDC Core 5.3.2 and a ' +
+                     'SAML sets, and the reason is not a copy-paste: `sub` ' +
+                     'is required in this response by OIDC Core 5.3.2 and a ' +
                      'client MUST check it against the ID Token\'s, and the ' +
                      'signed form of the same response — for a client that ' +
                      'registered a userinfo_signed_response_alg — is a JWT ' +
                      'carrying iss, aud and exp.'
       },
       claimsRequest: openObject(
-        'THE HALF NO OPERATION HERE SETS. OpenID Connect Core section 5.5 lets ' +
-        'a client name individual claims in the `claims` request parameter at ' +
-        'the authorization endpoint, and this service parses it, refuses a ' +
-        'malformed one by name, carries it on the authorization code and ' +
-        'INSIDE the access token, and answers it by reading the named claims ' +
-        'off that person\'s entry under ou=users.',
+        'THE HALF NO OPERATION HERE SETS. OpenID Connect Core section 5.5 ' +
+        'lets a client name individual claims in the `claims` request ' +
+        'parameter at the authorization endpoint, and this service parses ' +
+        'it, refuses a malformed one by name, carries it on the ' +
+        'authorization code and INSIDE the access token, and answers it by ' +
+        'reading the named claims off that person\'s entry under ou=users.',
         {
           supported: {
             type: 'boolean',
-            description: 'The same fact `claims_parameter_supported` states in ' +
-                         'the OpenID Provider metadata, where it said false ' +
-                         'until 2026-08-26.'
+            description: 'The same fact `claims_parameter_supported` states ' +
+                         'in the OpenID Provider metadata, where it said ' +
+                         'false until 2026-08-26.'
           },
           members: {
             type: 'array', items: { type: 'string' },
             description: 'The two top-level members section 5.5 defines and ' +
-                         'this service acts on. Any OTHER top-level member is ' +
-                         'ignored rather than refused — the section says ' +
+                         'this service acts on. Any OTHER top-level member ' +
+                         'is ignored rather than refused — the section says ' +
                          'others MAY be defined — and the ignored names are ' +
                          'reported in `preview.ignoredMembers` so that ' +
                          '"ignored" and "not understood" are distinguishable.'
@@ -2661,15 +2759,15 @@ const SCHEMAS = {
           },
           requestable: {
             type: 'array',
-            description: 'Every name a request may use. A nested claim appears ' +
-                         'twice: by its flat name (`address.locality`) and by ' +
-                         'its top-level name alone (`address`), which returns ' +
-                         'the whole Address Claim of OIDC Core 5.1.1 as one ' +
-                         'object and is the spelling section 5.5.1\'s own ' +
-                         'example uses. A language tag is part of the name ' +
-                         '(Core 5.2): `family_name#ja-Kana-JP` is answered ' +
-                         'under exactly that name with the one value this ' +
-                         'service holds.',
+            description: 'Every name a request may use. A nested claim ' +
+                         'appears twice: by its flat name ' +
+                         '(`address.locality`) and by its top-level name ' +
+                         'alone (`address`), which returns the whole Address ' +
+                         'Claim of OIDC Core 5.1.1 as one object and is the ' +
+                         'spelling section 5.5.1\'s own example uses. A ' +
+                         'language tag is part of the name (Core 5.2): ' +
+                         '`family_name#ja-Kana-JP` is answered under exactly ' +
+                         'that name with the one value this service holds.',
             items: openObject('One requestable claim.', {
               claim: { type: 'string' },
               ldap: { type: 'string' },
@@ -2695,23 +2793,24 @@ const SCHEMAS = {
           },
           notEnforced: {
             type: 'array', items: { type: 'string' },
-            description: 'What is carried and deliberately not acted on, with ' +
-                         'the reason for each. `essential` is a hint (5.5.1 ' +
-                         'says a server MUST NOT error for an unavailable ' +
-                         'claim); `value` and `values` are checked and ' +
-                         'reported rather than echoed back.'
+            description: 'What is carried and deliberately not acted on, ' +
+                         'with the reason for each. `essential` is a hint ' +
+                         '(5.5.1 says a server MUST NOT error for an ' +
+                         'unavailable claim); `value` and `values` are ' +
+                         'checked and reported rather than echoed back.'
           },
           directParameter: openObject(
-            'NON-SPEC. The UserInfo endpoint also accepts a claims request on ' +
-            'the request itself, which section 5.3.1 does not define. It is a ' +
-            'union with what the access token carries and can never take a ' +
-            'claim away from it.', {}),
+            'NON-SPEC. The UserInfo endpoint also accepts a claims request ' +
+            'on the request itself, which section 5.3.1 does not define. It ' +
+            'is a union with what the access token carries and can never ' +
+            'take a claim away from it.', {}),
           preview: openObject(
             'What the `request` query parameter would return for `user`, ' +
-            'computed by the two functions the UserInfo endpoint itself calls. ' +
-            '`asked` is false when no request was given; `ok` is false, with ' +
-            '`error`, when the request is one the authorization endpoint would ' +
-            'refuse `invalid_request` — which is shown rather than corrected.',
+            'computed by the two functions the UserInfo endpoint itself ' +
+            'calls. `asked` is false when no request was given; `ok` is ' +
+            'false, with `error`, when the request is one the authorization ' +
+            'endpoint would refuse `invalid_request` — which is shown rather ' +
+            'than corrected.',
             {})
         })
     }, CLAIM_SET_PROPS)),
@@ -2809,9 +2908,10 @@ const SCHEMAS = {
   // -----------------------------------------------------------------------
   Xacml: openObject(
     'The Policy Decision Point. THIS IS THE ONLY FAMILY ON THIS SERVICE THAT ' +
-    'ANSWERS A QUESTION ABOUT SOMEBODY ELSE\'S BOUNDARY: every other protocol ' +
-    'here authenticates or provisions a person, and this one is handed a ' +
-    'subject who was authenticated somewhere else and asked whether they may.',
+    'ANSWERS A QUESTION ABOUT SOMEBODY ELSE\'S BOUNDARY: every other ' +
+    'protocol here authenticates or provisions a person, and this one is ' +
+    'handed a subject who was authenticated somewhere else and asked whether ' +
+    'they may.',
     {
       enabled: { type: 'boolean',
         description: 'Whether the /xacml endpoints answer. When off they ' +
@@ -2868,8 +2968,8 @@ const SCHEMAS = {
                      'template id — those are the same word today and need ' +
                      'not be.' },
       setting: { type: 'string',
-        description: 'The config.js key that names it: `xacml.issuancePolicy` ' +
-                     'or `xacml.accessPolicy`.' },
+        description: 'The config.js key that names it: ' +
+                     '`xacml.issuancePolicy` or `xacml.accessPolicy`.' },
       template: { type: 'string',
         description: 'The template the built-in document is built from, and ' +
                      'the one an override should be created from so that the ' +
@@ -3043,6 +3143,48 @@ const SCHEMAS = {
   // Every other XACML schema here describes the repository; this one describes
   // TRAFFIC, and the two things it is careful about are the two things a
   // caller would otherwise get wrong.
+  GnapServer: openObject(
+    'The GNAP authorization server of this realm (RFC 9635 and RFC 9767), as ' +
+    '/admin/gnap draws it.',
+    {
+      page: { type: 'string', description: '`/admin/gnap`.' },
+      enabled: { type: 'boolean', description: 'gnap.enabled in this realm.' },
+      endpoints: openObject('Every GNAP endpoint of this realm, absolute.', {}),
+      capabilities: openObject('The default authorization server\'s RFC 9635 ' +
+                               'section 9 document.', {}),
+      authorizationServers: { type: 'array', items: openObject('A named ' +
+          'authorization server and its GNAP capabilities.', {}) },
+      tokenFormats: { type: 'array', items: { type: 'string' } },
+      verificationMaterial: openObject('The public material that verifies ' +
+                                       'the self-contained formats (absent ' +
+                                       'until the realm has an Ed25519 ' +
+                                       'key).', {}),
+      grants: openObject('`state`, `states`, `paging` and `rows`: the grants ' +
+                         'this realm holds.', {}),
+      resourceSets: openObject('`paging` and `rows`: the registered resource ' +
+                               'sets.', {}),
+      actions: { type: 'array', items: { type: 'string' } },
+      settings: { type: 'array', items: openObject('A gnap.* setting.', {}) }
+    }),
+  GnapMonitor: openObject(
+    'Every application that uses GNAP and what each has done, as ' +
+    '/admin/gnap/monitor draws it.',
+    {
+      page: { type: 'string', description: '`/admin/gnap/monitor`.' },
+      since: { type: 'string', description: 'When the counters started (this ' +
+                                            'process).' },
+      events: { type: 'array', items: openObject('One counted event: ' +
+                                                 '`event`, `counter`, ' +
+                                                 '`label`.', {}) },
+      totals: openObject('Every counter summed over the applications.', {}),
+      tokensByFormat: openObject('Tokens issued, by RFC 9767 format.', {}),
+      applications: { type: 'integer', description: 'How many applications ' +
+                                                    'are listed.' },
+      paging: openObject('`page`, `pages`, `perPage`, `firstRow`, `lastRow`, ' +
+                         '`total`.', {}),
+      rows: { type: 'array', items: openObject('One application and its ' +
+                                               'counters.', {}) }
+    }),
   XacmlMonitor: openObject(
     'How many decisions this service\'s authorization is making, by which ' +
     'enforcement point, and how many are refusals. Mirrors ' +
@@ -3055,7 +3197,8 @@ const SCHEMAS = {
     'TOLD — the embedded figures are things this process did and counted, ' +
     'the remote ones are what another process reports on a heartbeat.',
     {
-      policies: openObject('`total`, `enabled`, and the name of the `root`.', {}),
+      policies: openObject('`total`, `enabled`, and the name of the `root`.',
+                           {}),
       peps: openObject(
         'How many enforcement points: `embedded` (compiled into this ' +
         'process, always three), `remote` (registered in ou=peps) and their ' +
@@ -3089,14 +3232,15 @@ const SCHEMAS = {
         'against acme\'s policies.', {}),
       rows: {
         type: 'array',
-        description: 'The askers of the PDP IN THIS PROCESS, in the order the ' +
-                     'console draws them: the three embedded PEPs and the ' +
-                     '`pdp` row, which is `POST /xacml/pdp` and is NOT a PEP ' +
-                     '— somebody else\'s enforcement point asked, and this ' +
-                     'service never saw what was done with the answer. On ' +
-                     'that row `allowed` and `refused` are **null rather ' +
+        description: 'The askers of the PDP IN THIS PROCESS, in the order ' +
+                     'the console draws them: the three embedded PEPs and ' +
+                     'the `pdp` row, which is `POST /xacml/pdp` and is NOT a ' +
+                     'PEP — somebody else\'s enforcement point asked, and ' +
+                     'this service never saw what was done with the answer. ' +
+                     'On that row `allowed` and `refused` are **null rather ' +
                      'than 0**, because zero would say it refused nothing.',
-        items: openObject('One asker: what it guards, its bias, and its counts.', {})
+        items:
+          openObject('One asker: what it guards, its bias, and its counts.', {})
       },
       remoteRows: {
         type: 'array',
@@ -3140,15 +3284,16 @@ const SCHEMAS = {
         description: 'How many registered PEPs hold the current token.' },
       stale: { type: 'integer' },
       elsewhere: { type: 'array',
-        description: 'EVERY OTHER TRUST REALM THAT HOLDS A REGISTRATION, with ' +
-                     'how many. `ou=peps` is per realm, like the policy ' +
-                     'repository it serves, so an empty `peps` array above has ' +
-                     'TWO causes and this is what tells them apart: nothing ' +
-                     'anywhere, or nothing in the realm you asked. It is ' +
-                     'routinely the second — the suite that drives a real ' +
-                     'remote PEP does it in a throwaway realm, so a passing ' +
-                     'test run never leaves a registration in the default ' +
-                     'realm. Empty on a service with no realms defined.',
+        description: 'EVERY OTHER TRUST REALM THAT HOLDS A REGISTRATION, ' +
+                     'with how many. `ou=peps` is per realm, like the policy ' +
+                     'repository it serves, so an empty `peps` array above ' +
+                     'has TWO causes and this is what tells them apart: ' +
+                     'nothing anywhere, or nothing in the realm you asked. ' +
+                     'It is routinely the second — the suite that drives a ' +
+                     'real remote PEP does it in a throwaway realm, so a ' +
+                     'passing test run never leaves a registration in the ' +
+                     'default realm. Empty on a service with no realms ' +
+                     'defined.',
         items: openObject('One realm that holds at least one registration.', {
           id: { type: 'string' },
           name: { type: 'string' },
@@ -3219,8 +3364,41 @@ const SCHEMAS = {
                        'enforcement outcome that looks like a bug from the ' +
                        'client side and is the specification working.' },
         current: { type: 'boolean' },
-        stale: { type: 'boolean' }
-      }) }
+        stale: { type: 'boolean' },
+        listenerCertificate: {
+          type: ['object', 'null'],
+          description: 'The HTTPS LISTENER CERTIFICATE this realm issued to ' +
+                       'the PEP from its Remote PEP listeners Issuing CA ' +
+                       '(POST /admin-api/xacml/issue-pep-certificate), or ' +
+                       'null when none has been. PUBLIC ONLY: the private ' +
+                       'key was handed over once when it was issued and ' +
+                       'this service keeps no copy. Whether the PEP is ' +
+                       'actually SERVING it is on the PEP\'s own GET /, ' +
+                       'which this service cannot see.',
+          properties: {
+            subject: { type: 'string' },
+            serialHex: { type: 'string' },
+            notBefore: { type: 'string' },
+            notAfter: { type: 'string' },
+            expired: { type: 'boolean' },
+            thumbprint: { type: 'string' },
+            keyAlg: { type: 'string' },
+            dnsNames: { type: 'array', items: { type: 'string' } },
+            ipAddresses: { type: 'array', items: { type: 'string' } },
+            issuedAt: { type: 'string' },
+            certificatePem: { type: 'string' }
+          } }
+      }) },
+      listenerCertificates: openObject(
+        'How a PEP\'s HTTPS listener certificate is issued here.', {
+          useCase: { type: 'string',
+            description: 'The use case whose Issuing CA signs them — ' +
+                         '`pep-tls`, one per realm, drawn on /admin/pki.' },
+          keyAlgorithms: { type: 'array', items: { type: 'string' },
+            description: 'The key algorithms a listener certificate may be ' +
+                         'issued with: the ones a TLS stack serves.' },
+          defaultKeyAlg: { type: 'string' }
+        })
     }),
 
   Ssf: openObject(
@@ -3269,12 +3447,25 @@ const SCHEMAS = {
       streamDetail: {
         type: 'array',
         description: 'One entry per stream: its configuration, its subjects, ' +
-                     'what is queued, its counters and its own log. The ' +
+                     'what is queued, its counters and its own log — and ' +
+                     'whether it is `dead` (with `deadSince`, `deadReason`, ' +
+                     '`nextProbeAt`) and its `deadLetters`: SETs that could ' +
+                     'not be delivered, newest first, each with `reason`, ' +
+                     '`errorCode`, `status` and whether it was `signed`, never ' +
+                     'the token. The ' +
                      'receiver\'s `authorization_header` is NEVER in it — it ' +
                      'is a credential belonging to somebody else\'s ' +
                      'endpoint, and this resource is not the door it goes ' +
                      'back through.',
         items: { type: 'object' }
+      },
+      deadLetters: {
+        type: 'object',
+        description: 'The dead-letter and push-cap settings in force, and ' +
+                     '`pushes`: this PROCESS\'s push cap right now — ' +
+                     '`active`, `waiting`, `concurrency`, `backlog`. A ' +
+                     'dispatched service has one per process, and this is ' +
+                     'the one that answered.'
       },
       receivedDetail: {
         type: 'array',
@@ -3298,12 +3489,13 @@ const SCHEMAS = {
     {
       identifier: { type: 'string',
                     description: 'What it authenticated as when it created ' +
-                                 'the stream, which is the `ssfReceiverId` on ' +
-                                 'its application entry.' },
+                                 'the stream, which is the `ssfReceiverId` ' +
+                                 'on its application entry.' },
       name: { type: 'string' },
       registered: { type: 'boolean',
-                    description: 'FALSE only on the collected row for streams ' +
-                                 'that belong to no application entry.' },
+                    description: 'FALSE only on the collected row for ' +
+                                 'streams that belong to no application ' +
+                                 'entry.' },
       declared: { type: 'boolean',
                   description: 'Whether an operator ticked Shared Signals on ' +
                                'the entry, as opposed to the entry appearing ' +
@@ -3312,9 +3504,9 @@ const SCHEMAS = {
       endpoints: { type: 'array', items: { type: 'string' },
                    description: 'The `ssfDeliveryEndpoint` values on the ' +
                                 'entry — what an operator wrote down that a ' +
-                                'receiver is EXPECTED to be. A stream carries ' +
-                                'its own delivery endpoint and this is not ' +
-                                'read as one.' },
+                                'receiver is EXPECTED to be. A stream ' +
+                                'carries its own delivery endpoint and this ' +
+                                'is not read as one.' },
       streams: { type: 'array', items: { type: 'string' } },
       streamCount: { type: 'integer' },
       enabled: { type: 'integer',
@@ -3408,20 +3600,22 @@ const SCHEMAS = {
                      'showed only receivers with streams would answer "where ' +
                      'is my application" with silence. A row named `(no ' +
                      'application …)` is the collected total for streams ' +
-                     'agreed while `ssf.authRequired` was off: there was no ' +
-                     'principal to record and the events are real.\n\n`counts` ' +
-                     'is per event type and never forgets; it is counted when ' +
-                     'the Security Event Token is built and QUEUED, so a poll ' +
-                     'stream nobody has polled yet still shows what is ' +
-                     'waiting. `delivered` and `failed` are the pipe, and are ' +
-                     'a different number from `total` for exactly that ' +
-                     'reason. `sessions` is the DISTINCT sessions the ' +
-                     'receiver has been told about across all of its streams ' +
-                     'together.\n\n`identifier` is what the receiver ' +
-                     'authenticated as; `audiences` is what it asked its SETs ' +
-                     'to be addressed to. They are different fields — `aud` ' +
-                     'is required on a stream and is never defaulted to the ' +
-                     'caller — and this is the only place both are reported.',
+                     'agreed while these endpoints could be left ' +
+                     'unauthenticated — `ssf.authRequired`, removed ' +
+                     '2026-09-06: there was no principal to record and the ' +
+                     'events are real.\n\n`counts` is per event type and ' +
+                     'never forgets; it is counted when the Security Event ' +
+                     'Token is built and QUEUED, so a poll stream nobody has ' +
+                     'polled yet still shows what is waiting. `delivered` ' +
+                     'and `failed` are the pipe, and are a different number ' +
+                     'from `total` for exactly that reason. `sessions` is ' +
+                     'the DISTINCT sessions the receiver has been told about ' +
+                     'across all of its streams together.\n\n`identifier` is ' +
+                     'what the receiver authenticated as; `audiences` is ' +
+                     'what it asked its SETs to be addressed to. They are ' +
+                     'different fields — `aud` is required on a stream and ' +
+                     'is never defaulted to the caller — and this is the ' +
+                     'only place both are reported.',
         items: { $ref: '#/components/schemas/CaepApplication' }
       },
       eventTypes: {
@@ -3585,9 +3779,10 @@ const SCHEMAS = {
                      'same three rules hold: an application with no stream ' +
                      'is a row rather than an omission, a row named `(no ' +
                      'application …)` collects the streams agreed while ' +
-                     '`ssf.authRequired` was off, and `counts` is counted ' +
-                     'when the token is built and QUEUED rather than when it ' +
-                     'is delivered.',
+                     'these endpoints could be left unauthenticated ' +
+                     '(`ssf.authRequired`, removed 2026-09-06), and `counts` ' +
+                     'is counted when the token is built and QUEUED rather ' +
+                     'than when it is delivered.',
         items: { type: 'object' }
       },
       eventTypes: {
@@ -3655,27 +3850,27 @@ const SCHEMAS = {
     }),
 
   Scim: openObject(
-    'The SCIM 2.0 provisioning surface: what it has been asked to do, what it ' +
-    'will and will not do, and which LDAP attribute each SCIM member is. It ' +
-    'writes into the SAME directory /admin-api/users and /admin-api/groups ' +
-    'report, with no store of its own — so a POST to /scim/v2/Users and an ' +
-    'ldapadd create the same entry.',
+    'The SCIM 2.0 provisioning surface: what it has been asked to do, what ' +
+    'it will and will not do, and which LDAP attribute each SCIM member is. ' +
+    'It writes into the SAME directory /admin-api/users and ' +
+    '/admin-api/groups report, with no store of its own — so a POST to ' +
+    '/scim/v2/Users and an ldapadd create the same entry.',
     {
       installed: {
         type: 'boolean',
         description: 'Whether the SCIM module is loaded in this process at ' +
                      'all. A DIFFERENT question from `enabled`: a process ' +
                      'that never required scim.js has no /scim routes, where ' +
-                     'one with scim.enabled false has routes that answer 501. ' +
-                     'Reporting both as "off" would send a caller to the ' +
-                     'wrong setting.'
+                     'one with scim.enabled false has routes that answer ' +
+                     '501. Reporting both as "off" would send a caller to ' +
+                     'the wrong setting.'
       },
       enabled: {
         type: 'boolean',
         description: 'The `scim.enabled` setting. When false, every endpoint ' +
-                     'under /scim/v2 answers 501 — the routes stay registered, ' +
-                     'because "turned off" and "wrong URL" are different ' +
-                     'answers to a client.'
+                     'under /scim/v2 answers 501 — the routes stay ' +
+                     'registered, because "turned off" and "wrong URL" are ' +
+                     'different answers to a client.'
       },
       baseUrl: {
         type: 'string',
@@ -3694,10 +3889,11 @@ const SCHEMAS = {
         {
           required: {
             type: 'boolean',
-            description: 'The `scim.authRequired` setting. When false these ' +
-                         'endpoints answer an unauthenticated request, which ' +
-                         'is the behaviour they had before authentication ' +
-                         'existed and stays reachable on purpose. A ' +
+            description: 'Whether these endpoints require a credential — ' +
+                         '`mode.gatesScim()`, which is where ' +
+                         '`scim.authRequired` went on 2026-09-06. It is ' +
+                         'true in both modes; the field is kept because a ' +
+                         'client reading it should not have to know that. A ' +
                          'credential that IS presented is checked either way.'
           },
           discoveryOpen: {
@@ -3741,7 +3937,8 @@ const SCHEMAS = {
                       description: 'The ServiceProviderConfig `type`. Three ' +
                                    'of the seven have no canonical value in ' +
                                    'RFC 7643 section 5 and carry an honest ' +
-                                   'one of their own; `canonical` says which.' },
+                                   'one of their own; `canonical` says ' +
+                                   'which.' },
               canonical: { type: 'boolean' },
               name: { type: 'string' },
               enabled: { type: 'boolean' },
@@ -3868,6 +4065,140 @@ const SCHEMAS = {
   // the TRAFFIC, and the two are views over ONE set of counters rather than two
   // tallies. Three things in here are easy to get wrong from the outside and
   // each is written out rather than left open for that reason.
+  // WHAT THIS CONSOLE HAS BEEN TOLD. It is the receiving half of Shared
+  // Signals and is deliberately not folded into `Ssf`, which is the
+  // TRANSMITTER's view — the streams, the subjects, the queues and what went
+  // out on each. A reply that carried both would answer "what has been said"
+  // and "what has been heard" with one document, and the whole value of this
+  // resource is that it goes empty when delivery is broken while the other
+  // one does not.
+  Signals: openObject(
+    'Every Security Event Token DELIVERED to this service\'s own admin ' +
+    'console, in the realm the request was made in. Mirrors ' +
+    '/admin/signals.\n\n**THIS CONSOLE IS A REGISTERED RECEIVER.** It has a ' +
+    'Shared Signals stream of its own (`sts-admin-console`), seeded in every ' +
+    'trust realm, asking for every CAEP and every RISC event type, and each ' +
+    'event is POSTed to it over RFC 8935 push at /admin/signals/receive ' +
+    'carrying that stream\'s own bearer token. What is in `received` is ' +
+    'therefore what came back through the door, verified against this ' +
+    'service\'s signing key and checked for this receiver\'s name in ' +
+    '`aud`.\n\n**`status.why` IS THE MEMBER TO READ WHEN `received` IS ' +
+    'EMPTY.** An empty inbox has five causes and only one of them is ' +
+    '"nothing has happened": the transmitter off, the internal receivers ' +
+    'off, the stream deleted, `ssf.pushDelivery` off, or a vocabulary turned ' +
+    'off under it. Each is a sentence in that array, in the order a reader ' +
+    'should check them, and the array is empty when none of them ' +
+    'applies.\n\n**A REFUSED DELIVERY IS STILL IN `received`.** A token ' +
+    'that would not decode, or that was addressed to another audience, is ' +
+    'recorded with `problem` or `audienceOk: false` and answered 400 — ' +
+    'because what arrived is the question being asked, and a receiver that ' +
+    'dropped what it refused would leave the transmitter\'s log as the only ' +
+    'evidence.',
+    {
+      status: openObject(
+        'This receiver and its stream: which realm, whether the feature is ' +
+        'on, how many events are held and of what the ceiling is, the ' +
+        'stream\'s identifiers and counters, and `why` — see above.', {}),
+      received: { type: 'array',
+        description: 'One row per delivered Security Event Token, newest ' +
+                     'first, filtered by `sigq` and paged by `receivedPage`. ' +
+                     'The token itself is NOT included: it is the whole ' +
+                     'document, 1-4kB of base64url per row, and a list of ' +
+                     'two hundred of them is a reply nobody wanted.',
+        items: openObject('One delivered event, opened out.', {}) },
+      total: { type: 'integer',
+               description: 'How many are held before paging — the figure ' +
+                            'the Clear on the console would drop.' },
+      filter: openObject('The search this reply was narrowed by, or null.', {}),
+      paging: openObject('Where in the list this page is.', {})
+    }),
+
+  // WHAT THE TRANSMITTER COULD NOT DELIVER, COUNTED (2026-09-14). A resource
+  // of its own rather than a member of `Ssf` for the reason `Signals` is one:
+  // `Ssf` is each stream's configuration with its first letters, and this is
+  // counts over every stream at once plus the letters searched and paged —
+  // the view somebody takes during an incident rather than while setting a
+  // stream up.
+  SsfDeadLetters: openObject(
+    'Every Security Event Token the Shared Signals transmitter could not ' +
+    'deliver and is still holding, in the realm the request was made in, ' +
+    'counted — and the letters themselves, searched and paged. Mirrors ' +
+    '/admin/ssf/dead-letters.\n\n**PER REALM.** Each realm has dead-letter ' +
+    'queues of its own; nothing here is another realm\'s.\n\n**`process` ' +
+    'IS ONE PROCESS\'S.** The push cap it reports is per process and shared ' +
+    'by every realm, and the sweeps are the ones THIS process ran; in a ' +
+    'service with request workers two calls can be answered by two ' +
+    'processes. Everything else is the shared store.\n\n**NO TOKEN IS ' +
+    'RETURNED.** A row says whether its SET was `signed`; the SET itself is ' +
+    'a signed statement about somebody and is not handed out.\n\nRead-only: ' +
+    'POST /admin-api/ssf/revive and /clear-dead-letters are the controls.',
+    {
+      installed: { type: 'boolean',
+        description: 'Whether ssf/ssf.js is loaded in this process at all.' },
+      realm: { type: 'string', description: 'The realm counted.' },
+      generatedAt: { type: 'string', format: 'date-time',
+        description: 'When the store was read. Every number in the reply ' +
+                     'comes from that one read.' },
+      enabled: { type: 'boolean', description: 'The `ssf.enabled` setting.' },
+      pushDelivery: { type: 'boolean',
+        description: 'The `ssf.pushDelivery` setting. With it off no push is ' +
+                     'made and none can fail.' },
+      causes: { type: 'array',
+        description: 'The four causes, in the order the console stacks ' +
+                     'them: `push-failed` (a push was made and did not ' +
+                     'deliver; the code says why), `backlog-full` ' +
+                     '(STS-SSF-0092), `declared-dead` (STS-SSF-0093) and ' +
+                     '`dead-stream` (STS-SSF-0096), each with its count.',
+        items: openObject('A cause: `id`, `label`, `code`, `what`, `count`.',
+                          {}) },
+      totals: openObject(
+        'Letters held, streams holding them, signed and unsigned, dead, ' +
+        'half-open and failing push streams, the oldest and newest letter ' +
+        'with their ages in seconds (null when nothing is held), and ' +
+        '`deadLetteredEver`, the streams\' own counts of every letter ' +
+        'including deleted ones.', {}),
+      timeline: openObject(
+        'The held letters by when they were dead-lettered, over the ' +
+        'retention window ending now: `bucketS`, `windowS`, `from`, `to`, ' +
+        '`peak`, `olderThanWindow` (held but due to be swept) and `buckets`, ' +
+        'each with its `start`, `total` and `counts` per cause.', {}),
+      byCode: { type: 'array',
+        description: 'Held letters per error code, biggest first, with the ' +
+                     'code\'s cause and summary.',
+        items: openObject('`errorCode`, `cause`, `summary`, `count`.', {}) },
+      byStatus: { type: 'array',
+        description: 'Held letters per HTTP status the receiver answered; ' +
+                     '`0` is no answer — not pushed, or nothing answered.',
+        items: openObject('`status`, `count`.', {}) },
+      byEventType: { type: 'array',
+        description: 'Held letters per event type URI.',
+        items: openObject('`type`, `name`, `count`.', {}) },
+      streams: { type: 'array',
+        description: 'Every stream holding a letter or not delivering, dead ' +
+                     'first: `state` is `dead`, `half-open`, `failing`, ' +
+                     '`healthy`, `poll` or `unknown` (letters for a stream ' +
+                     'this process does not hold), with its letters by ' +
+                     'cause and its dead or failing times.',
+        items: openObject('One stream.', {}) },
+      letters: { type: 'array',
+        description: 'Held letters, newest first, narrowed by `dlq`, ' +
+                     '`dlstream` and `dlcause` and paged by `lettersPage`. ' +
+                     'No token.',
+        items: openObject('One dead letter.', {}) },
+      matched: { type: 'integer',
+        description: 'How many letters the narrowing matched, before paging.' },
+      filter: openObject('`q`, `stream` and `cause`, each null when not ' +
+                         'narrowed.', {}),
+      paging: openObject('`letters`: where in the matched list this page is.',
+                         {}),
+      settings: openObject('The seven `ssf.*` settings that decide what is ' +
+                           'dead-lettered and for how long.', {}),
+      process: openObject(
+        'The answering process: `pid`, `role`, `pushes` (its push cap: ' +
+        '`active`, `waiting`, `concurrency`, `backlog`), `sweeps` (its last ' +
+        'twenty sweeps of this realm) and `sinceStart`.', {})
+    }),
+
   ScimMonitor: openObject(
     'How much traffic the SCIM 2.0 endpoints have taken, from whom, of what ' +
     'kind, and how much of it failed. Mirrors /admin/scim/monitor.\n\n**A ' +
@@ -3878,38 +4209,38 @@ const SCHEMAS = {
     'down.\n\n**A REFUSED CALLER IS NOT A CLIENT.** Calls the gate turned ' +
     'away are in `authentication.refused` and in no `clients` row, even when ' +
     'the credential carried a name.\n\n**AN ABSENT MEASUREMENT IS NULL AND ' +
-    'NOT ZERO**, throughout: an average over no samples is absent, and a 100% ' +
-    'success rate on nothing is the most misleading number this reply could ' +
-    'carry.',
+    'NOT ZERO**, throughout: an average over no samples is absent, and a ' +
+    '100% success rate on nothing is the most misleading number this reply ' +
+    'could carry.',
     {
       installed: {
         type: 'boolean',
         description: 'Whether the SCIM module is loaded in this process at ' +
                      'all. A DIFFERENT question from `enabled`, and on this ' +
                      'reply in particular it is what tells a zero call total ' +
-                     'meaning "no such endpoint" from one meaning "nobody has ' +
-                     'called".'
+                     'meaning "no such endpoint" from one meaning "nobody ' +
+                     'has called".'
       },
       enabled: {
         type: 'boolean',
-        description: 'The `scim.enabled` setting. When false every call under ' +
-                     '/scim/v2 is answered 501 — AND IS STILL COUNTED HERE, ' +
-                     'because it is a request this service answered. Totals ' +
-                     'that went flat while a client kept calling would hide ' +
-                     'the very thing somebody reads this for.'
+        description: 'The `scim.enabled` setting. When false every call ' +
+                     'under /scim/v2 is answered 501 — AND IS STILL COUNTED ' +
+                     'HERE, because it is a request this service answered. ' +
+                     'Totals that went flat while a client kept calling ' +
+                     'would hide the very thing somebody reads this for.'
       },
       baseUrl: { type: 'string' },
       authRequired: { type: 'boolean',
                       description: 'Whether the SCIM gate asks for a ' +
                                    'credential at all — `mode.gatesScim()`, ' +
                                    'which since 2026-09-06 is where ' +
-                                   '`scim.authRequired` went. When it is off, ' +
-                                   'callers are counted as anonymous rather ' +
-                                   'than as clients and `clients` stays empty ' +
-                                   'however much traffic there is. Note that ' +
-                                   'the gate being ON is not the same as the ' +
-                                   'credential being CHECKED: what ' +
-                                   '`global.mode` decides is ' +
+                                   '`scim.authRequired` went. Where it is ' +
+                                   'off, callers are counted as anonymous ' +
+                                   'rather than as clients and `clients` ' +
+                                   'stays empty however much traffic there ' +
+                                   'is. Note that the gate being ON is not ' +
+                                   'the same as the credential being ' +
+                                   'CHECKED: what `global.mode` decides is ' +
                                    '`verifiesCredentials()`, and the ' +
                                    'turnstile is there in both modes.' },
       schemes: {
@@ -3924,19 +4255,19 @@ const SCHEMAS = {
       store: openObject(
         'The embedded directory as it is NOW — not a counter. It is here ' +
         'because a reply reporting four hundred successful creates beside a ' +
-        'directory holding three people is reporting something worth knowing. ' +
-        'The same figures GET /admin-api/users and /admin-api/groups are ' +
-        'drawn from; there is no second store.', {}),
+        'directory holding three people is reporting something worth ' +
+        'knowing. The same figures GET /admin-api/users and ' +
+        '/admin-api/groups are drawn from; there is no second store.', {}),
       counters: openObject(
         'The traffic itself.',
         {
           calls: { type: 'integer',
-                   description: 'Every request the SCIM implementation had an ' +
-                                'opinion about, INCLUDING the ones its own ' +
-                                'gate refused: a 401 is a call this service ' +
-                                'answered, and a total that omitted them ' +
-                                'would be smaller than the access log for no ' +
-                                'stated reason.' },
+                   description: 'Every request the SCIM implementation had ' +
+                                'an opinion about, INCLUDING the ones its ' +
+                                'own gate refused: a 401 is a call this ' +
+                                'service answered, and a total that omitted ' +
+                                'them would be smaller than the access log ' +
+                                'for no stated reason.' },
           ok: { type: 'integer' },
           failed: { type: 'integer' },
           successRate: { type: ['number', 'null'],
@@ -3948,35 +4279,35 @@ const SCHEMAS = {
                    description: 'When the counting started, which is when ' +
                                 'this process did. The counters are in ' +
                                 'memory and are not persisted: these are ' +
-                                'observations, and the durable record of what ' +
-                                'SCIM was asked to do is the audit log.' },
+                                'observations, and the durable record of ' +
+                                'what SCIM was asked to do is the audit log.' },
           latency: openObject(
             '`totalMs` (a SUM, so any other statistic can still be computed ' +
             'from it), `averageMs` (null when nothing has been called) and ' +
             '`maxMs`.', {}),
           bytesOut: { type: 'integer',
                       description: 'The SCIM payload written back, headers ' +
-                                   'excluded. It answers one common question: ' +
-                                   'whether a client is listing the whole ' +
-                                   'directory on every poll.' },
+                                   'excluded. It answers one common ' +
+                                   'question: whether a client is listing ' +
+                                   'the whole directory on every poll.' },
           authentication: openObject(
-            '`distinct` authenticated principals, split into `identities` and ' +
-            '`applications`; `anonymous`, calls nothing authenticated; ' +
+            '`distinct` authenticated principals, split into `identities` ' +
+            'and `applications`; `anonymous`, calls nothing authenticated; ' +
             '`refused`, calls the gate turned away and did NOT attribute to ' +
             'anybody; `byScheme`, a plain tally keyed by scheme id; and ' +
             '`capped`/`cap`, which say whether the per-client breakdown ' +
             'stopped growing. Past the cap every total is still counted and ' +
-            'only the breakdown stops — said out loud rather than letting the ' +
-            'reply under-report quietly.', {}),
+            'only the breakdown stops — said out loud rather than letting ' +
+            'the reply under-report quietly.', {}),
           operations: {
             type: 'array',
             description: 'One row per operation THIS SERVER IMPLEMENTS, with ' +
                          'the ones nothing has called at zero — a list of ' +
                          'only what happened would answer "does this support ' +
-                         'PATCH" by omission. **These do not sum to `calls`**: ' +
-                         'one Bulk carrying five creates is one `bulk` AND ' +
-                         'five `create`s, because each of the five really is ' +
-                         'performed.',
+                         'PATCH" by omission. **These do not sum to ' +
+                         '`calls`**: one Bulk carrying five creates is one ' +
+                         '`bulk` AND five `create`s, because each of the ' +
+                         'five really is performed.',
             items: openObject('One operation, with its outcome and cost.', {
               operation: { type: 'string' },
               label: { type: 'string' },
@@ -4012,8 +4343,8 @@ const SCHEMAS = {
             type: 'array',
             description: 'One row per authenticated principal, busiest first ' +
                          'and most recent as the tie-break. The name is ' +
-                         'whatever the credential carried: a username for the ' +
-                         'five user-bearing schemes, a `client_id` for a ' +
+                         'whatever the credential carried: a username for ' +
+                         'the five user-bearing schemes, a `client_id` for a ' +
                          'Bearer token minted for an application (`kind` is ' +
                          'then `application`), an RFC 4514 subject DN for a ' +
                          'client certificate.',
@@ -4038,9 +4369,9 @@ const SCHEMAS = {
                          'aggregate cannot answer "what did the call that ' +
                          'just failed look like". A ring of `recentCap`; ' +
                          'anything older has been dropped and the durable ' +
-                         'record is the audit log. `principal` is empty where ' +
-                         'nothing authenticated, and `ms` is null where ' +
-                         'nothing was measured.',
+                         'record is the audit log. `principal` is empty ' +
+                         'where nothing authenticated, and `ms` is null ' +
+                         'where nothing was measured.',
             items: openObject('One request, as it was answered.', {
               at: { type: 'integer' },
               operation: { type: 'string' },
@@ -4058,11 +4389,11 @@ const SCHEMAS = {
           },
           recentCap: { type: 'integer' },
           realm: openObject(
-            'The trust realm these counters are for. They are PER REALM, like ' +
-            'the directory SCIM writes into: a client provisioning under ' +
-            '/realm/acme created entries in acme, and counting it in the ' +
-            'default realm would be one page reporting traffic that happened ' +
-            'in another.', {})
+            'The trust realm these counters are for. They are PER REALM, ' +
+            'like the directory SCIM writes into: a client provisioning ' +
+            'under /realm/acme created entries in acme, and counting it in ' +
+            'the default realm would be one page reporting traffic that ' +
+            'happened in another.', {})
         })
     }),
 
@@ -4073,16 +4404,18 @@ const SCHEMAS = {
   // ---------------------------------------------------------------------------
   DelegationParty: openObject(
     'One layer of the architecture. Each of the three roles uses this shape ' +
-    'and each can be an identity, an application, or BOTH — which is the fact ' +
-    'that makes the model protocol-independent rather than a Kerberos model ' +
-    'the other two are squeezed into.',
+    'and each can be an identity, an application, or BOTH — which is the ' +
+    'fact that makes the model protocol-independent rather than a Kerberos ' +
+    'model the other two are squeezed into.',
     {
       key: {
         type: 'string',
-        description: 'The NORMALISED local name, so a party here and a row on ' +
-                     '/admin-api/users name the same person — `alice`, ' +
-                     '`urn:sts-mock:user:alice` and `alice@STS.MOCK` are one ' +
-                     'identity. Empty where this layer is an application ' +
+        description: 'The NORMALISED local name, so a party here and a row ' +
+                     'on /admin-api/users name the same person — `alice`, ' +
+                     'her `urn:uuid:<entryUUID>` subject and ' +
+                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     'this ' +
+                     'layer is an application ' +
                      'rather than a person, or where nothing named it.'
       },
       presented: {
@@ -4096,8 +4429,8 @@ const SCHEMAS = {
         type: 'string',
         description: 'The application this layer IS — a client_id, an ' +
                      'AppliesTo, an SPN, an audience. NOT a promise that an ' +
-                     'entry exists under ou=applications: that registry holds ' +
-                     'what this service has been ASKED ABOUT, and a ' +
+                     'entry exists under ou=applications: that registry ' +
+                     'holds what this service has been ASKED ABOUT, and a ' +
                      'delegation naming something nobody has otherwise ' +
                      'mentioned is an ordinary and interesting outcome. Look ' +
                      'it up on /admin-api/applications to find out which.'
@@ -4115,15 +4448,15 @@ const SCHEMAS = {
     {
       kind: { type: 'string',
               description: '`subject_token`, `actor_token`, `access_token`, ' +
-                           '`Kerberos evidence ticket`, `SAML 2.0 assertion`, ' +
-                           '`PA-FOR-USER`, and so on.' },
+                           '`Kerberos evidence ticket`, `SAML 2.0 ' +
+                           'assertion`, `PA-FOR-USER`, and so on.' },
       identifier: {
         type: 'string',
-        description: 'A `jti` or an AssertionID. EMPTY for a Kerberos ticket, ' +
-                     'which genuinely has none in the protocol, and for the ' +
-                     'WS-Trust JWT, which is signed directly rather than ' +
-                     'through this service\'s JWT funnel and so carries no ' +
-                     '`jti` and is in no register. `note` says which.'
+        description: 'A `jti` or an AssertionID. EMPTY for a Kerberos ' +
+                     'ticket, which genuinely has none in the protocol, and ' +
+                     'for the WS-Trust JWT, which is signed directly rather ' +
+                     'than through this service\'s JWT funnel and so carries ' +
+                     'no `jti` and is in no register. `note` says which.'
       },
       note: { type: 'string',
               description: 'What is worth knowing about this credential — ' +
@@ -4131,8 +4464,8 @@ const SCHEMAS = {
     }),
 
   DelegationAct: openObject(
-    'ONE ACT: a single exchange at a single moment in which somebody acted on ' +
-    'somebody else\'s behalf. Not a relationship — the same three parties ' +
+    'ONE ACT: a single exchange at a single moment in which somebody acted ' +
+    'on somebody else\'s behalf. Not a relationship — the same three parties ' +
     'appearing eleven times is eleven acts, and `chainKey` is what collapses ' +
     'them.',
     {
@@ -4147,8 +4480,8 @@ const SCHEMAS = {
                   description: 'The family, spelled as /admin-api/users ' +
                                'spells it.' },
       type: { type: 'string',
-              description: 'The mechanism, as its specification names it. The ' +
-                           'list\'s `types` member describes each one.' },
+              description: 'The mechanism, as its specification names it. ' +
+                           'The list\'s `types` member describes each one.' },
       typeLabel: { type: 'string', description: 'That mechanism in words.' },
       mode: {
         type: 'string',
@@ -4177,10 +4510,10 @@ const SCHEMAS = {
         description: 'The identity of the CHAIN rather than of the act: the ' +
                      'mechanism and the three parties, with the time, the ' +
                      'credentials and the OUTCOME left out. Acts sharing one ' +
-                     'are one edge of the picture — and the outcome is out of ' +
-                     'it deliberately, so a chain refused nine times and then ' +
-                     'fixed is one edge that changes rather than two that ' +
-                     'never meet.'
+                     'are one edge of the picture — and the outcome is out ' +
+                     'of it deliberately, so a chain refused nine times and ' +
+                     'then fixed is one edge that changes rather than two ' +
+                     'that never meet.'
       },
       authorizedBy: {
         type: 'string',
@@ -4196,15 +4529,17 @@ const SCHEMAS = {
                      'to disagree with it. Empty on an issued act.'
       },
       consumed: { type: 'array',
-                  items: { $ref: '#/components/schemas/DelegationCredential' } },
+                  items:
+                    { $ref: '#/components/schemas/DelegationCredential' } },
       produced: { type: 'array',
-                  items: { $ref: '#/components/schemas/DelegationCredential' } },
+                  items:
+                    { $ref: '#/components/schemas/DelegationCredential' } },
       sessionId: {
         type: 'string',
         description: 'The browser sign-on session, where there was one. ' +
                      'USUALLY EMPTY, and that is a fact about delegation ' +
-                     'rather than a gap in the recording: a service asking on ' +
-                     'somebody\'s behalf has no browser anywhere in it.'
+                     'rather than a gap in the recording: a service asking ' +
+                     'on somebody\'s behalf has no browser anywhere in it.'
       },
       note: { type: 'string', description: 'One sentence of context.' }
     }),
@@ -4227,9 +4562,10 @@ const SCHEMAS = {
       firstAt: { type: 'integer' },
       lastAt: { type: 'integer' },
       authorizedBy: { type: 'string',
-                      description: 'From the MOST RECENT act on the chain, so ' +
-                                   'an edge that was fixed says how it works ' +
-                                   'now rather than why it used to fail.' },
+                      description: 'From the MOST RECENT act on the chain, ' +
+                                   'so an edge that was fixed says how it ' +
+                                   'works now rather than why it used to ' +
+                                   'fail.' },
       reason: { type: 'string', description: 'Likewise, for a refusal.' }
     }),
 
@@ -4237,15 +4573,15 @@ const SCHEMAS = {
     'WHO MAY DELEGATE TO WHOM, before anybody has tried. KERBEROS ONLY, and ' +
     'that is not an omission: Kerberos is the only family here that polices ' +
     'delegation at all. WS-Trust puts no authorization on OnBehalfOf or ' +
-    'ActAs, and RFC 8693 leaves the policy to the authorization server, which ' +
-    'this one does not have.',
+    'ActAs, and RFC 8693 leaves the policy to the authorization server, ' +
+    'which this one does not have.',
     {
       pairs: {
         type: 'array',
         description: 'One per (front end, target, mechanism). The two ' +
-                     'mechanisms are in ONE list because the messages and the ' +
-                     'KDC options are identical and the whole difference is ' +
-                     'which of the two accounts carries the permission — ' +
+                     'mechanisms are in ONE list because the messages and ' +
+                     'the KDC options are identical and the whole difference ' +
+                     'is which of the two accounts carries the permission — ' +
                      'which is `setOn`.',
         items: openObject('One configured pair.', {
           mechanism: { type: 'string', enum: ['classic', 'rbcd'] },
@@ -4264,10 +4600,11 @@ const SCHEMAS = {
             type: 'string',
             description: 'THE ACCOUNT THE PERMISSION LIVES ON, and the field ' +
                          'to read first. Classic puts it on the front end, ' +
-                         'where only a domain admin can set it; resource-based ' +
-                         'puts it on the back end, where whoever controls that ' +
-                         'object can set it themselves. That is the entire ' +
-                         'security story of RBCD.'
+                         'where only a domain admin can set it; ' +
+                         'resource-based puts it on the back end, where ' +
+                         'whoever controls that object can set it ' +
+                         'themselves. That is the entire security story of ' +
+                         'RBCD.'
           },
           setOnRole: { type: 'string', enum: ['front end', 'back end'] },
           requires: { type: 'string',
@@ -4275,28 +4612,29 @@ const SCHEMAS = {
                                    'attribute.' },
           targetKnown: { type: 'boolean',
                          description: 'Whether this KDC has a principal by ' +
-                                      'that name. A misspelt SPN fails at TGS ' +
-                                      'time with an error about ' +
+                                      'that name. A misspelt SPN fails at ' +
+                                      'TGS time with an error about ' +
                                       'authorization rather than spelling.' },
           warning: {
             type: 'string',
-            description: 'Why this pair may still fail although the attribute ' +
-                         'names it. The expensive one: a front end with no ' +
-                         'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION gets a ' +
-                         'non-forwardable ticket out of S4U2Self, so classic ' +
-                         'S4U2Proxy then fails complaining about the evidence ' +
-                         '— two steps from the attribute that caused it.'
+            description: 'Why this pair may still fail although the ' +
+                         'attribute names it. The expensive one: a front end ' +
+                         'with no TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION ' +
+                         'gets a non-forwardable ticket out of S4U2Self, so ' +
+                         'classic S4U2Proxy then fails complaining about the ' +
+                         'evidence — two steps from the attribute that ' +
+                         'caused it.'
           },
           note: { type: 'string' }
         })
       },
       accounts: {
         type: 'array',
-        description: 'Principals carrying a flag that changes what delegation ' +
-                     'can do to them or with them. Two of the three STOP ' +
-                     'delegation rather than permit it, and one is not a ' +
-                     'control at all. Listed whether or not a pair names ' +
-                     'them.',
+        description: 'Principals carrying a flag that changes what ' +
+                     'delegation can do to them or with them. Two of the ' +
+                     'three STOP delegation rather than permit it, and one ' +
+                     'is not a control at all. Listed whether or not a pair ' +
+                     'names them.',
         items: openObject('One account.', {
           principal: { type: 'string' },
           realm: { type: 'string' },
@@ -4323,12 +4661,29 @@ const SCHEMAS = {
     'Kerberos ones.\n\nWalk it with `seq` rather than with `page`: acts are ' +
     'still being recorded while you page.',
     Object.assign({
-      held: { type: 'integer', description: 'Acts currently held.' },
+      held: { type: 'integer',
+              description: 'Acts currently held, across every process in ' +
+                           'this service. The store is per process and the ' +
+                           'merge happens on the way out, so with request ' +
+                           'workers this is a fan-in of all of them.' },
+      heldHere: { type: 'integer',
+                  description: 'How many of `held` are this process\'s own. ' +
+                               'Equal to `held` in a single-process ' +
+                               'deployment, where it is noise; with several, ' +
+                               'the difference is what coordination is ' +
+                               'doing.' },
+      processes: { type: 'integer',
+                   description: 'How many processes contributed to `held`. ' +
+                                '1 unless `workers.requestCount` is set.' },
       recorded: {
         type: 'integer',
-        description: 'Acts recorded since this process started. Greater than ' +
-                     '`held` once the cap has bitten — `held` alone would ' +
-                     'read as "this is all there ever was".'
+        description: 'Acts recorded BY THIS PROCESS since it started, which ' +
+                     'is not comparable with `held` when `processes` is ' +
+                     'greater than 1 — there is no counter store to fan in, ' +
+                     'deliberately, and inventing one to make the two ' +
+                     'numbers match would be a store nothing else reads. ' +
+                     'Greater than `heldHere` once the cap has bitten — that ' +
+                     'number alone would read as "this is all there ever was".'
       },
       dropped: { type: 'integer',
                  description: 'Acts discarded to stay under the cap, oldest ' +
@@ -4354,10 +4709,11 @@ const SCHEMAS = {
       types: {
         type: 'array',
         description: 'The eight mechanisms with the specification each comes ' +
-                     'from, what it is, and whether this service polices it — ' +
-                     'what the `type` filter takes. Read off the same table ' +
-                     'the store records against, so a mechanism cannot occur ' +
-                     'and be unfilterable nor be offered and never occur.',
+                     'from, what it is, and whether this service polices it ' +
+                     '— what the `type` filter takes. Read off the same ' +
+                     'table the store records against, so a mechanism cannot ' +
+                     'occur and be unfilterable nor be offered and never ' +
+                     'occur.',
         items: openObject('One mechanism.', {
           type: { type: 'string' }, protocol: { type: 'string' },
           mode: { type: 'string' }, label: { type: 'string' },
@@ -4378,8 +4734,8 @@ const SCHEMAS = {
         type: 'array',
         description: 'The three layers of the architecture, in the order a ' +
                      'request moves through them. The names are this ' +
-                     'service\'s own and deliberately not any protocol\'s: ' +
-                     'a Kerberos front end, a WS-Trust requester and an OAuth ' +
+                     'service\'s own and deliberately not any protocol\'s: a ' +
+                     'Kerberos front end, a WS-Trust requester and an OAuth ' +
                      'client doing an exchange are the same position in the ' +
                      'same picture.',
         items: openObject('One layer.', {
@@ -4392,21 +4748,21 @@ const SCHEMAS = {
       chains: {
         type: 'array',
         description: 'The distinct chains among what MATCHED — one per edge ' +
-                     'of the picture. Not paged: it cannot be longer than the ' +
-                     'list it is derived from.',
+                     'of the picture. Not paged: it cannot be longer than ' +
+                     'the list it is derived from.',
         items: { $ref: '#/components/schemas/DelegationChain' }
       },
       applications: {
         type: 'array',
         description: 'Every APPLICATION named by an act among what matched, ' +
                      'in whatever role it played, with what it did. It is a ' +
-                     'strictly different question from `chains` and cannot be ' +
-                     'derived from one: an application is keyed on its ' +
+                     'strictly different question from `chains` and cannot ' +
+                     'be derived from one: an application is keyed on its ' +
                      'IDENTIFIER, normalised, while a chain names three ' +
-                     'parties — one of which routinely carries an application ' +
-                     'identifier that is not its identity (an RFC 8693 ' +
-                     'intermediary is an ACTOR who exchanged through a ' +
-                     '`client_id`). This is what the chooser on ' +
+                     'parties — one of which routinely carries an ' +
+                     'application identifier that is not its identity (an ' +
+                     'RFC 8693 intermediary is an ACTOR who exchanged ' +
+                     'through a `client_id`). This is what the chooser on ' +
                      '/admin/delegation is built from, and ' +
                      '/admin/delegation/application is one entry of it drawn ' +
                      'in full.',
@@ -4416,8 +4772,8 @@ const SCHEMAS = {
                               'one application are one entry, on the same ' +
                               'normalisation the picture merges boxes with.' },
           identifier: { type: 'string',
-                        description: 'The most recent spelling, which is what ' +
-                                     'the console shows and links by.' },
+                        description: 'The most recent spelling, which is ' +
+                                     'what the console shows and links by.' },
           spellings: { type: 'array', items: { type: 'string' },
                        description: 'Every form seen. Carried so that the ' +
                                     'collapse is something a reader can SEE ' +
@@ -4440,8 +4796,8 @@ const SCHEMAS = {
           credentials: {
             type: 'integer',
             description: 'Credentials produced by the acts it took part in — ' +
-                         'issued THROUGH it where it was the intermediary and ' +
-                         'FOR it where it was the target. Both, because ' +
+                         'issued THROUGH it where it was the intermediary ' +
+                         'and FOR it where it was the target. Both, because ' +
                          '"related to this application" is the question, and ' +
                          'a count that silently meant one of them would be ' +
                          'the wrong answer half the time.'
@@ -4469,7 +4825,8 @@ const SCHEMAS = {
             description: 'When it happened, in milliseconds since the epoch.' },
       category: { type: 'string',
                   enum: ['authentication', 'session', 'directory', 'admin',
-                         'api', 'protocol'],
+                         'api', 'application', 'protocol', 'spiffe',
+                         'signals', 'authorization', 'service'],
                   description: 'Derived from `action` and never set ' +
                                'independently, so the two cannot disagree.' },
       action: { type: 'string',
@@ -4478,12 +4835,22 @@ const SCHEMAS = {
       outcome: { type: 'string', enum: ['success', 'refused', 'error'],
                  description: 'A `refused` is this service saying no and ' +
                               'working; an `error` is this service failing.' },
+      errorCode: {
+        type: 'string',
+        description: 'Which failure condition this row is about — ' +
+                     '`STS-<SUBSYSTEM>-<NNNN>`, listed in ' +
+                     'docs/error-codes.md — or empty for a row that is not a ' +
+                     'failure. Every refused or failed request carries one. ' +
+                     'It is an operator\'s name for the condition and is ' +
+                     'never sent to the client whose request produced it.'
+      },
       actor: {
         type: 'string',
         description: 'The NORMALISED local name, so a row here and a row on ' +
-                     '/admin-api/users name the same person — `alice`, ' +
-                     '`urn:sts-mock:user:alice` and `alice@STS.MOCK` are one ' +
-                     'identity. Empty where nothing named an actor, which an ' +
+                     '/admin-api/users name the same person — `alice`, her ' +
+                     '`urn:uuid:<entryUUID>` subject and ' +
+                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     'nothing named an actor, which an ' +
                      'unauthenticated protocol call and an anonymous LDAP ' +
                      'bind both are.'
       },
@@ -4499,19 +4866,19 @@ const SCHEMAS = {
                 description: 'What it was done to: a DN, a request path, a ' +
                              'session id.' },
       protocol: { type: 'string',
-                  description: 'The family, where one applies. Free text: the ' +
-                               'sixteen families here spell themselves ' +
+                  description: 'The family, where one applies. Free text: ' +
+                               'the sixteen families here spell themselves ' +
                                'differently in the places this is read from, ' +
                                'and an enum would be a lookup table that ' +
                                'silently drops the seventeenth.' },
       channel: {
         type: 'string',
         enum: ['http', 'ldap', 'ldaps', 'internal'],
-        description: 'Which socket it arrived on, or `internal` for something ' +
-                     'this service did on its own — the directory entry it ' +
-                     'seeds for somebody who authenticated elsewhere. NOT the ' +
-                     'client\'s address, which on a mock behind a compose ' +
-                     'bridge would be a fact about docker.'
+        description: 'Which socket it arrived on, or `internal` for ' +
+                     'something this service did on its own — the directory ' +
+                     'entry it seeds for somebody who authenticated ' +
+                     'elsewhere. NOT the client\'s address, which on a mock ' +
+                     'behind a compose bridge would be a fact about docker.'
       },
       summary: { type: 'string',
                  description: 'One sentence, the same one the console shows.' },
@@ -4539,8 +4906,8 @@ const SCHEMAS = {
                      'would read as "this is all there ever was".'
       },
       dropped: { type: 'integer',
-                 description: 'Events discarded to stay under the cap, oldest ' +
-                              'first.' },
+                 description: 'Events discarded to stay under the cap, ' +
+                              'oldest first.' },
       maxEvents: { type: 'integer',
                    description: 'The cap: `audit.maxEvents`, changeable at ' +
                                 'runtime through POST /admin-api/config/set.' },
@@ -4590,17 +4957,76 @@ const SCHEMAS = {
         })
       },
       outcomes: { type: 'array', items: { type: 'string' } },
-      events: { type: 'array', items: { $ref: '#/components/schemas/AuditEvent' } }
+      events: { type: 'array',
+                items: { $ref: '#/components/schemas/AuditEvent' } }
     }, PAGING_PROPERTIES))
 };
 
-// The prose at the top of the document. It is long on purpose: the first thing
-// anybody pointing a tool at this needs to know is that it is unprotected and
-// that four of its operations change what the PROTOCOL endpoints do.
-const DESCRIPTION = [
-  'The management API of the mock STS: everything the /admin console ' +
-  'shows and everything it can change, over JSON, with no browser.',
+// ---------------------------------------------------------------------------
+// THE PROSE AT THE TOP OF THE DOCUMENT, AND IT IS A FUNCTION OF THE GATE
+// SINCE 2026-09-10 BECAUSE IT USED TO BE A FLAT CONTRADICTION OF IT.
+//
+// It is long on purpose: the first thing anybody pointing a tool at this needs
+// to know is whether it is protected and that four of its operations change
+// what the PROTOCOL endpoints do.
+//
+// **IT SAID "Nothing here is protected" FOR A DAY AFTER IT STOPPED BEING
+// TRUE.** `/admin-api` began requiring an OAuth 2.0 access token on
+// 2026-09-09; the startup banner was taught to read `adminApi.authRequired`
+// and this document was not, so the one artifact a machine reads went on
+// stating the opposite of what every one of its 238 operations would do. That
+// is worse than a stale comment: `security: []` is OpenAPI's way of saying a
+// credential is not needed, so a generated client sent none and was refused
+// everywhere, and the sentence a person read told them the refusal was a bug.
+//
+// Both states are still real — `adminApi.authRequired` is the off switch and
+// it restores the open API exactly — so the paragraph is written twice rather
+// than hedged once. The OFF text is the original, verbatim, because it is the
+// argument for the switch.
+// ---------------------------------------------------------------------------
+function describe(authRequired) {
+  log.debug("Entering describe(). authRequired=" + authRequired);
+  const protection = authRequired ? PROTECTED_PARAGRAPH : OPEN_PARAGRAPH;
+  log.debug("Leaving describe().");
+  return [DESCRIPTION_OPENING, protection].concat(DESCRIPTION_REST)
+    .join('\n\n');
+}
 
+const DESCRIPTION_OPENING =
+  'The management API of the mock STS: everything the /admin console ' +
+  'shows and everything it can change, over JSON, with no browser.';
+
+// ---------------------------------------------------------------------------
+// THE GATE, WHEN IT IS ON — which is the default.
+// ---------------------------------------------------------------------------
+const PROTECTED_PARAGRAPH =
+  '**Every operation here requires an OAuth 2.0 access token, and this ' +
+  'document says which scope each one needs.** Ask this service\'s own token ' +
+  'endpoint for one: `grant_type=client_credentials` as the seeded client ' +
+  '`sts-management-api` (its secret is `adminApi.clientSecret`), ' +
+  '`scope=admin:read admin:write`, and **`resource=<this ' +
+  'server>/admin-api`** — that last parameter is what puts this API in the ' +
+  'token\'s `aud`, and a token audienced at anything else is refused however ' +
+  'good it is. A GET needs `admin:read` and everything else needs ' +
+  '`admin:write`; they are checked as a XACML access decision against the ' +
+  'built-in ADMIN_READ and ADMIN_WRITE roles, so the requirement is stated ' +
+  'in the same policy document as every other access decision in this ' +
+  'service. **The credential is service-wide**: the token is verified ' +
+  'against the DEFAULT realm\'s key and audienced without a realm prefix ' +
+  'wherever it is presented, for the reason the console\'s two roles are ' +
+  'groups in the default realm — a per-realm one would let anybody who can ' +
+  'create a realm mint themselves an administrator. `adminApi.authRequired` ' +
+  'turns this off and restores the open API exactly; what follows is what ' +
+  'that means. **AND IT IS STILL WORTH STATING PLAINLY**: a holder of this ' +
+  'token can revoke every token this service has issued and change what the ' +
+  'next one contains. That is fine on a laptop or a compose network and is ' +
+  'not fine on a public address, which was already true of /oauth2/token — ' +
+  'it will mint a token for any username asked of it.';
+
+// ---------------------------------------------------------------------------
+// AND WHEN IT IS OFF (`adminApi.authRequired: false`). The original text.
+// ---------------------------------------------------------------------------
+const OPEN_PARAGRAPH =
   '**Nothing here is protected, and that is a decision rather than an ' +
   'oversight.** This service checks no end-user password anywhere — the ' +
   'username typed at its sign-in screen simply becomes the identity in every ' +
@@ -4623,8 +5049,10 @@ const DESCRIPTION = [
   'this port can revoke every token this service has issued and change ' +
   'what the next one contains. That is fine on a laptop or a compose ' +
   'network and is not fine on a public address, which was already true of ' +
-  '/oauth2/token — it will mint a token for any username asked of it.',
+  '/oauth2/token — it will mint a token for any username asked of it.';
 
+// The paragraphs that are true whichever way the switch is set.
+const DESCRIPTION_REST = [
   '**Four groups of operations change what the protocol endpoints do**, ' +
   'rather than only reporting on them. Revoking a token is the same ' +
   'revocation RFC 7009\'s /oauth2/revoke performs, so introspection, ' +
@@ -4643,7 +5071,90 @@ const DESCRIPTION = [
   'says which control it is.',
 
   'All state is in memory and dies with the process.'
-].join('\n\n');
+];
+
+// ===========================================================================
+// THE SECURITY HALF OF THE DOCUMENT.
+//
+// **THE SCOPE A GIVEN OPERATION NEEDS IS DECIDED BY ITS METHOD, AND THE
+// AUTHORITY IS THE GATE RATHER THAN THIS FILE.** `admin_api.js`'s
+// `app.use(BASE, ...)` middleware reads `req.method === 'GET' ? 'admin:read' :
+// 'admin:write'`, and `scopeForMethod()` below is that one line written a
+// second time — which is a duplication worth naming, because a document that
+// disagrees with the gate is exactly the failure this whole change is about.
+// `tests/admin_api_document_security.js` compares the two over every operation
+// in the table, so the copy cannot drift silently.
+//
+// TWO SCHEMES, and they describe the same credential from the two ends a
+// reader arrives from:
+//
+//   * `oauth2` (client credentials) is what the API actually wants and where
+//     it comes from — the token endpoint, the two scopes, the client. It is
+//     the accurate description, and it is the one a tool can act on.
+//   * `bearerAuth` (http/bearer) is for the reader who already HAS a token —
+//     out of a launcher's environment, out of the console's explorer, out of
+//     a shell — and wants to paste it into a tool's Authorize box. Nothing
+//     but a header, which is all such a reader needs.
+//
+// **`resource` HAS NO FIELD IN OPENAPI AND IT IS THE PARAMETER MOST LIKELY TO
+// BE MISSED**, so it is in the scheme's own description rather than left to
+// the prose at the top: a token minted without it carries the wrong `aud` and
+// is refused by a gate that has just told the caller the credential was good
+// enough to parse. Being explicit here is the difference between a five-second
+// fix and reading a middleware.
+// ===========================================================================
+function scopeForMethod(method) {
+  log.debug("Entering scopeForMethod().");
+  log.debug("Leaving scopeForMethod().");
+  return String(method).toUpperCase() === 'GET' ? 'admin:read' : 'admin:write';
+}
+
+function securitySchemesFor(baseUrl) {
+  log.debug("Entering securitySchemesFor().");
+  const schemes = {
+    oauth2: {
+      type: 'oauth2',
+      description: 'An access token from this service\'s own token endpoint. ' +
+        'Ask as the seeded client `sts-management-api`, whose secret is the ' +
+        '`adminApi.clientSecret` setting, and **send ' +
+        '`resource=' + String(baseUrl || '') + '/admin-api`** with the ' +
+        'request: OpenAPI has no field for RFC 8707\'s resource indicator ' +
+        'and it is what puts this API in the token\'s `aud`, without which ' +
+        'every call here is refused 401.',
+      flows: {
+        clientCredentials: {
+          tokenUrl: String(baseUrl || '') + '/oauth2/token',
+          scopes: {
+            'admin:read': 'Read anything this API exposes (every GET).',
+            'admin:write': 'Change anything this API can change ' +
+                           '(every other method).'
+          }
+        }
+      }
+    },
+    bearerAuth: {
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      description: 'The same token, pasted. Use this when you already hold ' +
+        'one — from a launcher\'s `STS_ADMIN_API_TOKEN`, from the console\'s ' +
+        'API explorer, or from a shell — rather than minting one here.'
+    }
+  };
+  log.debug("Leaving securitySchemesFor().");
+  return schemes;
+}
+
+// What one operation requires. Two alternatives rather than one, because the
+// schemes above are two ways to present the same credential and OpenAPI reads
+// a LIST of requirement objects as "any one of these will do". The bearer
+// entry carries an empty array because scopes are meaningless outside oauth2 —
+// naming them there would be a document that validators reject.
+function securityFor(method) {
+  log.debug("Entering securityFor().");
+  log.debug("Leaving securityFor().");
+  return [{ oauth2: [scopeForMethod(method)] }, { bearerAuth: [] }];
+}
 
 // One operation, as OpenAPI wants it. `entry` is a row of admin_api.js's route
 // table and `action` is one of its actions, or null for a plain route.
@@ -4654,6 +5165,18 @@ function operationOf(entry, action) {
   const parts = [source.description || ''];
   if (mirrors) {
     parts.push('\n\n**Mirrors** `' + mirrors + '` on the admin console.');
+  }
+  // THE ONE MEMBER NO VIEW ADDS: `mgmt-api/admin_api.js`'s `sendJson()` puts
+  // it on the reply of a GET mirroring exactly one Protocols page, so it is
+  // said here from the same test rather than in forty descriptions.
+  const mirroredPage = /^GET (\/admin\S*)$/.exec(String(mirrors));
+  if (!action && entry.method === 'GET' && mirroredPage &&
+      protocolEndpoints.pages().indexOf(mirroredPage[1]) >= 0) {
+    parts.push('\n\nThe reply also carries `protocolEndpoints`: every ' +
+               'endpoint of this family in the realm the call arrived in, ' +
+               'as `{ name, methods, url }` (plus `route` for an HTTP ' +
+               'endpoint, `transport` for a socket, and `registered: false` ' +
+               'for a route the router no longer has).');
   }
   const operation = {
     operationId: source.operationId,
@@ -4719,6 +5242,25 @@ function operationOf(entry, action) {
 function buildSpec(routes, options) {
   log.debug("Entering buildSpec().");
   const opts = options || {};
+  // ---------------------------------------------------------------------
+  // **THE GATE'S STATE ARRIVES AS AN OPTION AND DEFAULTS TO ON.**
+  //
+  // It is not read from `config` here, and the header of this file is why:
+  // this module must not require anything that holds state, or the document
+  // becomes a description of one moment rather than of the API. `baseUrl` and
+  // `version` already arrive the same way — from a caller that has the
+  // request in its hand — and `adminApi.authRequired` is one more such fact.
+  // `admin_api.js`'s `specOptions()` is the one place all three are gathered,
+  // so a fourth caller cannot assemble a different answer.
+  //
+  // **THE DEFAULT IS THE SETTING'S OWN DEFAULT, AND THE DIRECTION MATTERS.** A
+  // caller that forgets to pass it makes a document that OVER-states the
+  // requirement, which costs a client one unnecessary token; the other
+  // default would reproduce the exact bug this option was added for, where a
+  // client is told no credential is needed by an API that refuses it 238 ways.
+  // ---------------------------------------------------------------------
+  const authRequired = opts.authRequired === undefined
+    ? true : opts.authRequired === true;
   const paths = {};
   const tags = [];
   routes.forEach(function (entry) {
@@ -4729,38 +5271,71 @@ function buildSpec(routes, options) {
     if (!entry.actions) {
       paths[entry.path] = paths[entry.path] || {};
       paths[entry.path][method] = operationOf(entry, null);
+      if (authRequired) {
+        paths[entry.path][method].security = securityFor(method);
+      }
       return;
     }
     entry.actions.forEach(function (action) {
       const path = entry.route.replace(':action', action.action);
       paths[path] = paths[path] || {};
       paths[path][method] = operationOf(entry, action);
+      if (authRequired) {
+        paths[path][method].security = securityFor(method);
+      }
     });
   });
+  log.debug("Leaving buildSpec().");
+  const components = { schemas: SCHEMAS };
+  if (authRequired) {
+    components.securitySchemes = securitySchemesFor(opts.baseUrl);
+  }
   log.debug("Leaving buildSpec().");
   return {
     openapi: '3.1.0',
     info: {
       title: 'mock STS management API',
       version: opts.version || '0.0.0',
-      description: DESCRIPTION,
+      description: describe(authRequired),
       license: { name: 'MIT' }
     },
     servers: [{ url: opts.baseUrl || '/', description: 'This service.' }],
     tags: tags.map(function (name) {
       return { name: name, description: TAG_DESCRIPTIONS[name] || '' };
     }),
-    // Empty rather than absent, and it is a statement rather than an omission:
-    // an empty security array is how OpenAPI says "this operation needs no
-    // credential", which is exactly true of every operation here.
-    security: [],
+    // ---------------------------------------------------------------------
+    // THE DOCUMENT-WIDE DEFAULT, AND EVERY OPERATION STATES ITS OWN AS WELL.
+    //
+    // Redundant on purpose. A tool's Authorize box reads THIS one — so it has
+    // to name both scopes, which is what the token a reader will actually
+    // hold carries — while the per-operation entries say the narrower truth,
+    // that a GET needs only `admin:read`. Neither alone is both actionable
+    // and accurate.
+    //
+    // **AN EMPTY ARRAY IS NOT AN OMISSION, IT IS THE OPPOSITE CLAIM**, and
+    // that is why it may only appear when the gate is off: OpenAPI reads
+    // `security: []` as "no credential is needed", which is exactly what
+    // `adminApi.authRequired: false` means and exactly what this document
+    // wrongly said while the gate was on.
+    // ---------------------------------------------------------------------
+    security: authRequired
+      ? [{ oauth2: ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
+      : [],
     paths: paths,
-    components: { schemas: SCHEMAS }
+    components: components
   };
 }
 
 const TAG_DESCRIPTIONS = {
   Service: 'What this API is, its document, and the explorer that calls it.',
+  SCEP: 'The Simple Certificate Enrolment Protocol (RFC 8894) server of this ' +
+        'realm: its Issuing CA and RA certificate, the single-use challenge ' +
+        'passwords that authorize an enrollment, registered host names, the ' +
+        'certificates issued over it, and what it has done.',
+  GNAP: 'The Grant Negotiation and Authorization Protocol (RFC 9635) and its ' +
+        'resource server connections (RFC 9767): the authorization server of ' +
+        'this realm, what the applications using it have done, and the two ' +
+        'things an operator does to its state by hand.',
   Metrics: 'What this service has done since it started.',
   Users: 'Who it has authenticated, and what each of them holds.',
   Groups: 'The embedded LDAP directory\'s groups. A group here GRANTS ' +
@@ -4774,7 +5349,13 @@ const TAG_DESCRIPTIONS = {
          '`if` in an issuance site, so a refusal is a document somebody can ' +
          'read. It is not Admin roles either: those are two directory groups ' +
          'that grant the /admin console and nothing else.',
-  Tokens: 'What has been issued, and the revocation of the three kinds that ' +
+  Policies: 'The rules this realm holds a credential to — the password ' +
+            'policy first: its minimum length, how many previous passwords ' +
+            'may not be reused, and the symbol, uppercase and digit rules, ' +
+            'stored as `cn=default,ou=passwordPolicies` in the directory and ' +
+            'ENFORCED IN PRODUCT MODE at every door that sets a password. ' +
+            'Not the XACML policy repository, which is under XACML.',
+  Tokens:'What has been issued, and the revocation of the three kinds that ' +
           'can be revoked.',
   SCIM: 'The SCIM 2.0 provisioning endpoints under /scim/v2 — what they have ' +
         'been asked to do, and what they will and will not do. READ-ONLY ' +

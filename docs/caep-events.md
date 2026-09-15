@@ -1,6 +1,6 @@
 ---
 title: CAEP events
-nav_order: 8
+nav_order: 11
 ---
 
 # The eight CAEP events, and what makes each one fire
@@ -44,9 +44,12 @@ arrived" are the third.
    back missing from `events_delivered` — which is the only notice SSF gives a
    receiver, and exactly the case a receiver ought to be tested against.
    `caep.eventsSupported` narrows the eight without turning the profile off.
-2. **Did something fire it.** For the three automatic ones, `caep.autoEmit`
-   (default on) and `caep.autoEmitTypes` (default: all three). Naming one of the
-   other five in `autoEmitTypes` is **dropped with a warning** rather than
+2. **Did something fire it.** For the automatic ones, `caep.autoEmit`
+   (default on) and `caep.autoEmitTypes` (default: all five — the three session
+   events, `credential-change`, and `assurance-level-change`, which goes out
+   when the same person re-authenticates on a session they already hold and
+   its `acr` changes, on the `urn:sts:acr` scale). Naming any other type in
+   `autoEmitTypes` is **dropped with a warning** rather than
    honoured — no code path here would ever fire it, and a setting that reads as
    configured and does nothing is worse than one that refuses.
 3. **Does a stream take it.** A stream must both deliver that type *and* cover
@@ -56,6 +59,16 @@ arrived" are the third.
    line at `info` says so once, naming the type and the subject, and the
    *Per application* table on that page says it per receiver: a row with no
    stream, or one whose *Takes* column is empty, is the answer.
+
+   **An application's entry can narrow it further (since 2026-09-12).**
+   `ssfAllowedEvents` on the application that owns the stream lists what it may
+   be sent — `caep`, `risc`, or individual event type URIs, one per line. Empty
+   means no limit. A stream is agreed only those types when it is created or
+   updated, and every delivery checks again, so removing a value stops existing
+   streams receiving it. Lifting a limit does not hand back a type that was
+   withheld when the stream was agreed: the receiver asks for it again. SSF's own
+   verification and stream-updated events are always allowed. The same rule
+   applies to RISC events.
 
 **What a session IS here — the browser sign-on session these events are about,
 and the two other things this service also calls a session — is
@@ -268,6 +281,24 @@ idempotent about it, and that is exactly the thing worth testing.
 session here, so `POST /admin-api/tokens/revoke-user` and the bulk buttons on
 `/admin/tokens` emit nothing. A session outlives its tokens; ending it is the
 act this event reports.
+
+**GNAP is the exception, and it is not a contradiction (2026-09-12).** A GNAP
+grant is itself a DELEGATED SESSION between a client instance and a resource
+owner — it has a lifetime, a continuation and a revocation of its own — so
+revoking one IS ending a session, and this event says so. Three acts send it,
+each with a complex subject whose `user` is the resource owner and whose
+`session.id` names what ended:
+
+| Act | `session.id` |
+|---|---|
+| `DELETE` on a grant's continuation URI, or *Revoke* on `/admin/gnap` | `gnap-grant:<grant>` |
+| `DELETE` on an access token's management URI | `gnap-token:<jti>` |
+
+A grant **modified** onto different access sends `token-claims-change` instead,
+carrying the new `access` in `claims`. `gnap.caepEvents` turns all three off. A
+stream OWNED by a GNAP web application — created with that application's own
+GNAP access token — hears only about people who approved a grant to it; see
+[GNAP](gnap.md).
 
 ---
 
@@ -484,7 +515,7 @@ session in CAEP's sense:
 |---|---|---|
 | `caep.enabled` | on | off drops all eight from `events_supported` |
 | `caep.autoEmit` | on | off leaves the register accurate and sends nothing by itself |
-| `caep.autoEmitTypes` | the three | which of the three observable acts emit; naming one of the other five is dropped with a warning |
+| `caep.autoEmitTypes` | the five | which of the five observable acts emit; naming any other type is dropped with a warning |
 | `caep.eventsSupported` | all eight | which types this transmitter will agree to deliver |
 | `caep.omitEventTimestamp` | off | on produces a conforming event with **no** `event_timestamp`, to break a receiver that assumes one |
 | `caep.includeReasons` | on | whether `reason_admin` / `reason_user` are sent |

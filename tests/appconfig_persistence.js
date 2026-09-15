@@ -5,13 +5,14 @@
 // ===========================================================================
 // WHAT A SETTING CHANGE ACTUALLY WRITES TO DISK, AND WHAT COMES BACK.
 //
-// The console and the management API both answer "did that setting change?"
-// out of memory, so a value that round-trips through either of them proves that
+// The console and the management API both answer "did that setting change?" out
+// of memory, so a value that round-trips through either of them proves that
 // something is holding it and nothing more. The parent project's
-// `tests/vendored/sts_admin_console.js` and `tests/vendored/sts_admin_api_operations.js` go as far
-// as an HTTP client can — they watch `/admin-api/persistence`'s write counter
-// move, its dirty flag clear and its failure counter stay put — and that is
-// still an assertion about a number the service computed about itself.
+// `tests/vendored/sts_admin_console.js` and
+// `tests/vendored/sts_admin_api_operations.js` go as far as an HTTP client can
+// — they watch `/admin-api/persistence`'s write counter move, its dirty flag
+// clear and its failure counter stay put — and that is still an assertion about
+// a number the service computed about itself.
 //
 // WHAT NEITHER OF THEM CAN ASK IS WHAT IS IN THE FILE.
 //
@@ -88,6 +89,12 @@ const config = require('../common/config');
 const realms = require('../common/realms');
 const persistence = require('../persistence/persistence');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'appconfig_persistence',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The one key this file drives process-wide. It is chosen rather than invented:
 // an INTEGER cannot be satisfied by an echo the way a string can, it is
 // `runtime: true` so it may be overridden at all, and it belongs to a family
@@ -106,6 +113,7 @@ function run(t) {
   const saved = saveEnvironment();
   const realmId = 'persist' + Math.random().toString(36).slice(2, 8);
 
+  log.debug("Leaving run().");
   return Promise.resolve()
     .then(function () { return drive(t, dir, realmId); })
     .finally(function () {
@@ -141,6 +149,7 @@ function run(t) {
 }
 
 async function drive(t, dir, realmId) {
+  log.debug("Entering drive().");
   t.log.info('the store, in ldif mode, writing into ' + dir);
   process.env.STS_PERSISTENCE_MODE = 'ldif';
   process.env.STS_PERSISTENCE_DATA_DIR = dir;
@@ -160,17 +169,27 @@ async function drive(t, dir, realmId) {
   // directory half has its own coverage in ldif_codec.js, which tests the codec
   // rather than the driver for the same reason.
   persistence.setDirectory({
-    realmEntries: function () { return []; },
-    replaceRealm: function () { return undefined; }
+    realmEntries: function () {
+      log.debug("Entering realmEntries().");
+      log.debug("Leaving realmEntries().");
+      return [];
+    },
+    replaceRealm: function () {
+      log.debug("Entering replaceRealm().");
+      log.debug("Leaving replaceRealm().");
+      return undefined;
+    }
   });
   await persistence.start();
   t.check(persistence.enabled(), 'the store opened',
-          'mode=' + persistence.activeMode() + ', dir=' + persistence.dataDir());
+          'mode=' + persistence.activeMode() + ', dir=' +
+          persistence.dataDir());
   if (!persistence.enabled()) {
     // Everything below asserts about files this would have written. Saying so
     // once is better than eleven failures that all mean this.
     t.bad('nothing below can be asserted with the store closed',
           persistence.status().lastError);
+    log.debug("Leaving drive().");
     return;
   }
 
@@ -180,6 +199,7 @@ async function drive(t, dir, realmId) {
   await aSavedFileIsPutBack(t, dir);
   await aSavedRestartOnlySettingIsRefused(t);
   await clearingTakesTheRowOut(t, dir);
+  log.debug("Leaving drive().");
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +214,7 @@ async function drive(t, dir, realmId) {
 // setting — and both of those happen in a different process, days later.
 // ---------------------------------------------------------------------------
 async function aProcessWideOverrideIsWritten(t, dir) {
+  log.debug("Entering aProcessWideOverrideIsWritten().");
   t.log.info('a process-wide override lands in appconfig.json');
   const before = Number(config.value(PROCESS_KEY));
   const wanted = before + 7;
@@ -218,6 +239,7 @@ async function aProcessWideOverrideIsWritten(t, dir) {
   t.check(!!file.note && /override/i.test(file.note),
           'and the file says what it is, for whoever finds it',
           String(file.note).slice(0, 60) + '…');
+  log.debug("Leaving aProcessWideOverrideIsWritten().");
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +253,7 @@ async function aProcessWideOverrideIsWritten(t, dir) {
 // appconfig.json — is the assertion that would catch them collapsing into one.
 // ---------------------------------------------------------------------------
 async function aRealmsOverrideIsWrittenSomewhereElse(t, dir, realmId) {
+  log.debug("Entering aRealmsOverrideIsWrittenSomewhereElse().");
   t.log.info("a realm's override lands on its row in realms.json");
   const made = realms.create({ id: realmId, name: 'Persistence test' });
   t.check(made.ok !== false, 'the realm was created',
@@ -277,9 +300,9 @@ async function aRealmsOverrideIsWrittenSomewhereElse(t, dir, realmId) {
   t.equal(row && (row.overrides || {})[REALM_KEY], wanted,
           'and the row carries the override that was set on it');
   t.check(!!(row && row.overrides && Object.keys(row.overrides).length > 1),
-          'beside the settings seeded onto every realm at creation, which are ' +
-          'what stop two realms minting assertions their audiences could not ' +
-          'tell apart',
+          'beside the settings seeded onto every realm at creation, which ' +
+          'are what stop two realms minting assertions their audiences could ' +
+          'not tell apart',
           JSON.stringify(Object.keys((row && row.overrides) || {})));
 
   const appconfig = readJson(path.join(dir, 'appconfig.json')) || {};
@@ -296,6 +319,7 @@ async function aRealmsOverrideIsWrittenSomewhereElse(t, dir, realmId) {
   }), 'and the DEFAULT realm is not a row in that file — it is a constant ' +
       'in realms.js, so a file that carried one would be describing a realm ' +
       'nobody can remove');
+  log.debug("Leaving aRealmsOverrideIsWrittenSomewhereElse().");
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +337,7 @@ async function aRealmsOverrideIsWrittenSomewhereElse(t, dir, realmId) {
 // be saved, and here it is the rule itself.
 // ---------------------------------------------------------------------------
 async function theRealmRuntimeMarkerIsHonoured(t, realmId) {
+  log.debug("Entering theRealmRuntimeMarkerIsHonoured().");
   t.log.info('the one setting a realm may carry and the process may not');
   const KEY = 'oauth2.rfc9700';
   const setting = config.SETTINGS.filter(function (one) {
@@ -334,8 +359,8 @@ async function theRealmRuntimeMarkerIsHonoured(t, realmId) {
     return config.setOverride(KEY, true);
   });
   t.check(inRealm.ok !== false,
-          'AND SETTING IT ON A REALM IS ACCEPTED, through the same function — ' +
-          'which it was not, because setOverride() computed the realm and ' +
+          'AND SETTING IT ON A REALM IS ACCEPTED, through the same function ' +
+          '— which it was not, because setOverride() computed the realm and ' +
           'then asked checkOverride() without telling it',
           JSON.stringify(inRealm.errors || []));
   t.equal(inRealm.realm, realmId, 'and it landed on that realm');
@@ -352,6 +377,7 @@ async function theRealmRuntimeMarkerIsHonoured(t, realmId) {
   realms.run(realms.get(realmId), function () {
     config.clearOverride(KEY);
   });
+  log.debug("Leaving theRealmRuntimeMarkerIsHonoured().");
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +391,7 @@ async function theRealmRuntimeMarkerIsHonoured(t, realmId) {
 // that any module could already have cached.
 // ---------------------------------------------------------------------------
 async function aSavedFileIsPutBack(t, dir) {
+  log.debug("Entering aSavedFileIsPutBack().");
   t.log.info('a saved file is applied the way the next start applies it');
   const file = readJson(path.join(dir, 'appconfig.json')) || {};
   const savedValue = (file.overrides || {})[PROCESS_KEY];
@@ -388,6 +415,7 @@ async function aSavedFileIsPutBack(t, dir) {
   t.equal(config.sourceOf(PROCESS_KEY), 'override',
           'and it is an override again rather than an appconfig value, so ' +
           '/admin/config says where it came from');
+  log.debug("Leaving aSavedFileIsPutBack().");
 }
 
 // ---------------------------------------------------------------------------
@@ -399,11 +427,14 @@ async function aSavedFileIsPutBack(t, dir) {
 // service in a state no caller could have put it in.
 // ---------------------------------------------------------------------------
 async function aSavedRestartOnlySettingIsRefused(t) {
-  t.log.info('a saved value that is no longer allowed is reported, not applied');
+  log.debug("Entering aSavedRestartOnlySettingIsRefused().");
+  t.log.info('a saved value that is no longer allowed is reported, not ' +
+             'applied');
   const pinned = restartOnlySetting();
   t.check(!!pinned, 'the table has a restart-only setting to try',
           pinned && pinned.key);
   if (!pinned) {
+    log.debug("Leaving aSavedRestartOnlySettingIsRefused().");
     return;
   }
   const before = config.value(pinned.key);
@@ -412,8 +443,8 @@ async function aSavedRestartOnlySettingIsRefused(t) {
     'no.such.setting.was.ever.here': 1
   });
   t.check(applied.indexOf(pinned.key) < 0,
-          'a saved RESTART-ONLY setting (' + pinned.key + ') is NOT applied — ' +
-          'the file was written by this service but by a possibly older ' +
+          'a saved RESTART-ONLY setting (' + pinned.key + ') is NOT applied ' +
+          '— the file was written by this service but by a possibly older ' +
           'build of it, and a value that is no longer allowed must go ' +
           'through the same validation as every other caller',
           'applied ' + JSON.stringify(applied));
@@ -424,6 +455,7 @@ async function aSavedRestartOnlySettingIsRefused(t) {
   t.check(config.sourceOf(pinned.key) !== 'override',
           'and the refused setting is not an override afterwards',
           'source=' + config.sourceOf(pinned.key));
+  log.debug("Leaving aSavedRestartOnlySettingIsRefused().");
   // The refusal is REPORTED to the log rather than returned — see
   // applyPersistedOverrides(), which warns per key and names the reason. What
   // is asserted here is the half that matters to the running service: the
@@ -442,6 +474,7 @@ async function aSavedRestartOnlySettingIsRefused(t) {
 // default may have changed in between.
 // ---------------------------------------------------------------------------
 async function clearingTakesTheRowOut(t, dir) {
+  log.debug("Entering clearingTakesTheRowOut().");
   t.log.info('clearing an override takes its row out of the file');
   config.clearOverride(PROCESS_KEY);
   await persistence.flush();
@@ -456,15 +489,20 @@ async function clearingTakesTheRowOut(t, dir) {
   const status = persistence.status();
   t.equal(status.failures, 0, 'and no write failed along the way');
   t.equal(status.pending, false, 'and nothing is left waiting to be written');
+  log.debug("Leaving clearingTakesTheRowOut().");
 }
 
 // ---------------------------------------------------------------------------
 // Small helpers.
 // ---------------------------------------------------------------------------
 function readJson(file) {
+  log.debug("Entering readJson().");
   try {
+    log.debug("Leaving readJson().");
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
+    log.debug("Caught in readJson(): " + ((e && e.message) || e));
+    log.debug("Leaving readJson().");
     // Absent or unparseable. The caller asserts on the null, which says more
     // than a thrown parse error would.
     return null;
@@ -472,6 +510,8 @@ function readJson(file) {
 }
 
 function restartOnlySetting() {
+  log.debug("Entering restartOnlySetting().");
+  log.debug("Leaving restartOnlySetting().");
   return config.SETTINGS.filter(function (setting) {
     return !setting.runtime && !setting.realmRuntime;
   })[0];
@@ -482,15 +522,18 @@ const PERSISTENCE_VARS = ['STS_PERSISTENCE_MODE', 'STS_PERSISTENCE_DATA_DIR',
                           'STS_PERSISTENCE_WRITE_DELAY'];
 
 function saveEnvironment() {
+  log.debug("Entering saveEnvironment().");
   const saved = {};
   PERSISTENCE_VARS.forEach(function (key) {
     saved[key] = Object.prototype.hasOwnProperty.call(process.env, key)
       ? process.env[key] : undefined;
   });
+  log.debug("Leaving saveEnvironment().");
   return saved;
 }
 
 function restoreEnvironment(saved) {
+  log.debug("Entering restoreEnvironment().");
   Object.keys(saved).forEach(function (key) {
     if (saved[key] === undefined) {
       delete process.env[key];
@@ -498,6 +541,7 @@ function restoreEnvironment(saved) {
       process.env[key] = saved[key];
     }
   });
+  log.debug("Leaving restoreEnvironment().");
 }
 
 module.exports = {

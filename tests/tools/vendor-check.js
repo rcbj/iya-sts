@@ -84,17 +84,21 @@ function findParent(named) {
 // them, because the jobs come from tests/ and the wallet modules they verify
 // against come from client/src/. See tests/vendored/MANIFEST.js.
 function compareOne(parentDir, entry) {
+  log.debug("Entering compareOne().");
   const rel = entry.rel;
   const theirs = path.join(parentDir, entry.source, rel);
   const ours = path.join(VENDORED_DIR, rel);
   if (!fs.existsSync(theirs)) {
+    log.debug("Leaving compareOne().");
     return { rel: rel, source: entry.source, state: 'gone-upstream' };
   }
   if (!fs.existsSync(ours)) {
+    log.debug("Leaving compareOne().");
     return { rel: rel, source: entry.source, state: 'missing-here' };
   }
   const a = fs.readFileSync(theirs);
   const b = fs.readFileSync(ours);
+  log.debug("Leaving compareOne().");
   return { rel: rel, source: entry.source,
            state: a.equals(b) ? 'same' : 'differs' };
 }
@@ -126,7 +130,8 @@ function main() {
   const results = files.map(function (entry) {
     return compareOne(parent.dir, entry);
   });
-  const differs = results.filter(function (r) { return r.state === 'differs'; });
+  const differs =
+      results.filter(function (r) { return r.state === 'differs'; });
   const goneUpstream = results.filter(function (r) {
     return r.state === 'gone-upstream';
   });

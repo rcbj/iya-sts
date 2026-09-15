@@ -79,6 +79,11 @@ const config = require('./config');
 // here without closing a cycle or moving anything. With one process it answers
 // an empty array and this file behaves exactly as it always has.
 const replication = require('../persistence/persistence_replication');
+// THE ERROR CODES. A LEAF that requires nothing at all, so it cannot close a
+// cycle from here — which matters, because this file is required by most of
+// the service. See common/error_codes.js for why a code is recorded here and
+// never sent to the client whose request produced it.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // The cap, read WHERE IT IS USED rather than captured at require time.
@@ -90,6 +95,8 @@ const replication = require('../persistence/persistence_replication');
 // the direction that looks like the console is broken.
 // ---------------------------------------------------------------------------
 function maxEvents() {
+  log.debug("Entering maxEvents().");
+  log.debug("Leaving maxEvents().");
   return config.value('audit.maxEvents');
 }
 
@@ -100,6 +107,8 @@ function maxEvents() {
 // to turn the firehose off without losing the rest. Read here, per call, for
 // the same reason the cap is.
 function protocolCallsRecorded() {
+  log.debug("Entering protocolCallsRecorded().");
+  log.debug("Leaving protocolCallsRecorded().");
   return config.value('audit.protocolCalls');
 }
 
@@ -120,19 +129,19 @@ const CATEGORIES = [
   { category: 'authentication', label: 'Authentication',
     what: 'A credential was ACCEPTED, in any of the sixteen protocol ' +
           'families here. Recorded at the single funnel every one of them ' +
-          'already passes through, so this is one place and not sixteen. SCIM ' +
-          'joined late and SPIFFE later still. SCIM: three of the schemes its ' +
-          'endpoints accept — Basic, Digest and HOBA — present a credential on ' +
-          'every request, and accepting one is an authentication. Its other ' +
-          'three do not appear here, because each continues an authentication ' +
-          'recorded elsewhere: an access token was accepted when it was ' +
-          'issued, a session cookie when its session began, and a client ' +
-          'certificate once per CONNECTION rather than once per request. ' +
-          'SPIFFE is the sixteenth and reaches this in three ways: an ' +
-          'X509-SVID presented over mutual TLS at the SPIRE Server API (once ' +
-          'per connection, for the reason a client certificate is), an agent ' +
-          'attesting, and a JWT-SVID verified at ValidateJWTSVID. Being ' +
-          'ISSUED an SVID is not one of them.' },
+          'already passes through, so this is one place and not sixteen. ' +
+          'SCIM joined late and SPIFFE later still. SCIM: three of the ' +
+          'schemes its endpoints accept — Basic, Digest and HOBA — present a ' +
+          'credential on every request, and accepting one is an ' +
+          'authentication. Its other three do not appear here, because each ' +
+          'continues an authentication recorded elsewhere: an access token ' +
+          'was accepted when it was issued, a session cookie when its ' +
+          'session began, and a client certificate once per CONNECTION ' +
+          'rather than once per request. SPIFFE is the sixteenth and reaches ' +
+          'this in three ways: an X509-SVID presented over mutual TLS at the ' +
+          'SPIRE Server API (once per connection, for the reason a client ' +
+          'certificate is), an agent attesting, and a JWT-SVID verified at ' +
+          'ValidateJWTSVID. Being ISSUED an SVID is not one of them.' },
   { category: 'session', label: 'Sessions',
     what: 'A browser sign-on session was created or ended. Shared between ' +
           'OAuth 2.0 / OIDC and WS-Federation, so a WS-Federation sign-out ' +
@@ -165,15 +174,15 @@ const CATEGORIES = [
   // everywhere else.
   { category: 'spiffe', label: 'SPIFFE',
     what: 'The three server-side SPIFFE surfaces: an SVID minted, a ' +
-          'registration entry created, changed or deleted, an agent attesting, ' +
-          'and the trust bundle being fetched or federated. An SVID row is NOT ' +
-          'an authentication row — being ISSUED a credential is not presenting ' +
-          'one — so an issuance is here and never in `authentication`. What ' +
-          'IS in both is a credential PRESENTED to one of these surfaces and ' +
-          'accepted: an X509-SVID over mutual TLS, an agent attesting, a ' +
-          'JWT-SVID validated. Those write an authentication row as well, at ' +
-          'the funnel, the way one act writes rows at several layers ' +
-          'everywhere else here.' },
+          'registration entry created, changed or deleted, an agent ' +
+          'attesting, and the trust bundle being fetched or federated. An ' +
+          'SVID row is NOT an authentication row — being ISSUED a credential ' +
+          'is not presenting one — so an issuance is here and never in ' +
+          '`authentication`. What IS in both is a credential PRESENTED to ' +
+          'one of these surfaces and accepted: an X509-SVID over mutual TLS, ' +
+          'an agent attesting, a JWT-SVID validated. Those write an ' +
+          'authentication row as well, at the funnel, the way one act writes ' +
+          'rows at several layers everywhere else here.' },
   // SHARED SIGNALS IS ITS OWN CATEGORY FOR A REASON THAT IS ALMOST THE
   // OPPOSITE OF SPIFFE'S. Every other row in this log records something a
   // caller asked this service to do. An SSF row records something this
@@ -209,7 +218,20 @@ const CATEGORIES = [
           'disagree with somebody\'s expectation it is always because only ' +
           'one of them was being looked at. Policy changes are LDAP rows ' +
           'against ou=policies, not rows here, because the repository is ' +
-          'the directory.' }
+          'the directory.' },
+
+  // A FAILURE THAT BELONGS TO NO REQUEST. Every other category records
+  // something a caller did or something that happened to a stream; a store
+  // that could not be written, a worker that stopped answering and an
+  // outbound request that failed are none of those, and filed under
+  // `protocol` they would sit among rows that all answer "who called what".
+  // It exists for the error codes (common/error_codes.js), and a row here
+  // always carries one.
+  { category: 'service', label: 'Service',
+    what: 'Failures of something this service does on its own rather than ' +
+          'in answer to one request: persistence, coordination between ' +
+          'processes, the worker pools, key and secret handling, background ' +
+          'tasks and outbound requests. Every row carries an error code.' }
 ];
 
 const ACTIONS = [
@@ -234,6 +256,10 @@ const ACTIONS = [
     label: 'An activation link was refused' },
   { action: 'portal.password.changed', category: 'authentication',
     label: 'Somebody changed their own password' },
+  // AT SIGN-IN, BECAUSE THEY HAD TO (2026-09-13): `pwdReset` on the entry.
+  { action: 'authn.password.changed', category: 'authentication',
+    label: 'Somebody changed a password they were required to change at ' +
+           'sign-in' },
   { action: 'portal.password.refused', category: 'authentication',
     label: 'A password change was refused' },
   { action: 'portal.password.csrf', category: 'authentication',
@@ -250,13 +276,79 @@ const ACTIONS = [
     label: 'Somebody enrolled a security key on their own account' },
   { action: 'portal.key.removed', category: 'authentication',
     label: 'Somebody removed a security key from their own account' },
+  // A PERSON'S OWN TLS CLIENT CERTIFICATE (2026-09-13), on
+  // /portal/signing-key. `issued` is the moment a private key left this
+  // service, which is the row somebody investigating a certificate sign-in
+  // they did not expect goes looking for; `revoked` is the person putting one
+  // on their issuer's list.
+  { action: 'portal.tls-client.issued', category: 'authentication',
+    label: 'Somebody issued themselves a TLS client certificate' },
+  { action: 'portal.tls-client.revoked', category: 'authentication',
+    label: 'Somebody revoked one of their own TLS client certificates' },
   { action: 'activation.issued', category: 'authentication',
     label: 'An administrator issued an activation link' },
+  // A PASSWORD RESET LINK SPENT, AND A SECOND FACTOR ENROLLED AT SIGN-IN
+  // BECAUSE ONE IS REQUIRED (2026-09-13). The refusal beside the success for
+  // the reason the password rows above give.
+  { action: 'portal.password-reset', category: 'authentication',
+    label: 'Somebody set a new password from a password reset link' },
+  { action: 'portal.password-reset.refused', category: 'authentication',
+    label: 'A password reset link was refused' },
+  { action: 'authn.mfa.enrolment.required', category: 'authentication',
+    label: 'A sign-in was asked to set up a required second factor' },
+  { action: 'authn.mfa.enrolment.started', category: 'authentication',
+    label: 'An authenticator app secret was shown at sign-in' },
+  { action: 'authn.mfa.enrolled', category: 'authentication',
+    label: 'Somebody set up a required second factor at sign-in' },
+
+  // ---------------------------------------------------------------------
+  // THE AUTHENTICATOR APP (RFC 6238), 2026-09-10. Five rows for what is one
+  // control on one page, and the split is the same one the password rows above
+  // make: what was STARTED, what SUCCEEDED, and every way it was refused.
+  //
+  // **`started` IS NOT NOISE AND IS THE ROW MOST WORTH HAVING.** It is the
+  // moment this service MINTED A SHARED SECRET and showed it to a browser. The
+  // enrolment that follows may never happen — the secret expires unconfirmed —
+  // so a log holding only `enrolled` would have no record at all of a secret
+  // having been handed out, which is the one event somebody investigating a
+  // compromised account would go looking for.
+  //
+  // `removed` is registered as its own row rather than folded into a generic
+  // credential change because of what it MEANS: an account that required two
+  // factors requires one now, and that is a downgrade somebody should be able
+  // to filter for.
+  { action: 'portal.mfa.started', category: 'authentication',
+    label: 'Somebody was shown a new authenticator-app secret' },
+  { action: 'portal.mfa.enrolled', category: 'authentication',
+    label: 'Somebody set up an authenticator app on their own account' },
+  { action: 'portal.mfa.refused', category: 'authentication',
+    label: 'An authenticator-app setup was not confirmed' },
+  { action: 'portal.mfa.removed', category: 'authentication',
+    label: 'Somebody removed the authenticator app from their own account' },
+  { action: 'portal.mfa.csrf', category: 'authentication',
+    label: 'An authenticator-app change was refused for a bad CSRF token' },
+  // The same two acts inside an ACTIVATION, which is a different situation and
+  // therefore a different row: nobody is signed in, and what authorises it is a
+  // single-use link rather than a session. A reader filtering for "who set up a
+  // second factor without ever having signed in" is asking about exactly these.
+  { action: 'portal.activate.mfa.started', category: 'authentication',
+    label: 'An authenticator-app secret was shown while an activation link ' +
+           'was being spent' },
+  { action: 'portal.activate.mfa.refused', category: 'authentication',
+    label: 'An authenticator app was not confirmed during activation' },
 
   { action: 'session.start', category: 'session',
     label: 'A sign-on session was created' },
   { action: 'session.end', category: 'session',
     label: 'A sign-on session was ended' },
+  // THE CONSOLE'S OR THE PORTAL'S TOKENS, RENEWED WITH A REFRESH TOKEN
+  // (2026-09-12). Not `session.start`: the session is the same one, nobody
+  // authenticated, and a row that said a session started would make one
+  // sign-in look like several. A renewal the token endpoint REFUSED is this
+  // action too, `refused` and coded — the session is then ended, and that
+  // writes its own `session.end`.
+  { action: 'session.renew', category: 'session',
+    label: 'A hosted surface renewed its tokens within the same session' },
 
   // THE TWO THE PROTOCOL-INDEPENDENT LOGOUT WRITES, and they are `session`
   // rather than a seventh category because that is what they are ABOUT — even
@@ -272,7 +364,8 @@ const ACTIONS = [
   // moment — and the counts of what could NOT be ended, which is the half of a
   // global logout nothing else records anywhere.
   { action: 'logout.global', category: 'session',
-    label: 'Everything held for one identity was ended, across every protocol' },
+    label:
+      'Everything held for one identity was ended, across every protocol' },
   { action: 'logout.selective', category: 'session',
     label: 'Named sessions or credentials were ended for one identity' },
 
@@ -288,10 +381,14 @@ const ACTIONS = [
   { action: 'user.rename', category: 'directory', label: 'A user was renamed' },
   { action: 'user.query', category: 'directory',
     label: 'A search returned at least one user' },
-  { action: 'group.create', category: 'directory', label: 'A group was created' },
-  { action: 'group.delete', category: 'directory', label: 'A group was deleted' },
-  { action: 'group.update', category: 'directory', label: 'A group was updated' },
-  { action: 'group.rename', category: 'directory', label: 'A group was renamed' },
+  { action: 'group.create', category: 'directory',
+    label: 'A group was created' },
+  { action: 'group.delete', category: 'directory',
+    label: 'A group was deleted' },
+  { action: 'group.update', category: 'directory',
+    label: 'A group was updated' },
+  { action: 'group.rename', category: 'directory',
+    label: 'A group was renamed' },
   { action: 'entry.create', category: 'directory',
     label: 'An entry elsewhere in the tree was created' },
   { action: 'entry.delete', category: 'directory',
@@ -341,7 +438,8 @@ const ACTIONS = [
   { action: 'application.delete', category: 'application',
     label: 'An application was deleted from the registry' },
 
-  { action: 'admin.view', category: 'admin', label: 'A console page was viewed' },
+  { action: 'admin.view', category: 'admin',
+    label: 'A console page was viewed' },
   { action: 'admin.change', category: 'admin',
     label: 'A console form was posted' },
   // The SUBSTANCE of a claim-set change, as against the HTTP row that says a
@@ -376,12 +474,97 @@ const ACTIONS = [
   // was made an administrator would be worth nothing.
   { action: 'admin.role.change', category: 'admin',
     label: 'An admin console role was granted or taken away' },
+  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13): seeded at startup with both
+  // roles, and its first console sign-in, which ends the window in which every
+  // signed-in person may use the console. `detail.event` says which.
+  { action: 'admin.console.bootstrap', category: 'admin',
+    label: 'The bootstrap administrator was seeded, or first signed in to ' +
+           'the console' },
+
+  // CLEARING SOMEBODY ELSE'S SECOND FACTOR (2026-09-10). `admin` rather than
+  // `authentication`, which is the distinction the portal rows above establish:
+  // there the actor and the target are the same person, and here an operator is
+  // acting on somebody else's account.
+  //
+  // **THIS IS A SECURITY DOWNGRADE PERFORMED BY A THIRD PARTY**, which is the
+  // one shape of act an audit log exists for. It is also the ONLY way back for
+  // somebody who has lost their authenticator, so it is expected traffic rather
+  // than an anomaly — the row says who cleared whose, and it is the pairing of
+  // those two names over time that is worth reading.
+  { action: 'admin.mfa.totp.cleared', category: 'admin',
+    label: 'An operator cleared somebody\'s authenticator app' },
+  { action: 'admin.mfa.key.cleared', category: 'admin',
+    label: 'An operator removed somebody\'s security key' },
+  // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
+  // each one ACT with who performed it. The sessions a reset's sign-out ends
+  // write their own `session.end` rows, so these do not count them again.
+  { action: 'admin.password.reset', category: 'admin',
+    label: 'An operator reset somebody\'s password' },
+  { action: 'admin.password.reset-link', category: 'admin',
+    label: 'An operator issued somebody a password reset link' },
+  { action: 'admin.mfa.primary-keys.removed', category: 'admin',
+    label: 'An operator disabled somebody\'s passwordless sign-in' },
+  { action: 'admin.mfa.disabled', category: 'admin',
+    label: 'An operator removed every second factor somebody held' },
+  { action: 'admin.mfa.required', category: 'admin',
+    label: 'An operator required a second factor of somebody' },
+  { action: 'admin.mfa.unrequired', category: 'admin',
+    label: 'An operator stopped requiring a second factor of somebody' },
+
+  // A PASSWORD POLICY PROFILE WAS SAVED OR PUT BACK (2026-09-12). The SUBSTANCE
+  // of the change, for `claims.change`'s reason: the `admin.change` row says a
+  // form was posted to /admin/policies, and this says what every password set
+  // from then on must look like. The values are recorded — they are numbers
+  // and booleans, not secrets — because "when did the minimum length drop to
+  // eight, and who dropped it" is the question this row exists to answer.
+  { action: 'admin.password-policy.change', category: 'admin',
+    label: 'A password policy profile was changed' },
+
+  // A CLIENT-CERTIFICATE TRUST ANCHOR WAS ADDED OR REMOVED (2026-09-12),
+  // through /admin/tls/trust or /admin-api/tls/trust. The SUBSTANCE, for
+  // `claims.change`'s reason: the `admin.change` / `api.change` row says a form
+  // or an operation was used, and this says whose certificates this service
+  // believes from then on — the subject and the fingerprint, which are public.
+  // `POST /tls/trust` writes no row, deliberately: it is a development test
+  // control that answers anybody, and product mode refuses it.
+  { action: 'admin.truststore.change', category: 'admin',
+    label: 'A client-certificate trust anchor was added or removed' },
+
+  // STORED KERBEROS KEYS (2026-09-12). A person's keys DERIVED from a password
+  // that was just set or verified is an `authentication` row, for the portal
+  // rows' reason above: it is a credential coming into existence on that
+  // person's own account. The three SERVICE PRINCIPAL rows and the CLEAR are
+  // an operator acting on something that is not theirs, so they are `admin`.
+  // **No row carries a key, a keytab or a password** — the kvno and the
+  // enctypes are what is recorded, which is what somebody reading a KRB-ERROR
+  // about a key version needs and all that anybody else should be given.
+  { action: 'krb5.keys.derived', category: 'authentication',
+    label: 'A person\'s Kerberos keys were derived from their password' },
+  { action: 'admin.krb5.keys.cleared', category: 'admin',
+    label: 'An operator cleared somebody\'s Kerberos keys' },
+  { action: 'admin.krb5.service.created', category: 'admin',
+    label: 'A Kerberos service principal was created with a random key' },
+  { action: 'admin.krb5.service.rotated', category: 'admin',
+    label: 'A Kerberos service principal\'s key was rotated' },
+  { action: 'admin.krb5.service.deleted', category: 'admin',
+    label: 'A Kerberos service principal\'s stored key was deleted' },
+  { action: 'admin.krb5.previous.dropped', category: 'admin',
+    label: 'An operator dropped the previous Kerberos key versions a person ' +
+           'or a service principal was still keeping' },
 
   { action: 'api.read', category: 'api', label: 'A management API read' },
   { action: 'api.change', category: 'api', label: 'A management API write' },
 
   { action: 'protocol.call', category: 'protocol',
     label: 'A protocol endpoint was called' },
+  // A REFUSAL OR FAILURE ON A SOCKET THAT IS NOT HTTP — a KRB-ERROR on port 88,
+  // a gRPC status on the SPIRE Server API — or inside an HTTP request where the
+  // funnel's own row cannot say which condition it was. It always carries an
+  // error code, which is what it exists to hold.
+  { action: 'protocol.failure', category: 'protocol',
+    label: 'A protocol operation was refused or failed' },
+  { action: 'service.failure', category: 'service',
+    label: 'Something this service does on its own failed' },
 
   // SPIFFE. Nine actions, and the split between them is the same one the
   // application rows draw: what was CONFIGURED, what HAPPENED, and what was
@@ -417,7 +600,8 @@ const ACTIONS = [
   { action: 'spiffe.bundle.read', category: 'spiffe',
     label: 'The trust bundle was fetched' },
   { action: 'spiffe.bundle.change', category: 'spiffe',
-    label: 'An authority was rotated, or a federated bundle was set or removed' },
+    label:
+      'An authority was rotated, or a federated bundle was set or removed' },
   // The one SPIFFE row that records a REFUSAL rather than something happening.
   // It is here rather than folded into `protocol.call` because the question it
   // answers is different: "why could my agent not list entries" is asked of the
@@ -469,8 +653,36 @@ const ACTIONS = [
   // and the person who wants to find it is investigating that decision.
   { action: 'xacml.pep.register', category: 'authorization',
     label: 'A remote Policy Enforcement Point registered' },
+  // A remote PEP's HTTPS listener certificate was issued (2026-09-13). The
+  // row names the serial, the names and the expiry, and never the key.
+  { action: 'xacml.pep.certificate', category: 'authorization',
+    label: 'A remote PEP was issued an HTTPS listener certificate' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
+
+  // GNAP (RFC 9635 + RFC 9767), 2026-09-12. In the protocol category, beside
+  // `protocol.call`: every one of these is a protocol act a client or resource
+  // server performed, and the person investigating one is debugging that party.
+  { action: 'gnap.grant.request', category: 'protocol',
+    label: 'A GNAP grant was requested' },
+  { action: 'gnap.grant.consent', category: 'protocol',
+    label: 'A resource owner approved a GNAP grant' },
+  { action: 'gnap.grant.deny', category: 'protocol',
+    label: 'A resource owner did not approve a GNAP grant' },
+  { action: 'gnap.grant.approve', category: 'protocol',
+    label: 'A GNAP grant was approved and its tokens released' },
+  { action: 'gnap.grant.revoke', category: 'protocol',
+    label: 'A GNAP grant was revoked' },
+  { action: 'gnap.token.issue', category: 'protocol',
+    label: 'A GNAP access token was issued' },
+  { action: 'gnap.token.rotate', category: 'protocol',
+    label: 'A GNAP access token was rotated' },
+  { action: 'gnap.token.revoke', category: 'protocol',
+    label: 'A GNAP access token was revoked' },
+  { action: 'gnap.rs.introspect', category: 'protocol',
+    label: 'A resource server introspected a GNAP access token' },
+  { action: 'gnap.rs.register', category: 'protocol',
+    label: 'A resource server registered a GNAP resource set' },
 
   { action: 'ssf.stream.create', category: 'signals',
     label: 'A Shared Signals stream was created' },
@@ -486,6 +698,12 @@ const ACTIONS = [
     label: 'A Security Event Token was delivered to a receiver' },
   { action: 'ssf.event.refused', category: 'signals',
     label: 'A receiver refused a Security Event Token' },
+  { action: 'ssf.stream.dead', category: 'signals',
+    label: 'A push stream was declared dead after only failed pushes' },
+  { action: 'ssf.stream.revived', category: 'signals',
+    label: 'A dead push stream was revived' },
+  { action: 'ssf.deadletter.clear', category: 'signals',
+    label: 'A stream\'s dead-letter queue was emptied by hand' },
   { action: 'ssf.event.receive', category: 'signals',
     label: 'A Security Event Token was pushed AT this service' },
 
@@ -557,7 +775,13 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain array it replaced. See common/realms.js.
-const events = realms.arr({ persist: 'audit.events', merge: 'own' });
+// IN SEGMENTS OF 32 SINCE 2026-09-14 (#46): one row for the whole ring was
+// 2.3 MB sealed, written and read back by every other node on every request
+// once a cluster barrier held responses for their commit. realms.js's
+// segmentedArr() argues it, including the one segment of already-dropped
+// events a stored copy can carry — which merged() below trims.
+const events = realms.arr({ persist: 'audit.events', merge: 'own',
+                            segment: 32 });
 
 // ---------------------------------------------------------------------
 // PER TRUST REALM, like the ring above it. A sequence number shared between
@@ -601,20 +825,30 @@ let dropped = 0;
 let actorResolver = null;
 
 function setActorResolver(fn) {
+  log.debug("Entering setActorResolver().");
   actorResolver = fn;
-  log.debug("An audit actor resolver was installed; HTTP events will now name " +
-            "the signed-in user where there is one.");
+  log.debug("An audit actor resolver was installed; HTTP events will now " +
+            "name the signed-in user where there is one.");
+  log.debug("Leaving setActorResolver().");
 }
 
 function actorOfRequest(req) {
-  if (!actorResolver) return '';
+  log.debug("Entering actorOfRequest().");
+  if (!actorResolver) {
+    log.debug("Leaving actorOfRequest().");
+    return '';
+  }
   try {
+    log.debug("Leaving actorOfRequest().");
     return String(actorResolver(req) || '');
   } catch (e) {
     // Swallowed with a reason: the actor is a nicety on an audit row and the
     // request it decorates is real work. A session store that throws must not
     // turn a working endpoint into a 500.
-    log.error('the audit actor resolver threw and was ignored: ' + e.message);
+    log.error(errorCodes.tag('STS-REG-0047') + 'the audit actor resolver ' +
+                                               'threw and was ignored: ' +
+              e.message);
+    log.debug("Leaving actorOfRequest().");
     return '';
   }
 }
@@ -639,8 +873,13 @@ const MAX_DETAIL_LENGTH = 200;
 const MAX_SUMMARY_LENGTH = 400;
 
 function trimmed(value, limit) {
+  log.debug("Entering trimmed().");
   const text = String(value == null ? '' : value);
-  if (text.length <= limit) return text;
+  if (text.length <= limit) {
+    log.debug("Leaving trimmed().");
+    return text;
+  }
+  log.debug("Leaving trimmed().");
   // Named rather than silently cut: a value that ends mid-word reads as data
   // that was always like that, which is how a truncation becomes a bug report.
   return text.slice(0, limit) + '… (' + text.length + ' characters)';
@@ -660,7 +899,8 @@ function detailOf(source) {
     out[key] = trimmed(value, MAX_DETAIL_LENGTH);
   });
   if (keys.length > MAX_DETAIL_KEYS) {
-    out['(more)'] = (keys.length - MAX_DETAIL_KEYS) + ' further field(s) not kept';
+    out['(more)'] = (keys.length - MAX_DETAIL_KEYS) + ' further field(s) not ' +
+                                                      'kept';
   }
   log.debug("Leaving detailOf().");
   return out;
@@ -668,22 +908,36 @@ function detailOf(source) {
 
 // Drop as many of the oldest events as the cap now requires. A LOOP rather than
 // a single shift, because `audit.maxEvents` is a runtime setting: lowering it
-// from 5,000 to 100 has to take effect on the next event rather than one row per
-// event for the next 4,900.
+// from 5,000 to 100 has to take effect on the next event rather than one row
+// per event for the next 4,900.
 function trimToCap() {
+  log.debug("Entering trimToCap().");
   const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
   while (events.length > cap) {
     events.shift();
     dropped++;
   }
+  log.debug("Leaving trimToCap().");
 }
 
 function record(event) {
   log.debug("Entering record().");
   const info = event || {};
   const action = String(info.action || 'protocol.call');
-  const category = CATEGORY_OF_ACTION[action] || String(info.category || 'protocol');
+  const category = CATEGORY_OF_ACTION[action] ||
+                   String(info.category || 'protocol');
   const now = Date.now();
+  // THE ERROR CODE, and it changes one default. A row that names a failure
+  // condition and says nothing about its outcome is a refusal rather than a
+  // success — defaulting it to success would put a failure in the success
+  // count on /admin/metrics with its own code beside it saying otherwise.
+  const errorCode = info.errorCode ? trimmed(info.errorCode, 40) : '';
+  if (errorCode && !errorCodes.isKnown(errorCode)) {
+    log.warn('an audit event carried an unregistered error code, ' + errorCode +
+             '; it is recorded as given. Add it to common/error_codes.js.');
+  }
+  const outcome = OUTCOMES.indexOf(info.outcome) >= 0
+    ? info.outcome : (errorCode ? 'refused' : 'success');
   nums.seq++;
   nums.recorded++;
   const row = {
@@ -693,7 +947,12 @@ function record(event) {
     action: action,
     // Defaulted to success rather than to '' because most events here are
     // things that happened; a refusal is the one that has to say so.
-    outcome: OUTCOMES.indexOf(info.outcome) >= 0 ? info.outcome : 'success',
+    outcome: outcome,
+    // Which failure condition this row is about, from common/error_codes.js,
+    // or '' for a row that is not a failure. It leads the summary as well, so
+    // the console's free-text search and a reader scanning the column both
+    // find it without knowing the field exists.
+    errorCode: errorCode,
     // The normalised local name where a caller had one (`alice`), so that a row
     // here and a row on /admin/users name the same person. Never computed in
     // this file — see the header: admin_stats.js owns that normalisation and
@@ -716,26 +975,84 @@ function record(event) {
     // bridge reports the bridge, which is a fact about docker and not about
     // whoever made the call.
     channel: trimmed(info.channel || '', 40),
-    summary: trimmed(info.summary || '', MAX_SUMMARY_LENGTH),
+    summary: trimmed((errorCode ? errorCodes.tag(errorCode) : '') +
+                     (info.summary || ''), MAX_SUMMARY_LENGTH),
     detail: detailOf(info.detail)
   };
   events.push(row);
   trimToCap();
+  if (errorCode) {
+    logFailure(row);
+  }
   log.debug("Leaving record().");
   return row;
+}
+
+// ---------------------------------------------------------------------------
+// THE LOG LINE FOR A ROW THAT CARRIES AN ERROR CODE.
+//
+// The audit ring is in memory, capped, and per process; the service log is
+// what a container's operator reads and what outlives a restart. So every row
+// naming a failure writes ONE line there too, with the code at the front. It is
+// written here rather than at each failure site so that the two records cannot
+// disagree about which code a failure had — and so that a site marking a code
+// does not also have to remember to log it.
+//
+// A refusal is `info`: it is this service working and saying no, and most of
+// them are a client under test getting something wrong on purpose. An `error`
+// is this service failing, and is logged as one. Nothing is added that is not
+// already on the row, which carries no credential by construction.
+// ---------------------------------------------------------------------------
+function logFailure(row) {
+  log.debug("Entering logFailure().");
+  const line = row.summary + (row.target ? ' (' + row.target + ')' : '') +
+               (row.actor ? ' actor=' + row.actor : '') +
+               ' action=' + row.action + ' outcome=' + row.outcome;
+  if (row.outcome === 'error') {
+    // error-code: none — the line IS the failure's record and leads with its code
+    log.error(line);
+    log.debug("Leaving logFailure().");
+    return;
+  }
+  log.info(line);
+  log.debug("Leaving logFailure().");
+}
+
+// ---------------------------------------------------------------------------
+// failure(code, event) — a row whose whole point is the error code.
+//
+// For a failure that is not an HTTP response the call log already records: a
+// refusal on a raw socket, an outbound request that failed, a background task,
+// a store that could not be written. `action` defaults to `protocol.failure`;
+// a caller whose failure belongs to no request passes `service.failure`. It
+// cannot throw, because it is audit().
+// ---------------------------------------------------------------------------
+function failure(code, event) {
+  log.debug("Entering failure().");
+  const info = Object.assign({}, event || {});
+  info.errorCode = code;
+  if (!info.action) {
+    info.action = 'protocol.failure';
+  }
+  log.debug("Leaving failure().");
+  return audit(info);
 }
 
 // The public entry point. Wrapped so that a caller cannot be broken by a defect
 // in here — see the header. Every recording site in this service calls THIS and
 // not record() above.
 function audit(event) {
+  log.debug("Entering audit().");
   try {
+    log.debug("Leaving audit().");
     return record(event);
   } catch (e) {
     // Swallowed with a reason: the alternative is an audit log that can fail a
     // bind, revoke or token issuance, which is strictly worse than a missing
     // row. Logged at error so it is not invisible.
-    log.error('an audit event could not be recorded and was dropped: ' + e.message);
+    log.error(errorCodes.tag('STS-REG-0048') + 'an audit event could not be ' +
+              'recorded and was dropped: ' + e.message);
+    log.debug("Leaving audit().");
     return null;
   }
 }
@@ -779,10 +1096,13 @@ function actionOf(req) {
       return trimmed(parsed && parsed.action, MAX_ACTION_LENGTH);
     }
     log.debug("Leaving actionOf().");
-    return trimmed(new URLSearchParams(raw).get('action') || '', MAX_ACTION_LENGTH);
+    return trimmed(new URLSearchParams(raw).get('action') || '',
+                   MAX_ACTION_LENGTH);
   } catch (e) {
+    log.debug("Caught in actionOf(): " + ((e && e.message) || e));
     // Not a body this can read; the row simply has no action name on it. Not an
-    // error worth a line — an unparseable body is already a 400 the row records.
+    // error worth a line — an unparseable body is already a 400 the row
+    // records.
     log.debug("Leaving actionOf().");
     return '';
   }
@@ -792,9 +1112,17 @@ function actionOf(req) {
 // What a status code means as an outcome. See OUTCOMES above for why 4xx and
 // 5xx are not one thing.
 function outcomeOfStatus(status) {
+  log.debug("Entering outcomeOfStatus().");
   const code = parseInt(status, 10) || 0;
-  if (code >= 500) return 'error';
-  if (code >= 400) return 'refused';
+  if (code >= 500) {
+    log.debug("Leaving outcomeOfStatus().");
+    return 'error';
+  }
+  if (code >= 400) {
+    log.debug("Leaving outcomeOfStatus().");
+    return 'refused';
+  }
+  log.debug("Leaving outcomeOfStatus().");
   return 'success';
 }
 
@@ -804,13 +1132,17 @@ function outcomeOfStatus(status) {
 // so testing for the console first would file every management API call as
 // console access and the API category would be permanently empty.
 function httpActionFor(path, method) {
+  log.debug("Entering httpActionFor().");
   const write = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
   if (path === '/admin-api' || path.indexOf('/admin-api/') === 0) {
+    log.debug("Leaving httpActionFor().");
     return write ? 'api.change' : 'api.read';
   }
   if (path === '/admin' || path.indexOf('/admin/') === 0) {
+    log.debug("Leaving httpActionFor().");
     return write ? 'admin.change' : 'admin.view';
   }
+  log.debug("Leaving httpActionFor().");
   return 'protocol.call';
 }
 
@@ -861,16 +1193,32 @@ function recordHttp(req, res, detail) {
     return null;
   }
   const action = httpActionFor(path, req.method);
-  if (action === 'protocol.call' && !protocolCallsRecorded()) {
-    log.debug("Leaving recordHttp(). audit.protocolCalls is off; not recorded.");
+  // THE ERROR CODE: what the handler marked (common/error_codes.js), or the
+  // generic code for a failed status nothing marked, so that every failed
+  // response has one. A handler may mark a response whose STATUS is not a
+  // failure — an OAuth error delivered to the client in a 302, an error page a
+  // browser flow answers with 200 — and that row is then a refusal, which is
+  // what it is.
+  const marked = errorCodes.codeOf(res);
+  const errorCode = marked ||
+                    errorCodes.fallbackFor(res.statusCode, !!info.matched);
+  // A FAILURE IS RECORDED WITH THE FIREHOSE OFF. `audit.protocolCalls` exists
+  // to silence the JWKS polls and metadata fetches; a refused request is the
+  // row somebody turned the firehose off to be able to find.
+  if (action === 'protocol.call' && !protocolCallsRecorded() && !errorCode) {
+    log.debug("Leaving recordHttp(). audit.protocolCalls is off; not " +
+              "recorded.");
     return null;
   }
   const actor = actorOfRequest(req);
   const posted = (action === 'admin.change' || action === 'api.change')
     ? actionOf(req) : '';
+  const statusOutcome = outcomeOfStatus(res.statusCode);
   const row = audit({
     action: action,
-    outcome: outcomeOfStatus(res.statusCode),
+    outcome: (marked && statusOutcome === 'success') ? 'refused' :
+              statusOutcome,
+    errorCode: errorCode,
     actor: actor,
     target: path,
     channel: 'http',
@@ -904,6 +1252,7 @@ const REDACTED_QUERY_KEYS = ['code', 'id_token_hint', 'access_token', 'token',
                              'credential', 'vp_token', 'response'];
 
 function queryText(query) {
+  log.debug("Entering queryText().");
   const source = query || {};
   const parts = [];
   Object.keys(source).slice(0, MAX_DETAIL_KEYS).forEach(function (key) {
@@ -911,6 +1260,7 @@ function queryText(query) {
     parts.push(key + '=' + (redact ? '(redacted)'
                                    : trimmed(source[key], 60)));
   });
+  log.debug("Leaving queryText().");
   return parts.join(' ');
 }
 
@@ -933,11 +1283,13 @@ function objectKindOf(dn, containers) {
                   .replace(/\s*,\s*/g, ',');
   const groups = String((containers && containers.groups) || '').toLowerCase()
                    .replace(/\s*,\s*/g, ',');
-  if (users && lower !== users && lower.slice(-(users.length + 1)) === ',' + users) {
+  if (users && lower !== users &&
+      lower.slice(-(users.length + 1)) === ',' + users) {
     log.debug("Leaving objectKindOf().");
     return 'user';
   }
-  if (groups && lower !== groups && lower.slice(-(groups.length + 1)) === ',' + groups) {
+  if (groups && lower !== groups &&
+      lower.slice(-(groups.length + 1)) === ',' + groups) {
     log.debug("Leaving objectKindOf().");
     return 'group';
   }
@@ -949,6 +1301,8 @@ function objectKindOf(dn, containers) {
 // does not come through here — those have one action each, since "a search of a
 // group" is not a thing anybody filters for.
 function directoryActionFor(operation, dn, containers) {
+  log.debug("Entering directoryActionFor().");
+  log.debug("Leaving directoryActionFor().");
   return objectKindOf(dn, containers) + '.' + operation;
 }
 
@@ -965,6 +1319,7 @@ function recordDirectory(event) {
     protocol: info.protocol || 'LDAP',
     channel: info.channel || 'ldap',
     summary: info.summary || '',
+    errorCode: info.errorCode || '',
     detail: info.detail
   });
 }
@@ -981,7 +1336,8 @@ function recordDirectory(event) {
 function list() {
   log.debug("Entering list(). " + events.length + " event(s) held.");
   const out = merged().reverse();
-  log.debug("Leaving list(). " + out.length + " event(s) returned, newest first.");
+  log.debug("Leaving list(). " + out.length + " event(s) returned, newest " +
+                                              "first.");
   return out;
 }
 
@@ -1012,9 +1368,17 @@ function list() {
 //     still holds and would report.
 // ---------------------------------------------------------------------------
 function merged() {
+  log.debug("Entering merged().");
   const mine = events.slice(0);
-  const others = replication.remoteRows('audit.events', undefined, '');
+  // Each other process's events, trimmed to the cap: a segmented store can
+  // hand back up to one segment that process has already dropped.
+  const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
+  const others = replication.remoteSegmentedRows('audit.events')
+    .map(function (rows) {
+      return rows.length > cap ? rows.slice(rows.length - cap) : rows;
+    });
   if (!others.length) {
+    log.debug("Leaving merged().");
     // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
     // copy and a length check rather than a sort of everything.
     return mine;
@@ -1038,6 +1402,7 @@ function merged() {
     }
     return (a.seq || 0) - (b.seq || 0);
   });
+  log.debug("Leaving merged().");
   return all;
 }
 
@@ -1060,7 +1425,8 @@ function summary() {
   // counter rather than a length — so it comes from the counter store's own
   // fan-in rather than from the list.
   let recorded = nums.recorded;
-  replication.remoteRows('audit.nums', undefined, '').forEach(function (theirs) {
+  replication.remoteRows('audit.nums', undefined, '')
+             .forEach(function (theirs) {
     recorded += Number((theirs || {}).recorded || 0);
   });
   all.forEach(function (row) {
@@ -1079,7 +1445,8 @@ function summary() {
     // number that does not match `wc -l` on one container's log needs to be
     // able to see why.
     heldHere: events.length,
-    processes: 1 + replication.remoteRows('audit.events', undefined, '').length,
+    processes: 1 +
+      replication.remoteSegmentedRows('audit.events').length,
     dropped: dropped,
     maxEvents: maxEvents(),
     protocolCalls: protocolCallsRecorded(),
@@ -1091,7 +1458,8 @@ function summary() {
     byAction: byAction,
     byOutcome: byOutcome
   };
-  log.debug("Leaving summary(). " + out.held + " held, " + out.dropped + " dropped.");
+  log.debug("Leaving summary(). " + out.held + " held, " + out.dropped + " " +
+      "dropped.");
   return out;
 }
 
@@ -1109,6 +1477,7 @@ module.exports = {
   record: audit,
   recordHttp: recordHttp,
   recordDirectory: recordDirectory,
+  failure: failure,
   directoryActionFor: directoryActionFor,
   objectKindOf: objectKindOf,
   setActorResolver: setActorResolver,

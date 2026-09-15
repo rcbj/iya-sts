@@ -219,6 +219,7 @@ async function main() {
   }
   log.debug('Leaving main(). All passed.');
   process.exit(0);
+  log.debug("Leaving main().");
 }
 
 // Required by `tests/tools/run-report.js` for the discovery rule, which must

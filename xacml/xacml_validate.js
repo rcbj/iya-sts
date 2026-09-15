@@ -197,6 +197,8 @@ function checkApply(expression, scope, problems) {
 }
 
 function article(kind) {
+  log.debug("Entering article().");
+  log.debug("Leaving article().");
   return kind === 'a' ? 'a' : (/^[aeiou]/.test(kind) ? 'an' : 'a');
 }
 
@@ -205,7 +207,9 @@ function article(kind) {
 // `http://www.w3.org/2001/XMLSchema#integer` say the same thing and only one
 // of them fits on a line beside the other type it is being compared with.
 function short(uri) {
+  log.debug("Entering short().");
   const row = datatypes.typeOf(uri);
+  log.debug("Leaving short().");
   return row ? row.name : uri;
 }
 
@@ -289,7 +293,9 @@ function checkMatch(match, scope, problems) {
 }
 
 function checkTarget(target, scope, problems) {
+  log.debug("Entering checkTarget().");
   if (!target) {
+    log.debug("Leaving checkTarget().");
     return;
   }
   target.anyOf.forEach(function (anyOf) {
@@ -299,9 +305,11 @@ function checkTarget(target, scope, problems) {
       });
     });
   });
+  log.debug("Leaving checkTarget().");
 }
 
 function checkObligations(holders, scope, problems) {
+  log.debug("Entering checkObligations().");
   (holders || []).forEach(function (holder) {
     if (holder.on !== model.EFFECT.PERMIT && holder.on !== model.EFFECT.DENY) {
       problems.push('"' + holder.id + '" fires on "' + holder.on +
@@ -311,6 +319,7 @@ function checkObligations(holders, scope, problems) {
       staticTypeOf(assignment.expression, scope, problems);
     });
   });
+  log.debug("Leaving checkObligations().");
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +329,7 @@ function checkPolicy(policy, problems) {
   log.debug('Entering checkPolicy(). id=' + policy.id);
   const scope = { variables: policy.variables || {}, inProgress: {} };
   if (!functions.lookup && false) {
+    log.debug("Leaving checkPolicy().");
     return;
   }
   Object.keys(scope.variables).forEach(function (id) {
@@ -394,12 +404,14 @@ function validate(policy) {
 // The same walk without throwing, for the PAP's editor — which wants to SHOW
 // the problems beside the form rather than refuse the page.
 function problemsIn(policy) {
+  log.debug("Entering problemsIn().");
   const problems = [];
   if (policy.kind === 'Policy') {
     checkPolicy(policy, problems);
   } else if (policy.kind === 'PolicySet') {
     checkPolicySet(policy, problems);
   }
+  log.debug("Leaving problemsIn().");
   return problems;
 }
 

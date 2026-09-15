@@ -51,6 +51,192 @@ never writes one. Do not give any other module a session store to "decouple" it:
 two stores would each look correct alone and never see each other, and the
 symptom is a sign-on that silently is not single.
 
+## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
+
+**It is this module's session: an internal, protocol-independent record, and
+NOT any protocol's token.** Every identity service has a canonical form
+underneath its protocols. ADFS makes a Windows logon behind every sign-in, and
+every identity after that has to fit Kerberos's names and lifetimes. The
+alternative considered here was an OpenID Connect ID Token, and it was refused
+for a reason that is structural rather than a matter of taste: **an ID Token is
+a statement TO one relying party** (`aud`, `azp`, `nonce`), and a session is
+addressed to nobody. Making one the anchor would mean inventing an audience of
+"this service" and carrying OAuth's naming and lifetime rules into every SAML,
+WS-Federation and WS-Trust sign-in. Keycloak's user session, Shibboleth's
+authentication result and PingFederate's session are internal records for the
+same reason.
+
+**The vocabulary is borrowed and the container is not.** Every field below
+uses the name a specification already gave it (`sub`, `sid`, `auth_time`, RFC
+8176 `amr`, `acr`), so a projection into any protocol is a mapping and never an
+invention.
+
+### Three things, kept apart
+
+| Concept | What it is | Fields |
+|---|---|---|
+| **Subject** | who | `sub` = `urn:uuid:<entryUUID>`: the directory entry's RFC 4530 identifier, assigned when the entry is created and never changed, **renames included** |
+| **Authentication event** | one act of proving it | `at` (`auth_time`), `amr`, `acr`, `via` (the door), the authority (this service, a federation partner, a Kerberos realm), a fingerprint of the evidence |
+| **Session** | what browsers, sign-out and CAEP reason about | a stable `sid`; a cookie HANDLE that rotates; the subject; **a list of events**; its clocks; the sessions derived from it; the parties it was answered to |
+
+**An authenticated identity is a session holding at least one event with
+`authenticated: true`.** The anonymous principal from *Continue without signing
+in* has a session and is not an authenticated identity.
+
+### Two words, used strictly
+
+* **RE-AUTHENTICATION** is any fresh proof by the SAME person on a LIVE
+  session, whatever it does to assurance. Four things ask for one: RFC 9470
+  `acr_values`, an elapsed `max_age`, `prompt=login` and SAML `ForceAuthn`.
+  All four reach the sign-in screen and `startSession({ request })`, which is
+  why they share one mechanism and shared one defect.
+* **STEP-UP** is the one kind that RAISES `acr`: RFC 9470, where a resource
+  server's `insufficient_user_authentication` sends the client back for a
+  stronger method (`oauth-oidc/step_up.js`). The levels are ordered `0` < `1`
+  < `mfa`. An elapsed `max_age` usually leaves `acr` where it was and moves
+  only `auth_time`. `prompt=login` and `ForceAuthn` can LOWER it, which is a
+  **step-down**.
+
+A rule below that says *re-authentication* applies to all four. Only the CAEP
+rule is about the level actually changing.
+
+### The rules that hold it together
+
+* **Evidence arrives, identity does not.** A federated assertion, a SPNEGO
+  ticket, a client certificate or a WS-Trust token is recorded ON an event as
+  what proved it. None of them is the identity.
+* **Artifacts leave as PROJECTIONS.** An ID Token, a SAML `AuthnStatement` and a
+  WS-Federation token are rendered from the session and carry its `sid` (or
+  `SessionIndex`). None of them is kept as the session's truth.
+* **Kerberos runs one way.** A ticket can BECOME a session (`/authn/spnego`); a
+  session never mints a ticket. That rule is what keeps ADFS's problem out.
+* **The session's current `amr`, `acr` and `auth_time` are the MOST RECENT
+  event's** (rcbj's choice). So a step-down lowers `acr`, which is OIDC's
+  literal reading of those claims.
+* **A re-authentication ADDS an event; a different person REPLACES the
+  session.** A re-authentication is not a sign-out, whichever of the four asked
+  for it. The sessions derived from this one, the parties it answered and the
+  refresh tokens it issued all carry on.
+* **The cookie handle rotates on every re-authentication, and `sid` never
+  does.** Rotation is OWASP's rule for a change of privilege, and it is applied
+  to every re-authentication rather than only to a step-up: a rule that first
+  had to work out whether privilege rose is a rule with a way to be wrong. A
+  stable `sid` is what front-channel logout, token records and
+  `/admin/sessions` need. When one value did both jobs, one of those rules had
+  to lose.
+* **A step-up or a step-down is a CAEP `assurance-level-change`**, with its
+  direction, emitted only when `acr` actually moved. A re-authentication that
+  leaves `acr` where it was emits nothing. There is never a `session-revoked`
+  or a `session-established` for one, because nothing ended and nothing began.
+
+### Why this was written down: the defect that made it necessary
+
+An in-process probe on 2026-09-14 had one person sign in with a password, get a
+portal session and a refresh token, and answer one OIDC client and one SAML
+service provider. The same person in the same browser then stepped up from
+`acr` `1` (`["pwd"]`) to `mfa` (`["pwd","otp"]`). `startSession()` treated that
+re-authentication exactly like somebody else signing in:
+
+| | What happened |
+|---|---|
+| the session | deleted, and a new one made with a new id |
+| the portal session derived from it | ended by the cascade |
+| `oidcClients`, `saml2ServiceProviders` | gone, so sign-out could no longer reach parties that were still signed in |
+| CAEP | two `session-revoked` events, then `session-established` |
+| refresh tokens issued on it | **revoked in RFC 9700 and OAuth 2.1 mode**: one client asking for `mfa` took another client's refresh token away |
+
+The probe was a step-up, but the table is true of all four kinds of
+re-authentication, because nothing on that path asks which kind it is.
+
+**The code was right for a change of person and wrong for the same person**,
+because the record could hold one authentication and nothing else. What it
+needed was a list of events, not another branch.
+
+### Status
+
+**Built (2026-09-14)**, and `tests/session_reauthentication.js` is the
+contract:
+
+* **the list of events.** `authenticationEvent()` builds one, and a session
+  keeps at most `MAX_SESSION_EVENTS` (20): the first, then the most recent,
+  with `eventsDropped` counting what went. `sessionStartedAt()` is when a
+  session BEGAN, now that `authTime` is its latest authentication; the
+  `/logout` inventory and `/admin/sessions` rows read it.
+* **appending on re-authentication.** `startSession()` recognises the same
+  `sub` on a live, chosen, authenticated sign-on session behind the cookie and
+  hands off to `reauthenticateSession()`, whose header lists what it does and,
+  at more length, what it does not. The issuance gate is still asked, because
+  a re-authentication may be for a different application.
+* **the cookie handle split from `sid`.** A cookie is `<sid>.<handle>`;
+  `mintSessionHandle()` stores only a SHA-256 of the handle, and
+  `cookieSession()` is the one reader. It is used for the sign-on cookie AND
+  for the three relying-party cookies (`sts_admin`, `sts_portal`,
+  `sts_debugger`), whose bare ids are printed on `/admin/sessions`. A bare id
+  is refused, and a session persisted before the change costs one sign-in.
+  **Rotation also closed a fixation hole**: an arrival session keeps its sid
+  through the sign-in that upgrades it, and it used to keep its cookie too.
+  `common/request_pool.js` binds worker affinity to the sid part.
+* **`assurance-level-change`**, from `ssf/caep.js` on a `reauthenticated`
+  notice whose `acr` moved, on the private `urn:sts:acr` scale with
+  `change_direction` from `oauth-oidc/step_up.js`'s ordering. It is in
+  `caep.autoEmitTypes`' default; a deployment that pinned the old list emits
+  nothing for it.
+
+**Built the same day, after the per-realm roster work landed**:
+
+* **`entryUUID` on every entry and `sub = urn:uuid:<entryUUID>` in both modes**, resolved
+  both ways by the subject resolver `ldap/ldap_server.js` fills into `helpers.js`.
+  `ldap/CLAUDE.md` carries the directory's rules — assigned in `putEntry()`, kept through
+  an overwrite and a rename, new on a re-create, deterministic for seeded entries,
+  backfilled deterministically, unwritable by a client in either mode. **One exception
+  (rcbj, 2026-09-14, #46):** an entry a development-mode sign-in auto-creates is
+  deterministic too wherever two processes can race to create it (a cluster mode or a
+  dispatched pool), so a re-created name keeps its subject there — `ldap/ldap_server.js`
+  `putEntry()` argues it.
+* **No signed-in session without an entry.** `startSession()` records the authentication
+  BEFORE the session is built — that is what makes the directory create the entry — and
+  refuses a signed-in session whose person has none (`STS-AUTHN-0180`). A keyed API caller,
+  an unauthenticated session and a process with no directory are exempt, each for a
+  reason written above the check. `sameIdentity()` tells two people apart by subject where
+  both have one and by name otherwise, so two empty subjects are never one person.
+* **The token grants follow the same rule** (`oauth-oidc/CLAUDE.md`).
+* **SCIM's resource `id` is the `entryUUID`** (`scim/CLAUDE.md`). **Everyone moved** (rcbj's
+  choice): every `sub` a relying party had stored changed once, and the four owned jobs
+  that built the old form now read `subject` off `GET /admin-api/users`.
+* **Federation's two switches**: `fedAutocreateUsers` off means the entry must already
+  exist, and `fedUpdateUserAttributes` decides whether a returning person's attributes are
+  overwritten (`federation/CLAUDE.md`).
+* **`deleteOldRdn` is honoured** on a rename, so the old name stops resolving.
+
+`tests/stable_subject.js` and `tests/federation_provisioning.js` are the contract.
+
+**Closed the same day, from the list of what was still open:**
+
+* **A keyed API session's touch is written through the store.** `found.calls` and
+  `lastSeenAt` changed on the object and the store journals a `set()`, so in `dispatch`
+  mode every other worker read a count frozen at the first call.
+* **`/admin/sessions` shows when a session BEGAN beside its latest authentication**
+  (`signOnSessionRows()`'s `startedAt`, `authTime` and `authentications`; the users page's
+  session block the same). "Signed in" was `authTime`, which a re-authentication moves.
+* **A relying-party session reads the person's sign-in through its parent.**
+  `signOnFactsFor()` answers the sign-on session's `acr`, `amr`, start, latest
+  authentication and count while it is live, and the session's own copy otherwise; the
+  portal's "You" card uses it, so a step-up shows at once. The console and portal
+  sessions' own `authTime`/`acr`/`amr` are unchanged — they are what the ID Token said,
+  and `oidc_rp.js`'s renewal compares against that `authTime`.
+* **Two workers creating one person** keep both UUIDs (`ldap/CLAUDE.md`), and
+  `sameIdentity()` treats a session under the alias as the same person.
+* **A rename keeps every name-keyed record together** — the identity register, the tokens
+  and sessions filed under a person, the RISC register (`ssf/risc.js`), GNAP's opaque
+  identifier and user reference (`gnap/gnap_subject.js`), and a person's TLS client and
+  enrolled certificates, whose issuing records now keep the holder's subject
+  (`common/tls_client_certificates.js`'s `currentHolderOf()`: a rename follows the entry,
+  a deleted-and-re-created name is refused `HOLDER_GONE`). A WS-Trust JWT for somebody
+  with no entry is refused (`STS-WSTRUST-0017`) rather than issued with a bare-name `sub`.
+  `tests/certificate_holder_rename.js` pins the certificates.
+
+---
+
 **`startSession()` TOOK A SIXTH ARGUMENT FOR FEDERATION, AND IT REPLACED A
 DOUBLE-COUNT RATHER THAN ADDING A FEATURE.** This function has always recorded
 the authentication ITSELF — that is what makes a WS-Federation sign-in appear on
@@ -119,7 +305,7 @@ and it does not change.
 
 **What changed is that the console asks a different question, and it had to,
 because of a fact about the COOKIE rather than a change of mind about realms.**
-`startSession()` writes `sts_mock_session` at `Path=/` — one name, one path, for
+`startSession()` writes `sts_session` at `Path=/` — one name, one path, for
 every protocol here, deliberately and for a reason that predates realms by
 months. So a browser holds exactly ONE session id for this whole origin whatever
 realm minted it, and the console's realm switcher (a link to the same page in
@@ -147,7 +333,12 @@ subtree per realm. Each realm has its own `ou=groups` now, so a session minted i
 grant themselves both roles inside it and walk back out into the default one —
 the realm feature would have become a privilege escalation.
 `ldap/ldap_server.js` pins `admin_rbac.js`'s whole directory to the default realm
-for that reason, and this function is the other half of the same decision. **The
+for that reason, and this function is the other half of the same decision.
+(**Since 2026-09-14 (#32) a realm HAS a roster of its own, confined to that realm
+by `admin-ui/admin_scope.js`, and the gate asks the roster of the realm the
+session was signed in through** — `admin-ui/CLAUDE.md` 8d. This function still
+reads the session out of the default realm's partition; which roster decides
+moved, and the escalation above is closed by the confinement.) **The
 two have to agree**: a gate that accepted an `acme` session while the roster
 could only name default-realm people would let somebody in and then insist they
 were nobody.
@@ -240,6 +431,83 @@ Four things about that are load-bearing:
 
 ---
 
+## THIS MODULE KEEPS NO CREDENTIAL STORE, AND FOR FOUR DAYS IT KEPT THE WRONG ONE (2026-09-10)
+
+`webauthnCredentials` was a `realms.map({ persist: 'authn.webauthnCredentials' })`
+holding ONE key per person. It survived a restart and it was still the wrong
+store, because **`common/credentials.js` already held the security keys** — on
+the person's own directory entry, multi-valued, each carrying the ROLE it was
+enrolled in. That is the store `mechanismsFor()` reads, and `mechanismsFor()` is
+what `/portal/keys`, `/admin/users`, `removeKey()`'s last-way-in refusal and
+this module's OWN `mfaRequired` check all consult.
+
+**`credentials.addKey()` had no caller anywhere in the service.** So the second
+store was not merely a duplicate; it was the only one being written, and the one
+everything READ was empty. What that cost:
+
+| | |
+|---|---|
+| `mechanismsFor().mfaKeys` | `0` for everybody, for ever |
+| `mfaRequired` from a key | never true |
+| the second sign-in | **a password alone**, box unticked, no second factor asked for |
+| `GET /authn/webauthn` | its own gate refused everybody |
+| `/portal/keys` | listed and removed keys that could not exist |
+| `/portal/activate`'s key choice | spent the link, said "your account is ready", enrolled nothing |
+
+**THE BYPASS IS THE THIRD ROW AND IT IS WHY THIS IS A SECURITY FIX RATHER THAN
+A TIDY-UP.** Enrolling a key was an opt-in that lasted one sign-in. Anybody who
+knew the password signed in without it — and the account looked, on `/portal/keys`,
+exactly like an account with a second factor on it.
+
+### What it is now
+
+Three changes and one deleted map:
+
+* **`webauthnPage()` draws from `credentials.keysOf()`**, filtered to the role
+  the pending step is about, so `mode` is an ASSERTION for anybody who holds a
+  key of that role and `allowCredentials` is a LIST — a person may hold several
+  and the specification has expected that since Level 1.
+* **The registration branch calls `credentials.addKey()`** with the role off
+  `step.passwordless`, after seeding the entry — the order is load-bearing now,
+  because that function writes an ATTRIBUTE and answers "there is nobody called
+  that in this realm's directory" when there is no entry. **A refused write is
+  a refused ceremony**: the old code could not fail (a map takes anything), and
+  reporting success on a credential that was not recorded would sign somebody
+  in with a key that will not work next time. It is also where the
+  `webauthn.*` policy finally bites.
+* **The assertion branch picks the key by `keyForAssertion()`**, on the role AND
+  the credential id the browser named. `allowCredentials` is a hint to the
+  browser; that function is the enforcement. The counter goes back through
+  `credentials.noteKeyUsed()`, which is the one place it is recorded.
+
+### `keyForAssertion()` is a function because it is a rule, and because of a mutant
+
+A `primary` key must not answer a SECOND-FACTOR step: it signs somebody in on
+its own, so accepting one there would let a person satisfy *a password AND a
+second factor* with a credential this service already considers sufficient by
+itself.
+
+It is EXPORTED, for one test and no caller. The state that makes it worth
+asserting is one person holding TWO keys — the only shape that tells *check the
+one the browser named* from *check the first one you find* — and **no door in
+this service can build it**, because the sign-in screen's checkbox is the only
+enrolment there is and it is reserved for people who hold no second factor yet.
+`tests/webauthn_policy.js` builds it through the credential layer. That mutant
+survived the over-HTTP job, which is the third time this repository has recorded
+*a surviving mutant is telling you about the fixture*.
+
+### What is still missing, and it is a door rather than a store
+
+**There is no way to enrol a SECOND key, and `/portal/keys` and
+`/portal/activate` still cannot enrol a first one.** A WebAuthn ceremony needs
+script, every page of the portal is `script-src 'none'`, and the six-scripted-pages
+rule says a seventh needs its own argument made from scratch. Until that is
+done: `webauthn.maxKeysPerPerson` cannot be exceeded because it cannot be
+reached above one, the multi-key `allowCredentials` list is exercised by no
+door, and the activation flow's *a security key instead of a password* still
+records an intention and produces no credential — which is a link spent on an
+account nobody can sign in to.
+
 ## `setSessionObserver()` — the one INVERTED HOOK this module offers
 
 Added 2026-09-03 for the CAEP profile. `ssf/caep.js` needs to know when a
@@ -299,8 +567,8 @@ authorization server now, so this module holds two kinds of browser row:
 
 | | Created by | Cookie | Read by |
 |---|---|---|---|
-| SIGN-ON | `startSession()`, at the screen or any other credential | `sts_mock_session` | `/oauth2/authorize`, `/wsfed`, both SAML profiles — every protocol family |
-| RELYING PARTY | `startRelyingPartySession()`, from a verified ID Token | `sts_mock_admin`, `sts_mock_portal` | the surface that minted it, and nothing else |
+| SIGN-ON | `startSession()`, at the screen or any other credential | `sts_session` | `/oauth2/authorize`, `/wsfed`, both SAML profiles — every protocol family |
+| RELYING PARTY | `startRelyingPartySession()`, from a verified ID Token | `sts_admin`, `sts_portal` | the surface that minted it, and nothing else |
 
 **They are one store because rule 3m says so** — `logout.js` reads this map,
 `/admin/sessions` draws it, CAEP observes it, and a second register would be a
@@ -321,7 +589,27 @@ Four things about a relying-party session:
   one ends the sessions derived from it. `relyingPartySessionOf()` also checks
   the parent on every read, because a cascade reaches only the store it walks
   and "the person signed out" is exactly the case that matters.
-* **IT IS NOT EXTENDED BY USE** and expires when its parent would.
+* **IT IS NOT EXTENDED BY USE — BUT SINCE 2026-09-12 ONE HOLDING A REFRESH
+  TOKEN IS RENEWED, AND THAT IS A DIFFERENT THING.** This line read *expires
+  when its parent would*, and that is what sent an operator back through the
+  sign-in screen an hour after signing in: the console session died with its
+  sign-on session although it held a refresh token good for a day. Now
+  `startRelyingPartySession()` keeps the tokens on the session (`rpTokens`) and,
+  where there is a refresh token, sets `expires` to the end of the RENEWAL
+  WINDOW — the refresh token's lifetime from the sign-in — rather than to the
+  parent's. `common/oidc_rp.js`'s `renewIfDue()` redeems the refresh token when
+  the ID Token and access token run out and `renewRelyingPartySession()` writes
+  the new ones onto THE SAME RECORD: same id, same cookie, same `authTime`, no
+  `session.start`, no authentication, no CAEP event — one `session.renew` audit
+  row. A renewal never extends the window. A session with no refresh token is
+  exactly what this line used to describe.
+* **A PARENT THAT RAN OUT IS NOT A PARENT THAT SIGNED OUT**, and
+  `relyingPartySessionOf()` tells them apart by the clock rather than by a flag:
+  `derivedFromExpires` is when the parent would have expired, so a renewable
+  session whose parent is gone AFTER that instant carries on, and one whose
+  parent vanished BEFORE it — a cascade that did not reach — is ended as an
+  orphan exactly as before. A sign-out still ends it through the cascade, which
+  runs while the parent exists. `tests/oidc_rp_renewal.js` holds both halves.
 * **ENDING ONE DOES NOT END THE PARENT.** That is the direction a real relying
   party has: sign out of the application and the identity provider still knows
   you, so the next visit is silent. `/logout` is what ends everything for an
@@ -332,6 +620,16 @@ Four things about a relying-party session:
   the person straight back in through the code flow with nothing typed. Those
   two handlers are the only callers that end a parent on purpose;
   `admin-ui/CLAUDE.md` and `portal/CLAUDE.md` argue them.
+
+**A CONSOLE SESSION'S PARENT IS IN A DIFFERENT PARTITION FROM THE SESSION
+ITSELF (2026-09-11).** The console's code flow runs in the AMBIENT realm while
+its own session lives in the DEFAULT realm, so everything in `authn.js` that
+learnt that is here: `derivedFromRealm` is the field, `relyingPartySessionOf()`
+looks the parent up where it lives, and `dropSession()`'s cascade walks the
+default partition as well as the parent's own — without which a sign-out ends
+the sign-on session and leaves the console session it issued working, which is
+the defect that cascade exists to prevent. `tests/cross_surface_sso.js` pins all
+of it in process and `common/oidc_rp.js`'s surface table argues the split.
 
 ## `clearSessionCookie()` TAKES A NAME AND APPENDS (2026-09-06)
 
@@ -368,6 +666,24 @@ One password IS rejected, here and in three other places:
 * **One password is rejected** — the literal string `invalid` on the password grant,
   on WS-Trust and at the WS-Federation sign-in screen — so a negative test has
   something to fail on in every protocol here.
+
+**No end user's password is checked, in any protocol, IN DEVELOPMENT MODE** —
+product mode verifies every presented password against `userPassword`, and
+since 2026-09-12 that list includes the OAuth 2.0 password grant, SSF Basic and
+WS-Trust, which had been checking only the reserved string `invalid` in both
+modes — **with THREE exceptions in development, and they are the same argument
+three times**. A Kerberos ticket presented at `/authn/spnego` is verified
+against a real long-term key (2026-08-26), and **an RFC 6238 one-time code
+presented at `/authn/totp` is verified against the shared secret and the clock
+(2026-09-10)**, in BOTH modes. Neither is a lapse: a permissive Kerberos
+acceptor is a broken acceptor and a permissive TOTP verifier is a broken
+verifier — there is nothing left of either specification once the comparison
+goes, and no artifact for a client author to test against. **And a single-use
+RECOVERY CODE presented at `/authn/backup-code` is compared against the set on
+that person's entry and SPENT (2026-09-10)**, for the third reading of the same
+argument: there is nothing left of a one-time credential once the comparison
+goes. What stays permissive is everything AROUND them: the KDC's account policy,
+and the password in front of the code.
 
 ## `beginAuthentication()` does not always answer with this module's screen
 
@@ -633,6 +949,147 @@ work" would answer differently the first time one of them learned a fifth.
 
 ---
 
+## THE SECOND SECOND FACTOR, AND THE DAY `mfaRequired` STARTED MEANING SOMETHING (2026-09-10)
+
+RFC 6238 one-time codes. `/authn/totp` is the screen, `common/totp.js` is the
+mechanism and `common/credentials.js` holds the enrolment; this file's part is
+the two things a sign-in has to decide — **whether a second factor is demanded,
+and which one**.
+
+### The bug that was not a bug until something read the flag
+
+`credentials.mechanismsFor()` has reported `mfaRequired` since the portal was
+written. `/portal/keys` drew it as *a password alone will not sign you in*.
+**Nothing at this door read it.** A person who had enrolled a security key in
+the `mfa` role signed in with a password and an unticked checkbox, exactly like
+somebody who had enrolled nothing — so the sentence on that page was a
+description of an intention rather than of the service.
+
+That was invisible for the same reason the `ALL_AUTHENTICATED_USERS` defect was:
+the only way to reach the second-factor path was to TICK THE BOX, and every test
+that exercised it ticked the box. Nothing ever asserted the negative — that
+somebody who had enrolled one could not get in without it — because until there
+was a mechanism that could be enrolled without a browser ceremony, writing that
+test meant driving WebAuthn.
+
+**The order in `handleLogin()` is now: the passwordless path, then WHAT THIS
+PERSON HOLDS, then the checkbox.**
+
+| The person | What they ticked | What is asked for |
+|---|---|---|
+| holds nothing | nothing | nothing — one factor, as before |
+| holds nothing | `use_webauthn` | the ceremony, which ENROLS on first use |
+| holds an `mfa` key | anything | the key |
+| holds an authenticator app | anything | **the code** |
+| holds both | anything | the key, with a link to the code |
+| holds a `primary` key | `webauthn_only` | the passwordless ceremony, unchanged |
+
+### The checkbox cannot override an enrolment, and here that is a bypass
+
+`record.forcePasswordless`'s argument, read a second time: *a configured
+mechanism a client can opt out of is not a mechanism*. It matters more here
+than there, and the reason is the enrolment-on-first-use behaviour of the
+security-key screen. If the box still won, somebody who knew a TOTP user's
+password could tick it, register a brand new authenticator of their own, and be
+signed in having never met the second factor the account is configured for.
+That is not a weaker second factor; it is none.
+
+**What it costs is worth stating rather than discovering.** Somebody who
+already holds a second factor **cannot enrol a SECURITY KEY at this screen any
+more** — the box is what enrolment goes through, and it is now reserved for
+people who hold no second factor yet. The other two doors are unaffected: an
+activation link enrols a key, and `/portal/mfa` enrols an authenticator app.
+That person's own row under `/admin/users` is where an operator clears a factor
+so that somebody can enrol a different one — it was `/admin/mfa` for a few hours
+on 2026-09-10, and `admin-ui/CLAUDE.md` records where the two halves of that page
+went.
+
+### One pending register for both mechanisms
+
+`pendingMfa` carries a `factor` and an `alternate` now and there is no second
+map beside it — rule 3m, read as it is everywhere else here: a second store
+would be a second answer to *is there a sign-in waiting for a second factor*,
+and the wrong half would be whichever screen a reader happened to open.
+
+`alternate` is resolved when the step is MINTED and not when a page is drawn,
+which is what stops the *use a code instead* link offering a mechanism the
+person has not got. Both screens now have a GET as well as a POST for exactly
+that link, and **each of them checks that the person really holds the factor it
+is about to draw** — a link is markup, and a hand-made GET of
+`/authn/webauthn?mfa=…` must not reach the ENROLMENT ceremony for somebody
+whose account is configured for an authenticator app. That is the bypass above,
+arriving through a different door.
+
+### The code is checked for real, and this screen is the second SPNEGO
+
+`common/totp.js`'s header carries the argument at length and it is the one
+`kerberos/CLAUDE.md` already makes: Kerberos cannot be permissive because the
+password there IS the key, and RFC 6238 cannot be permissive because the code
+IS the comparison. A verifier that accepted any six digits would leave no
+artifact to inspect, no failure to demonstrate and nothing for a client author
+to test their authenticator integration against.
+
+**And unlike a password it costs a tester nothing**, which is the half that
+made it easy to decide: the permissiveness elsewhere exists so somebody can
+type any name and get a token about it, and here the person has ALREADY been
+let in under whatever name they typed. The code is checked against a secret
+this service generated and showed them ninety seconds ago.
+
+### What the session claims, and the fourth branch of `methodPhraseFor()`
+
+`amr ["pwd","otp"]` and `acr "mfa"`. `otp` is RFC 8176's registered value and
+its registry entry names RFC 4226 and RFC 6238 by number, so there was nothing
+to invent — and `acr "mfa"` is honest here in a way it is not for a passwordless
+WebAuthn sign-in: two factors really were presented.
+
+`methodPhraseFor()` grew a branch rather than letting `otp` fall through,
+because the fall-through answers *sign-in screen (password)* — which for
+somebody who typed a password AND a code is a report that quietly loses the
+second factor. That is the identical defect the passwordless ceremony had
+before this function replaced the two-way conditional it started as.
+
+### The refusal SAYS which, where the sign-in screen says nothing
+
+The password screen hides whether a sign-in failed for a wrong password or for
+a person who holds no credential, because either answer is account enumeration.
+**Nothing is enumerable at this door.** The person has already presented a first
+factor, so the only new fact on offer is about their own account — and *that
+code has already been used* against *that code is not right* is the difference
+between waiting thirty seconds and concluding your authenticator is broken.
+
+### Rate limited, and this is the endpoint where it matters most
+
+Six digits is a million values, the window forgives a step either side, and the
+comparison is real in both modes — so an unthrottled door here is about one
+chance in 333,000 per attempt at somebody's second factor. It uses
+`websecurity.attempt('mfa-code', …)`, both buckets, the same pair the password
+screen uses. **A refused code redraws the page and KEEPS the step**: mistyping
+six digits is the ordinary case, and throwing away a password step that
+succeeded would make the commonest mistake the most expensive one. The step's
+own five-minute expiry is what bounds the window; the limiter bounds the
+attempts inside it.
+
+### There is no enrolment on this screen, which is the whole difference from `/authn/webauthn`
+
+That page registers a key on first use and a session comes out of it. **This one
+only ever verifies.** Enrolling an authenticator means being SHOWN a shared
+secret, so it has to happen somewhere the person is already authenticated
+(`/portal/mfa`) or somewhere a credential authorises it (`/portal/activate`). A
+sign-in screen that handed out a shared secret to whoever typed a password would
+be a second factor anybody could set up for themselves.
+
+### It has NO SCRIPT, and it had to argue that beside a page that does
+
+The one-time code screen at `/authn/totp` sits directly beside a page that DOES
+relax the policy and still had to argue its own case. A WebAuthn ceremony is a
+browser API call and cannot happen without script; a person reading six digits
+off a phone and typing them into an input needs none, and the QR code that
+enrols the app is an SVG this server rendered. Copying `sendWebauthnPage()`
+because it was next door would have added a seventh scripted page to the root
+`CLAUDE.md`'s inventory for a page with no script on it.
+
+---
+
 ## A SESSION THAT RAN OUT USED TO SAY NOTHING (2026-09-04)
 
 Every sign-out door in this service goes through `dropSession()` —
@@ -832,3 +1289,346 @@ that is argued where it is: the RSTR was already permitted in its own right
 through `ISSUANCE.WSTRUST_TOKEN`, and the browser session a UsernameToken
 exchange also starts is a side effect rather than the product. Refusing the
 token there would refuse a credential the policy had just allowed.
+
+---
+
+## A MACHINE ENDPOINT REGISTERED UNDER A FRONT DOOR MINTED AN ARRIVAL SESSION PER REQUEST (2026-09-10)
+
+`ARRIVAL_PATHS` is a list of FRONT DOORS, matched by PREFIX, and its own comment
+already names the failure it exists to prevent: *"giving a cookie to a callback
+or a metadata fetch would mint a session for a machine that will never send it
+back — one row per metadata poll, for ever."* That is why the list is entry
+points rather than families.
+
+**A PREFIX MATCH CANNOT PREVENT IT FOR A MACHINE ENDPOINT REGISTERED UNDER A
+FRONT DOOR, AND ON 2026-09-10 TWO OF THOSE ARRIVED.** This service's own admin
+console and user portal became Shared Signals receivers, each hosting a receive
+endpoint at `/admin/signals/receive` and `/portal/signals/receive`. Both are
+under a prefix on that list. What arrives at them is `ssf/ssf_http.js` POSTing a
+Security Event Token over the loopback interface — a server-to-server request
+that carries no cookie, will never send one back, and is answered 202 with an
+empty body.
+
+So every delivered event minted an arrival session. **A service telling its own
+console about every sign-in minted a second session for every session**, and
+the CAEP profile guarantees there is an event per sign-in, per presentation and
+per sign-out. They expire on `AUTHN_TTL_MS` and so it is not a leak that grows
+without bound — which is the reason it would have gone unnoticed: what it
+produces is `/admin/sessions` and `/admin/metrics` carrying rows for a browser
+that never existed, in a service whose whole job is to let somebody read those
+pages and believe them.
+
+`NOT_ARRIVAL_PATHS` is the fix and it is an exclusion HERE rather than two paths
+moved out of `/admin` and `/portal`. The path is what says WHICH RECEIVER a SET
+was delivered to, and a receiver's endpoint living somewhere other than the
+receiver would be the tidier version of a worse design — `ssf/CLAUDE.md` argues
+why a receiver hosts its own endpoint.
+
+**THE TEST FOR A THIRD ENTRY** is the one question: *is this path reached by a
+BROWSER that will hold a cookie?* If yes it belongs on neither list and the
+prefix already handles it. If no, and it sits under a front door, it belongs
+here. Anything else — a metadata document, a callback, a well-known — is
+already outside both prefixes and needs nothing.
+
+**IT WAS FOUND BY RUNNING THE SERVICE AND COUNTING**, not by reading either
+file. Both comments were correct and neither could see the other.
+
+## `/authn/backup-code`: THE THIRD SECOND-FACTOR SCREEN, AND THE ONLY ONE A SIGN-IN NEVER ASKS FOR (2026-09-10)
+
+A person whose second factor is not to hand — the phone is lost or flat, the
+security key is in a drawer at home — types one of the recovery codes they were
+issued, and it signs them in once and is spent.
+
+### It is never the factor, and that is a property of the model rather than of this screen
+
+`credentials.mechanismsFor().secondFactor` answers `webauthn` or `totp` and
+never this, and `mfaRequired` is deliberately not true of somebody who holds
+only a set. So the ONLY way here is a link out of one of the other two screens,
+carrying a step id they already hold: `pendingMfa`'s `backup` flag is resolved
+when the step is MINTED, exactly as `alternate` is, so a link is never drawn for
+somebody with no unspent code.
+
+**`backup` is a separate field from `alternate` even though they are drawn
+beside each other**, and the distinction is worth keeping: `alternate` names the
+OTHER MECHANISM THIS PERSON IS CONFIGURED FOR and the two screens swap between
+them, while a recovery code is configured for nobody and stands in for whichever
+of the two they cannot produce. One field carrying both would make *what is this
+person's second factor* a question with a wrong answer.
+
+**The link is drawn LAST on both screens**, after the ordinary alternative. The
+codes are a finite, single-use resource issued once, and a link offered above
+*use a code from your authenticator app instead* would spend them on a phone
+that was merely in the next room.
+
+### The GET decides nothing and refuses a set that is spent
+
+Like `GET /authn/totp`: it draws the page for a step that already exists. What
+it adds is a check that an UNSPENT code exists at all, because a link is markup
+and this is a door — a screen asking for a credential that cannot exist reads as
+a service that has lost it, and a hand-made GET must not produce one.
+
+### The spend is a REFUSAL when it will not write, which is the opposite of the code screen next door
+
+`POST /authn/totp` treats a failed counter write as a warning: the
+authentication succeeded and the worst case is a replay inside ninety seconds.
+Here a failed spend refuses the sign-in, because a recovery code that cannot be
+marked spent is a permanent credential. `common/credentials.js` carries the
+argument and `verifyBackupCode()` is where it is enforced, so this endpoint has
+no branch of its own for it.
+
+### It has NO SCRIPT, and the argument is made again rather than cited
+
+A person reads a string off a piece of paper and types it into an input. So it
+is served under the service-wide `script-src 'none'` and `sendBackupCodePage()`
+sets no policy of its own — which is `/authn/totp`'s position, argued the same
+day, and the root `CLAUDE.md`'s rule is that a new scripted page needs its case
+made from scratch and *the same as the page next door* is not one. Copying
+`sendWebauthnPage()` because it is in the same file would have added an eighth
+entry to that inventory for a page with no script on it.
+
+### `amr` is `otp` and that is a choice among the registered values
+
+RFC 8176 registers nothing for a recovery code. Inventing one would put a string
+in `amr` that no relying party can look up — the exact fake this profile refuses
+everywhere else — and `otp`'s registry entry describes *one-time password*,
+which a single-use recovery code is by the plainest reading. `acr` is `mfa`
+because two factors really were presented: a password and something from a list
+only this person holds. **A recovery code is a WEAKER second factor than the one
+it stands in for and there is no vocabulary here in which to say so** —
+downgrading to `1` would claim ONE factor when two were checked — so the audit
+row and `/admin/sessions` are where which mechanism it was is recorded.
+
+## THE SESSION CLOCKS ARE SETTINGS, AND ONE FUNCTION SAYS WHETHER A SESSION HAS ENDED (2026-09-12)
+
+`SESSION_TTL_MS` (an hour), `AUTHN_TTL_MS` (ten minutes) and `MFA_TTL_MS` (five)
+were literals, and there was no idle timeout anywhere — the first thing a
+deployment's security review asks for and the one thing nobody could set. They
+are `authn.sessionLifetimeS`, `authn.pendingTtlS` and `authn.mfaStepTtlS` now,
+with `authn.sessionIdleTimeoutS` beside them, and every default is the literal
+it replaced. **The idle timeout's default is ZERO and zero means none**, which
+is why it is read by a function of its own rather than `secondsSetting()`, whose
+fallback would turn a deliberate zero into an hour.
+
+Four things are load-bearing:
+
+* **THE LIFETIME IS STAMPED AT CREATION; THE IDLE TIMEOUT IS CHECKED AT READ.**
+  A lifetime is a property a session was issued with, so a change reaches the
+  next one. An idle timeout is a policy about how long this service goes on
+  honouring a session nobody is using, so `sessionEnded()` — THE ONE PLACE the
+  question is answered — asks it every time a session is looked up
+  (`sessionOf()`, `relyingPartySessionOf()`, `consoleSession()`, the
+  keyed-session lookup) and on every sweep, and `logout/logout.js` asks the same
+  function.
+* **AN IDLE SESSION IS ENDED, NOT MERELY REFUSED.** It goes through
+  `expireSession()` like an absolute expiry, so it writes the `session.end` row
+  and the CAEP `session-revoked` every other ending writes, with a reason that
+  says which limit ran out.
+* **A READ IS NOT A WRITE UNLESS AN IDLE TIMEOUT IS IN FORCE.** `lastSeenAt` is
+  touched by `noteSessionUsed()` only then, and at most once a second, because
+  `sessionOf()` is called several times per request and the store's journal
+  sees `set()`. With no idle timeout — the default — nothing a session carries
+  changes on a read, which is what this service always did.
+* **USE OF THE CONSOLE OR THE PORTAL IS USE OF THE SIGN-ON SESSION BEHIND IT.**
+  Somebody working in the console presents only the console's cookie, so without
+  `relyingPartySessionOf()` touching the parent too, the sweep would idle the
+  sign-on session out underneath them and the cascade would end the console
+  session they are using. An ARRIVAL session is exempt: it has an inactivity
+  window of its own on the screen's clock.
+
+`common/oidc_rp.js`'s flow lifetime reads `authn.pendingTtlS` as well — the two
+were "deliberately the same" as two literals, which is how two numbers come
+apart. `tests/session_clocks.js` pins all of it, mutation-tested against ten.
+
+## THE WEBAUTHN ADDRESS RULES (2026-09-12)
+
+Two changes to what a ceremony is held to, both about the address a request
+arrived at:
+
+* **`webauthn.allowedOrigins`.** `expectedOriginFor()` answers
+  `originOf(base)` when it is empty — what this module always did, and what
+  `global.publicBaseUrl` already pins — and, when it is set, looks the
+  clientDataJSON's claimed origin up in the list. A claim is only ever returned
+  when an operator already listed it, and the verifier still checks the signed
+  bytes against it; a claim off the list is answered with the list's first
+  entry so the verifier refuses it in its own words.
+* **`rpIdProblem()`.** `rpIdOf()`'s fallback — a configured `webauthn.rpId` that
+  does not fit the host is replaced by the host, and the log says why — is a
+  development convenience. The host is read off the request, so in product mode
+  it is a ceremony scoped to whatever Host arrived. `rpIdProblem()` asks
+  `mode.acceptsUnregisteredAddresses()` and the ceremony's POST refuses on it;
+  the GET draws the sentence on the page. `rpIdOf()` itself keeps answering,
+  because a page that says what it would have sent is worth more than one that
+  throws.
+
+**`/portal/keys` asks both functions**, so the two ceremonies cannot accept
+different origins. `tests/webauthn_addresses.js` pins it.
+
+## `/authn/password-change`: A FORCED PASSWORD CHANGE AT THE SIGN-IN SCREEN (2026-09-13)
+
+**`pwdReset: TRUE` on a person's entry means the password must be changed
+before it can be used.** The attribute comes from
+draft-behera-ldap-password-policy, and the bootstrap administrator is its first
+writer (`admin-ui/CLAUDE.md`, 8a). `common/credentials.js` reads and writes it
+through two functions on the directory's credentials slot:
+`passwordResetRequired()` and `setPasswordResetRequired()`.
+
+**Only the sign-in screen can clear it.** The rules:
+
+* **The screen verifies with `allowPasswordReset: true`.** If the password was
+  right and `pwdReset` is set, it mints a step in `pendingPasswordChange`, a
+  per-realm persisted store. It then draws the change form instead of starting
+  a session. The step id rides as `change_id` and `?change=`. A missing,
+  expired or spent id is `STS-AUTHN-0144`.
+* **Every other door that verifies a password refuses the account**: the
+  password grant, LDAP bind, WS-Trust, SCIM Basic and the rest.
+  `resetRefusal()` returns `STS-AUTHN-0142` with reason
+  `password-reset-required`. It acts only on a `verified` answer, which is
+  product mode's. **In development nothing is verified, so no door refuses**,
+  and the forced change happens at the sign-in screen only.
+* **The new password goes through `setPassword()`**, so the password policy and
+  its history apply. A refusal redraws the form and names the rule it broke
+  (`STS-AUTHN-0146`, like a mismatch or an empty field). `invalid` is refused
+  in every mode: it is the one password development mode treats as wrong, so
+  choosing it would lock the account out.
+* **On success**: `pwdReset` is cleared (`STS-AUTHN-0143` warns if that write
+  fails, and the sign-in still goes on), then the `authn.password.changed`
+  audit row is written. After that, `finishPasswordSignIn()` runs the same tail
+  the password step would have run, **second factor included**. That tail was
+  moved out of the login POST handler so that the two could not drift apart.
+* **A passwordless sign-in is not asked.** It never presented the password that
+  must be changed.
+
+The route is described in `sts_metadata.js`. `tests/admin_bootstrap.js`
+section 7 drives the flow over HTTP in a child process. It checks that the form
+is drawn in place of a session, and that a mismatch and the reserved password
+are refused. It checks that a good change sets a session cookie, redirects on
+to the authorization endpoint and clears the flag, and that the step is spent.
+In product mode it checks that a wrong password never reaches the step and that
+the policy refuses a weak new password. Section 6 checks the refusal at a door
+that cannot ask. **Nothing asserts the audit row or a second factor after the
+change.**
+
+## A SECOND FACTOR MAY BE REQUIRED, AND `/authn/mfa-setup` ENROLS ONE (2026-09-13)
+
+`credentials.mfaRequirementFor(username)` answers `{ required, byUser, byRealm }`
+— `stsMfaRequired` on the entry, set by **Require MFA** on the person's console
+page, or `authn.mfaRequired` for the realm. `finishPasswordSignIn()` asks it
+after computing `factor`:
+
+* **A passwordless sign-in under the requirement is refused** on the login page
+  (`STS-AUTHN-0171`): a key on its own is one factor, `amr ["hwk"]`, and the
+  requirement is two.
+* **A requirement with no factor held mints a `pendingMfa` step with factor
+  `enrol`** and draws `mfaSetupPage()` — buttons for an authenticator app and a
+  security key, whichever `enrolmentOffered()` finds (`totp.offered()`;
+  `webauthnPolicy.offered()` with the `mfa` role allowed). Offered neither, the
+  sign-in is refused naming the settings (`STS-AUTHN-0172`) rather than a
+  required factor silently not being asked for.
+* **`/authn/mfa-setup`** takes the step id. `webauthn` hands the step to
+  `webauthnPage()` as an ordinary `mfa` enrolment; `totp` begins an enrolment,
+  moves the step to `enrol-totp` and draws the QR code and the typed secret;
+  `confirm-totp` confirms the code (rate limited on the `mfa-code` bucket) and
+  only then calls `startSession(['pwd','otp'], 'mfa')` and returns to the
+  caller. A wrong code keeps the step. Anybody who already holds a factor is
+  refused there (`STS-AUTHN-0175`), which is what keeps this door the same
+  exception the security-key box's enrol-on-first-use is: **a person holding no
+  second factor may add one at sign-in, because there is none an attacker with
+  the password could be bypassing.**
+
+**IT IS ENFORCED AT THIS SCREEN AND NOWHERE ELSE**, and the setting's
+description says which doors it does not reach: a federated assertion, SPNEGO,
+a TLS client certificate, the OAuth password grant, an LDAP bind, WS-Trust and
+SCIM Basic. A session that already exists is not ended. **The enrolment emits
+no CAEP event**, because the signals the request asked for are the ADMIN doors'
+(`admin-core/admin_actions.js`); the portal's own enrolment pages do not emit
+either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
+
+## SEVERAL NODES: A SIGN-OUT HOLDS, AND TWO COPIES OF A SESSION MERGE (2026-09-14, #46 section 3)
+
+`sessions` is declared `realms.map({ persist: 'authn.sessions', tombstone: true,
+mergeRow: mergeSessionRows })`, and `persistence/CLAUDE.md` (*Several nodes
+writing one row*) carries the mechanism. What is this file's is the rule
+`mergeSessionRows()` applies to two copies of one live session, because every
+one of the failures it answers was a node writing its copy back:
+
+* **the copy further along is the base** — a chosen session over an arrival
+  (`chosen: false`), then the later `authTime`, then the later handle rotation,
+  then the later hosted-surface renewal — so a stale arrival copy touched by
+  `touchArrivalSession()` cannot undo a sign-in another node made;
+* **`lastSeenAt` is the later of the two**, and `expires` too only when both are
+  the same sign-in: an arrival's ten-minute slide must not land on the session
+  it became;
+* **the relying-party lists are unions** — `oidcClients` (earliest `first`,
+  latest `last`, larger `count`), `wsfedRealms`, `saml2ServiceProviders`,
+  `saml11RelyingParties`, and `relyingParties` and `events` by value — because a
+  client missing from the list never gets its front-channel logout iframe.
+
+An ended session leaves a tombstone, so `noteSessionUsed()` or
+`touchArrivalSession()` on a node a moment behind cannot bring it back; the
+copy is dropped there instead (`STS-STORE-0054`). What this does NOT do is make
+two nodes that each END one session emit one event — that is Shared Signals'
+row (`ssf.delivery`), and the next section.
+
+**A merge only helps a list that reached the store, and until 2026-09-14 none
+of the four did on its own.** Each protocol records the party ON the session
+object — `saml2_sso.js`, `saml11_sso.js`, `wsfed.js`, and
+`frontchannel_logout.js`'s `noteClient()` — and `sessions` journals a `set()`,
+never an edit to an object it holds, so the list was written only if something
+re-set the row later (with no idle timeout, nothing did). Identity-provider
+initiated SAML logout on the node that had not issued the response offered no
+LogoutRequest (`sts_saml_encryption`, the suite's `cluster` mode). Each now
+calls **`noteSessionChanged(session)`** right after its edit: it re-sets the
+row by id, **merges** with `mergeSessionRows()` when replication has replaced
+the stored object meanwhile, and **refuses to write a session that is no longer
+there**, so it cannot resurrect one ended in between. `notePresented()` spends
+`firstPresentationIsTheSignIn` through it too. An in-place edit of a session
+anywhere else owes the same call; `tests/cluster_node_state_sharing.js` holds
+the four call sites to it.
+
+## SEVERAL NODES: A SESSION'S END IS REPORTED ONCE (2026-09-14, #46 section 6)
+
+Every process runs the sweep over its own copy, and `sessionOf()` expires a
+session wherever it is next presented, so two processes — a container's
+workers, or two containers — found the same expired session and each wrote
+`session.end` and emitted CAEP `session-revoked`. A sweep led by one elected
+node would have fixed the timer and not the lazy lookup, and not a container's
+own workers; **a claim fixes all three**. `sessionEndOnce(id, emit, onLost)`:
+
+* **The delete stays synchronous and local.** A process that noticed the end
+  stops honouring the session at once, whatever the store says.
+* **The report goes out once.** `reportExpiry()` (from `expireSession()`) and
+  `reportSignOut()` (from `dropSession()`) run only for the process that wins
+  `authn.session-end` on the realm and session id (one hour). An explicit
+  sign-out takes the same claim, so a sign-out racing the sweep on another node
+  reports one end; the loser writes its sign-out as `refused`
+  (`STS-AUTHN-0191`, `reportSignOutAlreadyEnded()`) with no event. A sign-out
+  that found no session claims nothing and is recorded as it always was.
+* **No shared claim store means one process, and `emit` runs inline** — the
+  audit row is written before the function returns, exactly as before.
+* **A store that cannot be asked REPORTS ANYWAY** (`STS-AUTHN-0192`) — the
+  opposite of `cluster_claims.js`'s fail-closed rule, on purpose: that rule is
+  for a value that must not be accepted twice, and this is a notice that must
+  not be lost. A duplicate `session-revoked` is an idempotent repeat at a
+  receiver; a missing one leaves it trusting an ended session.
+
+On a shared store the report is therefore a claim's round trip after the
+delete, not before the function returns. `tests/cluster_signout_signals.js`
+section 3 holds it: two ends of one session with a shared stub store report
+once (with the losing row coded), the same without one report twice (the
+control), and an unreachable store still reports.
+
+## SEVERAL NODES: THE THREE SECOND-FACTOR DOORS SPEND IN THE STORE (2026-09-14, #46)
+
+`POST /authn/totp` and the assertion branch of `POST /authn/webauthn` are
+ASYNCHRONOUS now, like `/authn/backup-code` already was, because each spends
+its credential in the store before the sign-in stands: a TOTP step through
+`credentials.verifyTotpAsync()` (a counter that only goes up), a security-key
+assertion through `credentials.spendAssertion()` (its challenge claimed, its
+signature counter advanced), and a recovery code inside
+`verifyBackupCodeAsync()` (claimed, and the entry made to converge on the
+claims). The tails are `finishTotp()` and `finishWebauthn()`, and every refusal
+reaches the page it always did, with the check that failed named. The argument
+for each is `common/CLAUDE.md`'s *Several nodes* section; what is this file's is
+that **a refusal after a verification that passed is still a refusal of the
+step, not an error page**, and that a catch sits on each promise because
+Express 4 does not look at what a handler returns (`STS-AUTHN-0182`).

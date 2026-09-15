@@ -34,7 +34,11 @@
 # and the container, and the CLAUDE.md files are guidance for whoever (or
 # whatever) edits this repository. They are excluded because the Dockerfile now
 # copies the context whole — before that they were left out by not being named.
-docs
+# `docs` WAS HERE until 2026-09-14 and went the way of the three files below:
+# tests/error_codes.js asserts that docs/error-codes.md is what the error-code
+# table generates and that docs/_config.yml lists it, so the directory is the
+# subject of a test that runs in the TESTS image. The service Dockerfile
+# removes it.
 .github
 # ...EXCEPT THE ONE WORKFLOW THAT IS THE SUBJECT OF A TEST (2026-09-10). This is
 # the block below's argument a fourth step out: tests/teardown_bounds.js reads
@@ -104,8 +108,10 @@ clean.sh
 # image, deliberately, because that image has no tests directory by the time it
 # is finished.
 # `docker-compose.yml` and `Dockerfile` ARE NOT HERE ANY MORE — see the block
-# above; the service image removes them instead.
-docker-compose-run-tests.yml
+# above; the service image removes them instead. Nor is
+# `docker-compose-run-tests.yml`, since 2026-09-14, for the same reason:
+# tests/stack_network.js and tests/teardown_bounds.js read it in the tests
+# image.
 .dockerignore
 
 # The test REPORT, which `tests` no longer covers. It is generated, timestamped
@@ -129,3 +135,16 @@ tests/report
 # every run but would still be there in `docker history` with whatever was in
 # the directory the day the image was built.
 data/
+
+# THE EMBEDDED DEBUGGER'S BUILT TREE, for the reason .gitignore gives: a local
+# build of the other project. The image takes it from that project's embedded
+# image (the Dockerfile's `debugger` stage), so a stale checkout copy must not
+# reach the build context and shadow it.
+debugger/embedded/
+
+# TERRAFORM'S PROVIDER CACHE, from `terraform init` in deploy/aws/foundation and
+# deploy/aws/environment: about 800 MB each, none of it read by either image,
+# and on 2026-09-15 it made a 1.8 GB build context that the machine building
+# the suite runner ran out of memory sending. The lock files beside them are
+# committed and small, and neither image needs them either.
+**/.terraform

@@ -35,11 +35,24 @@ header_pages:
   - getting-started.md
   - configuration.md
   - endpoints.md
+  - jwt-assertions.md
+  - saml-assertions.md
+  - pki.md
+  - acme.md
+  - est.md
+  - scep.md
   - trust-realms.md
   - signing-out.md
   - sessions.md
   - caep-events.md
+  - signals-received.md
+  - gnap.md
   - persistence.md
+  - encryption-at-rest.md
+  - caches.md
+  - aws-cluster.md
+  - remote-pep.md
   - what-is-not-checked.md
+  - error-codes.md
   - layout.md
   - parent-project-migration.md

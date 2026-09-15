@@ -10,13 +10,13 @@
 // It is a LIBRARY, like `delegation.js` beside it and like `admin_stats.js`,
 // `audit.js` and `dpop.js`: it registers no route, so its position in the
 // require order does not matter and it cannot be the reason a route is missing.
-// `admin.js` renders it at /admin/delegation/user; this file holds the model and
-// none of the HTML.
+// `admin.js` renders it at /admin/delegation/user; this file holds the model
+// and none of the HTML.
 //
 // It requires `helpers.js`, `admin_stats.js` and `delegation.js`, and nothing
 // requires IT except the console — so it cannot join a cycle and it cannot move
-// a route. Rule 3e's test is therefore not reached: no slot is needed, because a
-// plain require in the ordinary direction closes nothing.
+// a route. Rule 3e's test is therefore not reached: no slot is needed, because
+// a plain require in the ordinary direction closes nothing.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS A FILE AND NOT A `filter()` ON /admin/delegation/map.
@@ -37,12 +37,12 @@
 //
 // Doing that union in `admin.js` was the alternative and it is the one this
 // codebase keeps warning about: the join is a statement about what the two
-// stores MEAN — that a token exchange writes a row in both and is one event, that
-// a `client_id` on a token and an `application` on a party are the same kind of
-// thing, that `identityKeyOf()` is the one spelling of a person — and a renderer
-// holding a second opinion about any of that is drift nothing can see. So the
-// union is here, in the shape `delegation.graph()` already returns, and the
-// console renders what it is handed.
+// stores MEAN — that a token exchange writes a row in both and is one event,
+// that a `client_id` on a token and an `application` on a party are the same
+// kind of thing, that `identityKeyOf()` is the one spelling of a person — and a
+// renderer holding a second opinion about any of that is drift nothing can see.
+// So the union is here, in the shape `delegation.graph()` already returns, and
+// the console renders what it is handed.
 //
 // ---------------------------------------------------------------------------
 // SEVEN DECISIONS ARE JUDGEMENTS RATHER THAN MECHANICS.
@@ -51,46 +51,46 @@
 // Every node and every edge here carries the fields that file's do, so
 // `delegation_map.js` draws this picture with no idea that it is different and
 // the console's party and relationship tables work unchanged. What is added is
-// added: `credentials` and `flows` on a node, `credentials` and `produced` on an
-// issuance edge, and two new values of `relation`. A second shape would have
+// added: `credentials` and `flows` on a node, `credentials` and `produced` on
+// an issuance edge, and two new values of `relation`. A second shape would have
 // meant a second renderer, and two renderers agreeing about what a box means is
 // a thing that stays true for about a month.
 //
 // **AN ORDINARY GRANT IS A LINE FROM THE PERSON TO THE APPLICATION, AND ITS
 // LABEL IS THE GRANT.** That is the whole of what was asked for and it is worth
 // saying why it is drawn where it is: the delegation picture's `acts-for` line
-// runs from the initial identity to the intermediary — *this party is acting for
-// that person* — and an ordinary authorization code grant is the same sentence
-// with nobody in the middle, *this client holds a credential naming that
-// person*. Drawing it the same way round means a delegation and a plain sign-in
-// LINE UP in one diagram instead of being two pictures on one page. What tells
-// them apart is the label and the colour: an issuance line names the grant
-// (`Authorization Code grant`, `RFC 6749 §4.1`) and is the console's own indigo,
-// because it makes no claim about impersonation or delegation — those are
-// properties of a mechanism this line is not.
+// runs from the initial identity to the intermediary — *this party is acting
+// for that person* — and an ordinary authorization code grant is the same
+// sentence with nobody in the middle, *this client holds a credential naming
+// that person*. Drawing it the same way round means a delegation and a plain
+// sign-in LINE UP in one diagram instead of being two pictures on one page.
+// What tells them apart is the label and the colour: an issuance line names the
+// grant (`Authorization Code grant`, `RFC 6749 §4.1`) and is the console's own
+// indigo, because it makes no claim about impersonation or delegation — those
+// are properties of a mechanism this line is not.
 //
 // **AUTHENTICATING IS A LINE TOO, AND IT POINTS THE OTHER WAY.** The person
 // signed in TO this service, so the arrow runs into the hexagon and is labelled
 // with the family and the method — `the sign-in screen (password + a security
-// key)`, `AS-REQ with PA-ENC-TIMESTAMP`, `a federated assertion`. Without it the
-// picture would show tokens appearing beside somebody who, as far as the drawing
-// went, had never been here; with it the three lines make a sentence. It is the
-// **OIDC Authentication Flow** half of the ask, and it is a different fact from
-// the grant: `client_credentials` has a grant and no sign-in, and a Kerberos
-// AS-REQ is a sign-in with no grant.
+// key)`, `AS-REQ with PA-ENC-TIMESTAMP`, `a federated assertion`. Without it
+// the picture would show tokens appearing beside somebody who, as far as the
+// drawing went, had never been here; with it the three lines make a sentence.
+// It is the **OIDC Authentication Flow** half of the ask, and it is a different
+// fact from the grant: `client_credentials` has a grant and no sign-in, and a
+// Kerberos AS-REQ is a sign-in with no grant.
 //
 // **A CREDENTIAL THAT BOTH REGISTERS KNOW ABOUT IS DRAWN ONCE.** An RFC 8693
 // token exchange writes a delegation act AND a token record — the same access
 // token, seen twice — so the issuance half skips any JWT whose `jti` the
 // delegation half has already accounted for. It is deduplicated on the
-// IDENTIFIER and nothing else: that is the one thing both registers record about
-// the same object, and anything cleverer (matching on a time window, on a
+// IDENTIFIER and nothing else: that is the one thing both registers record
+// about the same object, and anything cleverer (matching on a time window, on a
 // subject and a kind) would eventually collapse two real credentials into one,
-// which is a worse failure than listing one twice. **The Kerberos case therefore
-// survives on purpose**: an S4U service ticket is in both registers and has no
-// identifier in either — a ticket genuinely has none to quote — so it is drawn
-// on both its lines, and the console says which register each line came from
-// rather than pretending the overlap is not there.
+// which is a worse failure than listing one twice. **The Kerberos case
+// therefore survives on purpose**: an S4U service ticket is in both registers
+// and has no identifier in either — a ticket genuinely has none to quote — so
+// it is drawn on both its lines, and the console says which register each line
+// came from rather than pretending the overlap is not there.
 //
 // **AN IDENTITY WITH NO AUTHENTICATION IS STILL A PERSON HERE.** S4U2Self and
 // OnBehalfOf name somebody who was not present and proved nothing, and a token
@@ -148,26 +148,27 @@ const { log } = require('./helpers');
 const stats = require('./admin_stats');
 const delegation = require('./delegation');
 // THE REGISTRY, for `audienceParties()` and `permissionsAddressedTo()` — see
-// the sixth and seventh decisions in the header. It requires `helpers.js`, `config.js` and `audit.js` and nothing here,
-// so this is a plain require in the ordinary direction: no cycle to close, and
-// it registers no route so there is none to move. Rule 3e's test is not reached.
+// the sixth and seventh decisions in the header. It requires `helpers.js`,
+// `config.js` and `audit.js` and nothing here, so this is a plain require in
+// the ordinary direction: no cycle to close, and it registers no route so there
+// is none to move. Rule 3e's test is not reached.
 const applications = require('./applications');
 
 // ---------------------------------------------------------------------------
 // THE GRANTS AND THE FLOWS, WHICH ARE THE ANSWER TO *WHAT WAS THIS TOKEN
 // ISSUED BY*.
 //
-// **`flow` IS THE STRING `oauth2.js` ALREADY RECORDS, VERBATIM.** Every JWT this
-// service signs goes through `signJwt()` with an issuance context, and that
-// context carries a `grant` — see `issuanceContext()` in `oauth-oidc/oauth2.js`
-// and `recordJwt()` in `admin_stats.js`. Those strings are the identifiers here
-// rather than a tidier vocabulary of this file's own, and that is deliberate:
-// a table keyed on a prettier name would need a translation, and a translation
-// that misses a value fails SILENTLY — the token is listed under a flow nobody
-// can filter, or under nothing at all. Keeping the recorded string as the key
-// means an unknown one is visibly unknown (see `flowRow()`), which is the same
-// choice `delegation.js`'s `recordUnguarded()` makes about a type it does not
-// know.
+// **`flow` IS THE STRING `oauth2.js` ALREADY RECORDS, VERBATIM.** Every JWT
+// this service signs goes through `signJwt()` with an issuance context, and
+// that context carries a `grant` — see `issuanceContext()` in
+// `oauth-oidc/oauth2.js` and `recordJwt()` in `admin_stats.js`. Those strings
+// are the identifiers here rather than a tidier vocabulary of this file's own,
+// and that is deliberate: a table keyed on a prettier name would need a
+// translation, and a translation that misses a value fails SILENTLY — the token
+// is listed under a flow nobody can filter, or under nothing at all. Keeping
+// the recorded string as the key means an unknown one is visibly unknown (see
+// `flowRow()`), which is the same choice `delegation.js`'s `recordUnguarded()`
+// makes about a type it does not know.
 //
 // `oidc` is the name OpenID Connect gives the same exchange where it gives it
 // one, and it is a separate field rather than being folded into the label
@@ -180,8 +181,8 @@ const applications = require('./applications');
 // are the reason this table is not just a list of `grant_type` values: a token
 // that came back through the browser was never at the token endpoint at all and
 // has no `grant_type` to be named after. `issueAuthorizationResponse()` records
-// which of the two it was, and the distinction is worth keeping — hybrid means a
-// code came back beside the token, so the SAME sign-on will also produce
+// which of the two it was, and the distinction is worth keeping — hybrid means
+// a code came back beside the token, so the SAME sign-on will also produce
 // `authorization_code` rows at the token endpoint, and a reader seeing both
 // should not conclude there were two sign-ins.
 // ---------------------------------------------------------------------------
@@ -199,17 +200,17 @@ const FLOWS = [
     oidc: 'Hybrid Flow', spec: 'OpenID Connect Core 1.0 §3.3',
     browser: true,
     what: 'The authorization response carried a code AND a token, so this ' +
-          'credential came back through the browser while a code went with it. ' +
-          'The same sign-on will also show `authorization_code` rows when that ' +
-          'code is redeemed — two rows, one sign-in.' },
+          'credential came back through the browser while a code went with ' +
+          'it. The same sign-on will also show `authorization_code` rows ' +
+          'when that code is redeemed — two rows, one sign-in.' },
   { flow: 'implicit', protocol: 'OAuth 2.0 / OIDC',
     label: 'Implicit Flow', oidc: 'Implicit Flow',
     spec: 'RFC 6749 §4.2 · OpenID Connect Core 1.0 §3.2',
     browser: true,
     what: 'The token came back from the authorization endpoint in the ' +
-          'fragment, with no code and no call to the token endpoint. RFC 9700 ' +
-          'section 2.1.2 says not to use it; this service issues it anyway ' +
-          'unless that mode is on, which is what it is for.' },
+          'fragment, with no code and no call to the token endpoint. RFC ' +
+          '9700 section 2.1.2 says not to use it; this service issues it ' +
+          'anyway unless that mode is on, which is what it is for.' },
   { flow: 'refresh_token', protocol: 'OAuth 2.0 / OIDC',
     label: 'Refresh Token grant', oidc: '', spec: 'RFC 6749 §6',
     browser: false,
@@ -242,14 +243,23 @@ const FLOWS = [
     // here: the console appends one off the `delegating` marker, and saying it
     // in both places put the same claim in one table cell twice.
     what: 'A subject_token was exchanged for a token about its subject — an ' +
-          'impersonation with no actor_token and a delegation with one, which ' +
-          'RFC 8693 section 1.1 is explicit are different things.' },
+          'impersonation with no actor_token and a delegation with one, ' +
+          'which RFC 8693 section 1.1 is explicit are different things.' },
   { flow: 'pre-authorized code', protocol: 'OpenID4VCI',
     label: 'Pre-Authorized Code grant', oidc: '',
     spec: 'OpenID4VCI 1.0 §4.1.1', browser: false,
     what: 'The wallet redeemed a code that came with a Credential Offer, ' +
           'having already identified itself to the issuer some other way. ' +
-          'There is no authorization request in this grant.' }
+          'There is no authorization request in this grant.' },
+  { flow: 'gnap', protocol: 'GNAP',
+    label: 'GNAP grant', oidc: '', spec: 'RFC 9635 · RFC 9767',
+    browser: false,
+    what: 'A client instance proved its key at /gnap and the grant was ' +
+          'released at the continuation URI — after a resource owner ' +
+          'approved it in a browser, or with no interaction for a trusted ' +
+          'client. The token came back over the client\'s own signed back ' +
+          'channel either way, which is why this row is not marked as a ' +
+          'browser flow.' }
 ];
 
 const FLOW_IDS = FLOWS.map(function (one) { return one.flow; });
@@ -258,9 +268,9 @@ const FLOW_BY_ID = {};
 FLOWS.forEach(function (one) { FLOW_BY_ID[one.flow] = one; });
 
 // What a token that states no grant is filed under, and it is a real answer
-// rather than a gap. `recordJwt()` fills `grant` from the issuance context and a
-// caller that passes none is STATING that there was no grant: WS-Trust's JWT and
-// the OID4VCI credential issuer both sign directly, and the signed UserInfo
+// rather than a gap. `recordJwt()` fills `grant` from the issuance context and
+// a caller that passes none is STATING that there was no grant: WS-Trust's JWT
+// and the OID4VCI credential issuer both sign directly, and the signed UserInfo
 // response is a reply rather than the product of one. The console prints this
 // sentence instead of an empty cell, for the reason /admin/users prints it
 // beside the same column.
@@ -270,8 +280,8 @@ const FLOW_NOT_STATED = {
   what: 'Whatever minted this said nothing about how. That is true of every ' +
         'JWT signed outside the token endpoint — WS-Trust\'s JWT token type ' +
         'and the credential issuer both sign directly — and of the signed ' +
-        'UserInfo response, which is a reply rather than a credential a grant ' +
-        'produced.'
+        'UserInfo response, which is a reply rather than a credential a ' +
+        'grant produced.'
 };
 
 // ---------------------------------------------------------------------------
@@ -289,18 +299,18 @@ const FLOW_NOT_STATED = {
 // from the Web Browser SSO profile, and the artifact register does not say
 // which. It could be inferred from a sign-in that happened at about the same
 // moment, and that is exactly the kind of inference this console does not make:
-// a picture that says `issued by WS-Federation` because a WS-Federation
-// sign-in was nearby is a picture that will be confidently wrong on a busy
-// service. The authentication lines say which families were used; this line says
-// what came out.
+// a picture that says `issued by WS-Federation` because a WS-Federation sign-in
+// was nearby is a picture that will be confidently wrong on a busy service. The
+// authentication lines say which families were used; this line says what came
+// out.
 // ---------------------------------------------------------------------------
 const ARTIFACT_FLOWS = [
   { match: 'SAML 2.0', protocol: 'SAML 2.0', label: 'A SAML 2.0 assertion',
     spec: 'saml-core-2.0-os §2.3',
     what: 'Issued through WS-Trust, through a WS-Federation sign-in response ' +
-          'or through the SAML 2.0 Web Browser SSO profile. Which of the three ' +
-          'is NOT recorded on the assertion and is deliberately not guessed ' +
-          'here.' },
+          'or through the SAML 2.0 Web Browser SSO profile. Which of the ' +
+          'three is NOT recorded on the assertion and is deliberately not ' +
+          'guessed here.' },
   { match: 'SAML 1.1', protocol: 'SAML 1.1', label: 'A SAML 1.1 assertion',
     spec: 'saml-core-1.1 §2.4',
     what: 'Issued through WS-Trust, through WS-Federation, or through one of ' +
@@ -312,8 +322,9 @@ const ARTIFACT_FLOWS = [
   { match: 'Kerberos service ticket', protocol: 'Kerberos v5',
     label: 'A service ticket (TGS-REQ)', spec: 'RFC 4120 §3.3',
     what: 'The KDC answered a TGS-REQ for one service. If it was an S4U ' +
-          'request it is ALSO a delegation act, and a ticket has no identifier ' +
-          'either register could collapse the two on — see this page\'s note.' },
+          'request it is ALSO a delegation act, and a ticket has no ' +
+          'identifier either register could collapse the two on — see this ' +
+          'page\'s note.' },
   { match: 'SVID (X.509)', protocol: 'SPIFFE', label: 'An X509-SVID',
     spec: 'SPIFFE X509-SVID',
     what: 'Minted over the Workload API or by the SPIRE Server API. Nothing ' +
@@ -330,22 +341,26 @@ const ARTIFACT_FLOWS = [
 ];
 
 // The row for a recorded grant string. An UNKNOWN one comes back named after
-// itself rather than as "no grant stated", which is the distinction that matters
-// when somebody adds a grant to `oauth2.js` and forgets this table: the page
-// then shows `device_code — not in this console's table`, which is a bug report.
-// Collapsing it into the not-stated row would hide the omission behind a
-// sentence that is not true of it.
+// itself rather than as "no grant stated", which is the distinction that
+// matters when somebody adds a grant to `oauth2.js` and forgets this table: the
+// page then shows `device_code — not in this console's table`, which is a bug
+// report. Collapsing it into the not-stated row would hide the omission behind
+// a sentence that is not true of it.
 function flowRow(id) {
+  log.debug("Entering flowRow().");
   const wanted = String(id == null ? '' : id);
   if (!wanted) {
+    log.debug("Leaving flowRow().");
     return FLOW_NOT_STATED;
   }
   if (FLOW_BY_ID[wanted]) {
+    log.debug("Leaving flowRow().");
     return FLOW_BY_ID[wanted];
   }
   log.warn('user_graph: "' + wanted + '" is not one of the grants this file ' +
            'knows (' + FLOW_IDS.join(', ') + '). It is shown named after ' +
            'itself — add a row to FLOWS, or fix the caller that recorded it.');
+  log.debug("Leaving flowRow().");
   return { flow: wanted, protocol: '', label: wanted, oidc: '', spec: '',
            browser: false, unknown: true,
            what: 'Something recorded this grant and this console has no row ' +
@@ -355,15 +370,19 @@ function flowRow(id) {
 
 // The same answer for an artifact, off its kind. `Credential (` is a prefix
 // because the kind carries the FORMAT — `Credential (sd-jwt-vc)` — and three
-// formats sharing one sentence is right where three specifications would not be.
+// formats sharing one sentence is right where three specifications would not
+// be.
 function artifactFlowRow(kind) {
+  log.debug("Entering artifactFlowRow().");
   const wanted = String(kind == null ? '' : kind);
   const row = ARTIFACT_FLOWS.filter(function (one) {
     return wanted === one.match || wanted.indexOf(one.match) === 0;
   })[0];
   if (row) {
+    log.debug("Leaving artifactFlowRow().");
     return row;
   }
+  log.debug("Leaving artifactFlowRow().");
   return { match: '', protocol: '', label: wanted || 'An artifact', spec: '',
            what: 'This console has no sentence for that kind of artifact. It ' +
                  'is a row in ARTIFACT_FLOWS in common/user_graph.js that ' +
@@ -392,12 +411,16 @@ function artifactFlowRow(kind) {
 // empty string is the answer and the caller draws the shorter line.
 // ---------------------------------------------------------------------------
 function holderOf(record) {
+  log.debug("Entering holderOf().");
   if (record.family === 'token') {
+    log.debug("Leaving holderOf().");
     return String(record.client_id || '');
   }
   if (record.kind && String(record.kind).indexOf('Kerberos') === 0) {
+    log.debug("Leaving holderOf().");
     return String(record.service || '');
   }
+  log.debug("Leaving holderOf().");
   return String(record.audience || '');
 }
 
@@ -422,37 +445,39 @@ function holderOf(record) {
 // application and draws ONE box named after two URLs, which is a party that
 // does not exist.
 //
-// **THE LOOKUP IS THE REGISTRY'S, and it is a lookup rather than a permission.**
-// `applications.forAudience()` is the same call the token exchange makes when it
-// records an act, so an audience some application registered on `oauthAudience`
-// resolves to that application and the picture has ONE box for it. Beside it
-// `applications.forClientId()`, because an audience here is as often a bare NAME
-// as a URI — that is what oauth2.js's `audienceScopes()` writes when a client
-// names the API it wants in its scope list — and the two must land on one box.
-// An audience neither of them knows comes back as ITSELF, which is the honest
-// answer and is what a real resource server looks like on this service: it is
-// drawn, named after the URI, and `registered` says which of the two happened.
+// **THE LOOKUP IS THE REGISTRY'S, and it is a lookup rather than a
+// permission.** `applications.forAudience()` is the same call the token
+// exchange makes when it records an act, so an audience some application
+// registered on `oauthAudience` resolves to that application and the picture
+// has ONE box for it. Beside it `applications.forClientId()`, because an
+// audience here is as often a bare NAME as a URI — that is what oauth2.js's
+// `audienceScopes()` writes when a client names the API it wants in its scope
+// list — and the two must land on one box. An audience neither of them knows
+// comes back as ITSELF, which is the honest answer and is what a real resource
+// server looks like on this service: it is drawn, named after the URI, and
+// `registered` says which of the two happened.
 //
 // **AN AUDIENCE THAT IS THIS SERVICE'S OWN IS NOT A PARTY, and it is the one
 // thing dropped here.** Two of them arrive on ordinary tokens and NEITHER is a
 // relationship with anybody: a refresh token is addressed to the token endpoint
 // (`aud` is the base URL), and an access token nobody asked a resource for
-// carries `<base>/resource`, which is `oauth2.js`'s stand-in for a resource that
-// was never named. Drawn, they put a box called `http://localhost:8081/resource`
-// beside every plain sign-in — a party that does not exist, on the line that is
-// supposed to say which party a client may reach. So an audience on the ISSUER's
-// own origin is skipped, and the hexagon carries what this service issued the
-// way it always has.
+// carries `<base>/resource`, which is `oauth2.js`'s stand-in for a resource
+// that was never named. Drawn, they put a box called
+// `http://localhost:8081/resource` beside every plain sign-in — a party that
+// does not exist, on the line that is supposed to say which party a client may
+// reach. So an audience on the ISSUER's own origin is skipped, and the hexagon
+// carries what this service issued the way it always has.
 //
-// The skip is narrowed by the registry rather than applied to the origin flatly:
-// an audience somebody REGISTERED on an application is drawn wherever it points,
-// because registering it is a person saying that this is an application. And the
-// issuer has to be quoted from the credential — `oauth2.issuer` is empty by
-// default so that one process answers correctly as localhost, as `sts` on a
-// compose network and through a published port, which means the base is a
-// property of the request and only the token remembers it. With no issuer known
-// nothing is dropped: under-drawing a relationship is worse than a placeholder
-// box, and this only ever happens for a token recorded before that field existed.
+// The skip is narrowed by the registry rather than applied to the origin
+// flatly: an audience somebody REGISTERED on an application is drawn wherever
+// it points, because registering it is a person saying that this is an
+// application. And the issuer has to be quoted from the credential —
+// `oauth2.issuer` is empty by default so that one process answers correctly as
+// localhost, as `sts` on a compose network and through a published port, which
+// means the base is a property of the request and only the token remembers it.
+// With no issuer known nothing is dropped: under-drawing a relationship is
+// worse than a placeholder box, and this only ever happens for a token recorded
+// before that field existed.
 // ---------------------------------------------------------------------------
 function audienceParties(audience, issuer) {
   log.debug("Entering audienceParties(). audience=" + audience);
@@ -474,19 +499,20 @@ function audienceParties(audience, issuer) {
     // audience that is a URI was registered on `oauthAudience` and is found by
     // the first; an audience that is a bare NAME is a client_id and is found by
     // the second — which is the shape oauth2.js's `audienceScopes()` produces
-    // when a client names the API it wants in its scope list rather than through
-    // RFC 8707. Both resolve to the SAME box, which is the point: `apigw1` and
-    // `https://apigw1.example.com` are one application, and a picture with a
-    // box for each would be this console inventing a party.
+    // when a client names the API it wants in its scope list rather than
+    // through RFC 8707. Both resolve to the SAME box, which is the point:
+    // `apigw1` and `https://apigw1.example.com` are one application, and a
+    // picture with a box for each would be this console inventing a party.
     //
     // The order is the narrower question first. It matters only for an entry
     // that registered one application's client_id as its own audience, which is
     // a configuration mistake either way — and `forAudience()` warns about it.
-    const application = applications.forAudience(one) || applications.forClientId(one);
+    const application = applications.forAudience(one) ||
+                        applications.forClientId(one);
     if (!application && sameOrigin(one, issuer)) {
       log.debug("audienceParties(): \"" + one + "\" is on this service's own " +
-                "origin and no application has registered it, so it names this " +
-                "service rather than a party.");
+                "origin and no application has registered it, so it names " +
+                "this service rather than a party.");
       return;
     }
     out.push({
@@ -522,15 +548,17 @@ function audienceParties(audience, issuer) {
 // `oauth2.js`'s `audienceScopes()` turns a scope list into an audience and a
 // scope claim, and a client can name the party it wants in two ways:
 //
-//   * **THE WHOLE PERMISSION IDENTIFIER.** `scope=https://abcapp2.example.com/read`
-//     produces `aud: https://abcapp2.example.com/` and `scope: read` — the base
-//     becomes the audience and the bare name becomes the scope. The permission
-//     is named EXACTLY and there is one on the line.
-//   * **THE CLIENT_ID OF THE AUDIENCE.** `scope=abcapp4` produces `aud: abcapp4`
-//     and takes that value OFF the scope claim, because it named a party rather
-//     than a permission. Nothing on the token then names a permission at all,
-//     which is not a gap — it is a token for the resource with no permission
-//     asked for, and this service's word for that is DEFAULT PERMISSIONS.
+//   * **THE WHOLE PERMISSION IDENTIFIER.**
+//     `scope=https://abcapp2.example.com/read` produces `aud:
+//     https://abcapp2.example.com/` and `scope: read` — the base becomes the
+//     audience and the bare name becomes the scope. The permission is named
+//     EXACTLY and there is one on the line.
+//   * **THE CLIENT_ID OF THE AUDIENCE.** `scope=abcapp4` produces `aud:
+//     abcapp4` and takes that value OFF the scope claim, because it named a
+//     party rather than a permission. Nothing on the token then names a
+//     permission at all, which is not a gap — it is a token for the resource
+//     with no permission asked for, and this service's word for that is DEFAULT
+//     PERMISSIONS.
 //
 // They come out as one rule because the question is asked of the TOKEN and not
 // of the request: whichever way the client spelled it, what arrives here is an
@@ -580,8 +608,8 @@ function permissionsAddressedTo(scope, audience) {
                    applications.forPermissionBase(wanted);
   if (!resource) {
     log.debug("Leaving permissionsAddressedTo(). No application answers to \"" +
-              wanted + "\", so nothing here defines a permission and there is " +
-              "nothing to name.");
+              wanted + "\", so nothing here defines a permission and there " +
+              "is nothing to name.");
     return [];
   }
   const defined = {};
@@ -597,13 +625,14 @@ function permissionsAddressedTo(scope, audience) {
     }
   });
   log.debug("Leaving permissionsAddressedTo(). " + out.length +
-            " permission(s) of " + resource.identifier + " named on the token.");
+            " permission(s) of " + resource.identifier +
+            " named on the token.");
   return out;
 }
 
-// Whether two URLs are the same scheme, host and port. `false` for anything that
-// is not a URL at all, which is most of what arrives here: an `aud` may be any
-// string, and a SAML entityID or a `wtrealm` that happens not to parse is a
+// Whether two URLs are the same scheme, host and port. `false` for anything
+// that is not a URL at all, which is most of what arrives here: an `aud` may be
+// any string, and a SAML entityID or a `wtrealm` that happens not to parse is a
 // party this service knows nothing about rather than one of its own endpoints.
 function sameOrigin(one, other) {
   log.debug("Entering sameOrigin().");
@@ -617,6 +646,7 @@ function sameOrigin(one, other) {
     a = new URL(String(one));
     b = new URL(String(other));
   } catch (err) {
+    log.debug("Caught in sameOrigin(): " + ((err && err.message) || err));
     // Not a URL, so the question does not arise. `aud` is an arbitrary string
     // by RFC 7519 section 4.1.3 and a urn: is the ordinary case here.
     log.debug("Leaving sameOrigin(). Not a URL.");
@@ -627,10 +657,11 @@ function sameOrigin(one, other) {
 }
 
 // One line of detail worth reading beside a credential, in the vocabulary its
-// own family uses. It is one column rather than five mostly-empty ones, which is
-// the argument `userArtifactTable()` in admin.js already makes about the same
-// four families.
+// own family uses. It is one column rather than five mostly-empty ones, which
+// is the argument `userArtifactTable()` in admin.js already makes about the
+// same four families.
 function detailOf(record) {
+  log.debug("Entering detailOf().");
   const parts = [];
   if (record.family === 'token') {
     if (record.scope) parts.push('scope: ' + record.scope);
@@ -641,6 +672,7 @@ function detailOf(record) {
   if (record.serial) parts.push('serial: ' + record.serial);
   if (record.configId) parts.push('configuration: ' + record.configId);
   if (record.signed === false) parts.push('UNSIGNED');
+  log.debug("Leaving detailOf().");
   return parts.join(', ');
 }
 
@@ -653,8 +685,8 @@ function detailOf(record) {
 // because that function is not per-user and re-filtering it would walk every
 // token in the process to find alice's four.
 //
-// `skipIdentifiers` is the token-exchange dedupe: the identifiers the delegation
-// half of the picture has already drawn. See the header.
+// `skipIdentifiers` is the token-exchange dedupe: the identifiers the
+// delegation half of the picture has already drawn. See the header.
 // ---------------------------------------------------------------------------
 function credentialsFor(detail, skipIdentifiers) {
   log.debug("Entering credentialsFor().");
@@ -689,8 +721,8 @@ function credentialsFor(detail, skipIdentifiers) {
       // writes the resource's base URI onto the `aud` and the bare permission
       // NAMES onto the `scope`, which is Microsoft Entra ID's arrangement, so
       // the audience above says WHICH application and this says WHICH OF ITS
-      // permissions. Neither is the whole answer alone; `permissionsAddressedTo()`
-      // reads them together.
+      // permissions. Neither is the whole answer alone;
+      // `permissionsAddressedTo()` reads them together.
       //
       // Carried only for this family, exactly like the audience beside it and
       // for the same reason: an assertion, a ticket and an SVID have no scope
@@ -711,7 +743,8 @@ function credentialsFor(detail, skipIdentifiers) {
     const flow = artifactFlowRow(record.kind);
     const family = String(record.kind).indexOf('Kerberos') === 0 ? 'ticket'
                  : String(record.kind).indexOf('SVID') === 0 ? 'svid'
-                 : String(record.kind).indexOf('Credential') === 0 ? 'credential'
+                 : String(record.kind).indexOf('Credential') === 0 ?
+                   'credential'
                  : 'assertion';
     out.push({
       at: record.issuedAt,
@@ -738,10 +771,10 @@ function credentialsFor(detail, skipIdentifiers) {
       expiresAtMs: record.expiresAt || 0
     });
   });
-  // Newest first, across the families together — the point of one list is that a
-  // sign-on which produced an ID Token and a SAML assertion shows both, next to
-  // each other, in the order they happened. `issuedList()`'s rule, applied to
-  // one person.
+  // Newest first, across the families together — the point of one list is that
+  // a sign-on which produced an ID Token and a SAML assertion shows both, next
+  // to each other, in the order they happened. `issuedList()`'s rule, applied
+  // to one person.
   out.sort(function (a, b) { return b.at - a.at; });
   log.debug("Leaving credentialsFor(). " + out.length + " credential(s), " +
             skipped + " already on a delegation line.");
@@ -754,14 +787,14 @@ function credentialsFor(detail, skipIdentifiers) {
 // Every identity worth offering, which is the UNION of two lists that answer
 // different questions — see the fifth decision in the header. `authenticated`
 // says whether the identity register has a row (somebody presented a credential
-// here) and `delegated` says whether any act names them; a person can be either,
-// both, or — the interesting one — only the second.
+// here) and `delegated` says whether any act names them; a person can be
+// either, both, or — the interesting one — only the second.
 //
 // Sorted most recently active first, which is the order /admin/users itself
 // uses. The application chooser sorts busiest first for a reason that does not
 // apply here: thirty applications are a topology and the biggest one is usually
-// the one somebody wants, where thirty people are a history and the one somebody
-// wants is nearly always the one they just drove a client as.
+// the one somebody wants, where thirty people are a history and the one
+// somebody wants is nearly always the one they just drove a client as.
 // ---------------------------------------------------------------------------
 function userList() {
   log.debug("Entering userList().");
@@ -845,12 +878,14 @@ function userList() {
 
 // The issuance fields, on a node from either half.
 function normaliseNode(node) {
+  log.debug("Entering normaliseNode().");
   if (node.credentials === undefined) node.credentials = 0;
   if (!node.flows) node.flows = [];
   if (node.authentications === undefined) node.authentications = 0;
   if (node.isSubject === undefined) node.isSubject = false;
   if (node.isClient === undefined) node.isClient = false;
   if (!node.kinds) node.kinds = [];
+  log.debug("Leaving normaliseNode().");
   return node;
 }
 
@@ -866,12 +901,14 @@ function graphFor(key) {
   const detail = stats.userDetail(wanted);
 
   const nodes = new Map();
-  graph.nodes.forEach(function (node) { nodes.set(node.id, normaliseNode(node)); });
+  graph.nodes.forEach(function (node) {
+    nodes.set(node.id, normaliseNode(node));
+  });
   const edges = new Map();
   // NORMALISED THE WAY THE NODES ARE, and for the same reason: the console
   // prints `edge.credentials` on every row of the relationship table, and an
-  // edge that came out of `delegation.graph()` and was never touched by the fold
-  // below — a `reaches` line, a refused chain — must answer 0 rather than
+  // edge that came out of `delegation.graph()` and was never touched by the
+  // fold below — a `reaches` line, a refused chain — must answer 0 rather than
   // `undefined`, or that column reads as a bug on exactly the rows the
   // delegation half contributed.
   graph.edges.forEach(function (edge) {
@@ -879,7 +916,8 @@ function graphFor(key) {
     if (!edge.protocols) edge.protocols = [];
     edges.set(edge.id, edge);
   });
-  const sts = graph.nodes.filter(function (one) { return one.kind === 'sts'; })[0];
+  const sts =
+      graph.nodes.filter(function (one) { return one.kind === 'sts'; })[0];
 
   // What the delegation half has already drawn, so the issuance half does not
   // draw it again. See the fourth decision in the header.
@@ -889,6 +927,7 @@ function graphFor(key) {
   });
 
   function nodeFor(id, seed) {
+    log.debug("Entering nodeFor().");
     let node = nodes.get(id);
     if (!node) {
       node = normaliseNode({
@@ -908,12 +947,15 @@ function graphFor(key) {
     if (seed) {
       if (seed.key && !node.key) node.key = seed.key;
       if (seed.presented && !node.presented) node.presented = seed.presented;
-      if (seed.application && !node.application) node.application = seed.application;
+      if (seed.application &&
+          !node.application) node.application = seed.application;
     }
+    log.debug("Leaving nodeFor().");
     return node;
   }
 
   function edgeFor(id, seed) {
+    log.debug("Entering edgeFor().");
     let edge = edges.get(id);
     if (!edge) {
       edge = Object.assign({
@@ -930,6 +972,7 @@ function graphFor(key) {
     }
     if (edge.credentials === undefined) edge.credentials = 0;
     if (!edge.protocols) edge.protocols = [];
+    log.debug("Leaving edgeFor().");
     return edge;
   }
 
@@ -937,6 +980,7 @@ function graphFor(key) {
   // `delegation.js` folds its own — same shape, so `delegationEdgeRow()` in the
   // console reads both without knowing which half it is looking at.
   function foldOnto(edge, credential) {
+    log.debug("Entering foldOnto().");
     let held = edge.produced.filter(function (one) {
       return one.kind === credential.kind;
     })[0];
@@ -955,15 +999,17 @@ function graphFor(key) {
         held.moreIdentifiers++;
       }
     }
+    log.debug("Leaving foldOnto().");
   }
 
   // THE PERSON. Created whether or not anything is known about them, because a
   // page that answers "nothing has been issued to bob" still has to draw bob —
-  // an empty picture is not an answer, which is the argument delegation.js makes
-  // about always drawing the hexagon.
+  // an empty picture is not an answer, which is the argument delegation.js
+  // makes about always drawing the hexagon.
   const person = nodeFor(wanted, {
     key: wanted,
-    presented: (detail && detail.user.forms[0] && detail.user.forms[0].form) || wanted
+    presented: (detail && detail.user.forms[0] &&
+                detail.user.forms[0].form) || wanted
   });
   person.isSubject = true;
   // WHETHER THIS IDENTITY IS A CLIENT RATHER THAN A PERSON, carried so the
@@ -1070,7 +1116,8 @@ function graphFor(key) {
   const found = detail ? credentialsFor(detail, drawnIdentifiers)
                        : { credentials: [], skipped: 0 };
   found.credentials.forEach(function (credential) {
-    const holderId = credential.holder ? stats.identityKeyOf(credential.holder) : '';
+    const holderId = credential.holder ?
+                     stats.identityKeyOf(credential.holder) : '';
     let holder = null;
     if (holderId && holderId !== person.id) {
       holder = nodeFor(holderId, { application: credential.holder });
@@ -1105,7 +1152,8 @@ function graphFor(key) {
       // client that used the authorization code grant and then refreshed draws
       // TWO lines — which is the fact worth seeing, and the same decision
       // `delegation.js` makes about putting the chain key in an edge id.
-      const edge = edgeFor('grant | ' + flowKey + ' | ' + person.id + ' > ' + holderId, {
+      const edge = edgeFor('grant | ' + flowKey + ' | ' + person.id + ' > ' +
+                           holderId, {
         from: person.id, to: holderId,
         fromRole: 'subject', toRole: 'holder',
         relation: 'issued-for',
@@ -1121,9 +1169,11 @@ function graphFor(key) {
       });
       edge.credentials++;
       edge.lastAt = Math.max(edge.lastAt, credential.at);
-      edge.firstAt = edge.firstAt ? Math.min(edge.firstAt, credential.at) : credential.at;
+      edge.firstAt = edge.firstAt ? Math.min(edge.firstAt, credential.at) :
+                     credential.at;
       foldOnto(edge, credential);
-      if (credential.flowProtocol && edge.protocols.indexOf(credential.flowProtocol) < 0) {
+      if (credential.flowProtocol &&
+          edge.protocols.indexOf(credential.flowProtocol) < 0) {
         edge.protocols.push(credential.flowProtocol);
       }
     }
@@ -1148,12 +1198,15 @@ function graphFor(key) {
       // machine-to-machine client uses and the one whose whole content is
       // which API it reached.
       const reachFrom = holder || person;
-      audienceParties(credential.audience, credential.issuer).forEach(function (addressed) {
+      audienceParties(credential.audience, credential.issuer).forEach(
+          function (addressed) {
         const audienceId = stats.identityKeyOf(addressed.identifier);
-        if (!audienceId || audienceId === reachFrom.id || audienceId === person.id) {
+        if (!audienceId || audienceId === reachFrom.id ||
+            audienceId === person.id) {
           return;
         }
-        const resource = nodeFor(audienceId, { application: addressed.identifier });
+        const resource = nodeFor(audienceId,
+                                 { application: addressed.identifier });
         if (!resource.chiefRole) {
           // The same fallback the holder gets, for the same reason: a box that
           // is only ever REACHED is a target, and a target is drawn as an
@@ -1168,7 +1221,8 @@ function graphFor(key) {
           resource.protocols.push(credential.flowProtocol);
         }
         resource.lastAt = Math.max(resource.lastAt, credential.at);
-        resource.firstAt = resource.firstAt ? Math.min(resource.firstAt, credential.at)
+        resource.firstAt = resource.firstAt ?
+                           Math.min(resource.firstAt, credential.at)
                                             : credential.at;
         // KEYED ON THE GRANT, exactly as the person-to-application line above
         // is: a client that was authorized to reach one resource by the
@@ -1233,7 +1287,8 @@ function graphFor(key) {
             }
           });
         foldOnto(reach, credential);
-        if (credential.flowProtocol && reach.protocols.indexOf(credential.flowProtocol) < 0) {
+        if (credential.flowProtocol &&
+            reach.protocols.indexOf(credential.flowProtocol) < 0) {
           reach.protocols.push(credential.flowProtocol);
         }
       });
@@ -1256,7 +1311,8 @@ function graphFor(key) {
       issued.firstAt = issued.firstAt ? Math.min(issued.firstAt, credential.at)
                                       : credential.at;
       foldOnto(issued, credential);
-      if (credential.flowProtocol && issued.protocols.indexOf(credential.flowProtocol) < 0) {
+      if (credential.flowProtocol &&
+          issued.protocols.indexOf(credential.flowProtocol) < 0) {
         issued.protocols.push(credential.flowProtocol);
       }
     } else {
@@ -1286,7 +1342,8 @@ function graphFor(key) {
       issued.firstAt = issued.firstAt ? Math.min(issued.firstAt, credential.at)
                                       : credential.at;
       foldOnto(issued, credential);
-      if (credential.flowProtocol && issued.protocols.indexOf(credential.flowProtocol) < 0) {
+      if (credential.flowProtocol &&
+          issued.protocols.indexOf(credential.flowProtocol) < 0) {
         issued.protocols.push(credential.flowProtocol);
       }
       if (person.flows.indexOf(flowKey) < 0) person.flows.push(flowKey);
@@ -1324,7 +1381,9 @@ function activityFor(key) {
     return null;
   }
   const catalogue = userList();
-  const entry = catalogue.filter(function (one) { return one.key === wanted; })[0] || null;
+  const entry = catalogue.filter(function (one) {
+    return one.key === wanted;
+  })[0] || null;
   if (!entry) {
     log.debug("Leaving activityFor(). Neither register names that identity.");
     return null;
@@ -1382,9 +1441,9 @@ module.exports = {
   // WHO HOLDS A CREDENTIAL, and one line of detail about it. Exported for
   // `credential_graph.js`, which draws one credential's ancestry and has to put
   // the same party at the end of the same line as this file does — two answers
-  // to "whose token is this" would be two pictures of one issuance, on two pages
-  // of one console, and the reader comparing them would have no way to tell that
-  // from two parties that really are different.
+  // to "whose token is this" would be two pictures of one issuance, on two
+  // pages of one console, and the reader comparing them would have no way to
+  // tell that from two parties that really are different.
   holderOf: holderOf,
   detailOf: detailOf,
   // WHAT A CREDENTIAL IS ADDRESSED TO. Exported for `credential_graph.js` for

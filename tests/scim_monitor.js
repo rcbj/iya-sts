@@ -1,4 +1,10 @@
 'use strict';
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'scim_monitor',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: scim_monitor.js
 //
@@ -21,11 +27,10 @@
 //      misleading pair of numbers this page could print: both look like a
 //      healthy service.
 //   3. **A COUNTER MUST NEVER BREAK A PROVISIONING REQUEST.** `recordScim()` is
-//      called from inside the two functions every SCIM answer goes out
-//      through. A counter that could throw would turn a monitoring feature into
-//      the 500 it exists to show — and, worse, half a count is indistinguishable
-//      from a real request, so a throw must record NOTHING rather than part of
-//      a row.
+//      called from inside the two functions every SCIM answer goes out through.
+//      A counter that could throw would turn a monitoring feature into the 500
+//      it exists to show — and, worse, half a count is indistinguishable from a
+//      real request, so a throw must record NOTHING rather than part of a row.
 //
 // And a fourth that is not about the page at all: the counters are PER TRUST
 // REALM since 2026-09-06, and the guard for that is in
@@ -57,6 +62,7 @@ module.exports = {
   describe: 'the SCIM traffic counters: a refused caller is not a client, an ' +
             'absent measurement is null, and a counter cannot throw',
   run: function (t) {
+    log.debug("Entering run().");
     const stats = require('../common/admin_stats');
 
     // ---------------------------------------------------------------------
@@ -83,8 +89,8 @@ module.exports = {
                      row.maxMs === null;
             }),
       'every operation this server implements is listed AT ZERO — a table of ' +
-      'only what has happened answers "does this support PATCH" by omission — ' +
-      'and each carries a null duration rather than a zero',
+      'only what has happened answers "does this support PATCH" by omission ' +
+      '— and each carries a null duration rather than a zero',
       empty.operations.length + ' operation(s)');
     t.check(empty.operations.some(function (row) {
       return row.operation === 'modify';
@@ -262,24 +268,29 @@ module.exports = {
     const hostile = { operation: 'create', resourceType: 'User', ok: true };
     Object.defineProperty(hostile, 'status', {
       enumerable: true,
-      get: function () { throw new Error('a getter that throws'); }
+      get: function () {
+        log.debug("Entering get().");
+        log.debug("Leaving get().");
+        throw new Error('a getter that throws');
+      }
     });
     let threw = false;
     try {
       stats.recordScim(hostile);
     } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
       threw = true;
     }
     t.check(!threw,
       'a detail object that throws when it is read does NOT throw into the ' +
-      'caller — every call site is on the path of a provisioning request, and ' +
-      'a monitoring feature that could fail one would cause the outage it ' +
-      'exists to show');
+      'caller — every call site is on the path of a provisioning request, ' +
+      'and a monitoring feature that could fail one would cause the outage ' +
+      'it exists to show');
     const afterThrow = stats.scimMonitorSnapshot();
     t.equal(afterThrow.calls, 0,
       'AND IT RECORDS NOTHING RATHER THAN HALF A ROW. Half a count is worse ' +
-      'than no count, because it is indistinguishable from a real request and ' +
-      'the totals stop adding up for good');
+      'than no count, because it is indistinguishable from a real request ' +
+      'and the totals stop adding up for good');
     t.equal(afterThrow.ok + afterThrow.failed, afterThrow.calls,
       'so the arithmetic still reconciles after the failure');
 
@@ -289,6 +300,7 @@ module.exports = {
     try {
       stats.recordScim(undefined);
     } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
       threwOnNothing = true;
     }
     t.check(!threwOnNothing,
@@ -298,5 +310,6 @@ module.exports = {
     // run — or a developer reading /admin/scim/monitor after `npm test` — is
     // not looking at this file's traffic.
     stats.resetScimForTests();
+    log.debug("Leaving run().");
   }
 };

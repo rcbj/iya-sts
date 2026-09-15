@@ -49,7 +49,11 @@
 // drive it with plain objects.
 // ---------------------------------------------------------------------------
 
-const { log } = require('../common/helpers');
+const { log, subjectForName } = require('../common/helpers');
+// For `inventsClaimValues()`: whether an address may be made up for somebody
+// whose entry carries none. A leaf requiring only config, so this file stays a
+// library that can join no cycle.
+const mode = require('../common/mode');
 
 // ---------------------------------------------------------------------------
 // THE EIGHT FORMATS OF RFC 9493 SECTION 3, EACH WITH ITS CLOSED MEMBER SET.
@@ -194,18 +198,24 @@ const ABSOLUTE_URI = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/;
 // ---------------------------------------------------------------------------
 const VALUE_CHECKS = {
   'account.uri': function (value) {
+    log.debug("Entering account.uri().");
+    log.debug("Leaving account.uri().");
     return ACCT_URI.test(value)
       ? null
       : 'is not an "acct" URI (RFC 7565) — it has to begin "acct:" and ' +
         'carry a user and a host, as in acct:alice@example.com';
   },
   'email.email': function (value) {
+    log.debug("Entering email.email().");
+    log.debug("Leaving email.email().");
     return ADDR_SPEC.test(value)
       ? null
       : 'is not an email address — one "@", something either side of it, ' +
         'and no whitespace';
   },
   'phone_number.phone_number': function (value) {
+    log.debug("Entering phone_number.phone_number().");
+    log.debug("Leaving phone_number.phone_number().");
     return E164.test(value)
       ? null
       : 'is not an E.164 number — RFC 9493 section 3.2.5 wants a leading ' +
@@ -213,17 +223,23 @@ const VALUE_CHECKS = {
         'from "+12065550100" to any receiver that compares them';
   },
   'decentralized_identifier.url': function (value) {
+    log.debug("Entering decentralized_identifier.url().");
+    log.debug("Leaving decentralized_identifier.url().");
     return DID_URL.test(value)
       ? null
       : 'is not a DID or a DID URL — it has to begin "did:", name a method ' +
         'and carry a method-specific identifier';
   },
   'uri.uri': function (value) {
+    log.debug("Entering uri.uri().");
+    log.debug("Leaving uri.uri().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI — it needs a scheme and a colon';
   },
   'issuer_subject_id.iss': function (value) {
+    log.debug("Entering issuer_subject_id.iss().");
+    log.debug("Leaving issuer_subject_id.iss().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI. An issuer identifier is one, always — it ' +
@@ -511,19 +527,65 @@ function describeSubject(subject) {
 // format a stream asked for. `format` comes off the stream configuration's own
 // `format` member (SSF 1.0's "default subjects" arrangement), so a receiver
 // that asked for `opaque` never sees an email address.
-function subjectForUser(userid, format, issuer) {
+//
+// ---------------------------------------------------------------------------
+// **`facts` IS WHAT THE CALLER KNOWS ABOUT THE PERSON, AND IT WINS
+// (2026-09-12).** `{ mail, phone, did }`, each optional. This function used to
+// know only the username, so an `email` subject was `<name>@example.com` and a
+// DID was `did:example:<name>` WHEREVER the person had a real address on their
+// entry — `risc.js` holds `mail` on its row and was not passing it. A Security
+// Event Token sent to a real receiver saying that `alice@example.com`'s account
+// was disabled is about somebody at a domain nobody here owns.
+//
+// **AND WHERE THERE IS NO REAL VALUE, `mode.inventsClaimValues()` DECIDES.**
+// Development invents, exactly as before, so a client has something to parse.
+// Product does not: a format with no real value falls back to the
+// issuer/subject pair — which is composed from this service's own issuer and
+// the person's own name, and invents nothing — the way `phone_number` always
+// has. An invented fact a receiver acts on is worse than a different format it
+// can handle. A username that is itself an address is a real value in both.
+// ---------------------------------------------------------------------------
+function realOrInventedMail(name, facts) {
+  log.debug("Entering realOrInventedMail().");
+  const mail = String((facts || {}).mail || '').trim();
+  if (mail) {
+    log.debug("Leaving realOrInventedMail().");
+    return mail;
+  }
+  if (name.indexOf('@') > 0) {
+    log.debug("Leaving realOrInventedMail().");
+    return name;
+  }
+  log.debug("Leaving realOrInventedMail().");
+  return mode.inventsClaimValues() ? name + '@example.com' : '';
+}
+
+function subjectForUser(userid, format, issuer, facts) {
   log.debug('Entering subjectForUser(). ' + format);
   const name = String(userid || '');
+  const known = facts || {};
   const chosen = FORMAT_BY_NAME[format] ? format : 'issuer_subject_id';
+  // THE `sub` EVERY TOKEN THIS ISSUER HANDED OUT CARRIES (2026-09-14): the
+  // person's `urn:uuid:<entryUUID>`. An issuer_subject_id is RFC 9493's
+  // "subject as the issuer knows it", and a receiver joins it to the tokens it
+  // already holds — so a bare name here named a subject no token had. A caller
+  // that knows the subject (an event about an entry already deleted) passes it
+  // as `facts.subject`; somebody the directory does not hold keeps the name.
+  const issuerSubject = String(known.subject || '') ||
+                        subjectForName(name) || name;
+  const fallback = { format: 'issuer_subject_id', iss: String(issuer || ''),
+    sub: issuerSubject };
   if (chosen === 'email') {
-    log.debug('Leaving subjectForUser(). email.');
-    return { format: 'email', email: name.indexOf('@') > 0
-      ? name : name + '@example.com' };
+    const mail = realOrInventedMail(name, known);
+    log.debug('Leaving subjectForUser(). email' + (mail ? '.' : ': none, ' +
+              'and none is invented here; issuer_subject_id.'));
+    return mail ? { format: 'email', email: mail } : fallback;
   }
   if (chosen === 'account') {
-    log.debug('Leaving subjectForUser(). account.');
-    return { format: 'account', uri: 'acct:' + (name.indexOf('@') > 0
-      ? name : name + '@example.com') };
+    const mail = realOrInventedMail(name, known);
+    log.debug('Leaving subjectForUser(). account' + (mail ? '.' : ': none; ' +
+              'issuer_subject_id.'));
+    return mail ? { format: 'account', uri: 'acct:' + mail } : fallback;
   }
   if (chosen === 'opaque') {
     log.debug('Leaving subjectForUser(). opaque.');
@@ -534,30 +596,47 @@ function subjectForUser(userid, format, issuer) {
     return { format: 'uri', uri: String(issuer || '') + '/users/' + name };
   }
   if (chosen === 'decentralized_identifier') {
-    log.debug('Leaving subjectForUser(). did.');
-    return { format: 'decentralized_identifier',
-      url: 'did:example:' + name };
+    const did = String(known.did || '').trim();
+    if (did) {
+      log.debug('Leaving subjectForUser(). did, a real one.');
+      return { format: 'decentralized_identifier', url: did };
+    }
+    if (mode.inventsClaimValues()) {
+      log.debug('Leaving subjectForUser(). did, invented.');
+      return { format: 'decentralized_identifier',
+        url: 'did:example:' + name };
+    }
+    log.debug('Leaving subjectForUser(). No DID; issuer_subject_id.');
+    return fallback;
   }
   if (chosen === 'phone_number') {
-    // There is no phone number on a directory entry here and inventing one
-    // per user would be inventing a fact. A stream that asked for this format
-    // gets the issuer/subject pair and the caller says so — see
-    // ssf.js's defaultSubjectNote().
+    // A number is used where the caller HOLDS one — `risc.js` keeps
+    // `telephoneNumber` / `mobile` on its row — and never invented, in either
+    // mode: a made-up phone number is a fact about somebody else's phone.
+    const phone = String(known.phone || '').trim();
+    if (phone) {
+      log.debug('Leaving subjectForUser(). phone_number.');
+      return { format: 'phone_number', phone_number: phone };
+    }
+    // A stream that asked for this format gets the issuer/subject pair and the
+    // caller says so — see ssf.js's defaultSubjectNote().
     log.debug('Leaving subjectForUser(). No number; issuer_subject_id.');
-    return { format: 'issuer_subject_id', iss: String(issuer || ''),
-      sub: name };
+    return fallback;
   }
   if (chosen === 'aliases') {
-    log.debug('Leaving subjectForUser(). aliases.');
-    return { format: 'aliases', identifiers: [
-      { format: 'issuer_subject_id', iss: String(issuer || ''), sub: name },
-      { format: 'email', email: name.indexOf('@') > 0
-        ? name : name + '@example.com' }
-    ] };
+    const mail = realOrInventedMail(name, known);
+    const identifiers = [
+      { format: 'issuer_subject_id', iss: String(issuer || ''),
+        sub: issuerSubject }
+    ];
+    if (mail) {
+      identifiers.push({ format: 'email', email: mail });
+    }
+    log.debug('Leaving subjectForUser(). aliases, ' + identifiers.length + '.');
+    return { format: 'aliases', identifiers: identifiers };
   }
   log.debug('Leaving subjectForUser(). issuer_subject_id.');
-  return { format: 'issuer_subject_id', iss: String(issuer || ''),
-    sub: name };
+  return fallback;
 }
 
 module.exports = {

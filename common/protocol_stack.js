@@ -109,12 +109,12 @@ require('../portal/portal');
 // `consent_error` it hands back.
 require('../oauth-oidc/consent_screen');
 require('../oauth-oidc/oauth2');
-// WS-Federation's passive requestor profile. It must come AFTER authn.js and the
-// order is a dependency and not a preference: it signs users in to the session
-// that service owns (startSession/sessionOf), so that single sign-on works across
-// the two protocols. The dependency is one-way — authn.js knows nothing about
-// this module — which is what keeps it out of the cycles the split exists to
-// avoid.
+// WS-Federation's passive requestor profile. It must come AFTER authn.js and
+// the order is a dependency and not a preference: it signs users in to the
+// session that service owns (startSession/sessionOf), so that single sign-on
+// works across the two protocols. The dependency is one-way — authn.js knows
+// nothing about this module — which is what keeps it out of the cycles the
+// split exists to avoid.
 require('../ws-federation/wsfed');
 // SAML 2.0 Web Browser SSO — the profile this service spent years documenting
 // the absence of. It must come AFTER authn.js for the reason wsfed.js must, and
@@ -127,8 +127,8 @@ require('../ws-federation/wsfed');
 require('../saml/saml2_sso');
 // SAML 1.1's two browser profiles, and the SAML responder behind one of them.
 // TWO constraints, and the second is the interesting one. It must come AFTER
-// authn.js for the same reason saml2_sso.js must — no sign-in screen of its own,
-// and beginAuthentication() is how it reaches one. And it must come AFTER
+// authn.js for the same reason saml2_sso.js must — no sign-in screen of its
+// own, and beginAuthentication() is how it reaches one. And it must come AFTER
 // saml/saml2_sso.js, because it takes that module's slugOf(): the slug is a
 // HANDLE FOR AN APPLICATION shared by both profiles and by the console, and two
 // spellings of it would make /saml2/metadata/app-1a2b3c and
@@ -199,21 +199,150 @@ require('../kerberos/spnego');
 // It starts nothing, exactly as `spnego.js` starts nothing.
 // ---------------------------------------------------------------------------
 require('../kerberos/spnego_authn');
-// The admin console. It must come AFTER oauth2.js and, like wsfed.js, the order is a
-// dependency rather than a preference: its metrics page reports the browser sign-on
-// sessions oauth2.js owns, read through the `sessions` map that module exports. The
-// dependency is one way — oauth2.js knows nothing about the console — so it is not a
-// cycle. What holds the STATE it renders is admin_stats.js, which registers no route
-// and is required by app.js, so the counting is already running by the time this
-// line is reached.
+// ---------------------------------------------------------------------------
+// 17b. THE REVOCATION ENDPOINTS. `/pki/crl/{scope}/{ca}.crl`,
+// `/pki/ocsp/{scope}/{ca}`, `/pki/ca/{scope}/{ca}.cer` and the index at
+// `/pki/revocation` — the HTTP half of the two schemes every certificate this
+// service issues names in its CRL distribution points and its Authority
+// Information Access (served on the main port and on the plain-HTTP listener
+// `server.js` binds from `pki/pki_service.js`). The LDAP half is the
+// directory's, published into `ou=crl` by `ldap/ldap_server.js`.
+//
+// **A PROTOCOL SURFACE AND NOT A CONSOLE ONE**, which is why it is here among
+// the protocol families rather than beside `/admin/pki` below. Nothing in it
+// is behind a gate and nothing in it takes a credential: a relying party
+// fetches a CRL before it has decided to trust anything, often before it has
+// authenticated to anybody, and a revocation list nobody can read is a
+// revocation nobody acts on.
+//
+// NO CONSTRAINT IN EITHER DIRECTION. It requires `common/app`,
+// `common/helpers`, `common/config`, `common/pki` and
+// `common/pki_revocation` — every one of them a LIBRARY (rule 3) that
+// registers nothing — so it can move a route no matter where it is put. It is
+// HERE, ahead of the console, only so that the endpoint list on
+// `/admin/sts-metadata` groups it with the protocols it belongs to.
+// ---------------------------------------------------------------------------
+require('../pki/pki_service');
+// The admin console. It must come AFTER oauth2.js and, like wsfed.js, the order
+// is a dependency rather than a preference: its metrics page reports the
+// browser sign-on sessions oauth2.js owns, read through the `sessions` map that
+// module exports. The dependency is one way — oauth2.js knows nothing about the
+// console — so it is not a cycle. What holds the STATE it renders is
+// admin_stats.js, which registers no route and is required by app.js, so the
+// counting is already running by the time this line is reached.
 require('../admin-ui/admin');
+// ---------------------------------------------------------------------------
+// 18a. THE PKI PAGE. `/admin/pki` — the certificate authority this service
+// maintains per trust realm, and the signing key pairs it issues to
+// applications from it (RFC 7521 / RFC 7523).
+//
+// **HERE RATHER THAN AT 20a WITH THE CRYPTO REPORT, AND THAT IS THE WHOLE OF
+// WHY IT NEEDS NO SLOT.** It requires `admin-ui/admin` for the shell — so a
+// require the other way would close a cycle — and `common/pki.js`, which is a
+// LIBRARY (rule 3) and registers nothing. That is the entire list, so
+// `mgmt-api/admin_api.js` at 19 can require it in the ORDINARY DIRECTION and
+// move no route: by then this line has already registered `/admin/pki` and
+// that require is a cache hit. `crypto_metadata.js` could not do this because
+// it reads an algorithm table out of `tls/tls_server.js` at 20, and requiring
+// that from here would drag every `/tls*` route in front of the management
+// API's own. Rule 3e says a slot is what you pay for a require that would
+// close a cycle or move a route, and not to add one by analogy.
+// ---------------------------------------------------------------------------
+require('../admin-ui/pki_admin');
+// ---------------------------------------------------------------------------
+// 18b. THE ENCRYPTION REPORT. `/admin/encryption` — what this service seals at
+// rest, with which key, under which algorithm, and how many encryptions and
+// decryptions have happened in this process.
+//
+// **SAME PLACEMENT ARGUMENT AS 18a, AND IT NEEDS NO SLOT FOR THE SAME
+// REASON.** It requires `admin-ui/admin` for the shell — a require the other
+// way would close a cycle — and `common/crypto`, `common/keystore`,
+// `common/secrets`, `common/mode` and `persistence/persistence`, every one of
+// which is a LIBRARY (rule 3) that registers nothing and every one of which is
+// already loaded by this line. So `mgmt-api/admin_api.js` at 19 requires it in
+// the ORDINARY DIRECTION and moves no route.
+//
+// It is a MONITORING page rather than a protocol one, which is a statement
+// `admin-ui/admin.js`'s `SECTIONS` makes and this line does not: where a page
+// is FILED is decided by the question it answers, and its position in the
+// require order is decided by what it requires.
+// ---------------------------------------------------------------------------
+require('../admin-ui/encryption_admin');
+// ---------------------------------------------------------------------------
+// 18c. THE DATABASE REPORT. `/admin/database` — everything PostgreSQL will
+// tell this service about itself, and the state of the schema this service
+// owns in it.
+//
+// **SAME PLACEMENT ARGUMENT AS 18a AND 18b, AND IT NEEDS NO SLOT EITHER.** It
+// requires `admin-ui/admin` for the shell and `persistence/persistence`,
+// which is a LIBRARY (rule 3) required at 4a and therefore a cache hit by
+// this line. It does NOT require `pg` and never sees a connection string:
+// every statement behind the page is a literal in
+// `persistence/persistence_postgres.js`, which owns the pool, and the console
+// asks `persistence.databaseMetrics()` for the answer.
+//
+// A MONITORING page rather than a settings one — `/admin/persistence` is what
+// this service is CONFIGURED to write down, and this is what the database has
+// DONE. That placement is `admin-ui/admin.js`'s `SECTIONS` to state and not
+// this line's.
+// ---------------------------------------------------------------------------
+require('../admin-ui/database_admin');
+// ---------------------------------------------------------------------------
+// 18d. THE SECRET-STORE REPORT. `/admin/secrets` — where the key-encryption
+// key and the database password come from, whether this process actually read
+// them, and what the store at the other end is doing.
+//
+// **SAME PLACEMENT ARGUMENT AS 18a, 18b AND 18c, AND IT NEEDS NO SLOT FOR THE
+// SAME REASON.** It requires `admin-ui/admin` for the shell and
+// `common/secrets`, `common/keystore` and `common/mode`, every one of which is
+// a LIBRARY (rule 3) that registers nothing and every one of which is already
+// loaded by this line — `secrets.js` is pulled in by `helpers.js` at 3. So
+// `mgmt-api/admin_api.js` at 19 requires it in the ORDINARY DIRECTION and
+// moves no route.
+//
+// It holds no SDK and makes no request itself: every probe behind the page is
+// in `common/secrets.js`, which owns the providers, the client and the login —
+// so the login a probe makes is the same login a startup read makes, and the
+// page cannot be right about a store nobody is talking to.
+//
+// A MONITORING page rather than a settings one, and rather than a second
+// `/admin/encryption`: that page says what is SEALED and with what, and this
+// says what is at the other end of the one paragraph in it about the key.
+// `admin-ui/admin.js`'s `SECTIONS` states the placement and this line does
+// not.
+// ---------------------------------------------------------------------------
+require('../admin-ui/secrets_admin');
+// ---------------------------------------------------------------------------
+// 18e. THE EMBEDDED PROTOCOL DEBUGGER'S REPORT (2026-09-13). `/admin/debugger`
+// — the same placement as 18a to 18d, for their reason: it requires
+// `admin-ui/admin` for the shell and nothing that registers a route, and
+// `mgmt-api/admin_api.js` at 19 requires it in the ordinary direction. It reads
+// the listener's status LAZILY, because `debugger/debugger_server.js` requires
+// `tls/tls_server.js` at 20. See 23h for the listener itself.
+// ---------------------------------------------------------------------------
+require('../debugger/debugger_admin');
+// ---------------------------------------------------------------------------
+// 18f. THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13).
+// `/admin/oauth2/monitor` — what the authorization server has done, one
+// section per mechanism, RFC 9126's pushed authorization requests first.
+//
+// The same placement as 18a to 18e, for their reason: it requires
+// `admin-ui/admin` for the shell and, through `oauth2_monitor_console.js`,
+// `admin-core/admin_views.js`, `oauth-oidc/par.js` and
+// `oauth-oidc/oauth2_monitor.js` — libraries every one of which is loaded by
+// this line — so it moves no route. It cannot be required from `oauth2.js` at
+// 9, which would drag the whole console in front of the authorization server.
+// `mgmt-api/admin_api.js` at 19 reaches the model lazily through
+// `oauth-oidc/oauth2_monitor_api.js`.
+// ---------------------------------------------------------------------------
+require('../oauth-oidc/oauth2_monitor_admin');
 // The management API: everything that console shows and everything it can
-// change, at /admin-api, over JSON. It must come AFTER admin.js and the order is
-// a dependency rather than a preference — it requires that module for the four
-// action functions and the per-page JSON views, and calls nothing else, which is
-// what makes it incapable of holding a second opinion about what a revocation
-// means. Its OpenAPI document is built from its own route table (admin_api.js ->
-// admin_api_spec.js), so an operation cannot be undocumented.
+// change, at /admin-api, over JSON. It must come AFTER admin.js and the order
+// is a dependency rather than a preference — it requires that module for the
+// four action functions and the per-page JSON views, and calls nothing else,
+// which is what makes it incapable of holding a second opinion about what a
+// revocation means. Its OpenAPI document is built from its own route table
+// (admin_api.js -> admin_api_spec.js), so an operation cannot be undocumented.
 require('../mgmt-api/admin_api');
 // 19a. THE API EXPLORER, which is a page of the CONSOLE and not of that API.
 //
@@ -244,6 +373,26 @@ require('../admin-ui/api_explorer');
 // would load it here whatever this line said. Saying it explicitly is what
 // keeps "the order in this file is the route order" true.
 const tlsServer = require('../tls/tls_server');
+// ---------------------------------------------------------------------------
+// 20-slot. THE CLIENT-CERTIFICATE TRUSTSTORE, HANDED TO THE CONSOLE
+// (2026-09-12).
+//
+// `admin.setTruststore()` is an inverted hook (rule 3e) and this is the one
+// slot in the service filled HERE rather than by the module that owns what it
+// carries. The ordinary shape — `tls/tls_server.js` requiring `admin-ui/admin`
+// at its own top level and filling it — does not work, and the reason is the
+// real load order rather than the one written above: that module is first
+// loaded from INSIDE `admin.js`'s require, through `admin-core/admin_views.js`
+// → `spiffe/spiffe_auth.js`. A require of `admin.js` from there is a cycle and
+// hands back its half-built exports, on which `setTruststore` is not yet
+// defined. Here both modules are whole, and so is every process that runs the
+// stack — `server.js`'s and every request worker's.
+//
+// A process that never loads this file (an in-process test) has an unfilled
+// slot, and `/admin/tls/trust` then says the truststore is not installed
+// rather than drawing an empty one.
+// ---------------------------------------------------------------------------
+require('../admin-ui/admin').setTruststore(tlsServer.truststore);
 // ---------------------------------------------------------------------------
 // GET /admin/crypto-metadata — the console's report on what this service does
 // with cryptography, for every identity service it advertises.
@@ -279,13 +428,13 @@ const tlsServer = require('../tls/tls_server');
 require('../admin-ui/crypto_metadata');
 // The embedded LDAPv3 directory (RFC 4511), built on the node-ldapjs submodule.
 // Like the two Kerberos modules it registers its HTTP views at require time
-// (/ldap, /admin/ldap/directory) and starts its TCP listener from listen() below, for
-// the same reason: binding port 389 is privileged and can fail, and a require
-// that throws takes the whole service down where a route cannot.
+// (/ldap, /admin/ldap/directory) and starts its TCP listener from listen()
+// below, for the same reason: binding port 389 is privileged and can fail, and
+// a require that throws takes the whole service down where a route cannot.
 //
 // It must come AFTER admin.js, and that is a dependency rather than a
-// preference: it installs itself as admin_stats.js's user observer, which is how
-// an entry appears under ou=users for anybody who authenticates through ANY
+// preference: it installs itself as admin_stats.js's user observer, which is
+// how an entry appears under ou=users for anybody who authenticates through ANY
 // protocol here. Requiring it earlier would work too — nothing authenticates
 // during require — but keeping it beside the console is what makes the pairing
 // visible to the next reader.
@@ -396,6 +545,35 @@ require('../ssf/ssf');
 // It starts nothing and holds no socket.
 require('../xacml/xacml');
 
+// GNAP (RFC 9635 + RFC 9767), 2026-09-12 — 23d. After `authn` (the resource
+// owner signs in through `beginAuthentication()`), after `oauth2` (the ID Token
+// builder and the authorization server profiles), after `saml/saml2`, after
+// `ssf/ssf` at 23b (its streams take GNAP's subject scope and its CAEP delivery
+// is called at event time) and after the console at 18 (whose shell
+// `gnap_admin.js` draws its two pages with). Before `logout`, which reads every
+// store a sign-out ends, and before `sts_metadata`, which reads the router.
+// `gnap.js` requires `gnap_interact.js` and `gnap_admin.js` itself, so this
+// family has one line here.
+require('../gnap/gnap');
+
+// CERTIFICATE ENROLLMENT (2026-09-13) — 23e, 23f, 23g. ACME (RFC 8555), EST
+// (RFC 7030) and SCEP (RFC 8894). After the console at 18, whose shell each
+// family's `<family>_admin.js` draws its two pages with, and after `ldap` at
+// 21, whose slot `common/cert_enrollment.js` reads the entries through. Each
+// module requires its own `_admin.js`, so each family is one line here. No
+// constraint between the three.
+require('../acme/acme');
+require('../est/est');
+require('../scep/scep');
+
+// THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13) — 23h. A socket owner: requiring
+// it builds the debugger listener's OWN express app and registers nothing on
+// this one, and `server.js`'s `listen()` binds it and forks the api process.
+// After `authn` (8, its sessions), `oauth2` (9, whose scope rule it relies on),
+// `tls/tls_server` (20, the certificate it presents) and the console (18, whose
+// roster decides who may use it). No route here depends on its position.
+const debuggerServer = require('../debugger/debugger_server');
+
 require('../logout/logout');
 require('../sts_metadata');
 
@@ -404,5 +582,6 @@ module.exports = {
   krb5Service: krb5Service,
   tlsServer: tlsServer,
   ldapServer: ldapServer,
-  spiffeServer: spiffeServer
+  spiffeServer: spiffeServer,
+  debuggerServer: debuggerServer
 };

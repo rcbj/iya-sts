@@ -124,11 +124,11 @@
 // in the ordinary direction with no cycle and no route moved. Do not let it
 // grow a require of anything that registers a route.
 //
-// The DIRECTORY half is inverted for `applications.js`'s reason: `ldap_server.js`
-// is near the end of the require order because requiring it pulls every `/ldap`
-// route into the router at that point, and a module the sign-in screen reads
-// cannot drag those routes to the front. So this file offers `setDirectory()`
-// and that module fills it at ITS require time.
+// The DIRECTORY half is inverted for `applications.js`'s reason:
+// `ldap_server.js` is near the end of the require order because requiring it
+// pulls every `/ldap` route into the router at that point, and a module the
+// sign-in screen reads cannot drag those routes to the front. So this file
+// offers `setDirectory()` and that module fills it at ITS require time.
 //
 // The division of labour is the same one and worth keeping: THIS module owns
 // the SCHEMA and both conversions, and that module owns the directory
@@ -157,18 +157,26 @@
 const crypto = require('crypto');
 const config = require('./../common/config');
 const { log, nowSec, randomId } = require('./../common/helpers');
+// The release index below is per trust realm. A LEAF requiring only `config`,
+// so rule 3o's "requires nothing heavier" stays true.
+const realms = require('./../common/realms');
 const audit = require('./../common/audit');
+// The error-code registry, a leaf. See actionRefused() below for why a refused
+// change to the register carries its code on an audit row and not on its
+// result.
+const errorCodes = require('./../common/error_codes');
 // ---------------------------------------------------------------------------
 // THE APPLICATIONS REGISTRY, AND WHY THIS MODULE MAY REQUIRE IT (rule 3o, read
 // the other way round).
 //
 // Rule 3o is about who may require THIS file. This is the one require going the
-// other way, and it is a plain one in the ordinary direction rather than a slot:
-// `applications.js` registers no route, and it requires only `config.js`,
+// other way, and it is a plain one in the ordinary direction rather than a
+// slot: `applications.js` registers no route, and it requires only `config.js`,
 // `helpers.js` and `audit.js` — none of which reaches back here — so nothing
 // about requiring it can close a cycle or move a route. Rule 3e's test is not
-// reached, and a slot would have cost a reader an indirection for nothing. It is
-// the same argument `admin_stats.js` makes above its own require of that file.
+// reached, and a slot would have cost a reader an indirection for nothing. It
+// is the same argument `admin_stats.js` makes above its own require of that
+// file.
 //
 // WHAT IT IS FOR IS ONE QUESTION AND ONLY ONE: *is this application actually
 // configured to authenticate through this relationship, right now?* — asked at
@@ -242,61 +250,84 @@ const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 // must carry before it can be enabled. It is read by `readyFor()` below and by
 // nothing else, so the rule a form enforces and the rule the endpoint enforces
 // are one list rather than two.
+//
+// **`fedPeer` IS IN EVERY ROW SINCE 2026-09-12, AND IT WAS IN NONE.** It is the
+// partner's own identifier — the issuer an assertion or an ID Token must name —
+// and `federation_sp.js` skipped the issuer check whenever it was empty, with a
+// warning. So a relationship with no peer accepted an assertion from ANY issuer
+// its configured key had signed for: one certificate shared by two identity
+// providers, or one identity provider hosting several tenants under one key,
+// and either could assert for the other here. That is the surface this
+// directory says cannot be made permissive, so it is fixed in every mode by
+// making the relationship NOT FULLY CONFIGURED without it — refused at the read
+// and named by readinessOf() like every other missing field — rather than by a
+// check that quietly lapses.
 // ---------------------------------------------------------------------------
 const PROTOCOLS = [
   { protocol: 'saml2', label: 'SAML 2.0', family: 'SAML 2.0',
     what: 'The Web Browser SSO profile. This service sends an <AuthnRequest> ' +
           'to the partner and consumes the <Response> at its assertion ' +
           'consumer service, or issues one to the partner from /saml2.',
-    needs: ['fedSsoUrl', 'fedSigningCertificate'],
+    needs: ['fedSsoUrl', 'fedSigningCertificate', 'fedPeer'],
     spec: 'saml-profiles-2.0-os section 4.1' },
   { protocol: 'saml11', label: 'SAML 1.1', family: 'SAML 1.1',
-    what: 'The Browser/POST profile. THERE IS NO REQUEST MESSAGE — a SAML 1.1 ' +
-          'flow is identity-provider-initiated, so what this service sends the ' +
-          'browser to is an inter-site transfer URL carrying a TARGET, and what ' +
-          'comes back is a <Response> with no InResponseTo to match. See the ' +
-          'note about replay on fedNonce below.',
-    needs: ['fedSsoUrl', 'fedSigningCertificate'],
+    what: 'The Browser/POST profile. THERE IS NO REQUEST MESSAGE — a SAML ' +
+          '1.1 flow is identity-provider-initiated, so what this service ' +
+          'sends the browser to is an inter-site transfer URL carrying a ' +
+          'TARGET, and what comes back is a <Response> with no InResponseTo ' +
+          'to match. See the note about replay on fedNonce below.',
+    needs: ['fedSsoUrl', 'fedSigningCertificate', 'fedPeer'],
     spec: 'saml-profiles-1.1 section 4.1' },
   { protocol: 'wsfed', label: 'WS-Federation 1.2', family: 'WS-Federation',
     what: 'The passive requestor profile. This service sends wa=wsignin1.0 ' +
           'with its own wtrealm and consumes the wresult, which carries a ' +
           'SAML 1.1 or SAML 2.0 assertion inside an RSTR.',
-    needs: ['fedSsoUrl', 'fedSigningCertificate'],
+    needs: ['fedSsoUrl', 'fedSigningCertificate', 'fedPeer'],
     spec: 'WS-Federation 1.2 section 13' },
   { protocol: 'oidc', label: 'OpenID Connect', family: 'OAuth 2.0 / OIDC',
-    what: 'The authorization code flow by default, and response_type=id_token ' +
-          'with response_mode=form_post where there is to be no back channel ' +
-          'at all. The attributes come off the ID Token, and off UserInfo ' +
-          'where one is configured.',
-    needs: ['fedSsoUrl', 'fedClientId'],
+    what: 'The authorization code flow by default, and ' +
+          'response_type=id_token with response_mode=form_post where there ' +
+          'is to be no back channel at all. The attributes come off the ID ' +
+          'Token, and off UserInfo where one is configured.',
+    needs: ['fedSsoUrl', 'fedClientId', 'fedPeer'],
     spec: 'OpenID Connect Core 1.0 section 3' },
   { protocol: 'oauth2', label: 'OAuth 2.0', family: 'OAuth 2.0 / OIDC',
-    what: 'The authorization code flow with NO ID Token — the attributes come ' +
-          'off the access token where it is a JWT, and off a configured ' +
-          'userinfo-shaped endpoint otherwise. It is a distinct protocol here ' +
-          'rather than OIDC with a flag because what identifies the person is ' +
-          'a different artifact, and getting that wrong is the whole of what ' +
-          'goes wrong when people use OAuth 2.0 for authentication.',
-    needs: ['fedSsoUrl', 'fedTokenUrl', 'fedClientId'],
+    what: 'The authorization code flow with NO ID Token — the attributes ' +
+          'come off the access token where it is a JWT, and off a configured ' +
+          'userinfo-shaped endpoint otherwise. It is a distinct protocol ' +
+          'here rather than OIDC with a flag because what identifies the ' +
+          'person is a different artifact, and getting that wrong is the ' +
+          'whole of what goes wrong when people use OAuth 2.0 for ' +
+          'authentication.',
+    needs: ['fedSsoUrl', 'fedTokenUrl', 'fedClientId', 'fedPeer'],
     spec: 'RFC 6749 section 4.1' }
 ];
 
 const PROTOCOL_IDS = PROTOCOLS.map(function (one) { return one.protocol; });
 
 function protocolRow(id) {
+  log.debug("Entering protocolRow().");
   const wanted = String(id || '');
   for (let i = 0; i < PROTOCOLS.length; i++) {
-    if (PROTOCOLS[i].protocol === wanted) return PROTOCOLS[i];
+    if (PROTOCOLS[i].protocol === wanted) {
+      log.debug("Leaving protocolRow().");
+      return PROTOCOLS[i];
+    }
   }
+  log.debug("Leaving protocolRow().");
   return null;
 }
 
 function roleRow(id) {
+  log.debug("Entering roleRow().");
   const wanted = String(id || '');
   for (let i = 0; i < ROLES.length; i++) {
-    if (ROLES[i].role === wanted) return ROLES[i];
+    if (ROLES[i].role === wanted) {
+      log.debug("Leaving roleRow().");
+      return ROLES[i];
+    }
   }
+  log.debug("Leaving roleRow().");
   return null;
 }
 
@@ -371,13 +402,14 @@ const MECHANISMS = [
           'in on the service ticket their client sends back (RFC 4559 over ' +
           'RFC 4178 over RFC 4121). Nothing is typed and no screen is drawn. ' +
           'It is the one mechanism here that rests on a credential this ' +
-          'service genuinely verifies — every other sign-in takes the name it ' +
-          'is given — and what the session then claims is read off the ' +
+          'service genuinely verifies — every other sign-in takes the name ' +
+          'it is given — and what the session then claims is read off the ' +
           'TICKET\'s own flags: amr ["pwd"] for pre-authent, ["hwk"] for ' +
           'hw-authent, both for both, and NOTHING at all for a ticket that ' +
-          'claims neither. A client that cannot get a ticket meets a page with ' +
-          'the sign-in screen linked from it, because a bare 401 Negotiate is ' +
-          'a dead end in every browser that is not configured for this host.' }
+          'claims neither. A client that cannot get a ticket meets a page ' +
+          'with the sign-in screen linked from it, because a bare 401 ' +
+          'Negotiate is a dead end in every browser that is not configured ' +
+          'for this host.' }
 ];
 
 const MECHANISM_IDS = MECHANISMS.map(function (one) {
@@ -385,10 +417,15 @@ const MECHANISM_IDS = MECHANISMS.map(function (one) {
 });
 
 function mechanismRow(id) {
+  log.debug("Entering mechanismRow().");
   const wanted = String(id || '');
   for (let i = 0; i < MECHANISMS.length; i++) {
-    if (MECHANISMS[i].mechanism === wanted) return MECHANISMS[i];
+    if (MECHANISMS[i].mechanism === wanted) {
+      log.debug("Leaving mechanismRow().");
+      return MECHANISMS[i];
+    }
   }
+  log.debug("Leaving mechanismRow().");
   return null;
 }
 
@@ -396,7 +433,9 @@ function mechanismRow(id) {
 // the application record an identity-provider-side relationship points at. One
 // function so the four spellings cannot drift.
 function familyOf(protocolId) {
+  log.debug("Entering familyOf().");
   const row = protocolRow(protocolId);
+  log.debug("Leaving familyOf().");
   return row ? row.family : String(protocolId || 'unstated');
 }
 
@@ -404,10 +443,10 @@ function familyOf(protocolId) {
 // THE SCHEMA.
 //
 // One row per attribute and the row is the whole definition, exactly as
-// `applications.js`'s is: `GET /admin/ldap/federations` publishes this table, the
-// console builds its forms from it, `ldap_server.js` writes the entry from it,
-// and there is no second list anywhere. An attribute that is not here is not
-// written.
+// `applications.js`'s is: `GET /admin/ldap/federations` publishes this table,
+// the console builds its forms from it, `ldap_server.js` writes the entry from
+// it, and there is no second list anywhere. An attribute that is not here is
+// not written.
 //
 // `single` vs `multi` is load-bearing rather than descriptive — a multi-valued
 // attribute ACCUMULATES and a single-valued one is ASSIGNED — and getting it
@@ -424,9 +463,9 @@ const SCHEMA = {
     { name: 'top', where: 'RFC 4512', standard: true,
       what: 'The abstract class every entry carries.' },
     { name: 'applicationProcess', where: 'RFC 4519 section 3.3', standard: true,
-      what: 'The same registered class ou=applications uses, and for the same ' +
-            'reason: it is the one that fits a party in a protocol at all, and ' +
-            'it brings cn, description, seeAlso, ou and l with it.' },
+      what: 'The same registered class ou=applications uses, and for the ' +
+            'same reason: it is the one that fits a party in a protocol at ' +
+            'all, and it brings cn, description, seeAlso, ou and l with it.' },
     { name: 'stsFederation', where: 'this service', standard: false,
       what: 'INVENTED. No registered LDAP schema has a federation partner, ' +
             'because every product that stores one (AD FS, Shibboleth, ' +
@@ -438,18 +477,18 @@ const SCHEMA = {
     { name: 'fedId', kind: 'single', role: 'both', from: 'this register',
       what: 'THE KEY: a short name an operator chose, unique across both ' +
             'roles. It is the RDN as well, unlike an application\'s, because ' +
-            'this register is CONFIGURED rather than observed — nobody has to ' +
-            'accept whatever a protocol presented, so the id can simply be ' +
-            'required to be RDN-safe and short.' },
+            'this register is CONFIGURED rather than observed — nobody has ' +
+            'to accept whatever a protocol presented, so the id can simply ' +
+            'be required to be RDN-safe and short.' },
     { name: 'cn', kind: 'single', role: 'both', standard: true,
       from: 'this register',
-      what: 'The RDN value, equal to fedId. Unlike an application entry there ' +
-            'is no digest case here: an id that would not fit is refused at ' +
-            'creation rather than hashed.' },
+      what: 'The RDN value, equal to fedId. Unlike an application entry ' +
+            'there is no digest case here: an id that would not fit is ' +
+            'refused at creation rather than hashed.' },
     { name: 'fedName', kind: 'single', role: 'both', from: 'this register',
-      what: 'What to call the partner on a page. The id is the name when none ' +
-            'is given, because inventing a friendly name would be inventing a ' +
-            'fact.' },
+      what: 'What to call the partner on a page. The id is the name when ' +
+            'none is given, because inventing a friendly name would be ' +
+            'inventing a fact.' },
     { name: 'fedRole', kind: 'single', role: 'both', from: 'this register',
       what: 'WHICH END THIS SERVICE IS: service-provider (it consumes) or ' +
             'identity-provider (it asserts). One relationship is one ' +
@@ -457,14 +496,30 @@ const SCHEMA = {
     { name: 'fedProtocol', kind: 'single', role: 'both', from: 'this register',
       what: 'One of saml2, saml11, wsfed, oidc, oauth2.' },
     { name: 'fedPeer', kind: 'single', role: 'both', from: 'this register',
-      what: 'THE PARTNER\'S OWN IDENTIFIER, in whatever its protocol calls it: ' +
-            'a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +
-            'wtrealm. On a service-provider-side relationship it is CHECKED — ' +
-            'an assertion whose Issuer is not this string is refused — which ' +
-            'is why it is not merely documentation.' },
+      what: 'THE PARTNER\'S OWN IDENTIFIER, in whatever its protocol calls ' +
+            'it: a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +
+            'wtrealm. On a service-provider-side relationship it is CHECKED ' +
+            '— an assertion whose Issuer is not this string is refused — ' +
+            'which is why it is not merely documentation, and since ' +
+            '2026-09-12 it is REQUIRED there: a relationship without it is ' +
+            'not fully configured.' },
+    { name: 'fedLocalEntityId', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'WHAT THIS SERVICE IS CALLED TO THIS PARTNER, when that is not ' +
+            'the name this service derives. Empty — the default — derives it ' +
+            'from the base URL the browser reached this service at ' +
+            '(<base>/federation/acs/<id>, which global.publicBaseUrl pins). ' +
+            'Set it to the entityID the partner was configured with: it ' +
+            'becomes the Issuer of the outbound AuthnRequest, the ' +
+            'WS-Federation wtrealm, the SAML 1.1 providerId, this ' +
+            'relationship\'s SP metadata entityID, and the audience an ' +
+            'inbound assertion must name — which is a REFUSAL since ' +
+            '2026-09-12, so a partner that knows this service by another ' +
+            'name needs this set. The assertion consumer URL stays derived, ' +
+            'because it is an address a browser must be able to reach.' },
     { name: 'fedEnabled', kind: 'single', role: 'both', from: 'this register',
-      what: 'TRUE/FALSE. A relationship is created DISABLED and nothing about ' +
-            'it does anything until it is turned on: a half-configured ' +
+      what: 'TRUE/FALSE. A relationship is created DISABLED and nothing ' +
+            'about it does anything until it is turned on: a half-configured ' +
             'partner that silently accepted assertions would be the failure ' +
             'this whole register exists to prevent.' },
     { name: 'description', kind: 'multi', role: 'both', standard: true,
@@ -497,10 +552,11 @@ const SCHEMA = {
       from: 'this register',
       what: 'The partner\'s JWKS. FETCHED — which is the exact opposite of ' +
             'what oauthJwksUri on an application entry does, and the ' +
-            'difference is the whole argument in federation_http.js: that one ' +
-            'is a URL an unauthenticated caller REGISTERED, this one is a URL ' +
-            'an administrator CONFIGURED. Leave it empty and paste the keys ' +
-            'into fedJwks instead if this service is not to make the call.' },
+            'difference is the whole argument in federation_http.js: that ' +
+            'one is a URL an unauthenticated caller REGISTERED, this one is ' +
+            'a URL an administrator CONFIGURED. Leave it empty and paste the ' +
+            'keys into fedJwks instead if this service is not to make the ' +
+            'call.' },
     { name: 'fedJwks', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'The partner\'s public keys as a JWKS document, verbatim. Read ' +
@@ -517,8 +573,8 @@ const SCHEMA = {
             'endpoint anybody could assert anything at.' },
     { name: 'fedClientId', kind: 'single', role: 'service-provider',
       from: 'this register',
-      what: 'THIS SERVICE\'S client_id AT THE PARTNER. Ours, issued by them — ' +
-            'not to be confused with an oauthClientId on an application ' +
+      what: 'THIS SERVICE\'S client_id AT THE PARTNER. Ours, issued by them ' +
+            '— not to be confused with an oauthClientId on an application ' +
             'entry, which is a mock client\'s id here.' },
     { name: 'fedClientSecret', kind: 'single', role: 'service-provider',
       sensitive: true, from: 'this register',
@@ -535,8 +591,8 @@ const SCHEMA = {
             'will give you is entirely local to it.' },
     { name: 'fedResponseType', kind: 'single', role: 'service-provider',
       from: 'this register',
-      what: 'code (the default) or id_token. `id_token` with form_post is the ' +
-            'shape that needs NO back channel and therefore no token ' +
+      what: 'code (the default) or id_token. `id_token` with form_post is ' +
+            'the shape that needs NO back channel and therefore no token ' +
             'endpoint, no client secret and no outbound request — which is ' +
             'the only way to federate with an OIDC partner from a deployment ' +
             'that has no egress at all.' },
@@ -545,8 +601,8 @@ const SCHEMA = {
       what: 'Which binding the outbound SAML AuthnRequest goes on: ' +
             'HTTP-Redirect (the default, and what every identity provider ' +
             'supports) or HTTP-POST. It says nothing about the response, ' +
-            'which arrives on whatever binding the partner sends it on and is ' +
-            'accepted on all of them.' },
+            'which arrives on whatever binding the partner sends it on and ' +
+            'is accepted on all of them.' },
     { name: 'fedSignRequest', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'Sign the outbound AuthnRequest with THIS service\'s key. OFF by ' +
@@ -566,15 +622,27 @@ const SCHEMA = {
       what: 'ONE VALUE PER MAPPING, written `<incoming name>=<LDAP ' +
             'attribute>`. What is NOT listed here still arrives — ' +
             'federation_map.js has a default table covering the ordinary ' +
-            'OIDC claims, the SAML urn:oid: names and the WS-Federation claim ' +
-            'URIs — so this is for the partner\'s own inventions rather than ' +
-            'for the names everybody uses.' },
+            'OIDC claims, the SAML urn:oid: names and the WS-Federation ' +
+            'claim URIs — so this is for the partner\'s own inventions ' +
+            'rather than for the names everybody uses.' },
     { name: 'fedAutocreateUsers', kind: 'single', role: 'service-provider',
       from: 'this register',
-      what: 'Create a directory entry for a person this partner ' +
-            'authenticates. ON by default, because it is the point of the ' +
-            'feature; OFF gives a session and no entry, which is how to watch ' +
-            'what a federated sign-in does WITHOUT filling ou=users up.' },
+      what: 'DYNAMIC PROVISIONING: create a directory entry the first time ' +
+            'this partner signs somebody in. ON by default. OFF means the ' +
+            'person must ALREADY have an entry here — provisioned ahead of ' +
+            'time, by SCIM or by hand — and a sign-in for somebody who does ' +
+            'not is refused, because a session needs an entry to be the ' +
+            'subject of. (Until 2026-09-14 OFF gave a session and no entry; ' +
+            'a stable subject made that state impossible.)' },
+    { name: 'fedUpdateUserAttributes', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'Update the person\'s directory attributes on EVERY sign-in from ' +
+            'the latest assertion or token. ON by default, which is what ' +
+            'this service always did. OFF writes the partner\'s attributes ' +
+            'only when this sign-in CREATED the entry, so a pre-provisioned ' +
+            'person — or one somebody has since edited — keeps what the ' +
+            'directory says. Which relationship and issuer a person came ' +
+            'through is recorded either way.' },
     { name: 'fedAllowUnsolicited', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'Accept a response this service did not ask for — SAML 2.0\'s ' +
@@ -628,16 +696,16 @@ const SCHEMA = {
 
     // --- what has happened ------------------------------------------------
     { name: 'fedFirstSeen', kind: 'single', role: 'both', from: 'this register',
-      what: 'GeneralizedTime: when this relationship was first USED, which is ' +
-            'not when it was created.' },
+      what: 'GeneralizedTime: when this relationship was first USED, which ' +
+            'is not when it was created.' },
     { name: 'fedLastSeen', kind: 'single', role: 'both', from: 'this register',
       what: 'GeneralizedTime, the most recent use.' },
     { name: 'fedAuthentications', kind: 'single', role: 'both',
       from: 'this register',
-      what: 'How many credentials have crossed this relationship. ASSIGNED on ' +
-            'every change — a counter that accumulated values would be ' +
-            'nonsense — and it is a live number in a directory entry, which a ' +
-            'real directory would not hold.' },
+      what: 'How many credentials have crossed this relationship. ASSIGNED ' +
+            'on every change — a counter that accumulated values would be ' +
+            'nonsense — and it is a live number in a directory entry, which ' +
+            'a real directory would not hold.' },
     { name: 'fedUsers', kind: 'single', role: 'both', from: 'this register',
       what: 'How many distinct identities have crossed it. Counted against ' +
             'fedLastUser, so it counts a CHANGE of user rather than a set: ' +
@@ -651,38 +719,40 @@ const SCHEMA = {
       from: 'this register',
       what: 'THE SAME TWO COUNTS, SPLIT BY THE APPLICATION THE SIGN-IN WAS ' +
             'FOR — one value per application, packed as ' +
-            '`application|authentications|users|lastUser|lastSeen`. It exists ' +
-            'because fedAuthentications answers "how much has crossed this ' +
-            'relationship" and the map at /admin/federation/map has to answer ' +
-            '"how much has crossed it FOR EACH of the applications configured ' +
-            'to use it", which is a different question the moment a second ' +
-            'application names the same partner.\n\nIT IS SERVICE-PROVIDER ' +
-            'SIDE ONLY, and that is not an omission. An identity-provider-side ' +
-            'relationship names exactly ONE application (fedApplication), so ' +
-            'its per-application count IS fedAuthentications and a second ' +
-            'attribute holding the same number under another name is the copy ' +
-            'that comes to disagree.\n\nA VALUE IS WRITTEN ONLY FOR A PAIR ' +
-            'THIS SERVICE IS CONFIGURED FOR, checked against the live ' +
-            'configuration at the moment of the write rather than trusted from ' +
-            'the request — see applicationConfiguredFor(). Without that check ' +
-            'this attribute would be an unbounded list of strings anybody who ' +
-            'can reach /federation/login/{id} chose, on the one entry in this ' +
+            '`application|authentications|users|lastUser|lastSeen`. It ' +
+            'exists because fedAuthentications answers "how much has crossed ' +
+            'this relationship" and the map at /admin/federation/map has to ' +
+            'answer "how much has crossed it FOR EACH of the applications ' +
+            'configured to use it", which is a different question the moment ' +
+            'a second application names the same partner.\n\nIT IS ' +
+            'SERVICE-PROVIDER SIDE ONLY, and that is not an omission. An ' +
+            'identity-provider-side relationship names exactly ONE ' +
+            'application (fedApplication), so its per-application count IS ' +
+            'fedAuthentications and a second attribute holding the same ' +
+            'number under another name is the copy that comes to ' +
+            'disagree.\n\nA VALUE IS WRITTEN ONLY FOR A PAIR THIS SERVICE IS ' +
+            'CONFIGURED FOR, checked against the live configuration at the ' +
+            'moment of the write rather than trusted from the request — see ' +
+            'applicationConfiguredFor(). Without that check this attribute ' +
+            'would be an unbounded list of strings anybody who can reach ' +
+            '/federation/login/{id} chose, on the one entry in this ' +
             'directory whose contents decide whether an assertion is ' +
             'refused.\n\n`|` IN EITHER FREE-TEXT FIELD IS REPLACED BY `~` ON ' +
-            'THE WAY IN, which is the trade this format makes and it is stated ' +
-            'rather than discovered: this is a packed counter drawn on a ' +
-            'picture, not an identifier anything joins on. The application a ' +
-            'row is FILED under is compared in the same packed spelling ' +
-            'throughout, so a pair round-trips to itself whatever it is ' +
-            'called.' },
+            'THE WAY IN, which is the trade this format makes and it is ' +
+            'stated rather than discovered: this is a packed counter drawn ' +
+            'on a picture, not an identifier anything joins on. The ' +
+            'application a row is FILED under is compared in the same packed ' +
+            'spelling throughout, so a pair round-trips to itself whatever ' +
+            'it is called.' },
     { name: 'fedLastError', kind: 'single', role: 'both', from: 'this register',
-      what: 'WHY THE LAST ATTEMPT FAILED, in this service\'s own words. It is ' +
-            'the most useful attribute here and it is why refusals are ' +
+      what: 'WHY THE LAST ATTEMPT FAILED, in this service\'s own words. It ' +
+            'is the most useful attribute here and it is why refusals are ' +
             'recorded rather than only logged: a federation that does not ' +
             'work fails at somebody else\'s service, and "the signature did ' +
             'not verify against the configured certificate" is the sentence ' +
             'that ends the argument about whose end is broken.' },
-    { name: 'fedLastErrorAt', kind: 'single', role: 'both', from: 'this register',
+    { name: 'fedLastErrorAt', kind: 'single', role: 'both', from: 'this ' +
+        'register',
       what: 'GeneralizedTime for the line above. Separate, so that an old ' +
             'error beside a recent success reads as history rather than as ' +
             'the current state.' }
@@ -714,6 +784,7 @@ const SCHEMA = {
 const EDITABLE = {
   fedName: 'set',
   fedPeer: 'set',
+  fedLocalEntityId: 'set',
   fedEnabled: 'set',
   fedSsoUrl: 'set',
   fedTokenUrl: 'set',
@@ -729,6 +800,7 @@ const EDITABLE = {
   fedSignRequest: 'set',
   fedUsernameSource: 'set',
   fedAutocreateUsers: 'set',
+  fedUpdateUserAttributes: 'set',
   fedAllowUnsolicited: 'set',
   fedApplication: 'set',
   fedAuthnMechanism: 'set',
@@ -743,13 +815,16 @@ SCHEMA.attributes.forEach(function (row) {
 });
 
 const ATTRIBUTE_BY_NAME = {};
-SCHEMA.attributes.forEach(function (row) { ATTRIBUTE_BY_NAME[row.name] = row; });
+SCHEMA.attributes.forEach(function (row) {
+  ATTRIBUTE_BY_NAME[row.name] = row;
+});
 
 // Every attribute that applies to a relationship in this role, in schema order.
 // The console draws its form from this and the action validates against the
 // same call, which is what stops a form offering a field the action refuses.
 function fieldsForRole(role, mode) {
-  log.debug('Entering fieldsForRole(). role=' + role + ', mode=' + (mode || 'any'));
+  log.debug('Entering fieldsForRole(). role=' + role + ', mode=' +
+            (mode || 'any'));
   const wanted = String(role || '');
   const rows = SCHEMA.attributes.filter(function (row) {
     if (row.role !== 'both' && row.role !== wanted) return false;
@@ -761,6 +836,8 @@ function fieldsForRole(role, mode) {
 }
 
 function editableFields(mode) {
+  log.debug("Entering editableFields().");
+  log.debug("Leaving editableFields().");
   return SCHEMA.attributes.filter(function (row) {
     return mode ? row.editable === mode : !!row.editable;
   });
@@ -799,8 +876,8 @@ function haveDirectory() {
   }
   if (!warnedAboutNoDirectory) {
     warnedAboutNoDirectory = true;
-    log.warn('federation: the embedded directory was never loaded, so there is ' +
-             'no ou=federations to hold a relationship. Every federation ' +
+    log.warn('federation: the embedded directory was never loaded, so there ' +
+             'is no ou=federations to hold a relationship. Every federation ' +
              'function answers empty and no partner appears on the sign-in ' +
              'screen. This is the ordinary state of an in-process test that ' +
              'requires only app.js and one protocol module; it is not a ' +
@@ -844,7 +921,8 @@ function attributesFor(record) {
     const single = String(value);
     if (single !== '') out[row.name] = [single];
   });
-  log.debug('Leaving attributesFor(). ' + Object.keys(out).length + ' attribute(s).');
+  log.debug('Leaving attributesFor(). ' + Object.keys(out).length + ' ' +
+      'attribute(s).');
   return out;
 }
 
@@ -854,11 +932,16 @@ function attributesFor(record) {
 // through the console and one read back through the register are the same
 // record.
 function byLowerName(attributes, name) {
+  log.debug("Entering byLowerName().");
   const wanted = String(name).toLowerCase();
   const keys = Object.keys(attributes || {});
   for (let i = 0; i < keys.length; i++) {
-    if (keys[i].toLowerCase() === wanted) return attributes[keys[i]];
+    if (keys[i].toLowerCase() === wanted) {
+      log.debug("Leaving byLowerName().");
+      return attributes[keys[i]];
+    }
   }
+  log.debug("Leaving byLowerName().");
   return undefined;
 }
 
@@ -884,21 +967,38 @@ function recordFromAttributes(attributes) {
 // JavaScript and a naive read makes every relationship enabled — which is the
 // one bug in this file that would be silent and would matter.
 function boolOf(value, dflt) {
+  log.debug("Entering boolOf().");
   const text = String(value == null ? '' : value).trim().toUpperCase();
-  if (text === 'TRUE' || text === 'YES' || text === '1' || text === 'ON') return true;
-  if (text === 'FALSE' || text === 'NO' || text === '0' || text === 'OFF') return false;
+  if (text === 'TRUE' || text === 'YES' || text === '1' || text === 'ON') {
+    log.debug("Leaving boolOf().");
+    return true;
+  }
+  if (text === 'FALSE' || text === 'NO' || text === '0' || text === 'OFF') {
+    log.debug("Leaving boolOf().");
+    return false;
+  }
+  log.debug("Leaving boolOf().");
   return !!dflt;
 }
 
 function boolText(value) {
+  log.debug("Entering boolText().");
+  log.debug("Leaving boolText().");
   return value ? 'TRUE' : 'FALSE';
 }
 
 function generalizedTime(ms) {
+  log.debug("Entering generalizedTime().");
   const d = ms ? new Date(ms) : new Date();
-  const pad = function (n, w) { return String(n).padStart(w || 2, '0'); };
+  const pad = function (n, w) {
+    log.debug("Entering pad().");
+    log.debug("Leaving pad().");
+    return String(n).padStart(w || 2, '0');
+  };
+  log.debug("Leaving generalizedTime().");
   return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) +
-    pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) + 'Z';
+    pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) +
+    'Z';
 }
 
 // ---------------------------------------------------------------------------
@@ -919,13 +1019,21 @@ function generalizedTime(ms) {
 const ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 
 function idProblem(id) {
+  log.debug("Entering idProblem().");
   const text = String(id == null ? '' : id).trim();
-  if (!text) return 'Name the relationship. An id is required — it is the key, the RDN and the URL segment.';
-  if (!ID_SHAPE.test(text)) {
-    return 'The id "' + text + '" will not do. It has to start with a letter or a digit and ' +
-           'hold only letters, digits, dot, dash and underscore, up to 63 characters — it is ' +
-           'an RDN and a URL segment as well as a key.';
+  if (!text) {
+    log.debug("Leaving idProblem().");
+    return 'Name the relationship. An id is required — it is the key, the ' +
+           'RDN and the URL segment.';
   }
+  if (!ID_SHAPE.test(text)) {
+    log.debug("Leaving idProblem().");
+    return 'The id "' + text + '" will not do. It has to start with a letter ' +
+           'or a digit and hold only letters, digits, dot, dash and ' +
+           'underscore, up to 63 characters — it is an RDN and a URL segment ' +
+           'as well as a key.';
+  }
+  log.debug("Leaving idProblem().");
   return '';
 }
 
@@ -948,7 +1056,9 @@ function list() {
   });
   // By id, so the console's list, the management API's list and an ldapsearch
   // in tree order are three views of one order rather than three orders.
-  rows.sort(function (a, b) { return String(a.fedId).localeCompare(String(b.fedId)); });
+  rows.sort(function (a, b) {
+    return String(a.fedId).localeCompare(String(b.fedId));
+  });
   log.debug('Leaving list(). ' + rows.length + ' relationship(s).');
   return rows;
 }
@@ -974,14 +1084,20 @@ function get(id) {
 }
 
 function count() {
+  log.debug("Entering count().");
+  log.debug("Leaving count().");
   return haveDirectory() ? directory.countFederations() : 0;
 }
 
 function containerDn() {
+  log.debug("Entering containerDn().");
+  log.debug("Leaving containerDn().");
   return haveDirectory() ? directory.containerDn() : '';
 }
 
 function maxRelationships() {
+  log.debug("Entering maxRelationships().");
+  log.debug("Leaving maxRelationships().");
   return haveDirectory() ? directory.maxFederations() : 0;
 }
 
@@ -1020,7 +1136,8 @@ function readinessOf(record) {
     // needs a key to verify it with and needs no back channel at all.
     if (record.fedProtocol === 'oidc') {
       if (String(record.fedResponseType || 'code') === 'code') {
-        if (!String(record.fedTokenUrl || '').trim()) missing.push('fedTokenUrl');
+        if (!String(record.fedTokenUrl || '').trim()) missing.push(
+            'fedTokenUrl');
       } else if (!String(record.fedJwks || '').trim() &&
                  !String(record.fedJwksUri || '').trim()) {
         missing.push('fedJwks or fedJwksUri');
@@ -1034,7 +1151,8 @@ function readinessOf(record) {
         !String(record.fedJwks || '').trim() &&
         !String(record.fedJwksUri || '').trim() &&
         !String(record.fedUserinfoUrl || '').trim()) {
-      missing.push('fedUserinfoUrl (or fedJwks / fedJwksUri, if the access token is a JWT)');
+      missing.push('fedUserinfoUrl (or fedJwks / fedJwksUri, if the access ' +
+                   'token is a JWT)');
     }
   }
   if (record.fedRole === 'identity-provider') {
@@ -1056,16 +1174,21 @@ function readinessOf(record) {
       missing.push('fedAuthnRelationship');
     }
   }
-  log.debug('Leaving readinessOf(). ' + (missing.length ? missing.length + ' field(s) missing.'
+  log.debug('Leaving readinessOf(). ' + (missing.length ? missing.length + ' ' +
+      'field(s) missing.'
                                                         : 'Ready.'));
   return { ready: missing.length === 0, missing: missing };
 }
 
 function isEnabled(record) {
+  log.debug("Entering isEnabled().");
+  log.debug("Leaving isEnabled().");
   return !!record && boolOf(record.fedEnabled, false);
 }
 
 function isUsable(record) {
+  log.debug("Entering isUsable().");
+  log.debug("Leaving isUsable().");
   return isEnabled(record) && readinessOf(record).ready;
 }
 
@@ -1074,7 +1197,9 @@ function isUsable(record) {
 // wants all of them — so the filter is the caller's rather than being baked in
 // here, and there is one list function rather than two that could drift.
 function inRole(role) {
+  log.debug("Entering inRole().");
   const wanted = String(role || '');
+  log.debug("Leaving inRole().");
   return list().filter(function (record) { return record.fedRole === wanted; });
 }
 
@@ -1091,11 +1216,14 @@ function inRole(role) {
 // IS. A second description assembled in the sign-in path would be the copy that
 // stopped matching the day fedName gained a fallback.
 function optionOf(record) {
+  log.debug("Entering optionOf().");
+  log.debug("Leaving optionOf().");
   return {
     id: record.fedId,
     label: record.fedName || record.fedId,
     protocol: record.fedProtocol,
-    protocolLabel: (protocolRow(record.fedProtocol) || {}).label || record.fedProtocol,
+    protocolLabel: (protocolRow(record.fedProtocol) ||
+                    {}).label || record.fedProtocol,
     peer: record.fedPeer
   };
 }
@@ -1107,7 +1235,8 @@ function optionOf(record) {
 function signInOptions() {
   log.debug('Entering signInOptions().');
   const rows = inRole('service-provider').filter(isUsable).map(optionOf);
-  log.debug('Leaving signInOptions(). ' + rows.length + ' partner(s) to offer.');
+  log.debug('Leaving signInOptions(). ' + rows.length +
+            ' partner(s) to offer.');
   return rows;
 }
 
@@ -1212,9 +1341,10 @@ function usableServiceProviders(ids, subject) {
   const rows = [];
   wanted.forEach(function (id) {
     if (seen[id]) {
-      log.info('federation: "' + String(subject || 'something here') + '" names ' +
-               'the federation relationship "' + id + '" more than once. It is ' +
-               'offered once — two identical buttons is a page that looks ' +
+      log.info('federation: "' + String(subject || 'something here') + '" ' +
+               'names the federation relationship ' +
+               '"' + id + '" more than once. It ' +
+               'is offered once — two identical buttons is a page that looks ' +
                'broken — and the duplicate is a configuration to tidy rather ' +
                'than a rule this service applies.');
       return;
@@ -1319,8 +1449,8 @@ function authenticationFor(record) {
     return { via: record.fedId, mechanism: '', label: '', relationship: null,
              problem: 'The federation relationship "' + record.fedId +
                       '" configures the authentication mechanism "' +
-                      mechanism + '", which is not one this service has: they ' +
-                      'are ' + MECHANISM_IDS.join(', ') + '.' };
+                      mechanism + '", which is not one this service has: ' +
+                      'they are ' + MECHANISM_IDS.join(', ') + '.' };
   }
   if (mechanism !== 'federation') {
     log.debug('Leaving authenticationFor(). ' + mechanism + '.');
@@ -1363,8 +1493,32 @@ function authenticationFor(record) {
 // assertion this service issues, so the early return for an empty register is
 // the ordinary path and is deliberately the first line.
 // ---------------------------------------------------------------------------
-let releaseIndex = null;
-let releaseIndexAt = 0;
+//
+// **PER TRUST REALM SINCE 2026-09-12.** It was two `let`s for the process, and
+// the register it indexes is not: `inRole()` reads the AMBIENT realm's
+// `ou=federations`, so the index was built out of whichever realm issued the
+// first token in a five-second window and then applied to every token in every
+// realm for the rest of it — a partner's release list in `acme` filtering the
+// claims of an unrelated application in the default realm, or a default-realm
+// partner's list not being applied at all because acme had built the index.
+// `realms.keyed()` is one index per realm, built out of that realm's register.
+//
+// Invalidation clears EVERY realm's, which is broader than it needs to be and
+// is the right trade: the four writers below are inside a request whose realm
+// they could name, and `recordUse()` is too, but an index that is rebuilt a
+// little early costs one walk of a small register while one that is not
+// invalidated is a release policy that lags an edit.
+const releaseIndexes = realms.keyed(function () {
+  return { index: null, at: 0 };
+});
+
+function forgetReleaseIndexes() {
+  log.debug("Entering forgetReleaseIndexes().");
+  releaseIndexes.existing().forEach(function (held) {
+    held.index = null;
+  });
+  log.debug("Leaving forgetReleaseIndexes().");
+}
 
 // The index is rebuilt rather than kept up to date, on a short timer, and both
 // halves of that are deliberate. Rebuilt, because there are four doors onto
@@ -1375,28 +1529,38 @@ let releaseIndexAt = 0;
 // every token issued. Five seconds is short enough that nobody testing a
 // release list notices and long enough that a load test does not walk a
 // directory per token.
-const RELEASE_INDEX_TTL_MS = 5000;
+//
+// `federation.releaseIndexTtlMs` since 2026-09-12; it was the constant 5000.
+// Read per call, so 0 — rebuild on every token — is a value somebody can set
+// while watching a release list take effect.
+function releaseIndexTtlMs() {
+  log.debug("Entering releaseIndexTtlMs().");
+  log.debug("Leaving releaseIndexTtlMs().");
+  return Number(config.value('federation.releaseIndexTtlMs'));
+}
 
 function releaseIndexNow() {
   log.debug('Entering releaseIndexNow().');
   const now = Date.now();
-  if (releaseIndex && now - releaseIndexAt < RELEASE_INDEX_TTL_MS) {
+  const held = releaseIndexes();
+  if (held.index && now - held.at < releaseIndexTtlMs()) {
     log.debug('Leaving releaseIndexNow().');
-    return releaseIndex;
+    return held.index;
   }
   const index = new Map();
   inRole('identity-provider').forEach(function (record) {
     if (!isEnabled(record)) return;
     const application = String(record.fedApplication || '').trim();
-    const names = (record.fedRelease || []).map(function (one) { return String(one).trim(); })
+    const names = (record.fedRelease || []).map(function (
+        one) { return String(one).trim(); })
       .filter(function (one) { return one !== ''; });
     // NO VALUES MEANS NO POLICY. See the header: a partner registered with no
     // release list must receive exactly what it received the day before.
     if (!application || !names.length) return;
     index.set(application, { id: record.fedId, names: new Set(names) });
   });
-  releaseIndex = index;
-  releaseIndexAt = now;
+  held.index = index;
+  held.at = now;
   log.debug('Leaving releaseIndexNow().');
   return index;
 }
@@ -1428,14 +1592,16 @@ function releaseFilterFor(context) {
   // a token for two audiences with two release policies is a state nothing here
   // can resolve correctly, so it resolves it predictably and says so in the log
   // rather than quietly intersecting two lists.
-  const parts = audience.split(/\s+/).filter(function (one) { return one !== ''; });
+  const parts = audience.split(/\s+/)
+                        .filter(function (one) { return one !== ''; });
   if (parts.length < 2) {
     log.debug('Leaving releaseFilterFor().');
     return null;
   }
   for (let i = 0; i < parts.length; i++) {
     if (index.has(parts[i])) {
-      log.debug('releaseFilterFor(): the audience names ' + parts.length + ' parties and ' +
+      log.debug('releaseFilterFor(): the audience names ' + parts.length + ' ' +
+          'parties and ' +
                 parts[i] + ' has a release policy; it is the one applied.');
       log.debug('Leaving releaseFilterFor().');
       return index.get(parts[i]);
@@ -1451,7 +1617,8 @@ function releaseFilterFor(context) {
 function persist(record, why) {
   log.debug('Entering persist(). id=' + record.fedId);
   const ok = directory.writeFederation(record.fedId, attributesFor(record));
-  log.debug('Leaving persist(). ' + (ok ? 'Written.' : 'Refused by the directory.'));
+  log.debug('Leaving persist(). ' + (ok ? 'Written.' : 'Refused by the ' +
+                                                       'directory.'));
   return ok;
 }
 
@@ -1482,6 +1649,27 @@ function recordChange(action, record, summary, detail) {
   log.debug('Leaving recordChange().');
 }
 
+// A REFUSED CHANGE TO THE REGISTER, as an audit row carrying its error code.
+//
+// The result of create(), update() and remove() is what the console and the
+// management API send back as it is — `/admin-api` serialises it whole — so a
+// code on that object would reach the caller, which no code may. The row names
+// the relationship and the reason, and never a value: fedClientSecret is among
+// the fields an update names.
+function actionRefused(code, id, why) {
+  log.debug("Entering actionRefused().");
+  audit.failure(code, {
+    protocol: 'Federation', channel: 'internal',
+    target: String(id || ''),
+    summary: 'a change to the federation relationship ' +
+             String(id || '(unnamed)') +
+             ' was refused: ' + why,
+    // error-code: none — the helper's own row; every caller passes its code
+    outcome: 'refused'
+  });
+  log.debug("Leaving actionRefused().");
+}
+
 // ---------------------------------------------------------------------------
 // CREATE.
 //
@@ -1510,7 +1698,8 @@ function create(spec) {
   if (problem) errors.push(problem);
   const role = String(info.fedRole || info.role || '').trim();
   if (ROLE_IDS.indexOf(role) === -1) {
-    errors.push('Unknown role "' + role + '". The two are: ' + ROLE_IDS.join(', ') + '.');
+    errors.push('Unknown role "' + role + '". The two are: ' +
+                ROLE_IDS.join(', ') + '.');
   }
   const protocol = String(info.fedProtocol || info.protocol || '').trim();
   if (PROTOCOL_IDS.indexOf(protocol) === -1) {
@@ -1519,20 +1708,29 @@ function create(spec) {
   }
   if (errors.length) {
     log.debug('Leaving create(). Refused: ' + errors.join(' '));
+    actionRefused('STS-FED-0061', id, 'the id, role or protocol is not valid');
+    log.debug("Leaving create().");
     return { ok: false, errors: errors };
   }
   if (!haveDirectory()) {
     log.debug('Leaving create(). There is no directory to write into.');
+    actionRefused('STS-FED-0062', id, 'there is no embedded directory to ' +
+                                      'hold it');
+    log.debug("Leaving create().");
     return { ok: false,
              errors: ['There is no embedded directory loaded, so there is no ' +
                       'ou=federations to hold a relationship.'] };
   }
   if (get(id)) {
     log.debug('Leaving create(). It is already here.');
+    actionRefused('STS-FED-0063', id, 'a relationship with that id already ' +
+                                      'exists');
+    log.debug("Leaving create().");
     return { ok: false,
-             errors: ['A relationship called "' + id + '" is already registered. An id ' +
-                      'names ONE relationship here, so the answer to "it is already ' +
-                      'there" is to change what it holds rather than to create it twice.'] };
+             errors: ['A relationship called "' + id + '" is already ' +
+                      'registered. An id names ONE relationship here, so the ' +
+                      'answer to "it is already there" is to change what it ' +
+                      'holds rather than to create it twice.'] };
   }
   const record = recordFromAttributes({});
   record.fedId = id;
@@ -1551,6 +1749,7 @@ function create(spec) {
   // nothing and leaving the behaviour in this file.
   if (role === 'service-provider') {
     record.fedAutocreateUsers = boolText(true);
+    record.fedUpdateUserAttributes = boolText(true);
     record.fedSignRequest = boolText(false);
     if (protocol === 'saml2' || protocol === 'saml11') {
       record.fedBinding = 'HTTP-Redirect';
@@ -1569,7 +1768,8 @@ function create(spec) {
     }
   }
   if (role === 'identity-provider') {
-    record.fedApplication = String(info.fedApplication || info.application || '').trim();
+    record.fedApplication = String(info.fedApplication || info.application ||
+                                   '').trim();
   }
   // Phrased to need no indefinite article. "a OpenID Connect" and "an SAML
   // 2.0" are both wrong, and the usual a/an-by-first-letter rule produces
@@ -1581,19 +1781,24 @@ function create(spec) {
   record.description = [note];
   if (!persist(record)) {
     log.debug('Leaving create(). The directory refused it.');
+    actionRefused('STS-FED-0064', id, 'the directory would not hold another ' +
+                                      'relationship');
+    log.debug("Leaving create().");
     return { ok: false,
              errors: ['The directory would not hold another relationship: ' +
-                      'ou=federations is at its maximum of ' + maxRelationships() +
+                      'ou=federations is at its maximum of ' +
+                      maxRelationships() +
                       ' (federation.max), or the directory itself is full.'] };
   }
-  releaseIndex = null;
+  forgetReleaseIndexes();
   recordChange('federation.create', record,
-               'the federation relationship ' + id + ' was registered (' + note + ')',
+               'the federation relationship ' + id + ' was registered (' +
+               note + ')',
                { enabled: false,
-                 note: 'created disabled; a relationship does nothing until it is ' +
-                       'enabled deliberately' });
-  log.info('federation: registered ' + id + ' — ' + note + '. It is DISABLED and will ' +
-           'do nothing until it is enabled.');
+                 note: 'created disabled; a relationship does nothing until ' +
+                       'it is enabled deliberately' });
+  log.info('federation: registered ' + id + ' — ' + note + '. It is DISABLED ' +
+           'and will do nothing until it is enabled.');
   const stored = get(id);
   log.debug('Leaving create(). ' + id + ' is registered.');
   return { ok: true, relationship: stored, readiness: readinessOf(stored) };
@@ -1609,40 +1814,61 @@ function create(spec) {
 // the attribute holds.
 // ---------------------------------------------------------------------------
 function update(id, change) {
-  log.debug('Entering update(). id=' + id + ', field=' + (change && change.field));
+  log.debug('Entering update(). id=' + id + ', field=' +
+            (change && change.field));
   const record = get(id);
   if (!record) {
     log.debug('Leaving update(). No such relationship.');
-    return { ok: false, errors: ['There is no federation relationship called "' + id + '".'] };
+    actionRefused('STS-FED-0065', id,
+                  'there is no such relationship to update');
+    log.debug("Leaving update().");
+    return { ok: false,
+             errors: ['There is no federation relationship called "' + id +
+                      '".'] };
   }
   const info = change || {};
   const field = String(info.field || info.attribute || '').trim();
   const row = ATTRIBUTE_BY_NAME[field];
   if (!row) {
     log.debug('Leaving update(). Unknown field.');
+    actionRefused('STS-FED-0066', id, '"' + field + '" is not an attribute ' +
+                                                    'of a relationship');
+    log.debug("Leaving update().");
     return { ok: false,
-             errors: ['"' + field + '" is not an attribute of a federation relationship. ' +
-                      'GET /admin/ldap/federations publishes the whole schema.'] };
+             errors: ['"' + field + '" is not an attribute of a federation ' +
+                      'relationship. GET /admin/ldap/federations publishes ' +
+                      'the whole schema.'] };
   }
   if (!row.editable) {
     log.debug('Leaving update(). Not editable.');
+    actionRefused('STS-FED-0067', id, '"' + field + '" is not editable');
+    log.debug("Leaving update().");
     return { ok: false,
              errors: ['"' + field + '" is not editable here. ' +
-                      (row.name === 'fedId' || row.name === 'fedRole' || row.name === 'fedProtocol'
-                        ? 'It is part of the relationship\'s identity — delete it and make ' +
-                          'another; there is no state to lose but the counters.'
-                        : 'It records what HAPPENED, and a form that could rewrite it would ' +
-                          'make this page lie about the service\'s own behaviour.') +
+                      (row.name === 'fedId' || row.name === 'fedRole' ||
+                       row.name === 'fedProtocol'
+                        ? 'It is part of the relationship\'s identity — ' +
+                          'delete it and make another; there is no state to ' +
+                          'lose but the counters.'
+                        : 'It records what HAPPENED, and a form that could ' +
+                          'rewrite it would make this page lie about the ' +
+                          'service\'s own behaviour.') +
                       ' An ldapmodify can still change it.'] };
   }
   if (row.role !== 'both' && row.role !== record.fedRole) {
     log.debug('Leaving update(). Wrong role for this field.');
+    actionRefused('STS-FED-0068', id, '"' + field + '" belongs to the other ' +
+                                                    'direction');
+    log.debug("Leaving update().");
     return { ok: false,
-             errors: ['"' + field + '" applies to a ' + row.role + '-side relationship, and ' +
-                      id + ' is ' + record.fedRole + '-side. Nothing was changed.'] };
+             errors: ['"' + field + '" applies to a ' + row.role + '-side ' +
+                 'relationship, and ' +
+                      id + ' is ' + record.fedRole + '-side. Nothing was ' +
+                                                     'changed.'] };
   }
   const value = String(info.value == null ? '' : info.value);
-  const before = row.kind === 'multi' ? (record[field] || []).slice() : record[field];
+  const before = row.kind === 'multi' ? (record[field] || []).slice() :
+                 record[field];
   if (row.editable === 'multi') {
     const mode = String(info.mode || 'add');
     const values = (record[field] || []).slice();
@@ -1650,17 +1876,30 @@ function update(id, change) {
       const at = values.indexOf(value);
       if (at === -1) {
         log.debug('Leaving update(). There was no such value to remove.');
-        return { ok: false, errors: ['"' + value + '" is not one of ' + field + '\'s values.'] };
+        actionRefused('STS-FED-0069', id,
+                      'the value to remove from ' + field + ' ' +
+            'is not there');
+        log.debug("Leaving update().");
+        return { ok: false,
+                 errors: ['"' + value + '" is not one of ' + field + '\'s ' +
+            'values.'] };
       }
       values.splice(at, 1);
     } else {
       if (!value) {
         log.debug('Leaving update(). Nothing to add.');
+        actionRefused('STS-FED-0070', id,
+                      'no value was given to add to ' + field);
+        log.debug("Leaving update().");
         return { ok: false, errors: ['Give a value to add to ' + field + '.'] };
       }
       if (values.indexOf(value) !== -1) {
         log.debug('Leaving update(). It is already a value.');
-        return { ok: false, errors: [field + ' already carries "' + value + '".'] };
+        actionRefused('STS-FED-0071', id,
+                      field + ' already carries that value');
+        log.debug("Leaving update().");
+        return { ok: false,
+                 errors: [field + ' already carries "' + value + '".'] };
       }
       values.push(value);
     }
@@ -1674,26 +1913,32 @@ function update(id, change) {
   // as something no reader of the attribute expects, and nothing would say so
   // until the day an assertion failed to verify.
   if (field === 'fedSigningCertificate') {
-    record[field] = String(record[field]).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    record[field] = String(record[field]).replace(/-----[^-]+-----/g, '')
+                                         .replace(/\s+/g, '');
   }
   // And the two booleans, so that `on`, `true`, `1` and a ticked checkbox all
   // reach the entry as the same string. Without this the entry holds whatever
   // the form posted and `boolOf()` has to guess.
   if (row.name === 'fedEnabled' || row.name === 'fedAutocreateUsers' ||
+      row.name === 'fedUpdateUserAttributes' ||
       row.name === 'fedSignRequest' || row.name === 'fedAllowUnsolicited') {
     record[field] = boolText(boolOf(record[field], false));
   }
   if (!persist(record)) {
     log.debug('Leaving update(). The directory refused the write.');
+    actionRefused('STS-FED-0072', id,
+                  'the directory refused the write to ' + field);
+    log.debug("Leaving update().");
     return { ok: false, errors: ['The directory refused the write.'] };
   }
-  releaseIndex = null;
+  forgetReleaseIndexes();
   const stored = get(id);
   const readiness = readinessOf(stored);
   recordChange('federation.update', stored,
                field + ' was changed on the federation relationship ' + id,
                { field: field,
-                 mode: row.editable === 'multi' ? String(info.mode || 'add') : 'set',
+                 mode: row.editable === 'multi' ? String(info.mode || 'add') :
+                       'set',
                  // NO VALUE. See recordChange(): fedClientSecret is among the
                  // fields that reach here.
                  sensitive: !!row.sensitive,
@@ -1701,7 +1946,8 @@ function update(id, change) {
                  missing: readiness.missing.join(', ') });
   log.info('federation: ' + field + ' changed on ' + id + '. It is ' +
            (isEnabled(stored) ? 'ENABLED' : 'disabled') + ' and ' +
-           (readiness.ready ? 'ready.' : 'NOT ready — ' + readiness.missing.join(', ') +
+           (readiness.ready ? 'ready.' :
+            'NOT ready — ' + readiness.missing.join(', ') +
             ' still to configure.'));
   log.debug('Leaving update(). ' + field + ' changed.');
   return { ok: true, relationship: stored, readiness: readiness,
@@ -1710,8 +1956,8 @@ function update(id, change) {
                ? (readiness.ready
                    ? 'The relationship is enabled and ready.'
                    : 'The relationship is ENABLED but NOT READY: ' +
-                     readiness.missing.join(', ') + ' still to configure. It will refuse ' +
-                     'rather than half-work.')
+                     readiness.missing.join(', ') + ' still to configure. It ' +
+                     'will refuse rather than half-work.')
                : 'The relationship is still disabled.') };
 }
 
@@ -1720,26 +1966,35 @@ function remove(id) {
   const record = get(id);
   if (!record) {
     log.debug('Leaving remove(). No such relationship.');
-    return { ok: false, errors: ['There is no federation relationship called "' + id + '".'] };
+    actionRefused('STS-FED-0065', id,
+                  'there is no such relationship to delete');
+    log.debug("Leaving remove().");
+    return { ok: false,
+             errors: ['There is no federation relationship called "' + id +
+                      '".'] };
   }
   if (!directory.deleteFederation(record.fedId)) {
     log.debug('Leaving remove(). The directory would not delete it.');
-    return { ok: false, errors: ['The directory would not delete ' + record.dn + '.'] };
+    actionRefused('STS-FED-0073', id, 'the directory would not delete it');
+    log.debug("Leaving remove().");
+    return { ok: false,
+             errors: ['The directory would not delete ' + record.dn + '.'] };
   }
-  releaseIndex = null;
+  forgetReleaseIndexes();
   recordChange('federation.delete', record,
                'the federation relationship ' + id + ' was deleted',
                { dn: record.dn,
                  note: 'nothing else was deleted: the people this partner ' +
-                       'authenticated keep their entries under ou=users, which is ' +
-                       'the rule everywhere in this directory' });
-  log.info('federation: deleted ' + id + '. The people it authenticated keep their ' +
-           'entries — nothing here is ever deleted from ou=users.');
+                       'authenticated keep their entries under ou=users, ' +
+                       'which is the rule everywhere in this directory' });
+  log.info('federation: deleted ' + id + '. The people it authenticated keep ' +
+           'their entries — nothing here is ever deleted from ou=users.');
   log.debug('Leaving remove(). Gone.');
   return { ok: true,
-           message: 'Deleted. The people this partner authenticated keep their entries ' +
-                    'under ou=users — nothing is ever deleted from there — and any session ' +
-                    'they hold is unaffected until it expires or is ended.' };
+           message: 'Deleted. The people this partner authenticated keep ' +
+                    'their entries under ou=users — nothing is ever deleted ' +
+                    'from there — and any session they hold is unaffected ' +
+                    'until it expires or is ended.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -1771,17 +2026,18 @@ function remove(id) {
 //   2. AN IDENTITY-PROVIDER-SIDE RELATIONSHIP BROKERS TO IT. The broker case:
 //      an enabled relationship names this application in `fedApplication`,
 //      declares `fedAuthnMechanism: federation`, and points
-//      `fedAuthnRelationship` at this one. The application entry says nothing at
-//      all in that arrangement, which is why checking only (1) would silently
-//      record nothing for every brokered sign-in — the case the identity broker
-//      exists for.
+//      `fedAuthnRelationship` at this one. The application entry says nothing
+//      at all in that arrangement, which is why checking only (1) would
+//      silently record nothing for every brokered sign-in — the case the
+//      identity broker exists for.
 //
 // It answers WHICH of the two rather than a boolean, because the map draws them
 // as different lines and the log line is worth the distinction.
 // ---------------------------------------------------------------------------
 function applicationConfiguredFor(applicationId, relationshipId) {
   log.debug('Entering applicationConfiguredFor(). application=' +
-            (applicationId || '(none)') + ', relationship=' + (relationshipId || '(none)'));
+            (applicationId || '(none)') + ', relationship=' +
+            (relationshipId || '(none)'));
   const wantedApp = String(applicationId || '').trim();
   const wantedFed = String(relationshipId || '').trim();
   if (!wantedApp || !wantedFed) {
@@ -1797,13 +2053,17 @@ function applicationConfiguredFor(applicationId, relationshipId) {
     const ids = (Array.isArray(named) ? named : (named ? [named] : []))
       .map(function (one) { return String(one).trim(); });
     if (ids.indexOf(wantedFed) >= 0) {
-      log.debug('Leaving applicationConfiguredFor(). The application entry names it.');
+      log.debug('Leaving applicationConfiguredFor(). The application entry ' +
+                'names it.');
       return { configured: true, source: 'application' };
     }
   } catch (e) {
-    log.error('federation: the applications registry threw while checking whether "' +
-              wantedApp + '" is configured for "' + wantedFed + '"; the per-application ' +
-              'count is skipped and the sign-in itself stands: ' + e.message);
+    log.error(errorCodes.tag('STS-FED-0057') + 'federation: the applications ' +
+                                               'registry threw while ' +
+                                               'checking whether "' +
+              wantedApp + '" is configured for "' + wantedFed + '"; the ' +
+              'per-application count is skipped and the sign-in itself ' +
+              'stands: ' + e.message);
     log.debug('Leaving applicationConfiguredFor(). The registry threw.');
     return { configured: false, source: '' };
   }
@@ -1815,10 +2075,12 @@ function applicationConfiguredFor(applicationId, relationshipId) {
   if (broker &&
       String(broker.fedAuthnMechanism || '').trim() === 'federation' &&
       String(broker.fedAuthnRelationship || '').trim() === wantedFed) {
-    log.debug('Leaving applicationConfiguredFor(). ' + broker.fedId + ' brokers it.');
+    log.debug('Leaving applicationConfiguredFor(). ' + broker.fedId + ' ' +
+        'brokers it.');
     return { configured: true, source: 'broker', via: broker.fedId };
   }
-  log.debug('Leaving applicationConfiguredFor(). Not configured for that pair.');
+  log.debug('Leaving applicationConfiguredFor(). Not configured for that ' +
+            'pair.');
   return { configured: false, source: '' };
 }
 
@@ -1830,6 +2092,8 @@ function applicationConfiguredFor(applicationId, relationshipId) {
 const USE_SEPARATOR = '|';
 
 function packField(value) {
+  log.debug("Entering packField().");
+  log.debug("Leaving packField().");
   return String(value == null ? '' : value).split(USE_SEPARATOR).join('~');
 }
 
@@ -1838,14 +2102,18 @@ function packField(value) {
 // any other, and half-parsing somebody's hand-written value would put a
 // nonsense count on a page that is meant to be read.
 function parseApplicationUse(value) {
+  log.debug("Entering parseApplicationUse().");
   const parts = String(value == null ? '' : value).split(USE_SEPARATOR);
   if (parts.length < 2) {
+    log.debug("Leaving parseApplicationUse().");
     return null;
   }
   const application = parts[0].trim();
   if (!application) {
+    log.debug("Leaving parseApplicationUse().");
     return null;
   }
+  log.debug("Leaving parseApplicationUse().");
   return {
     application: application,
     authentications: parseInt(parts[1], 10) || 0,
@@ -1856,6 +2124,8 @@ function parseApplicationUse(value) {
 }
 
 function packApplicationUse(row) {
+  log.debug("Entering packApplicationUse().");
+  log.debug("Leaving packApplicationUse().");
   return [packField(row.application), String(row.authentications || 0),
           String(row.users || 0), packField(row.lastUser),
           packField(row.lastSeen)].join(USE_SEPARATOR);
@@ -1866,7 +2136,8 @@ function packApplicationUse(row) {
 // twice: a picture whose boxes moved because two applications drew level would
 // be a picture nobody could compare with itself.
 function applicationUse(record) {
-  log.debug('Entering applicationUse(). id=' + ((record && record.fedId) || '(none)'));
+  log.debug('Entering applicationUse(). id=' +
+            ((record && record.fedId) || '(none)'));
   const rows = ((record || {}).fedApplicationUse || [])
     .map(parseApplicationUse)
     .filter(function (one) { return !!one; });
@@ -1874,7 +2145,8 @@ function applicationUse(record) {
     if (b.authentications !== a.authentications) {
       return b.authentications - a.authentications;
     }
-    return a.application < b.application ? -1 : a.application > b.application ? 1 : 0;
+    return a.application < b.application ? -1 :
+           a.application > b.application ? 1 : 0;
   });
   log.debug('Leaving applicationUse(). ' + rows.length + ' application(s).');
   return rows;
@@ -1888,7 +2160,15 @@ function applicationUse(record) {
 // and `ldapsearch` cannot read. Past it the busiest rows are kept and the rest
 // are dropped, which is stated on the page rather than left to be inferred from
 // a number that stopped moving.
-const MAX_APPLICATION_USE = 64;
+//
+// `federation.maxApplicationUse` since 2026-09-12; it was the constant 64, and
+// the export is the function now (nothing outside this file read the constant),
+// so a reader sees the value in force rather than the number it once was.
+function maxApplicationUse() {
+  log.debug("Entering maxApplicationUse().");
+  log.debug("Leaving maxApplicationUse().");
+  return Number(config.value('federation.maxApplicationUse'));
+}
 
 // WHICH APPLICATIONS ARE CONFIGURED TO USE THIS RELATIONSHIP, which is a
 // question about CONFIGURATION and not about what has happened — so it is
@@ -1907,10 +2187,15 @@ function applicationsUsing(relationshipId) {
   const out = [];
   const seen = Object.create(null);
   const add = function (id, source, via) {
+    log.debug("Entering add().");
     const name = String(id || '').trim();
-    if (!name || seen[name]) return;
+    if (!name || seen[name]) {
+      log.debug("Leaving add().");
+      return;
+    }
     seen[name] = true;
     out.push({ application: name, source: source, via: via || '' });
+    log.debug("Leaving add().");
   };
   if (!wanted) {
     log.debug('Leaving applicationsUsing(). Nothing was named.');
@@ -1929,7 +2214,9 @@ function applicationsUsing(relationshipId) {
     // Swallowed with a reason: this builds a picture on a console page, and a
     // registry that throws must cost the picture's completeness rather than the
     // page. The brokered half below is still worth having.
-    log.error('federation: the applications registry threw while listing what uses "' +
+    log.error(errorCodes.tag('STS-FED-0058') + 'federation: the applications ' +
+                                               'registry threw while listing ' +
+                                               'what uses "' +
               wanted + '"; the map is drawn without that half: ' + e.message);
   }
   inRole('identity-provider').forEach(function (record) {
@@ -1964,19 +2251,23 @@ function recordApplicationUse(record, application, user, now, how) {
     if (rows[i].application === key) { row = rows[i]; break; }
   }
   if (!row) {
-    if (rows.length >= MAX_APPLICATION_USE) {
-      // The busiest are kept. See MAX_APPLICATION_USE: past the cap this stops
+    if (rows.length >= maxApplicationUse()) {
+      // The busiest are kept. See maxApplicationUse(): past the cap this stops
       // being a picture and becomes an entry nothing can read, and dropping the
       // quietest row is the one choice that leaves the picture saying the same
       // thing it said before.
-      log.warn('federation: ' + record.fedId + ' already carries ' + rows.length +
-               ' per-application counts, which is the cap (' + MAX_APPLICATION_USE +
-               '), so "' + application + '" is not being counted separately. The ' +
-               'relationship\'s own totals still include it.');
+      log.warn('federation: ' + record.fedId + ' already carries ' +
+               rows.length +
+               ' per-application counts, which is the cap ' +
+               '(federation.maxApplicationUse, ' +
+               maxApplicationUse() +
+               '), so "' + application + '" is not being counted separately. ' +
+               'The relationship\'s own totals still include it.');
       log.debug('Leaving recordApplicationUse(). At the cap.');
       return;
     }
-    row = { application: key, authentications: 0, users: 0, lastUser: '', lastSeen: '' };
+    row = { application: key, authentications: 0, users: 0, lastUser: '',
+            lastSeen: '' };
     rows.push(row);
     log.info('federation: "' + application + '" signed somebody in through ' +
              record.fedId + ' for the first time' +
@@ -2024,7 +2315,8 @@ function recordUse(id, detail) {
     const now = generalizedTime();
     record.fedFirstSeen = record.fedFirstSeen || now;
     record.fedLastSeen = now;
-    record.fedAuthentications = String((parseInt(record.fedAuthentications, 10) || 0) + 1);
+    record.fedAuthentications = String((parseInt(record.fedAuthentications,
+                                                 10) || 0) + 1);
     const user = String(info.user || '').trim();
     if (user && user !== record.fedLastUser) {
       record.fedUsers = String((parseInt(record.fedUsers, 10) || 0) + 1);
@@ -2052,14 +2344,15 @@ function recordUse(id, detail) {
       if (how.configured) {
         recordApplicationUse(record, application, user, now, how);
       } else {
-        log.warn('federation: a sign-in through ' + record.fedId + ' named the ' +
-                 'application "' + application + '", which is NOT configured to ' +
-                 'authenticate through it — neither its entry\'s ' +
-                 'appFederationRelationship nor any enabled identity-provider-side ' +
-                 'relationship brokering to this one names the pair. The sign-in ' +
-                 'stands and the relationship\'s own counts moved; no ' +
-                 'per-application count was recorded, because this attribute is ' +
-                 'not a list of whatever asked.');
+        log.warn('federation: a sign-in through ' + record.fedId + ' named ' +
+                 'the application ' +
+                 '"' + application + '", which is NOT configured ' +
+                 'to authenticate through it — neither its entry\'s ' +
+                 'appFederationRelationship nor any enabled ' +
+                 'identity-provider-side relationship brokering to this one ' +
+                 'names the pair. The sign-in stands and the relationship\'s ' +
+                 'own counts moved; no per-application count was recorded, ' +
+                 'because this attribute is not a list of whatever asked.');
       }
     }
     // A success CLEARS the last error, and that is worth the line: an error
@@ -2068,11 +2361,13 @@ function recordUse(id, detail) {
     record.fedLastError = '';
     record.fedLastErrorAt = '';
     persist(record);
-    releaseIndex = null;
+    forgetReleaseIndexes();
     log.debug('Leaving recordUse(). ' + record.fedAuthentications + ' so far.');
     return get(id);
   } catch (e) {
-    log.error('federation: the register threw while recording a use of ' + id +
+    log.error(errorCodes.tag('STS-FED-0059') + 'federation: the register ' +
+                                               'threw while recording a use ' +
+                                               'of ' + id +
               ' and was ignored; the sign-in itself stands: ' + e.message);
     log.debug('Leaving recordUse(). It threw.');
     return null;
@@ -2093,19 +2388,23 @@ function recordFailure(id, why) {
     record.fedLastError = String(why || 'refused, with no reason recorded');
     record.fedLastErrorAt = generalizedTime();
     persist(record);
-    releaseIndex = null;
+    forgetReleaseIndexes();
     // An audit row as well as the attribute, because the attribute holds ONE
     // failure and somebody debugging a partner that intermittently fails needs
     // the sequence. The audit log is the only place here that answers "when,
     // and how many times".
     recordChange('federation.refused', record,
-                 'a federated sign-in through ' + id + ' was refused: ' + record.fedLastError,
+                 'a federated sign-in through ' + id + ' was refused: ' +
+                 record.fedLastError,
                  { why: record.fedLastError });
-    log.warn('federation: ' + id + ' refused a sign-in — ' + record.fedLastError);
+    log.warn('federation: ' + id + ' refused a sign-in — ' +
+             record.fedLastError);
     log.debug('Leaving recordFailure(). Recorded.');
     return get(id);
   } catch (e) {
-    log.error('federation: the register threw while recording a failure of ' + id +
+    log.error(errorCodes.tag('STS-FED-0060') + 'federation: the register ' +
+                                               'threw while recording a ' +
+                                               'failure of ' + id +
               ' and was ignored: ' + e.message);
     log.debug('Leaving recordFailure(). It threw.');
     return null;
@@ -2181,5 +2480,5 @@ module.exports = {
   // implementation of "is this application configured for that relationship"
   // would be the one that disagreed on the broker case.
   applicationConfiguredFor: applicationConfiguredFor,
-  MAX_APPLICATION_USE: MAX_APPLICATION_USE
+  maxApplicationUse: maxApplicationUse
 };

@@ -48,12 +48,13 @@
 //     call gives it one, and `GetBundle`, because a trust bundle is public —
 //     and both are open in a real SPIRE server too.
 //
-//   * **`spiffe.authRequired` off restores the old posture completely**: the
-//     TCP port binds plain, nothing is verified, and anybody who can reach it
-//     can create a registration entry granting any identity in this trust
-//     domain and then collect an SVID for it. That is still worth having, and
-//     it is still what `GET /spiffe`, `/admin/spiffe` and `spiffe.grpcHost`
-//     warn about — for that setting rather than for every deployment.
+//   * **THE OLD POSTURE IS NO LONGER REACHABLE.** `spiffe.authRequired` off
+//     used to restore it completely — the TCP port bound plain, nothing was
+//     verified, and anybody who could reach it could create a registration
+//     entry granting any identity in this trust domain and then collect an
+//     SVID for it. That setting was removed on 2026-09-06 when `global.mode`
+//     took the question over, so the `!authRequired()` arms below are dead
+//     code kept against a third mode wanting them.
 //
 // **WHAT IS STILL NOT ATTESTED IS THE WORKLOAD API AND NODE ATTESTATION.** See
 // `spiffe_workload.js`'s header for the first, which is the specification's
@@ -80,6 +81,11 @@ const crypto = require('crypto');
 const { log, nowSec } = require('../common/helpers');
 const config = require('../common/config');
 const audit = require('../common/audit');
+// THE ERROR CODES. A LEAF. A handler that throws a status marks the CALL with
+// the condition on the line before, and `spiffe_grpc.js`'s wrapper records it
+// on the call's one audit row; a per-item refusal inside a batch, which fails
+// no call, is recorded by `refusedItem()` below.
+const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
 const spiffeId = require('./spiffe_id');
 // PER PROCESS AND NOT PER REALM — see the store below. Required only for
@@ -92,10 +98,17 @@ const rpc = require('./spiffe_grpc');
 // For the caller on a call — see the header. This module never authorizes;
 // it reads WHO, where a method's answer depends on it.
 const auth = require('./spiffe_auth');
+// The atomic "once" a join token is spent through across nodes — see
+// AttestAgent. A LIBRARY that reaches `persistence.js` lazily.
+const claims = require('../cluster/cluster_claims');
 
 const status = rpc.grpc.status;
 
-function trustDomain() { return ca.trustDomain(); }
+function trustDomain() {
+  log.debug("Entering trustDomain().");
+  log.debug("Leaving trustDomain().");
+  return ca.trustDomain();
+}
 
 // ---------------------------------------------------------------------------
 // CONVERSIONS.
@@ -144,15 +157,23 @@ function entryToProto(entry, mask) {
 // `id` is never masked out — it is the handle to everything else, and an entry
 // without one is a result a caller cannot act on.
 function applyEntryMask(full, mask) {
-  if (!mask || !Object.keys(mask).length) return full;
+  log.debug("Entering applyEntryMask().");
+  if (!mask || !Object.keys(mask).length) {
+    log.debug("Leaving applyEntryMask().");
+    return full;
+  }
   const anySet = Object.keys(mask).some(function (key) { return mask[key]; });
-  if (!anySet) return full;
+  if (!anySet) {
+    log.debug("Leaving applyEntryMask().");
+    return full;
+  }
   const out = { id: full.id };
   Object.keys(mask).forEach(function (key) {
     if (mask[key] && Object.prototype.hasOwnProperty.call(full, key)) {
       out[key] = full[key];
     }
   });
+  log.debug("Leaving applyEntryMask().");
   return out;
 }
 
@@ -167,7 +188,8 @@ function entryFromProto(message) {
   return {
     id: String(proto.id || '').trim(),
     spiffeId: spiffeId.fromProto(proto.spiffe_id),
-    parentId: spiffeId.fromProto(proto.parent_id) || spiffeId.serverId(trustDomain()),
+    parentId: spiffeId.fromProto(proto.parent_id) ||
+              spiffeId.serverId(trustDomain()),
     selectors: (proto.selectors || []).map(function (s) {
       return { type: String(s.type || ''), value: String(s.value || '') };
     }),
@@ -225,20 +247,48 @@ function agentToProto(agent, mask) {
 // anything unparseable: a `created_at` of NaN serialises as an error naming the
 // field, and 0 at least reads as "unknown".
 function secondsFromGeneralizedTime(text) {
+  log.debug("Entering secondsFromGeneralizedTime().");
   const value = String(text || '');
   const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(value);
   if (!m) {
     const parsed = Date.parse(value);
+    log.debug("Leaving secondsFromGeneralizedTime().");
     return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
   }
-  return Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000);
+  log.debug("Leaving secondsFromGeneralizedTime().");
+  return Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) /
+                    1000);
 }
 
 function statusFor(code, message) {
+  log.debug("Entering statusFor().");
+  log.debug("Leaving statusFor().");
   return { code: code, message: message || (code === status.OK ? 'OK' : '') };
 }
 
-function okStatus() { return statusFor(status.OK, 'OK'); }
+function okStatus() {
+  log.debug("Entering okStatus().");
+  log.debug("Leaving okStatus().");
+  return statusFor(status.OK, 'OK');
+}
+
+// ONE ITEM OF A BATCH, REFUSED. The call itself answers OK — see the header —
+// so the wrapper records a success, and without this row the refusal inside it
+// would be recorded nowhere. One row per refused item, carrying the condition;
+// the status handed back is exactly what `statusFor()` builds. `target` is the
+// item (an entry id, a trust domain), which is a name and never a credential.
+function refusedItem(code, grpcCode, message, target) {
+  log.debug("Entering refusedItem().");
+  audit.failure(code, {
+    protocol: 'SPIRE Server API', channel: 'grpc', target: target || '',
+    // No `outcome`: a row carrying a code is a refusal by default.
+    summary: 'One item of a SPIRE Server API batch call was refused: ' +
+             (message || '')
+  });
+  log.debug("Leaving refusedItem().");
+  // error-code: none — the helper's own internals, handed the status as a variable
+  return statusFor(grpcCode, message);
+}
 
 // ---------------------------------------------------------------------------
 // PAGING.
@@ -255,11 +305,20 @@ function okStatus() { return statusFor(status.OK, 'OK'); }
 // size — the alternative, a cursor keyed on the last id, matters when rows are
 // being inserted underneath a paging client, and a mock's registry is not.
 // ---------------------------------------------------------------------------
+//
+// **THE CAP IS `spiffe.maxPageSize` SINCE 2026-09-12** (1000, the old literal,
+// is its default). It bounds what one call may ask for; a request with no
+// page_size still gets every row, which is what it always got and what a
+// client that does not page expects.
 function page(rows, pageSize, pageToken) {
-  const size = Number(pageSize) > 0 ? Math.min(Number(pageSize), 1000) : rows.length;
+  log.debug("Entering page().");
+  const cap = config.value('spiffe.maxPageSize');
+  const size = Number(pageSize) > 0 ? Math.min(Number(pageSize), cap) :
+               rows.length;
   const start = Math.max(0, parseInt(String(pageToken || '0'), 10) || 0);
   const slice = rows.slice(start, start + size);
   const next = (start + size) < rows.length ? String(start + size) : '';
+  log.debug("Leaving page().");
   return { rows: slice, nextPageToken: next };
 }
 
@@ -280,11 +339,13 @@ function page(rows, pageSize, pageToken) {
 // deployment where it should return everything.
 // ---------------------------------------------------------------------------
 function selectorSet(list) {
+  log.debug("Entering selectorSet().");
   const set = {};
   (list || []).forEach(function (s) {
     const text = registry.selectorText(s);
     if (text) set[text] = true;
   });
+  log.debug("Leaving selectorSet().");
   return set;
 }
 
@@ -338,7 +399,8 @@ function federatesWithMatches(entryFederates, match) {
     return true;
   }
   const have = {};
-  (entryFederates || []).forEach(function (t) { have[String(t).toLowerCase()] = true; });
+  (entryFederates ||
+   []).forEach(function (t) { have[String(t).toLowerCase()] = true; });
   const haveKeys = Object.keys(have);
   const behavior = String(match.match || 'MATCH_EXACT');
   if (behavior === 'MATCH_EXACT') {
@@ -368,10 +430,17 @@ function federatesWithMatches(entryFederates, match) {
 // hint is empty" — so reading `.value` without checking presence turns the
 // first into the second and silently filters everything out.
 function wrapped(value) {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'value')) {
+  log.debug("Entering wrapped().");
+  if (value === null || value === undefined) {
+    log.debug("Leaving wrapped().");
+    return undefined;
+  }
+  if (typeof value === 'object' &&
+      Object.prototype.hasOwnProperty.call(value, 'value')) {
+    log.debug("Leaving wrapped().");
     return value.value;
   }
+  log.debug("Leaving wrapped().");
   return value;
 }
 
@@ -389,10 +458,13 @@ function filterEntries(rows, filter) {
   return rows.filter(function (entry) {
     if (bySpiffe && entry.spiffeId !== bySpiffe) return false;
     if (byParent && entry.parentId !== byParent) return false;
-    if (byHint !== undefined && String(entry.hint || '') !== String(byHint)) return false;
-    if (byDownstream !== undefined && !!entry.downstream !== !!byDownstream) return false;
+    if (byHint !== undefined &&
+        String(entry.hint || '') !== String(byHint)) return false;
+    if (byDownstream !== undefined &&
+        !!entry.downstream !== !!byDownstream) return false;
     if (!selectorMatches(entry.selectors, filter.by_selectors)) return false;
-    if (!federatesWithMatches(entry.federatesWith, filter.by_federates_with)) return false;
+    if (!federatesWithMatches(entry.federatesWith,
+                              filter.by_federates_with)) return false;
     return true;
   });
 }
@@ -412,9 +484,12 @@ function filterAgents(rows, filter) {
   return rows.filter(function (agent) {
     if (byType && agent.attestationType !== byType) return false;
     if (byBanned !== undefined && !!agent.banned !== !!byBanned) return false;
-    if (byReattest !== undefined && !!agent.canReattest !== !!byReattest) return false;
-    if (beforeSeconds && !(agent.expiresAt && agent.expiresAt < beforeSeconds)) return false;
-    if (!selectorMatches(agent.selectors, filter.by_selector_match)) return false;
+    if (byReattest !== undefined &&
+        !!agent.canReattest !== !!byReattest) return false;
+    if (beforeSeconds &&
+        !(agent.expiresAt && agent.expiresAt < beforeSeconds)) return false;
+    if (!selectorMatches(agent.selectors,
+                         filter.by_selector_match)) return false;
     return true;
   });
 }
@@ -423,8 +498,10 @@ function filterAgents(rows, filter) {
 // THE ENTRY SERVICE.
 // ===========================================================================
 const entryHandlers = {
-  CountEntries: rpc.unary('server', 'Entry.CountEntries', async function (call) {
-    const rows = filterEntries(registry.allEntries(), (call.request || {}).filter);
+  CountEntries: rpc.unary('server', 'Entry.CountEntries',
+                          async function (call) {
+    const rows = filterEntries(registry.allEntries(),
+                               (call.request || {}).filter);
     return { count: rows.length };
   }),
 
@@ -444,13 +521,15 @@ const entryHandlers = {
     const request = call.request || {};
     const entry = registry.entryById(request.id);
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0046');
       throw rpc.notFound('No registration entry has the id ' +
                          String(request.id || '(none given)') + '.');
     }
     return entryToProto(entry, request.output_mask);
   }),
 
-  BatchCreateEntry: rpc.unary('server', 'Entry.BatchCreateEntry', async function (call) {
+  BatchCreateEntry: rpc.unary('server', 'Entry.BatchCreateEntry',
+                              async function (call) {
     const request = call.request || {};
     const results = (request.entries || []).map(function (message) {
       const record = entryFromProto(message);
@@ -459,8 +538,9 @@ const entryHandlers = {
         // Per item, never the whole call. See the header: a batch of fifty
         // that fails because the thirteenth had a typo is how a client loses
         // forty-nine entries it correctly submitted.
-        return { status: statusFor(status.INVALID_ARGUMENT,
-                                   created.errors.join(' ')), entry: null };
+        return { status: refusedItem('STS-SPIFFE-0047', status.INVALID_ARGUMENT,
+                                     created.errors.join(' '), record.id),
+                 entry: null };
       }
       return { status: okStatus(),
                entry: entryToProto(created.entry, request.output_mask) };
@@ -468,14 +548,16 @@ const entryHandlers = {
     return { results: results };
   }),
 
-  BatchUpdateEntry: rpc.unary('server', 'Entry.BatchUpdateEntry', async function (call) {
+  BatchUpdateEntry: rpc.unary('server', 'Entry.BatchUpdateEntry',
+                              async function (call) {
     const request = call.request || {};
     const results = (request.entries || []).map(function (message) {
       const id = String(message.id || '').trim();
       if (!id) {
-        return { status: statusFor(status.INVALID_ARGUMENT,
-                                   'An update names the entry by its id, and ' +
-                                   'this one has none.'), entry: null };
+        return { status: refusedItem('STS-SPIFFE-0048', status.INVALID_ARGUMENT,
+                                     'An update names the entry by its id, ' +
+                                     'and this one has ' +
+                                     'none.', ''), entry: null };
       }
       // The INPUT mask says which fields of the submitted entry to apply. It is
       // honoured, and it matters more than the output mask does: a client that
@@ -487,10 +569,12 @@ const entryHandlers = {
       const changes = maskedChanges(submitted, request.input_mask);
       const updated = registry.updateEntry(id, changes, trustDomain(), '');
       if (!updated.ok) {
-        return { status: statusFor(
-          /No registration entry has the id/.test(updated.errors[0] || '')
-            ? status.NOT_FOUND : status.INVALID_ARGUMENT,
-          updated.errors.join(' ')), entry: null };
+        const missing = /No registration entry has the id/.test(
+            updated.errors[0] || '');
+        return { status: refusedItem(
+          missing ? 'STS-SPIFFE-0046' : 'STS-SPIFFE-0049',
+          missing ? status.NOT_FOUND : status.INVALID_ARGUMENT,
+          updated.errors.join(' '), id), entry: null };
       }
       return { status: okStatus(),
                entry: entryToProto(updated.entry, request.output_mask) };
@@ -498,12 +582,14 @@ const entryHandlers = {
     return { results: results };
   }),
 
-  BatchDeleteEntry: rpc.unary('server', 'Entry.BatchDeleteEntry', async function (call) {
+  BatchDeleteEntry: rpc.unary('server', 'Entry.BatchDeleteEntry',
+                              async function (call) {
     const request = call.request || {};
     const results = (request.ids || []).map(function (id) {
       const deleted = registry.deleteEntry(String(id), '');
       return { status: deleted.ok ? okStatus()
-                 : statusFor(status.NOT_FOUND, deleted.errors.join(' ')),
+                 : refusedItem('STS-SPIFFE-0046', status.NOT_FOUND,
+                               deleted.errors.join(' '), String(id)),
                id: String(id) };
     });
     return { results: results };
@@ -514,7 +600,8 @@ const entryHandlers = {
   // beneath it. Here it returns every entry, because nothing identifies the
   // caller — the same answer the Workload API gives, for the same reason, and
   // it is the honest one rather than a guess at who is asking.
-  GetAuthorizedEntries: rpc.unary('server', 'Entry.GetAuthorizedEntries', async function (call) {
+  GetAuthorizedEntries: rpc.unary('server', 'Entry.GetAuthorizedEntries',
+                                  async function (call) {
     const request = call.request || {};
     return {
       entries: registry.allEntries().map(function (entry) {
@@ -540,7 +627,8 @@ const entryHandlers = {
         entry_revisions: rows.map(function (entry) {
           return { id: entry.id,
                    revision_number: String(entry.revisionNumber || 0),
-                   created_at: String(secondsFromGeneralizedTime(entry.createdAt)) };
+                   created_at: String(secondsFromGeneralizedTime(
+                       entry.createdAt)) };
         }),
         entries: rows.filter(function (entry) { return !held[entry.id]; })
           .map(function (entry) {
@@ -574,7 +662,8 @@ function maskedChanges(submitted, mask) {
   };
   const changes = {};
   Object.keys(mask).forEach(function (key) {
-    if (mask[key] && FIELD_OF[key]) changes[FIELD_OF[key]] = submitted[FIELD_OF[key]];
+    if (mask[key] &&
+        FIELD_OF[key]) changes[FIELD_OF[key]] = submitted[FIELD_OF[key]];
   });
   log.debug('Leaving maskedChanges().');
   return changes;
@@ -590,21 +679,55 @@ function maskedChanges(submitted, mask) {
 // make `CreateJoinToken` a way of issuing a permanent credential, which is
 // exactly what it exists not to be.
 // -------------------------------------------------------------------------
-// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
-// is a plain Map that reports its writes so product mode can write them down;
-// `scope: 'shared'` is what says the store deliberately has no realm in it,
-// which is the discriminator `tests/realm_isolation.js` checks against.
+// PERSISTED, AND **PER REALM SINCE 2026-09-12** — it was `sharedMap()` with
+// `scope: 'shared'`, and that was right for exactly as long as there was one
+// trust domain.
+//
+// The old note read: *shared rather than per realm; `scope: 'shared'` is what
+// says the store deliberately has no realm in it, which is the discriminator
+// `tests/realm_isolation.js` checks against.* True when the four gRPC sockets
+// all answered in the default realm, because then there was one agent
+// population and one authority for them to join.
+//
+// **A JOIN TOKEN IS A CREDENTIAL FOR JOINING A TRUST DOMAIN, AND A TRUST
+// DOMAIN IS A REALM'S NOW.** A token minted on acme's SPIRE Server API and
+// redeemed on the default realm's would attest an agent into a trust domain
+// nobody issued it for — and the SVID it then collects is signed by the wrong
+// authority, which is the confused deputy this whole boundary exists to
+// prevent. rcbj's instruction said it in one clause: *issue join tokens that
+// are scoped per realm*.
+//
+// So it is `realms.map()`, and the discriminator is the realm the call arrived
+// in — which, on these sockets, is the realm whose socket it arrived on.
 // -------------------------------------------------------------------------
 // SINGLE-USE SURVIVES THE RESTART NOW, and that is the point rather than a
 // side effect: a join token redeemed before a restart used to become usable
 // again after one, which turned the one property that makes it different
 // from a password into a property it did not have.
-const joinTokens = realms.sharedMap({ persist: 'spiffe.joinTokens',
-                                      scope: 'shared' });
+//
+// **THE STORE IS KEYED BY A DIGEST OF THE TOKEN, NOT BY THE TOKEN
+// (2026-09-12).** It was keyed by the token itself, and a persisted row's KEY
+// is not sealed — `persistence_minted.js` seals the body and writes the key as
+// it is, into `sts_minted` and `sts_changes` — so every unspent join token sat
+// in the database in the clear, one row per token. The body carried a second
+// copy. Membership and the three facts about a held token are the only
+// questions ever asked of this map, and a SHA-256 answers the first as well as
+// the value did: `joinTokenKey()` is the one spelling, and nothing here holds
+// the token after CreateJoinToken has returned it. Same argument, same shape,
+// as `oid4vc/vc_offers.js`'s deferred access tokens.
+const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
+
+function joinTokenKey(token) {
+  log.debug("Entering joinTokenKey().");
+  log.debug("Leaving joinTokenKey().");
+  return crypto.createHash('sha256').update(String(token || ''), 'utf8')
+    .digest('base64url');
+}
 
 const agentHandlers = {
   CountAgents: rpc.unary('server', 'Agent.CountAgents', async function (call) {
-    const rows = filterAgents(registry.allAgents(), (call.request || {}).filter);
+    const rows = filterAgents(registry.allAgents(),
+                              (call.request || {}).filter);
     return { count: rows.length };
   }),
 
@@ -625,6 +748,7 @@ const agentHandlers = {
     const id = spiffeId.fromProto(request.id);
     const agent = id ? registry.agentById(id) : null;
     if (!agent) {
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
       throw rpc.notFound('No agent has attested here as ' +
                          (id || '(no id given)') + '.');
     }
@@ -634,14 +758,20 @@ const agentHandlers = {
   DeleteAgent: rpc.unary('server', 'Agent.DeleteAgent', async function (call) {
     const id = spiffeId.fromProto((call.request || {}).id);
     const deleted = registry.deleteAgent(id, '');
-    if (!deleted.ok) throw rpc.notFound(deleted.errors.join(' '));
+    if (!deleted.ok) {
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
+      throw rpc.notFound(deleted.errors.join(' '));
+    }
     return {};
   }),
 
   BanAgent: rpc.unary('server', 'Agent.BanAgent', async function (call) {
     const id = spiffeId.fromProto((call.request || {}).id);
     const banned = registry.setAgentBanned(id, true, '');
-    if (!banned.ok) throw rpc.notFound(banned.errors.join(' '));
+    if (!banned.ok) {
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
+      throw rpc.notFound(banned.errors.join(' '));
+    }
     return {};
   }),
 
@@ -658,16 +788,19 @@ const agentHandlers = {
   // agent id is derived from what the caller sent. What IS real is the CSR —
   // only the public key is read out of it, so an agent still cannot name itself
   // something it is not — the join token's single use, and the ban.
-  AttestAgent: rpc.bidiStream('server', 'Agent.AttestAgent', async function (request, call) {
+  AttestAgent: rpc.bidiStream('server', 'Agent.AttestAgent',
+                              async function (request, call) {
     await ca.ready();
     // A challenge response arriving when no challenge was issued. Refused
     // rather than ignored: a client in that state has misread the protocol, and
     // an empty answer would leave it waiting.
     if (request.challenge_response !== undefined && !request.params) {
-      throw rpc.invalidArgument('This server issues no attestation challenge, ' +
-                                'so there is nothing a challenge_response can ' +
-                                'answer. Send the params step and the SVID ' +
-                                'comes back immediately.');
+      errorCodes.mark(call, 'STS-SPIFFE-0051');
+      throw rpc.invalidArgument('This server issues no attestation ' +
+                                'challenge, so there is nothing a ' +
+                                'challenge_response can answer. Send the ' +
+                                'params step and the SVID comes back ' +
+                                'immediately.');
     }
     const params = request.params || {};
     const data = params.data || {};
@@ -678,16 +811,19 @@ const agentHandlers = {
       // One of the few refusals in this service, and it earns its place: a ban
       // that did not refuse would make the button on /admin/spiffe/agents a
       // lie. PERMISSION_DENIED with the reason SPIRE uses.
-      throw rpc.permissionDenied('The agent ' + agentId + ' is banned on this ' +
-                                 'server. Unban it from /admin/spiffe/agents ' +
-                                 'or with the management API.');
+      errorCodes.mark(call, 'STS-SPIFFE-0052');
+      throw rpc.permissionDenied('The agent ' + agentId + ' is banned on ' +
+                                 'this server. Unban it from ' +
+                                 '/admin/spiffe/agents or with the ' +
+                                 'management API.');
     }
     const csr = (params.params || {}).csr;
     if (!csr || !csr.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0053');
       throw rpc.invalidArgument('AttestAgent needs a certificate signing ' +
-                                'request in params.params.csr: the agent keeps ' +
-                                'its own private key, so there is nothing to ' +
-                                'issue against without one.');
+                                'request in params.params.csr: the agent ' +
+                                'keeps its own private key, so there is ' +
+                                'nothing to issue against without one.');
     }
     // ---------------------------------------------------------------------
     // A JOIN TOKEN IS A CREDENTIAL, SO IT IS CHECKED.
@@ -699,32 +835,37 @@ const agentHandlers = {
     // from being permissive about a payload somebody else's attestor would
     // have verified.
     //
-    // Gated on `spiffe.authRequired` like everything else this file gained, so
-    // the old behaviour — any token attests — stays reachable. The refusals
+    // Gated like everything else this file gained. The old behaviour — any
+    // token attests — used to stay reachable behind `spiffe.authRequired` and
+    // no longer does. The refusals
     // are three and they are deliberately distinguishable: a token nobody
     // minted, a token that ran out, and a token already spent are three
     // different bugs in a client and reading one message for all three would
     // send somebody looking in the wrong place.
     // ---------------------------------------------------------------------
+    // The claim a checked join token is spent through, when there is one.
+    let joinTokenClaim = null;
     if (attestationType === 'join_token' && auth.authRequired()) {
-      const presented = String(Buffer.from(data.payload || []).toString('utf8')).trim();
-      const held = joinTokens.get(presented);
+      const presented = String(Buffer.from(data.payload || [])
+                                     .toString('utf8')).trim();
+      const held = joinTokens.get(joinTokenKey(presented));
       if (!presented) {
-        throw rpc.invalidArgument('A join_token attestation carries the token ' +
-                                  'as params.data.payload, and this one is ' +
-                                  'empty.');
+        errorCodes.mark(call, 'STS-SPIFFE-0054');
+        throw rpc.invalidArgument('A join_token attestation carries the ' +
+                                  'token as params.data.payload, and this ' +
+                                  'one is empty.');
       }
       if (!held) {
+        errorCodes.mark(call, 'STS-SPIFFE-0055');
         throw rpc.permissionDenied('That join token was not issued by this ' +
                                    'server, or it has already been spent — a ' +
                                    'join token is single-use, and the one it ' +
                                    'attested is on /admin/spiffe/agents. Ask ' +
-                                   'for a new one with CreateJoinToken. Note ' +
-                                   'that tokens do not survive a restart: ' +
-                                   'nothing here is persisted.');
+                                   'for a new one with CreateJoinToken.');
       }
       if (held.expiresAt && held.expiresAt < nowSec()) {
-        joinTokens.delete(presented);
+        joinTokens.delete(joinTokenKey(presented));
+        errorCodes.mark(call, 'STS-SPIFFE-0056');
         throw rpc.permissionDenied('That join token expired at ' +
           new Date(held.expiresAt * 1000).toISOString() + '. It has been ' +
           'discarded; ask for another with CreateJoinToken, which takes a ' +
@@ -734,32 +875,85 @@ const agentHandlers = {
         // A token minted FOR a named agent, presented by another. SPIRE binds
         // the two; without this the `agent_id` argument to CreateJoinToken
         // would be a note rather than a constraint.
+        errorCodes.mark(call, 'STS-SPIFFE-0057');
         throw rpc.permissionDenied('That join token was issued for ' +
           held.agentId + ' and this attestation would produce ' + agentId +
           '. A join token created for a named agent may only attest that ' +
           'agent.');
       }
+      // -------------------------------------------------------------------
+      // SPENT ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 2).
+      //
+      // The token is deleted from `joinTokens` at the SUCCESSFUL attestation
+      // below, and that store replicates to the other nodes a moment later.
+      // Two AttestAgent calls carrying one token at two nodes inside that
+      // moment both found it and both attested — two agents, each with an
+      // SVID, from a credential that is single-use by definition. So it is
+      // CLAIMED here, once every check that refuses without side effects has
+      // passed and before anything is signed; the claim lives until the token
+      // would have expired, plus a minute of skew. A claim another call holds
+      // is the refusal a spent token always was (`STS-SPIFFE-0055`); an
+      // attestation that fails after the claim gives it back, so the token is
+      // still spendable exactly as it was on one node.
+      // -------------------------------------------------------------------
+      const claimed = await claims.claim({
+        scope: 'spiffe.join-token', value: joinTokenKey(presented),
+        ttlMs: Math.max(60 * 1000, held.expiresAt
+          ? (held.expiresAt - nowSec()) * 1000 + 60 * 1000 : 0)
+      });
+      if (!claimed.ok && claimed.reason === 'used') {
+        errorCodes.mark(call, 'STS-SPIFFE-0055');
+        throw rpc.permissionDenied('That join token was not issued by this ' +
+                                   'server, or it has already been spent — a ' +
+                                   'join token is single-use. Ask for a new ' +
+                                   'one with CreateJoinToken.');
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-SPIFFE-0075') + 'spiffe: a join token ' +
+                  'could not be proved unspent (' + claimed.why + '); the ' +
+                  'attestation is refused.');
+        errorCodes.mark(call, 'STS-SPIFFE-0075');
+        throw rpc.unavailable('This server could not check the join token ' +
+                              'just now. Retry.');
+      }
+      joinTokenClaim = claimed.handle;
     }
-    const svid = await ca.signCsr(Buffer.from(csr), agentId, { ttl: 0 });
-    const recorded = registry.recordAttestation(agentId, {
-      attestationType: attestationType,
-      selectors: selectorsFromAttestation(attestationType, data.payload),
-      canReattest: attestationType !== 'join_token',
-      svidHash: crypto.createHash('sha256').update(svid.certificateDer)
-        .digest('hex').slice(0, 32),
-      expiresAt: svid.expiresAt
-    });
-    if (recorded && recorded.banned) {
-      throw rpc.permissionDenied('The agent ' + agentId + ' is banned.');
+    let svid = null;
+    try {
+      // `spiffe.agentSvidTtl`, where 0 — its default, and the literal this
+      // was — means spiffe.svidTtl. See agentSvidTtl().
+      svid = await ca.signCsr(Buffer.from(csr), agentId,
+                              { ttl: agentSvidTtl() });
+      const recorded = registry.recordAttestation(agentId, {
+        attestationType: attestationType,
+        selectors: selectorsFromAttestation(attestationType, data.payload),
+        canReattest: attestationType !== 'join_token',
+        svidHash: crypto.createHash('sha256').update(svid.certificateDer)
+          .digest('hex').slice(0, 32),
+        expiresAt: svid.expiresAt
+      });
+      if (recorded && recorded.banned) {
+        errorCodes.mark(call, 'STS-SPIFFE-0052');
+        throw rpc.permissionDenied('The agent ' + agentId + ' is banned.');
+      }
+    } catch (e) {
+      // THE CLAIM IS GIVEN BACK: nothing was attested, so the token is not
+      // spent. The error is the call's answer, unchanged.
+      log.debug("Caught in AttestAgent: " + ((e && e.message) || e));
+      if (joinTokenClaim) {
+        claims.release(joinTokenClaim);
+      }
+      throw e;
     }
     // A join token is spent HERE, at the successful attestation, and not when
     // it is looked up — the same reasoning that puts oauth2_bcp.js's
     // transaction check at the point the values are spent rather than at the
     // top of the endpoint.
     if (attestationType === 'join_token') {
-      const token = String(Buffer.from(data.payload || []).toString('utf8')).trim();
-      if (joinTokens.has(token)) {
-        joinTokens.delete(token);
+      const token = String(Buffer.from(data.payload || [])
+                                 .toString('utf8')).trim();
+      if (joinTokens.has(joinTokenKey(token))) {
+        joinTokens.delete(joinTokenKey(token));
         log.info('spiffe: the join token ending ' + token.slice(-6) +
                  ' has been spent and cannot be used again.');
       }
@@ -803,7 +997,17 @@ const agentHandlers = {
     return {
       result: {
         svid: {
-          cert_chain: [svid.certificateDer],
+          // **THE WHOLE CHAIN, LEAF FIRST, ANCHOR EXCLUDED.** `cert_chain` is
+          // a `repeated bytes` in `svid.proto` and it was one entry long here
+          // for as long as this file existed, because the trust domain's
+          // authority was self-signed and there was nothing between the leaf
+          // and the anchor. Since 2026-09-11 that authority is this realm's
+          // SPIFFE Issuing CA under the service Root, so there are two
+          // certificates above every SVID and an agent handed only the leaf
+          // cannot build a path to the bundle it was given.
+          // `spiffe_ca.js`'s `chainDerOf()` is the one place the order is
+          // decided; all four sites in this file read it.
+          cert_chain: svid.chainCertificatesDer,
           id: spiffeId.toProto(agentId),
           expires_at: String(svid.expiresAt),
           hint: ''
@@ -830,26 +1034,28 @@ const agentHandlers = {
   // classified as an attested, unbanned agent — and it is NEVER read from the
   // request. The policy table already refuses this method to anybody who is
   // not an agent, so by the time this runs the caller is one; the check below
-  // is for the OTHER mode, where `spiffe.authRequired` is off and the old
-  // objection stands word for word.
+  // is for the OTHER mode, where nothing identifies a caller and the old
+  // objection stands word for word. That mode is unreachable since 2026-09-06.
   // ---------------------------------------------------------------------
   RenewAgent: rpc.unary('server', 'Agent.RenewAgent', async function (call) {
     await ca.ready();
     const csr = ((call.request || {}).params || {}).csr;
     if (!csr || !csr.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0053');
       throw rpc.invalidArgument('RenewAgent needs a certificate signing ' +
                                 'request in params.csr.');
     }
     const caller = call.spiffeCaller || {};
     if (!caller.authenticated || !caller.entities.agent) {
+      errorCodes.mark(call, 'STS-SPIFFE-0058');
       throw rpc.statusError(status.UNIMPLEMENTED,
         'RenewAgent renews the agent on the CONNECTION, and this connection ' +
         'has no agent on it: ' + auth.describeCaller(caller) + '. With ' +
-        'spiffe.authRequired off there is nothing to identify a caller by, so ' +
-        'answering would mean renewing whichever agent the caller named — a ' +
-        'way for anybody to obtain any agent\'s identity. Turn the setting ' +
-        'on and present the agent\'s X509-SVID, or call AttestAgent again, ' +
-        'which is not refused, re-issues, and records the attestation.');
+        'nothing to identify a caller by, answering would mean renewing ' +
+        'whichever agent the caller named — a way for anybody to obtain any ' +
+        'agent\'s identity. Present the agent\'s X509-SVID, or call ' +
+        'AttestAgent again, which is not refused, re-issues, and records the ' +
+        'attestation.');
     }
     const agent = registry.agentById(caller.spiffeId);
     if (!agent) {
@@ -858,18 +1064,21 @@ const agentHandlers = {
       // FOUND rather than an invented re-attestation — a renewal is for an
       // agent that exists, and re-attesting one somebody has just removed
       // would undo the delete from the other end.
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
       throw rpc.notFound('The agent ' + caller.spiffeId + ' is no longer ' +
                          'recorded on this server — it was deleted between ' +
                          'this connection being made and this call. Call ' +
                          'AttestAgent to come back.');
     }
     if (agent.banned) {
-      throw rpc.permissionDenied('The agent ' + caller.spiffeId + ' is banned ' +
-                                 'on this server. Unban it from ' +
+      errorCodes.mark(call, 'STS-SPIFFE-0052');
+      throw rpc.permissionDenied('The agent ' + caller.spiffeId + ' is ' +
+                                 'banned on this server. Unban it from ' +
                                  '/admin/spiffe/agents or with the ' +
                                  'management API.');
     }
-    const svid = await ca.signCsr(Buffer.from(csr), caller.spiffeId, { ttl: 0 });
+    const svid = await ca.signCsr(Buffer.from(csr), caller.spiffeId,
+                                  { ttl: agentSvidTtl() });
     // The renewal is recorded as an attestation of the SAME kind the agent
     // already had. It is not a new attestation — nothing was attested here,
     // the agent proved possession of an SVID this server issued — so the
@@ -895,7 +1104,7 @@ const agentHandlers = {
     });
     return {
       svid: {
-        cert_chain: [svid.certificateDer],
+        cert_chain: svid.chainCertificatesDer,
         id: spiffeId.toProto(caller.spiffeId),
         expires_at: String(svid.expiresAt),
         hint: ''
@@ -906,20 +1115,48 @@ const agentHandlers = {
   // A join token. Single-use (see `joinTokens`), and with a real TTL, because
   // both properties are what a join token IS — and because a client author
   // testing "my token expired" has nothing to test against otherwise.
-  CreateJoinToken: rpc.unary('server', 'Agent.CreateJoinToken', async function (call) {
+  CreateJoinToken: rpc.unary('server', 'Agent.CreateJoinToken',
+                             async function (call) {
     const request = call.request || {};
-    const ttl = Number(request.ttl) > 0 ? Number(request.ttl) : 600;
+    // `spiffe.joinTokenTtl` when the request names none (600, the old literal,
+    // is its default). A request's own ttl still wins, as it does in SPIRE.
+    const ttl = Number(request.ttl) > 0 ? Number(request.ttl)
+                                        : config.value('spiffe.joinTokenTtl');
     const token = String(request.token || '').trim() ||
                   crypto.randomUUID();
     const expiresAt = nowSec() + ttl;
     const agentId = spiffeId.fromProto(request.agent_id);
-    joinTokens.set(token, { token: token, expiresAt: expiresAt,
-                            agentId: agentId || '' });
-    // Bounded, like everything else held in memory here.
-    if (joinTokens.size > 256) {
-      const oldest = joinTokens.keys().next().value;
-      joinTokens.delete(oldest);
+    // ---------------------------------------------------------------------
+    // **BOUNDED, AND THE BOUND NO LONGER EATS A LIVE TOKEN (2026-09-12).** It
+    // was `if (size > 256) delete the oldest` — so the 257th CreateJoinToken
+    // silently invalidated a token somebody had already handed to an agent that
+    // had not attested yet, and that agent then met "not issued by this server"
+    // about a token this server had issued. Now: expired tokens are swept
+    // first, because forgetting one costs nothing; a token being REPLACED by
+    // the same value does not count against the cap; and if the cap is still
+    // reached the NEW request is refused with RESOURCE_EXHAUSTED naming the
+    // setting — the caller asking now can see the refusal, where the agent
+    // holding an evicted token could not. `spiffe.maxJoinTokens` (256) is per
+    // realm, because the store is.
+    // ---------------------------------------------------------------------
+    const now = nowSec();
+    joinTokens.forEach(function (held, key) {
+      if (held && held.expiresAt && held.expiresAt <= now) {
+        joinTokens.delete(key);
+      }
+    });
+    const cap = config.value('spiffe.maxJoinTokens');
+    if (!joinTokens.has(joinTokenKey(token)) && joinTokens.size >= cap) {
+      errorCodes.mark(call, 'STS-SPIFFE-0059');
+      throw rpc.statusError(status.RESOURCE_EXHAUSTED,
+        'This realm already holds ' + joinTokens.size + ' unexpired join ' +
+        'token(s), which is spiffe.maxJoinTokens. Nothing was evicted — a ' +
+        'token already handed to an agent stays good until it is spent or ' +
+        'expires. Wait for one to expire, create tokens with a shorter ttl, ' +
+        'or raise the setting.');
     }
+    joinTokens.set(joinTokenKey(token), { expiresAt: expiresAt,
+                                          agentId: agentId || '' });
     audit.audit({
       action: 'spiffe.agent.create', actor: '', protocol: 'SPIRE Server API',
       channel: 'grpc', target: agentId || '',
@@ -943,16 +1180,30 @@ const agentHandlers = {
   })
 };
 
+// The lifetime of the SVID an agent is issued at AttestAgent and RenewAgent.
+// `spiffe.agentSvidTtl` since 2026-09-12; its default 0 means "spiffe.svidTtl",
+// which is exactly what the `{ ttl: 0 }` literal it replaced meant —
+// `signCsr()` treats a non-positive ttl as the service default. Stated here
+// because 0 is a legal, meaningful value and must never be read as "unset, use
+// something".
+function agentSvidTtl() {
+  log.debug("Entering agentSvidTtl().");
+  log.debug("Leaving agentSvidTtl().");
+  return config.value('spiffe.agentSvidTtl');
+}
+
 // An agent's SPIFFE ID. SPIRE derives it from what the attestor PROVED; nothing
 // is proved here, so it is derived from what was sent — a digest of the
 // attestation payload, so that the same agent attesting twice is one entry
 // rather than two, which is the property that makes the agents page readable.
 function agentIdFor(attestationType, payload) {
+  log.debug("Entering agentIdFor().");
   const material = Buffer.isBuffer(payload) ? payload
     : Buffer.from(String(payload || ''), 'utf8');
   const suffix = crypto.createHash('sha256')
     .update(attestationType + '|').update(material)
     .digest('hex').slice(0, 32);
+  log.debug("Leaving agentIdFor().");
   return spiffeId.agentId(trustDomain(), attestationType, suffix);
 }
 
@@ -965,6 +1216,25 @@ function selectorsFromAttestation(attestationType, payload) {
   const out = [{ type: attestationType, value: 'unverified:true' }];
   const text = Buffer.isBuffer(payload) ? payload.toString('utf8')
     : String(payload || '');
+  // **A JOIN TOKEN IS A CREDENTIAL AND NEVER A SELECTOR VALUE (2026-09-12).**
+  // The branch below put every short printable payload on the agent's entry as
+  // `payload:<text>` — and a join token is exactly that, so the token that had
+  // just attested the agent was written into the SPIFFE registry, in the
+  // directory, readable wherever an agent's selectors are drawn. It is spent by
+  // then, which narrows the harm and does not make storing a credential right;
+  // and in development, where tokens are not checked, it is not spent at all.
+  // What goes on the entry is a digest prefix, which still lets somebody
+  // holding the token recognise the agent it attested and lets nobody
+  // reconstruct it.
+  if (attestationType === 'join_token') {
+    if (text) {
+      out.push({ type: attestationType,
+                 value: 'token-sha256:' + crypto.createHash('sha256')
+                   .update(text.trim(), 'utf8').digest('hex').slice(0, 16) });
+    }
+    log.debug('Leaving selectorsFromAttestation(). A join token, by digest.');
+    return out;
+  }
   if (text && text.length <= 256 && /^[\x20-\x7e]*$/.test(text)) {
     // A short printable payload is usually a join token or a name, and having
     // it on the entry is what makes the agents page useful. Anything longer or
@@ -985,7 +1255,13 @@ async function ownBundleProto(mask) {
   const document = await ca.bundle();
   const full = {
     trust_domain: ca.trustDomain(),
-    x509_authorities: state.x509Authorities.map(function (authority) {
+    // **THE TRUST ANCHORS, WHICH SINCE 2026-09-11 ARE NOT THE AUTHORITIES.**
+    // `x509_authorities` in `bundle.proto` is what a consumer should TRUST, and
+    // that is the service Root — the SPIFFE Issuing CA that actually signs
+    // travels in each SVID's own chain instead. The two were one list while
+    // the authority was self-signed, and publishing the Issuing CA here now
+    // would hand every consumer an anchor that is not one.
+    x509_authorities: state.trustAnchors.map(function (authority) {
       return {
         asn1: Buffer.from(authority.certificatePem
           .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64'),
@@ -1036,7 +1312,8 @@ function derFromJwk(jwk) {
     // A key this node cannot import. Empty rather than fatal: the rest of the
     // bundle is still usable, and a caller sees a key with no material rather
     // than no bundle at all.
-    log.error('spiffe: a JWT authority could not be exported as DER and is ' +
+    log.error(errorCodes.tag('STS-SPIFFE-0068') +
+              'spiffe: a JWT authority could not be exported as DER and is ' +
               'being sent empty: ' + e.message);
     log.debug('Leaving derFromJwk().');
     return Buffer.alloc(0);
@@ -1115,7 +1392,8 @@ function bundleDocumentFromProto(message) {
     const der = Buffer.from(authority.public_key || []);
     if (!der.length) return;
     try {
-      const jwk = crypto.createPublicKey({ key: der, format: 'der', type: 'spki' })
+      const jwk = crypto.createPublicKey({ key: der, format: 'der',
+                                           type: 'spki' })
         .export({ format: 'jwk' });
       delete jwk.key_ops;
       delete jwk.ext;
@@ -1156,35 +1434,42 @@ const bundleHandlers = {
   // authority nothing here can issue against, which every workload would then
   // trust. Rotation is how a new authority appears, and it is on
   // /admin/spiffe.
-  AppendBundle: rpc.unary('server', 'Bundle.AppendBundle', async function () {
+  AppendBundle: rpc.unary('server', 'Bundle.AppendBundle',
+                          async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0060');
     throw rpc.statusError(status.PERMISSION_DENIED,
       'This service will not append an authority to its OWN bundle. An ' +
       'authority in a trust domain\'s bundle is a key permitted to sign ' +
       'identities in that trust domain, and this server holds no private key ' +
-      'for one somebody else submits — so appending would publish an authority ' +
-      'that can issue nothing here, which every workload in the trust domain ' +
-      'would nonetheless trust. To add an authority, rotate: POST ' +
-      '/admin-api/spiffe/rotate, or the button on /admin/spiffe. ' +
+      'for one somebody else submits — so appending would publish an ' +
+      'authority that can issue nothing here, which every workload in the ' +
+      'trust domain would nonetheless trust. To add an authority, rotate: ' +
+      'POST /admin-api/spiffe/rotate, or the button on /admin/spiffe. ' +
       'Federated bundles are a different thing and are accepted — see ' +
       'BatchCreateFederatedBundle.');
   }),
 
-  PublishJWTAuthority: rpc.unary('server', 'Bundle.PublishJWTAuthority', async function () {
+  PublishJWTAuthority: rpc.unary('server', 'Bundle.PublishJWTAuthority',
+                                 async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0060');
     throw rpc.statusError(status.PERMISSION_DENIED,
-      'This service will not publish a JWT authority into its own bundle, for ' +
-      'the reason AppendBundle gives: it would advertise a signing key nothing ' +
-      'here holds. Rotate instead.');
+      'This service will not publish a JWT authority into its own bundle, ' +
+      'for the reason AppendBundle gives: it would advertise a signing key ' +
+      'nothing here holds. Rotate instead.');
   }),
 
-  PublishWITAuthority: rpc.unary('server', 'Bundle.PublishWITAuthority', async function () {
+  PublishWITAuthority: rpc.unary('server', 'Bundle.PublishWITAuthority',
+                                 async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service issues no WIT-SVIDs and holds no WIT authority. See GET ' +
       '/spiffe for why: the Workload Identity Token\'s format is not settled ' +
-      'in a specification this service could implement against, and inventing ' +
-      'one would be inventing a credential format.');
+      'in a specification this service could implement against, and ' +
+      'inventing one would be inventing a credential format.');
   }),
 
-  ListFederatedBundles: rpc.unary('server', 'Bundle.ListFederatedBundles', async function (call) {
+  ListFederatedBundles: rpc.unary('server', 'Bundle.ListFederatedBundles',
+                                  async function (call) {
     const request = call.request || {};
     const rows = ca.federatedBundles();
     const paged = page(rows, request.page_size, request.page_token);
@@ -1196,40 +1481,47 @@ const bundleHandlers = {
     };
   }),
 
-  GetFederatedBundle: rpc.unary('server', 'Bundle.GetFederatedBundle', async function (call) {
+  GetFederatedBundle: rpc.unary('server', 'Bundle.GetFederatedBundle',
+                                async function (call) {
     const request = call.request || {};
     const name = String(request.trust_domain || '').trim().toLowerCase();
     const entry = ca.federatedBundle(name);
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0061');
       throw rpc.notFound('This service holds no bundle for the trust domain ' +
                          (name || '(none given)') + '.');
     }
     return federatedBundleProto(entry, request.output_mask);
   }),
 
-  BatchCreateFederatedBundle: rpc.unary('server', 'Bundle.BatchCreateFederatedBundle',
+  BatchCreateFederatedBundle: rpc.unary('server',
+    'Bundle.BatchCreateFederatedBundle',
     async function (call) {
       const request = call.request || {};
       return { results: (request.bundle || []).map(function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (ca.federatedBundle(name)) {
-          return { status: statusFor(status.ALREADY_EXISTS,
-                                     'A bundle for ' + name + ' is already ' +
-                                     'held; use BatchUpdateFederatedBundle or ' +
-                                     'BatchSetFederatedBundle.'), bundle: null };
+          return { status: refusedItem('STS-SPIFFE-0062', status.ALREADY_EXISTS,
+                                       'A bundle for ' + name + ' is already ' +
+                                       'held; use BatchUpdateFederatedBundle ' +
+                                       'or BatchSetFederatedBundle.', name),
+                   bundle: null };
         }
         return setFederated(message, request.output_mask);
       }) };
     }),
 
-  BatchUpdateFederatedBundle: rpc.unary('server', 'Bundle.BatchUpdateFederatedBundle',
+  BatchUpdateFederatedBundle: rpc.unary('server',
+    'Bundle.BatchUpdateFederatedBundle',
     async function (call) {
       const request = call.request || {};
       return { results: (request.bundle || []).map(function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (!ca.federatedBundle(name)) {
-          return { status: statusFor(status.NOT_FOUND,
-                                     'No bundle for ' + name + ' is held here.'),
+          return { status: refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+                                       'No bundle for ' + name + ' is held ' +
+                                           'here.',
+                                       name),
                    bundle: null };
         }
         return setFederated(message, request.output_mask);
@@ -1246,7 +1538,8 @@ const bundleHandlers = {
       }) };
     }),
 
-  BatchDeleteFederatedBundle: rpc.unary('server', 'Bundle.BatchDeleteFederatedBundle',
+  BatchDeleteFederatedBundle: rpc.unary('server',
+    'Bundle.BatchDeleteFederatedBundle',
     async function (call) {
       const request = call.request || {};
       // The three modes say what to do about registration entries that federate
@@ -1261,10 +1554,12 @@ const bundleHandlers = {
           return (entry.federatesWith || []).indexOf(domain) >= 0;
         });
         if (dependents.length && mode === 'RESTRICT') {
-          return { status: statusFor(status.FAILED_PRECONDITION,
+          return { status: refusedItem('STS-SPIFFE-0063',
+            status.FAILED_PRECONDITION,
             dependents.length + ' registration entry/entries federate with ' +
-            domain + '. Delete them first, or send mode DELETE to remove them ' +
-            'with it, or DISSOCIATE to keep them and drop the federation.'),
+            domain + '. Delete them first, or send mode DELETE to remove ' +
+            'them with it, or DISSOCIATE to keep them and drop the federation.',
+            domain),
             trust_domain: domain };
         }
         dependents.forEach(function (entry) {
@@ -1280,8 +1575,10 @@ const bundleHandlers = {
         });
         const removed = ca.deleteFederatedBundle(domain);
         if (!removed) {
-          return { status: statusFor(status.NOT_FOUND,
-                                     'No bundle for ' + domain + ' is held here.'),
+          return { status: refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+                                       'No bundle for ' + domain + ' is held ' +
+                                           'here.',
+                                       domain),
                    trust_domain: domain };
         }
         auditBundleChange('a federated bundle for ' + domain + ' was deleted');
@@ -1291,24 +1588,30 @@ const bundleHandlers = {
 };
 
 function setFederated(message, mask) {
+  log.debug("Entering setFederated().");
   const name = String(message.trust_domain || '').trim().toLowerCase();
   const document = bundleDocumentFromProto(message);
   const result = ca.setFederatedBundle(name, document, {});
   if (!result.ok) {
-    return { status: statusFor(status.INVALID_ARGUMENT, result.reason),
+    log.debug("Leaving setFederated().");
+    return { status: refusedItem(result.errorCode || 'STS-SPIFFE-0041',
+                                 status.INVALID_ARGUMENT, result.reason, name),
              bundle: null };
   }
   auditBundleChange('a federated bundle for ' + name + ' was set');
+  log.debug("Leaving setFederated().");
   return { status: okStatus(),
            bundle: federatedBundleProto(ca.federatedBundle(name), mask) };
 }
 
 function auditBundleChange(what) {
+  log.debug("Entering auditBundleChange().");
   audit.audit({
     action: 'spiffe.bundle.change', actor: '', protocol: 'SPIRE Server API',
     channel: 'grpc', target: '', summary: 'The trust bundle changed: ' + what,
     detail: { sequence: ca.sequence() }
   });
+  log.debug("Leaving auditBundleChange().");
 }
 
 // ===========================================================================
@@ -1322,6 +1625,7 @@ const svidHandlers = {
     await ca.ready();
     const request = call.request || {};
     if (!request.csr || !request.csr.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0053');
       throw rpc.invalidArgument('MintX509SVID takes a certificate signing ' +
                                 'request; the SPIFFE ID is read from its URI ' +
                                 'subjectAltName.');
@@ -1333,12 +1637,13 @@ const svidHandlers = {
     // and only the public key is read out of the CSR.
     const wanted = spiffeIdFromCsr(request.csr);
     if (!wanted) {
+      errorCodes.mark(call, 'STS-SPIFFE-0064');
       throw rpc.invalidArgument('That certificate signing request carries no ' +
                                 'SPIFFE ID in a URI subjectAltName, so there ' +
                                 'is nothing to mint. This is the one method ' +
-                                'here that reads the identity out of the CSR: ' +
-                                'there is no registration entry to take it ' +
-                                'from.');
+                                'here that reads the identity out of the ' +
+                                'CSR: there is no registration entry to take ' +
+                                'it from.');
     }
     const svid = await ca.signCsr(Buffer.from(request.csr), wanted,
                                   { ttl: Number(request.ttl || 0) });
@@ -1346,7 +1651,7 @@ const svidHandlers = {
                                 expiresAt: svid.expiresAt,
                                 certificate: svid.certificate });
     auditSvid('An X509-SVID was minted for ' + wanted, wanted);
-    return { svid: { cert_chain: [svid.certificateDer],
+    return { svid: { cert_chain: svid.chainCertificatesDer,
                      id: spiffeId.toProto(wanted),
                      expires_at: String(svid.expiresAt), hint: '' } };
   }),
@@ -1356,13 +1661,15 @@ const svidHandlers = {
     const request = call.request || {};
     const id = spiffeId.fromProto(request.id);
     if (!id) {
-      throw rpc.invalidArgument('MintJWTSVID needs the SPIFFE ID to mint for, ' +
-                                'as a trust_domain and a path.');
+      errorCodes.mark(call, 'STS-SPIFFE-0065');
+      throw rpc.invalidArgument('MintJWTSVID needs the SPIFFE ID to mint ' +
+                                'for, as a trust_domain and a path.');
     }
     const audiences = (request.audience || []).map(String).filter(Boolean);
     if (!audiences.length) {
-      throw rpc.invalidArgument('MintJWTSVID requires at least one audience: a ' +
-                                'JWT-SVID is a bearer credential, and the ' +
+      errorCodes.mark(call, 'STS-SPIFFE-0027');
+      throw rpc.invalidArgument('MintJWTSVID requires at least one audience: ' +
+                                'a JWT-SVID is a bearer credential, and the ' +
                                 'audience is what stops one being replayed ' +
                                 'against a different service.');
     }
@@ -1376,7 +1683,8 @@ const svidHandlers = {
                      issued_at: String(minted.issuedAt), hint: '' } };
   }),
 
-  MintWITSVID: rpc.unary('server', 'SVID.MintWITSVID', async function () {
+  MintWITSVID: rpc.unary('server', 'SVID.MintWITSVID', async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service issues no WIT-SVIDs; see GET /spiffe for why. X509-SVIDs ' +
       'and JWT-SVIDs are fully implemented.');
@@ -1386,7 +1694,8 @@ const svidHandlers = {
   // to. The identity comes from the ENTRY, and only the public key is read out
   // of the CSR — which is the check that stops an agent naming itself anything
   // it likes even though nothing here authenticates it.
-  BatchNewX509SVID: rpc.unary('server', 'SVID.BatchNewX509SVID', async function (call) {
+  BatchNewX509SVID: rpc.unary('server', 'SVID.BatchNewX509SVID',
+                              async function (call) {
     await ca.ready();
     const request = call.request || {};
     const results = [];
@@ -1394,14 +1703,18 @@ const svidHandlers = {
       const params = request.params[i];
       const entry = registry.entryById(String(params.entry_id || ''));
       if (!entry) {
-        results.push({ status: statusFor(status.NOT_FOUND,
-          'No registration entry has the id ' + String(params.entry_id || '') + '.'),
+        results.push({ status: refusedItem('STS-SPIFFE-0046', status.NOT_FOUND,
+          'No registration entry has the id ' + String(params.entry_id || '') +
+          '.',
+          String(params.entry_id || '')),
           svid: null });
         continue;
       }
       if (!params.csr || !params.csr.length) {
-        results.push({ status: statusFor(status.INVALID_ARGUMENT,
-          'Entry ' + entry.id + ' was given no certificate signing request.'),
+        results.push({ status: refusedItem('STS-SPIFFE-0053',
+          status.INVALID_ARGUMENT,
+          'Entry ' + entry.id + ' was given no certificate signing request.',
+          entry.id),
           svid: null });
         continue;
       }
@@ -1415,17 +1728,20 @@ const svidHandlers = {
                                     expiresAt: svid.expiresAt,
                                     certificate: svid.certificate });
         results.push({ status: okStatus(),
-                       svid: { cert_chain: [svid.certificateDer],
+                       svid: { cert_chain: svid.chainCertificatesDer,
                                id: spiffeId.toProto(entry.spiffeId),
                                expires_at: String(svid.expiresAt),
                                hint: entry.hint || '' } });
       } catch (e) {
         // Per item, like every other batch here.
-        results.push({ status: statusFor(status.INVALID_ARGUMENT, e.message),
+        results.push({ status: refusedItem('STS-SPIFFE-0066',
+                                           status.INVALID_ARGUMENT,
+                                           e.message, entry.id),
                        svid: null });
       }
     }
-    auditSvid(results.length + ' X509-SVID(s) were issued from registration entries', '');
+    auditSvid(results.length + ' X509-SVID(s) were issued from registration ' +
+                               'entries', '');
     return { results: results };
   }),
 
@@ -1434,15 +1750,18 @@ const svidHandlers = {
     const request = call.request || {};
     const entry = registry.entryById(String(request.entry_id || ''));
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0046');
       throw rpc.notFound('No registration entry has the id ' +
                          String(request.entry_id || '(none given)') + '.');
     }
     const audiences = (request.audience || []).map(String).filter(Boolean);
     if (!audiences.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0027');
       throw rpc.invalidArgument('NewJWTSVID requires at least one audience.');
     }
     const minted = await ca.mintJwtSvid(entry.spiffeId, audiences,
-                                        { ttl: entry.jwtSvidTtl, hint: entry.hint });
+                                        { ttl: entry.jwtSvidTtl,
+                                          hint: entry.hint });
     registry.noteSvidIssued(entry.id);
     stats.recordSvid('JWT', { subject: entry.spiffeId, entryId: entry.id,
                               audiences: audiences, hint: entry.hint,
@@ -1454,7 +1773,9 @@ const svidHandlers = {
                      hint: entry.hint || '' } };
   }),
 
-  BatchNewWITSVID: rpc.unary('server', 'SVID.BatchNewWITSVID', async function () {
+  BatchNewWITSVID: rpc.unary('server', 'SVID.BatchNewWITSVID',
+                             async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service issues no WIT-SVIDs; see GET /spiffe for why.');
   }),
@@ -1463,7 +1784,8 @@ const svidHandlers = {
   // `downstream` flag is NOT checked — nothing here authenticates the caller,
   // so there is no entry to check it on. Said plainly rather than left as a
   // silent difference from a real server.
-  NewDownstreamX509CA: rpc.unary('server', 'SVID.NewDownstreamX509CA', async function (call) {
+  NewDownstreamX509CA: rpc.unary('server', 'SVID.NewDownstreamX509CA',
+                                 async function (call) {
     await ca.ready();
     const request = call.request || {};
     const downstream = await ca.downstreamCa({
@@ -1473,7 +1795,9 @@ const svidHandlers = {
     auditSvid('A downstream X.509 CA was issued', '');
     return {
       ca_cert_chain: downstream.chainDer,
-      x509_authorities: state.x509Authorities.map(function (authority) {
+      // The anchors, for `ownBundleProto()`'s reason — this field is what the
+      // caller of NewDownstreamX509CA should trust, not what signed its CA.
+      x509_authorities: state.trustAnchors.map(function (authority) {
         return Buffer.from(authority.certificatePem
           .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64');
       })
@@ -1502,11 +1826,13 @@ function spiffeIdFromCsr(csr) {
         (extensions.extensions || []).forEach(function (extension) {
           if (found || extension.extnID !== '2.5.29.17') return;
           const names = new pkijs.GeneralNames({
-            schema: asn1js.fromBER(extension.extnValue.valueBlock.valueHexView).result
+            schema:
+              asn1js.fromBER(extension.extnValue.valueBlock.valueHexView).result
           });
           (names.names || []).forEach(function (name) {
             if (found) return;
-            if (name.type === 6 && spiffeId.isValid(name.value)) found = name.value;
+            if (name.type === 6 &&
+                spiffeId.isValid(name.value)) found = name.value;
           });
         });
       });
@@ -1526,12 +1852,14 @@ function spiffeIdFromCsr(csr) {
 }
 
 function auditSvid(summary, subject) {
+  log.debug("Entering auditSvid().");
   audit.audit({
     action: 'spiffe.svid.issue', actor: '', protocol: 'SPIRE Server API',
     channel: 'grpc', target: subject || '', summary: summary,
     // No SVID and no key, exactly as on the Workload API side.
     detail: {}
   });
+  log.debug("Leaving auditSvid().");
 }
 
 // ===========================================================================
@@ -1563,12 +1891,14 @@ function relationshipProto(entry, mask) {
     return full;
   }
   const out = { trust_domain: full.trust_domain };
-  if (mask.bundle_endpoint_url) out.bundle_endpoint_url = full.bundle_endpoint_url;
+  if (mask.bundle_endpoint_url) out.bundle_endpoint_url =
+      full.bundle_endpoint_url;
   if (mask.bundle_endpoint_profile) {
     if (full.https_spiffe) out.https_spiffe = full.https_spiffe;
     else out.https_web = full.https_web;
   }
-  if (mask.trust_domain_bundle) out.trust_domain_bundle = full.trust_domain_bundle;
+  if (mask.trust_domain_bundle) out.trust_domain_bundle =
+      full.trust_domain_bundle;
   log.debug('Leaving relationshipProto().');
   return out;
 }
@@ -1588,20 +1918,24 @@ function setRelationship(message, mask) {
   });
   if (!result.ok) {
     log.debug('Leaving setRelationship().');
-    return { status: statusFor(status.INVALID_ARGUMENT, result.reason),
+    return { status: refusedItem(result.errorCode || 'STS-SPIFFE-0041',
+                                 status.INVALID_ARGUMENT, result.reason, name),
              federation_relationship: null };
   }
   auditBundleChange('a federation relationship with ' + name + ' was set');
   log.debug('Leaving setRelationship().');
   return { status: okStatus(),
-           federation_relationship: relationshipProto(ca.federatedBundle(name), mask) };
+           federation_relationship: relationshipProto(ca.federatedBundle(name),
+                                                      mask) };
 }
 
 const trustDomainHandlers = {
-  ListFederationRelationships: rpc.unary('server', 'TrustDomain.ListFederationRelationships',
+  ListFederationRelationships: rpc.unary('server',
+    'TrustDomain.ListFederationRelationships',
     async function (call) {
       const request = call.request || {};
-      const paged = page(ca.federatedBundles(), request.page_size, request.page_token);
+      const paged = page(ca.federatedBundles(), request.page_size,
+                         request.page_token);
       return {
         federation_relationships: paged.rows.map(function (entry) {
           return relationshipProto(entry, request.output_mask);
@@ -1610,12 +1944,14 @@ const trustDomainHandlers = {
       };
     }),
 
-  GetFederationRelationship: rpc.unary('server', 'TrustDomain.GetFederationRelationship',
+  GetFederationRelationship: rpc.unary('server',
+    'TrustDomain.GetFederationRelationship',
     async function (call) {
       const request = call.request || {};
       const name = String(request.trust_domain || '').trim().toLowerCase();
       const entry = ca.federatedBundle(name);
       if (!entry) {
+        errorCodes.mark(call, 'STS-SPIFFE-0061');
         throw rpc.notFound('No federation relationship with ' +
                            (name || '(none given)') + ' is configured here.');
       }
@@ -1625,11 +1961,13 @@ const trustDomainHandlers = {
   BatchCreateFederationRelationship: rpc.unary('server',
     'TrustDomain.BatchCreateFederationRelationship', async function (call) {
       const request = call.request || {};
-      return { results: (request.federation_relationships || []).map(function (message) {
+      return { results: (request.federation_relationships || []).map(
+          function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (ca.federatedBundle(name)) {
-          return { status: statusFor(status.ALREADY_EXISTS,
-            'A federation relationship with ' + name + ' is already here.'),
+          return { status: refusedItem('STS-SPIFFE-0062', status.ALREADY_EXISTS,
+            'A federation relationship with ' + name + ' is already here.',
+            name),
             federation_relationship: null };
         }
         return setRelationship(message, request.output_mask);
@@ -1639,11 +1977,13 @@ const trustDomainHandlers = {
   BatchUpdateFederationRelationship: rpc.unary('server',
     'TrustDomain.BatchUpdateFederationRelationship', async function (call) {
       const request = call.request || {};
-      return { results: (request.federation_relationships || []).map(function (message) {
+      return { results: (request.federation_relationships || []).map(
+          function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (!ca.federatedBundle(name)) {
-          return { status: statusFor(status.NOT_FOUND,
-            'No federation relationship with ' + name + ' is configured here.'),
+          return { status: refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+            'No federation relationship with ' + name + ' is configured here.',
+            name),
             federation_relationship: null };
         }
         return setRelationship(message, request.output_mask);
@@ -1656,10 +1996,14 @@ const trustDomainHandlers = {
       return { results: (request.trust_domains || []).map(function (name) {
         const domain = String(name).trim().toLowerCase();
         const removed = ca.deleteFederatedBundle(domain);
-        if (removed) auditBundleChange('a federation relationship with ' + domain + ' was deleted');
+        if (removed) auditBundleChange('a federation relationship with ' +
+            domain + ' ' +
+            'was deleted');
         return { status: removed ? okStatus()
-                   : statusFor(status.NOT_FOUND,
-                               'No federation relationship with ' + domain + '.'),
+                   : refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+                                 'No federation relationship with ' + domain +
+                                 '.',
+                                 domain),
                  trust_domain: domain };
       }) };
     }),
@@ -1678,13 +2022,17 @@ const trustDomainHandlers = {
   // The same refusal `wsfed.js` gives `wreqptr` and `client_auth.js` gives
   // `jwks_uri`. Holding the position in two files and not in a third would be
   // no position at all.
-  RefreshBundle: rpc.unary('server', 'TrustDomain.RefreshBundle', async function (call) {
-    const name = String((call.request || {}).trust_domain || '').trim().toLowerCase();
+  RefreshBundle: rpc.unary('server', 'TrustDomain.RefreshBundle',
+                           async function (call) {
+    const name = String((call.request || {}).trust_domain || '').trim()
+      .toLowerCase();
     const entry = ca.federatedBundle(name);
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0061');
       throw rpc.notFound('No federation relationship with ' +
                          (name || '(none given)') + ' is configured here.');
     }
+    errorCodes.mark(call, 'STS-SPIFFE-0067');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service records a bundle endpoint URL and never fetches it. ' +
       'Fetching a URL somebody registered, to obtain a key that will then ' +
@@ -1692,8 +2040,9 @@ const trustDomainHandlers = {
       'specification citation attached — and nothing here authenticates the ' +
       'caller who registered it. The same refusal this service gives ' +
       'WS-Federation\'s wreqptr and a client\'s jwks_uri. Push the bundle in ' +
-      'instead: BatchSetFederatedBundle, POST /admin-api/spiffe/federation-set, ' +
-      'or the form on /admin/spiffe. The URL recorded for ' + name + ' is ' +
+      'instead: BatchSetFederatedBundle, POST ' +
+      '/admin-api/spiffe/federation-set, or the form on /admin/spiffe. The ' +
+      'URL recorded for ' + name + ' is ' +
       (entry.bundleEndpointUrl || '(none)') + '.');
   })
 };
@@ -1712,7 +2061,8 @@ const debugHandlers = {
       // statement rather than an empty list that reads as a fault.
       svid_chain: active ? [{
         id: spiffeId.toProto(spiffeId.serverId(trustDomain())),
-        expires_at: String(Math.floor(new Date(active.notAfter).getTime() / 1000)),
+        expires_at: String(Math.floor(new Date(active.notAfter).getTime() /
+                                      1000)),
         subject: active.subject
       }] : [],
       uptime: Math.floor((Date.now() - (state.startedAt || Date.now())) / 1000),
@@ -1740,7 +2090,7 @@ const debugHandlers = {
 // that nothing authenticated the caller, so there was no way to know which
 // agent to renew; mutual TLS on the SPIRE Server API answered that, and the
 // method now renews the agent on the connection. It still refuses, with the
-// same argument, when `spiffe.authRequired` is off — see the handler.
+// same argument, where nothing identifies the caller — see the handler.
 const NOT_IMPLEMENTED = {
   'Bundle.AppendBundle':
     'It would publish an authority this server holds no key for, which every ' +
@@ -1762,22 +2112,22 @@ const SERVICE_HANDLERS = [
   { name: 'entry', label: 'Entry', handlers: entryHandlers,
     what: 'Registration entries: what identity a workload gets, under which ' +
           'parent, matching which selectors. The store is the LDAP directory ' +
-          'under ou=entries,ou=spiffe, so an ldapmodify and a BatchUpdateEntry ' +
-          'are two doors onto one entry.' },
+          'under ou=entries,ou=spiffe, so an ldapmodify and a ' +
+          'BatchUpdateEntry are two doors onto one entry.' },
   { name: 'agent', label: 'Agent', handlers: agentHandlers,
     what: 'Attesting, listing, banning and join tokens. NODE ATTESTATION IS ' +
           'NEVER VERIFIED — whatever attestor an agent names and whatever ' +
           'payload it sends are taken on trust — but the CSR is real, a join ' +
           'token is single-use, and a ban is enforced.' },
   { name: 'bundle', label: 'Bundle', handlers: bundleHandlers,
-    what: 'This trust domain\'s bundle, and every federated one. Appending to ' +
-          'this trust domain\'s own is refused with a reason; federated ' +
+    what: 'This trust domain\'s bundle, and every federated one. Appending ' +
+          'to this trust domain\'s own is refused with a reason; federated ' +
           'bundles are accepted from a caller and never fetched.' },
   { name: 'svid', label: 'SVID', handlers: svidHandlers,
-    what: 'Minting on demand and signing an agent\'s CSRs. Only the public key ' +
-          'is read out of a CSR except at MintX509SVID, where there is no ' +
-          'entry to take the identity from and the CSR is the only statement ' +
-          'of what is wanted.' },
+    what: 'Minting on demand and signing an agent\'s CSRs. Only the public ' +
+          'key is read out of a CSR except at MintX509SVID, where there is ' +
+          'no entry to take the identity from and the CSR is the only ' +
+          'statement of what is wanted.' },
   { name: 'trustdomain', label: 'TrustDomain', handlers: trustDomainHandlers,
     what: 'Federation relationships: which trust domain, which bundle ' +
           'endpoint, which profile. RefreshBundle is refused — see its ' +

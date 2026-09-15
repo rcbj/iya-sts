@@ -61,6 +61,9 @@
 #   ./docker-run-tests.sh --modes=dispatch    # one mode of tests/tools/modes.sh
 #                                             # rather than all three, in that
 #                                             # file's own spelling
+#   ./docker-run-tests.sh --modes=cluster     # the fourth, never run unless
+#                                             # named: two nodes behind a load
+#                                             # balancer (2026-09-14)
 #   ./docker-run-tests.sh --only=crypto --no-browser
 #                                             # anything else is passed straight
 #                                             # to tests/tools/run-report.js
@@ -73,7 +76,7 @@
 #   STS_MODE_TIMEOUT=2400 ./docker-run-tests.sh
 #                                             # seconds a single mode may take
 #                                             # before this script stops waiting
-#                                             # on docker (default 1500); see
+#                                             # on docker (default 3000); see
 #                                             # THE TWO WALL CLOCKS below
 #   STS_TEARDOWN_TIMEOUT=600 ./docker-run-tests.sh
 #                                             # the same for every `down` and
@@ -125,18 +128,52 @@ fi
 . "${COMPOSE_SH}"
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
+# ---------------------------------------------------------------------------
+# THE `cluster` MODE'S LAYER (2026-09-14, issue #46): a second service
+# container and an HAProxy load balancer, over the file above, and the runner
+# and the remote PEP pointed at the balancer. Every compose command in this
+# file goes through COMPOSE_FILE_ARGS, which the mode loop sets per mode, so
+# no other mode's stack reads the layer. The layer's own header argues its
+# contents; tests/tools/modes.sh defines the mode.
+CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
+COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
 # so two runs sharing one would tear down each other's stack.
 COMPOSE_PROJECT="${STS_DOCKER_TEST_PROJECT:-mock-sts-docker-tests}"
 STS_CONTAINER_NAME="${STS_CONTAINER_NAME:-sts-docker-tests}"
+# THE SECRET STORE AND ITS TWO ONE-SHOT CONTAINERS (2026-09-12). Named for the
+# reason every other container here is: `container_name` is machine-wide, and
+# this one holds the key-encryption key the `dispatch` mode's data is sealed
+# under.
+STS_BAO_CONTAINER_NAME="${STS_BAO_CONTAINER_NAME:-sts-docker-tests-openbao}"
+STS_BAO_TLS_CONTAINER_NAME="${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}"
+STS_BAO_SEED_CONTAINER_NAME="${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}"
 STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
+# The `cluster` mode's node B and load balancer (2026-09-14), named for the
+# same reason.
+STS2_CONTAINER_NAME="${STS2_CONTAINER_NAME:-sts-docker-tests-node-b}"
+STS_LB_CONTAINER_NAME="${STS_LB_CONTAINER_NAME:-sts-docker-tests-lb}"
+# ---------------------------------------------------------------------------
+# AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
+# machine-wide like a container name: this launcher builds once and then
+# `up`s each mode from whatever `rcbj/sts` points at by then, so another
+# checkout building that name mid-run changed the code under the remaining
+# modes with every job still green. A named project builds its own tags; an
+# unnamed run keeps the compose files' names.
+# ---------------------------------------------------------------------------
+if [ -n "${STS_DOCKER_TEST_PROJECT:-}" ];
+then
+  STS_IMAGE="${STS_IMAGE:-rcbj/sts:${COMPOSE_PROJECT}}"
+  XACML_PEP_IMAGE="${XACML_PEP_IMAGE:-rcbj/xacml-pep:${COMPOSE_PROJECT}}"
+  STS_TESTS_IMAGE="${STS_TESTS_IMAGE:-rcbj/mock-sts-tests:${COMPOSE_PROJECT}}"
+fi
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
 # env/docker-tests.js exists for this stack and names it in its own header —
-# env/local.js with the log level kept at debug, which is what a failing
-# protocol job is read from — and env/test.js is the same file at `info`.
+# env/local.js with a comment of its own — and env/test.js is the same file.
+# All three are at `info` since 2026-09-12; see THE SERVICE'S LOG LEVEL below.
 # Setting CONFIG_FILE in the environment pins one and that block leaves it be.
 CONFIG_FILE="${CONFIG_FILE:-}"
 
@@ -158,9 +195,11 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # actually reached.
 #
 #   STS_MODE_TIMEOUT      the suite, once, for one mode. The slowest mode ever
-#                         measured here is `dispatch` at 16m; 25m is that with
-#                         half again on top, which is roughly the spread
-#                         between a fast runner and a slow one.
+#                         measured here was `dispatch` at 16m when this was
+#                         25m; the suite has grown to 225 jobs since, and on
+#                         2026-09-14 `dispatch` was killed at 25m at job 203
+#                         of 225 with nothing wrong. 50m is that measurement
+#                         (about 28m) with most of it again on top.
 #   STS_TEARDOWN_TIMEOUT  every `down`, and the `logs` that precedes it. These
 #                         are seconds of work when they work at all, so five
 #                         minutes is already the pathological case.
@@ -168,7 +207,7 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # Both are seconds and both are overridable, because a machine slower than any
 # CI runner is a machine somebody will run this on.
 # ---------------------------------------------------------------------------
-STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-1500}"
+STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-3000}"
 STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 
 BUILD=1
@@ -300,6 +339,12 @@ preflight || exit 1
 # says something more specific than a level does and a service logging at
 # `info` out of a file that says `debug` is nobody's idea of an answer.
 #
+# EVERY APPCONFIG FILE IN env/ IS AT `info` SINCE 2026-09-12, env/local.js and
+# env/docker-tests.js included, because every function now logs its entry and
+# exit at debug. So the file this block picks no longer changes the level: a
+# trace or debug run raises what STS_LOG_LEVEL reaches, and the vendored
+# modules stay at info unless CONFIG_FILE names a file that says otherwise.
+#
 # The branches rather than a `:-`: an EMPTY STS_LOG_LEVEL is not a harmless
 # default, because bunyan throws `unknown level name: ""` from config.js while
 # the service is still loading its modules — so it never listens, and on this
@@ -354,10 +399,67 @@ ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET:-$(head -c 24 /dev/urandom \
   | base64 | tr -d '/+=' | head -c 24)}"
 export ADMIN_API_CLIENT_SECRET
 
+# ---------------------------------------------------------------------------
+# THE STACK'S OWN SUBNET (2026-09-12), chosen exactly as ./local-run-tests.sh
+# chooses its own and for the same reason — see freeSubnet() in
+# tests/tools/compose.sh, which argues it once for both launchers.
+#
+# docker-compose-run-tests.yml names `172.30.0.0/24` because a realm's SPIFFE
+# listeners need addresses that do not move between starts, and a network is
+# MACHINE-WIDE however the project is named. So two runs of this launcher — a
+# CI agent with two workspaces, which is the case STS_DOCKER_TEST_PROJECT
+# exists for — collided on the address space before either brought up a
+# container.
+#
+# THE BASE IS 172.30 AND THE OTHER LAUNCHER'S IS 172.29, which is what keeps
+# one run of each off the scan entirely. Placed after the preflight because
+# freeSubnet() asks docker, and whether that needs `sudo` is what
+# resolveCompose() answers.
+# ---------------------------------------------------------------------------
+if [ -z "${STS_NETWORK_SUBNET:-}" ];
+then
+  STS_NETWORK_SUBNET="$(freeSubnet 172.30)"
+  if [ -z "${STS_NETWORK_SUBNET}" ];
+  then
+    echo "No free /24 could be found in 172.30.0.0/16 for the stack's own" >&2
+    echo "network. Every one of the 256 overlaps a docker network or a route" >&2
+    echo "on this machine — \`docker network ls\` and \`ip route\` say which." >&2
+    echo "STS_NETWORK_SUBNET names one explicitly." >&2
+    exit 1
+  fi
+fi
+# The addresses inside it, derived from the SUBNET and never from the base:
+# the scan hands back `172.30.1.0/24` as readily as `172.30.0.0/24`, and an
+# address built from the first two octets would sit outside the network
+# compose is about to create.
+STS_NETWORK_BITS="${STS_NETWORK_SUBNET##*/}"
+STS_NETWORK_PREFIX="${STS_NETWORK_SUBNET%/*}"
+STS_NETWORK_PREFIX="${STS_NETWORK_PREFIX%.*}"
+STS_SERVICE_ADDRESS="${STS_NETWORK_PREFIX}.10"
+STS_SERVICE_EXTRA_IPS="${STS_NETWORK_PREFIX}.11/${STS_NETWORK_BITS}"
+STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.12/${STS_NETWORK_BITS}"
+STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.13/${STS_NETWORK_BITS}"
+
 COMPOSE_ENV=(
   "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
+  # The network and the three addresses in it, chosen above. Named here for the
+  # reason every other variable in this array is: what a run does not name is
+  # the compose file's default, and that default is the same literal for every
+  # run on this machine.
+  "STS_NETWORK_SUBNET=${STS_NETWORK_SUBNET}"
+  "STS_ADDRESS=${STS_SERVICE_ADDRESS}"
+  "STS_SPIFFE_GRPC_HOST=${STS_SERVICE_ADDRESS}"
+  "STS_EXTRA_IPS=${STS_SERVICE_EXTRA_IPS}"
   "STS_CONTAINER_NAME=${STS_CONTAINER_NAME}"
+  "STS_BAO_CONTAINER_NAME=${STS_BAO_CONTAINER_NAME}"
+  "STS_BAO_TLS_CONTAINER_NAME=${STS_BAO_TLS_CONTAINER_NAME}"
+  "STS_BAO_SEED_CONTAINER_NAME=${STS_BAO_SEED_CONTAINER_NAME}"
+  # The keystore, per mode — see tests/tools/modes.sh. `persisted` in the
+  # `dispatch` mode is what makes the key-encryption key come out of the store.
+  "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"
   "STS_TESTS_CONTAINER_NAME=${STS_TESTS_CONTAINER_NAME}"
+  "STS2_CONTAINER_NAME=${STS2_CONTAINER_NAME}"
+  "STS_LB_CONTAINER_NAME=${STS_LB_CONTAINER_NAME}"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # ---------------------------------------------------------------------
@@ -377,6 +479,12 @@ COMPOSE_ENV=(
   # ---------------------------------------------------------------------
   "STS_HTTPS=${STS_HTTPS:-true}"
   "STS_TEST_SERVICE_URL=$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)://sts:8081"
+  # AND THE ADDRESS INSIDE EVERY CERTIFICATE (2026-09-13): the CRL, OCSP and
+  # caIssuers URLs the service writes are followed by
+  # sts_pki_distribution_points from this runner, so they must name the
+  # service the way the runner does — `sts`, on the plain-HTTP revocation
+  # listener, which is plain whatever STS_HTTPS says about the main port.
+  "PKI_DISTRIBUTION_BASE_URL=http://sts:8082"
   # ---- the remote PEP and the client certificate it presents --------------
   # The three /xacml/pep endpoints are gated: a PEP is admitted by a client
   # certificate this service VERIFIES, whose subject DN resolves to a directory
@@ -393,6 +501,17 @@ COMPOSE_ENV=(
   "XACML_PEP_NAME=${XACML_PEP_NAME}"
   "XACML_PEP_REALM=${XACML_PEP_REALM}"
   "XACML_PEP_URL=http://xacml-pep:9090"
+  # ---- the PEP's HTTPS listener (2026-09-13) -------------------------------
+  # The pair is issued by the realm the PEP registers to, so it cannot exist
+  # before the job creates that realm: the PEP is pointed at two paths under
+  # its mount that are empty when it starts, and sts_xacml_remote_pep.js writes
+  # the pair there after issuing it. The job sees the same directory under the
+  # report mount, which is why XACML_PEP_SERVER_CERT_DIR is a path inside the
+  # tests container and the other two are paths inside the PEP's.
+  "XACML_PEP_HTTPS_CERT=/certs/server/pep-server.crt"
+  "XACML_PEP_HTTPS_KEY=/certs/server/pep-server.key"
+  "XACML_PEP_HTTPS_URL=https://xacml-pep:9443"
+  "XACML_PEP_SERVER_CERT_DIR=/usr/src/sts/tests/report/pep-credential/server"
   # ---- the management API's client secret, pinned for this run ------------
   # `/admin-api` requires an access token, and the token is obtained by the
   # seeded `sts-management-api` client with `client_credentials`. That client's
@@ -416,6 +535,31 @@ if [ -n "${LOG_LEVEL:-}" ];
 then
   COMPOSE_ENV+=("LOG_LEVEL=${LOG_LEVEL}")
 fi
+if [ -n "${STS_IMAGE:-}" ];
+then
+  COMPOSE_ENV+=("STS_IMAGE=${STS_IMAGE}")
+fi
+if [ -n "${XACML_PEP_IMAGE:-}" ];
+then
+  COMPOSE_ENV+=("XACML_PEP_IMAGE=${XACML_PEP_IMAGE}")
+fi
+if [ -n "${STS_TESTS_IMAGE:-}" ];
+then
+  COMPOSE_ENV+=("STS_TESTS_IMAGE=${STS_TESTS_IMAGE}")
+fi
+# ---------------------------------------------------------------------------
+# WHERE THE SERVICE IS, AS THE LAUNCHER'S OWN ONE-SHOT CONTAINERS DIAL IT
+# (2026-09-14). `sts` in every mode but `cluster`, where it is the balancer —
+# the token is minted and the PEP's anchor posted THROUGH it, like everything
+# a job does. Set per mode by the loop.
+# ---------------------------------------------------------------------------
+SERVICE_HOST="sts"
+serviceUrl()
+{
+  printf '%s://%s:8081' \
+    "$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)" \
+    "${SERVICE_HOST}"
+}
 
 # ---------------------------------------------------------------------------
 # THE CONTAINERS' OWN LOGS, KEPT BESIDE THE JOBS'.
@@ -453,6 +597,15 @@ captureContainerLogs()
     return 0
   fi
   captureOneContainerLog "${mode}" sts   "00-mock-sts-service.log" "Service log"
+  # The `cluster` mode's node B and balancer, whose logs go with their
+  # containers too (2026-09-14). Node A keeps the name every mode uses.
+  if stsModeIsCluster "${mode}";
+  then
+    captureOneContainerLog "${mode}" sts2   "00-mock-sts-service-node-b.log" \
+      "Node B log"
+    captureOneContainerLog "${mode}" sts-lb "00-load-balancer.log" \
+      "Balancer log"
+  fi
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
 
@@ -466,12 +619,32 @@ captureContainerLogs()
 # the only evidence there is. The fallback name carries the MODE, because three
 # modes falling back would otherwise be three writes to one path and only the
 # last of them would survive.
+#
+# **AND ONLY BESIDE A REPORT THIS MODE WROTE (2026-09-14).** `latest` is the
+# newest report of that mode from ANY run — `./local-run-tests.sh`'s included —
+# so a mode whose runner never started wrote its two logs over another run's
+# `00-mock-sts-service.log` and `00-test-runner.log`, destroying that report's
+# evidence and leaving this run's where nobody would look for it.
+MODE_MARKER="${CURRENT_DIR}/tests/report/.docker-run-tests-mode-start"
+
+# Did the runner write a report under tests/report/<mode> after this mode's
+# `up` began? A report directory's `logs` gains an entry per job, so its
+# modification time moves during the mode.
+modeWroteReport()
+{
+  local mode="$1"
+  local logs="${CURRENT_DIR}/tests/report/${mode}/latest/logs"
+  [ -f "${MODE_MARKER}" ] && [ -d "${logs}" ] &&
+    [ "${logs}" -nt "${MODE_MARKER}" ]
+}
+
 captureOneContainerLog()
 {
   local mode="$1" service="$2" name="$3" label="$4"
   local logs="${CURRENT_DIR}/tests/report/${mode}/latest/logs"
   local dest="${logs}/${name}"
-  if ! ( [ -d "${logs}" ] && touch "${dest}" 2> /dev/null );
+  if ! modeWroteReport "${mode}" ||
+     ! ( [ -d "${logs}" ] && touch "${dest}" 2> /dev/null );
   then
     mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
     dest="${CURRENT_DIR}/tests/report/${mode}-${name}"
@@ -480,7 +653,7 @@ captureOneContainerLog()
   # that has just been stopped, and the case worth collecting a log for is
   # exactly the case where that stop did not go well.
   docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-    -f "${COMPOSE_FILE}" logs --no-color "${service}" \
+    "${COMPOSE_FILE_ARGS[@]}" logs --no-color "${service}" \
     > "${dest}" 2>&1 || true
   printf '%-12s %s\n' "${label}:" "${dest}"
 }
@@ -506,7 +679,7 @@ teardown()
   # open after everything it was asked to do is finished and reported — which
   # is the shape of the 2026-09-10 incident, one function along.
   docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-    -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+    "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
     > /dev/null 2>&1 || true
 }
 trap teardown EXIT
@@ -516,7 +689,7 @@ trap teardown EXIT
 # reaches `mock-sts-docker-tests` and can never reach the `sts` container a
 # plain `docker compose up` in this directory creates.
 docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-  -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+  "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
   > /dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
@@ -532,7 +705,7 @@ docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
 if [ "${BUILD}" = "1" ];
 then
   echo "Building the service and test images from this working tree..."
-  if ! docker_compose -f "${COMPOSE_FILE}" build;
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" build;
   then
     echo "" >&2
     echo "The images would not build. Nothing was run." >&2
@@ -598,10 +771,20 @@ waitForStsHealthy()
 # and be a 401 on every job in modes two and three.
 #
 # **RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
-# ELSE"** — the same argument mintThePepCredential() makes, and cheaper here:
-# `admin-api-token.js` requires nothing but node's own `http` and `https`, so
-# the repository is mounted read-only and the image supplies the runtime. On
-# the project's network, dialling `sts` by the name in the certificate.
+# ELSE"** — the same argument mintThePepCredential() makes: the repository is
+# mounted read-only and the image supplies the runtime. On the project's
+# network, dialling `sts` by the name in the certificate.
+#
+# **NODE_PATH, BECAUSE THE TOOL IS NOT DEPENDENCY-FREE ANY MORE.** It said
+# here that `admin-api-token.js` needed only node's `http` and `https`, and
+# the 2026-09-12 style sweep gave it (and `pep-credential.js`) a bunyan
+# logger. node resolves a package by walking up from the SCRIPT, which is
+# /repo/tests/tools — the host checkout, which has node_modules on a
+# developer's machine and none on a CI runner — and `-w` does not change
+# that. So every CI run of this launcher failed here with `Cannot find module
+# 'bunyan'` in all three modes while every local run passed. The image's own
+# /usr/src/sts/node_modules has bunyan; NODE_PATH is where node looks when
+# the walk finds nothing, so a checkout that has its own still uses it.
 # ---------------------------------------------------------------------------
 mintAdminApiToken()
 {
@@ -610,10 +793,11 @@ mintAdminApiToken()
        --network "${COMPOSE_PROJECT}_default" \
        -v "${CURRENT_DIR}:/repo:ro" \
        -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
+       -e NODE_PATH=/usr/src/sts/node_modules \
        -w /usr/src/sts \
        "${STS_IMAGE:-rcbj/sts}" \
        node /repo/tests/tools/admin-api-token.js \
-         "$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)://sts:8081" \
+         "$(serviceUrl)" \
        2>&1)";
   then
     echo "" >&2
@@ -668,7 +852,8 @@ mintThePepCredential()
   # ---------------------------------------------------------------------
   # RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
   # ELSE". The tool is a node script that needs `common/vendored/x509.js` and
-  # its three npm packages; this host may have neither node nor node_modules.
+  # its three npm packages (and bunyan, for its logger — see NODE_PATH at
+  # mintAdminApiToken()); this host may have neither node nor node_modules.
   # The service image has both — so the REPOSITORY is mounted read-only for the
   # tool itself (the image deletes ./tests, see the root Dockerfile) and
   # MOCK_STS_DIR points the tool at the image's own copy of the engine.
@@ -681,10 +866,11 @@ mintThePepCredential()
        -v "${CURRENT_DIR}:/repo:ro" \
        -v "${XACML_PEP_CERT_DIR}:/out" \
        -e MOCK_STS_DIR=/usr/src/sts \
+       -e NODE_PATH=/usr/src/sts/node_modules \
        -w /usr/src/sts \
        "${STS_IMAGE:-rcbj/sts}" \
        node /repo/tests/tools/pep-credential.js \
-         --url="$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)://sts:8081" \
+         --url="$(serviceUrl)" \
          --out=/out --subject="${XACML_PEP_SUBJECT}" > /dev/null;
   then
     echo "" >&2
@@ -701,6 +887,12 @@ mintThePepCredential()
   # relaxed here, deliberately and narrowly, because this key exists for the
   # length of one test run and protects nothing.
   chmod 0644 "${XACML_PEP_CERT_DIR}/pep.key" 2>/dev/null || true
+  # WHERE THE JOB WRITES THE HTTPS LISTENER'S PAIR, made now because the PEP
+  # container mounts its parent and the job — in the tests container — writes
+  # into it later. World-writable because that container may not be this user;
+  # it holds one test run's key and is removed with the reports.
+  mkdir -p "${XACML_PEP_CERT_DIR}/server"
+  chmod 0777 "${XACML_PEP_CERT_DIR}/server" 2>/dev/null || true
   return 0
 }
 
@@ -876,6 +1068,38 @@ do
   # is what every mode of this launcher did on its first run. That function
   # already prefixes COMPOSE_ENV onto the compose command for the `sudo` reason
   # its own header gives, so a mode has a channel and needs no second one.
+  # ---- THE `cluster` MODE: TWO NODES AND A BALANCER (2026-09-14) ---------
+  #
+  # The layer, the three services `up -d` has to start, and every address the
+  # runner is handed moved to the balancer — the service URL, the directory,
+  # the base URL both nodes issue under (on the cluster's must-agree list, and
+  # the audience of the token minted below through the same URL) and the
+  # revocation addresses inside every certificate. These entries come AFTER the
+  # base array's, and `env` applies assignments in order, so they win.
+  COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
+  UP_SERVICES=(sts)
+  SERVICE_HOST="sts"
+  if stsModeIsCluster "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${CLUSTER_COMPOSE_FILE}")
+    UP_SERVICES=(sts sts2 sts-lb)
+    SERVICE_HOST="sts-lb"
+    MODE_ENV+=(
+      "STS_TEST_SERVICE_URL=$(serviceUrl)"
+      "STS_PUBLIC_BASE_URL=$(serviceUrl)"
+      "STS_LDAP_URL=ldap://sts-lb:389"
+      "PKI_DISTRIBUTION_BASE_URL=http://sts-lb:8082"
+      "PKI_DISTRIBUTION_LDAP_HOST=sts-lb"
+      "STS2_ADDRESS=${STS_NETWORK_PREFIX}.20"
+      # PROXY protocol v2 and its one trusted source, the balancer pinned at
+      # `.30` — see ./local-run-tests.sh's cluster block for why not the subnet.
+      # STS_TEST_CLUSTER_PROXY_PROTOCOL=off runs the mode without it.
+      "STS_PROXY_PROTOCOL=${STS_TEST_CLUSTER_PROXY_PROTOCOL:-v2}"
+      "STS_LB_ADDRESS=${STS_NETWORK_PREFIX}.30"
+      "STS_TRUSTED_PROXIES=${STS_NETWORK_PREFIX}.30/32"
+    )
+  fi
+
   COMPOSE_ENV=(
     ${BASE_COMPOSE_ENV[@]+"${BASE_COMPOSE_ENV[@]}"}
     ${MODE_ENV[@]+"${MODE_ENV[@]}"}
@@ -883,7 +1107,11 @@ do
 
   STACK_UP=1
   MODE_RC=0
-  if ! docker_compose -f "${COMPOSE_FILE}" up -d sts;
+  # This mode's start, which modeWroteReport() compares a report against, so a
+  # report from an earlier mode or run is never taken for this one's.
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  touch "${MODE_MARKER}"
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d "${UP_SERVICES[@]}";
   then
     echo "The mock STS would not start in mode ${MODE}. Nothing was run." >&2
     MODE_RC=1
@@ -925,12 +1153,36 @@ do
       MODE_RC=1
     else
       COMPOSE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
-      docker_compose_bounded "${STS_MODE_TIMEOUT}" -f "${COMPOSE_FILE}" up \
+      # THE TWO ONE-SHOT CONTAINERS ARE NOT ATTACHED (2026-09-14), OR THEIR
+      # FINISHING ENDS THE MODE. `openbao-tls` and `openbao-seed` exit 0 by
+      # design. The `up -d sts` above already ran both; this `up` names every
+      # service, so compose STARTS them again, and `--abort-on-container-exit`
+      # counts an ATTACHED container's exit — any container's — as the signal
+      # to stop the stack. So each mode stopped `sts` a few seconds after
+      # starting it, the runner never ran, and the screen showed the OpenBao
+      # containers exiting and nothing after. Not attaching them keeps their
+      # exit out of that rule; the runner's exit is still what ends the mode.
+      # Reproduced with a two-step `up` against a toy stack before this was
+      # written.
+      docker_compose_bounded "${STS_MODE_TIMEOUT}" "${COMPOSE_FILE_ARGS[@]}" up \
+        --no-attach openbao-tls --no-attach openbao-seed \
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
       if [ "${MODE_RC}" -ge 124 ];
       then
         MODE_RC="$(recoverModeVerdict "${MODE}" "${MODE_RC}")"
+      fi
+      # A MODE WHOSE RUNNER WROTE NO REPORT DID NOT PASS, whatever compose
+      # returned. The stack stopping before the runner started is exactly the
+      # case compose can report as 0, and a green mode that ran no job is the
+      # one verdict this launcher must never give.
+      if [ "${MODE_RC}" -eq 0 ] && ! modeWroteReport "${MODE}";
+      then
+        echo "" >&2
+        echo "Mode ${MODE}: compose returned 0, but the test runner wrote no" >&2
+        echo "report under tests/report/${MODE} during this mode. Nothing was" >&2
+        echo "run, so the mode is a failure. The runner log below says why." >&2
+        MODE_RC=1
       fi
     fi
   fi
@@ -947,7 +1199,7 @@ do
   # that a stack which will not come down costs the next mode a warning rather
   # than the whole run's remaining budget.
   if ! docker_compose_bounded "${STS_TEARDOWN_TIMEOUT}" \
-       -f "${COMPOSE_FILE}" down --remove-orphans --volumes \
+       "${COMPOSE_FILE_ARGS[@]}" down --remove-orphans --volumes \
        > /dev/null 2>&1;
   then
     echo "The stack did not come down cleanly after mode ${MODE}." >&2

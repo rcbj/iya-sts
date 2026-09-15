@@ -54,8 +54,8 @@
 // ---------------------------------------------------------------------------
 // FOUR THINGS ARE LOAD-BEARING.
 //
-// **It is a LIBRARY (rule 3) and it registers no route**, so its position in the
-// require order does not matter. It requires helpers.js, admin_stats.js,
+// **It is a LIBRARY (rule 3) and it registers no route**, so its position in
+// the require order does not matter. It requires helpers.js, admin_stats.js,
 // vc_claims.js and audit.js, and NONE of those requires it back — which is what
 // keeps it out of the cycles rule 2 exists for. admin_stats.js in particular
 // cannot require it: vc_claims.js requires admin_stats.js, so a require in that
@@ -73,12 +73,12 @@
 // claims arrive through them. Four call sites edited would have been four that
 // drift, and a fifth added later that nobody remembers to edit.
 //
-// **NOTHING IS SELECTED ON A FRESH START, in any of the five sets.** That is not
-// timidity, it is the only defensible default: this page changes what every
-// client of this service receives, and a mock that started issuing a `birthdate`
-// in every access token because a feature was added would break the tests of
-// everyone who upgraded. /admin/vc's ten defaults are a different case — that
-// page reproduces what its issuer already carried before it existed.
+// **NOTHING IS SELECTED ON A FRESH START, in any of the five sets.** That is
+// not timidity, it is the only defensible default: this page changes what every
+// client of this service receives, and a mock that started issuing a
+// `birthdate` in every access token because a feature was added would break the
+// tests of everyone who upgraded. /admin/vc's ten defaults are a different case
+// — that page reproduces what its issuer already carried before it existed.
 //
 // **A hand-typed custom claim WINS over an attribute claim of the same name.**
 // Somebody who typed `email = nobody@example.org` on the same page that has
@@ -100,10 +100,13 @@ const stats = require('./admin_stats');
 // The catalogue, the persona and the directory read. See the header: it is not
 // copied, and the spellings live over there.
 const vcClaims = require('../oid4vc/vc_claims');
-// The event log. Every change here writes a row of its own, because the HTTP row
-// app.js records for the same POST says that a claims page was posted to and not
-// WHICH set gained WHICH attribute — see recordChange() below.
+// The event log. Every change here writes a row of its own, because the HTTP
+// row app.js records for the same POST says that a claims page was posted to
+// and not WHICH set gained WHICH attribute — see recordChange() below.
 const audit = require('./audit');
+// The registry of failure codes, a LEAF. A refused change carries its code on
+// the audit row and, NON-ENUMERABLY, on the result a caller serialises.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // The catalogue, indexed.
@@ -171,24 +174,23 @@ CATALOGUE.forEach(function (row) {
 const SET_IDS = stats.CLAIM_SET_IDS;
 
 // setId -> Set of lower-cased attribute names. Empty on a fresh start, in every
-// one of them; see the header for why that is the only defensible default. Held in
-// memory like every other piece of configuration in this service — the signing
-// key is regenerated on every start, so a selection that outlived it would
-// describe tokens nothing can verify.
-// PER TRUST REALM. `realms.obj()` is a object that holds a separate one for each
-// realm and hands out the ambient realm's — so every reader below is
-// unchanged and every one of them is now realm-correct. In the default realm,
-// and in a service with no realms defined, there is exactly one partition and
-// this behaves as the plain object it replaced. See common/realms.js.
-// SEEDED BY THE FACTORY, ONCE PER REALM, AND THAT IS NOT A STYLE CHOICE.
-// `realms.obj()` builds a partition the first time a realm asks for one, so
-// seeding the five set ids AFTER the call seeds exactly one partition — the
-// realm that happened to be ambient at require time, which is none, which is
-// the default realm's. Every other realm then got an EMPTY object, and
-// `isKnownSet()` answered false for every set id in it: the three `attributes`
-// actions on all three claim-set doors refused every set in every trust realm,
-// with a sentence that listed the set it was refusing, because the list is
-// read from the process-wide table and the lookup is not.
+// one of them; see the header for why that is the only defensible default. Held
+// in memory like every other piece of configuration in this service — the
+// signing key is regenerated on every start, so a selection that outlived it
+// would describe tokens nothing can verify. PER TRUST REALM. `realms.obj()` is
+// a object that holds a separate one for each realm and hands out the ambient
+// realm's — so every reader below is unchanged and every one of them is now
+// realm-correct. In the default realm, and in a service with no realms defined,
+// there is exactly one partition and this behaves as the plain object it
+// replaced. See common/realms.js. SEEDED BY THE FACTORY, ONCE PER REALM, AND
+// THAT IS NOT A STYLE CHOICE. `realms.obj()` builds a partition the first time
+// a realm asks for one, so seeding the five set ids AFTER the call seeds
+// exactly one partition — the realm that happened to be ambient at require
+// time, which is none, which is the default realm's. Every other realm then got
+// an EMPTY object, and `isKnownSet()` answered false for every set id in it:
+// the three `attributes` actions on all three claim-set doors refused every set
+// in every trust realm, with a sentence that listed the set it was refusing,
+// because the list is read from the process-wide table and the lookup is not.
 // **LISTS AND NOT SETS, AND ONLY SO THAT THIS CAN BE PERSISTED (2026-09-07).**
 // These are the configured claim sets — an operator's choice, which every
 // request worker has to see or each one issues a different token. A store
@@ -207,6 +209,8 @@ const selections = realms.obj(function () {
 }, { persist: 'claim_attributes.selections' });
 
 function isKnownSet(setId) {
+  log.debug("Entering isKnownSet().");
+  log.debug("Leaving isKnownSet().");
   return Object.prototype.hasOwnProperty.call(selections, String(setId || ''));
 }
 
@@ -220,10 +224,13 @@ function isKnownSet(setId) {
 // that reordered itself because somebody unticked and reticked a box would look
 // like a different token to anything diffing them.
 function selectedRows(setId) {
+  log.debug("Entering selectedRows().");
   const chosen = selections[String(setId || '')];
   if (!chosen) {
+    log.debug("Leaving selectedRows().");
     return [];
   }
+  log.debug("Leaving selectedRows().");
   return CATALOGUE.filter(function (row) {
     return chosen.indexOf(row.ldap.toLowerCase()) >= 0;
   });
@@ -235,17 +242,23 @@ function selectedRows(setId) {
 // `schacdateofbirth` beside a catalogue naming `schacDateOfBirth` reads as two
 // different attributes.
 function selectedNames(setId) {
+  log.debug("Entering selectedNames().");
+  log.debug("Leaving selectedNames().");
   return selectedRows(setId).map(function (row) { return row.ldap; });
 }
 
 function isSelected(setId, ldapName) {
+  log.debug("Entering isSelected().");
   const chosen = selections[String(setId || '')];
+  log.debug("Leaving isSelected().");
   return !!chosen && chosen.indexOf(String(ldapName || '').toLowerCase()) >= 0;
 }
 
 // Every name in the catalogue, for the "select all" button and for the API's
 // equivalent operation.
 function allNames() {
+  log.debug("Entering allNames().");
+  log.debug("Leaving allNames().");
   return CATALOGUE.map(function (row) { return row.ldap; });
 }
 
@@ -269,24 +282,27 @@ function allNames() {
 // no personal data, and the way that sentence stays true is that every call
 // site keeps it, not that one central place strips it.
 //
-// `actor` is deliberately left empty: this is reached from claimsAction(), which
-// takes a body and no request, and threading a request through it just to name
-// a person would be the tail wagging the dog. The HTTP row for the same POST is
-// one row away and carries the signed-in username.
+// `actor` is deliberately left empty: this is reached from claimsAction(),
+// which takes a body and no request, and threading a request through it just to
+// name a person would be the tail wagging the dog. The HTTP row for the same
+// POST is one row away and carries the signed-in username.
 // ---------------------------------------------------------------------------
-function recordChange(setId, how, added, removed, count, ok, errors) {
+function recordChange(setId, how, added, removed, count, ok, errors, code) {
   log.debug("Entering recordChange(). setId=" + setId + ", how=" + how);
-  // audit.audit() cannot throw — it is wrapped over there — so there is no guard
-  // here and there must not be one: a guard would suggest to the next reader
-  // that this call is allowed to fail an admin action, and it is not.
+  // audit.audit() cannot throw — it is wrapped over there — so there is no
+  // guard here and there must not be one: a guard would suggest to the next
+  // reader that this call is allowed to fail an admin action, and it is not.
   audit.audit({
     action: 'claims.change',
     outcome: ok ? 'success' : 'refused',
+    // The condition a refusal was for; '' on a change that was made.
+    errorCode: ok ? '' : (code || ''),
     actor: '',
     target: setId,
     channel: 'http',
     summary: ok
-      ? 'The ' + labelOf(setId) + ' set now carries ' + count + ' directory attribute(s)' +
+      ? 'The ' + labelOf(setId) + ' set now carries ' + count + ' directory ' +
+          'attribute(s)' +
         (added.length ? '; added ' + added.join(', ') : '') +
         (removed.length ? '; removed ' + removed.join(', ') : '') + '.'
       : 'A change to the ' + labelOf(setId) + ' set was refused: ' +
@@ -305,7 +321,9 @@ function recordChange(setId, how, added, removed, count, ok, errors) {
 }
 
 function labelOf(setId) {
+  log.debug("Entering labelOf().");
   const set = stats.CLAIM_SETS[setId];
+  log.debug("Leaving labelOf().");
   return set ? set.label : String(setId);
 }
 
@@ -317,20 +335,26 @@ function labelOf(setId) {
 // handler or an API handler that has to redisplay them — the same contract
 // admin_stats.setClaimSet() and vc_claims.setSelection() have.
 //
-// An unknown attribute is an ERROR and not a silent omission, and the whole call
-// is refused rather than partially applied. The page offers a fixed list, so an
-// unknown name means either a hand-written request — which deserves an answer —
-// or a rename in the catalogue that left a caller behind. A partial application
-// would leave the set in a state nobody asked for, which is the same rule
-// `replace` follows for the typed claims.
+// An unknown attribute is an ERROR and not a silent omission, and the whole
+// call is refused rather than partially applied. The page offers a fixed list,
+// so an unknown name means either a hand-written request — which deserves an
+// answer — or a rename in the catalogue that left a caller behind. A partial
+// application would leave the set in a state nobody asked for, which is the
+// same rule `replace` follows for the typed claims.
 // ---------------------------------------------------------------------------
 function setSelection(setId, names, how) {
-  log.debug("Entering setSelection(). setId=" + setId + ", " + (names || []).length + " name(s) offered.");
+  log.debug("Entering setSelection(). setId=" + setId + ", " +
+      (names || []).length + " " +
+      "name(s) offered.");
   const id = String(setId || '');
   if (!isKnownSet(id)) {
     log.debug("Leaving setSelection(). No such set.");
-    return { ok: false, errors: ['There is no claim set called "' + id + '". The ' +
-                                 SET_IDS.length + ' are: ' + SET_IDS.join(', ') + '.'] };
+    return errorCodes.mark({ ok: false, errors: ['There is no claim set ' +
+                                                 'called "' + id + '". ' +
+        'The ' +
+                                 SET_IDS.length + ' are: ' +
+                                                 SET_IDS.join(', ') + '.'] },
+                           'STS-REG-0034');
   }
   const errors = [];
   const wanted = new Set();
@@ -340,16 +364,19 @@ function setSelection(setId, names, how) {
       return;
     }
     if (!BY_LDAP.has(key)) {
-      errors.push('There is no attribute called "' + name + '" in the catalogue. GET ' +
-                  '/admin-api/claims lists every one of them.');
+      errors.push('There is no attribute called "' + name + '" in the ' +
+                  'catalogue. GET /admin-api/claims lists every one of them.');
       return;
     }
     wanted.add(key);
   });
   if (errors.length) {
-    recordChange(id, how || 'select', [], [], selections[id].length, false, errors);
-    log.debug("Leaving setSelection(). " + errors.length + " error(s); nothing changed.");
-    return { ok: false, errors: errors };
+    recordChange(id, how || 'select', [], [], selections[id].length, false,
+                 errors,
+                 'STS-REG-0035');
+    log.debug("Leaving setSelection(). " + errors.length + " error(s); " +
+        "nothing changed.");
+    return errorCodes.mark({ ok: false, errors: errors }, 'STS-REG-0035');
   }
 
   // A Set for the difference below; the stored form is the list.
@@ -365,11 +392,14 @@ function setSelection(setId, names, how) {
   selections[id] = Array.from(wanted);
 
   const now = selectedNames(id);
-  log.info('admin: the ' + labelOf(id) + ' set now carries the directory attribute(s) ' +
-           (now.join(', ') || '(none)') + '. Added: ' + (added.join(', ') || 'nothing') +
+  log.info('admin: the ' + labelOf(id) + ' set now carries the directory ' +
+                                         'attribute(s) ' +
+           (now.join(', ') || '(none)') + '. Added: ' +
+                                         (added.join(', ') || 'nothing') +
            '. Removed: ' + (removed.join(', ') || 'nothing') + '.');
   recordChange(id, how || 'select', added, removed, now.length, true, []);
-  log.debug("Leaving setSelection(). " + now.length + " attribute(s) selected.");
+  log.debug("Leaving setSelection(). " + now.length +
+            " attribute(s) selected.");
   return { ok: true, set: id, attributes: now, added: added, removed: removed };
 }
 
@@ -383,8 +413,8 @@ function selectAll(setId) {
 function clearSelection(setId) {
   log.debug("Entering clearSelection(). setId=" + setId);
   // The empty array is the whole of it: setSelection() with nothing wanted is
-  // exactly "remove everything", and a second code path for it would be a second
-  // place to forget the audit row.
+  // exactly "remove everything", and a second code path for it would be a
+  // second place to forget the audit row.
   const result = setSelection(setId, [], 'clear');
   log.debug("Leaving clearSelection(). ok=" + result.ok);
   return result;
@@ -402,23 +432,26 @@ function clearSelection(setId) {
 //   2. the generated persona, for a person with no entry, an entry without that
 //      attribute, or a directory that is not running
 //
-// (Its first source, the access token, is not reachable from here: `tokenClaims`
-// is passed empty, because the thing being built IS the token. A token whose
-// `email` claim was sourced from its own `email` claim would be a circle.)
+// (Its first source, the access token, is not reachable from here:
+// `tokenClaims` is passed empty, because the thing being built IS the token. A
+// token whose `email` claim was sourced from its own `email` claim would be a
+// circle.)
 //
 // Nothing is ever left absent because a source was missing: a selected claim
-// that silently did not arrive would be indistinguishable, at the client, from a
-// selection that never took effect.
+// that silently did not arrive would be indistinguishable, at the client, from
+// a selection that never took effect.
 // ---------------------------------------------------------------------------
 
 // Who the token is about. The two kinds of caller spell it differently and
 // neither spelling is wrong — oauth2.js's context calls it `username` because
 // that is the claim it carries, and the assertion builders call it `subject`
 // because that is what a SAML Subject is. Reading both here is one line; making
-// them agree would have meant editing four issuance sites, which is exactly what
-// the slot in admin_stats.js exists to avoid.
+// them agree would have meant editing four issuance sites, which is exactly
+// what the slot in admin_stats.js exists to avoid.
 function subjectOf(context) {
+  log.debug("Entering subjectOf().");
   const ctx = context || {};
+  log.debug("Leaving subjectOf().");
   return String(ctx.username || ctx.subject || '');
 }
 
@@ -442,25 +475,27 @@ function claimsFor(setId, username) {
 //
 // A SAML Attribute is FLAT — the content model is a name and text values, with
 // no way to spell a nested claim — so a nested one has to be named somehow, and
-// the name used is the DOTTED PATH the JWT sets already use (`address.locality`).
-// The alternative was to emit the leaf name alone, which would put `locality`,
-// `region` and `country` in an assertion with nothing saying they are one
-// address and no way to tell `country` from a nationality. Saying
-// `address.locality` in both families means a person comparing an ID Token with
-// an assertion is looking at one claim under one name.
+// the name used is the DOTTED PATH the JWT sets already use
+// (`address.locality`). The alternative was to emit the leaf name alone, which
+// would put `locality`, `region` and `country` in an assertion with nothing
+// saying they are one address and no way to tell `country` from a nationality.
+// Saying `address.locality` in both families means a person comparing an ID
+// Token with an assertion is looking at one claim under one name.
 //
-// `nameFormat` is left absent for SAML 2.0 (the builder omits the attribute when
-// there is none, and the specification's default is
-// unspecified — which is the honest answer for a name this service invented) and
-// SAML 1.1 gets the same default namespace a typed claim gets, for the reason
-// admin_stats.js states beside it: it is the namespace every WS-Federation
-// relying party already reads.
+// `nameFormat` is left absent for SAML 2.0 (the builder omits the attribute
+// when there is none, and the specification's default is unspecified — which is
+// the honest answer for a name this service invented) and SAML 1.1 gets the
+// same default namespace a typed claim gets, for the reason admin_stats.js
+// states beside it: it is the namespace every WS-Federation relying party
+// already reads.
 function samlAttributesFor(setId, username) {
-  log.debug("Entering samlAttributesFor(). setId=" + setId + ", user=" + username);
+  log.debug("Entering samlAttributesFor(). setId=" + setId + ", user=" +
+            username);
   const built = claimsFor(setId, username);
   const out = built.report.map(function (item) {
     const attribute = { name: item.claim, value: item.value };
-    if (setId === 'saml11') attribute.namespace = stats.DEFAULT_SAML11_NAMESPACE;
+    if (setId === 'saml11') attribute.namespace =
+        stats.DEFAULT_SAML11_NAMESPACE;
     return attribute;
   });
   log.debug("Leaving samlAttributesFor(). " + out.length + " attribute(s).");
@@ -468,10 +503,10 @@ function samlAttributesFor(setId, username) {
 }
 
 // What one person's selected attributes would put in this set right now, flat
-// and annotated with where each value came from. It is the console's preview and
-// the API's, and it is built by the function the ISSUANCE path calls rather than
-// by a second walk of the catalogue — a preview that agreed with the page and
-// disagreed with the token would be worse than no preview at all.
+// and annotated with where each value came from. It is the console's preview
+// and the API's, and it is built by the function the ISSUANCE path calls rather
+// than by a second walk of the catalogue — a preview that agreed with the page
+// and disagreed with the token would be worse than no preview at all.
 function previewFor(setId, username) {
   log.debug("Entering previewFor(). setId=" + setId + ", user=" + username);
   const built = claimsFor(setId, username);
@@ -491,7 +526,8 @@ function catalogueValuesFor(username) {
   built.report.forEach(function (item) {
     byLdap[item.ldap.toLowerCase()] = item;
   });
-  log.debug("Leaving catalogueValuesFor(). " + built.report.length + " value(s).");
+  log.debug("Leaving catalogueValuesFor(). " + built.report.length + " " +
+      "value(s).");
   return { byLdap: byLdap, entryFound: built.entryFound };
 }
 
@@ -533,8 +569,10 @@ function catalogueValuesFor(username) {
 // The rows one requested claim name resolves to, and how it should be spelled
 // back. Returns null for a name this service's catalogue cannot produce.
 function rowsForClaim(name) {
+  log.debug("Entering rowsForClaim().");
   const raw = String(name == null ? '' : name).trim();
   if (!raw) {
+    log.debug("Leaving rowsForClaim().");
     return null;
   }
   const hash = raw.indexOf('#');
@@ -542,13 +580,16 @@ function rowsForClaim(name) {
   const tag = hash >= 0 ? raw.slice(hash) : '';
   const rows = BY_CLAIM.get(base.toLowerCase());
   if (!rows || !rows.length) {
+    log.debug("Leaving rowsForClaim().");
     return null;
   }
   // A GROUP request (`address`) is the top-level name of a nested claim and
   // resolves to every row beneath it; anything else is one row. `grouped` is
   // what tells the caller which of the two it has, because the answer is
   // shaped differently — an object with members, or one value.
-  const grouped = rows.length > 1 || (rows[0].claim.length > 1 && base.indexOf('.') < 0);
+  const grouped = rows.length > 1 ||
+                  (rows[0].claim.length > 1 && base.indexOf('.') < 0);
+  log.debug("Leaving rowsForClaim().");
   return { requested: raw, base: base, tag: tag, rows: rows, grouped: grouped };
 }
 
@@ -557,6 +598,7 @@ function rowsForClaim(name) {
 // setPath() is private to it, and exporting it would make a helper that exists
 // for the credential builder into part of this file's contract.
 function setPath(target, path, value) {
+  log.debug("Entering setPath().");
   let node = target;
   for (let i = 0; i < path.length - 1; i++) {
     if (!node[path[i]] || typeof node[path[i]] !== 'object') {
@@ -565,6 +607,7 @@ function setPath(target, path, value) {
     node = node[path[i]];
   }
   node[path[path.length - 1]] = value;
+  log.debug("Leaving setPath().");
 }
 
 // What a list of requested claim names produces for one person, read off their
@@ -587,7 +630,8 @@ function requestedClaimsFor(username, names) {
     asked.push(resolved);
   });
   if (!asked.length) {
-    log.debug("Leaving requestedClaimsFor(). Nothing in the catalogue answers this request.");
+    log.debug("Leaving requestedClaimsFor(). Nothing in the catalogue " +
+              "answers this request.");
     return { claims: {}, report: [], unknown: unknown, entryFound: false };
   }
 
@@ -624,7 +668,8 @@ function requestedClaimsFor(username, names) {
       entry.rows.forEach(function (row) {
         const item = byFlat[row.claim.join('.')];
         if (item) {
-          report.push({ requested: entry.requested, claim: item.claim, ldap: item.ldap,
+          report.push({ requested: entry.requested, claim: item.claim,
+                        ldap: item.ldap,
                         value: item.value, source: item.source });
         }
       });
@@ -648,13 +693,16 @@ function requestedClaimsFor(username, names) {
     } else {
       claims[row.claim[0]] = item.value;
     }
-    report.push({ requested: entry.requested, claim: item.claim, ldap: item.ldap,
+    report.push({ requested: entry.requested, claim: item.claim,
+                  ldap: item.ldap,
                   value: item.value, source: item.source });
   });
 
-  log.debug("Leaving requestedClaimsFor(). " + report.length + " claim(s) resolved, " +
+  log.debug("Leaving requestedClaimsFor(). " + report.length + " claim(s) " +
+      "resolved, " +
             unknown.length + " name(s) this catalogue cannot produce.");
-  return { claims: claims, report: report, unknown: unknown, entryFound: built.entryFound };
+  return { claims: claims, report: report, unknown: unknown,
+           entryFound: built.entryFound };
 }
 
 // Every claim name a client may ask for, in the two spellings the index holds —
@@ -674,13 +722,15 @@ function requestableClaims() {
         out.push({ claim: top, ldap: CATALOGUE.filter(function (r) {
           return r.claim[0] === top && r.claim.length > 1;
         }).map(function (r) { return r.ldap; }).join(', '),
-          label: 'The whole ' + top + ' claim (OIDC Core 5.1.1)', grouped: true });
+          label: 'The whole ' + top + ' claim (OIDC Core 5.1.1)',
+          grouped: true });
       }
     }
     const flat = row.claim.join('.');
     if (!seen.has(flat)) {
       seen.add(flat);
-      out.push({ claim: flat, ldap: row.ldap, label: row.label, grouped: false });
+      out.push({ claim: flat, ldap: row.ldap, label: row.label,
+                 grouped: false });
     }
   });
   log.debug("Leaving requestableClaims(). " + out.length + " name(s).");
@@ -688,9 +738,9 @@ function requestableClaims() {
 }
 
 // The catalogue as the console's table and the API's document want it: one row
-// per attribute type, with which of the sets currently carries it. Built
-// here rather than in admin.js because the API answers the same list and neither
-// of them should be walking the catalogue itself.
+// per attribute type, with which of the sets currently carries it. Built here
+// rather than in admin.js because the API answers the same list and neither of
+// them should be walking the catalogue itself.
 function catalogueRows() {
   log.debug("Entering catalogueRows().");
   const out = CATALOGUE.map(function (row) {
@@ -708,10 +758,10 @@ function catalogueRows() {
 // ---------------------------------------------------------------------------
 // FILLING THE SLOT.
 //
-// This is the whole of the installation, and it is why no issuance site changed.
-// admin_stats.js calls these two from inside jwtClaims() and samlAttributes(),
-// wraps them, and merges what comes back UNDER the typed claims — see the note
-// there about precedence.
+// This is the whole of the installation, and it is why no issuance site
+// changed. admin_stats.js calls these two from inside jwtClaims() and
+// samlAttributes(), wraps them, and merges what comes back UNDER the typed
+// claims — see the note there about precedence.
 //
 // Done at require time, at module scope, like every other inverted dependency
 // here. A process that never loads this module simply has no attribute claims,
@@ -719,9 +769,13 @@ function catalogueRows() {
 // ---------------------------------------------------------------------------
 stats.setAttributeResolver({
   jwtClaims: function (setId, context) {
+    log.debug("Entering jwtClaims().");
+    log.debug("Leaving jwtClaims().");
     return claimsFor(setId, subjectOf(context)).claims;
   },
   samlAttributes: function (setId, context) {
+    log.debug("Entering samlAttributes().");
+    log.debug("Leaving samlAttributes().");
     return samlAttributesFor(setId, subjectOf(context));
   }
 });
@@ -729,9 +783,9 @@ stats.setAttributeResolver({
 log.info('The claim-attribute selection is loaded: /admin/claims can now put ' +
          'LDAP attributes from the directory into an access token and an ID ' +
          'Token, /admin/userinfo-claims into a UserInfo response, and ' +
-         '/admin/saml-attributes into a SAML 2.0 assertion and a SAML 1.1 one. ' +
-         'Nothing is selected on a fresh start, so this changes no token until ' +
-         'somebody asks it to.');
+         '/admin/saml-attributes into a SAML 2.0 assertion and a SAML 1.1 ' +
+         'one. Nothing is selected on a fresh start, so this changes no ' +
+         'token until somebody asks it to.');
 
 module.exports = {
   CATALOGUE: CATALOGUE,

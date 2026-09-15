@@ -54,17 +54,23 @@ const { Command, Option } = require("commander");
 const { usernameFor, runStamp } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_portal_sessions",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -82,11 +88,36 @@ var INTRUDER = usernameFor("portal-intruder");
 // service that starts before anybody can sign in.
 var NEWCOMER = usernameFor("portal-newcomer");
 
+// ---------------------------------------------------------------------------
+// EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
+// ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).
+//
+// In product mode this service invents no persona for a name that signs in,
+// creates nobody because a sign-in named them, and verifies the password
+// against the person's own entry. The suite runs in development, where none of
+// that is enforced — which is exactly why a job that leaned on it would go on
+// passing while testing the invention. So `ensurePerson()` makes each account
+// through `/admin-api/users/create` with `invent: false`, its own `cn`, `sn`,
+// `givenName`, `displayName` and `mail`, and a password of at least twelve
+// characters, and that password is what the sign-in screen is sent.
+// ---------------------------------------------------------------------------
+var PASSWORD = "portal-sessions-Passw0rd!-" + String(Date.now()).slice(-6);
+var MAIL_DOMAIN = "portal-sessions.test";
+
+function personAttributes(who) {
+  log.debug("Entering personAttributes().");
+  log.debug("Leaving personAttributes().");
+  return { cn: "Portal Person " + who, givenName: "Portal", sn: who,
+           displayName: "Portal Person " + who, mail: who + "@" + MAIL_DOMAIN };
+}
+
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  [ok] " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -95,35 +126,44 @@ function check(what, fn) {
 // that followed them would answer the question by hiding it.
 // ---------------------------------------------------------------------------
 function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
   return new URLSearchParams(o).toString();
 }
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser(name) {
+  log.debug("Entering browser().");
   const self = {
     name: name,
     cookie: "",
     jar: {},
     cookieHeader: function () {
+      log.debug("Entering cookieHeader().");
+      log.debug("Leaving cookieHeader().");
       return Object.keys(self.jar).map(function (k) {
         return k + "=" + self.jar[k];
       }).join("; ");
     },
     async go(method, path, body) {
+      log.debug("Entering go().");
       const headers = {};
       if (self.cookie) headers.cookie = self.cookie;
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       // A JAR KEYED BY NAME, and it has to be since 2026-09-06: a browser
       // signing in to a hosted surface ends up holding TWO cookies — the
-      // sign-on session (`sts_mock_session`, the identity provider's) and the
+      // sign-on session (`sts_session`, the identity provider's) and the
       // surface's own, established from the ID Token. Keeping only the last
       // one seen dropped whichever arrived first, which made the second half
       // of every flow behave as though nobody had signed in.
@@ -142,24 +182,37 @@ function browser(name) {
         }
         self.cookie = self.cookieHeader();
       });
+      log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                text: await r.text() };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
+// A BARE `/portal` OR `/admin` DRAWS THE REALM CHOOSER once a service has
+// trust realms (2026-09-14, #32), and the suite nearly always has some. The
+// chooser's own `?realm=default` is what a script names to skip it, so every
+// door this file signs in through, or asks whether a browser is anybody, names
+// it. `sts_realm_administrators.js` asserts the chooser itself.
+const PORTAL_DOOR = "/portal?realm=default";
+const ADMIN_DOOR = "/admin?realm=default";
+
 async function get(path) {
+  log.debug("Entering get().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole
     // rather than reporting as a parse failure.
     body = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: body, raw: raw };
 }
 
@@ -167,6 +220,7 @@ async function get(path) {
 // browser door offers: creating a person who has no credential yet. It is
 // ungated like everything under /admin-api, which is what a test drives.
 async function post(path, body) {
+  log.debug("Entering post().");
   const r = await fetch(api + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -177,11 +231,34 @@ async function post(path, body) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in post(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole
     // rather than reporting as a parse failure.
     parsed = raw;
   }
+  log.debug("Leaving post().");
   return { status: r.status, body: parsed, raw: raw };
+}
+
+// Create `who` with a password and real attributes, once. A name this job has
+// already created (a second sign-in by the same person) is left as it is.
+var createdPeople = {};
+async function ensurePerson(who) {
+  log.debug("Entering ensurePerson(). who=" + who);
+  if (createdPeople[who]) {
+    log.debug("Leaving ensurePerson(). Already created by this run.");
+    return;
+  }
+  const r = await post("/users/create", {
+    username: who, invent: false, attributes: personAttributes(who),
+    credential: "password", password: PASSWORD
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
+    "POST /admin-api/users/create should create " + who + " with a password " +
+    "before they sign in; it answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  createdPeople[who] = true;
+  log.debug("Leaving ensurePerson(). Created " + who + ".");
 }
 
 // The session id out of the cookie, so an assertion can name the row it means
@@ -194,28 +271,51 @@ async function post(path, body) {
 // derived from it. The one a door CREATED is the second, so that is the one
 // these assertions are about — and `signOnIdOf()` beside it is how a test
 // reaches the other when it means the other.
-const SURFACE_COOKIES = { admin: "sts_mock_admin", portal: "sts_mock_portal" };
-const SIGN_ON_COOKIE = "sts_mock_session";
+//
+// **AND A COOKIE IS `<sid>.<handle>` SINCE 2026-09-14**, not the bare id: the
+// handle rotates on every re-authentication and the sid never does
+// (`authn/CLAUDE.md`), and every row, audit target and `derivedFrom` names the
+// sid. So the id is the part before the first dot.
+const SURFACE_COOKIES = { admin: "sts_admin", portal: "sts_portal" };
+const SIGN_ON_COOKIE = "sts_session";
+
+function sidOfCookie(value) {
+  log.debug("Entering sidOfCookie().");
+  const text = String(value || "");
+  const dot = text.indexOf(".");
+  log.debug("Leaving sidOfCookie().");
+  return dot > 0 ? text.slice(0, dot) : text;
+}
 
 function sessionIdOf(b) {
-  return b.jar[SURFACE_COOKIES.admin] || b.jar[SURFACE_COOKIES.portal] || "";
+  log.debug("Entering sessionIdOf().");
+  log.debug("Leaving sessionIdOf().");
+  return sidOfCookie(b.jar[SURFACE_COOKIES.admin] ||
+                     b.jar[SURFACE_COOKIES.portal]);
 }
 
 function signOnIdOf(b) {
-  return b.jar[SIGN_ON_COOKIE] || "";
+  log.debug("Entering signOnIdOf().");
+  log.debug("Leaving signOnIdOf().");
+  return sidOfCookie(b.jar[SIGN_ON_COOKIE]);
 }
 
 async function liveSessions() {
+  log.debug("Entering liveSessions().");
   const r = await get("/sessions?per=200");
   assert.ok(r.status === 200 && r.body && Array.isArray(r.body.sessions),
     "GET /admin-api/sessions should list sessions; it answered " + r.status +
     " " + String(r.raw).slice(0, 200));
+  log.debug("Leaving liveSessions().");
   return r.body.sessions;
 }
 
 async function rowFor(id) {
+  log.debug("Entering rowFor().");
   const rows = await liveSessions();
-  return rows.filter(function (row) { return row.sessionId === id; })[0] || null;
+  log.debug("Leaving rowFor().");
+  return rows.filter(function (row) { return row.sessionId === id; })[0] ||
+         null;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,11 +340,12 @@ async function rowFor(id) {
 // signing in works and nothing at all about which protocol did it.
 //
 // The browser ends up holding TWO cookies and that is the design: the sign-on
-// session (`sts_mock_session`, the identity provider's) and the surface's own
-// (`sts_mock_admin` or `sts_mock_portal`, established from the ID Token). The
+// session (`sts_session`, the identity provider's) and the surface's own
+// (`sts_admin` or `sts_portal`, established from the ID Token). The
 // jar keeps whichever it was last sent, so `cookies` below holds both by name.
 async function signInAt(door, who) {
   log.debug("Entering signInAt(). door=" + door);
+  await ensurePerson(who);
   const b = browser(who);
   let r = await b.go("GET", door);
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
@@ -262,15 +363,16 @@ async function signInAt(door, who) {
   // browser to the screen.
   r = await b.go("GET", r.location);
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
-    "the authorization endpoint should send a browser with no sign-on session " +
-    "to the sign-in screen; it answered " + r.status + " -> " + r.location);
+    "the authorization endpoint should send a browser with no sign-on " +
+    "session to the sign-in screen; it " +
+    "answered " + r.status + " -> " + r.location);
 
   r = await b.go("GET", r.location);
   const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: "any-password", action: "login",
+                        password: PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in form should redirect, got " + r.status + " " +
@@ -296,17 +398,23 @@ async function signInAt(door, who) {
 }
 
 function csrfOf(text) {
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
+  log.debug("Entering csrfOf().");
+  log.debug("Leaving csrfOf().");
+  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
+          [])[1] || "";
 }
 
 // Follow redirects to wherever they end, bounded. Used where the assertion is
 // about the DESTINATION rather than the journey — `signInAt()` asserts every
 // hop by hand precisely because there the journey is the subject.
 async function follow(b, r, hops) {
+  log.debug("Entering follow().");
   let at = r;
-  for (let i = 0; i < (hops || 6) && (at.status === 302 || at.status === 303); i++) {
+  for (let i = 0; i < (hops || 6) &&
+                  (at.status === 302 || at.status === 303); i++) {
     at = await b.go("GET", at.location);
   }
+  log.debug("Leaving follow().");
   return at;
 }
 
@@ -314,6 +422,7 @@ async function follow(b, r, hops) {
 // 1. THE ADMIN CONSOLE.
 // ---------------------------------------------------------------------------
 async function theConsoleSignInCreatesASession() {
+  log.debug("Entering theConsoleSignInCreatesASession().");
   log.info("=== the admin console: sign in, and the session is listed ===");
   const before = (await liveSessions()).length;
   const b = await signInAt("/admin/sessions", OPERATOR);
@@ -322,15 +431,16 @@ async function theConsoleSignInCreatesASession() {
   const row = await rowFor(id);
   check("signing in at /admin creates a session the management API lists",
     function () {
-      assert.ok(row, "no row for session " + id + " in GET /admin-api/sessions");
+      assert.ok(row,
+                "no row for session " + id + " in GET /admin-api/sessions");
     });
   check("it names the person who signed in", function () {
     assert.strictEqual(row.username, OPERATOR);
   });
   check("IT IS THE CONSOLE'S OWN SESSION AND NOT THE SIGN-ON SESSION, which " +
-        "is what moving this surface onto the authorization code flow bought: " +
-        "the console is a relying party and holds a session of its own, " +
-        "derived from the one the identity provider holds", function () {
+        "is what moving this surface onto the authorization code flow " +
+        "bought: the console is a relying party and holds a session of its " +
+        "own, derived from the one the identity provider holds", function () {
       assert.strictEqual(row.kind, "Admin console session");
     });
   check("it names the client that holds it — an ordinary entry in the " +
@@ -369,6 +479,7 @@ async function theConsoleSignInCreatesASession() {
         "redirecting", function () {
       assert.strictEqual(page.status, 200);
     });
+  log.debug("Leaving theConsoleSignInCreatesASession().");
   return b;
 }
 
@@ -376,8 +487,9 @@ async function theConsoleSignInCreatesASession() {
 // 2. THE USER PORTAL.
 // ---------------------------------------------------------------------------
 async function thePortalSignInCreatesASession() {
+  log.debug("Entering thePortalSignInCreatesASession().");
   log.info("=== the user portal: sign in, and the session is listed ===");
-  const b = await signInAt("/portal", OWNER);
+  const b = await signInAt(PORTAL_DOOR, OWNER);
   const id = sessionIdOf(b);
   const row = await rowFor(id);
 
@@ -400,6 +512,7 @@ async function thePortalSignInCreatesASession() {
     assert.ok(page.text.indexOf(OWNER) >= 0,
       "the portal page does not name " + OWNER);
   });
+  log.debug("Leaving thePortalSignInCreatesASession().");
   return b;
 }
 
@@ -412,14 +525,16 @@ async function thePortalSignInCreatesASession() {
 // takes.
 // ---------------------------------------------------------------------------
 async function oneUserCannotReachAnother(owner) {
+  log.debug("Entering oneUserCannotReachAnother().");
   log.info("=== a signed-in person cannot reach another's portal account ===");
-  const b = await signInAt("/portal", INTRUDER);
+  const b = await signInAt(PORTAL_DOOR, INTRUDER);
 
   // EVERY PARAMETER A FUTURE AUTHOR MIGHT PLAUSIBLY READ, with the owner's
   // name in it. A handler that grew `req.query.user` would fail here on the
   // day it was written rather than on the day somebody noticed.
   const q = form({ user: OWNER, username: OWNER, id: OWNER, uid: OWNER,
-                   sub: OWNER, dn: "uid=" + OWNER + ",ou=users,dc=example,dc=com",
+                   sub: OWNER,
+                   dn: "uid=" + OWNER + ",ou=users,dc=example,dc=com",
                    account: OWNER, as: OWNER });
   const page = await b.go("GET", "/portal?" + q);
   check("the portal answers the intruder's own page, not a refusal — the " +
@@ -445,7 +560,7 @@ async function oneUserCannotReachAnother(owner) {
   assert.ok(csrf, "the portal draws no csrf_token to post back.");
   const wrote = await b.go("POST", "/portal/password",
     form({ csrf_token: csrf, username: OWNER, user: OWNER,
-           current: "any-password", next: "IntruderChosen123!",
+           current: PASSWORD, next: "IntruderChosen123!",
            confirm: "IntruderChosen123!" }));
   check("a password change naming somebody else is accepted or refused, but " +
         "either way it answers — it is not a crash", function () {
@@ -455,7 +570,8 @@ async function oneUserCannotReachAnother(owner) {
     });
 
   const audit = await get("/audit?per=200");
-  assert.ok(audit.status === 200 && audit.body && Array.isArray(audit.body.events),
+  assert.ok(audit.status === 200 && audit.body &&
+            Array.isArray(audit.body.events),
     "GET /admin-api/audit should list events; it answered " + audit.status);
   const changes = audit.body.events.filter(function (e) {
     return String(e.action || "").indexOf("portal.password") === 0;
@@ -484,6 +600,7 @@ async function oneUserCannotReachAnother(owner) {
       assert.ok(ownerRow, "the owner's session disappeared");
       assert.strictEqual(ownerRow.username, OWNER);
     });
+  log.debug("Leaving oneUserCannotReachAnother().");
   return b;
 }
 
@@ -495,6 +612,7 @@ async function oneUserCannotReachAnother(owner) {
 // removed the row and left the session usable would pass the first alone.
 // ---------------------------------------------------------------------------
 async function signingOutInvalidatesIt(b, who, door) {
+  log.debug("Entering signingOutInvalidatesIt().");
   log.info("=== " + who + " signs out ===");
   const id = sessionIdOf(b);
   assert.ok(await rowFor(id), "precondition: " + who + " should be signed in");
@@ -545,6 +663,7 @@ async function signingOutInvalidatesIt(b, who, door) {
       assert.ok(ended.length > 0,
         "no session.end row naming " + id);
     });
+  log.debug("Leaving signingOutInvalidatesIt().");
 }
 
 // ---------------------------------------------------------------------------
@@ -567,17 +686,23 @@ async function signingOutInvalidatesIt(b, who, door) {
 // not send anybody there.
 // ---------------------------------------------------------------------------
 async function anActivationLinkEndsAtAUsableSignIn() {
+  log.debug("Entering anActivationLinkEndsAtAUsableSignIn().");
   log.info("=== an activation link ends at a sign-in that works ===");
+  // Created with the attributes a real account carries and NO credential —
+  // the activation link below is how the credential arrives.
   const created = await post("/users/create",
-    { username: NEWCOMER, invent: false, credential: "activation" });
+    { username: NEWCOMER, invent: false, attributes: personAttributes(NEWCOMER),
+      credential: "activation" });
   assert.ok(created.status === 200 && created.body && created.body.ok,
-    "POST /admin-api/users/create should create " + NEWCOMER + "; it answered " +
+    "POST /admin-api/users/create should create " + NEWCOMER +
+    "; it answered " +
     created.status + " " + String(created.raw).slice(0, 300));
   const link = String((created.body || {}).activationUrl || "");
   check("creating a user with credential=activation hands back a link, once",
     function () {
       assert.ok(/^\/portal\/activate\?user=/.test(link),
-        "no activation URL came back: " + JSON.stringify(created.body).slice(0, 300));
+        "no activation URL came back: " +
+        JSON.stringify(created.body).slice(0, 300));
     });
 
   // **THE WHOLE OF THIS SECTION IS DRIVEN WITH NO SESSION, WHICH IS THE
@@ -611,7 +736,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   // started working because a session existed is exactly what this catches,
   // and it catches it where the old line could not: a real sign-on session
   // would send them to their account instead.
-  const notSignedIn = await b.go("GET", "/portal");
+  const notSignedIn = await b.go("GET", PORTAL_DOOR);
   check("and that browser is signed in to NOBODY — the cookie it now holds " +
         "names an anonymous arrival session and not a person",
     function () {
@@ -623,7 +748,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   const token = (r.text.match(/name="token" value="([^"]+)"/) || [])[1];
   assert.ok(token, "the activation form carries no token to post back.");
 
-  const password = "activated-" + Date.now();
+  const password = "Activated-Pw1!-" + Date.now();
   r = await b.go("POST", "/portal/activate",
                  form({ user: NEWCOMER, token: token, password: password,
                         confirm: password, key_role: "none",
@@ -651,7 +776,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   // the browser already has goes on naming the session — so a real sign-in
   // here would leave the jar holding the same string it held a moment ago.
   // Only asking a gated page whether this browser is anybody tells them apart.
-  const stillNobody = await b.go("GET", "/portal");
+  const stillNobody = await b.go("GET", PORTAL_DOOR);
   check("and it establishes NO session — the last step of setup is to go and " +
         "use the credential, not to be let in by the link that set it",
     function () {
@@ -665,15 +790,16 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   // THE ASSERTION THE DEFECT WOULD HAVE FAILED. A bare `/authn/login` is a
   // page nobody can be sent to, so the link out of this page must carry a
   // pending id or go somewhere that mints one.
-  const signIn = (r.text.match(/<a href="([^"]*)"[^>]*>\s*Sign in\s*<\/a>/) || [])[1];
-  check("the account-ready page offers a way to sign in, and it is NOT a bare " +
-        "/authn/login — that endpoint answers 400 to a request naming no " +
-        "pending record, so this button used to end the whole flow on an " +
+  const signIn = (r.text.match(/<a href="([^"]*)"[^>]*>\s*Sign in\s*<\/a>/) ||
+                  [])[1];
+  check("the account-ready page offers a way to sign in, and it is NOT a " +
+        "bare /authn/login — that endpoint answers 400 to a request naming " +
+        "no pending record, so this button used to end the whole flow on an " +
         "error page", function () {
       assert.ok(signIn, "no Sign in link on the account-ready page.");
       assert.ok(!/^\/authn\/login$/.test(signIn),
-        "the account-ready page links to a bare " + signIn + ", which answers " +
-        "400: there is no sign-in waiting under that id");
+        "the account-ready page links to a bare " + signIn + ", which " +
+        "answers 400: there is no sign-in waiting under that id");
     });
 
   // AND FOLLOWING IT, because a link that is merely different is not a link
@@ -694,8 +820,8 @@ async function anActivationLinkEndsAtAUsableSignIn() {
         "following " + signIn + " answered " + r.status + " " +
         String(r.text).slice(0, 300));
       assert.ok(/name="authn_id" value="/.test(r.text),
-        "the page reached from the account-ready link carries no authn_id, so " +
-        "it is not the sign-in screen: " + String(r.text).slice(0, 300));
+        "the page reached from the account-ready link carries no authn_id, " +
+        "so it is not the sign-in screen: " + String(r.text).slice(0, 300));
     });
 
   const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
@@ -705,7 +831,8 @@ async function anActivationLinkEndsAtAUsableSignIn() {
                         csrf_token: csrfOf(r.text) }));
   check("and the credential just set up signs them in", function () {
     assert.ok(r.status === 303 || r.status === 302,
-      "the sign-in form answered " + r.status + " " + String(r.text).slice(0, 300));
+      "the sign-in form answered " + r.status + " " +
+      String(r.text).slice(0, 300));
     assert.ok(b.cookie, "signing in established no session cookie.");
   });
 
@@ -721,6 +848,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
       assert.ok(landed.text.indexOf(NEWCOMER) >= 0,
         "the portal page does not name " + NEWCOMER);
     });
+  log.debug("Leaving anActivationLinkEndsAtAUsableSignIn().");
   return b;
 }
 
@@ -738,6 +866,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
 // exactly the page that wants to offer a sign-in link.
 // ---------------------------------------------------------------------------
 async function noPageLinksToABareSignInScreen() {
+  log.debug("Entering noPageLinksToABareSignInScreen().");
   log.info("=== no page links to a bare /authn/login ===");
   const b = browser("anonymous");
   const pages = ["/", "/federation", "/logout"];
@@ -745,7 +874,8 @@ async function noPageLinksToABareSignInScreen() {
     const r = await b.go("GET", path);
     if (r.status !== 200) {
       // A page that redirects or is not registered in this configuration is not
-      // evidence of anything; the ones that DRAW are what this section is about.
+      // evidence of anything; the ones that DRAW are what this section is
+      // about.
       continue;
     }
     check(path + " draws no link to a bare /authn/login", function () {
@@ -759,7 +889,8 @@ async function noPageLinksToABareSignInScreen() {
   // posted after the session expired. Its link has to be an ABSOLUTE URL in the
   // DEFAULT realm as well, which is asserted here rather than assumed because
   // app.js rewrites root-relative hrefs into whatever realm is being read.
-  const refused = await b.go("POST", "/admin/tokens", form({ action: "revoke-kind" }));
+  const refused = await b.go("POST", "/admin/tokens",
+                             form({ action: "revoke-kind" }));
   if (refused.status === 401) {
     check("the console's refusal for a form posted with an expired session " +
           "offers a REAL way back — an absolute URL that mints a pending " +
@@ -771,10 +902,12 @@ async function noPageLinksToABareSignInScreen() {
           "realm's console: " + String(refused.text).slice(0, 400));
       });
   }
+  log.debug("Leaving noPageLinksToABareSignInScreen().");
 }
 
 // ---------------------------------------------------------------------------
-// 6. THE SIGN OUT BUTTON ON EACH SURFACE, AND THE SESSION BEHIND IT (2026-09-06).
+// 6. THE SIGN OUT BUTTON ON EACH SURFACE, AND THE SESSION BEHIND IT
+//    (2026-09-06).
 //
 // `/admin` and `/portal` each draw a Sign out button of their own now, and the
 // claim worth asserting is NOT that the surface session ends — a button that
@@ -794,6 +927,7 @@ async function noPageLinksToABareSignInScreen() {
 // SCREEN when it asks for the door again rather than back inside it.
 // ---------------------------------------------------------------------------
 async function theSignOutButtonEndsBothSessions(door, surface, who) {
+  log.debug("Entering theSignOutButtonEndsBothSessions().");
   log.info("=== " + who + " presses Sign out on " + door + " ===");
   const b = await signInAt(door, who);
   const surfaceId = sessionIdOf(b);
@@ -811,13 +945,15 @@ async function theSignOutButtonEndsBothSessions(door, surface, who) {
   // handler accepts a token, and what is wanted is that the CONTROL works.
   const page = await b.go("GET", door);
   const shown = new RegExp('<form[^>]+action="[^"]*' + surface +
-                           '/signout"[^>]*>([\\s\\S]*?)</form>').exec(page.text);
+                           '/signout"[^>]*>([\\s\\S]*?)</form>').exec(
+                               page.text);
   check(door + " draws the Sign out form", function () {
     assert.ok(shown,
-      door + " should draw a form posting to " + surface + "/signout. What it " +
-      "drew begins: " + String(page.text).slice(0, 300));
+      door + " should draw a form posting to " + surface + "/signout. What " +
+      "it drew begins: " + String(page.text).slice(0, 300));
   });
-  const csrf = (shown[1].match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
+  const csrf = (shown[1].match(/name="csrf_token" value="([^"]+)"/) ||
+                [])[1] || "";
   check("and it carries this session's CSRF token", function () {
     assert.ok(csrf,
       "the sign-out form carries no csrf_token, and the handler requires one " +
@@ -830,8 +966,8 @@ async function theSignOutButtonEndsBothSessions(door, surface, who) {
         "sign-out fired from another site is the classic harmless CSRF that " +
         "is not", function () {
       assert.strictEqual(refused.status, 403,
-        surface + "/signout answered " + refused.status + " to a form with no " +
-        "csrf_token");
+        surface + "/signout answered " + refused.status + " to a form with " +
+        "no csrf_token");
     });
   assert.ok(await rowFor(surfaceId),
     "and the refused sign-out must have ended nothing");
@@ -856,10 +992,10 @@ async function theSignOutButtonEndsBothSessions(door, surface, who) {
         "the " + surface + " session " + surfaceId + " is still listed");
       assert.strictEqual(signOnGone, null,
         "THE SIGN-ON SESSION " + signOnId + " SURVIVED THE SIGN-OUT. That is " +
-        "the defect this section exists for: the surface session is gone, the " +
-        "page says signed out, and the next request runs the authorization " +
-        "code flow, meets this session, and comes straight back in with " +
-        "nothing typed.");
+        "the defect this section exists for: the surface session is gone, " +
+        "the page says signed out, and the next request runs the " +
+        "authorization code flow, meets this session, and comes straight " +
+        "back in with nothing typed.");
     });
 
   // AND THE COOKIES BUY NOTHING. Both are re-presented deliberately — the jar
@@ -883,6 +1019,7 @@ async function theSignOutButtonEndsBothSessions(door, surface, who) {
         "session is still live and this surface's Sign out button is signing " +
         "nobody out.");
     });
+  log.debug("Leaving theSignOutButtonEndsBothSessions().");
 }
 
 // ---------------------------------------------------------------------------
@@ -913,6 +1050,7 @@ async function theSignOutButtonEndsBothSessions(door, surface, who) {
 // The issuance PEP's row on the monitor, which is where a dry run would show
 // up if it were being counted.
 async function issuanceCounters() {
+  log.debug("Entering issuanceCounters().");
   const r = await get("/xacml/monitor");
   assert.ok(r.status === 200 && r.body,
     "GET /admin-api/xacml/monitor answered " + r.status);
@@ -920,12 +1058,17 @@ async function issuanceCounters() {
   const row = rows.filter(function (one) { return one.id === "issuance"; })[0];
   assert.ok(row, "the monitor has no row for the issuance PEP; it listed " +
     rows.map(function (one) { return one.id; }).join(", "));
-  return { decisions: row.decisions, allowed: row.allowed, refused: row.refused };
+  log.debug("Leaving issuanceCounters().");
+  return { decisions: row.decisions, allowed: row.allowed,
+           refused: row.refused };
 }
 
 async function issuanceAuditRows() {
+  log.debug("Entering issuanceAuditRows().");
   const r = await get("/audit?per=500");
-  assert.ok(r.status === 200 && r.body, "GET /admin-api/audit answered " + r.status);
+  assert.ok(r.status === 200 && r.body,
+            "GET /admin-api/audit answered " + r.status);
+  log.debug("Leaving issuanceAuditRows().");
   return (r.body.events || r.body.audit || []).filter(function (e) {
     return String(e.action || "").indexOf("xacml.issuance") === 0;
   }).length;
@@ -936,18 +1079,56 @@ async function issuanceAuditRows() {
 // that page names applications too — "sts-user-portal" appears in the sign-in
 // explanation — and a substring match against the whole page would report a
 // row that is not there.
+// The `<a>` in the middle is why this is an exec loop rather than the
+// match-and-strip it was until 2026-09-10: an application whose entry carries
+// `appHomePageUrl` has its name drawn as a link to that page, and one that does
+// not has it drawn in a `<span class="unlinked">`. A pattern anchored on
+// `<td><strong>NAME</strong>` matched neither of those and reported every row
+// missing.
 function listedApplications(text) {
-  return (String(text).match(/<td><strong>([^<]*)<\/strong>/g) || [])
-    .map(function (cell) {
-      return cell.replace(/^<td><strong>/, "").replace(/<\/strong>$/, "");
-    });
+  log.debug("Entering listedApplications().");
+  const names = [];
+  const pattern = /<td><strong>(?:<(?:a|span)\b[^>]*>)?([^<]*)/g;
+  let found = pattern.exec(String(text));
+  while (found) {
+    names.push(found[1]);
+    found = pattern.exec(String(text));
+  }
+  log.debug("Leaving listedApplications().");
+  return names;
+}
+
+// The href a named application's row links to, or "" when its name is drawn
+// greyed out instead. Read out of the row rather than off the page, because
+// several rows carry links and "this page contains that URL" would pass for a
+// link on somebody else's row.
+function homePageLinkFor(text, name) {
+  log.debug("Entering homePageLinkFor().");
+  const rows = String(text).split("<tr>");
+  const mine = rows.filter(function (row) {
+    return row.indexOf(">" + name + "<") >= 0;
+  })[0];
+  if (!mine) {
+    log.debug("Leaving homePageLinkFor().");
+    return null;
+  }
+  const link =
+      mine.match(/<strong><a class="home" rel="noopener" href="([^"]*)"/);
+  if (link) {
+    log.debug("Leaving homePageLinkFor().");
+    return link[1];
+  }
+  log.debug("Leaving homePageLinkFor().");
+  return mine.indexOf('<strong><span class="unlinked"') >= 0 ? "" : null;
 }
 
 // How many pages that list runs to, off the pager's own "Page 1 of 3" marker.
 // One page draws no pager at all, which is not a missing element: it is the
 // page saying there is nothing to page through.
 function pageCountOf(text) {
+  log.debug("Entering pageCountOf().");
   const m = String(text).match(/<span class="here">Page \d+ of (\d+)<\/span>/);
+  log.debug("Leaving pageCountOf().");
   return m ? Number(m[1]) : 1;
 }
 
@@ -963,6 +1144,7 @@ function pageCountOf(text) {
 // ISSUANCE POLICY deciding the list, which is a claim about the whole list;
 // asserting it against one page was asserting it about the alphabet.
 async function everyListedApplication(b) {
+  log.debug("Entering everyListedApplication().");
   const first = await b.go("GET", "/portal/applications");
   assert.strictEqual(first.status, 200,
     "the applications page answered " + first.status + " " +
@@ -977,6 +1159,7 @@ async function everyListedApplication(b) {
     names = names.concat(listedApplications(next.text));
     text += next.text;
   }
+  log.debug("Leaving everyListedApplication().");
   // The two counts at the foot are TOTALS rather than per-page tallies, so
   // page one's are the whole list's; `text` is every page concatenated,
   // because "this name appears nowhere outside the table" is a claim about
@@ -986,27 +1169,37 @@ async function everyListedApplication(b) {
 
 // The two counts at the foot of the page: refused, and not-a-sign-in-door.
 function notListedCounts(text) {
+  log.debug("Entering notListedCounts().");
   const refused = (String(text)
     .match(/Not permitted to you<\/th><td>(\d+) application/) || [])[1];
   const other = (String(text)
     .match(/Not sign-in destinations<\/th><td>(\d+) entr/) || [])[1];
+  log.debug("Leaving notListedCounts().");
   return { refused: refused === undefined ? null : Number(refused),
            notSignIn: other === undefined ? null : Number(other) };
 }
 
 async function theApplicationsPageIsDecidedByThePolicy() {
+  log.debug("Entering theApplicationsPageIsDecidedByThePolicy().");
   log.info("=== the applications page: what the ISSUANCE POLICY permits ===");
   const who = usernameFor("portal-apps");
   const stamp = runStamp();
   const openName = "Portal Probe Open " + stamp;
   const narrowedName = "Portal Probe Narrowed " + stamp;
   const role = "portal-probe-role-" + stamp;
+  // The two halves of the link on this page (2026-09-10): an application that
+  // has told this registry where it lives, and one that has not. Both are
+  // LISTED — the issuance policy permits them equally — and the difference is
+  // whether the name is a way in.
+  const openHome = "https://portal-probe-" + stamp + ".example.com/expenses";
+  const nowhereName = "Portal Probe Nowhere " + stamp;
 
   // Three entries: one anybody may reach, one narrowed to a role nobody holds
   // yet, and one that is not a sign-in destination at all.
   let r = await post("/applications/create",
     { identifier: "portal-probe-open-" + stamp, name: openName,
-      protocols: ["oauth2", "oidc"] });
+      protocols: ["oauth2", "oidc"],
+      fields: { appHomePageUrl: openHome } });
   assert.ok(r.status === 200 && r.body && r.body.ok,
     "creating the open application answered " + r.status + " " +
     String(r.raw).slice(0, 300));
@@ -1017,28 +1210,38 @@ async function theApplicationsPageIsDecidedByThePolicy() {
     "creating the narrowed application answered " + r.status + " " +
     String(r.raw).slice(0, 300));
   r = await post("/applications/create",
+    { identifier: "portal-probe-nowhere-" + stamp, name: nowhereName,
+      protocols: ["oauth2"] });
+  assert.ok(r.status === 200 && r.body && r.body.ok,
+    "creating the application with no home page answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  r = await post("/applications/create",
     { identifier: "portal-probe-ssf-" + stamp,
       name: "Portal Probe Receiver " + stamp, protocols: ["ssf"] });
   assert.ok(r.status === 200 && r.body && r.body.ok,
     "creating the Shared Signals receiver answered " + r.status + " " +
     String(r.raw).slice(0, 300));
 
-  const b = await signInAt("/portal", who);
+  const b = await signInAt(PORTAL_DOOR, who);
 
   // ------------------------------------------------------------------
   // THE FOUR PAGES, and the column that joins them.
   // ------------------------------------------------------------------
-  const pages = [["/portal", "Overview"], ["/portal/applications", "Applications"],
-                 ["/portal/password", "Password"], ["/portal/keys", "Security keys"]];
+  const pages = [["/portal", "Overview"],
+                 ["/portal/applications", "Applications"],
+                 ["/portal/password", "Password"], ["/portal/keys",
+                                                    "Security " +
+                     "keys"]];
   for (const [path, label] of pages) {
     const page = await b.go("GET", path);
     check(path + " answers 200 for the person signed in", function () {
       assert.strictEqual(page.status, 200,
-        path + " answered " + page.status + " " + String(page.text).slice(0, 200));
+        path + " answered " + page.status + " " +
+        String(page.text).slice(0, 200));
     });
-    check("and its navigation marks \"" + label + "\" as the page being drawn " +
-          "— the column is one table, so a page missing from it is a page " +
-          "with no way in", function () {
+    check("and its navigation marks \"" + label + "\" as the page being " +
+          "drawn — the column is one table, so a page missing from it is a " +
+          "page with no way in", function () {
         assert.ok(page.text.indexOf('<span class="here" aria-current="page">' +
                                     label + "</span>") >= 0,
           path + " does not mark " + label + " as current. It drew: " +
@@ -1065,8 +1268,8 @@ async function theApplicationsPageIsDecidedByThePolicy() {
       assert.ok(listed.indexOf(narrowedName) < 0,
         narrowedName + " is on the page and nobody holds " + role + " yet.");
     });
-  check("and it is COUNTED rather than named, which is the whole of what this " +
-        "page tells somebody about applications they cannot reach",
+  check("and it is COUNTED rather than named, which is the whole of what " +
+        "this page tells somebody about applications they cannot reach",
     function () {
       assert.ok(counts.refused !== null && counts.refused >= 1,
         "the page reports " + counts.refused + " refused applications.");
@@ -1074,6 +1277,57 @@ async function theApplicationsPageIsDecidedByThePolicy() {
         "the page names " + narrowedName + " somewhere outside the table, " +
         "which is the disclosure the count exists to avoid.");
     });
+  // ------------------------------------------------------------------
+  // THE LINK ON EACH ROW (2026-09-10), and the greyed-out name beside it.
+  //
+  // This page listed the applications a person may sign in to and gave them no
+  // way to reach any of them. The link is the entry's DECLARED
+  // `appHomePageUrl` and is never computed from the redirect URIs on the entry
+  // — `common/applications.js`'s row for that attribute argues why — so the
+  // assertion here is a pair rather than a value: the application that stated a
+  // home page links to exactly it, and the one that did not is listed with no
+  // link at all rather than with a guess.
+  // ------------------------------------------------------------------
+  check("the application that declared a home page is LINKED to it, exactly " +
+        "as declared", function () {
+      const href = homePageLinkFor(apps.text, openName);
+      assert.strictEqual(href, openHome,
+        openName + " links to " + JSON.stringify(href) + " rather than to " +
+        openHome + ". A home page is what the entry says it is; nothing " +
+        "derives one.");
+    });
+  check("AND THE ONE THAT DECLARED NONE IS LISTED WITH NO LINK — greyed out " +
+        "rather than pointed at a guessed address, which is the whole reason " +
+        "the attribute is declared", function () {
+      assert.ok(listed.indexOf(nowhereName) >= 0,
+        nowhereName + " is not listed at all. Having no home page must not " +
+        "keep an application off this page: it is the ordinary shape of an " +
+        "entry a protocol endpoint created. It listed: " + listed.join(", "));
+      assert.strictEqual(homePageLinkFor(apps.text, nowhereName), "",
+        nowhereName +
+        " is drawn with a link and its entry names no home page.");
+    });
+
+  // A HOME PAGE BECOMES AN `href` ON THIS PAGE, so the write door refuses a
+  // value that is not http or https. The scheme list is an ALLOWLIST rather
+  // than a blocklist and `javascript:` is why: this registry accepts an entry
+  // from a dynamic client registration, so a scheme of somebody's choosing
+  // must not be able to reach an attribute a signed-in person's page renders
+  // as a link. Checked at the door AND again when the page reads it — an
+  // `ldapmodify` on TCP 389 goes through neither.
+  const refused = await post("/applications/set",
+    { application: "portal-probe-nowhere-" + stamp,
+      attribute: "appHomePageUrl", value: "javascript:alert(1)" });
+  check("a home page that is not http or https is REFUSED where it is written",
+    function () {
+      assert.strictEqual(refused.status, 400,
+        "setting a javascript: home page answered " + refused.status +
+        " rather than refusing it. " + String(refused.raw).slice(0, 300));
+      assert.ok(/http/.test(String(refused.raw)),
+        "the refusal does not say what a home page must be: " +
+        String(refused.raw).slice(0, 300));
+    });
+
   check("the Shared Signals receiver is on neither list — it is not a " +
         "sign-in destination, and is counted as one of those instead",
     function () {
@@ -1099,7 +1353,8 @@ async function theApplicationsPageIsDecidedByThePolicy() {
         "not a decision this service acted on", function () {
       assert.deepStrictEqual(countersAfter, countersBefore,
         "the issuance PEP's counters moved from " +
-        JSON.stringify(countersBefore) + " to " + JSON.stringify(countersAfter) +
+        JSON.stringify(countersBefore) + " to " +
+        JSON.stringify(countersAfter) +
         " because somebody opened a page.");
     });
   check("AND WRITES NO xacml.issuance.* ROW TO THE AUDIT LOG — a refusal row " +
@@ -1116,10 +1371,13 @@ async function theApplicationsPageIsDecidedByThePolicy() {
   r = await post("/roles/create-role",
     { role: role, description: "created by sts_portal_sessions.js" });
   assert.ok(r.status === 200 && r.body && r.body.ok,
-    "creating the role answered " + r.status + " " + String(r.raw).slice(0, 300));
-  r = await post("/roles/add-member", { role: role, kind: "user", member: who });
+    "creating the role answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  r = await post("/roles/add-member",
+                 { role: role, kind: "user", member: who });
   assert.ok(r.status === 200 && r.body && r.body.ok,
-    "granting the role answered " + r.status + " " + String(r.raw).slice(0, 300));
+    "granting the role answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
 
   apps = await everyListedApplication(b);
   listed = apps.listed;
@@ -1182,6 +1440,7 @@ async function theApplicationsPageIsDecidedByThePolicy() {
 }
 
 async function test() {
+  log.debug("Entering test().");
   log.info("Driving the admin console and the User Portal at " + base);
 
   const operator = await theConsoleSignInCreatesASession();
@@ -1199,18 +1458,18 @@ async function test() {
 
   // THE TWO SURFACES' OWN SIGN OUT BUTTONS, each in a browser of its own so
   // that nothing above is signed out from underneath it.
-  await theSignOutButtonEndsBothSessions("/portal", "/portal",
+  await theSignOutButtonEndsBothSessions(PORTAL_DOOR, "/portal",
                                          usernameFor("portal-signout"));
-  await theSignOutButtonEndsBothSessions("/admin", "/admin",
+  await theSignOutButtonEndsBothSessions(ADMIN_DOOR, "/admin",
                                          usernameFor("console-signout"));
-  await signingOutInvalidatesIt(newcomer, NEWCOMER, "/portal");
+  await signingOutInvalidatesIt(newcomer, NEWCOMER, PORTAL_DOOR);
 
   // SECTION 7 RUNS BEFORE THE SIGN-OUTS, in a browser of its own, so that
   // nothing it signs in is signed out from underneath the sections above.
   const appsBrowser = await theApplicationsPageIsDecidedByThePolicy();
 
-  await signingOutInvalidatesIt(intruder, INTRUDER, "/portal");
-  await signingOutInvalidatesIt(owner, OWNER, "/portal");
+  await signingOutInvalidatesIt(intruder, INTRUDER, PORTAL_DOOR);
+  await signingOutInvalidatesIt(owner, OWNER, PORTAL_DOOR);
   await signingOutInvalidatesIt(operator, OPERATOR, "/admin/sessions");
 
   // A FLOOR ON THE COUNT, for sts_admin_console.js's reason: a section that
@@ -1226,6 +1485,7 @@ async function test() {
     "only " + checks + " assertions ran; a section has stopped being called.");
   log.info(checks + " assertion(s).");
   log.info("Test completed successfully.");
+  log.debug("Leaving test().");
 }
 
 const program = new Command();

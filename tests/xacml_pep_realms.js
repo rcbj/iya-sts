@@ -1,4 +1,10 @@
 'use strict';
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_pep_realms',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: xacml_pep_realms.js
 //
@@ -35,9 +41,9 @@
 // register that is partitioned by realm. Asserting it over HTTP would mean
 // REGISTERING a remote PEP over HTTP, which needs a client certificate chaining
 // to an anchor in this service's truststore whose subject DN resolves to an
-// entry holding `REMOTE_PEPS` — a launcher, a credential and a second container,
-// all of which `sts_xacml_remote_pep.js` already builds to assert something
-// else. This drives the registry directly and asserts both halves in
+// entry holding `REMOTE_PEPS` — a launcher, a credential and a second
+// container, all of which `sts_xacml_remote_pep.js` already builds to assert
+// something else. This drives the registry directly and asserts both halves in
 // milliseconds.
 //
 // It also covers the state that job cannot leave behind: it removes its realm
@@ -52,6 +58,7 @@ module.exports = {
             'list and REPORTED in its answer — the empty list that had two ' +
             'causes',
   run: function (t) {
+    log.debug("Entering run().");
     const realms = require('../common/realms');
     // The directory IS `ou=peps`. Requiring it seeds the default realm's
     // subtree and fills the registry's directory slot; without it every call
@@ -67,6 +74,8 @@ module.exports = {
     // here checks a certificate: what is under test is the REGISTER, and the
     // gate in front of it is `sts_xacml_remote_pep.js`'s subject.
     function registerOne(name) {
+      log.debug("Entering registerOne().");
+      log.debug("Leaving registerOne().");
       return peps.register({
         name: name,
         identity: 'cn=' + name + ',ou=users,dc=example,dc=com',
@@ -86,7 +95,8 @@ module.exports = {
     // THE ORDINARY SERVICE: nothing anywhere.
     // -------------------------------------------------------------------
     t.equal(peps.all().length, 0,
-            'the default realm holds no remote PEP before this file writes one');
+            'the default realm holds no remote PEP before this file writes ' +
+            'one');
     t.equal(peps.elsewhere().length, 0,
             'AND NO OTHER REALM HOLDS ONE EITHER — the answer that lets the ' +
             'page say "in this realm or in any other" instead of a sentence ' +
@@ -96,6 +106,7 @@ module.exports = {
     if (!realm) {
       t.check(false, 'the throwaway realm could not be created, so the ' +
                      'per-realm assertions did not run');
+      log.debug("Leaving run().");
       return;
     }
 
@@ -118,8 +129,8 @@ module.exports = {
     });
     t.equal(insideElsewhere.length, 0,
             'and reports no OTHER realm holding one — the realm you are ' +
-            'standing in is never in its own "elsewhere", or every page would ' +
-            'point at itself');
+            'standing in is never in its own "elsewhere", or every page ' +
+            'would point at itself');
 
     t.equal(peps.all().length, 0,
             'THE DEFAULT REALM STILL LISTS NONE, which is correct and is ' +
@@ -148,5 +159,6 @@ module.exports = {
     t.equal(peps.elsewhere().length, 0,
             'with the realm gone the answer is "none anywhere" again, which ' +
             'is what a passing suite really does leave behind');
+    log.debug("Leaving run().");
   }
 };

@@ -86,6 +86,9 @@
 //
 // ---------------------------------------------------------------------------
 // THE COUNTERS ARE PER TRUST REALM, IN MEMORY, AND DIE WITH THE PROCESS.
+// (Where minted state is persisted each process's row is written down too,
+// `merge: 'own'`, so that several processes or nodes add up — see `merge()`.
+// It is still per process: a restarted process starts its own row at zero.)
 //
 // Per realm because everything else in this family is: `ou=policies` is per
 // realm, so a decision made under `/realm/acme` was made against acme's
@@ -121,6 +124,9 @@
 
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// The error-code registry (a leaf). Tagged log lines only: an audit row per
+// failed counter would be a second record on the path of every decision.
+const errorCodes = require('../common/error_codes');
 const realms = require('../common/realms');
 // WHAT OTHER PROCESSES DECIDED. A LIBRARY (rule 3) requiring only `config` and
 // `realms`, which is what keeps this file's require list to leaves — the
@@ -160,6 +166,8 @@ const PEPS = [
     // not permitted does not happen — and a setting that appeared to change
     // that would silently do nothing.
     bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
       return config.value('xacml.pepBias') === 'permit-biased'
         ? 'permit-biased' : 'deny-biased';
     },
@@ -176,7 +184,11 @@ const PEPS = [
             'WS-Trust token, a Kerberos ticket, a verifiable credential, a ' +
             'sign-on session.',
     enforces: true,
-    bias: function () { return 'deny-biased (fixed)'; },
+    bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
+      return 'deny-biased (fixed)';
+    },
     obligations: false },
 
   { id: 'access',
@@ -187,7 +199,11 @@ const PEPS = [
     guards: 'The admin console, the user portal, /scim/v2, the SPIRE Server ' +
             'API, and /admin-api in product mode.',
     enforces: true,
-    bias: function () { return 'deny-biased (fixed)'; },
+    bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
+      return 'deny-biased (fixed)';
+    },
     obligations: false },
 
   { id: 'pdp',
@@ -200,7 +216,11 @@ const PEPS = [
             'process. This service saw the decision and never the ' +
             'enforcement.',
     enforces: false,
-    bias: function () { return null; },
+    bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
+      return null;
+    },
     obligations: false }
 ];
 
@@ -218,6 +238,8 @@ const DECISIONS = { Permit: 'permit', Deny: 'deny',
                     Indeterminate: 'indeterminate' };
 
 function emptyRow() {
+  log.debug("Entering emptyRow().");
+  log.debug("Leaving emptyRow().");
   return { decisions: 0, allowed: 0, refused: 0,
            permit: 0, deny: 0, notApplicable: 0, indeterminate: 0, other: 0,
            undischargeable: 0,
@@ -227,7 +249,12 @@ function emptyRow() {
 // PER TRUST REALM. See the header: `ou=policies` is per realm, so a decision
 // made under /realm/acme was made against acme's policies, and one total over
 // both would be counting two logical services as one.
-const counters = realms.map({ persist: 'xacml_monitor.counters', merge: 'own' });
+//
+// `observation: true` (2026-09-15, #46): a decision counted is a tally of what
+// a request did, so journalling it does not make a read a WRITING request that
+// the cluster barrier would hold — see `record()` and `cluster_barrier.js`.
+const counters = realms.map({ persist: 'xacml_monitor.counters',
+                              merge: 'own', observation: true });
 
 // WHEN THE COUNTING STARTED. Declared here, above its one reader, because a
 // module-level `const` used by a function defined above it is legal and reads
@@ -236,9 +263,11 @@ const counters = realms.map({ persist: 'xacml_monitor.counters', merge: 'own' })
 const startedAt = new Date().toISOString();
 
 function rowFor(id) {
+  log.debug("Entering rowFor().");
   if (!counters.has(id)) {
     counters.set(id, emptyRow());
   }
+  log.debug("Leaving rowFor().");
   return counters.get(id);
 }
 
@@ -262,17 +291,21 @@ function rowFor(id) {
 // direction.
 // ---------------------------------------------------------------------------
 function record(id, outcome) {
+  log.debug("Entering record().");
   try {
     if (!BY_ID[id]) {
       // A NAME THAT IS NOT IN THE CATALOGUE IS LOGGED AND NOT COUNTED. It
       // would otherwise appear as a row on a page whose whole claim is that it
       // lists every asker of the PDP in this process, and a row nothing
       // describes is worse than a missing one.
-      log.warn('xacml: a decision was recorded against "' + id + '", which is ' +
-               'not one of the ' + PEPS.length + ' askers xacml_monitor.js ' +
+      log.warn(errorCodes.tag('STS-XACML-0063') +
+               'xacml: a decision was recorded against "' + id + '", which ' +
+               'is not one of ' +
+               'the ' + PEPS.length + ' askers xacml_monitor.js ' +
                'knows about. It is NOT counted — /admin/xacml/monitor claims ' +
                'to list every one of them, and a row with no description ' +
                'would break that claim rather than extend it. Add it to PEPS.');
+      log.debug("Leaving record().");
       return;
     }
     // -----------------------------------------------------------------
@@ -320,12 +353,35 @@ function record(id, outcome) {
     }
     row.lastAt = new Date().toISOString();
     row.lastDecision = decision || null;
+    // -----------------------------------------------------------------
+    // AND THE ROW IS SET BACK, WHICH IS WHAT JOURNALS IT (2026-09-15, #46).
+    //
+    // `rowFor()` hands back the live object and the lines above change it in
+    // place, which a `realms.map()` cannot see: only `set()` and `delete()`
+    // tell the persistence journal a key moved. So the row in `sts_minted`
+    // held whatever the FIRST decision of the process wrote through
+    // `rowFor()`'s `set()`, and never moved again. On one node nothing reads
+    // that row. With two, each node's `merge()` adds its own live tally to
+    // the OTHER node's frozen one, and the two pages disagree about one
+    // service: the suite's `cluster` mode read the issuance PEP at 126 on node
+    // A and 142 on node B across a page load that decided nothing, and 21
+    // then 17 in a run of that job alone — the number went DOWN, which no
+    // late-arriving decision can explain. `oauth2_monitor.js` always set its
+    // row back; this file did not.
+    //
+    // The store is declared `observation: true`, so this does not make the
+    // access PEP's every console read a request the barrier holds; a request
+    // that wrote anything else is held and the row commits with it.
+    // -----------------------------------------------------------------
+    counters.set(id, row);
   } catch (error) {
     // SWALLOWED, and the comment is the reason rather than an apology: this is
     // on the path of every issuance and every gated request in the service.
-    log.error('xacml: a decision counter threw and was ignored; the decision ' +
+    log.error(errorCodes.tag('STS-XACML-0062') +
+              'xacml: a decision counter threw and was ignored; the decision ' +
               'itself is unaffected: ' + error.message);
   }
+  log.debug("Leaving record().");
 }
 
 // ---------------------------------------------------------------------------
@@ -356,9 +412,12 @@ function record(id, outcome) {
 // Object.keys.
 // ---------------------------------------------------------------------------
 function merge(id) {
+  log.debug("Entering merge().");
   const mine = counters.has(id) ? counters.get(id) : emptyRow();
-  const theirs = replication.remoteRows('xacml_monitor.counters', undefined, id);
+  const theirs = replication.remoteRows('xacml_monitor.counters', undefined,
+                                        id);
   if (!theirs.length) {
+    log.debug("Leaving merge().");
     return mine;
   }
   const out = Object.assign(emptyRow(), mine);
@@ -378,6 +437,7 @@ function merge(id) {
       out.lastAllowed = row.lastAllowed;
     }
   });
+  log.debug("Leaving merge().");
   return out;
 }
 
@@ -424,7 +484,8 @@ function snapshot(policies) {
     // half of this snapshot is this process's own memory and is always
     // answerable; the remote half needs the directory, and a build with no
     // `ldap_server.js` has none.
-    log.warn('xacml: the remote PEP register could not be read for the ' +
+    log.warn(errorCodes.tag('STS-XACML-0064') +
+             'xacml: the remote PEP register could not be read for the ' +
              'monitor, so only the embedded half is reported: ' +
              error.message);
     remoteRows = [];
@@ -536,6 +597,7 @@ function snapshot(policies) {
 // kind of thing that makes somebody distrust every other number beside it.
 // ---------------------------------------------------------------------------
 function totalOf(rows) {
+  log.debug("Entering totalOf().");
   const out = { decisions: 0, allowed: 0, refused: 0, unenforced: 0,
                 undischargeable: 0 };
   rows.forEach(function (row) {
@@ -550,6 +612,7 @@ function totalOf(rows) {
     }
     out.undischargeable += Number(row.undischargeable || 0);
   });
+  log.debug("Leaving totalOf().");
   return out;
 }
 

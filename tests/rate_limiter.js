@@ -23,12 +23,12 @@
 // nobody would notice the removal of, so it gets a real test instead of an
 // accidental one, and that is this file.
 //
-// WHY IN PROCESS. Every assertion here is about a counter: how many attempts
-// it takes to be refused, which BUCKET refused, that the window expires, that a
-// success clears it. Over HTTP each of those is minutes of waiting on a 60-second
-// window, and the two buckets cannot be told apart from outside — the refusal
-// deliberately names only one. `attempt()` takes its limit as an argument and
-// `reset()` clears the table, so all of it is a function call.
+// WHY IN PROCESS. Every assertion here is about a counter: how many attempts it
+// takes to be refused, which BUCKET refused, that the window expires, that a
+// success clears it. Over HTTP each of those is minutes of waiting on a
+// 60-second window, and the two buckets cannot be told apart from outside — the
+// refusal deliberately names only one. `attempt()` takes its limit as an
+// argument and `reset()` clears the table, so all of it is a function call.
 //
 // It is also the one file here that must NOT be affected by the appconfig
 // change above: every limit below is passed EXPLICITLY, so a run under any
@@ -40,10 +40,18 @@ delete process.env.CONFIG_FILE;
 
 const websecurity = require('../common/websecurity');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'rate_limiter',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A stand-in for the `req` the limiter reads an address off. It looks at
 // `req.socket.remoteAddress` (and, with `global.trustProxy`, at
 // `x-forwarded-for`), so this is the whole of what it needs.
 function from(address) {
+  log.debug("Entering from().");
+  log.debug("Leaving from().");
   return { headers: {}, socket: { remoteAddress: address } };
 }
 
@@ -55,6 +63,7 @@ function from(address) {
 // out one try early, and nobody reports it as a bug — they try again.
 // ---------------------------------------------------------------------------
 function checkTheBoundary(t) {
+  log.debug("Entering checkTheBoundary().");
   t.log.info('where the limit falls');
   websecurity.reset();
 
@@ -67,8 +76,8 @@ function checkTheBoundary(t) {
     }
   }
   t.equal(refusedAt, 4,
-          'with a limit of 3, the FOURTH attempt is the first refused — three ' +
-          'are allowed, which is what "3 per window" means');
+          'with a limit of 3, the FOURTH attempt is the first refused — ' +
+          'three are allowed, which is what "3 per window" means');
 
   const answer = websecurity.attempt('rl-boundary', req, '', 3);
   t.equal(answer.ok, false, 'and it stays refused');
@@ -78,6 +87,7 @@ function checkTheBoundary(t) {
   t.check(Number(answer.retryAfterS) > 0 && Number(answer.retryAfterS) <= 60,
           'and how long to wait, within the window',
           String(answer.retryAfterS) + 's');
+  log.debug("Leaving checkTheBoundary().");
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +100,7 @@ function checkTheBoundary(t) {
 // for the other.
 // ---------------------------------------------------------------------------
 function checkTheTwoBuckets(t) {
+  log.debug("Entering checkTheTwoBuckets().");
   t.log.info('the address bucket and the identity bucket');
   websecurity.reset();
 
@@ -138,6 +149,7 @@ function checkTheTwoBuckets(t) {
   t.equal(refusal && refusal.kind, 'address',
           'an attempt naming nobody is counted by address rather than waved ' +
           'through');
+  log.debug("Leaving checkTheTwoBuckets().");
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +162,7 @@ function checkTheTwoBuckets(t) {
 // `/authn/login` would break `/portal/activate` for a minute.
 // ---------------------------------------------------------------------------
 function checkPerAction(t) {
+  log.debug("Entering checkPerAction().");
   t.log.info('one bucket per action');
   websecurity.reset();
 
@@ -160,8 +173,9 @@ function checkPerAction(t) {
   t.equal(websecurity.attempt('rl-one', req, 'alice', 3).ok, false,
           'the first action is exhausted');
   t.equal(websecurity.attempt('rl-two', req, 'alice', 3).ok, true,
-          'and a DIFFERENT action from the same address, for the same person, ' +
-          'is untouched');
+          'and a DIFFERENT action from the same address, for the same ' +
+          'person, is untouched');
+  log.debug("Leaving checkPerAction().");
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +188,7 @@ function checkPerAction(t) {
 // which has no such call — did.
 // ---------------------------------------------------------------------------
 function checkSuccessClears(t) {
+  log.debug("Entering checkSuccessClears().");
   t.log.info('what a success forgets');
   websecurity.reset();
 
@@ -198,6 +213,7 @@ function checkSuccessClears(t) {
   websecurity.succeeded('rl-success2', req, 'person-1');
   t.equal(websecurity.attempt('rl-success2', req, 'person-9', 3).ok, true,
           'and it clears the ADDRESS bucket as well as the identity one');
+  log.debug("Leaving checkSuccessClears().");
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +225,7 @@ function checkSuccessClears(t) {
 // from configuration on every call, so this is the real code path.
 // ---------------------------------------------------------------------------
 function checkTheWindowExpires(t) {
+  log.debug("Entering checkTheWindowExpires().");
   t.log.info('the window expires');
   const config = require('../common/config');
   websecurity.reset();
@@ -222,6 +239,7 @@ function checkTheWindowExpires(t) {
   if (!set || set.ok === false) {
     t.bad('could not narrow the rate-limit window to 1s',
           JSON.stringify(set));
+    log.debug("Leaving checkTheWindowExpires().");
     return;
   }
   try {
@@ -245,6 +263,7 @@ function checkTheWindowExpires(t) {
     config.clearOverride('security.rateLimitWindowS');
     websecurity.reset();
   }
+  log.debug("Leaving checkTheWindowExpires().");
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +277,7 @@ function checkTheWindowExpires(t) {
 // compiled in.
 // ---------------------------------------------------------------------------
 function checkItReadsTheSettings(t) {
+  log.debug("Entering checkItReadsTheSettings().");
   t.log.info('it reads the settings');
   const config = require('../common/config');
   websecurity.reset();
@@ -278,9 +298,11 @@ function checkItReadsTheSettings(t) {
     config.clearOverride('security.rateLimitPerAddress');
     websecurity.reset();
   }
+  log.debug("Leaving checkItReadsTheSettings().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheBoundary(t);
   checkTheTwoBuckets(t);
   checkPerAction(t);
@@ -288,6 +310,7 @@ function run(t) {
   checkTheWindowExpires(t);
   checkItReadsTheSettings(t);
   websecurity.reset();
+  log.debug("Leaving run().");
 }
 
 module.exports = {

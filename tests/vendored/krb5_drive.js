@@ -38,13 +38,20 @@
 //
 // THE MODULES ARE THIS SERVICE'S OWN, loaded in process. That is deliberate and
 // is the same decision `tests/CLAUDE.md` records for the other in-process jobs:
-// what is under test here is the KDC's behaviour over the wire, and hand-rolling
-// a second ASN.1 encoder to check the first one would be testing the copy.
+// what is under test here is the KDC's behaviour over the wire, and
+// hand-rolling a second ASN.1 encoder to check the first one would be testing
+// the copy.
 // ===========================================================================
 
 "use strict";
 
 const paths = require("./module_paths.js");
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'krb5_drive',
+  level: process.env.LOG_LEVEL || 'info' });
 paths.addTestsModulesToResolutionPath();
 
 const msgs = require(paths.mockStsModule("krb5_messages.js"));
@@ -64,6 +71,8 @@ const ETYPE_NAME = "aes256-cts-hmac-sha1-96";
 // formatted string instead is refused with `krb5: not a date`, which reads like
 // a clock problem and is in fact the wrong TYPE.
 function kerberosTime(atMs) {
+  log.debug("Entering kerberosTime().");
+  log.debug("Leaving kerberosTime().");
   return new Date(atMs);
 }
 
@@ -72,6 +81,7 @@ function kerberosTime(atMs) {
 // framed message in a small ASN.1 envelope — which `krb5_kdc.js` unwraps at
 // the other end, so this has to write it.
 async function proxy(baseUrl, realm, request) {
+  log.debug("Entering proxy().");
   const framed = Buffer.concat([
     Buffer.from([(request.length >>> 24) & 0xff, (request.length >>> 16) & 0xff,
                  (request.length >>> 8) & 0xff, request.length & 0xff]),
@@ -97,12 +107,15 @@ async function proxy(baseUrl, realm, request) {
   const outer = asn1.readTlv(prim.toBytes(raw), 0);
   const fields = asn1.readTaggedSequence(outer.value);
   const unwrapped = asn1.decOctetString(fields[0]);
+  log.debug("Leaving proxy().");
   // Strip the four-byte length the TCP framing put in front on the way back.
   return Buffer.from(unwrapped.subarray(4));
 }
 
 function asReq(realm, username, padata) {
+  log.debug("Entering asReq().");
   const now = Date.now();
+  log.debug("Leaving asReq().");
   return msgs.encKdcReq({
     msgType: msgs.MSG_TYPE.AS_REQ,
     padata: padata || [],
@@ -137,6 +150,7 @@ function asReq(realm, username, padata) {
 // the console has a Kerberos session to end.
 // ---------------------------------------------------------------------------
 async function getTgt(baseUrl, realm, username, password) {
+  log.debug("Entering getTgt().");
   const etype = crypto.etypeByName(ETYPE_NAME);
 
   // 1. The bare request, which is MEANT to be refused. `readKdcResponse()`
@@ -146,6 +160,7 @@ async function getTgt(baseUrl, realm, username, password) {
   const bare = await proxy(baseUrl, realm, asReq(realm, username, []));
   const first = msgs.readKdcResponse(bare);
   if (first.kind !== "KRB-ERROR") {
+    log.debug("Leaving getTgt().");
     // A KDC configured to require no pre-authentication. Not an error — the
     // seeded `noreauth` principal is exactly this — so it is answered rather
     // than treated as a surprise.
@@ -168,7 +183,8 @@ async function getTgt(baseUrl, realm, username, password) {
                     "Error " + ((err.error || {}).code) + " " +
                     ((err.error || {}).name || "") +
                     (err.eDataNote ? " — " + err.eDataNote : "") +
-                    ". It offered: " + (err.eDataPaData || []).map(function (pa) {
+                    ". It offered: " +
+                    (err.eDataPaData || []).map(function (pa) {
                       return pa.type;
                     }).join(", "));
   }
@@ -182,11 +198,11 @@ async function getTgt(baseUrl, realm, username, password) {
                       return one.etypeName;
                     }).join(", "));
   }
-  // **BOTH CRYPTO CALLS ARE ASYNCHRONOUS AND NEITHER LOOKS IT.** `krb5_crypto.js`
-  // is built on WebCrypto, so `stringToKey()` and `encrypt()` return promises —
-  // and a caller that forgets returns a Promise where bytes are expected,
-  // failing much later as `krb5: expected bytes, got object` from inside
-  // `importAesKey()`, which names neither call.
+  // **BOTH CRYPTO CALLS ARE ASYNCHRONOUS AND NEITHER LOOKS IT.**
+  // `krb5_crypto.js` is built on WebCrypto, so `stringToKey()` and `encrypt()`
+  // return promises — and a caller that forgets returns a Promise where bytes
+  // are expected, failing much later as `krb5: expected bytes, got object` from
+  // inside `importAesKey()`, which names neither call.
   const key = await etype.stringToKey(
       password, prim.utf8(chosen.salt || (realm + username)), chosen.s2kparams);
 
@@ -205,9 +221,11 @@ async function getTgt(baseUrl, realm, username, password) {
   if (reply.kind === "KRB-ERROR") {
     const e = reply.error || {};
     throw new Error("the pre-authenticated AS-REQ was refused: " +
-                    ((e.error || {}).code) + " " + ((e.error || {}).name || "") +
+                    ((e.error || {}).code) + " " +
+                    ((e.error || {}).name || "") +
                     " " + (e.eText || ""));
   }
+  log.debug("Leaving getTgt().");
   return { ok: true, preauthRequired: true, asRep: reply.rep };
 }
 

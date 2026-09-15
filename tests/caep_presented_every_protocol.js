@@ -9,7 +9,7 @@
 // CAEP is a vocabulary about SESSIONS. Nothing in `session-presented` names
 // OAuth 2.0 or OpenID Connect — the event says an existing session was
 // presented and honoured without a new authentication, which is exactly what
-// happens when a browser that already holds `sts_mock_session` arrives at the
+// happens when a browser that already holds `sts_session` arrives at the
 // SAML 2.0 SSO endpoint, the SAML 1.1 inter-site transfer service or the
 // WS-Federation passive requestor endpoint.
 //
@@ -39,6 +39,13 @@ const fs = require('fs');
 const path = require('path');
 const authn = require('../authn/authn');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log =
+    require('bunyan').createLogger({ name: 'caep_presented_every_protocol',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The four browser SSO profiles: a module, and the identifier it passes as
 // `via` so the event says which door the session came back through. A profile
 // added here without a `notePresented()` fails section B by name.
@@ -46,19 +53,25 @@ const PROFILES = [
   { file: '../oauth-oidc/oauth2.js', via: 'OAuth 2.0 / OIDC' },
   { file: '../saml/saml2_sso.js', via: 'SAML 2.0' },
   { file: '../saml/saml11_sso.js', via: 'SAML 1.1' },
-  { file: '../ws-federation/wsfed.js', via: 'WS-Federation' }
+  { file: '../ws-federation/wsfed.js', via: 'WS-Federation' },
+  // GNAP (2026-09-12): an interaction that meets a live sign-on session
+  // approves without a new authentication, which is a presentation.
+  { file: '../gnap/gnap_interact.js', via: 'GNAP' }
 ];
 
 // A session in the shape `startSession()` leaves one, INCLUDING the flag that
 // makes the sign-in's own return trip free. Spelling it out rather than
 // calling startSession() keeps this test off `res` and the cookie.
 function sessionAfterSignIn(id) {
-  return { id: id, user: { sub: 'urn:sts-mock:user:tester',
+  log.debug("Entering sessionAfterSignIn().");
+  log.debug("Leaving sessionAfterSignIn().");
+  return { id: id, user: { sub: 'urn:sts:user:tester',
     username: 'tester' }, acr: '1', amr: ['pwd'],
     firstPresentationIsTheSignIn: true };
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   t.log.info('A. notePresented() is about the SESSION, so it behaves the ' +
              'same whichever protocol presents one');
@@ -150,6 +163,7 @@ function run(t) {
             name + " names the protocol as '" + profile.via + "', the same " +
             'spelling it hands startSession() and recordServiceProvider()');
   });
+  log.debug("Leaving run().");
 }
 
 module.exports = {

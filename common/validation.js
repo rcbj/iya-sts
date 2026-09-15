@@ -57,10 +57,10 @@
 // ambiguity entirely.
 //
 // **A PARAMETER THAT MAY LEGITIMATELY REPEAT SAYS SO IN ITS SCHEMA**, as
-// `repeatable(...)`. RFC 8707's `resource` and RFC 8693's `audience` are the two
-// that do. They are then kept as arrays and nothing is thrown away, which is
-// the behaviour `helpers.bodyValues()` already had to be written by hand to get
-// back after `parseBody()` had flattened it.
+// `repeatable(...)`. RFC 8707's `resource` and RFC 8693's `audience` are the
+// two that do. They are then kept as arrays and nothing is thrown away, which
+// is the behaviour `helpers.bodyValues()` already had to be written by hand to
+// get back after `parseBody()` had flattened it.
 //
 // ---------------------------------------------------------------------------
 // CONTROL CHARACTERS ARE REFUSED EVERYWHERE, AND THE RULE IS NOT THE SAME IN
@@ -130,6 +130,10 @@ const { z } = require('zod');
 const config = require('./config');
 const { DOMParser } = require('@xmldom/xmldom');
 const zlib = require('zlib');
+// The registry of failure codes. A LEAF that requires nothing, so this closes
+// no cycle. The guard below marks its refusals with one, on the RESPONSE OBJECT
+// and never in the body — see common/error_codes.js.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
   name: 'sts-validation',
@@ -160,10 +164,12 @@ const CAP = {
   NAME: 256,            // a username, a group name, a principal name
   TOKEN: 4096,          // an opaque credential: a code, a token, an artifact
   URI: 2048,            // the de-facto browser limit, and more than any of ours needs
-  SCOPE: 2048,          // a space-delimited list, which grows with the deployment
+  SCOPE:
+    2048,          // a space-delimited list, which grows with the deployment
   DEFAULT: 4096,        // the backstop for a field whose schema did not say
   TEXT: 65536,          // a console textarea: a policy, a PEM block, an LDIF fragment
-  LARGE: 1048576        // a SAML message, a SOAP envelope, an XACML request document
+  LARGE:
+    1048576        // a SAML message, a SOAP envelope, an XACML request document
 };
 
 // ---------------------------------------------------------------------------
@@ -216,6 +222,8 @@ const POLLUTING_KEYS = ['__proto__', 'constructor', 'prototype'];
 // want different amounts of it.
 // ---------------------------------------------------------------------------
 function refusal(code, field, detail) {
+  log.debug("Entering refusal().");
+  log.debug("Leaving refusal().");
   return { ok: false, code: code, field: field, detail: detail };
 }
 
@@ -237,21 +245,27 @@ function refusal(code, field, detail) {
 // Note what this does NOT do: it does not choose. See the header.
 // ---------------------------------------------------------------------------
 function scalar(value, field, allowText) {
+  log.debug("Entering scalar().");
   if (value === undefined || value === null) {
+    log.debug("Leaving scalar().");
     return { ok: true, value: undefined };
   }
   if (Array.isArray(value)) {
+    log.debug("Leaving scalar().");
     return refusal('repeated', field,
                    'the parameter "' + field + '" was given ' + value.length +
-                   ' times and this endpoint takes it once. It is refused rather ' +
-                   'than resolved to one of them, because choosing silently is ' +
-                   'how two readers of the same request come to disagree.');
+                   ' times and this endpoint takes it once. It is refused ' +
+                   'rather than resolved to one of them, because choosing ' +
+                   'silently is how two readers of the same request come to ' +
+                   'disagree.');
   }
   if (typeof value === 'object') {
+    log.debug("Leaving scalar().");
     return refusal('structured', field,
-                   'the parameter "' + field + '" arrived as a structure rather ' +
-                   'than a value. Express parses "' + field + '[key]=..." into an ' +
-                   'object; this endpoint takes a single value.');
+                   'the parameter "' + field + '" arrived as a structure ' +
+                   'rather than a value. Express parses ' +
+                   '"' + field + '[key]=..." ' +
+                   'into an object; this endpoint takes a single value.');
   }
   // A number or a boolean is what a JSON body legitimately carries, and the
   // schema below decides whether this field was allowed to be one. Coercing
@@ -259,15 +273,18 @@ function scalar(value, field, allowText) {
   const text = typeof value === 'string' ? value : String(value);
   const forbidden = allowText ? CONTROL_TEXT : CONTROL_STRICT;
   if (forbidden.test(text)) {
+    log.debug("Leaving scalar().");
     return refusal('control-character', field,
-                   'the value of "' + field + '" contains a control character. ' +
+                   'the value of "' + field +
+                   '" contains a control character. ' +
                    (allowText
-                     ? 'A line break is allowed in this field; the other control ' +
-                       'characters are not.'
-                     : 'A carriage return or newline here would reach a response ' +
-                       'header, a log line or a directory query as a second ' +
-                       'instruction rather than as text.'));
+                     ? 'A line break is allowed in this field; the other ' +
+                       'control characters are not.'
+                     : 'A carriage return or newline here would reach a ' +
+                       'response header, a log line or a directory query as ' +
+                       'a second instruction rather than as text.'));
   }
+  log.debug("Leaving scalar().");
   return { ok: true, value: text };
 }
 
@@ -284,14 +301,17 @@ function scalar(value, field, allowText) {
 // against silently accepting a repeat that was not.
 // ---------------------------------------------------------------------------
 function isArraySchema(schema) {
+  log.debug("Entering isArraySchema().");
   let current = schema;
   for (let depth = 0; depth < 8 && current; depth++) {
     const def = current._def || current.def;
     if (!def) {
+      log.debug("Leaving isArraySchema().");
       return false;
     }
     const kind = def.typeName || def.type;
     if (kind === 'ZodArray' || kind === 'array') {
+      log.debug("Leaving isArraySchema().");
       return true;
     }
     const inner = def.innerType || def.schema;
@@ -299,8 +319,10 @@ function isArraySchema(schema) {
       current = inner;
       continue;
     }
+    log.debug("Leaving isArraySchema().");
     return false;
   }
+  log.debug("Leaving isArraySchema().");
   return false;
 }
 
@@ -331,7 +353,8 @@ function flatten(input, shape, allowText) {
       return refusal('polluting-key', key,
                      'the parameter name "' + key + '" is refused. It is a ' +
                      'property of every object in javascript, and a request ' +
-                     'that sets it is not asking for anything this service offers.');
+                     'that sets it is not asking for anything this service ' +
+                     'offers.');
     }
     const declared = shape ? shape[key] : undefined;
     const repeats = declared ? isArraySchema(declared) : false;
@@ -342,7 +365,8 @@ function flatten(input, shape, allowText) {
       for (let j = 0; j < list.length; j++) {
         const one = scalar(list[j], key, allowText);
         if (!one.ok) {
-          log.debug("Leaving flatten(). An element of a repeated parameter was refused.");
+          log.debug("Leaving flatten(). An element of a repeated parameter " +
+                    "was refused.");
           return one;
         }
         if (one.value !== undefined) {
@@ -379,7 +403,8 @@ function fromZod(error, where) {
   if (!issues.length) {
     log.debug("Leaving fromZod(). No issue was reported.");
     return refusal('invalid', '(request)',
-                   'the ' + where + ' did not validate and no reason was given.');
+                   'the ' + where +
+                   ' did not validate and no reason was given.');
   }
   const first = issues[0];
   const path = Array.isArray(first.path) ? first.path : [];
@@ -423,7 +448,8 @@ function check(req, where, schema) {
   const parsed = schema.safeParse(flat.value);
   if (!parsed.success) {
     const why = fromZod(parsed.error, where);
-    log.debug("Leaving check(). The schema refused: " + why.code + " " + why.field);
+    log.debug("Leaving check(). The schema refused: " + why.code + " " +
+              why.field);
     return why;
   }
   log.debug("Leaving check(). Accepted.");
@@ -455,13 +481,15 @@ function checkParsed(value, where, schema) {
   const shape = schema && schema.shape ? schema.shape : undefined;
   const flat = flatten(value, shape, where === 'body');
   if (!flat.ok) {
-    log.debug("Leaving checkParsed(). The input was refused before the schema ran.");
+    log.debug("Leaving checkParsed(). The input was refused before the " +
+              "schema ran.");
     return flat;
   }
   const parsed = schema.safeParse(flat.value);
   if (!parsed.success) {
     const why = fromZod(parsed.error, where);
-    log.debug("Leaving checkParsed(). The schema refused: " + why.code + " " + why.field);
+    log.debug("Leaving checkParsed(). The schema refused: " + why.code + " " +
+              why.field);
     return why;
   }
   log.debug("Leaving checkParsed(). Accepted.");
@@ -473,6 +501,8 @@ function checkParsed(value, where, schema) {
 // schema is still being written, so that the type-confusion class is closed
 // everywhere before the per-endpoint work is finished.
 function scalars(req, where) {
+  log.debug("Entering scalars().");
+  log.debug("Leaving scalars().");
   return flatten(req ? req[where] : undefined, undefined, where === 'body');
 }
 
@@ -494,11 +524,11 @@ function scalars(req, where) {
 // So this walks the document instead and asserts only the things that are true
 // of ANY JSON this service accepts, whatever its shape:
 //
-//   * NO POLLUTING KEY, at any depth. This is the one that matters. `JSON.parse`
-//     produces a real own `__proto__` property, and a registration document is
-//     merged into a record — `applications.js` rebuilds a client from the stored
-//     document and then overwrites members from attributes — so the ingredient
-//     and the recipe are both present here.
+//   * NO POLLUTING KEY, at any depth. This is the one that matters.
+//     `JSON.parse` produces a real own `__proto__` property, and a registration
+//     document is merged into a record — `applications.js` rebuilds a client
+//     from the stored document and then overwrites members from attributes — so
+//     the ingredient and the recipe are both present here.
 //   * A BOUNDED DEPTH, because a deeply nested document is a stack overflow in
 //     whatever walks it next, and nothing this service accepts is deep.
 //   * A BOUNDED KEY COUNT, for the same reason a field has a length cap: the
@@ -518,7 +548,9 @@ function checkDocument(value, where, opts) {
   let bad = null;
 
   const walk = function (node, depth, path) {
+    log.debug("Entering walk().");
     if (bad) {
+      log.debug("Leaving walk().");
       return;
     }
     if (depth > maxDepth) {
@@ -526,15 +558,18 @@ function checkDocument(value, where, opts) {
                     'the ' + where + ' is nested more than ' + maxDepth +
                     ' levels deep. Nothing this service accepts is, and what ' +
                     'reads it next would recurse as far as the document says.');
+      log.debug("Leaving walk().");
       return;
     }
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length && !bad; i++) {
         walk(node[i], depth + 1, path);
       }
+      log.debug("Leaving walk().");
       return;
     }
     if (node === null || typeof node !== 'object') {
+      log.debug("Leaving walk().");
       return;
     }
     const names = Object.keys(node);
@@ -545,18 +580,22 @@ function checkDocument(value, where, opts) {
         bad = refusal('too-many-keys', path || '(document)',
                       'the ' + where + ' carries more than ' + maxKeys +
                       ' members.');
+        log.debug("Leaving walk().");
         return;
       }
       if (POLLUTING_KEYS.indexOf(name) >= 0) {
         bad = refusal('polluting-key', name,
                       'the ' + where + ' carries a member named "' + name +
-                      '"' + (path ? ' under "' + path + '"' : '') + '. It is a ' +
-                      'property of every object in javascript, and a document ' +
-                      'that sets it is not describing anything this service offers.');
+                      '"' + (path ? ' under "' + path + '"' : '') + '. It is ' +
+                      'a property of every object in javascript, and a ' +
+                      'document that sets it is not describing anything this ' +
+                      'service offers.');
+        log.debug("Leaving walk().");
         return;
       }
       walk(node[name], depth + 1, path ? path + '.' + name : name);
     }
+    log.debug("Leaving walk().");
   };
 
   walk(value, 0, '');
@@ -632,6 +671,8 @@ function checkDocument(value, where, opts) {
 // parsed. Both are covered by the per-endpoint schemas.
 // ---------------------------------------------------------------------------
 function guard() {
+  log.debug("Entering guard().");
+  log.debug("Leaving guard().");
   return function (req, res, next) {
     log.debug("Entering the validation guard.");
     const query = req.query;
@@ -643,10 +684,12 @@ function guard() {
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       let why = null;
+      let code = '';
       if (POLLUTING_KEYS.indexOf(key) >= 0) {
+        code = 'STS-HTTP-0010';
         why = refusal('polluting-key', key,
-                      'the parameter name "' + key + '" is refused everywhere ' +
-                      'in this service.');
+                      'the parameter name "' + key + '" is refused ' +
+                      'everywhere in this service.');
       } else {
         // A repeat is NOT refused here (see above), so each value of one is
         // checked on its own. `flatten()` cannot be reused: it would refuse the
@@ -655,18 +698,23 @@ function guard() {
         for (let j = 0; j < values.length && !why; j++) {
           const value = values[j];
           if (typeof value === 'string' && CONTROL_STRICT.test(value)) {
+            code = 'STS-HTTP-0011';
             why = refusal('control-character', key,
                           'the value of "' + key + '" contains a control ' +
-                          'character. A carriage return or newline in a query ' +
-                          'parameter reaches a response header, a log line or ' +
-                          'a directory query as a second instruction rather ' +
-                          'than as text.');
+                          'character. A carriage return or newline in a ' +
+                          'query parameter reaches a response header, a log ' +
+                          'line or a directory query as a second instruction ' +
+                          'rather than as text.');
           }
         }
       }
       if (why) {
         log.warn('validation: refused a request to ' + req.method + ' ' +
-                 (req.path || req.url) + ' — ' + why.code + ' on "' + why.field + '".');
+                 (req.path || req.url) + ' — ' + why.code + ' on "' +
+                 why.field + '".');
+        errorCodes.mark(res,
+                        code === 'STS-HTTP-0010' ? 'STS-HTTP-0010' :
+                        'STS-HTTP-0011');
         res.status(400).type('text/plain').send(
           'Bad Request: ' + why.detail + '\n\n' +
           'This is refused before any endpoint sees it, in development mode ' +
@@ -676,7 +724,8 @@ function guard() {
         return undefined;
       }
     }
-    log.debug("Leaving the validation guard. " + keys.length + " parameter(s) passed.");
+    log.debug("Leaving the validation guard. " + keys.length + " " +
+        "parameter(s) passed.");
     return next();
   };
 }
@@ -748,9 +797,11 @@ function parseXml(xml, what, opts) {
   try {
     const parser = new DOMParser({
       onError: function (level, message) {
+        log.debug("Entering onError().");
         if (level === 'error' || level === 'fatalError') {
           errors.push(String(message));
         }
+        log.debug("Leaving onError().");
       }
     });
     doc = parser.parseFromString(text, 'text/xml');
@@ -769,7 +820,8 @@ function parseXml(xml, what, opts) {
   if (!doc || !doc.documentElement) {
     log.debug("Leaving parseXml(). No document element.");
     return refusal('malformed', label,
-                   'the ' + label + ' parsed to nothing. It carries no root element.');
+                   'the ' + label + ' parsed to nothing. It carries no root ' +
+                                    'element.');
   }
   log.debug("Leaving parseXml(). Read <" + doc.documentElement.nodeName + ">.");
   return { ok: true, value: doc };
@@ -826,7 +878,8 @@ function inflate(buf, what, opts) {
     // inflate past the ceiling. `code` tells them apart for a caller that
     // cares — ERR_BUFFER_TOO_LARGE is the bomb.
     log.debug("Leaving inflate(). " + (e && e.code ? e.code : 'failed') + ".");
-    return refusal(e && e.code === 'ERR_BUFFER_TOO_LARGE' ? 'too-large' : 'not-deflated',
+    return refusal(e && e.code === 'ERR_BUFFER_TOO_LARGE' ? 'too-large' :
+                   'not-deflated',
                    label,
                    e && e.code === 'ERR_BUFFER_TOO_LARGE'
                      ? 'the ' + label + ' inflates past ' + max + ' bytes. A ' +
@@ -884,13 +937,16 @@ const base64url = z.string().min(1).max(CAP.TOKEN)
 // becomes script in somebody's browser, and this service puts caller-supplied
 // URIs into links and Location headers on a dozen pages.
 // ---------------------------------------------------------------------------
-const DANGEROUS_SCHEMES = ['javascript:', 'data:', 'vbscript:', 'file:', 'blob:'];
+const DANGEROUS_SCHEMES = ['javascript:', 'data:', 'vbscript:', 'file:',
+                           'blob:'];
 
 const uri = z.string().min(1).max(CAP.URI).refine(function (value) {
   let parsed = null;
   try {
     parsed = new URL(value);
   } catch (e) {
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
     // Not a URL at all. The refusal is the answer; the parse error itself says
     // nothing a caller can act on beyond "it did not parse".
     return false;
@@ -898,11 +954,259 @@ const uri = z.string().min(1).max(CAP.URI).refine(function (value) {
   return DANGEROUS_SCHEMES.indexOf(parsed.protocol.toLowerCase()) < 0;
 }, 'must be an absolute URI with a scheme that is not executable');
 
-// A redirection endpoint. RFC 6749 section 3.1.2: absolute, and MUST NOT
-// contain a fragment — the fragment is where the response goes.
-const redirectUri = uri.refine(function (value) {
-  return value.indexOf('#') < 0;
-}, 'must not contain a fragment (RFC 6749 section 3.1.2)');
+// ---------------------------------------------------------------------------
+// A REDIRECTION ENDPOINT IS AN ALLOWLIST, NOT `uri` WITH A FRAGMENT RULE
+// (2026-09-13).
+//
+// `uri` above refuses the five schemes that EXECUTE and accepts every other
+// one, which was harmless while `/oauth2/authorize` and `/oauth2/logout` also
+// demanded `^https?://` at the call site. Native applications need a
+// PRIVATE-USE scheme there (RFC 8252 section 7.1, OAuth 2.1 section 8.4.3 in
+// draft-ietf-oauth-v2-1-16), and removing that regex on top of a blocklist
+// would turn both endpoints into redirectors to every protocol handler an
+// operating system registers — `ms-msdt:`, `search-ms:`, `intent:` — none of
+// which is on any list and each of which has had its day. So the rule is
+// written the other way round, as the two shapes a redirection endpoint may
+// have:
+//
+//   * http or https, WITH A HOST. `https:/cb` parses (the URL parser supplies
+//     the missing slashes) and is nobody's callback.
+//   * a private-use scheme NAMED FOR A DOMAIN IN REVERSE ORDER — which is to
+//     say, containing a period. RFC 8252 section 7.1 makes that a MUST for the
+//     app and OAuth 2.1 section 2.3.1 says a server SHOULD refuse a scheme with
+//     no period, and it is also the rule that catches the commonest mistake:
+//     `localhost:3000/cb`, typed without `http://`, parses as the scheme
+//     `localhost:` and would otherwise be a perfectly valid redirect.
+//
+// And never a fragment (RFC 6749 section 3.1.2): the fragment is where a
+// response goes.
+//
+// `uri` itself is deliberately NOT narrowed: OID4VC's `wallet` parameter reads
+// it, and a wallet's own scheme (`openid-credential-offer:`) has no period in
+// it by specification.
+// ---------------------------------------------------------------------------
+const PRIVATE_USE_SCHEME = /^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$/;
+
+// The reason a value may not be a redirection endpoint, or null. A FUNCTION as
+// well as the zod type below, because three callers have no schema to hand:
+// registration (RFC 7591), the application register's own writes, and a URI
+// read back out of the directory, where an `ldapmodify` put it without passing
+// any of the other two. `privateUse: false` is the http(s)-only reading, which
+// is what a sign-out return address gets while no client vouches for it.
+function redirectUriProblem(value, options) {
+  log.debug("Entering redirectUriProblem().");
+  const opts = options || {};
+  const allowPrivateUse = opts.privateUse !== false;
+  const text = typeof value === 'string' ? value : '';
+  if (!text) {
+    log.debug("Leaving redirectUriProblem(). Empty.");
+    return 'is empty';
+  }
+  if (text.length > CAP.URI) {
+    log.debug("Leaving redirectUriProblem(). Too long.");
+    return 'is longer than ' + CAP.URI + ' characters';
+  }
+  if (text.indexOf('#') >= 0) {
+    log.debug("Leaving redirectUriProblem(). A fragment.");
+    return 'must not contain a fragment (RFC 6749 section 3.1.2)';
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(text);
+  } catch (e) {
+    log.debug("Caught in redirectUriProblem(): " + ((e && e.message) || e));
+    // Not an absolute URI. The refusal below is the whole answer; the parser's
+    // own message names nothing a caller can act on.
+    log.debug("Leaving redirectUriProblem(). Does not parse.");
+    return 'is not an absolute URI';
+  }
+  const scheme = parsed.protocol.toLowerCase().replace(/:$/, '');
+  if (scheme === 'http' || scheme === 'https') {
+    // The TEXT, not the parse: the URL parser supplies missing slashes for a
+    // special scheme, so `https:/cb` comes back with the host `cb` — and the
+    // value compared, stored and sent in a Location header is the text.
+    if (!/^https?:\/\/[^/]/i.test(text) || !parsed.hostname) {
+      log.debug("Leaving redirectUriProblem(). http(s) with no host.");
+      return 'is an ' + scheme + ' URL with no host';
+    }
+    log.debug("Leaving redirectUriProblem(). http(s).");
+    return null;
+  }
+  if (allowPrivateUse && PRIVATE_USE_SCHEME.test(scheme)) {
+    log.debug("Leaving redirectUriProblem(). A private-use scheme.");
+    return null;
+  }
+  log.debug("Leaving redirectUriProblem(). Scheme " + scheme + " refused.");
+  return allowPrivateUse
+    ? 'must be an http or https URL, or a native application\'s private-use ' +
+      'scheme named for a domain in reverse order, such as ' +
+      'com.example.app:/callback (RFC 8252 section 7.1; a scheme with no ' +
+      'period, like "' + scheme + ':", is refused)'
+    : 'must be an http or https URL';
+}
+
+// Whether a value that passed redirectUriProblem() is a private-use one. The
+// authorization endpoint needs the distinction for exactly one decision —
+// `response_mode=form_post` cannot deliver to a protocol handler, which is
+// handed a URL and never a request body — and the sign-out endpoint for
+// another, so it is answered here rather than re-parsed at two call sites.
+function isPrivateUseRedirect(value) {
+  log.debug("Entering isPrivateUseRedirect().");
+  let parsed = null;
+  try {
+    parsed = new URL(String(value || ''));
+  } catch (e) {
+    log.debug("Caught in isPrivateUseRedirect(): " + ((e && e.message) || e));
+    // Not a URI, so not a private-use one; the schema has refused it already.
+    log.debug("Leaving isPrivateUseRedirect(). Does not parse.");
+    return false;
+  }
+  const scheme = parsed.protocol.toLowerCase();
+  log.debug("Leaving isPrivateUseRedirect().");
+  return scheme !== 'http:' && scheme !== 'https:';
+}
+
+// OpenID Connect Front-Channel Logout 1.0's `frontchannel_logout_uri`. It is
+// loaded in an IFRAME on the sign-out page and named in that page's CSP
+// `frame-src`, so http(s) is not a preference here: a browser will not frame a
+// protocol handler, and a value that is not an origin makes the header itself
+// malformed.
+function frontchannelUriProblem(value) {
+  log.debug("Entering frontchannelUriProblem().");
+  const problem = redirectUriProblem(value, { privateUse: false });
+  log.debug("Leaving frontchannelUriProblem().");
+  return problem;
+}
+
+// ---------------------------------------------------------------------------
+// AN ORIGIN, AS CORS COMPARES ONE (2026-09-13).
+//
+// `appCorsOrigin` on an application holds the origins a browser page may call
+// this service from, and `global.corsOrigins` the ones a deployment names as
+// its own. `common/cors.js` compares each with the `Origin` header a browser
+// sent, BY STRING, because that is what the Fetch standard does with
+// `Access-Control-Allow-Origin`: the value echoed must be byte-for-byte the
+// serialised origin (RFC 6454 section 6.1) the browser sent. So a value is
+// held in that serialisation, and two things follow.
+//
+//   * **IT IS NORMALISED WHEN IT IS WRITTEN.** `HTTPS://App.Example.com:443/`
+//     is the origin `https://app.example.com`, and a stored copy in the first
+//     spelling would never match a header in the second. The URL parser does
+//     the work for http and https — case, the default port, an IDN host in its
+//     ASCII form, an IPv6 literal in brackets — and one trailing `/` is
+//     forgiven because it is what a person copying an address out of a
+//     browser's bar pastes.
+//   * **NOTHING BUT AN ORIGIN IS ACCEPTED.** A path, a query, a fragment or a
+//     user name would be silently discarded by the comparison, so an operator
+//     who wrote `https://app.example.com/spa` and believed it meant only that
+//     page would be wrong — refused instead, with the origin it would have
+//     been. A WILDCARD is refused for the same reason: `*` is the value this
+//     rule exists to replace, and `https://*.example.com` is not an origin any
+//     browser sends. And `null` is refused because it is the origin of EVERY
+//     sandboxed frame, `data:` document and local file at once, so allowing it
+//     would allow all of them.
+//
+// A scheme other than http or https is allowed with a host — a browser
+// extension calls from `chrome-extension://<id>` or `moz-extension://<uuid>` —
+// and is lower-cased rather than parsed, because the URL parser gives a
+// non-special scheme the opaque origin `null`.
+// ---------------------------------------------------------------------------
+const ORIGIN_SHAPE = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#\s]+)\/?$/;
+
+// `{ origin, problem }`: the serialised origin, or '' and the reason it is not
+// one. Both halves from one parse, so the refusal and the normalisation cannot
+// disagree about what a value is.
+function readOrigin(value) {
+  log.debug("Entering readOrigin().");
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) {
+    log.debug("Leaving readOrigin(). Empty.");
+    return { origin: '', problem: 'is empty' };
+  }
+  if (text.length > CAP.URI) {
+    log.debug("Leaving readOrigin(). Too long.");
+    return { origin: '', problem: 'is longer than ' + CAP.URI + ' characters' };
+  }
+  if (text.indexOf('*') >= 0) {
+    log.debug("Leaving readOrigin(). A wildcard.");
+    return { origin: '', problem: 'is a wildcard, and CORS here is an ' +
+             'allowlist of exact origins — list each origin a page is ' +
+             'served from' };
+  }
+  if (text.toLowerCase() === 'null') {
+    log.debug("Leaving readOrigin(). The opaque origin.");
+    return { origin: '', problem: 'is the opaque origin, which every ' +
+             'sandboxed frame, data: document and local file shares — ' +
+             'allowing it would allow all of them' };
+  }
+  const shape = ORIGIN_SHAPE.exec(text);
+  if (!shape) {
+    log.debug("Leaving readOrigin(). Not scheme://host[:port].");
+    return { origin: '', problem: 'is not an origin: it must be ' +
+             'scheme://host or scheme://host:port with no path, query or ' +
+             'fragment, such as https://app.example.com' };
+  }
+  if (shape[2].indexOf('@') >= 0) {
+    log.debug("Leaving readOrigin(). A user name.");
+    return { origin: '', problem: 'carries a user name, which an origin ' +
+             'never does' };
+  }
+  const scheme = shape[1].toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') {
+    log.debug("Leaving readOrigin(). A non-special scheme.");
+    return { origin: scheme + '://' + shape[2].toLowerCase(), problem: null };
+  }
+  let parsed = null;
+  try {
+    parsed = new URL(text);
+  } catch (e) {
+    log.debug("Caught in readOrigin(): " + ((e && e.message) || e));
+    // The shape matched and the host did not parse — a bad port or an illegal
+    // character. The refusal is the whole answer.
+    log.debug("Leaving readOrigin(). Does not parse.");
+    return { origin: '', problem: 'is not an origin: its host or port does ' +
+             'not parse' };
+  }
+  if (!parsed.hostname || parsed.origin === 'null') {
+    log.debug("Leaving readOrigin(). No host.");
+    return { origin: '', problem: 'is an ' + scheme + ' origin with no host' };
+  }
+  log.debug("Leaving readOrigin(). origin=" + parsed.origin);
+  return { origin: parsed.origin, problem: null };
+}
+
+// The reason a value may not be held as a CORS origin, or null.
+function originProblem(value) {
+  log.debug("Entering originProblem().");
+  const read = readOrigin(value);
+  log.debug("Leaving originProblem().");
+  return read.problem;
+}
+
+// The value in the serialisation a browser sends, or '' if it is not an
+// origin. What a write stores and what `common/cors.js` compares.
+function normaliseOrigin(value) {
+  log.debug("Entering normaliseOrigin().");
+  const read = readOrigin(value);
+  log.debug("Leaving normaliseOrigin().");
+  return read.problem ? '' : read.origin;
+}
+
+// The zod types over those functions, so an endpoint's schema says it in one
+// word. `superRefine` rather than `refine`, so the refusal carries the reason
+// the function gave instead of one sentence for every way to be wrong.
+function redirectType(options) {
+  log.debug("Entering redirectType().");
+  log.debug("Leaving redirectType().");
+  return z.string().min(1).max(CAP.URI).superRefine(function (value, ctx) {
+    const problem = redirectUriProblem(value, options);
+    if (problem) {
+      ctx.addIssue({ code: 'custom', message: problem });
+    }
+  });
+}
+
+const redirectUri = redirectType({ privateUse: true });
 
 // An http(s) URL this service will DIAL. Narrower than `uri` on purpose: the
 // three outbound requests in this repository (a federation partner, an SSF push
@@ -913,6 +1217,8 @@ const httpUri = z.string().min(1).max(CAP.URI).refine(function (value) {
   try {
     parsed = new URL(value);
   } catch (e) {
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
     // Not a URL; refused for the same reason as `uri` above.
     return false;
   }
@@ -954,12 +1260,16 @@ const flag = z.enum(['true', 'false', 'on', 'off', '1', '0', 'yes', 'no']);
 // parameter is. Coercion is right here and wrong for most things: the value is
 // unambiguously meant to be a number and there is no second reading of "300".
 function integer(min, max) {
+  log.debug("Entering integer().");
+  log.debug("Leaving integer().");
   return z.coerce.number().int().min(min).max(max);
 }
 
 // A value from a closed set this service defines. A thin wrapper so that call
 // sites read as declarations rather than as zod.
 function oneOf(values) {
+  log.debug("Entering oneOf().");
+  log.debug("Leaving oneOf().");
   return z.enum(values);
 }
 
@@ -968,6 +1278,8 @@ function oneOf(values) {
 // greppable: every repeatable parameter in this service is one call to this,
 // and `flatten()` above keys its whole behaviour off the array-ness this makes.
 function repeatable(inner) {
+  log.debug("Entering repeatable().");
+  log.debug("Leaving repeatable().");
   return z.array(inner);
 }
 
@@ -999,6 +1311,8 @@ function repeatable(inner) {
 // all, which is true of very little that arrives from a browser.
 // ---------------------------------------------------------------------------
 function opt(inner) {
+  log.debug("Entering opt().");
+  log.debug("Leaving opt().");
   return z.union([z.literal(''), inner]).optional();
 }
 
@@ -1013,7 +1327,8 @@ function report() {
     unconditional: true,
     modeIndependent: 'Shape is refused in development and product alike. ' +
                      'Existence and credentials remain with mode.js.',
-    repeatedParameters: 'refused unless the schema declares the parameter repeatable',
+    repeatedParameters: 'refused unless the schema declares the parameter ' +
+                        'repeatable',
     unknownParameters: 'stripped, as RFC 6749 section 3.1 requires',
     controlCharacters: 'refused everywhere; tab, newline and carriage return ' +
                        'are allowed in body fields only',
@@ -1037,6 +1352,12 @@ module.exports = {
   refusal: refusal,
   guard: guard,
   report: report,
+  redirectUriProblem: redirectUriProblem,
+  isPrivateUseRedirect: isPrivateUseRedirect,
+  frontchannelUriProblem: frontchannelUriProblem,
+  // CORS origins: the refusal and the serialisation, from one parse.
+  originProblem: originProblem,
+  normaliseOrigin: normaliseOrigin,
 
   // The shared types.
   types: {

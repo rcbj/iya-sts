@@ -47,6 +47,12 @@ const stats = require('../common/admin_stats');
 const userGraph = require('../common/user_graph');
 const map = require('../admin-ui/delegation_map');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'user_graph_signin',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A name no other test and no seed uses, because the register is shared by
 // every file in this run and an assertion about "the sign-in line" has to be
 // about a person with exactly the sign-ins this file gave them.
@@ -66,6 +72,7 @@ const BARE = 'OAuth 2.0';
 // first word is `signed in`. Read out of the emitted SVG rather than off
 // `edgeLabelLines()` directly: the assertion is about what a reader sees.
 function signInLabel(svg) {
+  log.debug("Entering signInLabel().");
   const groups = svg.split('<g>');
   for (let i = 0; i < groups.length; i++) {
     const texts = [];
@@ -76,9 +83,11 @@ function signInLabel(svg) {
       m = re.exec(groups[i]);
     }
     if (texts[0] === 'signed in') {
+      log.debug("Leaving signInLabel().");
       return texts;
     }
   }
+  log.debug("Leaving signInLabel().");
   return null;
 }
 
@@ -86,6 +95,8 @@ function signInLabel(svg) {
 // the multiplication sign a comparison is written with has to come back the
 // way it went in.
 function unescape(text) {
+  log.debug("Entering unescape().");
+  log.debug("Leaving unescape().");
   return String(text)
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
@@ -93,12 +104,15 @@ function unescape(text) {
 
 // Long enough that Date.now() has moved on, which is all this is for.
 function pause() {
+  log.debug("Entering pause().");
+  log.debug("Leaving pause().");
   return new Promise(function (resolve) {
     setTimeout(resolve, 4);
   });
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   t.log.info('one sign-in and two token exchanges, in two families');
   // -----------------------------------------------------------------------
@@ -195,6 +209,7 @@ async function run(t) {
   t.equal(dotted, 1,
           'and exactly one dotted line is drawn — the sign-in line is the ' +
           'only one that is dotted');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

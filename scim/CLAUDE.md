@@ -151,8 +151,9 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    where a client READS which schemes exist, so demanding a credential to fetch
    it means a client must already know the answer to the question it is asking.
 
-   **A CREDENTIAL THAT WAS PRESENTED AND FAILED IS ALWAYS A REFUSAL**, even with
-   `scim.authRequired` off. A client testing its expired-token path must not get
+   **A CREDENTIAL THAT WAS PRESENTED AND FAILED IS ALWAYS A REFUSAL**, and was
+   one even while `scim.authRequired` could turn the requirement off. A client
+   testing its expired-token path must not get
    a 200 because the endpoint would also have accepted nobody.
 
    **THE ServiceProviderConfig PUBLISHES THREE SCHEMES scimmy CANNOT
@@ -300,13 +301,16 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 * **SCIM WRITES INTO THE DIRECTORY AND IS THE ONE SURFACE HERE THAT ASKS WHO IS
   DOING IT.** The `/scim/v2` endpoints create, replace, patch and DELETE
   accounts, so they are the exception to everything above: a credential is
-  REQUIRED (`scim.authRequired`), all six schemes RFC 7644 section 2 names are
+  REQUIRED — unconditionally, in both modes, `mode.gatesScim()` — all six
+  schemes RFC 7644 section 2 names are
   offered, and the OAuth ones must carry `scim:read` or `scim:write` — the first
   scope requirement anywhere in this service. **It is still a turnstile rather
-  than a lock**, which is a different sentence and the one that matters: anybody
-  can get a token with either scope from any grant, any password but `invalid`
-  passes Basic, any username passes Digest with the one shared password, and
-  anybody can register a HOBA key for any name. What it buys is that a client's
+  than a lock** IN DEVELOPMENT MODE, which is a different sentence and the one
+  that matters: anybody can get a token with either scope from any grant, any
+  password but `invalid` passes Basic, any username passes Digest with the one
+  shared password, and anybody can register a HOBA key for any name. **In
+  product mode none of those four halves holds** — see the audit section at the
+  foot of this file. What it buys is that a client's
   401, 403, challenge-response and scope handling can be exercised at all — none
   of which an open endpoint can produce. See rule 6a-ii and `scim_auth.js`.
   **`active: false` DEACTIVATES NOBODY**: it is
@@ -357,8 +361,8 @@ Two things about it are SCIM's own:
   client on the same surface, and keying on the token would give it a second
   row and leave the first until it expired.
 * **An anonymous decision gets no session**, which is not a special case:
-  `scim.authRequired` off, or the open ServiceProviderConfig, means nobody
-  authenticated and a session recording that they had would be untrue.
+  a request that presented nothing — the open ServiceProviderConfig, or, while
+  `scim.authRequired` existed, that setting off — means nobody authenticated and a session recording that they had would be untrue.
 
 **THE POLICY RUNS AFTER THE SCOPE CHECK AND NOT INSTEAD OF IT.** RFC 7644
 section 2's mapping from an authenticated client to an access policy is this
@@ -443,3 +447,138 @@ could zero its own monitoring would make every number on the page a number
 somebody might have zeroed, and the audit log — which is the durable record of
 what SCIM was ASKED to do, with the actor and the target — cannot be reset
 either.
+
+## A FULL DIRECTORY TOOK THE WHOLE PROCESS DOWN (2026-09-13)
+
+A User or Group write refused as `full` (`ldap.maxEntries`) was raised as a
+SCIM error with status **507**. RFC 7644 section 3.12 lists no 507, scimmy's
+`ErrorResponse` refuses to build an error whose status the section does not
+list, and `sendScimError()` is called from a promise's `.catch()` — so the throw
+was an unhandled rejection and node exited. One `POST /scim/v2/Groups` ended
+every protocol on every socket; the suite saw it as the SCIM bulk load dying on
+`other side closed` and the next two jobs on ECONNREFUSED. Two changes:
+
+* **a full directory is 500**, the listed status for a server-side failure, with
+  the directory's own sentence and `STS-LDAP-0007` kept;
+* **`sendScimError()` cannot throw on an off-list status or scimType**: it logs
+  `STS-SCIM-0075` naming the status and the code it was raised with, and sends
+  500 with the same detail. Checked by putting 507 back on the group path —
+  500, the log line, the service still answering.
+
+The HOBA registration's 507 is unaffected: that route answers plain JSON and
+never builds an `ErrorResponse`.
+
+## THE 2026-09-12 AUDIT OF HARD-CODED VALUES, AND WHAT IT CHANGED HERE
+
+`tests/ssf_spiffe_scim_hardening.js` holds every item below.
+
+* **HTTP DIGEST IS NOT OFFERED IN PRODUCT MODE**, whatever `scim.authDigest`
+  says. An RFC 7616 response is a hash over `username:realm:password`, so the
+  server must hold the password or that hash; product mode holds a salted
+  scrypt hash, from which neither can be computed. The only Digest left is
+  every user sharing `scim.digestPassword` — a password printed in the
+  configuration table, authenticating any name to endpoints that delete
+  accounts. Storing H(A1) per person was considered and refused: it is a
+  password-equivalent with no work factor, bound to one realm string. A Digest
+  credential in product is refused with that reason; `describe()` carries
+  `refusedByMode` so an ON setting that is not an offer says why.
+* **THE SHARED PASSWORD IS NO LONGER PRINTED IN A 401** unless
+  `mode.opensTestControls()`. (With Digest off in product that branch is only
+  reachable if the predicates ever diverge; it is the right answer then too.)
+* **HOBA REGISTRATION WAS ACCOUNT TAKEOVER.** `POST /.well-known/hoba/register`
+  let anybody add a key to any account, and a registered key authenticates at
+  `/scim/v2` as that person. Outside development a key may be added to an
+  EXISTING account only by somebody whose sign-on session IS that account
+  (`mode.opensTestControls()`, 403 otherwise), and a registration never CREATES
+  one (`mode.autoCreates()`, 404). **In every mode** a `kid` already registered
+  to another account is refused 409: `entryForHobaKid()` takes the first entry
+  holding a kid, so a duplicate made authentication depend on directory order.
+* **CAPS THAT COULD RE-OPEN A REPLAY.** `scim.maxHobaSeen` (5000) replaces a
+  constant, and the seen store maps each triple to its challenge so that
+  evicting a triple forgets the challenge too — the copied signature is then
+  refused rather than accepted twice. Expired triples go first.
+  `scim.maxDigestNonces` (2000) and `scim.maxHobaChallenges` (2000) are safe to
+  lower for a simpler reason: a forgotten nonce or challenge is refused, never
+  accepted.
+* **`scim.digestMd5`** (true) drops MD5 from the challenges and refuses an MD5
+  credential naming the setting. `DIGEST_ALGORITHMS` stays the table of what the
+  BUILD computes, for the crypto report.
+* **`scim.digestNonceSeconds` and `scim.hobaMaxAgeSeconds` carry `min: 1`** and
+  are read straight through; they were `Number(...) || 300` and `|| 600`, which
+  rewrote a value the table accepted without saying so.
+
+## THE `id` IS THE ENTRY'S `entryUUID` (2026-09-14)
+
+It was the DN, and `README.md`'s *The `id` is the entry's `entryUUID`* records why it was
+and why that lost: RFC 7643 section 3.1's id must never be reassigned, a rename reassigned
+the DN, and once a person's `sub` became `urn:uuid:<entryUUID>` a SCIM id that a rename
+changed would have been the one identifier here that still moved. Five things follow.
+
+* **`scim_map.js`'s `scimIdOf()` reads the id off the entry** (its `entryUUID`, and its DN
+  for an entry with none), so that module still asks the directory nothing.
+* **Member, group and manager values are ids on the wire and DNs in the store.** The
+  handlers translate: `groupResourceFor()` and `groupsOf()` add each DN's id, the Group
+  ingress turns member ids into DNs before writing, and the User ingress does the same for
+  `manager`. A value naming no entry is kept as it was sent — this directory does no
+  referential integrity, as the dangling-member paragraph above says.
+* **A DN presented as an id still resolves**, through the directory's
+  `dnForResourceId()`, for a client that stored one before the change; the resource comes
+  back with its new id.
+* **A rename keeps the id**, which the paragraph beside the PUT handler used to say it
+  would not.
+* The `nameUsableInDn()` refusals stand for a different reason now: the DN is still built
+  from the name, so a name carrying an RFC 4514 special character still gives an entry the
+  other doors cannot name.
+
+`tests/stable_subject.js` section E drives it over HTTP; `sts_directory_bulk_load_scim.js`
+asserts every created id is a UUID and sends them back as member values.
+
+## Several nodes: a create claims its name first (2026-09-14, #46 section 3)
+
+`createHandler()` claims the `userName` (a User) or the `displayName` (a Group)
+across nodes before the resource is written. A create that finds the name
+claimed waits for the release (since 2026-09-15) and then meets the
+directory's own 409 `uniqueness` "already a user called"; it is refused as in
+progress (`STS-LDAP-0092`) only if the name is still claimed after the wait,
+and 500 when the store cannot be asked (`STS-LDAP-0093`). The design is the directory's, in `ldap/CLAUDE.md`,
+*Several nodes: a create claims its name*. **A Bulk create is claimed too since
+2026-09-14**: a BulkRequest's POST operations never pass through
+`createHandler()`, so both ingress handlers are wrapped in `claimingIngress()`,
+which scimmy awaits, and claims for a create the handler did not already claim
+(`req.__scimCreateClaimed`). A lost claim is that operation's own 409 inside the
+Bulk response. `tests/cluster_followups.js` E5 posts two concurrent Bulk creates
+of one `userName` and gets one 201 and one 409 refused by the claim.
+
+## Several nodes: Digest and HOBA state any process can answer (2026-09-14, #46 section 5)
+
+The capability row `scim.challenge-state` is provided by `scim_auth.js`.
+
+* **It was broken inside ONE dispatched container before it was a cluster
+  problem.** `/scim/v2` fans out across request workers (`common/request_pool.js`),
+  and `digestNonces`, `hobaChallenges` and `hobaSeen` were `realms.map()` with no
+  `persist`: a challenge issued by one worker, answered at another, was "not one
+  this server issued" — Digest's `stale=true` with a fresh nonce from THAT
+  worker, and HOBA's `STS-SCIM-0050`. Found by reading, not by a run; the test
+  below reproduces the shape (a nonce that reached this process only as a
+  restored row).
+* **`scim.digestNonces` and `scim.hobaChallenges` are persisted stores now**, so
+  the read barrier carries a challenge to whichever process the answer lands
+  on. The Digest row is `{ at }` only: the nonce COUNTS were a `Set` on the row,
+  which JSON drops and a replicated row would lose to last writer wins. They are
+  a per-process `digestCounts` map (the fast refusal) and `hobaSeen` stays
+  per-process for the same reason.
+* **A nonce count (qop=auth) and a HOBA (kid, challenge, nonce) are SPENT
+  through `cluster/cluster_claims.js`** before the credential is accepted —
+  `authenticateSpent()`, which `scim.js`'s gate calls. The claim runs after the
+  scheme's own checks and BEFORE the session and the policy, so a replay mints no
+  session. `used` is the scheme's replay refusal (`STS-SCIM-0076` Digest,
+  `STS-SCIM-0077` HOBA, a 401 with fresh challenges); a store that cannot be
+  asked is `STS-SCIM-0078`, 500 (RFC 7644 section 3.12 has no 503). A Digest
+  credential without qop spends nothing: RFC 7616 lets that nonce be reused
+  until it expires, as it always could here. `authenticate()` stays synchronous
+  for its in-process callers and spends nothing across processes.
+* `tests/cluster_limits_challenges_retention.js` section C: a nonce another
+  process issued is answered, a count another node spent is refused where the
+  next count is accepted, and a failing claim store refuses. Not run against two
+  live nodes: Digest is not offered in product mode, and a HOBA run needs a
+  signed-in owner to register a key.

@@ -39,7 +39,14 @@ delete process.env.CONFIG_FILE;
 
 const nodeCrypto = require('crypto');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'portal_access',
+  level: process.env.LOG_LEVEL || 'info' });
+
 function run(t) {
+  log.debug("Entering run().");
   require('../common/app');
   require('../authn/authn');
   require('../ldap/ldap_server');
@@ -62,8 +69,10 @@ function run(t) {
   t.log.info('=== two people, both real, both with credentials ===');
   const stats = require('../common/admin_stats');
   const makePerson = function (name) {
+    log.debug("Entering makePerson().");
     stats.recordAuthentication({ presented: name, protocol: 'test',
                                  method: 'a fixture' });
+    log.debug("Leaving makePerson().");
   };
   makePerson(alice);
   makePerson(mallory);
@@ -240,6 +249,7 @@ function run(t) {
   // the cross-test interference this section is placed in process to avoid,
   // and leaving it dirty here would reintroduce it one layer down.
   websecurity.reset();
+  log.debug("Leaving run().");
 }
 
 module.exports = {

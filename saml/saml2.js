@@ -8,8 +8,8 @@
 // Separate from wstrust.js because a SAML assertion is not a WS-Trust concept —
 // WS-Trust merely carries one. These three functions are what a SAML 2.0
 // implementation owes anyone who asks for a token in that format, and the
-// debugger's SAML pages verify their output against an independent reading of the
-// specification.
+// debugger's SAML pages verify their output against an independent reading of
+// the specification.
 //
 // The signature is an enveloped XML Signature over the Assertion with an
 // exclusive canonicalization, and the encryption is XML Encryption with an
@@ -18,7 +18,8 @@
 // with what real identity providers send.
 // ---------------------------------------------------------------------------
 
-const { log, logArtifact, STS, xmlEscape, genId, iso } = require('../common/helpers');
+const { log, logArtifact, STS, xmlEscape, genId,
+        iso } = require('../common/helpers');
 // ---------------------------------------------------------------------------
 // EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE IS IN ONE MODULE SINCE
 // 2026-08-27, and this file is where two of the four families used to live.
@@ -36,10 +37,19 @@ const stsCrypto = require('../common/crypto');
 // saml.issuer, read per assertion rather than captured at require time so
 // that /admin/config can change what the next one says it came from.
 const config = require('../common/config');
-// The custom attributes an admin configured, and the register every assertion is
-// counted in. A library like dpop.js: it registers no route and requires only
-// helpers.js, so it cannot join a cycle with this file.
+// The error-code registry, a leaf; the signing failure below is tagged with its
+// code.
+const errorCodes = require('../common/error_codes');
+// The custom attributes an admin configured, and the register every assertion
+// is counted in. A library like dpop.js: it registers no route and requires
+// only helpers.js, so it cannot join a cycle with this file.
 const stats = require('../common/admin_stats');
+// The configured signature and canonicalization algorithms, and the one reading
+// of how a session authenticated. Both LIBRARIES in this directory that
+// register nothing and require only common/ leaves, so neither can join a
+// cycle with this file. See each one's header.
+const documentSettings = require('./document_settings');
+const authnContext = require('./authn_context');
 // Sign a SAML assertion enveloped (signature after Issuer), like api/server.js.
 function signAssertion(xml) {
   log.debug("Entering signAssertion().");
@@ -47,10 +57,18 @@ function signAssertion(xml) {
   // AFTER the <Issuer>, which is where the SAML 2.0 schema puts a signature on
   // an assertion. The reference is worked out from the root's own `ID` by the
   // signer; passing one here would only be a second place for it to be wrong.
+  //
+  // THE ALGORITHMS ARE THE CONFIGURED ONES (2026-09-12) —
+  // `saml.signatureAlgorithm` and `saml.canonicalizationAlgorithm`. Until then
+  // this call passed neither and the signer's defaults decided, which is a
+  // choice no page could report.
+  const how = documentSettings.signatureOptions();
   const signed = stsCrypto.signXml(xml, {
     privateKeyPem: STS.privateKeyPem,
     certPem: STS.certPem,
     placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
+    sigAlg: how.sigAlg,
+    c14nAlg: how.c14nAlg,
     what: 'SAML 2.0 assertion'
   });
   logArtifact('SAML assertion', 'after signing', signed);
@@ -75,18 +93,21 @@ function signAssertion(xml) {
 // the person is in four.
 // ---------------------------------------------------------------------------
 function attributeValuesOf(a) {
+  log.debug("Entering attributeValuesOf().");
   const values = Array.isArray(a.values) ? a.values : [a.value];
+  log.debug("Leaving attributeValuesOf().");
   return values.map(function (value) {
-    return '<saml:AttributeValue>' + xmlEscape(String(value == null ? '' : value)) +
+    return '<saml:AttributeValue>' +
+           xmlEscape(String(value == null ? '' : value)) +
            '</saml:AttributeValue>';
   }).join('');
 }
 
-// The optional fourth argument is what WS-Federation needs and WS-Trust does not,
-// and it is an argument rather than a second builder on purpose: one assertion
-// writer means one place where the element order, the namespace and the signature
-// location are decided, and those are what a relying party's parser is strict
-// about. Omit it and this produces exactly what it always did.
+// The optional fourth argument is what WS-Federation needs and WS-Trust does
+// not, and it is an argument rather than a second builder on purpose: one
+// assertion writer means one place where the element order, the namespace and
+// the signature location are decided, and those are what a relying party's
+// parser is strict about. Omit it and this produces exactly what it always did.
 //
 //   authnContextClassRef  how the End-User authenticated. WS-Federation's `wauth`
 //                         asks for a method and the session records which one was
@@ -153,48 +174,61 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
   const id = genId();
   const now = iso(0);
   // The validity window, WIDENED AT BOTH ENDS by saml.clockSkewS. `now` is
-  // untouched and is what IssueInstant and the default AuthnInstant carry: those
-  // two state when this service actually did something, and backdating them
-  // would be a lie about an event rather than an allowance about a clock. Only
-  // the Conditions move. With the setting at its default 0 this is byte-for-byte
-  // what this function emitted before the setting existed, which is the property
-  // that keeps every existing caller and every recorded assertion unchanged.
+  // untouched and is what IssueInstant and the default AuthnInstant carry:
+  // those two state when this service actually did something, and backdating
+  // them would be a lie about an event rather than an allowance about a clock.
+  // Only the Conditions move. With the setting at its default 0 this is
+  // byte-for-byte what this function emitted before the setting existed, which
+  // is the property that keeps every existing caller and every recorded
+  // assertion unchanged.
   const skewS = Math.max(0, Number(config.value('saml.clockSkewS')) || 0);
   const notBefore = iso(-skewS / 60);
   const exp = iso((lifetimeMin > 0 ? lifetimeMin : 60) + skewS / 60);
   const audienceEl = audience
-    ? '<saml:AudienceRestriction><saml:Audience>' + xmlEscape(audience) + '</saml:Audience></saml:AudienceRestriction>'
+    ? '<saml:AudienceRestriction><saml:Audience>' + xmlEscape(audience) +
+      '</saml:Audience></saml:AudienceRestriction>'
     : '';
+  // THE DEFAULT IS `unspecified` SINCE 2026-09-12, and it was
+  // PasswordProtectedTransport. A caller that names no class has not said a
+  // password was used, and this builder putting one in the AuthnStatement on
+  // its behalf is how WS-Trust came to assert a password sign-in for an
+  // anonymous request. Every caller in this service now passes the class
+  // `saml/authn_context.js` computed; the default is what an unknown caller
+  // gets, and it overstates nothing.
   const authnContextClassRef = opts.authnContextClassRef ||
-    'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport';
+                               authnContext.AC_UNSPECIFIED;
   // Who signed it. Read once, because it appears in the Issuer element and in
   // the default `issuedBy` attribute, and two reads of a runtime-changeable
   // setting inside one document can disagree with each other.
   const issuer = opts.issuer || config.value('saml.issuer');
-  const attributes = (opts.attributes && opts.attributes.length) ? opts.attributes : [
+  const attributes = (opts.attributes && opts.attributes.length) ?
+                      opts.attributes : [
     { name: 'name', value: subject },
     { name: 'issuedBy', value: issuer }
   ];
-  // Whatever the admin console was told to add, APPENDED to the above rather than
-  // replacing it — and appended in both branches, so a WS-Federation sign-in
-  // (which passes its own claim list) and a WS-Trust Issue (which does not) both
-  // carry them. A configured attribute that displaced the claim a relying party
-  // keys off would break the sign-in and look like a bug in the relying party.
-  const custom = stats.samlAttributes('saml2', { subject: subject, audience: audience });
-  // Appended, and FILTERED against what is already there by name. The rule is the
-  // one the JWT builders follow — the protocol's own claims win — but it has to be
-  // written as a filter rather than as an assignment order, because an assertion
-  // is a list of elements and not an object: a duplicate name does not overwrite
-  // anything, it produces two <Attribute> elements with one name, and a relying
-  // party reading the first sees whichever this function happened to emit first.
-  // It became reachable by ticking a box rather than by typing a name when
-  // /admin/claims grew its directory attributes: `cn` becomes the claim `name`,
-  // and `name` is one of the two attributes above.
+  // Whatever the admin console was told to add, APPENDED to the above rather
+  // than replacing it — and appended in both branches, so a WS-Federation
+  // sign-in (which passes its own claim list) and a WS-Trust Issue (which does
+  // not) both carry them. A configured attribute that displaced the claim a
+  // relying party keys off would break the sign-in and look like a bug in the
+  // relying party.
+  const custom = stats.samlAttributes('saml2',
+                                      { subject: subject, audience: audience });
+  // Appended, and FILTERED against what is already there by name. The rule is
+  // the one the JWT builders follow — the protocol's own claims win — but it
+  // has to be written as a filter rather than as an assignment order, because
+  // an assertion is a list of elements and not an object: a duplicate name does
+  // not overwrite anything, it produces two <Attribute> elements with one name,
+  // and a relying party reading the first sees whichever this function happened
+  // to emit first. It became reachable by ticking a box rather than by typing a
+  // name when /admin/claims grew its directory attributes: `cn` becomes the
+  // claim `name`, and `name` is one of the two attributes above.
   const names = new Set(attributes.map(function (a) { return a.name; }));
   const configured = custom.filter(function (a) { return !names.has(a.name); });
   const attributeEls = attributes.concat(configured).map(function (a) {
     return '<saml:Attribute Name="' + xmlEscape(a.name) + '"' +
-      (a.nameFormat ? ' NameFormat="' + xmlEscape(a.nameFormat) + '"' : '') + '>' +
+      (a.nameFormat ? ' NameFormat="' + xmlEscape(a.nameFormat) + '"' : '') +
+      '>' +
       attributeValuesOf(a) + '</saml:Attribute>';
   }).join('');
   // The NameID, and the one thing to know about the default: `unspecified` is
@@ -206,18 +240,22 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
   const nameIdValue = opts.nameIdValue == null ? subject : opts.nameIdValue;
   // <SubjectConfirmationData>, which the Web Browser SSO profile requires and
   // the other two callers have no request to answer. Built as an EMPTY-ELEMENT
-  // SubjectConfirmation when there is nothing to say, exactly as before, because
-  // that is what every existing caller's output has been and a self-closing
-  // element is not the same document as one with an empty child.
+  // SubjectConfirmation when there is nothing to say, exactly as before,
+  // because that is what every existing caller's output has been and a
+  // self-closing element is not the same document as one with an empty child.
   const scd = opts.subjectConfirmation;
   const confirmation = scd
-    ? '<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">' +
+    ? '<saml:SubjectConfirmation ' +
+        'Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">' +
         '<saml:SubjectConfirmationData' +
-        (scd.notOnOrAfter ? ' NotOnOrAfter="' + xmlEscape(scd.notOnOrAfter) + '"' : '') +
+        (scd.notOnOrAfter ?
+         ' NotOnOrAfter="' + xmlEscape(scd.notOnOrAfter) + '"' : '') +
         (scd.recipient ? ' Recipient="' + xmlEscape(scd.recipient) + '"' : '') +
-        (scd.inResponseTo ? ' InResponseTo="' + xmlEscape(scd.inResponseTo) + '"' : '') +
+        (scd.inResponseTo ?
+         ' InResponseTo="' + xmlEscape(scd.inResponseTo) + '"' : '') +
         '/></saml:SubjectConfirmation>'
-    : '<saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"/>';
+    : '<saml:SubjectConfirmation ' +
+      'Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"/>';
   const sessionIndex = opts.sessionIndex || id;
   const authnInstant = opts.authnInstant || now;
   const xml =
@@ -227,41 +265,49 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
       '<saml:Subject><saml:NameID Format="' + xmlEscape(nameIdFormat) + '">' +
         xmlEscape(nameIdValue) + '</saml:NameID>' +
       confirmation + '</saml:Subject>' +
-      '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp + '">' + audienceEl + '</saml:Conditions>' +
-      '<saml:AuthnStatement AuthnInstant="' + xmlEscape(authnInstant) + '" SessionIndex="' +
+      '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
+      '">' + audienceEl + '</saml:Conditions><saml:AuthnStatement ' +
+      'AuthnInstant="' + xmlEscape(authnInstant) + '" ' +
+          'SessionIndex="' +
         xmlEscape(sessionIndex) + '">' +
       '<saml:AuthnContext><saml:AuthnContextClassRef>' +
         xmlEscape(authnContextClassRef) +
       '</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement>' +
-      '<saml:AttributeStatement>' + attributeEls + '</saml:AttributeStatement>' +
-    '</saml:Assertion>';
+      '<saml:AttributeStatement>' + attributeEls +
+      '</saml:AttributeStatement></saml:Assertion>';
   // Counted here rather than at the call sites: WS-Trust and WS-Federation both
-  // come through this function, so this counts every SAML 2.0 assertion instead of
-  // every one somebody remembered to count. `exp` is the Conditions/NotOnOrAfter
-  // already computed above, which is what makes the console able to say how many
-  // are still valid without re-parsing anything.
-  const record = stats.recordAssertion('2.0', { id: id, subject: subject, audience: audience,
-                                                expiresAt: Date.parse(exp) || 0 });
+  // come through this function, so this counts every SAML 2.0 assertion instead
+  // of every one somebody remembered to count. `exp` is the
+  // Conditions/NotOnOrAfter already computed above, which is what makes the
+  // console able to say how many are still valid without re-parsing anything.
+  const record = stats.recordAssertion('2.0',
+                                       { id: id, subject: subject,
+                                                audience: audience,
+                                                expiresAt: Date.parse(exp) ||
+                                                    0 });
   // `sign: false` is a state, not a failure — see the option's note above — so
   // the record is corrected here for the same reason it is corrected in the
   // catch below: the console shows whether an assertion was signed, and an
   // unsigned one is the single most useful thing that column can say.
   if (opts.sign === false) {
     record.signed = false;
-    log.debug("Leaving buildSamlAssertion(). Unsigned, because the caller asked for that.");
+    log.debug("Leaving buildSamlAssertion(). Unsigned, because the caller " +
+              "asked for that.");
     return xml;
   }
   try {
     log.debug("Leaving buildSamlAssertion().");
     return signAssertion(xml);
   } catch (e) {
-    // The record is corrected rather than left as it was, because the console now
-    // SHOWS whether an assertion was signed and an unsigned one is the single most
-    // useful thing that column can say. Counting it as signed because it was
-    // counted before the attempt would be a page that agrees with itself and not
-    // with what went out.
+    // The record is corrected rather than left as it was, because the console
+    // now SHOWS whether an assertion was signed and an unsigned one is the
+    // single most useful thing that column can say. Counting it as signed
+    // because it was counted before the attempt would be a page that agrees
+    // with itself and not with what went out.
     record.signed = false;
-    log.error('sign failed, returning unsigned: ' + e.message);
+    log.error(errorCodes.tag('STS-SAML-0023') + 'sign failed, returning ' +
+                                                'unsigned: ' + e.message);
+    log.debug("Leaving buildSamlAssertion().");
     return xml;
   }
 }
@@ -281,7 +327,8 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
 // the two produce byte-compatible documents so there was no interop gap to
 // close, and this one answers rather than throwing, checks the unwrapped key's
 // LENGTH, parses the plaintext before calling CBC a success, and tells a
-// NamespaceError apart from a wrong certificate. Those messages are the product.
+// NamespaceError apart from a wrong certificate. Those messages are the
+// product.
 //
 // The re-exports below are not a compatibility shim to be removed later: an
 // assertion is what gets encrypted, so `saml2.encryptAssertion()` is the name
@@ -295,16 +342,22 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
 // `common/crypto.js` cannot reach `logArtifact()` itself — helpers.js requires
 // that file, so requiring it back would close a cycle.
 function encryptElement(xml, certPem, opts) {
+  log.debug("Entering encryptElement().");
+  log.debug("Leaving encryptElement().");
   return stsCrypto.encryptElement(xml, certPem,
     Object.assign({}, opts, { logArtifact: logArtifact }));
 }
 
 function encryptAssertion(assertionXml, certPem, opts) {
+  log.debug("Entering encryptAssertion().");
+  log.debug("Leaving encryptAssertion().");
   return stsCrypto.encryptAssertion(assertionXml, certPem,
     Object.assign({}, opts, { logArtifact: logArtifact }));
 }
 
 function decryptElement(xml, privateKeyPem, opts) {
+  log.debug("Entering decryptElement().");
+  log.debug("Leaving decryptElement().");
   return stsCrypto.decryptElement(xml, privateKeyPem,
     Object.assign({}, opts, { logArtifact: logArtifact }));
 }

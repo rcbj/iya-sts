@@ -38,6 +38,12 @@ const nodeCrypto = require('crypto');
 
 const crypto = require('../common/crypto');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'keystore',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A directory of its own per run, removed at the end. The KEK file lives in it
 // too, which is not how a deployment would do it — the whole point of a KEK is
 // that it is somewhere the ciphertext is not — but a test that put them apart
@@ -50,8 +56,10 @@ const crypto = require('../common/crypto');
 // is the ordinary shape of this mistake: the error names the file rather than
 // the lifetime.
 async function withTempDir(fn) {
+  log.debug("Entering withTempDir().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-keystore-'));
   try {
+    log.debug("Leaving withTempDir().");
     return await fn(dir);
   } finally {
     try {
@@ -69,26 +77,35 @@ async function withTempDir(fn) {
 // against a running service by the persistence job; what this needs is
 // something that keeps rows so the round trip can be made twice.
 function fakeStore() {
+  log.debug("Entering fakeStore().");
   const rows = new Map();
+  log.debug("Leaving fakeStore().");
   return {
     rows: rows,
     loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
       return Promise.resolve(Array.from(rows.entries()).map(function (pair) {
         return { realm: pair[0], material: pair[1] };
       }));
     },
     saveKeys: function (realm, material) {
+      log.debug("Entering saveKeys().");
       rows.set(realm, material);
+      log.debug("Leaving saveKeys().");
       return Promise.resolve();
     },
     deleteKeys: function (realm) {
+      log.debug("Entering deleteKeys().");
       rows.delete(realm);
+      log.debug("Leaving deleteKeys().");
       return Promise.resolve();
     }
   };
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   // 1. THE ENCRYPTION. Everything else rests on these four.
   // -----------------------------------------------------------------------
@@ -102,8 +119,8 @@ async function run(t) {
   t.check(sealed.indexOf(secret) < 0,
           'AND THE PLAINTEXT IS NOT IN THE STORED FORM, which is the whole ' +
           'point and is worth asserting rather than assuming: a bug that ' +
-          'stored the value beside its ciphertext would pass every round-trip ' +
-          'check ever written',
+          'stored the value beside its ciphertext would pass every ' +
+          'round-trip check ever written',
           sealed.slice(0, 40));
   t.check(crypto.isEncryptedWithKek(sealed) &&
           !crypto.isEncryptedWithKek('plain text'),
@@ -114,6 +131,7 @@ async function run(t) {
   try {
     crypto.decryptWithKek(nodeCrypto.randomBytes(32), sealed);
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedWrongKey = true;
   }
   t.check(refusedWrongKey,
@@ -128,6 +146,7 @@ async function run(t) {
   try {
     crypto.decryptWithKek(kek, sealed.slice(0, sealed.length - 8) + 'AAAAAAAA');
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedTampering = true;
   }
   t.check(refusedTampering,
@@ -141,6 +160,7 @@ async function run(t) {
   try {
     crypto.kekBytes('too-short');
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedShort = true;
   }
   t.check(refusedShort,
@@ -233,6 +253,65 @@ async function run(t) {
             'separates a product from a mock');
 
     // -------------------------------------------------------------------
+    // **AND SO DOES THE POST-QUANTUM HALF, WHICH IT DID NOT UNTIL
+    // 2026-09-12.**
+    //
+    // `serialise()` has written these since 2026-09-07 and `deserialise()`
+    // has read them back the whole time — and the RESTORED key set threw them
+    // away, because `helpers.js`'s `lazyKeySet()` had nowhere to get them
+    // from. Nothing failed: the process generated eleven more, offered them
+    // to its siblings, was refused because another process had got there
+    // first, and went on signing with its own.
+    //
+    // **MEASURED IN A DISPATCHED STACK**: three workers publishing three
+    // different ML-DSA and SLH-DSA kids for one realm, so a UserInfo response
+    // signed by one could not be verified against the JWKS served by another.
+    //
+    // Asserted through `privateMaterialFor()` rather than by signing,
+    // because what broke is the RESTORE and signing would only prove that
+    // SOME key exists — which it did, eleven times over, and that was the
+    // bug.
+    // -------------------------------------------------------------------
+    const warmed = await helpers.warmPqKeys('');
+    t.check(Array.isArray(warmed) && warmed.length > 0,
+            'the realm has a post-quantum key set at all',
+            String(warmed && warmed.length) + ' key(s)');
+    const warmedKids = (warmed || []).map(function (one) {
+      return one.publicJwk && one.publicJwk.kid;
+    }).join(',');
+    await new Promise(function (r) { setTimeout(r, 50); });
+
+    keystore.reset();
+    keystore.setStore(store);
+    await keystore.start();
+    helpers.resetStsKeys();
+    const restoredPq = helpers.STS.pqKeys || [];
+    t.equal(restoredPq.map(function (one) {
+              return one.publicJwk && one.publicJwk.kid;
+            }).join(','), warmedKids,
+            'THE POST-QUANTUM KEYS COME BACK TOO — every process that ' +
+            'restores a realm from the store publishes the same ML-DSA and ' +
+            'SLH-DSA keys, which is what stops one worker\'s signature ' +
+            'being unverifiable against another worker\'s JWKS');
+    // **AS BYTES, AND THE KIDS ABOVE AGREED WHILE THESE DID NOT.** A stored
+    // post-quantum private key is base64 in the blob and raw bytes in a key
+    // set, and the first version of the restore handed the STRING on: every
+    // kid matched, the JWKS was right, and the first signature answered *an
+    // ML-DSA "priv" is the 32-byte seed of RFC 9964 section 3.2; this one is
+    // 44 bytes* — 44 being the length of 32 bytes in base64. A comparison of
+    // public names cannot see that, which is why this assertion is about the
+    // private half.
+    const firstPq = restoredPq[0] || {};
+    t.check(Buffer.isBuffer(firstPq.privateKey),
+            'and as BYTES rather than as the base64 the blob holds them in — ' +
+            'the kid matches either way and only the signature does not',
+            typeof firstPq.privateKey + ' of length ' +
+            String(firstPq.privateKey && firstPq.privateKey.length));
+    t.equal((firstPq.privateKey || '').length,
+            ((warmed[0] || {}).privateKey || '').length,
+            'the same number of bytes the generated key had');
+
+    // -------------------------------------------------------------------
     // 3. ROTATION, which is destructive and has to be.
     // -------------------------------------------------------------------
     t.log.info('=== rotation ===');
@@ -259,9 +338,21 @@ async function run(t) {
     delete process.env.STS_KEYS_KEK_PROVIDER;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
-    keystore.setStore({ loadKeys: function () { return Promise.resolve([]); },
-                        saveKeys: function () { return Promise.resolve(); },
-                        deleteKeys: function () { return Promise.resolve(); } });
+    keystore.setStore({ loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
+      return Promise.resolve([]);
+    },
+                        saveKeys: function () {
+                          log.debug("Entering saveKeys().");
+                          log.debug("Leaving saveKeys().");
+                          return Promise.resolve();
+                        },
+                        deleteKeys: function () {
+                          log.debug("Entering deleteKeys().");
+                          log.debug("Leaving deleteKeys().");
+                          return Promise.resolve();
+                        } });
     helpers.resetStsKeys();
   });
 
@@ -300,7 +391,8 @@ async function run(t) {
     process.env.STS_KEYS_SOURCE = 'persisted';
     process.env.STS_KEYS_KEK_PROVIDER = 'file';
     process.env.STS_KEYS_KEK_FILE = kekFile;
-    keystore.setStore(fakeStore());
+    const store = fakeStore();
+    keystore.setStore(store);
     await keystore.start();
     t.equal(keystore.persists(), true,
             'this section is only about the persisting case — the other one ' +
@@ -355,13 +447,71 @@ async function run(t) {
             'property the old early-return was really protecting: sharing ' +
             'must not stop a product service persisting its keys');
 
+    // -------------------------------------------------------------------
+    // **LOSING THE RACE HAS TO REACH THE STORED SET, AND UNTIL 2026-09-12 IT
+    // DID NOT.** Everything above is the WINNER's side of the channel; this
+    // is the loser's. A process that generated a realm's keys, wrote them to
+    // `sts_keys` and is then told another process got there first drops its
+    // CACHED set — and `helpers.js` asks `storedFor()` FIRST, which is the
+    // ordering the block above argues for, so it rebuilt from its own row and
+    // went on signing with what it had made. The adoption logged as a success
+    // and reversed itself on the next property read.
+    //
+    // Measured on a dispatched stack with `keys.source=persisted`: a realm
+    // created at runtime had FOUR key sets in four processes, three generated
+    // within 43ms of each other and each written down, so `/oauth2/jwks`
+    // answered a different key per worker. It was found as an "intermittent"
+    // OAEP failure in `tests/vendored/sts_jwt_bearer_grant.js`, which encrypts
+    // to the key one worker publishes and posts to whichever answers.
+    //
+    // The winning blob is the held one with a DIFFERENT certificate rather
+    // than a second generated key set, and that is the right stand-in: the
+    // certificate is what `publishShared()` compares to tell an enrichment
+    // from a race, so it is the identity of a set at this layer.
+    // -------------------------------------------------------------------
+    const mine = keystore.storedFor('default');
+    const winner = Object.assign({}, mine, {
+      certB64: 'WINNING-CERTIFICATE',
+      createdAt: (mine.createdAt || Date.now()) + 1
+    });
+    const wroteBefore = store.rows.get('default');
+    keystore.adoptShared('default', winner);
+    const after = keystore.storedFor('default');
+    // The write is QUEUED — `hold()` seals synchronously and hands the store
+    // a promise — so the row has not moved until the microtask queue has run.
+    // Awaited rather than asserted optimistically, for the reason every other
+    // timing assertion in this repository is: a check that happens to pass on
+    // a fast machine is not a check.
+    await new Promise(function (resolve) { setImmediate(resolve); });
+    t.equal(after && after.certB64, 'WINNING-CERTIFICATE',
+            'ADOPTING ANOTHER PROCESS\'S KEY SET REPLACES THE STORED ONE — ' +
+            'without this the loser rebuilds from its own row and the ' +
+            'adoption is a no-op that logged as a success');
+    t.check(store.rows.get('default') !== wroteBefore,
+            'AND THE WINNER IS WRITTEN DOWN, so the row converges on the set ' +
+            'every process is using rather than on whichever process wrote ' +
+            'last — the loser had already stored its own',
+            String(store.rows.get('default') !== wroteBefore));
+
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
-    keystore.setStore({ loadKeys: function () { return Promise.resolve([]); },
-                        saveKeys: function () { return Promise.resolve(); },
-                        deleteKeys: function () { return Promise.resolve(); } });
+    keystore.setStore({ loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
+      return Promise.resolve([]);
+    },
+                        saveKeys: function () {
+                          log.debug("Entering saveKeys().");
+                          log.debug("Leaving saveKeys().");
+                          return Promise.resolve();
+                        },
+                        deleteKeys: function () {
+                          log.debug("Entering deleteKeys().");
+                          log.debug("Leaving deleteKeys().");
+                          return Promise.resolve();
+                        } });
     helpers.resetStsKeys();
   }());
 
@@ -372,11 +522,110 @@ async function run(t) {
   t.log.info('=== development mode ===');
   t.equal(require('../common/keystore').persists(), false,
           'with keys.source at its default, a development service persists ' +
-          'nothing and generates a key on every start exactly as it always did');
+          'nothing and generates a key on every start exactly as it always ' +
+          'did');
+
+  // -----------------------------------------------------------------------
+  // 5. THE BLOB A PROCESS SHARES IS IDENTIFIED BY THE KEY AND NOT BY WHAT IT
+  //    CURRENTLY PUBLISHES (2026-09-11).
+  //
+  // `helpers.js`'s certifiedView() makes `certPem` and `certB64` GETTERS that
+  // switch from the certificate a key set was BORN with to the one `pki.js`
+  // issued over it. `serialise()` read them, so the blob moved under a key that
+  // had not — and two things that compare blobs by certificate stopped working
+  // at the moment a realm's keys were certified:
+  //
+  //   * publishShared()'s enrichment test, which is how a realm's POST-QUANTUM
+  //     keys reach the other processes. It answered "different key set" for
+  //     ever after, the offer was refused, and every request worker in a
+  //     dispatched service signed ML-DSA and SLH-DSA with eleven keys of its
+  //     own while `/oauth2/jwks` published a sibling's. Nothing failed here; it
+  //     failed at a client, as "No key in the set has kid …".
+  //   * the `kid` a restored set derives, which would have MOVED across a
+  //     restart — the one thing certifiedView()'s own header says must never
+  //     happen.
+  //
+  // This is in process for tests/CLAUDE.md's reason twice over: it needs a key
+  // set whose certificate it can make move on demand, and the thing asserted is
+  // what ONE process offers ANOTHER, which no HTTP surface publishes.
+  // -----------------------------------------------------------------------
+  t.log.info('=== the shared blob names the key, not the certificate ===');
+  (function () {
+    const keystore = require('../common/keystore');
+    keystore.reset();
+    const pair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const born = 'THE-CERTIFICATE-THIS-KEY-WAS-BORN-WITH';
+    const issued = 'THE-ONE-ITS-ISSUING-CA-MINTED-LATER';
+    let certified = false;
+    const keys = {
+      realm: '',
+      createdAt: Date.now(),
+      privateKeyPem: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      extraKeys: [],
+      pqKeys: null,
+      selfSignedCertPem: '-----BEGIN CERTIFICATE-----\nBORN\n-----END ' +
+                         'CERTIFICATE-----\n',
+      selfSignedCertB64: born
+    };
+    // The moving pair, exactly as certifiedView() installs it.
+    Object.defineProperty(keys, 'certB64', {
+      enumerable: true, configurable: true,
+      get: function () {
+        log.debug("Entering get().");
+        log.debug("Leaving get().");
+        return certified ? issued : born;
+      } });
+    Object.defineProperty(keys, 'certPem', {
+      enumerable: true, configurable: true,
+      get: function () {
+        log.debug("Entering get().");
+        log.debug("Leaving get().");
+        return certified ? 'ISSUED-PEM' : keys.selfSignedCertPem;
+      } });
+
+    const offered = [];
+    keystore.setKeyPublisher(function (realmId, blob) { offered.push(blob); });
+
+    // Generated, and offered to the rest of the service before anything has
+    // certified it. This is the publish that already worked.
+    keystore.publishShared('', keys);
+    t.equal(offered.length, 1,
+            'a realm generating its keys offers them to every other process');
+    t.equal(offered[0].certB64, born,
+            'and the blob carries the certificate the key was born with');
+
+    // `pki.js` certifies it a moment later — certifyLater() is a setImmediate,
+    // so this is the ordinary case rather than an unusual one.
+    certified = true;
+    t.equal(keys.certB64, issued,
+            'after certification the key set PUBLISHES the issued certificate');
+    t.equal(keystore.sharedBlobFor('').certB64, born,
+            'and the blob it shared still names the key, so the kid a ' +
+            'sibling derives from it cannot move');
+
+    // And now the post-quantum half arrives. THIS is the publish that was
+    // refused, and the eleven keys that never left the process that made them.
+    keys.pqKeys = [{ alg: 'ML-DSA-44',
+                     privateKey: Buffer.from('not a key'),
+                     publicJwk: { kty: 'AKP', kid: 'sts-ml-dsa-44-0000' } }];
+    keystore.publishShared('', keys);
+    t.equal(offered.length, 2,
+            'THE POST-QUANTUM KEYS ARE OFFERED ON — the same key set gaining ' +
+            'its second half is an ENRICHMENT and not a second key set, and ' +
+            'a certificate issued in between must not make it look like one');
+    t.equal((offered[1].pqKeys || []).length, 1,
+            'and the offer carries them');
+    t.equal(offered[1].certB64, born,
+            'still under the name the key was born with');
+
+    keystore.reset();
+  }());
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'keystore',
-  describe: 'a signing key that survives a restart, and a wrong key that must not',
+  describe: 'a signing key that survives a restart, and a wrong key that ' +
+            'must not',
   run: run
 };

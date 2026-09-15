@@ -74,7 +74,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const log = bunyan.createLogger({ name: 'service',
                                   level: process.env.LOG_LEVEL || 'info' });
 
-// The nine listeners, in the order the offsets are handed out. The NAME is the
+// The ten listeners, in the order the offsets are handed out. The NAME is the
 // environment variable this service reads for it — README.md's *Configuration*
 // table is the authority for these spellings, and a misspelt one is SILENT: it
 // is ignored and the listener takes its default port, which is the shared one.
@@ -87,7 +87,11 @@ const PORT_VARS = [
   'LDAP_PORT',
   'LDAPS_PORT',
   'STS_SPIFFE_WORKLOAD_PORT',
-  'STS_SPIFFE_SERVER_PORT'
+  'STS_SPIFFE_SERVER_PORT',
+  // The plain-HTTP revocation listener (2026-09-13). Last, so no offset above
+  // moved — `instance.ports` is read by NAME, and appending keeps a port that
+  // somebody noted from an earlier run where it was.
+  'PKI_HTTP_PORT'
 ];
 
 // The KDC is the one that binds UDP as well as TCP (RFC 4120 section 7.2.1),
@@ -100,6 +104,8 @@ const UDP_TOO = { KRB5_KDC_PORT: true };
 // keeping a registry) can disagree with the kernel.
 // ---------------------------------------------------------------------------
 function tcpFree(port) {
+  log.debug("Entering tcpFree().");
+  log.debug("Leaving tcpFree().");
   return new Promise(function (resolve) {
     const s = net.createServer();
     s.once('error', function () { resolve(false); });
@@ -111,6 +117,8 @@ function tcpFree(port) {
 }
 
 function udpFree(port) {
+  log.debug("Entering udpFree().");
+  log.debug("Leaving udpFree().");
   return new Promise(function (resolve) {
     const s = dgram.createSocket('udp4');
     s.once('error', function () { resolve(false); });
@@ -215,6 +223,35 @@ function environmentFor(base, opts) {
   }
   if (opts.coverageDir) {
     env.NODE_V8_COVERAGE = opts.coverageDir;
+    // -------------------------------------------------------------------
+    // THE SERVICE'S OWN WAITS, WIDENED FOR AN INSTRUMENTED SERVICE
+    // (2026-09-15) — and only for one, and a caller's own value still wins.
+    //
+    // Three of this service's bounds are right for a deployment and wrong
+    // for a process NODE_V8_COVERAGE is instrumenting, and the coverage job
+    // failed seven jobs on develop for that alone. Measured on a developer
+    // machine, a realm's FIRST /oauth2/jwks read — the one that makes its
+    // keys — took 1,644ms plain and 17,562ms instrumented, and a two-core
+    // runner is slower again:
+    //   oidcRp.backChannelTimeoutS (10s): the console's and portal's first
+    //     sign-in to a new realm reads that JWKS — four jobs refused with
+    //     "did not answer its own /realm/<id>/oauth2/jwks within 10s";
+    //   workers.jobTimeoutS (120s): one SLH-DSA-SHAKE-128s signature for
+    //     sts_userinfo_protected — "the pq.sign job ... did not come back
+    //     within 120000ms";
+    //   federation.outboundTimeoutMs (15s): the same first JWKS read, from a
+    //     federation partner — not hit here yet, and set for the same reason.
+    // Each is its setting's maximum or near it. The job watchdog, not these,
+    // is what still catches a service that has really stopped.
+    // -------------------------------------------------------------------
+    const WIDENED = { STS_OIDC_RP_BACK_CHANNEL_TIMEOUT_S: '120',
+                      STS_WORKERS_JOB_TIMEOUT_S: '900',
+                      STS_FEDERATION_OUTBOUND_TIMEOUT_MS: '60000' };
+    Object.keys(WIDENED).forEach(function (name) {
+      if (process.env[name] === undefined) {
+        env[name] = WIDENED[name];
+      }
+    });
   }
   log.debug('Leaving environmentFor().');
   return env;
@@ -224,6 +261,8 @@ function environmentFor(base, opts) {
 // variable, so that the URL this module publishes and the listener the child
 // binds can never disagree.
 function schemeFor(env) {
+  log.debug("Entering schemeFor().");
+  log.debug("Leaving schemeFor().");
   return String(env.STS_HTTPS) === 'true' ? 'https' : 'http';
 }
 
@@ -232,11 +271,14 @@ function schemeFor(env) {
 // dispatcher takes no per-request `rejectUnauthorized`, and a service that
 // regenerates its key every start can be trusted by nothing that ran before it.
 function probe(url) {
+  log.debug("Entering probe().");
+  log.debug("Leaving probe().");
   return new Promise(function (resolve) {
     let target;
     try {
       target = new URL(url);
     } catch (e) {
+      log.debug("Caught in a callback in probe(): " + ((e && e.message) || e));
       resolve(0);
       return;
     }
@@ -263,7 +305,7 @@ function probe(url) {
 
 // ---------------------------------------------------------------------------
 // Start it, and do not return until it ANSWERS. `up` is a request that got a
-// response, not a process that was spawned: this service binds nine listeners
+// response, not a process that was spawned: this service binds ten listeners
 // and reads its store before the first of them, so "the child exists" and "the
 // service is ready" are seconds and several failure modes apart.
 // ---------------------------------------------------------------------------
@@ -335,6 +377,7 @@ async function start(opts) {
   } catch (e) {
     // Already gone. Nothing to do, and failing here would replace the useful
     // message below with a useless one.
+    log.debug("Caught in start(): " + ((e && e.message) || e));
   }
   log.debug('Leaving start(). Timed out.');
   throw new Error('the mock STS did not answer on ' + url + ' in time; see ' +
@@ -382,6 +425,7 @@ async function stop(instance, log) {
     process.kill(instance.pid, 'SIGKILL');
   } catch (e) {
     // Raced with its own exit, which is the outcome we wanted anyway.
+    log.debug("Caught in stop(): " + ((e && e.message) || e));
   }
   await Promise.race([
     gone,

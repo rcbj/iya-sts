@@ -64,6 +64,10 @@ const app = require('../common/app');
 const { log, parseBody } = require('../common/helpers');
 const config = require('../common/config');
 const audit = require('../common/audit');
+// The error-code registry (a leaf). An action's refusal carries its code as a
+// NON-ENUMERABLE mark on the result object, so the console handlers below and
+// `/admin-api` mark their response from it and no JSON body can carry it out.
+const errorCodes = require('../common/error_codes');
 const admin = require('../admin-ui/admin');
 const model = require('./xacml_model');
 const xml = require('./xacml_xml');
@@ -75,6 +79,10 @@ const alfa = require('./xacml_alfa');
 const pip = require('./xacml_pip');
 const peps = require('./xacml_pep_registry');
 const pepHttp = require('./xacml_pep_http');
+// A remote PEP's HTTPS listener certificate (2026-09-13). A LIBRARY over
+// `common/pki.js` and the register above, registering nothing.
+const pepTls = require('./xacml_pep_tls');
+const pki = require('../common/pki');
 const monitor = require('./xacml_monitor');
 
 const esc = admin.esc;
@@ -84,22 +92,28 @@ const esc = admin.esc;
 // they are about POLICIES rather than about the console.
 // ---------------------------------------------------------------------------
 function select(name, options, selected, extra) {
+  log.debug("Entering select().");
   const body = options.map(function (one) {
     const value = one.value === undefined ? one.uri : one.value;
     return '<option value="' + esc(value) + '"' +
       (String(value) === String(selected) ? ' selected' : '') + '>' +
       esc(one.label) + '</option>';
   }).join('');
+  log.debug("Leaving select().");
   return '<select name="' + esc(name) + '"' + (extra || '') + '>' + body +
     '</select>';
 }
 
 function hidden(name, value) {
+  log.debug("Entering hidden().");
+  log.debug("Leaving hidden().");
   return '<input type="hidden" name="' + esc(name) + '" value="' +
     esc(value === null || value === undefined ? '' : value) + '">';
 }
 
 function textField(name, value, size) {
+  log.debug("Entering textField().");
+  log.debug("Leaving textField().");
   return '<input type="text" name="' + esc(name) + '" value="' +
     esc(value === null || value === undefined ? '' : value) + '"' +
     (size ? ' size="' + size + '"' : '') + '>';
@@ -211,7 +225,8 @@ function policiesJson() {
 
 // ---------------------------------------------------------------------------
 // THE TWO POLICIES THIS SERVICE DECIDES ITS OWN BOUNDARIES WITH, WHICH ARE NOT
-// IN THE REPOSITORY AND THEREFORE APPEARED NOWHERE IN THIS CONSOLE (2026-09-06).
+// IN THE REPOSITORY AND THEREFORE APPEARED NOWHERE IN THIS CONSOLE
+// (2026-09-06).
 //
 // Everything else on these pages is a row in `ou=policies`, and until this date
 // so was everything these pages SAID. That left the most misleading page in the
@@ -309,13 +324,12 @@ function serviceOwnEditorNote(rows) {
   }).length;
   log.debug('Leaving serviceOwnEditorNote(). ' + overridden + ' overridden.');
   return admin.note(
-    '<p><strong>This chooser lists <code>ou=policies</code>, and two policies ' +
-    'that are deciding right now are not in it.</strong> The issuance policy ' +
-    '(what this service will issue) and the access policy (who reaches the ' +
-    'console, the User Portal, SCIM, the SPIRE Server ' +
-    'API) are BUILT IN — called at decision time rather than seeded — so ' +
-    'there is no stored document for this editor to open.</p>' +
-    '<p>' + (overridden
+    '<p><strong>This chooser lists <code>ou=policies</code>, and two ' +
+    'policies that are deciding right now are not in it.</strong> The ' +
+    'issuance policy (what this service will issue) and the access policy ' +
+    '(who reaches the console, the User Portal, SCIM, the SPIRE Server API) ' +
+    'are BUILT IN — called at decision time rather than seeded — so there is ' +
+    'no stored document for this editor to open.</p><p>' + (overridden
       ? 'One or more of them HAS an override in the repository, so it is in ' +
         'the list above and opens here like any other policy. '
       : 'Neither has an override yet. ') +
@@ -380,21 +394,20 @@ function renderServiceOwnPolicies(rows, writable) {
       'into the repository — so the editor has never listed them and a ' +
       'reader looking only at the repository would conclude that whatever is ' +
       'root there is what this service enforces. Usually it is not: a seeded ' +
-      'example policy decides nothing this service does.</p>' +
-      '<p><strong>They are built in rather than seeded on purpose.</strong> ' +
+      'example policy decides nothing this service does.</p><p><strong>They ' +
+      'are built in rather than seeded on purpose.</strong> ' +
       '<code>ou=policies</code> is per trust realm, so a policy written once ' +
       'into the default realm leaves every realm created afterwards unable ' +
       'to decide anything at all — and falling back to the default realm\'s ' +
       'copy would couple two realms, which is the one thing the realm design ' +
       'does not do. Called rather than seeded, every realm has both of them ' +
-      'out of the box with nothing to delete.</p>' +
-      '<p><strong>An override is an ordinary policy.</strong> Create one from ' +
-      'the same template, named whatever the setting says, and it wins from ' +
-      'the next request — it then appears in the table above and in the ' +
-      'editor like everything else. Neither is sent to a remote PEP: ' +
-      '<code>GET /xacml/pep/policies</code> carries the policies about ' +
-      'somebody ELSE\'s boundary, and these two are about this service\'s ' +
-      'own.</p>',
+      'out of the box with nothing to delete.</p><p><strong>An override is ' +
+      'an ordinary policy.</strong> Create one from the same template, named ' +
+      'whatever the setting says, and it wins from the next request — it ' +
+      'then appears in the table above and in the editor like everything ' +
+      'else. Neither is sent to a remote PEP: <code>GET ' +
+      '/xacml/pep/policies</code> carries the policies about somebody ' +
+      'ELSE\'s boundary, and these two are about this service\'s own.</p>',
       'Two policies decide here and are not in the repository') +
     '<table><tr><th>Policy</th><th>What it decides</th>' +
     '<th>Document in force</th><th>Right now</th><th></th></tr>' +
@@ -555,6 +568,17 @@ function pepsJson() {
     // about a PEP registered an hour ago. A stored verdict would have been
     // right when it was written and wrong from then on.
     view.notifyProblem = pepHttp.urlProblem(row.notifyUrl);
+    // THE LISTENER CERTIFICATE THIS REALM ISSUED IT, read from the
+    // certificate register rather than stored on the row — the register is
+    // where `pki.js` keeps what an Issuing CA certified, and a copy on
+    // `ou=peps` would be a second answer that went stale at the first
+    // reissue. Public only; the key was handed over once. The chain is left
+    // off because it is the realm's and `GET /admin-api/pki` has it.
+    const certificate = pepTls.certificateOf(row.name);
+    if (certificate) {
+      delete certificate.chainPem;
+    }
+    view.listenerCertificate = certificate;
     return view;
   });
   const json = {
@@ -577,6 +601,11 @@ function pepsJson() {
     // empties it is looking at. Empty on the ordinary service, where the
     // default realm is the only realm.
     elsewhere: peps.elsewhere(),
+    listenerCertificates: {
+      useCase: pepTls.USE_CASE,
+      keyAlgorithms: pki.TLS_SERVER_KEY_ALGS.slice(),
+      defaultKeyAlg: pki.DEFAULT_TLS_SERVER_KEY_ALG
+    },
     current: rows.filter(function (row) {
       return row.current;
     }).length,
@@ -609,8 +638,8 @@ function pepsJson() {
 // `where` is that function's answer.
 function noPepsHere(where) {
   log.debug('Entering noPepsHere().');
-  const shared = 'That does not mean none is running: registering is not what ' +
-    'lets a PEP enforce, and one that only ever pulls ' +
+  const shared = 'That does not mean none is running: registering is not ' +
+    'what lets a PEP enforce, and one that only ever pulls ' +
     '<code>/xacml/pep/policies</code> works perfectly and never appears here.';
   if (!where.length) {
     log.debug('Leaving noPepsHere(). None anywhere.');
@@ -624,10 +653,12 @@ function noPepsHere(where) {
   log.debug('Leaving noPepsHere(). ' + where.length + ' elsewhere.');
   return 'No remote Policy Enforcement Point has registered <strong>in this ' +
     'realm</strong> &mdash; but ' + where.length + ' other realm' +
-    (where.length === 1 ? '' : 's') + ' hold' + (where.length === 1 ? 's' : '') +
-    ' one: ' + list + '. <strong>The register is per realm</strong>, like the ' +
-    'policy repository it serves, so a PEP that registered against ' +
-    '<code>/realm/&lt;id&gt;</code> is listed there and nowhere else. ' + shared;
+    (where.length === 1 ? '' : 's') + ' hold' +
+    (where.length === 1 ? 's' : '') +
+    ' one: ' + list + '. <strong>The register is per realm</strong>, like ' +
+    'the policy repository it serves, so a PEP that registered against ' +
+    '<code>/realm/&lt;id&gt;</code> is listed there and nowhere ' +
+    'else. ' + shared;
 }
 
 app.get('/admin/xacml/peps', function (req, res) {
@@ -671,6 +702,34 @@ app.get('/admin/xacml/peps', function (req, res) {
           : '')
       : '<span class="sub">none — never nudged, and it converges on its ' +
         'own poll anyway</span>';
+    // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
+    // and never whether the PEP is serving it: nothing on this page reaches
+    // into another process, and the PEP's own GET / is where that is said.
+    const held = row.listenerCertificate;
+    const listener = (held
+      ? '<code>' + esc(held.serialHex) + '</code>' +
+        '<div class="sub">' +
+        esc(held.dnsNames.concat(held.ipAddresses).join(', ')) + '</div>' +
+        '<div class="sub">' +
+        (held.expired ? '<strong>expired</strong> ' : '') +
+        'until ' + esc(held.notAfter) + '</div>'
+      : '<span class="sub">none issued</span>') +
+      (writable
+        ? '<form method="post" action="/admin/xacml/peps">' +
+          hidden('action', 'issue-pep-certificate') +
+          hidden('name', row.name) +
+          '<div class="sub">More DNS names <input name="dnsNames" ' +
+          'size="18" placeholder="pep.example.test"></div>' +
+          '<div class="sub">IP addresses <input name="ipAddresses" ' +
+          'size="14" placeholder="10.0.0.5"></div>' +
+          '<div class="sub">Key ' +
+          select('keyAlg', json.listenerCertificates.keyAlgorithms
+            .map(function (one) {
+              return { value: one, label: one };
+            }), json.listenerCertificates.defaultKeyAlg) + ' ' +
+          '<button type="submit">' + (held ? 'Reissue' : 'Issue') +
+          ' certificate</button></div></form>'
+        : '');
     const actions = writable
       ? '<form method="post" action="/admin/xacml/peps" ' +
         'style="display:inline">' +
@@ -696,9 +755,10 @@ app.get('/admin/xacml/peps', function (req, res) {
         ? '<div class="sub">' + row.undischargeable + ' of those refused for ' +
           'an obligation it could not discharge</div>'
         : '') +
-      '</td><td>' + notify + '</td><td>' + actions + '</td></tr>';
+      '</td><td>' + notify + '</td><td>' + listener + '</td><td>' + actions +
+      '</td></tr>';
   }).join('') ||
-    '<tr><td colspan="7">' + noPepsHere(json.elsewhere) + '</td></tr>';
+    '<tr><td colspan="8">' + noPepsHere(json.elsewhere) + '</td></tr>';
 
   const body = admin.note(
     '<p>A <strong>remote</strong> Policy Enforcement Point runs in another ' +
@@ -740,7 +800,23 @@ app.get('/admin/xacml/peps', function (req, res) {
         'safe to turn off.</p>') +
     '<table><tr><th>PEP</th><th>Certificate</th><th>State</th>' +
     '<th>Its bias</th><th>What it enforced</th><th>Notify</th>' +
+    '<th>HTTPS listener certificate</th>' +
     '<th>Actions</th></tr>' + rows + '</table>' +
+    admin.note(
+      '<p>A remote PEP answers its own clients, and the column above is the ' +
+      'certificate it answers them with. It is issued by the ' +
+      '<strong>Remote PEP listeners</strong> Issuing CA of <em>this</em> ' +
+      'realm &mdash; the realm the PEP registered to &mdash; so a client ' +
+      'that installed this service&rsquo;s Root CA verifies it, and the ' +
+      'chain still says which realm vouched for that front door. It names ' +
+      'the PEP&rsquo;s registered name and the host of its notify URL, plus ' +
+      'whatever you add.</p><p><strong>The private key is shown ' +
+      'once</strong>, on the page that answers the button, and this service ' +
+      'keeps no copy. Write the two blocks to the files the container reads ' +
+      '(<code>PEP_HTTPS_CERT</code> and <code>PEP_HTTPS_KEY</code>); it ' +
+      'picks up a pair written after it started, and reissuing supersedes ' +
+      'the certificate it replaces on the issuer&rsquo;s revocation list.</p>',
+      'The HTTPS listener certificate') +
     admin.note(
       '<p>The decision counts are the PEP&rsquo;s own, reported by it, ' +
       'cumulative in its process. This service did not see one of those ' +
@@ -857,9 +933,12 @@ function monitorJson() {
 // as a dash rather than as "0 (0%)" or NaN: nothing has happened yet, and a
 // percentage of nothing is not a fact about this service.
 function share(n, of) {
+  log.debug("Entering share().");
   if (!of) {
+    log.debug("Leaving share().");
     return n ? String(n) : '&mdash;';
   }
+  log.debug("Leaving share().");
   return String(n) + ' <span class="sub">(' +
          Math.round((n / of) * 100) + '%)</span>';
 }
@@ -868,11 +947,14 @@ function share(n, of) {
 // which is every REMOTE row, because a remote PEP reports what it ENFORCED and
 // the breakdown by PDP decision is known only to the process that evaluated.
 function decisionCells(row) {
+  log.debug("Entering decisionCells().");
   if (row.permit === null || row.permit === undefined) {
+    log.debug("Leaving decisionCells().");
     return '<td colspan="4" class="sub">not reported &mdash; a remote PEP ' +
-           'sends what it enforced, and only the process that EVALUATED knows ' +
-           'which of the four decisions each was</td>';
+           'sends what it enforced, and only the process that EVALUATED ' +
+           'knows which of the four decisions each was</td>';
   }
+  log.debug("Leaving decisionCells().");
   return '<td class="num state-valid">' + row.permit + '</td>' +
     '<td class="num state-revoked">' + row.deny + '</td>' +
     '<td class="num">' + row.notApplicable + '</td>' +
@@ -883,17 +965,21 @@ function decisionCells(row) {
 // enforced anything. `/xacml/pdp` is the one row that gets it, and the
 // distinction is the point: a zero would read as "it refused nothing".
 function enforcementCells(row) {
+  log.debug("Entering enforcementCells().");
   if (!row.enforces || row.allowed === null || row.allowed === undefined) {
+    log.debug("Leaving enforcementCells().");
     return '<td colspan="2" class="sub">nothing was enforced here &mdash; ' +
-           'this service produced the decision and somebody else\'s PEP acted ' +
-           'on it, in their process</td>';
+           'this service produced the decision and somebody else\'s PEP ' +
+           'acted on it, in their process</td>';
   }
+  log.debug("Leaving enforcementCells().");
   return '<td class="num state-valid">' + share(row.allowed, row.decisions) +
     '</td><td class="num state-revoked">' + share(row.refused, row.decisions) +
     '</td>';
 }
 
 function monitorRow(row) {
+  log.debug("Entering monitorRow().");
   const state = [];
   if (row.kind === 'remote') {
     state.push(row.remote.current
@@ -921,13 +1007,15 @@ function monitorRow(row) {
         : ', ' + (row.lastAllowed ? 'allowed' : 'refused')) +
       '<div class="sub">' + esc(row.lastAt || '') + '</div>'
     : '<span class="sub">nothing yet</span>';
+  log.debug("Leaving monitorRow().");
   return '<tr><td><strong>' + esc(row.label) + '</strong>' +
     '<div class="sub">' + esc(row.kind) + ' &middot; <code>' +
     esc(row.where) + '</code></div>' +
     '<div class="sub">' + esc(row.guards) + '</div></td>' +
     '<td>' + state.join('<br>') +
     (row.kind === 'remote' && row.remote.policyCount !== null
-      ? '<div class="sub">holds ' + row.remote.policyCount + ' policy/policies</div>'
+      ? '<div class="sub">holds ' + row.remote.policyCount + ' ' +
+          'policy/policies</div>'
       : '') +
     '</td>' +
     '<td>' + (row.bias ? esc(row.bias) : '<span class="sub">n/a</span>') +
@@ -977,6 +1065,8 @@ app.get('/admin/xacml/monitor', function (req, res) {
   // made the row look like an arithmetic error, which is the kind of thing
   // that makes a reader distrust every other number beside it.
   const evidenceRow = function (label, figures, what) {
+    log.debug("Entering evidenceRow().");
+    log.debug("Leaving evidenceRow().");
     return '<tr><td><strong>' + label + '</strong></td>' +
       '<td class="num">' + figures.decisions + '</td>' +
       '<td class="num state-valid">' + figures.allowed + '</td>' +
@@ -1017,41 +1107,42 @@ app.get('/admin/xacml/monitor', function (req, res) {
 
   const what = admin.note(
     '<p>This is the only page in this family about <strong>traffic</strong>. ' +
-    'The others are about configuration &mdash; what policies exist, what one ' +
-    'of them says, what the PDP would decide about a subject you type in. ' +
-    'This one answers the question you have when authorization is ' +
+    'The others are about configuration &mdash; what policies exist, what ' +
+    'one of them says, what the PDP would decide about a subject you type ' +
+    'in. This one answers the question you have when authorization is ' +
     'misbehaving: how many decisions are being made, by which enforcement ' +
-    'point, and how many of them are refusals.</p>' +
-    '<p><strong>&ldquo;Decisions&rdquo; and &ldquo;allows&rdquo; are not two ' +
-    'views of one tally.</strong> XACML has FOUR decisions &mdash; Permit, ' +
-    'Deny, NotApplicable, Indeterminate &mdash; and a PEP has TWO outcomes. ' +
-    'What maps between them is the PEP&rsquo;s <em>bias</em>: a deny-biased ' +
-    'PEP refuses a NotApplicable and a permit-biased one allows it, from the ' +
-    'same decision on the same request. And an obligation a PEP cannot ' +
-    'discharge turns a Permit into a refusal (section 7.2) &mdash; the one ' +
-    'enforcement outcome that looks like a bug from the client side and is ' +
-    'the specification working. So <code>allowed</code> is not ' +
-    '<code>permit</code>, and both are drawn.</p>' +
-    '<p><strong>The counters are in memory and start when this process ' +
-    'does.</strong> They are observations, and this service persists nothing ' +
-    'it observes; the durable record of a refusal is the ' +
-    '<a href="/admin/audit">audit log</a>, which holds the reason as well as ' +
+    'point, and how many of them are ' +
+    'refusals.</p><p><strong>&ldquo;Decisions&rdquo; and ' +
+    '&ldquo;allows&rdquo; are not two views of one tally.</strong> XACML has ' +
+    'FOUR decisions &mdash; Permit, Deny, NotApplicable, Indeterminate ' +
+    '&mdash; and a PEP has TWO outcomes. What maps between them is the ' +
+    'PEP&rsquo;s <em>bias</em>: a deny-biased PEP refuses a NotApplicable ' +
+    'and a permit-biased one allows it, from the same decision on the same ' +
+    'request. And an obligation a PEP cannot discharge turns a Permit into a ' +
+    'refusal (section 7.2) &mdash; the one enforcement outcome that looks ' +
+    'like a bug from the client side and is the specification working. So ' +
+    '<code>allowed</code> is not <code>permit</code>, and both are ' +
+    'drawn.</p><p><strong>The counters are in memory and start when this ' +
+    'process does.</strong> They are observations, and this service persists ' +
+    'nothing it observes; the durable record of a refusal is the <a ' +
+    'href="/admin/audit">audit log</a>, which holds the reason as well as ' +
     'the count. They are also <strong>per trust realm</strong>, like ' +
     '<code>ou=policies</code> itself &mdash; this page is showing <strong>' +
     esc(json.realm.name || json.realm.id) + '</strong>, and a decision made ' +
-    'under another realm was made against another realm&rsquo;s policies.</p>' +
-    '<p><strong>There is no reset button</strong>, deliberately: a console ' +
-    'that could zero its own monitoring would make every number here a number ' +
-    'somebody might have zeroed. A restart is what clears them.</p>',
+    'under another realm was made against another realm&rsquo;s ' +
+    'policies.</p><p><strong>There is no reset button</strong>, ' +
+    'deliberately: a console that could zero its own monitoring would make ' +
+    'every number here a number somebody might have zeroed. A restart is ' +
+    'what clears them.</p>',
     'What this page is');
 
   const off = json.enabled ? '' : admin.warn(
     '<strong>The XACML family is switched off</strong> ' +
     '(<code>xacml.enabled</code>), so nothing is being evaluated and every ' +
-    'figure below has stopped moving. The embedded PEPs answer ALLOWED without ' +
-    'asking the PDP &mdash; which is what keeps a service with the family off ' +
-    'a smaller service rather than a broken one &mdash; and those allows are ' +
-    'counted, because they are what happened.',
+    'figure below has stopped moving. The embedded PEPs answer ALLOWED ' +
+    'without asking the PDP &mdash; which is what keeps a service with the ' +
+    'family off a smaller service rather than a broken one &mdash; and those ' +
+    'allows are counted, because they are what happened.',
     'Nothing is being decided');
 
   // ---------------------------------------------------------------------
@@ -1082,24 +1173,23 @@ app.get('/admin/xacml/monitor', function (req, res) {
     admin.note(
       '<p><strong>An embedded PEP is not &ldquo;registered&rdquo; and cannot ' +
       'be.</strong> It is compiled into this process, so its existence is a ' +
-      'fact about the build rather than something it told this service; there ' +
-      'are exactly three and they are the catalogue in ' +
-      '<code>xacml_monitor.js</code>. A <em>remote</em> PEP registers because ' +
-      'it has no other way to be known about &mdash; and even that is not a ' +
-      'permission: an unregistered PEP can pull ' +
+      'fact about the build rather than something it told this service; ' +
+      'there are exactly three and they are the catalogue in ' +
+      '<code>xacml_monitor.js</code>. A <em>remote</em> PEP registers ' +
+      'because it has no other way to be known about &mdash; and even that ' +
+      'is not a permission: an unregistered PEP can pull ' +
       '<code>/xacml/pep/policies</code> and enforce perfectly, and never ' +
       'appears here. So <strong>this list is every enforcement point this ' +
       'service KNOWS ABOUT</strong>, which is a smaller claim than every one ' +
-      'that exists, and the difference cannot be closed from this end.</p>' +
-      '<p><strong>Only the demonstration PEP&rsquo;s bias is settable.</strong> ' +
-      '<code>xacml.pepBias</code> governs that one. The issuance and access ' +
-      'PEPs are deny-biased by construction &mdash; an issuance or an access ' +
-      'that was not permitted does not happen &mdash; and a remote ' +
-      'PEP&rsquo;s bias is <em>reported by it</em>, because a control here ' +
-      'that appeared to set another process&rsquo;s bias would silently do ' +
-      'nothing.</p>' +
-      '<p>The remote rows are a summary. ' +
-      '<a href="/admin/xacml/peps">Remote PEPs</a> has the sync tokens, the ' +
+      'that exists, and the difference cannot be closed from this ' +
+      'end.</p><p><strong>Only the demonstration PEP&rsquo;s bias is ' +
+      'settable.</strong> <code>xacml.pepBias</code> governs that one. The ' +
+      'issuance and access PEPs are deny-biased by construction &mdash; an ' +
+      'issuance or an access that was not permitted does not happen &mdash; ' +
+      'and a remote PEP&rsquo;s bias is <em>reported by it</em>, because a ' +
+      'control here that appeared to set another process&rsquo;s bias would ' +
+      'silently do nothing.</p><p>The remote rows are a summary. <a ' +
+      'href="/admin/xacml/peps">Remote PEPs</a> has the sync tokens, the ' +
       'notify URLs, what happened to the last nudge, and the controls.</p>' +
       // WHERE THE REMOTE ROWS WOULD BE IF THEY ARE NOT HERE (2026-09-06). The
       // register is per realm and this page draws one realm, so a table with
@@ -1113,26 +1203,26 @@ app.get('/admin/xacml/monitor', function (req, res) {
         : '<p>' + noPepsHere(json.elsewhere) + '</p>'),
       'What this list is, and what it is not') +
     admin.note(
-      '<p>A refusal here is a policy decision and the reason is in the ' +
-      '<a href="/admin/audit">audit log</a>, not in this table: ' +
+      '<p>A refusal here is a policy decision and the reason is in the <a ' +
+      'href="/admin/audit">audit log</a>, not in this table: ' +
       '<code>xacml.issuance.refused</code> for the issuance PEP, ' +
       '<code>xacml.access.refused</code> for the access PEP and ' +
       '<code>xacml.enforcement</code> for the demonstration one. This page ' +
-      'says how many; that log says who, what and why.</p>' +
-      '<p>To make a decision happen on purpose and watch it land here, use ' +
-      '<a href="/admin/xacml/decide">Try a decision</a> &mdash; but note that ' +
+      'says how many; that log says who, what and why.</p><p>To make a ' +
+      'decision happen on purpose and watch it land here, use <a ' +
+      'href="/admin/xacml/decide">Try a decision</a> &mdash; but note that ' +
       'the enforcement preview on that page is deliberately <em>not</em> ' +
       'counted. It is a what-if rather than a request anybody guarded, and ' +
       'counting it would make this page&rsquo;s numbers grow every time ' +
       'somebody looked at it. <code>GET /xacml/protected</code> is the ' +
-      'endpoint that really enforces.</p>' +
-      '<p><strong>Drawing THIS page adds one to the access PEP\'s count, ' +
-      'and that is right rather than a measurement artefact.</strong> ' +
-      '<code>/admin</code> is one of the five gated surfaces, so reading it ' +
-      'is a real request that the access policy really decided &mdash; the ' +
-      'number would be wrong if it did not move. It is the opposite case ' +
-      'from the preview above, and the two are worth telling apart: one is ' +
-      'an access that happened, the other is a question somebody typed.</p>',
+      'endpoint that really enforces.</p><p><strong>Drawing THIS page adds ' +
+      'one to the access PEP\'s count, and that is right rather than a ' +
+      'measurement artefact.</strong> <code>/admin</code> is one of the five ' +
+      'gated surfaces, so reading it is a real request that the access ' +
+      'policy really decided &mdash; the number would be wrong if it did not ' +
+      'move. It is the opposite case from the preview above, and the two are ' +
+      'worth telling apart: one is an access that happened, the other is a ' +
+      'question somebody typed.</p>',
       'Where a refusal is explained');
 
   // The title is the nav label rather than the bare word `Monitor`: this page
@@ -1152,23 +1242,36 @@ app.get('/admin/xacml/monitor', function (req, res) {
 // ambiguous between a policy and a PEP — and the ambiguity would resolve
 // silently in favour of whichever list was tested first.
 // ---------------------------------------------------------------------------
-const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep'];
+// `issue-pep-certificate` (2026-09-13) is the fourth and the only one that is
+// ASYNCHRONOUS — generating a key pair and signing a certificate are both
+// promises — so `pepAction()` answers a PROMISE for it and a plain result for
+// the other three, and every caller settles it with `Promise.resolve()`. The
+// three synchronous ones stay synchronous because two in-process test files
+// call `combinedAction()` without awaiting.
+const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
+                     'issue-pep-certificate'];
 
 function pepAction(body) {
   log.debug('Entering pepAction(). action=' + (body || {}).action);
   const action = String((body || {}).action || '');
+  if (action === 'issue-pep-certificate') {
+    log.debug('Leaving pepAction(). Issuing a listener certificate.');
+    return pepTls.issue(body);
+  }
   const name = String((body || {}).name || '');
   if (!name) {
     log.debug('Leaving pepAction(). No name.');
-    return { ok: false, why: 'Which registered PEP? Send `name`.' };
+    return errorCodes.mark({ ok: false,
+                             why: 'Which registered PEP? Send `name`.' },
+                           'STS-XACML-0038');
   }
   const row = peps.read(name);
   if (!row) {
     log.debug('Leaving pepAction(). Not registered.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'No Policy Enforcement Point is registered as "' + name +
                   '". The register is ou=peps in the embedded directory and ' +
-                  'GET /admin-api/xacml/peps lists it.' };
+                  'GET /admin-api/xacml/peps lists it.' }, 'STS-XACML-0038');
   }
   if (action === 'forget-pep') {
     const gone = peps.remove(name);
@@ -1182,13 +1285,17 @@ function pepAction(body) {
                 'BE ENFORCING — this removed a row, not a process, and a PEP ' +
                 'that pulls again simply registers again. What has changed ' +
                 'is that this service will not nudge it in the meantime.' }
-      : { ok: false, why: 'The directory would not remove it.' };
+      : errorCodes.mark({ ok: false,
+                          why: 'The directory would not remove it.' },
+                        'STS-XACML-0027');
   }
   const on = action === 'enable-pep';
   const written = peps.setEnabled(name, on);
   if (!written) {
     log.debug('Leaving pepAction(). The directory refused it.');
-    return { ok: false, why: 'The directory refused the change.' };
+    return errorCodes.mark({ ok: false,
+                             why: 'The directory refused the change.' },
+                           'STS-XACML-0027');
   }
   audit.audit({ action: 'xacml.pep.' + (on ? 'enable' : 'disable'), actor: '',
                 protocol: 'XACML',
@@ -1209,15 +1316,98 @@ app.post('/admin/xacml/peps', function (req, res) {
   log.debug('Entering the admin XACML remote PEPs action.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-XACML-0031');
     admin.respondToAction(req, res, '/admin/xacml/peps',
                           { ok: false, why: 'This console session may read ' +
                                             'but not write.' });
     log.debug('Leaving the admin XACML remote PEPs action. Read-only.');
     return;
   }
-  admin.respondToAction(req, res, '/admin/xacml/peps', pepAction(body));
+  if (String(body.action || '') === 'issue-pep-certificate') {
+    issueFromConsole(req, res, body);
+    log.debug('Leaving the admin XACML remote PEPs action. Issuing.');
+    return;
+  }
+  const result = pepAction(body);
+  if (!result.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0038');
+  }
+  admin.respondToAction(req, res, '/admin/xacml/peps', result);
   log.debug('Leaving the admin XACML remote PEPs action.');
 });
+
+// ---------------------------------------------------------------------------
+// THE ISSUE, ANSWERED AS A PAGE AND NOT AS A REDIRECT.
+//
+// Every other control on this page 303s back with its sentence on the query
+// string, which is `respondToAction()`'s shape. This one carries a PRIVATE KEY,
+// and a private key on a query string is a private key in the browser history,
+// the access log and the next request's `Referer` — so the reply is a 200 page
+// drawn once, `no-store`, which is what `/admin/pki/person` does for the same
+// reason. A JSON caller gets `respondToAction()`'s JSON, unchanged.
+// ---------------------------------------------------------------------------
+function issueFromConsole(req, res, body) {
+  log.debug('Entering issueFromConsole().');
+  Promise.resolve(pepAction(body)).then(function (result) {
+    if (!result.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0072');
+    }
+    if (/json/i.test(String(req.headers['content-type'] || ''))) {
+      admin.respondToAction(req, res, '/admin/xacml/peps', result);
+      log.debug('Leaving issueFromConsole(). Answered JSON.');
+      return;
+    }
+    const back = '<p><a class="btn" href="/admin/xacml/peps">Back to Remote ' +
+      'PEPs</a></p>';
+    if (!result.ok) {
+      admin.respond(req, res, { ok: false }, 'Listener certificate',
+                    '/admin/xacml/peps',
+                    admin.warn(esc(String(result.why || '')),
+                               'That was refused') + back, '/admin/xacml');
+      log.debug('Leaving issueFromConsole(). Refused.');
+      return;
+    }
+    res.set('Cache-Control', 'no-store');
+    const page = admin.note('<p>' + esc(result.what) + '</p>') +
+      '<table><tr><th>PEP</th><td><code>' + esc(result.pep) + '</code></td>' +
+      '</tr><tr><th>Realm</th><td><code>' + esc(result.realm) + '</code></td>' +
+      '</tr><tr><th>Serial</th><td><code>' + esc(result.serialHex) +
+      '</code></td></tr><tr><th>Names</th><td>' +
+      esc(result.dnsNames.concat(result.ipAddresses).join(', ')) +
+      '</td></tr><tr><th>Valid until</th><td>' + esc(result.notAfter) +
+      '</td></tr></table>' +
+      admin.warn(
+        '<p>This is the only time this service will show you this key. It ' +
+        'is not on the PEP&rsquo;s entry and nothing in this console or in ' +
+        '<code>/admin-api</code> opens it again. Save it as the file ' +
+        '<code>PEP_HTTPS_KEY</code> names.</p>' +
+        '<pre>' + esc(result.privateKeyPem) + '</pre>',
+        'The private key, once') +
+      '<p>The certificate followed by its chain (the Issuing CA and this ' +
+      'realm&rsquo;s Intermediate) &mdash; the file ' +
+      '<code>PEP_HTTPS_CERT</code> names:</p>' +
+      '<pre>' + esc(result.fullChainPem) + '</pre>' +
+      '<p>The anchor a client of that listener installs &mdash; this ' +
+      'service&rsquo;s Root CA, which the chain deliberately leaves out:</p>' +
+      '<pre>' + esc(result.anchorPem) + '</pre>' + back;
+    const json = Object.assign({}, result);
+    delete json.privateKeyPem;
+    admin.respond(req, res, json, 'Listener certificate', '/admin/xacml/peps',
+                  page, '/admin/xacml');
+    log.debug('Leaving issueFromConsole(). Issued.');
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-XACML-0072') + 'xacml: issuing a remote ' +
+              'PEP listener certificate threw: ' +
+              (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-XACML-0072');
+    admin.respond(req, res, { ok: false }, 'Listener certificate',
+                  '/admin/xacml/peps',
+                  admin.warn(esc('That failed: ' +
+                                 ((e && e.message) || e)),
+                             'That was refused'), '/admin/xacml');
+    log.debug('Leaving issueFromConsole(). It threw.');
+  });
+}
 
 // ---------------------------------------------------------------------------
 // THE ACTIONS BEHIND THAT PAGE.
@@ -1237,10 +1427,10 @@ function policyAction(body, req) {
 
   if (POLICY_ACTIONS.indexOf(action) < 0) {
     log.debug('Leaving policyAction(). Unknown action.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'Unknown action "' + action + '". The ' +
                   numberWord(POLICY_ACTIONS.length) + ' are: ' +
-                  POLICY_ACTIONS.join(', ') + '.' };
+                  POLICY_ACTIONS.join(', ') + '.' }, 'STS-XACML-0032');
   }
 
   if (action === 'import-alfa') {
@@ -1253,7 +1443,8 @@ function policyAction(body, req) {
       policy = alfa.parse(String(body.alfa || ''));
     } catch (error) {
       log.debug('Leaving policyAction(). The ALFA would not parse.');
-      return { ok: false, why: error.message };
+      return errorCodes.mark({ ok: false, why: error.message },
+                             'STS-XACML-0037');
     }
     const document = xml.writePolicy(policy);
     const isRoot = !store.root();
@@ -1285,7 +1476,7 @@ function policyAction(body, req) {
                                   { name: name || body.template });
     if (!built.ok) {
       log.debug('Leaving policyAction(). The template refused.');
-      return built;
+      return errorCodes.mark(built, 'STS-XACML-0036');
     }
     const document = xml.writePolicy(built.policy);
     // The FIRST policy in an empty repository becomes the root, because a
@@ -1312,7 +1503,9 @@ function policyAction(body, req) {
   const existing = store.read(name);
   if (!existing) {
     log.debug('Leaving policyAction(). No such policy.');
-    return { ok: false, why: 'There is no policy called "' + name + '".' };
+    return errorCodes.mark({ ok: false,
+                             why: 'There is no policy called "' + name + '".' },
+                           'STS-XACML-0033');
   }
 
   if (action === 'delete') {
@@ -1358,8 +1551,10 @@ function policyAction(body, req) {
 }
 
 function numberWord(n) {
+  log.debug("Entering numberWord().");
   const words = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
                  'eight', 'nine', 'ten'];
+  log.debug("Leaving numberWord().");
   return words[n] || String(n);
 }
 
@@ -1367,6 +1562,7 @@ app.post('/admin/xacml/policies', function (req, res) {
   log.debug('Entering the admin XACML policies action endpoint.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-XACML-0031');
     admin.respondToAction(req, res, '/admin/xacml/policies',
                           { ok: false,
                             why: 'This console session holds Admin Read and ' +
@@ -1374,8 +1570,11 @@ app.post('/admin/xacml/policies', function (req, res) {
     log.debug('Leaving the admin XACML policies action endpoint. Read-only.');
     return;
   }
-  admin.respondToAction(req, res, '/admin/xacml/policies',
-                        policyAction(body, req));
+  const result = policyAction(body, req);
+  if (!result.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0028');
+  }
+  admin.respondToAction(req, res, '/admin/xacml/policies', result);
   log.debug('Leaving the admin XACML policies action endpoint.');
 });
 
@@ -1471,24 +1670,32 @@ function editorJson(name) {
 // every other form on the row would silently clear it. Two states that must
 // both be sendable is exactly what a select is for.
 function yesNo(name, value) {
+  log.debug("Entering yesNo().");
+  log.debug("Leaving yesNo().");
   return select(name, [{ value: 'false', label: 'no' },
                        { value: 'true', label: 'yes' }],
                 value ? 'true' : 'false');
 }
 
 function typeOptions() {
+  log.debug("Entering typeOptions().");
+  log.debug("Leaving typeOptions().");
   return editor.typeMenu().map(function (one) {
     return { value: one.uri, label: one.label };
   });
 }
 
 function categoryOptions() {
+  log.debug("Entering categoryOptions().");
+  log.debug("Leaving categoryOptions().");
   return editor.CATEGORY_MENU.map(function (one) {
     return { value: one.uri, label: one.label };
   });
 }
 
 function functionOptions() {
+  log.debug("Entering functionOptions().");
+  log.debug("Leaving functionOptions().");
   return editor.applyFunctions().map(function (one) {
     return { value: one.uri,
              label: one.label + '  (' + one.arity + ' → ' + one.returns + ')' };
@@ -1508,8 +1715,10 @@ function functionOptions() {
 // function cannot disturb its attribute — and a person pressing Update under
 // "Reference" can see that the function is not part of what they are changing.
 function editFormFor(policy, row) {
+  log.debug("Entering editFormFor().");
   const located = editor.nodeAt(policy, row.path);
   if (!located) {
+    log.debug("Leaving editFormFor().");
     return '';
   }
   const node = located.node;
@@ -1528,6 +1737,7 @@ function editFormFor(policy, row) {
     const chosen = menu.filter(function (one) {
       return one.uri === node.combiningAlgId;
     })[0] || {};
+    log.debug("Leaving editFormFor().");
     return head + hidden('action', 'edit-policy') +
       (row.kind === 'policySet' ? 'PolicySetId ' : 'PolicyId ') +
       textField('id', node.id, 40) + ' ' +
@@ -1546,24 +1756,26 @@ function editFormFor(policy, row) {
       'this PDP implements no administrative delegation, so the attribute ' +
       'survives a round trip and is read by nothing. XPathVersion belongs in ' +
       '&lt;' + (row.kind === 'policySet' ? 'PolicySetDefaults'
-                                          : 'PolicyDefaults') + '&gt; and the ' +
-      'specification asks for it whenever the document holds an ' +
+                                          : 'PolicyDefaults') + '&gt; and ' +
+      'the specification asks for it whenever the document holds an ' +
       'AttributeSelector or an xpathExpression.</div>';
   }
 
   if (row.kind === 'reference') {
+    log.debug("Leaving editFormFor().");
     return head + hidden('action', 'edit-reference') +
       esc(node.kind) + ' ' + textField('ref', node.ref, 44) +
       ' Version ' + textField('version', node.version, 8) +
-      ' <button type="submit">Update</button></form>' +
-      '<div class="sub">The id of a policy stored <em>separately</em> in this ' +
-      'repository. It is resolved when a decision is made rather than when ' +
-      'this document is loaded, so naming one that does not exist yet is ' +
-      'allowed — an unresolved reference is reported on the decision. Leave ' +
-      'Version empty for no constraint.</div>';
+      ' <button type="submit">Update</button></form><div class="sub">The id ' +
+      'of a policy stored <em>separately</em> in this repository. It is ' +
+      'resolved when a decision is made rather than when this document is ' +
+      'loaded, so naming one that does not exist yet is allowed — an ' +
+      'unresolved reference is reported on the decision. Leave Version empty ' +
+      'for no constraint.</div>';
   }
 
   if (row.kind === 'rule') {
+    log.debug("Leaving editFormFor().");
     return head + hidden('action', 'edit-rule') +
       select('effect', [{ value: 'Permit', label: 'Permit' },
                         { value: 'Deny', label: 'Deny' }], node.effect) +
@@ -1585,6 +1797,7 @@ function editFormFor(policy, row) {
       'document that does not load, and the write would be refused. The ' +
       'scope is <strong>this policy</strong>: a sibling policy in the same ' +
       'set cannot see it.</div>';
+    log.debug("Leaving editFormFor().");
     // The definition IS an expression, so the expression's own form follows —
     // one row, two forms, rather than a variable you can rename and whose
     // value you cannot reach.
@@ -1627,10 +1840,12 @@ function editFormFor(policy, row) {
       'an empty bag and being Indeterminate — which is the difference ' +
       'between a policy that quietly does not apply and one that fails ' +
       'closed.</div>';
+    log.debug("Leaving editFormFor().");
     return test + against;
   }
 
   if (row.kind === 'assignment') {
+    log.debug("Leaving editFormFor().");
     return head + hidden('action', 'edit-assignment') +
       'AttributeId ' + textField('attributeId', node.attributeId, 30) +
       ' Category ' + select('category',
@@ -1646,6 +1861,7 @@ function editFormFor(policy, row) {
   }
 
   if (row.kind === 'obligation') {
+    log.debug("Leaving editFormFor().");
     return head + hidden('action', 'edit-obligation') +
       textField('id', node.id, 40) + ' fires on ' +
       select('on', [{ value: 'Permit', label: 'Permit' },
@@ -1654,8 +1870,10 @@ function editFormFor(policy, row) {
   }
 
   if (row.kind === 'expression') {
+    log.debug("Leaving editFormFor().");
     return expressionForm(policy, row, node);
   }
+  log.debug("Leaving editFormFor().");
   return '';
 }
 
@@ -1666,12 +1884,14 @@ function editFormFor(policy, row) {
 // whole content is which variable it names, and that is chosen by REPLACING it
 // from the Add menu, where the list of legal names is computed.
 function expressionForm(policy, row, node) {
+  log.debug("Entering expressionForm().");
   const head = '<form method="post" action="/admin/xacml/editor" ' +
     'class="inline">' + hidden('policy', policy.__editorName) +
     hidden('path', row.path);
 
   if (node.kind === 'value') {
     const xpath = node.type === model.TYPE.XPATH_EXPRESSION;
+    log.debug("Leaving expressionForm().");
     return head + hidden('action', 'edit-value') +
       textField('lexical', node.lexical, 24) + ' as ' +
       select('type', typeOptions(), node.type) +
@@ -1689,6 +1909,7 @@ function expressionForm(policy, row, node) {
   }
 
   if (node.kind === 'designator') {
+    log.debug("Leaving expressionForm().");
     return head + hidden('action', 'edit-designator') +
       textField('attributeId', node.attributeId, 24) + ' in ' +
       select('category', categoryOptions(), node.category) + ' as ' +
@@ -1710,6 +1931,7 @@ function expressionForm(policy, row, node) {
         return '<code>' + esc(prefix) + '</code> → <code>' +
           esc(node.namespaces[prefix]) + '</code>';
       }).join(', ');
+    log.debug("Leaving expressionForm().");
     return head + hidden('action', 'edit-selector') +
       'Path ' + textField('path', node.path, 30) + ' over ' +
       select('category', categoryOptions(), node.category) + ' as ' +
@@ -1734,6 +1956,7 @@ function expressionForm(policy, row, node) {
   }
 
   if (node.kind === 'function') {
+    log.debug("Leaving expressionForm().");
     return head + hidden('action', 'edit-function') +
       select('functionId', functionOptions(), node.functionId) +
       ' <button type="submit">Update</button></form>' +
@@ -1745,6 +1968,7 @@ function expressionForm(policy, row, node) {
   }
 
   if (node.kind === 'apply') {
+    log.debug("Leaving expressionForm().");
     return head + hidden('action', 'edit-apply') +
       select('functionId', functionOptions(), node.functionId) +
       ' Description ' + textField('description', node.description, 30) +
@@ -1759,11 +1983,13 @@ function expressionForm(policy, row, node) {
     // reference to a variable belonging to a sibling policy cannot be chosen.
     const scope = editor.variablesInScope(policy, row.path);
     if (!scope.length) {
+      log.debug("Leaving expressionForm().");
       return '<div class="sub">Names <code>$' + esc(node.variableId) +
         '</code>, which this policy does not define — so the document will ' +
         'not load. Add a variable definition to the policy, or replace this ' +
         'expression from the Add menu.</div>';
     }
+    log.debug("Leaving expressionForm().");
     return head + hidden('action', 'set-expression-variable') +
       select('variableId', scope.map(function (one) {
         return { value: one.id, label: '$' + one.id + '  — ' + one.detail };
@@ -1774,6 +2000,7 @@ function expressionForm(policy, row, node) {
       'to a sibling policy in the same set — section 5.24 — and the ' +
       'document would not load.</div>';
   }
+  log.debug("Leaving expressionForm().");
   return '';
 }
 
@@ -1814,6 +2041,8 @@ app.get('/admin/xacml/editor', function (req, res) {
     parsed = store.parseDocument(json.document);
     parsed.__editorName = json.policy.name;
   } catch (error) {
+    log.debug("Caught in a callback in module scope: " +
+              ((error && error.message) || error));
     parsed = null;
   }
 
@@ -1935,51 +2164,48 @@ app.get('/admin/xacml/editor', function (req, res) {
     'point and nothing else — a <code>Match</code> may only go inside an ' +
     'alternative, a <code>Condition</code> only on a rule and only one per ' +
     'rule, and the function list on a Match is the two-argument boolean ' +
-    'predicates rather than all 275 functions.</p>' +
-    '<p>Those menus are computed <strong>on the server</strong>, by the same ' +
-    'code that validates the policy, against the real function library — so ' +
-    'the editor cannot offer you something that will then be refused. This ' +
-    'console runs under <code>script-src \'none\'</code> and has no ' +
-    'JavaScript anywhere, which is why every control is a form and every ' +
-    'choice is a round trip. The cost is real: a five-rule policy built by ' +
-    'hand is perhaps forty of them. The templates on the ' +
-    '<a href="/admin/xacml/policies">Policies</a> page are the first twenty ' +
-    'already made.</p>' +
-    '<p>Every element you add arrives <em>complete and valid</em> — a new ' +
-    'rule has a Target and an Effect, a new Match has a function, a value ' +
-    'and an attribute. An editor that produced half-built elements would ' +
-    'hold a document that could not be saved, and a document that cannot be ' +
-    'saved cannot be evaluated, which is when you most want to look at it.</p>' +
-    '<p><strong>A <code>PolicySet</code> is edited here too, and it holds ' +
-    'policies rather than rules.</strong> Its children may be a policy ' +
-    'written inline, a nested set, or a <code>PolicyIdReference</code> ' +
-    'naming a policy stored separately in this repository — which is how a ' +
-    'PDP reaches more than one document: the root is evaluated and ' +
-    'references are resolved when a decision is made. Its combining ' +
-    'algorithm comes from the <em>policy</em>-combining list, which is a ' +
-    'different set of URIs from the rule-combining one they are almost ' +
-    'spelt the same as.</p>' +
-    '<p>The rest of the syntax is here as well: ' +
-    '<code>VariableDefinition</code> (named once, evaluated once per ' +
-    'request, visible to its own policy only), <code>AttributeSelector</code>' +
-    ' (an XPath over a request category\u2019s content, with the namespace ' +
-    'bindings its prefixes need), <code>Function</code> as a value (what a ' +
-    'higher-order function such as <code>any-of</code> or <code>map</code> ' +
-    'takes as its first argument), the attribute assignments under an ' +
-    'obligation, and the optional attributes — <code>Version</code>, ' +
-    '<code>Issuer</code>, <code>MustBePresent</code>, ' +
-    '<code>ContextSelectorId</code>, <code>XPathVersion</code> and ' +
-    '<code>MaxDelegationDepth</code>.</p>' +
-    '<p><strong>Two things are shown and cannot be added.</strong> The four ' +
-    'combiner-parameter elements are drawn and removable, because a ' +
-    'document may arrive carrying them and an element you cannot see is one ' +
-    'you cannot delete — but there is no Add button, since section C of the ' +
-    'specification says none of the twelve standard combining algorithms ' +
-    'takes a parameter, and a control that provably changes no decision ' +
-    'would be the first such control on this console. ' +
-    '<code>&lt;PolicyIssuer&gt;</code> is not here at all: it belongs to the ' +
-    'administrative delegation profile, which this PDP does not implement, ' +
-    'so a document carrying one loses it here.</p>',
+    'predicates rather than all 275 functions.</p><p>Those menus are ' +
+    'computed <strong>on the server</strong>, by the same code that ' +
+    'validates the policy, against the real function library — so the editor ' +
+    'cannot offer you something that will then be refused. This console runs ' +
+    'under <code>script-src \'none\'</code> and has no JavaScript anywhere, ' +
+    'which is why every control is a form and every choice is a round trip. ' +
+    'The cost is real: a five-rule policy built by hand is perhaps forty of ' +
+    'them. The templates on the <a href="/admin/xacml/policies">Policies</a> ' +
+    'page are the first twenty already made.</p><p>Every element you add ' +
+    'arrives <em>complete and valid</em> — a new rule has a Target and an ' +
+    'Effect, a new Match has a function, a value and an attribute. An editor ' +
+    'that produced half-built elements would hold a document that could not ' +
+    'be saved, and a document that cannot be saved cannot be evaluated, ' +
+    'which is when you most want to look at it.</p><p><strong>A ' +
+    '<code>PolicySet</code> is edited here too, and it holds policies rather ' +
+    'than rules.</strong> Its children may be a policy written inline, a ' +
+    'nested set, or a <code>PolicyIdReference</code> naming a policy stored ' +
+    'separately in this repository — which is how a PDP reaches more than ' +
+    'one document: the root is evaluated and references are resolved when a ' +
+    'decision is made. Its combining algorithm comes from the ' +
+    '<em>policy</em>-combining list, which is a different set of URIs from ' +
+    'the rule-combining one they are almost spelt the same as.</p><p>The ' +
+    'rest of the syntax is here as well: <code>VariableDefinition</code> ' +
+    '(named once, evaluated once per request, visible to its own policy ' +
+    'only), <code>AttributeSelector</code> (an XPath over a request ' +
+    'category\u2019s content, with the namespace bindings its prefixes ' +
+    'need), <code>Function</code> as a value (what a higher-order function ' +
+    'such as <code>any-of</code> or <code>map</code> takes as its first ' +
+    'argument), the attribute assignments under an obligation, and the ' +
+    'optional attributes — <code>Version</code>, <code>Issuer</code>, ' +
+    '<code>MustBePresent</code>, <code>ContextSelectorId</code>, ' +
+    '<code>XPathVersion</code> and ' +
+    '<code>MaxDelegationDepth</code>.</p><p><strong>Two things are shown and ' +
+    'cannot be added.</strong> The four combiner-parameter elements are ' +
+    'drawn and removable, because a document may arrive carrying them and an ' +
+    'element you cannot see is one you cannot delete — but there is no Add ' +
+    'button, since section C of the specification says none of the twelve ' +
+    'standard combining algorithms takes a parameter, and a control that ' +
+    'provably changes no decision would be the first such control on this ' +
+    'console. <code>&lt;PolicyIssuer&gt;</code> is not here at all: it ' +
+    'belongs to the administrative delegation profile, which this PDP does ' +
+    'not implement, so a document carrying one loses it here.</p>',
     'How this editor works');
 
   const body = chooser + whereToCreate + liveWarning + problems + xpathGap +
@@ -2024,16 +2250,18 @@ function editorAction(body) {
   const existing = store.read(name);
   if (!existing) {
     log.debug('Leaving editorAction(). No such policy.');
-    return { ok: false, why: 'There is no policy called "' + name + '".' };
+    return errorCodes.mark({ ok: false,
+                             why: 'There is no policy called "' + name + '".' },
+                           'STS-XACML-0033');
   }
   let policy;
   try {
     policy = store.parseDocument(existing.document);
   } catch (error) {
     log.debug('Leaving editorAction(). It will not load.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'That policy does not load, so it cannot be edited here: ' +
-                  error.message };
+                  error.message }, 'STS-XACML-0034');
   }
   // A DEEP COPY, because `applyEdit()` mutates and `parseDocument()` returns
   // the CACHED parse — editing that object in place would leave the cache
@@ -2043,7 +2271,7 @@ function editorAction(body) {
   const applied = editor.applyEdit(policy, path, action, body);
   if (!applied.ok) {
     log.debug('Leaving editorAction(). The edit was refused.');
-    return applied;
+    return errorCodes.mark(applied, 'STS-XACML-0035');
   }
   const document = xml.writePolicy(policy);
   const written = store.write(name, document, {
@@ -2052,10 +2280,11 @@ function editorAction(body) {
   });
   if (!written.ok) {
     log.debug('Leaving editorAction(). The store refused.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'That edit would leave the policy invalid, so it was not ' +
                   'saved and the stored document is unchanged. ' +
-                  written.why };
+                  written.why },
+                           errorCodes.codeOf(written) || 'STS-XACML-0028');
   }
   audit.audit({ action: 'xacml.policy.write', actor: '', protocol: 'XACML',
                 detail: action + ' at "' + (path || '(root)') + '" in "' +
@@ -2068,6 +2297,7 @@ app.post('/admin/xacml/editor', function (req, res) {
   log.debug('Entering the admin XACML editor action endpoint.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-XACML-0031');
     admin.respondToAction(req, res, '/admin/xacml/editor',
                           { ok: false,
                             why: 'This console session holds Admin Read and ' +
@@ -2076,6 +2306,9 @@ app.post('/admin/xacml/editor', function (req, res) {
     return;
   }
   const result = editorAction(body);
+  if (!result.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0035');
+  }
   admin.respondToAction(req, res, '/admin/xacml/editor?policy=' +
                         encodeURIComponent(String(body.policy || '')), result);
   log.debug('Leaving the admin XACML editor action endpoint.');
@@ -2249,6 +2482,8 @@ const EDITOR_ACTIONS = ['remove', 'add-rule', 'add-target-anyof', 'add-allof',
                         'edit-reference'];
 
 function actionNames() {
+  log.debug("Entering actionNames().");
+  log.debug("Leaving actionNames().");
   return POLICY_ACTIONS.concat(EDITOR_ACTIONS).concat(PEP_ACTIONS);
 }
 
@@ -2272,23 +2507,31 @@ function combinedAction(body) {
   // phrased it its own way would turn both checks off with nothing failing.
   const all = actionNames();
   log.debug('Leaving combinedAction(). Unknown action.');
-  return { ok: false,
+  return errorCodes.mark({ ok: false,
            why: 'Unknown action "' + action + '". There are ' + all.length +
-                ': ' + all.join(', ') + '.' };
+                ': ' + all.join(', ') + '.' }, 'STS-XACML-0032');
 }
 
 if (typeof admin.setXacmlPages === 'function') {
   admin.setXacmlPages({
     overview: function () {
+      log.debug("Entering overview().");
+      log.debug("Leaving overview().");
       return overviewJson();
     },
     policies: function () {
+      log.debug("Entering policies().");
+      log.debug("Leaving policies().");
       return policiesJson();
     },
     editor: function (name) {
+      log.debug("Entering editor().");
+      log.debug("Leaving editor().");
       return editorJson(name);
     },
     peps: function () {
+      log.debug("Entering peps().");
+      log.debug("Leaving peps().");
       return pepsJson();
     },
     // THE SIXTH VIEW, AND IT WAS MISSING UNTIL PHASE FIVE. Rule 7 says every
@@ -2299,6 +2542,8 @@ if (typeof admin.setXacmlPages === 'function') {
     // that job had not been run against this branch. The fix is here rather
     // than in a route of its own because the parity is about the VIEW.
     decide: function (query) {
+      log.debug("Entering decide().");
+      log.debug("Leaving decide().");
       return decideJson(query);
     },
     // THE SEVENTH, and it takes nothing: the monitor has no filter, no name
@@ -2306,6 +2551,8 @@ if (typeof admin.setXacmlPages === 'function') {
     // with no `action` beside it, because that page has no control — see its
     // header for why a reset button was refused rather than forgotten.
     monitor: function () {
+      log.debug("Entering monitor().");
+      log.debug("Leaving monitor().");
       return monitorJson();
     },
     action: combinedAction,

@@ -75,6 +75,20 @@ const engine = require('./engine');
 
 const log = engine.log;
 
+// THE ERROR-CODE TAG, handed in on `options` by `pep.js`, which resolves the
+// registry across both layouts (see `loadErrorCodes()` there). The fallback is
+// the registry's own format, so a caller that built its options elsewhere
+// still gets a coded line rather than a TypeError out of a polling timer.
+function tag(options, code) {
+  log.debug("Entering tag().");
+  if (options && typeof options.tag === 'function') {
+    log.debug("Leaving tag().");
+    return options.tag(code);
+  }
+  log.debug("Leaving tag().");
+  return '[' + code + '] ';
+}
+
 // What this PEP holds. Everything about the current policy set in one object,
 // replaced WHOLE on a successful pull rather than mutated field by field —
 // so there is no moment at which the root and the repository disagree, which
@@ -99,6 +113,8 @@ let registration = { registered: false, name: '', attempts: 0,
 const counters = { decisions: 0, allowed: 0, refused: 0, undischargeable: 0 };
 
 function state() {
+  log.debug("Entering state().");
+  log.debug("Leaving state().");
   return {
     held: {
       loaded: held.loaded,
@@ -121,6 +137,7 @@ function state() {
 }
 
 function countDecision(outcome) {
+  log.debug("Entering countDecision().");
   counters.decisions += 1;
   if (outcome.allowed) {
     counters.allowed += 1;
@@ -130,6 +147,7 @@ function countDecision(outcome) {
   if (outcome.undischargeable && outcome.undischargeable.length) {
     counters.undischargeable += 1;
   }
+  log.debug("Leaving countDecision().");
 }
 
 // ---------------------------------------------------------------------------
@@ -149,11 +167,15 @@ function countDecision(outcome) {
 // would expect to have to make.
 // ---------------------------------------------------------------------------
 function call(options, method, path, body) {
+  log.debug("Entering call().");
+  log.debug("Leaving call().");
   return new Promise(function (resolve) {
     let base;
     try {
       base = new URL(options.pdpUrl);
     } catch (error) {
+      log.debug("Caught in a callback in call(): " +
+                ((error && error.message) || error));
       resolve({ status: 0, body: null,
                 error: 'PEP_PDP_URL is not a URL: ' + options.pdpUrl });
       return;
@@ -198,6 +220,8 @@ function call(options, method, path, body) {
           try {
             parsed = JSON.parse(text);
           } catch (error) {
+            log.debug("Caught in a callback in call(): " +
+                      ((error && error.message) || error));
             // Not JSON; the raw text is what gets reported, which is what a
             // PDP answering an HTML error page or a proxy's message looks
             // like and is exactly what somebody debugging needs to see.
@@ -251,20 +275,49 @@ async function register(options) {
                           'address for the nudge, not the ability to decide. ' +
                           'It is retried on every poll (attempt ' + attempts +
                           ').' };
-    complain('xacml-pep: ' + registration.why);
+    complain(tag(options, 'STS-XPEP-0015') + 'xacml-pep: ' + registration.why);
     log.debug('Leaving register(). Unreachable.');
     return registration;
   }
   if (answer.status !== 200 && answer.status !== 201) {
     const why = (answer.body && answer.body.error_description) ||
                 answer.text || ('the PDP answered ' + answer.status);
+    // ---------------------------------------------------------------------
+    // WHAT THIS SENTENCE SAID UNTIL IT WAS FIXED, AND WHY IT MATTERED.
+    //
+    // It read "THIS PEP STILL ENFORCES — GET /xacml/pep/policies needs no
+    // credential", which stopped being true on 2026-09-06 when the three
+    // /xacml/pep/* endpoints went behind a verified client certificate
+    // holding REMOTE_PEPS. `xacml-pep/CLAUDE.md` recorded that correction for
+    // its prose and this string was missed — so an operator whose certificate
+    // was missing or unrecognised was told, on the same `GET /` page whose
+    // `holding.lastPullWhy` carried the PDP's 403 about REMOTE_PEPS, that the
+    // pull needed no credential. The one place the two disagreed was the one
+    // place somebody was reading to find out which it was.
+    //
+    // **REGISTERING IS STILL NOT WHAT LETS THIS PEP DECIDE**, and that half
+    // is unchanged: it buys a row on the PDP's console and an address for the
+    // nudge. What is no longer safe to say is anything about the PULL, and
+    // the reason is that this branch covers refusals that need OPPOSITE
+    // readings — 401 and 403 are the credential, and the pull is refused too;
+    // 400 (the register is full, the name is taken) and 501 (remote PEPs are
+    // turned off on that service) leave a credentialed PEP pulling and
+    // enforcing perfectly. So it names both and points at the one field that
+    // answers it for this deployment rather than guessing.
+    // ---------------------------------------------------------------------
     registration = { registered: false, name: options.name, attempts: attempts,
                      why: 'The PDP refused the registration (' +
-                          answer.status + '): ' + why + ' THIS PEP STILL ' +
-                          'ENFORCES — GET /xacml/pep/policies needs no ' +
-                          'credential. It is retried on every poll (attempt ' +
-                          attempts + ').' };
-    complain('xacml-pep: ' + registration.why);
+                          answer.status + '): ' + why + ' Registering buys a ' +
+                          'row on the PDP console and an address for the ' +
+                          'nudge, not the ability to decide — but the PULL ' +
+                          'needs the same credential, since GET ' +
+                          '/xacml/pep/policies requires the REMOTE_PEPS ' +
+                          'role. So a refusal about a certificate or that ' +
+                          'role will have refused the pull as well, and one ' +
+                          'about anything else will not: holding.lastPullWhy ' +
+                          'is what says which happened here. It is retried ' +
+                          'on every poll (attempt ' + attempts + ').' };
+    complain(tag(options, 'STS-XPEP-0016') + 'xacml-pep: ' + registration.why);
     log.debug('Leaving register(). Refused.');
     return registration;
   }
@@ -312,9 +365,12 @@ async function register(options) {
 // `created: false` — harmless, and still noise nobody asked for.
 // ---------------------------------------------------------------------------
 async function registerIfNeeded(options) {
+  log.debug("Entering registerIfNeeded().");
   if (registration.registered) {
+    log.debug("Leaving registerIfNeeded().");
     return registration;
   }
+  log.debug("Leaving registerIfNeeded().");
   return register(options);
 }
 
@@ -329,7 +385,9 @@ async function pull(options) {
     : '?pep=' + encodeURIComponent(options.name);
   const answer = await call(options, 'GET', '/xacml/pep/policies' + since);
   if (answer.error) {
-    return keep('Could not reach the PDP: ' + answer.error);
+    log.debug("Leaving pull().");
+    return keep('Could not reach the PDP: ' + answer.error,
+                tag(options, 'STS-XPEP-0017'));
   }
   if (answer.status === 304) {
     // UNCHANGED IS A SUCCESSFUL PULL. It moves `lastPullAt`, because the
@@ -342,14 +400,18 @@ async function pull(options) {
     return state().held;
   }
   if (answer.status !== 200) {
+    log.debug("Leaving pull().");
     return keep('The PDP answered ' + answer.status +
                 ((answer.body && answer.body.error_description)
-                  ? ': ' + answer.body.error_description : '') + '.');
+                  ? ': ' + answer.body.error_description : '') + '.',
+                tag(options, 'STS-XPEP-0018'));
   }
   const said = answer.body;
   if (!said || !Array.isArray(said.policies)) {
+    log.debug("Leaving pull().");
     return keep('The PDP answered 200 with something that is not a policy ' +
-                'set. Keeping the previous one.');
+                'set. Keeping the previous one.',
+                tag(options, 'STS-XPEP-0019'));
   }
   // PARSED AND STATICALLY VALIDATED HERE, by this PEP's own copy of the
   // validator, and NOT taken on trust because the PDP said it was fine. That
@@ -392,6 +454,7 @@ async function pull(options) {
     try {
       root = engine.xml.parsePolicy(said.policies[0].document);
     } catch (error) {
+      log.debug("Caught in pull(): " + ((error && error.message) || error));
       // Already counted in `refused` above; nothing more to do here.
       root = null;
     }
@@ -413,20 +476,28 @@ async function pull(options) {
     refused: refused
   };
   if (refused.length) {
-    log.warn('xacml-pep: ' + refused.length + ' of ' + said.policies.length +
+    log.warn(tag(options, 'STS-XPEP-0020') +
+             'xacml-pep: ' + refused.length + ' of ' + said.policies.length +
              ' pulled policy(ies) would not load here and were left out: ' +
              refused.map(function (one) {
                return one.name + ' (' + one.why + ')';
              }).join('; '));
   }
-  log.info('xacml-pep: pulled ' + said.policies.length + ' policy(ies), ' +
+  // Tagged only when nothing is the root: the pull worked and there is still
+  // nothing to evaluate, which is the state an operator has to go and fix.
+  log.info((root ? '' : tag(options, 'STS-XPEP-0021')) +
+           'xacml-pep: pulled ' + said.policies.length + ' policy(ies), ' +
            'token ' + held.syncToken + '. ' + held.lastPullWhy);
   log.debug('Leaving pull(). Loaded.');
   return state().held;
 }
 
 // A FAILED PULL KEEPS WHAT IS HELD. See the header for the trade this is.
-function keep(why) {
+// `prefix` is the caller's error-code tag, which goes on the LOG LINE only —
+// `lastPullWhy` is drawn on `GET /` and a code is never put in front of a
+// caller.
+function keep(why, prefix) {
+  log.debug("Entering keep().");
   // `lastPullAt` IS DELIBERATELY NOT TOUCHED. It means "when did this PEP last
   // confirm it was current", so a FAILED pull must leave it where it was —
   // that gap is precisely what `stale` is computed from, and stamping it here
@@ -443,7 +514,8 @@ function keep(why) {
     : ' NOTHING IS HELD, so there is no policy to enforce: every decision is ' +
       'NotApplicable and the bias decides. That is a different state from a ' +
       'stale copy and is reported as loaded: false.');
-  log.warn('xacml-pep: ' + held.lastPullWhy);
+  log.warn((prefix || '') + 'xacml-pep: ' + held.lastPullWhy);
+  log.debug("Leaving keep().");
   return state().held;
 }
 
@@ -470,8 +542,11 @@ async function heartbeat(options) {
     // reporting, and a PEP that cannot report is still enforcing correctly —
     // logging it at warn on a sixty-second timer would fill a log with the
     // least important failure this container has.
-    log.debug('Leaving heartbeat(). Not delivered: ' +
+    log.debug((answer.error ? tag(options, 'STS-XPEP-0022')
+                            : tag(options, 'STS-XPEP-0023')) +
+              'Leaving heartbeat(). Not delivered: ' +
               (answer.error || answer.status));
+    log.debug("Leaving heartbeat().");
     return { ok: false };
   }
   const said = answer.body || {};
@@ -487,6 +562,8 @@ async function heartbeat(options) {
 // a plain accessor rather than an exported variable so that a caller cannot be
 // holding last minute's object while a pull replaces it.
 function current() {
+  log.debug("Entering current().");
+  log.debug("Leaving current().");
   return { root: held.root, repository: held.repository,
            loaded: held.loaded };
 }

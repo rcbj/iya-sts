@@ -55,6 +55,12 @@ const path = require('path');
 
 const driver = require('../persistence/persistence_postgres');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'postgres_schema',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 const SCHEMA_SQL = path.join(ROOT, 'postgres', 'schema.sql');
 const APPLY_SH = path.join(ROOT, 'postgres', 'apply-schema.sh');
@@ -71,6 +77,8 @@ const APP_ROLE = 'sts_app';
 // columns, their types and their constraints, not the indentation somebody
 // chose. Anything else differing is a real disagreement.
 function normalize(statement) {
+  log.debug("Entering normalize().");
+  log.debug("Leaving normalize().");
   return statement.replace(/\s+/g, ' ').trim();
 }
 
@@ -84,21 +92,26 @@ function normalize(statement) {
 // one, and a naive strip of everything after `--` anywhere would silently eat
 // part of a statement the day one does.
 function statementsIn(sql) {
+  log.debug("Entering statementsIn().");
   const body = sql.split('\n').filter(function (line) {
     return !/^\s*--/.test(line) && !/^\s*\\/.test(line);
   }).join('\n');
+  log.debug("Leaving statementsIn().");
   return body.split(';').map(normalize).filter(function (statement) {
     return statement.length > 0;
   });
 }
 
 function scriptStatements(sql) {
+  log.debug("Entering scriptStatements().");
+  log.debug("Leaving scriptStatements().");
   return statementsIn(sql).filter(function (statement) {
     return /^CREATE (TABLE|INDEX)/i.test(statement);
   });
 }
 
 function checkTheDdlAgrees(t, sql) {
+  log.debug("Entering checkTheDdlAgrees().");
   const fromScript = scriptStatements(sql);
   const fromDriver = driver.SCHEMA.map(normalize);
 
@@ -120,9 +133,11 @@ function checkTheDdlAgrees(t, sql) {
             'the driver carries the script\'s ' + statement.slice(0, 60) + '…',
             statement);
   });
+  log.debug("Leaving checkTheDdlAgrees().");
 }
 
 function checkTheVersionAgrees(t, sql) {
+  log.debug("Entering checkTheVersionAgrees().");
   // The script writes the version row so that a database built by an owner
   // reports its schema version without this service ever having connected.
   // A script that wrote a different number would be a store claiming to be a
@@ -134,9 +149,11 @@ function checkTheVersionAgrees(t, sql) {
     t.equal(Number(match[1]), driver.SCHEMA_VERSION,
             'and the version it writes is the driver\'s SCHEMA_VERSION');
   }
+  log.debug("Leaving checkTheVersionAgrees().");
 }
 
 function checkThePrivilegeIsNarrow(t, sql) {
+  log.debug("Entering checkThePrivilegeIsNarrow().");
   // ---------------------------------------------------------------------
   // THE FOUR VERBS AND NO FIFTH.
   //
@@ -196,9 +213,11 @@ function checkThePrivilegeIsNarrow(t, sql) {
     return /REVOKE CREATE ON SCHEMA :"sts_schema" FROM :"sts_app_role"/i
       .test(s);
   }), 'and from the application role by name');
+  log.debug("Leaving checkThePrivilegeIsNarrow().");
 }
 
 function checkTheRoleNameAgrees(t) {
+  log.debug("Entering checkTheRoleNameAgrees().");
   const apply = fs.readFileSync(APPLY_SH, 'utf8');
   const compose = fs.readFileSync(COMPOSE, 'utf8');
 
@@ -214,22 +233,31 @@ function checkTheRoleNameAgrees(t) {
   const url = /STS_DATABASE_URL=\$\{STS_DATABASE_URL:-([^}]+)\}/.exec(compose);
   t.check(!!url, 'docker-compose.yml has a default STS_DATABASE_URL');
   if (url) {
-    t.check(url[1].indexOf('://' + APP_ROLE + ':') === 0 ||
-            url[1].indexOf('://' + APP_ROLE + ':') > 0,
+    // THE PASSWORD IS NO LONGER IN THIS STRING AND THAT IS THE POINT. Since
+    // 2026-09-12 the compose stack reads it from OpenBao and
+    // `persistence.js`'s `resolveDatabaseUrl()` injects it, so the default
+    // reads `sts_app@postgres` where it used to read `sts_app:sts_app@`. What
+    // this assertion is about is the ROLE, so it accepts either spelling —
+    // pinning the colon would have made "the password left the compose file"
+    // look like "the service dials as the schema owner".
+    t.check(new RegExp('://' + APP_ROLE + '[:@]').test(url[1]),
             'and it dials as ' + APP_ROLE + ' rather than as the schema owner',
             url[1]);
     t.check(url[1].indexOf('sslmode=require') > 0,
             'and still asks for TLS, which the database still requires',
             url[1]);
   }
+  log.debug("Leaving checkTheRoleNameAgrees().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   const sql = fs.readFileSync(SCHEMA_SQL, 'utf8');
   checkTheDdlAgrees(t, sql);
   checkTheVersionAgrees(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

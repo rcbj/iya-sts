@@ -323,6 +323,8 @@ function externalDecision(decision) {
 }
 
 function isIndeterminate(decision) {
+  log.debug("Entering isIndeterminate().");
+  log.debug("Leaving isIndeterminate().");
   return decision === DECISION.INDETERMINATE ||
          decision === DECISION.INDETERMINATE_P ||
          decision === DECISION.INDETERMINATE_D ||
@@ -386,18 +388,26 @@ function canonicalType(uri) {
 // caller has to remember to wrap one — which is the shape the mistake takes.
 // ---------------------------------------------------------------------------
 function bag(type, values) {
+  log.debug("Entering bag().");
+  log.debug("Leaving bag().");
   return { type: canonicalType(type), values: values || [] };
 }
 
 function emptyBag(type) {
+  log.debug("Entering emptyBag().");
+  log.debug("Leaving emptyBag().");
   return bag(type, []);
 }
 
 function singleton(type, value) {
+  log.debug("Entering singleton().");
+  log.debug("Leaving singleton().");
   return bag(type, [value]);
 }
 
 function isEmptyBag(candidate) {
+  log.debug("Entering isEmptyBag().");
+  log.debug("Leaving isEmptyBag().");
   return !candidate || !candidate.values || candidate.values.length === 0;
 }
 
@@ -414,22 +424,30 @@ function isEmptyBag(candidate) {
 // in this directory is a bug in this directory rather than a decision.
 // ---------------------------------------------------------------------------
 function IndeterminateError(status, message, detail) {
+  log.debug("Entering IndeterminateError().");
   const error = new Error(message);
   error.name = 'IndeterminateError';
   error.xacmlStatus = status || STATUS.PROCESSING_ERROR;
   error.xacmlDetail = detail || null;
+  log.debug("Leaving IndeterminateError().");
   return error;
 }
 
 function missingAttribute(message, detail) {
+  log.debug("Entering missingAttribute().");
+  log.debug("Leaving missingAttribute().");
   return IndeterminateError(STATUS.MISSING_ATTRIBUTE, message, detail);
 }
 
 function syntaxError(message, detail) {
+  log.debug("Entering syntaxError().");
+  log.debug("Leaving syntaxError().");
   return IndeterminateError(STATUS.SYNTAX_ERROR, message, detail);
 }
 
 function processingError(message, detail) {
+  log.debug("Entering processingError().");
+  log.debug("Leaving processingError().");
   return IndeterminateError(STATUS.PROCESSING_ERROR, message, detail);
 }
 

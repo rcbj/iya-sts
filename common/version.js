@@ -122,6 +122,13 @@ var log = {
 };
 
 const VERSION_FILE = 'VERSION';
+
+// THE ERROR CODES BELOW ARE WRITTEN OUT AS `[STS-CORE-nnnn] ` RATHER THAN
+// THROUGH `common/error_codes.js`'s `tag()`, and that is (2) above holding:
+// this file requires nothing from the repository, and it is copied ALONE to the
+// root of the `xacml-pep/` image, where a require of the registry would throw
+// at load. The bracketed prefix is exactly what `tag()` produces, so a search
+// for `[STS-` finds these lines with every other one.
 const STAMP_FILE = 'version.json';
 
 // THE PACKAGE ROOT: the directory the VERSION file is in. Every path below is
@@ -142,15 +149,19 @@ const STAMP_FILE = 'version.json';
 // VERSION file behaves exactly as before and readMajorMinor() reports the 0.0
 // it is written to report.
 function findRoot() {
+  log.debug("Entering findRoot().");
   const candidates = [path.join(__dirname, '..'), __dirname];
   for (const dir of candidates) {
     try {
       fs.accessSync(path.join(dir, VERSION_FILE), fs.constants.R_OK);
+      log.debug("Leaving findRoot().");
       return dir;
     } catch (e) {
       // Not this one. The first miss is normal in the container layout.
+      log.debug("Caught in findRoot(): " + ((e && e.message) || e));
     }
   }
+  log.debug("Leaving findRoot().");
   return path.join(__dirname, '..');
 }
 const ROOT = findRoot();
@@ -171,11 +182,14 @@ function readMajorMinor() {
     // likeliest way somebody breaks this, and the number would otherwise just
     // be wrong everywhere with nothing to say why.
     if (raw) {
-      console.error('[version] ignoring malformed ' + file + ': "' + raw +
+      console.error('[STS-CORE-0039] [version] ignoring malformed ' + file +
+          ': ' +
+          '"' + raw +
                     '" (want M.N)');
     }
   } catch (e) {
     // No VERSION file in either candidate root. Falls through to 0.0 below.
+    log.debug("Caught in readMajorMinor(): " + ((e && e.message) || e));
   }
   // NEVER FAIL A BUILD — OR A START — OVER THIS. An unknown major.minor is
   // still reportable, and a service that would not answer a Token Request
@@ -183,7 +197,7 @@ function readMajorMinor() {
   // the repository. Contrast the signing key, which IS fatal to lose: a wrong
   // version misinforms a reader, a wrong key invalidates every token this
   // service ever issued.
-  console.error('[version] no readable ' + VERSION_FILE +
+  console.error('[STS-CORE-0040] [version] no readable ' + VERSION_FILE +
                 '; falling back to 0.0');
   log.debug("Leaving readMajorMinor().");
   return { major: '0', minor: '0' };
@@ -192,6 +206,8 @@ function readMajorMinor() {
 function utcStamp(d) {
   log.debug("Entering utcStamp().");
   const p = (n, w) => {
+    log.debug("Entering p().");
+    log.debug("Leaving p().");
     return String(n).padStart(w || 2, '0');
   };
   log.debug("Leaving utcStamp().");
@@ -214,6 +230,7 @@ function gitCommit() {
     log.debug("Leaving gitCommit().");
     return out;
   } catch (e) {
+    log.debug("Caught in gitCommit(): " + ((e && e.message) || e));
     // No git, no history, or a detached weirdness. The commit is provenance for
     // a tooltip and nothing depends on it, so an empty string is the answer
     // rather than a thrown error.
@@ -267,7 +284,8 @@ function stamp(dir) {
     fs.writeFileSync(path.join(dir, STAMP_FILE), JSON.stringify(v, null, 2) +
                      '\n');
   } catch (e) {
-    console.error('[version] could not write ' + path.join(dir, STAMP_FILE) +
+    console.error('[STS-CORE-0041] [version] could not write ' +
+                  path.join(dir, STAMP_FILE) +
                   ': ' + e.message);
   }
   log.debug("Leaving stamp().");
@@ -324,8 +342,9 @@ function load(dir) {
       return v;
     }
   } catch (e) {
-    // Not stamped. Entirely normal in a checkout, and the whole reason resolve()
-    // exists as a fallback rather than this being an error.
+    // Not stamped. Entirely normal in a checkout, and the whole reason
+    // resolve() exists as a fallback rather than this being an error.
+    log.debug("Caught in load(): " + ((e && e.message) || e));
   }
   const computed = resolve();
   if (!dir) {
@@ -339,19 +358,26 @@ function load(dir) {
 //
 // This service makes FOUR outbound requests (root CLAUDE.md lists them and each
 // is argued where it lives), and three of them reach somebody else's server:
-// federation's, SSF's RFC 8935 push, and XACML's change nudge. Every one of them
-// should say what dialled it and which build of it, because the person reading
-// that access log is debugging an integration with a mock they did not install.
+// federation's, SSF's RFC 8935 push, and XACML's change nudge. Every one of
+// them should say what dialled it and which build of it, because the person
+// reading that access log is debugging an integration with a mock they did not
+// install.
 //
-// **RFC 9110 product form**, `mock-sts/<M.N.O> (<component>)`: one product token
+// **RFC 9110 product form**, `sts/<M.N.O> (<component>)`: one product token
 // with a version, and the component in a comment. The version is not decoration
-// there — "mock-sts called my endpoint and sent the wrong thing" is answerable
+// there — "sts called my endpoint and sent the wrong thing" is answerable
 // only if the request said which build did it.
 //
 // It is HERE rather than three strings in three modules for the reason the rest
 // of this file exists: one copy of the product token, so a rename or a version
 // change cannot reach two of the three.
-const PRODUCT = 'mock-sts';
+//
+// **THE TOKEN WAS `mock-sts` UNTIL 2026-09-12**, when the product name in
+// every identifier this service stores and emits became `sts`. That was the
+// rename this constant exists to make a one-line change, and it was. The
+// REPOSITORY and the package are still called mock-sts; this is the name on
+// the wire, which is a different thing.
+const PRODUCT = 'sts';
 
 function userAgent(component) {
   log.debug("Entering userAgent(). component=" + component);
@@ -398,9 +424,9 @@ function manifestVersion() {
   return major + '.' + minor + '.0';
 }
 
-// [{ path, actual, expected, ok }] for each manifest present in the tree. In the
-// service image `xacml-pep/` has been removed by the Dockerfile, so this is one
-// entry there rather than two — absence is not drift.
+// [{ path, actual, expected, ok }] for each manifest present in the tree. In
+// the service image `xacml-pep/` has been removed by the Dockerfile, so this is
+// one entry there rather than two — absence is not drift.
 function checkManifests() {
   log.debug("Entering checkManifests().");
   const want = manifestVersion();
@@ -411,6 +437,7 @@ function checkManifests() {
     try {
       actual = JSON.parse(fs.readFileSync(file, 'utf8')).version;
     } catch (e) {
+      log.debug("Caught in checkManifests(): " + ((e && e.message) || e));
       continue;
     }
     out.push({ path: rel, actual: actual, expected: want,
@@ -444,6 +471,7 @@ function syncManifests() {
     } catch (e) {
       // No lock, or unreadable. The manifest is what matters — npm regenerates
       // the lock's root entry on the next install.
+      log.debug("Caught in syncManifests(): " + ((e && e.message) || e));
     }
     changed.push(entry.path + ': ' + entry.actual + ' -> ' + want);
   }

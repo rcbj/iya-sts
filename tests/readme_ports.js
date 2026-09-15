@@ -52,6 +52,12 @@ const path = require('path');
 
 const config = require('../common/config');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'readme_ports',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const README = path.join(__dirname, '..', 'README.md');
 
 // The settings that name something this service BINDS. A port or a socket
@@ -59,9 +65,14 @@ const README = path.join(__dirname, '..', 'README.md');
 // socket rather than the socket, so the filter is on the shape of the VALUE as
 // well as on the name.
 function bindingSettings() {
+  log.debug("Entering bindingSettings().");
+  log.debug("Leaving bindingSettings().");
   return config.SETTINGS.filter(function (s) {
+    // A port whose DEFAULT is 0 is not a binding: `pki.distributionPort` and
+    // `pki.distributionLdapPort` are ports this service WRITES into a
+    // certificate, and 0 is how they say "the listener's own".
     if (/[Pp]ort$/.test(s.key)) {
-      return typeof s.dflt === 'number';
+      return typeof s.dflt === 'number' && s.dflt > 0;
     }
     if (/Socket$/.test(s.key)) {
       return typeof s.dflt === 'string' && s.dflt.indexOf('/') === 0;
@@ -74,22 +85,27 @@ function bindingSettings() {
 // next heading so that a `| ... |` line further down the README — and there are
 // hundreds, the settings table among them — cannot be read as a port row.
 function portsSection() {
+  log.debug("Entering portsSection().");
   const text = fs.readFileSync(README, 'utf8');
   const start = text.indexOf('\n### The ports\n');
   if (start < 0) {
+    log.debug("Leaving portsSection().");
     return null;
   }
   const rest = text.slice(start + 1);
   const end = rest.indexOf('\n### ');
+  log.debug("Leaving portsSection().");
   return end < 0 ? rest : rest.slice(0, end);
 }
 
 function run(t) {
+  log.debug("Entering run().");
   const section = portsSection();
   if (!t.check(!!section, 'README.md has a `### The ports` section',
                'the section this file exists to check is gone; either it was ' +
                'renamed — in which case rename it here too — or a table that ' +
                'was being kept honest has been deleted')) {
+    log.debug("Leaving run().");
     // Every assertion below reads it. Stopping is the honest outcome: a run
     // that reported twenty passes against an empty string would be the exact
     // thing this file is written to prevent one file over.
@@ -204,8 +220,9 @@ function run(t) {
   // answer datagrams.
   t.check(/^EXPOSE\s+88\/udp\s*$/m.test(dockerfile),
           'and names 88/udp separately from 88/tcp',
-          'both transports are bound from one setting, so only the Dockerfile ' +
-          'says out loud that the datagram socket is there');
+          'both transports are bound from one setting, so only the ' +
+          'Dockerfile says out loud that the datagram socket is there');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

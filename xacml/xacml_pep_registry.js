@@ -88,6 +88,9 @@
 const crypto = require('crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// The error-code registry (a leaf). A refusal's code is marked on the RESULT as
+// a non-enumerable property, which `xacml.js` reads back onto its response.
+const errorCodes = require('../common/error_codes');
 // For elsewhere() below, which answers the one question a per-realm register
 // cannot answer about itself. A LEAF like `config` — it registers no route and
 // requiring it is what fills the realm slot every store here already depends
@@ -214,11 +217,15 @@ function setDirectory(fns) {
 // service calls this, exactly as nothing calls
 // `applications.directoryInstalled()`.
 function directoryInstalled() {
+  log.debug("Entering directoryInstalled().");
+  log.debug("Leaving directoryInstalled().");
   return directory;
 }
 
 function haveDirectory() {
+  log.debug("Entering haveDirectory().");
   if (directory) {
+    log.debug("Leaving haveDirectory().");
     return true;
   }
   if (!warnedAboutNoDirectory) {
@@ -231,6 +238,7 @@ function haveDirectory() {
              'store, deliberately — a register that quietly lived in memory ' +
              'would list PEPs nobody could find.');
   }
+  log.debug("Leaving haveDirectory().");
   return false;
 }
 
@@ -271,7 +279,9 @@ function certificateIdentity(certificate) {
 }
 
 function staleAfterS() {
+  log.debug("Entering staleAfterS().");
   const value = config.value('xacml.pepStaleAfterS');
+  log.debug("Leaving staleAfterS().");
   return typeof value === 'number' && value > 0 ? value : 300;
 }
 
@@ -308,24 +318,31 @@ function syncToken() {
 // two — `xacml/CLAUDE.md` records it as the first of four silent defects.
 // ---------------------------------------------------------------------------
 function attributeReader(attributes) {
+  log.debug("Entering attributeReader().");
   const lowered = {};
   Object.keys(attributes || {}).forEach(function (key) {
     lowered[key.toLowerCase()] = attributes[key];
   });
+  log.debug("Leaving attributeReader().");
   return function (name) {
     return one(lowered[String(name).toLowerCase()]);
   };
 }
 
 function one(value) {
+  log.debug("Entering one().");
   if (Array.isArray(value)) {
+    log.debug("Leaving one().");
     return value.length ? String(value[0]) : null;
   }
+  log.debug("Leaving one().");
   return value === undefined || value === null ? null : String(value);
 }
 
 function number(value) {
+  log.debug("Entering number().");
   const n = parseInt(value, 10);
+  log.debug("Leaving number().");
   return isNaN(n) ? 0 : n;
 }
 
@@ -377,7 +394,8 @@ function elsewhere() {
         // A realm whose directory subtree is mid-build answers nothing rather
         // than taking the page down: this is a hint about where to look, and a
         // hint that throws is worse than no hint.
-        log.warn('xacml: could not read the "' + realm.id + '" realm\'s ' +
+        log.warn(errorCodes.tag('STS-XACML-0064') +
+                 'xacml: could not read the "' + realm.id + '" realm\'s ' +
                  'remote PEP register: ' + e.message);
         return [];
       }
@@ -476,19 +494,21 @@ function register(record) {
   const given = record || {};
   if (!haveDirectory()) {
     log.debug('Leaving register(). No directory.');
-    return { ok: false, why: 'There is no embedded directory, so there is ' +
-                             'nowhere to register a Policy Enforcement ' +
-                             'Point.' };
+    return errorCodes.mark({ ok: false,
+                             why: 'There is no embedded directory, so there ' +
+                                  'is nowhere to register a Policy ' +
+                                  'Enforcement Point.' }, 'STS-XACML-0026');
   }
   const name = nameFrom(given.name);
   if (!name) {
     log.debug('Leaving register(). No usable name.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'A remote PEP is named from the common name of the client ' +
                   'certificate it registered with, or — when ' +
                   'xacml.pepRequireCertificate is off — from the `name` in ' +
                   'the registration. Neither produced anything usable after ' +
-                  'folding to letters, digits, dot, dash and underscore.' };
+                  'folding to letters, digits, dot, dash and underscore.' },
+                           'STS-XACML-0019');
   }
   const existing = read(name);
   const now = new Date().toISOString();
@@ -532,10 +552,10 @@ function register(record) {
   const written = directory.writePep(name, attributes);
   if (!written) {
     log.debug('Leaving register(). The directory refused it.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'The directory refused the entry. ou=peps may be at its ' +
                   'maximum of ' + config.value('xacml.maxPeps') +
-                  ' (xacml.maxPeps).' };
+                  ' (xacml.maxPeps).' }, 'STS-XACML-0027');
   }
   log.info('xacml: remote PEP "' + name + '" ' +
            (existing ? 're-registered' : 'registered') +
@@ -563,18 +583,20 @@ function heartbeat(name, report) {
   log.debug('Entering heartbeat(). name=' + name);
   if (!haveDirectory()) {
     log.debug('Leaving heartbeat(). No directory.');
-    return { ok: false, why: 'There is no embedded directory.' };
+    return errorCodes.mark({ ok: false,
+                             why: 'There is no embedded directory.' },
+                           'STS-XACML-0026');
   }
   const existing = read(name);
   if (!existing) {
     log.debug('Leaving heartbeat(). Not registered.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'No Policy Enforcement Point is registered as "' + name +
                   '". Register first — POST /xacml/pep/register. A heartbeat ' +
                   'does not create a row, deliberately: a row created by a ' +
                   'heartbeat would carry no certificate, no notify URL and ' +
                   'no registration date, and would be a PEP nobody could ' +
-                  'nudge.' };
+                  'nudge.' }, 'STS-XACML-0021');
   }
   const said = report || {};
   const attributes = attributesOf(existing, {
@@ -603,7 +625,9 @@ function heartbeat(name, report) {
   const written = directory.writePep(name, attributes);
   log.debug('Leaving heartbeat(). ' + (written ? 'Recorded.' : 'Refused.'));
   return written ? { ok: true, name: name, current: syncToken() }
-                 : { ok: false, why: 'The directory refused the entry.' };
+                 : errorCodes.mark({ ok: false,
+                                     why: 'The directory refused the entry.' },
+                                   'STS-XACML-0027');
 }
 
 // What happened to the last nudge, written back onto the row. Separate from
@@ -657,6 +681,7 @@ function setEnabled(name, on) {
 // that had stopped enforcing.
 // ---------------------------------------------------------------------------
 function attributesOf(row, overrides) {
+  log.debug("Entering attributesOf().");
   const attributes = {
     objectClass: ['top', 'xacmlPep'],
     xacmlPepIdentity: row.identity,
@@ -681,6 +706,7 @@ function attributesOf(row, overrides) {
   if (row.description) {
     attributes.description = row.description;
   }
+  log.debug("Leaving attributesOf().");
   return Object.assign(attributes, overrides || {});
 }
 

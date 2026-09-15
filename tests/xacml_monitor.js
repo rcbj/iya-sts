@@ -1,4 +1,10 @@
 'use strict';
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_monitor',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: xacml_monitor.js
 //
@@ -49,9 +55,10 @@ delete process.env.CONFIG_FILE;
 
 module.exports = {
   name: 'xacml_monitor',
-  describe: 'the decision counters: a decision is not an enforcement, and the ' +
-            'four figures reconcile',
+  describe: 'the decision counters: a decision is not an enforcement, and ' +
+            'the four figures reconcile',
   run: function (t) {
+    log.debug("Entering run().");
     const realms = require('../common/realms');
     const monitor = require('../xacml/xacml_monitor');
 
@@ -59,8 +66,15 @@ module.exports = {
     // counts as an argument precisely so that it needs no store — see its
     // header — and this file is about the counters, not about `ou=policies`.
     const REPOSITORY = { total: 3, enabled: 2, root: 'seeded-rbac' };
-    const shot = function () { return monitor.snapshot(REPOSITORY); };
+    const shot = function () {
+      log.debug("Entering shot().");
+      log.debug("Leaving shot().");
+      return monitor.snapshot(REPOSITORY);
+    };
+
     const rowOf = function (id) {
+      log.debug("Entering rowOf().");
+      log.debug("Leaving rowOf().");
       return shot().rows.filter(function (one) { return one.id === id; })[0];
     };
 
@@ -104,7 +118,8 @@ module.exports = {
     t.equal(issuance.notApplicable, 1, 'as a NotApplicable');
     t.equal(issuance.deny, 0,
             'and NOT as a Deny — a deny-biased PEP refusing a question the ' +
-            'policy did not cover is a different fact from the policy saying no');
+            'policy did not cover is a different fact from the policy saying ' +
+            'no');
     t.equal(issuance.refused, 1,
             'while the ENFORCEMENT was a refusal, which is the number an ' +
             'operator asking "how many were declined" wants');
@@ -206,8 +221,13 @@ module.exports = {
     const beforeThrow = rowOf('access').decisions;
     let threw = false;
     try {
-      monitor.record('access', { get decision() { throw new Error('boom'); } });
+      monitor.record('access', { get decision() {
+        log.debug("Entering decision().");
+        log.debug("Leaving decision().");
+        throw new Error('boom');
+      } });
     } catch (error) {
+      log.debug("Caught in run(): " + ((error && error.message) || error));
       threw = true;
     }
     t.equal(threw, false,
@@ -265,5 +285,6 @@ module.exports = {
       t.check(false, 'the throwaway realm could not be created, so the ' +
                      'per-realm assertions did not run');
     }
+    log.debug("Leaving run().");
   }
 };

@@ -5,23 +5,24 @@
 // ===========================================================================
 // THE FEDERATION PICTURE. `federation/federation_graph.js`'s graph, drawn.
 //
-// It is a LIBRARY, like `delegation_map.js` beside it: it registers no route, so
-// its position in the require order does not matter and it cannot be the reason
-// a route is missing. `admin.js` registers `/admin/federation/map` and calls
-// `render()`; this file holds the geometry and none of the console's HTML.
+// It is a LIBRARY, like `delegation_map.js` beside it: it registers no route,
+// so its position in the require order does not matter and it cannot be the
+// reason a route is missing. `admin.js` registers `/admin/federation/map` and
+// calls `render()`; this file holds the geometry and none of the console's
+// HTML.
 //
-// It requires `../common/helpers` (for `log` and `xmlEscape`), `@dagrejs/dagre`,
-// and `./delegation_map` — for the PALETTE, the hexagon and the two text
-// functions, and for nothing else. That last require is worth being explicit
-// about: it is not this picture reusing that one's layout. It reuses the
-// arithmetic that decides how wide a box holding a given string is, and the
-// colours the console has already taught a reader to read, because two answers
-// to either of those is two pictures that do not look like one console.
+// It requires `../common/helpers` (for `log` and `xmlEscape`),
+// `@dagrejs/dagre`, and `./delegation_map` — for the PALETTE, the hexagon and
+// the two text functions, and for nothing else. That last require is worth
+// being explicit about: it is not this picture reusing that one's layout. It
+// reuses the arithmetic that decides how wide a box holding a given string is,
+// and the colours the console has already taught a reader to read, because two
+// answers to either of those is two pictures that do not look like one console.
 //
 // It is NAMED `federation_diagram.js` AND NOT `federation_map.js` for one
 // reason, and it is worth a line because the collision is real:
-// `federation/federation_map.js` already exists and is something else entirely —
-// it maps a partner's ATTRIBUTE NAMES onto directory attributes. Two files
+// `federation/federation_map.js` already exists and is something else entirely
+// — it maps a partner's ATTRIBUTE NAMES onto directory attributes. Two files
 // called federation_map.js doing unrelated things in one repository is a bug
 // waiting for somebody to open the wrong one.
 //
@@ -37,19 +38,19 @@
 // HERE.** It takes the hexagon OUT of dagre's layout and puts it in a band
 // ABOVE, then puts every other box on one horizontal centreline — because a
 // delegation chain is a chain, and the issuer is the box every line touches so
-// leaving it in the flow made a staircase. This graph is the opposite shape: the
-// hexagon is the MIDDLE RANK of a three-rank left-to-right flow, and which side
-// of it a box sits on is the entire claim the picture makes (see
+// leaving it in the flow made a staircase. This graph is the opposite shape:
+// the hexagon is the MIDDLE RANK of a three-rank left-to-right flow, and which
+// side of it a box sits on is the entire claim the picture makes (see
 // `federation_graph.js`'s header — left asks, right authenticates). Hoisting it
 // into a band would delete exactly the thing being said.
 //
 // **AND ITS EDGE VOCABULARY IS DELEGATION'S.** `edgeLook()` and
-// `edgeLabelLines()` there switch on `acts-for`, `issued`, `reaches`, and colour
-// by impersonation-versus-delegation — a judgement that means nothing about a
-// federation relationship. Teaching that function a second vocabulary would make
-// one function that is really two, and the amber/green pairing a reader has
-// learnt from `/admin/delegation` would start meaning something else on this
-// page.
+// `edgeLabelLines()` there switch on `acts-for`, `issued`, `reaches`, and
+// colour by impersonation-versus-delegation — a judgement that means nothing
+// about a federation relationship. Teaching that function a second vocabulary
+// would make one function that is really two, and the amber/green pairing a
+// reader has learnt from `/admin/delegation` would start meaning something else
+// on this page.
 //
 // So the layout here is the ORDINARY use of dagre — its ranks and ITS
 // coordinates, both — which is also why this file is a third the size of that
@@ -57,18 +58,20 @@
 // case here, because the graph really is layered.
 //
 // ---------------------------------------------------------------------------
-// AND IT KEEPS THE CSP RULE INTACT, which is the root CLAUDE.md's second one and
-// is the reason the delegation picture is drawn on the server. This is the same
-// answer for the same reason and it is NOT the argument being made once and
-// cited twice: a graph library in the browser — mermaid, cytoscape, d3 — would
-// make this the first scripted page in the console to draw a diagram that does
-// not move, and `script-src 'none'` would have to be relaxed for it. The SVG
-// below is generated here and arrives as markup, so nothing is relaxed and
+// AND IT KEEPS THE CSP RULE INTACT, which is the root CLAUDE.md's second one
+// and is the reason the delegation picture is drawn on the server. This is the
+// same answer for the same reason and it is NOT the argument being made once
+// and cited twice: a graph library in the browser — mermaid, cytoscape, d3 —
+// would make this the first scripted page in the console to draw a diagram that
+// does not move, and `script-src 'none'` would have to be relaxed for it. The
+// SVG below is generated here and arrives as markup, so nothing is relaxed and
 // `img-src` is not even reached. What it costs is pan and zoom, and the page
 // says so out loud and offers `?format=svg` for something that does zoom.
 // ===========================================================================
 
 const { log, xmlEscape } = require('../common/helpers');
+// The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
+const errorCodes = require('../common/error_codes');
 const dagre = require('@dagrejs/dagre');
 const delegationMap = require('./delegation_map');
 
@@ -93,24 +96,32 @@ const MAX_LABEL_CHARS = delegationMap.MAX_LABEL_CHARS;
 // stroke colour a line can take needs a marker of that colour. Named by colour
 // rather than by meaning, so that changing what a line MEANS does not leave a
 // marker named after the old idea — `delegation_map.js`'s rule, and its prefix
-// is different from this one's so the two pictures cannot share ids if they ever
-// appear on one page.
+// is different from this one's so the two pictures cannot share ids if they
+// ever appear on one page.
 const ARROW_COLOURS = [INDIGO, GREEN, AMBER, RED, QUIET];
 
 function markerId(colour) {
+  log.debug("Entering markerId().");
+  log.debug("Leaving markerId().");
   return 'fd-arrow-' + colour.replace('#', '');
 }
 
 function esc(v) {
+  log.debug("Entering esc().");
+  log.debug("Leaving esc().");
   return xmlEscape(v == null ? '' : String(v));
 }
 
 function round(n) {
+  log.debug("Entering round().");
+  log.debug("Leaving round().");
   return Math.round(n * 10) / 10;
 }
 
 function trim(text, max) {
+  log.debug("Entering trim().");
   const value = String(text == null ? '' : text);
+  log.debug("Leaving trim().");
   return value.length > max ? value.slice(0, max - 1) + '…' : value;
 }
 
@@ -132,10 +143,11 @@ const MAX_BOX_W = 250;
 const HEX_PAD_X = 22;
 
 // dagre's own knobs. `ranksep` is generous for the reason it is generous next
-// door: an edge label sits BETWEEN two ranks and a cramped gap puts the words of
-// one line on top of the words of the next. It is wider here than there because
-// these labels are the point — a federation line carries the relationship's
-// name, its protocol and its counts, where a delegation line carries a mechanism.
+// door: an edge label sits BETWEEN two ranks and a cramped gap puts the words
+// of one line on top of the words of the next. It is wider here than there
+// because these labels are the point — a federation line carries the
+// relationship's name, its protocol and its counts, where a delegation line
+// carries a mechanism.
 const RANK_SEP = 132;
 const NODE_SEP = 30;
 const EDGE_SEP = 22;
@@ -153,7 +165,8 @@ const LABEL_PAD_Y = 3;
 //
 // `delegation_map.js`'s `measure()` makes the argument and it holds here
 // unchanged: they are the same question asked twice, and two functions would be
-// two chances for the drawing to be a shape the layout did not reserve room for.
+// two chances for the drawing to be a shape the layout did not reserve room
+// for.
 //
 // FOUR SHAPES, AND EACH IS A CLAIM RATHER THAN A DECORATION:
 //
@@ -178,7 +191,8 @@ const LABEL_PAD_Y = 3;
 function measure(look) {
   log.debug("Entering measure().");
   const lines = wrapLabel(look.label, MAX_LABEL_CHARS, 2);
-  const subLines = look.sublabel ? wrapLabel(look.sublabel, MAX_LABEL_CHARS + 6, 2) : [];
+  const subLines = look.sublabel ?
+                   wrapLabel(look.sublabel, MAX_LABEL_CHARS + 6, 2) : [];
   let textW = 0;
   lines.forEach(function (one) {
     textW = Math.max(textW, textWidth(one, LABEL_SIZE));
@@ -192,7 +206,8 @@ function measure(look) {
     log.debug("Leaving measure().");
     return {
       shape: 'hexagon',
-      width: Math.min(MAX_BOX_W + 40, Math.max(MIN_BOX_W + 40, textW + HEX_PAD_X * 2 + 26)),
+      width: Math.min(MAX_BOX_W + 40,
+                      Math.max(MIN_BOX_W + 40, textW + HEX_PAD_X * 2 + 26)),
       height: Math.max(58, textH + BOX_PAD_Y * 2 + 8),
       lines: lines, subLines: subLines
     };
@@ -218,21 +233,22 @@ function measure(look) {
 // ---------------------------------------------------------------------------
 function lookOf(node, options) {
   log.debug("Entering lookOf(). kind=" + node.kind);
-  const extra = typeof options.resolve === 'function' ? (options.resolve(node) || {}) : {};
+  const extra = typeof options.resolve === 'function' ?
+                (options.resolve(node) || {}) : {};
   let look;
   if (node.kind === 'sts') {
     look = {
       shape: 'hexagon', colour: INDIGO, dashed: false, fill: WASH,
       label: node.label || 'This service',
-      // THE REALM IS ON THE HEXAGON, not in the page's heading alone. A realm is
-      // a whole logical copy of this service and this picture is of one of them;
-      // a saved `?format=svg` document with no realm on it is a picture of
-      // somewhere, and nobody can tell where.
+      // THE REALM IS ON THE HEXAGON, not in the page's heading alone. A realm
+      // is a whole logical copy of this service and this picture is of one of
+      // them; a saved `?format=svg` document with no realm on it is a picture
+      // of somewhere, and nobody can tell where.
       sublabel: 'trust realm ' + (node.realmName || node.realm || 'default'),
       title: 'This service, in the trust realm "' + (node.realm || 'default') +
-             '". Every relationship on this picture belongs to this realm and to ' +
-             'no other: the register is per realm, so an id that names a ' +
-             'relationship in another realm names nothing here.'
+             '". Every relationship on this picture belongs to this realm ' +
+             'and to no other: the register is per realm, so an id that ' +
+             'names a relationship in another realm names nothing here.'
     };
   } else if (node.kind === 'application') {
     look = {
@@ -240,8 +256,8 @@ function lookOf(node, options) {
       label: node.label,
       sublabel: 'an application here',
       title: 'An application registered in this realm whose people are ' +
-             'authenticated through a federation relationship. It is an entry ' +
-             'under ou=applications; what points it at a partner is ' +
+             'authenticated through a federation relationship. It is an ' +
+             'entry under ou=applications; what points it at a partner is ' +
              'appFederationRelationship on that entry.'
     };
   } else if (node.kind === 'partner-sp') {
@@ -249,8 +265,8 @@ function lookOf(node, options) {
       shape: 'rect', colour: GREEN, dashed: true, fill: PAPER,
       label: node.label,
       sublabel: 'a foreign service provider',
-      title: 'A FOREIGN SERVICE PROVIDER. It asks this service to authenticate ' +
-             'somebody and consumes what this service issues' +
+      title: 'A FOREIGN SERVICE PROVIDER. It asks this service to ' +
+             'authenticate somebody and consumes what this service issues' +
              (node.peer && node.peer !== node.label
                 ? '. Its own name for itself is "' + node.peer + '"' : '') +
              (node.application
@@ -262,10 +278,11 @@ function lookOf(node, options) {
       shape: 'hexagon', colour: GREEN, dashed: true, fill: PAPER,
       label: node.label,
       sublabel: 'a foreign identity provider',
-      title: 'A FOREIGN IDENTITY PROVIDER. It authenticates the person and this ' +
-             'service consumes what it issues. Nothing about it is checked here ' +
-             'except its SIGNATURE, against the certificate configured on the ' +
-             'relationship — which is the one thing this service does check.'
+      title: 'A FOREIGN IDENTITY PROVIDER. It authenticates the person and ' +
+             'this service consumes what it issues. Nothing about it is ' +
+             'checked here except its SIGNATURE, against the certificate ' +
+             'configured on the relationship — which is the one thing this ' +
+             'service does check.'
     };
   }
   const merged = Object.assign(look, extra);
@@ -325,18 +342,24 @@ function edgeLook(edge) {
   return { colour: GREEN, dash: '', weight: 1.8 };
 }
 
-// A count of PEOPLE and a count of SIGN-INS are different units and one word for
-// both would report `4` on a line carrying four arrivals and on a line carrying
-// four people, which are not comparable numbers. Both are said, or neither.
+// A count of PEOPLE and a count of SIGN-INS are different units and one word
+// for both would report `4` on a line carrying four arrivals and on a line
+// carrying four people, which are not comparable numbers. Both are said, or
+// neither.
 function useText(use) {
+  log.debug("Entering useText().");
   if (!use) {
+    log.debug("Leaving useText().");
     return '';
   }
   if (!use.authentications) {
+    log.debug("Leaving useText().");
     return use.configured === false ? 'no longer configured' : 'never used';
   }
+  log.debug("Leaving useText().");
   return use.users + ' ' + (use.users === 1 ? 'person' : 'people') + ', ' +
-         use.authentications + ' sign-in' + (use.authentications === 1 ? '' : 's');
+         use.authentications + ' sign-in' +
+         (use.authentications === 1 ? '' : 's');
 }
 
 // ---------------------------------------------------------------------------
@@ -360,8 +383,8 @@ function edgeLabelLines(edge) {
     const counts = useText(edge.use);
     if (counts) lines.push(counts);
   } else if (edge.relation === 'asks') {
-    // A FOREIGN SERVICE PROVIDER ASKING. What it gets is the second line, and it
-    // is the answer to the thing this picture was asked to show: the
+    // A FOREIGN SERVICE PROVIDER ASKING. What it gets is the second line, and
+    // it is the answer to the thing this picture was asked to show: the
     // authentication method configured on the identity-provider side.
     lines.push('asks · ' + trim(row.protocolLabel, 20));
     if (row.brokersTo) {
@@ -417,11 +440,13 @@ function edgeLabelLines(edge) {
 // and it is where the state sentence lives — the picture says the state in
 // COLOUR, which is fast to read and impossible to quote.
 function edgeTitle(edge) {
+  log.debug("Entering edgeTitle().");
   const row = edge.row || {};
   const parts = [];
   if (edge.relation === 'signs-in') {
     parts.push('This application\'s people are authenticated at "' +
-               (row.peer || row.id) + '" through the federation relationship "' +
+               (row.peer || row.id) +
+               '" through the federation relationship "' +
                row.id + '" (' + row.protocolLabel + ').');
     if (edge.use && edge.use.configured === false) {
       parts.push('IT IS NO LONGER CONFIGURED TO: nothing names this pair any ' +
@@ -431,37 +456,40 @@ function edgeTitle(edge) {
     }
     if (edge.use && edge.use.source === 'broker') {
       parts.push('It reaches it through the identity-provider-side ' +
-                 'relationship "' + edge.use.via + '" rather than through its ' +
-                 'own entry.');
+                 'relationship "' + edge.use.via + '" rather than through ' +
+                 'its own entry.');
     }
   } else if (edge.relation === 'asks') {
     parts.push('This foreign service provider asks this service to ' +
                'authenticate people, through the federation relationship "' +
-               row.id + '" (' + row.protocolLabel + '). This service ASSERTS to ' +
-               'it: the arrow is the request, not the assertion.');
+               row.id + '" (' + row.protocolLabel + '). This service ASSERTS ' +
+               'to it: the arrow is the request, not the assertion.');
     parts.push(row.brokersTo
       ? 'It authenticates them through another federation relationship, "' +
         row.brokersTo + '" — this service is an identity BROKER for this ' +
         'partner: it consumes somebody else\'s assertion and issues its own.'
       : 'How somebody is authenticated for it: ' + row.mechanismLabel + '.');
     if (row.brokerProblem) {
-      parts.push('AND IT CANNOT: ' + row.brokerProblem + ' Until that is fixed ' +
-                 'the person meets the sign-in screen instead, which checks no ' +
-                 'password — a federated application authenticating people ' +
-                 'locally looks exactly like a federated application working.');
+      parts.push('AND IT CANNOT: ' + row.brokerProblem + ' Until that is ' +
+                 'fixed the person meets the sign-in screen instead, which ' +
+                 'checks no password — a federated application ' +
+                 'authenticating people locally looks exactly like a ' +
+                 'federated application working.');
     }
     if (edge.use && edge.use.authentications) {
       parts.push(edge.use.users + ' person(s) and ' + edge.use.authentications +
                  ' sign-in(s) have been brokered for it through "' +
                  edge.brokeredTo + '". The relationship\'s OWN counters read ' +
-                 'zero and always will: nothing increments them, because what ' +
-                 'they count is assertions CONSUMED and this side issues them.');
+                 'zero and always will: nothing increments them, because ' +
+                 'what they count is assertions CONSUMED and this side ' +
+                 'issues them.');
     }
     if (row.releases.length) {
       parts.push('Attributes released to it: ' + row.releases.join(', ') + '.');
     }
   } else {
-    parts.push('This service consumes assertions from "' + (row.peer || row.id) +
+    parts.push('This service consumes assertions from "' +
+               (row.peer || row.id) +
                '" through the federation relationship "' + row.id + '" (' +
                row.protocolLabel + '). An assertion is refused unless it ' +
                'verifies against the certificate configured on this ' +
@@ -474,9 +502,10 @@ function edgeTitle(edge) {
         'configuration to reach.');
     if (row.unattributed) {
       parts.push(row.unattributed + ' of its ' + row.authentications +
-                 ' sign-in(s) named no application this service is configured ' +
-                 'for, so they belong to no application row: somebody used the ' +
-                 'partner buttons on the sign-in screen, reached ' +
+                 ' sign-in(s) named no application this service is ' +
+                 'configured for, so they belong to no application row: ' +
+                 'somebody used the partner buttons on the sign-in screen, ' +
+                 'reached ' +
                  '/federation/login/' + row.id + ' directly, or named an ' +
                  'application that does not point here.');
     }
@@ -484,13 +513,14 @@ function edgeTitle(edge) {
   // The state, in words, because the picture says it in colour.
   parts.push(row.usable ? 'It is enabled and fully configured.'
     : !row.enabled
-        ? 'IT IS DISABLED. Every relationship is created disabled deliberately ' +
-          'and does nothing until it is enabled.'
+        ? 'IT IS DISABLED. Every relationship is created disabled ' +
+          'deliberately and does nothing until it is enabled.'
         : 'IT IS ENABLED AND NOT FULLY CONFIGURED: ' + row.missing.join(', ') +
           ' still to set. It REFUSES rather than half-working.');
   if (row.lastError) {
     parts.push('Last refusal: ' + row.lastError);
   }
+  log.debug("Leaving edgeTitle().");
   return parts.join(' ');
 }
 
@@ -516,13 +546,16 @@ function edgeTitle(edge) {
 function render(graph, options) {
   log.debug("Entering render().");
   try {
-    const svg = renderUnguarded(graph || { nodes: [], edges: [] }, options || {});
+    const svg = renderUnguarded(graph || { nodes: [], edges: [] },
+                                options || {});
     log.debug("Leaving render(). " + svg.svg.length + " bytes of SVG, " +
               svg.width + "x" + svg.height + ".");
     return svg;
   } catch (e) {
-    log.error('federation map: the picture could not be drawn and the page was ' +
-              'left alone: ' + e.message);
+    log.error(errorCodes.tag('STS-ADMIN-0601') +
+              'federation map: the picture could not be drawn and the page ' +
+              'was left alone: ' + e.message);
+    log.debug("Leaving render().");
     return {
       svg: '<p class="err">The picture could not be drawn: ' + esc(e.message) +
            '. Everything below is unaffected — the tables are built from the ' +
@@ -602,8 +635,9 @@ function renderUnguarded(graph, options) {
 
   const defs = '<defs>' + ARROW_COLOURS.map(function (colour) {
     return '<marker id="' + prefix + '-' + markerId(colour) +
-      '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" ' +
-      'orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="' + colour +
+      '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" ' +
+      'markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 ' +
+      '10z" fill="' + colour +
       '"/></marker>';
   }).join('') + '</defs>';
 
@@ -632,8 +666,9 @@ function renderUnguarded(graph, options) {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" ' +
     'xmlns:xlink="http://www.w3.org/1999/xlink" ' +
     'viewBox="0 0 ' + width + ' ' + height + '" width="' + width +
-    '" height="' + height + '" role="img" font-family="system-ui, sans-serif">' +
-    '<title>' + esc(options.label || 'Federation relationships') + '</title>' +
+    '" height="' + height + '" role="img" font-family="system-ui, ' +
+    'sans-serif"><title>' + esc(options.label || 'Federation relationships') +
+    '</title>' +
     defs + edgeMarkup + nodeMarkup + '</svg>';
 
   log.debug("Leaving renderUnguarded(). " + nodes.length + " box(es), " +
@@ -657,10 +692,13 @@ function edgeMarkupFor(edge, laid, label, prefix) {
     (look.dash ? ' stroke-dasharray="' + look.dash + '"' : '') +
     ' marker-end="url(#' + prefix + '-' + markerId(look.colour) + ')"/>';
 
-  const x = laid.x == null ? laid.points[Math.floor(laid.points.length / 2)].x : laid.x;
-  const y = laid.y == null ? laid.points[Math.floor(laid.points.length / 2)].y : laid.y;
+  const x = laid.x == null ? laid.points[Math.floor(laid.points.length / 2)].x :
+            laid.x;
+  const y = laid.y == null ? laid.points[Math.floor(laid.points.length / 2)].y :
+            laid.y;
   const top = y - label.height / 2;
-  const panel = '<rect x="' + round(x - label.width / 2) + '" y="' + round(top) +
+  const panel = '<rect x="' + round(x - label.width / 2) + '" y="' +
+    round(top) +
     '" width="' + round(label.width) + '" height="' + round(label.height) +
     '" rx="3" fill="' + PAPER + '" fill-opacity="0.92" stroke="' + LINE +
     '" stroke-width="0.6"/>';
@@ -677,8 +715,8 @@ function edgeMarkupFor(edge, laid, label, prefix) {
 }
 
 // One box. `at` is dagre's, and dagre gives a CENTRE where every shape below is
-// drawn from its top left — so the conversion happens once, here, rather than in
-// each shape.
+// drawn from its top left — so the conversion happens once, here, rather than
+// in each shape.
 function nodeMarkupFor(entry, at, options) {
   log.debug("Entering nodeMarkupFor().");
   const look = entry.look;
@@ -697,11 +735,13 @@ function nodeMarkupFor(entry, at, options) {
       '" stroke-width="1.6"' + dash + '/>';
 
   const textH = size.lines.length * LINE_HEIGHT +
-                (size.subLines.length ? size.subLines.length * (LINE_HEIGHT - 2) + 2 : 0);
+                (size.subLines.length ?
+                 size.subLines.length * (LINE_HEIGHT - 2) + 2 : 0);
   const textTop = y + (size.height - textH) / 2 + LINE_HEIGHT - 3;
   const cx = x + size.width / 2;
   const texts = size.lines.map(function (one, i) {
-    return '<text x="' + round(cx) + '" y="' + round(textTop + i * LINE_HEIGHT) +
+    return '<text x="' + round(cx) + '" y="' +
+      round(textTop + i * LINE_HEIGHT) +
       '" text-anchor="middle" font-size="' + LABEL_SIZE +
       '" font-weight="600" fill="' + INK + '">' + esc(one) + '</text>';
   }).join('') + size.subLines.map(function (one, i) {
@@ -732,9 +772,9 @@ function nodeMarkupFor(entry, at, options) {
 module.exports = {
   render: render,
   // Exported for the legend on the page, so that the swatch beside "a foreign
-  // identity provider" and the shape in the picture cannot come to be drawn from
-  // two different palettes — `delegation_map.js`'s rule, and admin.js draws the
-  // key out of these rather than naming the colours a second time.
+  // identity provider" and the shape in the picture cannot come to be drawn
+  // from two different palettes — `delegation_map.js`'s rule, and admin.js
+  // draws the key out of these rather than naming the colours a second time.
   COLOURS: { ink: INK, indigo: INDIGO, green: GREEN, amber: AMBER, red: RED,
              quiet: QUIET, line: LINE, panel: PANEL, paper: PAPER, wash: WASH },
   hexPath: hexPath

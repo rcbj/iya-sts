@@ -46,6 +46,12 @@ const keystore = require('../common/keystore');
 const minted = require('../persistence/persistence_minted');
 const replication = require('../persistence/persistence_replication');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'minted_persistence',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // A DRIVER THAT KEEPS ROWS AND NOTHING ELSE. It is the interface
 // `persistence_minted.js` actually uses — five functions — rather than the
@@ -54,17 +60,28 @@ const replication = require('../persistence/persistence_replication');
 // turns off rather than quietly passing.
 // ---------------------------------------------------------------------------
 function fakeDriver(origin) {
+  log.debug("Entering fakeDriver().");
   const rows = new Map();   // handle \u0000 realm \u0000 key -> row
   function id(handle, realm, key) {
+    log.debug("Entering id().");
+    log.debug("Leaving id().");
     return handle + '\u0000' + realm + '\u0000' + key;
   }
+  log.debug("Leaving fakeDriver().");
   return {
     rows: rows,
-    origin: function () { return origin || 'test-origin'; },
+    origin: function () {
+      log.debug("Entering origin().");
+      log.debug("Leaving origin().");
+      return origin || 'test-origin';
+    },
     loadMinted: function () {
+      log.debug("Entering loadMinted().");
+      log.debug("Leaving loadMinted().");
       return Promise.resolve(Array.from(rows.values()));
     },
     saveMinted: function (upserts, deletes) {
+      log.debug("Entering saveMinted().");
       upserts.forEach(function (row) {
         rows.set(id(row.handle, row.realm, row.key),
                  { handle: row.handle, realm: row.realm, key: row.key,
@@ -73,12 +90,16 @@ function fakeDriver(origin) {
       deletes.forEach(function (row) {
         rows.delete(id(row.handle, row.realm, row.key));
       });
+      log.debug("Leaving saveMinted().");
       return Promise.resolve();
     },
     readMinted: function (handle, realm, key) {
+      log.debug("Entering readMinted().");
+      log.debug("Leaving readMinted().");
       return Promise.resolve(rows.get(id(handle, realm, key)) || null);
     },
     purgeMinted: function (before) {
+      log.debug("Entering purgeMinted().");
       let gone = 0;
       rows.forEach(function (row, k) {
         if (Number(row.writtenAt || 0) < before) {
@@ -86,6 +107,7 @@ function fakeDriver(origin) {
           gone++;
         }
       });
+      log.debug("Leaving purgeMinted().");
       return Promise.resolve(gone);
     }
   };
@@ -105,6 +127,7 @@ function fakeDriver(origin) {
 // filesystem.
 // ---------------------------------------------------------------------------
 async function armKeystore(dir) {
+  log.debug("Entering armKeystore().");
   const kekFile = path.join(dir, 'kek');
   fs.writeFileSync(kekFile, nodeCrypto.randomBytes(32).toString('base64'),
                    { encoding: 'utf8', mode: 0o600 });
@@ -113,26 +136,43 @@ async function armKeystore(dir) {
   process.env.STS_KEYS_KEK_FILE = kekFile;
   keystore.reset();
   keystore.setStore({
-    loadKeys: function () { return Promise.resolve([]); },
-    saveKeys: function () { return Promise.resolve(); },
-    deleteKeys: function () { return Promise.resolve(); }
+    loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
+      return Promise.resolve([]);
+    },
+    saveKeys: function () {
+      log.debug("Entering saveKeys().");
+      log.debug("Leaving saveKeys().");
+      return Promise.resolve();
+    },
+    deleteKeys: function () {
+      log.debug("Entering deleteKeys().");
+      log.debug("Leaving deleteKeys().");
+      return Promise.resolve();
+    }
   });
   await keystore.start();
+  log.debug("Leaving armKeystore().");
 }
 
 function disarmKeystore() {
+  log.debug("Entering disarmKeystore().");
   delete process.env.STS_KEYS_SOURCE;
   delete process.env.STS_KEYS_KEK_PROVIDER;
   delete process.env.STS_KEYS_KEK_FILE;
   keystore.reset();
+  log.debug("Leaving disarmKeystore().");
 }
 
 // A directory of its own per run, removed at the end — `tests/keystore.js`'s
 // `withTempDir()`, and its comment about `async`/`await` applies here for the
 // same reason.
 async function withTempDir(fn) {
+  log.debug("Entering withTempDir().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-minted-'));
   try {
+    log.debug("Leaving withTempDir().");
     return await fn(dir);
   } finally {
     try {
@@ -146,10 +186,13 @@ async function withTempDir(fn) {
 }
 
 async function run(t) {
+  log.debug("Entering run().");
+  log.debug("Leaving run().");
   return withTempDir(function (dir) { return body(t, dir); });
 }
 
 async function body(t, dir) {
+  log.debug("Entering body().");
   // -------------------------------------------------------------------------
   // 1. THE JOURNAL NAMES EXACTLY WHAT MOVED.
   //
@@ -201,7 +244,8 @@ async function body(t, dir) {
                               { persist: 'test.counters', merge: 'own' });
   counters.n++;
   t.equal(seen.length, 1,
-          'and an object reports a field assignment, which is what nums.n++ is');
+          'and an object reports a field assignment, which is what nums.n++ ' +
+          'is');
 
   seen.length = 0;
   const quiet = realms.map();
@@ -259,13 +303,14 @@ async function body(t, dir) {
           'ship');
 
   sessions.clear();
-  t.equal(sessions.size, 0, 'the live store is emptied, standing in for a restart');
+  t.equal(sessions.size, 0, 'the live store is emptied, standing in for a ' +
+                            'restart');
   await minted.restore();
   t.equal((sessions.get('sid-3') || {}).user, 'carol',
           'and the restore puts the session back where it was');
   t.equal(sessions.get('sid-1'), undefined,
-          'while a key that was DELETED before the flush does not come back — ' +
-          'which is the half a write-only journal would get wrong');
+          'while a key that was DELETED before the flush does not come back ' +
+          '— which is the half a write-only journal would get wrong');
 
   // -------------------------------------------------------------------------
   // 4. A RESTORE MUST NOT JOURNAL WHAT IT JUST READ.
@@ -360,6 +405,68 @@ async function body(t, dir) {
   t.equal((remote[0] || {}).n, 100, 'with the other process\'s number intact');
 
   // -------------------------------------------------------------------------
+  // 5a. A FAILED FLUSH PUTS BACK THE KEY IT TOOK, NOT THE KEY IT WROTE
+  //     (2026-09-12).
+  //
+  // The retry re-noted `storedKey()`'s answer, which for an `own` store is the
+  // key base64url-encoded with the origin appended — so every consecutive
+  // failure encoded it again. A dispatched stack whose workers deadlocked on
+  // `sts_minted` grew those keys past PostgreSQL's index limit and then into
+  // gigabytes. Three failures and a success is enough to see it: a correct
+  // retry offers the same stored key four times.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a failed flush puts back the key it took ===');
+  replication.reset();
+  minted.reset();
+  const flaky = fakeDriver('process-a');
+  const realSave = flaky.saveMinted;
+  let failuresLeft = 3;
+  const offered = [];
+  flaky.saveMinted = function (upserts, deletes) {
+    log.debug("Entering saveMinted().");
+    upserts.concat(deletes).forEach(function (row) {
+      if (row.handle === 'test.retry') {
+        offered.push(row.key);
+      }
+    });
+    if (failuresLeft > 0) {
+      failuresLeft--;
+      log.debug("Leaving saveMinted().");
+      return Promise.reject(new Error('deadlock detected'));
+    }
+    log.debug("Leaving saveMinted().");
+    return realSave(upserts, deletes);
+  };
+  minted.setDriver(flaky, 'postgres');
+  const retried = realms.map({ persist: 'test.retry', merge: 'own' });
+  retried.set('alice', { n: 1 });
+  for (let i = 0; i < 4; i++) {
+    await minted.flush();
+  }
+  const expectedKey = Buffer.from('alice', 'utf8').toString('base64url') + '.' +
+                      Buffer.from('process-a', 'utf8').toString('base64url');
+  t.equal(offered.length, 4,
+          'the key is offered on every attempt, the three that failed and ' +
+          'the one that did not', JSON.stringify(offered.map(function (k) {
+            return k.length;
+          })));
+  t.check(offered.every(function (k) { return k === expectedKey; }),
+          'AND IT IS THE SAME STORED KEY EVERY TIME — base64url(key) + "." + ' +
+          'base64url(origin), not that encoded again per failure',
+          'key lengths offered: ' + offered.map(function (k) {
+            return k.length;
+          }).join(', '));
+  t.check(flaky.rows.has('test.retry default ' + expectedKey),
+          'and the row that finally lands is under that key, as an upsert ' +
+          'rather than a delete of a name nothing holds');
+  // Put back the driver section 6 restores from: `restore()` reads whichever
+  // driver is installed, and leaving this one in place made retention count
+  // this section's rows.
+  retried.delete('alice');
+  minted.reset();
+  minted.setDriver(driver, 'postgres');
+
+  // -------------------------------------------------------------------------
   // 6. RETENTION. A month-old store must not restore a month of dead sessions.
   // -------------------------------------------------------------------------
   t.log.info('=== retention ===');
@@ -399,6 +506,52 @@ async function body(t, dir) {
           'and a flush in development mode writes no rows at all');
 
   // -------------------------------------------------------------------------
+  // 7b. UNLESS SEVERAL PROCESSES ARE ANSWERING ONE PORT (2026-09-12).
+  //
+  // The arm above is the promise; this is its one exception, and it is not a
+  // softening of it. A dispatched run is several processes against one store,
+  // and what they mint has to be in that store or they disagree: a token
+  // minted on one worker is unknown to the next, and — the way it was actually
+  // found — a REPLAYED RFC 7523 assertion is refused by the worker that saw it
+  // and accepted by the two that did not.
+  //
+  // **IT WAS `hasEphemeralKek()` ALONE AND THAT WENT SILENTLY FALSE.** The
+  // pool generates a per-run KEK precisely because development mode has none;
+  // `keys.source=persisted` gives it a REAL one, `useEphemeralKek()` then
+  // refuses to substitute a per-run key, and every arm of the condition was
+  // false — so a dispatched run reading its KEK from a secret store shared
+  // nothing, with no error anywhere. The question is SEVERAL PROCESSES, and it
+  // is asked as such now.
+  //
+  // The two variables go through the ENVIRONMENT for `armKeystore()`'s reason:
+  // both are restart-only rows and `setOverride()` refuses one correctly.
+  // -------------------------------------------------------------------------
+  t.log.info('=== development mode, dispatched ===');
+  process.env.STS_WORKERS_REQUEST_COUNT = '3';
+  process.env.STS_WORKERS_DISPATCH = '*';
+  minted.reset();
+  const poolDriver = fakeDriver('process-a');
+  minted.setDriver(poolDriver, 'postgres');
+  t.equal(minted.enabled(), true,
+          'A DISPATCHED development run DOES persist what it mints, because ' +
+          'its workers have to agree — the keystore holds a real ' +
+          'key-encryption key here, which is the case that used to answer no');
+  sessions.set('sid-10', { user: 'erin' });
+  await minted.flush();
+  t.check(poolDriver.rows.size > 0,
+          'and a flush writes rows the other workers can read',
+          String(poolDriver.rows.size) + ' row(s)');
+
+  delete process.env.STS_WORKERS_DISPATCH;
+  minted.reset();
+  minted.setDriver(fakeDriver('process-a'), 'postgres');
+  t.equal(minted.enabled(), false,
+          'and WORKERS ALONE ARE NOT THE CONDITION — with nothing dispatched ' +
+          'the children answer no request, so there is no second process to ' +
+          'disagree with and the promise above is unchanged');
+  delete process.env.STS_WORKERS_REQUEST_COUNT;
+
+  // -------------------------------------------------------------------------
   // 8. AN ldif STORE SAYS SO RATHER THAN HALF-WORKING.
   // -------------------------------------------------------------------------
   t.log.info('=== the ldif store ===');
@@ -421,6 +574,7 @@ async function body(t, dir) {
   minted.reset();
   replication.reset();
   disarmKeystore();
+  log.debug("Leaving body().");
 }
 
 module.exports = {

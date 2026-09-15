@@ -61,6 +61,10 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
+const nodeCrypto = require('crypto');
+// For the two limits below. `helpers.js` above already requires it, so this
+// adds no file to the parent project's copy set.
+const config = require('../common/config');
 const prim = require('./krb5_primitives.js');
 const gss = require('./krb5_gss.js');
 const spnego = require('./krb5_spnego.js');
@@ -70,6 +74,19 @@ const krb5Service = require('./krb5_service.js');
 // `sharedMap()`, and it is a LEAF that registers no route, so this cannot
 // move a route or join a cycle.
 const realms = require('../common/realms');
+// ERROR CODES. A LEAF, already in this closure through common/audit.js. Every
+// refusing verdict below carries `errorCode` in its facts, and applyVerdict()
+// marks the response with it — the verdict is never serialised whole, and
+// record() copies named fields only, so the code reaches the call log and
+// nothing a client receives.
+const errorCodes = require('../common/error_codes');
+// ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 5): a request-mic
+// continuation is spent through an atomic claim, and the table active-active
+// mode is held to. **NEITHER ADDS A FILE TO THE PARENT PROJECT'S COPY SET**:
+// `krb5_service.js` above already requires both, so both are in that closure
+// already (kerberos/CLAUDE.md).
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 
 // What this acceptor supports, in ITS order of preference. Kerberos first
 // because it is the only thing here that works — NTLM is listed by every real
@@ -95,21 +112,50 @@ const SPN = krb5Service.SERVICE_PRINCIPAL.join('/');
 // for the next round trip.
 // ---------------------------------------------------------------------------
 const OUTCOMES = {
-  'no-authorization':        { terminal: false, what: 'no Authorization header; the bare RFC 4559 challenge' },
-  'wrong-scheme':            { terminal: true,  what: 'an Authorization header naming some other scheme' },
-  'empty-token':             { terminal: true,  what: 'Negotiate with nothing after it' },
-  'undecodable':             { terminal: true,  what: 'the token is neither a NegToken nor a bare Kerberos one' },
-  'no-common-mechanism':     { terminal: true,  what: 'nothing the client offered is performed here' },
-  'no-mech-token':           { terminal: false, what: 'a pessimistic NegTokenInit; the mechanism token was asked for' },
-  'non-kerberos-mechanism':  { terminal: true,  what: 'the selected mechanism is not one this service performs' },
-  'acceptor-threw':          { terminal: true,  what: 'the Kerberos acceptor raised' },
-  'ticket-refused':          { terminal: true,  what: 'the AP-REQ did not pass one of krb5_service.js\'s checks' },
-  'bad-mech-list-mic':       { terminal: true,  what: 'the mechListMIC does not verify (RFC 4178 section 5)' },
-  'mic-required':            { terminal: true,  what: 'section 5 required a mechListMIC and none was sent' },
-  'request-mic':             { terminal: false, what: 'request-mic sent; awaiting the client MIC' },
-  'no-pending-continuation': { terminal: true,  what: 'a bare NegTokenResp with no negotiation in progress' },
-  'continuation-no-mic':     { terminal: true,  what: 'the continuation carried no mechListMIC' },
-  'accepted':               { terminal: true,  what: 'the context is established' }
+  'no-authorization':        { terminal: false, what: 'no Authorization ' +
+                                                      'header; the bare RFC ' +
+                                                      '4559 challenge' },
+  'wrong-scheme':            { terminal: true,  what: 'an Authorization ' +
+                                                      'header naming some ' +
+                                                      'other scheme' },
+  'empty-token':             { terminal: true,  what: 'Negotiate with ' +
+                                                      'nothing after it' },
+  'undecodable':             { terminal: true,  what: 'the token is neither ' +
+                                                      'a NegToken nor a bare ' +
+                                                      'Kerberos one' },
+  'no-common-mechanism':     { terminal: true,  what: 'nothing the client ' +
+                                                      'offered is performed ' +
+                                                      'here' },
+  'no-mech-token':           { terminal: false, what: 'a pessimistic ' +
+                                                      'NegTokenInit; the ' +
+                                                      'mechanism token was ' +
+                                                      'asked for' },
+  'non-kerberos-mechanism':  { terminal: true,  what: 'the selected ' +
+                                                      'mechanism is not one ' +
+                                                      'this service performs' },
+  'acceptor-threw':          { terminal: true,  what: 'the Kerberos acceptor ' +
+                                                      'raised' },
+  'ticket-refused':          { terminal: true,  what: 'the AP-REQ did not ' +
+                                                      'pass one of ' +
+                                                      'krb5_service.js\'s ' +
+                                                      'checks' },
+  'bad-mech-list-mic':       { terminal: true,  what: 'the mechListMIC does ' +
+                                                      'not verify (RFC 4178 ' +
+                                                      'section 5)' },
+  'mic-required':            { terminal: true,  what: 'section 5 required a ' +
+                                                      'mechListMIC and none ' +
+                                                      'was sent' },
+  'request-mic':             { terminal: false, what: 'request-mic sent; ' +
+                                                      'awaiting the client ' +
+                                                      'MIC' },
+  'no-pending-continuation': { terminal: true,  what: 'a bare NegTokenResp ' +
+                                                      'with no negotiation ' +
+                                                      'in progress' },
+  'continuation-no-mic':     { terminal: true,  what: 'the continuation ' +
+                                                      'carried no ' +
+                                                      'mechListMIC' },
+  'accepted':               { terminal: true,  what: 'the context is ' +
+                                                     'established' }
 };
 
 // ---------------------------------------------------------------------------
@@ -153,8 +199,21 @@ function volunteerTheSpn(res) {
 // that is not prose.
 function applyVerdict(res, verdict) {
   log.debug('Entering applyVerdict(). code=' + verdict.code);
+  if (verdict.errorCode) {
+    errorCodes.mark(res, verdict.errorCode);
+  }
   if (verdict.wwwAuthenticate) {
     res.set('WWW-Authenticate', verdict.wwwAuthenticate);
+  }
+  // THE NEGOTIATION'S NAME, for the request-mic round trip — see pending
+  // below. Set when a negotiation is left pending and cleared when a
+  // continuation has spent it.
+  if (verdict.pendingId || verdict.pendingSpent) {
+    const secure = !!(res.req && res.req.secure);
+    res.append('Set-Cookie', PENDING_COOKIE + '=' +
+      (verdict.pendingId || '') + '; Path=/; HttpOnly; SameSite=Lax' +
+      (secure ? '; Secure' : '') + '; Max-Age=' +
+      (verdict.pendingId ? Math.ceil(pendingTtlMs() / 1000) : 0));
   }
   volunteerTheSpn(res);
   // A sign-in and a protected page are both answers about a credential, and
@@ -184,35 +243,120 @@ function applyVerdict(res, verdict) {
 // session would be minted for. Keying the door in does not make the stand-in a
 // connection; it stops one door from spending the other's state.
 // ---------------------------------------------------------------------------
-const PENDING_TTL_MS = 120000;
-const MAX_PENDING = 64;
+// Both are settings since 2026-09-12 — `krb5.spnegoPendingTtlSeconds` and
+// `krb5.spnegoMaxPending`, defaulting to the 120 seconds and 64 entries these
+// were written as — and functions, because both are runtime.
+function pendingTtlMs() {
+  log.debug("Entering pendingTtlMs().");
+  log.debug("Leaving pendingTtlMs().");
+  return config.value('krb5.spnegoPendingTtlSeconds') * 1000;
+}
+
+function maxPending() {
+  log.debug("Entering maxPending().");
+  log.debug("Leaving maxPending().");
+  return config.value('krb5.spnegoMaxPending');
+}
 // -------------------------------------------------------------------------
-// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
-// is a plain Map that reports its writes so product mode can write them down;
-// `scope: 'shared'` is what says the store deliberately has no realm in it,
-// which is the discriminator `tests/realm_isolation.js` checks against.
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06).
+// `realms.sharedMap()` is a plain Map that reports its writes so product mode
+// can write them down; `scope: 'shared'` is what says the store deliberately
+// has no realm in it, which is the discriminator `tests/realm_isolation.js`
+// checks against.
 // -------------------------------------------------------------------------
+//
+// ---------------------------------------------------------------------------
+// **KEYED BY A NEGOTIATION ID THE CLIENT CARRIES, SINCE 2026-09-14 (#46
+// section 5)**, where it was the door, `req.ip` and the mechanism list.
+//
+// Behind a load balancer every client has the balancer's address, and every
+// browser of one kind sends the same mechanism list, so two people's
+// negotiations were ONE key: the second overwrote the first, and a
+// continuation took whichever was there. Nothing in the protocol can name a
+// negotiation instead — RFC 4559's header carries a bare token, and RFC
+// 4178's NegTokenResp has no field for a context handle (a real acceptor
+// keeps one on the CONNECTION, which is the thing a balancer does not keep).
+// So the request-mic answer sets a short-lived cookie naming the
+// negotiation — `sts_spnego_negotiation`, HttpOnly, for exactly the pending
+// lifetime — and a continuation that carries it is matched by it. A browser
+// keeps a cookie set on a 401; the retry is the same origin.
+//
+// **A CLIENT WITH NO COOKIE JAR IS STILL MATCHED, BY THE MIC ITSELF.** The
+// continuation's mechListMIC is keyed by the session key of the ticket its
+// negotiation presented, so it verifies against exactly one pending entry and
+// no other: the candidates for the door are tried, the caller's own address
+// first, and the one it verifies against is the one it continues. That is not
+// weaker than the address was — the address never authenticated anything,
+// the MIC always did — and it means a guess spends nothing: without the
+// cookie, a continuation that verifies against no entry deletes none, where
+// the address key let anybody behind the same NAT delete somebody else's
+// negotiation with one bad token.
+//
+// **PERSISTED WITH ITS KEYS AS HEX.** The store was persisted already, and a
+// session key is a `Uint8Array`, which JSON turns into `{"0":…}` — so a
+// negotiation that reached another process arrived with a key the MIC check
+// could not use. Hex, decoded where it is used. The row is sealed by the
+// minted store like every other (`persistence_minted.js`). And the second leg
+// SPENDS the negotiation through a claim before it is accepted, so the one
+// continuation cannot be answered twice at two nodes.
+// ---------------------------------------------------------------------------
 const pending = realms.sharedMap({ persist: 'spnego.pending',
                                    scope: 'shared' });
+const PENDING_COOKIE = 'sts_spnego_negotiation';
 
 function whoIs(req) {
+  log.debug("Entering whoIs().");
+  log.debug("Leaving whoIs().");
   return (req.ip || req.connection.remoteAddress || 'unknown');
 }
 
-function pendingKey(req, door, mechListDer) {
+function pendingKey(door, id) {
   log.debug('Entering pendingKey().');
   log.debug('Leaving pendingKey().');
-  return String(door || '') + '|' + whoIs(req) + '|' + prim.toHex(mechListDer);
+  return String(door || '') + '|' + String(id || '');
+}
+
+// The negotiation id this request carries, or ''. A plain parse of one cookie:
+// an id is base64url, so anything else is not one of ours.
+function pendingIdOf(req) {
+  log.debug("Entering pendingIdOf().");
+  const header = String(((req && req.headers) || {}).cookie || '');
+  let found = '';
+  header.split(';').forEach(function (bit) {
+    const at = bit.indexOf('=');
+    if (at < 0 || bit.slice(0, at).trim() !== PENDING_COOKIE) {
+      return;
+    }
+    const value = bit.slice(at + 1).trim();
+    if (/^[A-Za-z0-9_-]{16,64}$/.test(value)) {
+      found = value;
+    }
+  });
+  log.debug("Leaving pendingIdOf().");
+  return found;
+}
+
+// A key `{ etype, key }` as it is written down, and back.
+function keyToRow(key) {
+  log.debug("Entering keyToRow().");
+  log.debug("Leaving keyToRow().");
+  return key ? { etype: key.etype, key: prim.toHex(key.key) } : null;
+}
+
+function keyFromRow(row) {
+  log.debug("Entering keyFromRow().");
+  log.debug("Leaving keyFromRow().");
+  return row ? { etype: row.etype, key: prim.fromHex(row.key) } : null;
 }
 
 function prunePending(nowMs) {
   log.debug('Entering prunePending().');
   for (const [key, entry] of pending) {
-    if (nowMs - entry.at > PENDING_TTL_MS) {
+    if (nowMs - entry.at > pendingTtlMs()) {
       pending.delete(key);
     }
   }
-  while (pending.size > MAX_PENDING) {
+  while (pending.size > maxPending()) {
     pending.delete(pending.keys().next().value);
   }
   log.debug('Leaving prunePending().');
@@ -266,6 +410,8 @@ function initiatorMicKey(result) {
 }
 
 function negotiateHeader(token) {
+  log.debug("Entering negotiateHeader().");
+  log.debug("Leaving negotiateHeader().");
   return 'Negotiate ' + Buffer.from(token).toString('base64');
 }
 
@@ -306,6 +452,9 @@ function bareVerdict(door, code, facts) {
 // structure has no field for one — so everything a caller prints about WHY is
 // out of band and a real server tells a client none of it.
 function rejection(door, code, facts) {
+  log.debug("Entering rejection().");
+  log.debug("Leaving rejection().");
+  // error-code: none — the helper's own call; every caller puts its code in facts.errorCode
   return tokenVerdict(door, code,
     spnego.encodeNegTokenResp({ negState: spnego.NEG_STATE.REJECT }), facts);
 }
@@ -345,7 +494,8 @@ async function negotiate(req, opts) {
       ' — answering 401 with a bare Negotiate challenge');
     log.debug('Leaving negotiate(). Challenged.');
     return bareVerdict(door, 'no-authorization',
-      { reason: 'no Authorization header; challenged' });
+      { reason: 'no Authorization header; challenged',
+        errorCode: 'STS-KRB-0082' });
   }
 
   const match = /^Negotiate\s+([A-Za-z0-9+/=]*)\s*$/i.exec(header.trim());
@@ -353,15 +503,17 @@ async function negotiate(req, opts) {
     // A scheme this resource does not speak. Named, because "401" on its own
     // sends people to look at their ticket when they sent Basic.
     const scheme = header.split(/\s/)[0] || '(none)';
-    log.info('krb5-spnego: refusing Authorization scheme ' + scheme + ' at ' + door);
+    log.info('krb5-spnego: refusing Authorization scheme ' + scheme + ' at ' +
+             door);
     log.debug('Leaving negotiate(). Wrong scheme.');
     return bareVerdict(door, 'wrong-scheme',
-      { reason: 'Authorization scheme ' + scheme, scheme: scheme });
+      { reason: 'Authorization scheme ' + scheme, scheme: scheme,
+        errorCode: 'STS-KRB-0083' });
   }
   if (!match[1]) {
     log.debug('Leaving negotiate(). Empty token.');
     return bareVerdict(door, 'empty-token',
-      { reason: 'an empty Negotiate token' });
+      { reason: 'an empty Negotiate token', errorCode: 'STS-KRB-0084' });
   }
 
   const tokenBytes = new Uint8Array(Buffer.from(match[1], 'base64'));
@@ -372,6 +524,7 @@ async function negotiate(req, opts) {
     log.debug('Leaving negotiate(). Undecodable.');
     return rejection(door, 'undecodable',
       { reason: 'the Negotiate token does not decode: ' + e.message,
+        errorCode: 'STS-KRB-0085',
         error: e.message });
   }
 
@@ -402,6 +555,7 @@ async function negotiate(req, opts) {
       log.debug('Leaving negotiate(). No common mechanism.');
       return rejection(door, 'no-common-mechanism',
         { reason: 'no mechanism in common',
+          errorCode: 'STS-KRB-0086',
           offered: parsed.mechTypes,
           offeredNames: parsed.mechTypeNames,
           supported: supported });
@@ -416,13 +570,15 @@ async function negotiate(req, opts) {
           negState: spnego.NEG_STATE.ACCEPT_INCOMPLETE,
           supportedMech: selected
         }),
-        { reason: 'no optimistic mechToken; asked for one', selected: selected });
+        { reason: 'no optimistic mechToken; asked for one', selected: selected,
+          errorCode: 'STS-KRB-0087' });
     }
     mechToken = parsed.mechToken;
     if (!spnego.isKerberosMech(selected)) {
       log.debug('Leaving negotiate(). Non-Kerberos mechanism.');
       return rejection(door, 'non-kerberos-mechanism',
         { reason: 'the selected mechanism is not one this service performs',
+          errorCode: 'STS-KRB-0088',
           selected: selected });
     }
   }
@@ -441,10 +597,13 @@ async function negotiate(req, opts) {
       record: options.record !== false
     });
   } catch (e) {
-    log.error('krb5-spnego: the acceptor threw: ' + (e.stack || e.message));
+    log.error(errorCodes.tag('STS-KRB-0089') + 'krb5-spnego: the acceptor ' +
+                                               'threw: ' +
+              (e.stack || e.message));
     log.debug('Leaving negotiate(). Acceptor threw.');
     return rejection(door, 'acceptor-threw',
       { reason: 'the Kerberos acceptor failed: ' + e.message,
+        errorCode: 'STS-KRB-0089',
         error: e.message });
   }
 
@@ -462,6 +621,9 @@ async function negotiate(req, opts) {
           : null
       }),
       { reason: 'the Kerberos AP-REQ was refused', checks: result.checks,
+        // The acceptor's own condition (a replay, a skew, a stale kvno) rather
+        // than one code for every way a ticket can be refused.
+        errorCode: result.errorCode || 'STS-KRB-0090',
         selected: selected });
   }
 
@@ -494,6 +656,7 @@ async function negotiate(req, opts) {
       return rejection(door, 'bad-mech-list-mic',
         { reason: 'the mechListMIC does not verify' +
                   (verdict.error ? ': ' + verdict.error : ''),
+          errorCode: 'STS-KRB-0091',
           error: verdict.error || '', checks: result.checks });
     }
     log.info('krb5-spnego: the mechListMIC verifies (' + verdict.senderRole +
@@ -502,18 +665,23 @@ async function negotiate(req, opts) {
     log.debug('Leaving negotiate(). Missing required mechListMIC.');
     return rejection(door, 'mic-required',
       { reason: 'a mechListMIC was required and none was sent',
+        errorCode: 'STS-KRB-0092',
         requirement: requirement, checks: result.checks });
   } else if (wantMic && !rawKerberos) {
     // The knob: force the exchange even though section 5 would let it be
     // skipped. Real acceptors do this — Windows sets request-mic whenever it
     // wants the list protected regardless of preference order.
     prunePending(Date.now());
-    pending.set(pendingKey(req, door, mechListDer), {
+    const pendingId = nodeCrypto.randomBytes(18).toString('base64url');
+    pending.set(pendingKey(door, pendingId), {
       at: Date.now(),
-      mechListDer: mechListDer,
+      id: pendingId,
+      door: door,
+      address: whoIs(req),
+      mechListDer: prim.toHex(mechListDer),
       selected: selected,
-      initiatorKey: initiatorKey,
-      acceptorSubkey: result.acceptorSubkey || null,
+      initiatorKey: keyToRow(initiatorKey),
+      acceptorSubkey: keyToRow(result.acceptorSubkey || null),
       client: result.client,
       ticketFlags: result.ticketFlags || null
     });
@@ -525,6 +693,8 @@ async function negotiate(req, opts) {
         responseToken: result.reply || null
       }),
       { reason: 'request-mic sent; awaiting the client MIC',
+        errorCode: 'STS-KRB-0093',
+        pendingId: pendingId,
         client: result.client, selected: selected });
   }
 
@@ -542,42 +712,57 @@ async function negotiate(req, opts) {
 }
 
 // The client's answer to request-mic: a bare NegTokenResp carrying the MIC and
-// nothing else. The context it belongs to is the pending one.
+// nothing else. The context it belongs to is the pending one — named by the
+// negotiation cookie, or, without it, the one entry the MIC verifies against
+// (see `pending` above).
 async function continuation(req, door, parsed) {
   log.debug('Entering continuation().');
   prunePending(Date.now());
+  const named = pendingIdOf(req);
   let entry = null;
   let entryKey = null;
-  const prefix = String(door) + '|' + whoIs(req) + '|';
-  for (const [key, value] of pending) {
-    if (key.indexOf(prefix) === 0) {
-      entry = value;
-      entryKey = key;
+  let verdict = null;
+  if (named) {
+    entryKey = pendingKey(door, named);
+    entry = pending.get(entryKey) || null;
+    if (!entry) {
+      log.debug('Leaving continuation(). Nothing pending under the cookie.');
+      return rejection(door, 'no-pending-continuation',
+        { reason: 'there is no negotiation in progress to continue',
+          errorCode: 'STS-KRB-0094', pendingSpent: true });
+    }
+    // The named negotiation is spent by any answer to it, as the address-keyed
+    // one was: a continuation that fails does not leave it to be tried again.
+    pending.delete(entryKey);
+    if (!parsed.mechListMic) {
+      log.debug('Leaving continuation(). No MIC.');
+      return rejection(door, 'continuation-no-mic',
+        { reason: 'the continuation carried no mechListMIC',
+          errorCode: 'STS-KRB-0095', pendingSpent: true });
+    }
+    verdict = await verifyContinuation(entry, parsed);
+  } else {
+    const found = await matchByMic(req, door, parsed);
+    if (!found.candidates) {
+      log.debug('Leaving continuation(). Nothing pending.');
+      return rejection(door, 'no-pending-continuation',
+        { reason: 'there is no negotiation in progress to continue',
+          errorCode: 'STS-KRB-0094' });
+    }
+    if (!parsed.mechListMic) {
+      log.debug('Leaving continuation(). No MIC.');
+      return rejection(door, 'continuation-no-mic',
+        { reason: 'the continuation carried no mechListMIC',
+          errorCode: 'STS-KRB-0095' });
+    }
+    entry = found.entry;
+    entryKey = found.key;
+    verdict = found.verdict;
+    if (entry) {
+      pending.delete(entryKey);
     }
   }
-  if (!entry) {
-    log.debug('Leaving continuation(). Nothing pending.');
-    return rejection(door, 'no-pending-continuation',
-      { reason: 'there is no negotiation in progress to continue' });
-  }
-  pending.delete(entryKey);
-  if (!parsed.mechListMic) {
-    log.debug('Leaving continuation(). No MIC.');
-    return rejection(door, 'continuation-no-mic',
-      { reason: 'the continuation carried no mechListMIC' });
-  }
-  let verdict;
-  try {
-    verdict = await spnego.verifyMechListMic({
-      key: entry.initiatorKey.key,
-      etype: entry.initiatorKey.etype,
-      mic: parsed.mechListMic,
-      mechListDer: entry.mechListDer
-    });
-  } catch (e) {
-    verdict = { ok: false, error: e.message };
-  }
-  if (!verdict.ok) {
+  if (!verdict || !verdict.ok) {
     log.debug('Leaving continuation(). Bad MIC.');
     // `continuation` is on the verdict because the two ways this code is
     // reached want different prose and a caller cannot tell them apart
@@ -586,21 +771,47 @@ async function continuation(req, door, parsed) {
     // client that was asked for one thing and sent it wrong.
     return rejection(door, 'bad-mech-list-mic',
       { reason: 'the mechListMIC does not verify' +
-                (verdict.error ? ': ' + verdict.error : ''),
-        error: verdict.error || '', continuation: true });
+                (verdict && verdict.error ? ': ' + verdict.error : ''),
+        errorCode: 'STS-KRB-0091',
+        error: (verdict && verdict.error) || '', continuation: true,
+        pendingSpent: !!named });
+  }
+  // ONCE ACROSS THE CLUSTER. The entry is a replicated row, so two nodes can
+  // each hold it and each delete their copy; the claim is what lets exactly
+  // one of them accept. Fail closed: a negotiation this service cannot prove
+  // unspent is not one it completes.
+  const spent = await clusterClaims.claim({
+    scope: 'spnego.continuation', value: entry.id || entryKey,
+    realm: '', ttlMs: Math.max(1000, pendingTtlMs())
+  });
+  if (!spent.ok) {
+    const code = spent.reason === 'used' ? 'STS-KRB-0119' : 'STS-KRB-0120';
+    log.warn(errorCodes.tag(code) + 'krb5-spnego: a request-mic ' +
+             'continuation at ' + door + ' was refused: ' +
+             (spent.reason === 'used'
+               ? 'another process had already completed that negotiation.'
+               : 'it could not be proved unspent (' + spent.why + ').'));
+    log.debug('Leaving continuation(). Spent elsewhere, or unprovable.');
+    return rejection(door, 'no-pending-continuation',
+      { errorCode: spent.reason === 'used' ? 'STS-KRB-0119' : 'STS-KRB-0120',
+        reason: spent.reason === 'used'
+          ? 'that negotiation has already been completed'
+          : 'that negotiation could not be checked against those already ' +
+            'completed',
+        pendingSpent: !!named });
   }
   const accepted = await accept(door, {
     result: {
       ok: true,
       client: entry.client,
       ticketFlags: entry.ticketFlags,
-      acceptorSubkey: entry.acceptorSubkey,
+      acceptorSubkey: keyFromRow(entry.acceptorSubkey),
       checks: [{ name: 'mechListMIC verifies', ok: true,
                  detail: 'sent by the ' + verdict.senderRole +
                    ', sequence ' + verdict.sequenceNumber }]
     },
     selected: entry.selected,
-    mechListDer: entry.mechListDer,
+    mechListDer: prim.fromHex(entry.mechListDer),
     requirement: { required: true,
                    reason: 'This acceptor asked for it with request-mic.' },
     rawKerberos: false,
@@ -608,8 +819,70 @@ async function continuation(req, door, parsed) {
     mutualOff: false,
     continuation: true
   });
+  accepted.pendingSpent = !!named;
   log.debug('Leaving continuation(). Accepted.');
   return accepted;
+}
+
+// The MIC checked against one pending entry's own key and mechanism list.
+async function verifyContinuation(entry, parsed) {
+  log.debug('Entering verifyContinuation().');
+  let verdict;
+  try {
+    const key = keyFromRow(entry.initiatorKey);
+    verdict = await spnego.verifyMechListMic({
+      key: key.key,
+      etype: key.etype,
+      mic: parsed.mechListMic,
+      mechListDer: prim.fromHex(entry.mechListDer)
+    });
+  } catch (e) {
+    log.debug('Caught in verifyContinuation(): ' + ((e && e.message) || e));
+    verdict = { ok: false, error: e.message };
+  }
+  log.debug('Leaving verifyContinuation(). ok=' + !!(verdict && verdict.ok));
+  return verdict;
+}
+
+// A continuation with no negotiation cookie: every pending entry for this
+// door, the caller's own address first and the newest first within that, is
+// tried until the MIC verifies against one. Answers the entry it verified
+// against (or none), and how many candidates there were — so the caller can
+// tell "nothing pending" from "a MIC that fits nothing".
+async function matchByMic(req, door, parsed) {
+  log.debug('Entering matchByMic().');
+  const here = whoIs(req);
+  const mine = [];
+  const others = [];
+  for (const [key, value] of pending) {
+    if (!value || value.door !== door || !value.initiatorKey) {
+      continue;
+    }
+    (value.address === here ? mine : others).push({ key: key, entry: value });
+  }
+  const byNewest = function (a, b) {
+    return (b.entry.at || 0) - (a.entry.at || 0);
+  };
+  const candidates = mine.sort(byNewest).concat(others.sort(byNewest));
+  if (!candidates.length || !parsed.mechListMic) {
+    log.debug('Leaving matchByMic(). ' + candidates.length + ' candidate(s), ' +
+              'nothing tried.');
+    return { candidates: candidates.length, entry: null, key: null,
+             verdict: null };
+  }
+  let last = null;
+  for (let i = 0; i < candidates.length; i++) {
+    const verdict = await verifyContinuation(candidates[i].entry, parsed);
+    if (verdict && verdict.ok) {
+      log.debug('Leaving matchByMic(). Matched candidate ' + (i + 1) + '.');
+      return { candidates: candidates.length, entry: candidates[i].entry,
+               key: candidates[i].key, verdict: verdict };
+    }
+    last = verdict;
+  }
+  log.debug('Leaving matchByMic(). The MIC fits no pending negotiation.');
+  return { candidates: candidates.length, entry: null, key: null,
+           verdict: last || { ok: false, error: '' } };
 }
 
 // 200, and the token that proves who answered.
@@ -655,6 +928,7 @@ async function accept(door, ctx) {
     ' at ' + door + ' over ' + spnego.mechName(ctx.selected) +
     (ctx.micVerified ? ', mechListMIC verified' : '') +
     (ctx.rawKerberos ? ' (a bare Kerberos token, no negotiation)' : ''));
+  // error-code: none — the one verdict that is not a refusal: the context is established
   const verdict = tokenVerdict(door, 'accepted', token, {
     status: 200,
     reason: 'the context is established',
@@ -677,6 +951,12 @@ async function accept(door, ctx) {
   return verdict;
 }
 
+// DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason: the pending
+// negotiation is keyed by an id the client carries rather than its address,
+// persisted with its keys readable by another process, and spent through a
+// claim (`continuation()`).
+capabilities.provide('spnego.pending');
+
 module.exports = {
   SPN: SPN,
   SUPPORTED_MECHS: SUPPORTED_MECHS,
@@ -684,5 +964,9 @@ module.exports = {
   negotiate: negotiate,
   applyVerdict: applyVerdict,
   volunteerTheSpn: volunteerTheSpn,
-  lastExchange: function () { return lastExchange; }
+  lastExchange: function () {
+    log.debug("Entering lastExchange().");
+    log.debug("Leaving lastExchange().");
+    return lastExchange;
+  }
 };

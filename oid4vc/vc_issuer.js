@@ -28,12 +28,12 @@
 // ===========================================================================
 //
 // What lives NEXT DOOR rather than here, and why: the credential configurations
-// (vc_configs.js, read by the authorization server too), the Credential Offer and
-// its pre-authorized codes (vc_offers.js, redeemed at the token endpoint), and the
-// issuer's DID documents (vc_did.js). This module is the part that MINTS: the
-// metadata, the nonce, the proof check, the three credential builders, the
-// Credential Request in both its plain and encrypted forms, deferred issuance and
-// the notification endpoint.
+// (vc_configs.js, read by the authorization server too), the Credential Offer
+// and its pre-authorized codes (vc_offers.js, redeemed at the token endpoint),
+// and the issuer's DID documents (vc_did.js). This module is the part that
+// MINTS: the metadata, the nonce, the proof check, the three credential
+// builders, the Credential Request in both its plain and encrypted forms,
+// deferred issuance and the notification endpoint.
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -47,27 +47,42 @@ const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const config = require('../common/config');
 const bbs2023 = require('../common/vendored/bbs2023.js');
-const { log, logArtifact, STS, baseUrlOf, b64u, b64uDecode, jsonFromB64u, randomId,
-        bbsKeyPair, vciError } = require('../common/helpers');
+const { log, logArtifact, STS, baseUrlOf, b64u, b64uDecode, jsonFromB64u,
+        randomId,
+        bbsKeyPair, vciError, signingKeyFor,
+        requestEncryptionKeyFor,
+        certificateHeaderFor,
+        publishedKidFor } = require('../common/helpers');
 const dpop = require('../oauth-oidc/dpop');
-// The register the admin console counts credentials in. The three builders below
-// sign with jsonwebtoken (or with BBS) directly rather than through
+// The error codes (common/error_codes.js). A LEAF that requires nothing; a code
+// is marked on the response object and never put in an error_description.
+const errorCodes = require('../common/error_codes');
+// The register the admin console counts credentials in. The three builders
+// below sign with jsonwebtoken (or with BBS) directly rather than through
 // helpers.signJwt(), so they are not counted by the recorder that catches every
-// OAuth token — buildCredentialFor(), which all three go through, says so instead.
+// OAuth token — buildCredentialFor(), which all three go through, says so
+// instead.
 const stats = require('../common/admin_stats');
-const { vciAuthorizationServer, vciBatchSize, VCI_CONFIGS, VCI_CONFIG_ID, VCI_JWT_CONFIG_ID,
-        VCI_JWT_SCOPE, VCI_JWT_TYPES, VCI_LDP_CONFIG_ID, VCI_LDP_SCOPE, VCI_SCOPE,
+const { vciAuthorizationServer, vciBatchSize, VCI_CONFIGS, VCI_CONFIG_ID,
+        VCI_JWT_CONFIG_ID,
+        VCI_JWT_SCOPE, VCI_JWT_TYPES, VCI_LDP_CONFIG_ID, VCI_LDP_SCOPE,
+        VCI_SCOPE,
         VCI_VCT, VC_CONTEXT, configIdOfIdentifier, vciConfigIds, vciFormatOf,
         vciUsesIssuerDid } = require('./vc_configs');
 const { issuerDidFor, stsDid } = require('./vc_did');
-// WHICH claims a credential carries, and what each one's value is. A library like
-// dpop.js — it registers nothing, so its place in the require order does not
-// matter — and it is the single list both the metadata below and the three
-// builders read, so an issuer that advertises one claim set and mints another is
-// not a state this file can reach. /admin/vc is what changes it.
+// WHICH claims a credential carries, and what each one's value is. A library
+// like dpop.js — it registers nothing, so its place in the require order does
+// not matter — and it is the single list both the metadata below and the three
+// builders read, so an issuer that advertises one claim set and mints another
+// is not a state this file can reach. /admin/vc is what changes it.
 const vcClaims = require('./vc_claims');
 const { deferredIntervalS, deferredReadyMs, OFFER_TTL_MS, deferredAccessTokens,
-        deferredTransactions } = require('./vc_offers');
+        deferredTransactions, offerTtlMs } = require('./vc_offers');
+// THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" a c_nonce is spent
+// through — see spendProofNonces(). A LIBRARY that registers no route and
+// requires persistence lazily, so it moves no route and closes no cycle.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 // c_nonce values this issuer has handed out and not yet seen used. A nonce is
 // single-use (RFC-conformant behaviour, and it makes replay visible in a test).
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -77,7 +92,100 @@ const { deferredIntervalS, deferredReadyMs, OFFER_TTL_MS, deferredAccessTokens,
 // this behaves as the plain Map it replaced. See common/realms.js.
 const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces' });
 
+// `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
+// its exported name.
 const VCI_NONCE_TTL_MS = 5 * 60 * 1000;
+
+function cNonceTtlMs() {
+  log.debug("Entering cNonceTtlMs().");
+  const seconds = Number(config.value('oid4vci.cNonceTtlS'));
+  log.debug("Leaving cNonceTtlMs().");
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 :
+         VCI_NONCE_TTL_MS;
+}
+
+// ---------------------------------------------------------------------------
+// THE NUMBERS AND NAMES A CREDENTIAL IS BUILT WITH, AS SETTINGS (2026-09-12).
+//
+// Each was a literal at its call site — thirty days in three builders, RS256
+// in five places, a six-hundred-second proof window, the issuer's display name
+// — and each is now read per use from `config.js`, whose `dflt` is the literal
+// that was here. One function per value so a builder reads as what it asks.
+// ---------------------------------------------------------------------------
+function credentialLifetimeSeconds() {
+  log.debug("Entering credentialLifetimeSeconds().");
+  const seconds = Number(config.value('oid4vci.credentialLifetimeS'));
+  log.debug("Leaving credentialLifetimeSeconds().");
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) :
+         30 * 24 * 3600;
+}
+
+function proofIatWindowSeconds() {
+  log.debug("Entering proofIatWindowSeconds().");
+  const seconds = Number(config.value('oid4vci.proofIatWindowS'));
+  log.debug("Leaving proofIatWindowSeconds().");
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 600;
+}
+
+// THE ALGORITHM A JOSE CREDENTIAL IS SIGNED WITH, AND THE KEY THAT SIGNS IT.
+//
+// `oid4vci.credentialSigningAlgorithm` names one of the algorithms this realm
+// holds a synchronous key for — the RSA key and the curve keys; no
+// post-quantum algorithm, because the builders sign on the request thread —
+// and `helpers.signingKeyFor()` is the one answer to which key that is. RS256
+// takes the exact path it always took (`STS.privateKey`, `STS.kid`), so an
+// untouched service signs as it did.
+//
+// `kid` is the INTERNAL name, which `certificateHeaderFor()` finds the key by;
+// `headerKid` is what the credential's header carries, which
+// `keys.kidFormat` decides (common/jose_kid.js).
+function credentialSigner() {
+  log.debug("Entering credentialSigner().");
+  const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
+                     'RS256');
+  if (alg === 'RS256') {
+    log.debug("Leaving credentialSigner(). RS256.");
+    return { alg: 'RS256', key: STS.privateKey, kid: STS.kid,
+             headerKid: publishedKidFor(STS.kid) };
+  }
+  const signer = signingKeyFor(alg);
+  log.debug("Leaving credentialSigner(). " + alg + ".");
+  return { alg: alg, key: signer.key, kid: signer.kid,
+           headerKid: publishedKidFor(signer.kid) };
+}
+
+// THE CONTENT ENCRYPTION VALUES A DIRECTION ADVERTISES AND ACCEPTS: the
+// setting, intersected with what `common/crypto.js` implements here. A value
+// the operator names that is not implemented is WARNED about and dropped
+// rather than advertised, and a setting that intersects to nothing falls back
+// to the implemented list with an error — an issuer that accepts no `enc` at
+// all would refuse every encrypted request while its metadata said nothing
+// about why.
+const IMPLEMENTED_ENC_VALUES = ['A128GCM', 'A256GCM'];
+
+function encValuesFrom(settingKey) {
+  log.debug("Entering encValuesFrom(). setting=" + settingKey);
+  const named = [].concat(config.value(settingKey) || []);
+  const usable = named.filter(function (one) {
+    return IMPLEMENTED_ENC_VALUES.indexOf(one) >= 0;
+  });
+  if (usable.length !== named.length) {
+    log.warn(settingKey + ' names ' + named.filter(function (one) {
+      return IMPLEMENTED_ENC_VALUES.indexOf(one) < 0;
+    }).join(', ') + ', which this issuer does not implement; only ' +
+    IMPLEMENTED_ENC_VALUES.join(' and ') + ' can be advertised.');
+  }
+  if (!usable.length) {
+    log.error(errorCodes.tag('STS-VC-0001') +
+              settingKey + ' names no content encryption this issuer ' +
+                           'implements, so ' +
+              IMPLEMENTED_ENC_VALUES.join(' and ') + ' are used instead.');
+    log.debug("Leaving encValuesFrom(). Fell back to the implemented list.");
+    return IMPLEMENTED_ENC_VALUES.slice(0);
+  }
+  log.debug("Leaving encValuesFrom(). " + usable.join(', '));
+  return usable;
+}
 
 function vciMetadata(req) {
   log.debug("Entering vciMetadata().");
@@ -101,8 +209,9 @@ function vciMetadata(req) {
     // metadata that says little.
     credential_response_encryption: {
       alg_values_supported: [VCI_ENC_ALG],
-      enc_values_supported: VCI_ENC_VALUES,
-      encryption_required: false
+      enc_values_supported: responseEncValues(),
+      encryption_required:
+        config.value('oid4vci.responseEncryptionRequired') === true
     },
     // The other direction (section 10). Note the shape differs from the one
     // above and the difference is normative, not an oversight: requests carry
@@ -110,7 +219,7 @@ function vciMetadata(req) {
     // JWK the wallet picked out of jwks.
     credential_request_encryption: credentialRequestEncryptionMetadata(),
     display: [{
-      name: 'IdP Tools Mock Credential Issuer',
+      name: String(config.value('oid4vci.issuerDisplayName') || ''),
       locale: 'en-US',
       logo: { uri: base + '/images/logo.png', alt_text: 'IdP Tools' }
     }]
@@ -120,7 +229,7 @@ function vciMetadata(req) {
     scope: VCI_SCOPE,
     vct: VCI_VCT,
     cryptographic_binding_methods_supported: ['jwk'],
-    credential_signing_alg_values_supported: ['RS256'],
+    credential_signing_alg_values_supported: [credentialSigner().alg],
     proof_types_supported: {
       jwt: { proof_signing_alg_values_supported: stsCrypto.JWS_ASYMMETRIC_ALGS }
     },
@@ -131,9 +240,9 @@ function vciMetadata(req) {
       text_color: '#FFFFFF'
     }],
     // Built from the configured claim set rather than written out, so that this
-    // metadata cannot come to describe a credential this issuer no longer mints.
-    // An SD-JWT VC's claims sit at the top level of the payload, so there is no
-    // prefix. See /admin/vc. Through advertisedClaims() rather than
+    // metadata cannot come to describe a credential this issuer no longer
+    // mints. An SD-JWT VC's claims sit at the top level of the payload, so
+    // there is no prefix. See /admin/vc. Through advertisedClaims() rather than
     // metadataClaims() directly, because the authorization endpoint validates a
     // wallet's requested claim paths against the SAME list — an issuer that
     // advertised one set of paths and accepted another would make the metadata
@@ -149,7 +258,7 @@ function vciMetadata(req) {
     scope: VCI_JWT_SCOPE,
     credential_definition: { type: VCI_JWT_TYPES },
     cryptographic_binding_methods_supported: ['jwk'],
-    credential_signing_alg_values_supported: ['RS256'],
+    credential_signing_alg_values_supported: [credentialSigner().alg],
     proof_types_supported: {
       jwt: { proof_signing_alg_values_supported: stsCrypto.JWS_ASYMMETRIC_ALGS }
     },
@@ -167,7 +276,8 @@ function vciMetadata(req) {
     format: 'ldp_vc',
     scope: VCI_LDP_SCOPE,
     credential_definition: {
-      '@context': ['https://www.w3.org/ns/credentials/v2', bbs2023.IDENTITY_CONTEXT_URL],
+      '@context': ['https://www.w3.org/ns/credentials/v2',
+                   bbs2023.IDENTITY_CONTEXT_URL],
       type: VCI_JWT_TYPES
     },
     cryptographic_binding_methods_supported: ['did:key'],
@@ -198,8 +308,11 @@ function vciMetadata(req) {
     if (!sibling) {
       // Loud, because the symptom otherwise is a configuration this issuer
       // advertises nowhere while still minting credentials for it.
-      log.error('the ' + id + ' configuration names a sibling ' + config.basedOn +
-                ' that the metadata does not offer; it will not be advertised.');
+      log.error(errorCodes.tag('STS-VC-0002') +
+                'the ' + id + ' configuration names a sibling ' +
+                config.basedOn +
+                ' that the metadata does not offer; it will not be ' +
+                'advertised.');
       return;
     }
     const entry = JSON.parse(JSON.stringify(sibling));
@@ -236,28 +349,40 @@ function vciMetadata(req) {
     if (entry) entry.issuer_identifier = issuerDidFor(id, req) || base;
   });
 
-  log.debug("Leaving vciMetadata(). " + Object.keys(meta.credential_configurations_supported).length +
+  log.debug("Leaving vciMetadata(). " +
+            Object.keys(meta.credential_configurations_supported).length +
             " credential configuration(s), " +
-            vciConfigIds().filter(vciUsesIssuerDid).length + " of them naming the issuer by DID.");
+            vciConfigIds().filter(vciUsesIssuerDid).length + " of them " +
+                "naming the issuer by DID.");
   return meta;
 }
 
 // OID4VCI adopts RFC 8414's signed_metadata: a JWT of the metadata signed by
 // the issuer. Signed with the same STS key, so the debugger can verify it
-// against /oauth2/jwks exactly as it verifies an RFC 8414 document.
+// against /oauth2/jwks exactly as it verifies an RFC 8414 document — and, since
+// 2026-09-12, with the same ALGORITHM, `oauth2.signedMetadataAlgorithm`,
+// through `oauth2.js`'s signer rather than a copy of it. That module is
+// required LAZILY, inside the handler: it requires this module's siblings for
+// their stores, and a top-level require back would be a cycle (rule 2).
 function sendVciMetadata(req, res) {
   log.debug("Entering sendVciMetadata().");
   const meta = vciMetadata(req);
   const claims = Object.assign({}, meta, { sub: meta.credential_issuer });
   logArtifact('OID4VCI signed_metadata', 'before signing', claims);
   try {
-    meta.signed_metadata = stsCrypto.signJws(claims, STS.privateKey,
-      { algorithm: 'RS256', issuer: meta.credential_issuer, expiresIn: 3600, keyid: STS.kid });
-    logArtifact('OID4VCI signed_metadata', 'after signing', meta.signed_metadata);
+    meta.signed_metadata = require('../oauth-oidc/oauth2')
+      .signPublishedDocument(claims, meta.credential_issuer, 3600,
+                             'vci-signed-metadata');
+    logArtifact('OID4VCI signed_metadata', 'after signing',
+                meta.signed_metadata);
   } catch (e) {
-    log.error('OID4VCI signed_metadata: ' + e.message);
+    log.error(errorCodes.tag('STS-VC-0003') +
+              'OID4VCI signed_metadata: ' + e.message);
   }
-  res.status(200).type('application/json').set('Cache-Control', 'no-store').send(JSON.stringify(meta, null, 2));
+  res.status(200)
+     .type('application/json')
+     .set('Cache-Control', 'no-store')
+     .send(JSON.stringify(meta, null, 2));
   log.debug("Leaving sendVciMetadata().");
 }
 
@@ -274,16 +399,19 @@ app.get('/.well-known/openid-credential-issuer/*', sendVciMetadata);
 // subject of that rule — there is no URL to insert anything into — which is
 // exactly why the DID route is an extension and not this.
 //
-// `issuer_did` is that extension, and it is one line rather than a mechanism: it
-// says the same issuer also answers to this DID, whose document publishes the
-// same keys this jwks_uri does. A wallet holding a DID-named credential can start
-// from the origin, find the DID named here, and confirm the two are one entity
-// at /.well-known/did-configuration.json. Without it, the DID and the URL are
-// two identifiers with nothing connecting them.
+// `issuer_did` is that extension, and it is one line rather than a mechanism:
+// it says the same issuer also answers to this DID, whose document publishes
+// the same keys this jwks_uri does. A wallet holding a DID-named credential can
+// start from the origin, find the DID named here, and confirm the two are one
+// entity at /.well-known/did-configuration.json. Without it, the DID and the
+// URL are two identifiers with nothing connecting them.
 function sendJwtVcIssuerMetadata(req, res) {
   log.debug("Entering sendJwtVcIssuerMetadata().");
   const base = baseUrlOf(req);
-  res.status(200).type('application/json').set('Cache-Control', 'no-store').send(JSON.stringify({
+  res.status(200)
+     .type('application/json')
+     .set('Cache-Control', 'no-store')
+     .send(JSON.stringify({
     issuer: base,
     jwks_uri: base + '/oauth2/jwks',
     issuer_did: stsDid(req)
@@ -300,9 +428,11 @@ app.post('/oid4vci/nonce', function (req, res) {
   log.debug("Entering the OID4VCI nonce endpoint.");
   const nonce = b64u(crypto.randomBytes(24));
   const now = Date.now();
-  vciNonces.set(nonce, now + VCI_NONCE_TTL_MS);
+  vciNonces.set(nonce, now + cNonceTtlMs());
   // Opportunistic sweep, so a long-running mock does not grow without bound.
-  vciNonces.forEach(function (expires, key) { if (expires < now) vciNonces.delete(key); });
+  vciNonces.forEach(function (expires, key) {
+    if (expires < now) vciNonces.delete(key);
+  });
   res.set('Cache-Control', 'no-store');
   // The one thing OID4VCI says about DPoP by name: "The Credential Issuer MAY
   // provide a DPoP nonce in an HTTP header as defined in Section 8.2 of RFC
@@ -321,11 +451,12 @@ app.post('/oid4vci/nonce', function (req, res) {
   if (dpop.nonceModeOn()) {
     const dpopNonce = dpop.issueNonce();
     res.set('DPoP-Nonce', dpopNonce);
-    log.debug("...and a DPoP nonce alongside it (OID4VCI's Nonce Response, RFC 9449 8.2).");
+    log.debug("...and a DPoP nonce alongside it (OID4VCI's Nonce Response, " +
+              "RFC 9449 8.2).");
   }
   res.status(200).type('application/json').send(JSON.stringify({
     c_nonce: nonce,
-    c_nonce_expires_in: VCI_NONCE_TTL_MS / 1000
+    c_nonce_expires_in: Math.round(cNonceTtlMs() / 1000)
   }));
   log.debug("Leaving the OID4VCI nonce endpoint. Handed out one c_nonce; " +
             vciNonces.size + " now outstanding.");
@@ -355,9 +486,11 @@ async function verifyProofJwt(proofJwt, credentialIssuer) {
   }
 
   if (header.typ !== 'openid4vci-proof+jwt') {
-    throw new Error('the proof typ must be openid4vci-proof+jwt, got "' + header.typ + '".');
+    throw new Error('the proof typ must be openid4vci-proof+jwt, got "' +
+                    header.typ + '".');
   }
-  if (!header.jwk) throw new Error('the proof header carries no jwk (this issuer binds to a JWK).');
+  if (!header.jwk) throw new Error('the proof header carries no jwk (this ' +
+                                   'issuer binds to a JWK).');
   // THE SAME LIST THE METADATA ADVERTISES, from the same place — this said
   // ['ES256','RS256'] while the metadata had grown to eleven, so a wallet that
   // read the metadata, chose EdDSA and signed a perfectly good proof was told
@@ -369,14 +502,19 @@ async function verifyProofJwt(proofJwt, credentialIssuer) {
       'accepts ' + stsCrypto.JWS_ASYMMETRIC_ALGS.join(', ') + '.');
   }
   if (claims.aud !== credentialIssuer) {
-    throw new Error('the proof aud ("' + claims.aud + '") is not this credential issuer ("' +
+    throw new Error('the proof aud ("' + claims.aud + '") is not this ' +
+                                                      'credential issuer ("' +
                     credentialIssuer + '").');
   }
-  if (!claims.iat || Math.abs(Date.now() / 1000 - claims.iat) > 600) {
-    throw new Error('the proof iat is missing or too far from now.');
+  if (!claims.iat ||
+      Math.abs(Date.now() / 1000 - claims.iat) > proofIatWindowSeconds()) {
+    throw new Error('the proof iat is missing or more than ' +
+                    proofIatWindowSeconds() +
+                    ' seconds from now (oid4vci.proofIatWindowS).');
   }
   const expires = vciNonces.get(claims.nonce);
-  if (!expires) throw new Error('the proof nonce is not one this issuer handed out (or was already used).');
+  if (!expires) throw new Error('the proof nonce is not one this issuer ' +
+                                'handed out (or was already used).');
   // The c_nonce belongs to the REQUEST, not to a single proof: a batch request
   // carries several proofs and they all quote the same one (section 8.2). So it
   // is not spent here — the caller spends it once, after every proof in the
@@ -404,7 +542,8 @@ async function verifyProofJwt(proofJwt, credentialIssuer) {
     throw new Error('the proof signature does not verify with the key in ' +
       'its own header: ' + e.message);
   }
-  logArtifact('OID4VCI proof of possession', 'verified', { header: header, payload: claims });
+  logArtifact('OID4VCI proof of possession', 'verified',
+              { header: header, payload: claims });
   log.debug("Leaving verifyProofJwt(). The proof is good.");
   return header.jwk;
 }
@@ -415,10 +554,14 @@ async function verifyProofJwt(proofJwt, credentialIssuer) {
 function makeDisclosure(name, value) {
   log.debug("Entering makeDisclosure(). name=" + name);
   const salt = b64u(crypto.randomBytes(16));
-  const encoded = b64u(Buffer.from(JSON.stringify([salt, name, value]), 'utf8'));
-  const digest = b64u(crypto.createHash('sha256').update(encoded, 'ascii').digest());
+  const encoded = b64u(Buffer.from(JSON.stringify([salt, name, value]),
+                                   'utf8'));
+  const digest = b64u(crypto.createHash('sha256')
+                            .update(encoded, 'ascii')
+                            .digest());
   log.debug("Leaving makeDisclosure(). digest=" + digest);
-  return { salt: salt, name: name, value: value, encoded: encoded, digest: digest };
+  return { salt: salt, name: name, value: value, encoded: encoded,
+           digest: digest };
 }
 
 function buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
@@ -429,8 +572,10 @@ function buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
   // RFC 7800 either way, and a DID there would be nobody's convention.
   log.debug("Entering buildSdJwtVc().");
   const issuerId = issuerDid || credentialIssuer;
-  logArtifact('SD-JWT VC', 'the claims it will assert, before any of them are hidden',
-              { subjectClaims: subjectClaims, holderJwk: holderJwk, credentialIssuer: credentialIssuer });
+  logArtifact('SD-JWT VC', 'the claims it will assert, before any of them ' +
+                           'are hidden',
+              { subjectClaims: subjectClaims, holderJwk: holderJwk,
+                credentialIssuer: credentialIssuer });
   const now = Math.floor(Date.now() / 1000);
   // Everything the holder can choose to disclose, one Disclosure each. sub is
   // not among them: it stays a plain claim, so the credential always says who
@@ -440,13 +585,18 @@ function buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
     .map(function (name) { return makeDisclosure(name, subjectClaims[name]); });
   // A decoy digest: RFC 9901 section 4.2.5 — hash a random value so the count
   // of _sd entries does not reveal how many claims there really are.
-  const decoy = b64u(crypto.createHash('sha256').update(b64u(crypto.randomBytes(16)), 'ascii').digest());
-  const digests = disclosures.map(function (d) { return d.digest; }).concat([decoy]).sort();
+  const decoy = b64u(crypto.createHash('sha256')
+                           .update(b64u(crypto.randomBytes(16)), 'ascii')
+                           .digest());
+  const digests = disclosures.map(function (d) { return d.digest; })
+                             .concat([decoy])
+                             .sort();
 
+  const signer = credentialSigner();
   const payload = {
     iss: issuerId,
     nbf: now,
-    exp: now + 30 * 24 * 3600,
+    exp: now + credentialLifetimeSeconds(),
     vct: VCI_VCT,
     sub: subjectClaims.sub || 'urn:uuid:' + crypto.randomUUID(),
     cnf: { jwk: holderJwk },
@@ -454,27 +604,39 @@ function buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
     _sd: digests
   };
   logArtifact('SD-JWT VC', 'before signing',
-              { header: { alg: 'RS256', typ: 'dc+sd-jwt', kid: STS.kid },
+              { header: { alg: signer.alg, typ: 'dc+sd-jwt',
+                          kid: signer.headerKid },
                 payload: payload,
                 disclosures: disclosures.map(function (d) {
-                  return { name: d.name, value: d.value, salt: d.salt, digest: d.digest, encoded: d.encoded };
+                  return { name: d.name, value: d.value, salt: d.salt,
+                           digest: d.digest, encoded: d.encoded };
                 }),
                 decoyDigest: decoy });
 
   // iat is added by the signer (jsonwebtoken drops a payload iat when it is
   // told not to timestamp, so it is left to do it).
-  const issuerJwt = stsCrypto.signJws(payload, STS.privateKey, {
-    algorithm: 'RS256',
-    header: { alg: 'RS256', typ: 'dc+sd-jwt', kid: STS.kid }
+  // `oid4vci.credentialCertificateHeader` decides the `x5c` / `x5u` — and
+  // SD-JWT VC section 3.5 names `x5c` as one of the ways a verifier may find
+  // the issuer's key, which is the case this setting exists for.
+  const issuerJwt = stsCrypto.signJws(payload, signer.key, {
+    algorithm: signer.alg,
+    header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
+                                               signer.kid),
+                          { alg: signer.alg, typ: 'dc+sd-jwt',
+                            kid: signer.headerKid })
   });
   logArtifact('SD-JWT VC issuer-signed JWT', 'after signing', issuerJwt);
 
   // Combined Serialization: <JWT>~<D1>~...~<Dn>~ (the trailing ~ is required
   // when no Key Binding JWT is present).
-  const serialized = [issuerJwt].concat(disclosures.map(function (d) { return d.encoded; })).join('~') + '~';
-  logArtifact('SD-JWT VC', 'after signing, as it will be sent (Combined Serialization)', serialized);
-  log.debug("Leaving buildSdJwtVc(). " + disclosures.length + " disclosure(s) plus 1 decoy digest.");
-  return { credential: serialized, disclosures: disclosures, payload: payload, decoy: decoy };
+  const serialized = [issuerJwt].concat(disclosures.map(
+      function (d) { return d.encoded; })).join('~') + '~';
+  logArtifact('SD-JWT VC', 'after signing, as it will be sent (Combined ' +
+                           'Serialization)', serialized);
+  log.debug("Leaving buildSdJwtVc(). " + disclosures.length + " " +
+      "disclosure(s) plus 1 decoy digest.");
+  return { credential: serialized, disclosures: disclosures, payload: payload,
+           decoy: decoy };
 }
 
 // A W3C Verifiable Credential secured as a JWT (OID4VCI format jwt_vc_json).
@@ -501,13 +663,16 @@ function buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
   log.debug("Entering buildJwtVcJson().");
   const issuerId = issuerDid || credentialIssuer;
   logArtifact('jwt_vc_json credential', 'the claims it will assert',
-              { subjectClaims: subjectClaims, holderJwk: holderJwk, credentialIssuer: credentialIssuer });
+              { subjectClaims: subjectClaims, holderJwk: holderJwk,
+                credentialIssuer: credentialIssuer });
   const now = Math.floor(Date.now() / 1000);
-  const exp = now + 30 * 24 * 3600;
+  const exp = now + credentialLifetimeSeconds();
+  const signer = credentialSigner();
   const subjectId = subjectClaims.sub || ('urn:uuid:' + crypto.randomUUID());
 
   // credentialSubject.id is the subject identifier; the rest of the claims sit
-  // beside it. `sub` is not repeated inside as a claim of its own — it IS the id.
+  // beside it. `sub` is not repeated inside as a claim of its own — it IS the
+  // id.
   const credentialSubject = { id: subjectId };
   Object.keys(subjectClaims).forEach(function (name) {
     if (name !== 'sub') credentialSubject[name] = subjectClaims[name];
@@ -531,17 +696,25 @@ function buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
     vc: vc
   };
   logArtifact('jwt_vc_json credential', 'before signing',
-              { header: { alg: 'RS256', typ: 'JWT', kid: STS.kid }, payload: payload });
+              { header: { alg: signer.alg, typ: 'JWT',
+                          kid: signer.headerKid },
+                payload: payload });
 
-  const token = stsCrypto.signJws(payload, STS.privateKey, {
-    algorithm: 'RS256',
-    header: { alg: 'RS256', typ: 'JWT', kid: STS.kid }
+  const token = stsCrypto.signJws(payload, signer.key, {
+    algorithm: signer.alg,
+    header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
+                                               signer.kid),
+                          { alg: signer.alg, typ: 'JWT',
+                            kid: signer.headerKid })
   });
-  logArtifact('jwt_vc_json credential', 'after signing, as it will be sent', token);
-  log.debug("Leaving buildJwtVcJson(). " + (Object.keys(credentialSubject).length - 1) +
+  logArtifact('jwt_vc_json credential', 'after signing, as it will be sent',
+              token);
+  log.debug("Leaving buildJwtVcJson(). " +
+            (Object.keys(credentialSubject).length - 1) +
             " claim(s), none of them selectively disclosable.");
-  // `disclosures` is deliberately an empty array rather than absent: the callers
-  // count them for logging, and "this format has none" is the honest answer.
+  // `disclosures` is deliberately an empty array rather than absent: the
+  // callers count them for logging, and "this format has none" is the honest
+  // answer.
   return { credential: token, disclosures: [], payload: payload, vc: vc };
 }
 
@@ -550,22 +723,24 @@ function buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
 // context this process actually loaded rather than against a list.
 //
 // vc_claims.js names a JSON-LD term per configurable attribute, and those names
-// were read off contexts/idptools_identity_v1.json by hand. Two files agreeing by
-// hand is a drift waiting to happen, and the way this one would announce itself is
-// the worst available: jsonld canonicalizes with `safe: true`, so an undefined
-// term THROWS, inside a cryptosuite, at the moment a wallet asks for a credential.
+// were read off contexts/idptools_identity_v1.json by hand. Two files agreeing
+// by hand is a drift waiting to happen, and the way this one would announce
+// itself is the worst available: jsonld canonicalizes with `safe: true`, so an
+// undefined term THROWS, inside a cryptosuite, at the moment a wallet asks for
+// a credential.
 //
-// So the term list is filtered through the context bbs2023.js loaded. A term that
-// is not in it is dropped with an error in the log — the credential is one claim
-// short, which is visible and survivable, where the throw is neither. The context
-// is fetched through that module's own document loader so there is no second
-// reader of that file to keep right.
+// So the term list is filtered through the context bbs2023.js loaded. A term
+// that is not in it is dropped with an error in the log — the credential is one
+// claim short, which is visible and survivable, where the throw is neither. The
+// context is fetched through that module's own document loader so there is no
+// second reader of that file to keep right.
 // ---------------------------------------------------------------------------
 async function identityContextTerms() {
   log.debug("Entering identityContextTerms().");
   try {
     const loaded = await bbs2023.documentLoader(bbs2023.IDENTITY_CONTEXT_URL);
-    const terms = (loaded && loaded.document && loaded.document['@context']) || {};
+    const terms = (loaded && loaded.document &&
+                   loaded.document['@context']) || {};
     log.debug("Leaving identityContextTerms(). The context defines " +
               Object.keys(terms).length + " term(s).");
     return terms;
@@ -573,8 +748,10 @@ async function identityContextTerms() {
     // Cannot happen while the context is vendored — bbs2023.js reads it at
     // require time and this service does not start without it — but a caught
     // failure here costs one claim and an uncaught one costs the credential.
-    log.error('the identity JSON-LD context could not be read; no configured ' +
-              'claim will be put in an ldp_vc credential this time: ' + e.message);
+    log.error(errorCodes.tag('STS-VC-0004') +
+              'the identity JSON-LD context could not be read; no configured ' +
+              'claim will be put in an ldp_vc credential this time: ' +
+              e.message);
     log.debug("Leaving identityContextTerms(). It could not be read.");
     return {};
   }
@@ -586,18 +763,23 @@ async function ldpSubjectMembers(subjectClaims) {
   const terms = await identityContextTerms();
   Object.keys(members).forEach(function (term) {
     if (!Object.prototype.hasOwnProperty.call(terms, term)) {
-      log.error('vc_claims.js maps a configured attribute to the JSON-LD term "' + term +
-                '", which contexts/idptools_identity_v1.json does not define; it is ' +
-                'left out of this credential rather than failing the signature.');
+      log.error(errorCodes.tag('STS-VC-0005') +
+                'vc_claims.js maps a configured attribute to the JSON-LD term "' + term +
+                '", which contexts/idptools_identity_v1.json does not ' +
+                'define; it is left out of this credential rather than ' +
+                'failing the signature.');
       delete members[term];
     }
   });
   const omitted = vcClaims.ldpOmitted();
   if (omitted.length) {
-    log.debug("ldpSubjectMembers(): " + omitted.join(', ') + " is/are configured and " +
-              "have no term in this format, so this credential does not carry them.");
+    log.debug("ldpSubjectMembers(): " + omitted.join(', ') + " is/are " +
+              "configured and have no term in this format, so this " +
+              "credential does not carry them.");
   }
-  log.debug("Leaving ldpSubjectMembers(). " + Object.keys(members).length + " member(s).");
+  log.debug("Leaving ldpSubjectMembers(). " + Object.keys(members).length +
+      " " +
+      "member(s).");
   return members;
 }
 
@@ -611,7 +793,8 @@ async function ldpSubjectMembers(subjectClaims) {
 // from the key it proved possession of, and what proves possession at
 // presentation time is the BBS derived proof itself rather than a separate
 // signature by the holder.
-async function buildLdpVc(subjectClaims, holderJwk, credentialIssuer, issuerDid) {
+async function buildLdpVc(subjectClaims, holderJwk, credentialIssuer,
+                          issuerDid) {
   // VC Data Model 2.0 is DID-native, so naming the issuer by DID here is
   // ordinary rather than an extension. The verification method moves with it:
   // a DID URL fragment into this issuer's DID document instead of a
@@ -626,11 +809,13 @@ async function buildLdpVc(subjectClaims, holderJwk, credentialIssuer, issuerDid)
     crv: holderJwk.crv, kty: holderJwk.kty, x: holderJwk.x, y: holderJwk.y
   })));
   const unsecured = {
-    '@context': ['https://www.w3.org/ns/credentials/v2', bbs2023.IDENTITY_CONTEXT_URL],
+    '@context': ['https://www.w3.org/ns/credentials/v2',
+                 bbs2023.IDENTITY_CONTEXT_URL],
     type: VCI_JWT_TYPES,
     issuer: issuerId,
     validFrom: new Date(now * 1000).toISOString(),
-    validUntil: new Date((now + 30 * 24 * 3600) * 1000).toISOString(),
+    validUntil: new Date((now +
+                          credentialLifetimeSeconds()) * 1000).toISOString(),
     credentialSubject: Object.assign({ id: subjectId },
                                      await ldpSubjectMembers(subjectClaims))
   };
@@ -644,12 +829,17 @@ async function buildLdpVc(subjectClaims, holderJwk, credentialIssuer, issuerDid)
   // requirement is that the STS validate every crypto operation, and an issuer
   // that cannot verify its own output has no business emitting it.
   const check = await bbs2023.verifyBase(issued.credential, keys.publicKey);
-  if (!check.ok) throw new Error('the ldp_vc credential this issuer just built does not verify');
+  if (!check.ok) throw new Error('the ldp_vc credential this issuer just ' +
+                                 'built does not verify');
 
-  logArtifact('ldp_vc credential', 'after signing (' + issued.statements.length + ' statements)',
+  logArtifact('ldp_vc credential',
+              'after signing (' + issued.statements.length + ' ' +
+      'statements)',
               issued.credential);
-  log.debug("Leaving buildLdpVc(). " + issued.statements.length + " canonical statement(s).");
-  return { credential: issued.credential, disclosures: [], payload: issued.credential,
+  log.debug("Leaving buildLdpVc(). " + issued.statements.length + " " +
+      "canonical statement(s).");
+  return { credential: issued.credential, disclosures: [],
+           payload: issued.credential,
            statements: issued.statements };
 }
 
@@ -664,34 +854,46 @@ async function buildLdpVc(subjectClaims, holderJwk, credentialIssuer, issuerDid)
 // link a DID to a person nothing else here is filed under, and the symptom
 // would be a second directory entry rather than an error.
 function holderNameFrom(accessToken) {
+  log.debug("Entering holderNameFrom().");
   let t = {};
   try {
     const parts = String(accessToken || '').split('.');
     if (parts.length === 3) t = jsonFromB64u(parts[1]) || {};
   } catch (e) {
+    log.debug("Caught in holderNameFrom(): " + ((e && e.message) || e));
     // An opaque token, exactly as subjectClaimsFrom() treats one: the mock
     // default is the answer, not an error.
     t = {};
   }
+  log.debug("Leaving holderNameFrom().");
   return t.preferred_username || t.sub || 'mock-holder';
 }
 
-async function buildCredentialFor(configId, subjectClaims, holderJwk, credentialIssuer, issuerDid,
+async function buildCredentialFor(configId, subjectClaims, holderJwk,
+                                  credentialIssuer, issuerDid,
                                   holderName) {
   log.debug("Entering buildCredentialFor(). configId=" + configId);
   const format = vciFormatOf(configId);
   let built;
-  if (format === 'ldp_vc') built = await buildLdpVc(subjectClaims, holderJwk, credentialIssuer, issuerDid);
-  else if (format === 'jwt_vc_json') built = await buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer, issuerDid);
-  else built = await buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer, issuerDid);
-  // Counted here, at the one point all three formats meet. The expiry is read from
-  // whichever member the format uses to state it — `exp` in the two JWT forms,
-  // `validUntil` in the Data Integrity one — because the console's "still valid"
-  // column has to mean the same thing across all three or it means nothing.
+  if (format === 'ldp_vc') built = await buildLdpVc(subjectClaims, holderJwk,
+                                                    credentialIssuer,
+                                                    issuerDid);
+  else if (format === 'jwt_vc_json') built = await buildJwtVcJson(subjectClaims,
+                                                                  holderJwk,
+                                                                  credentialIssuer, issuerDid);
+  else built = await buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
+                                  issuerDid);
+  // Counted here, at the one point all three formats meet. The expiry is read
+  // from whichever member the format uses to state it — `exp` in the two JWT
+  // forms, `validUntil` in the Data Integrity one — because the console's
+  // "still valid" column has to mean the same thing across all three or it
+  // means nothing.
   const payload = built.payload || {};
   const expiresAt = payload.exp ? payload.exp * 1000
-                                : (Date.parse((built.credential && built.credential.validUntil) || '') || 0);
-  const subject = payload.sub || (payload.credentialSubject && payload.credentialSubject.id) ||
+                                : (Date.parse((built.credential &&
+                                               built.credential.validUntil) || '') || 0);
+  const subject = payload.sub ||
+                  (payload.credentialSubject && payload.credentialSubject.id) ||
                   subjectClaims.sub || '';
   stats.recordCredential(format, {
     configId: configId,
@@ -701,22 +903,24 @@ async function buildCredentialFor(configId, subjectClaims, holderJwk, credential
   // The credential's subject identifier, when it is a DECENTRALIZED IDENTIFIER,
   // is a SECOND identity and gets its own record — and its own directory entry.
   //
-  // It is not the same person as the one recorded in subjectClaimsFrom(): that is
-  // whoever the access token named, and this is the holder key the wallet proved
-  // possession of, turned into a did:jwk by buildLdpVc(). One wallet asking for
-  // credentials for one person can hold several, and a directory that filed them
-  // all under the access token's name could not tell them apart.
+  // It is not the same person as the one recorded in subjectClaimsFrom(): that
+  // is whoever the access token named, and this is the holder key the wallet
+  // proved possession of, turned into a did:jwk by buildLdpVc(). One wallet
+  // asking for credentials for one person can hold several, and a directory
+  // that filed them all under the access token's name could not tell them
+  // apart.
   //
-  // Guarded on `did:` deliberately, and the two formats that are NOT DIDs are why:
-  // an SD-JWT VC's subject is the access token's own `sub` (already recorded
-  // above, so a second call would only double the count), and where the token
-  // carries no sub at all it is a `urn:uuid:` minted fresh for this one
-  // credential. Recording those would put a directory entry per issuance in a
-  // store with a fixed maximum, and evict real people to hold identifiers nothing
-  // will ever present again.
+  // Guarded on `did:` deliberately, and the two formats that are NOT DIDs are
+  // why: an SD-JWT VC's subject is the access token's own `sub` (already
+  // recorded above, so a second call would only double the count), and where
+  // the token carries no sub at all it is a `urn:uuid:` minted fresh for this
+  // one credential. Recording those would put a directory entry per issuance in
+  // a store with a fixed maximum, and evict real people to hold identifiers
+  // nothing will ever present again.
   //
   // One call per credential rather than per request, which is the right grain
-  // here: a batch of three proofs is three holder keys and therefore three DIDs.
+  // here: a batch of three proofs is three holder keys and therefore three
+  // DIDs.
   if (/^did:[a-z0-9]+:/i.test(subject)) {
     stats.recordAuthentication({
       presented: subject,
@@ -729,14 +933,15 @@ async function buildCredentialFor(configId, subjectClaims, holderJwk, credential
       // genuinely different things to have seen.
       linkedTo: holderName,
       protocol: 'OpenID4VCI',
-      method: 'credential subject (' + format + ', bound to the holder key the ' +
-              'wallet proved possession of)',
-      note: 'The subject identifier of an issued credential. It is a DID rather ' +
-            'than a name, and nobody authenticated as it — the wallet proved ' +
-            'possession of the key it is derived from.'
+      method: 'credential subject (' + format + ', bound to the holder key ' +
+              'the wallet proved possession of)',
+      note: 'The subject identifier of an issued credential. It is a DID ' +
+            'rather than a name, and nobody authenticated as it — the wallet ' +
+            'proved possession of the key it is derived from.'
     });
   }
-  log.debug("Leaving buildCredentialFor(). Minted one " + format + " credential.");
+  log.debug("Leaving buildCredentialFor(). Minted one " + format + " " +
+      "credential.");
   return built;
 }
 
@@ -744,12 +949,13 @@ async function buildCredentialFor(configId, subjectClaims, holderJwk, credential
 //
 // WHICH claims those are is configuration now (vc_claims.js, set on /admin/vc)
 // and no longer the seven names that used to be written out here. Where each
-// VALUE comes from is that module's decision too and is stated there: the access
-// token first, then this person's LDAP entry, then a persona invented from their
-// username. What stays here is the two things that are this file's own —
+// VALUE comes from is that module's decision too and is stated there: the
+// access token first, then this person's LDAP entry, then a persona invented
+// from their username. What stays here is the two things that are this file's
+// own —
 //
-//   * `sub`, because each of the three formats names its subject differently and
-//     vc_claims.js deliberately has no opinion about which.
+//   * `sub`, because each of the three formats names its subject differently
+//     and vc_claims.js deliberately has no opinion about which.
 //   * WHO the credential is about, read off the access token exactly as before.
 //     The name is what everything downstream is keyed on: it selects the
 //     directory entry and seeds the persona, so `alice` gets the same invented
@@ -761,8 +967,10 @@ function subjectClaimsFrom(accessToken, configId) {
     const parts = String(accessToken || '').split('.');
     if (parts.length === 3) t = jsonFromB64u(parts[1]) || {};
   } catch (e) {
+    log.debug("Caught in subjectClaimsFrom(): " + ((e && e.message) || e));
     // An opaque token — the mock defaults it is.
-    log.debug("The access token is not a readable JWT; using the default claims.");
+    log.debug("The access token is not a readable JWT; using the default " +
+              "claims.");
   }
   const user = holderNameFrom(accessToken);
   // ---------------------------------------------------------------------------
@@ -771,54 +979,61 @@ function subjectClaimsFrom(accessToken, configId) {
   //
   // Every other family here calls stats.recordAuthentication() at the moment a
   // credential is ACCEPTED, and the embedded directory grows an entry off the
-  // back of it (admin_stats.js's user observer). Issuance never did, and the cost
-  // was visible in this function's own leaving-log: "with no directory entry to
-  // read from". The people who reach this endpoint through THIS service's
-  // authorization server were covered by accident — oauth2.js records them at the
-  // token endpoint — but nobody else was, and "anybody else" is not an edge case
-  // at a Credential Issuer: OID4VCI lets the authorization server be somebody
-  // else entirely, so a FOREIGN access token is the ordinary case and its subject
-  // had never been seen here.
+  // back of it (admin_stats.js's user observer). Issuance never did, and the
+  // cost was visible in this function's own leaving-log: "with no directory
+  // entry to read from". The people who reach this endpoint through THIS
+  // service's authorization server were covered by accident — oauth2.js records
+  // them at the token endpoint — but nobody else was, and "anybody else" is not
+  // an edge case at a Credential Issuer: OID4VCI lets the authorization server
+  // be somebody else entirely, so a FOREIGN access token is the ordinary case
+  // and its subject had never been seen here.
   //
-  // What is being recorded is a credential being ACCEPTED and not a sign-on, and
-  // the method and note say so rather than leaving a reader of /admin/users to
-  // assume otherwise — the same distinction tls_server.js draws for a verified
-  // client certificate. Nobody authenticated here; an access token was presented
-  // and this issuer does not verify tokens it did not issue.
+  // What is being recorded is a credential being ACCEPTED and not a sign-on,
+  // and the method and note say so rather than leaving a reader of /admin/users
+  // to assume otherwise — the same distinction tls_server.js draws for a
+  // verified client certificate. Nobody authenticated here; an access token was
+  // presented and this issuer does not verify tokens it did not issue.
   //
   // HERE rather than at the two endpoints, because this function is the single
-  // point that decides who a credential is about: it is called once per credential
-  // request and once when an issuance is deferred, so a batch of five proofs is
-  // one record and not five, and a deferred credential is not recorded twice.
+  // point that decides who a credential is about: it is called once per
+  // credential request and once when an issuance is deferred, so a batch of
+  // five proofs is one record and not five, and a deferred credential is not
+  // recorded twice.
   // ---------------------------------------------------------------------------
   stats.recordAuthentication({
     presented: user,
     protocol: 'OpenID4VCI',
-    method: 'credential request (the subject named by the presented access token)',
+    method: 'credential request (the subject named by the presented access ' +
+            'token)',
     sub: t.sub || '',
     client_id: t.client_id || t.azp || '',
     note: 'An access token was presented at the Credential Endpoint and the ' +
-          'credential describes this subject. Nobody authenticated here, and this ' +
-          'issuer does not verify access tokens it did not issue.'
+          'credential describes this subject. Nobody authenticated here, and ' +
+          'this issuer does not verify access tokens it did not issue.'
   });
   // What the wallet asked for in its authorization_details, if it asked at all
   // (OID4VCI section 5.1.1). Null means it did not, which is not the same as an
   // empty selection: the whole configured set is issued, exactly as before.
   const asked = requestedClaimPaths(accessToken, configId);
-  const rows = asked ? vcClaims.rowsForPaths(asked, vciFormatOf(configId)) : null;
+  const rows = asked ? vcClaims.rowsForPaths(asked, vciFormatOf(configId)) :
+               null;
   const built = vcClaims.subjectClaimsFor(user, t, rows);
-  const claims = Object.assign({ sub: t.sub || ('urn:uuid:' + crypto.randomUUID()) },
+  const claims = Object.assign({ sub: t.sub ||
+                                      ('urn:uuid:' + crypto.randomUUID()) },
                                built.claims);
-  log.debug("Leaving subjectClaimsFrom(). The credential will describe " + user +
+  log.debug("Leaving subjectClaimsFrom(). The credential will describe " +
+            user +
             " with " + built.report.length + " configured claim(s), " +
             (asked ? "the " + asked.length + " the wallet asked for, " : "") +
-            (built.entryFound ? "read from their directory entry where it has them."
+            (built.entryFound ? "read from their directory entry where it " +
+                                "has them."
                               : "with no directory entry to read from."));
   return claims;
 }
 
 // ---------------------------------------------------------------------------
-// WHICH CLAIMS THE WALLET ASKED FOR, or null if it asked for none in particular.
+// WHICH CLAIMS THE WALLET ASKED FOR, or null if it asked for none in
+// particular.
 //
 // The request was made at the authorization endpoint, in the `claims` member of
 // an authorization_details entry (OID4VCI section 5.1.1), and it arrives here
@@ -834,7 +1049,8 @@ function subjectClaimsFrom(accessToken, configId) {
 // every wallet that used a scope.
 // ---------------------------------------------------------------------------
 function requestedClaimPaths(accessToken, configId) {
-  log.debug("Entering requestedClaimPaths(). configId=" + (configId || '(none)'));
+  log.debug("Entering requestedClaimPaths(). configId=" +
+            (configId || '(none)'));
   let claims;
   try {
     // **THIS NOW APPLIES `oauth2.clockSkewS` AND DID NOT BEFORE 2026-08-27**,
@@ -846,7 +1062,8 @@ function requestedClaimPaths(accessToken, configId) {
     // should have been. The shared verifier applies it by default.
     claims = stsCrypto.verifyJws(accessToken, STS.certPem);
   } catch (e) {
-    log.debug("Leaving requestedClaimPaths(). The token is not one of ours: " + e.message);
+    log.debug("Leaving requestedClaimPaths(). The token is not one of ours: " +
+              e.message);
     return null;
   }
   const details = claims.authorization_details || [];
@@ -858,13 +1075,16 @@ function requestedClaimPaths(accessToken, configId) {
     // The entry for THIS credential. A token may authorize several
     // configurations and each carries its own selection, so matching on the
     // configuration is what keeps one credential's selection off another.
-    if (configId && d.credential_configuration_id && d.credential_configuration_id !== configId) {
+    if (configId && d.credential_configuration_id &&
+        d.credential_configuration_id !== configId) {
       return;
     }
-    found = d.claims.map(function (c) { return (c || {}).path; }).filter(Array.isArray);
+    found = d.claims.map(function (c) { return (c || {}).path; })
+                    .filter(Array.isArray);
   });
   log.debug("Leaving requestedClaimPaths(). " +
-            (found ? found.length + " claim(s) requested." : "None were requested."));
+            (found ? found.length + " claim(s) requested." : "None were " +
+                "requested."));
   return found;
 }
 
@@ -875,11 +1095,36 @@ function requestedClaimPaths(accessToken, configId) {
 // this service, so reading them back is a verification — a wallet cannot award
 // itself an identifier by editing anything.
 // ---------------------------------------------------------------------------
-// The nonces a set of proofs quoted, spent together: one Credential Request, one
-// c_nonce, however many proofs.
-function spendProofNonces(proofJwts) {
+// The nonces a set of proofs quoted, spent together: one Credential Request,
+// one c_nonce, however many proofs.
+//
+// **ACROSS THE CLUSTER SINCE 2026-09-14 (#46), AND SO ASYNCHRONOUS.** The
+// delete below is the whole of "once" in one process, and in several it is a
+// write another node reads a moment later — two Credential Requests quoting
+// one c_nonce, sent to two nodes inside that moment, both verified their
+// proofs against a nonce each node still held and both were issued a
+// credential. So each distinct nonce is deleted here as before (the fast path,
+// and every other process's eventual refusal) and then SPENT THROUGH
+// `cluster_claims.claim()`: exactly one request wins it, on any node.
+//
+// That also closes the same race inside ONE process, which the delete alone
+// never did: `verifyProofJwt()` awaits the signature check, so two concurrent
+// requests could both find the nonce before either deleted it, and both were
+// answered. The claim is set before its first await, so the second is refused.
+//
+// The claim lives for what is left of the nonce's own lifetime plus
+// CLAIM_SKEW_MS for clocks that disagree. A store that cannot be asked refuses
+// (fail closed). Nothing releases the claim: the nonce is already gone from
+// this process's map, and a claim given back without it would only let another
+// node that still holds it accept the replay.
+//
+// Resolves to `{ ok: true }` or `{ ok: false, errorCode, description }`.
+const CLAIM_SKEW_MS = 60 * 1000;
+
+async function spendProofNonces(proofJwts) {
   log.debug("Entering spendProofNonces(). " + proofJwts.length + " proof(s).");
   const spent = [];
+  const lifetimes = {};
   proofJwts.forEach(function (proof) {
     let nonce;
     try {
@@ -887,12 +1132,47 @@ function spendProofNonces(proofJwts) {
     } catch (e) {
       // Unreadable proofs never got this far; ignore it rather than throwing
       // after the credential has already been decided on.
-      log.debug("spendProofNonces(): a proof payload could not be read: " + e.message);
+      log.debug("Caught in spendProofNonces(): a proof payload could not be " +
+                "read: " + ((e && e.message) || e));
       return;
     }
-    if (nonce && vciNonces.delete(nonce) && spent.indexOf(nonce) === -1) spent.push(nonce);
+    if (!nonce || spent.indexOf(nonce) !== -1) {
+      return;
+    }
+    const expires = Number(vciNonces.get(nonce));
+    lifetimes[nonce] = isFinite(expires) && expires > 0
+      ? Math.max(0, expires - Date.now()) : cNonceTtlMs();
+    vciNonces.delete(nonce);
+    spent.push(nonce);
   });
-  log.debug("Leaving spendProofNonces(). Spent " + spent.length + " distinct nonce(s).");
+  for (const nonce of spent) {
+    const claimed = await clusterClaims.claim({
+      scope: 'oid4vci.c_nonce', value: nonce,
+      ttlMs: lifetimes[nonce] + CLAIM_SKEW_MS });
+    if (!claimed.ok && claimed.reason === 'used') {
+      log.warn(errorCodes.tag('STS-VC-0050') + 'vc_issuer: a c_nonce the ' +
+               'proofs verified against was ALREADY SPENT by another ' +
+               'Credential Request, on this node or another against the same ' +
+               'store. Refused.');
+      log.debug("Leaving spendProofNonces(). Used elsewhere.");
+      return { ok: false, errorCode: 'STS-VC-0050',
+               description: 'the proof nonce is not one this issuer handed ' +
+                            'out (or was already used).' };
+    }
+    if (!claimed.ok) {
+      log.error(errorCodes.tag('STS-VC-0051') + 'vc_issuer: whether a ' +
+                'c_nonce was already spent could not be asked of the claim ' +
+                'store (' + (claimed.why || 'no reason given') + '). The ' +
+                'Credential Request is refused.');
+      log.debug("Leaving spendProofNonces(). Store unavailable.");
+      return { ok: false, errorCode: 'STS-VC-0051',
+               description: 'this issuer could not confirm the proof nonce ' +
+                            'is unused; request a new c_nonce and retry.' };
+    }
+  }
+  log.debug("Leaving spendProofNonces(). Spent " + spent.length + " distinct " +
+      "nonce(s).");
+  return { ok: true };
 }
 
 function grantedIdentifiers(accessToken) {
@@ -906,7 +1186,8 @@ function grantedIdentifiers(accessToken) {
   } catch (e) {
     // Not our token (or not valid): nothing was granted by us. The caller still
     // checks the token elsewhere; this only answers "what did we grant".
-    log.debug("Leaving grantedIdentifiers(). The token is not one of ours: " + e.message);
+    log.debug("Leaving grantedIdentifiers(). The token is not one of ours: " +
+              e.message);
     return [];
   }
   const details = claims.authorization_details || [];
@@ -931,14 +1212,19 @@ function grantedIdentifiers(accessToken) {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });  // id -> { accessToken, expires, event }
+// id -> { accessToken, expires, event }
+const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });
 
 function newNotificationId(accessToken) {
   log.debug("Entering newNotificationId().");
   const id = b64u(crypto.randomBytes(12));
-  notificationIds.set(id, { accessToken: accessToken, expires: Date.now() + OFFER_TTL_MS, event: null });
+  notificationIds.set(id,
+                      { accessToken: accessToken,
+                        expires: Date.now() + offerTtlMs(), event: null });
   const now = Date.now();
-  notificationIds.forEach(function (v, k) { if (v.expires < now) notificationIds.delete(k); });
+  notificationIds.forEach(function (v, k) {
+    if (v.expires < now) notificationIds.delete(k);
+  });
   log.debug("Leaving newNotificationId(). " + id);
   return id;
 }
@@ -952,7 +1238,16 @@ function newNotificationId(accessToken) {
 // ---------------------------------------------------------------------------
 const VCI_ENC_ALG = 'RSA-OAEP-256';
 
-const VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
+// The implemented list, kept under its old name. What is ADVERTISED and
+// ACCEPTED is `responseEncValues()` — `oid4vci.responseEncryptionEncValues`
+// narrowed to this — since 2026-09-12.
+const VCI_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
+
+function responseEncValues() {
+  log.debug("Entering responseEncValues().");
+  log.debug("Leaving responseEncValues().");
+  return encValuesFrom('oid4vci.responseEncryptionEncValues');
+}
 
 // ---------------------------------------------------------------------------
 // Credential REQUEST encryption (OID4VCI section 10), the other direction.
@@ -972,65 +1267,67 @@ const VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 //     it in the JWE header. That is what lets an issuer rotate keys, so the kid
 //     is checked on the way in rather than ignored.
 //
-// The key is regenerated per start, like the signing key, and its kid is
+// The key lives and dies exactly as the signing key does — it is a member of
+// the same per-realm key set since 2026-09-12, so it is regenerated per start
+// in development and read back from the store in product — and its kid is
 // derived from the key material for the same reason: two instances must not
 // claim the same kid over different keys, or "decryption failed" looks like a
 // corrupt request instead of the wrong issuer.
 // ---------------------------------------------------------------------------
-const VCI_REQUEST_ENC_VALUES = ['A128GCM', 'A256GCM'];
+// The implemented list, kept under its old name; `requestEncValues()` is what
+// is advertised and accepted (`oid4vci.requestEncryptionEncValues`).
+const VCI_REQUEST_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
+
+function requestEncValues() {
+  log.debug("Entering requestEncValues().");
+  log.debug("Leaving requestEncValues().");
+  return encValuesFrom('oid4vci.requestEncryptionEncValues');
+}
 
 // Only an explicit "true" turns the requirement on: a mock that demanded
 // encryption because of a typo in an environment variable would fail every
 // existing test with an error about something the test never mentioned.
 function vciRequestEncryptionRequired() {
+  log.debug("Entering vciRequestEncryptionRequired().");
+  log.debug("Leaving vciRequestEncryptionRequired().");
   return config.value('oid4vci.requestEncryptionRequired');
 }
 
-const VCI_REQUEST_ENC_KEY = (function () {
-  // ONE KEY ACROSS EVERY PROCESS IN THIS SERVICE (2026-09-07).
-  //
-  // This is real key material made at MODULE LOAD, so before the request worker
-  // pool existed there was exactly one of it. There are now four — the front
-  // process and three workers — and a client that read the public JWK from one
-  // and encrypted its request to it had the request decrypted by whichever
-  // worker answered, which was usually a different one.
-  //
-  // It arrives the way the TLS server certificate does and for the same reason
-  // request_worker.js gives there: over the fork's IPC channel and into the
-  // environment before this module is loaded, because a private key placed in
-  // the environment AFTER start is not in /proc/<pid>/environ. Absent — a
-  // service with no pool, which is every ordinary run — one is generated here
-  // exactly as it always was.
-  const handedDown = process.env.STS_VCI_REQUEST_ENC_KEY_PEM || '';
-  const pair = handedDown
-    ? { privateKey: crypto.createPrivateKey(handedDown),
-        publicKey: crypto.createPublicKey(handedDown) }
-    : crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const publicJwk = pair.publicKey.export({ format: 'jwk' });
-  // RFC 7638 thumbprint. This was the THIRD hand-written copy in the service —
-  // `dpop.js` and `spiffe_ca.js` had the others — and this one and SPIFFE's
-  // both leant on JSON.stringify over an object literal whose keys happened to
-  // be in lexicographic order. Correct as typed, and one member added out of
-  // order away from silently producing a different thumbprint for the same key.
-  // Deriving the kid from the key still means it cannot outlive it.
-  const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
-  return {
-    privateKey: pair.privateKey,
-    publicJwk: Object.assign({}, publicJwk, {
-      kid: 'sts-mock-req-enc-' + thumbprint,
-      alg: VCI_ENC_ALG,
-      use: 'enc',
-      key_ops: ['encrypt']
-    })
-  };
-})();
+// ---------------------------------------------------------------------------
+// THE KEY IS A MEMBER OF THE REALM'S KEY SET SINCE 2026-09-12, AND THIS FILE
+// NO LONGER MAKES ONE.
+//
+// Until that date this block generated a process key at module load, took it
+// from `process.env.STS_VCI_REQUEST_ENC_KEY_PEM` in a request worker, and kept
+// a `realms.keyed()` map beside it that made a key per realm in a process with
+// no pool and SHARED the handed-down key in a process with one — so in a
+// dispatched service every realm's issuer could decrypt a request encrypted to
+// another realm's published key, and in no mode did the key survive a restart.
+//
+// `helpers.requestEncryptionKeyFor()` answers with the AMBIENT realm's key
+// set's member now, and every property the old arrangement lacked comes from
+// the key set: per realm, sealed and written down in product mode, decrypted
+// only while used, and agreed across the front process and every request worker
+// by the key channel's first-generator-wins. `common/helpers.js`'s
+// makeRequestEncryptionKey() argues why it is there and why it is a plain key
+// rather than a leaf of the PKI hierarchy.
+//
+// **WHAT A WALLET SEES IS UNCHANGED**: one RSA-OAEP-256 key in
+// `credential_request_encryption.jwks`, a kid of `sts-req-enc-<thumbprint>`,
+// `use: enc`, `key_ops: ["encrypt"]` — per realm, at that realm's metadata.
+// ---------------------------------------------------------------------------
+function requestEncryptionKeys() {
+  log.debug("Entering requestEncryptionKeys().");
+  log.debug("Leaving requestEncryptionKeys().");
+  return requestEncryptionKeyFor();
+}
 
 function credentialRequestEncryptionMetadata() {
   log.debug("Entering credentialRequestEncryptionMetadata().");
   log.debug("Leaving credentialRequestEncryptionMetadata().");
   return {
-    jwks: { keys: [VCI_REQUEST_ENC_KEY.publicJwk] },
-    enc_values_supported: VCI_REQUEST_ENC_VALUES,
+    jwks: { keys: [requestEncryptionKeys().publicJwk] },
+    enc_values_supported: requestEncValues(),
     // zip_values_supported is deliberately absent: "If absent then no
     // compression algorithms are supported", and this issuer does not
     // decompress. Advertising a zip it then refused would make the metadata a
@@ -1059,11 +1356,12 @@ function decryptJweRequest(compact) {
   // library, for the reason encryptToJwe() has always given: having the steps
   // visible is the point of a mock. It is simply in one place now.
   const result = stsCrypto.decryptJweCompact(compact, {
-    privateKey: VCI_REQUEST_ENC_KEY.privateKey,
-    allowedEnc: VCI_REQUEST_ENC_VALUES,
-    expectedKid: VCI_REQUEST_ENC_KEY.publicJwk.kid
+    privateKey: requestEncryptionKeys().privateKey,
+    allowedEnc: requestEncValues(),
+    expectedKid: requestEncryptionKeys().publicJwk.kid
   });
-  logArtifact('OID4VCI Credential Request', 'JWE protected header as received', result.header);
+  logArtifact('OID4VCI Credential Request', 'JWE protected header as received',
+              result.header);
   let body;
   try {
     body = JSON.parse(result.plaintext);
@@ -1071,7 +1369,9 @@ function decryptJweRequest(compact) {
     throw new Error('the decrypted request is not JSON: ' + e.message);
   }
   logArtifact('OID4VCI Credential Request', 'after decryption', body);
-  log.debug("Leaving decryptJweRequest(). Decrypted " + result.plaintext.length + " characters.");
+  log.debug("Leaving decryptJweRequest(). Decrypted " +
+      result.plaintext.length + " " +
+      "characters.");
   return body;
 }
 
@@ -1090,7 +1390,40 @@ function decryptJweRequest(compact) {
 // issues, so even the end-to-end result looks right. Only the issuer knows what
 // it received. A mutation test proved the point: dropping the ciphertext at the
 // point of sending went completely undetected until this existed.
-let lastCredentialRequest = { seen: false };
+//
+// **PER TRUST REALM SINCE 2026-09-12.** It was one `let` for the process, so
+// `/realm/acme/oid4vci/last_request` answered with however the DEFAULT realm's
+// last request had arrived — including the `kid` of a key acme does not hold —
+// and a wallet under test in one realm could be told it had encrypted by a
+// request made in another. It was `realms.keyed()` rather than `realms.obj()`
+// because the record is REPLACED whole on every request rather than edited, and
+// a holder object was the honest shape for that. ~~In memory and not persisted:
+// it describes one request as seen by one process~~ — **PERSISTED SINCE
+// 2026-09-14 (#46)**, and the struck sentence is why: behind a balancer the
+// wallet's Credential Request is answered by one node and its read-back of
+// `/oid4vci/last_request` by another, which answered `seen: false` or an
+// older request, so a wallet that DID encrypt was told it had not — the one
+// question this endpoint exists to answer truthfully. It is now a
+// `realms.map()` with one key, `LAST_REQUEST_KEY`, the record still replaced
+// whole (so it owes no `touch()`), and "last" means the last one the SERVICE
+// saw, which is what a wallet under test is asking. The record names a media
+// type, a kid, an alg and an enc and never the request itself.
+const LAST_REQUEST_KEY = 'last';
+const lastCredentialRequestStore = realms.map({
+  persist: 'vc_issuer.lastCredentialRequest' });
+
+function lastCredentialRequestRecord() {
+  log.debug("Entering lastCredentialRequestRecord().");
+  log.debug("Leaving lastCredentialRequestRecord().");
+  return lastCredentialRequestStore.get(LAST_REQUEST_KEY) || { seen: false };
+}
+
+// Written WHOLE through the store's `set()`, which is the journalled door.
+function recordLastCredentialRequest(record) {
+  log.debug("Entering recordLastCredentialRequest().");
+  lastCredentialRequestStore.set(LAST_REQUEST_KEY, record);
+  log.debug("Leaving recordLastCredentialRequest().");
+}
 
 function readPossiblyEncryptedRequest(req) {
   log.debug("Entering readPossiblyEncryptedRequest().");
@@ -1100,26 +1433,35 @@ function readPossiblyEncryptedRequest(req) {
     if (vciRequestEncryptionRequired()) {
       // Section 10: "When encryption of a message was required but the received
       // message is unencrypted, it SHOULD be rejected."
-      log.debug("Leaving readPossiblyEncryptedRequest(). Refused: encryption is required.");
+      log.debug("Leaving readPossiblyEncryptedRequest(). Refused: encryption " +
+                "is required.");
       return {
+        errorCode: 'STS-VC-0006',
         error: 'invalid_encryption_parameters',
-        description: 'This issuer advertises credential_request_encryption.encryption_required = ' +
-          'true, so the Credential Request must be a JWE sent as application/jwt.'
+        description: 'This issuer advertises ' +
+          'credential_request_encryption.encryption_required = true, so the ' +
+          'Credential Request must be a JWE sent as application/jwt.'
       };
     }
     // Every content type arrives as raw text here (the body parser above takes
     // all of them), so the plain path still has to parse its own JSON.
     try {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-      lastCredentialRequest = {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') :
+                   (req.body || {});
+      recordLastCredentialRequest({
         seen: true, encrypted: false, path: req.path,
         contentType: contentType || null, at: new Date().toISOString()
-      };
+      });
       log.debug("Leaving readPossiblyEncryptedRequest(). Plain JSON.");
       return { body: body, encrypted: false };
     } catch (e) {
-      log.error('the credential request body is not JSON: ' + e.message);
-      return { error: 'invalid_request', description: 'The request body is not JSON: ' + e.message };
+      log.error(errorCodes.tag('STS-VC-0007') +
+                'the credential request body is not JSON: ' + e.message);
+      log.debug("Leaving readPossiblyEncryptedRequest().");
+      return { errorCode: 'STS-VC-0007',
+               error: 'invalid_request', description: 'The request body is ' +
+                                                      'not ' +
+                                                      'JSON: ' + e.message };
     }
   }
   try {
@@ -1128,18 +1470,29 @@ function readPossiblyEncryptedRequest(req) {
     // Recorded only once it has actually decrypted, so "encrypted" means the
     // issuer really read ciphertext rather than merely being sent a media type.
     let header = {};
-    try { header = JSON.parse(Buffer.from(compact.split('.')[0], 'base64url').toString('utf8')); }
-    catch (e2) { /* it decrypted, so this cannot fail; ignore defensively */ }
-    lastCredentialRequest = {
+    try {
+      header = JSON.parse(Buffer.from(compact.split('.')[0], 'base64url')
+                                .toString('utf8'));
+    } catch (e2) {
+      // It decrypted, so its protected header was read once already and this
+      // cannot fail; the record below simply names no kid, alg or enc if it
+      // somehow does.
+      log.debug('readPossiblyEncryptedRequest(): the header would not re-read: ' + e2.message);
+    }
+    recordLastCredentialRequest({
       seen: true, encrypted: true, path: req.path,
       kid: header.kid || null, alg: header.alg || null, enc: header.enc || null,
       at: new Date().toISOString()
-    };
+    });
     log.debug("Leaving readPossiblyEncryptedRequest(). Decrypted.");
     return { body: body, encrypted: true };
   } catch (e) {
-    log.error('the encrypted Credential Request could not be read: ' + e.message);
-    return { error: 'invalid_encryption_parameters', description: e.message };
+    log.error(errorCodes.tag('STS-VC-0008') +
+              'the encrypted Credential Request could not be read: ' +
+              e.message);
+    log.debug("Leaving readPossiblyEncryptedRequest().");
+    return { errorCode: 'STS-VC-0008', error: 'invalid_encryption_parameters',
+             description: e.message };
   }
 }
 
@@ -1148,21 +1501,27 @@ function encryptionProblem(encryption) {
   const jwk = encryption.jwk;
   if (!jwk || jwk.kty !== 'RSA' || !jwk.n || !jwk.e) {
     log.debug("Leaving encryptionProblem(). The key is unusable.");
-    return 'credential_response_encryption.jwk must be an RSA public key; this issuer encrypts with ' +
+    return 'credential_response_encryption.jwk must be an RSA public key; ' +
+           'this issuer encrypts with ' +
            VCI_ENC_ALG + '.';
   }
   const alg = jwk.alg || encryption.alg || VCI_ENC_ALG;
   if (alg !== VCI_ENC_ALG) {
     log.debug("Leaving encryptionProblem(). Unsupported alg " + alg);
-    return 'This issuer supports alg ' + VCI_ENC_ALG + ' only; "' + alg + '" was requested.';
+    return 'This issuer supports alg ' + VCI_ENC_ALG + ' only; "' + alg + '" ' +
+        'was requested.';
   }
   if (!encryption.enc) {
     log.debug("Leaving encryptionProblem(). No enc.");
-    return 'credential_response_encryption.enc is required (' + VCI_ENC_VALUES.join(' or ') + ').';
+    return 'credential_response_encryption.enc is required (' +
+           responseEncValues().join(' ' +
+        'or ') + ').';
   }
-  if (VCI_ENC_VALUES.indexOf(encryption.enc) === -1) {
+  if (responseEncValues().indexOf(encryption.enc) === -1) {
     log.debug("Leaving encryptionProblem(). Unsupported enc " + encryption.enc);
-    return 'This issuer supports enc ' + VCI_ENC_VALUES.join(' or ') + '; "' + encryption.enc +
+    return 'This issuer supports enc ' + responseEncValues().join(' or ') +
+        '; ' +
+        '"' + encryption.enc +
            '" was requested.';
   }
   if (encryption.zip) {
@@ -1193,7 +1552,8 @@ function encryptToJwe(plaintext, encryption) {
 // Every Credential Response goes out through here, so the encrypted and plain
 // paths cannot drift apart.
 function sendCredentialResponse(res, status, payload, encryption) {
-  log.debug("Entering sendCredentialResponse(). status=" + status + ", encrypted=" + !!encryption);
+  log.debug("Entering sendCredentialResponse(). status=" + status + ", " +
+      "encrypted=" + !!encryption);
   res.set('Cache-Control', 'no-store');
   if (!encryption) {
     res.status(status).type('application/json').send(JSON.stringify(payload));
@@ -1202,7 +1562,8 @@ function sendCredentialResponse(res, status, payload, encryption) {
   }
   logArtifact('OID4VCI Credential Response', 'before encryption', payload);
   const jwe = encryptToJwe(JSON.stringify(payload), encryption);
-  logArtifact('OID4VCI Credential Response', 'after encryption (JWE compact serialization)', jwe);
+  logArtifact('OID4VCI Credential Response', 'after encryption (JWE compact ' +
+                                             'serialization)', jwe);
   // Section 10: an encrypted response is a JWT, and says so.
   res.status(status).type('application/jwt').send(jwe);
   log.debug("Leaving sendCredentialResponse(). Sent as a JWE.");
@@ -1213,11 +1574,12 @@ function sendCredentialResponse(res, status, payload, encryption) {
 // published as its raw compressed bytes in multibase base64url, which is what
 // the Data Integrity multikey encoding uses and what verificationMethod above
 // points at. Served no-store because the key is regenerated on every start.
+// Its CORS header is `common/cors.js`'s decision like every other response's;
+// the `*` this route used to set for itself would have overridden it.
 app.get('/bbs/keys/1', async function (req, res) {
   log.debug("Entering the BBS key endpoint.");
   const keys = await bbsKeyPair();
   res.set('Cache-Control', 'no-store');
-  res.set('Access-Control-Allow-Origin', '*');
   res.status(200).type('application/json').send(JSON.stringify({
     id: baseUrlOf(req) + '/bbs/keys/1',
     type: 'Multikey',
@@ -1230,7 +1592,8 @@ app.get('/bbs/keys/1', async function (req, res) {
 
 app.post('/oid4vci/credential', async function (req, res) {
   log.debug("Entering the OID4VCI credential endpoint.");
-  const presented = dpop.presentedAccessToken(req, res, 'the credential endpoint');
+  const presented = dpop.presentedAccessToken(req, res, 'the credential ' +
+                                                        'endpoint');
   if (!presented) return;
   const accessToken = presented.accessToken;
 
@@ -1238,6 +1601,8 @@ app.post('/oid4vci/credential', async function (req, res) {
   // it is the same job on both endpoints, so both call this.
   const read = readPossiblyEncryptedRequest(req);
   if (read.error) {
+    // error-code: none — the code was decided in readPossiblyEncryptedRequest() and is on read.errorCode
+    errorCodes.mark(res, read.errorCode);
     return vciError(res, 400, read.error, read.description);
   }
   const body = read.body;
@@ -1249,54 +1614,81 @@ app.post('/oid4vci/credential', async function (req, res) {
   const identifier = body.credential_identifier;
   const configId = body.credential_configuration_id;
   if (identifier && configId) {
+    errorCodes.mark(res, 'STS-VC-0009');
     return vciError(res, 400, 'invalid_credential_request',
-      'credential_identifier and credential_configuration_id are mutually exclusive; send one.');
+      'credential_identifier and credential_configuration_id are mutually ' +
+      'exclusive; send one.');
   }
   if (identifier) {
     if (!granted.length) {
+      errorCodes.mark(res, 'STS-VC-0010');
       return vciError(res, 400, 'invalid_credential_request',
-        'credential_identifier may only be used when the token response granted credential_identifiers ' +
-        '(this authorization used a scope, so send credential_configuration_id instead).');
+        'credential_identifier may only be used when the token response ' +
+        'granted credential_identifiers (this authorization used a scope, so ' +
+        'send credential_configuration_id instead).');
     }
     if (granted.indexOf(identifier) === -1) {
+      errorCodes.mark(res, 'STS-VC-0011');
       return vciError(res, 400, 'invalid_credential_request',
-        'credential_identifier "' + identifier + '" was not granted by the token response. Granted: ' +
+        'credential_identifier "' + identifier + '" was not granted by the ' +
+                                                 'token response. Granted: ' +
         granted.join(', '));
     }
   } else if (configId) {
     if (granted.length) {
+      errorCodes.mark(res, 'STS-VC-0012');
       return vciError(res, 400, 'invalid_credential_request',
-        'the token response granted credential_identifiers, so credential_configuration_id MUST NOT be used ' +
-        '(OID4VCI section 8.2).');
+        'the token response granted credential_identifiers, so ' +
+        'credential_configuration_id MUST NOT be used (OID4VCI section 8.2).');
     }
     if (!VCI_CONFIGS[configId]) {
+      errorCodes.mark(res, 'STS-VC-0013');
       return vciError(res, 400, 'unsupported_credential_type',
         'This issuer offers credential_configuration_id ' +
-        vciConfigIds().map(function (id) { return '"' + id + '"'; }).join(' and ') + '.');
+        vciConfigIds().map(function (id) { return '"' + id + '"'; }).join(' ' +
+            'and ') + '.');
     }
   } else {
+    errorCodes.mark(res, 'STS-VC-0014');
     return vciError(res, 400, 'invalid_credential_request',
-      'Name the credential: credential_identifier (when one was granted) or credential_configuration_id.');
+      'Name the credential: credential_identifier (when one was granted) or ' +
+      'credential_configuration_id.');
   }
 
-  // Which format, decided once. An identifier names its configuration in its own
-  // prefix; a configuration id names it directly. Anything else falls back to
-  // the SD-JWT configuration, which is what this issuer has always offered.
+  // Which format, decided once. An identifier names its configuration in its
+  // own prefix; a configuration id names it directly. Anything else falls back
+  // to the SD-JWT configuration, which is what this issuer has always offered.
   const requestedConfigId = identifier
     ? (configIdOfIdentifier(identifier) || VCI_CONFIG_ID)
     : (configId || VCI_CONFIG_ID);
-  log.debug("The credential endpoint will issue " + vciFormatOf(requestedConfigId) +
+  log.debug("The credential endpoint will issue " +
+            vciFormatOf(requestedConfigId) +
             " (configuration " + requestedConfigId + ").");
 
-  // Encryption of the response is the wallet's call (section 8.2). Checked before
-  // any signature work: a request this issuer is going to refuse should not cost
-  // the wallet its single-use c_nonce, and "your enc is unsupported" is a more
-  // useful answer than "your proof is stale".
+  // Encryption of the response is the wallet's call (section 8.2). Checked
+  // before any signature work: a request this issuer is going to refuse should
+  // not cost the wallet its single-use c_nonce, and "your enc is unsupported"
+  // is a more useful answer than "your proof is stale".
   const encryption = body.credential_response_encryption;
+  // OID4VCI section 10's encryption_required, for the RESPONSE direction
+  // (`oid4vci.responseEncryptionRequired`, 2026-09-12). The metadata says it
+  // too — see vciMetadata().
+  if (!encryption &&
+      config.value('oid4vci.responseEncryptionRequired') === true) {
+    log.debug("Leaving the OID4VCI credential endpoint. An encrypted " +
+              "response is required.");
+    errorCodes.mark(res, 'STS-VC-0015');
+    return vciError(res, 400, 'invalid_encryption_parameters',
+      'This issuer advertises ' +
+      'credential_response_encryption.encryption_required = true, so the ' +
+      'Credential Request must carry credential_response_encryption.');
+  }
   if (encryption) {
     const problem = encryptionProblem(encryption);
     if (problem) {
-      log.debug("Leaving the OID4VCI credential endpoint. The encryption parameters were refused.");
+      log.debug("Leaving the OID4VCI credential endpoint. The encryption " +
+                "parameters were refused.");
+      errorCodes.mark(res, 'STS-VC-0016');
       return vciError(res, 400, 'invalid_encryption_parameters', problem);
     }
   }
@@ -1305,15 +1697,21 @@ app.post('/oid4vci/credential', async function (req, res) {
   // bound to; the earlier single-proof form is accepted too, since wallets in
   // the wild still send it. One credential comes back per proof (section 8.3).
   let proofJwts = [];
-  if (body.proofs && Array.isArray(body.proofs.jwt) && body.proofs.jwt.length) proofJwts = body.proofs.jwt;
+  if (body.proofs && Array.isArray(body.proofs.jwt) &&
+      body.proofs.jwt.length) proofJwts = body.proofs.jwt;
   else if (body.proof && body.proof.jwt) proofJwts = [body.proof.jwt];
   if (!proofJwts.length) {
-    return vciError(res, 400, 'invalid_proof', 'A JWT proof of possession is required (proofs.jwt).');
+    errorCodes.mark(res, 'STS-VC-0017');
+    return vciError(res, 400, 'invalid_proof', 'A JWT proof of possession is ' +
+                                               'required (proofs.jwt).');
   }
   if (proofJwts.length > vciBatchSize()) {
+    errorCodes.mark(res, 'STS-VC-0018');
     return vciError(res, 400, 'invalid_credential_request',
-      'This issuer accepts at most ' + vciBatchSize() + ' proofs in one request ' +
-      '(batch_credential_issuance.batch_size); ' + proofJwts.length + ' were sent.');
+      'This issuer accepts at most ' + vciBatchSize() + ' proofs in one ' +
+      'request ' +
+      '(batch_credential_issuance.batch_size); ' + proofJwts.length + ' were ' +
+          'sent.');
   }
 
   let holderJwks = [];
@@ -1326,13 +1724,23 @@ app.post('/oid4vci/credential', async function (req, res) {
       return verifyProofJwt(jwt, vciMetadata(req).credential_issuer);
     }));
   } catch (e) {
-    log.error('the proof of possession was refused: ' + e.message);
+    log.error(errorCodes.tag('STS-VC-0019') +
+              'the proof of possession was refused: ' + e.message);
+    errorCodes.mark(res, 'STS-VC-0019');
     return vciError(res, 400, 'invalid_proof', e.message);
   }
   // Every proof in this request quoted the same c_nonce, and it is single use:
   // spend it now that they have all been accepted, so replaying the request is
-  // refused while a batch inside one request is not.
-  spendProofNonces(proofJwts);
+  // refused while a batch inside one request is not — on every node against
+  // the store, since 2026-09-14 (see spendProofNonces()).
+  const nonceSpent = await spendProofNonces(proofJwts);
+  if (!nonceSpent.ok) {
+    log.debug("Leaving the OID4VCI credential endpoint. The c_nonce was " +
+              "refused at its spend.");
+    // STS-VC-0050 (spent elsewhere) or STS-VC-0051 (the store).
+    errorCodes.mark(res, nonceSpent.errorCode);
+    return vciError(res, 400, 'invalid_proof', nonceSpent.description);
+  }
   const holderJwk = holderJwks[0];
 
 
@@ -1357,18 +1765,22 @@ app.post('/oid4vci/credential', async function (req, res) {
       configId: requestedConfigId,
       // A deferred response is encrypted with the parameters given in the
       // DEFERRED request, not these — but keeping them means an issuer that
-      // decides otherwise still has them. Section 9.2 is explicit that the newly
-      // provided ones win.
+      // decides otherwise still has them. Section 9.2 is explicit that the
+      // newly provided ones win.
       encryption: encryption,
       accessToken: accessToken,
       readyAt: Date.now() + deferredReadyMs(),
-      expires: Date.now() + OFFER_TTL_MS
+      expires: Date.now() + offerTtlMs()
     });
-    const deferredResponse = { transaction_id: transactionId, interval: deferredIntervalS() };
+    const deferredResponse = { transaction_id: transactionId,
+                               interval: deferredIntervalS() };
     logArtifact('OID4VCI Credential Response', 'deferred', deferredResponse);
     res.set('Cache-Control', 'no-store');
-    res.status(202).type('application/json').send(JSON.stringify(deferredResponse));
-    log.debug("Leaving the OID4VCI credential endpoint. Deferred as " + transactionId +
+    res.status(202)
+       .type('application/json')
+       .send(JSON.stringify(deferredResponse));
+    log.debug("Leaving the OID4VCI credential endpoint. Deferred as " +
+              transactionId +
               ", ready in " + deferredReadyMs() + "ms.");
     return;
   }
@@ -1381,14 +1793,19 @@ app.post('/oid4vci/credential', async function (req, res) {
       issuerDidFor(requestedConfigId, req), holderNameFrom(accessToken));
   }));
   const response = {
-    credentials: issued.map(function (b) { return { credential: b.credential }; }),
+    credentials: issued.map(function (b) {
+      return {credential: b.credential };
+    }),
     notification_id: newNotificationId(accessToken)
   };
   logArtifact('OID4VCI Credential Response', 'as returned', response);
   sendCredentialResponse(res, 200, response, encryption);
-  log.debug("Leaving the OID4VCI credential endpoint. Issued " + issued.length + " " +
-            vciFormatOf(requestedConfigId) + " credential(s), " + issued[0].disclosures.length +
-            " disclosure(s) each" + (encryption ? ", encrypted to the wallet's key" : "") + ".");
+  log.debug("Leaving the OID4VCI credential endpoint. Issued " + issued.length +
+            " " +
+            vciFormatOf(requestedConfigId) + " credential(s), " +
+            issued[0].disclosures.length +
+            " disclosure(s) each" + (encryption ? ", encrypted to the " +
+                                                  "wallet's key" : "") + ".");
 });
 
 // The Deferred Credential Endpoint (OID4VCI section 9). 202 with the same
@@ -1397,14 +1814,18 @@ app.post('/oid4vci/credential', async function (req, res) {
 // this issuer never made or has already handed over.
 app.post('/oid4vci/deferred_credential', async function (req, res) {
   log.debug("Entering the OID4VCI deferred credential endpoint.");
-  if (!dpop.presentedAccessToken(req, res, 'the deferred credential endpoint')) return;
+  if (!dpop.presentedAccessToken(req, res,
+                                 'the deferred credential endpoint')) return;
 
   // Section 10 covers the Deferred Credential Request too, in the same words as
   // the Credential Request — so it goes through the same reader rather than
   // getting a second, subtly different implementation.
   const read = readPossiblyEncryptedRequest(req);
   if (read.error) {
-    log.debug("Leaving the OID4VCI deferred credential endpoint. Unreadable body.");
+    log.debug("Leaving the OID4VCI deferred credential endpoint. Unreadable " +
+              "body.");
+    // error-code: none — the code was decided in readPossiblyEncryptedRequest() and is on read.errorCode
+    errorCodes.mark(res, read.errorCode);
     return vciError(res, 400, read.error, read.description);
   }
   const body = read.body;
@@ -1413,14 +1834,19 @@ app.post('/oid4vci/deferred_credential', async function (req, res) {
   const record = deferredTransactions.get(transactionId);
   if (!record || record.expires < Date.now()) {
     deferredTransactions.delete(transactionId);
-    log.debug("Leaving the OID4VCI deferred credential endpoint. No such transaction.");
+    log.debug("Leaving the OID4VCI deferred credential endpoint. No such " +
+              "transaction.");
+    errorCodes.mark(res, 'STS-VC-0020');
     return vciError(res, 400, 'invalid_transaction_id',
-      'That transaction_id was not issued by this Credential Issuer, or it has already been used.');
+      'That transaction_id was not issued by this Credential Issuer, or it ' +
+      'has already been used.');
   }
 
   if (Date.now() < record.readyAt) {
-    const pending = { transaction_id: transactionId, interval: deferredIntervalS() };
-    logArtifact('OID4VCI Deferred Credential Response', 'still pending', pending);
+    const pending = { transaction_id: transactionId,
+                      interval: deferredIntervalS() };
+    logArtifact('OID4VCI Deferred Credential Response', 'still pending',
+                pending);
     res.set('Cache-Control', 'no-store');
     res.status(202).type('application/json').send(JSON.stringify(pending));
     log.debug("Leaving the OID4VCI deferred credential endpoint. Still " +
@@ -1441,24 +1867,28 @@ app.post('/oid4vci/deferred_credential', async function (req, res) {
       issuerDidFor(deferredConfigId, req), record.holderName);
   }));
   const response = {
-    credentials: issued.map(function (b) { return { credential: b.credential }; }),
+    credentials: issued.map(function (b) {
+      return {credential: b.credential };
+    }),
     notification_id: newNotificationId(record.accessToken)
   };
   logArtifact('OID4VCI Deferred Credential Response', 'as returned', response);
   sendCredentialResponse(res, 200, response, record.encryption);
-  log.debug("Leaving the OID4VCI deferred credential endpoint. Issued " + issued.length + " " +
+  log.debug("Leaving the OID4VCI deferred credential endpoint. Issued " +
+            issued.length + " " +
             vciFormatOf(deferredConfigId) + " credential(s).");
 });
 
-// The Notification Endpoint (OID4VCI section 11): the wallet reports what it did
-// with a credential this issuer issued.
+// The Notification Endpoint (OID4VCI section 11): the wallet reports what it
+// did with a credential this issuer issued.
 //
 // It used to answer 204 to anything at all, which made it useless — a wallet
 // could not tell a notification that was understood from one that was ignored,
 // and the suite could not tell whether it had sent a valid one. Now the id has
 // to be one this issuer handed out and the event one of the three the spec
 // defines.
-const NOTIFICATION_EVENTS = ['credential_accepted', 'credential_failure', 'credential_deleted'];
+const NOTIFICATION_EVENTS = ['credential_accepted', 'credential_failure',
+                             'credential_deleted'];
 
 app.post('/oid4vci/notification', function (req, res) {
   log.debug("Entering the OID4VCI notification endpoint.");
@@ -1466,10 +1896,13 @@ app.post('/oid4vci/notification', function (req, res) {
 
   let body = {};
   try {
-    body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') :
+           (req.body || {});
   } catch (e) {
-    log.error('the notification body is not JSON: ' + e.message);
+    log.error(errorCodes.tag('STS-VC-0021') +
+              'the notification body is not JSON: ' + e.message);
     log.debug("Leaving the OID4VCI notification endpoint. Unreadable body.");
+    errorCodes.mark(res, 'STS-VC-0021');
     return vciError(res, 400, 'invalid_notification_request',
       'The request body is not JSON: ' + e.message);
   }
@@ -1479,14 +1912,20 @@ app.post('/oid4vci/notification', function (req, res) {
   const record = notificationIds.get(id);
   if (!record || record.expires < Date.now()) {
     notificationIds.delete(id);
-    log.debug("Leaving the OID4VCI notification endpoint. No such notification_id.");
+    log.debug("Leaving the OID4VCI notification endpoint. No such " +
+              "notification_id.");
+    errorCodes.mark(res, 'STS-VC-0022');
     return vciError(res, 400, 'invalid_notification_id',
-      'That notification_id was not issued by this Credential Issuer, or it has expired.');
+      'That notification_id was not issued by this Credential Issuer, or it ' +
+      'has expired.');
   }
   if (NOTIFICATION_EVENTS.indexOf(event) === -1) {
-    log.debug("Leaving the OID4VCI notification endpoint. Unknown event: " + event);
+    log.debug("Leaving the OID4VCI notification endpoint. Unknown event: " +
+              event);
+    errorCodes.mark(res, 'STS-VC-0023');
     return vciError(res, 400, 'invalid_notification_request',
-      'event must be one of ' + NOTIFICATION_EVENTS.join(', ') + '; got "' + event + '".');
+      'event must be one of ' + NOTIFICATION_EVENTS.join(', ') + '; got "' +
+      event + '".');
   }
 
   record.event = event;
@@ -1501,7 +1940,9 @@ app.post('/oid4vci/notification', function (req, res) {
   });
   // Section 11.2: 204, no body.
   res.status(204).end();
-  log.debug("Leaving the OID4VCI notification endpoint. Recorded " + event + " for " + id + ".");
+  log.debug("Leaving the OID4VCI notification endpoint. Recorded " + event +
+      " " +
+      "for " + id + ".");
 });
 
 // Non-spec, like GET /oid4vci/notification/:id and GET /oid4vp/result/:state:
@@ -1515,20 +1956,25 @@ app.post('/oid4vci/notification', function (req, res) {
 app.get('/oid4vci/last_request', function (req, res) {
   log.debug("Entering the (non-spec) last credential request endpoint.");
   res.set('Cache-Control', 'no-store');
-  res.status(200).type('application/json').send(JSON.stringify(lastCredentialRequest, null, 2));
-  log.debug("Leaving the (non-spec) last credential request endpoint. encrypted=" +
-            lastCredentialRequest.encrypted);
+  const last = lastCredentialRequestRecord();
+  res.status(200).type('application/json').send(JSON.stringify(last, null, 2));
+  log.debug("Leaving the (non-spec) last credential request endpoint. " +
+            "encrypted=" +
+            last.encrypted);
 });
 
 // What this issuer was told about a credential. Not part of OID4VCI — it exists
 // so a test can check that a notification actually arrived and was understood,
 // rather than trusting a 204.
 app.get('/oid4vci/notification/:id', function (req, res) {
-  log.debug("Entering the notification inspection endpoint. id=" + req.params.id);
+  log.debug("Entering the notification inspection endpoint. id=" +
+            req.params.id);
   const record = notificationIds.get(String(req.params.id));
   if (!record) {
     log.debug("Leaving the notification inspection endpoint. Unknown id.");
-    return vciError(res, 404, 'invalid_notification_id', 'No such notification_id.');
+    errorCodes.mark(res, 'STS-VC-0024');
+    return vciError(res, 404, 'invalid_notification_id', 'No such ' +
+        'notification_id.');
   }
   res.status(200).type('application/json').send(JSON.stringify({
     notification_id: req.params.id,
@@ -1539,10 +1985,34 @@ app.get('/oid4vci/notification/:id', function (req, res) {
   log.debug("Leaving the notification inspection endpoint.");
 });
 
+// #46: a pre-authorized code and a c_nonce are spent once across the cluster,
+// and Transaction Code failures are counted against one budget — the c_nonce
+// by spendProofNonces() above, the other two by vc_offers.js's
+// spendPreAuthorizedCode() and checkTxCode(), which this module requires and
+// the token endpoint calls. Provided here because the capability row names
+// this file.
+capabilities.provide('oid4vc.once');
+
 module.exports = {
   vciMetadata: vciMetadata,
+  // For tests/cluster_single_use_protocols.js: the c_nonce's spend, driven
+  // twice with the local map restored between, which is what another node
+  // that has not yet caught up looks like.
+  spendProofNonces: spendProofNonces,
   buildCredentialFor: buildCredentialFor,
   subjectClaimsFrom: subjectClaimsFrom,
   vciNonces: vciNonces,
-  VCI_NONCE_TTL_MS: VCI_NONCE_TTL_MS
+  VCI_NONCE_TTL_MS: VCI_NONCE_TTL_MS,
+  // The request-encryption half, for `tests/vci_request_encryption_key.js`:
+  // what a realm PUBLISHES, what it will DECRYPT, and what it last SAW. A JWE
+  // encrypted to one realm's published key and refused by another's is a claim
+  // about these three and about nothing a single HTTP request can separate.
+  credentialRequestEncryptionMetadata: credentialRequestEncryptionMetadata,
+  decryptJweRequest: decryptJweRequest,
+  readPossiblyEncryptedRequest: readPossiblyEncryptedRequest,
+  lastCredentialRequest: function () {
+    log.debug("Entering lastCredentialRequest().");
+    log.debug("Leaving lastCredentialRequest().");
+    return lastCredentialRequestRecord();
+  }
 };

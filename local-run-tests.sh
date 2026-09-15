@@ -183,7 +183,11 @@
 #                    narrows the jobs — a pass in `memory` alone says nothing
 #                    about persistence or dispatch, which is the whole reason
 #                    the other two exist.
-#   --list           Name what would run, and run none of it.
+#                    `--modes=cluster` is the FOURTH, never run unless named
+#                    (2026-09-14): two service containers active-active on one
+#                    postgres behind an HAProxy load balancer, every job's
+#                    requests alternating between them. It needs docker.
+#   --list          Name what would run, and run none of it.
 #   --protocol       Run the parent project's mock-only jobs as well. The
 #                    DEFAULT since 2026-08-28; the flag is kept because
 #                    scripts and fingers still pass it.
@@ -343,6 +347,9 @@ COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}" -f "${LDAP_COMPOSE_FILE}")
 # Chosen at run time like the other two, so that two runs on one machine do not
 # collide with each other and neither collides with a real directory on 389.
 STS_LDAP_HOST_PORT=""
+# The plain-HTTP revocation listener's host port (2026-09-13), for the same two
+# reasons. See composeUp().
+STS_PKI_HOST_PORT=""
 # Overridable so that two runs on one machine (a CI agent with two workspaces)
 # do not share a project — compose scopes containers, networks and volumes by
 # it, so two runs sharing one would tear down each other's stack.
@@ -352,6 +359,13 @@ COMPOSE_PROJECT="${STS_TEST_COMPOSE_PROJECT:-mock-sts-tests}"
 STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 STS_TEST_CONTAINER="sts-tests"
 STS_TEST_PG_CONTAINER="sts-tests-postgres"
+# THE SECRET STORE AND ITS TWO ONE-SHOT CONTAINERS (2026-09-12). Named here for
+# the reason the block below gives about the other two: `container_name` is
+# machine-wide, so a second run in this tree would take the first run's store —
+# and this one holds the key-encryption key every mode's data is sealed under.
+STS_TEST_BAO_CONTAINER="sts-tests-openbao"
+STS_TEST_BAO_TLS_CONTAINER="sts-tests-openbao-tls"
+STS_TEST_BAO_SEED_CONTAINER="sts-tests-openbao-seed"
 # ---------------------------------------------------------------------------
 # NAMING A PROJECT MUST ISOLATE THE WHOLE RUN, AND UNTIL 2026-09-07 IT DID NOT.
 #
@@ -372,12 +386,48 @@ STS_TEST_PG_CONTAINER="sts-tests-postgres"
 # containers, which is what makes two runs on one machine actually possible:
 #
 #   STS_TEST_COMPOSE_PROJECT=mine ./local-run-tests.sh
+#
+# **AND THE NETWORK WAS THE THIRD THING TO ESCAPE THIS, ON 2026-09-12.** A
+# subnet arrived in docker-compose.yml as a literal, because a realm's SPIFFE
+# listeners need addresses that do not move between starts — and an address
+# space is machine-wide in the same way a `container_name` is. The second run
+# in this tree was then refused outright, with `invalid pool request: Pool
+# overlaps with other one on this address space` and nothing brought up. It is
+# chosen per run now, in composeUp() beside the three ports; the same sentence
+# reaching one more thing.
+#
+# **AND THE IMAGE TAG WAS THE FOURTH, ON 2026-09-14.** `docker-compose.yml`
+# names `rcbj/sts`, a tag is machine-wide, and `up` of a later mode uses
+# whatever that tag points at BY THEN — so a second checkout's build between
+# two modes of another run put the second checkout's code under the first run,
+# with every job still green about the wrong tree. A named project now builds
+# and runs `rcbj/sts:<project>`; a plain run is untouched.
+#
+# THE `cluster` MODE'S TWO EXTRA CONTAINERS (2026-09-14) are named here with
+# the rest for the same reason: node B and the load balancer.
 # ---------------------------------------------------------------------------
+STS_TEST_NODE_B_CONTAINER="sts-tests-node-b"
+STS_TEST_LB_CONTAINER="sts-tests-lb"
+STS_TEST_IMAGE=""
+STS_TEST_PEP_IMAGE=""
 if [ -n "${STS_TEST_COMPOSE_PROJECT:-}" ];
 then
   STS_TEST_CONTAINER="${COMPOSE_PROJECT}-sts"
   STS_TEST_PG_CONTAINER="${COMPOSE_PROJECT}-postgres"
+  STS_TEST_BAO_CONTAINER="${COMPOSE_PROJECT}-openbao"
+  STS_TEST_BAO_TLS_CONTAINER="${COMPOSE_PROJECT}-openbao-tls"
+  STS_TEST_BAO_SEED_CONTAINER="${COMPOSE_PROJECT}-openbao-seed"
+  STS_TEST_NODE_B_CONTAINER="${COMPOSE_PROJECT}-sts-node-b"
+  STS_TEST_LB_CONTAINER="${COMPOSE_PROJECT}-sts-lb"
+  STS_TEST_IMAGE="rcbj/sts:${COMPOSE_PROJECT}"
+  STS_TEST_PEP_IMAGE="rcbj/xacml-pep:${COMPOSE_PROJECT}"
 fi
+# ---------------------------------------------------------------------------
+# THE `cluster` MODE'S LAYER (2026-09-14, issue #46): node B and an HAProxy
+# that takes every published port, over the two files above. Layered by
+# composeFileArgsFor() only when the mode is `cluster`, so no other mode's
+# stack reads it. tests/docker-compose-cluster.yml argues its contents.
+CLUSTER_COMPOSE_FILE="tests/docker-compose-cluster.yml"
 # ---------------------------------------------------------------------------
 # THE REMOTE XACML PEP THIS STACK ALSO BRINGS UP (2026-09-06).
 #
@@ -418,6 +468,8 @@ XACML_PEP_REALM="${XACML_PEP_REALM:-pep-e2e}"
 # leave a registered PEP that no pull ever touched.
 XACML_PEP_NAME=""
 XACML_PEP_HOST_PORT=""
+# Its HTTPS listener's published port (2026-09-13), picked beside the one above.
+XACML_PEP_HTTPS_HOST_PORT=""
 # ---------------------------------------------------------------------------
 # THE PEP'S CLIENT CERTIFICATE (2026-09-06).
 #
@@ -730,6 +782,23 @@ captureContainerLog()
   dest="$(runLogPath "${mode}" "00-mock-sts-service.log")"
   docker_compose "${COMPOSE_FILE_ARGS[@]}" logs --no-color sts > "${dest}" 2>&1 || true
   echo "Service log: ${dest}"
+  # THE `cluster` MODE HAS TWO MORE ACCOUNTS AND BOTH ARE GONE WITH THEIR
+  # CONTAINERS (2026-09-14): node B's, since a request a job made may have been
+  # answered by either node and the failure is in whichever log that was; and
+  # the balancer's, which is where a node taken out of rotation, or a
+  # connection it could not place, is written down. Node A keeps the file name
+  # every other mode uses, so a report reads the same in all four.
+  if stsModeIsCluster "${mode}";
+  then
+    dest="$(runLogPath "${mode}" "00-mock-sts-service-node-b.log")"
+    docker_compose "${COMPOSE_FILE_ARGS[@]}" logs --no-color sts2 \
+      > "${dest}" 2>&1 || true
+    echo "Node B log:  ${dest}"
+    dest="$(runLogPath "${mode}" "00-load-balancer.log")"
+    docker_compose "${COMPOSE_FILE_ARGS[@]}" logs --no-color sts-lb \
+      > "${dest}" 2>&1 || true
+    echo "Balancer log: ${dest}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -888,6 +957,11 @@ composePepUp()
   export XACML_PEP_URL="http://localhost:${XACML_PEP_HOST_PORT}"
   export XACML_PEP_NAME
   export XACML_PEP_REALM
+  # AND ITS HTTPS LISTENER (2026-09-13): where the job dials it, and where the
+  # job writes the pair it issues. `localhost` is the name the job asks the
+  # certificate to carry, because it is the name this host dials it by.
+  export XACML_PEP_HTTPS_URL="https://localhost:${XACML_PEP_HTTPS_HOST_PORT}"
+  export XACML_PEP_SERVER_CERT_DIR="${XACML_PEP_CERT_DIR}/server"
   # AND THE ROOT CA, AS TEXT, SO THE JOB CAN PUT IT BACK.
   #
   # This anchor is posted to /tls/trust once, here, before the container
@@ -915,6 +989,23 @@ composePepUp()
 
 composeUp()
 {
+  # ---- ONE STACK OR TWO NODES? (2026-09-14) -------------------------------
+  #
+  # The `cluster` mode layers its file over the other two and is reached, by
+  # the jobs and by the remote PEP alike, through the load balancer — which
+  # publishes the SAME host ports under the SAME variables, so everything
+  # below that computes an address computes the balancer's without knowing.
+  # The one address that is not a published port is the PEP's, which dials a
+  # compose hostname: `sts-lb` in that mode, `sts` otherwise.
+  local serviceHost="sts"
+  local upServices=(sts)
+  COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}" -f "${LDAP_COMPOSE_FILE}")
+  if stsModeIsCluster "${STS_MODE_NAME:-memory}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${CLUSTER_COMPOSE_FILE}")
+    serviceHost="sts-lb"
+    upServices=(sts sts2 sts-lb)
+  fi
   STS_HOST_PORT="${STS_PORT_ARG}"
   if [ -z "${STS_HOST_PORT}" ];
   then
@@ -939,6 +1030,16 @@ composeUp()
     echo "No free host port could be found above 19090 for the remote PEP."
     return 1
   fi
+  # AND ITS HTTPS LISTENER'S (2026-09-13), searched from one above the HTTP
+  # port for the reason the revocation listener's search below gives:
+  # freePort() binds nothing, so two searches from one start answer one port.
+  XACML_PEP_HTTPS_HOST_PORT="$(freePort "$((XACML_PEP_HOST_PORT + 1))")"
+  if [ -z "${XACML_PEP_HTTPS_HOST_PORT}" ];
+  then
+    echo "No free host port could be found above ${XACML_PEP_HOST_PORT} for"
+    echo "the remote PEP's HTTPS listener."
+    return 1
+  fi
 
   # THE DIRECTORY'S SOCKET, picked the same way and for two reasons rather than
   # one: two runs on this machine must not collide with each other, and NEITHER
@@ -951,6 +1052,23 @@ composeUp()
     echo "No free host port could be found above 11389 for the LDAP socket."
     return 1
   fi
+
+  # THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13). Every certificate the
+  # service issues names it for its CRL, its OCSP responder and its issuer's
+  # certificate, and `sts_pki_distribution_points` follows those addresses from
+  # this host EXACTLY AS WRITTEN — so it is published on a free port like the
+  # three above, and docker-compose.yml hands the same number to the service as
+  # PKI_DISTRIBUTION_PORT, which is how the address inside a certificate comes
+  # to be the address this mapping made. Searched from ONE ABOVE the service's
+  # own port: freePort() binds nothing, so two searches started at 18081 and
+  # 18082 would both answer 18082 whenever 18081 was taken.
+  STS_PKI_HOST_PORT="$(freePort "$((STS_HOST_PORT + 1))")"
+  if [ -z "${STS_PKI_HOST_PORT}" ];
+  then
+    echo "No free host port could be found above ${STS_HOST_PORT} for the"
+    echo "plain-HTTP revocation listener."
+    return 1
+  fi
   # INSIDE THE RUN'S OWN REPORT DIRECTORY rather than /tmp, so that a private
   # key this script generates lives beside the run that needed it and goes when
   # somebody clears the reports. It has to be an ABSOLUTE path: compose
@@ -959,6 +1077,67 @@ composeUp()
   XACML_PEP_CERT_DIR="${CURRENT_DIR}/tests/report/pep-credential"
   rm -rf "${XACML_PEP_CERT_DIR}"
   mkdir -p "${XACML_PEP_CERT_DIR}"
+  # Where sts_xacml_remote_pep.js writes the HTTPS listener's pair once it has
+  # issued one (2026-09-13). Made now, because the container mounts its parent.
+  mkdir -p "${XACML_PEP_CERT_DIR}/server"
+
+  # ---------------------------------------------------------------------------
+  # THE STACK'S OWN SUBNET, PICKED THE WAY THE THREE PORTS ABOVE ARE
+  # (2026-09-12), AND FOR THE REASON THE PROJECT-NAME BLOCK NEAR THE TOP OF
+  # THIS FILE IS A RECORD OF.
+  #
+  # docker-compose.yml names a subnet now rather than letting compose allocate
+  # one, because a realm's SPIFFE listeners need addresses that are the same on
+  # every start — and a network, like a `container_name`, is MACHINE-WIDE. So
+  # the literal `172.29.0.0/24` put every run in this tree back where naming a
+  # project had just got them out of: the second one refused to start at all,
+  #
+  #   invalid pool request: Pool overlaps with other one on this address space
+  #
+  # with nothing brought up and nothing in the tree wrong. It is the same
+  # sentence as the container names — naming a project must isolate the WHOLE
+  # run — reaching one more thing.
+  #
+  # AN IDLE MACHINE IS UNAFFECTED: freeSubnet() offers the compose file's own
+  # default first, so a plain run takes the addresses it always took. The four
+  # variables move TOGETHER because three of them are addresses INSIDE the
+  # first — which is the whole reason they are derived here from one answer
+  # rather than named four times.
+  #
+  # AN OPERATOR'S OWN `STS_NETWORK_SUBNET` IS HONOURED and the addresses are
+  # derived from it, so the one lever docker-compose.yml documents still moves
+  # the whole arrangement in one place.
+  # ---------------------------------------------------------------------------
+  if [ -z "${STS_NETWORK_SUBNET:-}" ];
+  then
+    STS_NETWORK_SUBNET="$(freeSubnet 172.29)"
+    if [ -z "${STS_NETWORK_SUBNET}" ];
+    then
+      echo "No free /24 could be found in 172.29.0.0/16 for the stack's own"
+      echo "network. Every one of the 256 overlaps a docker network or a route"
+      echo "on this machine — \`docker network ls\` and \`ip route\` say which."
+      echo "STS_NETWORK_SUBNET names one explicitly."
+      return 1
+    fi
+  fi
+  # The three addresses inside it. `.10` is the service, and `.11`-`.13` are
+  # what the container adds to its own interface for a realm's SPIFFE
+  # listeners — see the STS_EXTRA_IPS block in docker-compose.yml.
+  #
+  # DERIVED FROM THE SUBNET RATHER THAN FROM THE BASE, which is not the same
+  # thing and was wrong for an edit: the scan hands back `172.29.1.0/24` as
+  # readily as `172.29.0.0/24`, and an address built from the first two octets
+  # would then sit outside the network compose was about to create — which
+  # compose refuses at `up` with a message about an invalid address, one layer
+  # away from the thing that chose it.
+  STS_NETWORK_BITS="${STS_NETWORK_SUBNET##*/}"
+  STS_NETWORK_PREFIX="${STS_NETWORK_SUBNET%/*}"
+  STS_NETWORK_PREFIX="${STS_NETWORK_PREFIX%.*}"
+  STS_SERVICE_ADDRESS="${STS_NETWORK_PREFIX}.10"
+  STS_SERVICE_EXTRA_IPS="${STS_NETWORK_PREFIX}.11/${STS_NETWORK_BITS}"
+  STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.12/${STS_NETWORK_BITS}"
+  STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.13/${STS_NETWORK_BITS}"
+
 
   COMPOSE_ENV=(
     "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
@@ -971,7 +1150,21 @@ composeUp()
     # the socket on 11389 whatever port this launcher picked and told the job
     # about.
     "STS_LDAP_HOST_PORT=${STS_LDAP_HOST_PORT}"
+    # AND THE REVOCATION LISTENER'S, which docker-compose.yml publishes and
+    # passes to the service as PKI_DISTRIBUTION_PORT. Named here for the
+    # reason the line above is: under sudo an exported variable reaches compose
+    # as unset, and the default would put every certificate's address on a
+    # port this launcher did not choose.
+    "STS_PKI_HOST_PORT=${STS_PKI_HOST_PORT}"
     "STS_CONTAINER_NAME=${STS_TEST_CONTAINER}"
+    # THE NETWORK AND THE ADDRESSES IN IT, chosen above. Named here for the
+    # reason every other variable in this array is: a compose file default is
+    # what a run that does not name one gets, and these four defaults are the
+    # same literals for every run in this tree.
+    "STS_NETWORK_SUBNET=${STS_NETWORK_SUBNET}"
+    "STS_ADDRESS=${STS_SERVICE_ADDRESS}"
+    "STS_SPIFFE_GRPC_HOST=${STS_SERVICE_ADDRESS}"
+    "STS_EXTRA_IPS=${STS_SERVICE_EXTRA_IPS}"
     "STS_POSTGRES_CONTAINER_NAME=${STS_TEST_PG_CONTAINER}"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     # ---- THE MODE, and this was a hardcoded `memory` until 2026-09-07 -----
@@ -994,8 +1187,27 @@ composeUp()
     "STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}"
     "STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}"
     "STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}"
+    "STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}"
     "STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}"
     "STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}"
+    # THE KEYSTORE, AND THEREFORE THE SECRET STORE (2026-09-12). `persisted`
+    # turns the keystore on without product mode, which is what makes the
+    # `dispatch` mode read its key-encryption key out of the OpenBao container
+    # the stack brings up. The other two modes generate a key per start and
+    # never dial it — see tests/tools/modes.sh, which sets this per mode for
+    # the reason that file's header gives about naming every variable.
+    #
+    # The DATABASE PASSWORD is not here because it is not per mode: the compose
+    # file's connection string carries none in any mode, and the store supplies
+    # it every time.
+    "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"
+    # The OpenBao containers' names, for the same reason every other container
+    # in this stack has one: two runs in one tree must not collide, and the
+    # compose default (`sts-openbao`) is the name a plain `docker compose up`
+    # in this directory takes.
+    "STS_BAO_CONTAINER_NAME=${STS_TEST_BAO_CONTAINER}"
+    "STS_BAO_TLS_CONTAINER_NAME=${STS_TEST_BAO_TLS_CONTAINER}"
+    "STS_BAO_SEED_CONTAINER_NAME=${STS_TEST_BAO_SEED_CONTAINER}"
     # TLS ON THE MAIN PORT. Named EXPLICITLY rather than left to the compose
     # file's own `${STS_HTTPS:-true}` default, and the reason is the one the
     # header of tests/tools/compose.sh gives: `sudo` empties the environment,
@@ -1015,13 +1227,21 @@ composeUp()
     "XACML_PEP_CONTAINER_NAME=${XACML_PEP_CONTAINER}"
     "XACML_PEP_HOST_PORT=${XACML_PEP_HOST_PORT}"
     "XACML_PEP_NAME=${XACML_PEP_NAME}"
-    "XACML_PEP_PDP_URL=$(stsScheme)://sts:8081/realm/${XACML_PEP_REALM}"
+    "XACML_PEP_PDP_URL=$(stsScheme)://${serviceHost}:8081/realm/${XACML_PEP_REALM}"
     "XACML_PEP_POLL_INTERVAL_MS=5000"
     "XACML_PEP_HEARTBEAT_INTERVAL_MS=2000"
     # The credential composePepUp() writes, mounted read-only at /certs.
     "XACML_PEP_CERT_DIR=${XACML_PEP_CERT_DIR}"
     "XACML_PEP_TLS_CERT=/certs/pep.crt"
     "XACML_PEP_TLS_KEY=/certs/pep.key"
+    # THE HTTPS LISTENER'S PAIR (2026-09-13): two paths under that mount that
+    # are EMPTY when the container starts. sts_xacml_remote_pep.js issues the
+    # pair once the PEP has registered in the realm it creates, and writes it
+    # into ${XACML_PEP_CERT_DIR}/server, which is this directory on the host.
+    "XACML_PEP_HTTPS_HOST_PORT=${XACML_PEP_HTTPS_HOST_PORT}"
+    "XACML_PEP_HTTPS_CERT=/certs/server/pep-server.crt"
+    "XACML_PEP_HTTPS_KEY=/certs/server/pep-server.key"
+    "XACML_PEP_HTTPS_RELOAD_INTERVAL_MS=1000"
   )
   # Only when it HAS a value: an empty STS_LOG_LEVEL makes bunyan throw
   # `unknown level name: ""` while this service is still loading its modules,
@@ -1033,6 +1253,42 @@ composeUp()
   if [ -n "${STS_LOG_LEVEL:-}" ];
   then
     COMPOSE_ENV+=("STS_LOG_LEVEL=${STS_LOG_LEVEL}")
+  fi
+  # THE IMAGE TAGS, when this run named a project — see the project-name block
+  # near the top of this file. Unset leaves the compose files' own names.
+  if [ -n "${STS_TEST_IMAGE}" ];
+  then
+    COMPOSE_ENV+=("STS_IMAGE=${STS_TEST_IMAGE}"
+                  "XACML_PEP_IMAGE=${STS_TEST_PEP_IMAGE}")
+  fi
+  # ---- THE `cluster` MODE'S OWN VALUES (2026-09-14) -----------------------
+  #
+  # Node B's name and address (`.20`, clear of the service's `.10` and the
+  # SPIFFE `.11`-`.13`), the balancer's name, and the ONE base URL both nodes
+  # issue under: the balancer's, as the jobs on this machine dial it. It is on
+  # the cluster's must-agree list, and it is also the audience of the
+  # `/admin-api` token minted below, which is minted against ${STS_URL} — the
+  # same string, so the two cannot disagree. STS_CLUSTER_MODE itself is the
+  # mode's (modes.sh) and reaches compose through the environment the mode
+  # loop exported, like every other mode variable; it is named here as well
+  # for the `sudo` reason every other entry in this array carries.
+  if stsModeIsCluster "${STS_MODE_NAME:-memory}";
+  then
+    COMPOSE_ENV+=(
+      "STS_CLUSTER_MODE=${STS_CLUSTER_MODE:-active-active}"
+      "STS_PUBLIC_BASE_URL=${STS_URL}"
+      "STS2_CONTAINER_NAME=${STS_TEST_NODE_B_CONTAINER}"
+      "STS2_ADDRESS=${STS_NETWORK_PREFIX}.20"
+      "STS_LB_CONTAINER_NAME=${STS_TEST_LB_CONTAINER}"
+      # PROXY PROTOCOL v2 (the mode's `v2`, or STS_TEST_CLUSTER_PROXY_PROTOCOL
+      # to run without it) and the ONE address both nodes believe a header
+      # from: the balancer's, pinned at `.30`. A trusted list that named the
+      # whole subnet would let any container on this network forge a client
+      # address, which is the thing the setting exists to stop.
+      "STS_PROXY_PROTOCOL=${STS_TEST_CLUSTER_PROXY_PROTOCOL:-${STS_PROXY_PROTOCOL:-off}}"
+      "STS_LB_ADDRESS=${STS_NETWORK_PREFIX}.30"
+      "STS_TRUSTED_PROXIES=${STS_NETWORK_PREFIX}.30/32"
+    )
   fi
 
   # ---------------------------------------------------------------------------
@@ -1105,6 +1361,13 @@ composeUp()
     echo "Starting the mock STS container on ${STS_URL} (project"
     echo "${COMPOSE_PROJECT}, container ${STS_TEST_CONTAINER}, with postgres,"
     echo "persistence=${STS_PERSISTENCE_MODE:-memory})."
+    if stsModeIsCluster "${STS_MODE_NAME:-memory}";
+    then
+      echo "CLUSTER: node B is ${STS_TEST_NODE_B_CONTAINER} and ${STS_URL} is"
+      echo "the load balancer ${STS_TEST_LB_CONTAINER} (HAProxy, TCP, round"
+      echo "robin per connection), cluster.mode=${STS_CLUSTER_MODE:-active-active},"
+      echo "PROXY protocol ${STS_TEST_CLUSTER_PROXY_PROTOCOL:-${STS_PROXY_PROTOCOL:-off}}."
+    fi
   else
     depsArgs=(--no-deps)
     echo "Starting the mock STS container on ${STS_URL} (project"
@@ -1112,7 +1375,13 @@ composeUp()
   fi
   # --force-recreate so that a container from a previous run is never reused
   # with a new image.
-  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d ${depsArgs[@]+"${depsArgs[@]}"} --force-recreate sts;
+  #
+  # IN THE `cluster` MODE, THREE SERVICES, and compose's own depends_on puts
+  # them in order: node A healthy, then node B, then the balancer once both
+  # are healthy (tests/docker-compose-cluster.yml). `up -d` waits on those
+  # conditions, so a node that refuses to join — the capability gate, a
+  # settings disagreement — is a stack that did not start, here.
+  if ! docker_compose "${COMPOSE_FILE_ARGS[@]}" up -d ${depsArgs[@]+"${depsArgs[@]}"} --force-recreate "${upServices[@]}";
   then
     echo "The stack would not start."
     STACK_UP=1   # something may exist; let the teardown and the log reach it
@@ -1136,6 +1405,22 @@ composeUp()
       # never came up leaves the job to fail on its own connect with a message
       # naming both launchers rather than on a URL this script promised.
       export STS_LDAP_URL="ldap://localhost:${STS_LDAP_HOST_PORT}"
+      # -------------------------------------------------------------------
+      # AND WHERE THE SERVICE CAN DIAL BACK INTO THIS MACHINE (2026-09-12).
+      #
+      # `sts_gnap_core` section 6 runs a listener in the JOB and has the
+      # authorization server POST an RFC 9635 push finish to it. The job
+      # defaulted the host to `localhost`, which from inside the service's
+      # container is the container itself — so every mode of every run
+      # failed with "0 !== 1 pushes", while the service logged that it had
+      # dialled `http://localhost:<port>` and been refused. The runner is a
+      # host process here, so the address is this compose network's GATEWAY:
+      # docker gives a user-defined network `.1`, and it is derived from the
+      # SUBNET chosen above for that block's reason. An operator's own value
+      # wins. `--no-docker` never reaches this line, and `localhost` is
+      # right there.
+      # -------------------------------------------------------------------
+      export GNAP_PUSH_HOST="${GNAP_PUSH_HOST:-${STS_NETWORK_PREFIX}.1}"
       # -------------------------------------------------------------------
       # AND THE PORT ON ITS OWN, BECAUSE TWO JOBS ASK TWO DIFFERENT QUESTIONS
       # (2026-09-09).
@@ -1241,7 +1526,7 @@ stackTeardown()
     echo ""
     echo "The stack is still up (the default; --tear-down removes it):"
     echo "  service:  ${STS_URL}    console: ${STS_URL}/admin"
-    echo "  logs:     ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} logs -f sts"
+    echo "  logs:     ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} logs -f sts"
     # THE SECOND CONTAINER IS PART OF THE RECIPE TOO. Somebody who kept the
     # stack to poke at it will find a remote PEP in it and no explanation
     # anywhere on screen otherwise — and the realm it polls is gone by then,
@@ -1254,9 +1539,15 @@ stackTeardown()
       echo "            which sts_xacml_remote_pep.js creates and REMOVES again — so a"
       echo "            kept stack shows it stale and still enforcing what it last pulled,"
       echo "            which is the state that job's last section asserts)"
-      echo "  pep logs: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} logs -f xacml-pep"
+      echo "  pep logs: ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} --profile xacml logs -f xacml-pep"
     fi
-    echo "  stop it:  ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE} down -v"
+    if stsModeIsCluster "${MODE:-memory}";
+    then
+      echo "  cluster:  node B ${STS_TEST_NODE_B_CONTAINER} (logs -f sts2), the"
+      echo "            balancer ${STS_TEST_LB_CONTAINER} (logs -f sts-lb); ${STS_URL}"
+      echo "            alternates between the nodes per connection"
+    fi
+    echo "  stop it:  ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} --profile xacml down -v"
     # THE CERTIFICATE IS PART OF THE RECIPE NOW. With the main port on TLS a
     # job run by hand meets a self-signed certificate this machine has no
     # anchor for and fails with DEPTH_ZERO_SELF_SIGNED_CERT, which names
@@ -1514,6 +1805,12 @@ ARGS+=("--protocol=${PROTOCOL}")
 # says something more specific than a level does and a service logging at
 # `info` out of a file that says `debug` is nobody's idea of an answer.
 #
+# EVERY APPCONFIG FILE IN env/ IS AT `info` SINCE 2026-09-12, env/local.js and
+# env/docker-tests.js included, because every function now logs its entry and
+# exit at debug. So the file this block picks no longer changes the level: a
+# trace or debug run raises what STS_LOG_LEVEL reaches, and the vendored
+# modules stay at info unless CONFIG_FILE names a file that says otherwise.
+#
 # The three branches rather than a `:-`: an EMPTY STS_LOG_LEVEL is not a
 # harmless default. bunyan throws `unknown level name: ""` while the service is
 # still loading its modules, so it never starts, and the run then reports a
@@ -1633,6 +1930,18 @@ do
   if [ "${LIST}" != "1" ] && needsService;
   then
     resolveServiceMode || exit 1
+    # THE `cluster` MODE IS TWO CONTAINERS AND A BALANCER, and there is no
+    # host-process form of that: a `--no-docker` run would start one service
+    # and report two nodes' worth of green about it. Refused, loudly, rather
+    # than quietly becoming the `postgres` mode.
+    if stsModeIsCluster "${MODE}" && [ "${SERVICE}" != "docker" ];
+    then
+      echo ""
+      echo "Mode ${MODE} needs docker: it is two service containers behind a"
+      echo "load balancer, and --no-docker (or a machine without docker) can"
+      echo "start only one service. Nothing was run."
+      exit 1
+    fi
     if [ "${SERVICE}" = "docker" ];
     then
       if ! composeUp;
@@ -1688,6 +1997,13 @@ do
   # up with different settings.
   if [ "${MODE_INDEX}" -lt "${MODE_COUNT}" ] && [ "${STACK_UP}" = "1" ];
   then
+    # THE SERVICE LOG FIRST (2026-09-14). The `down` below removes the
+    # container and its log with it, and the only other capture is the LAST
+    # mode's, after the loop — so every mode but the last had no
+    # 00-mock-sts-service.log, and a postgres-mode failure
+    # (sts_directory_bulk_load_ldap, one modify timing out) had nothing on the
+    # service side to read. runLogPath() puts it in this mode's report.
+    captureContainerLog "${MODE}"
     # NOT `stackTeardown`, which honours --keep-stack and would therefore
     # PRINT rather than remove — leaving the next mode's composeUp to collide
     # with this mode's containers on the same compose project. Between modes

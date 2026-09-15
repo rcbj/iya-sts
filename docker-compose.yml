@@ -276,12 +276,135 @@ services:
       retries: 10
       start_period: 5s
 
+  # ===========================================================================
+  # THE SECRET STORE (2026-09-12), AND THE TWO ONE-SHOT CONTAINERS THAT BUILD
+  # IT.
+  #
+  # This stack reads its key-encryption key AND its database password out of
+  # OpenBao, over TLS, authenticating with a client certificate the store
+  # itself issued and which is bound to a policy that can READ those two values
+  # and nothing else. `openbao/CLAUDE.md` argues the whole arrangement; what is
+  # here is the wiring.
+  #
+  # **THREE SERVICES BECAUSE THE BOOTSTRAP HAS THREE STEPS THAT CANNOT SHARE A
+  # CONTAINER.** The listener needs a certificate before it starts, so
+  # something has to mint one BEFORE the store runs; the store then has to be
+  # running before anything can be written into it. Compose expresses that with
+  # `service_completed_successfully`, which is what the two one-shot services
+  # are for — and it is why `sts` waits on the SEEDER rather than on the store.
+  #
+  # **BOTH ONE-SHOTS RUN THE IMAGE THIS REPOSITORY BUILDS**, not the OpenBao
+  # one: that image is Alpine with `bao` and busybox in it, and every step here
+  # needs either a certificate encoder or a JSON parser. Using our own image
+  # buys the property worth having — the store's listener certificate comes out
+  # of `common/vendored/x509.js`, the same encoder behind every other
+  # certificate in this service.
+  # ===========================================================================
+  openbao-tls:
+    container_name: ${STS_BAO_TLS_CONTAINER_NAME:-sts-openbao-tls}
+    image: ${STS_IMAGE:-rcbj/sts}
+    build:
+      context: .
+    # It has to exist before the store starts and it must not be restarted
+    # afterwards: the pair belongs to the volume and re-minting it would break
+    # the anchor the service pins.
+    restart: "no"
+    environment:
+      - STS_BAO_TLS_DIR=/openbao/file/tls
+      # The names the certificate answers to. `openbao` is the service name on
+      # this bridge, which is what every other container dials.
+      - STS_BAO_TLS_NAMES=${STS_BAO_TLS_NAMES:-openbao,localhost}
+      - STS_BAO_TLS_IPS=${STS_BAO_TLS_IPS:-127.0.0.1}
+    volumes:
+      - sts-bao-file:/openbao/file
+      - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
+    command: ["node", "openbao/generate-tls.js"]
+
+  openbao:
+    container_name: ${STS_BAO_CONTAINER_NAME:-sts-openbao}
+    hostname: openbao
+    image: openbao/openbao:${OPENBAO_TAG:-latest}
+    depends_on:
+      openbao-tls:
+        condition: service_completed_successfully
+    # mlock, so the store's memory is never written to swap. It is the one
+    # capability this container needs and the reason the image documents it.
+    cap_add:
+      - IPC_LOCK
+    environment:
+      # -------------------------------------------------------------------
+      # THE UNSEAL KEY, AND IT TRAVELS WITH THE STORE ON PURPOSE HERE.
+      #
+      # `seal "static"` is a real auto seal: the store unseals ITSELF at every
+      # start, with no operator and no quorum, which is what lets this stack
+      # come up on `docker compose up` and in a test run. What it costs is
+      # that the key is in this environment — so the store protects its
+      # contents from a reader of the DATABASE and not from somebody who can
+      # read this stack.
+      #
+      # **THAT IS THE DEVELOPER-MODE ANSWER AND IT IS OVERRIDABLE, WHICH IS
+      # THE POINT.** A deployment sets STS_BAO_SEAL_KEY from its own
+      # orchestrator's secret, or replaces the seal stanza in openbao/bao.hcl
+      # with `transit`, `awskms`, `gcpckms` or `azurekeyvault` — one stanza,
+      # same auto-unseal behaviour, key held somewhere this stack cannot read.
+      #
+      # It MUST be base64 of exactly 32 bytes. 31 fails initialisation with
+      # `invalid key size` and leaves the storage dirty.
+      - BAO_STATIC_SEAL_CURRENT_KEY_ID=${STS_BAO_SEAL_KEY_ID:-sts}
+      - BAO_STATIC_SEAL_CURRENT_KEY=${STS_BAO_SEAL_KEY:-KSVmckTNY246XdLbpfIzGbuXvgZqAOPzsrF4itdFTvo=}
+    volumes:
+      - ./openbao/bao.hcl:/openbao/config/bao.hcl:ro
+      - sts-bao-file:/openbao/file
+    command: ["server", "-config=/openbao/config/bao.hcl"]
+    # `sys/health` answers 200 only when the store is initialised, unsealed AND
+    # active — which is the state the seeder needs and a weaker probe would not
+    # catch. 501 means uninitialised and 503 means sealed or standby, so the
+    # first start is expected to fail this probe until the seeder has run.
+    healthcheck:
+      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/root.token"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  openbao-seed:
+    container_name: ${STS_BAO_SEED_CONTAINER_NAME:-sts-openbao-seed}
+    image: ${STS_IMAGE:-rcbj/sts}
+    build:
+      context: .
+    restart: "no"
+    depends_on:
+      openbao:
+        condition: service_started
+    environment:
+      - STS_BAO_ADDR=https://openbao:8200
+      - STS_BAO_CA_FILE=/openbao/file/tls/server.crt
+      - STS_BAO_POLICY_FILE=/usr/src/sts/openbao/read-only.hcl
+      - STS_BAO_CLIENT_CN=${STS_BAO_CLIENT_CN:-sts}
+      # THE DATABASE PASSWORD COMES FROM ONE PLACE. The same variable the
+      # database itself is built with, so the value in the store and the value
+      # in postgres cannot drift.
+      - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+    volumes:
+      - sts-bao-file:/openbao/file
+      - sts-bao-client:/openbao/client
+      - ./openbao/seed.js:/usr/src/sts/openbao/seed.js:ro
+      - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
+    command: ["node", "openbao/seed.js"]
+
   sts:
     container_name: ${STS_CONTAINER_NAME:-sts}
     hostname: sts
     # Same image name the parent project builds, so a local `docker compose up`
     # here and the suite there produce the one image rather than two that drift.
-    image: rcbj/sts
+    #
+    # **AND A TEST RUN NAMES ITS OWN TAG (2026-09-14)**, because an image tag is
+    # MACHINE-WIDE exactly as a `container_name` is. `up` of a later mode reuses
+    # whatever `rcbj/sts` points at by then, so a second checkout building the
+    # same name between two modes of another run swapped the code under that run
+    # with nothing said. `STS_IMAGE` unset is the name above, unchanged; the
+    # launchers set it when a compose project is named.
+    image: ${STS_IMAGE:-rcbj/sts}
     # -----------------------------------------------------------------------
     # THE KEY-ENCRYPTION KEY IS MADE ON THE FIRST START THAT FINDS NONE.
     #
@@ -324,6 +447,40 @@ services:
     # stack they own. That is a property of a stack whose database password is
     # also in this file.
     # -----------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # AND THE SECONDARY ADDRESSES THE PER-REALM SPIFFE LISTENERS BIND
+    # (2026-09-12).
+    #
+    # A realm with SPIFFE turned on binds a Workload API and a SPIRE Server
+    # API of its own, and what keeps two realms apart is the ADDRESS and not
+    # the port: gRPC's path is the METHOD name, fixed by the Workload API
+    # specification, so there is nowhere in the protocol for a realm segment
+    # and the endpoint is the only thing a client has to name a tenant with.
+    # Two realms therefore need two addresses on one container.
+    #
+    # `STS_EXTRA_IPS` is a space-separated list in CIDR form, added to the
+    # interface that already carries the container's own address. The defaults
+    # are the three after the static one below, so a stack brought up with no
+    # variables at all can run four realms' SPIFFE at once.
+    #
+    # **IT NEEDS `NET_ADMIN`, AND THAT IS THE COST OF THIS FEATURE**: adding an
+    # address to an interface is a privileged operation, and a container that
+    # cannot do it says so on the way up and goes on to run everything else.
+    # The failure is REPORTED and never fatal, for the reason every listener in
+    # this service follows: a service that refused to start because one realm's
+    # address could not be added would take fourteen other protocol families
+    # down with it.
+    # -----------------------------------------------------------------------
+    cap_add:
+      - NET_ADMIN
+    # THE SERVICE'S OWN ADDRESS, FIXED. A realm's `spiffe.grpcHost` is a
+    # literal IP, so the addresses have to be the same on every start — a
+    # compose-assigned one moves when the services come up in a different
+    # order, and a realm would then be configured to bind an address this
+    # container does not have.
+    networks:
+      default:
+        ipv4_address: ${STS_ADDRESS:-172.29.0.10}
     command: >
       sh -c 'if [ ! -s /run/secrets/sts-kek ]; then
       head -c 32 /dev/urandom | base64 > /run/secrets/sts-kek;
@@ -335,6 +492,14 @@ services:
       if [ -z "$$ADMIN_API_CLIENT_SECRET" ]; then
       ADMIN_API_CLIENT_SECRET="$$(cat /run/secrets/sts-admin-api-secret)";
       export ADMIN_API_CLIENT_SECRET; fi;
+      IFACE="$$(ip -o -4 route show to default | awk "{print \$$5}" | head -1)";
+      for CIDR in $$STS_EXTRA_IPS; do
+      if ip addr add "$$CIDR" dev "$$IFACE" 2>/dev/null; then
+      echo "sts: added $$CIDR to $$IFACE for a realm SPIFFE listener";
+      else
+      echo "sts: COULD NOT add $$CIDR to $$IFACE — a realm configured to bind
+      it will report that its listener did not come up. NET_ADMIN is what this
+      needs; everything else in this service is unaffected."; fi; done;
       exec node server.js'
     build:
       # Repo root, and the default ./Dockerfile. The parent passes
@@ -362,6 +527,11 @@ services:
       args:
         BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
+        # THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): an image built by the
+        # debugger project's embedded/Dockerfile. Empty selects the
+        # Dockerfile's own empty stage, and the debugger then reports itself
+        # not installed — see debugger/CLAUDE.md.
+        DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-debugger-none}"
     # A published port rather than the parent's `network_mode: "host"`. Host
     # networking is what that stack needs and is Linux-only; publishing works on
     # Docker Desktop too, and nothing in this repo has to share a loopback with
@@ -372,6 +542,14 @@ services:
     # told which address it was reached at.
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
+      # THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13). Published because it
+      # is the one listener whose entire purpose is to be reached from outside:
+      # every certificate this service issues names it for its CRL, its OCSP
+      # responder and its issuer's certificate (pki/pki_service.js). The host
+      # side is `STS_PKI_HOST_PORT` for the reason `STS_HOST_PORT` is, and the
+      # SAME variable is handed to the service below as PKI_DISTRIBUTION_PORT,
+      # so the address in a certificate is the address this mapping made.
+      - "${STS_PKI_HOST_PORT:-8082}:8082"
       # The directory's two sockets are NOT published by default, and that is a
       # choice about collisions rather than about usefulness: 389 and 636 are the
       # assigned LDAP ports, so a host already running slapd — which is the host
@@ -389,6 +567,13 @@ services:
       # one fetch of GET /tls/server-certificate whichever of the three you use.
       # - "8443:8443"
       # - "9443:9443"
+      # The embedded protocol debugger (debugger.port), unpublished by default
+      # like the two above. It is ON in development mode when the image carries
+      # the debugger's built tree; publish it to open it in a browser. The host
+      # and container ports have to be the same number, because the debugger's
+      # own sign-in sends the browser to this service's main port on the host
+      # name it used.
+      # - "8444:8444"
     # The database must be ACCEPTING CONNECTIONS, not merely started — see the
     # healthcheck above for what goes wrong otherwise. This is the one thing in
     # this file that needs compose format 2.4's `condition:`, which is also the
@@ -396,7 +581,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # AND THE SECRET STORE MUST BE SEEDED, not merely running (2026-09-12):
+      # this service reads its key-encryption key and its database password out
+      # of it before the listener binds, and a store with no secrets in it is a
+      # service that will not start. Waiting on the SEEDER rather than on the
+      # store is what makes that true — the store answers long before there is
+      # anything in it.
+      openbao-seed:
+        condition: service_completed_successfully
     volumes:
+      # WHAT THE SECRET STORE ISSUED THIS SERVICE (2026-09-12): the client
+      # certificate it authenticates with, its key, and the CA that signs the
+      # store's own listener. Read-only: this service presents them and never
+      # writes them, and the identity they carry can read two values and
+      # change nothing.
+      - sts-bao-client:/run/secrets/bao:ro
       # WHERE THE ldif MODE WRITES. Mounted in postgres mode too, so that
       # switching between them is one environment variable — see the header.
       - sts-data:/usr/src/sts/data
@@ -429,15 +628,16 @@ services:
       # disagree with the table in common/config.js that generates it.
       - ./env:/usr/src/sts/env:ro
     environment:
-      # The log level, and nothing else. debug is the point of a mock: every
-      # endpoint call, and every assertion, JWT and SD-JWT VC both before and
-      # after signing. Swap to ./env/test.js for a quiet run.
+      # The appconfig layer. It was chosen for its log level, and since
+      # 2026-09-12 every file in env/ is at `info` — every function logs its
+      # entry and exit at debug, so a debug stack writes all of it.
+      # STS_LOG_LEVEL=debug asks for the whole record.
       - CONFIG_FILE=${CONFIG_FILE:-./env/local.js}
       # The service's own bunyan level, passed through ONLY when the host
       # environment has it — see the note about the empty value in the
-      # header. Unset means the appconfig file decides, and that is
-      # `debug`: every request and every artifact before and after
-      # signing, which is the point of a mock and about half of its CPU.
+      # header. Unset means the appconfig file decides, and that is `info`
+      # since 2026-09-12; `debug` is every request, every artifact before
+      # and after signing, and every function's entry and exit.
       - STS_LOG_LEVEL
       # ---------------------------------------------------------------------
       # TLS ON THE MAIN PORT (2026-08-30). Until then this stack was the one
@@ -468,6 +668,27 @@ services:
       #   curl -k https://localhost:8081/tls/server-certificate
       # ---------------------------------------------------------------------
       - STS_HTTPS=${STS_HTTPS:-true}
+      # ---------------------------------------------------------------------
+      # WHERE A CERTIFICATE SAYS ITS CRL AND OCSP RESPONDER ARE (2026-09-13).
+      #
+      # Every certificate this service issues names its revocation list, its
+      # OCSP responder and its issuer's certificate BY URL, and those URLs are
+      # fetched from OUTSIDE this container. They name the plain-HTTP
+      # revocation listener, on 8082 in here; the host may publish it anywhere
+      # (`STS_PKI_HOST_PORT`, below), and nothing inside the container can see
+      # the host side of that mapping. So the service is TOLD the published
+      # port — without it, a stack published on 18081 issued certificates
+      # naming `https://localhost:8081/pki/…`, which answered nothing from
+      # where a relying party read it.
+      #
+      # `PKI_DISTRIBUTION_BASE_URL` wins over it where a stack is reached by a
+      # name rather than by localhost — docker-compose-run-tests.yml sets it to
+      # the container name its runner dials — and it is passed through here
+      # empty so a caller of this file can say the same.
+      # ---------------------------------------------------------------------
+      - PKI_DISTRIBUTION_PORT=${STS_PKI_HOST_PORT:-8082}
+      - PKI_DISTRIBUTION_BASE_URL=${PKI_DISTRIBUTION_BASE_URL:-}
+      - PKI_DISTRIBUTION_LDAP_HOST=${PKI_DISTRIBUTION_LDAP_HOST:-}
       # ---------------------------------------------------------------------
       # PERSISTENCE. The directory, the trust realms and the runtime setting
       # changes survive `docker compose down` and come back on the next `up`.
@@ -514,6 +735,15 @@ services:
       - STS_MODE=${STS_MODE:-product}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-3}
+      # The console and the portal on workers of their own, so that neither
+      # queues behind protocol traffic. It needs read-your-write, which the
+      # line below turns on — see common/request_pool.js's surfacePoolProblem().
+      # TWO since 2026-09-13 (it was one): with one, a console page walking the
+      # directory held the only worker every portal page and every console
+      # sign-in callback was waiting on, and a worker that died left both
+      # surfaces on the protocol pool until it was re-forked. Each is a whole
+      # copy of the service, so raise it with the memory to match.
+      - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-2}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-*}
       - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
@@ -564,7 +794,73 @@ services:
       # The pair is created by postgres/schema.sql, which the database
       # container runs once through postgres/apply-schema.sh — see the postgres
       # service above, and note that an OLD VOLUME has no such role.
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app:sts_app@postgres:5432/sts?sslmode=require}
+      # ---------------------------------------------------------------------
+      # **NO PASSWORD IN THIS STRING SINCE 2026-09-12**, and that is the point
+      # of the OpenBao service above. It carries the user, the host and the
+      # database; the password is read from the secret store at startup and
+      # injected into it by `persistence.js`. `docker compose config` no longer
+      # prints a database credential, and neither does /admin/config.
+      #
+      # `STS_DATABASE_URL` in the environment still wins whole — a deployment
+      # pointing at its own database writes its own string, with or without a
+      # password in it, and `persistence.databasePasswordProvider` decides
+      # whether anything replaces it.
+      # ---------------------------------------------------------------------
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=require}
+      # ---------------------------------------------------------------------
+      # BOTH SECRETS COME FROM THE STORE (2026-09-12), AND THE SERVICE PROVES
+      # WHO IT IS WITH A CERTIFICATE THE STORE ISSUED IT.
+      #
+      # The key-encryption key and the database password live in ONE secret at
+      # `secret/sts`, told apart by their field names — which is the shape
+      # `common/secrets.js` supports for every provider, and the reason the
+      # database password's own location row is left empty here.
+      #
+      # **THE IDENTITY IS READ-ONLY ON THOSE TWO VALUES AND ON NOTHING ELSE**,
+      # which is `openbao/read-only.hcl`: this service cannot rotate the key it
+      # sealed its signing keys under, cannot change the database password and
+      # cannot plant a key of its own. A vendored job asserts the refusal
+      # rather than trusting the policy file to be right.
+      # ---------------------------------------------------------------------
+      - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault}
+      - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
+      - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
+      - STS_KEYS_KEK_FIELD=${STS_KEYS_KEK_FIELD:-kek}
+      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/bao/client.crt}
+      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/bao/client.key}
+      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/bao/bao-ca.crt}
+      # THE ADDRESSES A REALM'S SPIFFE LISTENERS MAY BIND. See `cap_add` and
+      # the `command` above: these are added to the container's own interface
+      # on the way up, so `spiffe.grpcHost` on a realm may name any of them.
+      # Three, because two realms with SPIFFE on is the case worth being able
+      # to run and a third is what shows the arrangement generalises; the
+      # service's own address is the static one above and is the DEFAULT
+      # realm's.
+      # AND THE DEFAULT REALM BINDS THIS CONTAINER'S OWN ADDRESS RATHER THAN
+      # THE WILDCARD (2026-09-12). `spiffe.grpcHost` defaults to 0.0.0.0,
+      # which is EVERY address on the machine — so the default realm's
+      # Workload API port would be taken on all three addresses above and
+      # a realm given one of them fails to bind with `EADDRINUSE` on an
+      # address nothing appears to be using. Measured, and then fixed in
+      # two places: `spiffe_server.js` recognises the wildcard and names
+      # the realm holding it, and this line stops it happening.
+      - STS_SPIFFE_GRPC_HOST=${STS_SPIFFE_GRPC_HOST:-172.29.0.10}
+      - STS_EXTRA_IPS=${STS_EXTRA_IPS:-172.29.0.11/24 172.29.0.12/24 172.29.0.13/24}
+      - STS_DATABASE_PASSWORD_PROVIDER=${STS_DATABASE_PASSWORD_PROVIDER:-vault}
+      - STS_DATABASE_PASSWORD_FIELD=${STS_DATABASE_PASSWORD_FIELD:-databasePassword}
+      # WHETHER THE KEYSTORE IS ON AT ALL, and it is BARE for the reason
+      # ADMIN_API_CLIENT_SECRET above is: unset must mean *the default for this
+      # mode* rather than the empty string. Product mode — this file's default
+      # — persists its keys and therefore reads the key-encryption key from the
+      # store above. `tests/tools/modes.sh` sets it to `persisted` for the
+      # DISPATCH mode, which runs in development mode and would otherwise
+      # generate a key per start and never dial the store at all.
+      #
+      # **WITHOUT THIS LINE THE VARIABLE NEVER REACHES THE CONTAINER**, which
+      # is how the first dispatch run came up with the database password out of
+      # the store and an ephemeral key-encryption key: compose passes what it
+      # is told to pass, and a value the launcher exports is not one of them.
+      - STS_KEYS_SOURCE
       # Where ldif mode would write. Set even in postgres mode so that the
       # volume above has a meaning and switching modes changes one line.
       - STS_PERSISTENCE_DATA_DIR=/usr/src/sts/data
@@ -585,7 +881,8 @@ services:
     # lost feature but a MODULE_NOT_FOUND before anything listens.
     #
     # IT PICKS ITS OWN SCHEME, and that is not defensiveness. STS_HTTPS — and
-    # STS_OAUTH2_RFC9700, which is its default — turn 8081 into an HTTPS
+    # STS_OAUTH2_RFC9700 or STS_OAUTH2_OAUTH21, either of which is its default
+    # — turn 8081 into an HTTPS
     # listener, and a probe that spoke http at it would fail on every poll: the
     # container would go `unhealthy` while the service answered every request
     # perfectly, which is the worst shape a healthcheck failure can take. The
@@ -594,7 +891,7 @@ services:
     # verify against until somebody fetches it. This probe asks whether the
     # process is alive, not whether its certificate is trustworthy.
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&process.env.STS_OAUTH2_RFC9700==='true');var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -642,7 +939,8 @@ services:
     container_name: ${XACML_PEP_CONTAINER_NAME:-xacml-pep}
     hostname: xacml-pep
     profiles: ["xacml"]
-    image: rcbj/xacml-pep
+    # Scoped per run like STS_IMAGE above, and for its reason.
+    image: ${XACML_PEP_IMAGE:-rcbj/xacml-pep}
     build:
       # THE REPOSITORY ROOT, because the Dockerfile copies the seven engine
       # modules out of xacml/ at build time — there is one copy of the
@@ -659,6 +957,12 @@ services:
         GIT_COMMIT: "${GIT_COMMIT:-}"
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
+      # THE HTTPS LISTENER (2026-09-13), which answers nothing until a pair is
+      # written where PEP_HTTPS_CERT and PEP_HTTPS_KEY below point. Published
+      # on 9444 rather than 9443 by default because 9443 is the mock's own
+      # mutual-TLS listener, which a reader of the sts service above may have
+      # uncommented.
+      - "${XACML_PEP_HTTPS_HOST_PORT:-9444}:9443"
     volumes:
       # WHERE A LAUNCHER PUTS THE CLIENT CREDENTIAL. It defaults to this
       # directory — which exists, contains no key, and mounts harmlessly — so
@@ -707,6 +1011,26 @@ services:
       # default and says so on /admin/xacml/peps.
       - PEP_TLS_CERT=${XACML_PEP_TLS_CERT:-}
       - PEP_TLS_KEY=${XACML_PEP_TLS_KEY:-}
+      # THE HTTPS LISTENER'S PAIR (2026-09-13), which is a different thing from
+      # the client certificate above and comes from a different place: the
+      # realm this PEP REGISTERED to issues it, from its Remote PEP listeners
+      # Issuing CA, to a PEP that has already registered —
+      #
+      #   curl -sk -H "Authorization: Bearer $TOKEN" \
+      #     -H 'Content-Type: application/json' -d '{"name":"<pep name>"}' \
+      #     https://localhost:8081/realm/<realm>/admin-api/xacml/issue-pep-certificate \
+      #   | tee >(jq -r .fullChainPem > certs/server/pep-server.crt) \
+      #   | jq -r .privateKeyPem > certs/server/pep-server.key
+      #
+      # — so the files normally do NOT exist when this container starts, and
+      # the PEP re-reads these two paths until they do. EMPTY BY DEFAULT: the
+      # default mount above is xacml-pep/common in this checkout, and a
+      # default pointing into it would invite writing a private key into the
+      # source tree. A launcher points them at a directory of its own.
+      - PEP_HTTPS_CERT=${XACML_PEP_HTTPS_CERT:-}
+      - PEP_HTTPS_KEY=${XACML_PEP_HTTPS_KEY:-}
+      - PEP_HTTPS_PORT=9443
+      - PEP_HTTPS_RELOAD_INTERVAL_MS=${XACML_PEP_HTTPS_RELOAD_INTERVAL_MS:-5000}
       # The mock regenerates its key on every start and signs it itself, so
       # there is no anchor to verify against. `pep.js` logs this on every
       # start rather than once, for federation_http.js's reason: a
@@ -755,7 +1079,59 @@ services:
 # in this repository, because the point of them is that a person edits them
 # with an editor. The header at the top argues the split.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# THE NETWORK, AND WHY THIS FILE NAMES ONE AT ALL (2026-09-12).
+#
+# Compose makes a bridge network per project without being asked, and that was
+# enough for as long as every service in this stack was reached by NAME. It
+# stopped being enough when a realm's SPIFFE listeners needed an ADDRESS of
+# their own: `spiffe.grpcHost` on a realm is a literal IP, so something has to
+# decide which addresses exist and they have to be the same on every start.
+#
+# So: a subnet this file chooses, a static address for the service, and three
+# more the container adds to its own interface on the way up (see
+# `STS_EXTRA_IPS` on the sts service). A realm turned on with
+# `spiffe.grpcHost=172.29.0.11` is then reachable at that address from
+# anything else on this network — which is where the test runner lives when
+# the suite runs in a container, and is why the realm ports are NOT published
+# to the host: a published port maps to ONE container address, so publishing
+# would answer for one realm and silently not for the others.
+#
+# THE SUBNET IS DELIBERATELY UNUSUAL. 172.29/16 is inside the private range
+# docker allocates from, so a machine that already has several compose stacks
+# is unlikely to be using it — and if it is, `STS_NETWORK_SUBNET` and the four
+# address variables move the whole arrangement in one place.
+#
+# **A LITERAL IS NOT ENOUGH FOR TWO RUNS IN THIS TREE, AND THIS FILE SAID IT
+# WAS FOR A DAY (2026-09-12).** A network is MACHINE-WIDE in exactly the way a
+# `container_name` is, so the second run — however its compose project was
+# named — asked for the address space the first was holding and was refused
+# with `invalid pool request: Pool overlaps with other one on this address
+# space` before a container started. Both launchers scan for a free /24 now
+# and name all four variables; the default below is the first candidate the
+# scan offers, so a plain `docker compose up` here is unchanged and a run on
+# an idle machine takes exactly these addresses. See freeSubnet() in
+# tests/tools/compose.sh, and tests/stack_network.js, which pins it.
+# ---------------------------------------------------------------------------
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${STS_NETWORK_SUBNET:-172.29.0.0/24}
+
 volumes:
+  # THE SECRET STORE'S OWN STORAGE (2026-09-12): its raft data, the TLS pair
+  # `openbao-tls` mints for its listener, and the root token the seeder keeps
+  # so that a restarted stack can still be reconfigured. `down --volumes`
+  # throws all of it away, which also throws away the key-encryption key — and
+  # the postgres volume goes at the same moment, so what was sealed under it
+  # goes too. That is the pair to keep together.
+  sts-bao-file:
+  # WHAT THE STORE ISSUED TO THIS SERVICE: the client certificate, its key and
+  # the listener's CA. Written by the seeder, mounted read-only into the
+  # service. It is a volume rather than a bind mount for `sts-secrets`' reason:
+  # a credential in a checkout is a credential in everybody's checkout.
+  sts-bao-client:
   # PostgreSQL's own data directory. This is where the embedded LDAP directory,
   # the trust realm registry and the durable setting changes actually live when
   # persistence.mode is postgres.

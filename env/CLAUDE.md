@@ -18,6 +18,8 @@ memory. **A setting with a row in `SETTINGS` and no row in `defaults.js` stops
 the service from starting and names itself** — there is no sixth level, no
 constant in a module underneath the table. `common/CLAUDE.md` argues the whole
 layering and is the one place it is written down; this file lists the files.
+README.md's *Configuration* lists every setting, its environment variable and
+its default.
 
 **`common/config_file.js` makes `CONFIG_FILE` absolute before anything reads
 it**, because a relative path resolves against the directory of the module doing
@@ -89,6 +91,15 @@ accident — before this, the suite's own 429s were the only thing touching it,
 and raising the limit would have made it invisible. And the numbers above are
 reproducible: put a peak counter in `attempt()`, run the suite with
 `STS_SECURITY_RATE_PER_ADDRESS` very high, and read it back.
+
+**THE THIRD USE, 2026-09-13: `acme.attemptsPerAddress` at 5000.** ACME counts
+REFUSED requests per address (shipped 120), and `sts_route_inputs.js` — which
+sends every route a malformed request on purpose — leaves 132 of them on the
+runner's one address, so `sts_metadata_anonymous.js` met a 429 on
+`/enroll/acme/directory` twelve seconds later. Measured off
+`GET /admin-api/acme/monitor` after that job alone; EST and SCEP were 10 each
+against 60 and have no block. The enrollment jobs that assert the throttle set
+their own limits inside their realms, so the layer hides none of them.
 
 ## The union is also what keeps a file that is NOT this service's loadable
 

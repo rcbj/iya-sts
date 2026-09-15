@@ -11,12 +11,12 @@
 // else, so it cannot be part of a cycle.
 //
 // What it is defending against. A Bearer access token (RFC 6750) is a password:
-// anything that can read it can spend it, so a token leaked from a log, a proxy,
-// a crash dump or an open redirect is a working credential until it expires. A
-// DPoP-bound token carries `cnf.jkt`, the RFC 7638 thumbprint of a public key,
-// and every request presenting it must also carry a fresh signature from the
-// matching private key over that request's method and URI. The stolen bytes are
-// then worthless without the key.
+// anything that can read it can spend it, so a token leaked from a log, a
+// proxy, a crash dump or an open redirect is a working credential until it
+// expires. A DPoP-bound token carries `cnf.jkt`, the RFC 7638 thumbprint of a
+// public key, and every request presenting it must also carry a fresh signature
+// from the matching private key over that request's method and URI. The stolen
+// bytes are then worthless without the key.
 //
 // RFC 9449 section 4.3 lists twelve checks a receiver MUST make. They are
 // implemented here in that order and each is labelled with its number, because
@@ -45,17 +45,26 @@ const crypto = require('crypto');
 // no route, so its position is not a position at all.
 const realms = require('../common/realms');
 // jsonwebtoken and the STS key arrived with presentedAccessToken() below: it
-// verifies an access token this service issued before believing its cnf. Still a
-// leaf — jsonwebtoken is an npm package and helpers.js is this module's only
-// project dependency, so the no-cycle property is unchanged.
-// One signer and one verifier for the whole service since 2026-08-27.
+// verifies an access token this service issued before believing its cnf. Still
+// a leaf — jsonwebtoken is an npm package and helpers.js is this module's only
+// project dependency, so the no-cycle property is unchanged. One signer and one
+// verifier for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const helpers = require('../common/helpers');
+// The registry of error codes: a leaf. A refusal is MARKED on the response and
+// named on the refusal object this module hands back; neither is serialised.
+const errorCodes = require('../common/error_codes');
 // RFC 8705 — the other sender constraint. A library like this one: it registers
 // nothing and requires only helpers.js and config.js, so requiring it here
 // cannot create a cycle. It is required HERE rather than at the four protected
-// endpoints because presentedAccessToken() below is the single check they share.
+// endpoints because presentedAccessToken() below is the single check they
+// share.
 const mtls = require('./mtls');
+// RFC 9068 — what an access token's header, issuer and audience must be. A
+// library that registers no route and requires only `common/` modules and
+// `authorization_servers.js`, none of which requires this one, so the no-cycle
+// property is unchanged. The resource-server check below is its reader.
+const jwtAccessToken = require('./jwt_access_token');
 // For one decision: whether to REFUSE an access token in a query string rather
 // than merely ignore it (RFC 9700 section 4.3.2). A library that registers no
 // route and requires only helpers.js, config.js and client_auth.js, so
@@ -70,6 +79,18 @@ const bcp = require('./oauth2_bcp');
 // them and not the fourth is a token that is alive at UserInfo and dead at the
 // credential endpoint, which reads as a wallet bug from both sides.
 const config = require('../common/config');
+// RFC 9470 (2026-09-13): whether the authentication behind a presented token
+// meets what the resource requires. A library requiring only `common/`
+// modules and `oauth2_monitor.js`, neither of which requires this file.
+const stepUp = require('./step_up');
+// SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46): the atomic "once" a
+// proof's `jti` is reserved through, and the capability table. Libraries that
+// register nothing; `cluster_claims.js` requires `config`, `realms`,
+// `error_codes` and the table and `persistence.js` only LAZILY inside its
+// calls, so this file still requires no store module at load and joins no
+// cycle. `oauth2_bcp.js` above already requires both.
+const clusterClaims = require('../cluster/cluster_claims');
+const capabilities = require('../cluster/cluster_capabilities');
 const log = helpers.log;
 const b64u = helpers.b64u;
 const jsonFromB64u = helpers.jsonFromB64u;
@@ -119,18 +140,141 @@ const SIGNING_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(function (alg) {
 // because the window is how long a captured proof stays useful for the same
 // method and URI; the nonce mechanism below is what shortens it further when a
 // deployment cares.
+//
+// A SETTING SINCE 2026-09-12 (`oauth2.dpopIatSkewS`), read per use for the
+// rule `common/CLAUDE.md` gives: a runtime setting captured in a module-level
+// const is the one thing a runtime override cannot reach. The export below
+// keeps its old name and is now the DEFAULT, for any reader that wanted the
+// number; `iatSkewSeconds()` is the live value.
 const IAT_SKEW_SECONDS = 300;
 
-// Replay detection (section 11.1). A `jti` seen once is refused thereafter. In a
-// real deployment this is a shared cache with an eviction policy; here it is a
-// Map of jti -> the second it was seen, pruned on use, which is all a mock needs
-// and is honest about being bounded by the same window as `iat`.
-// PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
-// realm and hands out the ambient realm's — so every reader below is
-// unchanged and every one of them is now realm-correct. In the default realm,
-// and in a service with no realms defined, there is exactly one partition and
-// this behaves as the plain Map it replaced. See common/realms.js.
+function iatSkewSeconds() {
+  log.debug("Entering iatSkewSeconds().");
+  const seconds = Number(config.value('oauth2.dpopIatSkewS'));
+  log.debug("Leaving iatSkewSeconds().");
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) :
+         IAT_SKEW_SECONDS;
+}
+
+// Replay detection (section 11.1). A `jti` seen once is refused thereafter. In
+// a real deployment this is a shared cache with an eviction policy; here it is
+// a Map of jti -> the second it was seen, pruned on use, which is all a mock
+// needs and is honest about being bounded by the same window as `iat`. PER
+// TRUST REALM. `realms.map()` is a Map that holds a separate one for each realm
+// and hands out the ambient realm's — so every reader below is unchanged and
+// every one of them is now realm-correct. In the default realm, and in a
+// service with no realms defined, there is exactly one partition and this
+// behaves as the plain Map it replaced. See common/realms.js.
 const seenJtis = realms.map({ persist: 'dpop.seenJtis' });
+
+// ---------------------------------------------------------------------------
+// THE REPLAY CHECK ACROSS NODES (2026-09-14, #46).
+//
+// **WHAT WAS WRONG.** `seenJtis` is a store that converges: a proof accepted
+// on node A is written there and reaches node B a moment later, so the same
+// proof presented to both at once was accepted by both — `persistence/
+// CLAUDE.md` recorded it as the one DPoP gap before the cluster work began.
+// Inside one process the check and the set are synchronous, so it was never a
+// problem there.
+//
+// **WHY THE CLAIM IS NOT IN `verifyProof()`.** An atomic "once" in a shared
+// store is a round trip, and `verifyProof()` is synchronous with synchronous
+// callers: `presentedAccessToken()` answers UserInfo, the step-up stand-in
+// and three more families (the credential endpoints, SCIM, Shared Signals),
+// each of which reads its return value on the next line. Making it async
+// would be a change to every one of those files, and a caller that forgot the
+// `await` would be a resource server that silently checks nothing — the
+// per-endpoint copy this file's history already warns about.
+//
+// **SO IT IS CLAIMED AT THE ASYNC BOUNDARY EVERY CALLER SHARES: THE REQUEST'S
+// ARRIVAL.** `proofClaims()` is a middleware `oauth2.js` registers above every
+// route that verifies a proof. For a request carrying a `DPoP` header it reads
+// the proof's `jti` WITHOUT verifying anything and reserves it through
+// `cluster_claims.claim()`; `verifyProof()`, given the request, then refuses a
+// proof whose reservation was refused, at the place the local replay check
+// already sits (so every check before it keeps its own refusal), and KEEPS the
+// reservation when it accepts. A reservation that was not kept — the proof was
+// refused for something else, or never verified at all — is given back when
+// the response finishes, which is `seenJtis`' rule exactly: only an ACCEPTED
+// proof is remembered.
+//
+// Reading an unverified `jti` is safe for the reason the claims module keys by
+// digest: the worst a forged header can do is reserve a value of its own
+// making, for one request.
+//
+// **THE SERVER NONCE NEEDS NOTHING (checked, 2026-09-14).** A nonce is not
+// single use: `nonceIsCurrent()` asks only whether this service issued it
+// recently. `issuedNonces` is persisted with what is minted, the response that
+// carries a new nonce is a writing response the barrier holds until its commit
+// lands, and the retry that carries it back — to any node — passes the
+// barrier's catch-up first. So a nonce issued on A is current on B by the time
+// B can be asked.
+// ---------------------------------------------------------------------------
+const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
+
+// The `jti` of a compact JWS, read without verifying it, or '' where there is
+// none to read. Anything malformed is left to `verifyProof()` to refuse.
+function unverifiedJtiOf(rawHeader) {
+  log.debug("Entering unverifiedJtiOf().");
+  const raw = String(rawHeader || '').trim();
+  const parts = raw.split('.');
+  if (parts.length !== 3 || raw.indexOf(',') >= 0) {
+    log.debug("Leaving unverifiedJtiOf(). Not a compact JWS.");
+    return '';
+  }
+  let payload = null;
+  try {
+    payload = jsonFromB64u(parts[1]);
+  } catch (e) {
+    log.debug("Caught in unverifiedJtiOf(): " + ((e && e.message) || e));
+    payload = null;
+  }
+  const jti = payload && typeof payload.jti === 'string' ? payload.jti : '';
+  log.debug("Leaving unverifiedJtiOf().");
+  return jti;
+}
+
+function proofClaims() {
+  log.debug("Entering proofClaims().");
+  log.debug("Leaving proofClaims().");
+  return function dpopProofClaim(req, res, next) {
+    log.debug("Entering dpopProofClaim().");
+    const jti = req.headers['dpop'] === undefined ? ''
+      : unverifiedJtiOf(req.headers['dpop']);
+    if (!jti) {
+      log.debug("Leaving dpopProofClaim(). No proof jti to reserve.");
+      next();
+      return;
+    }
+    clusterClaims.claim({
+      scope: 'oauth.dpop-jti', value: jti,
+      // A proof is refused outside `iat` ± the skew, so twice the skew is
+      // every moment it could be presented — `pruneJtis()`'s window.
+      ttlMs: iatSkewSeconds() * 2 * 1000
+    }).then(function (answer) {
+      const held = { jti: jti, answer: answer, kept: false };
+      req[PROOF_CLAIM] = held;
+      if (answer.ok && typeof res.once === 'function') {
+        let settled = false;
+        const settle = function () {
+          log.debug("Entering settle().");
+          if (!settled) {
+            settled = true;
+            if (!held.kept) {
+              clusterClaims.release(answer.handle);
+            }
+          }
+          log.debug("Leaving settle().");
+        };
+        res.once('finish', settle);
+        res.once('close', settle);
+      }
+      log.debug("Leaving dpopProofClaim(). " +
+                (answer.ok ? "Reserved." : "Refused: " + answer.reason + "."));
+      next();
+    });
+  };
+}
 
 // Server-supplied nonces (sections 8 and 9). OFF by default: the mechanism is a
 // second round trip on the first request of every session, so a deployment opts
@@ -146,31 +290,76 @@ const seenJtis = realms.map({ persist: 'dpop.seenJtis' });
 // issued was accepted 200, because the worker answering had never been told
 // nonces were required at all.
 //
-// `sharedMap` and not `realms.obj()`, which is per realm: this switch has been
-// service-wide since it was written, `nonceModeOn()` is read by handlers in
-// every realm, and making it per-realm here would be a behaviour change
-// smuggled in with a replication fix. One key, one row — the same shape
-// `krb5.principals` uses and for the same reason.
-const nonceModeState = realms.sharedMap({ persist: 'dpop.nonceMode',
-                                          scope: 'shared' });
+// ~~`sharedMap` and not `realms.obj()`, which is per realm: this switch has
+// been service-wide since it was written … and making it per-realm here would
+// be a behaviour change smuggled in with a replication fix.~~
+//
+// **IT IS A SETTING NOW, PER REALM, AND THE PARAGRAPH ABOVE IS WHY IT WAS
+// DONE AS ITS OWN CHANGE (2026-09-12).** A switch that one realm flips for
+// every realm is a trust-realm leak in the same family as the stores
+// `common/CLAUDE.md` lists: a test at /realm/acme/dpop/nonce-mode turned
+// nonces on for the default realm's clients, which had asked for nothing. So
+// the state is `oauth2.dpopNonceRequired` — a `config.js` row, which is per
+// realm by construction (the override lands on the ambient realm), replicated
+// to every request worker by the same change log a setting already rides, and
+// reachable through /admin/oauth2 and POST /admin-api/config/set behind a
+// credential. That last property is the one product mode needed: the
+// endpoint that used to be the ONLY way to set it is an unauthenticated test
+// control, and in product it refuses.
+//
+// The replication property the 2026-09-08 fix bought is kept rather than
+// traded: a setting written through one worker is read by the others exactly
+// as the shared map's row was.
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const issuedNonces = realms.map({ persist: 'dpop.issuedNonces' });
+// The default of `oauth2.dpopNonceTtlS`, kept under its old name for the same
+// reason IAT_SKEW_SECONDS is.
 const NONCE_TTL_SECONDS = 300;
 
+function nonceTtlSeconds() {
+  log.debug("Entering nonceTtlSeconds().");
+  const seconds = Number(config.value('oauth2.dpopNonceTtlS'));
+  log.debug("Leaving nonceTtlSeconds().");
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) :
+         NONCE_TTL_SECONDS;
+}
+
+// WRITES THE SETTING, IN THE REALM IT IS CALLED IN. Returns what is now in
+// force, or throws with the setting's own refusal — which cannot happen for a
+// boolean on a runtime row, and is surfaced rather than swallowed because a
+// switch that silently did not switch is the invisible failure the endpoint's
+// own comment warns about.
+//
+// **TURNING IT BACK TO WHAT IT WOULD BE ANYWAY CLEARS THE OVERRIDE rather than
+// writing one**, which is tests/CLAUDE.md's "restore with reset" rule applied
+// inside the control: a test that turns nonces on and then off would otherwise
+// leave the row reading `source: override` with the default's value, and the
+// management API's own job asserts that a row nobody meant to override does not
+// say that — so the failure would land on a different file.
 function setNonceMode(on) {
   log.debug('Entering setNonceMode(). on=' + on);
-  nonceModeState.set('on', on === true);
+  const wanted = on === true;
+  config.clearOverride('oauth2.dpopNonceRequired');
+  if (config.value('oauth2.dpopNonceRequired') !== wanted) {
+    const written = config.setOverride('oauth2.dpopNonceRequired', wanted);
+    if (written && written.ok === false) {
+      log.debug('Leaving setNonceMode(). The setting refused the value.');
+      throw new Error((written.errors || []).join(' '));
+    }
+  }
   log.debug('Leaving setNonceMode(). DPoP nonces are ' +
             (nonceModeOn() ? 'REQUIRED' : 'not required'));
   return nonceModeOn();
 }
 
 function nonceModeOn() {
-  return nonceModeState.get('on') === true;
+  log.debug("Entering nonceModeOn().");
+  log.debug("Leaving nonceModeOn().");
+  return config.value('oauth2.dpopNonceRequired') === true;
 }
 
 function issueNonce() {
@@ -183,10 +372,12 @@ function issueNonce() {
 }
 
 function pruneNonces() {
-  const cutoff = nowSec() - NONCE_TTL_SECONDS;
+  log.debug("Entering pruneNonces().");
+  const cutoff = nowSec() - nonceTtlSeconds();
   issuedNonces.forEach(function (issued, nonce) {
     if (issued < cutoff) issuedNonces.delete(nonce);
   });
+  log.debug("Leaving pruneNonces().");
 }
 
 function nonceIsCurrent(nonce) {
@@ -200,11 +391,11 @@ function nonceIsCurrent(nonce) {
 // ---------------------------------------------------------------------------
 // The JWK Thumbprint, RFC 7638 — the value that becomes `cnf.jkt`.
 //
-// Built member by member in the specification's own order rather than by sorting
-// the key's members, so a key carrying a `kid` or Web Crypto's `key_ops`/`ext`
-// hashes to the same value as the same key without them. That is not tidiness:
-// the wallet sends its key in every proof header, and if a stray member changed
-// the digest the token would stop matching its own key.
+// Built member by member in the specification's own order rather than by
+// sorting the key's members, so a key carrying a `kid` or Web Crypto's
+// `key_ops`/`ext` hashes to the same value as the same key without them. That
+// is not tidiness: the wallet sends its key in every proof header, and if a
+// stray member changed the digest the token would stop matching its own key.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE RFC 7638 MEMBER TABLE AND THE CANONICAL JSON MOVED TO `common/crypto.js`
@@ -230,7 +421,11 @@ function thumbprint(jwk) {
 
 // `ath`, RFC 9449 section 4.2: base64url(SHA-256(ASCII(access token))).
 function athOf(accessToken) {
-  return b64u(crypto.createHash('sha256').update(String(accessToken), 'ascii').digest());
+  log.debug("Entering athOf().");
+  log.debug("Leaving athOf().");
+  return b64u(crypto.createHash('sha256')
+                    .update(String(accessToken), 'ascii')
+                    .digest());
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +458,8 @@ function htuOf(req) {
   const proto = String(from.proto || 'http').toLowerCase();
   const host = String(from.host || '').trim().toLowerCase();
   // req.originalUrl carries the query; the path alone is what belongs here.
-  const path = String(req.originalUrl || req.url || '/').split('?')[0].split('#')[0];
+  const path = String(req.originalUrl || req.url || '/').split('?')[0].split(
+      '#')[0];
   let hostname = host;
   let port = '';
   const colon = host.lastIndexOf(':');
@@ -271,7 +467,8 @@ function htuOf(req) {
     hostname = host.slice(0, colon);
     port = host.slice(colon + 1);
   }
-  if ((proto === 'https' && port === '443') || (proto === 'http' && port === '80')) port = '';
+  if ((proto === 'https' && port === '443') || (proto === 'http' &&
+                                                port === '80')) port = '';
   const htu = proto + '://' + hostname + (port ? ':' + port : '') + path;
   log.debug('Leaving htuOf(). htu=' + htu);
   return htu;
@@ -283,6 +480,7 @@ function normalizeHtu(value) {
   try {
     parsed = new URL(String(value));
   } catch (e) {
+    log.debug("Caught in normalizeHtu(): " + ((e && e.message) || e));
     // Unparseable, so it cannot match anything. Returned as-is so the caller's
     // comparison fails and says what arrived, rather than throwing.
     log.debug('Leaving normalizeHtu(). Not a URL.');
@@ -290,8 +488,10 @@ function normalizeHtu(value) {
   }
   const scheme = parsed.protocol.toLowerCase();
   let port = parsed.port;
-  if ((scheme === 'https:' && port === '443') || (scheme === 'http:' && port === '80')) port = '';
-  const out = scheme + '//' + parsed.hostname.toLowerCase() + (port ? ':' + port : '') +
+  if ((scheme === 'https:' && port === '443') || (scheme === 'http:' &&
+                                                  port === '80')) port = '';
+  const out = scheme + '//' + parsed.hostname.toLowerCase() +
+              (port ? ':' + port : '') +
               parsed.pathname;
   log.debug('Leaving normalizeHtu(). out=' + out);
   return out;
@@ -301,17 +501,23 @@ function normalizeHtu(value) {
 // The twelve checks.
 //
 // Returns { ok: true, jkt, jwk, claims } or { ok: false, error, description,
-// needNonce }. It never sends a response: the caller decides the status code and
-// the header shape, because an authorization server says `use_dpop_nonce` in a
-// 400 JSON body while a resource server says it in a 401 WWW-Authenticate, and
-// this module has no business knowing which of the two it is serving.
+// needNonce }. It never sends a response: the caller decides the status code
+// and the header shape, because an authorization server says `use_dpop_nonce`
+// in a 400 JSON body while a resource server says it in a 401 WWW-Authenticate,
+// and this module has no business knowing which of the two it is serving.
 // ---------------------------------------------------------------------------
 function verifyProof(rawHeader, opts) {
-  log.debug('Entering verifyProof(). htm=' + (opts && opts.htm) + ', htu=' + (opts && opts.htu));
+  log.debug('Entering verifyProof(). htm=' + (opts && opts.htm) + ', htu=' +
+            (opts && opts.htu));
   const options = opts || {};
-  const fail = function (description, extra) {
+  // `code` names the condition for the caller that sends the response; it is
+  // never serialised into one.
+  const fail = function (code, description, extra) {
+    log.debug("Entering fail().");
     log.debug('Leaving verifyProof(). REFUSED: ' + description);
-    return Object.assign({ ok: false, error: 'invalid_dpop_proof', description: description },
+    return Object.assign({ ok: false, errorCode: code,
+                           error: 'invalid_dpop_proof',
+                           description: description },
                          extra || {});
   };
 
@@ -319,18 +525,25 @@ function verifyProof(rawHeader, opts) {
   // fields with ", " — and a compact JWS contains no comma — so a comma here
   // means two headers arrived, and accepting either of them would let an
   // attacker append their own proof to a captured request.
-  if (rawHeader === undefined || rawHeader === null || String(rawHeader).trim() === '') {
-    return fail('No DPoP proof was presented.', { missing: true });
+  if (rawHeader === undefined || rawHeader === null ||
+      String(rawHeader).trim() === '') {
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0093', 'No DPoP proof was presented.',
+                { missing: true });
   }
   const raw = String(rawHeader).trim();
   if (raw.indexOf(',') >= 0) {
-    return fail('More than one DPoP header field was sent; RFC 9449 permits exactly one.');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0094', 'More than one DPoP header field was sent; ' +
+                                  'RFC 9449 permits exactly one.');
   }
 
   // Check 2: a single well-formed JWT.
   const parts = raw.split('.');
   if (parts.length !== 3) {
-    return fail('The DPoP proof is not a compact JWS with three parts.');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0095', 'The DPoP proof is not a compact JWS with ' +
+                                  'three parts.');
   }
   let header;
   let claims;
@@ -338,18 +551,27 @@ function verifyProof(rawHeader, opts) {
     header = jsonFromB64u(parts[0]);
     claims = jsonFromB64u(parts[1]);
   } catch (e) {
-    return fail('The DPoP proof could not be decoded: ' + e.message);
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0096',
+                'The DPoP proof could not be decoded: ' + e.message);
   }
-  if (!header || typeof header !== 'object' || !claims || typeof claims !== 'object') {
-    return fail('The DPoP proof header or payload is not a JSON object.');
+  if (!header || typeof header !== 'object' || !claims ||
+      typeof claims !== 'object') {
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0097', 'The DPoP proof header or payload is not a ' +
+                                  'JSON object.');
   }
 
   // Check 4: typ. Before the signature, because it costs nothing and it is the
   // check that stops a JWT signed for another purpose being accepted here.
   if (header.typ !== PROOF_TYP) {
-    return fail('The DPoP proof must have typ "' + PROOF_TYP + '"; this one has ' +
-                JSON.stringify(header.typ) + '. Without this check some other JWT the client ' +
-                'signed with the same key would be accepted as a proof.');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0098',
+                'The DPoP proof must have typ "' + PROOF_TYP + '"; ' +
+        'this one has ' +
+                JSON.stringify(header.typ) + '. Without this check some ' +
+                'other JWT the client signed with the same key would be ' +
+                'accepted as a proof.');
   }
 
   // Check 5: a supported asymmetric algorithm, not none and not a MAC. The
@@ -358,9 +580,12 @@ function verifyProof(rawHeader, opts) {
   const spec = SIGNING_ALGS.indexOf(header.alg) === -1 ? null
     : stsCrypto.JWS_ALGS[header.alg];
   if (!spec) {
-    return fail('The DPoP proof is signed with ' + JSON.stringify(header.alg) +
-                ', which this server does not accept. RFC 9449 requires a registered ' +
-                'asymmetric algorithm, never none and never a MAC: ' + SIGNING_ALGS.join(', ') + '.');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0099',
+                'The DPoP proof is signed with ' + JSON.stringify(header.alg) +
+                ', which this server does not accept. RFC 9449 requires a ' +
+                'registered asymmetric algorithm, never none and never a ' +
+                'MAC: ' + SIGNING_ALGS.join(', ') + '.');
   }
 
   // Check 7: the jwk header must carry a public key and no private key. Checked
@@ -368,27 +593,38 @@ function verifyProof(rawHeader, opts) {
   // material would let a client hand over a whole key pair and be believed.
   const jwk = header.jwk;
   if (!jwk || typeof jwk !== 'object' || !jwk.kty) {
-    return fail('The DPoP proof header must carry the public key as a jwk.');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0100', 'The DPoP proof header must carry the ' +
+                                  'public key as a jwk.');
   }
-  const privateMembers = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k'].filter(function (m) {
+  const privateMembers = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k'].filter(
+      function (m) {
     return jwk[m] !== undefined;
   });
   if (privateMembers.length) {
-    return fail('The DPoP proof header carries private key material (' +
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0101', 'The DPoP proof header carries private key ' +
+                                  'material (' +
                 privateMembers.join(', ') + '), which RFC 9449 forbids.');
   }
   if (jwk.kty !== spec.kty || (spec.crv && jwk.crv !== spec.crv)) {
-    return fail('The DPoP proof header key (' + jwk.kty + (jwk.crv ? '/' + jwk.crv : '') +
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0102',
+                'The DPoP proof header key (' + jwk.kty +
+                (jwk.crv ? '/' + jwk.crv : '') +
                 ') does not match its alg ' + header.alg + '.');
   }
 
-  // Check 3: all required claims. Named individually so the client is told which.
+  // Check 3: all required claims. Named individually so the client is told
+  // which.
   const required = ['jti', 'htm', 'htu', 'iat'];
   const absent = required.filter(function (c) {
     return claims[c] === undefined || claims[c] === null || claims[c] === '';
   });
   if (absent.length) {
-    return fail('The DPoP proof is missing ' + absent.join(', ') + '.');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0103',
+                'The DPoP proof is missing ' + absent.join(', ') + '.');
   }
 
   // Check 6: the signature verifies with the key in the header.
@@ -406,13 +642,18 @@ function verifyProof(rawHeader, opts) {
     // simply does not verify. A malformed one makes node throw rather than
     // return false, and this is what keeps that from becoming a 500.
     log.debug('the DPoP proof did not verify: ' + e.message);
-    return fail('The DPoP proof signature does not verify with the key in ' +
-                'its own header: ' + e.message);
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0104', 'The DPoP proof signature does not verify ' +
+                'with the key in its own header: ' + e.message);
   }
 
   // Check 8: htm matches this request's method.
-  if (String(claims.htm).toUpperCase() !== String(options.htm || '').toUpperCase()) {
-    return fail('The DPoP proof was made for HTTP ' + claims.htm + ', but this is a ' +
+  if (String(claims.htm).toUpperCase() !== String(
+      options.htm || '').toUpperCase()) {
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0105',
+                'The DPoP proof was made for HTTP ' + claims.htm + ', ' +
+        'but this is a ' +
                 options.htm + ' request.');
   }
 
@@ -420,40 +661,56 @@ function verifyProof(rawHeader, opts) {
   const presented = normalizeHtu(claims.htu);
   const expected = normalizeHtu(options.htu);
   if (presented !== expected) {
+    log.debug("Leaving verifyProof().");
     // The commonest cause of this on a deployment that works everywhere else is
     // a reverse proxy: the client made the request to the proxy's URL, the
     // socket here saw the last hop's, and the two differ in scheme, host or
     // both. So the setting is named rather than left to be discovered — a proof
     // refused for a reason nobody can see is an afternoon, and this refusal
     // would otherwise read as the client's bug.
-    return fail('The DPoP proof was made for ' + claims.htu + ', but this request went to ' +
+    return fail('STS-OAUTH-0106',
+                'The DPoP proof was made for ' + claims.htu + ', ' +
+        'but this request went to ' +
                 options.htu + '.' +
                 (helpers.trustProxy()
                   ? ''
-                  : ' If something is terminating TLS in front of this service, that is why: ' +
-                    'global.trustProxy is OFF, so X-Forwarded-Proto and X-Forwarded-Host are ' +
-                    'ignored and this server describes the LAST HOP rather than the URL the ' +
-                    'client used. Turn it on where a proxy really is in front — and leave it ' +
-                    'off where one is not, because those are headers any client can set, and ' +
-                    'a client that chooses its own htu has unbound its own proof.'));
+                  : ' If something is terminating TLS in front of this ' +
+                    'service, that is why: global.trustProxy is OFF, so ' +
+                    'X-Forwarded-Proto and X-Forwarded-Host are ignored and ' +
+                    'this server describes the LAST HOP rather than the URL ' +
+                    'the client used. Turn it on where a proxy really is in ' +
+                    'front — and leave it off where one is not, because ' +
+                    'those are headers any client can set, and a client that ' +
+                    'chooses its own htu has unbound its own proof.'));
   }
 
   // Check 11: iat within an acceptable window.
   const age = nowSec() - Number(claims.iat);
-  if (!isFinite(age) || Math.abs(age) > IAT_SKEW_SECONDS) {
-    return fail('The DPoP proof iat is ' + (isFinite(age) ? age + ' seconds away' : 'not a number') +
-                '; this server accepts ' + IAT_SKEW_SECONDS + ' seconds either way.');
+  const window = iatSkewSeconds();
+  if (!isFinite(age) || Math.abs(age) > window) {
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0107',
+                'The DPoP proof iat is ' + (isFinite(age) ? age + ' ' +
+        'seconds away' : 'not ' +
+        'a number') +
+                '; this server accepts ' + window + ' seconds either way ' +
+                '(oauth2.dpopIatSkewS).');
   }
 
   // Check 10: the nonce, when this server is asking for one. The order matters:
   // a missing nonce is not a refusal but a REQUEST, answered with a fresh nonce
-  // for the client to retry with, so it is reported separately from a wrong one.
+  // for the client to retry with, so it is reported separately from a wrong
+  // one.
   if (nonceModeOn()) {
     if (claims.nonce === undefined) {
-      return fail('This server requires a DPoP nonce.', { needNonce: true });
+      log.debug("Leaving verifyProof().");
+      return fail('STS-OAUTH-0108', 'This server requires a DPoP nonce.',
+                  { needNonce: true });
     }
     if (!nonceIsCurrent(claims.nonce)) {
-      return fail('The DPoP proof nonce is not one this server issued, or it has expired.',
+      log.debug("Leaving verifyProof().");
+      return fail('STS-OAUTH-0109', 'The DPoP proof nonce is not one this ' +
+                                    'server issued, or it has expired.',
                   { needNonce: true });
     }
   }
@@ -461,19 +718,43 @@ function verifyProof(rawHeader, opts) {
   // Section 11.1: replay. A proof is good for one request.
   pruneJtis();
   if (seenJtis.has(String(claims.jti))) {
-    return fail('This DPoP proof has already been used (jti ' + claims.jti + '). A proof is ' +
-                'good for one request.');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0110',
+                'This DPoP proof has already been used (jti ' + claims.jti +
+                '). ' +
+                'A proof is good for one request.');
+  }
+  // AND ACROSS NODES (#46): the reservation `proofClaims()` made when the
+  // request arrived. After the local check, so a replay this process can see
+  // keeps its own code.
+  const reservation = options.req ? options.req[PROOF_CLAIM] : null;
+  const reserved = reservation && reservation.jti === String(claims.jti)
+    ? reservation : null;
+  if (reserved && !reserved.answer.ok) {
+    log.debug("Leaving verifyProof().");
+    return reserved.answer.reason === 'used'
+      ? fail('STS-OAUTH-0519',
+             'This DPoP proof has already been used (jti ' + claims.jti +
+             ') by another request. A proof is good for one request.')
+      : fail('STS-OAUTH-0520',
+             'Whether this DPoP proof (jti ' + claims.jti + ') has already ' +
+             'been used could not be recorded, so it is refused. Send a ' +
+             'fresh proof.');
   }
 
   // Check 12, first half: ath, when an access token came with the proof.
   const jkt = thumbprint(jwk);
   if (options.accessToken) {
     if (claims.ath === undefined) {
-      return fail('The DPoP proof must carry ath when it accompanies an access token; without ' +
-                  'it a proof captured with one token could be presented with another.');
+      log.debug("Leaving verifyProof().");
+      return fail('STS-OAUTH-0111', 'The DPoP proof must carry ath when it ' +
+                  'accompanies an access token; without it a proof captured ' +
+                  'with one token could be presented with another.');
     }
     if (claims.ath !== athOf(options.accessToken)) {
-      return fail('The DPoP proof ath does not match the access token presented with it.');
+      log.debug("Leaving verifyProof().");
+      return fail('STS-OAUTH-0112', 'The DPoP proof ath does not match the ' +
+                                    'access token presented with it.');
     }
   }
 
@@ -481,44 +762,61 @@ function verifyProof(rawHeader, opts) {
   // makes the token sender-constrained — without it the client simply presents
   // whichever key it likes and is believed.
   if (options.expectedJkt && options.expectedJkt !== jkt) {
-    return fail('The access token is bound to a different key than the one that signed this ' +
-                'DPoP proof (cnf.jkt ' + options.expectedJkt + ', proof key ' + jkt + ').');
+    log.debug("Leaving verifyProof().");
+    return fail('STS-OAUTH-0113', 'The access token is bound to a different ' +
+                'key than the one that signed this DPoP proof ' +
+                '(cnf.jkt ' + options.expectedJkt + ', proof key ' + jkt +
+                ').');
   }
 
   seenJtis.set(String(claims.jti), nowSec());
+  if (reserved) {
+    reserved.kept = true;
+  }
   log.debug('Leaving verifyProof(). Accepted. jkt=' + jkt);
   return { ok: true, jkt: jkt, jwk: jwk, claims: claims, header: header };
 }
 
 function pruneJtis() {
-  const cutoff = nowSec() - (IAT_SKEW_SECONDS * 2);
+  log.debug("Entering pruneJtis().");
+  const cutoff = nowSec() - (iatSkewSeconds() * 2);
   seenJtis.forEach(function (seen, jti) {
     if (seen < cutoff) seenJtis.delete(jti);
   });
+  log.debug("Leaving pruneJtis().");
 }
 
 // The confirmation a token carries, if any. RFC 9449 section 6.1 puts it in
-// `cnf.jkt`; a token without one is a Bearer token and must be presented as one.
+// `cnf.jkt`; a token without one is a Bearer token and must be presented as
+// one.
 function jktOf(claims) {
-  return (claims && claims.cnf && typeof claims.cnf.jkt === 'string') ? claims.cnf.jkt : '';
+  log.debug("Entering jktOf().");
+  log.debug("Leaving jktOf().");
+  return (claims && claims.cnf && typeof claims.cnf.jkt === 'string') ?
+          claims.cnf.jkt : '';
 }
 
 // For tests and for /admin/sts-metadata: what this server will accept.
 function state() {
+  log.debug("Entering state().");
+  log.debug("Leaving state().");
   return {
     signing_alg_values_supported: SIGNING_ALGS,
     nonces_required: nonceModeOn(),
-    iat_skew_seconds: IAT_SKEW_SECONDS,
+    iat_skew_seconds: iatSkewSeconds(),
+    nonce_ttl_seconds: nonceTtlSeconds(),
     proofs_remembered: seenJtis.size,
     nonces_outstanding: issuedNonces.size
   };
 }
 
-// Only for tests that need a clean slate: the replay cache is deliberately
-// process-wide, so a test asserting "a fresh proof is accepted" after asserting
-// "a replayed one is refused" needs a way to forget.
+// Only for tests that need a clean slate: the replay cache is per realm (it
+// said process-wide here long after it stopped being), so a test asserting "a
+// fresh proof is accepted" after asserting "a replayed one is refused" needs a
+// way to forget.
 function forgetProofs() {
-  log.debug('Entering forgetProofs(). ' + seenJtis.size + ' remembered proof(s) discarded.');
+  log.debug('Entering forgetProofs(). ' + seenJtis.size + ' remembered ' +
+      'proof(s) discarded.');
   seenJtis.clear();
   log.debug('Leaving forgetProofs().');
 }
@@ -530,16 +828,16 @@ function forgetProofs() {
 // Three of this service's protected endpoints — Credential, Deferred Credential
 // and Notification — used to carry their own copy of a Bearer-only check. They
 // share this one, because a per-endpoint copy is how one of three ends up not
-// demanding the proof, and the endpoint that forgot is the one an attacker would
-// use.
+// demanding the proof, and the endpoint that forgot is the one an attacker
+// would use.
 //
 // **It lives here rather than in vc_issuer.js, where it was written, because
-// there are now four.** /oauth2/userinfo is the fourth, and it is in oauth2.js —
-// a module vc_issuer.js cannot be required from without either building a cycle
-// or moving OID4VCI ahead of OAuth2 in the route order. Copying the check into
-// the OAuth2 module instead is precisely the mistake the paragraph above records
-// having already been made once. dpop.js registers no routes and requires only
-// helpers.js, so it is the one place both callers can reach.
+// there are now four.** /oauth2/userinfo is the fourth, and it is in oauth2.js
+// — a module vc_issuer.js cannot be required from without either building a
+// cycle or moving OID4VCI ahead of OAuth2 in the route order. Copying the check
+// into the OAuth2 module instead is precisely the mistake the paragraph above
+// records having already been made once. dpop.js registers no routes and
+// requires only helpers.js, so it is the one place both callers can reach.
 //
 // It answers the request itself on failure and returns null, so a caller reads:
 //
@@ -552,78 +850,35 @@ function forgetProofs() {
 // vc_issuer.js and has not changed. The consequence for DPoP is worth being
 // explicit about: `cnf.jkt` is read from a token whose signature may be
 // unverifiable here, so for a foreign token the binding is checked between the
-// proof and a claim anyone could have written. When the token IS one of ours the
-// signature is checked first and the binding is real. A production resource
+// proof and a claim anyone could have written. When the token IS one of ours
+// the signature is checked first and the binding is real. A production resource
 // server has no such excuse and must verify the token before trusting its cnf.
 //
 // `verified` in the returned object is how a caller that CANNOT live with that
 // tells the difference: the userinfo endpoint refuses a token it did not issue,
-// because a profile is a statement about somebody this server authenticated, and
-// there is nothing it can honestly say about the subject of a signature it
+// because a profile is a statement about somebody this server authenticated,
+// and there is nothing it can honestly say about the subject of a signature it
 // cannot check.
+//
+// **RFC 9470 IS THE LAST QUESTION, ASKED OF A TOKEN THAT PASSED EVERY OTHER**
+// (2026-09-13). Section 3's challenge says "the token is fine and the
+// authentication behind it is not", which would be a lie about a token that is
+// not fine — so it is asked after the binding and the proof, and a client is
+// never sent to step up for a token it would then be refused for anyway. The
+// requirement is `oauth2.stepUpAcrValues` / `oauth2.stepUpMaxAgeS` unless the
+// caller names one.
+//
+// `options`, which only RFC 9470's stand-in resource passes:
+//   audience        `{ names(audiences), label }` — RFC 9068 section 4 step
+//                   4 asked of a registered application instead of this
+//                   service (`jwt_access_token.resourceServerRefusal()`)
+//   requireVerified refuse a token this service cannot verify, rather than
+//                   reading its claims unverified
+//   stepUp          the requirement, in `step_up.js`'s shape
 // ---------------------------------------------------------------------------
-// The audiences a token issued here carries, as this service's own resource
-// server. `<base>/resource` is what accessToken() mints when nothing narrows
-// it; anything else on the token came from an RFC 8707 `resource` parameter and
-// names a resource server that is not this one.
-//
-// The path ENDS WITH `/resource` rather than equalling it, because this process
-// publishes several authorization servers and a named one issues for
-// `<base>/{id}/resource` — its own resource server, under its own name. Testing
-// for equality refused every token any named authorization server had ever
-// issued, at every protected endpoint, with a message about audience
-// restriction that was true and completely misleading.
-//
-// What it still refuses is what it was written for: an audience from a
-// `resource` parameter, which names somebody else's server and does not end
-// there.
-function isOwnResourceAudience(value) {
-  log.debug('Entering isOwnResourceAudience().');
-  const text = String(value || '');
-  if (!text) {
-    log.debug('Leaving isOwnResourceAudience().');
-    return false;
-  }
-  try {
-    const path = new URL(text).pathname;
-    log.debug('Leaving isOwnResourceAudience().');
-    return path === '/resource' || path.endsWith('/resource');
-  } catch (e) {
-    // Not a URL. RFC 8707 requires an absolute URI, and the default audience is
-    // one — so an audience that does not parse was not minted by this service's
-    // own default and is not this resource server.
-    log.debug('Leaving isOwnResourceAudience().');
-    return false;
-  }
-  log.debug('Leaving isOwnResourceAudience().');
-}
-
-function audienceRefusal(claims, verified) {
-  log.debug("Entering audienceRefusal().");
-  if (!verified || !claims || claims.aud === undefined) {
-    log.debug("Leaving audienceRefusal(). Not ours, or it names no audience.");
-    return null;
-  }
-  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-  if (audiences.some(isOwnResourceAudience)) {
-    log.debug("Leaving audienceRefusal(). This token is for this resource server.");
-    return null;
-  }
-  log.debug("Leaving audienceRefusal(). It names " + audiences.join(', ') + ".");
-  return {
-    error: 'invalid_token',
-    description: 'RFC 9700 section 2.3: an access token is audience-restricted and a resource ' +
-                 'server must refuse one issued for a different audience. This token names ' +
-                 audiences.map(function (one) { return '"' + one + '"'; }).join(', ') +
-                 ', and the endpoints here are the resource server this service issues for. A ' +
-                 'token narrowed with the RFC 8707 `resource` parameter is usable at THAT ' +
-                 'resource server and nowhere else, which is the whole of what the restriction ' +
-                 'buys.'
-  };
-}
-
-function presentedAccessToken(req, res, where) {
+function presentedAccessToken(req, res, where, options) {
   log.debug("Entering presentedAccessToken(). where=" + where);
+  const opts = options || {};
   // RFC 9700 section 4.3.2 — an access token MUST NOT travel in a URI query
   // parameter. RFC 6750 section 2.3 defines a form that does, and this service
   // has never read it: the token comes from the Authorization header and
@@ -644,17 +899,23 @@ function presentedAccessToken(req, res, where) {
                                 req.query.token !== undefined);
   if (inQuery && bcp.enabled()) {
     res.set('WWW-Authenticate', 'Bearer error="invalid_request"');
-    log.warn('RFC 9700 section 4.3.2: a request to ' + (where || 'a protected endpoint') +
-             ' carried an access token in the QUERY STRING. Refused. That URL is now in this ' +
-             'client\'s browser history and in whatever logged the request.');
-    log.debug("Leaving presentedAccessToken(). A token was in the query string.");
+    log.warn('RFC 9700 section 4.3.2: a request to ' + (where || 'a ' +
+        'protected endpoint') +
+             ' carried an access token in the QUERY STRING. Refused. That ' +
+             'URL is now in this client\'s browser history and in whatever ' +
+             'logged the request.');
+    log.debug("Leaving presentedAccessToken(). A token was in the query " +
+              "string.");
+    errorCodes.mark(res, 'STS-OAUTH-0115');
     vciError(res, 400, 'invalid_request',
-      'RFC 9700 section 4.3.2: an access token must not be sent in a URI query parameter. ' +
-      'RFC 6750 section 2.3 defines that form and its own specification does not recommend it, ' +
-      'because a URL ends up in browser history, in the address bar, in server logs and in the ' +
-      'Referer header of anything the page goes on to fetch — so the token is in all of those ' +
-      'too. This endpoint reads the Authorization header only, and treat the token you just ' +
-      'sent as disclosed.');
+      'RFC 9700 section 4.3.2: an access token must not be sent in a URI ' +
+      'query parameter. RFC 6750 section 2.3 defines that form and its own ' +
+      'specification does not recommend it, because a URL ends up in browser ' +
+      'history, in the address bar, in server logs and in the Referer header ' +
+      'of anything the page goes on to fetch — so the token is in all of ' +
+      'those too. This endpoint reads the Authorization header only, and ' +
+      'treat the token you just sent as disclosed.');
+    log.debug("Leaving presentedAccessToken().");
     return null;
   }
   const auth = String(req.headers['authorization'] || '');
@@ -663,11 +924,14 @@ function presentedAccessToken(req, res, where) {
     // Both schemes are offered in the challenge, since either is acceptable
     // here; RFC 9449 section 7.1 requires DPoP to appear when the server
     // supports it, or a client has no way to discover that it may use it.
-    res.set('WWW-Authenticate', 'DPoP algs="' + SIGNING_ALGS.join(' ') + '", Bearer');
+    res.set('WWW-Authenticate', 'DPoP algs="' + SIGNING_ALGS.join(' ') + '", ' +
+        'Bearer');
     log.debug("Leaving presentedAccessToken(). No access token.");
+    errorCodes.mark(res, 'STS-OAUTH-0116');
     vciError(res, 401, 'invalid_token',
-      'An access token is required, presented as "Bearer <token>" or, when it is DPoP-bound, ' +
-      'as "DPoP <token>" with a DPoP proof.');
+      'An access token is required, presented as "Bearer <token>" or, when ' +
+      'it is DPoP-bound, as "DPoP <token>" with a DPoP proof.');
+    log.debug("Leaving presentedAccessToken().");
     return null;
   }
   const scheme = match[1].toLowerCase();
@@ -681,18 +945,69 @@ function presentedAccessToken(req, res, where) {
     claims = stsCrypto.verifyJws(accessToken, STS.certPem);
     verified = true;
   } catch (e) {
-    log.debug("This access token is not one of ours, so its claims are read unverified: " +
+    log.debug("This access token is not one of ours, so its claims are read " +
+              "unverified: " +
               e.message);
     try {
       claims = jsonFromB64u(String(accessToken).split('.')[1]) || {};
     } catch (e2) {
       // Not a JWT at all. Opaque tokens are legal, and this issuer accepts them
       // as it always has — there is simply no binding to find in one.
-      log.debug("...and it is not a JWT either, so there is no cnf to read: " + e2.message);
+      log.debug("...and it is not a JWT either, so there is no cnf to read: " +
+                e2.message);
       claims = {};
     }
   }
   const boundTo = jktOf(claims);
+
+  // A resource answering for a registered application accepts only what it can
+  // verify: an unverified token's `aud`, `acr` and `auth_time` are strings its
+  // holder could have written, and those are exactly what it decides on.
+  if (!verified && opts.requireVerified) {
+    res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+    log.debug("Leaving presentedAccessToken(). Not a token this service can " +
+              "verify.");
+    errorCodes.mark(res, 'STS-OAUTH-0507');
+    vciError(res, 401, 'invalid_token',
+      'This resource accepts only access tokens issued by this service\'s ' +
+      'authorization servers, and this one did not verify against the ' +
+      'realm\'s signing key.');
+    log.debug("Leaving presentedAccessToken().");
+    return null;
+  }
+
+  // RFC 9068 SECTION 4 — THE TYPE, THE ISSUER AND THE AUDIENCE (2026-09-13),
+  // for a token this service VERIFIED, and before anything else is read off
+  // it: a token that is not an access token, or not one of this service's
+  // authorization servers', or not addressed here, has no binding worth
+  // checking. `jwt_access_token.js` is the one reading of all three, shared with
+  // the authorization server that mints the token.
+  //
+  // It REPLACED `audienceRefusal()`, which lived here and matched the aud's
+  // PATH — ending in `/resource` — so that a token minted at localhost and
+  // presented at 127.0.0.1 would pass. RFC 9068 does not allow that reading,
+  // and it admitted `https://api.partner.example/resource` as well: somebody
+  // else's resource server, narrowed to on purpose with RFC 8707. The audience
+  // is compared whole now, against the address this request arrived on.
+  //
+  // ONLY FOR A VERIFIED TOKEN, for the reason given about cnf below: the
+  // header, issuer and audience of a token signed by somebody else are
+  // strings this service has no configuration to check them against, and the
+  // OID4VCI credential endpoints accept such tokens by design.
+  if (verified) {
+    const profileProblem = jwtAccessToken.resourceServerRefusal(accessToken,
+      claims, helpers.baseUrlOf(req), { audience: opts.audience || null });
+    if (profileProblem) {
+      res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+      log.debug("Leaving presentedAccessToken(). RFC 9068 section 4 refused " +
+                "it.");
+      errorCodes.mark(res, errorCodes.codeOf(profileProblem) ||
+                           'STS-OAUTH-0114');
+      vciError(res, 401, profileProblem.error, profileProblem.description);
+      log.debug("Leaving presentedAccessToken().");
+      return null;
+    }
+  }
 
   // RFC 8705 section 3.1 — the OTHER sender constraint, checked here for the
   // same reason the DPoP one is: this function is the single check the four
@@ -702,29 +1017,12 @@ function presentedAccessToken(req, res, where) {
   const certificateProblem = mtls.checkBinding(claims, req, verified);
   if (certificateProblem) {
     res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
-    log.debug("Leaving presentedAccessToken(). The certificate binding did not hold.");
-    vciError(res, 401, certificateProblem.error, certificateProblem.description);
-    return null;
-  }
-
-  // RFC 9700 section 2.3 — an access token is audience-restricted, and a
-  // resource server MUST refuse one that names a different audience. Only for a
-  // token this service ISSUED, which is the same judgement made about cnf above:
-  // the `aud` of a token signed by somebody else is a string this service cannot
-  // check and was never the audience of anyway.
-  //
-  // What counts as "this resource server" is deliberately the PATH and not the
-  // whole URL. Every token issued here carries `<base>/resource`, and the base
-  // is whatever URL the request that minted it arrived on — so a token minted at
-  // localhost:8081 and presented at 127.0.0.1:8081 would fail a whole-URL
-  // comparison while being, in every sense that matters, a token for this
-  // service. What the check is FOR is a token narrowed to somebody else by an
-  // RFC 8707 `resource` parameter, and that always has a different path.
-  const audienceProblem = audienceRefusal(claims, verified);
-  if (audienceProblem) {
-    res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
-    log.debug("Leaving presentedAccessToken(). The audience is somebody else's.");
-    vciError(res, 401, audienceProblem.error, audienceProblem.description);
+    log.debug("Leaving presentedAccessToken(). The certificate binding did " +
+              "not hold.");
+    errorCodes.mark(res, certificateProblem.errorCode || 'STS-OAUTH-0092');
+    vciError(res, 401, certificateProblem.error,
+             certificateProblem.description);
+    log.debug("Leaving presentedAccessToken().");
     return null;
   }
 
@@ -732,26 +1030,39 @@ function presentedAccessToken(req, res, where) {
   // are the same. Accepting it would throw the binding away silently, which is
   // the single most likely way to implement DPoP and gain nothing.
   if (boundTo && scheme !== 'dpop') {
-    res.set('WWW-Authenticate', 'DPoP error="invalid_token", error_description="the token is ' +
-                                'DPoP-bound and must be presented with the DPoP scheme"');
-    log.debug("Leaving presentedAccessToken(). A bound token was presented as Bearer.");
+    res.set('WWW-Authenticate', 'DPoP error="invalid_token", ' +
+                                'error_description="the token is DPoP-bound ' +
+                                'and must be presented with the DPoP scheme"');
+    log.debug("Leaving presentedAccessToken(). A bound token was presented " +
+              "as Bearer.");
+    errorCodes.mark(res, 'STS-OAUTH-0117');
     vciError(res, 401, 'invalid_token',
-      'This access token is DPoP-bound (it carries cnf.jkt), so it must be presented as ' +
-      '"Authorization: DPoP <token>" with a DPoP proof — not as a Bearer token.');
+      'This access token is DPoP-bound (it carries cnf.jkt), so it must be ' +
+      'presented as "Authorization: DPoP <token>" with a DPoP proof — not as ' +
+      'a Bearer token.');
+    log.debug("Leaving presentedAccessToken().");
     return null;
   }
 
   // No binding and no proof: a plain Bearer request, exactly as before.
   if (!boundTo && req.headers['dpop'] === undefined) {
-    log.debug("Leaving presentedAccessToken(). A Bearer request. verified=" + verified);
-    return { accessToken: accessToken, claims: claims, scheme: scheme, jkt: '', verified: verified };
+    if (stepUpChallenged(res, claims, 'Bearer', opts, where)) {
+      log.debug("Leaving presentedAccessToken(). Step-up is required.");
+      return null;
+    }
+    log.debug("Leaving presentedAccessToken(). A Bearer request. verified=" +
+              verified);
+    return { accessToken: accessToken, claims: claims, scheme: scheme, jkt: '',
+             verified: verified };
   }
 
   const checked = verifyProof(req.headers['dpop'], {
     htm: req.method,
     htu: htuOf(req),
     accessToken: accessToken,
-    expectedJkt: boundTo
+    expectedJkt: boundTo,
+    // For the reservation `proofClaims()` made on arrival (#46).
+    req: req
   });
   if (!checked.ok) {
     // RFC 9449 section 9: a RESOURCE server asks for a nonce with a 401 and
@@ -760,24 +1071,66 @@ function presentedAccessToken(req, res, where) {
     // wallet unable to proceed, so the two are deliberately not shared.
     if (checked.needNonce) {
       res.set('DPoP-Nonce', issueNonce());
-      res.set('WWW-Authenticate', 'DPoP error="use_dpop_nonce", error_description="Resource ' +
-                                  'server requires nonce in DPoP proof"');
-      log.debug("Leaving presentedAccessToken(). Asking the wallet for a DPoP nonce.");
-      vciError(res, 401, 'use_dpop_nonce', 'Resource server requires nonce in DPoP proof');
+      res.set('WWW-Authenticate', 'DPoP error="use_dpop_nonce", ' +
+                                  'error_description="Resource server ' +
+                                  'requires nonce in DPoP proof"');
+      log.debug("Leaving presentedAccessToken(). Asking the wallet for a " +
+                "DPoP nonce.");
+      errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0108');
+      vciError(res, 401, 'use_dpop_nonce', 'Resource server requires nonce ' +
+                                           'in DPoP proof');
+      log.debug("Leaving presentedAccessToken().");
       return null;
     }
     res.set('WWW-Authenticate', 'DPoP error="invalid_dpop_proof"');
     log.debug("Leaving presentedAccessToken(). The DPoP proof was refused.");
+    errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0118');
     vciError(res, 401, 'invalid_dpop_proof', checked.description);
+    log.debug("Leaving presentedAccessToken().");
     return null;
   }
-  log.debug("Leaving presentedAccessToken(). A valid DPoP request. jkt=" + checked.jkt +
+  if (stepUpChallenged(res, claims, 'DPoP', opts, where)) {
+    log.debug("Leaving presentedAccessToken(). Step-up is required.");
+    return null;
+  }
+  log.debug("Leaving presentedAccessToken(). A valid DPoP request. jkt=" +
+            checked.jkt +
             ", token verified=" + verified);
   return {
     accessToken: accessToken, claims: claims, scheme: scheme, jkt: checked.jkt,
     verified: verified, dpop: checked
   };
 }
+
+// RFC 9470 SECTION 3: answer the request with the challenge and return true
+// when the token's authentication does not meet the requirement. The scheme is
+// the one the token was presented under, so a DPoP-bound token is told to come
+// back as DPoP. Counted against the token's client_id.
+function stepUpChallenged(res, claims, scheme, opts, where) {
+  log.debug("Entering stepUpChallenged().");
+  const requirement = opts.stepUp || stepUp.ownResourceRequirement();
+  const refusal = stepUp.tokenRefusal(requirement, claims);
+  if (!refusal) {
+    log.debug("Leaving stepUpChallenged(). Met, or nothing required.");
+    return false;
+  }
+  res.set('WWW-Authenticate', stepUp.challengeHeader(scheme, requirement,
+                                                     refusal.description));
+  stepUp.record((claims && claims.client_id) || '', 'stepup.challenged',
+                { error: refusal.error });
+  log.info('RFC 9470: ' + (where || 'a protected endpoint') + ' challenged ' +
+           'a token for client "' + ((claims && claims.client_id) || '') +
+           '" (' + refusal.reason + '): ' + refusal.description);
+  errorCodes.mark(res, errorCodes.codeOf(refusal) || 'STS-OAUTH-0503');
+  vciError(res, 401, refusal.error, refusal.description);
+  log.debug("Leaving stepUpChallenged(). Challenged.");
+  return true;
+}
+
+// #46: a proof's jti is reserved across the cluster on arrival and refused by
+// `verifyProof()` when another request holds it; the nonce needs nothing (see
+// above `PROOF_CLAIM`). At require time — see cluster/CLAUDE.md.
+capabilities.provide('oauth.dpop-jti');
 
 module.exports = {
   PROOF_TYP: PROOF_TYP,
@@ -794,6 +1147,8 @@ module.exports = {
   htuOf: htuOf,
   normalizeHtu: normalizeHtu,
   verifyProof: verifyProof,
+  // #46: the middleware that reserves a proof's jti across the cluster.
+  proofClaims: proofClaims,
   jktOf: jktOf,
   setNonceMode: setNonceMode,
   nonceModeOn: nonceModeOn,

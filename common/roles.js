@@ -90,6 +90,12 @@
 
 const { log } = require('./helpers');
 const config = require('./config');
+// The error-code registry. A LEAF that requires nothing here, so this file
+// stays one (the header argues why that matters). A refusal's code is marked on
+// the RESULT OBJECT as a non-enumerable property — the caller that answers the
+// request reads it back with `errorCodes.codeOf()`, and no serialisation of the
+// result can carry it to a client.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // THE SCHEMA. Published on `/admin/ldap/roles` the way every other container's
@@ -122,9 +128,9 @@ const SCHEMA = {
     { name: 'roleMemberApplication',
       what: 'An application that holds this role AS ITSELF — what a ' +
             'client_credentials grant is decided on, where there is no ' +
-            'person. Multi-valued. NOT the same relation as `appRequiredRole` ' +
-            'on the application entry, which is what that application ' +
-            'DEMANDS of others.' },
+            'person. Multi-valued. NOT the same relation as ' +
+            '`appRequiredRole` on the application entry, which is what that ' +
+            'application DEMANDS of others.' },
     { name: 'description',
       what: 'What the role is for, for the next person.' }
   ]
@@ -153,12 +159,16 @@ const BUILT_IN = [
           'is refused — which is exactly how this service behaved before ' +
           'roles existed.',
     holds: function () {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return true;
     } },
   { name: 'ALL_AUTHENTICATED_USERS',
     what: 'A person with a live authenticated session in the security ' +
           'context this decision is being made in.',
     holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return who.kind === 'user' && who.authenticated;
     } },
   { name: 'ALL_UNAUTHENTICATED_USERS',
@@ -166,6 +176,8 @@ const BUILT_IN = [
           'role above as far as a policy is concerned — it is a name a ' +
           'target can match, and XACML targets cannot say "not".',
     holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return who.kind === 'user' && !who.authenticated;
     } },
   // ---------------------------------------------------------------------
@@ -190,6 +202,8 @@ const BUILT_IN = [
           'carries the `admin:read` scope. Every READ operation on ' +
           '/admin-api requires it.',
     holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return who.scopes.indexOf('admin:read') >= 0;
     } },
   { name: 'ADMIN_WRITE',
@@ -199,11 +213,15 @@ const BUILT_IN = [
           'a token may carry either, both or neither, and the policy asks ' +
           'for the one the operation needs.',
     holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return who.scopes.indexOf('admin:write') >= 0;
     } },
   { name: 'ALL_APPLICATIONS',
     what: 'Any client, however it turned up.',
     holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return who.kind === 'application';
     } },
   { name: 'ALL_AUTHENTICATED_APPLICATIONS',
@@ -211,11 +229,15 @@ const BUILT_IN = [
           'assertion, or a verified client certificate. A public client that ' +
           'merely sent a client_id is not this.',
     holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return who.kind === 'application' && who.authenticated;
     } },
   { name: 'ALL_UNAUTHENTICATED_APPLICATIONS',
     what: 'A public client that proved nothing.',
     holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
       return who.kind === 'application' && !who.authenticated;
     } },
   // -------------------------------------------------------------------------
@@ -251,10 +273,13 @@ const BUILT_IN = [
           'than a person — the certificate says WHO, and this group says ' +
           'whether they may.',
     holds: function (who) {
+      log.debug("Entering holds().");
       const wanted = remotePepGroupName().toLowerCase();
       if (!wanted) {
+        log.debug("Leaving holds().");
         return false;
       }
+      log.debug("Leaving holds().");
       return (who.groups || []).some(function (one) {
         return String(one).toLowerCase() === wanted;
       });
@@ -306,10 +331,13 @@ const BUILT_IN = [
           'with, and one group granting both would make admitting a caller ' +
           'to the demonstration surface silently admit it to those.',
     holds: function (who) {
+      log.debug("Entering holds().");
       const wanted = xacmlUserGroupName().toLowerCase();
       if (!wanted) {
+        log.debug("Leaving holds().");
         return false;
       }
+      log.debug("Leaving holds().");
       return (who.groups || []).some(function (one) {
         return String(one).toLowerCase() === wanted;
       });
@@ -322,6 +350,8 @@ const BUILT_IN = [
 // how somebody turns the role off entirely, which `holds()` above reads as
 // "nobody".
 function remotePepGroupName() {
+  log.debug("Entering remotePepGroupName().");
+  log.debug("Leaving remotePepGroupName().");
   return String(config.value('roles.remotePepGroup') || '').trim();
 }
 
@@ -333,6 +363,8 @@ function remotePepGroupName() {
 // off and losing the embedded PEPs with it — and it is not a mistake this
 // function should second-guess.
 function xacmlUserGroupName() {
+  log.debug("Entering xacmlUserGroupName().");
+  log.debug("Leaving xacmlUserGroupName().");
   return String(config.value('roles.xacmlUserGroup') || '').trim();
 }
 
@@ -346,10 +378,14 @@ const BUILT_IN_NAMES = BUILT_IN.map(function (one) {
 const DEFAULT_REQUIRED_ROLE = 'EVERYBODY';
 
 function isBuiltIn(name) {
+  log.debug("Entering isBuiltIn().");
+  log.debug("Leaving isBuiltIn().");
   return BUILT_IN_NAMES.indexOf(String(name)) >= 0;
 }
 
 function builtInCatalogue() {
+  log.debug("Entering builtInCatalogue().");
+  log.debug("Leaving builtInCatalogue().");
   return BUILT_IN.map(function (one) {
     return { name: one.name, what: one.what, builtIn: true };
   });
@@ -373,11 +409,15 @@ function setDirectory(hooks) {
 // distinction is not pedantry, and it is the same one process, one reference
 // situation here.
 function directoryInstalled() {
+  log.debug("Entering directoryInstalled().");
+  log.debug("Leaving directoryInstalled().");
   return directory;
 }
 
 function haveDirectory() {
+  log.debug("Entering haveDirectory().");
   if (directory && typeof directory.allRoles === 'function') {
+    log.debug("Leaving haveDirectory().");
     return true;
   }
   if (!warnedAboutNoDirectory) {
@@ -390,6 +430,7 @@ function haveDirectory() {
              'fallback store, deliberately: a role register that quietly ' +
              'lived in memory would decide things nobody could find.');
   }
+  log.debug("Leaving haveDirectory().");
   return false;
 }
 
@@ -397,15 +438,20 @@ function haveDirectory() {
 // READING THE REGISTER.
 // ---------------------------------------------------------------------------
 function firstValue(attributes, name) {
+  log.debug("Entering firstValue().");
   const found = attributes[name] || attributes[name.toLowerCase()];
+  log.debug("Leaving firstValue().");
   return Array.isArray(found) ? (found[0] || '') : (found || '');
 }
 
 function allValues(attributes, name) {
+  log.debug("Entering allValues().");
   const found = attributes[name] || attributes[name.toLowerCase()];
   if (!found) {
+    log.debug("Leaving allValues().");
     return [];
   }
+  log.debug("Leaving allValues().");
   return (Array.isArray(found) ? found : [found]).map(function (one) {
     return String(one).trim();
   }).filter(function (one) {
@@ -467,11 +513,14 @@ function catalogue() {
 // WRITING.
 // ---------------------------------------------------------------------------
 function checkName(name) {
+  log.debug("Entering checkName().");
   const text = String(name || '').trim();
   if (!text) {
+    log.debug("Leaving checkName().");
     return 'A role needs a name.';
   }
   if (isBuiltIn(text)) {
+    log.debug("Leaving checkName().");
     return 'There is already a built-in role called "' + text + '", and the ' +
            'built-in ones are COMPUTED rather than stored — a stored role of ' +
            'the same name could never be reached, because the resolver ' +
@@ -479,11 +528,13 @@ function checkName(name) {
            BUILT_IN_NAMES.join(', ') + '.';
   }
   if (!/^[A-Za-z0-9][A-Za-z0-9 ._:@-]{0,63}$/.test(text)) {
+    log.debug("Leaving checkName().");
     return 'A role name is up to 64 characters of letters, digits, and ' +
            '. _ : @ - or a space, starting with a letter or a digit. "' +
            text + '" is not, and the name becomes an LDAP RDN and a value in ' +
            'a token claim.';
   }
+  log.debug("Leaving checkName().");
   return null;
 }
 
@@ -492,13 +543,14 @@ function write(name, record) {
   const problem = checkName(name);
   if (problem) {
     log.debug('Leaving write(). ' + problem);
-    return { ok: false, why: problem };
+    return errorCodes.mark({ ok: false, why: problem }, 'STS-XACML-0055');
   }
   if (!haveDirectory()) {
     log.debug('Leaving write(). No directory.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'There is no embedded directory in this process, so there ' +
-                  'is nowhere to keep a role. ou=roles IS the register.' };
+                  'is nowhere to keep a role. ou=roles IS the register.' },
+             'STS-XACML-0026');
   }
   const given = record || {};
   const attributes = {
@@ -511,9 +563,9 @@ function write(name, record) {
   const written = directory.writeRole(String(name), attributes);
   if (!written) {
     log.debug('Leaving write(). The directory refused.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'The directory would not store the role — it is at its ' +
-                  'maximum number of entries.' };
+                  'maximum number of entries.' }, 'STS-XACML-0027');
   }
   log.debug('Leaving write(). Stored.');
   return { ok: true, name: String(name) };
@@ -523,15 +575,17 @@ function remove(name) {
   log.debug('Entering remove(). name=' + name);
   if (isBuiltIn(name)) {
     log.debug('Leaving remove(). Built in.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: '"' + name + '" is a built-in role. It is computed rather ' +
                   'than stored, so there is nothing to delete — and an ' +
                   'application requiring it would be requiring something ' +
-                  'that no longer existed.' };
+                  'that no longer existed.' }, 'STS-XACML-0056');
   }
   if (!haveDirectory() || !directory.deleteRole(String(name))) {
     log.debug('Leaving remove(). Not here.');
-    return { ok: false, why: 'There is no role called "' + name + '".' };
+    return errorCodes.mark({ ok: false,
+             why: 'There is no role called "' + name + '".' },
+                           'STS-XACML-0057');
   }
   log.debug('Leaving remove(). Gone.');
   return { ok: true };
@@ -583,7 +637,8 @@ function rolesOf(who) {
     // should have carried is a defect; an issuance that FAILED because the
     // role register threw would be a worse one, and this service's whole job
     // is to keep answering.
-    log.error('roles: the register threw while resolving roles for "' +
+    log.error(errorCodes.tag('STS-XACML-0053') +
+              'roles: the register threw while resolving roles for "' +
               context.name + '" and was ignored; only the built-in roles ' +
               'were used. ' + error.message);
   }
@@ -596,8 +651,10 @@ function rolesOf(who) {
 }
 
 function normalizeContext(who) {
+  log.debug("Entering normalizeContext().");
   const given = who || {};
   const kind = given.kind === 'application' ? 'application' : 'user';
+  log.debug("Leaving normalizeContext().");
   return {
     kind: kind,
     name: String(given.name || ''),
@@ -614,18 +671,24 @@ function normalizeContext(who) {
 }
 
 function groupsFor(context) {
+  log.debug("Entering groupsFor().");
   if (context.groups) {
+    log.debug("Leaving groupsFor().");
     return context.groups;
   }
   if (context.kind !== 'user' || !context.name ||
       !directory || typeof directory.groupsOfUser !== 'function') {
+    log.debug("Leaving groupsFor().");
     return [];
   }
+  log.debug("Leaving groupsFor().");
   return directory.groupsOfUser(context.name) || [];
 }
 
 function configuredRolesOf(context) {
+  log.debug("Entering configuredRolesOf().");
   if (!context.name) {
+    log.debug("Leaving configuredRolesOf().");
     // AN ANONYMOUS PARTY HOLDS NO CONFIGURED ROLE and every built-in one that
     // applies. Not an error: `ALL_UNAUTHENTICATED_USERS` is a real answer, and
     // it is the whole reason that role exists.
@@ -635,6 +698,7 @@ function configuredRolesOf(context) {
   const lowerGroups = groups.map(function (one) {
     return String(one).toLowerCase();
   });
+  log.debug("Leaving configuredRolesOf().");
   return all().filter(function (role) {
     if (context.kind === 'application') {
       return contains(role.applications, context.name);
@@ -655,7 +719,9 @@ function configuredRolesOf(context) {
 // always treated those as one identity however they were typed —
 // `admin_stats.js`'s `identityKeyOf()` is the same decision one layer up.
 function contains(list, wanted) {
+  log.debug("Entering contains().");
   const key = String(wanted).toLowerCase();
+  log.debug("Leaving contains().");
   return list.some(function (one) {
     return String(one).toLowerCase() === key;
   });
@@ -687,8 +753,10 @@ function claimFor(who) {
   try {
     names = configuredRolesOf(context);
   } catch (error) {
-    log.error('roles: the register threw while building the roles claim and ' +
+    log.error(errorCodes.tag('STS-XACML-0054') +
+              'roles: the register threw while building the roles claim and ' +
               'was ignored; the token is issued without it. ' + error.message);
+    log.debug("Leaving claimFor().");
     return null;
   }
   if (!names.length) {

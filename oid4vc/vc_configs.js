@@ -5,14 +5,14 @@
 // ---------------------------------------------------------------------------
 // Every credential this issuer offers, by credential_configuration_id.
 //
-// One module, because "is this a configuration I offer" is asked from five places
-// — the credential endpoint, authorization_details, the offer builder, the DID
-// decision and the metadata — and a list that disagrees with itself between them
-// is an issuer that advertises what it will then refuse.
+// One module, because "is this a configuration I offer" is asked from five
+// places — the credential endpoint, authorization_details, the offer builder,
+// the DID decision and the metadata — and a list that disagrees with itself
+// between them is an issuer that advertises what it will then refuse.
 //
-// It is also the bottom of the dependency graph: it names the credentials without
-// knowing how any of them is built, which is what lets both the OID4VCI module
-// and the authorization server read it without requiring each other.
+// It is also the bottom of the dependency graph: it names the credentials
+// without knowing how any of them is built, which is what lets both the OID4VCI
+// module and the authorization server read it without requiring each other.
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
@@ -22,6 +22,8 @@ const config = require('../common/config');
 // runtime-settable value in this service; the ones that are still constants
 // are the ones config.js marks restart-only.
 function vciAuthorizationServer() {
+  log.debug("Entering vciAuthorizationServer().");
+  log.debug("Leaving vciAuthorizationServer().");
   return config.value('oid4vci.authorizationServer');
 }
 
@@ -30,6 +32,8 @@ const VCI_CONFIG_ID = 'IdentityCredential';
 // The most proofs this issuer will take in one Credential Request, and so the
 // most credentials it will return (OID4VCI section 14.6).
 function vciBatchSize() {
+  log.debug("Entering vciBatchSize().");
+  log.debug("Leaving vciBatchSize().");
   return config.value('oid4vci.batchSize');
 }
 
@@ -71,7 +75,8 @@ const VC_CONTEXT = 'https://www.w3.org/2018/credentials/v1';
 // that advertises what it will then refuse.
 const VCI_CONFIGS = {};
 VCI_CONFIGS[VCI_CONFIG_ID] = { format: 'dc+sd-jwt', scope: VCI_SCOPE };
-VCI_CONFIGS[VCI_JWT_CONFIG_ID] = { format: 'jwt_vc_json', scope: VCI_JWT_SCOPE };
+VCI_CONFIGS[VCI_JWT_CONFIG_ID] = { format: 'jwt_vc_json',
+                                   scope: VCI_JWT_SCOPE };
 // The third format: a W3C credential secured by an EMBEDDED Data Integrity
 // proof (bbs-2023) rather than by a JWS. This is the only one of the three that
 // can carry BBS at all — the other two are JOSE-secured and BBS is not a JOSE
@@ -88,10 +93,10 @@ VCI_CONFIGS[VCI_LDP_CONFIG_ID] = { format: 'ldp_vc', scope: VCI_LDP_SCOPE };
 // Two configurations rather than one server-wide switch, and the reason is
 // coverage: with a switch, a run exercises the DID route or the URL route but
 // never both, and for dc+sd-jwt the URL route is the one the specification
-// actually defines (/.well-known/jwt-vc-issuer). Offering both side by side lets
-// one run cover both, lets a wallet SEE the difference in the metadata rather
-// than being told out of band, and makes "which mechanism am I looking at" a
-// choice the person driving the debugger makes deliberately.
+// actually defines (/.well-known/jwt-vc-issuer). Offering both side by side
+// lets one run cover both, lets a wallet SEE the difference in the metadata
+// rather than being told out of band, and makes "which mechanism am I looking
+// at" a choice the person driving the debugger makes deliberately.
 //
 // `issuerDid: true` is the whole of the difference. Everything else about these
 // configurations — claims, proof types, batch, deferral, encryption — is
@@ -105,14 +110,22 @@ const VCI_LDP_DID_CONFIG_ID = 'IdentityCredentialLdpVcDid';
 
 const VCI_LDP_DID_SCOPE = 'identity_credential_ldp_did';
 VCI_CONFIGS[VCI_DID_CONFIG_ID] =
-  { format: 'dc+sd-jwt', scope: VCI_DID_SCOPE, issuerDid: true, basedOn: VCI_CONFIG_ID };
+  { format: 'dc+sd-jwt', scope: VCI_DID_SCOPE, issuerDid: true,
+    basedOn: VCI_CONFIG_ID };
 VCI_CONFIGS[VCI_LDP_DID_CONFIG_ID] =
-  { format: 'ldp_vc', scope: VCI_LDP_DID_SCOPE, issuerDid: true, basedOn: VCI_LDP_CONFIG_ID };
+  { format: 'ldp_vc', scope: VCI_LDP_DID_SCOPE, issuerDid: true,
+    basedOn: VCI_LDP_CONFIG_ID };
 
-function vciConfigIds() { return Object.keys(VCI_CONFIGS); }
+function vciConfigIds() {
+  log.debug("Entering vciConfigIds().");
+  log.debug("Leaving vciConfigIds().");
+  return Object.keys(VCI_CONFIGS);
+}
 
 function vciFormatOf(configId) {
+  log.debug("Entering vciFormatOf().");
   const c = VCI_CONFIGS[configId];
+  log.debug("Leaving vciFormatOf().");
   return c ? c.format : '';
 }
 
@@ -121,7 +134,9 @@ function vciFormatOf(configId) {
 // answer the credential will carry — an issuer whose metadata and credentials
 // disagree about who issued them is the bug this keeps in one place.
 function vciUsesIssuerDid(configId) {
+  log.debug("Entering vciUsesIssuerDid().");
   const c = VCI_CONFIGS[configId];
+  log.debug("Leaving vciUsesIssuerDid().");
   return !!(c && c.issuerDid);
 }
 
@@ -129,7 +144,9 @@ function vciUsesIssuerDid(configId) {
 // configuration it belongs to is the part before the colon. Used to route a
 // section 8.2 identifier request to the right format.
 function configIdOfIdentifier(identifier) {
+  log.debug("Entering configIdOfIdentifier().");
   const prefix = String(identifier || '').split(':')[0];
+  log.debug("Leaving configIdOfIdentifier().");
   return VCI_CONFIGS[prefix] ? prefix : '';
 }
 

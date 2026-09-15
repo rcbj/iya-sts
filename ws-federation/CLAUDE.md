@@ -83,6 +83,34 @@ Section 13.2.1's sign-in response is a self-submitting form, so
 BUTTON as well, labelled for a person, because with the script blocked the button
 is the whole mechanism. See the root `CLAUDE.md`.
 
+## 2026-09-12: the reply address, the persona claims, and the two issuer names
+
+* **`wreply` must be registered in product mode** (`mode.acceptsUnregisteredAddresses()`):
+  one of the `wsfedReplyUrl` values on the `wtrealm`'s entry, exact match, with
+  none sent meaning the registered one and NO fallback to `/wsfed/rp`. The rule is
+  `../saml/return_address.js`, shared with both SAML profiles. Development passes
+  no registration to it at all, so a request with no `wreply` still goes to the
+  mock relying party even when the entry recorded one — byte for byte what it did.
+  **Which `wsfedReplyUrl` values count is `applications.returnAddressesOf()`'s
+  answer** (the same day): a `wreply` a development sighting wrote is marked
+  OBSERVED on `appReturnAddressObserved`, and product refuses it with
+  `STS-REG-0049` until an operator confirms it. See `../common/CLAUDE.md`.
+* **`authnMethodsFor()` is `../saml/authn_context.js`'s reading now**, which
+  fixed the defect all three copies had (a certificate, a Kerberos ticket, a
+  federated or unauthenticated session was `am:password`). The `wauth` hardware
+  and multi-factor checks read `hardwareKey` / `multiFactor` off the same answer.
+* **The persona claims** come off the directory entry in product mode or are
+  omitted (`../saml/person_attributes.js`), and **the signed metadata describes
+  what the realm's mode emits** — it said `Always "Mock"` and
+  `username@sts.example` in a product deployment's signed document.
+* **`wsfed.entityId` and `saml.issuer` differing is reported** on `/wsfed` and
+  once at startup (`issuerDisagreement()`): the metadata names one and every
+  assertion the other, which a relying party's issuer registry refuses.
+* `wsfed.mockRpContextTtlMin` (30) replaced the constant; the metadata signer
+  reads `saml.signatureAlgorithm`.
+
+`tests/saml_family_hardcoded.js` sections A, H and I pin these.
+
 ## There is no test for this in either repository
 
 The mock relying party makes it look covered — but a person has to click it and

@@ -1,6 +1,6 @@
 ---
 title: Persistence
-nav_order: 9
+nav_order: 13
 ---
 
 # Persistence
@@ -8,6 +8,15 @@ nav_order: 9
 Until 2026-08-27 this service wrote nothing down and everything was gone on
 restart. Three things are not, now, when a store is configured — and the list of
 what still is not matters just as much.
+
+**Encryption is a page of its own.** What this service seals before a value
+reaches a store, and what encrypts the rest of the database underneath it —
+LUKS, ZFS, the forks that have TDE — is [Encryption at rest](encryption-at-rest.md).
+That page also answers the two questions this one invites: there is ONE
+key-encryption key for the whole service rather than one per trust realm, and
+the DATABASE PASSWORD can come out of the same secret store as that key
+(`persistence.databasePasswordProvider`) rather than out of the connection
+string.
 
 ## What survives, and what never can
 
@@ -19,6 +28,7 @@ answer stopped being the same in every configuration.**
 | the embedded **LDAP directory** — every entry under every realm's base | sessions, access tokens, ID Tokens, refresh tokens | nothing, beyond two caches that are re-derivable |
 | …which is also the **applications registry**, the **federation register**, the **SPIFFE registry** and the **group roster**, because in this service those *are* directory entries | authorization codes, pre-authorized codes, SAML artifacts | |
 | the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches | |
+| the **used-assertion history** — every RFC 7523 and RFC 7522 assertion accepted and not yet expired, so none is accepted twice across a restart (both modes; its own table on postgres, a file per realm on ldif) | | |
 | **runtime setting changes** — what the console and `POST /admin-api/config/set` write | the statistics, the counters and the audit log | |
 | the **signing keys**, encrypted (product mode only) | | |
 
@@ -291,6 +301,11 @@ worst-case convergence lag when a notification is lost.
   Between a write in one process and its arrival in another there is a window the
   size of the poll interval in which a proof one process refused is accepted by
   another. Sticky sessions at the load balancer close it; nothing here does.
+  **The RFC 7523 / RFC 7522 used-assertion history does not have that window**:
+  on postgres, recording a use is one atomic `INSERT … ON CONFLICT` in the table
+  `sts_used_assertions`, so two processes can never both accept one assertion.
+  A database built by an older `postgres/schema.sql` has no such table — run
+  that file again as the owner; it adds the table and changes nothing else.
 * **A realm's signing keys are not adopted mid-life.** A key changed in another
   process is logged and ignored here: taking it would strand everything this
   process has already signed. Rotation across processes is a rolling restart.

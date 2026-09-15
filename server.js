@@ -24,7 +24,8 @@
 // it does not verify request signatures or enforce real policy.
 //
 // The project's real intent is to run against Apache CXF's WS-Trust STS; this
-// mock is the CI fallback (see the plan / README) and the app can target either.
+// mock is the CI fallback (see the plan / README) and the app can target
+// either.
 //
 // Config via env:
 //   CONFIG_FILE  the configuration module to load, chosen the same way as for the
@@ -48,16 +49,17 @@
 // wstrust.issuer and wsfed.entityId, all three still fed by STS_ISSUER when it
 // is set.
 //
-// Logging: everything this mock does is written to the log at DEBUG level — every
-// endpoint call (path, request headers and body, response headers and body,
-// status code and elapsed time), and every SAML assertion, JWT and SD-JWT VC both
-// BEFORE and AFTER it was signed or encrypted. Drop the level to info (see
-// env/test.js) for a quiet run.
+// Logging: everything this mock does is written to the log at DEBUG level —
+// every endpoint call (path, request headers and body, response headers and
+// body, status code and elapsed time), and every SAML assertion, JWT and SD-JWT
+// VC both BEFORE and AFTER it was signed or encrypted. Drop the level to info
+// (see env/test.js) for a quiet run.
 //
 // ---------------------------------------------------------------------------
-// This file is now the SHELL only: it loads the modules and listens. It used to be
-// all 4,489 lines of the service, which is why the split happened — eight protocol
-// families in one file meant no way to see what was in it short of reading it.
+// This file is now the SHELL only: it loads the modules and listens. It used to
+// be all 4,489 lines of the service, which is why the split happened — eight
+// protocol families in one file meant no way to see what was in it short of
+// reading it.
 //
 //   helpers.js       the log, the keys, and the helpers more than one protocol needs
 //   app.js           the express app and every middleware, which must be installed
@@ -75,15 +77,15 @@
 //   vc_verifier.js   OID4VP: the request, and verifying what comes back
 //   sts_metadata.js  GET /admin/sts-metadata — every endpoint and spec, listed
 //
-// **Requiring a module registers its endpoints.** Each one does `app.get(...)` at
-// its top level against the shared app from app.js, rather than exporting a
+// **Requiring a module registers its endpoints.** Each one does `app.get(...)`
+// at its top level against the shared app from app.js, rather than exporting a
 // register() function — which kept every handler exactly where it was written
 // instead of re-indented inside a wrapper. So the order below is the route
-// order. Nothing here has overlapping paths, so it does not currently matter, but
-// a module registering a wildcard would care a great deal. sts_metadata.js is last
-// on purpose: it reads the router to list what everything else registered, and
-// while it re-reads it per request, being last means it is never the reason a
-// route is missing.
+// order. Nothing here has overlapping paths, so it does not currently matter,
+// but a module registering a wildcard would care a great deal. sts_metadata.js
+// is last on purpose: it reads the router to list what everything else
+// registered, and while it re-reads it per request, being last means it is
+// never the reason a route is missing.
 // ---------------------------------------------------------------------------
 
 // FIRST, and before any module that reads the appconfig file. Every module now
@@ -94,6 +96,7 @@
 // common/config_file.js.
 require('./common/config_file').resolveConfigFile();
 
+const http = require('http');
 const https = require('https');
 const app = require('./common/app');
 // `warmPqKeys` joins the three destructured names for one call in announce()
@@ -127,6 +130,10 @@ const requestPool = require('./common/request_pool');
 // reports the build it came from and restarting it does not renumber it. See
 // common/version.js and CLAUDE.md, *Versioning*.
 const version = require('./common/version');
+// The registry of failure codes, a LEAF. Every failure this file reports is
+// either about to end the process or is a listener that did not come up, and
+// each is logged with its code at the front — see common/error_codes.js.
+const errorCodes = require('./common/error_codes');
 const APP_VERSION = version.load();
 
 // ---------------------------------------------------------------------------
@@ -179,6 +186,7 @@ const krb5Service = stack.krb5Service;
 const tlsServer = stack.tlsServer;
 const ldapServer = stack.ldapServer;
 const spiffeServer = stack.spiffeServer;
+const debuggerServer = stack.debuggerServer;
 
 // ---------------------------------------------------------------------------
 // THE MAIN LISTENER, and the one decision made about it before it binds.
@@ -266,7 +274,10 @@ function announce() {
            '); POST SOAP RST to /sts');
   if (useHttps) {
     log.info('This port is HTTPS (global.https' +
-             (config.value('oauth2.rfc9700') ? ', which RFC 9700 mode turned on' : '') +
+             (config.value('oauth2.oauth21') ?
+              ', which OAuth 2.1 mode turned on' :
+              (config.value('oauth2.rfc9700') ?
+               ', which RFC 9700 mode turned on' : '')) +
              '), served with the same certificate 8443, 9443 and ' +
              'LDAPS 636 use. It is ' + tlsServer.certificateProvenance() +
              '. Fetch it from /tls/server-certificate and trust it — and ' +
@@ -283,52 +294,78 @@ function announce() {
            'console on this instance. Every endpoint is listed inside the ' +
            'console, at /admin/sts-metadata.');
   log.info('RFC 8414 metadata at /.well-known/oauth-authorization-server; ' +
-           'OpenID Provider Configuration at /.well-known/openid-configuration; JWKS at /oauth2/jwks');
-  log.info('OID4VCI issuer metadata at /.well-known/openid-credential-issuer; ' +
-           'credential endpoint at /oid4vci/credential');
-  log.info('Issuer-initiated (OID4VCI H.1): the issuer web page is at /issuer; ' +
-           'it builds a Credential Offer and sends the browser to the wallet.');
-  log.info('Authentication service at /authn/login (the sign-in screen every protocol here sends ' +
-           'a person to) and /authn/webauthn (its second factor).');
-  log.info('Mock authorization server endpoints: /oauth2/authorize (redirects to /authn/login when ' +
-           'there is no session), /oauth2/token, /oauth2/userinfo, /oauth2/introspect, ' +
+           'OpenID Provider Configuration at ' +
+           '/.well-known/openid-configuration; JWKS at /oauth2/jwks');
+  log.info('OID4VCI issuer metadata at ' +
+           '/.well-known/openid-credential-issuer; credential endpoint at ' +
+           '/oid4vci/credential');
+  log.info('Issuer-initiated (OID4VCI H.1): the issuer web page is at ' +
+           '/issuer; it builds a Credential Offer and sends the browser to ' +
+           'the wallet.');
+  log.info('Authentication service at /authn/login (the sign-in screen every ' +
+           'protocol here sends a person to) and /authn/webauthn (its second ' +
+           'factor).');
+  log.info('Mock authorization server endpoints: /oauth2/authorize ' +
+           '(redirects to /authn/login when there is no session), ' +
+           '/oauth2/token, /oauth2/userinfo, /oauth2/introspect, ' +
            '/oauth2/revoke, /oauth2/register, /oauth2/logout');
-  log.info('WS-Federation passive requestor at /wsfed (wsignin1.0 / wsignout1.0); metadata at ' +
-           '/FederationMetadata/2007-06/FederationMetadata.xml; a mock relying party that verifies ' +
-           'the sign-in response is at /wsfed/rp.');
-  log.info('Every endpoint call, and every token or assertion before and after it was signed, ' +
-           'is written to this log at debug level.');
-  log.info('A SPNEGO-protected page (RFC 4559 over RFC 4178) is advertised at /spnego and ' +
-           'lives at /spnego/protected; ?mic=require, ?mech=none and ?mutual=off make the ' +
-           'negotiation fail in one specific way each.');
+  log.info('WS-Federation passive requestor at /wsfed (wsignin1.0 / ' +
+           'wsignout1.0); metadata at ' +
+           '/FederationMetadata/2007-06/FederationMetadata.xml; a mock ' +
+           'relying party that verifies the sign-in response is at /wsfed/rp.');
+  log.info('Every endpoint call, and every token or assertion before and ' +
+           'after it was signed, is written to this log at debug level.');
+  log.info('A SPNEGO-protected page (RFC 4559 over RFC 4178) is advertised ' +
+           'at /spnego and lives at /spnego/protected; ?mic=require, ' +
+           '?mech=none and ?mutual=off make the negotiation fail in one ' +
+           'specific way each.');
   log.info('Every protocol, every endpoint and every specification this ' +
            'service implements is listed at /admin/sts-metadata (add ' +
            '?format=json for the machine-readable form, or use the Download ' +
            'button on the page). It is a console page, so it is behind ' +
-           'admin.authRequired like the rest of /admin; it was at ' +
+           'the console gate like the rest of /admin — a sign-on session and ' +
+           'one of two roles, unconditionally since global.mode replaced ' +
+           'admin.authRequired on 2026-09-06; it was at ' +
            '/sts-metadata until 2026-08-24.');
-  log.info('The management API is at /admin-api — every /admin control over JSON, with ' +
-           'its OpenAPI 3.1 document at /admin-api/openapi.json and an explorer that ' +
-           'calls it at /admin-api/docs. It is NOT protected either.');
-  log.info('The admin console is at /admin: /admin/metrics counts every call, token, assertion, ' +
-           'ticket and session; /admin/tokens lists every JWT, SAML assertion and Kerberos ticket ' +
-           'issued and invalidates access tokens, ID Tokens and refresh tokens (only those three ' +
-           'can be); /admin/claims adds custom claims to future tokens and /admin/saml-attributes ' +
-           'to future assertions. It is NOT ' +
-           'protected — nothing in this service is — so do not put this port on a public address.');
+  log.info('The management API is at /admin-api — every /admin control over ' +
+           'JSON, with its OpenAPI 3.1 document at /admin-api/openapi.json ' +
+           'and an explorer that calls it at /admin/api-explorer. It takes ' +
+           'an OAuth 2.0 access token audienced to it, carrying admin:read ' +
+           'to read and admin:write to change anything ' +
+           '(adminApi.authRequired).');
+  log.info('The admin console is at /admin: /admin/metrics counts every ' +
+           'call, token, assertion, ticket and session; /admin/tokens lists ' +
+           'every JWT, SAML assertion and Kerberos ticket issued and ' +
+           'invalidates access tokens, ID Tokens and refresh tokens (only ' +
+           'those three can be); /admin/claims adds custom claims to future ' +
+           'tokens and /admin/saml-attributes to future assertions. It is ' +
+           'NOT protected — nothing in this service is — so do not put this ' +
+           'port on a public address.');
   // The KDC's sockets are started here rather than at require time so that a
   // failure to bind (port 88 is privileged) is reported by a running service
-  // instead of preventing it from starting at all. GET /krb5/principals says what
-  // this KDC knows; GET /admin/sts-metadata cannot see a raw socket, so the
-  // listener has its own entry there.
+  // instead of preventing it from starting at all. GET /krb5/principals says
+  // what this KDC knows; GET /admin/sts-metadata cannot see a raw socket, so
+  // the listener has its own entry there.
   const kdcListeners = krb5.listen();
+  // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
+  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.js` into
+  // the parent project's Kerberos COPY set (`kerberos/CLAUDE.md`). Installing
+  // after `listen()` returned is not a race — `listen()` is synchronous up to
+  // the bind, and a `connection` event is delivered from the event loop,
+  // after this line. UDP is not covered: a datagram has no stream to put a
+  // header at the front of.
+  proxyProtocol.install(kdcListeners.tcp, {
+    label: 'the KDC (TCP ' + kdcListeners.port + ')', channel: 'kerberos' });
   kdcListeners.whenReady.then(function (ready) {
-    log.info('krb5: the KDC is reachable on TCP and UDP ' + ready.port + '; MS-KKDCP at /KdcProxy; ' +
-             'GET /krb5/principals lists what it knows.');
+    log.info('krb5: the KDC is reachable on TCP and UDP ' + ready.port + '; ' +
+             'MS-KKDCP at /KdcProxy; GET /krb5/principals lists what it ' +
+             'knows.');
   }).catch(function (err) {
-    // Reported rather than thrown: the rest of this service is still useful, and a
-    // silent failure to bind would surface later as a KDC that never answers.
-    log.error('krb5: the KDC could not start: ' + err.message);
+    // Reported rather than thrown: the rest of this service is still useful,
+    // and a silent failure to bind would surface later as a KDC that never
+    // answers.
+    log.error(errorCodes.tag('STS-CORE-0029') + 'krb5: the KDC could not ' +
+                                                'start: ' + err.message);
   });
   krb5Service.listen();
   // The LDAP directory's socket, started here for the same reason the KDC's is.
@@ -347,15 +384,16 @@ function announce() {
                : ', and NOT over LDAPS — ' + (ready.ldapsError ||
                  'it never bound') + ', which leaves the plain listener and ' +
                  'the rest of this service untouched') +
-             '. Every bind succeeds except the password "invalid"; ' +
-             'GET /admin/ldap/service describes it and GET ' +
-             '/admin/ldap/directory lists every entry. Both are admin console ' +
-             'pages and behind its gate; /admin-api mirrors them and is not.');
+             '. Every bind succeeds except the password "invalid"; GET ' +
+             '/admin/ldap/service describes it and GET /admin/ldap/directory ' +
+             'lists every entry. Both are admin console pages and behind its ' +
+             'gate; /admin-api mirrors them and is not.');
   }).catch(function (err) {
     // Reported rather than thrown, exactly as the KDC's failure is: the rest of
     // this service is still useful, and a silent failure to bind would surface
     // later as a directory that never answers.
-    log.error('ldap: the directory could not start: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0030') + 'ldap: the directory could ' +
+                                                'not start: ' + err.message);
   });
   // The two HTTPS listeners, started here for the same reason the other two
   // sockets are. GET /tls describes them and hands out the server certificate;
@@ -386,7 +424,39 @@ function announce() {
              'trust domain.');
   }).catch(function (err) {
     // Reported rather than thrown, exactly as the other three are.
-    log.error('spiffe: the SPIFFE listeners could not start: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0031') +
+              'spiffe: the SPIFFE listeners could not start: ' + err.message);
+  });
+  // THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13): `/pki/` and nothing else,
+  // because RFC 5280 section 8 and RFC 5019 section 5 put CRL and OCSP
+  // addresses on http:// — see pki/pki_service.js. Recorded rather than
+  // thrown, for the reason every raw listener here is.
+  require('./pki/pki_service').listen().whenReady.then(function (ready) {
+    if (ready.port) {
+      log.info('pki: the revocation endpoints are also on plain HTTP port ' +
+               ready.port + ' (/pki/ only), which is the address every ' +
+               'certificate this service issues names for its CRL, its OCSP ' +
+               'responder and its issuer\'s certificate.');
+    }
+  }).catch(function (err) {
+    log.error(errorCodes.tag('STS-CORE-0043') + 'pki: the plain-HTTP ' +
+              'revocation listener could not start: ' + err.message + '. ' +
+              'Every http:// CRL and OCSP address in this service\'s ' +
+              'certificates will answer nothing.');
+  });
+  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13): its own listener, then its
+  // api child. Recorded rather than thrown like every socket here — and a
+  // debugger that is not embedded, or not installed, says why on
+  // /admin/debugger and costs the rest of the service nothing.
+  debuggerServer.listen().whenReady.then(function (ready) {
+    if (ready.port) {
+      log.info('debugger: the identity protocol debugger is on port ' +
+               ready.port + ', for console administrators signed in ' +
+               'through this service. /admin/debugger reports it.');
+    }
+  }).catch(function (err) {
+    log.error(errorCodes.tag('STS-DBG-0016') + 'debugger: the listener ' +
+              'could not start: ' + err.message);
   });
   const tlsListeners = tlsServer.listen();
   tlsListeners.whenReady.then(function (ready) {
@@ -396,14 +466,15 @@ function announce() {
              'explained) and on ' + ready.mtlsPort + ' (one is REQUIRED, and ' +
              'refused during the handshake if it does not verify). GET ' +
              '/tls/whoami over either. The client truststore starts EMPTY — ' +
-             'POST the issuing CA to /tls/trust on this port — because the CA ' +
-             'it has to verify is usually generated in a browser minutes ' +
+             'POST the issuing CA to /tls/trust on this port — because the ' +
+             'CA it has to verify is usually generated in a browser minutes ' +
              'before the connection.');
   }).catch(function (err) {
     // Reported rather than thrown, as the other two are: the rest of this
     // service is still useful, and a silent failure to bind would surface
     // later as a TLS endpoint that never answers.
-    log.error('tls: the TLS endpoint could not start: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0032') + 'tls: the TLS endpoint could ' +
+                                                'not start: ' + err.message);
   });
   log.debug('Leaving announce().');
 }
@@ -457,7 +528,13 @@ function shutdown(signal) {
   // that pool first would fail the job the request is blocked on and turn a
   // clean shutdown into a truncated answer.
   // ---------------------------------------------------------------------
-  requestPool.stop().then(function (drained) {
+  // The debugger's api child first: it is not a worker of either pool and
+  // holds nothing worth draining, and an orphan would keep its socket.
+  debuggerServer.close().catch(function (e) {
+    log.debug('Caught in shutdown(): ' + ((e && e.message) || e));
+  }).then(function () {
+    return requestPool.stop();
+  }).then(function (drained) {
     if (drained.stopped || drained.killed) {
       log.info('sts: ' + drained.stopped + ' request worker(s) finished and ' +
                drained.killed + ' had to be killed.');
@@ -476,7 +553,8 @@ function shutdown(signal) {
     // stop() already logs its own failure and does not reject in the ordinary
     // case; this exists so that an unexpected one still ends the process
     // rather than leaving it hanging with no listener and no explanation.
-    log.error('sts: the shutdown flush failed: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0033') + 'sts: the shutdown flush ' +
+                                                'failed: ' + err.message);
     process.exit(1);
   });
   log.debug('Leaving shutdown().');
@@ -539,10 +617,18 @@ process.on('SIGINT', function () { shutdown('SIGINT'); });
 // The credential verifier, for the product-mode bootstrap below. A LEAF
 // (rule 3) that registers no route, so this require adds nothing to the router.
 const credentials = require('./common/credentials');
+// The console roles, for the bootstrap administrator below. A LIBRARY (rule 3)
+// that the protocol stack has already loaded, so this is a cache hit that
+// registers no route.
+const adminRbac = require('./admin-ui/admin_rbac');
 // The keystore, for the product-mode key material. A LEAF (rule 3).
 const keystore = require('./common/keystore');
 // The four startup steps, shared with a request worker. See that file.
 const serviceState = require('./common/service_state');
+// The PROXY protocol v2 reader, a LIBRARY (rule 3): installed on the main
+// listener in bind() and on the KDC's TCP listener in announce(), and asked
+// once, below, whether this process may start at all. See that file.
+const proxyProtocol = require('./common/proxy_protocol');
 
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S STATE, IN THE ONE ORDER THERE IS.
@@ -554,6 +640,16 @@ const serviceState = require('./common/service_state');
 // ---------------------------------------------------------------------------
 serviceState.start().then(function (both) {
   const started = both.started;
+  // THE PROXY PROTOCOL WITH NOBODY TRUSTED (2026-09-14, #46): refused here,
+  // after the store restored any runtime `global.trustedProxies` and before
+  // anything binds, for the reason `startupProblem()` gives — such a process
+  // either refuses every client or lets any caller name any address.
+  const proxyProblem = proxyProtocol.startupProblem();
+  if (proxyProblem) {
+    log.fatal(errorCodes.tag('STS-PROXY-0009') + 'sts: NOT STARTING. ' +
+              proxyProblem);
+    process.exit(1);
+  }
   if (started.mode !== 'memory') {
     const mintedStatus = persistence.mintedStatus();
     log.info('sts: persistence is ' + started.mode + '. The embedded ' +
@@ -594,7 +690,47 @@ serviceState.start().then(function (both) {
   //
   // It does nothing in development mode and nothing in a realm where somebody
   // already holds a credential; see credentials.bootstrap().
-  credentials.bootstrap({ username: config.value('admin.bootstrapUsername') });
+  // THE BOOTSTRAP ADMINISTRATOR FIRST (2026-09-13): `admin.bootstrapUsername`
+  // in the default realm, made if absent, in both console roles, and forced to
+  // change its password at its first sign-in. `credentials.bootstrap()` below
+  // then gives that account its generated password in product mode. See
+  // admin-ui/admin_rbac.js's seedBootstrapAdministrator().
+  //
+  // **ONCE FOR THE CLUSTER, SINCE 2026-09-14 (#46 section 8).** Several nodes
+  // cold-started against one empty store each seeded the account and each
+  // printed a password, and only the last writer's worked — or none, when a
+  // node's seed landed after another node's password. Both steps now run
+  // inside `credentials.bootstrapOnce()`, one claim per realm: the node that
+  // wins does them after catching up with the store, and every other node
+  // does neither and says which node is. It is awaited below, before the
+  // request workers start, so the listener still binds only after it ran.
+  const bootstrapUsername = config.value('admin.bootstrapUsername');
+  const otherRealms = realms.list().filter(function (realm) {
+    return realm.id !== realms.DEFAULT_ID;
+  });
+  const bootstrapped = realms.run(realms.DEFAULT_REALM, function () {
+    return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
+      adminRbac.seedBootstrapAdministrator();
+      return credentials.bootstrap({ username: bootstrapUsername });
+    });
+  }).then(function () {
+    // AND EVERY TRUST REALM THIS PROCESS STARTED WITH (2026-09-14, #32): each
+    // has an administrator of its own, confined to it. A realm created while
+    // running is given one by the create action itself; this is for a realm
+    // restored from the store that predates the feature, or whose account was
+    // removed. Both steps are idempotent, exactly as they are for the default
+    // realm above — and one realm at a time, each under its own claim.
+    return otherRealms.reduce(function (chain, realm) {
+      return chain.then(function () {
+        return realms.run(realm, function () {
+          return credentials.bootstrapOnce(realm.id, function () {
+            adminRbac.seedBootstrapAdministrator(realm.id);
+            return credentials.bootstrap({ username: bootstrapUsername });
+          });
+        });
+      });
+    }, Promise.resolve());
+  });
 
   // ---------------------------------------------------------------------
   // THE REQUEST WORKERS, AND THEY COME UP BEFORE THE LISTENER DOES.
@@ -620,27 +756,55 @@ serviceState.start().then(function (both) {
   // the pool forks anything — see request_pool.js's setServerCertificate() for
   // why it travels this way round, and tls_server.js for what went wrong when
   // each worker made its own.
+  // **THE CHAIN AND THE ANCHOR TRAVEL WITH IT (2026-09-11), AND LEAVING THEM
+  // BEHIND WAS A REAL FAILURE RATHER THAN AN OMISSION.** A worker was handed
+  // the leaf and the key and nothing else, so it had no chain to present and
+  // — worse — `trustAnchorPems()` fell back to asking `common/pki.js` for the
+  // Root, which in a worker is a Root that worker built itself. The certificate
+  // came from the front process and the anchor came from the worker, they were
+  // from different hierarchies, and `/portal` and `/admin` failed their own
+  // back channel with `unable to get local issuer certificate`. Both halves
+  // have to come from the process that made the certificate.
   const tlsMaterial = tlsServer.serverCertificate();
   requestPool.setServerCertificate({ certPem: tlsMaterial.certPem,
-                                     keyPem: tlsMaterial.privateKeyPem });
+                                     keyPem: tlsMaterial.privateKeyPem,
+                                     chainPem: tlsMaterial.chainPem,
+                                     trustAnchorPem:
+                                       tlsMaterial.trustAnchorPem });
   // AND THE BBS PAIR, for the same reason and on the same channel. Awaited here
   // because generating one is asynchronous and the pool's start() is not the
   // place to wait — see request_pool.js's setBbsKeyPair(). A failure is logged
   // and not fatal: each process then makes its own, which is what it did
   // before, and only Data Integrity proofs are affected.
-  return bbsKeyPairForSharing().then(function (encoded) {
-    requestPool.setBbsKeyPair(encoded);
-  }).catch(function (e) {
-    log.error('sts: the BBS key pair could not be shared with the request ' +
-              'workers (' + e.message + '); each will generate its own and a ' +
-              'did:web document may name a key its siblings did not sign with.');
+  // The bootstrap first, OUTSIDE the BBS pair's catch: a bootstrap that
+  // throws is fatal at startup, as it was when it ran synchronously above.
+  return bootstrapped.then(function () {
+    return bbsKeyPairForSharing().then(function (encoded) {
+      requestPool.setBbsKeyPair(encoded);
+    }).catch(function (e) {
+      log.error(errorCodes.tag('STS-CORE-0034') +
+                'sts: the BBS key pair could not be shared with the request ' +
+                'workers (' + e.message + '); each will generate its own and ' +
+                'a did:web document may name a key its siblings did not ' +
+                'sign with.');
+    });
   }).then(function () {
     return requestPool.start().then(function (pool) {
       if (pool.wanted) {
         log.info('sts: ' + pool.started + ' of ' + pool.wanted + ' request ' +
                  'worker(s) are serving' +
+                 // Per pool, when the hosted surfaces have workers of their
+                 // own — see common/request_pool.js's two-pools block.
+                 ((pool.pools || []).some(function (one) {
+                   return one.pool !== 'protocol' && one.wanted;
+                 })
+                   ? ' (' + pool.pools.map(function (one) {
+                     return one.started + ' of ' + one.wanted + ' ' + one.pool;
+                   }).join(', ') + ')'
+                   : '') +
                  (requestPool.dispatchPrefixes().length
-                   ? '; dispatching ' + requestPool.dispatchPrefixes().join(', ')
+                   ? '; dispatching ' +
+                     requestPool.dispatchPrefixes().join(', ')
                    : '. NOTHING IS DISPATCHED TO THEM — workers.dispatch is ' +
                      'empty, so every request is still handled here') + '.');
       }
@@ -659,19 +823,31 @@ serviceState.start().then(function (both) {
   // database. Told apart on the message rather than on a flag, because
   // keystore.js writes a complete explanation and this only has to choose which
   // paragraph follows it.
-  if (/key material|key-encryption key|signing key|minted state/i.test(err.message || '')) {
-    log.fatal('sts: NOT STARTING. ' + err.message +
+  // A CLUSTER REFUSAL (2026-09-14, #46) carries its whole explanation — which
+  // mode, which setting, which node differs — and neither paragraph below is
+  // about it: the store opened and the keys are fine. See cluster/cluster.js.
+  if (/STS-CLUSTER-\d{4}/.test(err.message || '')) {
+    // error-code: none — the refusal's own STS-CLUSTER code leads err.message
+    log.fatal(err.message + ' The service is NOT STARTING.');
+    process.exit(1);
+  }
+  if (/key material|key-encryption key|signing key|minted state/i.test(
+      err.message || '')) {
+    log.fatal(errorCodes.tag('STS-CORE-0035') + 'sts: NOT STARTING. ' +
+              err.message +
               '\n\nThis service will not generate a replacement signing key ' +
               'and carry on. Doing that would silently stop every token, ' +
               'assertion and signed document it has ever issued from ' +
               'verifying — at somebody else\'s relying party, with nothing ' +
               'in any log here to point at. Fix the key-encryption key ' +
-              '(keys.kekProvider=' + require('./common/config').value('keys.kekProvider') +
+              '(keys.kekProvider=' + require('./common/config').value(
+                  'keys.kekProvider') +
               '), or set keys.source=generated to accept a new key on every ' +
               'start, which is what development mode does.');
     process.exit(1);
   }
-  log.fatal('sts: NOT STARTING. ' + err.message +
+  log.fatal(errorCodes.tag('STS-CORE-0036') + 'sts: NOT STARTING. ' +
+            err.message +
             '\n\nThis service is configured to persist (persistence.mode=' +
             persistence.mode() + '), so it will not run without its store: a ' +
             'process answering out of a seeded directory while presenting ' +
@@ -687,9 +863,10 @@ serviceState.start().then(function (both) {
 // one expression and writing the whole announcement twice is how the two
 // versions of it come to say different things.
 function bind() {
+log.debug("Entering bind().");
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
-  const mainServer = https.createServer({
+  const mainServer = https.createServer(Object.assign({
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
     // THE CLIENT TRUSTSTORE, THE SAME ONE /tls/trust FILLS FOR 8443 AND 9443
@@ -720,15 +897,31 @@ if (useHttps) {
     // truststore at /tls/trust starts empty by design.
     requestCert: true,
     rejectUnauthorized: false
-  }, app);
+  // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that
+  // states them for every TLS listener — at creation as well as on every
+  // truststore change, so the first handshake is held to the same floor as the
+  // hundredth.
+  }, tlsServer.protocolOptions()), app);
   // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
   // is a registration rather than a require in the other direction because
   // this file requires that module, not the other way round.
-  tlsServer.trustClientCertificatesOn(mainServer, 'the main port (' + PORT + ')');
+  tlsServer.trustClientCertificatesOn(mainServer,
+                                      'the main port (' + PORT + ')');
+  // The PROXY protocol header comes off BEFORE the TLS handshake — see
+  // common/proxy_protocol.js. A no-op with global.proxyProtocol off.
+  proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',
+                                      channel: 'http' });
   mainServer.listen(PORT, HOST, announce);
 } else {
-  app.listen(PORT, HOST, announce);
+  // `http.createServer(app)` rather than `app.listen()`, which is the same
+  // thing with the server object hidden — and the PROXY protocol has to be
+  // installed on that object before it listens.
+  const plainServer = http.createServer(app);
+  proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
+                                       channel: 'http' });
+  plainServer.listen(PORT, HOST, announce);
 }
+log.debug("Leaving bind().");
 }

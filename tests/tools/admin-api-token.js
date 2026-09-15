@@ -26,7 +26,15 @@
 const https = require('https');
 const http = require('http');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'admin-api-token',
+  level: process.env.LOG_LEVEL || 'info' });
+
 function request(url, options, body) {
+  log.debug("Entering request().");
+  log.debug("Leaving request().");
   return new Promise(function (resolve, reject) {
     const u = new URL(url);
     const mod = u.protocol === 'http:' ? http : https;
@@ -56,22 +64,29 @@ function request(url, options, body) {
 // own JSON door — which is open to a caller holding the console session — and
 // falls back to the environment where a deployment has been given one.
 async function secretFor(base) {
+  log.debug("Entering secretFor().");
   if (process.env.STS_ADMIN_API_CLIENT_SECRET) {
+    log.debug("Leaving secretFor().");
     return process.env.STS_ADMIN_API_CLIENT_SECRET;
   }
   const reply = await request(base + '/admin-api/applications?identifier=' +
                               encodeURIComponent('sts-management-api'));
   if (reply.status !== 200) {
+    log.debug("Leaving secretFor().");
     return '';
   }
   try {
     const body = JSON.parse(reply.text);
-    const rows = body.applications || (body.application ? [body.application] : []);
+    const rows = body.applications ||
+                 (body.application ? [body.application] : []);
     const row = rows.filter(function (one) {
       return one && one.identifier === 'sts-management-api';
     })[0];
+    log.debug("Leaving secretFor().");
     return (row && row.registration && row.registration.client_secret) || '';
   } catch (e) {
+    log.debug("Caught in secretFor(): " + ((e && e.message) || e));
+    log.debug("Leaving secretFor().");
     return '';
   }
 }
@@ -80,6 +95,8 @@ async function secretFor(base) {
 // Empty configuration means "this service's own /admin-api under the host the
 // request arrived on", so the launcher asks for exactly the base it is driving.
 function audienceFor(base) {
+  log.debug("Entering audienceFor().");
+  log.debug("Leaving audienceFor().");
   return String(base).replace(/\/+$/, '') + '/admin-api';
 }
 
@@ -95,6 +112,7 @@ function audienceFor(base) {
 // that restated them would go on passing against a service that had changed
 // any of them.
 async function mint(base, secret, options) {
+  log.debug("Entering mint().");
   const wanted = options || {};
   const audience = wanted.audience || audienceFor(base);
   const scope = wanted.scope === undefined ? 'admin:read admin:write'
@@ -120,16 +138,19 @@ async function mint(base, secret, options) {
     throw new Error('the token endpoint answered 200 with no access_token: ' +
                     reply.text.slice(0, 300));
   }
+  log.debug("Leaving mint().");
   return body.access_token;
 }
 
 async function tokenFor(base, options) {
+  log.debug("Entering tokenFor().");
   const secret = await secretFor(base);
   if (!secret) {
     throw new Error('could not read the sts-management-api client secret from ' +
                     base + '. Set STS_ADMIN_API_CLIENT_SECRET, or start the ' +
                     'service with adminApi.authRequired=false to read it.');
   }
+  log.debug("Leaving tokenFor().");
   return mint(base, secret, options);
 }
 

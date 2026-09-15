@@ -2,6 +2,36 @@
 #
 # Pinned to Node 24.16.0 via nvm rather than an official node image, which is what
 # the project this was extracted from does for all of its services.
+
+# ---------------------------------------------------------------------------
+# THE EMBEDDED PROTOCOL DEBUGGER'S BUILT TREE (2026-09-13), TAKEN FROM AN IMAGE
+# AND NEVER BUILT HERE.
+#
+# The debugger project builds its client and api for embedding with
+# `embedded/Dockerfile`, into an image whose only content is `/debugger/ui`,
+# `/debugger/api` (with its own node_modules) and `/debugger/common`. This
+# build copies that tree to `debugger/embedded/` and nothing else, so this
+# image's dependency tree and that one's never meet — `debugger/CLAUDE.md`
+# argues why that is the whole of the design.
+#
+# **AN IMAGE AND NOT A SECOND BUILD CONTEXT OR A SUBMODULE.** This machine's
+# docker has no BuildKit, so `--build-context` is not available; and this
+# repository is already a submodule of the debugger project, so the reverse
+# would be a cycle. `COPY --from` an image works with the classic builder.
+#
+# **DEFAULTS TO A STAGE WITH AN EMPTY TREE**, so a build that names no
+# debugger image succeeds exactly as it did before: the listener then reports
+# the debugger as not installed on /admin/debugger and the rest of the service
+# is unaffected. Pass
+#   --build-arg DEBUGGER_IMAGE=rcbj/id-proto-debugger-embedded:<tag>
+# to embed one. The indirection through a stage name is what lets the default
+# be "nothing" under the classic builder, which cannot make a COPY optional.
+# ---------------------------------------------------------------------------
+ARG DEBUGGER_IMAGE=debugger-none
+FROM ubuntu:latest AS debugger-none
+RUN mkdir -p /debugger
+FROM ${DEBUGGER_IMAGE} AS debugger
+
 FROM ubuntu:latest
 
 # replace shell with bash so we can source files
@@ -16,7 +46,21 @@ RUN apt-get -y install curl \
         wget \
         unzip \
         util-linux \
-        bsdextrautils
+        bsdextrautils \
+        # SECONDARY IP ADDRESSES FOR THE PER-REALM SPIFFE LISTENERS (2026-09-12).
+        #
+        # A realm with SPIFFE turned on binds a Workload API and a SPIRE
+        # Server API of its own, and what keeps two realms apart is the
+        # ADDRESS rather than the port — a SPIFFE client has nowhere else to
+        # name a tenant, because the gRPC method name is fixed by the
+        # specification. So a container running two realms needs two
+        # addresses, and `ip addr add` is how it gets them.
+        #
+        # ONE PACKAGE, and it is in the image rather than installed at start
+        # for the ordinary reason: a container that apt-gets on the way up
+        # fails to start when the network it is being given is the thing that
+        # is broken.
+        iproute2
 
 # Install NVM
 ENV NVM_DIR /usr/local/nvm
@@ -66,6 +110,7 @@ COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs
 RUN npm install --omit=dev && npm cache clean --force
 
+
 # THE WHOLE SOURCE TREE IN ONE LINE, and that is deliberate rather than lazy.
 #
 # The service is a shell: server.js requires the other modules and listens, so a
@@ -105,6 +150,80 @@ RUN npm install --omit=dev && npm cache clean --force
 # .dockerignore; node-ldapjs is copied above, ahead of the install, and copying
 # it again here is a no-op on identical content.
 COPY . ./
+
+# ---------------------------------------------------------------------------
+# THE SECRET-STORE SDK, AND WHY IT IS INSTALLED HERE RATHER THAN DECLARED AS A
+# DEPENDENCY (2026-09-12).
+#
+# `common/secrets.js` reads the key-encryption key and the database password
+# from one of five places, and four of them need somebody else's SDK. Those are
+# OPTIONAL PEER dependencies on purpose — that file's header argues it at
+# length: this package is installed by the debugger's suite and by CI, and
+# carrying four cloud SDKs to use none of them would be a cost every one of
+# those installs pays.
+#
+# **THE IMAGE IS THE OTHER CASE.** The stack this repository ships now brings up
+# an OpenBao container and points the service at it, so the image REQUIRES the
+# Vault SDK to start. It is installed here, with `--no-save`, so that the
+# container has it and a checkout still does not — which is exactly the split
+# the peer declaration describes.
+#
+# **IT IS AFTER `COPY . ./` AND THAT IS NOT A STYLE CHOICE.** Installed
+# before it, the package is there at that step and GONE from the finished
+# image: the copy brings the build context's own `node_modules` over the
+# top of the one npm just wrote into. `.dockerignore` carries
+# `**/node_modules`, which reads as though it prevents exactly that and does
+# not for the tree's own top-level directory. Installing after the copy is
+# the fix that does not depend on reading that pattern correctly.
+#
+# The three cloud SDKs are deliberately NOT installed: nothing in this stack
+# dials AWS, GCP or Azure, and a deployment that does runs one `npm install` in
+# its own image. `secrets.js` names the package to install when one is missing.
+# **AND IT GOES IN A PREFIX OF ITS OWN, WHICH IS npm's DOING.** `npm install
+# node-vault` inside this tree does NOTHING and says "up to date": the package
+# is declared here as an OPTIONAL PEER, and npm treats an absent optional peer
+# as a satisfied one — an explicit install request included. Every spelling of
+# `--include=optional`, `--no-save` and `--force` answers the same way. So the
+# SDK is installed into a prefix that has no opinion about this package.json,
+# and `NODE_PATH` is what makes `require('node-vault')` find it.
+RUN mkdir -p /opt/sts-sdk \
+    && cd /opt/sts-sdk \
+    && npm init -y > /dev/null \
+    && npm install --omit=dev node-vault \
+    && npm cache clean --force
+ENV NODE_PATH=/opt/sts-sdk/node_modules
+# ---------------------------------------------------------------------------
+# A CLOUD SDK AND A DATABASE CA, FOR AN IMAGE THAT RUNS IN A CLOUD (2026-09-15).
+#
+# The paragraph above leaves the three cloud SDKs out, and for THIS stack that
+# is still right. `deploy/aws/` (issue #51) runs the same image on ECS against
+# AWS Secrets Manager and RDS, so it needs `@aws-sdk/client-secrets-manager`
+# and the RDS certificate bundle — and "a deployment runs one `npm install` in
+# its own image" is exactly what these two build arguments are, spelt once
+# here rather than in a second Dockerfile that would drift from this one.
+#
+# * `STS_CLOUD_SDKS` — space-separated package names, installed into the same
+#   prefix as node-vault (npm's peer rule above applies to them too). Empty by
+#   default, so the image every other launcher builds is unchanged.
+# * `STS_DATABASE_CA_URL` — a PEM bundle fetched into
+#   /opt/sts-sdk/database-ca.pem. Node reads it through `NODE_EXTRA_CA_CERTS`,
+#   which the deployment sets; this service has no CA-file setting of its own
+#   for the database (`persistence/CLAUDE.md`). Fetched at BUILD time, so a
+#   container never needs the network to trust its own database.
+# ---------------------------------------------------------------------------
+ARG STS_CLOUD_SDKS=
+ARG STS_DATABASE_CA_URL=
+RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
+    then \
+      cd /opt/sts-sdk \
+      && npm install --omit=dev ${STS_CLOUD_SDKS} \
+      && npm cache clean --force; \
+    fi \
+    && if [ -n "${STS_DATABASE_CA_URL}" ]; \
+    then \
+      curl -fsSL "${STS_DATABASE_CA_URL}" -o /opt/sts-sdk/database-ca.pem \
+      && grep -q 'BEGIN CERTIFICATE' /opt/sts-sdk/database-ca.pem; \
+    fi
 # ---------------------------------------------------------------------------
 # AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
 #
@@ -157,8 +276,21 @@ COPY . ./
 # timeout sits above the sum of the two ./docker-run-tests.sh reaches itself,
 # so the workflow is the subject of a test and has to be in the context. The
 # rest of `.github` is still excluded and nothing here reads any of it.
+#
+# **AND `docs` AND `docker-compose-run-tests.yml` ON 2026-09-14**, for the same
+# reason again: tests/error_codes.js reads docs/error-codes.md and
+# docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
+# read the test compose file. Excluded from the context, all three failed with
+# ENOENT in the first ./docker-run-tests.sh run that reached them.
+# `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
+# from a workstation or CI and never by the service.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
-           ./.github
+           ./.github ./docs ./docker-compose-run-tests.yml ./deploy
+
+# The debugger's built tree — see the stage at the top of this file. After the
+# `rm` above and before the version stamp, and into the directory
+# `debugger.uiDirectory` and `debugger.apiDirectory` default to.
+COPY --from=debugger /debugger/ ./debugger/embedded/
 # ---------------------------------------------------------------------------
 # FIX THIS IMAGE'S BUILD NUMBER (M.N.O) AND SHIP IT IN version.json.
 #
@@ -218,6 +350,9 @@ ENV CONFIG_FILE=./env/local.js
 # separately. A compose file that publishes 389 and not 636 offers a directory a
 # TLS client cannot reach, with nothing in the image to say why.
 EXPOSE 8081
+# The plain-HTTP revocation listener (2026-09-13): /pki/ only, and the
+# address every certificate names for its CRL and OCSP responder.
+EXPOSE 8082
 EXPOSE 88/tcp
 EXPOSE 88/udp
 EXPOSE 389
@@ -246,4 +381,7 @@ EXPOSE 8888
 # client pointed at `tcp://host:8092` explicitly.
 EXPOSE 8092
 EXPOSE 8181
+# The embedded protocol debugger's listener (debugger.port), when it is
+# embedded and installed. See debugger/CLAUDE.md.
+EXPOSE 8444
 CMD [ "node", "server.js" ]

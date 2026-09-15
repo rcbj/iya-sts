@@ -141,17 +141,23 @@ const { Command, Option } = require("commander");
 const bulk = require("./bulk_load.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_directory_bulk_load_scim",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -164,9 +170,34 @@ const STAMP = bulk.stampFor("scim");
 // SCIM needs a credential (RFC 7644 section 2 — `scim/CLAUDE.md` argues it).
 // In development mode any username and any password but one is accepted, so
 // this is a turnstile rather than a lock and the name is what it authenticates.
+//
+// **THE CALLER IS A PERSON THIS JOB CREATES FIRST, WITH A REAL PASSWORD
+// (2026-09-12)**, in `createTheCaller()`, because product mode verifies a SCIM
+// Basic credential against the named person's own `userPassword` — so a name
+// nobody created, with a word nothing checks, is a credential only development
+// accepts. It is one entry, made after the preflight has raised the ceiling and
+// before anything is timed.
 const SCIM_USER = "bulk-load-" + STAMP.run;
+const SCIM_PASSWORD = "bulk-load-scim-Passw0rd!-" + STAMP.run;
 const SCIM_AUTH = "Basic " +
-    Buffer.from(SCIM_USER + ":not-checked-in-development").toString("base64");
+    Buffer.from(SCIM_USER + ":" + SCIM_PASSWORD).toString("base64");
+
+async function createTheCaller() {
+  log.debug("Entering createTheCaller().");
+  const made = await http.postJson(http.api("/users/create"), {
+    username: SCIM_USER, invent: false,
+    attributes: { cn: "Bulk Load SCIM Caller", givenName: "Bulk",
+                  sn: "SCIM Caller", displayName: "Bulk Load SCIM Caller",
+                  mail: SCIM_USER + "@bulk-load.test" },
+    credential: "password", password: SCIM_PASSWORD
+  });
+  assert.ok(made.status === 200 && made.body && made.body.ok &&
+            made.body.passwordSet,
+    "POST /admin-api/users/create should create the SCIM caller " + SCIM_USER +
+    " with a password; it answered " + made.status + " " +
+    JSON.stringify(made.body).slice(0, 300));
+  log.debug("Leaving createTheCaller().");
+}
 
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
@@ -175,6 +206,8 @@ var checks = bulk.checker(log);
 const check = checks.check;
 
 function scim(method, path, payload) {
+  log.debug("Entering scim().");
+  log.debug("Leaving scim().");
   return http.timed(base + "/scim/v2" + path, {
     method: method,
     headers: { "Content-Type": "application/scim+json",
@@ -262,6 +295,7 @@ async function readTheMapping(catalogue) {
 // written for any depth because a mapping row is data and a two-level
 // assumption would be this file knowing something about it that it read.
 function setPath(target, path, value) {
+  log.debug("Entering setPath().");
   const parts = String(path).split(".");
   let node = target;
   for (let n = 0; n < parts.length - 1; n += 1) {
@@ -271,6 +305,7 @@ function setPath(target, path, value) {
     node = node[parts[n]];
   }
   node[parts[parts.length - 1]] = value;
+  log.debug("Leaving setPath().");
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +322,7 @@ function setPath(target, path, value) {
 //   bool        not reached: nothing bulk_load.js generates maps to one
 // ---------------------------------------------------------------------------
 function resourceFor(person, sendable, byLdap) {
+  log.debug("Entering resourceFor().");
   const resource = {
     schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
     userName: person.username
@@ -337,6 +373,7 @@ function resourceFor(person, sendable, byLdap) {
     // declaring a schema it sends nothing for.
     resource.schemas = resource.schemas.concat([ENTERPRISE]);
   }
+  log.debug("Leaving resourceFor().");
   return resource;
 }
 
@@ -385,16 +422,20 @@ async function createThePeople(sendable, byLdap) {
       "population than the one it claims, which is why this is asserted " +
       "rather than reported.");
   });
-  check("every created person came back with an id, and it is their DN",
-        function () {
+  // `dn` on each row is the SCIM id the create returned, which is the
+  // person's entryUUID since 2026-09-14; the membership writes below send it
+  // as a member value and the service stores the DN it names.
+  check("every created person came back with an id, and it is their " +
+        "entryUUID", function () {
     const wrong = created.filter(function (one) {
-      return String(one.dn).toLowerCase().indexOf(",") < 0;
+      return !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        .test(String(one.dn));
     });
     assert.strictEqual(wrong.length, 0,
-      "the SCIM id of a person here IS their directory entry's DN — that is " +
-      "what `scim/CLAUDE.md` says and what the membership writes below " +
-      "depend on. " + wrong.length + " came back with something else, e.g. " +
-      JSON.stringify(wrong.slice(0, 3)));
+      "the SCIM id of a person here is their directory entry's entryUUID " +
+      "(RFC 4530) — `scim/CLAUDE.md` says so, and the membership writes " +
+      "below send it. " + wrong.length + " came back with something else, " +
+      "e.g. " + JSON.stringify(wrong.slice(0, 3)));
   });
 
   const summary = bulk.summaryOf(watch);
@@ -442,13 +483,16 @@ async function createTheGroups() {
       created.length + " of " + SIZES.GROUPS + " groups were created. The " +
       "first few refusals were:\n  " + failures.join("\n  "));
   });
-  check("each group came back with an id, and it is its DN", function () {
+  check("each group came back with an id, and it is its entryUUID",
+        function () {
     const wrong = created.filter(function (one) {
-      return one.id.toLowerCase().indexOf("cn=") !== 0;
+      return !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        .test(String(one.id));
     });
     assert.strictEqual(wrong.length, 0,
-      "the SCIM id of a group here IS its directory entry's DN. " +
-      wrong.length + " came back with something else, e.g. " +
+      "the SCIM id of a group here is its directory entry's entryUUID " +
+      "(RFC 4530), which a rename does not change — it was the DN until " +
+      "2026-09-14. " + wrong.length + " came back with something else, e.g. " +
       JSON.stringify(wrong.slice(0, 3)));
   });
 
@@ -555,7 +599,8 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
   // entries, and that is precisely the failure this is here for.
   const step = Math.max(1, Math.floor(people.length / SIZES.SAMPLE));
   const sampled = [];
-  for (let i = 0; i < people.length && sampled.length < SIZES.SAMPLE; i += step) {
+  for (let i = 0; i < people.length &&
+                  sampled.length < SIZES.SAMPLE; i += step) {
     sampled.push(people[i]);
   }
 
@@ -575,9 +620,9 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
   check("the sampled people are all in the directory", function () {
     assert.strictEqual(missing, 0,
       missing + " of " + sampled.length + " sampled people could not be read " +
-      "back at GET /scim/v2/Users/<dn>, spread across the whole run. A create " +
-      "that answered 201 and stored nothing is the defect that makes every " +
-      "timing above meaningless.");
+      "back at GET /scim/v2/Users/<dn>, spread across the whole run. A " +
+      "create that answered 201 and stored nothing is the defect that makes " +
+      "every timing above meaningless.");
     assert.deepStrictEqual(wrongValues, [],
       "and each must read back under the username it was created with.");
   });
@@ -594,8 +639,19 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
     assert.strictEqual(entry.status, 200,
       "GET /admin-api/ldap/directory answered " + entry.status + ".");
     const rows = (entry.body && entry.body.entries) || [];
+    // `one.dn` is the SCIM id, which is the entry's `entryUUID` since
+    // 2026-09-14 and no longer its DN — so the row is the one whose own
+    // `entryUUID` attribute is that id. The DN comparison is kept beside it
+    // for a service from before the change, where the id was the DN.
     const found = rows.filter(function (row) {
-      return String(row.dn || "").toLowerCase() === one.dn.toLowerCase();
+      const attributes = row.attributes || {};
+      const uuid = Object.keys(attributes).filter(function (name) {
+        return name.toLowerCase() === "entryuuid";
+      }).map(function (name) {
+        return [].concat(attributes[name]).map(String);
+      })[0] || [];
+      return uuid.indexOf(one.dn) >= 0 ||
+             String(row.dn || "").toLowerCase() === one.dn.toLowerCase();
     })[0];
     assert.ok(found,
       "the entry at " + one.dn + " is not in the directory's own view of " +
@@ -657,10 +713,10 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
         function () {
     assert.deepStrictEqual(wrongCounts, [],
       "these groups do not hold what was written into them. `memberCount` is " +
-      "the values on the entry, `presentCount` how many of them name an entry " +
-      "this directory holds, and a difference between the two is a dangling " +
-      "member — which is what a membership written from the wrong DN " +
-      "produces, silently, with a 200 on the way in:\n  " +
+      "the values on the entry, `presentCount` how many of them name an " +
+      "entry this directory holds, and a difference between the two is a " +
+      "dangling member — which is what a membership written from the wrong " +
+      "DN produces, silently, with a 200 on the way in:\n  " +
       wrongCounts.join("\n  "));
   });
 
@@ -679,13 +735,14 @@ async function test() {
   log.info("Filling the DEFAULT realm's directory at " + base + " with " +
            SIZES.USERS + " people, " + SIZES.GROUPS + " groups and " +
            (SIZES.GROUPS * SIZES.PER_GROUP) + " memberships, ALL OF IT OVER " +
-           "SCIM 2.0. NOTHING IS DELETED AFTERWARDS — that is deliberate, and " +
-           "tests/CLAUDE.md argues it.");
+           "SCIM 2.0. NOTHING IS DELETED AFTERWARDS — that is deliberate, " +
+           "and tests/CLAUDE.md argues it.");
 
   bulk.checkSizes(assert);
 
   const ready = await bulk.preflight({ log: log, assert: assert, http: http,
                                        checks: checks });
+  await createTheCaller();
   const mapping = await readTheMapping(ready.catalogue);
   const people = await createThePeople(mapping.sendable, mapping.byLdap);
   const groups = await createTheGroups();

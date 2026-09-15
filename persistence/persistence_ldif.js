@@ -68,6 +68,31 @@
 
 const fs = require('fs');
 const path = require('path');
+// A LEAF with no requires: the failure codes on the log lines below.
+const errorCodes = require('../common/error_codes');
+
+// This driver's own logger. It is a leaf and requires nothing that could hand
+// it the service's, so the level is read the way the vendored modules read
+// theirs: STS_LOG_LEVEL, then CONFIG_FILE's logLevel, then info.
+let logLevelProblem = null;
+const log = require('bunyan').createLogger({
+  name: 'sts-persistence-ldif',
+  level: (function () {
+    if (process.env.STS_LOG_LEVEL) {
+      return process.env.STS_LOG_LEVEL;
+    }
+    try {
+      return require(process.env.CONFIG_FILE).logLevel || 'info';
+    } catch (e) {
+      logLevelProblem = e;
+      return 'info';
+    }
+  })()
+});
+if (logLevelProblem) {
+  log.debug('No log level from CONFIG_FILE, so info: ' +
+            logLevelProblem.message);
+}
 
 // RFC 2849 says lines SHOULD be wrapped, and does not say where. 76 is what
 // OpenLDAP's tools emit and is therefore what a diff of our file against one
@@ -95,23 +120,29 @@ const ORIGIN_COMMENT = '# sts-origin: ';
 // wrong, and base64 removes the guess.
 // ---------------------------------------------------------------------------
 function needsBase64(value) {
+  log.debug("Entering needsBase64().");
   const s = String(value);
   if (s === '') {
+    log.debug("Leaving needsBase64().");
     return false;
   }
   const first = s.charCodeAt(0);
   if (first === 0x20 || first === 0x3a || first === 0x3c) {
+    log.debug("Leaving needsBase64().");
     return true;
   }
   if (s.charCodeAt(s.length - 1) === 0x20) {
+    log.debug("Leaving needsBase64().");
     return true;
   }
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
     if (c === 0x00 || c === 0x0a || c === 0x0d || c > 0x7f) {
+      log.debug("Leaving needsBase64().");
       return true;
     }
   }
+  log.debug("Leaving needsBase64().");
   return false;
 }
 
@@ -120,6 +151,7 @@ function needsBase64(value) {
 // value that itself begins with a space would be ambiguous, which is exactly
 // why such a value is base64 above.
 function ldifLine(name, value) {
+  log.debug("Entering ldifLine().");
   let line;
   if (needsBase64(value)) {
     line = name + ':: ' + Buffer.from(String(value), 'utf8').toString('base64');
@@ -127,6 +159,7 @@ function ldifLine(name, value) {
     line = name + ': ' + String(value);
   }
   if (line.length <= WRAP_AT) {
+    log.debug("Leaving ldifLine().");
     return line;
   }
   const parts = [line.slice(0, WRAP_AT)];
@@ -139,6 +172,7 @@ function ldifLine(name, value) {
     parts.push(' ' + rest.slice(0, WRAP_AT - 1));
     rest = rest.slice(WRAP_AT - 1);
   }
+  log.debug("Leaving ldifLine().");
   return parts.join('\n');
 }
 
@@ -146,6 +180,7 @@ function ldifLine(name, value) {
 // requires; then the attributes in the order the entry holds them, which is the
 // order they were written and is therefore stable across runs.
 function entryToLdif(entry) {
+  log.debug("Entering entryToLdif().");
   const lines = [];
   if (entry.origin) {
     lines.push(ORIGIN_COMMENT + entry.origin);
@@ -158,10 +193,12 @@ function entryToLdif(entry) {
       lines.push(ldifLine(name, value));
     });
   });
+  log.debug("Leaving entryToLdif().");
   return lines.join('\n');
 }
 
 function toLdif(rows, header) {
+  log.debug("Entering toLdif().");
   const out = [];
   // Comments before `version:` are legal and are where this file explains
   // itself to whoever opens it without having read any of this.
@@ -172,6 +209,7 @@ function toLdif(rows, header) {
     out.push(entryToLdif(entry));
     out.push('');
   });
+  log.debug("Leaving toLdif().");
   return out.join('\n');
 }
 
@@ -181,6 +219,7 @@ function toLdif(rows, header) {
 // what it continues is the line before it with no separator at all.
 // ---------------------------------------------------------------------------
 function unfold(text) {
+  log.debug("Entering unfold().");
   const raw = String(text).split(/\r?\n/);
   const out = [];
   raw.forEach(function (line) {
@@ -190,6 +229,7 @@ function unfold(text) {
     }
     out.push(line);
   });
+  log.debug("Leaving unfold().");
   return out;
 }
 
@@ -198,19 +238,25 @@ function unfold(text) {
 // or http: URL out of a data file is a way to read something somebody else
 // chose, and there is no reason for it here.
 function parseLine(line) {
+  log.debug("Entering parseLine().");
   const colon = line.indexOf(':');
   if (colon < 0) {
+    log.debug("Leaving parseLine().");
     return null;
   }
   const name = line.slice(0, colon);
   const rest = line.slice(colon + 1);
   if (rest.charAt(0) === '<') {
+    log.debug("Leaving parseLine().");
     return { name: name, value: null, url: true };
   }
   if (rest.charAt(0) === ':') {
+    log.debug("Leaving parseLine().");
     return { name: name,
-             value: Buffer.from(rest.slice(1).trim(), 'base64').toString('utf8') };
+             value: Buffer.from(rest.slice(1).trim(), 'base64')
+                          .toString('utf8') };
   }
+  log.debug("Leaving parseLine().");
   // Exactly ONE leading space is the separator and is dropped; a second is part
   // of the value. `.trim()` here would be a data-losing convenience.
   return { name: name,
@@ -226,10 +272,12 @@ function fromLdif(text, log) {
   let skipped = 0;
 
   function finish() {
+    log.debug("Entering finish().");
     if (current) {
       entries.push(current);
     }
     current = null;
+    log.debug("Leaving finish().");
   }
 
   lines.forEach(function (line) {
@@ -291,7 +339,8 @@ function fromLdif(text, log) {
   });
 
   if (skipped) {
-    log.warn('persistence: ' + skipped + ' LDIF line(s) were not loaded — a ' +
+    log.warn(errorCodes.tag('STS-STORE-0010') +
+             'persistence: ' + skipped + ' LDIF line(s) were not loaded — a ' +
              'URL-valued attribute (which this service will not dereference) ' +
              'or a line before the first dn:.');
   }
@@ -312,12 +361,27 @@ function create(options) {
   // HERE too rather than assumed from over there. A path that escaped the data
   // directory would be a write anywhere the process can reach.
   function realmFile(realmId) {
+    log.debug("Entering realmFile().");
     const id = String(realmId || '');
     if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
       throw new Error('persistence: "' + id + '" is not a realm id this ' +
                       'driver will build a filename from.');
     }
+    log.debug("Leaving realmFile().");
     return path.join(dir, 'realm-' + id + '.ldif');
+  }
+
+  // `used-assertions-<id>.json`, with `realmFile()`'s check for the same
+  // reason: a filename built from data.
+  function usedAssertionsFile(realmId) {
+    log.debug("Entering usedAssertionsFile().");
+    const id = String(realmId || '');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+      throw new Error('persistence: "' + id + '" is not a realm id this ' +
+                      'driver will build a filename from.');
+    }
+    log.debug("Leaving usedAssertionsFile().");
+    return path.join(dir, 'used-assertions-' + id + '.json');
   }
 
   function writeAtomic(file, text) {
@@ -329,10 +393,13 @@ function create(options) {
   }
 
   function readIfPresent(file) {
+    log.debug("Entering readIfPresent().");
     try {
+      log.debug("Leaving readIfPresent().");
       return fs.readFileSync(file, 'utf8');
     } catch (err) {
       if (err.code === 'ENOENT') {
+        log.debug("Leaving readIfPresent().");
         // The ordinary first run. Not an error, and the caller's null means
         // "nothing has ever been written" rather than "it was empty".
         return null;
@@ -346,6 +413,7 @@ function create(options) {
 
     open: function () {
       log.debug('Entering the ldif driver open().');
+      log.debug("Leaving open().");
       return Promise.resolve().then(function () {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
         // Written and removed rather than assumed, because a volume mounted
@@ -361,6 +429,8 @@ function create(options) {
     },
 
     close: function () {
+      log.debug("Entering close().");
+      log.debug("Leaving close().");
       // Nothing to close: every write is its own open/write/rename. The
       // function exists because the driver contract has it and a driver that
       // omitted it would make every caller test for it.
@@ -369,6 +439,7 @@ function create(options) {
 
     loadDirectory: function () {
       log.debug('Entering the ldif driver loadDirectory().');
+      log.debug("Leaving loadDirectory().");
       return Promise.resolve().then(function () {
         let names;
         try {
@@ -405,6 +476,7 @@ function create(options) {
 
     loadRealms: function () {
       log.debug('Entering the ldif driver loadRealms().');
+      log.debug("Leaving loadRealms().");
       return Promise.resolve().then(function () {
         const text = readIfPresent(path.join(dir, 'realms.json'));
         if (text === null) {
@@ -420,6 +492,7 @@ function create(options) {
 
     loadOverrides: function () {
       log.debug('Entering the ldif driver loadOverrides().');
+      log.debug("Leaving loadOverrides().");
       return Promise.resolve().then(function () {
         const text = readIfPresent(path.join(dir, 'appconfig.json'));
         if (text === null) {
@@ -436,6 +509,7 @@ function create(options) {
     // the per-entry diff is read only for `touched`.
     saveDirectory: function (change) {
       log.debug('Entering the ldif driver saveDirectory().');
+      log.debug("Leaving saveDirectory().");
       return Promise.resolve().then(function () {
         change.removedRealms.forEach(function (realmId) {
           try {
@@ -477,12 +551,13 @@ function create(options) {
 
     saveRealms: function (rows) {
       log.debug('Entering the ldif driver saveRealms().');
+      log.debug("Leaving saveRealms().");
       return Promise.resolve().then(function () {
         writeAtomic(path.join(dir, 'realms.json'), JSON.stringify({
           version: 1,
-          note: 'The trust realms mock-sts had defined when this was written. ' +
-                'The DEFAULT realm is not here and never will be: it is a ' +
-                'constant in common/realms.js, not a row.',
+          note: 'The trust realms mock-sts had defined when this was ' +
+                'written. The DEFAULT realm is not here and never will be: ' +
+                'it is a constant in common/realms.js, not a row.',
           realms: rows
         }, null, 2) + '\n');
         log.debug('Leaving the ldif driver saveRealms(). ' + rows.length +
@@ -492,6 +567,7 @@ function create(options) {
 
     saveOverrides: function (map) {
       log.debug('Entering the ldif driver saveOverrides().');
+      log.debug("Leaving saveOverrides().");
       return Promise.resolve().then(function () {
         writeAtomic(path.join(dir, 'appconfig.json'), JSON.stringify({
           version: 1,
@@ -532,6 +608,7 @@ function create(options) {
     // -----------------------------------------------------------------------
     loadKeys: function () {
       log.debug('Entering the ldif driver loadKeys().');
+      log.debug("Leaving loadKeys().");
       return Promise.resolve().then(function () {
         const file = path.join(dir, 'keys.json');
         if (!fs.existsSync(file)) {
@@ -548,6 +625,7 @@ function create(options) {
 
     saveKeys: function (realmId, ciphertext) {
       log.debug('Entering the ldif driver saveKeys(). realm=' + realmId);
+      log.debug("Leaving saveKeys().");
       return Promise.resolve().then(function () {
         const file = path.join(dir, 'keys.json');
         let rows = [];
@@ -558,8 +636,9 @@ function create(options) {
             // A file this service cannot read is REPLACED rather than appended
             // to, and the warning says so: appending to something unparseable
             // produces a file that is unparseable for ever.
-            log.warn('persistence: keys.json could not be parsed and is being ' +
-                     'rewritten: ' + e.message);
+            log.warn(errorCodes.tag('STS-STORE-0011') +
+                     'persistence: keys.json could not be parsed and is ' +
+                     'being rewritten: ' + e.message);
             rows = [];
           }
         }
@@ -583,6 +662,7 @@ function create(options) {
 
     deleteKeys: function (realmId) {
       log.debug('Entering the ldif driver deleteKeys(). realm=' + realmId);
+      log.debug("Leaving deleteKeys().");
       return Promise.resolve().then(function () {
         const file = path.join(dir, 'keys.json');
         if (!fs.existsSync(file)) {
@@ -593,20 +673,131 @@ function create(options) {
         try {
           rows = (JSON.parse(fs.readFileSync(file, 'utf8')) || {}).keys || [];
         } catch (e) {
-          log.warn('persistence: keys.json could not be parsed while removing ' +
-                   'a realm\'s keys: ' + e.message);
+          log.warn(errorCodes.tag('STS-STORE-0011') +
+                   'persistence: keys.json could not be parsed while ' +
+                   'removing a realm\'s keys: ' + e.message);
           return;
         }
-        const kept = rows.filter(function (row) { return row.realm !== realmId; });
-        writeAtomic(file, JSON.stringify({ version: 1, keys: kept }, null, 2) + '\n');
+        const kept =
+            rows.filter(function (row) { return row.realm !== realmId; });
+        writeAtomic(file,
+                    JSON.stringify({ version: 1, keys: kept }, null, 2) + '\n');
         log.debug('Leaving the ldif driver deleteKeys(). ' + kept.length +
                   ' realm(s) left.');
+      });
+    },
+
+    // -----------------------------------------------------------------------
+    // THE USED-ASSERTION HISTORY (2026-09-13), and it is the one thing this
+    // driver holds that a REQUEST writes rather than a person typing.
+    //
+    // **THE ARGUMENT BELOW AGAINST MINTED STATE IS WHY THIS IS AFFORDABLE AND
+    // NOT A CONTRADICTION OF IT.** That argument is about SIZE AND RATE — an
+    // audit ring and a session table rewritten per request. This file is one
+    // realm's UNEXPIRED rows, bounded by `oauth2.assertionReplayCacheSize`
+    // (a thousand by default), each a couple of hundred bytes, and it changes
+    // only when an assertion is presented, which is a fraction of token
+    // requests. What it buys is the property `common/used_assertions.js` exists
+    // for: an assertion spent before a restart is still spent after one, and a
+    // deployment that chose this store is owed that as much as one that chose
+    // a database.
+    //
+    // ONE FILE PER REALM, `used-assertions-<id>.json`, so a claim in `acme`
+    // rewrites acme's rows and nobody else's. The rows hold no credential — an
+    // issuer, a `jti` or `ID`, a client, a subject — but the file is `0o600`
+    // like everything else this driver writes.
+    // -----------------------------------------------------------------------
+    loadUsedAssertions: function () {
+      log.debug('Entering the ldif driver loadUsedAssertions().');
+      log.debug("Leaving loadUsedAssertions().");
+      return Promise.resolve().then(function () {
+        let names;
+        try {
+          names = fs.readdirSync(dir);
+        } catch (err) {
+          if (err.code === 'ENOENT') {
+            log.debug('Leaving loadUsedAssertions(). No data directory yet.');
+            return {};
+          }
+          throw err;
+        }
+        const out = {};
+        names.filter(function (name) {
+          return /^used-assertions-[a-z0-9][a-z0-9-]*\.json$/.test(name);
+        }).forEach(function (name) {
+          const realmId = name.replace(/^used-assertions-/, '')
+            .replace(/\.json$/, '');
+          const text = readIfPresent(path.join(dir, name));
+          if (text === null) {
+            return;
+          }
+          try {
+            out[realmId] = (JSON.parse(text) || {}).rows || [];
+          } catch (e) {
+            // NOT RETHROWN, AND NOT SILENTLY EMPTY EITHER. A file this service
+            // cannot parse is a history it cannot consult, and starting with
+            // no history is the restart-replay this file exists to close — so
+            // it is logged at error, named, and the realm starts empty only
+            // because refusing to start over one realm's history would take
+            // every other protocol down with it.
+            log.error(errorCodes.tag('STS-STORE-0045') +
+                      'persistence: ' + name + ' could not be parsed (' +
+                      e.message + '). The used-assertion history for the ' +
+                      'realm "' + realmId + '" starts EMPTY, so an assertion ' +
+                      'spent before this restart and still unexpired will be ' +
+                      'accepted once more.');
+            out[realmId] = [];
+          }
+        });
+        log.debug('Leaving the ldif driver loadUsedAssertions(). ' +
+                  Object.keys(out).length + ' realm(s).');
+        return out;
+      });
+    },
+
+    saveUsedAssertions: function (realmId, rows) {
+      log.debug('Entering the ldif driver saveUsedAssertions(). realm=' +
+                realmId);
+      log.debug("Leaving saveUsedAssertions().");
+      return Promise.resolve().then(function () {
+        writeAtomic(usedAssertionsFile(realmId), JSON.stringify({
+          version: 1,
+          note: 'Every RFC 7523 and RFC 7522 assertion the "' + realmId +
+                '" realm has accepted and that has not yet expired, so that ' +
+                'none is accepted twice across a restart. It holds no ' +
+                'assertion and no credential. Rewritten whenever an ' +
+                'assertion is presented; editing it while the service runs ' +
+                'is lost at the next one, and deleting a row while the ' +
+                'service is stopped lets that assertion be used again.',
+          rows: rows
+        }) + '\n');
+        log.debug('Leaving the ldif driver saveUsedAssertions(). ' +
+                  rows.length + ' row(s).');
+      });
+    },
+
+    removeUsedAssertions: function (realmId) {
+      log.debug('Entering the ldif driver removeUsedAssertions(). realm=' +
+                realmId);
+      log.debug("Leaving removeUsedAssertions().");
+      return Promise.resolve().then(function () {
+        try {
+          fs.unlinkSync(usedAssertionsFile(realmId));
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            throw err;
+          }
+          log.debug('Caught in removeUsedAssertions(): there was no file, ' +
+                    'which is the state this was trying to reach.');
+        }
       });
     }
 
     // -----------------------------------------------------------------------
     // AND NO `loadMinted`, `saveMinted` OR `purgeMinted` — DELIBERATELY, AND
-    // THE ABSENCE IS THE ANSWER RATHER THAN AN OMISSION.
+    // THE ABSENCE IS THE ANSWER RATHER THAN AN OMISSION. (The used-assertion
+    // history above is the one request-written thing this driver holds, and
+    // its header says why the argument below does not reach it.)
     //
     // Since 2026-09-06 product mode writes down what this process MINTS:
     // sessions, tokens, authorization codes, SAML artifacts, Kerberos

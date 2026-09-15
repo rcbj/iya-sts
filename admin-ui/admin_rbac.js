@@ -36,25 +36,26 @@
 // AND IT MAKES ONE SENTENCE IN THIS REPOSITORY NO LONGER UNIVERSALLY TRUE.
 //
 // "A group here grants nothing" is written in README.md, in three CLAUDE.md
-// files, in `sts_metadata.js`, on `/admin/groups` itself and in `group_claims.js`.
-// It is STILL true of every other group and it is still true of these two
-// everywhere except this console: no token's scopes change, no assertion gains
-// an attribute, no protocol endpoint reads them, and a member of `admin-write`
-// has exactly the same access to `/oauth2/token` as anybody else. What changed
-// is that ONE surface — `/admin` — now reads two named groups. Every place that
-// sentence appears has been qualified rather than deleted, because deleting it
-// would leave a reader believing that adding somebody to `cn=developers`
-// changed what their token could do.
+// files, in `sts_metadata.js`, on `/admin/groups` itself and in
+// `group_claims.js`. It is STILL true of every other group and it is still true
+// of these two everywhere except this console: no token's scopes change, no
+// assertion gains an attribute, no protocol endpoint reads them, and a member
+// of `admin-write` has exactly the same access to `/oauth2/token` as anybody
+// else. What changed is that ONE surface — `/admin` — now reads two named
+// groups. Every place that sentence appears has been qualified rather than
+// deleted, because deleting it would leave a reader believing that adding
+// somebody to `cn=developers` changed what their token could do.
 //
 // ---------------------------------------------------------------------------
 // THE EMPTY ROSTER, which is the only interesting decision in the file.
 //
 // This service has no password anywhere. It checks none, it stores none, and
 // the roster lives in memory and dies with the process — so there is no
-// bootstrap administrator and no way to make one out of band. A service that
-// started with `admin.authRequired` on and an empty roster would therefore have
-// a console that NO browser could ever reach, and no amount of signing in would
-// help.
+// bootstrap administrator and no way to make one out of band. The console gate
+// is unconditional — `mode.gatesConsole()`, where this used to read
+// `admin.authRequired` — so a service with an empty roster and no opening rule
+// would have a console that NO browser could ever reach, and no amount of
+// signing in would help.
 //
 // So: while NEITHER role group has a single member, anybody who signs in holds
 // BOTH roles, and every page says so in a banner that cannot be missed. The
@@ -95,6 +96,41 @@ const config = require('../common/config');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 const mode = require('../common/mode');
 const audit = require('../common/audit');
+// THE ERROR CODES (common/error_codes.js, a leaf). A refusal here is a RESULT
+// that `/admin/rbac` redirects with and `/admin-api/rbac` sends as JSON, so its
+// code rides on the object under the non-enumerable Symbol `mark()` uses —
+// invisible to JSON.stringify, read back with `errorCodes.codeOf(result)`.
+const errorCodes = require('../common/error_codes');
+// THE REALMS, for their ids and the default realm's. A leaf here: this module
+// asks the registry whether a realm exists and never enters one itself — the
+// directory slot's `forRealm()` does that.
+const realms = require('../common/realms');
+
+// ---------------------------------------------------------------------------
+// A ROSTER PER REALM (2026-09-14, ticket #32), AND THE DEFAULT REALM'S IS STILL
+// THE SERVICE'S.
+//
+// Until that day there was ONE roster — the default realm's two groups — and
+// the prose said a per-realm one would let anybody who can create a realm
+// administer the service. rcbj asked for per-realm administrators with the
+// default realm's roster kept as the SUPER administrator over every realm, and
+// the argument is answered rather than dropped: a realm's roster grants
+// AUTHORITY IN THAT REALM ONLY, which `admin-core/admin_views.js`'s
+// `gateStateFor()` and `admin-ui/admin_scope.js` enforce, and creating a realm
+// is itself a service action.
+//
+// So every public function here takes an OPTIONAL realm id. Absent, it answers
+// about whatever realm is bound — the default realm, at the top level — which
+// is what keeps every caller written before this unchanged, and what lets a
+// function here call another without re-binding. Present, it binds that realm
+// for the call through the slot's `forRealm()`.
+// ---------------------------------------------------------------------------
+
+function refused(code, result) {
+  log.debug("Entering refused().");
+  log.debug("Leaving refused().");
+  return errorCodes.mark(result, code);
+}
 
 // The two roles. An array rather than two constants because everything below
 // walks it — the screen, the API, the JSON view, the decision — and a third
@@ -106,9 +142,9 @@ const audit = require('../common/audit');
 const ROLES = [
   { id: 'read', label: 'Admin Read', setting: 'admin.readGroup',
     implies: [],
-    what: 'Look at every page of this console, and at every ?format=json view ' +
-          'of one. It changes nothing: a reader can see which tokens are ' +
-          'revoked and cannot revoke one.' },
+    what: 'Look at every page of this console, and at every ?format=json ' +
+          'view of one. It changes nothing: a reader can see which tokens ' +
+          'are revoked and cannot revoke one.' },
   { id: 'write', label: 'Admin Write', setting: 'admin.writeGroup',
     implies: ['read'],
     what: 'Post every form on this console — revoke a token, add a custom ' +
@@ -120,8 +156,11 @@ const ROLES = [
 const ROLE_IDS = ROLES.map(function (role) { return role.id; });
 
 function roleFor(id) {
+  log.debug("Entering roleFor().");
   const wanted = String(id == null ? '' : id).trim().toLowerCase();
-  return ROLES.filter(function (role) { return role.id === wanted; })[0] || null;
+  log.debug("Leaving roleFor().");
+  return ROLES.filter(function (role) { return role.id === wanted; })[0] ||
+         null;
 }
 
 // The cn of the group behind a role, read WHERE IT IS USED rather than captured
@@ -129,6 +168,8 @@ function roleFor(id) {
 // renames the write group on /admin/config expects the next request to use the
 // new name.
 function groupCnFor(role) {
+  log.debug("Entering groupCnFor().");
+  log.debug("Leaving groupCnFor().");
   return String(config.value(role.setting) || '').trim();
 }
 
@@ -136,6 +177,10 @@ function groupCnFor(role) {
 // The slot. See the header.
 // ---------------------------------------------------------------------------
 
+// `installed` is what the filler offered, bound to the DEFAULT realm;
+// `directory` is the view in use for the call in progress, which is the same
+// object except while `inRosterRealm()` has bound another realm.
+let installed = null;
 let directory = null;
 
 // What the filler has to provide. Named here rather than checked inline so the
@@ -156,24 +201,91 @@ function setDirectory(fns) {
     // Refused rather than half-installed, which is the whole argument for a
     // single slot being safe here: the failure is one loud line at startup
     // instead of a grant button that answers 200 and writes nothing.
-    log.error('admin_rbac: the directory slot was offered an object missing ' +
-              missing.join(', ') + '. It is NOT installed — the console roles ' +
-              'will read as "no directory is loaded", which is the same ' +
-              'answer a build without ldap_server.js gives.');
-    log.debug("Leaving setDirectory(). Refused: " + missing.length + " member(s) missing.");
+    log.error(errorCodes.tag('STS-ADMIN-0587') +
+              'admin_rbac: the directory slot was offered an object missing ' +
+              missing.join(', ') + '. It is NOT installed — the console ' +
+              'roles will read as "no directory is loaded", which is the ' +
+              'same answer a build without ldap_server.js gives.');
+    log.debug("Leaving setDirectory(). Refused: " + missing.length + " " +
+        "member(s) missing.");
     return false;
   }
+  installed = given;
   directory = given;
   log.debug("Leaving setDirectory(). Installed.");
   log.info('admin_rbac: the admin console roles are the directory groups ' +
            groupCnFor(ROLES[0]) + ' and ' + groupCnFor(ROLES[1]) + ' under ' +
            given.groupsDn + '. An ldapmodify, a SCIM PATCH, /admin/rbac and ' +
            'POST /admin-api/rbac are four doors onto the same membership.');
+  log.debug("Leaving setDirectory().");
   return true;
 }
 
 function available() {
+  log.debug("Entering available().");
+  log.debug("Leaving available().");
   return !!directory;
+}
+
+// The realm this module answers about when a caller names one. `''`, null and
+// undefined mean "whatever is bound", so an inner call inherits its caller's
+// realm; the default realm's own id binds the installed view.
+function realmIdOf(realmId) {
+  log.debug("Entering realmIdOf().");
+  const id = realmId === undefined || realmId === null ? '' : String(realmId);
+  log.debug("Leaving realmIdOf().");
+  return id.trim();
+}
+
+// The directory view for a named realm: the installed one for the default
+// realm, `forRealm()`'s for any other, and NULL for a realm that does not exist
+// or a filler that offers no per-realm view — which every function here already
+// answers as "no directory is loaded", so an unknown realm grants nothing.
+function viewFor(realmId) {
+  log.debug("Entering viewFor(). realm=" + realmId);
+  if (!installed) {
+    log.debug("Leaving viewFor(). Nothing installed.");
+    return null;
+  }
+  if (realmId === realms.DEFAULT_ID) {
+    log.debug("Leaving viewFor(). The default realm.");
+    return installed;
+  }
+  if (typeof installed.forRealm !== 'function' || !realms.get(realmId)) {
+    log.debug("Leaving viewFor(). No view for that realm.");
+    return null;
+  }
+  const view = installed.forRealm(realmId);
+  log.debug("Leaving viewFor(). " + (view ? "Bound." : "Refused."));
+  return view || null;
+}
+
+// Run `fn` with the named realm's roster bound, or with whatever is bound when
+// no realm is named. Synchronous throughout, like every function it wraps, so
+// the binding cannot leak into another request.
+function inRosterRealm(realmId, fn) {
+  log.debug("Entering inRosterRealm().");
+  const id = realmIdOf(realmId);
+  if (!id) {
+    log.debug("Leaving inRosterRealm(). Inherited.");
+    return fn();
+  }
+  const previous = directory;
+  directory = viewFor(id);
+  try {
+    log.debug("Leaving inRosterRealm(). Bound " + id + ".");
+    return fn();
+  } finally {
+    directory = previous;
+  }
+}
+
+// The realm a view answers about, for the words a result carries.
+function boundRealmId() {
+  log.debug("Entering boundRealmId().");
+  log.debug("Leaving boundRealmId().");
+  return directory && directory.realmId ? String(directory.realmId)
+                                        : realms.DEFAULT_ID;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +293,8 @@ function available() {
 // ---------------------------------------------------------------------------
 
 function dnForRole(role) {
+  log.debug("Entering dnForRole().");
+  log.debug("Leaving dnForRole().");
   return directory.groupDnFor(groupCnFor(role));
 }
 
@@ -243,7 +357,8 @@ function rosterFor(roleId) {
     };
   });
   out.memberCount = out.members.length;
-  out.presentCount = out.members.filter(function (m) { return m.present; }).length;
+  out.presentCount = out.members.filter(function (
+      m) { return m.present; }).length;
   out.danglingCount = out.memberCount - out.presentCount;
   addClaimedMembers(out);
   log.debug("Leaving rosterFor(). " + out.memberCount + " member value(s), " +
@@ -260,8 +375,8 @@ function rosterFor(roleId) {
 // state `/admin/groups` reports rather than repairs.
 //
 // `groupsOfUser()` HONOURS BOTH DIRECTIONS, which means somebody added that way
-// REALLY HOLDS THE ROLE. So a roster built from the group entry alone would have
-// shown a console that person could use and a list they were not on — a
+// REALLY HOLDS THE ROLE. So a roster built from the group entry alone would
+// have shown a console that person could use and a list they were not on — a
 // permissions page that under-reports who has access, which is the single worst
 // thing this page could do. They are merged in and marked, not hidden and not
 // silently promoted: the row says which side of the disagreement it came from.
@@ -269,11 +384,11 @@ function rosterFor(roleId) {
 // **The edge worth knowing, because it cost a test to find:** a `memberOf`
 // naming a group that DOES NOT EXIST grants nothing. `groupsOfUser()` resolves
 // each claimed DN against the group index, and an unresolvable one is skipped —
-// so writing `memberOf: cn=admin-read,...` onto an entry before anybody has ever
-// been granted Admin Read does nothing at all, and starts working the moment the
-// first ordinary grant creates that group. That is the directory's rule rather
-// than this module's, and it is the same rule `/admin/groups` applies when it
-// decides what counts as a group.
+// so writing `memberOf: cn=admin-read,...` onto an entry before anybody has
+// ever been granted Admin Read does nothing at all, and starts working the
+// moment the first ordinary grant creates that group. That is the directory's
+// rule rather than this module's, and it is the same rule `/admin/groups`
+// applies when it decides what counts as a group.
 // ---------------------------------------------------------------------------
 function addClaimedMembers(out) {
   log.debug("Entering addClaimedMembers().");
@@ -306,7 +421,8 @@ function addClaimedMembers(out) {
     });
   });
   out.memberCount = out.members.length;
-  out.presentCount = out.members.filter(function (m) { return m.present; }).length;
+  out.presentCount = out.members.filter(function (
+      m) { return m.present; }).length;
   out.danglingCount = out.memberCount - out.presentCount;
   log.debug("Leaving addClaimedMembers().");
 }
@@ -354,8 +470,231 @@ function roster() {
 // somebody who has never authenticated is a value naming an entry that is not
 // there yet, and it is still a grant — treating it as empty would mean granting
 // a role to a future colleague quietly leaving the door open.
+// ---------------------------------------------------------------------------
+// THE BOOTSTRAP ADMINISTRATOR (2026-09-13).
+//
+// A new instance has ONE account that administers it: `admin.bootstrapUsername`
+// (default `admin`) in the DEFAULT realm, a member of both console roles, whose
+// password must be changed at its first sign-in (`pwdReset`, enforced by
+// `authn/authn.js`). Development accepts any password for it, as for anybody;
+// product mode's first password is the generated one `credentials.bootstrap()`
+// prints once.
+//
+// **UNTIL THAT ACCOUNT FIRST SIGNS IN TO THE CONSOLE, EVERY SIGNED-IN PERSON
+// MAY USE THE CONSOLE** — the window the empty roster used to open, kept open by
+// something that cannot happen by accident. It replaced "open while nobody
+// holds a role" because that rule closed on the FIRST GRANT: an operator who
+// granted themselves only Admin Read locked themselves out of every write, with
+// nobody left who could undo it from the console. Seeding both roles onto one
+// named account and closing on THAT account's arrival means the first thing to
+// close the door is the administrator walking through it.
+//
+// Three facts, all on the account's own entry (`ldap_server.js`'s
+// readPersonFlags()), so they persist and replicate with it:
+// `stsBootstrapAdministrator` says it was seeded, `stsConsoleClaimedAt` says the
+// window is closed, and `pwdReset` is the password rule.
+// ---------------------------------------------------------------------------
+function bootstrapName() {
+  log.debug("Entering bootstrapName().");
+  log.debug("Leaving bootstrapName().");
+  return String(config.value('admin.bootstrapUsername') || '').trim();
+}
+
+function bootstrapState() {
+  log.debug("Entering bootstrapState().");
+  const name = bootstrapName();
+  const out = { username: name, seeded: false, claimedAt: '', dn: '' };
+  if (!directory || !name || typeof directory.readPersonFlags !== 'function') {
+    log.debug("Leaving bootstrapState(). Nothing to read.");
+    return out;
+  }
+  let flags = null;
+  try {
+    flags = directory.readPersonFlags(name);
+  } catch (e) {
+    log.debug("Caught in bootstrapState(): " + ((e && e.message) || e));
+    flags = null;
+  }
+  if (flags) {
+    out.seeded = !!flags.bootstrapAdministrator;
+    out.claimedAt = String(flags.consoleClaimedAt || '');
+    out.dn = flags.dn;
+  }
+  log.debug("Leaving bootstrapState(). seeded=" + out.seeded +
+            ", claimed=" + !!out.claimedAt);
+  return out;
+}
+
+function nowGeneralized() {
+  log.debug("Entering nowGeneralized().");
+  log.debug("Leaving nowGeneralized().");
+  return new Date().toISOString().replace(/[-:T]/g, '').replace(/\.\d+Z$/,
+                                                                 'Z');
+}
+
+// ---------------------------------------------------------------------------
+// MAKE IT, ONCE, AT STARTUP. `server.js` calls this after the persistence store
+// has been restored and before `credentials.bootstrap()` gives the account its
+// generated password in product mode.
+//
+// **IT NEVER UNDOES AN OPERATOR.** An account whose window has closed is left
+// exactly as it is, including if somebody took its roles away. And a roster
+// that already names somebody ELSE when the account is first marked is a
+// service that was already administered before this existed: the account is
+// made and given both roles, as asked, and the window is recorded as closed at
+// once rather than re-opening the console to everybody on an upgrade.
+//
+// `pwdReset` is set only on an account this call CREATED — an existing entry
+// was somebody's before, and forcing a change on it is not this step's call.
+// ---------------------------------------------------------------------------
+function seedBootstrapAdministrator() {
+  log.debug("Entering seedBootstrapAdministrator().");
+  const name = bootstrapName();
+  if (!directory || !name ||
+      typeof directory.readPersonFlags !== 'function' ||
+      typeof directory.writePersonFlag !== 'function' ||
+      typeof directory.createPerson !== 'function') {
+    log.debug("Leaving seedBootstrapAdministrator(). No directory to seed.");
+    return { ran: false, why: 'no directory offers the bootstrap functions' };
+  }
+  let flags = directory.readPersonFlags(name);
+  if (flags && flags.bootstrapAdministrator && flags.consoleClaimedAt) {
+    log.debug("Leaving seedBootstrapAdministrator(). Already claimed.");
+    return { ran: false, why: 'the bootstrap administrator has already ' +
+                              'signed in to the console', username: name };
+  }
+  const administeredBy = roster().reduce(function (names, row) {
+    row.members.concat(row.claimed || []).forEach(function (member) {
+      const who = String(member.username || '');
+      if (who && who.toLowerCase() !== name.toLowerCase() &&
+          names.indexOf(who) < 0) {
+        names.push(who);
+      }
+    });
+    return names;
+  }, []);
+  let created = false;
+  if (!flags) {
+    const made = directory.createPerson(name);
+    if (!made || made.ok === false) {
+      log.error(errorCodes.tag('STS-ADMIN-0706') + 'admin_rbac: the ' +
+                'bootstrap administrator "' + name + '" could not be ' +
+                'created in the "' + boundRealmId() + '" realm: ' +
+                ((made && (made.errors || []).join(' ')) || 'no reason'));
+      log.debug("Leaving seedBootstrapAdministrator(). Not created.");
+      return { ran: false, why: 'the account could not be created',
+               username: name };
+    }
+    created = true;
+    flags = directory.readPersonFlags(name);
+  }
+  if (!flags.bootstrapAdministrator) {
+    directory.writePersonFlag(name, 'stsBootstrapAdministrator', true);
+  }
+  if (created) {
+    directory.writePersonFlag(name, 'pwdReset', true);
+  }
+  const granted = ROLE_IDS.map(function (id) {
+    return grant(name, id, { via: 'bootstrap', actor: 'bootstrap' });
+  });
+  const failed = granted.filter(function (one) { return !one.ok; });
+  if (failed.length) {
+    log.error(errorCodes.tag('STS-ADMIN-0706') + 'admin_rbac: the ' +
+              'bootstrap administrator "' + name + '" could not be given ' +
+              'both console roles: ' + failed.map(function (one) {
+                return (one.errors || []).join(' ');
+              }).join(' '));
+  }
+  const closedAtOnce = administeredBy.length > 0;
+  if (closedAtOnce) {
+    directory.writePersonFlag(name, 'stsConsoleClaimedAt', nowGeneralized());
+  }
+  audit.record({
+    action: 'admin.console.bootstrap', outcome: 'success', actor: 'bootstrap',
+    target: flags.dn, channel: 'internal',
+    summary: 'The bootstrap administrator "' + name + '" was ' +
+             (created ? 'created and ' : '') + 'given both console roles' +
+             (closedAtOnce ? '; the console was already administered, so it ' +
+                             'is not opened to everybody' : ''),
+    detail: { event: 'seeded', username: name, created: created,
+              realm: boundRealmId(),
+              passwordResetRequired: created,
+              administeredBy: administeredBy.slice(0, 20),
+              windowClosed: closedAtOnce }
+  });
+  log.info('admin_rbac: "' + name + '" in the "' + boundRealmId() +
+           '" realm holds Admin Read ' +
+           'and Admin Write' + (created ? ', and must change its password at ' +
+           'its first sign-in' : '') + '. ' + (closedAtOnce
+             ? 'The roster already named ' + administeredBy.join(', ') +
+               ', so the console stays enforced.'
+             : 'Until it first signs in to /admin, every signed-in person may ' +
+               'use the console.'));
+  log.debug("Leaving seedBootstrapAdministrator().");
+  return { ran: true, username: name, created: created,
+           realm: boundRealmId(), windowClosed: closedAtOnce };
+}
+
+// ---------------------------------------------------------------------------
+// THE WINDOW CLOSES WHEN THE BOOTSTRAP ADMINISTRATOR ARRIVES. Called by the
+// console gate for every signed-in request, so the common answer — not that
+// account, or already closed — is one flag read and no write.
+//
+// **A SIGN-IN CLOSES THE WINDOW OF THE REALM IT CAME FROM, AND NO OTHER.** The
+// console's code flow runs in the realm it was reached in, so a trust realm's
+// own `admin` signing in closes THAT realm's window (2026-09-14, #32) and must
+// never close the default realm's, which belongs to the service's account.
+// Until #32 a sign-in through another realm closed nothing at all, because
+// there was no realm window to close. The password has already been changed
+// by then: `authn.js` asks for it before any session exists.
+// ---------------------------------------------------------------------------
+function noteConsoleSignIn(username, session, defaultRealmId) {
+  log.debug("Entering noteConsoleSignIn().");
+  const name = String(username || '').trim();
+  const wanted = bootstrapName();
+  if (!name || !wanted || name.toLowerCase() !== wanted.toLowerCase()) {
+    log.debug("Leaving noteConsoleSignIn(). Not the bootstrap administrator.");
+    return false;
+  }
+  const fromRealm = String((session && session.derivedFromRealm) ||
+                           defaultRealmId || realms.DEFAULT_ID);
+  const closed = inRosterRealm(fromRealm, function () {
+    return closeBootstrapWindow(name, wanted);
+  });
+  log.debug("Leaving noteConsoleSignIn(). " + (closed ? "Closed " : "Open ") +
+            "in " + fromRealm + ".");
+  return closed;
+}
+
+function closeBootstrapWindow(name, wanted) {
+  log.debug("Entering closeBootstrapWindow().");
+  const state = bootstrapState();
+  if (!state.seeded || state.claimedAt) {
+    log.debug("Leaving closeBootstrapWindow(). Nothing to close.");
+    return false;
+  }
+  const at = nowGeneralized();
+  directory.writePersonFlag(wanted, 'stsConsoleClaimedAt', at);
+  audit.record({
+    action: 'admin.console.bootstrap', outcome: 'success', actor: name,
+    target: state.dn, channel: 'internal',
+    summary: 'The bootstrap administrator "' + name + '" signed in to the ' +
+             'console; it is enforced from now on',
+    detail: { event: 'claimed', username: name, at: at }
+  });
+  log.info('admin_rbac: the bootstrap administrator "' + name + '" of the "' +
+           boundRealmId() + '" realm signed in to the console. That ' +
+           'realm\'s roster is enforced from now on: only members of its two ' +
+           'role groups may use it.');
+  log.debug("Leaving closeBootstrapWindow(). Closed.");
+  return true;
+}
+
 function rosterEmpty() {
-  return roster().reduce(function (n, row) { return n + row.memberCount; }, 0) === 0;
+  log.debug("Entering rosterEmpty().");
+  log.debug("Leaving rosterEmpty().");
+  return roster().reduce(function (n, row) { return n + row.memberCount; },
+                         0) === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -381,7 +720,8 @@ function rolesOf(username) {
                 groups: [], open: false, openable: false,
                 available: !!directory, empty: false };
   if (!directory || !name) {
-    log.debug("Leaving rolesOf(). " + (directory ? "No name." : "No directory."));
+    log.debug("Leaving rolesOf(). " +
+              (directory ? "No name." : "No directory."));
     return out;
   }
 
@@ -409,10 +749,23 @@ function rolesOf(username) {
   });
 
   out.empty = rosterEmpty();
-  // THE EMPTY-ROSTER RULE, and it is applied here rather than at the guard so
+  // THE OPEN-CONSOLE RULE, and it is applied here rather than at the guard so
   // that the console's own banner, the management API's answer and the refusal
   // itself cannot come to disagree about whether the door is open.
-  if (out.empty && !Object.keys(held).length) {
+  //
+  // **SINCE 2026-09-13 IT IS ABOUT THE BOOTSTRAP ADMINISTRATOR, NOT THE EMPTY
+  // ROSTER, wherever one was seeded.** `seedBootstrapAdministrator()` puts
+  // `admin.bootstrapUsername` in both groups at startup, so the roster is never
+  // empty on a service started through server.js — and the console stays open
+  // to every signed-in person until THAT account first signs in to it
+  // (`noteConsoleSignIn()`), after which the roster is enforced for good. A
+  // directory with no seeded account (an in-process test, a process that never
+  // ran the startup step) keeps the old rule: open while the roster is empty.
+  const bootstrap = bootstrapState();
+  out.bootstrap = { username: bootstrap.username, seeded: bootstrap.seeded,
+                    claimedAt: bootstrap.claimedAt };
+  const unclaimed = bootstrap.seeded ? !bootstrap.claimedAt : out.empty;
+  if (unclaimed && !Object.keys(held).length) {
     out.openable = true;
     if (config.value('admin.openWhenEmpty')) {
       out.open = true;
@@ -424,7 +777,8 @@ function rolesOf(username) {
   out.read = !!held.read;
   out.write = !!held.write;
   log.debug("Leaving rolesOf(). " + name + " holds " +
-            (out.roles.join(', ') || 'no role') + (out.open ? " (empty roster)." : "."));
+            (out.roles.join(', ') || 'no role') +
+            (out.open ? " (empty roster)." : "."));
   return out;
 }
 
@@ -442,14 +796,15 @@ function rolesOf(username) {
 // holds MINUS the operational ones.
 //
 // `entryDN` is the one that matters and it is the reason this is a function.
-// `readGroupEntry()` SYNTHESISES it — the DN is where the entry is, so holding a
-// copy would be a second definition of the same fact — and writing the read
+// `readGroupEntry()` SYNTHESISES it — the DN is where the entry is, so holding
+// a copy would be a second definition of the same fact — and writing the read
 // object straight back would turn that synthesised value into a stored
 // attribute, which is the one thing every door onto this directory is told
 // never to do.
 const NOT_WRITTEN_BACK = ['entrydn', 'createtimestamp', 'modifytimestamp'];
 
 function writableAttributes(entry) {
+  log.debug("Entering writableAttributes().");
   const out = {};
   Object.keys(entry.attributes).forEach(function (name) {
     if (NOT_WRITTEN_BACK.indexOf(name.toLowerCase()) >= 0) {
@@ -457,6 +812,7 @@ function writableAttributes(entry) {
     }
     out[name] = entry.attributes[name].slice(0);
   });
+  log.debug("Leaving writableAttributes().");
   return out;
 }
 
@@ -472,11 +828,13 @@ function memberValueFor(username) {
   log.debug("Entering memberValueFor(). username=" + username);
   const existing = directory.existingUserEntry(username);
   if (existing) {
-    log.debug("Leaving memberValueFor(). Their entry is at " + existing.dn + ".");
+    log.debug("Leaving memberValueFor(). Their entry is at " + existing.dn +
+              ".");
     return { dn: existing.dn, present: true };
   }
   const dn = 'uid=' + username + ',' + directory.usersDn;
-  log.debug("Leaving memberValueFor(). Nothing there yet; " + dn + " is where they would go.");
+  log.debug("Leaving memberValueFor(). Nothing there yet; " + dn + " is " +
+      "where they would go.");
   return { dn: dn, present: false };
 }
 
@@ -520,8 +878,9 @@ function nameProblem(username) {
   }
   if (!directory.nameUsableInDn(username)) {
     log.debug("Leaving nameProblem().");
-    return '"' + username + '" carries a character RFC 4514 reserves in a DN, ' +
-           'so it cannot name an entry under ' + directory.usersDn + '. That ' +
+    return '"' + username + '" carries a character RFC 4514 reserves in a ' +
+           'DN, so it cannot name an entry ' +
+           'under ' + directory.usersDn + '. That ' +
            'is the same refusal creating a person gets, and for the same ' +
            'reason: names of that shape get into this directory by being ' +
            'PRESENTED — a certificate subject, a did: — rather than by being ' +
@@ -540,17 +899,19 @@ function grant(username, roleId, context) {
 
   if (!directory) {
     log.debug("Leaving grant(). No directory is loaded.");
-    return { ok: false, errors: [NO_DIRECTORY] };
+    return refused('STS-ADMIN-0501', { ok: false, errors: [NO_DIRECTORY] });
   }
   if (!role) {
     log.debug("Leaving grant(). No such role.");
-    return { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
-                                 ROLE_IDS.join(' and ') + '.'] };
+    return refused('STS-ADMIN-0582',
+                   { ok: false, errors: ['Unknown role "' + roleId + '". ' +
+        'There are two: ' +
+                                 ROLE_IDS.join(' and ') + '.'] });
   }
   const problem = nameProblem(name);
   if (problem) {
     log.debug("Leaving grant(). " + problem);
-    return { ok: false, errors: [problem] };
+    return refused('STS-ADMIN-0583', { ok: false, errors: [problem] });
   }
 
   const dn = dnForRole(role);
@@ -592,7 +953,9 @@ function grant(username, roleId, context) {
   const written = directory.writeGroupEntry(dn, attributes, 'console');
   if (!written.ok) {
     log.debug("Leaving grant(). The directory refused: " + written.reason);
-    return { ok: false, errors: [refusalText(written, dn)], reason: written.reason };
+    return refused('STS-ADMIN-0585',
+                   { ok: false, errors: [refusalText(written, dn)],
+                     reason: written.reason });
   }
 
   audit.record({
@@ -612,15 +975,18 @@ function grant(username, roleId, context) {
            entry: written.entry,
            message: name + ' now holds ' + role.label + ', as ' + target.dn +
                     ' in ' + dn + '.' +
-                    (written.created ? ' The group did not exist and was created.' : '') +
+                    (written.created ? ' The group did not exist and was ' +
+                                       'created.' : '') +
                     (target.present ? ''
-                                    : ' NOTHING IS AT THAT DN YET — they have not ' +
-                                      'authenticated here and nobody has created ' +
-                                      'them, so the membership dangles until one of ' +
-                                      'those happens. The role still counts.') +
-                    (wasEmpty ? ' This was the FIRST grant, so the roster is now ' +
-                                'enforced: whoever is not in one of these two groups ' +
-                                'can no longer use this console.' : '') };
+                                    : ' NOTHING IS AT THAT DN YET — they ' +
+                                      'have not authenticated here and ' +
+                                      'nobody has created them, so the ' +
+                                      'membership dangles until one of those ' +
+                                      'happens. The role still counts.') +
+                    (wasEmpty ? ' This was the FIRST grant, so the roster is ' +
+                                'now enforced: whoever is not in one of ' +
+                                'these two groups can no longer use this ' +
+                                'console.' : '') };
 }
 
 function revoke(username, roleId, context) {
@@ -632,16 +998,19 @@ function revoke(username, roleId, context) {
 
   if (!directory) {
     log.debug("Leaving revoke(). No directory is loaded.");
-    return { ok: false, errors: [NO_DIRECTORY] };
+    return refused('STS-ADMIN-0501', { ok: false, errors: [NO_DIRECTORY] });
   }
   if (!role) {
     log.debug("Leaving revoke(). No such role.");
-    return { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
-                                 ROLE_IDS.join(' and ') + '.'] };
+    return refused('STS-ADMIN-0582',
+                   { ok: false, errors: ['Unknown role "' + roleId + '". ' +
+        'There are two: ' +
+                                 ROLE_IDS.join(' and ') + '.'] });
   }
   if (!name) {
     log.debug("Leaving revoke(). No name.");
-    return { ok: false, errors: ['No name was given.'] };
+    return refused('STS-ADMIN-0584',
+                   { ok: false, errors: ['No name was given.'] });
   }
 
   const dn = dnForRole(role);
@@ -663,23 +1032,30 @@ function revoke(username, roleId, context) {
     // on the PERSON'S entry and this module writes only to groups — writing to
     // a person from here would make the console a second definition of what an
     // entry may hold, which is the thing every slot in this feature avoids.
-    const claimed = (directory.claimedMembersOf(dn) || []).filter(function (row) {
+    const claimed = (directory.claimedMembersOf(dn) || []).filter(
+        function (row) {
       return directory.normalizeDn(row.dn) === directory.normalizeDn(target.dn);
     });
     if (claimed.length) {
       log.debug("Leaving revoke(). Claimed through memberOf; refused.");
-      return { ok: false, reason: 'claimed', role: role.id, username: name, dn: dn,
-               errors: [name + ' holds ' + role.label + ' through a memberOf value on ' +
-                        'THEIR OWN entry (' + target.dn + ') rather than through a member ' +
-                        'value on ' + dn + ', so there is nothing in the group to remove. ' +
-                        'Nothing here maintains memberOf — a client wrote it — and this ' +
-                        'console writes only to groups, deliberately. Delete that value with ' +
-                        'an ldapmodify or a SCIM PATCH of the person and the role goes with ' +
-                        'it.'] };
+      return refused('STS-ADMIN-0586',
+                     { ok: false, reason: 'claimed', role: role.id,
+               username: name, dn: dn,
+               errors: [name + ' holds ' + role.label + ' through a memberOf ' +
+                        'value on THEIR OWN entry ' +
+                        '(' + target.dn + ') rather than ' +
+                        'through a member value ' +
+                        'on ' + dn + ', so there is nothing in the ' +
+                        'group to remove. Nothing here maintains memberOf — ' +
+                        'a client wrote it — and this console writes only to ' +
+                        'groups, deliberately. Delete that value with an ' +
+                        'ldapmodify or a SCIM PATCH of the person and the ' +
+                        'role goes with it.'] });
     }
     log.debug("Leaving revoke(). Not a member.");
     return { ok: true, changed: false, role: role.id, username: name, dn: dn,
-             message: name + ' does not hold ' + role.label + '. Nothing was changed.' };
+             message: name + ' does not hold ' + role.label + '. Nothing was ' +
+                 'changed.' };
   }
 
   // Removed from EVERY membership attribute that named them rather than from
@@ -687,7 +1063,8 @@ function revoke(username, roleId, context) {
   // clients, two conventions, one directory — would otherwise still hold the
   // role after a revoke that reported success, which is the worst shape a
   // permissions bug takes.
-  const removed = hits.map(function (index) { return existing.members[index]; });
+  const removed =
+      hits.map(function (index) { return existing.members[index]; });
   const attributes = writableAttributes(existing);
   removed.forEach(function (member) {
     const key = Object.keys(attributes).filter(function (name2) {
@@ -707,7 +1084,9 @@ function revoke(username, roleId, context) {
   const written = directory.writeGroupEntry(dn, attributes, 'console');
   if (!written.ok) {
     log.debug("Leaving revoke(). The directory refused: " + written.reason);
-    return { ok: false, errors: [refusalText(written, dn)], reason: written.reason };
+    return refused('STS-ADMIN-0585',
+                   { ok: false, errors: [refusalText(written, dn)],
+                     reason: written.reason });
   }
 
   const nowEmpty = rosterEmpty();
@@ -722,28 +1101,33 @@ function revoke(username, roleId, context) {
               rosterNowEmpty: nowEmpty }
   });
 
+  // A seeded bootstrap administrator who has signed in has CLOSED the open
+  // window for good, so an empty roster no longer opens the console.
+  const boot = nowEmpty ? bootstrapState() : null;
+  const reopens = nowEmpty && config.value('admin.openWhenEmpty') &&
+                  !(boot.seeded && boot.claimedAt);
   log.debug("Leaving revoke(). " + name + " no longer holds " + role.id + ".");
   return { ok: true, changed: true, role: role.id, username: name, dn: dn,
            removed: removed.length,
            message: name + ' no longer holds ' + role.label + ' — ' +
-                    removed.length + ' membership value(s) removed from ' + dn + '.' +
+                    removed.length + ' membership value(s) removed from ' + dn +
+                    '.' +
                     (nowEmpty
-                      ? ' THAT WAS THE LAST GRANT ON THIS SERVICE. The roster is ' +
-                        'empty again, so ' +
-                        (config.value('admin.openWhenEmpty')
-                          ? 'this console is open to anybody who signs in until ' +
-                            'somebody is granted a role.'
-                          : 'nobody can use this console at all — ' +
-                            'admin.openWhenEmpty is off. POST /admin-api/rbac/grant ' +
-                            'is the way back in.')
+                      ? ' THAT WAS THE LAST GRANT ON THIS SERVICE. The ' +
+                        'roster is empty again, so ' +
+                        (reopens
+                          ? 'this console is open to anybody who signs in ' +
+                            'until somebody is granted a role.'
+                          : 'nobody can use this console at all. POST ' +
+                            '/admin-api/rbac/grant is the way back in.')
                       : '') };
 }
 
 const NO_DIRECTORY =
   'No LDAP directory is loaded in this process, so there is nowhere to hold ' +
-  'the roles. That is a build of this service without ldap_server.js and not a ' +
-  'failure — but it means nobody can be granted anything, so admin.authRequired ' +
-  'would leave this console reachable only while admin.openWhenEmpty is on.';
+  'the roles. That is a build of this service without ldap_server.js and not ' +
+  'a failure — but it means nobody can be granted anything, so the console ' +
+  'gate leaves this console reachable only while admin.openWhenEmpty is on.';
 
 function refusalText(written, dn) {
   log.debug("Entering refusalText().");
@@ -761,8 +1145,8 @@ function refusalText(written, dn) {
   }
   if (written.reason === 'full') {
     log.debug("Leaving refusalText().");
-    return 'The directory holds its maximum number of entries (ldap.maxEntries), ' +
-           'so the role group could not be created.';
+    return 'The directory holds its maximum number of entries ' +
+           '(ldap.maxEntries), so the role group could not be created.';
   }
   log.debug("Leaving refusalText().");
   return 'The directory refused to write ' + dn + ' (' + written.reason + ').';
@@ -787,8 +1171,10 @@ function candidates(seen) {
   log.debug("Entering candidates().");
   const out = new Map();
   const add = function (name, source) {
+    log.debug("Entering add().");
     const value = String(name == null ? '' : name).trim();
     if (!value) {
+      log.debug("Leaving add().");
       return;
     }
     const key = value.toLowerCase();
@@ -796,6 +1182,7 @@ function candidates(seen) {
       out.set(key, { username: value, inDirectory: false, seen: false });
     }
     out.get(key)[source] = true;
+    log.debug("Leaving add().");
   };
 
   if (directory) {
@@ -837,18 +1224,72 @@ function describe() {
     available: !!directory,
     groupsDn: directory ? directory.groupsDn : '',
     usersDn: directory ? directory.usersDn : '',
+    // WHOSE ROSTER THIS IS (2026-09-14, #32). The default realm's is the
+    // SERVICE roster — its members administer every realm and the whole
+    // service; any other realm's grants authority in that realm alone.
+    realm: boundRealmId(),
+    authority: boundRealmId() === realms.DEFAULT_ID ? 'service' : 'realm',
     roles: rows,
-    grantCount: rows.reduce(function (n, row) { return n + row.memberCount; }, 0)
+    grantCount: rows.reduce(function (n, row) { return n + row.memberCount; },
+                            0)
   };
   out.empty = out.grantCount === 0;
+  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13) — see bootstrapState(). Where one
+  // was seeded, the console is open until it signs in; otherwise, while the
+  // roster is empty, as before.
+  const bootstrap = bootstrapState();
+  out.bootstrap = { username: bootstrap.username, seeded: bootstrap.seeded,
+                    claimedAt: bootstrap.claimedAt };
+  const unclaimed = bootstrap.seeded ? !bootstrap.claimedAt : out.empty;
   // Said as one flag rather than left to the caller to compute from three,
   // because it is the sentence every surface has to render and three of them
   // computing it separately is three chances to say the door is shut while it
   // is open.
-  out.openToAnyone = out.enforced && out.empty && out.openWhenEmpty;
-  out.closedToEveryone = out.enforced && out.empty && !out.openWhenEmpty;
+  out.openToAnyone = out.enforced && unclaimed && out.openWhenEmpty;
+  out.closedToEveryone = out.enforced && out.empty && !out.openToAnyone;
   log.debug("Leaving describe(). " + out.grantCount + " grant(s).");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE PUBLIC FUNCTIONS, EACH TAKING THE REALM (2026-09-14, #32).
+//
+// `bound(fn, at)` answers a function that binds the realm found at argument
+// `at` for the call and then runs `fn` with the same arguments. The functions
+// above never re-bind — they read `directory` — so one of them calling another
+// stays in the realm its caller named.
+//
+// `grant()` and `revoke()` take it as `context.realm`, where their other
+// options already are.
+// ---------------------------------------------------------------------------
+function bound(fn, at) {
+  log.debug("Entering bound(). " + fn.name);
+  log.debug("Leaving bound().");
+  return function () {
+    const args = arguments;
+    return inRosterRealm(args[at], function () {
+      return fn.apply(null, args);
+    });
+  };
+}
+
+function inContextRealm(fn) {
+  log.debug("Entering inContextRealm(). " + fn.name);
+  log.debug("Leaving inContextRealm().");
+  return function (username, roleId, context) {
+    return inRosterRealm((context || {}).realm, function () {
+      return fn(username, roleId, context);
+    });
+  };
+}
+
+// The id an ambient authority names for a realm, for a caller that has a realm
+// record rather than an id.
+function isServiceRealm(realmId) {
+  log.debug("Entering isServiceRealm().");
+  const id = realmIdOf(realmId);
+  log.debug("Leaving isServiceRealm().");
+  return !id || id === realms.DEFAULT_ID;
 }
 
 module.exports = {
@@ -856,13 +1297,18 @@ module.exports = {
   ROLE_IDS: ROLE_IDS,
   roleFor: roleFor,
   setDirectory: setDirectory,
-  available: available,
-  roster: roster,
-  rosterFor: rosterFor,
-  rosterEmpty: rosterEmpty,
-  rolesOf: rolesOf,
-  grant: grant,
-  revoke: revoke,
-  candidates: candidates,
-  describe: describe
+  available: bound(available, 0),
+  roster: bound(roster, 0),
+  rosterFor: bound(rosterFor, 1),
+  rosterEmpty: bound(rosterEmpty, 0),
+  // THE BOOTSTRAP ADMINISTRATOR (2026-09-13), one per realm since 2026-09-14.
+  seedBootstrapAdministrator: bound(seedBootstrapAdministrator, 0),
+  noteConsoleSignIn: noteConsoleSignIn,
+  bootstrapState: bound(bootstrapState, 0),
+  rolesOf: bound(rolesOf, 1),
+  grant: inContextRealm(grant),
+  revoke: inContextRealm(revoke),
+  candidates: bound(candidates, 1),
+  describe: bound(describe, 0),
+  isServiceRealm: isServiceRealm
 };

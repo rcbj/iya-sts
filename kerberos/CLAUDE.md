@@ -2,7 +2,8 @@
 
 Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, a Kerberos-protected
 service, the same acceptor over HTTP as SPNEGO (RFC 4559/4178), and **a way of
-signing in with it**. Fourteen files, and they divide into three groups.
+signing in with it**. Sixteen files, and they divide into three groups — the two
+stored-key modules of 2026-09-12 belong to the service group and are described at the foot.
 
 **The codec**, which knows nothing about this service: `krb5_primitives.js`,
 `krb5_asn1.js`, `krb5_crypto.js`, `krb5_messages.js`, `krb5_ndr.js`,
@@ -51,6 +52,12 @@ installation. Note the naming: `krb5_spnego.js` beside it is the VENDORED RFC 41
 codec (a byte-identical copy of the parent project's `common/krb5/krb5_spnego.js`,
 kept honest by `tests/krb5_codec_sync.js` there), and `spnego.js` is this repo's own.
 Do not merge the two — one of them is somebody else's file.
+
+**`spnego_authn.js` must stay after `spnego.js` AND after `authn/authn.js` in the
+require order.** It draws with `spnego.js`'s page shell and negotiates through
+`spnego_exchange.js`; and it calls `authn.startSession()`, which is why the
+endpoint is HERE and not in `authn/` — a require the other way would drag the
+KDC's routes ahead of `oauth2.js` and close a cycle.
 
 ---
 
@@ -116,9 +123,10 @@ Five things about it are load-bearing:
   acceptor.
 * **THE REALM IS STRIPPED FROM THE PRINCIPAL, AND ONLY THE LOCAL ONE.**
   `alice@EXAMPLE.COM` becomes a session for `alice`, because the session's
-  username becomes `sub: urn:sts-mock:user:<name>` in every token that follows
-  and leaving the realm on would make a typed sign-in and a ticket sign-in two
-  subjects for one person. A FOREIGN realm is kept whole — `bob@PARTNER.COM` is
+  username is the name the directory entry — and so the `sub`
+  (`urn:uuid:<entryUUID>` since 2026-09-14) in every token that follows — is
+  found under, and leaving the realm on would make a typed sign-in and a
+  ticket sign-in two entries for one person. A FOREIGN realm is kept whole — `bob@PARTNER.COM` is
   not this service's `bob` — and the asymmetry is deliberate:
   `admin_stats.js`'s `identityOf()` folds them onto one DIRECTORY entry anyway,
   so the directory answers "which human" while the token answers "who am I
@@ -169,6 +177,34 @@ continuation arriving at `/authn/spnego` could otherwise be matched against a
 half-finished exchange begun at `/spnego/protected` by anybody sharing the
 address — a NAT, a proxy, a container network — and the accepted client on that
 entry is what the session would be minted for.
+
+**SINCE 2026-09-14 (#46 section 5) IT IS KEYED BY A NEGOTIATION ID, NOT THE
+ADDRESS** — capability `spnego.pending`, provided by `spnego_exchange.js`.
+Behind a load balancer every client has the balancer's address and every
+browser of a kind sends the same mechanism list, so two people's negotiations
+were one key and the second overwrote the first. Neither RFC 4559's header nor
+RFC 4178's NegTokenResp can carry a context handle, so:
+
+* the `request-mic` answer sets `sts_spnego_negotiation` (HttpOnly, SameSite=Lax,
+  Secure over TLS, for `krb5.spnegoPendingTtlSeconds`), and a continuation that
+  carries it is matched by it — and cleared;
+* a continuation WITHOUT it (a client with no cookie jar — the parent's
+  `krb5_spnego_http.js` job is one) is matched by its MIC: the candidates for the
+  door are tried, the caller's own address first, and the MIC verifies against
+  exactly one, because it is keyed by that negotiation's session key. A MIC
+  that fits none deletes nothing — the address key let one bad token from
+  behind the same NAT delete somebody else's negotiation;
+* the row holds its keys and mechanism list as HEX: the store was persisted
+  already, and a `Uint8Array` through JSON comes back as `{"0":…}`, so a
+  negotiation that reached another process could never have verified;
+* the continuation is SPENT through `cluster/cluster_claims.js` before it is
+  accepted (`STS-KRB-0119` another process completed it, `STS-KRB-0120` the
+  store could not be asked — both the `no-pending-continuation` outcome, so no
+  caller's switch changed).
+
+`tests/cluster_limits_challenges_retention.js` section D holds all four; the
+parent's `tests/krb5_spnego_http.js` passed against this tree
+(`MOCK_STS_DIR`), request-mic included.
 
 ---
 
@@ -318,6 +354,49 @@ commit that bumps the `sts/` gitlink across the change, or the four jobs die at
 load with `Cannot find module` naming a file nobody edited. See
 `docs/parent-project-migration.md`.
 
+**AND IT IS OWED AGAIN AS OF 2026-09-12: `common/error_codes.js`.** The error
+code registry is required by `common/audit.js`, `config.js`, `helpers.js`,
+`realms.js`, `crypto.js`, `worker_pool.js`, `worker.js`, `krb5_kdc.js`,
+`krb5_service.js` and `spnego_exchange.js` — all inside that closure — so the
+commit that bumps the `sts/` pin across it needs `COPY
+sts/common/error_codes.js ./sts/common/` in the parent's `tests/Dockerfile`, or
+the four in-process Kerberos jobs die at load with `Cannot find module
+'./error_codes'`. It is a leaf and requires nothing, so it is one line and no
+more.
+
+**AND OWED AGAIN AS OF 2026-09-14: `cluster/cluster_claims.js`** (#46).
+`krb5_service.js` requires it to spend an Authenticator across the cluster, so
+the commit that bumps the `sts/` pin across it needs `COPY
+sts/cluster/cluster_claims.js ./sts/cluster/`. Everything it requires —
+`config`, `realms`, `error_codes`, `cluster_capabilities`, and
+`persistence/persistence.js` LAZILY — is already in that closure through
+`common/app.js`, which requires `cluster/cluster_barrier.js`; if the parent's set
+does not yet carry `cluster/` at all, the whole directory is owed with it. With
+no store a claim is that process's memory, so the four in-process jobs behave
+exactly as before.
+
+**AND OWED AGAIN AS OF 2026-09-14: `common/client_address.js`** (#46 section 8).
+`common/helpers.js` requires it to decide whether a request's forwarded headers
+are believed, so the commit that bumps the `sts/` pin across it needs `COPY
+sts/common/client_address.js ./sts/common/`. It requires only `net`, bunyan and
+`config`, which is already in the closure. `spnego_exchange.js`'s new requires
+of `cluster/cluster_claims.js` and `cluster/cluster_capabilities.js` add nothing:
+`krb5_service.js` already requires both. `common/websecurity.js` now requires
+`cluster/cluster_counters.js`, which is owed only if websecurity is in the
+parent's set (it is reached from `authn.js`, not from the three Kerberos
+modules).
+
+**AND NOT OWED FOR THE PROXY PROTOCOL (2026-09-14, #46), ON PURPOSE.** The
+KDC's TCP listener takes a PROXY protocol v2 header when `global.proxyProtocol`
+is `v2`, and `common/proxy_protocol.js` is installed on it from `server.js`
+(`proxyProtocol.install(kdcListeners.tcp, …)` right after `krb5.listen()`)
+rather than from `krb5_kdc.js`, so the closure gains nothing. That is not a race:
+`listen()` returns before any `connection` event can be delivered. `startTcp()`
+now reads `socket.remoteAddress` once per connection for its debug line and its
+two refusal warnings, which is the header's source when one was read. The UDP
+socket is not covered — a datagram has no stream to put a header in front of —
+so behind a load balancer Kerberos clients use TCP.
+
 `MOCK_STS_DIR=/path/to/mock-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
 says loudly that the run reflects an unpushed working copy.
@@ -449,3 +528,356 @@ while one for a host this service answers for is not; that a half-finished
 that exactly ONE authentication is recorded per sign-in rather than a ticket
 acceptance beside a session start.
 
+
+## PRODUCT MODE, AND THE LITERALS AN AUDIT FOUND IN THIS DIRECTORY (2026-09-12)
+
+**The principal database is built at REQUIRE TIME in the mode the PROCESS starts
+in, and that is captured once as `SEEDS_DEMO`.** `global.mode` is runtime and per
+trust realm, but this KDC answers in no realm and its long-term keys are material
+derived at startup — the kind `common/CLAUDE.md` says must never be marked
+runtime — so switching the mode later adds and removes no principal. `realmsServed()`
+and `realmForService()` read the same captured value, so the database and the realms
+it answers for cannot disagree.
+
+**What product mode (`mode.seedsDemoData()` false) does NOT create**: every entry in
+`DEFINITIONS` below `krbtgt` — alice, bob and the five misconfigured users, the
+computer account, the four delegation services with their literal passwords and their
+`msDS-*` rules — and the whole second realm (`TRUSTED_DEFINITIONS`, the trust). The
+realm list is then one realm, so `PARTNER.COM` is `KDC_ERR_WRONG_REALM`.
+
+**What it creates, and the one refusal each carries.** `krbtgt/<realm>` and the account
+`krb5.servicePrincipal` names — each ONLY where its password is not the value the
+settings table publishes (`publishedDefault()` reads the row's `dflt`, so the literal
+is written once). A krbtgt from `krbtgt-mock-password` is a golden ticket handed out in
+the README; a service key from `service-account-password` is a silver one. Refused, the
+reason is carried by `serviceAccount()` / `krbtgtUnavailableReason()`, the acceptor puts
+it in its refusal, and `GET /krb5/service` and `GET /krb5/principals` publish it.
+
+**A PRODUCT KDC AUTHENTICATED NOBODY UNTIL LATER THE SAME DAY, AND NOW IT AUTHENTICATES
+THE DIRECTORY'S PEOPLE.** This paragraph read: *nothing is created on demand, no fixture
+user exists, and the directory's people are not given Kerberos accounts. The product use
+of this directory is the ACCEPTOR … Giving directory people principals is
+`common/mode.js`'s `kerberos-keys` row.* The first two clauses still hold; the third is
+the section below. The acceptor use is unchanged, with one addition: a keytab minted at
+`/admin/kerberos/principals` for `krb5.servicePrincipal` keys the acceptor with a random
+key instead of `krb5.servicePassword` and `krb5.serviceSalt`.
+
+**`krb5.servicePrincipal` IS WHAT THE ACCEPTOR'S ACCOUNT IS MADE FROM, IN EVERY MODE.**
+It was the fixture `['HTTP', 'web.' + DOMAIN]` whatever the setting said, while
+`krb5_service.js` looked for the setting — invisible at the defaults, where the two
+agree. `configuredServiceDefinition()` builds the account from the setting and, at the
+defaults, REPLACES the fixture entry in place with a definition identical field for
+field (same salt convention, password, `okAsDelegate`, description), so a development
+database is byte-for-byte what it was. When the names differ the fixture stays beside it,
+because the delegation cases name it. `ok-as-delegate` is on only where the fixtures are.
+
+**Settings that replaced literals** (defaults unchanged): `krb5.enctypes` (validated
+against the vendored codec — an unimplemented number is FATAL at startup rather than
+silently dropped), `krb5.kvno` (rotation is not modelled), `krb5.ticketLifetimeSeconds`,
+`krb5.renewLifetimeSeconds`, `krb5.logonServer`, `krb5.maxRequestBytes` (the KDC's
+inbound TCP cap — the old `MAX_REPLY_BYTES` name described a different limit from the one
+it enforced), `krb5.udpMaxReplyBytes`, `krb5.serviceMaxTokenBytes`,
+`krb5.replayCacheMaxEntries`, `krb5.spnegoPendingTtlSeconds`, `krb5.spnegoMaxPending`.
+
+**THE PAC INVENTS NOTHING IN PRODUCT MODE WHERE [MS-PAC] PERMITS.** `passwordLastSet`
+(authtime minus thirty days) becomes the zero FILETIME — there is no "never" encoding
+for that field the way there is for PasswordMustChange — and `logonCount` becomes 0.
+`passwordMustChange: 2020-01-01` is on the `expired` fixture, which product mode does
+not create.
+
+**`GET /krb5/principals` WITHHOLDS BOTH PASSWORDS unless the database was built with
+fixtures AND the ambient realm opens test controls** — both, because a development realm
+inside a product process must not publish the process's passwords. They are replaced by
+a sentence rather than omitted. `notImplementedYet` said PAC, cross-realm referrals,
+S4U2Self and S4U2Proxy for as long as all four had been implemented; it names FAST,
+PKINIT, kpasswd, user-to-user, SID filtering and key rotation now.
+
+**Two bugs wrong in every mode, fixed unconditionally.** Every listener here bound the
+literal `'0.0.0.0'` rather than `global.host` (the UDP socket is `udp6` for an IPv6
+address). And **the acceptor's replay cache FORGOT an Authenticator still inside its
+window** when it passed its cap — `pruneReplayCache()` deleted the oldest entries on the
+stated grounds that they "cannot be replayed anyway", which was true only of the entries
+the loop above had already removed. An attacker holding a captured AP-REQ needed only
+enough fresh valid Authenticators to push it out, and development mode gives anybody a
+ticket. The cap now REFUSES the next Authenticator (`KRB_ERR_GENERIC`, naming the
+setting) and prunes only by the window, whose 2 × skew bound is exactly sufficient.
+
+**AN ON-DEMAND RID IS DERIVED FROM THE NAME (later the same day), and this paragraph
+described two allocators before it.** A counter restarted at 5000 in a process whose
+persisted `principals` store came back holding 5000 — two accounts, one SID. Its
+replacement read one above the highest RID in the database, which fixed a restart and not
+a second PROCESS: two processes creating accounts in the same instant both read the same
+highest RID, and the paragraph said so and called the fix "a coordinated write". It is
+`autoRidFor()` now — SHA-256 of `name@realm` into **[5000, 2^30)** (2^30 being Active
+Directory's RID pool, so the SID is one a real domain could issue and nothing reading it
+signed sees a negative), with a linear probe past any slot a DIFFERENT principal already
+holds. Two processes creating the SAME name agree with no coordination; an existing account
+is never renumbered (every caller asks only when creating, and `directoryUser()` keeps the
+RID of a record it replaces); a configured RID cannot be produced. **The residual** — two
+different names meeting on one slot in ~1.07 billion within one replication window, about
+n²/2.1e9 for n first creations inside it — is stated in the comment above `autoRidFor()`
+and judged not material enough for a `common/mode.js` row: runtime-made accounts in product
+mode are directory people's first Kerberos sign-ins, and a restored or replicated
+runtime-made row whose RID another principal holds is LOGGED (`STS-KRB-0114`) rather than
+silent. **A collision the old allocators already made is not repaired** — renumbering would
+change a SID already in somebody's ticket or ACL — and is reported by that same code the
+next time the row is restored.
+
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js`, `krb5_service.js`
+and `spnego_exchange.js` now require `common/mode.js` and `common/config.js`, both already
+in that closure through `common/helpers.js`.
+
+**A RESTORED PRINCIPAL NO LONGER OVERRIDES THE SETTINGS (later the same day), and this
+paragraph called that "one thing this cannot fix from here".** It read: *a restore SETS
+each stored row over the one `buildDatabase()` just registered — so a changed
+`krb5.servicePassword`, `krb5.enctypes` or `krb5.kvno` does not take effect for an account
+that is already in the store. That is `realms.sharedMap()`'s restore semantics and
+`persistence/`'s to decide.* It was worse than that sentence: a process whose settings no
+longer CREATE an account — product mode after a development run, a krbtgt refused for its
+published password, a renamed SPN — had it put back with the password it was written with.
+
+The fix is at the boundary both doors reach. `realms.sharedMap()` takes a `reconcile`
+option (`common/realms.js` argues it) that its `restore` and `remove` accessors ask first —
+and those two accessors are what `persistence_minted.js`'s startup restore AND its
+replication applier call, so another process's write obeys the rule exactly as a restart
+does. `krb5_principals.js`'s `reconcileRestored()` / `reconcileRemoved()` are the rule:
+
+* **A CONFIGURED principal** (`CONFIGURED_KEYS`, filled by `registerConfigured()` in
+  `buildDatabase()`) keeps every field its settings built and takes only `RUNTIME_FIELDS`
+  from the row. **That list is ONE field, `signedOutAt`, and it is a finding**: every write
+  to a configured principal after startup is `signOut()` or `clearSignOut()`; `revoked` is
+  set only by the `locked` fixture's definition. A difference in anything else is logged as
+  `STS-KRB-0111`, by field NAME and never by value. **A field that becomes runtime state
+  later is a row in `RUNTIME_FIELDS` in the same commit as its first writer**, or a restart
+  silently undoes that writer's work.
+* **A RUNTIME-MADE principal** (`autoCreated`, or a `directoryKeys` person) is restored
+  WHOLE — the store is its only source. That includes the shared development password an
+  auto-created account was made with, so changing `krb5.userPassword` does not reach one
+  already in a store; in practice only a dispatched development run persists these, and it
+  does not persist them across a restart.
+* **Any other row is NOT restored** (`STS-KRB-0112`) — it claims to be configured and these
+  settings do not configure it.
+* **A stored REMOVAL of a configured principal is refused** (`STS-KRB-0113`).
+* **Nothing is written back.** A stale stored row is corrected by the next write of that key
+  (a sign-out writes the whole record this process holds); rewriting from inside the applier
+  would be two processes with different settings exchanging one row for ever.
+
+`tests/kerberos_product_mode.js` holds the audit's claims, in child processes where the
+claim is about how the process was started; mutation-tested against the replay refusal
+removed, the RID probe removed, and (through `ldap_tls_product_mode.js`) the listeners'
+bind address. **`tests/kerberos_principal_store.js` holds both of the fixes above**: the
+rule at the accessors in process, the two real doors (`minted.restore()` and
+`minted.applyChange()`, over sealed rows) in a product-mode child with a changed
+`krb5.servicePassword` and `krb5.serviceSalt` and a development fixture left in the store,
+and the RID asked of a second process. Sixteen mutants across it, `common/realms.js` and
+`krb5_principals.js`, all caught — one (the probe counting a name's own record as taken)
+only after the fixture asked about an account sitting on its own slot.
+
+
+## STORED LONG-TERM KEYS: A PERSON'S FROM THEIR PASSWORD, A SERVICE'S AT RANDOM (2026-09-12)
+
+Two NEW files and neither is vendored: **`krb5_person_keys.js`** (the register — derive,
+store, read for the KDC, service principals, the lists) and **`krb5_keytab.js`** (an MIT
+keytab 0x502 writer and reader; this repository had no keytab code before, reader or
+writer, so there was nothing to reuse and the test carries an independent reader). The
+directory's count above is sixteen files now.
+
+**THE PROBLEM WAS STRUCTURAL.** A person's password is a scrypt hash on their entry, and
+RFC 3961 string-to-key needs the plaintext. So the keys are derived at the two moments
+`common/credentials.js` holds one — a password SET, and a password VERIFIED — and stored,
+SEALED, on the person's own entry: `stsKrb5Keys` (one value: name, realm, kvno, salt, a
+stamp of the password hash, and every enctype's key) and `stsKrb5KeyInfo` (the public
+half). Six things about it are decisions:
+
+* **THE ASYNC SHAPE.** `setPassword()` and `verify()` are synchronous and string-to-key is
+  Web Crypto PBKDF2, so the observer QUEUES a derivation, chained per person, and returns.
+  The keys lag the password by tens of milliseconds, and the KDC refuses the person in that
+  window rather than keying them from anything older — which is what the STAMP makes true
+  whichever door changed the password (an `ldapmodify` of `userPassword` included, which the
+  observer never sees). A failed derivation is `STS-KRB-0107`, logged and audited, and never
+  touches the sign-in it observed. `idle()` settles every derivation for a caller that has to
+  know.
+* **THE KVNO.** A first key starts at `krb5.kvno`; a new password is the stored kvno plus
+  one; the SAME password adding enctypes keeps its version. A service principal starts at
+  `krb5.kvno` and a Rotate adds one. `krb5.kvno` therefore means two things now and the
+  settings row says both: the fixed version of every account built from a password in the
+  configuration, and the STARTING version of a stored key.
+* **ONE SEALED VALUE, NOT ONE PER ENCTYPE.** The authentication tag covers the name and the
+  stamp beside the keys, so a value copied to another entry names the wrong person and one
+  kept past a password change carries the wrong stamp. While keys persist a CLEAR value is
+  refused, so an `ldapmodify` cannot plant a key of its choosing.
+* **THE TRUST REALM IS THE DEFAULT ONE.** The KDC's sockets and `krb5.realm` are the
+  process's; the directory slot `ldap_server.js` fills is pinned to the default realm, and a
+  password set in another realm derives nothing — keys nothing reads are password-equivalent
+  material for nobody. This is NOT per-realm Kerberos, and `realmSupport()` still says so.
+* **NOTHING IS SHOWN.** Both key attributes are withheld from the directory dump and from an
+  LDAP search (ciphertext included), from `applications.view()`, from `/admin-api` and from
+  the audit log. A service key leaves this service ONCE, as the keytab the create or rotate
+  hands over; nothing reads a stored key back out.
+* **THE PRINCIPAL IS A RECORD AND THE KEYS ARE NOT.** A person the KDC resolves from the
+  directory is registered in `principals` (so a sign-out stamps it, the TGS handler finds it
+  and `/krb5/principals` lists it with `directoryKeys: true`) with NO PASSWORD — the shared
+  development password left on the record would be a second key for every person — and the
+  keys go into the non-enumerable cache, refilled from the source on every AS lookup. A
+  stored SERVICE key is not registered: it is built over the configured account, if any, per
+  lookup, and `krbtgt/*` is never asked.
+
+**THE SLOTS, AND RULE 3e.** `krb5_principals.js` offers `setKeySource()` and this module
+fills it; `common/credentials.js` offers `setPasswordObserver()` and this module fills it;
+this module offers `setDirectory()` and `ldap/ldap_server.js` fills it. A require from the
+principal database to the register would close a cycle (the register requires it) and move
+every `/ldap` route (the register reads the directory) — and, the reason that is particular to
+this directory, **it would put `common/credentials.js`, `common/keystore.js` and the
+directory into the parent project's COPY set**. A require from `common/credentials.js` would
+be `common/` reaching into `kerberos/`, the layering inversion `common/CLAUDE.md` exists to
+prevent.
+
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_kdc.js`, `krb5_service.js`
+and `spnego.js` gained no require; `krb5_principals.js` gained a slot and no require. The
+new modules are required by `ldap/ldap_server.js` and the two `admin-core/` halves only. A
+parent in-process job loads a KDC with no key source, which in development behaves exactly
+as it did (and in product refuses a person with a sentence naming the missing source).
+
+**`/admin/kerberos/principals`** is the console page and `GET /admin-api/kerberos/principals`
++ `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,
+clear-person-keys}` its twins (rule 7). `admin-ui/CLAUDE.md` argues the page.
+
+`tests/kerberos_person_keys.js` holds it: RFC 3962 Appendix B through the derivation path,
+the keytab against an independent reader, development unchanged, and — in a product-mode
+child — a real AS-REQ succeeding with the right password and failing with a wrong one, the
+shared development password refused, a person with no keys refused with the sign-in-once
+e-text, the upgrade on a verify, a password change moving the kvno and refusing the old
+password, a password written behind the observer refused as stale, a copied sealed value
+refused with the stamp matching, a planted clear value refused, no key in an audit row or a
+view, and a service principal created, its keytab read independently, a ticket for it issued
+by the KDC and accepted by the acceptor, rotated, and deleted. Sixteen mutants, all caught
+(see `tests/CLAUDE.md`).
+
+**What is still not done**, recorded where it bites: a superseded derivation abandoning
+itself is not asserted by any test. (This paragraph also listed the LDAP add/modify door,
+which since the same day reaches the observer through `credentials.passwordWritten()`, and
+old kvnos not being retained, which is the section below.)
+
+### PREVIOUS KEY VERSIONS: A PASSWORD CHANGE OR A ROTATION NO LONGER STRANDS A TICKET (2026-09-12)
+
+Until this, a rotation or a password change threw the old key away in the write that stored
+the new one, so a ticket issued an instant earlier was refused `KRB_AP_ERR_BADKEYVER` at its
+very next use. A real KDC keeps the previous kvno in its database and a service keeps it in
+its keytab until those tickets have expired; this is that, bounded twice.
+
+* **WHERE THEY LIVE: INSIDE THE SAME SEALED VALUE, as `previous`, not in a companion
+  attribute.** One authentication tag over the current keys and every kept version, so a
+  version cannot be planted back beside a newer current key or left behind on another
+  entry; one write, so there is no moment holding the new key and no previous version (or
+  the reverse); and no schema change — the two key attributes are already withheld, sealed
+  and on the rows a sighting preserves. `RECORD_VERSION` stays 1: `previous` is optional. The
+  PUBLIC info attribute gains `retained` — kvno, enctypes, `retiredAt`, `expiresAt`, never a
+  key — which is all a page lists.
+* **THE BOUNDS.** `krb5.retainedKeyVersions` (default 1, 0 keeps none) and
+  `krb5.retainedKeyTtlS` (default 0 = `krb5.ticketLifetimeSeconds` + `krb5.clockSkew`: no
+  ticket here outlives its lifetime, a renewal needs an unexpired ticket and re-seals under
+  the current key, and an acceptor tolerates the skew on its end time). A version's expiry is
+  the EARLIER of the one stamped when it was retired and its retirement plus the lifetime in
+  force NOW, and the count is re-applied, **at every read as well as every write** — so a
+  lowered setting ends windows at the next request and a raised one resurrects nothing. What
+  is past a bound is never used, never listed, and removed from storage at the next write of
+  that key.
+* **A KEPT VERSION ONLY OPENS A TICKET ALREADY SEALED UNDER IT.** The key source hands kept
+  versions over BESIDE the current keys; `krb5_principals.js` attaches them non-enumerably as
+  `retainedKeys` and never into `keys`, which is the cache pre-authentication and every
+  issuance read. The one reader is `retainedKeyFor(principal, etype, kvno)`, asked by
+  `krb5_kdc.js`'s `ticketKeyFor()` (the ticket in a TGS-REQ, and an S4U2Proxy evidence
+  ticket) and by `krb5_service.js`'s acceptor. **So the KDC always issues under the current
+  kvno and an old password never signs in.** A stored-key principal presented with a kvno
+  that is neither current nor kept is refused 44 — `STS-KRB-0115` at the KDC (new, and the
+  KDC never checked a kvno before), `STS-KRB-0068` at the acceptor as before. **A principal
+  built from a password in the configuration is unchanged at the KDC**: its key does not
+  change with its number, the KDC never refused on that number, and `ticketKeyFor()` answers
+  its current key whatever kvno a ticket names.
+* **`find()` READS A DIRECTORY PERSON AGAIN** before answering, because the record's key
+  cache holds whatever the LAST AS lookup found — without it a TGS naming a person issued or
+  decrypted under the kvno before their password change.
+* **THE OUTGOING RECORD IS READ AT THE WRITE**, not before the derivation: an operator's drop
+  may land in between, and retiring from the earlier read would put back what was dropped.
+  The re-read and the write have no await between them.
+* **A ROTATION'S KEYTAB CARRIES EVERY KEPT VERSION**, current first, as MIT's `ktadd` without
+  `-k` leaves one; the reply's `keytabKvnos` and `retained` say which and until when.
+* **"DROP PREVIOUS VERSIONS"** — `drop-previous-service-keys` and
+  `drop-previous-person-keys`, a row button on `/admin/kerberos/principals` drawn only while a
+  version is kept, and the same two operations on `/admin-api` (rule 7) — rewrites the record
+  with `previous` empty and the current key untouched, audited as
+  `admin.krb5.previous.dropped`. Nothing kept is `dropped: 0`; a record this process cannot
+  open is refused rather than rewritten.
+* **WHAT IT DOES NOT COVER.** `krbtgt` has no rotation here (its key is the restart-only
+  `krb5.krbtgtPassword` at a fixed kvno), so the TGT path consults kept versions only for the
+  stored-key principals that have them; a TGT under an older krbtgt password is still
+  refused. And the principal's own check in `retainedKeyFor()` against the clock duplicates
+  the source's (mutant M4 below survives because of it, deliberately).
+
+`tests/kerberos_person_keys.js` sections 5 holds it in the product child with real AS-REQs,
+TGS-REQs and AP-REQs: a TGT and a ticket sealed under a person's key both still accepted
+after a password change, the old password refused, issuance at the new kvno, the count bound
+(kvno 3 refused 44 once 4 and 5 exist), the lifetime bound (a one-second override refuses,
+clearing it restores), drop-now refusing 44 while the current sign-in works; and for a
+service, the rotation keytab holding both kvnos with the create's own kvno-3 keys, the
+acceptor and the TGS accepting kvno 3 and 4, a second rotation keeping only 4, and drop-now
+refusing 4 while 5 is accepted. Sixteen mutants, fifteen caught; **M4 (the principal-side
+expiry check removed) survives** because the source filters by the same clock in the same
+synchronous call — a belt-and-braces guard, recorded rather than counted. Untested: the
+S4U2Proxy evidence path under a kept version, and a drop racing a derivation.
+
+---
+
+## THE REPLAY CACHE ACROSS THE CLUSTER (2026-09-14, #46) — capability `kerberos.replay-cache`
+
+`replayCache` is a persisted `realms.sharedMap()`, which REPLICATES: a captured
+AP-REQ delivered to a second node inside the replication window found an empty
+cache there and was accepted — and with a load balancer or DNS round-robin on
+the service name, delivery to another node is the default, not the attack.
+
+`accept()` step 7 now keeps the cache check (and the full-cache refusal) first,
+sets the entry before any await, and then SPENDS the Authenticator's
+(client, ctime, cusec) key through `cluster/cluster_claims.js` (scope
+`krb5.authenticator`, `realm: ''` — the acceptor has no realm, like the cache).
+**The claim is inside `accept()` because that is the async boundary**: it is
+already asynchronous (every decryption is awaited), it is the one place any
+transport accepts a ticket — the raw socket and both SPNEGO doors — and it comes
+after every other check, so a bad ticket takes no slot. The claim lives
+`2 × krb5.clockSkew` (the cache's own window) plus 60 s of clock disagreement.
+A replay seen by another node is `KRB_AP_ERR_REPEAT` with `STS-KRB-0116`; a store
+that cannot be asked is refused `KRB_ERR_GENERIC` with `STS-KRB-0117` **and the
+local entry is forgotten**, because an Authenticator refused unproven was not
+used and its retry is not a replay. `tests/cluster_single_use_protocols.js`
+section 4 holds all three, with the empty-store control.
+
+
+## A SIGN-OUT INSTANT ON ANOTHER NODE (2026-09-14, #46 section 4)
+
+`signedOutAt` is a field of a replicated `krb5.principals` row, so a TGS-REQ
+that DNS round-robin sent to a node which had not yet applied a sign-out
+committed elsewhere was answered from a copy without the stamp, and the
+signed-out ticket was honoured. Every HTTP request is held to the cluster
+barrier; these raw TCP and UDP sockets are not the express app. So
+`handleMessage()` now calls `catchUpWithCluster()` before an AS-REQ or a
+TGS-REQ: in active-active mode, with `logout.kerberosSignOut` on, it awaits
+`cluster_barrier.syncShared()` — the barrier's rule 1, one shared read of the
+change log's head — and a barrier that gave up is logged (`STS-KRB-0118`) and
+the request answered anyway. The sign-out itself is HTTP, so its answer is held
+until the stamp commits; a TGS-REQ that follows it on any node sees it. MS-KKDCP
+goes through the same dispatcher and is already behind the HTTP barrier; the
+second shared read costs nothing.
+
+**What is left is a race, not a window**: an AS-REQ CLEARS the stamp by writing
+the whole principal back, and one that caught up just before a concurrent
+sign-out on another node committed can land its clear after that stamp — last
+writer wins on the row, which is issue section 3's. **`signedOutAt` survives
+`reconcileRestored()`**, which the issue left unverified: it is the one member
+of `RUNTIME_FIELDS`, so a configured principal takes it from the incoming row
+and a runtime-made one is restored whole.
+
+The two requires are LAZY and guarded. `cluster/cluster_barrier.js` is already
+in the parent project's COPY closure through `common/app.js`, and
+`cluster/cluster.js` with it (the barrier requires it lazily); if that set does
+not carry `cluster/` yet, it is the directory already owed above, not a new
+line. Not measured on a live pair: the sign-out probe in `ldap/CLAUDE.md` ran
+against LDAP only.

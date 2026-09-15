@@ -51,11 +51,18 @@
 // over there, in `tests/sts_userinfo_protected.js`.
 // ===========================================================================
 
+const child_process = require('child_process');
 const pool = require('../common/worker_pool');
 const pqJose = require('../common/pq_jose');
 const crypto = require('../common/crypto');
 const config = require('../common/config');
 const realms = require('../common/realms');
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'worker_pool',
+  level: process.env.LOG_LEVEL || 'info' });
 
 // One message for everything below, so a difference is never the input.
 const MESSAGE = Buffer.from('the worker pool signs exactly what this ' +
@@ -109,7 +116,9 @@ const DRIVEN_IN_A = pqJose.PQ_ALGS.filter(function (alg) {
 // puts it back, for the reason the parent suite's saml11_sso.js gives: a `set`
 // left behind is the next test's mystery.
 function withWorkers(count, run) {
+  log.debug("Entering withWorkers().");
   config.setOverride('workers.count', String(count));
+  log.debug("Leaving withWorkers().");
   return Promise.resolve()
     .then(run)
     .then(function (value) {
@@ -123,11 +132,13 @@ function withWorkers(count, run) {
 
 module.exports = {
   name: 'worker_pool',
-  describe: 'the same bytes, off this thread, on the right worker, and ' +
-            'nothing lost when one dies',
+  describe: 'the same bytes, off this thread, on the right worker, nothing ' +
+            'lost when one dies, and nothing left hanging when one simply ' +
+            'never answers',
 
   run: async function (t) {
 
+    log.debug("Entering run().");
     // -----------------------------------------------------------------------
     t.log.info('A. a worker computes what this process would have computed');
     // -----------------------------------------------------------------------
@@ -200,6 +211,8 @@ module.exports = {
     // existed and it is here as the CONTROL: without it, "the timer fired" is
     // not evidence of anything.
     const measure = async function (workers) {
+      log.debug("Entering measure().");
+      log.debug("Leaving measure().");
       return withWorkers(workers, async function () {
         const pair = pqJose.generate(SLOW_ALG);
         let ticks = 0;
@@ -374,5 +387,137 @@ module.exports = {
     // running is a test the next one has to reason about.
     await pool.stop();
     t.equal(pool.stats().running, 0, 'and the pool drains at the end');
+    // -----------------------------------------------------------------------
+    t.log.info('F. A JOB THAT DOES NOT COME BACK IS FAILED, NOT LEFT HANGING');
+    // -----------------------------------------------------------------------
+    // **THE POOL HAD NO BOUND AT ALL UNTIL 2026-09-11**, and the gap is the
+    // one this file's own subject line already claimed to cover: `reap()`
+    // rejects every job on a worker that DIES, and nothing covered a worker
+    // that stays ALIVE and never answers. One was observed doing exactly that
+    // — five idle children, no CPU anywhere in the process tree, the service
+    // answering every other request in eleven milliseconds, and one HTTP
+    // request parked until a test runner's 300-second watchdog killed the job.
+    //
+    // There is no way to make a real worker swallow a job, so the bound is
+    // driven from the other side: a genuinely slow job and a bound far shorter
+    // than it. **What is asserted is that the promise SETTLES**, not that it
+    // settles quickly — a pool that hangs and a pool that is slow are the two
+    // outcomes being told apart, and only one of them is a bug.
+    // **RESET FIRST.** Section E drives the give-up path, which leaves the
+    // pool computing in the front process — and work done here has no worker
+    // to time out, so the bound would not fire and this section would pass on
+    // a resolve, recording nothing. That is exactly how its first draft
+    // passed.
+    pool.reset();
+    await withWorkers(1, async function () {
+      const before = config.value('workers.jobTimeoutS');
+      config.setOverride('workers.jobTimeoutS', 1);
+      try {
+        // **A SIGNATURE AND NOT A KEYPAIR.** `pq.generate` for this
+        // algorithm finishes in about six hundred milliseconds, so a
+        // one-second bound never fired and the assertion below passed for the
+        // wrong reason — it recorded "resolved" and the bound went unchecked.
+        // SLH-DSA SIGNING is the slow half (the stalls this pool was built for
+        // were measured on it, at 15 to 23 seconds), so it is reliably longer
+        // than the bound on any machine.
+        //
+        // The worker goes on computing after the bound fires; it is not
+        // waited for, which is the point, and `withWorkers()` stops the pool
+        // on the way out.
+        const pair = pqJose.generate(SLOW_ALG);
+        const started = Date.now();
+        let settled = 'nothing';
+        try {
+          await pool.run('pq.sign',
+                         { alg: SLOW_ALG, priv: pair.priv, message: MESSAGE });
+          settled = 'resolved';
+        } catch (e) {
+          settled = /did not come back within/.test(e.message)
+            ? 'failed on the bound' : 'failed: ' + e.message;
+        }
+        const took = Date.now() - started;
+        t.check(settled !== 'nothing',
+                'the promise SETTLES rather than hanging, which is the whole ' +
+                'property', settled + ' in ' + took + 'ms');
+        t.check(!pool.stats().inProcess,
+                'a WORKER was used rather than the front process — work done ' +
+                'here has no worker to time out, so a bound cannot fire and ' +
+                'the check below would pass on a resolve',
+                JSON.stringify(pool.stats()));
+        t.check(settled === 'failed on the bound',
+                'and it is the BOUND that settled it, with a message naming ' +
+                'the worker and the job kind — a bound that never fires is a ' +
+                'bound nothing is checking', settled);
+        t.check(took < 30000,
+                'and it fired near the bound rather than at some other ' +
+                'timeout further out', took + 'ms');
+      } finally {
+        config.setOverride('workers.jobTimeoutS', before);
+      }
+    });
+
+    // AND THE BOUND IS OFF BY DEFAULT-ABLE: `0` restores exactly what this
+    // pool did before, which is the contract every switch in this service
+    // keeps about its own previous behaviour.
+    t.equal(typeof config.value('workers.jobTimeoutS'), 'number',
+            'the bound is a number of seconds and is settable');
+
+    // -----------------------------------------------------------------------
+    t.log.info('G. A WORKER WHOSE CHANNEL CLOSES MID-JOB EXITS, IT DOES NOT ' +
+               'CRASH');
+    // -----------------------------------------------------------------------
+    // **SECTION F LEFT A WORKER COMPUTING, AND IT DIED ON ITS WAY OUT.** A job
+    // is synchronous, so the channel can close while one runs — the bound
+    // fired, the pool drained, or the front process exited — and the worker
+    // cannot see the `disconnect` until the job returns. Its answer then went
+    // to a closed pipe, node reported that as an `'error'` on `process`,
+    // nothing listened, and the child printed an unhandled `write EPIPE` stack
+    // onto the stderr it shares with its parent. Seen at the foot of this
+    // file's own log in a `cluster` run on 2026-09-15, after `0 failed`.
+    //
+    // The child is forked BY HAND rather than through the pool: `stop()`
+    // disconnects and then kills, and a killed child exits by signal whatever
+    // its send did, which would pass this section on the defect.
+    await new Promise(function (resolve) {
+      const child = child_process.fork(require.resolve('../common/worker'), [],
+        { serialization: 'advanced', stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+      let stdout = '';
+      let stderr = '';
+      let sent = false;
+      child.stderr.on('data', function (d) {
+        stderr += d;
+      });
+      child.stdout.on('data', function (d) {
+        stdout += d;
+        if (sent || !/ready\./.test(stdout)) {
+          return;
+        }
+        sent = true;
+        const pair = pqJose.generate(SLOW_ALG);
+        child.send({ id: 1, kind: 'pq.sign',
+                     job: { alg: SLOW_ALG, priv: pair.priv,
+                            message: MESSAGE } },
+          function () {
+            // Long enough for the message to be read and the signature to
+            // start; far shorter than an SLH-DSA signature (section F's bound
+            // of one second fires before one finishes).
+            setTimeout(function () {
+              child.disconnect();
+            }, 200);
+          });
+      });
+      child.on('exit', function (code, signal) {
+        t.check(code === 0 && !signal,
+                'the worker exits 0 once the job it was computing returns',
+                'code ' + code + ', signal ' + signal);
+        t.check(!/EPIPE|Unhandled 'error'/.test(stderr),
+                'and writes no unhandled EPIPE onto the shared stderr',
+                stderr.trim().split('\n').slice(0, 3).join(' | ') ||
+                  '(nothing)');
+        resolve();
+      });
+    });
+    log.debug("Leaving run().");
+
   }
 };

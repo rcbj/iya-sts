@@ -52,14 +52,24 @@
 // first, which is the same trade the api's push inbox makes for the same
 // reason: whoever is reading wants what happened lately.
 //
-// It is in memory and dies with the process, like everything else this service
-// mints. `persistence/CLAUDE.md`'s rule decides that and the reason it gives
-// everywhere applies here too — the signing key is regenerated on every start,
-// so a register restored from disk would count tokens nothing can verify.
+// **IT IS PER TRUST REALM, AND PERSISTED WHERE MINTED STATE IS, SINCE
+// 2026-09-12.** This paragraph said it was in memory and died with the process
+// "like everything else this service mints", which stopped being true of
+// everything else in product mode on 2026-09-06 — the sessions it describes
+// and the streams it counts against are both written down there — and it was
+// one `new Map()` for the whole process, so `/realm/acme/admin/caep-sessions`
+// listed every realm's sessions and a session id minted in one realm could be
+// reset from another's console. `realms.map()` is the partition and
+// `persistence/persistence_minted.js` carries it, `merge: 'replace'`: a row is
+// whole-valued, the later write wins, and `touch()` below is what reports a row
+// edited in place. In development nothing minted is written down, which is
+// unchanged.
 // ---------------------------------------------------------------------------
 
 const { log, nowSec, iso } = require('../common/helpers');
 const config = require('../common/config');
+// The partition. A LEAF requiring `config` and nothing else here.
+const realms = require('../common/realms');
 const audit = require('../common/audit');
 const events = require('./ssf_events');
 const subjects = require('./ssf_subjects');
@@ -74,19 +84,94 @@ const subjects = require('./ssf_subjects');
 const AUTO_ACTS = {
   established: 'session-established',
   presented: 'session-presented',
-  revoked: 'session-revoked'
+  revoked: 'session-revoked',
+  // THE FOURTH (2026-09-13), and the first that is not about a session: an
+  // administrator changing somebody's credentials from their /admin/users page
+  // or /admin-api/users, or the person spending a password reset link. It goes
+  // out through `ssf.js`'s `emitCredentialChange()` rather than through
+  // `observe()` below, because there is no session row to hang it on — the
+  // subject names the PERSON — so `observe()` never sees this act.
+  credential: 'credential-change',
+  // THE FIFTH (2026-09-14): the same person re-authenticated on a session
+  // they already held, and `acr` MOVED — a step-up or a step-down. It is not a
+  // session event: nothing began and nothing ended, which is exactly what
+  // `session-established` and `session-revoked` would have claimed, and what
+  // this service used to send. A re-authentication that leaves `acr` where it
+  // was emits nothing; `observe()` below decides. See `authn/CLAUDE.md`, *What
+  // an authenticated identity is here*.
+  reauthenticated: 'assurance-level-change'
 };
+
+// THE SCALE THIS SERVICE'S OWN LEVELS ARE ON, and it is deliberately not
+// `caep.assuranceNamespace` (NIST-AAL), which stays the default for an event
+// emitted BY HAND. `0`, `1` and `mfa` are what `authn.js` records and what
+// every token here carries in `acr`; mapping them onto NIST's AALs would
+// assert a conformance nobody assessed. CAEP's namespace list is an open enum,
+// so a private URN is carried with a warning at worst, and a receiver sees the
+// level spelt exactly as the tokens it already holds spell it (rcbj's choice).
+const ACR_NAMESPACE = 'urn:sts:acr';
+
+// The ORDER of those levels is `oauth-oidc/step_up.js`'s, required rather than
+// written out again: RFC 9470's "a stronger authentication satisfies a request
+// for a weaker one" and this file's `change_direction` are one ordering, and
+// two copies would disagree the first time a level was added. step_up.js is a
+// library over `common/` and registers no route, so the require moves nothing
+// and closes no cycle.
+const stepUp = require('../oauth-oidc/step_up');
 
 // How many events one row remembers. It is a RING and not a total — the total
 // is on `counts`, which never forgets — because the list exists so that a
 // reader can see the last few `jti`s and the counts exist so that a reader can
 // see how many there have been, and conflating the two would make a page that
 // says "3 events" under a list of three when there were nine.
-const EVENTS_PER_SESSION = 25;
+//
+// `caep.eventsPerSession` since 2026-09-12 (25, the old constant, is its
+// default); read per event. `caep.historyPerSession` is the same thing for the
+// credential-change list below, which was a literal 10.
+function eventsPerSession() {
+  log.debug("Entering eventsPerSession().");
+  log.debug("Leaving eventsPerSession().");
+  return config.value('caep.eventsPerSession');
+}
+
+function historyPerSession() {
+  log.debug("Entering historyPerSession().");
+  log.debug("Leaving historyPerSession().");
+  return config.value('caep.historyPerSession');
+}
 
 // sessionId -> row. Insertion-ordered, which is what makes "the oldest goes"
 // one `keys().next()` rather than a sort by a timestamp two rows can share.
-const register = new Map();
+//
+// PER TRUST REALM — a session belongs to the realm that minted it, and so does
+// what CAEP has said about it. The realm is the AMBIENT one: `observe()` is
+// reached from `authn.js`'s session store inside the request or the
+// realm-scoped expiry sweep, and `noteTransmitted()` from `ssf.js`'s
+// `transmit()`, whose streams are per realm already. `caep.maxSessionsTracked`
+// caps each realm's partition rather than the process, which is what a cap read
+// in a realm means.
+const register = realms.map({ persist: 'caep.register' });
+
+// A ROW EDITED IN PLACE, REPORTED TO THE JOURNAL. `realms.map()` journals a
+// `set()` and a `delete()`; almost everything this file does to a row is
+// `row.counts[uri] += 1` on an object already in the map, which nothing sees.
+// Re-setting the same key reports it — and keeps its place in the map's
+// insertion order, so "the oldest goes" still means the oldest. A row trimmed
+// out before the edit is NOT put back, and neither is a row another process's
+// write has since REPLACED — which is why this asks whether the object it was
+// handed is still the one held: the edit belongs to a row the register has
+// already let go.
+function touch(row) {
+  log.debug("Entering touch().");
+  if (!row || !row.sessionId) {
+    log.debug("Leaving touch().");
+    return;
+  }
+  if (register.get(row.sessionId) === row) {
+    register.set(row.sessionId, row);
+  }
+  log.debug("Leaving touch().");
+}
 
 function enabled() {
   log.debug('Entering enabled().');
@@ -135,7 +220,8 @@ function autoEmitActs() {
       ? name.slice(events.CAEP_PREFIX.length) : name;
     if (!names[short]) {
       log.warn('caep.autoEmitTypes names "' + name + '", which is not one ' +
-               'of the three acts this service can observe (' +
+               'of the ' + Object.keys(AUTO_ACTS).length + ' acts this ' +
+               'service can observe (' +
                Object.keys(AUTO_ACTS).map(function (act) {
                  return AUTO_ACTS[act];
                }).join(', ') + '). It is DROPPED — nothing here would ever ' +
@@ -452,7 +538,7 @@ function applyToState(row, uri, payload) {
       changeType: String(body.change_type || ''),
       friendlyName: String(body.friendly_name || '')
     });
-    row.credentials = row.credentials.slice(0, 10);
+    row.credentials = row.credentials.slice(0, historyPerSession());
   } else if (short === 'assurance-level-change') {
     if (row.assurance.level && typeof body.previous_level === 'string' &&
         body.previous_level !== row.assurance.level) {
@@ -491,6 +577,7 @@ function applyToState(row, uri, payload) {
   }
 
   row.updatedAt = iso();
+  touch(row);
   log.debug('Leaving applyToState(). ' + errors.length + ' error(s), ' +
             warnings.length + ' warning(s).');
   return { ok: errors.length === 0, errors: errors, warnings: warnings,
@@ -545,11 +632,12 @@ function noteTransmitted(record, claims) {
     streamId: String((record && record.stream_id) || ''),
     warnings: verdict.warnings
   });
-  row.events = row.events.slice(0, EVENTS_PER_SESSION);
+  row.events = row.events.slice(0, eventsPerSession());
   const streamId = String((record && record.stream_id) || '');
   if (streamId && row.streams.indexOf(streamId) < 0) {
     row.streams.push(streamId);
   }
+  touch(row);
   log.debug('Leaving noteTransmitted(). ' + row.total + ' event(s) on ' +
             row.sessionId + '.');
   return row;
@@ -593,6 +681,24 @@ function observe(notice) {
     row.iss = String(asked.issuer);
   }
   row.updatedAt = iso();
+  // A RE-AUTHENTICATION MOVES WHAT THE ROW SAYS THE SESSION IS, whether or not
+  // anything goes out — the register follows the ACT, as it does for a
+  // revocation with emission off. And it is only an EVENT when `acr` moved:
+  // an elapsed `max_age` answered with the same method is a fresh `auth_time`
+  // and nothing a receiver's decision could turn on.
+  let previousAcr = '';
+  if (act === 'reauthenticated') {
+    previousAcr = String(((asked.previous || {}).acr) || row.acr || '');
+    row.acr = String(session.acr || '');
+    row.amr = Array.isArray(session.amr) ? session.amr.slice() : [];
+    if (previousAcr === row.acr) {
+      touch(row);
+      log.debug('Leaving observe(). A re-authentication that left acr at "' +
+                row.acr + '"; nothing to emit.');
+      return null;
+    }
+  }
+  touch(row);
 
   const short = AUTO_ACTS[act];
   if (!short) {
@@ -611,6 +717,7 @@ function observe(notice) {
     row.notes.push('A ' + short + ' was NOT emitted for this act: ' +
         'caep.autoEmit or caep.autoEmitTypes excludes it.');
     row.notes = row.notes.slice(-5);
+    touch(row);
     log.debug('Leaving observe(). Emission is off for ' + act + '.');
     return null;
   }
@@ -624,6 +731,21 @@ function observe(notice) {
   }
   if (act === 'presented') {
     values.ext_id = sessionId;
+  }
+  if (act === 'reauthenticated') {
+    values.namespace = ACR_NAMESPACE;
+    values.current_level = row.acr;
+    if (previousAcr) {
+      values.previous_level = previousAcr;
+    }
+    // Said outright where both levels are on the scale, and omitted where one
+    // is not: CAEP makes the member optional precisely so that a transmitter
+    // never has to guess an order it does not have.
+    const from = stepUp.LEVELS.indexOf(previousAcr);
+    const to = stepUp.LEVELS.indexOf(row.acr);
+    if (from >= 0 && to >= 0 && from !== to) {
+      values.change_direction = to > from ? 'increase' : 'decrease';
+    }
   }
   // WHO INITIATED IT, in CAEP section 2's four words.
   //
@@ -664,6 +786,9 @@ function reasonFor(act, notice) {
   } else if (act === 'presented') {
     text = 'An existing session was presented at ' + via + ' and honoured ' +
       'without a new authentication.';
+  } else if (act === 'reauthenticated') {
+    text = 'The person re-authenticated at ' + via + ' on a session they ' +
+      'already held, and its assurance changed. The session was not ended.';
   } else {
     text = 'The session was ended at ' + via + '.';
   }
@@ -681,9 +806,14 @@ function reasonForUser(act, notice) {
     log.debug('Leaving reasonForUser(). Expired.');
     return 'Your session expired. Sign in again to carry on.';
   }
-  const text = act === 'revoked'
-    ? 'You have been signed out.'
-    : (act === 'established' ? 'You signed in.' : 'You are still signed in.');
+  let text = 'You are still signed in.';
+  if (act === 'revoked') {
+    text = 'You have been signed out.';
+  } else if (act === 'established') {
+    text = 'You signed in.';
+  } else if (act === 'reauthenticated') {
+    text = 'You confirmed who you are again, and you are still signed in.';
+  }
   log.debug('Leaving reasonForUser().');
   return text;
 }
@@ -712,6 +842,7 @@ function reset(sessionId) {
   row.streams = [];
   row.notes = ['Reset from the console; the sign-in itself is untouched.'];
   row.updatedAt = iso();
+  touch(row);
   audit.audit({ action: 'caep.session.reset', category: 'signals',
     protocol: 'CAEP', channel: 'http', target: row.sessionId,
     summary: 'The CAEP state of session ' + row.sessionId + ' was reset' });

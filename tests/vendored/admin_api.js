@@ -32,10 +32,10 @@
 //     prove it is not to read the code but to revoke a token here and watch
 //     RFC 7662 introspection call it inactive.
 //
-// It also checks the one thing the explorer costs: /admin/api-explorer is the only
-// page in this service with a script on it, so it is the only one served under
-// a relaxed Content-Security-Policy. That relaxation must stay scoped — the
-// console next door must still be `script-src 'none'` — and it must stay
+// It also checks the one thing the explorer costs: /admin/api-explorer is the
+// only page in this service with a script on it, so it is the only one served
+// under a relaxed Content-Security-Policy. That relaxation must stay scoped —
+// the console next door must still be `script-src 'none'` — and it must stay
 // minimal, which means `'self'` and never `'unsafe-inline'`.
 //
 // **This test restores what it changes.** The mock's admin state survives
@@ -99,10 +99,12 @@ const CONDITIONAL = {
 // A browser sign-on session for the CONSOLE, which this file needs in exactly
 // two places and could not have needed before 2026-08-24.
 //
-// The API is unprotected and stays that way — mgmt-api/admin_api.js argues that
-// at length, and this test is the first reason it gives. The CONSOLE next door
-// is not: `admin.authRequired` is on by default, so every /admin page needs a
-// session from /authn/login and a console role, and a caller that asks for
+// The API takes an OAuth 2.0 access token since 2026-09-09 — it was unprotected
+// before that, and mgmt-api/CLAUDE.md keeps the three reasons it was, because
+// they are the argument for `adminApi.authRequired`, the off switch. This test
+// being able to drive it is the first of the three. The CONSOLE next door takes
+// a DIFFERENT credential: its gate is unconditional, so every /admin page needs
+// a session from /authn/login and a console role, and a caller that asks for
 // `?format=json` is refused 401 `login_required` rather than redirected,
 // because a redirect to an HTML sign-in screen is not an answer a program can
 // read. That refusal is what failed theReadsAgreeWithTheConsole() below.
@@ -139,7 +141,8 @@ const CONDITIONAL = {
 // two things that are THIS job's: which user, and what a missing role means.
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
-  const cookie = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER, log);
+  const cookie = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER,
+                                                        log);
   log.debug("Leaving signInToTheConsole(). " +
             (cookie ? "Holding a session." : "The gate is off."));
   return cookie;
@@ -188,24 +191,71 @@ async function theDocumentIsServedAndWellFormed() {
     "than at the top of the file; got " + doc.openapi);
   assert.ok(doc.info && doc.info.title && doc.info.version,
     "it should name and version itself.");
-  assert.ok(/(nothing here is|not) protected/i.test(doc.info.description),
-    "and its description must say the API is unprotected. Every other page " +
-    "of this console says so where a reader will see it, and a machine-" +
-    "readable document that omitted it would be the one artifact a person " +
-    "could act on without being told.");
+  // -------------------------------------------------------------------
+  // **THE DESCRIPTION MUST AGREE WITH THE GATE, AND THIS ASSERTION USED TO
+  // REQUIRE THE OPPOSITE (2026-09-10).**
+  //
+  // It read: the description "must say the API is unprotected" — correct, and
+  // load-bearing, for as long as it was. `/admin-api` began requiring an
+  // access token on 2026-09-09 and this check went on demanding the sentence
+  // that denied it, so the suite was holding the document to a claim the
+  // service had stopped making. That is the shape of a test outliving its
+  // subject: it did not go red when the behaviour changed, it went red when
+  // the DOCUMENT was corrected.
+  //
+  // So it is asked against the state rather than against a remembered answer.
+  // `protected` on the index is that state, and the two artifacts must not
+  // disagree — which is the same rule this file already applies to the
+  // console and the API.
+  // -------------------------------------------------------------------
+  const indexForProtection = await get("");
+  if (indexForProtection.protected === true) {
+    assert.ok(/requires an OAuth 2\.0 access token/i.test(doc.info.description),
+      "GET /admin-api reports `protected: true`, so the document's own " +
+      "description must say a token is required. It opens: " +
+      String(doc.info.description).split("\n\n")[1].slice(0, 160));
+    assert.ok(Array.isArray(doc.security) && doc.security.length > 0,
+      "and `security` must not be the empty array, which is OpenAPI for " +
+      "\"no credential is needed\" — the one statement a client generated " +
+      "from this document cannot recover from, because it will not send a " +
+      "header the document never mentioned. It is " +
+      JSON.stringify(doc.security) + ".");
+  } else {
+    assert.ok(/(nothing here is|not) protected/i.test(doc.info.description),
+      "GET /admin-api reports `protected: false` (adminApi.authRequired is " +
+      "off), so the description must say the API is unprotected. Every other " +
+      "page of this console says so where a reader will see it, and a " +
+      "machine-readable document that omitted it would be the one artifact a " +
+      "person could act on without being told.");
+  }
   assert.ok(Array.isArray(doc.servers) && doc.servers.length === 1 &&
             doc.servers[0].url === base,
     "servers[0].url should be this service as the request reached it (" +
     base + "), so a document fetched through a published port names an " +
     "address the caller can use; got " +
     JSON.stringify(doc.servers));
-  assert.ok(Array.isArray(doc.security) && doc.security.length === 0,
-    "security should be an EMPTY ARRAY rather than absent: that is how " +
-    "OpenAPI states 'this needs no credential', which is true here and worth " +
-    "stating rather than leaving to be inferred from a missing member.");
-  assert.ok(!doc.components.securitySchemes,
-    "and there should be no securityScheme at all, since nothing here " +
-    "checks one.");
+  // -------------------------------------------------------------------
+  // AND THE SAME QUESTION IN THE SCHEMA RATHER THAN THE PROSE. Both branches
+  // are the original assertion, one of them inverted: the point it was making
+  // — that `security` is a STATEMENT and must be present either way — is what
+  // survives the gate arriving.
+  // -------------------------------------------------------------------
+  if (indexForProtection.protected === true) {
+    const schemes = (doc.components || {}).securitySchemes || {};
+    assert.ok(schemes.oauth2 && schemes.bearerAuth,
+      "a `security` requirement naming a scheme the document does not define " +
+      "is a document no tool can act on. components.securitySchemes holds " +
+      (Object.keys(schemes).join(", ") || "nothing") + ".");
+  } else {
+    assert.ok(Array.isArray(doc.security) && doc.security.length === 0,
+      "security should be an EMPTY ARRAY rather than absent: that is how " +
+      "OpenAPI states 'this needs no credential', which is what " +
+      "adminApi.authRequired=false means and is worth stating rather than " +
+      "leaving to be inferred from a missing member.");
+    assert.ok(!doc.components.securitySchemes,
+      "and there should be no securityScheme at all, since nothing here " +
+      "checks one.");
+  }
 
   const paths = Object.keys(doc.paths);
   assert.ok(paths.length > 25,
@@ -244,7 +294,12 @@ async function theDocumentIsServedAndWellFormed() {
     "operationIds must be unique, or a generated client has two methods of " +
     "one name.");
   log.info("[document] OK — OpenAPI " + doc.openapi + ", " + paths.length +
-           " paths, " + ids.length + " operations, no security scheme.");
+           " paths, " + ids.length + " operations, " +
+           (Array.isArray(doc.security) && doc.security.length
+             ? Object.keys((doc.components ||
+                            {}).securitySchemes || {}).length +
+               " security scheme(s)."
+             : "no security scheme."));
   log.debug("Leaving theDocumentIsServedAndWellFormed().");
   return doc;
 }
@@ -255,8 +310,21 @@ async function theIndexAgreesWithTheDocument(doc) {
   log.debug("Entering theIndexAgreesWithTheDocument().");
   log.info("=== The index ===");
   const index = await get("");
-  assert.strictEqual(index.protected, false,
-    "the index must say so in a field as well as in prose.");
+  // **THE FIELD MUST AGREE WITH THE DOCUMENT, RATHER THAN BE A REMEMBERED
+  // VALUE (2026-09-10).** This read `strictEqual(index.protected, false)` —
+  // written when nothing here checked a credential, and left demanding it
+  // after `/admin-api` grew a token gate. What the assertion is FOR is that
+  // the index says so in a field as well as in prose, and that survives the
+  // switch being thrown either way; the constant did not.
+  const documentIsGuarded = Array.isArray(doc.security) &&
+                            doc.security.length > 0;
+  assert.strictEqual(index.protected, documentIsGuarded,
+    "the index must say in a field what the OpenAPI document says in its " +
+    "`security`, and they disagree: the index reports `protected: " +
+    JSON.stringify(index.protected) + "` while the document's security is " +
+    JSON.stringify(doc.security) + ". These are the two machine-readable " +
+    "answers to \"does this API need a credential\" and a client may read " +
+    "either one.");
   const documented = [];
   Object.keys(doc.paths).forEach(function (path) {
     Object.keys(doc.paths[path]).forEach(function (method) {
@@ -522,7 +590,8 @@ async function theSchemasMatchTheReplies(doc) {
   // And the drill-down, which is the only place IssuedSetDetail appears.
   cases.push({ name: "IssuedSetDetail",
                body: await get("/tokens/set?id=" +
-                               encodeURIComponent(issuedList.sets[0].setKey)) });
+                               encodeURIComponent(
+                                   issuedList.sets[0].setKey)) });
 
   const sets = cases.filter(function (item) {
     return item.name === "ClaimSets";
@@ -576,7 +645,7 @@ async function theReadsAgreeWithTheConsole(session) {
   assert.ok(consoleTokens.ok,
     "the console's JSON view should answer 200, and it answered " +
     consoleTokens.status + ": " + String(consoleTokens.raw).slice(0, 300) +
-    ". A 401 or a 403 here is the console's own gate (admin.authRequired) " +
+    ". A 401 or a 403 here is the console's own gate " +
     "rather than a broken read — see signInToTheConsole(); a 403 means the " +
     "session is real and the role is not, which happens once some other job " +
     "has granted a role and turned the empty roster into an enforced one.");
@@ -618,11 +687,35 @@ async function theReadsAgreeWithTheConsole(session) {
 async function revokingHereReachesIntrospection() {
   log.debug("Entering revokingHereReachesIntrospection().");
   log.info("=== A revocation through the API reaches RFC 7662 ===");
+  // THE PERSON AND THE CLIENT ARE REAL (2026-09-12). The person is the console
+  // account `console_signin.js` created with a password before the first
+  // sign-in of this run, and that password is what the grant presents; the
+  // client is REGISTERED here, with a secret the request presents, rather than
+  // created on sight because a token request named it. Product mode does
+  // neither on anybody's behalf, and a job leaning on development's doing both
+  // would be testing that. A second run against a kept stack finds the client
+  // already registered, which is the same state and is accepted.
+  const clientSecret = "admin-api-test-client-secret";
+  const registered = await post("/applications/create", {
+    identifier: CONSOLE_USER, name: "Management API test client",
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [CONSOLE_USER], oauthClientSecret: clientSecret,
+              oauthTokenEndpointAuthMethod: "client_secret_post" }
+  });
+  assert.ok((registered.status === 200 && registered.body &&
+             registered.body.ok) ||
+            /already/i.test(JSON.stringify(registered.body || {})),
+    "registering the client " + CONSOLE_USER + " answered " +
+    registered.status + " " + String(registered.raw).slice(0, 300));
   const minted = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=password&username=admin-api-test&password=x" +
-          "&client_id=admin-api-test&scope=openid",
+    body: "grant_type=password&username=" + encodeURIComponent(CONSOLE_USER) +
+          "&password=" +
+          encodeURIComponent(consoleSignIn.consolePasswordFor(CONSOLE_USER)) +
+          "&client_id=" + encodeURIComponent(CONSOLE_USER) +
+          "&client_secret=" + encodeURIComponent(clientSecret) +
+          "&scope=openid",
   });
   assert.ok(minted.ok && minted.body.access_token,
     "the password grant should mint a token to revoke; got " + minted.status);
@@ -834,10 +927,36 @@ async function theVerifierRequestCanBeChangedAndPutBack() {
 // The bulk revocations, and the restore that undoes them. `revoke-all` has no
 // opposite, so what is put back is every jti that was NOT already revoked when
 // this started — which is why the set is read first.
+// EVERY REVOKED RECORD, NOT THE FIRST PAGE OF THEM (2026-09-15, #51). The
+// list pages by token SET, 300 to a page, and this section read one page
+// three times — before, after revoking and after restoring. On a service that
+// had minted fewer than 300 sets that is the whole list. On a reused AWS
+// cluster holding 1,852 tokens it was not: records past the first page were
+// never restored, and records already revoked before this job ran moved onto
+// page one once others were restored, so 913 tokens were reported as left
+// revoked that were either restored by nothing or never this job's to restore.
+async function allRevoked() {
+  log.debug("Entering allRevoked().");
+  const records = [];
+  let page = 1;
+  let pages = 1;
+  let first;
+  do {
+    const body = await get("/tokens?state=revoked&per=300&page=" + page);
+    first = first || body;
+    (body.issued || []).forEach(function (r) { records.push(r); });
+    pages = Math.max(1, Number(body.pages) || 1);
+    page += 1;
+  } while (page <= pages);
+  log.debug("Leaving allRevoked(). " + records.length + " record(s) on " +
+            pages + " page(s).");
+  return { matched: first.matched, issued: records };
+}
+
 async function theBulkRevocationsWorkAndAreUndone() {
   log.debug("Entering theBulkRevocationsWorkAndAreUndone().");
   log.info("=== The bulk revocations ===");
-  const before = await get("/tokens?state=revoked&per=300");
+  const before = await allRevoked();
   const alreadyRevoked = new Set(before.issued.map(function (r) {
     return r.jti;
   }));
@@ -857,7 +976,7 @@ async function theBulkRevocationsWorkAndAreUndone() {
   assert.strictEqual(all.status, 200, "revoke-all should be applied.");
   assert.ok(typeof all.body.revoked === "number",
     "and report how many it revoked; got " + JSON.stringify(all.body));
-  const nowRevoked = await get("/tokens?state=revoked&per=300");
+  const nowRevoked = await allRevoked();
   assert.ok(nowRevoked.matched >= before.matched,
     "and the revoked list should not have shrunk.");
 
@@ -871,7 +990,7 @@ async function theBulkRevocationsWorkAndAreUndone() {
       "restoring " + record.jti + " should be applied; got " + put.status);
     restored += 1;
   }
-  const after = await get("/tokens?state=revoked&per=300");
+  const after = await allRevoked();
   const leftBehind = after.issued.filter(function (record) {
     return !alreadyRevoked.has(record.jti);
   }).map(function (record) { return record.jti; });
@@ -1104,7 +1223,8 @@ async function configurationCanBeChangedAndPutBack(doc) {
   // set-many is all-or-nothing, which is the property a section's Save rests
   // on: a body with one bad field must change NOTHING.
   const partly = await post("/config/set-many",
-    { "oid4vci.offerUsername": "someone.else", "oid4vp.kbMaxAgeS": "not-a-number" });
+    { "oid4vci.offerUsername": "someone.else",
+      "oid4vp.kbMaxAgeS": "not-a-number" });
   assert.strictEqual(partly.status, 400,
     "a set-many with one unusable value should be refused; got " +
     partly.status);
@@ -1349,7 +1469,8 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
   });
 
   // --- against the discovery document -----------------------------------
-  const oidc = await common.httpJson(base + "/.well-known/openid-configuration");
+  const oidc = await common.httpJson(base +
+                                     "/.well-known/openid-configuration");
   assert.ok(oidc.ok, "the OpenID Provider metadata should answer 200; got " +
             oidc.status);
   const oauthFamily = report.families.filter(function (row) {
@@ -1357,6 +1478,7 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
   })[0];
   assert.ok(oauthFamily, "the report should carry the OAuth2 / OIDC family.");
   const listNamed = function (what) {
+    log.debug("Entering listNamed().");
     const group = oauthFamily.algorithms.filter(function (row) {
       return row.what === what;
     })[0];
@@ -1365,6 +1487,7 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
               JSON.stringify(oauthFamily.algorithms.map(function (row) {
                 return row.what;
               })));
+    log.debug("Leaving listNamed().");
     return group.values;
   };
   assert.deepStrictEqual(listNamed("ID Token, when a client registers one"),
@@ -1386,6 +1509,28 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
   const as = await common.httpJson(base +
       "/.well-known/oauth-authorization-server");
   assert.ok(as.ok, "the RFC 8414 metadata should answer 200; got " + as.status);
+  assert.deepStrictEqual(listNamed("JWT introspection response (RFC 9701)"),
+    as.body.introspection_signing_alg_values_supported,
+    "and the RFC 9701 introspection response's signing list must be the one " +
+    "RFC 8414 advertises as introspection_signing_alg_values_supported. It " +
+    "is the ID Token's table WITHOUT `none` and WITH the HMAC family, which " +
+    "is neither of the two lists above, so it is compared on its own.");
+  assert.deepStrictEqual(
+    listNamed("JWT introspection response encryption (RFC 9701)"),
+    as.body.introspection_encryption_alg_values_supported,
+    "and its encryption list must be introspection_encryption_alg_values_" +
+    "supported.");
+  assert.deepStrictEqual(listNamed("Request object signature (RFC 9101)"),
+    as.body.request_object_signing_alg_values_supported.filter(function (alg) {
+      return alg !== "none";
+    }),
+    "and the RFC 9101 request object signing list must be the one RFC 8414 " +
+    "advertises, less `none` — which is advertised only where an unsigned " +
+    "request object is accepted and is not a signature this page lists.");
+  assert.deepStrictEqual(listNamed("Request object decryption (RFC 9101)"),
+    as.body.request_object_encryption_alg_values_supported,
+    "and the request object decryption list must be " +
+    "request_object_encryption_alg_values_supported.");
   assert.deepStrictEqual(listNamed("DPoP proof"),
     as.body.dpop_signing_alg_values_supported,
     "and the DPoP list must be the one RFC 8414 advertises. It is a FILTER " +

@@ -6,11 +6,11 @@
 // Thirteen modules in this service read the appconfig file directly —
 // `require(process.env.CONFIG_FILE)` — for one thing each: the bunyan log level
 // they need before config.js exists. (It was fourteen until 2026-08-24:
-// helpers.js's read had been dead for some time and was removed when CONFIG_FILE
-// became optional, since `require(undefined)` throws.) That was harmless while every module sat
-// in the package root, because node resolves a RELATIVE require against the
-// directory of the module doing the requiring, and every one of them was in the
-// same directory the `./env` tree hangs off.
+// helpers.js's read had been dead for some time and was removed when
+// CONFIG_FILE became optional, since `require(undefined)` throws.) That was
+// harmless while every module sat in the package root, because node resolves a
+// RELATIVE require against the directory of the module doing the requiring, and
+// every one of them was in the same directory the `./env` tree hangs off.
 //
 // The 2026-08-23 reorganisation moved those modules into common/, kerberos/,
 // common/vendored/ and so on, and it took that property away silently. The
@@ -80,7 +80,8 @@ function resolveConfigFile() {
   // the fallback for a caller that started somewhere else and pointed at its
   // own file — the parent project's in-process Kerberos tests do exactly that,
   // with CONFIG_FILE naming the TEST suite's config rather than one of ours.
-  const candidates = [ path.resolve(ROOT, given), path.resolve(process.cwd(), given) ];
+  const candidates = [ path.resolve(ROOT, given),
+                       path.resolve(process.cwd(), given) ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       process.env.CONFIG_FILE = candidate;

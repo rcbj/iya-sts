@@ -69,6 +69,12 @@ const fs = require('fs');
 const path = require('path');
 const bunyan = require('bunyan');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = bunyan.createLogger({ name: 'coverage-report',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // THE `Entering`/`Leaving` PAIR IS ON THE FUNCTIONS THAT RUN A BOUNDED NUMBER
 // OF TIMES PER RUN, AND NOT ON THE ONES INSIDE THE PASS — argued here rather
@@ -88,9 +94,12 @@ const bunyan = require('bunyan');
 // Never coverage's subject: dependencies, the tests themselves, generated
 // output, and this tooling. `tests/` is excluded for the ordinary reason — a
 // suite that covers itself reports its own size, not the service's.
-const SKIP_DIR = /(^|\/)(node_modules|node-ldapjs|coverage|docs|data|\.git|tests)(\/|$)/;
+const SKIP_DIR =
+    /(^|\/)(node_modules|node-ldapjs|coverage|docs|data|\.git|tests)(\/|$)/;
 
 function defaultLog() {
+  log.debug("Entering defaultLog().");
+  log.debug("Leaving defaultLog().");
   return bunyan.createLogger({ name: 'coverage',
                                level: process.env.LOG_LEVEL || 'info' });
 }
@@ -135,6 +144,7 @@ function readRaw(dir, log) {
 // how two counts for the same range are combined — Math.max within a pid,
 // addition across pids.
 function foldScript(into, script, merge) {
+  log.debug("Entering foldScript().");
   const fns = into[script.url] = into[script.url] || {};
   (script.functions || []).forEach(function (fn) {
     const ranges = fn.ranges || [];
@@ -149,6 +159,7 @@ function foldScript(into, script, merge) {
       slot[rk] = slot[rk] === undefined ? r.count : merge(slot[rk], r.count);
     });
   });
+  log.debug("Leaving foldScript().");
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +197,7 @@ function mergeLabel(byPid, log) {
 
 // Two merged sets added together, for the combined column.
 function addSets(a, b) {
+  log.debug("Entering addSets().");
   const out = {};
   [a, b].forEach(function (set) {
     Object.keys(set).forEach(function (url) {
@@ -198,27 +210,35 @@ function addSets(a, b) {
       });
     });
   });
+  log.debug("Leaving addSets().");
   return out;
 }
 
 function fileOf(url, root) {
+  log.debug("Entering fileOf().");
   if (url.indexOf('file://') !== 0) {
+    log.debug("Leaving fileOf().");
     return '';
   }
   let file;
   try {
     file = decodeURIComponent(url.slice('file://'.length));
   } catch (e) {
+    log.debug("Caught in fileOf(): " + ((e && e.message) || e));
+    log.debug("Leaving fileOf().");
     // A URL this service never produced. Not ours either way.
     return '';
   }
   if (file.indexOf(root + path.sep) !== 0) {
+    log.debug("Leaving fileOf().");
     return '';
   }
   const rel = path.relative(root, file);
   if (SKIP_DIR.test(rel) || !/\.js$/.test(rel)) {
+    log.debug("Leaving fileOf().");
     return '';
   }
+  log.debug("Leaving fileOf().");
   return rel;
 }
 
@@ -234,6 +254,7 @@ function fileOf(url, root) {
 // flattering than the truth.
 // ---------------------------------------------------------------------------
 function executableLines(source) {
+  log.debug("Entering executableLines().");
   const lines = source.split('\n');
   const executable = new Array(lines.length).fill(false);
   let inBlock = false;
@@ -273,6 +294,7 @@ function executableLines(source) {
     }
     executable[i] = true;
   }
+  log.debug("Leaving executableLines().");
   return { lines: lines, executable: executable };
 }
 
@@ -281,6 +303,7 @@ function executableLines(source) {
 // stack of the ranges currently open, and the innermost one wins.
 // ---------------------------------------------------------------------------
 function countsByLine(source, ranges, executable) {
+  log.debug("Entering countsByLine().");
   const lines = source.split('\n');
   // The offset of the first non-whitespace character of each line, which is
   // the position a line's count is read at.
@@ -321,6 +344,7 @@ function countsByLine(source, ranges, executable) {
     }
     counts[i] = count;
   }
+  log.debug("Leaving countsByLine().");
   return counts;
 }
 
@@ -328,10 +352,13 @@ function countsByLine(source, ranges, executable) {
 // One file's numbers, for one merged set.
 // ---------------------------------------------------------------------------
 function summariseFile(rel, root, fns) {
+  log.debug("Entering summariseFile().");
   let source;
   try {
     source = fs.readFileSync(path.join(root, rel), 'utf8');
   } catch (e) {
+    log.debug("Caught in summariseFile(): " + ((e && e.message) || e));
+    log.debug("Leaving summariseFile().");
     // Covered but no longer on disk — a file deleted between the run and the
     // render. Reporting it with no numbers is better than crashing.
     return null;
@@ -376,6 +403,7 @@ function summariseFile(rel, root, fns) {
     }
     perLine.push(c);
   }
+  log.debug("Leaving summariseFile().");
   return { rel: rel, lines: lines, hit: hit, functions: functions,
            functionsHit: functionsHit, perLine: perLine,
            source: source.split('\n') };
@@ -389,10 +417,13 @@ function allSourceFiles(root) {
   log.debug('Entering allSourceFiles(). root=' + root);
   const out = [];
   (function walk(dir) {
+    log.debug("Entering walk().");
     let entries = [];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch (e) {
+      log.debug("Caught in walk(): " + ((e && e.message) || e));
+      log.debug("Leaving walk().");
       return;
     }
     entries.forEach(function (e) {
@@ -407,19 +438,25 @@ function allSourceFiles(root) {
         out.push(rel);
       }
     });
+    log.debug("Leaving walk().");
   })(root);
   log.debug('Leaving allSourceFiles(). ' + out.length + ' file(s).');
   return out.sort();
 }
 
 function pct(hit, total) {
+  log.debug("Entering pct().");
   if (!total) {
+    log.debug("Leaving pct().");
     return 100;
   }
+  log.debug("Leaving pct().");
   return Math.round((hit / total) * 1000) / 10;
 }
 
 function escapeHtml(s) {
+  log.debug("Entering escapeHtml().");
+  log.debug("Leaving escapeHtml().");
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -430,18 +467,22 @@ const STYLE = [
   '--hitbg:rgba(26,127,55,.10);--missbg:rgba(179,38,30,.13);}',
   '@media (prefers-color-scheme:dark){:root{--fg:#e6e6e6;--bg:#171717;',
   '--muted:#a0a0a0;--line:#333;--card:#1f1f1f;--good:#4ac26b;--mid:#d4a72c;',
-  '--bad:#ff7b72;--hitbg:rgba(74,194,107,.10);--missbg:rgba(255,123,114,.16);}}',
-  'body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,',
+  '--bad:#ff7b72;--hitbg:rgba(74,194,107,.10);--missbg:rgba(255,123,114,' +
+  '.16);}}',
+  'body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ' +
+  '-apple-system,',
   'BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}',
   '.wrap{max-width:1100px;margin:0 auto;padding:24px 20px 64px;}',
   'h1{font-size:20px;margin:0 0 4px;}h2{font-size:16px;margin:28px 0 8px;}',
   '.sub{color:var(--muted);margin:0 0 16px;}',
   'table{border-collapse:collapse;width:100%;background:var(--card);',
   'border:1px solid var(--line);border-radius:8px;overflow:hidden;}',
-  'th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);}',
+  'th,td{text-align:left;padding:6px 10px;border-bottom:1px solid ' +
+  'var(--line);}',
   'th{font-size:12px;color:var(--muted);}tr:last-child td{border-bottom:none;}',
   'th.num{text-align:right;}',
-  'td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}',
+  'td.num{text-align:right;font-variant-numeric:tabular-nums;' +
+  'white-space:nowrap;}',
   '.good{color:var(--good);}.mid{color:var(--mid);}.bad{color:var(--bad);}',
   'code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;',
   'font-size:12px;}',
@@ -462,14 +503,20 @@ const STYLE = [
 ].join('');
 
 function klass(p) {
+  log.debug("Entering klass().");
+  log.debug("Leaving klass().");
   return p >= 80 ? 'good' : (p >= 50 ? 'mid' : 'bad');
 }
 
 function bar(p) {
+  log.debug("Entering bar().");
+  log.debug("Leaving bar().");
   return '<span class="bar"><span style="width:' + p + '%"></span></span>';
 }
 
 function fileSlug(rel) {
+  log.debug("Entering fileSlug().");
+  log.debug("Leaving fileSlug().");
   return rel.replace(/[^A-Za-z0-9]+/g, '-');
 }
 
@@ -480,6 +527,7 @@ function fileSlug(rel) {
 // from a file:// URL on a machine with nothing installed.
 // ---------------------------------------------------------------------------
 function writeFilePage(outDir, summary) {
+  log.debug("Entering writeFilePage().");
   const rows = summary.source.map(function (line, i) {
     const c = summary.perLine[i];
     const cls = c === null ? '' : (c > 0 ? 'hit' : 'miss');
@@ -501,6 +549,7 @@ function writeFilePage(outDir, summary) {
     '</div></body></html>';
   fs.writeFileSync(path.join(outDir, 'files', fileSlug(summary.rel) + '.html'),
                    html);
+  log.debug("Leaving writeFilePage().");
 }
 
 // LCOV, so that anything standard — genhtml, a CI plug-in, an editor gutter —
@@ -570,7 +619,8 @@ function render(opts) {
       if (!rel) {
         return;
       }
-      const into = perLabelByFile[label][rel] = perLabelByFile[label][rel] || {};
+      const into = perLabelByFile[label][rel] = perLabelByFile[label][rel] ||
+                                                {};
       Object.keys(sets[label][url]).forEach(function (k) {
         into[k] = sets[label][url][k];
       });
@@ -656,6 +706,7 @@ function render(opts) {
     try {
       source = fs.readFileSync(path.join(root, rel), 'utf8');
     } catch (e) {
+      log.debug("Caught in a callback in render(): " + ((e && e.message) || e));
       return;
     }
     const { executable } = executableLines(source);
@@ -765,7 +816,8 @@ function main() {
     if (a.indexOf('--in=') === 0) {
       const spec = a.slice('--in='.length);
       const at = spec.indexOf(':');
-      inputs.push({ label: spec.slice(0, at), dir: path.resolve(spec.slice(at + 1)) });
+      inputs.push({ label: spec.slice(0, at),
+                    dir: path.resolve(spec.slice(at + 1)) });
     } else if (a.indexOf('--out=') === 0) {
       outDir = path.resolve(a.slice('--out='.length));
     } else if (a.indexOf('--root=') === 0) {
@@ -774,7 +826,8 @@ function main() {
   });
   if (!inputs.length) {
     inputs.push({ label: 'unit', dir: path.join(outDir, 'raw', 'unit') });
-    inputs.push({ label: 'protocol', dir: path.join(outDir, 'raw', 'protocol') });
+    inputs.push({ label: 'protocol',
+                  dir: path.join(outDir, 'raw', 'protocol') });
   }
   const out = render({ inputs: inputs, outDir: outDir, root: root });
   process.stdout.write(out.htmlFile + '\n');

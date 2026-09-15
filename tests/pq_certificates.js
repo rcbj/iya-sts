@@ -45,9 +45,17 @@ const crypto = require('../common/crypto');
 const nodeCrypto = require('crypto');
 const tls = require('tls');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pq_certificates',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A throwaway TLS server carrying the certificates given, on a loopback port.
 // Returns a promise for {port, close} — the tests below all connect to it.
 function listen(pairs) {
+  log.debug("Entering listen().");
+  log.debug("Leaving listen().");
   return new Promise(function (resolve) {
     const server = tls.createServer({
       key: pairs.map(function (one) { return one.privateKeyPem; }),
@@ -61,7 +69,11 @@ function listen(pairs) {
     });
     server.listen(0, '127.0.0.1', function () {
       resolve({ port: server.address().port,
-               close: function () { server.close(); } });
+               close: function () {
+                 log.debug("Entering close().");
+                 server.close();
+                 log.debug("Leaving close().");
+               } });
     });
   });
 }
@@ -69,6 +81,8 @@ function listen(pairs) {
 // One handshake, resolved with what the client saw rather than rejected: a
 // FAILED handshake is a result here as often as a successful one is.
 function handshake(port, options) {
+  log.debug("Entering handshake().");
+  log.debug("Leaving handshake().");
   return new Promise(function (resolve) {
     const socket = tls.connect(Object.assign({
       host: '127.0.0.1', port: port, servername: 'localhost',
@@ -79,6 +93,8 @@ function handshake(port, options) {
         keyType = new nodeCrypto.X509Certificate(
             socket.getPeerCertificate().raw).publicKey.asymmetricKeyType;
       } catch (e) {
+        log.debug("Caught in a callback in handshake(): " +
+                  ((e && e.message) || e));
         keyType = null;
       }
       socket.end();
@@ -96,6 +112,7 @@ module.exports = {
             'OpenSSL and used in a real TLS 1.3 handshake',
 
   run: async function (t) {
+    log.debug("Entering run().");
     // -----------------------------------------------------------------------
     // THE RUNTIME COMES FIRST, AND IT IS THE ONE THING IN THIS DIRECTORY THAT
     // CAN STOP A FILE FROM RUNNING AT ALL.
@@ -143,6 +160,7 @@ module.exports = {
               'told which runtime it needs, because the raw refusal names an ' +
               'argument called `type` and nothing else',
               String(named));
+      log.debug("Leaving run().");
       return;
     }
 
@@ -152,7 +170,7 @@ module.exports = {
     const built = crypto.selfSignedMlDsaCertificate({
       algorithm: 'ml-dsa-65',
       commonName: 'localhost',
-      organizationName: 'mock-sts',
+      organizationName: 'sts',
       serialNumber: '04',
       dnsNames: ['localhost', 'sts'],
       ipAddresses: ['127.0.0.1']
@@ -219,7 +237,7 @@ module.exports = {
     t.log.info('C. two certificates on one port: the CLIENT decides which');
     // -----------------------------------------------------------------------
     const rsa = crypto.selfSignedRsaCertificate({
-      commonName: 'localhost', organizationName: 'mock-sts',
+      commonName: 'localhost', organizationName: 'sts',
       serialNumber: '03',
       extensions: [
         { name: 'basicConstraints', cA: false, critical: true },
@@ -273,5 +291,6 @@ module.exports = {
     t.check(refused && /ML-DSA/.test(refused),
             'an unknown parameter set is refused by name rather than ' +
             'producing a certificate with an invented OID', String(refused));
+    log.debug("Leaving run().");
   }
 };

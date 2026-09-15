@@ -51,22 +51,32 @@ const authn = require('../authn/authn');
 const caep = require('../ssf/caep');
 const logout = require('../logout/logout');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'caep_initiating_entity',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // What the observer was told, without a transmitter behind it. The notice is
 // what `caep.observe()` reads, so capturing it is capturing the whole input to
 // the decision — and it keeps this file off streams, signing and delivery,
 // none of which is what is being asserted.
 function capture() {
+  log.debug("Entering capture().");
   const seen = [];
   authn.setSessionObserver(function (notice) {
     seen.push(notice);
     return null;
   });
+  log.debug("Leaving capture().");
   return seen;
 }
 
 // A sign-in, without a response object: startSession() only ever calls
 // `res.set()` and reads `res.req`.
 function signIn(username, via) {
+  log.debug("Entering signIn().");
+  log.debug("Leaving signIn().");
   return authn.startSession({ set: function () {}, req: null },
                             username, ['pwd'], '1', via || 'OAuth 2.0 / OIDC');
 }
@@ -76,14 +86,18 @@ function signIn(username, via) {
 // test: a copy of the rule in this file would pass while the service was
 // wrong.
 function entityOf(notice) {
+  log.debug("Entering entityOf().");
   const due = caep.observe(notice);
   if (!due) {
+    log.debug("Leaving entityOf().");
     return '(nothing was due)';
   }
+  log.debug("Leaving entityOf().");
   return String(due.payload.initiating_entity || '(absent)');
 }
 
 function run(t) {
+  log.debug("Entering run().");
   caep.clear();
 
   // -----------------------------------------------------------------------
@@ -135,14 +149,25 @@ function run(t) {
   t.log.info('C. an expiry is neither a person nor an administrator');
   // -----------------------------------------------------------------------
   const seenExpiry = capture();
-  const expiring = signIn('entity-expiry');
+  // The cookie the sign-in WROTE, and not `sts_session=<id>`: since
+  // 2026-09-14 a session cookie is `<sid>.<handle>` and a bare id is nobody's
+  // cookie, so a lookup built from the id alone finds nothing whether or not
+  // the session has expired — and this assertion would pass for that reason.
+  const written = [];
+  const expiring = authn.startSession({ set: function (name, value) {
+    written.push(String(value));
+  }, req: null }, 'entity-expiry', ['pwd'], '1', 'OAuth 2.0 / OIDC');
+  const expiringCookie = (written[0] || '').split(';')[0];
+  t.check(authn.sessionOf({ headers: { cookie: expiringCookie } }) === expiring,
+          'the cookie the sign-in wrote opens the session before it expires, ' +
+          'so the null below is the expiry and not a cookie nobody holds');
   seenExpiry.length = 0;
   // Make it run out and then look it up, which is one of the two lazy paths.
   // The sweep is the other and reaches the same function; a test that waited
   // thirty seconds for it would be a test nobody runs.
   expiring.expires = Date.now() - 1000;
   const found = authn.sessionOf({
-    headers: { cookie: 'sts_mock_session=' + expiring.id } });
+    headers: { cookie: expiringCookie } });
   t.equal(found, null, 'an expired session is not returned');
   t.equal(seenExpiry.length, 1,
           'and ending it told the observer, which it did not do at all ' +
@@ -176,6 +201,7 @@ function run(t) {
           'and byAdmin alone is still "admin"');
 
   authn.setSessionObserver(function () { return null; });
+  log.debug("Leaving run().");
 }
 
 module.exports = {

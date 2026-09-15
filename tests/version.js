@@ -47,6 +47,12 @@ const path = require('path');
 
 const version = require('../common/version');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'version',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 // The source of a module with its FULL-LINE COMMENTS removed.
@@ -65,6 +71,8 @@ const ROOT = path.join(__dirname, '..');
 // `//` on a line would truncate half of them and make this check quietly
 // weaker rather than louder.
 function codeOf(rel) {
+  log.debug("Entering codeOf().");
+  log.debug("Leaving codeOf().");
   return fs.readFileSync(path.join(ROOT, rel), 'utf8')
     .split('\n')
     .filter(function (line) { return !/^\s*\/\//.test(line); })
@@ -72,8 +80,10 @@ function codeOf(rel) {
 }
 
 function withTempDir(fn) {
+  log.debug("Entering withTempDir().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-version-'));
   try {
+    log.debug("Leaving withTempDir().");
     return fn(dir);
   } finally {
     try {
@@ -88,6 +98,7 @@ function withTempDir(fn) {
 }
 
 function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== the VERSION file is the single source of M.N ===');
 
   // -----------------------------------------------------------------------
@@ -297,9 +308,10 @@ function run(t) {
     t.check(/version'\)\.userAgent\(/.test(src) ||
             /userAgent\(/.test(src),
             rel + ' builds its User-Agent from common/version.js');
-    t.check(!/'User-Agent':\s*'mock-sts /.test(src),
+    t.check(!/'User-Agent':\s*'(mock-)?sts[ \/]/.test(src),
             rel + ' does not carry a hand-written product token');
   });
+  log.debug("Leaving run().");
 }
 
 module.exports = {

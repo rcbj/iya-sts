@@ -78,8 +78,13 @@
 // ---------------------------------------------------------------------------
 // USAGE
 //
-//   node tests/tools/pep-credential.js --url https://localhost:8081 \
-//        --out /tmp/pep-certs --subject "CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+//   node tests/tools/pep-credential.js --url=https://localhost:8081 \
+//        --out=/tmp/pep-certs --subject="CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+//
+// **EVERY FLAG TAKES `=`.** `--url https://…` leaves `--url` empty and reports
+// the URL as an unknown option; this block showed that form until it was fixed,
+// so the documented invocation exited 2 naming the argument the reader had got
+// right. See `parseArgs()` for why the doc moved rather than the parser.
 //
 //   --url       the mock, where the anchor is POSTed. Required.
 //   --out       where the three files go. Required; created if absent.
@@ -102,6 +107,12 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pep-credential',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const REPO = process.env.MOCK_STS_DIR ||
              path.join(__dirname, '..', '..');
 const x509 = require(path.join(REPO, 'common', 'vendored', 'x509.js'));
@@ -113,7 +124,21 @@ const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=mock-sts';
 // The arguments. Hand-parsed for `tests/run.js`'s reason: this directory takes
 // no dependency to run, and five flags do not justify the first one.
 // ---------------------------------------------------------------------------
+// **`--flag=value` ONLY, AND THE HEADER SAID OTHERWISE UNTIL IT WAS FIXED.**
+// Each argument is split on its first `=`, so a bare `--url` is a flag whose
+// value is the empty string and the URL that followed it is an unknown option:
+// the invocation the USAGE block documented exited 2, naming the one argument
+// the reader had typed correctly.
+//
+// **THE DOCUMENTATION MOVED RATHER THAN THIS FUNCTION**, which is worth saying
+// because the other repair is four lines and looks obviously kinder. Nothing
+// calls this file the space way — both launchers pass `=`, `docs/remote-pep.md`
+// passes `=`, and the three tests that want a certificate `require()` this file
+// for `mint()` and never reach a command line at all — so accepting the space
+// form would have been a behaviour change made to rescue a comment, in the one
+// directory whose rule is that it takes no dependency and stays small.
 function parseArgs(argv) {
+  log.debug("Entering parseArgs().");
   const opts = { url: '', out: '', subject: DEFAULT_SUBJECT, years: 1,
                  quiet: false };
   argv.forEach(function (arg) {
@@ -128,13 +153,16 @@ function parseArgs(argv) {
     else if (name === '--help' || name === '-h') { opts.help = true; }
     else { opts.unknown = (opts.unknown || []).concat(arg); }
   });
+  log.debug("Leaving parseArgs().");
   return opts;
 }
 
 function say(opts, line) {
+  log.debug("Entering say().");
   if (!opts.quiet) {
     process.stderr.write(line + '\n');
   }
+  log.debug("Leaving say().");
 }
 
 // ---------------------------------------------------------------------------
@@ -151,11 +179,15 @@ function say(opts, line) {
 // step further away.
 // ---------------------------------------------------------------------------
 function postAnchor(url, pem) {
+  log.debug("Entering postAnchor().");
+  log.debug("Leaving postAnchor().");
   return new Promise(function (resolve) {
     let target;
     try {
       target = new URL(url.replace(/\/+$/, '') + '/tls/trust');
     } catch (error) {
+      log.debug("Caught in a callback in postAnchor(): " +
+                ((error && error.message) || error));
       resolve({ ok: false, why: '--url is not a URL: ' + url });
       return;
     }
@@ -194,6 +226,7 @@ function postAnchor(url, pem) {
 // second set of edge cases.
 // ---------------------------------------------------------------------------
 async function issue(spec) {
+  log.debug("Entering issue().");
   const pair = await keys.generateKeyPair('rsa-2048');
   const now = new Date();
   const until = new Date(now.getTime() +
@@ -227,6 +260,7 @@ async function issue(spec) {
     notAfter: until.toISOString(),
     extensions: extensions
   });
+  log.debug("Leaving issue().");
   return { pem: issued.pem, privateKeyPem: pair.privatePem,
            publicKeyPem: pair.publicPem, subject: spec.subject,
            serialHex: issued.serialHex,
@@ -241,6 +275,7 @@ async function issue(spec) {
 // second reading of how a chain is built.
 // ---------------------------------------------------------------------------
 async function mint(opts) {
+  log.debug("Entering mint().");
   const options = opts || {};
   const root = await issue({
     subject: options.rootSubject || 'CN=mock-sts test Root CA,O=mock-sts tests',
@@ -259,6 +294,7 @@ async function mint(opts) {
     issuer: { certificatePem: issuing.pem,
               privateKeyPem: issuing.privateKeyPem, keyAlg: 'rsa-2048' }
   });
+  log.debug("Leaving mint().");
   return {
     root: root, issuing: issuing, leaf: leaf,
     // WHAT A TLS CLIENT NEEDS, spelt the way node's `cert`/`key` options take
@@ -272,6 +308,7 @@ async function mint(opts) {
 }
 
 async function main() {
+  log.debug("Entering main().");
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
     process.stdout.write(
@@ -294,7 +331,8 @@ async function main() {
   }
 
   say(opts, 'Building a Root CA, an Issuing CA and a TLS client certificate ' +
-            'for ' + opts.subject + ' on ' + REPO + '/common/vendored/x509.js ' +
+            'for ' + opts.subject + ' on ' + REPO +
+            '/common/vendored/x509.js ' +
             '— the same engine spiffe/spiffe_ca.js issues X509-SVIDs with.');
 
   const minted = await mint({ subject: opts.subject, years: opts.years });
@@ -314,7 +352,8 @@ async function main() {
     ['These three were generated by tests/tools/pep-credential.js.',
      '',
      'Root CA      ' + root.subject + '   (serial ' + root.serialHex + ')',
-     '  issues     ' + issuing.subject + '   (serial ' + issuing.serialHex + ')',
+     '  issues     ' + issuing.subject + '   (serial ' + issuing.serialHex +
+     ')',
      '    issues   ' + leaf.subject + '   (serial ' + leaf.serialHex + ')',
      '',
      'pep.crt is the LEAF followed by the ISSUING CA, which is what the PEP',
@@ -351,6 +390,7 @@ async function main() {
   // the DN and a launcher needs no parsing. Everything else this file says
   // goes to stderr for that reason.
   process.stdout.write(leaf.subject + '\n');
+  log.debug("Leaving main().");
 }
 
 // Guarded so that a test can require this file for `mint()` and `trustAnchor()`

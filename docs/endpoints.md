@@ -22,7 +22,9 @@ Both are **behind the console gate** since the page moved into `/admin` on
 screen and the second is a `401 login_required`, because a redirect to an HTML
 login screen is not an answer a program can read. Sign in at `/authn/login`
 (any username; no password is checked anywhere here), or set
-`ADMIN_AUTH_REQUIRED=false`. Nothing under `/admin-api` is gated.
+`ADMIN_AUTH_REQUIRED=false`. **Everything under `/admin-api` needs an OAuth 2.0
+access token** audienced to that API (`admin:read` to read, `admin:write` to
+write); `ADMIN_API_AUTH_REQUIRED=false` turns that off.
 
 ## What that page is
 
@@ -81,15 +83,20 @@ them can drift from what the service does:
 | `GET /.well-known/openid-configuration` | The OpenID Provider Configuration |
 | `GET /.well-known/oauth-authorization-server` | The RFC 8414 document |
 | `GET /oauth2/rfc9700` | Every Security BCP requirement, with what is and is not enforced |
+| `GET /oauth2/oauth21` | Every OAuth 2.1 requirement the mode adds, which it inherits from RFC 9700 mode, and what it exempts |
 | `GET /admin-api/openapi.json` | The management API, generated from its operation table |
 | `GET /admin/api-explorer` | The same, in a small explorer that also shows the `curl` line. A page of the **admin console** since 2026-09-09, behind its session and roles — it was `GET /admin-api/docs` until that API began requiring an access token a browser cannot carry |
-| `GET /spiffe` | The trust domain, the four sockets, and all 42 SPIRE methods with a reason for each of the six that are unimplemented |
+| `GET /spiffe` | The trust domain, every socket this process has bound — the default realm's four and two more for each realm whose SPIFFE is turned on, each row naming its realm — and all 42 SPIRE methods with a reason for each of the six that are unimplemented. Reached under a realm prefix it is that realm's answer |
 | `GET /admin/ldap/service` | The directory's state, both listeners separately, and the fact that it is schemaless |
 | `GET /federation` | Every configured federation relationship in both directions, and the URL to give each partner |
 | `GET /admin/ldap/federations` | The federation register as the directory holds it, with its schema — and the one container here where an `ldapmodify` is a security change |
 | `GET /tls` | Both TLS listeners, and what a verified client certificate does and does not mean |
+| `GET /admin/tls/trust` | Every client-certificate trust anchor, with where each came from (`tls.trustAnchorsFile` or added at runtime), and the add and remove controls. An admin console page; `GET /admin-api/tls/trust` and `POST /admin-api/tls/trust/{add,remove}` are its management-API twins. Nothing on it is persisted and there is no clear |
 | `GET /scim` | The SCIM authentication schemes that are switched on |
-| `GET /krb5/principals` | The principal database, passwords included, for the reason that page gives |
+| `GET /krb5/principals` | The principal database, passwords included in development mode for the reason that page gives; in product mode the passwords are withheld and the page says why. A directory person keyed from their own password is listed with `directoryKeys: true` and never with a key |
+| `GET /admin/kerberos/principals` | Who the KDC holds a STORED long-term key for: directory people whose keys were derived from their own password (product mode), and service principals created with a random key — with create, rotate, delete and clear controls. A create or a rotate shows an MIT keytab ONCE — a rotate's carries the previous kvno too. Each row lists the PREVIOUS key versions still accepted for tickets issued under them (kvno, enctypes, expiry; `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`), with a Drop previous versions control that ends that window at once. An admin console page; `GET /admin-api/kerberos/principals` and `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,clear-person-keys,drop-previous-service-keys,drop-previous-person-keys}` are its twins, and only the create and rotate replies carry key material |
+| `OPTIONS /gnap` and `GET /.well-known/gnap-as-rs` | GNAP's two discovery documents — the client's (RFC 9635 section 9) and the resource server's (RFC 9767 section 3.1), both read off the `gnap.*` settings and the authorization server profile. See [GNAP](gnap.md) |
+| `GET /gnap/keys` | The public keys that verify GNAP's self-contained token formats without introspection |
 | `GET /admin-api/status` | Which console pages exist — what the parity test reads |
 
 **Two rows in that table are behind the console's gate, and their `/admin-api`
@@ -116,3 +123,9 @@ in `iss` and `aud`, and **a credential does not cross between them** — an
 authorization code issued by one is refused by another's token endpoint. The
 capabilities in its document *drive* those endpoints rather than describing them,
 so there is no second table that could disagree.
+
+**A named authorization server has a GNAP grant endpoint too**, at
+`/tenant1/gnap`. Its GNAP members — start modes, finish methods, key proofs,
+token formats — are set on `/admin/authorization-servers` beside the OAuth ones
+and are ENFORCED at that endpoint, and they appear only in its GNAP discovery
+document, never in its OAuth metadata.

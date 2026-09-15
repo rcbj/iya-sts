@@ -140,12 +140,14 @@ export NODE_EXTRA_CA_CERTS=/tmp/sts.pem      # for a node client
 It is the same certificate 8443, 9443 and LDAPS 636 serve, so that is one trust
 decision for the whole service rather than four.
 
-The second one is **behind the console gate** (`admin.authRequired`, on by
-default): with no session it answers a 302 to the sign-in screen, which is why
-the `-L` is there and why what comes back is that screen rather than the page.
-Open it in a browser and sign in — any username, since this service checks no
-password — or read the same service through `/admin-api`, which is not gated.
-`ADMIN_AUTH_REQUIRED=false` turns the gate off entirely.
+The second one is **behind the console gate**, which is unconditional: with no
+session it answers a 302 to the sign-in screen, which is why the `-L` is there
+and why what comes back is that screen rather than the page. Open it in a
+browser and sign in — any username, since this service checks no password in
+its default `development` mode. There is no setting that opens the console;
+`admin.authRequired` was removed on 2026-09-06 when `global.mode` took over the
+question. `/admin-api` reads the same service for a program, and takes an OAuth
+2.0 access token of its own.
 
 A protocol you can drive end to end in a browser with nothing else installed is
 **SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick one of the three bindings, sign

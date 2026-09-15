@@ -78,20 +78,28 @@ const bunyan = require('bunyan');
 const nodeCrypto = require('crypto');
 const config = require('./config');
 const pqJose = require('./pq_jose');
+// A LEAF with no requires, so this child stays a leaf too. The failure codes.
+const errorCodes = require('./error_codes');
 
 // The module's own logger, made the way pq_jose.js makes its own. A worker's
 // lines are named `worker` and carry the pid, because the whole point of
 // several of them is that a reader has to be able to tell which one spoke.
+let logLevelProblem = null;
 const log = bunyan.createLogger({
   name: 'worker',
   level: (function () {
     try {
       return config.value('global.logLevel') || 'info';
     } catch (e) {
+      logLevelProblem = e;
       return 'info';
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug('No log level could be read, so info: ' +
+            logLevelProblem.message);
+}
 
 // ---------------------------------------------------------------------------
 // THE JOBS. One entry per unit of work the front process may hand out.
@@ -228,16 +236,47 @@ function handleMessage(message) {
   try {
     result = runJob(message.kind, message.job);
   } catch (e) {
-    log.warn('worker ' + process.pid + ': the ' +
+    log.warn(errorCodes.tag('STS-WORKER-0006') +
+             'worker ' + process.pid + ': the ' +
              (message && message.kind ? message.kind : 'unknown') +
              ' job failed: ' + e.message);
-    process.send({ id: id, ok: false, error: e.message,
-                   errorName: e.name || 'Error' });
+    answer({ id: id, ok: false, error: e.message,
+             errorName: e.name || 'Error' });
     log.debug('Leaving handleMessage(). Failed.');
     return;
   }
-  process.send({ id: id, ok: true, result: result });
+  answer({ id: id, ok: true, result: result });
   log.debug('Leaving handleMessage(). Answered.');
+}
+
+// ---------------------------------------------------------------------------
+// ONE ANSWER TO THE FRONT PROCESS, AND A CHANNEL THAT HAS GONE IS NOT A CRASH.
+//
+// A job is synchronous, so the channel can close WHILE it computes — the pool
+// gave up on it (`workers.jobTimeoutS`), drained, or the front process exited
+// — and the `disconnect` handler below cannot run until the job returns. A
+// send on a closed channel fails ASYNCHRONOUSLY, and without a callback node
+// emits that failure as an `'error'` on `process`, which nothing listens for:
+// the worker died with an unhandled `write EPIPE` stack on the stderr it shares
+// with its parent. Found on 2026-09-15 at the foot of `tests/worker_pool.js`'s
+// log in a `cluster` run, after section F's bound had left a signature running
+// and the test process had finished.
+//
+// Nobody is waiting for this answer any more — the pool rejected the job, or
+// is gone — so it is dropped, and the pending `disconnect` exits the worker 0
+// exactly as a drain always did. A try/catch here would catch nothing: the
+// failure is not thrown.
+// ---------------------------------------------------------------------------
+function answer(message) {
+  log.debug('Entering answer(). id=' + message.id);
+  process.send(message, function (err) {
+    if (err) {
+      log.debug('Caught in answer(): ' + ((err && err.message) || err) +
+                '. The channel closed while job ' + message.id + ' ran, so ' +
+                'its answer is dropped.');
+    }
+  });
+  log.debug('Leaving answer().');
 }
 
 function startWorker() {

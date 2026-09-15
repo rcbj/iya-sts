@@ -37,3 +37,10 @@ coverage/
 # that name anywhere in the tree. There is only one stamp: `xacml-pep/`
 # deliberately does not get one, for a reason common/version.js gives.
 /version.json
+
+# THE EMBEDDED PROTOCOL DEBUGGER'S BUILT TREE (2026-09-13). The debugger
+# project's `embedded/build.sh --out debugger/embedded` writes it for a checkout
+# run, and the image copies the same tree out of that project's embedded image
+# instead. It is the other repository's build output — its own node_modules
+# included — and never this one's source.
+debugger/embedded/

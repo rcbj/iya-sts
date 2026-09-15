@@ -57,6 +57,12 @@ delete process.env.CONFIG_FILE;
 const applications = require('../common/applications');
 const consent = require('../common/consent');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'consent',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // THE TWO STUBS.
 //
@@ -70,10 +76,12 @@ const consent = require('../common/consent');
 // that the service would never write.
 // ---------------------------------------------------------------------------
 function entry(identifier, attributes) {
+  log.debug("Entering entry().");
   const attrs = { appIdentifier: [identifier], cn: [identifier] };
   Object.keys(attributes || {}).forEach(function (name) {
     attrs[name] = attributes[name];
   });
+  log.debug("Leaving entry().");
   return { dn: 'cn=' + identifier + ',ou=applications', origin: 'test',
            createdAt: '', modifiedAt: '', operational: [], attributes: attrs };
 }
@@ -101,32 +109,42 @@ const REGISTRY = [
 ];
 
 function consentStore(seed) {
+  log.debug("Entering consentStore().");
   const held = {};
   Object.keys(seed || {}).forEach(function (key) {
     held[key] = (seed[key] || []).slice(0);
   });
+  log.debug("Leaving consentStore().");
   return {
     values: held,
     hooks: {
       consentsOf: function (key) {
+        log.debug("Entering consentsOf().");
+        log.debug("Leaving consentsOf().");
         return { dn: 'uid=' + key + ',ou=users', found: !!held[key],
                  values: (held[key] || []).slice(0) };
       },
       addConsent: function (key, values) {
+        log.debug("Entering addConsent().");
         held[key] = (held[key] || []).concat(values.filter(function (one) {
           return (held[key] || []).indexOf(one) < 0;
         }));
+        log.debug("Leaving addConsent().");
         return { ok: true, dn: 'uid=' + key + ',ou=users' };
       },
       removeConsent: function (key, values) {
+        log.debug("Entering removeConsent().");
         const before = (held[key] || []).length;
         held[key] = (held[key] || []).filter(function (one) {
           return values.indexOf(one) < 0;
         });
+        log.debug("Leaving removeConsent().");
         return { ok: true, dn: 'uid=' + key + ',ou=users',
                  removed: before - held[key].length };
       },
       listConsents: function () {
+        log.debug("Entering listConsents().");
+        log.debug("Leaving listConsents().");
         return Object.keys(held).map(function (key) {
           return { dn: 'uid=' + key + ',ou=users', username: key,
                    values: held[key].slice(0) };
@@ -139,10 +157,13 @@ function consentStore(seed) {
 // Which scopes came back outstanding, as a plain sorted list, so an assertion
 // reads as the sentence it is making.
 function names(result) {
+  log.debug("Entering names().");
+  log.debug("Leaving names().");
   return result.names.slice(0).sort().join(' ');
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // WHAT WAS THERE BEFORE, PUT BACK AT THE END. `applications.js`'s directory
   // slot is ONE reference for the whole process and every later file in a run
   // reads through it, so a stub left installed answers every later question
@@ -168,8 +189,14 @@ function run(t) {
   // application", which is a failure that names applications.js and has
   // nothing to do with it.
   applications.setDirectory({
-    allApplications: function () { return REGISTRY; },
+    allApplications: function () {
+      log.debug("Entering allApplications().");
+      log.debug("Leaving allApplications().");
+      return REGISTRY;
+    },
     readApplication: function (identifier) {
+      log.debug("Entering readApplication().");
+      log.debug("Leaving readApplication().");
       return REGISTRY.filter(function (one) {
         return (one.attributes.appIdentifier || [])[0] === identifier;
       })[0] || null;
@@ -183,8 +210,8 @@ function run(t) {
   const when = new Date(Date.UTC(2026, 8, 1, 14, 30, 0));
   t.equal(consent.consentValueOf('openid', 'webapp1', when),
           '20260901143000Z openid webapp1',
-          'a GeneralizedTime, the scope and the client, space-separated — the ' +
-          'same spelling ldap_server.js writes every other timestamp in');
+          'a GeneralizedTime, the scope and the client, space-separated — ' +
+          'the same spelling ldap_server.js writes every other timestamp in');
 
   const plain = consent.parseConsentValue('20260901143000Z openid webapp1');
   t.equal(plain.scope, 'openid', 'the scope reads back');
@@ -192,11 +219,12 @@ function run(t) {
   t.equal(plain.at, '20260901143000Z', 'and the instant it was agreed');
 
   const spaced = consent.parseConsentValue(
-    consent.consentValueOf('https://resource1.example/read', 'a client with spaces', when));
+    consent.consentValueOf('https://resource1.example/read', 'a client with ' +
+        'spaces', when));
   t.equal(spaced.client, 'a client with spaces',
-          'A CLIENT_ID CONTAINING SPACES SURVIVES THE ROUND TRIP, which is the ' +
-          'whole reason it is last: identifierProblem() refuses only a line ' +
-          'break, a NUL and 512 characters, so a client_id may contain ' +
+          'A CLIENT_ID CONTAINING SPACES SURVIVES THE ROUND TRIP, which is ' +
+          'the whole reason it is last: identifierProblem() refuses only a ' +
+          'line break, a NUL and 512 characters, so a client_id may contain ' +
           'anything at all — and a grammar that split it on the last space ' +
           'would file that person\'s consent under a name nothing could ever ' +
           'revoke');
@@ -206,27 +234,27 @@ function run(t) {
   const barred = consent.parseConsentValue(
     consent.consentValueOf('write', 'weird|client', when));
   t.equal(barred.client, 'weird|client',
-          'AND SO DOES ONE CONTAINING `|` — which is why the delimiter here is ' +
-          'a space and not this repository\'s usual pipe: `oauthPermission`\'s ' +
-          '`name|description` works because the unconstrained field is last ' +
-          'there too, and here the unconstrained field contains pipes as ' +
-          'happily as anything else');
+          'AND SO DOES ONE CONTAINING `|` — which is why the delimiter here ' +
+          'is a space and not this repository\'s usual pipe: ' +
+          '`oauthPermission`\'s `name|description` works because the ' +
+          'unconstrained field is last there too, and here the unconstrained ' +
+          'field contains pipes as happily as anything else');
 
   const junk = consent.parseConsentValue('something-somebody-typed');
   t.equal(junk.scope, '',
           'a value with no delimiters at all reads as NOT A CONSENT rather ' +
-          'than as a consent to something — an ldapmodify can put anything in ' +
-          'this attribute, and a parser that guessed would grant it');
+          'than as a consent to something — an ldapmodify can put anything ' +
+          'in this attribute, and a parser that guessed would grant it');
   t.equal(consent.parseConsentValue('20260901143000Z openid').scope, '',
-          'and so does one with only two fields: without a client_id it names ' +
-          'no application, so there is nothing it could be a consent TO');
+          'and so does one with only two fields: without a client_id it ' +
+          'names no application, so there is nothing it could be a consent TO');
   t.equal(consent.parseConsentValue('this is not a consent').scope, '',
-          'AND SO DOES A SENTENCE, which is the case that forced the timestamp ' +
-          'to be CHECKED rather than merely split off: three words separated ' +
-          'by spaces fit the grammar exactly, so a parser that only counted ' +
-          'delimiters would read this as a consent to `is` for a client called ' +
-          '`not a consent` — a permission granted to nobody, invented out of ' +
-          'prose somebody left on an entry');
+          'AND SO DOES A SENTENCE, which is the case that forced the ' +
+          'timestamp to be CHECKED rather than merely split off: three words ' +
+          'separated by spaces fit the grammar exactly, so a parser that ' +
+          'only counted delimiters would read this as a consent to `is` for ' +
+          'a client called `not a consent` — a permission granted to nobody, ' +
+          'invented out of prose somebody left on an entry');
 
   // -----------------------------------------------------------------------
   t.log.info('a scope list is deduplicated and keeps its order');
@@ -259,18 +287,23 @@ function run(t) {
           'the override again — three different reasons that all have to end ' +
           'in the same silence');
 
-  const row = mixed.scopes.filter(function (one) { return one.scope === 'profile'; })[0];
+  const row = mixed.scopes.filter(function (one) {
+    return one.scope === 'profile';
+  })[0];
   t.check(row && row.consented === true && row.global === false,
-          'the row for a scope alice agreed to says so, and does not claim an ' +
-          'override she never had');
-  const globalRow = mixed.scopes.filter(function (one) { return one.scope === 'openid'; })[0];
-  t.check(globalRow && globalRow.global === true && globalRow.consented === false,
+          'the row for a scope alice agreed to says so, and does not claim ' +
+          'an override she never had');
+  const globalRow = mixed.scopes.filter(function (
+      one) { return one.scope === 'openid'; })[0];
+  t.check(globalRow && globalRow.global === true &&
+          globalRow.consented === false,
           'and the row for the override says the opposite — the two are ' +
           'reported separately because removing them does different things');
 
   // BOTH AT ONCE. alice now also agrees `openid` personally, which the override
   // was already covering.
-  store.hooks.addConsent('alice', [consent.consentValueOf('openid', 'webapp1', when)]);
+  store.hooks.addConsent('alice',
+                         [consent.consentValueOf('openid', 'webapp1', when)]);
   const both = consent.outstanding({ username: 'alice', clientId: 'webapp1',
                                      scope: 'openid' });
   const bothRow = both.scopes[0];
@@ -286,22 +319,23 @@ function run(t) {
              'SCOPE ALONE');
   // -----------------------------------------------------------------------
   const other = consent.outstanding({ username: 'alice', clientId: 'webapp2',
-                                      scope: 'openid https://resource1.example/read' });
+                                      scope: 'openid ' +
+                                             'https://resource1.example/read' });
   t.equal(names(other), 'https://resource1.example/read openid',
-          'BOTH ARE ASKED OF webapp2. webapp1 carries an override for exactly ' +
-          'these two, and it consents them for webapp1 — an application ' +
-          'registered afterwards that spells the same words is still asked, ' +
-          'which is the whole reason the override is a pair rather than a ' +
-          'service-wide list of harmless scopes');
+          'BOTH ARE ASKED OF webapp2. webapp1 carries an override for ' +
+          'exactly these two, and it consents them for webapp1 — an ' +
+          'application registered afterwards that spells the same words is ' +
+          'still asked, which is the whole reason the override is a pair ' +
+          'rather than a service-wide list of harmless scopes');
   t.equal(names(consent.outstanding({ username: 'bob', clientId: 'webapp1',
                                       scope: 'openid profile' })),
           'profile',
-          'AND IT COVERS EVERYBODY ON THE APPLICATION IT IS ON: bob has never ' +
-          'signed in anywhere and is not asked about `openid` either');
+          'AND IT COVERS EVERYBODY ON THE APPLICATION IT IS ON: bob has ' +
+          'never signed in anywhere and is not asked about `openid` either');
 
   // -----------------------------------------------------------------------
-  t.log.info('AN OVERRIDE ON A DELEGATED PERMISSION IS THE SAME OVERRIDE, and ' +
-             'the identifier is what is matched');
+  t.log.info('AN OVERRIDE ON A DELEGATED PERMISSION IS THE SAME OVERRIDE, ' +
+             'and the identifier is what is matched');
   // -----------------------------------------------------------------------
   // The assertion this whole "store the WHOLE identifier" rule exists for.
   // resource1 and resource2 both expose `read`; webapp1's override names
@@ -322,8 +356,8 @@ function run(t) {
   t.check(permissionRow && permissionRow.permission &&
           permissionRow.permission.identifier === 'resource1',
           'and the row resolves to the application that EXPOSES it, so the ' +
-          'screen can say whose API is being asked for rather than printing a ' +
-          'URL');
+          'screen can say whose API is being asked for rather than printing ' +
+          'a URL');
   t.equal(permissionRow.permission.description, 'Read resource1\'s data',
           'with the description somebody typed — a screen that listed five ' +
           'opaque words is a screen that teaches a person to press Allow');
@@ -337,33 +371,37 @@ function run(t) {
           'OIDC Core section 3.1.2.1: every requested scope is outstanding ' +
           'whatever is on the entry');
   t.equal(consent.consentsOf('alice').length, 2,
-          'AND NOTHING WAS DELETED BY ASKING. Re-consenting adds nothing that ' +
-          'is not already there and somebody who cancels keeps what they had — ' +
-          'a prompt that cleared the entry first would make Deny destructive');
+          'AND NOTHING WAS DELETED BY ASKING. Re-consenting adds nothing ' +
+          'that is not already there and somebody who cancels keeps what ' +
+          'they had — a prompt that cleared the entry first would make Deny ' +
+          'destructive');
 
   // -----------------------------------------------------------------------
   t.log.info('a value only an ldapmodify can write is reported, never obeyed');
   // -----------------------------------------------------------------------
   store.values.carol = ['this is not a consent'];
   const register = consent.register();
-  const odd = register.users.filter(function (one) { return one.username === 'carol'; })[0];
+  const odd = register.users.filter(function (one) {
+    return one.username === 'carol';
+  })[0];
   t.check(odd && odd.unreadable === true,
-          'the register marks it unreadable and shows the raw value — a value ' +
-          'the page silently dropped would be one somebody wrote on purpose ' +
-          'and could not find out was being ignored');
+          'the register marks it unreadable and shows the raw value — a ' +
+          'value the page silently dropped would be one somebody wrote on ' +
+          'purpose and could not find out was being ignored');
   t.equal(names(consent.outstanding({ username: 'carol', clientId: 'webapp2',
                                       scope: 'profile' })),
           'profile',
-          'AND IT CONSENTS NOTHING: carol is asked about `profile` exactly as ' +
-          'though her entry were empty');
+          'AND IT CONSENTS NOTHING: carol is asked about `profile` exactly ' +
+          'as though her entry were empty');
   t.equal(register.counts.unreadable, 1,
-          'and the count says how many there are, so a directory somebody has ' +
-          'been editing by hand says so on the page rather than in a log');
+          'and the count says how many there are, so a directory somebody ' +
+          'has been editing by hand says so on the page rather than in a log');
 
   // -----------------------------------------------------------------------
   t.log.info('the register keeps the two halves apart');
   // -----------------------------------------------------------------------
-  const globals = register.globals.filter(function (one) { return one.client === 'webapp1'; });
+  const globals = register.globals.filter(function (
+      one) { return one.client === 'webapp1'; });
   t.equal(globals.length, 2, 'both of webapp1\'s overrides are listed');
   const permissionGlobal = globals.filter(function (one) {
     return one.scope === 'https://resource1.example/read';
@@ -377,14 +415,15 @@ function run(t) {
           'oauth2.delegatedPermissionsEnforced on the request is refused ' +
           'anyway — consent and permission are two gates and this is the one ' +
           'place both are visible at once');
-  const plainGlobal = globals.filter(function (one) { return one.scope === 'openid'; })[0];
+  const plainGlobal =
+      globals.filter(function (one) { return one.scope === 'openid'; })[0];
   t.equal(plainGlobal.resource, '',
-          'and an ordinary scope names no resource rather than being reported ' +
-          'as a broken permission — most scopes are not permissions');
+          'and an ordinary scope names no resource rather than being ' +
+          'reported as a broken permission — most scopes are not permissions');
 
   // -----------------------------------------------------------------------
-  t.log.info('with no directory installed, an answer is NOT remembered and NOT ' +
-             'silently granted');
+  t.log.info('with no directory installed, an answer is NOT remembered and ' +
+             'NOT silently granted');
   // -----------------------------------------------------------------------
   consent.setDirectory(null);
   t.equal(consent.storable(), true,
@@ -392,10 +431,26 @@ function run(t) {
           'half-replacing it — setDirectory() validates the object WHOLE, ' +
           'because a filler that installed the reads and neither write would ' +
           'draw the screen, record nothing, and draw it again');
-  consent.setDirectory({ consentsOf: function () { return { values: [] }; },
-                         addConsent: function () { return { ok: false, reason: 'noEntry' }; },
-                         removeConsent: function () { return { ok: false }; },
-                         listConsents: function () { return []; } });
+  consent.setDirectory({ consentsOf: function () {
+    log.debug("Entering consentsOf().");
+    log.debug("Leaving consentsOf().");
+    return { values: [] };
+  },
+                         addConsent: function () {
+                           log.debug("Entering addConsent().");
+                           log.debug("Leaving addConsent().");
+                           return { ok: false, reason: 'noEntry' };
+                         },
+                         removeConsent: function () {
+                           log.debug("Entering removeConsent().");
+                           log.debug("Leaving removeConsent().");
+                           return { ok: false };
+                         },
+                         listConsents: function () {
+                           log.debug("Entering listConsents().");
+                           log.debug("Leaving listConsents().");
+                           return [];
+                         } });
   const unstored = consent.record('dave', 'webapp2', ['profile']);
   t.equal(unstored.ok, true,
           'the authorization request is NOT failed — a mock that stopped ' +
@@ -416,10 +471,12 @@ function run(t) {
   // the consent store this file installed is `consent.setDirectory(null)`
   // above, and this is the registry's.
   applications.setDirectory(beforeDirectory);
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'consent',
-  describe: 'an override is not a record, and neither is a value somebody typed',
+  describe:
+    'an override is not a record, and neither is a value somebody typed',
   run: run
 };

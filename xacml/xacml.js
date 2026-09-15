@@ -95,6 +95,9 @@ const validation = require('../common/validation');
 const websecurity = require('../common/websecurity');
 const config = require('../common/config');
 const audit = require('../common/audit');
+// The error-code registry (a leaf). A code is marked on the RESPONSE and never
+// written into it — every refusal below keeps the body it always had.
+const errorCodes = require('../common/error_codes');
 const model = require('./xacml_model');
 const json = require('./xacml_json');
 const pdp = require('./xacml_pdp');
@@ -158,6 +161,8 @@ require('./xacml_role_pep');
 require('./xacml_access_pep');
 
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return config.value('xacml.enabled') !== false;
 }
 
@@ -170,6 +175,7 @@ function offCheck(res) {
     log.debug('Leaving offCheck(). On.');
     return false;
   }
+  errorCodes.mark(res, 'STS-XACML-0001');
   res.status(501).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify({
        error: 'not_implemented',
@@ -184,9 +190,11 @@ function offCheck(res) {
 }
 
 function fail(res, status, code, description) {
+  log.debug("Entering fail().");
   res.status(status).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify({ error: code, error_description: description },
                           null, 2));
+  log.debug("Leaving fail().");
 }
 
 // ===========================================================================
@@ -253,6 +261,18 @@ function xacmlAccess(req, res, action, what) {
   // and which setting names that group. A 403 saying "access_denied" and
   // nothing else would make the one endpoint that documents this family
   // unreachable by exactly the people who need it.
+  if (!identity.authenticated) {
+    errorCodes.mark(res, 'STS-XACML-0003');
+  } else if (identity.revocationRefused) {
+    errorCodes.mark(res,
+                    errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
+  } else if (!identity.verified) {
+    errorCodes.mark(res, 'STS-XACML-0004');
+  } else if (held.indexOf(XACML_USER_ROLE) < 0) {
+    errorCodes.mark(res, 'STS-XACML-0005');
+  } else {
+    errorCodes.mark(res, 'STS-XACML-0006');
+  }
   fail(res, 403, 'access_denied',
     'The access policy refused this request. ' + policy.why +
     ' The XACML endpoints are reached by presenting a client certificate ' +
@@ -310,11 +330,15 @@ function decide(request) {
     policy = store.parseDocument(root.document);
   } catch (error) {
     log.debug('Leaving decide(). The root policy will not load.');
-    return { decision: model.DECISION.INDETERMINATE,
+    // MARKED ON THE ANSWER, NOT IN IT: a non-enumerable property that neither
+    // `json.writeResponse()` nor anything else serialises, so a handler that
+    // sends this answer can mark its response with the condition behind it.
+    return errorCodes.mark({ decision: model.DECISION.INDETERMINATE,
              status: { code: error.xacmlStatus || model.STATUS.SYNTAX_ERROR,
                        message: 'The root policy "' + root.name + '" does ' +
                                 'not load: ' + error.message },
-             obligations: [], advice: [], policyIdentifiers: [] };
+             obligations: [], advice: [], policyIdentifiers: [] },
+             'STS-XACML-0012');
   }
   if (config.value('xacml.returnPolicyIdList') === true) {
     request.returnPolicyIdList = true;
@@ -323,6 +347,14 @@ function decide(request) {
     repository: store.repository(),
     resolver: pip.resolverFor(request)
   });
+  // AN INDETERMINATE THE ENGINE REACHED THROUGH A PROCESSING OR SYNTAX ERROR is
+  // a fault somebody has to fix, where a missing attribute is an answer about
+  // the request; only the first two carry a code.
+  if (answer && answer.decision === model.DECISION.INDETERMINATE &&
+      answer.status && (answer.status.code === model.STATUS.PROCESSING_ERROR ||
+                        answer.status.code === model.STATUS.SYNTAX_ERROR)) {
+    errorCodes.mark(answer, 'STS-XACML-0013');
+  }
   log.debug('Leaving decide(). ' + answer.decision);
   return answer;
 }
@@ -345,7 +377,8 @@ function decide(request) {
 const XACML_QUERY = validation.z.looseObject({
   format: validation.types.opt(validation.z.string().regex(/^(json|xml|html)$/i,
     'must be "json", "xml" or "html"')),
-  bias: validation.types.opt(validation.types.oneOf(['deny-biased', 'permit-biased']))
+  bias: validation.types.opt(validation.types.oneOf(
+      ['deny-biased', 'permit-biased']))
 });
 
 app.post('/xacml/pdp', function (req, res) {
@@ -381,10 +414,16 @@ app.post('/xacml/pdp', function (req, res) {
     // request and a 400 says there was no request to answer about. Collapsing
     // them would have a PEP enforce its bias over somebody's typo.
     log.debug('Leaving POST /xacml/pdp. The request would not parse.');
+    errorCodes.mark(res, 'STS-XACML-0011');
     fail(res, 400, 'invalid_request', error.message);
     return;
   }
   const answer = decide(request);
+  // A Permit, a Deny or a NotApplicable is the ANSWER and carries no code; an
+  // Indeterminate this service reached through a fault does.
+  if (errorCodes.codeOf(answer)) {
+    errorCodes.mark(res, errorCodes.codeOf(answer));
+  }
   // COUNTED AS A DECISION AND NOT AS AN ENFORCEMENT, which is the distinction
   // `/admin/xacml/monitor` is built around. Somebody else's PEP asked; this
   // service produced the decision and never saw what was done with it, so the
@@ -536,7 +575,8 @@ app.get('/xacml/protected', function (req, res) {
   monitor.record('protected', { decision: answer.decision,
                                 allowed: enforcement.allowed,
                                 undischargeable:
-                                  (enforcement.undischargeable || []).length > 0 });
+                                  (enforcement.undischargeable ||
+                                   []).length > 0 });
   audit.audit({
     action: 'xacml.enforcement',
     actor: subject,
@@ -564,6 +604,16 @@ app.get('/xacml/protected', function (req, res) {
   if (answer.note) {
     body.note = answer.note;
   }
+  if (!enforcement.allowed) {
+    errorCodes.mark(res, (enforcement.undischargeable || []).length &&
+                         answer.decision === model.DECISION.PERMIT
+      ? 'STS-XACML-0015' : 'STS-XACML-0014');
+  }
+  // A fault behind the decision is the more specific condition, and the last
+  // mark wins.
+  if (errorCodes.codeOf(answer)) {
+    errorCodes.mark(res, errorCodes.codeOf(answer));
+  }
   res.status(enforcement.allowed ? 200 : 403)
      .type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify(body, null, 2));
@@ -587,7 +637,7 @@ app.get('/xacml/protected', function (req, res) {
 //      success. This PEP can discharge exactly one obligation — the one it
 //      knows about, below — and refuses on any other, loudly.
 // ---------------------------------------------------------------------------
-const DISCHARGEABLE = ['urn:sts-mock:xacml:obligation:log'];
+const DISCHARGEABLE = ['urn:sts:xacml:obligation:log'];
 
 function enforce(answer) {
   log.debug('Entering enforce(). decision=' + answer.decision);
@@ -712,6 +762,8 @@ function enforce(answer) {
 // ===========================================================================
 
 function remotePepsEnabled() {
+  log.debug("Entering remotePepsEnabled().");
+  log.debug("Leaving remotePepsEnabled().");
   return config.value('xacml.remotePeps') !== false;
 }
 
@@ -730,6 +782,7 @@ function remotePepOffCheck(res) {
     log.debug('Leaving remotePepOffCheck(). On.');
     return false;
   }
+  errorCodes.mark(res, 'STS-XACML-0002');
   res.status(501).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify({
        error: 'not_implemented',
@@ -778,6 +831,13 @@ function callerIdentity(req) {
   const identity = {
     authenticated: true,
     verified: verdict.verified,
+    // A chain that built and was REFUSED ON REVOCATION (2026-09-12) is
+    // `verified: false` — `mtls.peerVerified()` decides that — and carries the
+    // verdict so the two refusals below can mark the revocation code rather
+    // than the "did not verify" one, which would send an operator looking at
+    // the truststore for a certificate that is in it.
+    revocationRefused: !!(verdict.revocation && verdict.revocation.refused),
+    revocation: verdict.revocation || null,
     why: verdict.why,
     subject: named.subject,
     // RFC 8705 x5t#S256, through the same function the token endpoint binds a
@@ -856,6 +916,18 @@ function pepAccess(req, res, action, what, known) {
   }
   log.info('xacml: the access policy refused ' + what + ' for ' +
            (name || 'an unidentified caller') + '. ' + policy.why);
+  if (!identity.authenticated) {
+    errorCodes.mark(res, 'STS-XACML-0007');
+  } else if (identity.revocationRefused) {
+    errorCodes.mark(res,
+                    errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
+  } else if (!identity.verified) {
+    errorCodes.mark(res, 'STS-XACML-0008');
+  } else if (held.indexOf(REMOTE_PEP_ROLE) < 0) {
+    errorCodes.mark(res, 'STS-XACML-0009');
+  } else {
+    errorCodes.mark(res, 'STS-XACML-0010');
+  }
   fail(res, 403, 'access_denied',
     'The access policy refused this request. ' + policy.why +
     ' A remote Policy Enforcement Point reaches these endpoints by ' +
@@ -913,6 +985,7 @@ app.post('/xacml/pep/register', function (req, res) {
     const plain = !(req.socket &&
                     typeof req.socket.getPeerCertificate === 'function');
     log.debug('Leaving POST /xacml/pep/register. No client certificate.');
+    errorCodes.mark(res, plain ? 'STS-XACML-0017' : 'STS-XACML-0018');
     fail(res, 401, 'invalid_client', plain
       ? 'This registration arrived on a PLAIN HTTP connection, which cannot ' +
         'carry a client certificate at all — so there is nothing a better ' +
@@ -930,11 +1003,20 @@ app.post('/xacml/pep/register', function (req, res) {
         '(xacml.pepRequireCertificate). The certificate does not have to ' +
         'chain to anything — what is proved is that the same key completed ' +
         'the handshake, which is RFC 8705 section 3\'s argument and it holds ' +
+        // THIS CLAUSE CONTRADICTED ITSELF UNTIL IT WAS FIXED, and it is worth
+        // knowing why rather than just that. It said "GET /xacml/pep/policies
+        // requires no credential" and then, eleven words later, "GET
+        // /xacml/pep/policies requires REMOTE_PEPS" — the first half left
+        // over from before 2026-09-06 and the second added on the day that
+        // stopped being true. A refusal is the one message that has to be
+        // right, and this one is quoted VERBATIM into the PEP container's own
+        // `registration.why`, so both halves were read together by exactly
+        // the person trying to work out what to fix.
         'here unchanged. Note that registering is not what lets a PEP ' +
-        'enforce: GET /xacml/pep/policies requires no credential, and what ' +
-        'a registration buys is a row on /admin/xacml/peps and an address ' +
-        'for the change nudge — but you will need a certificate for the ' +
-        'pull as well, since GET /xacml/pep/policies requires REMOTE_PEPS.');
+        'enforce: what a registration buys is a row on /admin/xacml/peps and ' +
+        'an address for the change nudge. You will need a certificate for ' +
+        'the PULL regardless, since GET /xacml/pep/policies requires the ' +
+        'REMOTE_PEPS role.');
     return;
   }
   // THE NAME COMES FROM THE CERTIFICATE WHEN THERE IS ONE, and from the body
@@ -959,6 +1041,7 @@ app.post('/xacml/pep/register', function (req, res) {
   });
   if (!result.ok) {
     log.debug('Leaving POST /xacml/pep/register. Refused.');
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0019');
     fail(res, 400, 'invalid_request', result.why);
     return;
   }
@@ -1072,7 +1155,9 @@ app.get('/xacml/pep/policies', function (req, res) {
     // token goes in an ETag as well so that an ordinary HTTP cache — or a
     // client library that already speaks conditional requests — behaves
     // correctly without knowing anything about XACML.
-    res.status(304).set('Cache-Control', 'no-store').set('ETag', '"' + token + '"')
+    res.status(304)
+       .set('Cache-Control', 'no-store')
+       .set('ETag', '"' + token + '"')
        .end();
     log.debug('Leaving GET /xacml/pep/policies. Unchanged.');
     return;
@@ -1094,7 +1179,7 @@ app.get('/xacml/pep/policies', function (req, res) {
   // **A REMOTE PEP MUST NOT ENFORCE EITHER, AND THE REASON IS NOT SECRECY.** A
   // PEP evaluates what it pulls against ITS OWN requests, and those two
   // documents are written against attributes only this process can supply —
-  // `urn:sts-mock:xacml:attribute:required-role` off an application entry, the
+  // `urn:sts:xacml:attribute:required-role` off an application entry, the
   // resource owner off a portal session. Enforced out there they would answer
   // NotApplicable to everything a remote PEP ever asks, and a deny-biased PEP
   // turns NotApplicable into a refusal: shipping them would silently make every
@@ -1149,8 +1234,8 @@ app.get('/xacml/pep/policies', function (req, res) {
        note: 'Every ENABLED policy EXCEPT this service\'s own. A disabled ' +
              'policy is left out rather than sent with a flag, because a PEP ' +
              'that loaded one would enforce a policy this service does not — ' +
-             'and the access-control and role-issuance documents are left out ' +
-             'because they decide THIS service\'s questions against ' +
+             'and the access-control and role-issuance documents are left ' +
+             'out because they decide THIS service\'s questions against ' +
              'attributes only this process can supply. Enforced elsewhere ' +
              'they would answer NotApplicable to everything, which a ' +
              'deny-biased PEP turns into a refusal of everything. They are ' +
@@ -1159,7 +1244,8 @@ app.get('/xacml/pep/policies', function (req, res) {
                ? ' Withheld here: ' + withheld.join(', ') + '.'
                : '')
      }, null, 2));
-  log.debug('Leaving GET /xacml/pep/policies. ' + rows.length + ' policy(ies).');
+  log.debug('Leaving GET /xacml/pep/policies. ' + rows.length +
+            ' policy(ies).');
 });
 
 // ---------------------------------------------------------------------------
@@ -1199,6 +1285,7 @@ app.post('/xacml/pep/heartbeat', function (req, res) {
     : String(body.name || ''));
   if (!name) {
     log.debug('Leaving POST /xacml/pep/heartbeat. Nameless.');
+    errorCodes.mark(res, 'STS-XACML-0020');
     fail(res, 400, 'invalid_request',
          'A heartbeat says which PEP it is from — by the client certificate ' +
          'it arrives with, or by `name` when it carries none.');
@@ -1218,6 +1305,7 @@ app.post('/xacml/pep/heartbeat', function (req, res) {
   });
   if (!result.ok) {
     log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0021');
     fail(res, 404, 'invalid_request', result.why);
     return;
   }
@@ -1374,7 +1462,7 @@ app.post('/xacml/pep/heartbeat', function (req, res) {
 // argument above made mechanical: everything a caller is invited to splice is
 // in OASIS's namespace and everything invented here is in this one, so the two
 // can never be confused by a parser or by a reader.
-const PIP_NS = 'urn:sts-mock:xacml:pip:1.0';
+const PIP_NS = 'urn:sts:xacml:pip:1.0';
 
 // The designators a caller may ask about, per call. A cap for the reason every
 // other container here has one: this endpoint walks a list a caller supplies,
@@ -1382,7 +1470,20 @@ const PIP_NS = 'urn:sts-mock:xacml:pip:1.0';
 // spend this service's single thread. It is generous — no real policy
 // designates fifty attributes about one subject — so reaching it is a sign of
 // something else.
+//
+// **`xacml.pipMaxDesignators` SINCE 2026-09-12**, beside
+// `xacml.pipMaxPerWindow` — that one bounds how many queries and this bounds
+// one query, so they are the two halves of what one enforcement point may cost.
+// This constant is the default, read per query so a change reaches the next
+// one.
 const PIP_MAX_DESIGNATORS = 50;
+
+function pipMaxDesignators() {
+  log.debug("Entering pipMaxDesignators().");
+  const n = Number(config.value('xacml.pipMaxDesignators'));
+  log.debug("Leaving pipMaxDesignators().");
+  return isFinite(n) && n > 0 ? Math.floor(n) : PIP_MAX_DESIGNATORS;
+}
 
 // ---------------------------------------------------------------------------
 // WHY A BAG IS EMPTY. Five reasons, five different fixes, and the resolver
@@ -1391,12 +1492,15 @@ const PIP_MAX_DESIGNATORS = 50;
 // caller, and it is why `<Unresolved>` exists.
 // ---------------------------------------------------------------------------
 function pipWhy(designator, subject, stored, mapped) {
+  log.debug("Entering pipWhy().");
   if (designator.category !== model.CATEGORY.ACCESS_SUBJECT) {
+    log.debug("Leaving pipWhy().");
     return 'Only the access-subject category is resolved by this PIP: a ' +
            'resource or environment designator has no directory entry to be ' +
            'looked up on.';
   }
   if (!mapped) {
+    log.debug("Leaving pipWhy().");
     return 'That AttributeId is not a directory attribute name. This PIP ' +
            'accepts a bare LDAP name (mail, employeeType) or the prefix ' +
            pip.ATTRIBUTE_PREFIX + '<name>; a standard XACML URI is ' +
@@ -1405,11 +1509,13 @@ function pipWhy(designator, subject, stored, mapped) {
            'decided about.';
   }
   if (!subject) {
+    log.debug("Leaving pipWhy().");
     return 'The request names no ' + model.ATTRIBUTE.SUBJECT_ID +
            ', so there is no entry to read. That is an ordinary request ' +
            'rather than an error.';
   }
   if (!stored) {
+    log.debug("Leaving pipWhy().");
     return 'No directory entry resolves from the subject "' + subject + '".';
   }
   // THE LAST TWO ARE THE ONES WORTH SEPARATING. An entry that does not hold
@@ -1420,9 +1526,11 @@ function pipWhy(designator, subject, stored, mapped) {
   // caller cannot see.
   const raw = pip.rawAttribute(stored.attributes, mapped);
   if (raw === undefined || raw === null) {
+    log.debug("Leaving pipWhy().");
     return 'The entry for "' + subject + '" does not hold "' + mapped + '".';
   }
   const count = Array.isArray(raw) ? raw.length : 1;
+  log.debug("Leaving pipWhy().");
   return 'The entry for "' + subject + '" holds ' + count + ' value(s) for "' +
          mapped + '", and none of them parses as ' + designator.dataType +
          '. Each was dropped with a warning rather than making the decision ' +
@@ -1441,6 +1549,7 @@ function pipWhy(designator, subject, stored, mapped) {
 // unlike any request, for no gain.
 // ---------------------------------------------------------------------------
 function writePipResponse(answers, unresolved) {
+  log.debug("Entering writePipResponse().");
   const byCategory = [];
   answers.forEach(function (answer) {
     let group = byCategory.filter(function (one) {
@@ -1489,6 +1598,7 @@ function writePipResponse(answers, unresolved) {
     parts.push('  </Unresolved>');
   }
   parts.push('</PIPResponse>');
+  log.debug("Leaving writePipResponse().");
   return parts.join('\n') + '\n';
 }
 
@@ -1497,11 +1607,13 @@ function writePipResponse(answers, unresolved) {
 // It carries the same two members `fail()` does so that a reader moving
 // between this endpoint and the six beside it meets one vocabulary.
 function pipFail(res, status, code, description) {
+  log.debug("Entering pipFail().");
   res.status(status).type('application/xml').set('Cache-Control', 'no-store')
      .send('<?xml version="1.0" encoding="UTF-8"?>\n' +
            '<PIPError xmlns="' + PIP_NS + '" error="' + xmlEscape(code) +
            '">\n  <Description>' + xmlEscape(description) +
            '</Description>\n</PIPError>\n');
+  log.debug("Leaving pipFail().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1527,8 +1639,10 @@ function pipFail(res, status, code, description) {
 // — the same cap `userFor()` and every other door in this service puts on one.
 // ---------------------------------------------------------------------------
 function pipScalarProblem(what, value, cap) {
+  log.debug("Entering pipScalarProblem().");
   const text = String(value === undefined || value === null ? '' : value);
   if (text.length > cap) {
+    log.debug("Leaving pipScalarProblem().");
     return 'the ' + what + ' is ' + text.length + ' characters and the ' +
            'limit is ' + cap + '. It is echoed back in <Unresolved>, written ' +
            'into this service\'s audit log, and held in memory while the ' +
@@ -1540,14 +1654,18 @@ function pipScalarProblem(what, value, cap) {
   // appears to be writing. `xmlEscape()` handles `<`, `>`, `&` and quotes and
   // has nothing to say about C0.
   if (/[\u0000-\u001F\u007F]/.test(text)) {
+    log.debug("Leaving pipScalarProblem().");
     return 'the ' + what + ' carries a control character. It is written into ' +
            'an XML attribute value and into a log line, and neither is a ' +
            'place for one.';
   }
+  log.debug("Leaving pipScalarProblem().");
   return '';
 }
 
-app.post('/xacml/pip', function (req, res) {
+// ASYNCHRONOUS SINCE 2026-09-14 (#46): the rate limit below counts in the
+// cluster's shared window, which is a round trip. Everything else is as it was.
+app.post('/xacml/pip', async function (req, res) {
   log.debug('Entering POST /xacml/pip.');
   // ---------------------------------------------------------------------
   // `remotePepOffCheck()` AND NOT `offCheck()`, WHICH IS A DECISION AND WAS
@@ -1608,12 +1726,13 @@ app.post('/xacml/pip', function (req, res) {
   // a limiter keyed on one would let an attacker mint a fresh bucket per
   // request by changing a string.
   // ---------------------------------------------------------------------
-  const within = websecurity.attempt('xacml-pip', req,
-                                     identity.verified ? identity.dn : '',
-                                     config.value('xacml.pipMaxPerWindow'));
+  const within = await websecurity.attemptShared('xacml-pip', req,
+    identity.verified ? identity.dn : '',
+    config.value('xacml.pipMaxPerWindow'));
   if (!within.ok) {
     log.debug('Leaving POST /xacml/pip. Rate limited.');
     res.set('Retry-After', String(within.retryAfterS));
+    errorCodes.mark(res, 'STS-XACML-0022');
     pipFail(res, 429, 'too_many_requests',
       'Too many PIP queries. ' + within.detail + ' The limit is ' +
       within.limit + ' per ' + config.value('security.rateLimitWindowS') +
@@ -1692,10 +1811,12 @@ app.post('/xacml/pip', function (req, res) {
         'entry — a PIP resolves designators, and a directory dump is a ' +
         'different and much larger thing.');
     }
-    if (nodes.length > PIP_MAX_DESIGNATORS) {
+    const most = pipMaxDesignators();
+    if (nodes.length > most) {
+      errorCodes.mark(res, 'STS-XACML-0024');
       throw model.syntaxError('A PIP query may name at most ' +
-        PIP_MAX_DESIGNATORS + ' designators; this one named ' + nodes.length +
-        '.');
+        most + ' designators (xacml.pipMaxDesignators); this one named ' +
+        nodes.length + '.');
     }
     // `readExpression()` AND NOT A READER WRITTEN HERE. It is the function
     // that reads an <AttributeDesignator> out of a POLICY, so a designator
@@ -1726,6 +1847,7 @@ app.post('/xacml/pip', function (req, res) {
         const problem = pipScalarProblem(field, read[field],
                                          validation.CAP.IDENTIFIER);
         if (problem) {
+          errorCodes.mark(res, 'STS-XACML-0025');
           throw model.syntaxError(problem);
         }
       });
@@ -1738,6 +1860,9 @@ app.post('/xacml/pip', function (req, res) {
     // reader that answered one for a typo would be indistinguishable from the
     // attribute being absent, and the caller's PDP would go on to decide on it.
     log.debug('Leaving POST /xacml/pip. The query would not parse.');
+    // The two bounds above marked their own condition before throwing; any
+    // other throw here is a query that is not a well-formed <PIPRequest>.
+    errorCodes.mark(res, errorCodes.codeOf(res) || 'STS-XACML-0023');
     pipFail(res, 400, 'invalid_request', error.message);
     return;
   }
@@ -1752,6 +1877,7 @@ app.post('/xacml/pip', function (req, res) {
                                           validation.CAP.NAME);
   if (subjectProblem) {
     log.debug('Leaving POST /xacml/pip. The subject is not a name.');
+    errorCodes.mark(res, 'STS-XACML-0025');
     pipFail(res, 400, 'invalid_request', subjectProblem);
     return;
   }
@@ -1826,16 +1952,77 @@ app.post('/xacml/pip', function (req, res) {
 // server would be exactly the mistake `saml/CLAUDE.md` records about not
 // dialling a service provider's metadata URL while issuing. What each PEP
 // answered is recorded on its own row and read on /admin/xacml/peps.
+//
+// ON AN ACTIVE-ACTIVE NODE THE NUDGE WAITS FOR THE COMMIT (2026-09-15, #46).
+//
+// The observer runs inside `xacml_store.write()`, so the nudge left while the
+// policy was in this node's memory and not yet in the store. The PEP answers
+// 204 and pulls at once — through the load balancer, on whatever node its
+// connection lands — and a node that is not this one serves from what has
+// COMMITTED: it answered the old sync token (304), and the PEP converged on its
+// next heartbeat or poll instead. The suite's `cluster` mode measured 2018ms
+// and 916ms for a nudge that takes tens of milliseconds on one node.
+//
+// So a clustered node dispatches it once `persistence.commitThrough()` says
+// the write has reached the store: after `setImmediate`, so the request that
+// made the change has usually answered and its barrier's commit is the flush in
+// flight this shares, rather than a second transaction started mid-request.
+// A commit that fails still nudges — the nudge is an optimisation, and the
+// PEP's pull then converges as it would have. Everywhere else (one node, the
+// cluster off, a dispatched pool) nothing changes: the nudge goes at once.
 // ---------------------------------------------------------------------------
+function afterCommit(dispatch) {
+  log.debug("Entering afterCommit().");
+  const barrier = require('../cluster/cluster_barrier');
+  if (!barrier.isActive()) {
+    log.debug("Leaving afterCommit(). Not active-active; at once.");
+    dispatch();
+    return;
+  }
+  setImmediate(function () {
+    const persistence = require('../persistence/persistence');
+    Promise.resolve().then(function () {
+      return persistence.commitThrough(persistence.writeGeneration());
+    }).then(function (results) {
+      const failed = (results || []).filter(function (one) {
+        return one && one.error;
+      });
+      if (failed.length) {
+        log.debug('xacml: the policy change did not commit before the ' +
+                  'nudge (' + failed.map(function (one) {
+                    return one.error;
+                  }).join('; ') + '); nudging anyway.');
+      }
+    }, function (e) {
+      log.debug("Caught in afterCommit(): " + ((e && e.message) || e));
+    }).then(dispatch).catch(function (error) {
+      // What `changed()` in xacml_store.js catches when the nudge goes at
+      // once, caught here because a deferred dispatch has left that frame.
+      log.warn(errorCodes.tag('STS-XACML-0060') +
+               'xacml: the repository change observer threw and the change ' +
+               'itself was fine: ' + ((error && error.message) || error));
+    });
+  });
+  log.debug("Leaving afterCommit(). Deferred until the commit.");
+}
+
 function nudgeRegisteredPeps(what) {
   log.debug('Entering nudgeRegisteredPeps(). what=' + what);
   if (!pepHttp.notifyAllowed() || !remotePepsEnabled()) {
     log.debug('Leaving nudgeRegisteredPeps(). Turned off.');
     return;
   }
+  afterCommit(function () {
+    dispatchNudge(what);
+  });
+  log.debug('Leaving nudgeRegisteredPeps().');
+}
+
+function dispatchNudge(what) {
+  log.debug('Entering dispatchNudge(). what=' + what);
   const rows = peps.notifiable();
   if (!rows.length) {
-    log.debug('Leaving nudgeRegisteredPeps(). Nobody to nudge.');
+    log.debug('Leaving dispatchNudge(). Nobody to nudge.');
     return;
   }
   log.info('xacml: ' + what + '; nudging ' + rows.length +
@@ -1847,19 +2034,20 @@ function nudgeRegisteredPeps(what) {
     });
     if (failed.length) {
       log.warn('xacml: ' + failed.length + ' of ' + results.length +
-               ' nudge(s) were not delivered. Each is recorded on that PEP\'s ' +
-               'row at /admin/xacml/peps. No policy change is lost by this: ' +
-               'those PEPs converge on their next poll.');
+               ' nudge(s) were not delivered. Each is recorded on that ' +
+               'PEP\'s row at /admin/xacml/peps. No policy change is lost by ' +
+               'this: those PEPs converge on their next poll.');
     }
   }).catch(function (error) {
     // `nudgeAll()` resolves rather than rejects for every ordinary failure, so
     // reaching here means a defect in this file rather than an unreachable
     // PEP. Logged and swallowed regardless: a policy that was written stays
     // written.
-    log.warn('xacml: the nudge dispatcher threw, which is a bug here rather ' +
+    log.warn(errorCodes.tag('STS-XACML-0065') +
+             'xacml: the nudge dispatcher threw, which is a bug here rather ' +
              'than a PEP being unreachable: ' + error.message);
   });
-  log.debug('Leaving nudgeRegisteredPeps(). Dispatched.');
+  log.debug('Leaving dispatchNudge(). Dispatched.');
 }
 
 store.setChangeObserver(nudgeRegisteredPeps);
@@ -1868,8 +2056,10 @@ store.setChangeObserver(nudgeRegisteredPeps);
 // GET /xacml — what this surface is.
 // ---------------------------------------------------------------------------
 function description(req) {
+  log.debug("Entering description().");
   const root = store.root();
   const policies = store.all();
+  log.debug("Leaving description().");
   return {
     enabled: enabled(),
     specification: 'OASIS XACML 3.0 (core), JSON Profile 1.1',
@@ -1983,6 +2173,7 @@ app.get('/xacml', function (req, res) {
   const askedFormat = validation.check(req, 'query', XACML_QUERY);
   if (!askedFormat.ok) {
     log.debug('Leaving the XACML page. ' + askedFormat.detail);
+    errorCodes.mark(res, 'STS-XACML-0016');
     return res.status(400).type('text/plain').send(askedFormat.detail + '\n');
   }
   if (String(req.query.format || '').toLowerCase() === 'json') {
@@ -2060,42 +2251,48 @@ app.get('/xacml', function (req, res) {
         'repository answers 304.'
       : 'Remote Policy Enforcement Points are <strong>off</strong> ' +
         '(<code>xacml.remotePeps</code>); those three endpoints answer 501.') +
-    '</p>' +
-    '<h2>The Policy Information Point, over HTTP</h2>' +
-    '<p>A remote PEP holds the engine but <strong>not the directory</strong>, ' +
-    'so a designator the request did not carry resolves to an empty bag out ' +
-    'there and to a real value here &mdash; the same policy deciding two ways ' +
-    'in two enforcement points. <code>POST /xacml/pip</code> closes that.</p>' +
-    '<p>XACML defines no PIP protocol, so this invents as little as possible: ' +
-    'both directions are <strong>XACML&rsquo;s own XML</strong>. Send a ' +
-    '<code>&lt;PIPRequest&gt;</code> carrying the ' +
+    '</p><h2>The Policy Information Point, over HTTP</h2><p>A remote PEP ' +
+    'holds the engine but <strong>not the directory</strong>, so a ' +
+    'designator the request did not carry resolves to an empty bag out there ' +
+    'and to a real value here &mdash; the same policy deciding two ways in ' +
+    'two enforcement points. <code>POST /xacml/pip</code> closes ' +
+    'that.</p><p>XACML defines no PIP protocol, so this invents as little as ' +
+    'possible: both directions are <strong>XACML&rsquo;s own XML</strong>. ' +
+    'Send a <code>&lt;PIPRequest&gt;</code> carrying the ' +
     '<code>&lt;Request&gt;</code> you are deciding &mdash; which is what ' +
     'names the subject &mdash; and one ' +
     '<code>&lt;AttributeDesignator&gt;</code> per attribute wanted. What ' +
     'comes back is <code>&lt;Attributes&gt;</code> <em>in the shape a ' +
-    '<code>&lt;Request&gt;</code> carries them</em>, so a PEP splices it into ' +
-    'its own request and evaluates &mdash; after which its engine finds the ' +
-    'values where a designator looks for them, which is exactly what happens ' +
-    'in this process when the embedded PDP asks the embedded PIP.</p>' +
-    '<p>An unresolved designator comes back as an <strong>absent</strong> ' +
-    '<code>&lt;Attribute&gt;</code> rather than an empty one: that is what a ' +
-    'request that never carried it looks like, so a PEP needs no branch for ' +
-    'it. <code>MustBePresent</code> is read and deliberately <em>not</em> ' +
-    'applied &mdash; what an empty bag means is settled by the designator and ' +
-    'the function it is handed to, both in your engine. The five reasons a ' +
-    'bag can be empty come back in <code>&lt;Unresolved&gt;</code>, in this ' +
-    'service&rsquo;s own namespace so that a PEP reading only the XACML core ' +
-    'namespace never sees it.</p>' +
-    '<p>The pull <em>is</em> the contract. When the repository changes this ' +
-    'service also POSTs a few bytes to each registered PEP that gave a ' +
-    'notify URL, saying only that something changed &mdash; an optimisation ' +
-    'over the polling interval and never a replacement for it, so a PEP ' +
-    'that is never nudged still converges.</p>' +
-    '<h2>Not here yet</h2><ul>' + later + '</ul>' +
+    '<code>&lt;Request&gt;</code> carries them</em>, so a PEP splices it ' +
+    'into its own request and evaluates &mdash; after which its engine finds ' +
+    'the values where a designator looks for them, which is exactly what ' +
+    'happens in this process when the embedded PDP asks the embedded ' +
+    'PIP.</p><p>An unresolved designator comes back as an ' +
+    '<strong>absent</strong> <code>&lt;Attribute&gt;</code> rather than an ' +
+    'empty one: that is what a request that never carried it looks like, so ' +
+    'a PEP needs no branch for it. <code>MustBePresent</code> is read and ' +
+    'deliberately <em>not</em> applied &mdash; what an empty bag means is ' +
+    'settled by the designator and the function it is handed to, both in ' +
+    'your engine. The five reasons a bag can be empty come back in ' +
+    '<code>&lt;Unresolved&gt;</code>, in this service&rsquo;s own namespace ' +
+    'so that a PEP reading only the XACML core namespace never sees ' +
+    'it.</p><p>The pull <em>is</em> the contract. When the repository ' +
+    'changes this service also POSTs a few bytes to each registered PEP that ' +
+    'gave a notify URL, saying only that something changed &mdash; an ' +
+    'optimisation over the polling interval and never a replacement for it, ' +
+    'so a PEP that is never nudged still converges.</p><h2>Not here ' +
+    'yet</h2><ul>' + later + '</ul>' +
     '<p><a href="?format=json">This document as JSON</a></p>' +
     '</body></html>');
   log.debug('Leaving GET /xacml. HTML.');
 });
 
 module.exports = { decide: decide, enforce: enforce, description: description,
-                   enabled: enabled };
+                   enabled: enabled,
+                   // The designator cap a PIP query is held to, for
+                   // `tests/scan_and_rate_limits.js` (2026-09-12).
+                   pipMaxDesignators: pipMaxDesignators,
+                   // The repository change observer, for
+                   // `tests/cluster_observation_counters.js` (2026-09-15):
+                   // a clustered node nudges only after the commit.
+                   nudgeRegisteredPeps: nudgeRegisteredPeps };

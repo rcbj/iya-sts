@@ -1,6 +1,6 @@
 ---
 title: Trust realms
-nav_order: 5
+nav_order: 8
 ---
 
 # Trust realms
@@ -90,9 +90,11 @@ before you build a test on it.
 | | |
 |---|---|
 | **The signing key** | Each realm generates its own. A token minted in one does not verify against another's JWKS. Each realm's `kid` is on `/admin/realms`. |
+| **The OpenID4VCI request-encryption key** | Part of the same per-realm key set since 2026-09-12. Each realm's credential issuer metadata publishes its own key in `credential_request_encryption.jwks`, and a Credential Request encrypted to one realm's key is refused by every other realm — in every process of a service running request workers, and, in product mode, across a restart. Until that date a service with request workers gave every realm one shared key. |
+| **Shared Signals registers** | The CAEP session register and the RISC account register behind `/admin/caep-sessions` and `/admin/risc-accounts`, since 2026-09-12. Until then every realm's page listed every realm's rows. |
 | **Every setting** | Per realm, above whatever the process is configured with. Every settings form in the console — each protocol's page, and `/admin/config` — and `POST /admin-api/config/set` reached under a realm's prefix read *and write* that realm. |
 | **Sessions** | Signing in to one realm signs you in to that realm only. **The admin console is the one exception**: its gate resolves your session cookie in whichever realm minted it, so the realm switcher switches rather than asking you to sign in again — the browser has only one session cookie, and before this a switch overwrote it. Every protocol endpoint is unchanged: in the realm you switched to, `/oauth2/authorize`, `/wsfed` and the two SAML profiles see no session. The console's banner names the realm your session belongs to whenever it is not the one you are looking at. |
-| **Everything in flight** | Authorization codes, access and refresh tokens, refresh families, DPoP replay and nonce state, client-assertion replay state, named authorization servers, credential offers, pre-authorized codes, deferred transactions, issuance nonces, presentation transactions, SAML 2.0 and 1.1 request state and artifacts. |
+| **Everything in flight** | Authorization codes, access and refresh tokens, refresh families, DPoP replay and nonce state, the RFC 7523 / RFC 7522 used-assertion history, named authorization servers, credential offers, pre-authorized codes, deferred transactions and the access tokens that mark a deferred issuance, issuance nonces, presentation transactions, SAML 2.0 and 1.1 request state and artifacts, SCIM Digest nonces and HOBA challenges, and the SPIRE Server API connections an X509-SVID was recorded for (a gRPC connection belongs to the realm whose listener accepted it). |
 | **What goes into a token** | The custom claim selections, the SAML attribute selections, the credential claims, the verifier's request. |
 | **The statistics and the audit log** | Including the audit sequence numbers, so one realm's rows are contiguous. |
 | **The six settings that are NAMES** | The SAML 2.0 entityID, the SAML 1.1 providerID, the WS-Federation entityID, the WS-Trust issuer, the SAML assertion issuer and the OpenID4VP verifier client id. A new realm is created with each suffixed with its id, because two realms carrying one entityID is two identity providers claiming one name. They are ordinary settings — change them, or unset them to go back to sharing the process's name. |
@@ -112,8 +114,12 @@ SPIFFE containers under each. So:
 - the same name signing in to two realms is **two entries**, one per realm;
 - an **OAuth client** registered under one realm is unknown to every other;
 - a **SAML service provider** entry belongs to the realm it was created in;
-- the **SPIFFE registry** is per realm, though the trust domain and the signing
-  authority in front of it are not;
+- the **SPIFFE registry** is per realm, and **so is the X.509 signing authority
+  since 2026-09-11** — each realm has a SPIFFE Issuing CA of its own on
+  [`/admin/pki`](pki.md) — and **so is the trust domain itself since
+  2026-09-12**: a realm is created with `spiffe.trustDomain` of
+  `<realm>.<the service's>`, so `acme` issues `spiffe://acme.example.org/…`.
+  See *SPIFFE* below, which is no longer on the not-separated list;
 - and a realm is reachable over LDAP: `ldapsearch -b "dc=acme,dc=example,dc=com"`.
 
 That last point is *why* the realm is in the DN rather than in a partition of its
@@ -144,30 +150,96 @@ directories, so that is the truth rather than a borrowed error code.
 With no realms defined there is one naming context and one container, and every
 byte of every answer is what it was before realms existed.
 
-### Not separated — the two admin console roles
+### Separated, and confined — the admin console roles (2026-09-14)
 
-Deliberately. They are groups in the **default realm's** `ou=groups`, read there
-whichever realm the console is reached in, and a grant made through
-`/realm/acme/admin-api/rbac/grant` lands there too and says so in its reply.
+Every realm has two administrator rosters that matter to it:
 
-There is one administrator roster for the process on purpose: a role is
-permission to change what *every* realm does — a settings form writes the realm
-it is reached in, and `/admin/realms` can delete a realm outright — so a
-per-realm roster would mean anybody who can create a realm can administer the
-whole service.
+- **Its own.** The realm's `cn=admin-read` and `cn=admin-write`, in its own
+  `ou=groups`. A new realm is seeded with an `admin` account holding both, which
+  must change its password at its first sign-in; in product mode creating the
+  realm shows that password once. Until that account signs in to the realm's
+  console, anybody who signs in through the realm holds both of its roles.
+- **The service's.** The default realm's two groups. Their members administer
+  every realm, as they always did.
 
-The console's sign-on follows the roster. It accepts the default realm's session
-and no other, and an unauthenticated reader of *any* realm's console is sent to
-the **default realm's** sign-in screen — then returned to the realm page they
-asked for. Sign in once, in one realm; read every realm.
+A realm's own administrators are **confined to their realm**. Everything about
+the whole process is hidden from them and refused if asked for: the persistence
+store, the database, encryption, the secret store, the TLS listeners and client
+truststore, Kerberos, the LDAP service page, the embedded debugger and the API
+explorer. So are creating or removing a realm, reading or editing another realm,
+replacing the service Root, exporting the TLS listener's key, and every setting
+that belongs to the process. That confinement is what makes a per-realm roster
+safe: creating a realm makes somebody an administrator of that realm and of
+nothing else.
 
-### Not separated — three socket families
+The console asks the roster of the realm a person **signed in through**. Sign in
+at `/realm/acme/admin` and acme's roster decides; `admin` in acme and `admin` in
+the default realm are different people. A realm administrator who opens another
+realm's console is told they administer another realm, with a link back.
+
+**Choosing a realm.** When realms are defined, the plain `/admin` and `/portal`
+ask which realm you belong to before signing you in — a list of realms in
+development mode, a box for the realm's id in product mode. Add `?realm=<id>` to
+skip the question, or `?realm=default` to sign in to the default realm. A link
+to any page below `/admin` or `/portal` never asks.
+
+**The management API.** `/admin-api` accepts a token from the default realm's
+`sts-management-api` client everywhere. Under `/realm/<id>/admin-api` it also
+accepts a token that realm's own `sts-management-api` client was issued, with
+the realm's issuer and audience, and refuses that token the same service-wide
+operations the console refuses the realm's administrators.
+
+### Separated — SPIFFE, by ADDRESS (2026-09-12)
+
+SPIFFE was on the not-separated list until this date: one trust domain, one set
+of four sockets, answering in the default realm. It is separated now, and the
+discriminator is neither a path nor a name but the **endpoint address**.
+
+A realm is created with SPIFFE **off** and with a trust domain of its own —
+`acme.example.org` under the service's `example.org`, a common root with a
+unique issuer beneath it — and with Unix socket paths of its own. Turning
+`spiffe.enabled` on for that realm builds its authorities and binds a **Workload
+API and a SPIRE Server API of its own** on its Unix sockets. Nothing restarts:
+writing the setting is what binds the sockets.
+
+**A realm is created with its TCP listeners OFF** (`spiffe.workloadPort` and
+`spiffe.serverPort` seeded to 0) and with **no administrators**
+(`spiffe.adminIds` seeded empty). The ports it would otherwise inherit are the
+default realm's, already bound on `0.0.0.0`, so turning SPIFFE on used to mean
+two refused binds; and nothing here can know which addresses a host has. To
+serve a realm over TCP, set `spiffe.grpcHost` on the realm to an address of its
+own and the two ports back to `8092` / `8181` — a client configured for those
+ports then reaches every realm where it expects to.
+
+**The address is the only thing a SPIFFE client can name a tenant with.** gRPC
+has a path and it is the method name — `/SpiffeWorkloadAPI/FetchX509SVID` is
+fixed by the Workload API specification — so a realm segment there would be a
+method no conforming client calls. It is also what a real deployment looks like:
+one SPIRE server is one trust domain, and several trust domains are several
+endpoints.
+
+So a container running several realms' SPIFFE needs several addresses, and the
+compose files give it four: a static one for the service and three more added to
+its own interface on the way up (`STS_EXTRA_IPS`, which needs `NET_ADMIN`).
+Join tokens are per realm too — a join token is a credential for joining a trust
+domain.
+
+What is still shared is the **default realm's own four sockets**, which are
+bound when the process starts and stay bound with `spiffe.enabled` off (they
+answer `Unavailable`; a socket that vanished would read as a service that had
+stopped). **Federated bundles are a realm's own** since 2026-09-12, and no
+realm may register one under a trust domain any realm of this service serves —
+until then a bundle one realm registered was trusted in every realm, including
+under another realm's name.
+
+### Not separated — two socket families
 
 Kerberos (over raw UDP/TCP 88 *and* over MS-KKDCP — `/KdcProxy` is reachable
-under a prefix but reaches the same KDC behind it), the two TLS listeners, and
-SPIFFE's four sockets. A socket has no path in it. LDAP's 389 and 636 were on
-this list until the directory was partitioned: the sockets are still shared, but
-what they serve is told apart by DN.
+under a prefix but reaches the same KDC behind it) and the two TLS listeners. A
+socket has no path in it. LDAP's 389 and 636 were on this list until the
+directory was partitioned — the sockets are still shared, but what they serve is
+told apart by DN — and SPIFFE's four left it on 2026-09-12, by giving each realm
+sockets of its own.
 
 Kerberos is the one with an obvious way forward, and it is written down here
 rather than left to be rediscovered: Kerberos already *has* a realm, so the
@@ -177,6 +249,20 @@ stands in the way today is that `krb5.realm` cannot be changed while the service
 runs — the principal database and every long-term key in it is built from it when
 the process starts — so that database has to become per-realm and lazily built
 first.
+
+### Not separated — the key-encryption key
+
+**A realm is not a cryptographic boundary at rest.** Each realm has its own
+signing keys and its own branch of the certificate authority — that is the table
+above — but the key that ENCRYPTS all of it before it reaches the store is a
+single one for the whole deployment, read once at startup from
+`keys.kekProvider`.
+
+So anybody who can read that key can open every realm's sealed data, and
+rotating it rotates every realm at once. Per-record separation does exist (every
+sealed value gets its own derived key), but it is per record and not per tenant.
+[Encryption at rest](encryption-at-rest.md) argues it, and says what making it
+per realm would cost.
 
 `GET /realms` and `/admin/realms` both publish this list family by family, so it
 is something the service tells you rather than something to remember.

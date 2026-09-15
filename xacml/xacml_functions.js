@@ -77,8 +77,10 @@ const F2 = 'urn:oasis:names:tc:xacml:2.0:function:';
 const F3 = 'urn:oasis:names:tc:xacml:3.0:function:';
 
 function define(uri, definition) {
+  log.debug("Entering define().");
   definition.uri = uri;
   FUNCTIONS[uri] = definition;
+  log.debug("Leaving define().");
 }
 
 // ---------------------------------------------------------------------------
@@ -89,22 +91,30 @@ function define(uri, definition) {
 // all. Used only by static checks: a range rule can be enforced at load time
 // exactly when the value is written into the policy rather than fetched.
 function literalInteger(expression) {
+  log.debug("Entering literalInteger().");
   if (!expression || expression.kind !== 'value' ||
       model.canonicalType(expression.type) !== TYPE.INTEGER) {
+    log.debug("Leaving literalInteger().");
     return null;
   }
   const text = String(expression.lexical).trim();
   if (!/^[+-]?\d+$/.test(text)) {
+    log.debug("Leaving literalInteger().");
     return null;
   }
+  log.debug("Leaving literalInteger().");
   return parseInt(text, 10);
 }
 
 function boolBag(value) {
+  log.debug("Entering boolBag().");
+  log.debug("Leaving boolBag().");
   return model.singleton(TYPE.BOOLEAN, value);
 }
 
 function intBag(value) {
+  log.debug("Entering intBag().");
+  log.debug("Leaving intBag().");
   return model.singleton(TYPE.INTEGER, BigInt(value));
 }
 
@@ -112,11 +122,14 @@ function intBag(value) {
 // Used by union, intersection, subset and set-equals, all of which are defined
 // in terms of "the same value" rather than "the same object".
 function bagHas(row, values, candidate) {
+  log.debug("Entering bagHas().");
   for (let i = 0; i < values.length; i += 1) {
     if (row.equal(values[i], candidate)) {
+      log.debug("Leaving bagHas().");
       return true;
     }
   }
+  log.debug("Leaving bagHas().");
   return false;
 }
 
@@ -129,6 +142,8 @@ function bagHas(row, values, candidate) {
 // unknown function rather than as a wrong answer.
 // ---------------------------------------------------------------------------
 function allTypes() {
+  log.debug("Entering allTypes().");
+  log.debug("Leaving allTypes().");
   return Object.keys(datatypes.TYPES).filter(function (uri) {
     // xpathExpression has no equality and takes part in no family. Section
     // A.3.15 defines no bag or comparison functions over it at all.
@@ -137,6 +152,8 @@ function allTypes() {
 }
 
 function typesWith(capability) {
+  log.debug("Entering typesWith().");
+  log.debug("Leaving typesWith().");
   return allTypes().filter(function (uri) {
     return typeof datatypes.TYPES[uri][capability] === 'function';
   });
@@ -163,13 +180,17 @@ function typesWith(capability) {
 // duration function URIs and every one of them at 3.0.
 // ---------------------------------------------------------------------------
 function familyPrefix(uri) {
+  log.debug("Entering familyPrefix().");
   if (uri === TYPE.DAYTIME_DURATION || uri === TYPE.YEARMONTH_DURATION) {
+    log.debug("Leaving familyPrefix().");
     return F3;
   }
+  log.debug("Leaving familyPrefix().");
   return F1;
 }
 
 function generic(suffix, types, definitionFor) {
+  log.debug("Entering generic().");
   types.forEach(function (uri) {
     const row = datatypes.TYPES[uri];
     const definition = definitionFor(row, uri);
@@ -180,6 +201,7 @@ function generic(suffix, types, definitionFor) {
     // because the short names come from the table rather than from a URI.
     define(familyPrefix(uri) + row.name + '-' + suffix, definition.body);
   });
+  log.debug("Leaving generic().");
 }
 
 // --- equality ---------------------------------------------------------------
@@ -189,6 +211,8 @@ generic('equal', typesWith('equal'), function (row, uri) {
     args: [{ kind: 'primitive', type: uri },
            { kind: 'primitive', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
+      log.debug("Leaving apply().");
       return boolBag(row.equal(values[0], values[1]));
     }
   } };
@@ -199,10 +223,26 @@ generic('equal', typesWith('equal'), function (row, uri) {
 // `compareTemporal()` in the datatype table — and null means the two values
 // are genuinely incomparable, which is Indeterminate rather than false.
 const COMPARISONS = [
-  { suffix: 'greater-than', holds: function (c) { return c > 0; } },
-  { suffix: 'greater-than-or-equal', holds: function (c) { return c >= 0; } },
-  { suffix: 'less-than', holds: function (c) { return c < 0; } },
-  { suffix: 'less-than-or-equal', holds: function (c) { return c <= 0; } }
+  { suffix: 'greater-than', holds: function (c) {
+    log.debug("Entering holds().");
+    log.debug("Leaving holds().");
+    return c > 0;
+  } },
+  { suffix: 'greater-than-or-equal', holds: function (c) {
+    log.debug("Entering holds().");
+    log.debug("Leaving holds().");
+    return c >= 0;
+  } },
+  { suffix: 'less-than', holds: function (c) {
+    log.debug("Entering holds().");
+    log.debug("Leaving holds().");
+    return c < 0;
+  } },
+  { suffix: 'less-than-or-equal', holds: function (c) {
+    log.debug("Entering holds().");
+    log.debug("Leaving holds().");
+    return c <= 0;
+  } }
 ];
 
 COMPARISONS.forEach(function (comparison) {
@@ -212,6 +252,7 @@ COMPARISONS.forEach(function (comparison) {
       args: [{ kind: 'primitive', type: uri },
              { kind: 'primitive', type: uri }],
       apply: function (values) {
+        log.debug("Entering apply().");
         const c = row.compare(values[0], values[1]);
         if (c === null) {
           throw model.processingError(
@@ -219,6 +260,7 @@ COMPARISONS.forEach(function (comparison) {
             'timezone and the other does not, and the ordering differs ' +
             'across the range a missing timezone could be.');
         }
+        log.debug("Leaving apply().");
         return boolBag(comparison.holds(c));
       }
     } };
@@ -232,6 +274,8 @@ generic('bag', allTypes(), function (row, uri) {
     variadic: { kind: 'primitive', type: uri },
     args: [],
     apply: function (values) {
+      log.debug("Entering apply().");
+      log.debug("Leaving apply().");
       return model.bag(uri, values);
     }
   } };
@@ -242,6 +286,8 @@ generic('bag-size', allTypes(), function (row, uri) {
     returns: { kind: 'primitive', type: TYPE.INTEGER },
     args: [{ kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
+      log.debug("Leaving apply().");
       return intBag(values[0].values.length);
     }
   } };
@@ -252,6 +298,7 @@ generic('one-and-only', allTypes(), function (row, uri) {
     returns: { kind: 'primitive', type: uri },
     args: [{ kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const contents = values[0].values;
       // The whole point of this function. A bag of nought and a bag of two are
       // BOTH errors, and they are different errors: nothing was there, or too
@@ -266,6 +313,7 @@ generic('one-and-only', allTypes(), function (row, uri) {
           row.name + '-one-and-only was given a bag of ' + contents.length +
           ' values and requires exactly one.');
       }
+      log.debug("Leaving apply().");
       return model.singleton(uri, contents[0]);
     }
   } };
@@ -276,6 +324,8 @@ generic('is-in', typesWith('equal'), function (row, uri) {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
     args: [{ kind: 'primitive', type: uri }, { kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
+      log.debug("Leaving apply().");
       return boolBag(bagHas(row, values[1].values, values[0]));
     }
   } };
@@ -286,6 +336,7 @@ generic('intersection', typesWith('equal'), function (row, uri) {
     returns: { kind: 'bag', type: uri },
     args: [{ kind: 'bag', type: uri }, { kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const result = [];
       values[0].values.forEach(function (candidate) {
         // Two conditions, and the second is the one that is easy to leave out:
@@ -296,6 +347,7 @@ generic('intersection', typesWith('equal'), function (row, uri) {
           result.push(candidate);
         }
       });
+      log.debug("Leaving apply().");
       return model.bag(uri, result);
     }
   } };
@@ -306,6 +358,7 @@ generic('union', typesWith('equal'), function (row, uri) {
     returns: { kind: 'bag', type: uri },
     args: [{ kind: 'bag', type: uri }, { kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const result = [];
       values.forEach(function (source) {
         source.values.forEach(function (candidate) {
@@ -314,6 +367,7 @@ generic('union', typesWith('equal'), function (row, uri) {
           }
         });
       });
+      log.debug("Leaving apply().");
       return model.bag(uri, result);
     }
   } };
@@ -324,9 +378,11 @@ generic('at-least-one-member-of', typesWith('equal'), function (row, uri) {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
     args: [{ kind: 'bag', type: uri }, { kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const found = values[0].values.some(function (candidate) {
         return bagHas(row, values[1].values, candidate);
       });
+      log.debug("Leaving apply().");
       return boolBag(found);
     }
   } };
@@ -337,9 +393,11 @@ generic('subset', typesWith('equal'), function (row, uri) {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
     args: [{ kind: 'bag', type: uri }, { kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const all = values[0].values.every(function (candidate) {
         return bagHas(row, values[1].values, candidate);
       });
+      log.debug("Leaving apply().");
       return boolBag(all);
     }
   } };
@@ -350,6 +408,7 @@ generic('set-equals', typesWith('equal'), function (row, uri) {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
     args: [{ kind: 'bag', type: uri }, { kind: 'bag', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
       // SET equality, so duplicates and order are both irrelevant — which is
       // why this is two subset tests rather than a length check and a walk.
       // `{a, a, b}` and `{a, b}` are equal sets, and a length check would
@@ -362,6 +421,7 @@ generic('set-equals', typesWith('equal'), function (row, uri) {
       const backward = right.every(function (candidate) {
         return bagHas(row, left, candidate);
       });
+      log.debug("Leaving apply().");
       return boolBag(forward && backward);
     }
   } };
@@ -373,6 +433,7 @@ generic('set-equals', typesWith('equal'), function (row, uri) {
 
 // Evaluate one argument expression and insist it is a single boolean.
 function asBoolean(bag, where) {
+  log.debug("Entering asBoolean().");
   if (!bag || bag.values.length !== 1) {
     throw model.processingError(
       where + ' requires each argument to be exactly one boolean; it was ' +
@@ -382,6 +443,7 @@ function asBoolean(bag, where) {
     throw model.processingError(
       where + ' requires boolean arguments; it was given ' + bag.type + '.');
   }
+  log.debug("Leaving asBoolean().");
   return bag.values[0];
 }
 
@@ -434,6 +496,8 @@ define(F1 + 'not', {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
   args: [{ kind: 'primitive', type: TYPE.BOOLEAN }],
   apply: function (values) {
+    log.debug("Entering apply().");
+    log.debug("Leaving apply().");
     return boolBag(!values[0]);
   }
 });
@@ -497,6 +561,7 @@ define(F1 + 'n-of', {
 // choice loses one of the two.
 // ---------------------------------------------------------------------------
 function arithmetic(name, uri, arity, compute) {
+  log.debug("Entering arithmetic().");
   const args = [];
   for (let i = 0; i < arity; i += 1) {
     args.push({ kind: 'primitive', type: uri });
@@ -505,9 +570,12 @@ function arithmetic(name, uri, arity, compute) {
     returns: { kind: 'primitive', type: uri },
     args: args,
     apply: function (values) {
+      log.debug("Entering apply().");
+      log.debug("Leaving apply().");
       return model.singleton(uri, compute.apply(null, values));
     }
   });
+  log.debug("Leaving arithmetic().");
 }
 
 arithmetic('integer-add', TYPE.INTEGER, 2, function (a, b) { return a + b; });
@@ -529,12 +597,14 @@ define(F1 + 'integer-divide', {
   args: [{ kind: 'primitive', type: TYPE.INTEGER },
          { kind: 'primitive', type: TYPE.INTEGER }],
   apply: function (values) {
+    log.debug("Entering apply().");
     if (values[1] === 0n) {
       // Indeterminate rather than a crash or an Infinity. A.3.4 makes division
       // by zero an error, and a PDP that returned Infinity here would carry a
       // value no subsequent comparison could do anything sensible with.
       throw model.processingError('integer-divide by zero.');
     }
+    log.debug("Leaving apply().");
     // BigInt division truncates toward zero, which is what xs:integer division
     // does. `Math.floor` would be wrong for negative operands.
     return model.singleton(TYPE.INTEGER, values[0] / values[1]);
@@ -546,9 +616,11 @@ define(F1 + 'double-divide', {
   args: [{ kind: 'primitive', type: TYPE.DOUBLE },
          { kind: 'primitive', type: TYPE.DOUBLE }],
   apply: function (values) {
+    log.debug("Entering apply().");
     if (values[1] === 0) {
       throw model.processingError('double-divide by zero.');
     }
+    log.debug("Leaving apply().");
     return model.singleton(TYPE.DOUBLE, values[0] / values[1]);
   }
 });
@@ -558,9 +630,11 @@ define(F1 + 'integer-mod', {
   args: [{ kind: 'primitive', type: TYPE.INTEGER },
          { kind: 'primitive', type: TYPE.INTEGER }],
   apply: function (values) {
+    log.debug("Entering apply().");
     if (values[1] === 0n) {
       throw model.processingError('integer-mod by zero.');
     }
+    log.debug("Leaving apply().");
     return model.singleton(TYPE.INTEGER, values[0] % values[1]);
   }
 });
@@ -569,11 +643,13 @@ define(F1 + 'round', {
   returns: { kind: 'primitive', type: TYPE.DOUBLE },
   args: [{ kind: 'primitive', type: TYPE.DOUBLE }],
   apply: function (values) {
+    log.debug("Entering apply().");
     // xs:double rounding is round-half-to-EVEN, and `Math.round` is
     // round-half-up. They differ on exactly the values a test suite picks:
     // 0.5 is 0 here and 1 there, 2.5 is 2 here and 3 there.
     const value = values[0];
     if (!isFinite(value)) {
+      log.debug("Leaving apply().");
       return model.singleton(TYPE.DOUBLE, value);
     }
     const floor = Math.floor(value);
@@ -586,6 +662,7 @@ define(F1 + 'round', {
     } else {
       result = floor % 2 === 0 ? floor : floor + 1;
     }
+    log.debug("Leaving apply().");
     return model.singleton(TYPE.DOUBLE, result);
   }
 });
@@ -594,9 +671,12 @@ define(F1 + 'floor', {
   returns: { kind: 'primitive', type: TYPE.DOUBLE },
   args: [{ kind: 'primitive', type: TYPE.DOUBLE }],
   apply: function (values) {
+    log.debug("Entering apply().");
     if (!isFinite(values[0])) {
+      log.debug("Leaving apply().");
       return model.singleton(TYPE.DOUBLE, values[0]);
     }
+    log.debug("Leaving apply().");
     return model.singleton(TYPE.DOUBLE, Math.floor(values[0]));
   }
 });
@@ -605,10 +685,12 @@ define(F1 + 'double-to-integer', {
   returns: { kind: 'primitive', type: TYPE.INTEGER },
   args: [{ kind: 'primitive', type: TYPE.DOUBLE }],
   apply: function (values) {
+    log.debug("Entering apply().");
     if (!isFinite(values[0])) {
       throw model.processingError(
         'double-to-integer cannot convert ' + values[0] + '.');
     }
+    log.debug("Leaving apply().");
     // Truncation toward zero, per A.3.4 — not rounding.
     return model.singleton(TYPE.INTEGER, BigInt(Math.trunc(values[0])));
   }
@@ -618,6 +700,8 @@ define(F1 + 'integer-to-double', {
   returns: { kind: 'primitive', type: TYPE.DOUBLE },
   args: [{ kind: 'primitive', type: TYPE.INTEGER }],
   apply: function (values) {
+    log.debug("Entering apply().");
+    log.debug("Leaving apply().");
     return model.singleton(TYPE.DOUBLE, Number(values[0]));
   }
 });
@@ -632,16 +716,20 @@ define(F1 + 'integer-to-double', {
 // are registered explicitly rather than through `generic()`.
 // ---------------------------------------------------------------------------
 function stringish(name, haystackType, compute) {
+  log.debug("Entering stringish().");
   define(F3 + name, {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
     args: [{ kind: 'primitive', type: TYPE.STRING },
            { kind: 'primitive', type: haystackType }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const haystack = haystackType === TYPE.STRING ? values[1]
                                                     : String(values[1]);
+      log.debug("Leaving apply().");
       return boolBag(compute(String(values[0]), haystack));
     }
   });
+  log.debug("Leaving stringish().");
 }
 
 stringish('string-contains', TYPE.STRING, function (needle, haystack) {
@@ -666,6 +754,7 @@ stringish('anyURI-ends-with', TYPE.ANYURI, function (needle, haystack) {
 });
 
 function substring(name, subjectType) {
+  log.debug("Entering substring().");
   define(F3 + name, {
     returns: { kind: 'primitive', type: TYPE.STRING },
     // A LITERAL INDEX OUT OF RANGE IS A STATIC ERROR, not a runtime one, and
@@ -673,6 +762,7 @@ function substring(name, subjectType) {
     // carrying `substring(uri, -2, 8)` must be REFUSED at load rather than
     // going Indeterminate for every request forever. See `xacml_validate.js`.
     staticCheck: function (args, report) {
+      log.debug("Entering staticCheck().");
       const from = literalInteger(args[1]);
       const to = literalInteger(args[2]);
       if (from !== null && from < 0) {
@@ -687,11 +777,13 @@ function substring(name, subjectType) {
         report(name + ' was given the range ' + from + '..' + to +
                ', which runs backwards.');
       }
+      log.debug("Leaving staticCheck().");
     },
     args: [{ kind: 'primitive', type: subjectType },
            { kind: 'primitive', type: TYPE.INTEGER },
            { kind: 'primitive', type: TYPE.INTEGER }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const subject = String(values[0]);
       const from = Number(values[1]);
       const to = Number(values[2]);
@@ -706,9 +798,11 @@ function substring(name, subjectType) {
           name + ' was given indices ' + from + ' and ' + to +
           ' for a value of length ' + subject.length + '.');
       }
+      log.debug("Leaving apply().");
       return model.singleton(TYPE.STRING, subject.slice(from, end));
     }
   });
+  log.debug("Leaving substring().");
 }
 
 substring('string-substring', TYPE.STRING);
@@ -718,6 +812,8 @@ define(F1 + 'string-normalize-space', {
   returns: { kind: 'primitive', type: TYPE.STRING },
   args: [{ kind: 'primitive', type: TYPE.STRING }],
   apply: function (values) {
+    log.debug("Entering apply().");
+    log.debug("Leaving apply().");
     // Leading and trailing whitespace only. It does NOT collapse internal
     // runs, despite the name suggesting xs:normalizeSpace, which does.
     return model.singleton(TYPE.STRING, String(values[0]).trim());
@@ -728,6 +824,8 @@ define(F1 + 'string-normalize-to-lower-case', {
   returns: { kind: 'primitive', type: TYPE.STRING },
   args: [{ kind: 'primitive', type: TYPE.STRING }],
   apply: function (values) {
+    log.debug("Entering apply().");
+    log.debug("Leaving apply().");
     return model.singleton(TYPE.STRING, String(values[0]).toLowerCase());
   }
 });
@@ -737,6 +835,8 @@ define(F3 + 'string-concatenate', {
   variadic: { kind: 'primitive', type: TYPE.STRING },
   args: [],
   apply: function (values) {
+    log.debug("Entering apply().");
+    log.debug("Leaving apply().");
     return model.singleton(TYPE.STRING, values.join(''));
   }
 });
@@ -751,6 +851,8 @@ allTypes().forEach(function (uri) {
     returns: { kind: 'primitive', type: TYPE.STRING },
     args: [{ kind: 'primitive', type: uri }],
     apply: function (values) {
+      log.debug("Entering apply().");
+      log.debug("Leaving apply().");
       return model.singleton(TYPE.STRING, row.write(values[0]));
     }
   });
@@ -758,6 +860,8 @@ allTypes().forEach(function (uri) {
     returns: { kind: 'primitive', type: uri },
     args: [{ kind: 'primitive', type: TYPE.STRING }],
     apply: function (values) {
+      log.debug("Entering apply().");
+      log.debug("Leaving apply().");
       return model.singleton(uri, row.parse(values[0]));
     }
   });
@@ -773,19 +877,24 @@ allTypes().forEach(function (uri) {
 // turn 2024-01-31 plus one month into 2024-03-02.
 // ---------------------------------------------------------------------------
 function addMonths(value, months) {
+  log.debug("Entering addMonths().");
   const total = (value.year * 12) + (value.month - 1) + months;
   const year = Math.floor(total / 12);
   const month = (total % 12 + 12) % 12 + 1;
   const day = Math.min(value.day, daysInMonth(year, month));
+  log.debug("Leaving addMonths().");
   return Object.assign({}, value, { year: year, month: month, day: day });
 }
 
 function daysInMonth(year, month) {
+  log.debug("Entering daysInMonth().");
   const lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   if (month === 2 &&
       ((year % 4 === 0 && year % 100 !== 0) || year % 400 === 0)) {
+    log.debug("Leaving daysInMonth().");
     return 29;
   }
+  log.debug("Leaving daysInMonth().");
   return lengths[month - 1];
 }
 
@@ -800,6 +909,7 @@ function daysInMonth(year, month) {
 // exact sum, and this implementation got it wrong in the direction that still
 // produced a perfectly well-formed dateTime.
 function addSeconds(value, seconds) {
+  log.debug("Entering addSeconds().");
   const local = (value.shape === 'time' ? 0
                   : datatypes.daysFromCivil(value.year, value.month,
                                             value.day) * 86400) +
@@ -812,6 +922,7 @@ function addSeconds(value, seconds) {
   const minute = Math.floor(rest / 60);
   const second = rest - minute * 60;
   const civil = civilFromDays(days);
+  log.debug("Leaving addSeconds().");
   return { shape: value.shape, year: civil.year, month: civil.month,
            day: civil.day, hour: hour, minute: minute, second: second,
            tz: value.tz };
@@ -821,6 +932,7 @@ function addSeconds(value, seconds) {
 // rather than there because only this file needs it — date arithmetic is the
 // only thing that turns a day count back into a date.
 function civilFromDays(days) {
+  log.debug("Entering civilFromDays().");
   const z = days + 719468;
   const era = Math.floor((z >= 0 ? z : z - 146096) / 146097);
   const doe = z - era * 146097;
@@ -832,15 +944,18 @@ function civilFromDays(days) {
   const mp = Math.floor((5 * doy + 2) / 153);
   const d = doy - Math.floor((153 * mp + 2) / 5) + 1;
   const m = mp + (mp < 10 ? 3 : -9);
+  log.debug("Leaving civilFromDays().");
   return { year: y + (m <= 2 ? 1 : 0), month: m, day: d };
 }
 
 function temporalArithmetic(name, subjectType, durationType, sign) {
+  log.debug("Entering temporalArithmetic().");
   define(F3 + name, {
     returns: { kind: 'primitive', type: subjectType },
     args: [{ kind: 'primitive', type: subjectType },
            { kind: 'primitive', type: durationType }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const subject = values[0];
       const duration = values[1];
       let result;
@@ -849,9 +964,11 @@ function temporalArithmetic(name, subjectType, durationType, sign) {
       } else {
         result = addSeconds(subject, sign * duration.seconds);
       }
+      log.debug("Leaving apply().");
       return model.singleton(subjectType, result);
     }
   });
+  log.debug("Leaving temporalArithmetic().");
 }
 
 temporalArithmetic('dateTime-add-dayTimeDuration', TYPE.DATETIME,
@@ -914,15 +1031,19 @@ function xmlSchemaRegExp(pattern) {
 }
 
 function regexpMatch(name, subjectType, subjectText) {
+  log.debug("Entering regexpMatch().");
   define((subjectType === TYPE.STRING ? F1 : F2) + name, {
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
     args: [{ kind: 'primitive', type: TYPE.STRING },
            { kind: 'primitive', type: subjectType }],
     apply: function (values) {
+      log.debug("Entering apply().");
       const expression = xmlSchemaRegExp(String(values[0]));
+      log.debug("Leaving apply().");
       return boolBag(expression.test(subjectText(values[1])));
     }
   });
+  log.debug("Leaving regexpMatch().");
 }
 
 regexpMatch('string-regexp-match', TYPE.STRING, function (v) {
@@ -957,6 +1078,7 @@ define(F1 + 'rfc822Name-match', {
   args: [{ kind: 'primitive', type: TYPE.STRING },
          { kind: 'primitive', type: TYPE.RFC822NAME }],
   apply: function (values) {
+    log.debug("Entering apply().");
     const pattern = String(values[0]);
     const name = values[1];
     // A.3.14 defines three shapes of pattern, and they are genuinely
@@ -967,15 +1089,18 @@ define(F1 + 'rfc822Name-match', {
       const at = pattern.lastIndexOf('@');
       const local = pattern.slice(0, at);
       const domain = pattern.slice(at + 1).toLowerCase();
+      log.debug("Leaving apply().");
       return boolBag(local === name.local && domain === name.domain);
     }
     if (pattern.charAt(0) === '.') {
+      log.debug("Leaving apply().");
       // A sub-domain pattern: the value's domain must END with it. `.acme.com`
       // matches `bob@sales.acme.com` and NOT `bob@acme.com` — the leading dot
       // means "strictly below", which is the half that gets implemented as a
       // plain `endsWith` and then matches the domain itself.
       return boolBag(name.domain.endsWith(pattern.toLowerCase()));
     }
+    log.debug("Leaving apply().");
     // A bare domain: the value's domain must equal it.
     return boolBag(name.domain === pattern.toLowerCase());
   }
@@ -986,12 +1111,14 @@ define(F1 + 'x500Name-match', {
   args: [{ kind: 'primitive', type: TYPE.X500NAME },
          { kind: 'primitive', type: TYPE.X500NAME }],
   apply: function (values) {
+    log.debug("Entering apply().");
     // A.3.13: true when the first name is the TERMINAL SEQUENCE of the second
     // — that is, the first is an ancestor of or equal to the second in the
     // directory tree. `O=Acme` matches `CN=bob,O=Acme` and not the reverse.
     const pattern = values[0].rdns;
     const subject = values[1].rdns;
     if (pattern.length > subject.length) {
+      log.debug("Leaving apply().");
       return boolBag(false);
     }
     const offset = subject.length - pattern.length;
@@ -1000,9 +1127,11 @@ define(F1 + 'x500Name-match', {
       const b = subject[offset + i];
       if (a.attribute !== b.attribute ||
           a.value.toLowerCase() !== b.value.toLowerCase()) {
+        log.debug("Leaving apply().");
         return boolBag(false);
       }
     }
+    log.debug("Leaving apply().");
     return boolBag(true);
   }
 });
@@ -1029,6 +1158,7 @@ define(F1 + 'x500Name-match', {
 // ALL over the first bag, not over the "any".
 // ---------------------------------------------------------------------------
 function functionReference(expression, context, evaluate, where) {
+  log.debug("Entering functionReference().");
   if (!expression || expression.kind !== 'function') {
     throw model.processingError(
       where + " requires a <Function> as its first argument.");
@@ -1039,14 +1169,17 @@ function functionReference(expression, context, evaluate, where) {
       'Unknown function "' + expression.functionId + '" passed to ' + where +
       '.');
   }
+  log.debug("Leaving functionReference().");
   return definition;
 }
 
 // Apply a resolved function definition to two already-resolved single values.
 function applyPair(definition, left, right, context) {
+  log.debug("Entering applyPair().");
   const result = invoke(definition, [model.singleton(left.type, left.value),
                                      model.singleton(right.type, right.value)],
                         context);
+  log.debug("Leaving applyPair().");
   return asBoolean(result, definition.uri);
 }
 
@@ -1057,6 +1190,7 @@ function applyPair(definition, left, right, context) {
 // So the prefix is per function rather than per family, and it is passed in.
 // Verified against the vendored suite, which uses all six.
 function higherOrder(prefix, name, combine) {
+  log.debug("Entering higherOrder().");
   define(prefix + name, {
     lazy: true,
     returns: { kind: 'primitive', type: TYPE.BOOLEAN },
@@ -1078,6 +1212,7 @@ function higherOrder(prefix, name, combine) {
       return boolBag(answer);
     }
   });
+  log.debug("Leaving higherOrder().");
 }
 
 // `any-of` and `all-of` take one value and one bag — and either way round,
@@ -1085,6 +1220,7 @@ function higherOrder(prefix, name, combine) {
 // Which is which is decided by which argument has more than one value, and
 // where both are bags of one it does not matter.
 function oneAgainstBag(definition, bags, context, quantifier) {
+  log.debug("Entering oneAgainstBag().");
   const first = bags[0];
   const second = bags[1];
   const valueFirst = first.values.length === 1 && second.values.length !== 1;
@@ -1098,6 +1234,7 @@ function oneAgainstBag(definition, bags, context, quantifier) {
          { type: single.type, value: single.values[0] }];
     return applyPair(definition, pair[0], pair[1], context);
   });
+  log.debug("Leaving oneAgainstBag().");
   return quantifier === 'any' ? test.some(Boolean) : test.every(Boolean);
 }
 
@@ -1191,6 +1328,8 @@ define(F3 + 'map', {
 });
 
 function declaredReturnType(definition) {
+  log.debug("Entering declaredReturnType().");
+  log.debug("Leaving declaredReturnType().");
   return definition.returns || null;
 }
 
@@ -1265,10 +1404,14 @@ function invoke(definition, argumentBags, context) {
 }
 
 function lookup(uri) {
+  log.debug("Entering lookup().");
+  log.debug("Leaving lookup().");
   return FUNCTIONS[uri] || null;
 }
 
 function names() {
+  log.debug("Entering names().");
+  log.debug("Leaving names().");
   return Object.keys(FUNCTIONS).sort();
 }
 

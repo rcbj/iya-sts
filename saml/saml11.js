@@ -7,47 +7,51 @@
 //
 // It is here because WS-Federation asked for it — and since 2026-08-24 it has a
 // SECOND CALLER, `saml11_sso.js`, which puts the same assertion in front of a
-// browser through SAML 1.1's own two profiles. That is the reason this file is a
-// module of its own stated twice over: an assertion is not a WS-Federation
+// browser through SAML 1.1's own two profiles. That is the reason this file is
+// a module of its own stated twice over: an assertion is not a WS-Federation
 // concept, the passive requestor profile merely carries one, and now so do
-// Browser/POST and Browser/Artifact. What made a second file necessary
-// rather than a flag on saml2.js is that **SAML 1.1 is a different specification
-// and not a dialect of SAML 2.0** — the element vocabulary, the attribute names and
+// Browser/POST and Browser/Artifact. What made a second file necessary rather
+// than a flag on saml2.js is that **SAML 1.1 is a different specification and
+// not a dialect of SAML 2.0** — the element vocabulary, the attribute names and
 // the document order all differ, and a builder that tried to be both would be a
 // series of conditionals around every line.
 //
-// Why 1.1 at all, when this service already issues SAML 2.0: AD FS issues a SAML
-// 1.1 assertion to a WS-Federation relying party by default, and the RP libraries
-// written against it (WIF, `Microsoft.Owin.Security.WsFederation`) read 1.1 first.
-// A WS-Federation mock that only spoke 2.0 would be exercising the half of those
-// clients that is rarely the half in production. Both are offered — see
-// `wsfed.js`, and `fed:TokenTypesOffered` in the federation metadata, which
-// advertises exactly these two.
+// Why 1.1 at all, when this service already issues SAML 2.0: AD FS issues a
+// SAML 1.1 assertion to a WS-Federation relying party by default, and the RP
+// libraries written against it (WIF, `Microsoft.Owin.Security.WsFederation`)
+// read 1.1 first. A WS-Federation mock that only spoke 2.0 would be exercising
+// the half of those clients that is rarely the half in production. Both are
+// offered — see `wsfed.js`, and `fed:TokenTypesOffered` in the federation
+// metadata, which advertises exactly these two.
 //
 // The six differences from SAML 2.0 that actually break a parser, all of them
 // visible below and every one of them worth stating because each is a plausible
 // thing to get wrong by writing 2.0 out of habit:
 //
-//   * the id attribute is **AssertionID**, not `ID`. This also matters on the way
-//     back IN: a verifier resolving the signature's `#id` reference looks for
-//     attributes named Id/ID/id, so xml-crypto has to be told about this one
-//     explicitly (see verifyAssertionSignature in wsfed.js) or the reference
-//     resolves to nothing and a perfectly good signature reports as broken.
+//   * the id attribute is **AssertionID**, not `ID`. This also matters on the
+//     way back IN: a verifier resolving the signature's `#id` reference looks
+//     for attributes named Id/ID/id, so xml-crypto has to be told about this
+//     one explicitly (see verifyAssertionSignature in wsfed.js) or the
+//     reference resolves to nothing and a perfectly good signature reports as
+//     broken.
 //   * the version is **two attributes**, MajorVersion="1" MinorVersion="1".
 //   * the **Issuer is an attribute** of Assertion, not a child element.
-//   * the **Subject sits inside each statement**, and is repeated in every one of
-//     them, rather than once on the assertion.
-//   * **ds:Signature is the LAST child** (SAML 2.0 puts it directly after Issuer),
-//     which is why computeSignature() is called here with no location option — its
-//     default of appending to the root element is, for once, exactly right.
+//   * the **Subject sits inside each statement**, and is repeated in every one
+//     of them, rather than once on the assertion.
+//   * **ds:Signature is the LAST child** (SAML 2.0 puts it directly after
+//     Issuer), which is why computeSignature() is called here with no location
+//     option — its default of appending to the root element is, for once,
+//     exactly right.
 //   * an attribute is **AttributeName + AttributeNamespace**, two halves of the
-//     claim URI, where SAML 2.0 has one `Name`. The convention every WS-Federation
-//     relying party follows is that the claim URI is the namespace, a slash, and
-//     the name; both halves are written here rather than the joined URI, because a
-//     relying party that re-joins them is the common case.
+//     claim URI, where SAML 2.0 has one `Name`. The convention every
+//     WS-Federation relying party follows is that the claim URI is the
+//     namespace, a slash, and the name; both halves are written here rather
+//     than the joined URI, because a relying party that re-joins them is the
+//     common case.
 //
-// And one that does not break a parser but does break a signature: the condition
-// element is **AudienceRestrictionCondition**, not `AudienceRestriction`.
+// And one that does not break a parser but does break a signature: the
+// condition element is **AudienceRestrictionCondition**, not
+// `AudienceRestriction`.
 // ---------------------------------------------------------------------------
 
 // Every signature in this service goes through one module since 2026-08-27.
@@ -60,20 +64,30 @@
 // is no list to be told about and nothing to invent, so the defect cannot
 // recur here or anywhere else.
 const stsCrypto = require('../common/crypto');
-const { log, logArtifact, STS, xmlEscape, genId, iso } = require('../common/helpers');
+const { log, logArtifact, STS, xmlEscape, genId,
+        iso } = require('../common/helpers');
 // saml.issuer — the same setting the 2.0 assertions carry, because it names
 // the same signer.
 const config = require('../common/config');
-// As in saml2.js: the custom attributes an admin configured, and the register every
-// assertion is counted in.
+// The error-code registry, a leaf; the signing failure below is tagged with its
+// code.
+const errorCodes = require('../common/error_codes');
+// As in saml2.js: the custom attributes an admin configured, and the register
+// every assertion is counted in.
 const stats = require('../common/admin_stats');
+// The configured signature algorithms and the one reading of how a session
+// authenticated — both libraries beside this file, argued in their headers.
+const documentSettings = require('./document_settings');
+const authnContext = require('./authn_context');
 
 const SAML11_NS = 'urn:oasis:names:tc:SAML:1.0:assertion';
 
-// The one every relying party here can read, and the only one this service could
-// honestly claim: nothing about the NameIdentifier it writes is a persistent
-// identifier or an email address, because the username is whatever was typed.
-const NAMEID_FORMAT_UNSPECIFIED = 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
+// The one every relying party here can read, and the only one this service
+// could honestly claim: nothing about the NameIdentifier it writes is a
+// persistent identifier or an email address, because the username is whatever
+// was typed.
+const NAMEID_FORMAT_UNSPECIFIED =
+    'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
 
 const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
 
@@ -83,16 +97,16 @@ const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
 // difference between the two profiles.
 const CONFIRMATION_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:cm:artifact';
 
-// Sign the assertion enveloped, with the signature as the last child of Assertion
-// — which is where the SAML 1.1 schema requires it and, unusually, also where
-// xml-crypto puts it with no location option at all.
+// Sign the assertion enveloped, with the signature as the last child of
+// Assertion — which is where the SAML 1.1 schema requires it and, unusually,
+// also where xml-crypto puts it with no location option at all.
 //
 // **`idAttribute: 'AssertionID'` IS LOAD-BEARING ON THE WAY OUT AS WELL AS THE
 // WAY BACK IN, and this file said the opposite until 2026-08-24.** It used to
 // read "SIGNING does not care that the id attribute has an unusual name; only
 // verification does", which is true of the DIGEST and false of the document.
-// xml-crypto's ensureHasId() looks for the first of `Id`, `ID`, `id` on the node
-// being signed, and when it finds none it INVENTS ONE — `Id="_0"` — and
+// xml-crypto's ensureHasId() looks for the first of `Id`, `ID`, `id` on the
+// node being signed, and when it finds none it INVENTS ONE — `Id="_0"` — and
 // overrides the reference URI passed below with `#_0`. So every SAML 1.1
 // assertion this service issued carried a bogus `Id` attribute the schema does
 // not have, and a reference naming it instead of the AssertionID.
@@ -102,16 +116,16 @@ const CONFIRMATION_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:cm:artifact';
 // party that resolves the reference through `AssertionID` — which is what a
 // SAML-aware verifier does, and what wsfed.js's own verifyAssertionSignature()
 // is told to do — looks for an element with that AssertionID and finds the
-// reference pointing somewhere else. And, the failure that actually surfaced it,
-// **a document carrying TWO signatures gets `Id="_0"` on both**: the
+// reference pointing somewhere else. And, the failure that actually surfaced
+// it, **a document carrying TWO signatures gets `Id="_0"` on both**: the
 // saml11_sso.js browser profiles sign the assertion and the Response around it,
 // and xml-crypto then refuses to verify either, reporting "multiple elements
 // with the same value for the ID / Id / Id attributes" — its signature-wrapping
 // guard, firing on a document nothing malicious ever touched.
 //
-// Naming the attribute here makes ensureHasId() find the real one, so nothing is
-// injected and the reference is `#` + the AssertionID, which is what every real
-// identity provider emits. It is safe to name because `AssertionID` is NOT
+// Naming the attribute here makes ensureHasId() find the real one, so nothing
+// is injected and the reference is `#` + the AssertionID, which is what every
+// real identity provider emits. It is safe to name because `AssertionID` is NOT
 // already on that default list — see saml2_sso.js, which records the opposite
 // case: naming `ID` for SAML 2.0 unshifts a DUPLICATE and trips the same guard.
 function signSaml11Assertion(xml) {
@@ -127,10 +141,14 @@ function signSaml11Assertion(xml) {
   // would pull those ancestor declarations into the digest at verification time
   // and the signature would fail for every relying party while verifying
   // perfectly here. That argument is now made once, over signXml().
+  // The configured algorithms (2026-09-12), for saml2.js's reason.
+  const how = documentSettings.signatureOptions();
   const signed = stsCrypto.signXml(xml, {
     privateKeyPem: STS.privateKeyPem,
     certPem: STS.certPem,
     placement: stsCrypto.PLACEMENT.LAST,
+    sigAlg: how.sigAlg,
+    c14nAlg: how.c14nAlg,
     what: 'SAML 1.1 assertion'
   });
   logArtifact('SAML 1.1 assertion', 'after signing', signed);
@@ -155,9 +173,12 @@ function signSaml11Assertion(xml) {
 // the person is in four.
 // ---------------------------------------------------------------------------
 function attributeValuesOf(a) {
+  log.debug("Entering attributeValuesOf().");
   const values = Array.isArray(a.values) ? a.values : [a.value];
+  log.debug("Leaving attributeValuesOf().");
   return values.map(function (value) {
-    return '<saml:AttributeValue>' + xmlEscape(String(value == null ? '' : value)) +
+    return '<saml:AttributeValue>' +
+           xmlEscape(String(value == null ? '' : value)) +
            '</saml:AttributeValue>';
   }).join('');
 }
@@ -171,10 +192,10 @@ function attributeValuesOf(a) {
 //   attributes    [{ name, namespace, value }]
 //
 // SEVEN MORE ARRIVED WITH THE BROWSER PROFILES (saml11_sso.js), and this is the
-// same growth saml2.js took for the Web Browser SSO profile — options on the one
-// builder rather than a second builder, for the reason this directory has always
-// given: one assertion writer means ONE place where the element order, the
-// attribute spelling and the signature location are decided, and those are
+// same growth saml2.js took for the Web Browser SSO profile — options on the
+// one builder rather than a second builder, for the reason this directory has
+// always given: one assertion writer means ONE place where the element order,
+// the attribute spelling and the signature location are decided, and those are
 // exactly what a relying party's parser is strict about. It also means the
 // custom SAML 1.1 attributes configured on /admin/saml-attributes reach an
 // assertion issued by the browser profiles with no wiring at all.
@@ -182,7 +203,8 @@ function attributeValuesOf(a) {
 // Every default below reproduces what WS-Trust and WS-Federation were already
 // getting, BYTE FOR BYTE. That is a requirement rather than a courtesy: those
 // two have relying parties in the parent project's test suite that verify a
-// signature over this document, and a single added attribute changes the digest.
+// signature over this document, and a single added attribute changes the
+// digest.
 //
 //   issuer              the Issuer attribute, when it is not `saml.issuer`. The
 //                       browser profiles MUST override it: they publish a
@@ -219,6 +241,16 @@ function attributeValuesOf(a) {
 //                       browser, so a relying party is told not to keep it. It is
 //                       off for the two older callers, whose assertions do not
 //                       pass through a browser at all.
+//   authenticationStatement
+//                       false leaves the <AuthenticationStatement> OUT
+//                       (2026-09-12). Default true, which is every caller that
+//                       existed before it. An answer to an AttributeQuery is a
+//                       statement about ATTRIBUTES; writing an authentication
+//                       statement into it — with a method and an instant — told
+//                       a relying party that somebody signed in who may never
+//                       have been near this service. SAML 1.1 lets an assertion
+//                       carry any non-empty set of statements, so leaving it
+//                       out is a smaller document rather than an invalid one.
 //   sign                false returns the assertion UNSIGNED. It is a test case
 //                       rather than a mistake — a relying party that accepts an
 //                       unsigned assertion has a hole in it and this is how
@@ -226,7 +258,8 @@ function attributeValuesOf(a) {
 //                       setting in the browser profiles.
 
 function buildSaml11Assertion(opts) {
-  log.debug("Entering buildSaml11Assertion(). subject=" + (opts.subject || '(none)'));
+  log.debug("Entering buildSaml11Assertion(). subject=" +
+            (opts.subject || '(none)'));
   const id = genId();
   const now = iso(0);
   const lifetimeMin = opts.lifetimeMin > 0 ? opts.lifetimeMin : 60;
@@ -240,16 +273,21 @@ function buildSaml11Assertion(opts) {
   const notBefore = iso(-skewS / 60);
   const exp = iso(lifetimeMin + skewS / 60);
   const authnInstant = opts.authnInstant || now;
-  const authnMethod = opts.authnMethod || 'urn:oasis:names:tc:SAML:1.0:am:password';
+  // `unspecified` rather than `am:password` since 2026-09-12, for the reason
+  // saml2.js gives beside its own default: a caller that names no method has
+  // not said a password was used. Every caller here passes the method
+  // `saml/authn_context.js` computed.
+  const authnMethod = opts.authnMethod || authnContext.AM_UNSPECIFIED;
   // The NameIdentifier, and the one thing to know about the defaults: they are
   // what this service has said for years and nothing consumed, so they stay the
   // defaults rather than becoming what a browser-profile relying party asked
   // for. A caller that was asked for a format passes it.
   const nameIdFormat = opts.nameIdFormat || NAMEID_FORMAT_UNSPECIFIED;
-  const nameIdValue = opts.nameIdValue == null ? opts.subject : opts.nameIdValue;
-  // OMITTED rather than written empty when nothing asks: `NameQualifier=""` is a
-  // qualifier whose value is the empty string, which is not the same document as
-  // one with no qualifier, and the difference is inside the signature.
+  const nameIdValue = opts.nameIdValue == null ? opts.subject :
+                      opts.nameIdValue;
+  // OMITTED rather than written empty when nothing asks: `NameQualifier=""` is
+  // a qualifier whose value is the empty string, which is not the same document
+  // as one with no qualifier, and the difference is inside the signature.
   const qualifier = opts.nameQualifier
     ? ' NameQualifier="' + xmlEscape(opts.nameQualifier) + '"'
     : '';
@@ -258,45 +296,53 @@ function buildSaml11Assertion(opts) {
   // schema: a statement is about a subject, and the assertion itself is not.
   const subjectEl =
     '<saml:Subject>' +
-      '<saml:NameIdentifier' + qualifier + ' Format="' + xmlEscape(nameIdFormat) + '">' +
+      '<saml:NameIdentifier' + qualifier + ' Format="' +
+      xmlEscape(nameIdFormat) + '">' +
         xmlEscape(nameIdValue) + '</saml:NameIdentifier>' +
-      '<saml:SubjectConfirmation><saml:ConfirmationMethod>' + xmlEscape(confirmation) +
+      '<saml:SubjectConfirmation><saml:ConfirmationMethod>' +
+      xmlEscape(confirmation) +
       '</saml:ConfirmationMethod></saml:SubjectConfirmation>' +
     '</saml:Subject>';
   const audienceEl = opts.audience
-    ? '<saml:AudienceRestrictionCondition><saml:Audience>' + xmlEscape(opts.audience) +
+    ? '<saml:AudienceRestrictionCondition><saml:Audience>' +
+      xmlEscape(opts.audience) +
       '</saml:Audience></saml:AudienceRestrictionCondition>'
     : '';
-  // <DoNotCacheCondition/> AFTER the audience restriction, which is the schema's
-  // sequence: Conditions holds a choice of AudienceRestrictionCondition and
-  // DoNotCacheCondition, and a document that reverses them is one a generated
-  // parser rejects while a hand-written one accepts. Off unless asked for.
+  // <DoNotCacheCondition/> AFTER the audience restriction, which is the
+  // schema's sequence: Conditions holds a choice of
+  // AudienceRestrictionCondition and DoNotCacheCondition, and a document that
+  // reverses them is one a generated parser rejects while a hand-written one
+  // accepts. Off unless asked for.
   const doNotCacheEl = opts.doNotCache ? '<saml:DoNotCacheCondition/>' : '';
   // <SubjectLocality> is the FIRST child of AuthenticationStatement after the
-  // Subject and before any AuthorityBinding — again the schema's sequence rather
-  // than a preference. Both attributes are optional and each is omitted when the
-  // caller has nothing to say, for the reason NameQualifier is.
+  // Subject and before any AuthorityBinding — again the schema's sequence
+  // rather than a preference. Both attributes are optional and each is omitted
+  // when the caller has nothing to say, for the reason NameQualifier is.
   const locality = opts.subjectLocality || null;
   const localityEl = locality && (locality.ipAddress || locality.dnsAddress)
     ? '<saml:SubjectLocality' +
-        (locality.ipAddress ? ' IPAddress="' + xmlEscape(locality.ipAddress) + '"' : '') +
-        (locality.dnsAddress ? ' DNSAddress="' + xmlEscape(locality.dnsAddress) + '"' : '') +
+        (locality.ipAddress ?
+         ' IPAddress="' + xmlEscape(locality.ipAddress) + '"' : '') +
+        (locality.dnsAddress ?
+         ' DNSAddress="' + xmlEscape(locality.dnsAddress) + '"' : '') +
       '/>'
     : '';
   // Appended to what the caller asked for, never substituted for it — the same
-  // rule as SAML 2.0, and it matters more here: a WS-Federation relying party keys
-  // off the claim URIs in claimsFor(), and displacing one of those would break the
-  // sign-in somewhere that looks nothing like this page. An attribute configured
-  // with no namespace gets the identity claims namespace, which is where a relying
-  // party is already looking.
-  const custom = stats.samlAttributes('saml11', { subject: opts.subject, audience: opts.audience });
+  // rule as SAML 2.0, and it matters more here: a WS-Federation relying party
+  // keys off the claim URIs in claimsFor(), and displacing one of those would
+  // break the sign-in somewhere that looks nothing like this page. An attribute
+  // configured with no namespace gets the identity claims namespace, which is
+  // where a relying party is already looking.
+  const custom = stats.samlAttributes('saml11',
+                                      { subject: opts.subject,
+                                        audience: opts.audience });
   // FILTERED against the caller's own claims by name, for the reason saml2.js
   // states beside the same line: an assertion is a list of elements, so a
   // duplicate name is not an overwrite but two <Attribute> elements with one
-  // name, and the relying party reads whichever came first. It matters more here
-  // than there — a WS-Federation relying party keys off these claim URIs — and it
-  // became easy to hit when /admin/claims grew a table of directory attributes to
-  // tick.
+  // name, and the relying party reads whichever came first. It matters more
+  // here than there — a WS-Federation relying party keys off these claim URIs —
+  // and it became easy to hit when /admin/claims grew a table of directory
+  // attributes to tick.
   //
   // Keyed on the NAMESPACE AND THE NAME together, which is the only correct key
   // here: SAML 1.1 splits a claim URI into the two, so `name` in the identity
@@ -306,36 +352,52 @@ function buildSaml11Assertion(opts) {
   // WS-Federation claim list carries `name` in that namespace, and so does a
   // ticked `cn`.
   const asked = opts.attributes || [];
-  const keyOf = function (a) { return String(a.namespace || '') + ' ' + String(a.name || ''); };
+  const keyOf = function (a) {
+    log.debug("Entering keyOf().");
+    log.debug("Leaving keyOf().");
+    return String(a.namespace || '') + ' ' + String(a.name || '');
+  };
   const names = new Set(asked.map(keyOf));
-  const configured = custom.filter(function (a) { return !names.has(keyOf(a)); });
+  const configured = custom.filter(function (a) {
+    return !names.has(keyOf(a));
+  });
   const attributeEls = asked.concat(configured).map(function (a) {
     return '<saml:Attribute AttributeName="' + xmlEscape(a.name) + '"' +
       ' AttributeNamespace="' + xmlEscape(a.namespace) + '">' +
       attributeValuesOf(a) + '</saml:Attribute>';
   }).join('');
-  // Conditions, then the statements, then (added by the signer) ds:Signature. The
-  // order is the schema's sequence and not a preference.
+  // Conditions, then the statements, then (added by the signer) ds:Signature.
+  // The order is the schema's sequence and not a preference.
   const xml =
     '<saml:Assertion xmlns:saml="' + SAML11_NS + '"' +
       ' MajorVersion="1" MinorVersion="1"' +
       ' AssertionID="' + id + '"' +
-      ' Issuer="' + xmlEscape(opts.issuer || config.value('saml.issuer')) + '"' +
-      ' IssueInstant="' + now + '">' +
-      '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp + '">' + audienceEl +
+      ' Issuer="' + xmlEscape(opts.issuer || config.value('saml.issuer')) +
+      '" ' +
+      'IssueInstant="' + now + '">' +
+      '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
+      '">' + audienceEl +
       doNotCacheEl + '</saml:Conditions>' +
-      '<saml:AuthenticationStatement AuthenticationMethod="' + xmlEscape(authnMethod) + '"' +
-        ' AuthenticationInstant="' + authnInstant + '">' + subjectEl + localityEl +
-      '</saml:AuthenticationStatement>' +
+      (opts.authenticationStatement === false ? '' :
+        '<saml:AuthenticationStatement AuthenticationMethod="' +
+          xmlEscape(authnMethod) + '" ' +
+          'AuthenticationInstant="' + authnInstant + '">' + subjectEl +
+          localityEl +
+        '</saml:AuthenticationStatement>') +
       (attributeEls
-        ? '<saml:AttributeStatement>' + subjectEl + attributeEls + '</saml:AttributeStatement>'
+        ? '<saml:AttributeStatement>' + subjectEl + attributeEls +
+          '</saml:AttributeStatement>'
         : '') +
     '</saml:Assertion>';
-  // Counted before the signing attempt, not after: an assertion that failed to sign
-  // was still built and still went out (unsigned — see the catch), so counting it
-  // only on success would leave the console reporting fewer than actually left.
-  const record = stats.recordAssertion('1.1', { id: id, subject: opts.subject, audience: opts.audience,
-                                                expiresAt: Date.parse(exp) || 0 });
+  // Counted before the signing attempt, not after: an assertion that failed to
+  // sign was still built and still went out (unsigned — see the catch), so
+  // counting it only on success would leave the console reporting fewer than
+  // actually left.
+  const record = stats.recordAssertion('1.1',
+                                       { id: id, subject: opts.subject,
+                                                audience: opts.audience,
+                                                expiresAt: Date.parse(exp) ||
+                                                    0 });
   // `sign: false` is a DELIBERATE unsigned assertion and is recorded as one, so
   // that the console's Signed column tells it apart from a signing FAILURE
   // below. The two look identical on the wire and mean opposite things: one is
@@ -343,7 +405,8 @@ function buildSaml11Assertion(opts) {
   // being broken.
   if (opts.sign === false) {
     record.signed = false;
-    log.debug("Leaving buildSaml11Assertion(). Unsigned because the caller asked for that.");
+    log.debug("Leaving buildSaml11Assertion(). Unsigned because the caller " +
+              "asked for that.");
     return xml;
   }
   try {
@@ -352,12 +415,15 @@ function buildSaml11Assertion(opts) {
     return signed;
   } catch (e) {
     // Returned unsigned rather than not at all, exactly as saml2.js does: an
-    // unsigned assertion in the response is something a relying party can look at
-    // and reject for the right reason, where a 500 here would say nothing about
-    // what failed. The log line is the record of which it was — and so, now, is the
-    // console's Signed column, which is why the record is corrected here.
+    // unsigned assertion in the response is something a relying party can look
+    // at and reject for the right reason, where a 500 here would say nothing
+    // about what failed. The log line is the record of which it was — and so,
+    // now, is the console's Signed column, which is why the record is corrected
+    // here.
     record.signed = false;
-    log.error('SAML 1.1 signing failed, returning the assertion unsigned: ' + e.message);
+    log.error(errorCodes.tag('STS-SAML-0024') + 'SAML 1.1 signing failed, ' +
+                                                'returning the assertion ' +
+                                                'unsigned: ' + e.message);
     log.debug("Leaving buildSaml11Assertion(). Unsigned.");
     return xml;
   }

@@ -110,11 +110,13 @@
 // nothing.
 // ---------------------------------------------------------------------------
 
-const nodeCrypto = require('crypto');
 const app = require('../common/app');
-const { log, xmlEscape, baseUrlOf, iso, nowSec, allSigningKeys, numberWord,
-        STS } = require('../common/helpers');
-const stsCrypto = require('../common/crypto');
+// `allSigningKeys`, `STS`, node's `crypto` and `common/crypto` left this list
+// on 2026-09-10 with the three functions that read a received SET — they are
+// `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were. See
+// the note above POST /ssf/receive.
+const { log, xmlEscape, baseUrlOf, iso, nowSec, numberWord,
+        subjectForName: helpersSubjectFor } = require('../common/helpers');
 const config = require('../common/config');
 const realms = require('../common/realms');
 const stats = require('../common/admin_stats');
@@ -141,8 +143,27 @@ const risc = require('./risc');
 // travels back the other direction is one function: see riscAutoEmit().
 const directory = require('../ldap/ldap_server');
 const streams = require('./ssf_streams');
+// THIS SERVICE'S OWN TWO RECEIVERS. A LIBRARY (rule 3) — the two receive
+// endpoints and the two inbox pages are registered by the SURFACES, because a
+// receiver hosts its own endpoint; what this module does with it is SEED the
+// streams, which is why the require is here and not only there. A process that
+// loaded `admin-ui/admin.js` and not this file would have an inbox page and no
+// stream behind it, and the page says exactly that rather than looking empty.
+const receivers = require('./ssf_receivers');
 const transport = require('./ssf_http');
+// What the dead-letter queues hold, counted, for Monitoring → Shared Signals →
+// Dead letters. A LIBRARY (rule 3) that registers nothing; the sweep below
+// tells it what each sweep found, and the console slot hands its report out.
+const deadLetterReport = require('./ssf_dead_letter_report');
 const ssfAuth = require('./ssf_auth');
+// SEVERAL NODES (2026-09-14, #46 section 6): one report per stream health
+// transition, one prober for the cluster, and a GNAP key proof spent across
+// every node before the gate reads it. A LIBRARY; see its header.
+const ssfCluster = require('./ssf_cluster');
+// The error-code registry, a LEAF. An HTTP refusal is marked on the response
+// (the call-log funnel records it); a refusal with no response of its own — a
+// transmission, a console action, an automatic emission — is an audit row.
+const errorCodes = require('../common/error_codes');
 
 // The well-known suffix RFC 8414's registry carries for this document. It is
 // `ssf-configuration` and NOT `ssf-configuration.json`, and not under
@@ -158,17 +179,51 @@ function enabled() {
 
 // The `iss` of this transmitter. Empty configuration means this realm's base
 // URL, which is the right answer almost always — see ssf.issuer.
+//
+// ---------------------------------------------------------------------------
+// **THREE FIXES ON 2026-09-12, AND THE FIRST WAS WRONG IN EVERY REALM BUT THE
+// DEFAULT ONE.**
+//
+//   1. `baseUrlOf()` ALREADY carries the realm prefix — that one line is why
+//      eighty call sites are realm-aware — and this appended it again. So in
+//      `acme` the issuer was `…/realm/acme/realm/acme`, as were the
+//      configuration, status, subject and verification endpoints and the
+//      `jwks_uri`: a receiver discovering an acme stream dialled URLs that do
+//      not exist, and matched every SET's `iss` against a string no SET
+//      carried. The default realm's prefix is empty, which is why nothing
+//      noticed.
+//   2. With no request — the CAEP expiry sweep runs on a timer — the base was
+//      `baseUrlOf(null)`, which is `http://localhost:<port>` whatever the
+//      listener speaks. `transport.ownBaseUrl()` is the same base computed
+//      honestly: `global.publicBaseUrl`, or the loopback origin in the right
+//      scheme.
+//   3. **A CONFIGURED `ssf.issuer` IS PER REALM.** It was returned verbatim in
+//      every realm, so two realms of one process transmitted under ONE issuer
+//      — two transmitters claiming one name, which a receiver matching `iss`
+//      against the issuer it discovered is entitled to treat as one. Now: a
+//      value the REALM carries is used as it stands (an operator who set it
+//      there meant exactly that string), and a PROCESS-WIDE value is given the
+//      realm's prefix, the way `baseUrlOf()` gives it to the base. It is not in
+//      `realms.js`'s NAMED_BY_REALM, which seeds a value when a realm is
+//      created: that would miss every realm created before the setting was
+//      pinned, and an issuer is a URL whose realm form this service already
+//      defines — the prefix — so deriving it here is the one answer that cannot
+//      go stale.
+// ---------------------------------------------------------------------------
+//
+// The computation is `ssf_http.js`'s `transmitterIssuer()`, because
+// `ssf_receivers.js` needs the same answer for a seeded stream and cannot
+// require this file (this file requires it).
 function issuerFor(req) {
   log.debug('Entering issuerFor().');
-  const configured = String(config.value('ssf.issuer') || '').trim();
-  const value = configured || baseUrlOf(req) + realms.currentPrefix();
+  const value = transport.transmitterIssuer(req);
   log.debug('Leaving issuerFor(). ' + value);
   return value;
 }
 
 function ssfBase(req) {
   log.debug('Entering ssfBase().');
-  const value = baseUrlOf(req) + realms.currentPrefix() + '/ssf';
+  const value = baseUrlOf(req) + '/ssf';
   log.debug('Leaving ssfBase(). ' + value);
   return value;
 }
@@ -224,6 +279,7 @@ function offCheck(res) {
     log.debug('Leaving offCheck(). On.');
     return false;
   }
+  errorCodes.mark(res, 'STS-SSF-0001');
   fail(res, 501, 'invalid_request',
     'The Shared Signals Framework is turned off on this service ' +
     '(ssf.enabled). The routes stay registered and answer 501 rather than ' +
@@ -244,6 +300,8 @@ function gate(req, res, need) {
     log.debug('Leaving gate(). Allowed.');
     return decision;
   }
+  // The code was chosen where the condition was decided, in ssf_auth.js.
+  errorCodes.mark(res, decision.errorCode || 'STS-SSF-0010');
   fail(res, decision.status, decision.err, decision.description,
        decision.headers);
   log.debug('Leaving gate(). Refused.');
@@ -268,6 +326,7 @@ function jsonBody(req) {
     log.debug('Leaving jsonBody(). Parsed.');
     return (parsed && typeof parsed === 'object') ? parsed : {};
   } catch (e) {
+    log.debug("Caught in jsonBody(): " + ((e && e.message) || e));
     // Not JSON. The caller reports it as a refusal naming the body rather
     // than throwing, because a 500 on a malformed body tells a client
     // nothing about what it sent.
@@ -289,24 +348,65 @@ function jsonBody(req) {
 // callers are answering an HTTP request that must not become a 500 over a
 // receiver being down.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A TRANSMISSION THAT DID NOT HAPPEN, RECORDED.
+//
+// transmit() answers with a report and never with a response — two of its
+// callers are answering an HTTP request and the third is an automatic emission
+// nobody is waiting on — so the refusal is an AUDIT ROW, one per stream it was
+// refused on, carrying the condition's code. Returns the report unchanged, so a
+// caller's `return` is exactly what it was. The `why` is this service's own
+// sentence about a stream and an event type; it carries no credential and no
+// token.
+// ---------------------------------------------------------------------------
+function transmitRefused(code, record, uri, report, outcome) {
+  log.debug('Entering transmitRefused(). ' + code);
+  audit.failure(code, {
+    protocol: 'SSF', channel: 'http',
+    target: String((record && record.stream_id) || ''),
+    outcome: outcome || 'refused',
+    summary: 'A ' + ((events.EVENT_BY_URI[uri] || {}).name || 'Security ' +
+      'Event Token') + ' was not transmitted on ' +
+      String((record && record.stream_id) || 'a stream'),
+    detail: { type: String(uri || ''), why: String((report || {}).why || '') }
+  });
+  log.debug('Leaving transmitRefused().');
+  return report;
+}
+
 function transmit(record, options) {
   log.debug('Entering transmit(). ' + record.stream_id);
   const asked = options || {};
   const uri = String(asked.uri || '');
   if (record.events_delivered.indexOf(uri) < 0) {
     log.debug('Leaving transmit(). Not an agreed type.');
-    return Promise.resolve({ ok: false, delivered: false, jti: '',
+    return Promise.resolve(transmitRefused('STS-SSF-0026', record, uri, {
+      ok: false, delivered: false, jti: '',
       why: 'This stream does not deliver "' + uri + '". It delivers ' +
            (record.events_delivered.length
              ? record.events_delivered.join(', ')
              : 'nothing at all') + ' — the intersection of what the ' +
-           'receiver requested and what this transmitter supports.' });
+           'receiver requested and what this transmitter supports.' }));
+  }
+  // THE OWNER'S ENTRY, asked at the moment of delivery rather than only when
+  // the stream was agreed — see ssf_streams.js's allowedEventsFor().
+  if (!streams.deliversEvent(record, uri)) {
+    log.debug('Leaving transmit(). Not allowed by the owning application.');
+    return Promise.resolve(transmitRefused('STS-SSF-0081', record, uri, {
+      ok: false, delivered: false, jti: '',
+      why: 'The application that owns this stream ("' + record.createdBy +
+           '") ' +
+           'is not allowed ' +
+           '"' + uri + '": ssfAllowedEvents on its entry does not ' +
+           'name it or its profile. Add it there, or ask for an event type ' +
+           'it does allow.' }));
   }
   const verdict = events.validateEvent(uri, asked.payload);
   if (!verdict.ok) {
     log.debug('Leaving transmit(). The payload is invalid.');
-    return Promise.resolve({ ok: false, delivered: false, jti: '',
-      why: verdict.errors.join(' ') });
+    return Promise.resolve(transmitRefused('STS-SSF-0027', record, uri, {
+      ok: false, delivered: false, jti: '',
+      why: verdict.errors.join(' ') }));
   }
   // ---------------------------------------------------------------------
   // AN EVENT WHOSE ROW SAYS IT MUST NAME SOMEBODY, THAT NAMES NOBODY.
@@ -327,12 +427,13 @@ function transmit(record, options) {
   const row = events.EVENT_BY_URI[uri];
   if (row && row.subject === 'required' && !asked.subject) {
     log.debug('Leaving transmit(). No subject on an event that needs one.');
-    return Promise.resolve({ ok: false, delivered: false, jti: '',
+    return Promise.resolve(transmitRefused('STS-SSF-0028', record, uri, {
+      ok: false, delivered: false, jti: '',
       why: '"' + uri + '" must carry a subject and this one carries none. ' +
            'A ' + row.name + ' with no sub_id says something happened and ' +
            'does not say to whom, so a receiver drops it with no error ' +
            'anybody sees. CAEP\'s subject is normally SSF\'s COMPLEX one — ' +
-           'the person is not revoked, one session of theirs is.' });
+           'the person is not revoked, one session of theirs is.' }));
   }
   // AND THE OTHER KIND OF WRONG SUBJECT, WHICH IS A WARNING RATHER THAN A
   // REFUSAL. The refusal above is MECHANICAL — an event with no subject can
@@ -347,12 +448,13 @@ function transmit(record, options) {
   });
   if (asked.subject && !streams.streamCoversSubject(record, asked.subject)) {
     log.debug('Leaving transmit(). Not a subject on this stream.');
-    return Promise.resolve({ ok: false, delivered: false, jti: '',
+    return Promise.resolve(transmitRefused('STS-SSF-0029', record, uri, {
+      ok: false, delivered: false, jti: '',
       why: 'This stream names ' + record.subjects.length + ' subject(s) and ' +
            subjects.describeSubject(asked.subject) + ' is not one of them. ' +
            'A stream with an EMPTY list is about everybody or nobody ' +
            'depending on ssf.defaultSubjects, which this transmitter ' +
-           'publishes as default_subjects.' });
+           'publishes as default_subjects.' }));
   }
 
   const claims = events.buildSet({
@@ -365,7 +467,45 @@ function transmit(record, options) {
     toe: typeof asked.toe === 'number' ? asked.toe : undefined
   });
 
+  // ---------------------------------------------------------------------
+  // A DEAD PUSH STREAM IS NOT PUSHED TO, AND ITS SET IS NOT EVEN SIGNED
+  // (2026-09-14). See ssf_streams.js's DEAD STREAMS. The SET goes to the
+  // stream's dead-letter queue as its claims — signing a document nothing
+  // will receive is the cost this exists to stop, and a probe signs it if it
+  // is ever pushed. Nothing is logged here: the sweep's summary line is where
+  // an undeliverable SET is counted.
+  //
+  // **A VERIFICATION EVENT IS PUSHED ANYWAY.** A receiver asking to verify
+  // its stream is evidence it is listening again, and the push is the probe
+  // it asked for — a success revives the stream.
+  // ---------------------------------------------------------------------
+  if (record.delivery.method === streams.DELIVERY_PUSH &&
+      streams.isDead(record) &&
+      uri !== events.SSF_PREFIX + 'verification') {
+    streams.addDeadLetter(record, { jti: claims.jti, token: '',
+      claims: claims, queuedAt: iso() }, {
+      why: 'the stream is dead (ssf.deadStreamTimeoutS); it is not pushed ' +
+           'to until a probe or an operator revives it',
+      errorCode: 'STS-SSF-0096' });
+    log.debug('Leaving transmit(). The stream is dead; dead-lettered.');
+    return Promise.resolve({ ok: false, delivered: false, deadLettered: true,
+      jti: claims.jti, claims: claims,
+      why: 'This stream is DEAD — its pushes all failed for ' +
+           'ssf.deadStreamTimeoutS — so the event was put on its dead-letter ' +
+           'queue and not pushed. Revive it on /admin/ssf or with POST ' +
+           '/admin-api/ssf/revive.' });
+  }
+
+  log.debug("Leaving transmit().");
   return events.signSet(claims).then(function (token) {
+    // THE RECORD HELD NOW, AND NOT THE ONE READ BEFORE THE SIGNATURE. Signing
+    // may go to the worker pool and take seconds, and in a service whose
+    // request workers share the stream store another process's write can
+    // REPLACE this record in the meantime — a PATCH, a pause, a poll's
+    // counters. Editing the copy read above and writing it back would undo
+    // that write; streams.touch() refuses to, so the edit would be lost
+    // instead. See ssf_streams.js's touch().
+    record = streams.liveRecord(record);
     // COUNTED HERE, which is after the SET exists and before anybody knows
     // whether it will be delivered — because what /admin/caep-sessions
     // reports is what this transmitter SAID about a session, and a queued
@@ -388,11 +528,12 @@ function transmit(record, options) {
     const queued = streams.enqueue(record, entry);
     if (!queued.ok) {
       log.debug('Leaving transmit(). Not queued.');
-      return { ok: false, delivered: false, jti: claims.jti, token: token,
+      return transmitRefused('STS-SSF-0030', record, uri, {
+        ok: false, delivered: false, jti: claims.jti, token: token,
         claims: claims,
         why: 'The event was built and signed and NOT queued, because ' +
              queued.reason + '. A disabled stream drops what is waiting; a ' +
-             'PAUSED one would have kept this.' };
+             'PAUSED one would have kept this.' });
     }
     audit.audit({ action: 'ssf.event.transmit', category: 'signals',
       protocol: 'SSF', channel: 'http', outcome: 'success',
@@ -412,50 +553,290 @@ function transmit(record, options) {
              'receiver asks at ' + '/ssf/poll.' };
     }
     record.counters.pushCalls += 1;
-    return transport.pushSet(record.delivery.endpoint_url, token, {
+    // Through the retrying door, which with `ssf.pushRetries` at its default
+    // of 0 is exactly one push — see ssf_http.js.
+    return transport.pushSetWithRetries(record.delivery.endpoint_url, token, {
       authorizationHeader: record.delivery.authorization_header
     }).then(function (result) {
+      // The push was a network round trip, so the same reason as above.
+      record = streams.liveRecord(record);
       record.lastPushAt = iso();
       if (result.ok) {
         record.counters.delivered += 1;
         entry.counted = true;
         entry.deliveredAt = iso();
-        record.queue = record.queue.filter(function (one) {
-          return one.jti !== entry.jti;
-        });
+        // Off the queue as ONE ROW'S DELETE — see ssf_streams.js's `queued`.
+        streams.dequeue(record, entry.jti);
         record.lastPushError = '';
         streams.note(record, 'push', 'Delivered ' + claims.jti + ' to ' +
           record.delivery.endpoint_url +
           (result.why ? ' — ' + result.why : ''));
+        if (streams.notePushSuccess(record)) {
+          streamRevived(record, 'a push of ' + claims.jti + ' was delivered');
+        }
         log.debug('Leaving transmit(). Pushed.');
         return { ok: true, delivered: true, jti: claims.jti, token: token,
           claims: claims, status: result.status, why: result.why };
       }
       record.counters.failed += 1;
       record.lastPushError = result.why;
-      streams.note(record, 'error', 'The push of ' + claims.jti + ' failed: ' +
-        result.why + ' The event is STILL ON THE QUEUE — nothing here ' +
-        'retries, so it stays until somebody asks for it again.');
-      audit.audit({ action: 'ssf.event.refused', category: 'signals',
-        protocol: 'SSF', channel: 'http', outcome: 'failure',
-        target: record.stream_id,
-        summary: 'A receiver refused ' + claims.jti,
-        detail: { why: result.why, err: result.err,
-          status: result.status } });
-      log.debug('Leaving transmit(). The push failed.');
-      return { ok: false, delivered: false, jti: claims.jti, token: token,
+      // ---------------------------------------------------------------
+      // UNDELIVERABLE: OFF THE LIVE QUEUE AND ONTO THE DEAD-LETTER QUEUE
+      // (2026-09-14), WITH NO LOG LINE AND NO AUDIT ROW OF ITS OWN.
+      //
+      // It stayed on the live queue "until somebody asks for it again", and
+      // nobody did; and every failure wrote an `ssf.event.refused` audit row
+      // whose code put a line in the service log — 30,698 of them in one
+      // second on the run this was built for, when a sweep of expired
+      // sessions revoked 1,398 sessions to twenty dead streams. The dead
+      // letter carries the reason, the code and the receiver's status for
+      // inspection, and the sweep logs ONE summary line of how many there
+      // were. `ssf.pushRetries` has already been spent: a final failure.
+      // ---------------------------------------------------------------
+      streams.dequeue(record, entry.jti);
+      streams.addDeadLetter(record, entry, { why: result.why,
+        errorCode: result.errorCode || 'STS-SSF-0032',
+        status: result.status });
+      const verdict = streams.notePushFailure(record, result);
+      if (verdict.declaredDead) {
+        streamDeclaredDead(record, verdict.moved);
+      }
+      log.debug('Leaving transmit(). The push failed; dead-lettered.');
+      return { ok: false, delivered: false, deadLettered: true,
+        jti: claims.jti, token: token,
         claims: claims, status: result.status, err: result.err,
         why: result.why };
     });
   }).catch(function (e) {
-    log.error('ssf: a Security Event Token could not be signed: ' + e.message);
+    log.error(errorCodes.tag('STS-SSF-0031') +
+              'ssf: a Security Event Token could not be signed: ' + e.message);
     log.debug('Leaving transmit(). The signature failed.');
-    return { ok: false, delivered: false, jti: '',
+    return transmitRefused('STS-SSF-0031', record, uri, {
+      ok: false, delivered: false, jti: '',
       why: 'The event could not be signed with ' +
            events.signingAlgorithm() + ': ' + e.message +
-           '. Check ssf.signingAlgorithm.' };
+           '. Check ssf.signingAlgorithm.' }, 'error');
   });
 }
+
+// ---------------------------------------------------------------------------
+// A STREAM DECLARED DEAD, AND ONE REVIVED (2026-09-14). One audit row and one
+// log line for each — the only per-stream lines this machinery writes.
+// ---------------------------------------------------------------------------
+function streamDeclaredDead(record, moved) {
+  log.debug('Entering streamDeclaredDead(). ' + record.stream_id);
+  // ONCE FOR THE CLUSTER (2026-09-14, #46): two nodes pushing to one dead
+  // receiver both cross the timeout. See ssf_cluster.js's transitionOnce().
+  // What is captured is what the row says NOW, before any await.
+  const realmId = realms.currentId();
+  const reason = record.deadReason || '?';
+  const endpoint = record.delivery.endpoint_url;
+  const streamId = record.stream_id;
+  ssfCluster.transitionOnce('dead', streamId, function () {
+    reportStreamDead(streamId, realmId, endpoint, moved, reason);
+  });
+  log.debug('Leaving streamDeclaredDead().');
+}
+
+function reportStreamDead(streamId, realmId, endpoint, moved, reason) {
+  log.debug('Entering reportStreamDead(). ' + streamId);
+  // The audit row's code writes the one log line (audit.js's logFailure()).
+  audit.audit({ action: 'ssf.stream.dead', category: 'signals',
+    protocol: 'SSF', channel: 'http', outcome: 'failure',
+    errorCode: 'STS-SSF-0093', target: streamId,
+    summary: 'ssf: stream ' + streamId + ' in the "' +
+      realmId + '" realm was declared DEAD after ' +
+      config.value('ssf.deadStreamTimeoutS') + 's of failed pushes to ' +
+      endpoint + '; ' + moved + ' waiting SET(s) moved ' +
+      'to its dead-letter queue and nothing more is pushed until a probe or ' +
+      'an operator revives it. Last failure: ' + reason,
+    detail: { endpoint: endpoint, moved: moved, why: reason } });
+  log.debug('Leaving reportStreamDead().');
+}
+
+function streamRevived(record, how) {
+  log.debug('Entering streamRevived(). ' + record.stream_id);
+  const streamId = record.stream_id;
+  const realmId = realms.currentId();
+  // Once for the cluster, for streamDeclaredDead()'s reason.
+  ssfCluster.transitionOnce('revived', streamId, function () {
+    audit.audit({ action: 'ssf.stream.revived', category: 'signals',
+      protocol: 'SSF', channel: 'http', outcome: 'success',
+      target: streamId,
+      summary: 'The dead stream ' + streamId + ' was revived: ' + how });
+    log.info('ssf: stream ' + streamId + ' in the "' + realmId + '" realm ' +
+             'is alive again (' + how + ') and is pushed to as before.');
+  });
+  log.debug('Leaving streamRevived().');
+}
+
+// ---------------------------------------------------------------------------
+// THE SWEEP (2026-09-14): per process, every `ssf.deadLetterSweepS`, in every
+// realm — delete expired dead letters, probe the dead streams that are due, and
+// log ONE line per realm summarising what was dead-lettered since the last
+// sweep. It is the only place an undeliverable SET is logged.
+//
+// **EVERY PROCESS SWEEPS.** The dead-letter store is shared, so a delete made
+// twice is a no-op; the counts being summarised are each process's own, so
+// four processes log four lines about four different sets of pushes. A probe
+// sets `nextProbeAtMs` on the record before it pushes, which replicates, so
+// processes rarely probe the same stream in the same period — and one extra
+// probe is harmless.
+//
+// **BUT IN ACTIVE-ACTIVE MODE ONE PROCESS PROBES (2026-09-14, #46).** "Rarely"
+// was a replication interval inside one container and became every node at
+// once across several, each probe a signed push at a receiver already known
+// to be down, and each half-open decision a whole-record write the others
+// could revert. `ssfCluster.leadsProbes()` names one front process for the
+// cluster; every other process still sweeps its letters and logs its summary.
+// ---------------------------------------------------------------------------
+function probeDeadStream(record, now) {
+  log.debug('Entering probeDeadStream(). ' + record.stream_id);
+  const timeout = Number(config.value('ssf.deadStreamTimeoutS')) * 1000;
+  record.nextProbeAtMs = now + (timeout > 0 ? timeout : 300000);
+  streams.touch(record);
+  const oldest = streams.deadLettersOf(record)[0];
+  if (!oldest) {
+    streams.halfOpen(record, now);
+    log.info('ssf: stream ' + record.stream_id + ' in the "' +
+             realms.currentId() + '" realm is dead with nothing left to ' +
+             'probe with; its next SET will be pushed as the probe.');
+    log.debug('Leaving probeDeadStream(). Half-open.');
+    return Promise.resolve(false);
+  }
+  const signed = oldest.token
+    ? Promise.resolve(oldest.token)
+    : events.signSet(oldest.claims);
+  log.debug('Leaving probeDeadStream(). Probing with ' + oldest.jti + '.');
+  return signed.then(function (token) {
+    return transport.pushSetGated(record.delivery.endpoint_url, token, {
+      authorizationHeader: record.delivery.authorization_header });
+  }).then(function (result) {
+    const live = streams.liveRecord(record);
+    if (!result.ok) {
+      log.debug('probeDeadStream(): ' + live.stream_id + ' is still dead: ' +
+                result.why);
+      return false;
+    }
+    streams.removeDeadLetter(live, oldest.jti);
+    live.counters.delivered += 1;
+    if (streams.notePushSuccess(live)) {
+      streamRevived(live, 'a probe push of the dead letter ' + oldest.jti +
+                          ' was delivered');
+    }
+    return true;
+  }).catch(function (e) {
+    log.debug('Caught in probeDeadStream(): ' + ((e && e.message) || e));
+    return false;
+  });
+}
+
+function sweepSignalsRealm(now) {
+  log.debug('Entering sweepSignalsRealm(). ' + realms.currentId());
+  const summary = streams.sweepDeadLetters(now);
+  const dead = streams.listStreams().filter(function (record) {
+    return record.delivery.method === streams.DELIVERY_PUSH &&
+           streams.isDead(record);
+  });
+  if (summary.letters || summary.trimmed) {
+    const top = summary.byStream.sort(function (a, b) {
+      return b[1] - a[1];
+    }).slice(0, 5).map(function (pair) {
+      return pair[0] + ' ' + pair[1];
+    }).join(', ');
+    log.warn(errorCodes.tag('STS-SSF-0094') + 'ssf: ' + summary.letters +
+             ' Security Event Token(s) could not be delivered in the "' +
+             realms.currentId() + '" realm since the last sweep and are on ' +
+             'dead-letter queues (' + summary.byStream.length + ' stream(s)' +
+             (top ? '; most: ' + top : '') + '; by code: ' +
+             summary.byCode.map(function (pair) {
+               return pair[0] + ' ' + pair[1];
+             }).join(', ') + '). ' + summary.held + ' dead letter(s) held, ' +
+             summary.expired + ' expired and deleted, ' + summary.trimmed +
+             ' deleted over ssf.deadLetterMaxPerStream; ' + dead.length +
+             ' dead stream(s). Inspect them on /admin/ssf.');
+  } else if (summary.expired || summary.orphaned) {
+    log.info('ssf: ' + summary.expired + ' dead letter(s) older than ' +
+             'ssf.deadLetterRetentionS and ' + summary.orphaned + ' of ' +
+             'deleted streams were removed in the "' + realms.currentId() +
+             '" realm; ' + summary.held + ' held.');
+  }
+  const due = ssfCluster.leadsProbes() ? dead.filter(function (record) {
+    return !(Number(record.nextProbeAtMs) > now);
+  }) : [];
+  // THE MONITORING PAGE'S SWEEP HISTORY. Noted here and not in
+  // `sweepDeadLetters()`, because the dead-stream and probe counts are only
+  // known here — and before the probes run, so a probe that throws cannot
+  // leave a sweep unrecorded.
+  deadLetterReport.noteSweep(summary, { nowMs: now, deadStreams: dead.length,
+                                        probes: due.length });
+  log.debug('Leaving sweepSignalsRealm(). ' + due.length + ' probe(s).');
+  return Promise.all(due.map(function (record) {
+    return probeDeadStream(record, now);
+  })).then(function () {
+    return summary;
+  });
+}
+
+let sweepTimer = null;
+
+function sweepSignals() {
+  log.debug('Entering sweepSignals().');
+  const now = Date.now();
+  const all = realms.list();
+  let chain = Promise.resolve();
+  all.forEach(function (realm) {
+    chain = chain.then(function () {
+      return realms.run(realm, function () {
+        try {
+          return sweepSignalsRealm(now);
+        } catch (e) {
+          log.error(errorCodes.tag('STS-SSF-0097') + 'ssf: the dead-letter ' +
+                    'sweep failed in the "' + realm.id + '" realm: ' +
+                    ((e && e.message) || e));
+          return null;
+        }
+      });
+    });
+  });
+  log.debug('Leaving sweepSignals(). ' + all.length + ' realm(s).');
+  return chain.catch(function (e) {
+    log.error(errorCodes.tag('STS-SSF-0097') + 'ssf: the dead-letter sweep ' +
+              'failed: ' + ((e && e.message) || e));
+  });
+}
+
+function scheduleSweep() {
+  log.debug('Entering scheduleSweep().');
+  const seconds = Math.max(5, Number(config.value('ssf.deadLetterSweepS')) ||
+                              60);
+  sweepTimer = setTimeout(function () {
+    sweepSignals().then(scheduleSweep, scheduleSweep);
+  }, seconds * 1000);
+  // A sweep must not keep a process that has finished everything else alive
+  // — `npm test` loads this file and would otherwise wait out the interval.
+  if (sweepTimer.unref) {
+    sweepTimer.unref();
+  }
+  log.debug('Leaving scheduleSweep(). ' + seconds + 's.');
+}
+
+scheduleSweep();
+
+// ---------------------------------------------------------------------------
+// `ssf.delivery` (#46 section 6), AT REQUIRE TIME like every capability — the
+// code being loaded is the capability (cluster/CLAUDE.md). What it stands for,
+// and where each half is: an acknowledged SET is not delivered again by
+// another node (the barrier for a sequential ack then poll, and
+// `ssf_streams.js`'s poll no longer writing a row back on a shared store for a
+// concurrent one); a session's end emits one event (`authn.js`'s
+// sessionEndOnce()); stream health is reported once and probed by one node,
+// and a GNAP proof on these endpoints is spent across the cluster
+// (`ssf_cluster.js`). `ssf/CLAUDE.md` argues all four and what stays per
+// process.
+// ---------------------------------------------------------------------------
+const capabilities = require('../cluster/cluster_capabilities');
+capabilities.provide('ssf.delivery');
 
 // ---------------------------------------------------------------------------
 // THE TRANSMITTER CONFIGURATION METADATA (SSF 1.0 section 6).
@@ -474,7 +855,8 @@ function metadata(req) {
   const doc = {
     spec_version: '1_0-final',
     issuer: issuerFor(req),
-    jwks_uri: baseUrlOf(req) + realms.currentPrefix() + '/oauth2/jwks',
+    // baseUrlOf() carries the realm prefix already; see issuerFor().
+    jwks_uri: baseUrlOf(req) + '/oauth2/jwks',
     delivery_methods_supported: streams.offeredDeliveryMethods(),
     configuration_endpoint: base + '/stream',
     status_endpoint: base + '/status',
@@ -532,7 +914,7 @@ function streamView(req, record, decision) {
   return view;
 }
 
-app.post('/ssf/stream', function (req, res) {
+app.post('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/stream.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/stream. Off.');
@@ -545,6 +927,7 @@ app.post('/ssf/stream', function (req, res) {
   }
   const body = jsonBody(req);
   if (!body) {
+    errorCodes.mark(res, 'STS-SSF-0011');
     fail(res, 400, 'invalid_request',
       'The request body is not JSON. A Stream Configuration is a JSON ' +
       'object; see ' + WELL_KNOWN + ' for what this transmitter supports.');
@@ -558,6 +941,7 @@ app.post('/ssf/stream', function (req, res) {
   if (body.delivery && body.delivery.method === streams.DELIVERY_PUSH) {
     const problem = transport.urlProblem(body.delivery.endpoint_url);
     if (problem) {
+      errorCodes.mark(res, 'STS-SSF-0012');
       fail(res, 400, 'invalid_request',
         'delivery.endpoint_url cannot be dialled by this transmitter: ' +
         problem + '. It is refused now rather than at delivery time, ' +
@@ -569,6 +953,7 @@ app.post('/ssf/stream', function (req, res) {
   }
   const created = streams.createStream(body, contextOf(req, decision));
   if (!created.ok) {
+    errorCodes.mark(res, 'STS-SSF-0013');
     fail(res, 400, 'invalid_request', created.errors.join(' '));
     log.debug('Leaving POST /ssf/stream. Refused.');
     return;
@@ -598,7 +983,7 @@ app.post('/ssf/stream', function (req, res) {
   log.debug('Leaving POST /ssf/stream. ' + created.stream.stream_id);
 });
 
-app.get('/ssf/stream', function (req, res) {
+app.get('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering GET /ssf/stream.');
   if (offCheck(res)) {
     log.debug('Leaving GET /ssf/stream. Off.');
@@ -621,6 +1006,7 @@ app.get('/ssf/stream', function (req, res) {
   }
   const record = streams.getStream(id);
   if (!record) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '". A GET with no stream_id lists ' +
       'every stream this transmitter holds.');
@@ -645,6 +1031,7 @@ function updateRoute(req, res, mode) {
   }
   const body = jsonBody(req);
   if (!body) {
+    errorCodes.mark(res, 'STS-SSF-0011');
     fail(res, 400, 'invalid_request', 'The request body is not JSON.');
     log.debug('Leaving updateRoute(). Not JSON.');
     return;
@@ -652,6 +1039,7 @@ function updateRoute(req, res, mode) {
   const id = String(body.stream_id || req.query.stream_id || '');
   const record = streams.getStream(id);
   if (!record) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '". The id goes in the body as ' +
       'stream_id, or in the query string.');
@@ -661,6 +1049,7 @@ function updateRoute(req, res, mode) {
   const updated = streams.updateStream(id, body, mode,
                                        contextOf(req, decision));
   if (!updated.ok) {
+    errorCodes.mark(res, 'STS-SSF-0015');
     fail(res, 400, 'invalid_request', updated.errors.join(' '));
     log.debug('Leaving updateRoute(). Refused.');
     return;
@@ -675,19 +1064,19 @@ function updateRoute(req, res, mode) {
   log.debug('Leaving updateRoute(). ' + id);
 }
 
-app.put('/ssf/stream', function (req, res) {
+app.put('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering PUT /ssf/stream.');
   updateRoute(req, res, 'replace');
   log.debug('Leaving PUT /ssf/stream.');
 });
 
-app.patch('/ssf/stream', function (req, res) {
+app.patch('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering PATCH /ssf/stream.');
   updateRoute(req, res, 'merge');
   log.debug('Leaving PATCH /ssf/stream.');
 });
 
-app.delete('/ssf/stream', function (req, res) {
+app.delete('/ssf/stream', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering DELETE /ssf/stream.');
   if (offCheck(res)) {
     log.debug('Leaving DELETE /ssf/stream. Off.');
@@ -701,6 +1090,7 @@ app.delete('/ssf/stream', function (req, res) {
   const body = jsonBody(req) || {};
   const id = String(body.stream_id || req.query.stream_id || '');
   if (!streams.getStream(id)) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '".');
     log.debug('Leaving DELETE /ssf/stream. No such stream.');
@@ -727,7 +1117,7 @@ app.delete('/ssf/stream', function (req, res) {
 // receiver agreed that type — which is the one event a receiver gets without
 // asking for it, and the one whose absence is hardest to notice.
 // ---------------------------------------------------------------------------
-app.get('/ssf/status', function (req, res) {
+app.get('/ssf/status', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering GET /ssf/status.');
   if (offCheck(res)) {
     log.debug('Leaving GET /ssf/status. Off.');
@@ -741,6 +1131,7 @@ app.get('/ssf/status', function (req, res) {
   const id = String(req.query.stream_id || '');
   const record = streams.getStream(id);
   if (!record) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '".');
     log.debug('Leaving GET /ssf/status. No such stream.');
@@ -752,7 +1143,7 @@ app.get('/ssf/status', function (req, res) {
   log.debug('Leaving GET /ssf/status. ' + record.status);
 });
 
-app.post('/ssf/status', function (req, res) {
+app.post('/ssf/status', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/status.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/status. Off.');
@@ -765,6 +1156,7 @@ app.post('/ssf/status', function (req, res) {
   }
   const body = jsonBody(req);
   if (!body) {
+    errorCodes.mark(res, 'STS-SSF-0011');
     fail(res, 400, 'invalid_request', 'The request body is not JSON.');
     log.debug('Leaving POST /ssf/status. Not JSON.');
     return;
@@ -774,6 +1166,7 @@ app.post('/ssf/status', function (req, res) {
                                     String(body.reason || ''));
   if (!changed.ok) {
     const status = streams.getStream(id) ? 400 : 404;
+    errorCodes.mark(res, status === 404 ? 'STS-SSF-0014' : 'STS-SSF-0016');
     fail(res, status, 'invalid_request', changed.errors.join(' '));
     log.debug('Leaving POST /ssf/status. Refused.');
     return;
@@ -813,7 +1206,7 @@ app.post('/ssf/status', function (req, res) {
 // receiver tidying up after a crash must not have to know what it had already
 // removed.
 // ---------------------------------------------------------------------------
-app.post('/ssf/subjects/add', function (req, res) {
+app.post('/ssf/subjects/add', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/subjects/add.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/subjects/add. Off.');
@@ -826,12 +1219,14 @@ app.post('/ssf/subjects/add', function (req, res) {
   }
   const body = jsonBody(req);
   if (!body) {
+    errorCodes.mark(res, 'STS-SSF-0011');
     fail(res, 400, 'invalid_request', 'The request body is not JSON.');
     log.debug('Leaving POST /ssf/subjects/add. Not JSON.');
     return;
   }
   const id = String(body.stream_id || '');
   if (!streams.getStream(id)) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '".');
     log.debug('Leaving POST /ssf/subjects/add. No such stream.');
@@ -840,6 +1235,7 @@ app.post('/ssf/subjects/add', function (req, res) {
   const added = streams.addSubject(id, body.subject, body.verified !== false,
                                    { criticalMembers: criticalMembers() });
   if (!added.ok) {
+    errorCodes.mark(res, 'STS-SSF-0017');
     fail(res, 400, 'invalid_request', added.errors.join(' '));
     log.debug('Leaving POST /ssf/subjects/add. Refused.');
     return;
@@ -853,7 +1249,8 @@ app.post('/ssf/subjects/add', function (req, res) {
   log.debug('Leaving POST /ssf/subjects/add.');
 });
 
-app.post('/ssf/subjects/remove', function (req, res) {
+app.post('/ssf/subjects/remove', ssfCluster.spendGnapProof,
+  function (req, res) {
   log.debug('Entering POST /ssf/subjects/remove.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/subjects/remove. Off.');
@@ -866,12 +1263,14 @@ app.post('/ssf/subjects/remove', function (req, res) {
   }
   const body = jsonBody(req);
   if (!body) {
+    errorCodes.mark(res, 'STS-SSF-0011');
     fail(res, 400, 'invalid_request', 'The request body is not JSON.');
     log.debug('Leaving POST /ssf/subjects/remove. Not JSON.');
     return;
   }
   const id = String(body.stream_id || '');
   if (!streams.getStream(id)) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '".');
     log.debug('Leaving POST /ssf/subjects/remove. No such stream.');
@@ -879,6 +1278,7 @@ app.post('/ssf/subjects/remove', function (req, res) {
   }
   const removed = streams.removeSubject(id, body.subject);
   if (!removed.ok) {
+    errorCodes.mark(res, 'STS-SSF-0018');
     fail(res, 400, 'invalid_request', removed.errors.join(' '));
     log.debug('Leaving POST /ssf/subjects/remove. Refused.');
     return;
@@ -909,7 +1309,7 @@ app.post('/ssf/subjects/remove', function (req, res) {
 // verify as often as it likes, and turning the second one on makes the 429
 // reachable.
 // ---------------------------------------------------------------------------
-app.post('/ssf/verify', function (req, res) {
+app.post('/ssf/verify', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/verify.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/verify. Off.');
@@ -922,6 +1322,7 @@ app.post('/ssf/verify', function (req, res) {
   }
   const body = jsonBody(req);
   if (!body) {
+    errorCodes.mark(res, 'STS-SSF-0011');
     fail(res, 400, 'invalid_request', 'The request body is not JSON.');
     log.debug('Leaving POST /ssf/verify. Not JSON.');
     return;
@@ -929,6 +1330,7 @@ app.post('/ssf/verify', function (req, res) {
   const id = String(body.stream_id || '');
   const record = streams.getStream(id);
   if (!record) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '".');
     log.debug('Leaving POST /ssf/verify. No such stream.');
@@ -939,6 +1341,7 @@ app.post('/ssf/verify', function (req, res) {
   if (config.value('ssf.verificationRateLimit') && interval > 0 &&
       record.lastVerificationAt && since < interval) {
     res.set('Retry-After', String(interval - since));
+    errorCodes.mark(res, 'STS-SSF-0019');
     fail(res, 429, 'invalid_request',
       'This stream was verified ' + since + ' second(s) ago and its ' +
       'min_verification_interval is ' + interval + '. That interval is ' +
@@ -949,6 +1352,10 @@ app.post('/ssf/verify', function (req, res) {
     return;
   }
   record.lastVerificationAt = nowSec();
+  // Reported to the journal: `ssf.verificationRateLimit` reads it back, and a
+  // worker that never learnt of it would let a receiver verify as often as
+  // the pool had workers.
+  streams.touch(record);
   transmit(record, {
     uri: events.SSF_PREFIX + 'verification',
     payload: typeof body.state === 'string' && body.state !== ''
@@ -958,6 +1365,7 @@ app.post('/ssf/verify', function (req, res) {
       // A 202 was already the wrong answer here: the receiver asked whether
       // the pipe works and the answer is no. The refusal names why, which is
       // the whole value of the request.
+      errorCodes.mark(res, 'STS-SSF-0020');
       fail(res, 400, 'invalid_request',
         'The verification event was not delivered: ' + report.why);
       log.debug('Leaving POST /ssf/verify. Not delivered.');
@@ -985,7 +1393,7 @@ app.post('/ssf/verify', function (req, res) {
 // a request open. RFC 8936 permits a transmitter to answer immediately in any
 // case, and long-polling a mock would tie up a socket to demonstrate nothing.
 // ---------------------------------------------------------------------------
-app.post('/ssf/poll', function (req, res) {
+app.post('/ssf/poll', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering POST /ssf/poll.');
   if (offCheck(res)) {
     log.debug('Leaving POST /ssf/poll. Off.');
@@ -998,6 +1406,7 @@ app.post('/ssf/poll', function (req, res) {
   }
   const body = jsonBody(req);
   if (!body) {
+    errorCodes.mark(res, 'STS-SSF-0011');
     fail(res, 400, 'invalid_request', 'The request body is not JSON.');
     log.debug('Leaving POST /ssf/poll. Not JSON.');
     return;
@@ -1005,6 +1414,7 @@ app.post('/ssf/poll', function (req, res) {
   const id = String(body.stream_id || req.query.stream_id || '');
   const record = streams.getStream(id);
   if (!record) {
+    errorCodes.mark(res, 'STS-SSF-0014');
     fail(res, 404, 'invalid_request',
       'No stream with stream_id "' + id + '". RFC 8936 has no stream_id ' +
       'member — a real poll endpoint is per stream, and this transmitter ' +
@@ -1014,6 +1424,7 @@ app.post('/ssf/poll', function (req, res) {
     return;
   }
   if (record.delivery.method !== streams.DELIVERY_POLL) {
+    errorCodes.mark(res, 'STS-SSF-0021');
     fail(res, 400, 'invalid_request',
       'Stream ' + id + ' is a PUSH stream (' + record.delivery.method +
       '), so its events are POSTed to ' + record.delivery.endpoint_url +
@@ -1049,134 +1460,16 @@ app.post('/ssf/poll', function (req, res) {
 // here" rather than as invalid — those are different sentences and conflating
 // them would be a receiver blaming a transmitter for its own missing key.
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// THE PUBLIC KEY A RECEIVED SET IS CHECKED AGAINST, and the reason this is a
-// function rather than one line.
-//
-// This service can only verify a signature made with a key IT HOLDS — it
-// follows no `jwks_uri`, here or anywhere else, for the reason
-// `applications.js` gives about `oauthJwksUri` and `federation_http.js`
-// repeats: fetching a URL a caller supplied in order to verify a credential is
-// a server-side request forgery with a specification citation attached. So the
-// key is looked up in this realm's own key set, BY `kid` FIRST and by
-// algorithm second.
-//
-// **BY kid FIRST IS THE PART THAT MATTERS.** Two of this service's keys share
-// an `alg` — the Ed25519 and Ed448 pair, because RFC 8037 registers one
-// algorithm value for both curves and puts the curve in the key — so an
-// algorithm-only lookup would pick one of them and report a perfectly good
-// Ed448 signature as not verifying.
-//
-// A SET signed by anybody else resolves to no key, and that is reported as NOT
-// VERIFIABLE HERE rather than as invalid. Those are different sentences and
-// conflating them would be a receiver blaming a transmitter for its own
-// missing key.
-// ---------------------------------------------------------------------------
-function publicKeyForHeader(header) {
-  log.debug('Entering publicKeyForHeader().');
-  const kid = String((header || {}).kid || '');
-  const alg = String((header || {}).alg || '');
-  if (alg === 'RS256' || kid === STS.kid) {
-    // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,
-    // where eight modules already read it — so it is resolved separately from
-    // the certificate this service publishes for it.
-    try {
-      log.debug('Leaving publicKeyForHeader(). The service RSA key.');
-      return { key: nodeCrypto.createPublicKey(STS.certPem), pq: false };
-    } catch (e) {
-      log.debug('Leaving publicKeyForHeader(). The certificate would not ' +
-                'load: ' + e.message);
-      return null;
-    }
-  }
-  const list = allSigningKeys();
-  const found = list.filter(function (one) {
-    return kid ? one.publicJwk.kid === kid : one.alg === alg;
-  })[0];
-  if (!found) {
-    log.debug('Leaving publicKeyForHeader(). No key of ours matches.');
-    return null;
-  }
-  if (found.publicJwk.kty === 'AKP') {
-    // A post-quantum key. `verifyCompactJws()` wants the raw public bytes,
-    // which the AKP JWK carries in `pub`.
-    log.debug('Leaving publicKeyForHeader(). A post-quantum key.');
-    return { key: { pub: found.publicJwk.pub }, pq: true };
-  }
-  try {
-    log.debug('Leaving publicKeyForHeader(). ' + found.alg + '.');
-    return { key: nodeCrypto.createPublicKey({ key: found.publicJwk,
-      format: 'jwk' }), pq: false };
-  } catch (e) {
-    log.debug('Leaving publicKeyForHeader(). The JWK would not load: ' +
-              e.message);
-    return null;
-  }
-}
-
-function verifyReceivedSet(token, header) {
-  log.debug('Entering verifyReceivedSet().');
-  if (!header) {
-    log.debug('Leaving verifyReceivedSet(). No readable header.');
-    return { verified: false,
-      note: 'there is no readable protected header, so there is nothing to ' +
-            'look a key up by' };
-  }
-  const resolved = publicKeyForHeader(header);
-  if (!resolved) {
-    log.debug('Leaving verifyReceivedSet(). No key.');
-    return { verified: false,
-      note: 'not verifiable here: this service holds no key matching kid "' +
-            String(header.kid || '(none)') + '" / alg "' +
-            String(header.alg || '(none)') + '". It follows no jwks_uri — ' +
-            'fetching a URL a caller supplied in order to verify a ' +
-            'credential is the request forgery this repository refuses ' +
-            'everywhere — so a SET signed by anybody else is UNVERIFIABLE ' +
-            'here rather than invalid. Those are different sentences.' };
-  }
-  try {
-    stsCrypto.verifyCompactJws(token, resolved.key,
-      { algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS });
-    log.debug('Leaving verifyReceivedSet(). Verified.');
-    return { verified: true,
-      note: 'verified against this service\'s own ' +
-            String(header.alg) + ' key' };
-  } catch (e) {
-    // A signature that does not verify, or one this build cannot check. Both
-    // are reported rather than thrown: the whole point of this endpoint is to
-    // say what arrived, and "it did not verify" IS what arrived.
-    log.debug('Leaving verifyReceivedSet(). It did not verify.');
-    return { verified: false,
-      note: 'the signature did not verify against this service\'s own key: ' +
-            e.message };
-  }
-}
-
-function readSetForDisplay(token) {
-  log.debug('Entering readSetForDisplay().');
-  const parts = String(token || '').split('.');
-  const out = { header: null, claims: null, problem: '' };
-  if (parts.length !== 3) {
-    out.problem = 'This is not a compact JWS — a Security Event Token has ' +
-      'three dot-separated parts and this has ' + parts.length + '.';
-    log.debug('Leaving readSetForDisplay(). Not a compact JWS.');
-    return out;
-  }
-  try {
-    out.header = JSON.parse(Buffer.from(parts[0], 'base64url')
-      .toString('utf8'));
-    out.claims = JSON.parse(Buffer.from(parts[1], 'base64url')
-      .toString('utf8'));
-  } catch (e) {
-    // Undecodable. Reported rather than thrown: the whole point of this
-    // endpoint is to say what arrived, and "it would not decode" IS what
-    // arrived.
-    out.problem = 'The header or the payload would not decode as base64url ' +
-      'JSON: ' + e.message;
-  }
-  log.debug('Leaving readSetForDisplay(). ' + (out.problem || 'read'));
-  return out;
-}
+// THE READING AND THE VERIFICATION ARE `ssf_events.js`'s SINCE 2026-09-10, AND
+// THEY MOVED BECAUSE A SECOND RECEIVER ARRIVED. `publicKeyForHeader()`,
+// `verifyReceivedSet()` and `readSetForDisplay()` were private to this file
+// while this endpoint was the only thing in the service that ever read a SET it
+// was handed. The admin console and the user portal are receivers of their own
+// now (`ssf/ssf_receivers.js`), with a receive endpoint each, and three
+// receivers reading a SET three ways would be three opinions about what
+// arrived. `events.readSet()` and `events.verifySet()` are the same code in the
+// file that owns the envelope — building a SET and reading one back are the two
+// directions of one format.
 
 app.post('/ssf/receive', function (req, res) {
   log.debug('Entering POST /ssf/receive.');
@@ -1185,6 +1478,7 @@ app.post('/ssf/receive', function (req, res) {
     return;
   }
   if (!config.value('ssf.receiveEnabled')) {
+    errorCodes.mark(res, 'STS-SSF-0022');
     fail(res, 501, 'invalid_request',
       'This service is not accepting pushed events (ssf.receiveEnabled). ' +
       'It is a RECEIVER only for the debugger\'s benefit — the roles ' +
@@ -1197,6 +1491,7 @@ app.post('/ssf/receive', function (req, res) {
       : String((req.body && req.body.token) || ''));
   const token = raw.trim();
   if (!token) {
+    errorCodes.mark(res, 'STS-SSF-0023');
     fail(res, 400, 'invalid_request',
       'The body is empty. RFC 8935 section 2.1 puts the Security Event ' +
       'Token in the body as application/secevent+jwt, with no form ' +
@@ -1206,11 +1501,12 @@ app.post('/ssf/receive', function (req, res) {
   }
   const contentType = String((req.headers || {})['content-type'] || '')
     .split(';')[0].trim().toLowerCase();
-  const read = readSetForDisplay(token);
-  const verdict = verifyReceivedSet(token, read.header);
+  const read = events.readSet(token);
+  const verdict = events.verifySet(token, read.header);
   const verified = verdict.verified;
   const verificationNote = verdict.note;
   if (!verified && config.value('ssf.receiveRequireSignature')) {
+    errorCodes.mark(res, 'STS-SSF-0024');
     fail(res, 400, 'invalid_key', verificationNote);
     log.debug('Leaving POST /ssf/receive. Signature required.');
     return;
@@ -1231,12 +1527,14 @@ app.post('/ssf/receive', function (req, res) {
   audit.audit({ action: 'ssf.event.receive', category: 'signals',
     protocol: 'SSF', channel: 'http',
     outcome: read.problem ? 'failure' : 'success',
+    errorCode: read.problem ? 'STS-SSF-0025' : '',
     target: String((read.claims || {}).jti || ''),
     summary: 'A Security Event Token was pushed at this service' +
       (verified ? ' and verified' : ''),
     detail: { types: Object.keys((read.claims || {}).events || {}),
       contentType: contentType } });
   if (read.problem) {
+    errorCodes.mark(res, 'STS-SSF-0025');
     fail(res, 400, 'invalid_request', read.problem +
       ' It has been recorded anyway and is on /admin/ssf, because what ' +
       'arrived is the question being asked.');
@@ -1250,7 +1548,7 @@ app.post('/ssf/receive', function (req, res) {
   log.debug('Leaving POST /ssf/receive. Accepted.');
 });
 
-app.get('/ssf/received', function (req, res) {
+app.get('/ssf/received', ssfCluster.spendGnapProof, function (req, res) {
   log.debug('Entering GET /ssf/received.');
   if (offCheck(res)) {
     log.debug('Leaving GET /ssf/received. Off.');
@@ -1277,7 +1575,7 @@ function description(req) {
   const out = {
     enabled: enabled(),
     issuer: issuerFor(req),
-    metadataUrl: baseUrlOf(req) + realms.currentPrefix() + WELL_KNOWN,
+    metadataUrl: baseUrlOf(req) + WELL_KNOWN,
     metadata: metadata(req),
     signingAlgorithm: events.signingAlgorithm(),
     delivery: streams.DELIVERY_METHODS.map(function (row) {
@@ -1288,10 +1586,16 @@ function description(req) {
       allowed: transport.pushAllowed(),
       allowInsecure: transport.allowInsecure(),
       allowedHosts: transport.allowedHosts(),
-      retries: false,
-      note: 'Nothing here retries a failed push, deliberately: a client ' +
-            'that answers 500 to the first and 202 to the second would ' +
-            'look, from its own logs, like a client that works.'
+      retries: config.value('ssf.pushRetries'),
+      maxResponseBytes: transport.maxBodyBytes(),
+      note: config.value('ssf.pushRetries') > 0
+        ? 'A failed push is tried again up to ' +
+          config.value('ssf.pushRetries') + ' time(s) (ssf.pushRetries) — ' +
+          'only a connection failure, a timeout, a 5xx or a 429, never a ' +
+          'receiver\'s 400 refusal.'
+        : 'Nothing here retries a failed push by default (ssf.pushRetries ' +
+          'is 0): a client that answers 500 to the first and 202 to the ' +
+          'second would look, from its own logs, like a client that works.'
     },
     eventTypes: events.EVENTS.map(function (row) {
       return { uri: row.uri, name: row.name, family: row.family,
@@ -1313,7 +1617,8 @@ function description(req) {
       return { stream_id: record.stream_id, status: record.status,
         delivery: record.delivery.method,
         events_delivered: record.events_delivered,
-        subjects: record.subjects.length, queued: record.queue.length,
+        subjects: record.subjects.length,
+        queued: streams.queueOf(record).length,
         counters: record.counters, createdAt: record.createdAt,
         lastPushError: record.lastPushError };
     }),
@@ -1389,8 +1694,9 @@ function description(req) {
         answer: 'A deprecated `sub` claim appears beside `sub_id`' }
     ],
     doesNotDo: [
-      'It never retries a failed push. RFC 8935 permits a retry; a mock ' +
-        'that retried would make a receiver\'s one-shot failure invisible.',
+      'It does not retry a failed push unless ssf.pushRetries says to, ' +
+        'and that is 0 by default. RFC 8935 permits a retry; a mock that ' +
+        'retried would make a receiver\'s one-shot failure invisible.',
       'It generates no event on its own. Nothing watches a session — every ' +
         'SET was asked for. SSF defines no event about a session, so a ' +
         'transmitter that invented one would be inventing a vocabulary. ' +
@@ -1537,9 +1843,9 @@ app.get('/ssf', function (req, res) {
     'the transmitter PUBLISH what it accepts, in ' +
     '<code>authorization_schemes</code> &mdash; so a receiver discovers how ' +
     'to authenticate rather than guessing. It is ' +
-    (info.authentication.required ? 'ON' : 'OFF (<code>ssf.authRequired' +
-      '</code>)') + '. ' + xmlEscape(info.authentication.note) + '</p>' +
-    '<table><tr><th>Scheme</th><th>spec_urn</th><th>What</th></tr>' +
+    (info.authentication.required ? 'ON' : 'OFF (<code>unreachable since ' +
+      '2026-09-06</code>)') + '. ' + xmlEscape(info.authentication.note) +
+    '</p><table><tr><th>Scheme</th><th>spec_urn</th><th>What</th></tr>' +
     schemeRows + '</table>' +
     '<h2>Streams right now</h2>' +
     '<table><tr><th>stream_id</th><th>Status</th><th>Delivery</th>' +
@@ -1609,17 +1915,62 @@ function consoleReport(req) {
           verified: one.verified, addedAt: one.addedAt,
           subject: one.subject };
       }),
-      queue: record.queue.map(function (one) {
+      queue: streams.queueOf(record).map(function (one) {
         return { jti: one.jti, queuedAt: one.queuedAt,
           deliveredAt: one.deliveredAt,
           summary: events.describeSet(one.claims) };
       }),
+      // DEAD OR ALIVE, and what could not be delivered (2026-09-14). The
+      // dead letters are newest first and carry no token — a SET is a signed
+      // statement about somebody, and a console page is not where it goes.
+      dead: streams.isDead(record),
+      deadSince: Number(record.deadSinceMs) > 0
+        ? new Date(Number(record.deadSinceMs)).toISOString() : '',
+      deadReason: record.deadReason || '',
+      failingSince: Number(record.failingSinceMs) > 0
+        ? new Date(Number(record.failingSinceMs)).toISOString() : '',
+      nextProbeAt: Number(record.nextProbeAtMs) > 0
+        ? new Date(Number(record.nextProbeAtMs)).toISOString() : '',
+      deadLetters: streams.deadLettersOf(record).reverse().map(function (one) {
+        return { jti: one.jti, queuedAt: one.queuedAt, deadAt: one.deadAt,
+          reason: one.reason, errorCode: one.errorCode, status: one.status,
+          signed: one.signed,
+          summary: one.claims ? events.describeSet(one.claims) : null };
+      }),
       log: record.log.slice().reverse()
     };
   });
+  info.deadLetters = {
+    retentionS: config.value('ssf.deadLetterRetentionS'),
+    maxPerStream: config.value('ssf.deadLetterMaxPerStream'),
+    deadStreamTimeoutS: config.value('ssf.deadStreamTimeoutS'),
+    pushes: transport.pushGateState()
+  };
   info.receivedDetail = streams.listReceived().slice().reverse();
   log.debug('Leaving consoleReport().');
   return info;
+}
+
+// ---------------------------------------------------------------------------
+// A CONSOLE OR MANAGEMENT API ACTION THIS FAMILY REFUSED, RECORDED.
+//
+// The action functions below hand a result to the console's responder rather
+// than answering a request themselves, so the code cannot be marked on a
+// response here. It is an audit row instead, and the result — which that
+// responder serialises for /admin-api — is returned untouched and carries no
+// code. The errors are this service's own sentences; no credential is in them.
+// ---------------------------------------------------------------------------
+function actionRefused(code, protocol, name, result) {
+  log.debug('Entering actionRefused(). ' + code);
+  audit.failure(code, {
+    protocol: protocol, channel: 'http',
+    target: String(name || ''),
+    summary: 'The ' + protocol + ' console action "' + String(name || '') +
+      '" was refused',
+    detail: { why: ((result || {}).errors || []).join(' ') }
+  });
+  log.debug('Leaving actionRefused().');
+  return Promise.resolve(result);
 }
 
 // The four actions the console's forms and `POST /admin-api/ssf/:action` share
@@ -1631,7 +1982,7 @@ function consoleAction(name, body, req) {
   if (name === 'delete') {
     if (!streams.getStream(id)) {
       log.debug('Leaving consoleAction(). No such stream.');
-      return Promise.resolve({ ok: false,
+      return actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
         errors: ['No stream with stream_id "' + id + '".'] });
     }
     streams.removeStream(id);
@@ -1647,11 +1998,13 @@ function consoleAction(name, body, req) {
                                       String(asked.reason || ''));
     if (!changed.ok) {
       log.debug('Leaving consoleAction(). Refused.');
-      return Promise.resolve({ ok: false, errors: changed.errors });
+      return actionRefused(streams.getStream(id) ? 'STS-SSF-0046'
+        : 'STS-SSF-0045', 'SSF', name, { ok: false, errors: changed.errors });
     }
     audit.audit({ action: 'ssf.stream.status', category: 'signals',
       protocol: 'SSF', channel: 'http', target: id,
       summary: 'The stream is now ' + changed.stream.status });
+    log.debug("Leaving consoleAction().");
     return transmit(changed.stream, {
       uri: events.SSF_PREFIX + 'stream-updated',
       payload: { status: changed.stream.status,
@@ -1671,7 +2024,7 @@ function consoleAction(name, body, req) {
     const record = streams.getStream(id);
     if (!record) {
       log.debug('Leaving consoleAction(). No such stream.');
-      return Promise.resolve({ ok: false,
+      return actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
         errors: ['No stream with stream_id "' + id + '".'] });
     }
     let payload = asked.payload;
@@ -1680,7 +2033,7 @@ function consoleAction(name, body, req) {
         payload = JSON.parse(payload || '{}');
       } catch (e) {
         log.debug('Leaving consoleAction(). The payload is not JSON.');
-        return Promise.resolve({ ok: false,
+        return actionRefused('STS-SSF-0047', 'SSF', name, { ok: false,
           errors: ['The event payload is not JSON: ' + e.message] });
       }
     }
@@ -1690,12 +2043,13 @@ function consoleAction(name, body, req) {
         subject = JSON.parse(subject);
       } catch (e) {
         log.debug('Leaving consoleAction(). The subject is not JSON.');
-        return Promise.resolve({ ok: false,
+        return actionRefused('STS-SSF-0048', 'SSF', name, { ok: false,
           errors: ['The subject is not JSON: ' + e.message] });
       }
     } else if (typeof subject === 'string') {
       subject = null;
     }
+    log.debug("Leaving consoleAction().");
     return transmit(record, { uri: String(asked.type || ''),
       payload: payload || {}, subject: subject || null,
       txn: String(asked.txn || '') }).then(function (report) {
@@ -1715,6 +2069,47 @@ function consoleAction(name, body, req) {
     return Promise.resolve({ ok: true, errors: [],
       message: gone + ' received event(s) dropped.' });
   }
+  // REVIVE A DEAD PUSH STREAM BY HAND (2026-09-14): it is pushed to again at
+  // once. Refused for a stream that is not dead, which is a refusal a caller
+  // can act on — reviving a live stream would do nothing and report success.
+  if (name === 'revive') {
+    const record = streams.getStream(id);
+    if (!record) {
+      log.debug('Leaving consoleAction(). No such stream.');
+      return actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
+        errors: ['No stream with stream_id "' + id + '".'] });
+    }
+    if (!streams.revive(record, String(asked.reason || ''))) {
+      log.debug('Leaving consoleAction(). Not dead.');
+      return actionRefused('STS-SSF-0095', 'SSF', name, { ok: false,
+        errors: ['Stream ' + id + ' is not dead, so there is nothing to ' +
+                 'revive. A stream is declared dead when its pushes have all ' +
+                 'failed for ssf.deadStreamTimeoutS.'] });
+    }
+    streamRevived(record, 'revived by hand');
+    log.debug('Leaving consoleAction(). Revived.');
+    return Promise.resolve({ ok: true, errors: [],
+      message: 'Stream ' + id + ' is alive again and will be pushed to. Its ' +
+               'dead-letter queue is kept until ssf.deadLetterRetentionS ' +
+               'passes.' });
+  }
+  // EMPTY A STREAM'S DEAD-LETTER QUEUE BY HAND. What is dropped was already
+  // undeliverable; nothing is sent.
+  if (name === 'clear-dead-letters') {
+    const record = streams.getStream(id);
+    if (!record) {
+      log.debug('Leaving consoleAction(). No such stream.');
+      return actionRefused('STS-SSF-0045', 'SSF', name, { ok: false,
+        errors: ['No stream with stream_id "' + id + '".'] });
+    }
+    const gone = streams.clearDeadLettersFor(id);
+    audit.audit({ action: 'ssf.deadletter.clear', category: 'signals',
+      protocol: 'SSF', channel: 'http', target: id,
+      summary: gone + ' dead letter(s) dropped from ' + id });
+    log.debug('Leaving consoleAction(). Dead letters cleared.');
+    return Promise.resolve({ ok: true, errors: [],
+      message: gone + ' dead letter(s) dropped from ' + id + '.' });
+  }
   // THE REFUSAL IS SPELLED THE WAY EVERY OTHER ACTION HANDLER HERE SPELLS IT,
   // AND IT WAS NOT UNTIL 2026-09-01. It said `"x" is not an action on this
   // resource. The ones that are: …`, which reads perfectly well and is
@@ -1732,19 +2127,33 @@ function consoleAction(name, body, req) {
   // the same reason: `applicationsAction()` said "The six are" over seven for
   // a fortnight.
   log.debug('Leaving consoleAction(). Unknown action.');
-  return Promise.resolve({ ok: false,
+  return actionRefused('STS-SSF-0049', 'SSF', name, { ok: false,
     errors: ['Unknown action "' + String(name) + '". The ' +
       numberWord(CONSOLE_ACTIONS.length) + ' are: ' +
       CONSOLE_ACTIONS.join(', ') + '.'] });
 }
 
-const CONSOLE_ACTIONS = ['status', 'delete', 'transmit', 'clear-received'];
+const CONSOLE_ACTIONS = ['status', 'delete', 'transmit', 'clear-received',
+                         'revive', 'clear-dead-letters'];
 
 adminConsole.setSignalsReporter({
   report: consoleReport,
+  // Monitoring → Shared Signals → Dead letters and
+  // GET /admin-api/ssf/dead-letters (2026-09-14), read inside the ambient
+  // realm. A member of THIS slot rather than a slot of its own: it reads the
+  // same family through the same require, and rule 3e's test for a new slot
+  // is a new cycle or a moved route, neither of which a second reader adds.
+  deadLetters: function () {
+    log.debug('Entering deadLetters().');
+    const out = deadLetterReport.report();
+    log.debug('Leaving deadLetters(). ' + out.totals.held + ' held.');
+    return out;
+  },
   action: consoleAction,
   actions: CONSOLE_ACTIONS,
   eventTypes: function () {
+    log.debug("Entering eventTypes().");
+    log.debug("Leaving eventTypes().");
     return events.EVENTS.map(function (row) {
       return { uri: row.uri, name: row.name,
         offered: events.supportedEventUris().indexOf(row.uri) >= 0 };
@@ -1803,7 +2212,7 @@ function caepAutoEmit(notice) {
     return Promise.resolve({ sent: 0, streams: 0 });
   }
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(due.uri) >= 0 &&
+    return streams.deliversEvent(record, due.uri) &&
            streams.streamCoversSubject(record, due.subject);
   });
   if (!candidates.length) {
@@ -1824,6 +2233,7 @@ function caepAutoEmit(notice) {
     log.debug('Leaving caepAutoEmit(). No stream takes it.');
     return Promise.resolve({ sent: 0, streams: 0 });
   }
+  log.debug("Leaving caepAutoEmit().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: due.uri, payload: due.payload,
       subject: due.subject, toe: due.payload.event_timestamp });
@@ -1841,8 +2251,118 @@ function caepAutoEmit(notice) {
     // covers this function throwing synchronously and this one covers a
     // rejected promise nobody is waiting on, which node reports as an
     // unhandled rejection and — depending on the flags — ends the process.
-    log.error('caep: automatic emission failed: ' + e.message);
+    log.error(errorCodes.tag('STS-SSF-0056') +
+              'caep: automatic emission failed: ' + e.message);
     log.debug('Leaving caepAutoEmit(). Failed.');
+    return { sent: 0, streams: candidates.length, why: e.message };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A CAEP EVENT A PROTOCOL FAMILY OBSERVED ABOUT SOMETHING THAT IS NOT A
+// SIGN-ON SESSION.
+//
+// `caepAutoEmit()` above is fed by `authn.js`, and its subject is always a row
+// in the CAEP session register. GNAP (2026-09-12) is the first family whose
+// sessions are not sign-on sessions — a grant is a DELEGATED session between a
+// client instance and a resource owner, with a revocation of its own — so it
+// needs the same delivery without the register. `gnap/gnap_signals.js` argues
+// why a revoked grant is a `session-revoked` at all.
+//
+// **THE CALLER BUILDS THE SUBJECT AND THIS BUILDS EVERYTHING ELSE**, for
+// `caepAutoEmit()`'s division of labour: the payload through
+// `caep.buildPayload()` so there is one shape for every CAEP event this service
+// sends, and the candidate streams through `streamCoversSubject()` so a
+// family's subject scope (`ssf_streams.setSubjectScope()`) is honoured here
+// exactly as it is for a sign-on session.
+//
+// **IT NEVER REJECTS.** A grant revocation does not wait on somebody else's
+// push endpoint, and a failure is logged, coded and recorded on the stream.
+// ---------------------------------------------------------------------------
+function emitProtocolEvent(asked) {
+  log.debug('Entering emitProtocolEvent().');
+  const options = asked || {};
+  const protocol = String(options.protocol || 'a protocol');
+  if (!enabled()) {
+    log.debug('Leaving emitProtocolEvent(). SSF is off.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  const type = String(options.type || '');
+  const uri = type.indexOf(events.CAEP_PREFIX) === 0 ? type :
+              events.CAEP_PREFIX + type;
+  const row = events.EVENT_BY_URI[uri];
+  if (!row || row.family !== 'caep') {
+    log.warn(errorCodes.tag('STS-SSF-0073') + 'ssf: ' + protocol + ' asked ' +
+        'for a CAEP "' +
+             type + '", which is not one of CAEP\'s event types; nothing was ' +
+                    'sent.');
+    log.debug('Leaving emitProtocolEvent(). Not a CAEP type.');
+    return Promise.resolve({ sent: 0, streams: 0,
+                             why: 'not a CAEP event type' });
+  }
+  let payload;
+  try {
+    payload = caep.buildPayload(uri, options.values || {}, {
+      initiatingEntity: String(options.initiatingEntity || 'system'),
+      reasonAdmin: String(options.reasonAdmin || ''),
+      reasonUser: String(options.reasonUser || '')
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SSF-0075') + 'ssf: a CAEP ' + row.name + ' ' +
+        'from ' + protocol +
+              ' could not be built: ' + e.message);
+    log.debug('Leaving emitProtocolEvent(). The payload could not be built.');
+    return Promise.resolve({ sent: 0, streams: 0, why: e.message });
+  }
+  const verdict = events.validateEvent(uri, payload);
+  if (!verdict.ok) {
+    log.warn(errorCodes.tag('STS-SSF-0074') + 'ssf: a CAEP ' + row.name + ' ' +
+        'from ' + protocol +
+             ' is not a valid event and was not sent: ' +
+        verdict.errors.join(' '));
+    log.debug('Leaving emitProtocolEvent(). The payload is invalid.');
+    return Promise.resolve({ sent: 0, streams: 0,
+                             why: verdict.errors.join(' ') });
+  }
+  const subject = options.subject;
+  const candidates = streams.listStreams().filter(function (record) {
+    return streams.deliversEvent(record, uri) &&
+           (!subject || streams.streamCoversSubject(record, subject));
+  });
+  if (!candidates.length) {
+    // The same line caepAutoEmit() says, for the same reason: "nothing
+    // arrived" is almost always "no stream asked for that type".
+    log.info('ssf: a ' + row.name + ' from ' + protocol + ' is due about ' +
+             (subject ? subjects.describeSubject(subject) : 'nobody') + ' ' +
+                 'and NO STREAM takes it.');
+    log.debug('Leaving emitProtocolEvent(). No stream takes it.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  audit.audit({ action: 'caep.event.emit', category: 'signals',
+    protocol: 'CAEP', channel: 'http',
+    target: subject && subject.session ? String(subject.session.id || '') : '',
+    summary: 'A CAEP ' + row.name + ' was emitted for ' + protocol,
+    detail: { type: uri, streams: candidates.length, via: protocol } });
+  log.debug("Leaving emitProtocolEvent().");
+  return Promise.all(candidates.map(function (record) {
+    return transmit(record, { uri: uri, payload: payload, subject: subject,
+      toe: payload.event_timestamp });
+  })).then(function (reports) {
+    const sent = reports.filter(function (one) {
+      return one.ok;
+    }).length;
+    log.info('ssf: ' + row.name + ' from ' + protocol + ' went to ' + sent +
+        ' ' +
+        'of ' +
+             candidates.length + ' stream(s).');
+    log.debug('Leaving emitProtocolEvent(). ' + sent + ' sent.');
+    return { sent: sent, streams: candidates.length, reports: reports };
+  }).catch(function (e) {
+    // A rejected promise nobody waits on would be an unhandled rejection.
+    log.error(errorCodes.tag('STS-SSF-0075') + 'ssf: a CAEP ' + row.name + ' ' +
+        'from ' + protocol +
+              ' could not be delivered: ' + e.message);
+    log.debug('Leaving emitProtocolEvent(). Failed.');
     return { sent: 0, streams: candidates.length, why: e.message };
   });
 }
@@ -1889,7 +2409,8 @@ authn.setSessionObserver(caepAutoEmit);
 // which of the two states it is in.
 //
 // **A STREAM WITH NO APPLICATION IS COUNTED TOO**, under one row for all of
-// them. That happens when `ssf.authRequired` is off: there is no principal, so
+// them. That happened while these endpoints could be left unauthenticated
+// (`ssf.authRequired`, removed 2026-09-06): there is no principal, so
 // nothing was recorded in the registry, and the events are real. Dropping them
 // would make the totals here disagree with the totals two tables up.
 // ---------------------------------------------------------------------------
@@ -1912,8 +2433,10 @@ function caepApplications() {
   });
 
   function blank(identifier, name, registered) {
+    log.debug("Entering blank().");
     const counts = {};
     caepUris.forEach(function (uri) { counts[uri] = 0; });
+    log.debug("Leaving blank().");
     return { identifier: identifier, name: name, registered: registered,
       dn: '', declared: false, streams: [], streamCount: 0, enabled: 0,
       deliveries: [], audiences: [], takes: [], counts: counts, total: 0,
@@ -1924,10 +2447,12 @@ function caepApplications() {
   const rows = {};
   const order = [];
   function rowFor(identifier, name, registered) {
+    log.debug("Entering rowFor().");
     if (!rows[identifier]) {
       rows[identifier] = blank(identifier, name, registered);
       order.push(identifier);
     }
+    log.debug("Leaving rowFor().");
     return rows[identifier];
   }
 
@@ -1946,10 +2471,11 @@ function caepApplications() {
                        entry.name || entry.identifier, true);
     row.dn = entry.dn || '';
     row.declared = declared;
-    row.endpoints = ((entry.attributes || {}).ssfDeliveryEndpoint || []).slice();
+    row.endpoints = ((entry.attributes ||
+                      {}).ssfDeliveryEndpoint || []).slice();
   });
 
-  const NOBODY = '(no application — ssf.authRequired is off)';
+  const NOBODY = '(no application — the stream was agreed unauthenticated)';
   all.forEach(function (record) {
     const who = String(record.createdBy || '');
     const known = who && who !== '(unauthenticated)';
@@ -1969,7 +2495,7 @@ function caepApplications() {
       row.audiences.push(aud);
     }
     caepUris.forEach(function (uri) {
-      if (record.events_delivered.indexOf(uri) >= 0) {
+      if (streams.deliversEvent(record, uri)) {
         const short = uri.slice(events.CAEP_PREFIX.length);
         if (row.takes.indexOf(short) < 0) {
           row.takes.push(short);
@@ -2036,7 +2562,7 @@ function caepReport(req) {
   report.applications = caepApplications();
   report.streams = streams.listStreams().map(function (record) {
     const takes = events.CAEP_EVENT_URIS.filter(function (uri) {
-      return record.events_delivered.indexOf(uri) >= 0;
+      return streams.deliversEvent(record, uri);
     });
     return { stream_id: record.stream_id, aud: record.aud,
       status: record.status, delivery: record.delivery.method,
@@ -2061,7 +2587,7 @@ function caepEmit(asked) {
   const row = events.EVENT_BY_URI[uri];
   if (!row || row.family !== 'caep') {
     log.debug('Leaving caepEmit(). Not a CAEP event type.');
-    return Promise.resolve({ ok: false, errors: [
+    return actionRefused('STS-SSF-0050', 'CAEP', 'emit', { ok: false, errors: [
       '"' + String(asked.type || '') + '" is not one of CAEP\'s eight event ' +
       'types. They are: ' + events.CAEP_EVENT_URIS.map(function (one) {
         return one.slice(events.CAEP_PREFIX.length);
@@ -2071,7 +2597,7 @@ function caepEmit(asked) {
   const known = caep.get(sessionId);
   if (!known) {
     log.debug('Leaving caepEmit(). No such session.');
-    return Promise.resolve({ ok: false, errors: [
+    return actionRefused('STS-SSF-0051', 'CAEP', 'emit', { ok: false, errors: [
       'No session "' + sessionId + '" is tracked here. A CAEP event is ' +
       'ABOUT a session — the subject names one — so there is nothing to ' +
       'compose a subject from. Sign somebody in, or pick a row from ' +
@@ -2083,7 +2609,7 @@ function caepEmit(asked) {
       values = JSON.parse(values);
     } catch (e) {
       log.debug('Leaving caepEmit(). The payload is not JSON.');
-      return Promise.resolve({ ok: false,
+      return actionRefused('STS-SSF-0047', 'CAEP', 'emit', { ok: false,
         errors: ['The event payload is not JSON: ' + e.message] });
     }
   }
@@ -2096,11 +2622,12 @@ function caepEmit(asked) {
   const verdict = events.validateEvent(uri, payload);
   if (!verdict.ok) {
     log.debug('Leaving caepEmit(). The payload is invalid.');
-    return Promise.resolve({ ok: false, errors: verdict.errors });
+    return actionRefused('STS-SSF-0052', 'CAEP', 'emit',
+                         { ok: false, errors: verdict.errors });
   }
   const subject = caep.subjectFor(known);
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(uri) >= 0 &&
+    return streams.deliversEvent(record, uri) &&
            streams.streamCoversSubject(record, subject);
   });
   audit.audit({ action: 'caep.event.emit', category: 'signals',
@@ -2114,6 +2641,17 @@ function caepEmit(asked) {
     // "nothing arrived" traceable to "nobody asked" rather than to a bug.
     const applied = caep.applyToState(known, uri, payload);
     log.debug('Leaving caepEmit(). No stream takes it.');
+    if (!applied.ok) {
+      // The register's one hard rule refused the state change the hand
+      // emission would have made; the result below says which.
+      audit.failure('STS-SSF-0053', {
+        protocol: 'CAEP', channel: 'http',
+        target: sessionId,
+        summary: 'A hand-emitted CAEP ' + row.name + ' was refused by the ' +
+          'session register for session ' + sessionId,
+        detail: { type: uri, why: applied.errors.join(' ') } });
+    }
+    log.debug("Leaving caepEmit().");
     return Promise.resolve({ ok: applied.ok, errors: applied.errors,
       warnings: applied.warnings,
       message: applied.ok
@@ -2123,6 +2661,7 @@ function caepEmit(asked) {
           'still updated, so the change is on this page.'
         : applied.errors.join(' ') });
   }
+  log.debug("Leaving caepEmit().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: uri, payload: payload, subject: subject,
       toe: payload.event_timestamp });
@@ -2145,13 +2684,14 @@ function caepAction(name, body) {
   log.debug('Entering caepAction(). ' + name);
   const asked = body || {};
   if (name === 'emit') {
+    log.debug("Leaving caepAction().");
     return caepEmit(asked);
   }
   if (name === 'reset-session') {
     const row = caep.reset(String(asked.session_id || ''));
     if (!row) {
       log.debug('Leaving caepAction(). No such session.');
-      return Promise.resolve({ ok: false,
+      return actionRefused('STS-SSF-0054', 'CAEP', name, { ok: false,
         errors: ['No session "' + String(asked.session_id || '') + '" is ' +
                  'tracked here.'] });
     }
@@ -2176,7 +2716,7 @@ function caepAction(name, body) {
   // shape — so a handler that writes it its own way turns two checks off with
   // nothing failing.
   log.debug('Leaving caepAction(). Unknown action.');
-  return Promise.resolve({ ok: false,
+  return actionRefused('STS-SSF-0055', 'CAEP', name, { ok: false,
     errors: ['Unknown action "' + String(name) + '". The ' +
       numberWord(CAEP_CONSOLE_ACTIONS.length) + ' are: ' +
       CAEP_CONSOLE_ACTIONS.join(', ') + '.'] });
@@ -2189,6 +2729,8 @@ adminConsole.setCaepReporter({
   action: caepAction,
   actions: CAEP_CONSOLE_ACTIONS,
   eventTypes: function () {
+    log.debug("Entering eventTypes().");
+    log.debug("Leaving eventTypes().");
     return events.CAEP_EVENTS.map(function (row) {
       return { uri: row.uri, name: row.name,
         short: row.uri.slice(events.CAEP_PREFIX.length),
@@ -2247,6 +2789,7 @@ function riscAutoEmit(notice) {
     log.debug('Leaving riscAutoEmit(). Nothing is due.');
     return Promise.resolve({ sent: 0, streams: 0 });
   }
+  log.debug("Leaving riscAutoEmit().");
   return Promise.all(due.map(function (one) {
     return sendOneRiscEvent(one);
   })).then(function (results) {
@@ -2261,7 +2804,8 @@ function riscAutoEmit(notice) {
     // and this one covers a rejected promise nobody is waiting on, which node
     // reports as an unhandled rejection and — depending on the flags — ends
     // the process.
-    log.error('risc: automatic emission failed: ' + e.message);
+    log.error(errorCodes.tag('STS-SSF-0063') +
+              'risc: automatic emission failed: ' + e.message);
     log.debug('Leaving riscAutoEmit(). Failed.');
     return { sent: 0, streams: 0, why: e.message };
   });
@@ -2273,7 +2817,7 @@ function riscAutoEmit(notice) {
 function sendOneRiscEvent(due) {
   log.debug('Entering sendOneRiscEvent(). ' + due.uri);
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(due.uri) >= 0 &&
+    return streams.deliversEvent(record, due.uri) &&
            streams.streamCoversSubject(record, due.subject);
   });
   if (!candidates.length) {
@@ -2302,6 +2846,7 @@ function sendOneRiscEvent(due) {
     log.debug('Leaving sendOneRiscEvent(). No stream takes it.');
     return Promise.resolve({ sent: 0, streams: 0, uri: due.uri });
   }
+  log.debug("Leaving sendOneRiscEvent().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: due.uri, payload: due.payload,
       subject: due.subject, toe: due.payload.event_timestamp });
@@ -2315,6 +2860,150 @@ function sendOneRiscEvent(due) {
     log.debug('Leaving sendOneRiscEvent(). ' + sent + ' sent.');
     return { sent: sent, streams: candidates.length, uri: due.uri,
       reports: reports };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// WHAT AN ADMINISTRATOR DID TO SOMEBODY'S CREDENTIALS, SAID OVER RISC AND CAEP
+// (2026-09-13).
+//
+// A password reset, a reset link, a key or an authenticator app taken off,
+// every second factor disabled — performed on a person's /admin/users page or
+// through /admin-api/users, and the password a reset link sets on
+// /portal/reset-password. None of those is a directory write RISC's observer
+// can read a meaning off (a password hash moving says nothing about who
+// required what) and none is a SESSION CAEP's register could hang an event on,
+// so the two functions below are asked by name, through
+// `ssf/account_signals.js`, by the doors that know what they did.
+//
+// **THEY TAKE THE SAME SWITCHES THE AUTOMATIC EMISSIONS DO.** `caep.autoEmit`
+// and `caep.autoEmitTypes` (the act `credential`), `risc.autoEmit` and
+// `risc.autoEmitTypes` (`credentialChangeRequired`, `recoveryChanged`), the
+// RISC opt-out gate, and every stream's own agreed types and subjects. So
+// "which streams get it" has one answer however the event came about.
+//
+// **THEY NEVER REJECT**, for `riscAutoEmit()`'s reason: the credential change
+// has already happened, and a receiver's push endpoint being down must not turn
+// it into a failure on the page that made it.
+// ---------------------------------------------------------------------------
+function emitRiscAccountAct(notice) {
+  log.debug('Entering emitRiscAccountAct().');
+  if (!enabled()) {
+    log.debug('Leaving emitRiscAccountAct(). SSF is off.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  let due;
+  try {
+    due = risc.observeAct(Object.assign({}, notice || {},
+                                        { issuer: issuerFor(null) }));
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SSF-0090') + 'risc: an administrator\'s ' +
+              'act could not be turned into an event: ' + e.message);
+    log.debug('Leaving emitRiscAccountAct(). Failed.');
+    return Promise.resolve({ sent: 0, streams: 0, why: e.message });
+  }
+  if (!due.length) {
+    log.debug('Leaving emitRiscAccountAct(). Nothing is due.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  log.debug('Leaving emitRiscAccountAct().');
+  return Promise.all(due.map(function (one) {
+    return sendOneRiscEvent(one);
+  })).then(function (results) {
+    const sent = results.reduce(function (total, one) {
+      return total + one.sent;
+    }, 0);
+    return { sent: sent, streams: results.length, results: results };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-SSF-0090') + 'risc: an administrator\'s ' +
+              'act could not be delivered: ' + e.message);
+    return { sent: 0, streams: 0, why: e.message };
+  });
+}
+
+// CAEP's credential-change, about a PERSON. The subject is SSF's complex one
+// with only `user` in it — the issuer/subject pair a receiver already holds
+// from an ID Token — which is what `caep.js`'s own subject is minus the
+// session, so a stream that names the person covers it by the member rule in
+// `streamCoversSubject()`, exactly as it covers that person's sessions.
+function emitCredentialChange(asked) {
+  log.debug('Entering emitCredentialChange().');
+  const options = asked || {};
+  const username = String(options.username || '');
+  if (!enabled() || !username) {
+    log.debug('Leaving emitCredentialChange(). SSF is off or nobody named.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  if (caep.autoEmitActs().indexOf('credential') < 0) {
+    log.info('caep: a credential-change about ' + username + ' was NOT ' +
+             'emitted: caep.enabled, caep.autoEmit or caep.autoEmitTypes ' +
+             'excludes it.');
+    log.debug('Leaving emitCredentialChange(). Not an emitted act.');
+    return Promise.resolve({ sent: 0, streams: 0, why: 'not emitted' });
+  }
+  const uri = events.CAEP_PREFIX + 'credential-change';
+  let payload;
+  try {
+    payload = caep.buildPayload(uri, {
+      credential_type: String(options.credentialType || 'password'),
+      change_type: String(options.changeType || 'update'),
+      friendly_name: String(options.friendlyName || '')
+    }, {
+      initiatingEntity: String(options.initiatingEntity || 'admin'),
+      reasonAdmin: String(options.reasonAdmin || ''),
+      reasonUser: String(options.reasonUser || '')
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SSF-0091') + 'caep: a credential-change ' +
+              'about ' + username + ' could not be built: ' + e.message);
+    log.debug('Leaving emitCredentialChange(). Not built.');
+    return Promise.resolve({ sent: 0, streams: 0, why: e.message });
+  }
+  const verdict = events.validateEvent(uri, payload);
+  if (!verdict.ok) {
+    log.error(errorCodes.tag('STS-SSF-0091') + 'caep: a credential-change ' +
+              'about ' + username + ' is not a valid event: ' +
+              verdict.errors.join(' '));
+    log.debug('Leaving emitCredentialChange(). Invalid.');
+    return Promise.resolve({ sent: 0, streams: 0,
+                             why: verdict.errors.join(' ') });
+  }
+  // The person's own subject, as every token names them (2026-09-14).
+  const subject = { user: { format: 'issuer_subject_id',
+    iss: issuerFor(null), sub: helpersSubjectFor(username) || username } };
+  const candidates = streams.listStreams().filter(function (record) {
+    return streams.deliversEvent(record, uri) &&
+           streams.streamCoversSubject(record, subject);
+  });
+  audit.audit({ action: 'caep.event.auto', category: 'signals',
+    protocol: 'CAEP', channel: 'http', target: username,
+    summary: 'A CAEP credential-change (' + payload.credential_type + ', ' +
+      payload.change_type + ') is due for ' + username,
+    detail: { type: uri, streams: candidates.length,
+              via: String(options.via || '') } });
+  if (!candidates.length) {
+    log.info('caep: a credential-change about ' + username + ' is due and NO ' +
+             'STREAM takes it — none both delivers that type and covers ' +
+             subjects.describeSubject(subject) + '.');
+    log.debug('Leaving emitCredentialChange(). No stream takes it.');
+    return Promise.resolve({ sent: 0, streams: 0 });
+  }
+  log.debug('Leaving emitCredentialChange().');
+  return Promise.all(candidates.map(function (record) {
+    return transmit(record, { uri: uri, payload: payload, subject: subject,
+      toe: payload.event_timestamp });
+  })).then(function (reports) {
+    const sent = reports.filter(function (one) {
+      return one.ok;
+    }).length;
+    log.info('caep: credential-change (' + payload.credential_type + ', ' +
+             payload.change_type + ') about ' + username + ' went to ' +
+             sent + ' of ' + candidates.length + ' stream(s).');
+    return { sent: sent, streams: candidates.length, reports: reports };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-SSF-0091') + 'caep: a credential-change ' +
+              'about ' + username + ' could not be delivered: ' + e.message);
+    return { sent: 0, streams: candidates.length, why: e.message };
   });
 }
 
@@ -2355,8 +3044,10 @@ function riscApplications() {
   });
 
   function blank(identifier, name, registered) {
+    log.debug("Entering blank().");
     const counts = {};
     riscUris.forEach(function (uri) { counts[uri] = 0; });
+    log.debug("Leaving blank().");
     return { identifier: identifier, name: name, registered: registered,
       dn: '', declared: false, streams: [], streamCount: 0, enabled: 0,
       deliveries: [], audiences: [], takes: [], counts: counts, total: 0,
@@ -2367,10 +3058,12 @@ function riscApplications() {
   const rows = {};
   const order = [];
   function rowFor(identifier, name, registered) {
+    log.debug("Entering rowFor().");
     if (!rows[identifier]) {
       rows[identifier] = blank(identifier, name, registered);
       order.push(identifier);
     }
+    log.debug("Leaving rowFor().");
     return rows[identifier];
   }
 
@@ -2389,7 +3082,7 @@ function riscApplications() {
       .slice();
   });
 
-  const NOBODY = '(no application — ssf.authRequired is off)';
+  const NOBODY = '(no application — the stream was agreed unauthenticated)';
   all.forEach(function (record) {
     const who = String(record.createdBy || '');
     const known = who && who !== '(unauthenticated)';
@@ -2409,7 +3102,7 @@ function riscApplications() {
       row.audiences.push(aud);
     }
     riscUris.forEach(function (uri) {
-      if (record.events_delivered.indexOf(uri) >= 0) {
+      if (streams.deliversEvent(record, uri)) {
         const short = uri.slice(events.RISC_PREFIX.length);
         if (row.takes.indexOf(short) < 0) {
           row.takes.push(short);
@@ -2465,7 +3158,7 @@ function riscReport(req) {
   report.applications = riscApplications();
   report.streams = streams.listStreams().map(function (record) {
     const takes = events.RISC_EVENT_URIS.filter(function (uri) {
-      return record.events_delivered.indexOf(uri) >= 0;
+      return streams.deliversEvent(record, uri);
     });
     return { stream_id: record.stream_id, aud: record.aud,
       status: record.status, delivery: record.delivery.method,
@@ -2508,7 +3201,7 @@ function riscEmit(asked) {
   const row = events.EVENT_BY_URI[uri];
   if (!row || row.family !== 'risc') {
     log.debug('Leaving riscEmit(). Not a RISC event type.');
-    return Promise.resolve({ ok: false, errors: [
+    return actionRefused('STS-SSF-0057', 'RISC', 'emit', { ok: false, errors: [
       '"' + String(asked.type || '') + '" is not one of RISC\'s fourteen ' +
       'event types. They are: ' + events.RISC_EVENT_URIS.map(function (one) {
         return one.slice(events.RISC_PREFIX.length);
@@ -2517,7 +3210,7 @@ function riscEmit(asked) {
   const accountId = String(asked.account_id || '');
   if (!accountId) {
     log.debug('Leaving riscEmit(). No account named.');
-    return Promise.resolve({ ok: false, errors: [
+    return actionRefused('STS-SSF-0058', 'RISC', 'emit', { ok: false, errors: [
       'A RISC event is ABOUT an account — the subject names one and, for ' +
       'eleven of the fourteen types, the subject is the entire message — so ' +
       'there is nothing to compose one from. Name an account, or pick a row ' +
@@ -2530,7 +3223,7 @@ function riscEmit(asked) {
       values = JSON.parse(values);
     } catch (e) {
       log.debug('Leaving riscEmit(). The payload is not JSON.');
-      return Promise.resolve({ ok: false,
+      return actionRefused('STS-SSF-0047', 'RISC', 'emit', { ok: false,
         errors: ['The event payload is not JSON: ' + e.message] });
     }
   }
@@ -2542,7 +3235,8 @@ function riscEmit(asked) {
   const verdict = events.validateEvent(uri, payload);
   if (!verdict.ok) {
     log.debug('Leaving riscEmit(). The payload is invalid.');
-    return Promise.resolve({ ok: false, errors: verdict.errors });
+    return actionRefused('STS-SSF-0052', 'RISC', 'emit',
+                         { ok: false, errors: verdict.errors });
   }
   // THE STATE MACHINE'S ONE HARD RULE, ASKED BEFORE ANYTHING IS BUILT. The
   // register is updated on the way BACK through `noteTransmitted()`, so a
@@ -2552,7 +3246,8 @@ function riscEmit(asked) {
   const hard = risc.refusals(known, uri);
   if (hard.length) {
     log.debug('Leaving riscEmit(). Refused by the state machine.');
-    return Promise.resolve({ ok: false, errors: hard });
+    return actionRefused('STS-SSF-0059', 'RISC', 'emit',
+                         { ok: false, errors: hard });
   }
   const subject = risc.subjectFor(known, uri);
   const advice = events.subjectAdvice(uri, subject)
@@ -2575,11 +3270,12 @@ function riscEmit(asked) {
   if (!allowed.send) {
     known.suppressed += 1;
     log.debug('Leaving riscEmit(). Suppressed by the opt-out gate.');
-    return Promise.resolve({ ok: false, errors: [allowed.why],
-      warnings: advice });
+    return actionRefused('STS-SSF-0060', 'RISC', 'emit',
+                         { ok: false, errors: [allowed.why],
+                           warnings: advice });
   }
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(uri) >= 0 &&
+    return streams.deliversEvent(record, uri) &&
            streams.streamCoversSubject(record, subject);
   });
   audit.audit({ action: 'risc.event.emit', category: 'signals',
@@ -2593,6 +3289,17 @@ function riscEmit(asked) {
     // traceable to "nobody asked" rather than to a bug.
     const applied = risc.applyToState(known, uri, payload);
     log.debug('Leaving riscEmit(). No stream takes it.');
+    if (!applied.ok) {
+      // The same hard rule risc.refusals() applies above, reached from the
+      // register's own copy of it — one condition, one code.
+      audit.failure('STS-SSF-0059', {
+        protocol: 'RISC', channel: 'http',
+        target: accountId,
+        summary: 'A hand-emitted RISC ' + row.name + ' was refused by the ' +
+          'account register for account ' + accountId,
+        detail: { type: uri, why: applied.errors.join(' ') } });
+    }
+    log.debug("Leaving riscEmit().");
     return Promise.resolve({ ok: applied.ok, errors: applied.errors,
       warnings: applied.warnings.concat(advice),
       message: applied.ok
@@ -2602,6 +3309,7 @@ function riscEmit(asked) {
           'still updated, so the change is on this page.'
         : applied.errors.join(' ') });
   }
+  log.debug("Leaving riscEmit().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: uri, payload: payload, subject: subject,
       toe: payload.event_timestamp });
@@ -2625,13 +3333,14 @@ function riscAction(name, body) {
   log.debug('Entering riscAction(). ' + name);
   const asked = body || {};
   if (name === 'emit') {
+    log.debug("Leaving riscAction().");
     return riscEmit(asked);
   }
   if (name === 'reset-account') {
     const row = risc.reset(String(asked.account_id || ''));
     if (!row) {
       log.debug('Leaving riscAction(). No such account.');
-      return Promise.resolve({ ok: false,
+      return actionRefused('STS-SSF-0061', 'RISC', name, { ok: false,
         errors: ['No account "' + String(asked.account_id || '') + '" is ' +
                  'tracked here.'] });
     }
@@ -2656,7 +3365,7 @@ function riscAction(name, body) {
   // `sts_admin_api_operations.js`, so a handler that writes it its own way
   // turns two checks off with nothing failing.
   log.debug('Leaving riscAction(). Unknown action.');
-  return Promise.resolve({ ok: false,
+  return actionRefused('STS-SSF-0062', 'RISC', name, { ok: false,
     errors: ['Unknown action "' + String(name) + '". The ' +
       numberWord(RISC_CONSOLE_ACTIONS.length) + ' are: ' +
       RISC_CONSOLE_ACTIONS.join(', ') + '.'] });
@@ -2669,6 +3378,8 @@ adminConsole.setRiscReporter({
   action: riscAction,
   actions: RISC_CONSOLE_ACTIONS,
   eventTypes: function () {
+    log.debug("Entering eventTypes().");
+    log.debug("Leaving eventTypes().");
     return events.RISC_EVENTS.map(function (row) {
       return { uri: row.uri, name: row.name,
         short: row.uri.slice(events.RISC_PREFIX.length),
@@ -2687,20 +3398,56 @@ adminConsole.setRiscReporter({
   }
 });
 
+// ===========================================================================
+// AND THIS SERVICE'S OWN TWO SURFACES ARE REGISTERED AS RECEIVERS (2026-09-10).
+//
+// One stream each, per trust realm, asking for every CAEP and every RISC event
+// type. `ssf/ssf_receivers.js` carries the whole argument — why delivery is a
+// real RFC 8935 push over the loopback interface rather than a function call,
+// why the streams are in every realm while the console's CLIENT entry is in
+// one, and what an empty inbox page can mean.
+//
+// **THE DEFAULT REALM IS SEEDED HERE AND EVERY LATER REALM FROM `onCreate()`**,
+// which is the arrangement `applications.js`'s internal client entries have and
+// is made for its reason: a realm created at runtime is a whole logical copy of
+// this service, and a copy whose console could not be told anything would be a
+// copy with a page that is empty for a reason nobody could see.
+//
+// It is at require time rather than from `server.js`'s `listen()` because it
+// binds nothing and opens nothing — it writes two rows into a store this
+// process already holds. What it DOES need is `ssf_streams.js`, `ssf_events.js`
+// and the realm registry, all of which are above this line.
+// ===========================================================================
+receivers.seedStreams();
+realms.onCreate(function (id) {
+  log.debug('Entering the SSF internal receiver seeder. id=' + id);
+  realms.run(realms.get(id), function () {
+    receivers.seedStreams();
+  });
+  log.debug('Leaving the SSF internal receiver seeder.');
+});
+
 module.exports = {
   WELL_KNOWN: WELL_KNOWN,
   metadata: metadata,
   description: description,
   transmit: transmit,
+  sweepSignals: sweepSignals,
   consoleReport: consoleReport,
   consoleAction: consoleAction,
   CONSOLE_ACTIONS: CONSOLE_ACTIONS,
   caepAutoEmit: caepAutoEmit,
+  emitProtocolEvent: emitProtocolEvent,
   caepReport: caepReport,
   caepAction: caepAction,
   CAEP_CONSOLE_ACTIONS: CAEP_CONSOLE_ACTIONS,
   riscAutoEmit: riscAutoEmit,
+  // What an administrator did to somebody's credentials (2026-09-13); reached
+  // through `ssf/account_signals.js`.
+  emitRiscAccountAct: emitRiscAccountAct,
+  emitCredentialChange: emitCredentialChange,
   riscReport: riscReport,
   riscAction: riscAction,
-  RISC_CONSOLE_ACTIONS: RISC_CONSOLE_ACTIONS
+  RISC_CONSOLE_ACTIONS: RISC_CONSOLE_ACTIONS,
+  receivers: receivers
 };

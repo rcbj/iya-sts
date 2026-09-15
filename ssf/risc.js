@@ -81,14 +81,23 @@
 // /admin/risc-accounts answers. `risc.maxAccountsTracked` caps it and the
 // oldest goes first.
 //
-// It is in memory and dies with the process, like everything else this service
-// mints. `persistence/CLAUDE.md`'s rule decides that, and its reason applies
-// here too: the signing key is regenerated on every start, so a register
-// restored from disk would count tokens nothing can verify.
+// **IT IS PER TRUST REALM, AND PERSISTED WHERE MINTED STATE IS, SINCE
+// 2026-09-12** — `caep.js`'s register's change, made the same day and for the
+// same two reasons. It was one `new Map()` for the process while the directory
+// whose writes it observes has been a subtree per realm since 2026-08-25, so
+// deleting `alice` in `acme` put a `purged` row on the DEFAULT realm's
+// /admin/risc-accounts beside a directory that still held its own `alice`. And
+// "in memory like everything else this service mints" stopped being true in
+// product mode on 2026-09-06. `touch()` below reports a row edited in place.
 // ---------------------------------------------------------------------------
 
-const { log, nowSec, iso } = require('../common/helpers');
+const { log, nowSec, iso, nameForSubject } = require('../common/helpers');
 const config = require('../common/config');
+// The partition. A LEAF requiring `config` and nothing else here.
+const realms = require('../common/realms');
+// For `inventsClaimValues()` in `defaultEmailFor()`. A leaf requiring only
+// config.
+const mode = require('../common/mode');
 const audit = require('../common/audit');
 const events = require('./ssf_events');
 const subjects = require('./ssf_subjects');
@@ -108,7 +117,16 @@ const AUTO_ACTS = {
   purged: 'account-purged',
   disabled: 'account-disabled',
   enabled: 'account-enabled',
-  identifier: 'identifier-changed'
+  identifier: 'identifier-changed',
+  // TWO ACTS AN ADMINISTRATOR PERFORMS (2026-09-13), on a person's
+  // /admin/users page or through /admin-api/users, and they reach this file
+  // through `observeAct()` rather than through a directory diff: a password
+  // reset or a reset link REQUIRES a credential change, and clearing somebody's
+  // recovery codes changes the information they recover their account with.
+  // Neither is a write `actsFor()` could read off the attributes — a password
+  // hash moving says nothing about who required what.
+  credentialChangeRequired: 'account-credential-change-required',
+  recoveryChanged: 'recovery-information-changed'
 };
 
 // The four events RISC section 2.8 defines as BEING a state rather than as
@@ -134,7 +152,21 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 // How many events one row remembers. A RING, and the counters are not — see
 // noteTransmitted() — because "how many account-disabled have gone out about
 // this person" and "what were the last few jtis" are two different questions.
-const EVENTS_PER_ACCOUNT = 25;
+//
+// `risc.eventsPerAccount` since 2026-09-12 (25, the old constant, is its
+// default); read per event. `risc.historyPerAccount` bounds the credential and
+// identifier-change lists below, which were a literal 10 each.
+function eventsPerAccount() {
+  log.debug("Entering eventsPerAccount().");
+  log.debug("Leaving eventsPerAccount().");
+  return config.value('risc.eventsPerAccount');
+}
+
+function historyPerAccount() {
+  log.debug("Entering historyPerAccount().");
+  log.debug("Leaving historyPerAccount().");
+  return config.value('risc.historyPerAccount');
+}
 
 // The directory attributes this file reads, LOWER-CASED, because that is how
 // `ldap_server.js`'s store keys them. Naming them here rather than inline is
@@ -154,7 +186,30 @@ const PHONE_ATTRIBUTES = ['telephonenumber', 'mobile'];
 
 // accountId -> row. Insertion-ordered, which is what makes "the oldest goes"
 // one `keys().next()` rather than a sort by a timestamp two rows can share.
-const register = new Map();
+//
+// PER TRUST REALM. An account is a person in ONE realm's directory — the same
+// username in two realms is two people — so the row about it belongs to that
+// realm. The realm is the AMBIENT one, and that is right on every door a write
+// arrives by: SCIM and the console are inside the request that made them, and
+// `ldap_server.js` wraps every socket operation in `realms.run(realmFor(dn))`
+// at registration — the directory's own `entries` are read ambiently, so a
+// write outside its realm would not have found the entry to observe.
+const register = realms.map({ persist: 'risc.register' });
+
+// A row edited in place, reported to the journal — `caep.js`'s `touch()`, for
+// its reason. Re-setting the key keeps the row's place in the insertion order,
+// and a row trimmed out or replaced by another process's write is not put back.
+function touch(row) {
+  log.debug("Entering touch().");
+  if (!row || !row.accountId) {
+    log.debug("Leaving touch().");
+    return;
+  }
+  if (register.get(row.accountId) === row) {
+    register.set(row.accountId, row);
+  }
+  log.debug("Leaving touch().");
+}
 
 function enabled() {
   log.debug('Entering enabled().');
@@ -201,8 +256,9 @@ function autoEmitActs() {
       ? name.slice(events.RISC_PREFIX.length) : name;
     if (!names[short]) {
       log.warn('risc.autoEmitTypes names "' + name + '", which is not one ' +
-               'of the four acts this service can observe in its own ' +
-               'directory (' + Object.keys(AUTO_ACTS).map(function (act) {
+               'of the ' + Object.keys(AUTO_ACTS).length + ' acts this ' +
+               'service can observe (' +
+               Object.keys(AUTO_ACTS).map(function (act) {
                  return AUTO_ACTS[act];
                }).join(', ') + '). It is DROPPED — nothing here would ever ' +
                'fire it, so honouring it would leave a setting that reads ' +
@@ -253,13 +309,32 @@ function subjectFor(row, uri) {
     ? catalogue.subjectFormats : null;
   let subject;
   if (formats && formats.indexOf('email') >= 0) {
-    subject = { format: 'email',
-      email: String(row.email || defaultEmailFor(row)) };
+    const email = String(row.email || defaultEmailFor(row));
+    if (email) {
+      subject = { format: 'email', email: email };
+    } else if (row.phone && formats.indexOf('phone_number') >= 0) {
+      // RISC permits either for the two identifier events, and a number the
+      // entry really holds is better than an address nobody has.
+      subject = { format: 'phone_number', phone_number: String(row.phone) };
+    } else {
+      // PRODUCT MODE WITH NOTHING REAL TO NAME. RISC says these two events'
+      // subject MUST be an address or a number, so the honest answer is no
+      // subject at all — `transmit()` refuses a `subject: 'required'` event
+      // that carries none, with a sentence, rather than this file inventing an
+      // address to satisfy the shape.
+      log.debug('Leaving subjectFor(). No real address or number, and none ' +
+                'is invented in product mode.');
+      return null;
+    }
   } else {
+    // THE ROW'S REAL `mail` AND NUMBER GO WITH IT (2026-09-12). This passed the
+    // name alone, so `risc.subjectFormat=email` sent `<name>@example.com` for a
+    // person whose entry this register had read a real address off.
     subject = subjects.subjectForUser(
       row.sub || row.accountId,
       String(config.value('risc.subjectFormat') || 'iss_sub'),
-      String(row.iss || ''));
+      String(row.iss || ''),
+      { mail: row.email, phone: row.phone, subject: row.subject || '' });
   }
   const out = googleSubjectType(subject);
   log.debug('Leaving subjectFor(). ' + subjects.describeSubject(subject));
@@ -271,10 +346,15 @@ function subjectFor(row, uri) {
 // rather than left plausible, for the reason `caep.js` marks a generated
 // session id: an event naming an address nobody has is well-formed, delivers,
 // and is about nothing at the far end.
+//
+// **DEVELOPMENT ONLY SINCE 2026-09-12** (`mode.inventsClaimValues()`): product
+// answers the empty string for a name that is not itself an address, and
+// `subjectFor()` then sends no subject rather than an invented one.
 function defaultEmailFor(row) {
   log.debug('Entering defaultEmailFor().');
   const name = String(row.accountId || row.sub || 'unknown');
-  const out = name.indexOf('@') > 0 ? name : name + '@example.com';
+  const out = name.indexOf('@') > 0 ? name
+    : (mode.inventsClaimValues() ? name + '@example.com' : '');
   log.debug('Leaving defaultEmailFor(). ' + out);
   return out;
 }
@@ -368,12 +448,21 @@ function matchAccount(candidate) {
     log.debug('Leaving matchAccount(). By account id.');
     return value;
   }
+  // A PERSON'S SUBJECT (2026-09-14): an issuer_subject_id carries
+  // `urn:uuid:<entryUUID>` now, and the register is keyed on the name. The
+  // directory says whose it is; a row that recorded the subject — which is the
+  // only way to recognise an account already deleted — is matched below.
+  const named = /^urn:uuid:/i.test(value) ? nameForSubject(value) : '';
+  if (named && register.has(named)) {
+    log.debug('Leaving matchAccount(). By subject.');
+    return named;
+  }
   let found = '';
   register.forEach(function (row, id) {
     if (found) {
       return;
     }
-    if (row.sub === value || row.email === value ||
+    if (row.sub === value || row.email === value || row.subject === value ||
         (row.formerIdentifiers || []).indexOf(value) >= 0 ||
         row.phone === value) {
       found = id;
@@ -601,7 +690,9 @@ function gate(row, uri) {
 }
 
 function shortNameOf(uri) {
+  log.debug("Entering shortNameOf().");
   const text = String(uri || '');
+  log.debug("Leaving shortNameOf().");
   return text.indexOf(events.RISC_PREFIX) === 0
     ? text.slice(events.RISC_PREFIX.length) : '';
 }
@@ -731,7 +822,7 @@ function applyToState(row, uri, payload) {
       credentialType: String(body.credential_type || ''),
       discoveredAt: typeof body.event_timestamp === 'number'
         ? body.event_timestamp : 0 });
-    row.credentials = row.credentials.slice(0, 10);
+    row.credentials = row.credentials.slice(0, historyPerAccount());
   } else if (short === 'identifier-changed') {
     // THE SUBJECT CARRIED THE OLD VALUE and the payload carries the new one,
     // which is the reverse of every other event here. The old address goes on
@@ -749,7 +840,7 @@ function applyToState(row, uri, payload) {
       row.formerIdentifiers.push(row.email);
     }
     row.identifierChanges.unshift({ at: iso(), from: row.email, to: now });
-    row.identifierChanges = row.identifierChanges.slice(0, 10);
+    row.identifierChanges = row.identifierChanges.slice(0, historyPerAccount());
     if (now) {
       row.email = now;
     }
@@ -781,6 +872,7 @@ function applyToState(row, uri, payload) {
 
   row.notes = row.notes.slice(-5);
   row.updatedAt = iso();
+  touch(row);
   log.debug('Leaving applyToState(). ' + errors.length + ' error(s), ' +
             warnings.length + ' warning(s).');
   return { ok: errors.length === 0, errors: errors, warnings: warnings,
@@ -858,11 +950,12 @@ function noteTransmitted(record, claims) {
     streamId: String((record && record.stream_id) || ''),
     warnings: verdict.warnings
   });
-  row.events = row.events.slice(0, EVENTS_PER_ACCOUNT);
+  row.events = row.events.slice(0, eventsPerAccount());
   const streamId = String((record && record.stream_id) || '');
   if (streamId && row.streams.indexOf(streamId) < 0) {
     row.streams.push(streamId);
   }
+  touch(row);
   log.debug('Leaving noteTransmitted(). ' + row.total + ' event(s) on ' +
             row.accountId + '.');
   return row;
@@ -898,6 +991,33 @@ function observe(notice) {
     return [];
   }
   let row = register.get(accountId);
+  // A RENAMED ACCOUNT KEEPS ITS ROW (2026-09-14). The register is keyed by the
+  // name, and a rename arrives here as an update naming the NEW one; the
+  // entry's subject is what says it is the row already held under the old
+  // name. Its counts and state move with it, and the old name is kept among
+  // its former identifiers so an event naming it is still matched.
+  const renamedUuid = ((deleted ? before : after).entryuuid || [])[0];
+  if (!row && renamedUuid) {
+    const wantedSubject = 'urn:uuid:' + String(renamedUuid).toLowerCase();
+    let formerId = '';
+    register.forEach(function (held, id) {
+      if (!formerId && held.subject === wantedSubject) {
+        formerId = id;
+      }
+    });
+    if (formerId) {
+      row = register.get(formerId);
+      register.delete(formerId);
+      row.formerIdentifiers = (row.formerIdentifiers || [])
+        .filter(function (one) {
+          return one !== formerId;
+        }).concat([formerId]);
+      row.accountId = accountId;
+      row.username = accountId;
+      row.sub = accountId;
+      register.set(accountId, row);
+    }
+  }
   if (!row) {
     row = blankRow({
       accountId: accountId,
@@ -918,6 +1038,14 @@ function observe(notice) {
   if (asked.dn) {
     row.dn = String(asked.dn);
   }
+  // THE ENTRY'S SUBJECT, off whichever snapshot has the entry in it
+  // (2026-09-14). It is kept on the row because the one event where it matters
+  // most — an account PURGED — is about an entry that is gone, and the
+  // directory can no longer be asked whose `urn:uuid:` it was.
+  const snapshotUuid = ((deleted ? before : after).entryuuid || [])[0];
+  if (snapshotUuid) {
+    row.subject = 'urn:uuid:' + String(snapshotUuid).toLowerCase();
+  }
   row.updatedAt = iso();
 
   // A DESCRIPTOR AND NOT A BARE NAME, because everything below reads
@@ -927,9 +1055,29 @@ function observe(notice) {
   const acts = deleted ? [{ act: 'purged', values: {} }]
     : actsFor(before, after);
   if (!acts.length) {
+    touch(row);
     log.debug('Leaving observe(). Nothing RISC has a word for.');
     return [];
   }
+  const due = dueForActs(row, acts, asked);
+  // ONE REPORT FOR EVERYTHING ABOVE — the seed's `iss` and `dn`, the notes and
+  // the suppressed count — rather than one per branch, which would be the
+  // branch somebody adds next forgetting it.
+  touch(row);
+  log.debug('Leaving observe(). ' + due.length + ' event(s) due.');
+  return due;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT IS DUE FOR A LIST OF ACTS ON ONE ROW. Split out of `observe()` on
+// 2026-09-13 so that `observeAct()` — an act an administrator performed, with
+// no directory diff behind it — goes through the SAME emission switch, opt-out
+// gate and audit row as a directory write. Two copies of that loop would be two
+// answers to "was this suppressed".
+// ---------------------------------------------------------------------------
+function dueForActs(row, acts, asked) {
+  log.debug('Entering dueForActs(). ' + acts.length + ' act(s).');
+  const accountId = row.accountId;
   const allowed = autoEmitActs();
   const due = [];
   acts.forEach(function (act) {
@@ -972,7 +1120,49 @@ function observe(notice) {
     due.push({ uri: uri, payload: payload, subject: subject, row: row,
       act: act.act });
   });
-  log.debug('Leaving observe(). ' + due.length + ' event(s) due.');
+  log.debug('Leaving dueForActs(). ' + due.length + ' due.');
+  return due;
+}
+
+// ---------------------------------------------------------------------------
+// AN ACT AN ADMINISTRATOR PERFORMED ON AN ACCOUNT (2026-09-13).
+//
+// `observe()` above reads a directory write and decides what it means. These
+// acts carry their meaning already — the console or `/admin-api` knows it
+// reset a password — so the notice names the act and this answers what is due,
+// through the same switch, gate and register `observe()` uses.
+//
+// The notice: `{ username, act, issuer, dn, realm, email, phone, reasonAdmin,
+// reasonUser }`, `act` one of AUTO_ACTS' keys that a directory diff cannot
+// produce.
+// ---------------------------------------------------------------------------
+function observeAct(notice) {
+  log.debug('Entering observeAct().');
+  const asked = notice || {};
+  const accountId = String(asked.username || '');
+  const act = String(asked.act || '');
+  if (!enabled() || !accountId || !AUTO_ACTS[act]) {
+    log.debug('Leaving observeAct(). Off, nothing named, or not an act.');
+    return [];
+  }
+  let row = register.get(accountId);
+  if (!row) {
+    row = blankRow({
+      accountId: accountId, sub: accountId, username: accountId,
+      iss: String(asked.issuer || ''), dn: String(asked.dn || ''),
+      realm: String(asked.realm || ''),
+      email: String(asked.email || ''), phone: String(asked.phone || '')
+    });
+    register.set(accountId, row);
+    trim();
+  }
+  if (asked.issuer && !row.iss) {
+    row.iss = String(asked.issuer);
+  }
+  row.updatedAt = iso();
+  const due = dueForActs(row, [{ act: act, values: {} }], asked);
+  touch(row);
+  log.debug('Leaving observeAct(). ' + due.length + ' event(s) due.');
   return due;
 }
 
@@ -1018,8 +1208,14 @@ function applyActLocally(row, act) {
       row.formerIdentifiers.push(row.email);
     }
     row.email = String(act.values['new-value']);
+  } else if (act.act === 'credentialChangeRequired') {
+    row.credentialChangeRequired = true;
+  } else if (act.act === 'recoveryChanged') {
+    row.notes.push('Recovery information changed.');
+    row.notes = row.notes.slice(-5);
   }
   row.updatedAt = iso();
+  touch(row);
   log.debug('Leaving applyActLocally().');
 }
 
@@ -1133,6 +1329,12 @@ function reasonFor(act, notice) {
     text = 'The account at ' + where + ' was marked inactive.';
   } else if (act.act === 'enabled') {
     text = 'The account at ' + where + ' was marked active again.';
+  } else if (act.act === 'credentialChangeRequired') {
+    text = String((notice || {}).reasonAdmin || '') ||
+           'An administrator reset the password of ' + where + '.';
+  } else if (act.act === 'recoveryChanged') {
+    text = String((notice || {}).reasonAdmin || '') ||
+           'The recovery codes of ' + where + ' were cleared.';
   } else {
     text = 'An identifier on ' + where + ' was changed.';
   }
@@ -1146,7 +1348,11 @@ function reasonForUser(act) {
     ? 'Your account was deleted.'
     : (act.act === 'disabled' ? 'Your account has been disabled.'
       : (act.act === 'enabled' ? 'Your account has been enabled.'
-        : 'One of your contact details was changed.'));
+        : (act.act === 'credentialChangeRequired'
+          ? 'Your password was reset and must be changed.'
+          : (act.act === 'recoveryChanged'
+            ? 'Your recovery codes were cleared.'
+            : 'One of your contact details was changed.'))));
   log.debug('Leaving reasonForUser().');
   return text;
 }
@@ -1177,6 +1383,7 @@ function reset(accountId) {
   row.streams = [];
   row.notes = ['Reset from the console; the directory entry is untouched.'];
   row.updatedAt = iso();
+  touch(row);
   audit.audit({ action: 'risc.account.reset', category: 'signals',
     protocol: 'RISC', channel: 'http', target: row.accountId,
     summary: 'The RISC state of account ' + row.accountId + ' was reset' });
@@ -1272,11 +1479,19 @@ module.exports = {
   OPT_OUT_EVENTS: OPT_OUT_EVENTS,
   OPT_STATES: OPT_STATES,
   LIFECYCLE_STATES: LIFECYCLE_STATES,
-  EVENTS_PER_ACCOUNT: EVENTS_PER_ACCOUNT,
+  // A GETTER: `tests/risc_register.js` reads this to know how long the ring
+  // is, and the answer is the setting now rather than a constant.
+  get EVENTS_PER_ACCOUNT() {
+    log.debug("Entering EVENTS_PER_ACCOUNT().");
+    log.debug("Leaving EVENTS_PER_ACCOUNT().");
+    return eventsPerAccount();
+  },
   enabled: enabled,
   supportedEventUris: supportedEventUris,
   autoEmitActs: autoEmitActs,
   subjectFor: subjectFor,
+  // An act an administrator performed (2026-09-13) — see observeAct().
+  observeAct: observeAct,
   googleSubjectType: googleSubjectType,
   accountIdOf: accountIdOf,
   rowFor: rowFor,

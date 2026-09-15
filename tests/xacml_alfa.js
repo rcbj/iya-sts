@@ -41,6 +41,12 @@ const templates = require('../xacml/xacml_templates');
 const pdp = require('../xacml/xacml_pdp');
 const pap = require('../xacml/xacml_admin');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_alfa',
+  level: process.env.LOG_LEVEL || 'info' });
+
 require('../ldap/ldap_server');
 
 // ---------------------------------------------------------------------------
@@ -50,11 +56,13 @@ require('../ldap/ldap_server');
 // depend on seeded data.
 // ---------------------------------------------------------------------------
 function requestFor(attributes, action) {
+  log.debug("Entering requestFor().");
   const subjectAttributes = Object.keys(attributes).map(function (id) {
     return { attributeId: id, issuer: null, includeInResult: false,
              values: [{ type: model.TYPE.STRING,
                         lexical: String(attributes[id]) }] };
   });
+  log.debug("Leaving requestFor().");
   return {
     returnPolicyIdList: false, combinedDecision: false,
     categories: [
@@ -94,6 +102,8 @@ const PROBES = [
 ];
 
 function decisionsOf(policy) {
+  log.debug("Entering decisionsOf().");
+  log.debug("Leaving decisionsOf().");
   return PROBES.map(function (probe) {
     return pdp.evaluate(policy, probe.request, {}).decision;
   });
@@ -103,11 +113,13 @@ function decisionsOf(policy) {
 // THE THREE CLAIMS, OVER EVERY POLICY THIS SERVICE CAN PRODUCE.
 // ---------------------------------------------------------------------------
 function checkRoundTrip(t, name, policy) {
+  log.debug("Entering checkRoundTrip().");
   let text;
   try {
     text = alfa.write(policy);
   } catch (error) {
     t.check(false, name + ': renders as ALFA', error.message);
+    log.debug("Leaving checkRoundTrip().");
     return;
   }
   t.check(text.indexOf('namespace') === 0,
@@ -118,6 +130,7 @@ function checkRoundTrip(t, name, policy) {
     back = alfa.parse(text);
   } catch (error) {
     t.check(false, name + ': and parses back', error.message);
+    log.debug("Leaving checkRoundTrip().");
     return;
   }
   t.check(true, name + ': and parses back');
@@ -133,6 +146,7 @@ function checkRoundTrip(t, name, policy) {
     reloaded = xml.parsePolicy(xml.writePolicy(back));
   } catch (error) {
     t.check(false, name + ': the result TYPE-CHECKS as XACML', error.message);
+    log.debug("Leaving checkRoundTrip().");
     return;
   }
   t.check(true, name + ': the result type-checks as XACML');
@@ -144,9 +158,11 @@ function checkRoundTrip(t, name, policy) {
   t.equal(after, before,
           name + ': and reaches the SAME decision on all ' + PROBES.length +
           ' probes');
+  log.debug("Leaving checkRoundTrip().");
 }
 
 function checkEveryPolicy(t) {
+  log.debug("Entering checkEveryPolicy().");
   checkRoundTrip(t, 'the seeded policy',
                  xml.parsePolicy(store.SEED_DOCUMENT));
   templates.TEMPLATES.forEach(function (row) {
@@ -155,6 +171,7 @@ function checkEveryPolicy(t) {
       checkRoundTrip(t, 'the ' + row.id + ' template', built.policy);
     }
   });
+  log.debug("Leaving checkEveryPolicy().");
 }
 
 // ---------------------------------------------------------------------------
@@ -193,11 +210,13 @@ const HAND_WRITTEN = [
 ].join('\n');
 
 function checkHandWritten(t) {
+  log.debug("Entering checkHandWritten().");
   let policy = null;
   try {
     policy = alfa.parse(HAND_WRITTEN);
   } catch (error) {
     t.check(false, 'a hand-written ALFA policy parses', error.message);
+    log.debug("Leaving checkHandWritten().");
     return;
   }
   t.check(true, 'a hand-written ALFA policy parses');
@@ -224,6 +243,7 @@ function checkHandWritten(t) {
     why = error.message;
   }
   t.check(ok, 'and the whole thing type-checks as XACML', why);
+  log.debug("Leaving checkHandWritten().");
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +251,7 @@ function checkHandWritten(t) {
 // that is worth being loud about.
 // ---------------------------------------------------------------------------
 function refusal(t, what, text, expected) {
+  log.debug("Entering refusal().");
   let message = null;
   try {
     alfa.parse(text);
@@ -239,12 +260,15 @@ function refusal(t, what, text, expected) {
   }
   if (!message) {
     t.check(false, what, 'it was ACCEPTED');
+    log.debug("Leaving refusal().");
     return;
   }
   t.check(expected.test(message), what, message);
+  log.debug("Leaving refusal().");
 }
 
 function checkRefusals(t) {
+  log.debug("Entering checkRefusals().");
   // THE MOST USEFUL ONE. An undeclared attribute is otherwise a policy that
   // quietly matches nothing — which looks exactly like a policy that is
   // working correctly and denying you.
@@ -291,6 +315,7 @@ function checkRefusals(t) {
   refusal(t, 'an unterminated string is refused with its line number',
           'namespace x { policy p { id = "unterminated } }',
           /unterminated string/i);
+  log.debug("Leaving checkRefusals().");
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +323,7 @@ function checkRefusals(t) {
 // likely to be quietly dropped by a future change.
 // ---------------------------------------------------------------------------
 function checkTypedLiterals(t) {
+  log.debug("Entering checkTypedLiterals().");
   const text = [
     'namespace x {',
     '    attribute when { category = environmentCat id = "d" type = date }',
@@ -316,6 +342,7 @@ function checkTypedLiterals(t) {
     policy = alfa.parse(text);
   } catch (error) {
     t.check(false, 'a typed literal parses', error.message);
+    log.debug("Leaving checkTypedLiterals().");
     return;
   }
   const match = policy.rules[0].target.anyOf[0].allOf[0].matches[0];
@@ -325,12 +352,14 @@ function checkTypedLiterals(t) {
           'stop comparing dates');
   t.check(/date\("2026-01-01"\)/.test(alfa.write(policy)),
           'and it is written back in the same form');
+  log.debug("Leaving checkTypedLiterals().");
 }
 
 // ---------------------------------------------------------------------------
 // THE PAP'S IMPORT ACTION, against the real store.
 // ---------------------------------------------------------------------------
 function checkImport(t) {
+  log.debug("Entering checkImport().");
   const imported = pap.combinedAction({ action: 'import-alfa',
                                         name: 'alfa-import',
                                         alfa: HAND_WRITTEN });
@@ -355,14 +384,17 @@ function checkImport(t) {
           'and nothing is written when it is');
 
   pap.combinedAction({ action: 'delete', name: 'alfa-import' });
+  log.debug("Leaving checkImport().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkEveryPolicy(t);
   checkHandWritten(t);
   checkRefusals(t);
   checkTypedLiterals(t);
   checkImport(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

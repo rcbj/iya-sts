@@ -15,10 +15,11 @@
 //     the Dockerfile's COPY set against `engine.js`, and the two `enforce()`
 //     implementations over seven decisions. It never starts the PEP, never
 //     pulls anything and never makes an HTTP request.
-//   * `tests/vendored/sts_xacml_endpoints.js` drives `POST /xacml/pep/register`,
-//     `GET /xacml/pep/policies` and `POST /xacml/pep/heartbeat` over HTTP — but
-//     the caller there is the TEST impersonating a PEP. It asserts the bytes of
-//     the pull; nothing evaluates them.
+//   * `tests/vendored/sts_xacml_endpoints.js` drives `POST
+//     /xacml/pep/register`, `GET /xacml/pep/policies` and `POST
+//     /xacml/pep/heartbeat` over HTTP — but the caller there is the TEST
+//     impersonating a PEP. It asserts the bytes of the pull; nothing evaluates
+//     them.
 //
 // So `xacml-pep/sync.js` — the registrar and the poller, which is the whole
 // client half of the feature — was loaded by no test at all, and no test
@@ -35,12 +36,12 @@
 // can be broken while a host run stays green:
 //
 //   1. **THE IMAGE IS BUILT FROM THIS TREE, HERE, EVERY RUN.** The Dockerfile
-//      copies seven engine modules out of `xacml/` by name. `tests/xacml_pep.js`
-//      compares that COPY list with `engine.js`'s `MODULES` as TEXT; this file
-//      runs the result. A module added to the engine and not to the Dockerfile
-//      is an image that dies at load with MODULE_NOT_FOUND, and the host run
-//      could never see it because on a developer's machine the engine is one
-//      directory up and is always there.
+//      copies seven engine modules out of `xacml/` by name.
+//      `tests/xacml_pep.js` compares that COPY list with `engine.js`'s
+//      `MODULES` as TEXT; this file runs the result. A module added to the
+//      engine and not to the Dockerfile is an image that dies at load with
+//      MODULE_NOT_FOUND, and the host run could never see it because on a
+//      developer's machine the engine is one directory up and is always there.
 //   2. **THE PEP RESOLVES THE PDP BY COMPOSE DNS**, `https://sts:8081`, on the
 //      private bridge — not `localhost`, and not the published port. That is
 //      the address `docker-compose.yml` ships, and it is a different name in
@@ -170,7 +171,7 @@
 //      cannot reach.
 //   5. The remote PEP and the PDP disagreeing about an attribute SPELLING.
 //      `xacml_pip.js` answers both the bare name and the
-//      `urn:sts-mock:xacml:attribute:` form; `pep.js` asserts both. A change to
+//      `urn:sts:xacml:attribute:` form; `pep.js` asserts both. A change to
 //      either side that dropped one would deny everything under a policy that
 //      is working perfectly — which `xacml-pep/CLAUDE.md` records as having
 //      cost a run already.
@@ -207,17 +208,23 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/vendored/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_xacml_remote_pep",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -247,7 +254,8 @@ const IMAGE = "rcbj/xacml-pep:test";
 // against a container polling another, and the failure would look like a PEP
 // that never converges rather than like the misconfiguration it is.
 // ---------------------------------------------------------------------------
-const PROVIDED_URL = String(process.env.XACML_PEP_URL || "").replace(/\/+$/, "");
+const PROVIDED_URL = String(process.env.XACML_PEP_URL || "").replace(/\/+$/,
+                                                                     "");
 const LAUNCHER_STARTED_IT = !!PROVIDED_URL;
 
 // **THE REALM IS FIXED WHEN THE LAUNCHER OWNS THE CONTAINER**, because that
@@ -270,6 +278,19 @@ const PEP_NAME = (LAUNCHER_STARTED_IT
   : "pep-" + names.runStamp()).toLowerCase()
     .replace(/[^a-z0-9-]/g, "").slice(0, 40);
 
+// THE TWO PEOPLE THE POLICY DECIDES ABOUT, created by `createThePeople()` in
+// this realm rather than seeded (2026-09-12) — see that function.
+//
+// **THE LAUNCHERS' PEP IDENTITY IS STILL A SEED**, and that is recorded rather
+// than changed: when a launcher owns the container, PEP_NAME is the seeded
+// `remote-pep-1` in the seeded `remote-peps` group, and product mode seeds
+// neither. The self-started path already creates both, in
+// `provisionTheContainersIdentity()`; the launcher path would need the same two
+// writes made before the container's first registration attempt, which is the
+// launcher's to arrange.
+const ADMIN_PERSON = "pep-admin-person";
+const STAFF_PERSON = "pep-staff-person";
+
 const POLICY_A = "remote-pep-baseline";
 const POLICY_B = "remote-pep-widened";
 // `xacml_templates.js` builds every policy id as this prefix plus the slug of
@@ -277,8 +298,8 @@ const POLICY_B = "remote-pep-widened";
 // service, so that the assertions below say WHICH document the PEP is starting
 // from and not merely that it changed.
 const ID_OF = {};
-ID_OF[POLICY_A] = "urn:sts-mock:xacml:policy:" + POLICY_A;
-ID_OF[POLICY_B] = "urn:sts-mock:xacml:policy:" + POLICY_B;
+ID_OF[POLICY_A] = "urn:sts:xacml:policy:" + POLICY_A;
+ID_OF[POLICY_B] = "urn:sts:xacml:policy:" + POLICY_B;
 
 // THE POLL INTERVAL IS THE MEASUREMENT INSTRUMENT of sections 4, 5, 6 and 9,
 // which is why it is here rather than left at the image's fifteen seconds.
@@ -291,14 +312,28 @@ const CONVERGE_MS = 40000;
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function realmUrl(p) { return base + "/realm/" + REALM + p; }
-function api(p) { return realmUrl("/admin-api" + p); }
+function realmUrl(p) {
+  log.debug("Entering realmUrl().");
+  log.debug("Leaving realmUrl().");
+  return base + "/realm/" + REALM + p;
+}
+
+function api(p) {
+  log.debug("Entering api().");
+  log.debug("Leaving api().");
+  return realmUrl("/admin-api" + p);
+}
+
 function sleep(ms) {
+  log.debug("Entering sleep().");
+  log.debug("Leaving sleep().");
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
 
@@ -391,6 +426,7 @@ async function mintTheCredential() {
     try {
       added = JSON.parse(String(back.body || "")).added;
     } catch (e) {
+      log.debug("Caught in mintTheCredential(): " + ((e && e.message) || e));
       // Not JSON. The status already said it worked; how many were added is
       // a nicety.
       added = null;
@@ -415,6 +451,7 @@ async function mintTheCredential() {
 // `postJson()` with that certificate on the connection.
 function certPostJson(url, payload) {
   log.debug("Entering certPostJson(). url=" + url);
+  log.debug("Leaving certPostJson().");
   return new Promise(function (resolve, reject) {
     const target = new URL(url);
     const data = JSON.stringify(payload || {});
@@ -434,6 +471,8 @@ function certPostJson(url, payload) {
         try {
           body = JSON.parse(text);
         } catch (e) {
+          log.debug("Caught in a callback in certPostJson(): " +
+                    ((e && e.message) || e));
           body = null;
         }
         resolve({ status: response.statusCode, body: body, text: text });
@@ -453,6 +492,7 @@ async function fetchJson(url, options) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML page, or an empty 204 from the PEP's nudge endpoint.
     // The caller reports the status and the raw text, which says more than a
     // parse error would.
@@ -463,10 +503,14 @@ async function fetchJson(url, options) {
 }
 
 function get(url) {
+  log.debug("Entering get().");
+  log.debug("Leaving get().");
   return fetchJson(url);
 }
 
 function postJson(url, payload) {
+  log.debug("Entering postJson().");
+  log.debug("Leaving postJson().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload || {}) });
@@ -476,20 +520,24 @@ function postJson(url, payload) {
 // every one of these handlers answers `why` with a sentence naming what it
 // wanted, and a test that reported only the status would throw that away.
 async function act(action, payload, what) {
+  log.debug("Entering act().");
   const r = await postJson(api("/xacml/" + action), payload || {});
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "POST /admin-api/xacml/" + action + " should have " + what + "; it " +
     "answered " + r.status + " " +
     JSON.stringify((r.body && (r.body.why || r.body.error_description)) ||
                    r.body || r.text).slice(0, 400));
+  log.debug("Leaving act().");
   return r.body;
 }
 
 async function setSetting(key, value) {
+  log.debug("Entering setSetting().");
   const r = await postJson(api("/config/set"), { key: key, value: value });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "setting " + key + " in the realm should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
+  log.debug("Leaving setSetting().");
 }
 
 // ===========================================================================
@@ -517,8 +565,10 @@ function docker(args, what) {
 }
 
 function dockerQuiet(args) {
+  log.debug("Entering dockerQuiet().");
   const r = spawnSync("docker", args, { encoding: "utf8",
                                         maxBuffer: 32 * 1024 * 1024 });
+  log.debug("Leaving dockerQuiet().");
   return { ok: !r.error && r.status === 0,
            out: String((r && r.stdout) || "").trim(),
            err: String((r && r.stderr) || "").trim() };
@@ -527,7 +577,11 @@ function dockerQuiet(args) {
 // Everything the PEP container owns, so the teardown has one thing to take
 // down and every failure message has one thing to quote.
 var pep = { url: "", network: "", mode: "", pdpUrl: "", created: false,
-            dir: "", certDir: "", hostPort: 0, containerPort: 9090 };
+            dir: "", certDir: "", hostPort: 0, containerPort: 9090,
+            // The HTTPS listener (2026-09-13): where this job dials it, and the
+            // directory it writes the issued pair into — the PEP's
+            // `/certs/server`, as THIS process sees it.
+            httpsUrl: "", serverCertDir: "", httpsContainerPort: 9443 };
 
 // The last of the container's own log. Every failure message below ends with
 // this, because the interesting failures here are ones where the PEP said
@@ -535,7 +589,9 @@ var pep = { url: "", network: "", mode: "", pdpUrl: "", created: false,
 // MODULE_NOT_FOUND naming an engine module the Dockerfile forgot — and a test
 // that reported only its own timeout would throw that sentence away.
 function pepLog(lines) {
+  log.debug("Entering pepLog().");
   if (!pep.created && !LAUNCHER_STARTED_IT) {
+    log.debug("Leaving pepLog().");
     return "\n(the PEP container was never created)";
   }
   // TRIED EVEN FOR A CONTAINER THIS JOB DID NOT CREATE, because under
@@ -545,6 +601,7 @@ function pepLog(lines) {
   // fallback names the container and the command rather than pretending.
   const got = dockerQuiet(["logs", "--tail", String(lines || 30), PEP_NAME]);
   if (!got.ok && LAUNCHER_STARTED_IT) {
+    log.debug("Leaving pepLog().");
     return "\n(this runner cannot read the PEP container's log — there is no " +
            "docker here. It is the container the launcher started; " +
            "`docker logs " + PEP_NAME + "` on the machine running the stack " +
@@ -553,6 +610,7 @@ function pepLog(lines) {
   const state = dockerQuiet(["inspect", "-f",
                              "{{.State.Status}} exit={{.State.ExitCode}}",
                              PEP_NAME]);
+  log.debug("Leaving pepLog().");
   return "\n--- the PEP container (" + (state.out || "state unknown") +
          ") ---\n" + (got.out || got.err || "(no output)") +
          "\n--- end of the PEP container's log ---";
@@ -603,7 +661,8 @@ function findTheNetwork() {
     }
     const parts = line.split("\t");
     // `0.0.0.0:18081->8081/tcp` — the published port, then the one inside.
-    const mapping = new RegExp(":" + port + "->(\\d+)/tcp").exec(parts[1] || "");
+    const mapping = new RegExp(":" + port + "->(\\d+)/tcp").exec(
+        parts[1] || "");
     if (mapping) {
       found = { container: parts[0], containerPort: mapping[1] };
     }
@@ -640,8 +699,8 @@ function findTheNetwork() {
                  "/realm/" + REALM;
   log.info("The service is the container \"" + found.container + "\" on the " +
            "network \"" + network + "\". The PEP will join it and dial " +
-           pdpUrl + " — the compose name and the INTERNAL port, which is what " +
-           "docker-compose.yml ships and what the certificate names.");
+           pdpUrl + " — the compose name and the INTERNAL port, which is " +
+           "what docker-compose.yml ships and what the certificate names.");
   log.debug("Leaving findTheNetwork(). Bridge.");
   return { mode: "bridge", network: network, pdpUrl: pdpUrl };
 }
@@ -652,6 +711,7 @@ function findTheNetwork() {
 // port is a job that fails when somebody's own stack is up.
 function freePort() {
   log.debug("Entering freePort().");
+  log.debug("Leaving freePort().");
   return new Promise(function (resolve, reject) {
     const probe = net.createServer();
     probe.on("error", reject);
@@ -715,6 +775,13 @@ async function attachToThePep() {
   pep.url = PROVIDED_URL;
   pep.mode = "provided";
   pep.network = "the launcher's stack";
+  // The HTTPS listener's two facts arrive from the launcher with the other
+  // three. Their absence is not asserted here, where it would stop every
+  // section: `theListenerServesARealmCertificate()` names the missing variable
+  // when it gets there.
+  pep.httpsUrl = String(process.env.XACML_PEP_HTTPS_URL || "")
+    .replace(/\/+$/, "");
+  pep.serverCertDir = String(process.env.XACML_PEP_SERVER_CERT_DIR || "");
   log.info("Driving the remote PEP container the launcher started: " +
            pep.url + ", registered as \"" + PEP_NAME + "\", polling the " +
            "realm \"" + REALM + "\" which this job creates below.");
@@ -766,6 +833,8 @@ async function attachToThePep() {
 // `ldap_server.js`'s seed comment describes them exactly ("a deployment using
 // a different common name adds its own member to this group").
 function containerSubject() {
+  log.debug("Entering containerSubject().");
+  log.debug("Leaving containerSubject().");
   return "CN=" + PEP_NAME + ",OU=remote-peps,O=mock-sts tests";
 }
 
@@ -774,7 +843,15 @@ function containerSubject() {
 // the PDP will read when it resolves this certificate.
 async function provisionTheContainersIdentity() {
   log.debug("Entering provisionTheContainersIdentity().");
-  const made = await postJson(api("/users/create"), { username: PEP_NAME });
+  // With the attributes a real entry carries and nothing invented — product
+  // mode invents no persona onto an entry, and a directory entry for an
+  // enforcement point is a record somebody reads.
+  const made = await postJson(api("/users/create"), {
+    username: PEP_NAME, invent: false,
+    attributes: { cn: PEP_NAME, sn: "Remote PEP", displayName: PEP_NAME,
+                  description:
+                    "the remote XACML PEP container this job drives" }
+  });
   assert.ok(made.status === 200,
     "POST /admin-api/users/create should put " + PEP_NAME + " in " + REALM +
     "'s directory; it answered " + made.status + ". A client certificate " +
@@ -851,10 +928,21 @@ async function startThePep() {
     // XACML_PEP_TLS_KEY onto the same names; here the mount below is /certs
     // for the same reason it is there.
     PEP_TLS_CERT: "/certs/pep.crt",
-    PEP_TLS_KEY: "/certs/pep.key"
+    PEP_TLS_KEY: "/certs/pep.key",
+    // THE HTTPS LISTENER'S PAIR (2026-09-13): two paths that are empty when the
+    // container starts, exactly as the launchers arrange it — the realm issues
+    // the pair only once the PEP has registered, and this job writes it.
+    PEP_HTTPS_CERT: "/certs/server/pep-server.crt",
+    PEP_HTTPS_KEY: "/certs/server/pep-server.key",
+    PEP_HTTPS_RELOAD_INTERVAL_MS: "1000"
   };
 
   pep.certDir = await mintTheContainersCredential();
+  pep.serverCertDir = path.join(pep.certDir, "server");
+  // World-writable for the reason the launchers give: the container is not
+  // this user, and nothing in it is a key worth more than one run.
+  fs.mkdirSync(pep.serverCertDir, { mode: 0o777 });
+  fs.chmodSync(pep.serverCertDir, 0o777);
 
   const create = ["create", "--name", PEP_NAME, "--hostname", PEP_NAME,
                   "--network", pep.network,
@@ -867,12 +955,15 @@ async function startThePep() {
     // the PEP from outside the network, and a fixed 9090 would collide with the
     // demonstration container `docker compose --profile xacml up` starts.
     create.push("--publish", "127.0.0.1::9090");
+    create.push("--publish", "127.0.0.1::9443");
     // The PDP dials this across the bridge by the container's own name.
     environment.PEP_NOTIFY_URL = "http://" + PEP_NAME + ":9090/notify";
   } else {
     pep.containerPort = await freePort();
     pep.hostPort = pep.containerPort;
     environment.PEP_PORT = String(pep.containerPort);
+    pep.httpsContainerPort = await freePort();
+    environment.PEP_HTTPS_PORT = String(pep.httpsContainerPort);
     // On the host network the service is a process on this same loopback, so
     // this is the address it dials — and it is still a real outbound request
     // made by the PDP to a listener it does not share a process with.
@@ -896,6 +987,14 @@ async function startThePep() {
     assert.ok(parsed, "docker port said \"" + mapped + "\", which carries no " +
               "port this job can dial");
     pep.hostPort = parsed[1];
+    const mappedHttps = docker(["port", PEP_NAME, "9443"],
+                               "reading the PEP's published HTTPS port");
+    const parsedHttps = /:(\d+)\s*$/.exec(mappedHttps.split("\n")[0] || "");
+    assert.ok(parsedHttps, "docker port said \"" + mappedHttps + "\" for " +
+              "9443, which carries no port this job can dial");
+    pep.httpsUrl = "https://localhost:" + parsedHttps[1];
+  } else {
+    pep.httpsUrl = "https://localhost:" + pep.httpsContainerPort;
   }
   pep.url = "http://127.0.0.1:" + pep.hostPort;
 
@@ -962,15 +1061,19 @@ function stopThePep() {
 }
 
 function pepGet(p) {
+  log.debug("Entering pepGet().");
+  log.debug("Leaving pepGet().");
   return fetchJson(pep.url + p);
 }
 
 // The PEP's whole self-report. Everything below reads it through this, so that
 // a failure message can always say what the PEP thought it was holding.
 async function pepOverview() {
+  log.debug("Entering pepOverview().");
   const r = await pepGet("/");
   assert.strictEqual(r.status, 200,
     "GET / on the PEP answered " + r.status + ". " + pepLog());
+  log.debug("Leaving pepOverview().");
   return r.body;
 }
 
@@ -1003,7 +1106,8 @@ async function until(what, probe, budgetMs) {
     // rather than throwing, so a runner with no docker simply never takes this
     // branch — and the commonest doomed wait, a container that exited, is
     // still caught wherever the daemon is reachable.
-    const state = dockerQuiet(["inspect", "-f", "{{.State.Running}}", PEP_NAME]);
+    const state = dockerQuiet(["inspect", "-f", "{{.State.Running}}",
+                               PEP_NAME]);
     if (state.ok && state.out === "false") {
       throw new Error("Waiting for " + what + ", but THE PEP CONTAINER HAS " +
                       "STOPPED. " + pepLog());
@@ -1030,6 +1134,7 @@ async function until(what, probe, budgetMs) {
     await sleep(100);
     /* eslint-enable no-await-in-loop */
   }
+  log.debug("Leaving until().");
   throw new Error("Gave up after " + budget + "ms waiting for " + what +
                   ". Last seen: " + last + pepLog());
 }
@@ -1076,7 +1181,8 @@ async function askThePdp(subject, action) {
   // wrong.
   assert.ok(r.status === 200 && r.body && Array.isArray(r.body.Response) &&
             r.body.Response.length,
-    "POST /xacml/pdp answered " + r.status + " " + String(r.text).slice(0, 300));
+    "POST /xacml/pdp answered " + r.status + " " +
+    String(r.text).slice(0, 300));
   log.debug("Leaving askThePdp(). " + r.body.Response[0].Decision);
   return r.body.Response[0];
 }
@@ -1085,12 +1191,14 @@ async function askThePdp(subject, action) {
 // never heard of it, which is a state section 1 has to be able to tell from a
 // row that exists and says something unwelcome.
 async function pepRow() {
+  log.debug("Entering pepRow().");
   const r = await get(api("/xacml/peps"));
   assert.strictEqual(r.status, 200,
     "GET /admin-api/xacml/peps answered " + r.status);
   const found = (r.body.peps || []).filter(function (one) {
     return one.name === PEP_NAME;
   });
+  log.debug("Leaving pepRow().");
   return { register: r.body, row: found.length ? found[0] : null };
 }
 
@@ -1098,10 +1206,10 @@ async function pepRow() {
 // WAIT FOR THE CONTAINER TO FIND THE REALM THIS JOB JUST MADE.
 //
 // A launcher-started PEP has been polling `/realm/<REALM>` since the stack came
-// up, getting a 404 from a realm that did not exist and failing to register. Now
-// that it does exist, two things have to happen on ITS timers and not on this
-// job's: the retried registration has to succeed, and a pull has to load the
-// policy. Both land within one polling interval.
+// up, getting a 404 from a realm that did not exist and failing to register.
+// Now that it does exist, two things have to happen on ITS timers and not on
+// this job's: the retried registration has to succeed, and a pull has to load
+// the policy. Both land within one polling interval.
 //
 // **THIS IS A WAIT AND NOT AN ASSERTION.** Section 1 makes the assertions, and
 // it can only make them once the state has settled — a read taken while the
@@ -1207,8 +1315,8 @@ async function itRegistersAndPulls() {
         "attempt means something else is answering — a container from an " +
         "earlier run, or a realm this job did not create. Before " +
         "xacml-pep/sync.js retried, this arrangement was impossible: a PEP " +
-        "that came up before its PDP enforced correctly for ever and appeared " +
-        "on nobody's console." + pepLog());
+        "that came up before its PDP enforced correctly for ever and " +
+        "appeared on nobody's console." + pepLog());
     });
   }
 
@@ -1221,8 +1329,8 @@ async function itRegistersAndPulls() {
     assert.ok(seen.pdp.replace(/\/+$/, "").endsWith("/realm/" + REALM),
       "the PEP reports it is dialling " + seen.pdp + " and this job owns the " +
       "realm " + REALM + ". Under a launcher that URL is decided when the " +
-      "stack comes up (XACML_PEP_PDP_URL) and this job is told which realm to " +
-      "use (XACML_PEP_REALM); the two disagreeing means one of them was " +
+      "stack comes up (XACML_PEP_PDP_URL) and this job is told which realm " +
+      "to use (XACML_PEP_REALM); the two disagreeing means one of them was " +
       "changed alone.");
     if (pep.pdpUrl) {
       // Only when this job configured it — an attached container was told
@@ -1237,8 +1345,8 @@ async function itRegistersAndPulls() {
         "ON A DOCKER NETWORK IT MUST NOT BE LOCALHOST. The point of the " +
         "container is that the PEP resolves the service by its compose name " +
         "on the private network, on the INTERNAL port, against a certificate " +
-        "issued for THAT name — none of which a PEP dialling a published port " +
-        "on loopback ever does. It says " + seen.pdp);
+        "issued for THAT name — none of which a PEP dialling a published " +
+        "port on loopback ever does. It says " + seen.pdp);
     }
   });
 
@@ -1338,9 +1446,9 @@ async function itRegistersAndPulls() {
     assert.strictEqual(seen.registration.notify.usable, false,
       "THIS IS THE PREMISE OF SECTIONS 4 AND 5. The PEP registered an http " +
       "notify URL and xacml.pepNotifyAllowInsecure is off, so the PDP will " +
-      "not dial it — which means the convergences up to section 5 happened by " +
-      "POLLING. Section 6 turns it on and measures the difference. The PDP " +
-      "said " + JSON.stringify(seen.registration.notify));
+      "not dial it — which means the convergences up to section 5 happened " +
+      "by POLLING. Section 6 turns it on and measures the difference. The " +
+      "PDP said " + JSON.stringify(seen.registration.notify));
     assert.ok(String(seen.registration.notify.why)
                 .indexOf("pepNotifyAllowInsecure") > 0,
       "and it should name the setting rather than merely refusing; it says " +
@@ -1361,11 +1469,12 @@ async function itRegistersAndPulls() {
     assert.strictEqual(seen.holding.root, ID_OF[POLICY_A],
       "AND IT MUST BE THE RIGHT DOCUMENT. The PEP starts evaluation from the " +
       "policy it believes is the root, and one that started from the wrong " +
-      "one would decide confidently and wrongly. It holds " + seen.holding.root);
+      "one would decide confidently and wrongly. It holds " +
+      seen.holding.root);
     assert.deepStrictEqual(seen.holding.refused, [],
       "no policy should have failed to load in the PEP's own validator — it " +
-      "parses what it pulled rather than trusting the PDP, and a refusal here " +
-      "is the two ends disagreeing about a document. It refused " +
+      "parses what it pulled rather than trusting the PDP, and a refusal " +
+      "here is the two ends disagreeing about a document. It refused " +
       JSON.stringify(seen.holding.refused));
   });
 
@@ -1415,6 +1524,217 @@ async function itRegistersAndPulls() {
 }
 
 // ===========================================================================
+// 1b. ITS HTTPS LISTENER, CERTIFIED BY THE REALM IT REGISTERED TO (2026-09-13).
+//
+// A remote PEP answers its own clients, and it answers them over HTTPS with a
+// key pair this service's realm issued it: the `pep-tls` Issuing CA under this
+// realm's Intermediate, reached through `POST /admin-api/xacml/
+// issue-pep-certificate`. The private key comes back ONCE, in that reply, and
+// this job does what an operator does with it — writes the pair to the two
+// files the container names — and then dials the container as a client that
+// holds nothing but the service Root.
+//
+// **WHAT IS ONLY TRUE OF THE DEPLOYMENT, which is why it is here and not only
+// in `tests/pep_listener_certificate.js`:** the container starts with no pair
+// (the realm did not exist, so it could not have one), finds the files after
+// they are written on a mount it does not own, starts a listener in the image
+// without a restart, and serves a chain a client verifies BY THE NAME IT
+// DIALLED — which is a different name in each launcher's stack.
+// ===========================================================================
+
+// A TLS request to the PEP's HTTPS listener, trusting ONLY `anchorPem`, with
+// hostname checking left on. Answers the status, the parsed body, and what
+// the handshake saw of the chain.
+function pepHttpsGet(p, anchorPem) {
+  log.debug("Entering pepHttpsGet(). path=" + p);
+  const target = new URL(pep.httpsUrl + p);
+  log.debug("Leaving pepHttpsGet().");
+  return new Promise(function (resolve) {
+    const request = https.request({
+      host: target.hostname, port: target.port, path: target.pathname +
+      target.search, method: "GET", ca: [anchorPem],
+      servername: target.hostname, agent: false
+    }, function (response) {
+      const peer = response.socket.getPeerCertificate(true);
+      let text = "";
+      response.on("data", function (chunk) {
+        text += chunk.toString("utf8");
+      });
+      response.on("end", function () {
+        let body = null;
+        try {
+          body = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in pepHttpsGet(): " + ((e && e.message) || e));
+          body = null;
+        }
+        resolve({ status: response.statusCode, body: body, text: text,
+                  authorized: response.socket.authorized,
+                  serialHex: String((peer && peer.serialNumber) || ""),
+                  issuerCn: peer && peer.issuerCertificate
+                    ? String(peer.issuerCertificate.subject.CN || "") : "",
+                  intermediateCn: peer && peer.issuerCertificate &&
+                    peer.issuerCertificate.issuerCertificate
+                    ? String(peer.issuerCertificate.issuerCertificate.subject
+                      .CN || "") : "" });
+      });
+    });
+    request.on("error", function (e) {
+      resolve({ status: 0, error: e.message, authorized: false });
+    });
+    request.end();
+  });
+}
+
+function sameSerial(a, b) {
+  log.debug("Entering sameSerial().");
+  const tidy = function (one) {
+    log.debug("Entering tidy().");
+    log.debug("Leaving tidy().");
+    return String(one || "").toLowerCase().replace(/[^0-9a-f]/g, "")
+      .replace(/^0+/, "");
+  };
+  log.debug("Leaving sameSerial().");
+  return !!tidy(a) && tidy(a) === tidy(b);
+}
+
+async function theListenerServesARealmCertificate() {
+  log.debug("Entering theListenerServesARealmCertificate().");
+  log.info("=== The PEP's HTTPS listener, certified by its realm ===");
+  assert.ok(pep.httpsUrl && pep.serverCertDir,
+    "the launcher started the PEP and did not say where its HTTPS listener " +
+    "is or where to write its certificate: XACML_PEP_HTTPS_URL=\"" +
+    pep.httpsUrl + "\" and XACML_PEP_SERVER_CERT_DIR=\"" + pep.serverCertDir +
+    "\". Both launchers export them beside XACML_PEP_URL; a stack brought up " +
+    "by hand needs them set to the published 9443 port and to the host path " +
+    "of the container's /certs/server.");
+
+  // BEFORE: configured, waiting, and saying why.
+  const waiting = await pepOverview();
+  check("before a pair is written the listener is configured and waiting",
+        function () {
+    assert.ok(waiting.https && waiting.https.configured === true &&
+              waiting.https.listening === false,
+      "GET / should report an HTTPS listener that is configured and not yet " +
+      "listening; it says " + JSON.stringify(waiting.https) + pepLog());
+    assert.ok(/does not exist/.test(String(waiting.https.problem || "")),
+      "and say the pair is not there yet; it says " +
+      JSON.stringify(waiting.https.problem));
+  });
+
+  // A NAME NOTHING REGISTERED IS REFUSED: the realm is decided by the row.
+  const stranger = await postJson(api("/xacml/issue-pep-certificate"),
+                                  { name: "no-such-pep-" + PEP_NAME });
+  check("a certificate for a PEP not registered in this realm is refused",
+        function () {
+    assert.strictEqual(stranger.status, 400,
+      "issuing for an unregistered name should answer 400; it answered " +
+      stranger.status + " " + String(stranger.text).slice(0, 300));
+    assert.ok(!stranger.text || stranger.text.indexOf("PRIVATE KEY") < 0,
+      "and hand back no key");
+  });
+
+  // THE ISSUE, naming the host this job dials the listener by.
+  const host = new URL(pep.httpsUrl).hostname;
+  const isIp = net.isIP(host) !== 0;
+  const issued = await postJson(api("/xacml/issue-pep-certificate"), {
+    name: PEP_NAME,
+    dnsNames: isIp ? [] : [host],
+    ipAddresses: isIp ? [host] : []
+  });
+  const got = issued.body || {};
+  check("the realm issues the PEP a listener certificate and its key, once",
+        function () {
+    assert.strictEqual(issued.status, 200,
+      "POST /admin-api/xacml/issue-pep-certificate answered " + issued.status +
+      " " + String(issued.text).slice(0, 400));
+    assert.ok(/BEGIN PRIVATE KEY/.test(String(got.privateKeyPem || "")),
+      "the reply carries the private key");
+    assert.ok((String(got.fullChainPem || "").match(/BEGIN CERTIFICATE/g) ||
+               []).length === 3,
+      "fullChainPem is the leaf, its Issuing CA and the realm Intermediate — " +
+      "three certificates, no Root; it holds " +
+      (String(got.fullChainPem || "").match(/BEGIN CERTIFICATE/g) || [])
+        .length);
+    assert.strictEqual(got.realm, REALM,
+      "it was issued by the realm the PEP registered to");
+    assert.ok(got.dnsNames.concat(got.ipAddresses).indexOf(host) >= 0 &&
+              got.dnsNames.indexOf(PEP_NAME) >= 0,
+      "it names the host this job dials (" + host + ") and the PEP's " +
+      "registered name; it names " +
+      JSON.stringify(got.dnsNames.concat(got.ipAddresses)));
+  });
+
+  const register = await get(api("/xacml/peps"));
+  check("the PDP's row records the certificate and not the key", function () {
+    const row = ((register.body || {}).peps || []).filter(function (one) {
+      return one.name === PEP_NAME;
+    })[0] || {};
+    assert.ok(row.listenerCertificate &&
+              row.listenerCertificate.serialHex === got.serialHex,
+      "GET /admin-api/xacml/peps should carry the issued serial on the " +
+      "PEP's row; it has " + JSON.stringify(row.listenerCertificate));
+    assert.ok(String(register.text).indexOf("PRIVATE KEY") < 0,
+      "and no private key anywhere in that reply");
+  });
+
+  // WHAT AN OPERATOR DOES WITH THE REPLY: two files on the container's mount.
+  fs.writeFileSync(path.join(pep.serverCertDir, "pep-server.crt"),
+                   got.fullChainPem, { mode: 0o644 });
+  fs.writeFileSync(path.join(pep.serverCertDir, "pep-server.key"),
+                   got.privateKeyPem, { mode: 0o644 });
+  log.info("Wrote the issued pair to " + pep.serverCertDir + "; waiting for " +
+           "the container to start its listener.");
+
+  await until("the PEP to start its HTTPS listener with the issued pair",
+              async function () {
+    const seen = await pepOverview();
+    const h = seen.https || {};
+    return { ok: h.listening === true && h.certificate &&
+                 sameSerial(h.certificate.serialHex, got.serialHex),
+             note: "listening=" + h.listening + ", problem=" + h.problem };
+  });
+
+  const overHttps = await pepHttpsGet("/", got.anchorPem);
+  check("a client holding only the service Root reaches it over HTTPS",
+        function () {
+    assert.ok(overHttps.status === 200 && overHttps.authorized,
+      "GET " + pep.httpsUrl + "/ trusting only the service Root answered " +
+      overHttps.status + " (" + (overHttps.error || "authorized=" +
+      overHttps.authorized) + ")" + pepLog());
+    assert.ok(sameSerial(overHttps.serialHex, got.serialHex),
+      "with the certificate the realm issued; it was served " +
+      overHttps.serialHex);
+    assert.ok(overHttps.body && overHttps.body.https &&
+              overHttps.body.https.listening === true,
+      "and it is the same PEP, reporting itself");
+  });
+  check("the chain runs through this realm's own Intermediate", function () {
+    assert.ok(/Remote PEP TLS Issuing CA/.test(overHttps.issuerCn),
+      "issued by the Remote PEP listeners Issuing CA; the issuer is " +
+      overHttps.issuerCn);
+    assert.ok(overHttps.intermediateCn.indexOf("(" + REALM + ")") >= 0,
+      "under " + REALM + "'s Intermediate; it is " + overHttps.intermediateCn);
+  });
+
+  const decided = await pepHttpsGet("/protected?subject=" + ADMIN_PERSON +
+                                    "&employeeType=admin&action=GET",
+                                    got.anchorPem);
+  check("the protected resource answers over HTTPS as it does over HTTP",
+        function () {
+    assert.ok(decided.status === 200 && decided.body &&
+              decided.body.decision === "Permit",
+      "GET /protected over HTTPS for an admin should be a Permit decided in " +
+      "the container; it answered " + decided.status + " " +
+      String(decided.text || decided.error).slice(0, 300));
+  });
+
+  log.info("[https] OK — serving " + got.serialHex + " from " + REALM +
+           "'s Remote PEP listeners Issuing CA at " + pep.httpsUrl + ".");
+  log.debug("Leaving theListenerServesARealmCertificate().");
+}
+
+// ===========================================================================
 // 2. THE DECISION HAPPENS IN THE CONTAINER.
 //
 // The four cases below are decided by the deny-unless-permit RBAC policy, so
@@ -1436,13 +1756,13 @@ async function itDecidesInItsOwnProcess() {
 
   const cases = [
     { what: "an admin may do anything",
-      query: { subject: "carol", employeeType: "admin", action: "DELETE" },
+      query: { subject: ADMIN_PERSON, employeeType: "admin", action: "DELETE" },
       allowed: true, decision: "Permit" },
     { what: "staff may GET",
-      query: { subject: "alice", employeeType: "staff", action: "GET" },
+      query: { subject: STAFF_PERSON, employeeType: "staff", action: "GET" },
       allowed: true, decision: "Permit" },
     { what: "staff may NOT DELETE",
-      query: { subject: "alice", employeeType: "staff", action: "DELETE" },
+      query: { subject: STAFF_PERSON, employeeType: "staff", action: "DELETE" },
       allowed: false, decision: "Deny" },
     { what: "a role nobody granted anything to is denied",
       query: { subject: "mallory", employeeType: "contractor", action: "GET" },
@@ -1465,7 +1785,8 @@ async function itDecidesInItsOwnProcess() {
     });
   }
 
-  const decided = await askThePep({ subject: "carol", employeeType: "admin",
+  const decided = await askThePep({ subject: ADMIN_PERSON,
+                                    employeeType: "admin",
                                     action: "GET" });
   check("the answer names the PEP that decided and the policy it applied",
         function () {
@@ -1476,7 +1797,8 @@ async function itDecidesInItsOwnProcess() {
       "AND THE TOKEN IT DECIDED AGAINST, which is the field that makes a " +
       "disagreement between two PEPs diagnosable rather than mysterious. It " +
       "carries " + JSON.stringify(decided.body.decidedBy));
-    assert.ok(String(decided.body.decidedBy.note).indexOf("PDP did not see") > 0,
+    assert.ok(String(decided.body.decidedBy.note).indexOf(
+        "PDP did not see") > 0,
       "and it should say plainly that the PDP saw none of this; it says " +
       decided.body.decidedBy.note);
     assert.ok((decided.body.applicablePolicies || []).length >= 1,
@@ -1522,11 +1844,13 @@ async function itDecidesInItsOwnProcess() {
 // ---------------------------------------------------------------------------
 // WHAT IS ACTUALLY BEING PROVED, AND WHY EACH STEP IS NEEDED.
 //
-// The policy is the `rbac` template over `employeeType`, and **carol carries
-// `employeeType: admin` on her entry under `ou=users` in the embedded
-// directory** — put there by `ldap_server.js`'s seed, in every realm, and by
-// nothing this job did. Nothing about carol travels in the request below: the
-// query names a subject and an action and asserts NO attribute at all.
+// The policy is the `rbac` template over `employeeType`, and **ADMIN_PERSON
+// carries `employeeType: admin` on their entry under `ou=users` in the
+// embedded directory** — put there by THIS JOB, in `createThePeople()`, through
+// the realm's own `/admin-api/users/create`. (Until 2026-09-12 it was `carol`,
+// put there by `ldap_server.js`'s development-mode seed; product mode seeds
+// nobody.) Nothing about them travels in the request below: the query names a
+// subject and an action and asserts NO attribute at all.
 //
 // So a Permit can only have come from one place. Four checks, and each rules
 // out a different way of being right by accident:
@@ -1565,49 +1889,52 @@ async function thePipReachesTheDirectory() {
   // NOTHING IS ASSERTED ABOUT HER. No employeeType, no role, no attribute of
   // any kind — only a name and an action. Every attribute the policy reads has
   // to come from the directory, through the PIP, or the request is refused.
-  const carol = await askThePep({ subject: "carol", action: "DELETE" });
-  check("the PEP PERMITS carol on an attribute it pulled from the PDP's " +
-        "directory, with the request asserting nothing", function () {
-    assert.strictEqual(carol.body.decision, "Permit",
-      "carol carries employeeType=admin on her entry under ou=users in the " +
-      "embedded directory and NOTHING in this request says so. The policy " +
-      "is the rbac template over employeeType, so a Permit can only have " +
-      "come from POST /xacml/pip resolving that designator against her " +
-      "entry. The PEP said " + carol.body.decision + " — " +
-      String(carol.body.why).slice(0, 300));
-    assert.strictEqual(carol.status, 200,
-      "and the access is allowed; it answered " + carol.status);
+  const adminAsked = await askThePep({ subject: ADMIN_PERSON,
+                                       action: "DELETE" });
+  check("the PEP PERMITS " + ADMIN_PERSON + " on an attribute it pulled from " +
+        "the PDP's directory, with the request asserting nothing", function () {
+    assert.strictEqual(adminAsked.body.decision, "Permit",
+      ADMIN_PERSON + " carries employeeType=admin on their entry under " +
+      "ou=users in the embedded directory and NOTHING in this request says " +
+      "so. The policy is the rbac template over employeeType, so a Permit " +
+      "can only have come from POST /xacml/pip resolving that designator " +
+      "against her entry. The PEP said " + adminAsked.body.decision + " — " +
+      String(adminAsked.body.why).slice(0, 300));
+    assert.strictEqual(adminAsked.status, 200,
+      "and the access is allowed; it answered " + adminAsked.status);
   });
 
   check("and it SAYS the PIP answered, rather than leaving it to be inferred",
         function () {
-    assert.ok(carol.body.pip && carol.body.pip.used === true,
+    assert.ok(adminAsked.body.pip && adminAsked.body.pip.used === true,
       "the answer should carry a pip block saying the query was made — two " +
       "decisions that differ only because one had an attribute the other did " +
       "not are otherwise identical on the wire. It carries " +
-      JSON.stringify(carol.body.pip));
-    assert.strictEqual(carol.body.pip.subject, "carol",
-      "naming the subject it asked about; it says " + carol.body.pip.subject);
-    assert.ok(carol.body.pip.resolved >= 1,
+      JSON.stringify(adminAsked.body.pip));
+    assert.strictEqual(adminAsked.body.pip.subject, ADMIN_PERSON,
+      "naming the subject it asked about; it says " +
+      adminAsked.body.pip.subject);
+    assert.ok(adminAsked.body.pip.resolved >= 1,
       "and how many designators came back with values. A Permit with ZERO " +
       "resolved would mean the attribute arrived some other way, which is " +
       "the one reading this whole section exists to rule out. It resolved " +
-      carol.body.pip.resolved + " of " + carol.body.pip.designators + ".");
+      adminAsked.body.pip.resolved + " of " + adminAsked.body.pip.designators +
+      ".");
   });
 
   // THE SAME QUESTION AT THE PDP. Two enforcement points, one policy, one
   // directory — and now one answer.
-  const pdpOnCarol = await askThePdp("carol", "DELETE");
+  const pdpOnAdmin = await askThePdp(ADMIN_PERSON, "DELETE");
   check("AND THE PDP AGREES WITH IT, which is the whole point", function () {
-    assert.strictEqual(pdpOnCarol.Decision, "Permit",
+    assert.strictEqual(pdpOnAdmin.Decision, "Permit",
       "the PDP resolves the same attribute through its own embedded PIP and " +
-      "said " + pdpOnCarol.Decision);
-    assert.strictEqual(pdpOnCarol.Decision, carol.body.decision,
+      "said " + pdpOnAdmin.Decision);
+    assert.strictEqual(pdpOnAdmin.Decision, adminAsked.body.decision,
       "the two enforcement points must reach the SAME decision about the " +
       "same person under the same policy. The PDP said " +
-      pdpOnCarol.Decision + " and the remote PEP said " +
-      carol.body.decision + ". This assertion is the inversion of what this " +
-      "section used to hold: before POST /xacml/pip existed these two " +
+      pdpOnAdmin.Decision + " and the remote PEP said " +
+      adminAsked.body.decision + ". This assertion is the inversion of what " +
+      "this section used to hold: before POST /xacml/pip existed these two " +
       "disagreed BY DESIGN, and the disagreement was the drift a shared " +
       "policy repository is supposed to prevent.");
   });
@@ -1663,8 +1990,8 @@ async function thePipReachesTheDirectory() {
   // ---------------------------------------------------------------------
   const asserted = await askThePep({ subject: "nobody-at-all",
                                      employeeType: "admin", action: "DELETE" });
-  check("a request-asserted attribute still decides where the directory holds " +
-        "nothing", function () {
+  check("a request-asserted attribute still decides where the directory " +
+        "holds nothing", function () {
     assert.strictEqual(asserted.body.decision, "Permit",
       "THE PEP STILL BELIEVES WHAT IT WAS TOLD when the PIP has nothing to " +
       "say — the request asserted employeeType=admin for a name no entry " +
@@ -1704,7 +2031,8 @@ async function thePipReachesTheDirectory() {
     assert.ok(overview.pip.lastQuery && overview.pip.lastQuery.used === true,
       "and the last query's outcome, so that 'the PIP stopped working' is " +
       "something a reader SEES rather than infers from decisions that " +
-      "changed. It says " + JSON.stringify(overview.pip.lastQuery).slice(0, 200));
+      "changed. It says " +
+      JSON.stringify(overview.pip.lastQuery).slice(0, 200));
   });
 
   log.info("[pip] OK — the same policy, two enforcement points, one " +
@@ -1717,8 +2045,8 @@ async function thePipReachesTheDirectory() {
 //
 // THIS IS THE ASSERTION THE WHOLE FILE EXISTS FOR. A second policy is built
 // through `/admin-api/xacml/create-from-template` and promoted to root, and the
-// PEP — which cannot be nudged yet, see section 1 — converges on its own polling
-// interval and starts allowing something it refused a moment ago.
+// PEP — which cannot be nudged yet, see section 1 — converges on its own
+// polling interval and starts allowing something it refused a moment ago.
 //
 // The wait is on the ENFORCEMENT rather than on the sync token, deliberately. A
 // token that changed while the decision did not would be a PEP that pulled and
@@ -1728,7 +2056,7 @@ async function aDeployedPolicyConverges() {
   log.debug("Entering aDeployedPolicyConverges().");
   log.info("=== A new policy, deployed at the PAP, reaching the container ===");
 
-  const before = await askThePep({ subject: "alice", employeeType: "staff",
+  const before = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                    action: "DELETE" });
   check("before the change, staff may not DELETE", function () {
     assert.strictEqual(before.status, 403,
@@ -1753,7 +2081,7 @@ async function aDeployedPolicyConverges() {
   const arrived = await until(
     "the remote PEP to enforce the policy deployed a moment ago",
     async function () {
-      const r = await askThePep({ subject: "alice", employeeType: "staff",
+      const r = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                   action: "DELETE" });
       return { ok: r.status === 200,
                note: "the PEP still answers " + r.status + " (" +
@@ -1770,15 +2098,15 @@ async function aDeployedPolicyConverges() {
       "both policies are enabled, so both are pulled — only one of them is " +
       "the root. The PEP holds " + after.holding.policyCount);
     // THE LATENCY IS THE POLLING INTERVAL AND NOTHING ELSE, which is the trade
-    // `xacml-pep/CLAUDE.md` states. Not asserted as a lower bound — a machine is
-    // allowed to be fast — but LOGGED, and section 6 asserts the comparison
+    // `xacml-pep/CLAUDE.md` states. Not asserted as a lower bound — a machine
+    // is allowed to be fast — but LOGGED, and section 6 asserts the comparison
     // against it, which is the assertion that would notice a nudge having been
     // delivered here after all.
     log.info("The PEP took " + arrived.ms + "ms to converge by polling; its " +
              "interval is " + POLL_MS + "ms and no nudge was delivered.");
   });
 
-  const both = await askThePep({ subject: "carol", employeeType: "admin",
+  const both = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                  action: "DELETE" });
   check("and the rule the old policy already granted still holds", function () {
     assert.strictEqual(both.status, 200,
@@ -1803,8 +2131,8 @@ async function aDeployedPolicyConverges() {
 //
 //   * disabling the ROOT leaves the other policy the only enabled one, and the
 //     PEP falls back to enforcing THAT — the same convenience rule
-//     `xacml_store.js` applies, restated in `sync.js` rather than relied on, and
-//     the two now demonstrably agree;
+//     `xacml_store.js` applies, restated in `sync.js` rather than relied on,
+//     and the two now demonstrably agree;
 //   * disabling both leaves the PEP holding NOTHING, which is the one state
 //     where its bias is what decides. A deny-biased PEP then refuses everything
 //     — including the admin it was permitting a second ago.
@@ -1820,7 +2148,7 @@ async function aDisabledPolicyStopsBeingEnforced() {
   await act("disable", { name: POLICY_B }, "disabled the widened policy");
   await until("the PEP to stop enforcing the disabled policy",
               async function () {
-    const r = await askThePep({ subject: "alice", employeeType: "staff",
+    const r = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                 action: "DELETE" });
     return { ok: r.status === 403,
              note: "staff DELETE still answers " + r.status };
@@ -1842,7 +2170,7 @@ async function aDisabledPolicyStopsBeingEnforced() {
       fellBack.holding.root);
   });
 
-  const stillAllowed = await askThePep({ subject: "carol",
+  const stillAllowed = await askThePep({ subject: ADMIN_PERSON,
                                          employeeType: "admin",
                                          action: "DELETE" });
   check("the fallback policy is really being evaluated, not just held",
@@ -1857,14 +2185,15 @@ async function aDisabledPolicyStopsBeingEnforced() {
   // AND NOW THE STATE WHERE THE BIAS IS WHAT DECIDES.
   await act("disable", { name: POLICY_A }, "disabled the baseline policy too");
   await until("the PEP to be holding no policy at all", async function () {
-    const r = await askThePep({ subject: "carol", employeeType: "admin",
+    const r = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                 action: "DELETE" });
     return { ok: r.status === 403,
              note: "the admin is still allowed (" + r.status + ")" };
   });
 
   const empty = await pepOverview();
-  const refused = await askThePep({ subject: "carol", employeeType: "admin",
+  const refused = await askThePep({ subject: ADMIN_PERSON,
+                                    employeeType: "admin",
                                     action: "DELETE" });
   check("with nothing to enforce, the deny-biased PEP refuses everything — " +
         "and says so", function () {
@@ -1892,7 +2221,7 @@ async function aDisabledPolicyStopsBeingEnforced() {
   await act("enable", { name: POLICY_A }, "re-enabled the baseline policy");
   await until("the PEP to recover when the policy comes back",
               async function () {
-    const r = await askThePep({ subject: "carol", employeeType: "admin",
+    const r = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                 action: "DELETE" });
     return { ok: r.status === 200,
              note: "the admin is still refused (" + r.status + ")" };
@@ -1906,7 +2235,8 @@ async function aDisabledPolicyStopsBeingEnforced() {
   });
 
   log.info("[disable] OK — a disabled policy stops being enforced in another " +
-           "container, and an empty holding is the one state the bias decides.");
+           "container, and an empty holding is the one state the bias " +
+           "decides.");
   log.debug("Leaving aDisabledPolicyStopsBeingEnforced().");
 }
 
@@ -1956,14 +2286,14 @@ async function theNudgeIsDelivered(polledMs) {
 
   const started = Date.now();
   // ONE ACTION AND NOT TWO. Re-enabling the widened policy makes it the root
-  // again on its own — `disable` left its isRoot flag alone and `xacml_store.js`
-  // picks the single flagged enabled policy — so this is exactly one repository
-  // change and therefore exactly one nudge to measure.
+  // again on its own — `disable` left its isRoot flag alone and
+  // `xacml_store.js` picks the single flagged enabled policy — so this is
+  // exactly one repository change and therefore exactly one nudge to measure.
   await act("enable", { name: POLICY_B }, "re-enabled the widened policy");
   const arrived = await until(
     "the nudged PEP to enforce the change",
     async function () {
-      const r = await askThePep({ subject: "alice", employeeType: "staff",
+      const r = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                   action: "DELETE" });
       return { ok: r.status === 200,
                note: "the PEP still answers " + r.status };
@@ -2043,13 +2373,13 @@ async function theNudgeIsDelivered(polledMs) {
         "interval", function () {
     assert.ok(elapsed < POLL_MS / 4,
       "the poll interval is " + POLL_MS + "ms and section 4 took " + polledMs +
-      "ms to converge without a nudge. This one took " + elapsed + "ms, and a " +
-      "delivered nudge is TENS of milliseconds — the PDP posts as the store " +
-      "is written and the PEP pulls on the way out of answering 204. A number " +
-      "up in the hundreds means the nudge was recorded as delivered and did " +
-      "not cause THIS convergence: the poll did the work, and a PEP that " +
-      "answers a nudge without acting on it looks identical from every other " +
-      "angle.");
+      "ms to converge without a nudge. This one took " + elapsed + "ms, and " +
+      "a delivered nudge is TENS of milliseconds — the PDP posts as the " +
+      "store is written and the PEP pulls on the way out of answering 204. A " +
+      "number up in the hundreds means the nudge was recorded as delivered " +
+      "and did not cause THIS convergence: the poll did the work, and a PEP " +
+      "that answers a nudge without acting on it looks identical from every " +
+      "other angle.");
     log.info("Nudged convergence: " + elapsed + "ms, against " + polledMs +
              "ms by polling and a " + POLL_MS + "ms interval.");
   });
@@ -2121,16 +2451,17 @@ async function thePdpSeesWhatItNeverSaw() {
       finalRow.policyCount);
     assert.strictEqual(finalRow.current, true,
       "CURRENT IS A COMPARISON THE PDP PERFORMS, between the token the PEP " +
-      "last reported and the one the repository has now — which is what makes " +
-      "\"is everybody deciding with the same policy\" answerable at all. The " +
-      "row says current=" + finalRow.current + " (it holds " +
+      "last reported and the one the repository has now — which is what " +
+      "makes \"is everybody deciding with the same policy\" answerable at " +
+      "all. The row says current=" + finalRow.current + " (it holds " +
       String(finalRow.syncToken).slice(0, 12) + "…)");
     assert.strictEqual(finalRow.stale, false,
       "and it is being heard from; lastSeen=" + finalRow.lastSeen);
   });
 
   log.info("[heartbeat] OK — " + finalRow.decisions + " decision(s) made in " +
-           "another container and visible here because that container said so.");
+           "another container and visible here because that container said " +
+           "so.");
   log.debug("Leaving thePdpSeesWhatItNeverSaw().");
 }
 
@@ -2175,13 +2506,12 @@ async function theNudgeCarriesNothing() {
       changed: true,
       syncToken: "a-token-this-pep-should-not-adopt",
       policies: [{ name: "hostile", policyId: "urn:test:hostile", isRoot: true,
-                   document: "<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:" +
-                             "core:schema:wd-17\" PolicyId=\"urn:test:hostile\" " +
-                             "Version=\"1.0\" RuleCombiningAlgId=\"urn:oasis:" +
-                             "names:tc:xacml:3.0:rule-combining-algorithm:" +
-                             "permit-overrides\"><Target/><Rule RuleId=\"" +
-                             "urn:test:hostile:all\" Effect=\"Permit\">" +
-                             "<Target/></Rule></Policy>" }],
+                   document: "<Policy " +
+                             "xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" " +
+                             "PolicyId=\"urn:test:hostile\" Version=\"1.0\" " +
+                             "RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:permit-overrides\">" +
+                             "<Target/><Rule RuleId=\"urn:test:hostile:all\" " +
+                             "Effect=\"Permit\"><Target/></Rule></Policy>" }],
       policiesUrl: "http://127.0.0.1:1/xacml/pep/policies"
     })
   });
@@ -2194,9 +2524,9 @@ async function theNudgeCarriesNothing() {
       String(nudged.text).slice(0, 200));
     assert.ok(answeredIn < 2000,
       "IT MUST ANSWER BEFORE IT PULLS. xacml.pepNotifyTimeoutMs is 2000ms by " +
-      "default, and a PEP that held the request open for the length of a pull " +
-      "would be recorded as unreachable on /admin/xacml/peps while working " +
-      "perfectly. This one answered in " + answeredIn + "ms.");
+      "default, and a PEP that held the request open for the length of a " +
+      "pull would be recorded as unreachable on /admin/xacml/peps while " +
+      "working perfectly. This one answered in " + answeredIn + "ms.");
   });
 
   // The nudged pull happens after the answer, so give it a moment to land
@@ -2303,7 +2633,8 @@ async function itKeepsEnforcingWhenThePdpIsGone() {
       "would be the dangerous half. It says: " + stranded.holding.lastPullWhy);
   });
 
-  const allowed = await askThePep({ subject: "alice", employeeType: "staff",
+  const allowed = await askThePep({ subject: STAFF_PERSON,
+                                    employeeType: "staff",
                                     action: "DELETE" });
   const denied = await askThePep({ subject: "mallory",
                                    employeeType: "contractor",
@@ -2384,7 +2715,31 @@ async function createTheRealm() {
   log.debug("Leaving createTheRealm().");
 }
 
+// THE TWO PEOPLE THE RBAC POLICY DECIDES ABOUT, created in this run's realm
+// (2026-09-12). They were the seeded `carol` (admin) and `alice` (staff); the
+// requests that assert an `employeeType` still assert the same one, and the PIP
+// section now resolves ADMIN_PERSON's from an entry this job wrote.
+async function createThePeople() {
+  log.debug("Entering createThePeople().");
+  for (const one of [[ADMIN_PERSON, "admin", "Admin"],
+                     [STAFF_PERSON, "staff", "Staff"]]) {
+    const r = await postJson(api("/users/create"), {
+      username: one[0], invent: false,
+      attributes: { cn: "Remote PEP " + one[2] + " Person", givenName: "Remote",
+                    sn: one[2] + " Person", displayName: "Remote PEP " + one[2],
+                    mail: one[0] + "@xacml-remote-pep.test",
+                    employeeType: one[1] }
+    });
+    assert.ok(r.status === 200 && r.body && r.body.ok,
+      "POST /admin-api/users/create should put " + one[0] + " (employeeType=" +
+      one[1] + ") in " + REALM + "; it answered " + r.status + " " +
+      String(r.text).slice(0, 300));
+  }
+  log.debug("Leaving createThePeople().");
+}
+
 function theRealmIsLeftBehind() {
+  log.debug("Entering theRealmIsLeftBehind().");
   log.info("The realm " + REALM + " is LEFT IN PLACE on purpose. It holds " +
            "the policy documents this run deployed, the PEP's row in " +
            "ou=peps with everything " + PEP_NAME + " reported, and — if " +
@@ -2395,6 +2750,7 @@ function theRealmIsLeftBehind() {
            "are done with it — and note that this job cannot run twice " +
            "against the same service while it stands, because a " +
            "launcher-owned PEP fixes the realm id.");
+  log.debug("Leaving theRealmIsLeftBehind().");
 }
 
 function cleanUpTheCertificates() {
@@ -2461,6 +2817,7 @@ async function test() {
   await mintTheCredential();
   await createTheRealm();
   try {
+    await createThePeople();
     // THE TWO THINGS THE CONTAINER NEEDS BEFORE IT CAN SETTLE, in this order
     // and both before anything is asserted about it.
     //
@@ -2495,6 +2852,7 @@ async function test() {
     try {
       await waitForItToFindTheRealm();
       await itRegistersAndPulls();
+      await theListenerServesARealmCertificate();
       await itDecidesInItsOwnProcess();
       await thePipReachesTheDirectory();
       const polledMs = await aDeployedPolicyConverges();

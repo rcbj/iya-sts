@@ -47,18 +47,18 @@
 //
 // **A PDP WITH AN EMPTY REPOSITORY ANSWERS NotApplicable TO EVERYTHING.** There
 // is no interesting question to ask this surface until a policy exists, and the
-// only way to put one there over HTTP is `/admin-api/xacml/create-from-template`
-// — a door this repository owns, on the console this repository's own jobs
-// cover. So every section below is a CONSOLE CONTROL WITH A PROTOCOL
-// CONSEQUENCE: a template built through `/admin-api` decides at `/xacml/pdp`, a
-// policy disabled on `/admin/xacml/policies` disappears from what a remote PEP
-// pulls, an obligation added in the editor turns a Permit into a refusal at
-// `/xacml/protected`, and a PEP disabled on `/admin/xacml/peps` stays disabled
-// when it re-registers. That is exactly the argument `sts_consent.js` makes one
-// file over, and splitting these in two was refused for its reason: the
-// assertion that matters is that the authoring door changes what the DECIDING
-// door says, and a test with the two halves in two repositories could not make
-// it.
+// only way to put one there over HTTP is
+// `/admin-api/xacml/create-from-template` — a door this repository owns, on the
+// console this repository's own jobs cover. So every section below is a CONSOLE
+// CONTROL WITH A PROTOCOL CONSEQUENCE: a template built through `/admin-api`
+// decides at `/xacml/pdp`, a policy disabled on `/admin/xacml/policies`
+// disappears from what a remote PEP pulls, an obligation added in the editor
+// turns a Permit into a refusal at `/xacml/protected`, and a PEP disabled on
+// `/admin/xacml/peps` stays disabled when it re-registers. That is exactly the
+// argument `sts_consent.js` makes one file over, and splitting these in two was
+// refused for its reason: the assertion that matters is that the authoring door
+// changes what the DECIDING door says, and a test with the two halves in two
+// repositories could not make it.
 //
 // ---------------------------------------------------------------------------
 // IT RUNS IN A TRUST REALM OF ITS OWN, AND THAT IS NOT MERELY TIDINESS.
@@ -134,17 +134,23 @@ const forge = require("node-forge");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_xacml_endpoints",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -176,6 +182,23 @@ const ROGUE_CN = "rogue-pep-" + names.runStamp();
 // The rogue name above is stamped precisely because it must resolve to an
 // entry that exists and holds NOTHING, which a fresh name does.
 const XACML_USER_CN = "xacml-user-1";
+// THE TWO PEOPLE THE RBAC POLICY DECIDES ABOUT, CREATED BY THIS JOB IN ITS
+// REALM (2026-09-12). They were the seeded `carol` (employeeType=admin) and
+// `alice` (employeeType=staff), whom every realm's directory holds in
+// development and in product nobody. Two people with the same `employeeType`
+// are made in `createThePeople()` instead, with the attributes a real account
+// carries — `mail` and `sn` among them, because the PIP section reads both —
+// so every decision below is still about an attribute the PIP fetches and the
+// request never carries, and none of it depends on a seed.
+//
+// **THE TWO CERTIFICATE IDENTITIES ABOVE STILL ARE SEEDS**, and that is
+// recorded rather than changed: `cn=remote-pep-1` and `cn=xacml-user-1` are
+// resolved in THIS realm and in the DEFAULT one (section 12 reads the default
+// realm's repository with the same certificate), so replacing them means
+// provisioning an entry and a group membership in both — which writes to the
+// default realm's role groups, a change every later job in the run inherits.
+const ADMIN_PERSON = "xacml-admin-person";
+const STAFF_PERSON = "xacml-staff-person";
 // The XACML core namespace and the access-subject category, written out here
 // because the PIP section below builds XML by hand — a job driving a wire
 // format has to spell it rather than import the service's own constant, or it
@@ -188,17 +211,28 @@ const SUBJECT_CATEGORY =
 // rather than read from the service, because the whole assertion in section 5
 // is that THIS string and no other is discharged — reading it from the module
 // under test would make the check agree with whatever the module said.
-const DISCHARGEABLE = "urn:sts-mock:xacml:obligation:log";
+const DISCHARGEABLE = "urn:sts:xacml:obligation:log";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function realmUrl(path) { return base + "/realm/" + REALM + path; }
-function api(path) { return realmUrl("/admin-api" + path); }
+function realmUrl(path) {
+  log.debug("Entering realmUrl().");
+  log.debug("Leaving realmUrl().");
+  return base + "/realm/" + REALM + path;
+}
+
+function api(path) {
+  log.debug("Entering api().");
+  log.debug("Leaving api().");
+  return realmUrl("/admin-api" + path);
+}
 
 // ---------------------------------------------------------------------------
 // THE VERBS.
@@ -211,6 +245,7 @@ async function fetchJson(url, options) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML page or an empty 304. The caller reports the status
     // and the raw text, which says more than a parse error would.
     body = null;
@@ -222,10 +257,14 @@ async function fetchJson(url, options) {
 }
 
 function get(url) {
+  log.debug("Entering get().");
+  log.debug("Leaving get().");
   return fetchJson(url);
 }
 
 function postJson(url, payload) {
+  log.debug("Entering postJson().");
+  log.debug("Leaving postJson().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload || {}) });
@@ -234,6 +273,8 @@ function postJson(url, payload) {
 // A raw body, for the three malformed requests in section 3. `JSON.stringify`
 // cannot produce them, which is the point.
 function postRaw(url, raw) {
+  log.debug("Entering postRaw().");
+  log.debug("Leaving postRaw().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: raw });
@@ -243,35 +284,42 @@ function postRaw(url, raw) {
 // every one of these handlers answers `why` with a sentence naming what it
 // wanted, and a test that reported only the status would throw that away.
 async function act(action, payload, what) {
+  log.debug("Entering act().");
   const r = await postJson(api("/xacml/" + action), payload || {});
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "POST /admin-api/xacml/" + action + " should have " + what + "; it " +
     "answered " + r.status + " " +
     JSON.stringify((r.body && (r.body.why || r.body.error_description)) ||
                    r.body || r.text).slice(0, 400));
+  log.debug("Leaving act().");
   return r.body;
 }
 
 async function setSetting(key, value) {
+  log.debug("Entering setSetting().");
   const r = await postJson(api("/config/set"), { key: key, value: value });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "setting " + key + " in the realm should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
+  log.debug("Leaving setSetting().");
 }
 
 async function resetSetting(key) {
+  log.debug("Entering resetSetting().");
   // `reset` RATHER THAN WRITING THE OLD VALUE BACK, for the reason
   // tests/saml11_sso.js records: a `set` leaves `source: override` behind, and
   // tests/vendored/admin_api.js reads that field.
   const r = await postJson(api("/config/reset"), { key: key });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "resetting " + key + " should have worked; it answered " + r.status);
+  log.debug("Leaving resetSetting().");
 }
 
 // ---------------------------------------------------------------------------
 // A JSON PROFILE REQUEST, built the way a PEP would.
 // ---------------------------------------------------------------------------
 function requestFor(subject, action, resource) {
+  log.debug("Entering requestFor().");
   const request = { Request: {} };
   if (subject !== null) {
     request.Request.AccessSubject = { Attribute: [
@@ -288,18 +336,21 @@ function requestFor(subject, action, resource) {
       Value: resource || "https://example.test/records",
       DataType: "anyURI" }
   ] };
+  log.debug("Leaving requestFor().");
   return request;
 }
 
 async function decisionFor(subject, action, resource) {
+  log.debug("Entering decisionFor().");
   const r = await xPost("/xacml/pdp", requestFor(subject, action, resource));
   assert.strictEqual(r.status, 200,
-    "POST /xacml/pdp should answer 200 with a JSON Profile response even when " +
-    "the answer is a refusal; it answered " + r.status + " " +
+    "POST /xacml/pdp should answer 200 with a JSON Profile response even " +
+    "when the answer is a refusal; it answered " + r.status + " " +
     String(r.text).slice(0, 300));
   assert.ok(r.body && Array.isArray(r.body.Response) && r.body.Response.length,
     "a JSON Profile response is an object with a Response ARRAY; this one is " +
     String(r.text).slice(0, 300));
+  log.debug("Leaving decisionFor().");
   return r.body.Response[0];
 }
 
@@ -348,7 +399,8 @@ var rogue = null;     // verified, and in no group
 // silently admit it to the endpoints publishing the documents this service
 // enforces its own access with.
 // ---------------------------------------------------------------------------
-var xacmlUser = null; // verified, in cn=xacml-users — XACML_USER and not REMOTE_PEPS
+// verified, in cn=xacml-users — XACML_USER and not REMOTE_PEPS
+var xacmlUser = null;
 
 async function mintTheCredentials() {
   log.debug("Entering mintTheCredentials().");
@@ -378,6 +430,7 @@ async function mintTheCredentials() {
 // above rather than replacing them.
 function pepRequest(method, url, identity, payload, rawBody) {
   log.debug("Entering pepRequest(). " + method + " " + url);
+  log.debug("Leaving pepRequest().");
   return new Promise(function (resolve, reject) {
     const target = new URL(url);
     // A RAW STRING WINS OVER A PAYLOAD, for the three malformed bodies in
@@ -404,6 +457,8 @@ function pepRequest(method, url, identity, payload, rawBody) {
         try {
           body = JSON.parse(text);
         } catch (e) {
+          log.debug("Caught in a callback in pepRequest(): " +
+                    ((e && e.message) || e));
           // A non-JSON answer from a door that answers JSON is worth reporting
           // whole rather than as a parse failure.
           body = null;
@@ -427,11 +482,15 @@ function pepRequest(method, url, identity, payload, rawBody) {
 }
 
 function pepGet(path, identity) {
+  log.debug("Entering pepGet().");
+  log.debug("Leaving pepGet().");
   return pepRequest("GET", realmUrl(path),
                     identity === undefined ? trusted : identity);
 }
 
 function pepPost(path, payload, identity) {
+  log.debug("Entering pepPost().");
+  log.debug("Leaving pepPost().");
   return pepRequest("POST", realmUrl(path),
                     identity === undefined ? trusted : identity, payload || {});
 }
@@ -448,11 +507,15 @@ function pepPost(path, payload, identity) {
 // else, or as nobody.
 // ---------------------------------------------------------------------------
 function xGet(path, identity) {
+  log.debug("Entering xGet().");
+  log.debug("Leaving xGet().");
   return pepRequest("GET", path.indexOf("http") === 0 ? path : realmUrl(path),
                     identity === undefined ? xacmlUser : identity);
 }
 
 function xPost(path, payload, identity) {
+  log.debug("Entering xPost().");
+  log.debug("Leaving xPost().");
   return pepRequest("POST", path.indexOf("http") === 0 ? path : realmUrl(path),
                     identity === undefined ? xacmlUser : identity,
                     payload || {});
@@ -461,6 +524,8 @@ function xPost(path, payload, identity) {
 // A raw body, for the malformed requests in section 3. `JSON.stringify` cannot
 // produce them, which is the point.
 function xPostRaw(path, raw, identity) {
+  log.debug("Entering xPostRaw().");
+  log.debug("Leaving xPostRaw().");
   return pepRequest("POST", path.indexOf("http") === 0 ? path : realmUrl(path),
                     identity === undefined ? xacmlUser : identity,
                     undefined, raw);
@@ -486,6 +551,7 @@ function selfSignedFor(commonName) {
 
 function postWithCertificate(url, payload, identity) {
   log.debug("Entering postWithCertificate(). url=" + url);
+  log.debug("Leaving postWithCertificate().");
   return new Promise(function (resolve, reject) {
     const target = new URL(url);
     const data = JSON.stringify(payload || {});
@@ -510,6 +576,8 @@ function postWithCertificate(url, payload, identity) {
         try {
           body = JSON.parse(text);
         } catch (e) {
+          log.debug("Caught in a callback in postWithCertificate(): " +
+                    ((e && e.message) || e));
           // As above: a non-JSON answer from a door that answers JSON is worth
           // reporting whole rather than as a parse failure.
           body = null;
@@ -648,8 +716,9 @@ async function theSurfaceDescribesItself() {
       policies.body.rootNote);
   });
 
-  log.info("[surface] OK — the document names eight endpoints, each with the role it wants, and its counts " +
-           "come from the repository rather than from itself.");
+  log.info("[surface] OK — the document names eight endpoints, each with the " +
+           "role it wants, and its counts come from the repository rather " +
+           "than from itself.");
   log.debug("Leaving theSurfaceDescribesItself().");
 }
 
@@ -667,7 +736,7 @@ async function anEmptyRepositoryDecidesNothing() {
   log.debug("Entering anEmptyRepositoryDecidesNothing().");
   log.info("=== An empty repository, and the bias that reads it ===");
 
-  const answer = await decisionFor("carol", "GET");
+  const answer = await decisionFor(ADMIN_PERSON, "GET");
   check("a PDP with no root policy answers NotApplicable", function () {
     assert.strictEqual(answer.Decision, "NotApplicable",
       "an empty repository has nothing to say about a request, which is " +
@@ -679,7 +748,8 @@ async function anEmptyRepositoryDecidesNothing() {
       JSON.stringify(answer.Status));
   });
 
-  const denied = await xGet("/xacml/protected?subject=carol&action=GET");
+  const denied = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                            "&action=GET");
   check("the deny-biased PEP refuses that with 403", function () {
     assert.strictEqual(denied.status, 403,
       "deny-biased means anything that is not Permit is a refusal; the " +
@@ -693,7 +763,8 @@ async function anEmptyRepositoryDecidesNothing() {
   });
 
   await setSetting("xacml.pepBias", "permit-biased");
-  const allowed = await xGet("/xacml/protected?subject=carol&action=GET");
+  const allowed = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                             "&action=GET");
   check("the SAME decision is allowed by a permit-biased PEP", function () {
     assert.strictEqual(allowed.status, 200,
       "permit-biased means anything that is not Deny is allowed; the PEP " +
@@ -710,7 +781,8 @@ async function anEmptyRepositoryDecidesNothing() {
   });
   await resetSetting("xacml.pepBias");
 
-  const back = await xGet("/xacml/protected?subject=carol&action=GET");
+  const back = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                          "&action=GET");
   check("resetting the setting puts the refusal back", function () {
     assert.strictEqual(back.status, 403,
       "after /admin-api/config/reset the PEP should be deny-biased again; " +
@@ -728,9 +800,10 @@ async function anEmptyRepositoryDecidesNothing() {
 // The template is the RBAC one: `employeeType=admin` may do anything,
 // `employeeType=staff` may GET or HEAD, and the combining algorithm is
 // deny-unless-permit so anything else is a Deny rather than a NotApplicable.
-// The three seeded people carry those attributes in EVERY realm — carol is the
-// admin, alice and bob are staff — which is what makes the decisions below
-// predictable without this file writing a directory entry.
+// The two people `createThePeople()` makes in this realm carry those attributes
+// — ADMIN_PERSON is the admin, STAFF_PERSON is staff — which is what makes the
+// decisions below predictable. (Until 2026-09-12 they were the seeded `carol`
+// and `alice`, and this said the file wrote no directory entry.)
 //
 // THE ATTRIBUTE COMES FROM THE PIP AND NOT FROM THE REQUEST, which is the half
 // worth stating: nothing below sends an `employeeType`, so a Permit here is the
@@ -748,7 +821,8 @@ async function aPolicyBuiltThroughTheApiDecides() {
     p_readerActions: "GET, HEAD"
   }, "created the policy");
 
-  check("the first policy in an empty repository becomes the root", function () {
+  check("the first policy in an empty repository becomes the root",
+        function () {
     assert.ok(String(built.what).indexOf("root") > 0,
       "a repository with a policy and no root decides nothing, so the first " +
       "one created should say it became the root. It said: " + built.what);
@@ -774,13 +848,13 @@ async function aPolicyBuiltThroughTheApiDecides() {
   });
 
   const cases = [
-    { who: "carol", action: "DELETE", decision: "Permit",
-      why: "carol is the admin, and an admin may do anything" },
-    { who: "carol", action: "GET", decision: "Permit",
+    { who: ADMIN_PERSON, action: "DELETE", decision: "Permit",
+      why: ADMIN_PERSON + " is the admin, and an admin may do anything" },
+    { who: ADMIN_PERSON, action: "GET", decision: "Permit",
       why: "an admin may GET as well" },
-    { who: "alice", action: "GET", decision: "Permit",
-      why: "alice is staff, and staff may GET" },
-    { who: "alice", action: "DELETE", decision: "Deny",
+    { who: STAFF_PERSON, action: "GET", decision: "Permit",
+      why: STAFF_PERSON + " is staff, and staff may GET" },
+    { who: STAFF_PERSON, action: "DELETE", decision: "Deny",
       why: "staff may not DELETE, and deny-unless-permit denies rather than " +
            "answering NotApplicable" },
     { who: "nobody-at-all", action: "GET", decision: "Deny",
@@ -810,7 +884,8 @@ async function aPolicyBuiltThroughTheApiDecides() {
       "answered " + anonymous.Decision);
     assert.strictEqual(anonymous.Status.StatusCode.Value,
                        "urn:oasis:names:tc:xacml:1.0:status:ok",
-      "and it is not an error; the status is " + JSON.stringify(anonymous.Status));
+      "and it is not an error; the status is " +
+      JSON.stringify(anonymous.Status));
   });
 
   log.info("[pdp] OK — five decisions, each resolved against an attribute " +
@@ -865,7 +940,7 @@ async function aMalformedRequestIsRefused() {
   // AND THE ENDPOINT IS STILL ALIVE AFTERWARDS. Four refusals in a row is
   // exactly the shape that catches a handler which throws past its own error
   // path and leaves the route wedged.
-  const after = await decisionFor("carol", "GET");
+  const after = await decisionFor(ADMIN_PERSON, "GET");
   check("the endpoint still decides after four refusals", function () {
     assert.strictEqual(after.Decision, "Permit",
       "after four malformed requests the endpoint answered " + after.Decision);
@@ -885,7 +960,7 @@ async function aMalformedRequestIsRefused() {
 // cannot discharge turns a Permit into a REFUSAL.
 //
 // The pair below is what makes that assertable: the editor's `add-obligation`
-// mints `urn:sts-mock:xacml:obligation:1`, which this PEP has never heard of,
+// mints `urn:sts:xacml:obligation:1`, which this PEP has never heard of,
 // and `edit-obligation` renames it to the one it knows. Same policy, same
 // request, same Permit — and the enforcement flips, which is the only way to
 // show that the refusal was about the OBLIGATION and not about the decision.
@@ -894,10 +969,12 @@ async function anUndischargeableObligationRefuses() {
   log.debug("Entering anUndischargeableObligationRefuses().");
   log.info("=== The embedded PEP and an obligation it cannot discharge ===");
 
-  const before = await xGet("/xacml/protected?subject=carol&action=GET");
-  check("carol is allowed before any obligation exists", function () {
+  const before = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                            "&action=GET");
+  check(ADMIN_PERSON + " is allowed before any obligation exists", function () {
     assert.strictEqual(before.status, 200,
-      "carol is the admin and the policy permits her; the PEP answered " +
+      ADMIN_PERSON + " is the admin and the policy permits them; the PEP " +
+                     "answered " +
       before.status + " " + String(before.text).slice(0, 200));
     assert.deepStrictEqual(before.body.obligations, [],
       "and the decision carries no obligations yet; it carries " +
@@ -907,12 +984,14 @@ async function anUndischargeableObligationRefuses() {
   await act("add-policy-obligation", { policy: POLICY, path: "", on: "Permit" },
             "added an obligation to the policy");
 
-  const refused = await xGet("/xacml/protected?subject=carol&action=GET");
+  const refused = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                             "&action=GET");
   check("an undischargeable obligation turns the Permit into a refusal",
         function () {
     assert.strictEqual(refused.status, 403,
       "section 7.2: a PEP that cannot discharge an obligation must refuse. " +
-      "It answered " + refused.status + " " + String(refused.text).slice(0, 300));
+      "It answered " + refused.status + " " +
+      String(refused.text).slice(0, 300));
     assert.strictEqual(refused.body.decision, "Permit",
       "AND THE DECISION IS STILL PERMIT, which is the whole point — the PDP " +
       "permitted and the PEP refused, and reporting the refusal as a Deny " +
@@ -923,7 +1002,7 @@ async function anUndischargeableObligationRefuses() {
       "and the refusal should name the obligation as the cause; it says: " +
       refused.body.why);
     assert.deepStrictEqual(refused.body.obligations,
-      [{ id: "urn:sts-mock:xacml:obligation:1", discharged: false }],
+      [{ id: "urn:sts:xacml:obligation:1", discharged: false }],
       "the obligation should be reported UNDISCHARGED rather than omitted; " +
       "it reports " + JSON.stringify(refused.body.obligations));
   });
@@ -947,7 +1026,8 @@ async function anUndischargeableObligationRefuses() {
               on: "Permit" },
             "renamed the obligation to the one this PEP knows");
 
-  const discharged = await xGet("/xacml/protected?subject=carol&action=GET");
+  const discharged = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                                "&action=GET");
   check("the one obligation this PEP knows IS discharged, and access returns",
         function () {
     assert.strictEqual(discharged.status, 200,
@@ -964,7 +1044,8 @@ async function anUndischargeableObligationRefuses() {
   // subject here; leaving it would make every later Permit carry one.
   await act("remove", { policy: POLICY, path: obligation.path },
             "removed the obligation again");
-  const clean = await xGet("/xacml/protected?subject=carol&action=GET");
+  const clean = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                           "&action=GET");
   check("removing the obligation leaves an ordinary Permit", function () {
     assert.strictEqual(clean.status, 200);
     assert.deepStrictEqual(clean.body.obligations, [],
@@ -997,8 +1078,8 @@ async function aRemotePepPulls() {
     assert.ok(first.body.syncToken, "there is no syncToken on the answer: " +
       JSON.stringify(first.body).slice(0, 200));
     assert.strictEqual(first.etag, '"' + first.body.syncToken + '"',
-      "the token should be in an ETag as well, so an ordinary HTTP cache or a " +
-      "client library that already speaks conditional requests behaves " +
+      "the token should be in an ETag as well, so an ordinary HTTP cache or " +
+      "a client library that already speaks conditional requests behaves " +
       "correctly knowing nothing about XACML. The ETag is " + first.etag);
     assert.strictEqual((first.body.policies || []).length, 1,
       "one enabled policy should come back; " +
@@ -1170,8 +1251,8 @@ async function registeringAPep() {
         function () {
     assert.strictEqual(rogueTried.status, 403,
       "this certificate chains to an anchor in the truststore and names " +
-      ROGUE_CN + "; it is not a member of cn=remote-peps and must be refused. " +
-      "The door answered " + rogueTried.status + " " +
+      ROGUE_CN + "; it is not a member of cn=remote-peps and must be " +
+      "refused. The door answered " + rogueTried.status + " " +
       String(rogueTried.text).slice(0, 300));
     assert.ok(String(rogueTried.body.error_description)
                 .indexOf("VERIFIED") > 0,
@@ -1246,7 +1327,8 @@ async function registeringAPep() {
     assert.strictEqual(again.body.notify.usable, false,
       "xacml.pepNotifyAllowInsecure is off, so an http notify URL cannot be " +
       "dialled. The answer says " + JSON.stringify(again.body.notify));
-    assert.ok(String(again.body.notify.why).indexOf("pepNotifyAllowInsecure") > 0,
+    assert.ok(String(again.body.notify.why).indexOf(
+        "pepNotifyAllowInsecure") > 0,
       "AND IT IS SAID BACK IMMEDIATELY rather than discovered the first time " +
       "a nudge is not delivered — a PEP whose notify URL this service will " +
       "never dial should find out while somebody is still looking at the " +
@@ -1297,8 +1379,8 @@ async function registeringAPep() {
     assert.strictEqual(misfiled.body.name, PEP_CN,
       "the same rule as the registration and for the same reason: a PEP " +
       "holding a certificate must not be able to file its counters against " +
-      "somebody else's row. This one claimed to be \"somebody-elses-pep\" and " +
-      "was filed as \"" + misfiled.body.name + "\".");
+      "somebody else's row. This one claimed to be \"somebody-elses-pep\" " +
+      "and was filed as \"" + misfiled.body.name + "\".");
   });
   check("and it is TOLD it is behind rather than left to compare", function () {
     assert.strictEqual(misfiled.body.current, false,
@@ -1348,13 +1430,15 @@ async function registeringAPep() {
   // reconnecting.
   // ---------------------------------------------------------------------------
   await act("disable-pep", { name: PEP_CN }, "disabled the PEP");
-  const afterDisable = await postWithCertificate(realmUrl("/xacml/pep/register"),
+  const afterDisable = await postWithCertificate(
+      realmUrl("/xacml/pep/register"),
                                                  {}, identity);
   const rows = await get(api("/xacml/peps"));
   const still = (rows.body.peps || []).filter(function (one) {
     return one.name === PEP_CN;
   })[0];
-  check("a disabled PEP cannot re-enable itself by re-registering", function () {
+  check("a disabled PEP cannot re-enable itself by re-registering",
+        function () {
     assert.strictEqual(afterDisable.status, 200,
       "the re-registration itself is accepted; it answered " +
       afterDisable.status);
@@ -1381,11 +1465,11 @@ async function registeringAPep() {
   check("a re-registration keeps the counters and takes the address afresh",
         function () {
     assert.strictEqual(still.decisions, 7,
-      "the counters this PEP reported before it re-registered should still be " +
-      "on its row; it says decisions=" + still.decisions);
+      "the counters this PEP reported before it re-registered should still " +
+      "be on its row; it says decisions=" + still.decisions);
     assert.strictEqual(still.notifyUrl, "",
-      "and the notify URL should have gone with the registration that did not " +
-      "carry one; the row says " + JSON.stringify(still.notifyUrl));
+      "and the notify URL should have gone with the registration that did " +
+      "not carry one; the row says " + JSON.stringify(still.notifyUrl));
     assert.ok(String(still.registeredAt || "").length > 0,
       "while the original registration date survives; the row says " +
       JSON.stringify(still.registeredAt));
@@ -1535,12 +1619,13 @@ async function turningItOff() {
         method + " " + path + " answered " + r.status + " with remote PEPs " +
         "off. It must be 501 and not 404: the route is registered and the " +
         "feature is off, which is a different sentence from a wrong URL.");
-      assert.ok(String(r.body.error_description).indexOf("xacml.remotePeps") > 0,
+      assert.ok(String(r.body.error_description).indexOf(
+          "xacml.remotePeps") > 0,
         "and the 501 should name the setting AND say that the register is " +
         "untouched; it says: " + r.body.error_description);
     });
   }
-  const stillDeciding = await decisionFor("carol", "GET");
+  const stillDeciding = await decisionFor(ADMIN_PERSON, "GET");
   check("remotePeps off leaves the PDP deciding", function () {
     assert.strictEqual(stillDeciding.Decision, "Permit",
       "turning remote enforcement points off must not turn the decision " +
@@ -1580,9 +1665,9 @@ async function turningItOff() {
   check("the default realm goes on answering while this one is off",
         function () {
     assert.strictEqual(elsewhere.status, 200,
-      "xacml.enabled was set INSIDE " + REALM + ", so every other realm — and " +
-      "every later job in this run — must be untouched. The default realm's " +
-      "repository answered " + elsewhere.status);
+      "xacml.enabled was set INSIDE " + REALM + ", so every other realm — " +
+      "and every later job in this run — must be untouched. The default " +
+      "realm's repository answered " + elsewhere.status);
     assert.ok((elsewhere.body.policies || []).length >= 1,
       "and it should still hold its own seeded policy");
   });
@@ -1636,7 +1721,8 @@ async function theRepositoryIsPerRealm() {
       JSON.stringify(thereNames));
   });
 
-  check("and the default realm's seeded policy is not in this one", function () {
+  check("and the default realm's seeded policy is not in this one",
+        function () {
     assert.ok(thereNames.indexOf("seeded-rbac") >= 0,
       "the default realm should still hold its seeded policy; it holds " +
       JSON.stringify(thereNames));
@@ -1693,6 +1779,27 @@ async function createTheRealm() {
     "inside it, so this is a failure and not something to work around.");
   log.info("Created the throwaway realm " + REALM + ".");
   log.debug("Leaving createTheRealm().");
+}
+
+async function createThePeople() {
+  log.debug("Entering createThePeople().");
+  for (const one of [[ADMIN_PERSON, "admin", "Admin"],
+                     [STAFF_PERSON, "staff", "Staff"]]) {
+    const r = await postJson(api("/users/create"), {
+      username: one[0], invent: false,
+      attributes: { cn: "XACML " + one[2] + " Person", givenName: "XACML",
+                    sn: one[2] + " Person", displayName: "XACML " + one[2],
+                    mail: one[0] + "@xacml-endpoints.test",
+                    employeeType: one[1] }
+    });
+    assert.ok(r.status === 200 && r.body && r.body.ok,
+      "POST /admin-api/users/create should put " + one[0] + " (employeeType=" +
+      one[1] + ") in " + REALM + "'s directory; it answered " + r.status + " " +
+      String(r.text).slice(0, 300));
+  }
+  log.info("Created " + ADMIN_PERSON + " (admin) and " + STAFF_PERSON +
+           " (staff) in " + REALM + ".");
+  log.debug("Leaving createThePeople().");
 }
 
 async function theRealmIsLeftBehind() {
@@ -1763,6 +1870,8 @@ async function theGateSplitsOnTheRole() {
                    ["POST", "/xacml/pip"]];
 
   async function drive(method, path, identity) {
+    log.debug("Entering drive().");
+    log.debug("Leaving drive().");
     return method === "GET" ? await xGet(path, identity)
                             : await xPost(path, {}, identity);
   }
@@ -1873,6 +1982,7 @@ async function theGateSplitsOnTheRole() {
 // meets them.
 // ===========================================================================
 function pipQuery(subject, designators) {
+  log.debug("Entering pipQuery().");
   const dz = designators.map(function (one) {
     return '  <AttributeDesignator xmlns="' + XACML_NS + '" Category="' +
            (one.category || SUBJECT_CATEGORY) + '" AttributeId="' + one.id +
@@ -1887,8 +1997,9 @@ function pipQuery(subject, designators) {
     '        <AttributeValue DataType="http://www.w3.org/2001/XMLSchema#' +
     'string">' + subject + '</AttributeValue>\n' +
     '      </Attribute>\n    </Attributes>\n';
+  log.debug("Leaving pipQuery().");
   return '<?xml version="1.0" encoding="UTF-8"?>\n' +
-         '<PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0">\n' +
+         '<PIPRequest xmlns="urn:sts:xacml:pip:1.0">\n' +
          '  <Request xmlns="' + XACML_NS + '" CombinedDecision="false" ' +
          'ReturnPolicyIdList="false">\n' + subjectBlock + '  </Request>\n' +
          dz + '\n</PIPRequest>\n';
@@ -1898,11 +2009,12 @@ async function thePipAnswersInXacmlsOwnXml() {
   log.debug("Entering thePipAnswersInXacmlsOwnXml().");
   log.info("=== POST /xacml/pip — the PIP, in XACML's own XML ===");
 
-  const answered = await xPostRaw("/xacml/pip", pipQuery("carol", [
+  const answered = await xPostRaw("/xacml/pip", pipQuery(ADMIN_PERSON, [
     { id: "mail" }, { id: "employeeType" },
-    { id: "urn:sts-mock:xacml:attribute:sn" },
+    { id: "urn:sts:xacml:attribute:sn" },
     { id: "noSuchAttributeAnywhere" },
-    { id: "mail", category: "urn:oasis:names:tc:xacml:3.0:attribute-category:resource" }
+    { id: "mail",
+      category: "urn:oasis:names:tc:xacml:3.0:attribute-category:resource" }
   ]), trusted);
 
   check("it answers XML and not JSON", function () {
@@ -1935,11 +2047,11 @@ async function thePipAnswersInXacmlsOwnXml() {
   check("it resolves both spellings of a directory attribute", function () {
     assert.ok(answered.text.indexOf('AttributeId="mail"') > 0 &&
               answered.text.indexOf("@") > 0,
-      "carol's mail should come back with a value; the document is " +
+      ADMIN_PERSON + "'s mail should come back with a value; the document is " +
       answered.text.slice(0, 800));
     assert.ok(answered.text.indexOf(
-      'AttributeId="urn:sts-mock:xacml:attribute:sn"') > 0,
-      "and the urn:sts-mock:xacml:attribute: form should resolve too — a PEP " +
+      'AttributeId="urn:sts:xacml:attribute:sn"') > 0,
+      "and the urn:sts:xacml:attribute: form should resolve too — a PEP " +
       "asserting only one of the two spellings is the defect " +
       "xacml-pep/CLAUDE.md records having cost a run");
   });
@@ -1973,7 +2085,7 @@ async function thePipAnswersInXacmlsOwnXml() {
 
   const noDesignators = await xPostRaw("/xacml/pip",
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    '<PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0">\n  <Request xmlns="' +
+    '<PIPRequest xmlns="urn:sts:xacml:pip:1.0">\n  <Request xmlns="' +
     XACML_NS + '"/>\n</PIPRequest>\n', trusted);
   check("a query naming no designator is a 400 and never an empty answer",
         function () {
@@ -2013,7 +2125,7 @@ async function thePipAnswersInXacmlsOwnXml() {
   // `tests/portal_access.js`, where the bucket can be cleared afterwards.
   // ---------------------------------------------------------------------
   const oversizedId = await xPostRaw("/xacml/pip",
-    pipQuery("carol", [{ id: "a".repeat(400) }]), trusted);
+    pipQuery(ADMIN_PERSON, [{ id: "a".repeat(400) }]), trusted);
   check("an AttributeId longer than an identifier is refused", function () {
     assert.strictEqual(oversizedId.status, 400,
       "it answered " + oversizedId.status + ". That string is echoed into " +
@@ -2024,7 +2136,7 @@ async function thePipAnswersInXacmlsOwnXml() {
   });
 
   const controlChar = await xPostRaw("/xacml/pip",
-    pipQuery("carol", [{ id: "ma\u0007il" }]), trusted);
+    pipQuery(ADMIN_PERSON, [{ id: "ma\u0007il" }]), trusted);
   check("and so is one carrying a control character", function () {
     assert.strictEqual(controlChar.status, 400,
       "it answered " + controlChar.status + ". A BEL in an AttributeId ends " +
@@ -2046,8 +2158,9 @@ async function thePipAnswersInXacmlsOwnXml() {
   // A BODY OVER THE CEILING. `validation.parseXml()`'s CAP.LARGE is a MEGABYTE
   // and app.js's body parser stops at five, so without the tighter cap a
   // caller chooses how much of this process's memory one request costs.
-  const huge = '<?xml version="1.0"?><PIPRequest xmlns="urn:sts-mock:xacml:' +
-               'pip:1.0"><Request/><!--' + "z".repeat(1100000) + '--></PIPRequest>';
+  const huge = '<?xml version="1.0"?><PIPRequest xmlns="urn:sts:xacml:' +
+               'pip:1.0"><Request/><!--' + "z".repeat(1100000) +
+               '--></PIPRequest>';
   const oversizedBody = await xPostRaw("/xacml/pip", huge, trusted);
   check("and a body over the megabyte ceiling never reaches the parser",
         function () {
@@ -2064,11 +2177,12 @@ async function thePipAnswersInXacmlsOwnXml() {
   let entities = '<!ENTITY lol "aaaaaaaaaa">';
   let prev = "lol";
   for (let i = 1; i <= 6; i += 1) {
-    entities += '<!ENTITY lol' + i + ' "' + ('&' + prev + ';').repeat(10) + '">';
+    entities += '<!ENTITY lol' + i + ' "' + ('&' + prev + ';').repeat(10) +
+                '">';
     prev = "lol" + i;
   }
   const bomb = '<?xml version="1.0"?><!DOCTYPE PIPRequest [' + entities +
-               ']><PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0"><Request/>' +
+               ']><PIPRequest xmlns="urn:sts:xacml:pip:1.0"><Request/>' +
                '<x>&' + prev + ';</x></PIPRequest>';
   const started = Date.now();
   const laughs = await xPostRaw("/xacml/pip", bomb, trusted);
@@ -2111,6 +2225,7 @@ async function test() {
   await mintTheCredentials();
   await createTheRealm();
   try {
+    await createThePeople();
     await theGateSplitsOnTheRole();
     await theSurfaceDescribesItself();
     await anEmptyRepositoryDecidesNothing();

@@ -15,22 +15,23 @@
 //
 // It is a LIBRARY, like `common/user_graph.js` and `common/credential_graph.js`
 // beside it: it registers no route, so its position in the require order does
-// not matter and it cannot be the reason a route is missing. `admin-ui/admin.js`
-// renders it at `/admin/federation/map` through `admin-ui/federation_diagram.js`;
-// this file holds the model and NONE of the geometry and none of the HTML.
+// not matter and it cannot be the reason a route is missing.
+// `admin-ui/admin.js` renders it at `/admin/federation/map` through
+// `admin-ui/federation_diagram.js`; this file holds the model and NONE of the
+// geometry and none of the HTML.
 //
 // ---------------------------------------------------------------------------
 // WHY IT MAY REQUIRE `federation.js` — rule 3o's test, taken again.
 //
-// Rule 3o's table lists who reaches the register and why each is safe. This is a
-// fifth, and it passes that test more easily than any of the four: it registers
-// no route itself, so nothing about requiring it can move one, and
+// Rule 3o's table lists who reaches the register and why each is safe. This is
+// a fifth, and it passes that test more easily than any of the four: it
+// registers no route itself, so nothing about requiring it can move one, and
 // `federation.js` cannot require this back — there is nothing here it wants.
 //
 // The console reaches THIS module rather than assembling the graph inline, for
-// `delegation.js`'s reason: a picture and the tables under it must be built from
-// ONE model, or the two come to disagree about what is in the picture and there
-// is no way to tell that from a filter working correctly.
+// `delegation.js`'s reason: a picture and the tables under it must be built
+// from ONE model, or the two come to disagree about what is in the picture and
+// there is no way to tell that from a filter working correctly.
 //
 // ---------------------------------------------------------------------------
 // THE PICTURE IS THREE BANDS, AND THE BANDS ARE A CLAIM ABOUT DIRECTION.
@@ -49,9 +50,9 @@
 // THE ASSERTION — and once it is, the identity broker draws itself. A foreign
 // service provider asking this realm to authenticate somebody, and this realm
 // consuming a foreign identity provider's assertion in order to do it, is ONE
-// straight left-to-right line through the hexagon. Drawn the other way it is two
-// arrows leaving the same box in the same direction with nothing joining them,
-// which is the picture of a broker that does not show the brokering.
+// straight left-to-right line through the hexagon. Drawn the other way it is
+// two arrows leaving the same box in the same direction with nothing joining
+// them, which is the picture of a broker that does not show the brokering.
 //
 // ---------------------------------------------------------------------------
 // A PARTNER IS KEYED BY ROLE AND PEER, WHICH IS NEITHER OF THE TWO OBVIOUS
@@ -63,13 +64,13 @@
 // attribute release policies, and the picture would say there are two partners
 // where there is one.
 //
-// Keying by PEER ALONE is worse, in a way that is not obvious until it is drawn.
-// `federation/CLAUDE.md` is emphatic that a partner this service both consumes
-// from and asserts to is TWO relationships, because everything that configures
-// one differs by direction. Collapsing those onto one box puts a party in both
-// bands at once — it asks and it answers — and dagre resolves that by breaking
-// the resulting cycle somewhere arbitrary, so the picture silently stops being
-// left-to-right and nothing says it has.
+// Keying by PEER ALONE is worse, in a way that is not obvious until it is
+// drawn. `federation/CLAUDE.md` is emphatic that a partner this service both
+// consumes from and asserts to is TWO relationships, because everything that
+// configures one differs by direction. Collapsing those onto one box puts a
+// party in both bands at once — it asks and it answers — and dagre resolves
+// that by breaking the resulting cycle somewhere arbitrary, so the picture
+// silently stops being left-to-right and nothing says it has.
 //
 // So the key is the PAIR. The far end of every service-provider-side
 // relationship is an identity provider; the far end of every
@@ -80,7 +81,8 @@
 //
 // `fedPeer` FALLS BACK TO `fedId`, because a relationship may be created before
 // anybody has typed the partner's name in — and a half-configured relationship
-// is exactly what this picture exists to make visible, so it has to be drawable.
+// is exactly what this picture exists to make visible, so it has to be
+// drawable.
 // ===========================================================================
 
 const { log } = require('./../common/helpers');
@@ -107,6 +109,8 @@ const federation = require('./federation');
 const STS_ID = 'sts';
 
 function partyId(kind, name) {
+  log.debug("Entering partyId().");
+  log.debug("Leaving partyId().");
   return kind + ':' + String(name);
 }
 
@@ -119,6 +123,8 @@ function partyId(kind, name) {
 // identifier. Two elements of an array cannot run together, whatever is in
 // them.
 function brokerKey(application, relationship) {
+  log.debug("Entering brokerKey().");
+  log.debug("Leaving brokerKey().");
   return JSON.stringify([String(application), String(relationship)]);
 }
 
@@ -129,8 +135,8 @@ function brokerKey(application, relationship) {
 // second, smaller version of it: that function answers the list page and this
 // one answers the map, and every field they share is computed by the same two
 // calls into the register (`readinessOf`, `isEnabled`) so the two pages cannot
-// disagree about whether a partner is usable. What this adds is the two things a
-// table row has no room for — who is configured to use it, and what a person
+// disagree about whether a partner is usable. What this adds is the two things
+// a table row has no room for — who is configured to use it, and what a person
 // arriving at the identity-provider side actually meets.
 // ---------------------------------------------------------------------------
 function describe(record) {
@@ -139,7 +145,8 @@ function describe(record) {
   const protocolRow = federation.protocolRow(record.fedProtocol) || {};
   const roleRow = federation.roleRow(record.fedRole) || {};
   const mechanismId = String(record.fedAuthnMechanism || '').trim();
-  const mechanismRow = mechanismId ? federation.mechanismRow(mechanismId) : null;
+  const mechanismRow = mechanismId ? federation.mechanismRow(mechanismId) :
+                       null;
   const row = {
     id: record.fedId,
     name: record.fedName || record.fedId,
@@ -207,12 +214,12 @@ function describe(record) {
     if (resolved) {
       row.brokerProblem = resolved.problem || '';
       if (resolved.mechanism === 'federation') {
-        // `onward` is the id it NAMES; `relationship` is null when that id names
-        // nothing usable. BOTH are kept, because the picture has to draw the
-        // intent even when it cannot draw the destination — a broker pointing at
-        // a disabled partner otherwise looks exactly like one configured to use
-        // the sign-in screen, which is the fallback the whole feature is careful
-        // about.
+        // `onward` is the id it NAMES; `relationship` is null when that id
+        // names nothing usable. BOTH are kept, because the picture has to draw
+        // the intent even when it cannot draw the destination — a broker
+        // pointing at a disabled partner otherwise looks exactly like one
+        // configured to use the sign-in screen, which is the fallback the whole
+        // feature is careful about.
         row.brokersTo = resolved.onward ||
                         String(record.fedAuthnRelationship || '').trim();
         row.brokerUsable = !!resolved.relationship;
@@ -256,8 +263,8 @@ function applicationRows(record, row) {
   log.debug('Entering applicationRows(). id=' + row.id);
   // Only the service-provider side has a per-application split. See the schema
   // row for `fedApplicationUse`: an identity-provider-side relationship names
-  // exactly ONE application, so its per-application count IS its own count and a
-  // second list holding the same number is the copy that comes to disagree.
+  // exactly ONE application, so its per-application count IS its own count and
+  // a second list holding the same number is the copy that comes to disagree.
   if (row.role !== 'service-provider') {
     log.debug('Leaving applicationRows(). Not the service-provider side.');
     return [];
@@ -295,7 +302,8 @@ function applicationRows(record, row) {
     if (b.authentications !== a.authentications) {
       return b.authentications - a.authentications;
     }
-    return a.application < b.application ? -1 : a.application > b.application ? 1 : 0;
+    return a.application < b.application ? -1 :
+           a.application > b.application ? 1 : 0;
   });
   log.debug('Leaving applicationRows(). ' + rows.length + ' application(s).');
   return rows;
@@ -380,11 +388,14 @@ function graph(wanted) {
   const edges = [];
   const nodeById = new Map();
   const addNode = function (node) {
+    log.debug("Entering addNode().");
     if (nodeById.has(node.id)) {
+      log.debug("Leaving addNode().");
       return nodeById.get(node.id);
     }
     nodeById.set(node.id, node);
     nodes.push(node);
+    log.debug("Leaving addNode().");
     return node;
   };
 
@@ -404,16 +415,17 @@ function graph(wanted) {
   // THE IDENTITY-PROVIDER SIDE FIRST, AND THE ORDER IS LOAD-BEARING RATHER
   // THAN TIDY.
   //
-  // A brokered application is reported by `federation.applicationsUsing()` as an
-  // application of the ONWARD service-provider-side relationship as well — which
-  // is correct, because its people really are authenticated there. Drawing both
-  // would put two arrows between the same pair of boxes saying two true things
-  // that a reader reads as one thing said twice.
+  // A brokered application is reported by `federation.applicationsUsing()` as
+  // an application of the ONWARD service-provider-side relationship as well —
+  // which is correct, because its people really are authenticated there.
+  // Drawing both would put two arrows between the same pair of boxes saying two
+  // true things that a reader reads as one thing said twice.
   //
   // So the identity-provider side is drawn first and remembers which (party,
   // onward relationship) pairs it has covered, and the loop below skips exactly
-  // those — carrying the COUNTS onto the arrow that was drawn rather than losing
-  // them, because they are that pair's counts wherever the arrow ends up.
+  // those — carrying the COUNTS onto the arrow that was drawn rather than
+  // losing them, because they are that pair's counts wherever the arrow ends
+  // up.
   // ---------------------------------------------------------------------
   const brokered = new Map();
   rows.filter(function (row) { return row.role === 'identity-provider'; })
@@ -493,8 +505,8 @@ function graph(wanted) {
     realm: { id: realm.id, name: realm.name || realm.id,
              isDefault: realms.isDefault(realm) },
     nodes: nodes, edges: edges, relationships: rows,
-    // `empty` is about the REGISTER and not about the filter, so that a page can
-    // tell "nothing is configured" from "nothing matches". Two states, two
+    // `empty` is about the REGISTER and not about the filter, so that a page
+    // can tell "nothing is configured" from "nothing matches". Two states, two
     // different things to say, and only one of them is a problem.
     empty: records.length === 0,
     filtered: records.length !== rows.length,

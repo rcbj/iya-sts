@@ -5,7 +5,7 @@ browser-side explorer.
 
 | File | What it is |
 |---|---|
-| `admin_api.js` | The table of operations. Every one calls a function in `../admin-ui/admin.js`. |
+| `admin_api.js` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.js`; every one that READS calls a view on `../admin-ui/admin.js`, which is where the JSON half of a console page is computed. **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
 | `admin_api_spec.js` | The OpenAPI document, GENERATED from that table. |
 | `admin_api_docs.js` | The docs page, and the route that serves the explorer. |
 | `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.js` and served verbatim. Its own header says so at length. |
@@ -88,6 +88,57 @@ about that line had to change.
    what `/admin/users?format=json` has always done, it is a string concatenation
    on a mock, and the alternative — a second set of builders for the same data —
    is the thing this whole arrangement exists to prevent.
+
+
+
+## THE DECISIONS MOVED OUT OF THE CONSOLE ON 2026-09-12, AND THIS FILE SAID THEY WERE THERE
+
+Every operation here that CHANGES something used to call a function on
+`admin-ui/admin.js`. They call `admin-core/admin_actions.js` now, and this file
+requires both modules for two different reasons.
+
+**What was wrong with the old arrangement was not the enforcement, it was the
+direction.** Rule 7 says a console control and an API operation must not be
+able to disagree, and calling the console's own function is the strongest
+possible way to guarantee that — they were one call. The price was that the
+surface a machine drives sat downstream of the surface a person reads, and the
+console was the declared home of logic that was never the console's.
+
+**The move was possible because the functions were already right.** Not one of
+the thirty-one touched `req`, `res` or markup: each took a parsed body and an
+actor and returned `{ ok, errors, … }`. `admin-core/CLAUDE.md` argues the
+split, including why `respondToAction()` and `listField()` stayed behind.
+
+**THE READ HALF FOLLOWED THE SAME DAY**, into `admin-core/admin_views.js`:
+thirty-eight functions that answer a question and build no markup. Forty-four
+call sites here were repointed at it.
+
+**THE INTERLEAVED VIEWS FOLLOWED, ONE FAMILY AT A TIME**, and this file now
+calls exactly FOUR functions on the console module:
+
+| | |
+|---|---|
+| `consoleJson()` | which pages this console has |
+| `configJson()` | every setting, and which page edits each group |
+| `protocolSettingsJsonFor()` | the settings one protocol page owns |
+| `listField()` | the repeated-checkbox parse, which reads `req` |
+
+The first three are the console describing ITSELF — a layer beneath it could
+not know which pages exist — and the fourth is transport. **Purity was not the
+test; ownership was**: all four are perfectly pure and all four belong here.
+
+**RULE 7 IS STRONGER AFTER THE SPLIT THAN BEFORE IT, WHICH IS NOT THE OBVIOUS
+OUTCOME.** Before, a page and its operation could not disagree because one
+function happened to build both halves, and nothing stopped a later edit
+computing the json from something else. Now the page renders the model the
+resource answers from: `xListPage()` calls `adminViews.xListJson(req)` and
+hands back `view.json` unchanged. The agreement is structural rather than
+incidental.
+
+**A REGRESSION HERE WOULD BE SILENT**, which is why it is pinned: adding one
+`admin.somethingAction()` call back would restore the old direction for that
+one operation, and nothing whatsoever would fail.
+`tests/admin_actions_layer.js` is the guard.
 
 
 ### EIGHT MORE GETs WITH NO POST BESIDE THEM (2026-08-27), and they are the same sentence eight times
@@ -423,6 +474,14 @@ gives are still the argument for the OFF SWITCH — they are the reasons
 `adminApi.authRequired=false` has to keep existing, and what changed is only
 which way the default points.
 
+**THE ROOT `CLAUDE.md` SAID THE OPPOSITE FOR AS LONG AS IT EXISTED, TOO.** It
+read "`/admin-api` is NOT gated and that is deliberate — it is what a test
+drives, and it is the way back in when nobody holds a role. Which means anybody
+who can reach this port can grant themselves both roles through it." Every
+clause of that was true and the last one is what the change was for. It is the
+EIGHTH row on the root `CLAUDE.md`'s table of gated surfaces, and it is not a
+turnstile.
+
 **WHAT IT IS NOW.** Every call into `/admin-api` presents an OAuth 2.0 access
 token this service issued, audienced to this API, carrying `admin:read` for a
 read and `admin:write` for anything that changes state. One middleware on the
@@ -432,6 +491,19 @@ base path, so the 232 operations are covered by construction rather than by
 the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.js` decides the
 QUESTION rather than the outcome.
+
+**THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
+ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
+*`/admin-api` under the host the request arrived on* — correct, and a blank box
+on `/admin/rbac`. It is a DERIVED row now: `config.managementApiBaseUrl()`,
+which is `global.publicBaseUrl` + `/admin-api` where that is set and otherwise
+the main port's own scheme, bound host (`localhost` for a wildcard) and port. A
+default cannot see a request, so taking it as the ONLY audience would refuse
+every token minted under another name for one process — `sts:8081` on the
+compose network, the host port a launcher publishes. So while the row is at its
+default, or set empty, `wantedAudiences()` accepts that URL AND the
+request-relative one; any other value pins exactly itself, as it always did.
+Where `global.publicBaseUrl` is set the two are the same string.
 
 **IT IS A DIFFERENT CREDENTIAL FROM THE CONSOLE'S AND MUST STAY ONE.** A
 console session is not an API credential; a token is not a console session.
@@ -469,8 +541,10 @@ They are why the off switch exists.
   every operation over HTTP with no browser and no cookie jar. A credential here
   would be the only one a test had to hold a secret for, in a service whose
   premise is that it authenticates nobody.
-* **It is the way back in.** With `admin.openWhenEmpty` off and no role granted,
-  NO browser can reach the console — the screen that grants the first role is
+* **It is the way back in.** When the console is closed and nobody who holds a
+  role can sign in (the roster emptied after the bootstrap administrator's first
+  sign-in, or `admin.openWhenEmpty` off with no role granted), NO browser can
+  reach the console — the screen that grants the first role is
   behind the gate that role opens. `POST /admin-api/rbac/grant` is the only door
   out of that state, and a door that needed a role would not be one.
 * **The consequence, stated rather than buried: anybody who can reach this port
@@ -487,9 +561,11 @@ console setting reached an API it never named would be the worst way to find out
 **THAT PARAGRAPH WAS FOLLOWED EXACTLY AND IS WORTH READING AS A PREDICTION THAT
 HELD.** The change did come, and it came as a separate setting with a separate
 argument — `adminApi.authRequired`, in its own group, with two settings beside
-it — and NOT as an extension of `admin.authRequired`. A deployment that turns
-the console's gate off still has an authenticated API, and one that turns this
-API's gate off still has a gated console. The name considered here was
+it — and NOT as an extension of `admin.authRequired`. The two gates are still
+independent, which is the property that paragraph was protecting: turning this
+API's gate off leaves the console gated. The other half of the sentence has
+lapsed for a reason of its own — `admin.authRequired` was itself removed on
+2026-09-06, so the console's gate can no longer be turned off at all. The name considered here was
 `admin.apiAuthRequired` and the one built is `adminApi.*`, which is the same
 decision spelt so that the group has somewhere to live.
 
@@ -1016,3 +1092,449 @@ put one.
 The refusal says the caller PASSED the role check and names the roles they hold,
 because "you hold the role and the policy still says no" is the one state a
 reader would otherwise spend an afternoon on.
+
+## `/admin-api/mfa`: A REPORT AND A RESET, AND DELIBERATELY NO ENROL (2026-09-10)
+
+**THE CONSOLE PAGE THIS MIRRORED IS GONE AND THIS RESOURCE IS NOT.**
+`/admin/mfa` arrived on 2026-09-10 and lasted hours: it edited the `totp.*`
+settings AND drew a roster of who held a second factor, and one page cannot be
+filed by both halves. The settings are `/admin/totp` and `/admin/webauthn` under
+Protocols; the roster is columns on `/admin/users`, and the per-person detail
+and both Clear buttons are on that person's own row.
+
+Rule 7 says a console control owes an operation. **It says nothing about an
+operation whose page moved**, and deleting a working one to tidy a table would
+be a regression dressed as consistency — the same argument `GET
+/admin-api/users/new` is kept on, one section up. So this stays, `mirrors`
+points at the page that absorbed it, and `admin.mfaView()` answers OUT OF THAT
+VIEW rather than scanning the credential store a second time: two scans would be
+two answers to how many people hold a second factor, agreeing until the day they
+did not.
+
+**BOTH ACTIONS ANSWER ON TWO PATHS NOW** — here and as
+`POST /admin-api/users/{clear-totp,clear-key}`, one switch reached two ways,
+because the console control moved and a caller's script did not. Their request
+schemas take BOTH spellings of the person (`username` and `user`) for the same
+reason: a caller that followed the other path's example must not be refused with
+a message about a member of the request rather than about the person.
+
+**THE MISSING OPERATION IS THE INTERESTING ONE.** There is no `enrol`, and it is
+a refusal rather than an omission: enrolling an authenticator means being SHOWN
+a shared secret, so an operation here would be an administrative door that mints
+a working second factor for any account — after which whoever called it holds
+that account's second factor. Enrolment happens where the person is
+(`/portal/mfa`) or where a credential authorises it (`/portal/activate`).
+
+**`clear-totp` ANSWERS 400 FOR AN ENROLMENT NOBODY HOLDS**, where
+`rbac/grant` answers 200 with `changed: false` for a role somebody already has.
+The difference is worth stating because it looks like an inconsistency: a grant
+has an idempotent reading a script wants — *make sure they hold this* — and a
+clear does not. The caller asked to clear a specific thing and it was not there.
+
+**`clear-key` GOES THROUGH `credentials.removeKey()`**, which is what carries
+the refusal that matters: it will not remove the last way in. An operator must
+not be able to do what the owner is stopped from doing.
+
+
+## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
+
+`GET /admin-api/tls/trust` (paged with `page` / `per`) and `POST
+/admin-api/tls/trust/{add,remove}`, mirroring `/admin/tls/trust` through
+`adminViews.truststoreJson()` and `adminActions.truststoreAction()`, which reach
+`tls/tls_server.js` through the console's thirteenth slot. **This file's own
+middleware is the whole of the credential**: `admin:read` lists and
+`admin:write` changes, by method, so nothing in the two rows re-checks it — and
+that is exactly what `tls/tls_server.js` said the runtime door had to be built
+behind rather than copied.
+
+Four things a caller has to be told, and the descriptions tell them:
+
+* **IT IS THE PROCESS'S TRUSTSTORE**, so every realm prefix reads and writes the
+  same array; and with request workers both operations are answered by the front
+  process (`NEVER_DISPATCHED`), because a worker's copy of the array configures
+  no listener.
+* **A RUNTIME ANCHOR IS PERSISTED** (2026-09-12; this bullet read *nothing is
+  persisted* until then) — in `ou=trustAnchors` in the default realm's
+  directory, so it survives a restart wherever the directory does and reaches
+  every other process against the same store. `persisted` in each reply says
+  whether it was written down. A removed `file` anchor still comes back.
+* **NO BULK CLEAR, AND `add` IS ALL OR NOTHING** on a block OpenSSL cannot
+  read. `remove` takes ONE fingerprint and a bodyless POST removes nothing —
+  which matters because `tests/vendored/sts_metadata.js` posts to every route
+  with no body.
+* **NO PRIVATE KEY IS IN ANY REPLY** — the truststore holds certificates only.
+
+**`sts_admin_api_operations.js` HOLDS BOTH ACTIONS OUT OF ITS EXAMPLE REPLAY**
+(`REPLAY_HELD_BACK`), for the reason `spiffe/rotate` is held back: the replay
+runs in a throwaway realm and this array has no realm, so an example that were
+ever a real certificate would be left in every later job's handshakes. Its
+`theTruststoreRoundTrips()` drives them instead, at the root, with a CA it mints,
+and asserts a read-only token is refused the write.
+
+
+## `/admin-api/kerberos/principals` — THE STORED KERBEROS KEYS (2026-09-12)
+
+`GET /admin-api/kerberos/principals` (paged with `per`, `peoplePage` and
+`servicesPage`) and `POST /admin-api/kerberos/principals/{create-service,
+rotate-service,delete-service,clear-person-keys}`, mirroring
+`/admin/kerberos/principals` through `adminViews.kerberosPrincipalsJson()` and
+`adminActions.kerberosPrincipalsAction()`, which require
+`kerberos/krb5_person_keys.js` in the ordinary direction — it registers no route,
+so neither a cycle nor a route move is possible and no slot was added (and no
+forwarded collaborator, so `tests/admin_actions_layer.js` did not change).
+
+Four things a caller is told, and the descriptions tell them:
+
+* **CREATE AND ROTATE ARE THE ONLY REPLIES CARRYING KEY MATERIAL**, as an MIT
+  keytab in base64 under `keytab`, handed over once: nothing can read a stored
+  key back afterwards, the GET included. A lost keytab is a rotation, not a read.
+* **NEITHER LIST CARRIES A KEY** — people and services are enctypes, kvno, salt
+  and when, which is the public half (`stsKrb5KeyInfo`, `krb5ServiceKeyInfo`).
+* **IT IS THE DEFAULT TRUST REALM'S**, under every prefix, and every reply says
+  `trustRealm: "default"`: the KDC's sockets and `krb5.realm` are the process's.
+* **`clear-person-keys` for somebody with no keys is `ok` with `cleared: false`**
+  rather than a refusal, because the state asked for is the state that holds.
+* **SIX ACTIONS SINCE LATER THE SAME DAY**: `drop-previous-service-keys` (`spn`)
+  and `drop-previous-person-keys` (`username`) end the window in which a ticket
+  under a PREVIOUS key version is still accepted. A rotate's reply grew
+  `keytabKvnos` and `retained`, and every row of the GET grew `retained` (kvno,
+  enctypes, expiry — never a key), with `retention` at the top saying the bounds
+  in force. A drop with nothing kept answers `dropped: 0`; one for a principal
+  holding no stored key is refused. `kerberos/CLAUDE.md` argues the design.
+
+**`sts_admin_api_operations.js` HOLDS ALL SIX OUT OF ITS EXAMPLE REPLAY**
+(`REPLAY_HELD_BACK`) — for the same reason as the truststore's: the replay runs
+in a throwaway realm and these write in the default one. Its
+`theKerberosPrincipalsRoundTrip()` drives them at the root instead, with a read
+back after every write.
+
+
+## `/admin-api/pki` — FOUR OPERATIONS, AND A MODULE REQUIRED IN THE ORDINARY DIRECTION (2026-09-10)
+
+`GET /admin-api/pki` and `POST /admin-api/pki/{build,issue,revoke,clear}`,
+mirroring `/admin/pki`. Rule 7 exactly: every control on that page has an
+operation and both go through the SAME functions in `admin-ui/pki_admin.js`, so
+this API decides nothing that console does not.
+
+**THE MODULE IS A PLAIN REQUIRE AND NEEDS NO SLOT**, which is the one thing
+about this resource worth knowing. It sits at **18a** in
+`common/protocol_stack.js` — after `admin-ui/admin` and BEFORE this file — so by
+the time this require runs it is a cache hit and registers nothing; and it
+requires only `admin.js` and `common/pki.js`, which is a LIBRARY (rule 3), so
+there is no route it could move and no cycle it could close.
+`admin-ui/crypto_metadata.js` is the contrast: it is at 20a because it reads an
+algorithm table out of `tls/tls_server.js` at 20, so it needed the seventh slot.
+Rule 3e says a slot is what you pay for a require that would close a cycle or
+move a route, and this one would do neither.
+
+**`pkiAction()` RESOLVES**, so this is the second action handler in this API
+that awaits — `/ssf/:action` is the first, and for a related reason. A rejection
+is turned into a 500 with the message rather than being left as an unhandled
+one.
+
+**NO PRIVATE KEY IS EVER IN THE REPLY.** `common/pki.js`'s `describe()` drops
+every one of them on the way out, so a handler here could not leak the Root's
+key by forgetting. The CERTIFICATES go out whole, because a certificate is the
+half of a key pair meant to be handed around and the Root is the one thing a
+relying party has to be given out of band. An application's own private key is
+on its directory entry, in the clear, which is `oauthClientSecret`'s decision
+and is documented as such rather than hidden.
+
+**`revoke` IS NAMED FOR THE BUTTON AND THE DESCRIPTION KEEPS THE CLAIM
+HONEST.** It takes a key pair OFF an application and puts nothing on any
+revocation list. The word on the console is `revoke`; the sentence that says
+what it does and does not do is in the operation's `description`, which is
+where a caller reads it.
+
+**THAT SENTENCE USED TO REST ON AN ABSENCE AND NOW RESTS ON A DISTINCTION,
+WHICH MAKES IT MORE IMPORTANT RATHER THAN LESS.** It read *this service
+publishes no CRL and answers no OCSP, so the operation does not revoke
+anything* — true until 2026-09-11, when every certificate authority here grew
+a CRL and an OCSP responder. **There are now two operations on this resource
+with the word `revoke` in them and they do completely different things**:
+
+| Operation | What it changes |
+|---|---|
+| `revoke` | an application's DIRECTORY ENTRY — seven attributes for `jwt`, six for `saml`. This service stops ACCEPTING what that key signs. The certificate still chains. |
+| `revoke-certificate` | an issuer's REVOCATION LIST. This service's CRL and OCSP responder say `revoked` for that serial. Nobody loses a key and nothing stops chaining for a party that does not check. |
+
+**THE OLDER NAME WAS KEPT AND THE NEW ONE WORKED AROUND IT**, which is the
+decision worth recording: this action list is PUBLISHED — `GET /admin-api/pki`
+carries it and a machine chooses from it — so renaming `revoke` to make room
+would have broken every caller that already had it, in order to fix a confusion
+two descriptions can carry instead. `release-hold` is its pair, and only a
+`certificateHold` can be released.
+
+## RECOVERY CODES: A SETTINGS RESOURCE AND A CLEAR, AND DELIBERATELY NOTHING ELSE (2026-09-10)
+
+Rule 7 again — `/admin/backup-codes` arrived on the console and owes an
+operation in the same change — and the interesting half is what this API does
+NOT get.
+
+| Operation | What it is |
+|---|---|
+| `GET /admin-api/backup-codes` | the four `backupCodes.*` settings, with the MECHANISM in `status`, read from `common/backup_codes.js` |
+| `POST /admin-api/users/clear-backup-codes` | deletes a person's set, which re-arms the automatic issue |
+
+**THERE IS NO OPERATION THAT ISSUES A SET AND THERE WILL NOT BE**, for the same
+reason there is no `enrol` beside `clear-totp` and `clear-key`: a set is created
+by the ACT of enrolling a second factor and by nothing else, and a management
+API that minted one would be an administrative door handing a working second
+factor to any account. `POST /users/clear-backup-codes` is the only route to a
+second set, and what it does is DELETE.
+
+**AND THERE IS NO OPERATION THAT READS A CODE.** `GET /users` reports the counts
+on each row and never the strings; the person reads their own set on
+`/portal/mfa` and nowhere else. That is asserted rather than trusted —
+`tests/vendored/sts_portal_backup_codes.js` walks this API's own OpenAPI
+document for a path that looks like a reader, and then checks that no code it
+holds appears anywhere in a `GET /users` reply.
+
+**The settings resource needs no POST**, like `/totp` and `/webauthn` beside it:
+every form on the page posts `set-many` to `/admin/config`, so a write here
+would be a second way to change one value.
+
+**Unlike `/totp`, its description carries no paragraph about affecting new
+enrolments only.** That one has to, because a TOTP parameter was told to an app
+this service cannot reach. Nothing here is told to anybody — a recovery code is
+a string compared against a stored string — so shortening `backupCodes.length`
+changes what the next set looks like and leaves an existing one matching exactly
+as it did.
+
+## `/admin-api/policies`, AND `users/create` GENERATING A PASSWORD BY DEFAULT (2026-09-12)
+
+Two operations mirroring `/admin/policies`: `GET /admin-api/policies` over
+`adminViews.passwordPoliciesView()` and `POST /admin-api/policies/{save-password-policy,reset-password-policy}`
+over `adminActions.passwordPoliciesAction()`. **The action names stutter** for
+`/permissions/define-permission`'s reason: they are the console's hidden
+`action` values, and the page will hold more than one kind of policy.
+
+**THE SAVE'S REQUEST SCHEMA IS BUILT FROM `password_policy.FIELDS`**, for
+`narrowDoorProperties()`'s reason, and each field is `oneOf` its JSON type or a
+string: this file's ajv runs with `coerceTypes` off, and a body copied from the
+console carries `"12"` and `"TRUE"`. The module parses both and refuses anything
+else by name. `required` is published and — as everywhere here — enforced by the
+handler, which says WHICH field was missing and why a save needs all of them.
+
+**`POST /admin-api/users/create` DEFAULTS `credential` TO `generate`**, which is
+a behaviour change for every caller that sent none: the reply now carries
+`password` once, and each create costs one scrypt hash. rcbj chose it for both
+doors. A caller that means nobody to hold anything sends `credential: "none"`;
+`sts_directory_bulk_load_api.js`, `sts_second_factor_pages.js` and
+`sts_portal_totp.js` were changed to say so. A typed password on this door, and
+a generated one, meet the realm's password policy in product mode, and
+`set-password` does the same.
+
+## `upload-certificate` AND `regenerate-secret` (2026-09-13)
+
+Two operations for the Credentials section of an application's console page,
+in the same change as the page (rule 7):
+
+* `POST /admin-api/pki/upload-certificate` — on the PKI resource beside `issue`
+  and `revoke`, because it writes the same attributes through the same table
+  (`pki_admin.js`'s `PURPOSE_WRITES`) and a key pair should be taken off with
+  one act however it arrived. The chain rules are `common/pki.js`'s
+  `registerCertificate()`.
+* `POST /admin-api/applications/regenerate-secret` — on the applications
+  resource, because the secret is an application attribute and the mint is
+  `applications.regenerateClientSecret()`. **The reply is the one place this
+  act hands the value out**; the audit row names the attribute. It refuses
+  `sts-management-api` while `adminApi.clientSecret` pins that secret, because
+  every token for this API is minted with the setting and seeding never
+  rewrites an existing entry — regenerating it would be this API locking its
+  own bootstrap out wherever a secret is checked.
+
+`GET /admin-api/applications?application=` grew `credentials`, and no GET was
+added: the page is the application drill-down, which already had its operation.
+
+## `issue-tls-client-certificate` AND `revoke-tls-client-certificate` (2026-09-13)
+
+The Mutual TLS subsection of an application's Credentials section, in the same
+change as the page (rule 7), as two arms of `applicationsAction()` over
+`common/tls_client_certificates.js` — issuing to an application is that module's
+`issue()` with `kind: 'application'`, which a person's portal certificate already
+went through. **The issue's reply is the only copy of the private key**: `files`
+holds the PKCS#12 (base64), the encrypted PEM key and the chain, all under
+`password`, which is neither stored nor audited. The action is a PROMISE, answered
+through the handler's existing `refresh-metadata` branch. The revoke looks among
+THIS application's certificates only. Codes `STS-ADMIN-0720..0723`,
+`STS-PKI-0180..0181`. **`/admin-api` also checks RFC 8705's `cnf["x5t#S256"]`
+since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an.
+
+## `issue-software-statement` (2026-09-13)
+
+`POST /admin-api/applications/issue-software-statement` mirrors the *Issue a
+statement* control in the Software statements section of an application's
+console page (rule 7, same change). It calls `applicationsAction()`, which calls
+`oauth-oidc/software_statement.js`'s `issue()`; the reply carries the statement,
+which is not a secret. **The issuer comes from the ROUTE'S context** — both
+doors add `base: baseUrlOf(req)` beside `authorizationServers` — and never from
+the body, because a registration must match the issuer at the address it
+arrives on. `metadata` and `lifetimeSeconds` are `oneOf` object-or-string and
+integer-or-string, for the console form's text. `GET
+/admin-api/applications?application=` grew `softwareStatements` (declared
+issuers, usable keys, the issued statement and whether it verifies now, and how
+the client registered); no GET was added.
+
+## `GET /admin-api/certificates` — THE CERTIFICATE DETAILS DIALOG, FOR A MACHINE (2026-09-13)
+
+One operation, two shapes, `?certificate=` deciding which — the arrangement
+`/permissions/groups` argues. Without it: every certificate this realm holds,
+one row per certificate with every place it appears, paged and filterable by
+`q`. With it: that certificate's every field and its trust chain, from
+`admin-core/certificate_views.js`, the same function the dialog on `/admin/pki`
+and `/admin/crypto-metadata` is drawn from. **No POST**: the dialog is a view
+and has no control.
+
+A fingerprint is looked up and never parsed from the request, so anything this
+realm does not hold is refused — `400` for a value that is not a SHA-256 (`STS-ADMIN-0640`),
+`404` for one not held here (`STS-ADMIN-0641`), `500` for one that could not be
+described. A certificate from another realm is reached under that realm's
+prefix, which is the realm boundary rather than an inconvenience.
+`tests/vendored/sts_admin_api_operations.js`'s `theCertificateDetailsAnswer()`
+drives both shapes, the colon spelling, and the refusal at the default realm's
+door of a certificate a throwaway realm holds.
+
+## `pqc` ON THE KEY LIST AND THE PKI KEY-PAIR ROWS (2026-09-13)
+
+`GET /admin-api/keys` rows and `GET /admin-api/pki`'s `issued` and `persons`
+rows carry `pqc` — `null` for a classical key, otherwise `{ kind, algorithm,
+label, family, standard }` with `kind` one of `pq`, `composite`, `kem` or
+`hybrid` — which is the answer the post-quantum icon on `/admin/keys` and
+`/admin/pki` is drawn from (`common/pqc_support.js`). It is in `KeyList`'s
+schema. No operation was added: the icon is a view of data both resources
+already carried. `sts_admin_api_operations.js`'s
+`theKeyListMarksPostQuantumKeys()` asserts every signing-key row's kind.
+
+## `target=person` ON `issue`, `upload-certificate` AND `revoke`, AND `credentials` ON A USER (2026-09-13)
+
+No new operation: the Credentials section of `/admin/users?user=` posts the same
+three PKI actions with `target=person`, so rule 7 is paid by three schema edits.
+`upload-certificate`'s `target` enum was `['application']` with
+`additionalProperties: false`, which would have REFUSED a person upload at the
+validator before the handler saw it; `issue` and `revoke` said a person refuses
+`purpose=saml` and that `revoke` ignores `purpose` for one, both now false. `GET
+/admin-api/users?user=` answers `credentials` — both profiles' key pairs, no
+private key — documented on `UserDetail` beside `ldap`.
+
+**A pre-existing mismatch noticed, not fixed**: `issue` documents `keyAlg` while
+`pkiAction()` reads `leafKeyAlg` (the console's field name), so the API's `keyAlg`
+is accepted by the schema and ignored.
+
+## `GET /admin-api/rbac` PAGES EVERY LIST IN ITS REPLY (2026-09-13)
+
+`grants` was already paged by `page` and `per`. The other two lists were not:
+`candidates` (everybody a role could be granted to) and each role's `members`
+and `claimed` — on a directory of thousands, thousands of rows on every read of
+the roster. Now:
+
+* **`candidates` is paged by `candidatesPage` and the shared `per`**, answered
+  in `candidatesPaging` — `detailPagingParameters()`'s naming, so the request
+  is spelt from the reply. Its default page size is twenty rather than
+  `DEFAULT_PER_PAGE`, because the console's results pane shows twenty and the
+  two should not disagree about who is on a page. `personq` narrows it;
+  `personfrom`, the pane's offset, is honoured as the page it falls on when
+  `candidatesPage` is absent.
+* **`roles[]` carries counts and no member lists.** `members` and `claimed`
+  are the same rows `grants` pages, and `?role=` narrows `grants` to one role,
+  so keeping them would have been an unpaged second copy. Nothing in either
+  suite read them.
+
+`sts_admin_api_operations.js`'s `theAdminRolesRoundTrip()` asserts all three.
+
+## `issue-pep-certificate`: THE ONE XACML ACTION THAT AWAITS (2026-09-13)
+
+`POST /admin-api/xacml/issue-pep-certificate` issues a registered remote PEP the
+key pair for its HTTPS listener, from the realm's `pep-tls` Issuing CA, and
+mirrors the **Issue certificate** control on `/admin/xacml/peps` through the
+same `pepAction()` — rule 7 in the ordinary way. Three things about it:
+
+* **`/xacml/:action` SETTLES A PROMISE NOW.** This action answers one and the
+  other XACML actions answer a result, so `admin-core/admin_actions.js`'s
+  `xacmlAction()` converts either and the handler here `Promise.resolve()`s it,
+  turning a rejection into a 500 naming the message. It is the third action
+  handler here that awaits, after `/ssf/:action` and `/pki/:action`.
+* **THE PRIVATE KEY IS IN THE REPLY**, once, like `/pki/issue`'s, and
+  `sendJson()`'s `no-store` is what keeps it out of caches. `GET
+  /admin-api/xacml/peps` carries the certificate on each row as
+  `listenerCertificate` — never the key — read from `pki.js`'s register.
+* **`keyAlg`'s ENUM IS READ FROM `pki.TLS_SERVER_KEY_ALGS`**, which is why
+  this file requires `common/pki.js` (a library, a cache hit): the document
+  cannot offer an algorithm the module refuses. The example names a PEP that is
+  not registered in the replay's throwaway realm, so the ledger records it as
+  refused about its referent, which is the correct reading.
+
+## `protocolEndpoints` ON THE GET THAT MIRRORS A PROTOCOLS PAGE (2026-09-13)
+
+Every Protocols console page lists its realm's endpoints, and rule 7 asks the
+operation mirroring it to answer the same. **No handler changed.** The
+registration loop wraps a GET whose `mirrors` is exactly `GET /admin/<page>`
+for a page in `admin-core/protocol_endpoints.js`'s table, putting the rows on
+`res.locals`; `sendJson()` adds them as `protocolEndpoints` to a 200 whose body
+is a plain object. A `mirrors` naming two pages is a mirror of neither and gets
+nothing — the one whose `mirrors` reads `GET /admin/pki and GET
+/admin/crypto-metadata` is the case. `admin_api_spec.js`'s `operationOf()` says so in those operations'
+descriptions from the same test (37 of them), rather than in each response
+schema: every one is an `openObject`, and the member is added outside the view
+every schema describes.
+
+## SIX MORE USERS ACTIONS (2026-09-13)
+
+`POST /admin-api/users/{reset-password, issue-password-reset,
+disable-primary-keys, disable-mfa, require-mfa, stop-requiring-mfa}` mirror the
+*Password and second factors* section of a person's console page, through the
+same `usersAction()`. Each documents a `{ user }` body with an example on
+`alice`, which `sts_admin_api_operations.js` replays in its throwaway realm. The
+handler passes `base: baseUrlOf(req)`, so `issue-password-reset`'s `resetUrl`
+names the realm the call was made in. **`reset-password` answers `password` and
+`issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
+retrievable afterwards, and neither is in the audit row.
+
+## A REALM'S OWN TOKEN (2026-09-14, #32)
+
+A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7
+owes them this API as well as the console. rcbj chose a realm-scoped
+`sts-management-api` token per realm over reusing the service token. The gate
+keeps the SERVICE credential exactly as it was and adds a second, narrower one:
+
+* **TRIED SECOND, AND ONLY UNDER A REALM PREFIX.** A token that does not verify
+  under the default realm's key is tried under the AMBIENT realm's key when the
+  request is under `/realm/<id>/admin-api`, and never at `/admin-api` itself, so
+  one realm's key is never asked about another realm's request.
+* **THE REALM'S ISSUER AND AUDIENCE.** `realmIssuerAccepted()` asks
+  `jwtAccessToken.isHostedIssuer()` against the request's realm base, and
+  `realmAudienceAccepted()` wants `<base>/realm/<id>/admin-api` — what
+  `resource=` at that realm's token endpoint gives. `adminApi.audience` pins the
+  service's audience and is not consulted.
+* **ONLY FROM THAT REALM'S `sts-management-api`** (`STS-API-0111`). The token
+  endpoint does not restrict who may ask for `admin:*`, so without this any
+  client registered in the realm — dynamic registration included — could mint
+  itself Admin Write over the realm. **This is narrower than the service token,
+  which accepts a token issued to any client carrying the scopes**; that wider
+  gap is not changed here.
+* **THE CONSOLE'S SCOPE, READ OFF THE OPERATION** (`STS-API-0112`).
+  `consoleOperationOf()` maps the request to the console path and action it
+  mirrors — `POST /admin-api/pki/build-root` is `build-root` on `/admin/pki` —
+  and `admin_scope.refusalFor()` answers as it does for the console. So the two
+  doors refuse a realm administrator the same things by construction.
+
+The realm's client secret is minted per start and is not pinned by
+`adminApi.clientSecret`, which is the service client's; a realm administrator
+reads or regenerates it on their realm's console
+(`/realm/<id>/admin/applications?application=sts-management-api`). The
+pinned-secret refusal on `regenerate-secret` applies in the default realm only.
+With `adminApi.authRequired` off, a console SESSION reaching this API is confined
+the same way when its authority is a realm's.
+
+## Several nodes: users/create and groups/create claim their names (2026-09-14, #46 section 3)
+
+`runClaimed()` wraps the two action endpoints: for `action=create` where a
+create can race another process (`directory_create_claims.active()`), the name
+is claimed across nodes first; a create that finds it claimed waits for the
+release (up to five seconds) and then meets the directory's own check, answering
+409 (`STS-LDAP-0092`) only if the name is still claimed after that, or 503
+when the store cannot be asked (`STS-LDAP-0093`); an action that threw after
+claiming gives the claim back and answers 500 (`STS-API-0113`). Everywhere else
+the handler runs synchronously as it did. The directory module is found in the
+require CACHE, never required: it is below this module in the route order. The
+design is `ldap/CLAUDE.md`'s, *Several nodes: a create claims its name*.

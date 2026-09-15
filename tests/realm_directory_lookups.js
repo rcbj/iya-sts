@@ -57,10 +57,18 @@ const realms = require('../common/realms');
 const dir = require('../ldap/ldap_server');
 const applications = require('../common/applications');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'realm_directory_lookups',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The attributes a group needs to be one by BOTH of groupRuleFor()'s rules —
 // placement under ou=groups and an objectClass — so that a failure here can
 // never be "it was not a group anyway".
 function groupAttributes(cn) {
+  log.debug("Entering groupAttributes().");
+  log.debug("Leaving groupAttributes().");
   return {
     objectclass: ['top', 'groupOfNames'],
     cn: [cn],
@@ -72,14 +80,17 @@ function groupAttributes(cn) {
 // as the other two files here: the realm table is process-wide, and a realm
 // left behind changes what a later test resolves.
 function withRealm(t, id, fn) {
+  log.debug("Entering withRealm().");
   const made = realms.create({ id: id, name: id,
                                description: 'Created by ' + __filename });
   if (!made.ok) {
     t.bad('could not create the realm "' + id + '"',
           (made.errors || []).join(' '));
+    log.debug("Leaving withRealm().");
     return undefined;
   }
   try {
+    log.debug("Leaving withRealm().");
     return fn(made.realm);
   } finally {
     realms.remove(id);
@@ -96,6 +107,7 @@ function withRealm(t, id, fn) {
 // subtree, so only the carve-out in `containedRealmBases()` refuses theirs.
 // ---------------------------------------------------------------------------
 function checkGroupReads(t) {
+  log.debug("Entering checkGroupReads().");
   t.log.info('reading a group by DN');
 
   withRealm(t, 'rdl-read', function (realm) {
@@ -110,14 +122,19 @@ function checkGroupReads(t) {
     t.check(inRealmDn.indexOf('dc=rdl-read') > 0,
             'the realm\'s group went into the realm\'s subtree', inRealmDn);
 
-    t.check(!!realms.run(realm, function () { return dir.readGroupEntry(inRealmDn); }),
+    t.check(!!realms.run(realm,
+                         function () { return dir.readGroupEntry(inRealmDn); }),
             'the realm reads its own group', inRealmDn);
     t.check(dir.readGroupEntry(inRealmDn) === null,
-            'the DEFAULT realm does not read the realm\'s group — the carve-out',
+            'the DEFAULT realm does not read the realm\'s group — the ' +
+            'carve-out',
             inRealmDn);
     t.check(!!dir.readGroupEntry(outsideDn),
             'the default realm reads its own group', outsideDn);
-    t.check(realms.run(realm, function () { return dir.readGroupEntry(outsideDn); }) === null,
+    t.check(realms.run(realm,
+                       function () {
+                         return dir.readGroupEntry(outsideDn);
+                       }) === null,
             'and the realm does not read the default realm\'s',
             outsideDn);
 
@@ -127,7 +144,8 @@ function checkGroupReads(t) {
       return dir.groupsFor(outsideDn);
     });
     t.equal(seenFromRealm.found, false,
-            'groupsFor() in the realm reports the default realm\'s group as not found');
+            'groupsFor() in the realm reports the default realm\'s group as ' +
+            'not found');
     t.equal(realms.run(realm, function () {
               return dir.groupsFor(inRealmDn).found;
             }), true,
@@ -139,12 +157,14 @@ function checkGroupReads(t) {
       return dir.allGroupEntries().map(function (g) { return g.dn; });
     });
     t.check(listedInRealm.indexOf(outsideDn) < 0,
-            'the realm\'s group LIST still excludes the default realm\'s groups',
+            'the realm\'s group LIST still excludes the default realm\'s ' +
+            'groups',
             String(listedInRealm.length) + ' group(s)');
 
     realms.run(realm, function () { dir.deleteGroupEntry(inRealmDn); });
     dir.deleteGroupEntry(outsideDn);
   });
+  log.debug("Leaving checkGroupReads().");
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +175,7 @@ function checkGroupReads(t) {
 // entry anyway would pass a refusal-only test.
 // ---------------------------------------------------------------------------
 function checkGroupWrites(t) {
+  log.debug("Entering checkGroupWrites().");
   t.log.info('writing and deleting a group by DN');
 
   withRealm(t, 'rdl-write', function (realm) {
@@ -167,8 +188,8 @@ function checkGroupWrites(t) {
     t.equal(deleted.ok, false,
             'a realm cannot DELETE a group in the default realm');
     t.check(!!dir.readGroupEntry(dn),
-            'and the group is still there afterwards — the assertion a refusal ' +
-            'alone would not make', dn);
+            'and the group is still there afterwards — the assertion a ' +
+            'refusal alone would not make', dn);
 
     const written = realms.run(realm, function () {
       return dir.writeGroupEntry(dn, groupAttributes('rdl-hijacked'), 'test');
@@ -190,13 +211,16 @@ function checkGroupWrites(t) {
       dir.writeGroupEntry(own, groupAttributes('rdl-own'), 'test');
       return own;
     });
-    t.check(!!realms.run(realm, function () { return dir.readGroupEntry(ownDn); }),
+    t.check(!!realms.run(realm,
+                         function () { return dir.readGroupEntry(ownDn); }),
             'a realm still creates and reads a group of its own', ownDn);
-    t.equal(realms.run(realm, function () { return dir.deleteGroupEntry(ownDn).ok; }),
+    t.equal(realms.run(realm,
+                       function () { return dir.deleteGroupEntry(ownDn).ok; }),
             true, 'and still deletes it');
 
     dir.deleteGroupEntry(dn);
   });
+  log.debug("Leaving checkGroupWrites().");
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +234,7 @@ function checkGroupWrites(t) {
 // this file exists for, and nothing else in the repository would notice.
 // ---------------------------------------------------------------------------
 function checkPeopleAndApplications(t) {
+  log.debug("Entering checkPeopleAndApplications().");
   t.log.info('the person and application halves');
 
   withRealm(t, 'rdl-other', function (realm) {
@@ -217,12 +242,17 @@ function checkPeopleAndApplications(t) {
                                    { objectclass: ['top', 'inetOrgPerson'],
                                      uid: ['rdl-person'], cn: ['rdl-person'],
                                      sn: ['person'] }, 'test');
-    const personDn = (person && person.dn) || ('uid=rdl-person,' + dir.usersDn());
+    const personDn = (person && person.dn) || ('uid=rdl-person,' +
+                                               dir.usersDn());
     t.check(!!dir.readPerson(personDn),
             'the default realm reads its own person', personDn);
-    t.check(realms.run(realm, function () { return dir.readPerson(personDn); }) === null,
+    t.check(realms.run(realm,
+                       function () {
+                         return dir.readPerson(personDn);
+                       }) === null,
             'and a realm does not read it', personDn);
-    t.equal(realms.run(realm, function () { return dir.deletePerson(personDn).ok; }),
+    t.equal(realms.run(realm,
+                       function () { return dir.deletePerson(personDn).ok; }),
             false, 'nor delete it');
     t.check(!!dir.readPerson(personDn), 'so it is still there', personDn);
     dir.deletePerson(personDn);
@@ -233,14 +263,19 @@ function checkPeopleAndApplications(t) {
     t.equal(made.ok, true, 'an application was created in the default realm');
     t.check(!!applications.get('rdl-app'),
             'the default realm knows it', 'rdl-app');
-    t.check(realms.run(realm, function () { return applications.get('rdl-app'); }) === null,
+    t.check(realms.run(realm,
+                       function () {
+                         return applications.get('rdl-app');
+                       }) === null,
             'and a realm does not', 'rdl-app');
     t.equal(realms.run(realm, function () {
               return applications.deleteApplication('rdl-app').ok;
             }), false, 'nor can a realm delete it');
-    t.check(!!applications.get('rdl-app'), 'so it is still registered', 'rdl-app');
+    t.check(!!applications.get('rdl-app'), 'so it is still registered',
+            'rdl-app');
     applications.deleteApplication('rdl-app');
   });
+  log.debug("Leaving checkPeopleAndApplications().");
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +286,7 @@ function checkPeopleAndApplications(t) {
 // `inRealm()` is "under the naming context", which every entry is.
 // ---------------------------------------------------------------------------
 function checkDefaultUnchanged(t) {
+  log.debug("Entering checkDefaultUnchanged().");
   t.log.info('a service with no realms defined');
 
   t.equal(realms.count(), 1,
@@ -263,17 +299,21 @@ function checkDefaultUnchanged(t) {
   t.equal(dir.groupsFor(dn).found, true, 'and found by the console\'s reader');
   t.equal(dir.deleteGroupEntry(dn).ok, true, 'and deleted');
   t.check(dir.readGroupEntry(dn) === null, 'and gone afterwards', dn);
+  log.debug("Leaving checkDefaultUnchanged().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkGroupReads(t);
   checkGroupWrites(t);
   checkPeopleAndApplications(t);
   checkDefaultUnchanged(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'realm_directory_lookups',
-  describe: 'a lookup by DN answers about one realm — groups, people and applications',
+  describe: 'a lookup by DN answers about one realm — groups, people and ' +
+            'applications',
   run: run
 };
