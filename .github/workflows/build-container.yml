@@ -99,17 +99,25 @@ jobs:
       # the service defaults to it — and the STS derives every published URL from
       # the Host header, so it does not have to be told where it was reached.
       #
-      # ADMIN_AUTH_REQUIRED=false, and it is the /admin/sts-metadata check below
-      # that needs it. That page moved into the console on 2026-08-24 and is
-      # gated with the rest of it, so an unauthenticated curl gets a 302 to the
-      # sign-in screen — which `curl -f` treats as success, leaving a smoke test
-      # that passes without the router ever being walked. Turning the gate off
-      # in a throwaway CI container is the honest fix; signing in would be
-      # testing the sign-in screen.
+      # ADMIN_API_CLIENT_SECRET, CHOSEN HERE, and both checks below need it.
+      # This used to pass ADMIN_AUTH_REQUIRED=false so a bare curl could read
+      # the console's /admin/sts-metadata. That setting was REMOVED on
+      # 2026-09-06 — the console gate cannot be turned off — and a variable
+      # the service no longer reads fails nothing, so the curl got a 303 to
+      # /oauth2/authorize and every merge to main from 2026-09-09 failed at
+      # the metadata check. /admin-api has required an access token since
+      # 2026-09-09 as well. So the job now does what the test launchers do:
+      # it pins the seeded `sts-management-api` client's secret BEFORE the
+      # service starts (the client reads it while it is seeded, so a secret
+      # chosen afterwards is one the service never heard of), mints a token,
+      # and signs in to the console. Masked, because a run log is public.
       - name: Start the container
         run: |
+          secret="$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
+          echo "::add-mask::${secret}"
+          echo "ADMIN_API_CLIENT_SECRET=${secret}" >> "$GITHUB_ENV"
           docker run -d --name sts-ci -p 8081:8081 \
-            -e ADMIN_AUTH_REQUIRED=false rcbj/sts:ci
+            -e ADMIN_API_CLIENT_SECRET="${secret}" rcbj/sts:ci
 
       # https AND `-k` SINCE 2026-08-30, and both halves are load-bearing. The
       # image's CONFIG_FILE is ./env/local.js, which carries
@@ -140,6 +148,34 @@ jobs:
           echo "STS never answered /healthcheck." >&2
           exit 1
 
+      # The two tools below are the test suite's own, run on the runner rather
+      # than in the image (the service image has no tests directory). They
+      # need one package the service's install would otherwise provide —
+      # bunyan, pinned to the version package-lock.json resolves — and a full
+      # `npm ci` here would build the whole service a second time for it.
+      # NODE_PATH is how node finds it from tests/, which has no node_modules
+      # of its own on a fresh checkout.
+      - name: Install the smoke-test tools' one dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/smoke" --no-audit --no-fund \
+            bunyan@1.8.15
+          echo "NODE_PATH=$RUNNER_TEMP/smoke/node_modules" >> "$GITHUB_ENV"
+
+      # The ONE place a run mints /admin-api's token is
+      # tests/tools/admin-api-token.js, so this calls it rather than writing
+      # the client id, grant and form out a second time. NODE_TLS_REJECT_
+      # UNAUTHORIZED=0 is `-k`'s reason above: the certificate is regenerated
+      # on every start, and the question here is not whether it is trusted.
+      - name: Mint an /admin-api access token
+        env:
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        run: |
+          token=$(STS_ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET}" \
+            node tests/tools/admin-api-token.js https://localhost:8081)
+          test -n "${token}"
+          echo "::add-mask::${token}"
+          echo "STS_ADMIN_API_TOKEN=${token}" >> "$GITHUB_ENV"
+
       # A second, sharper check on the same running container. The metadata
       # page at /admin/sts-metadata
       # reads the endpoint list from the live Express router, so it answers only
@@ -147,19 +183,15 @@ jobs:
       # loaded but registered nothing, or a require order that changed, shows up
       # here and not in the liveness probe.
       #
-      # A block scalar rather than `run: curl ...` on one line: the -w format
-      # contains ": ", which a plain YAML scalar may not — the parser reads it as
-      # a nested mapping and rejects the file before the job ever runs.
-      #
-      # `-w %{http_code}` alone would not notice a redirect, so the status is
-      # checked against 200 rather than merely printed: see the note on the
-      # container's ADMIN_AUTH_REQUIRED above.
+      # It is a CONSOLE page, behind a gate that cannot be turned off, so the
+      # check signs in first — through tests/vendored/console_signin.js's
+      # authorization code flow, which tests/tools/container-smoke.js calls —
+      # and asks for 200 AND an endpoint list. A bare status check on this path
+      # is what passed for weeks and then failed on a 303.
       - name: Check /admin/sts-metadata answers
-        run: |
-          code=$(curl -fsSk -o /dev/null -w '%{http_code}' \
-            https://localhost:8081/admin/sts-metadata)
-          echo "sts-metadata: ${code}"
-          test "${code}" = "200"
+        env:
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        run: node tests/tools/container-smoke.js https://localhost:8081
 
       # THE IMAGE REPORTS THE BUILD IT WAS STAMPED WITH, which is the only
       # place that claim can be checked at all: the stamp is written during the
@@ -173,12 +205,14 @@ jobs:
       # leaves a container computing its version at startup and reporting a
       # perfectly plausible number that changes on every restart.
       #
-      # `/admin-api` rather than the front page: it answers JSON, it is not
-      # gated, and it carries `build` and `stamped` as fields rather than as
-      # something to be parsed out of HTML.
+      # `/admin-api` rather than the front page: it answers JSON and carries
+      # `build` and `stamped` as fields rather than as something to be parsed
+      # out of HTML. It is gated since 2026-09-09, so the request carries the
+      # token minted above.
       - name: Check the image reports the build it was stamped with
         run: |
-          body=$(curl -fsSk https://localhost:8081/admin-api)
+          body=$(curl -fsSk -H "Authorization: Bearer ${STS_ADMIN_API_TOKEN}" \
+            https://localhost:8081/admin-api)
           echo "${body}" | head -8
           echo "${body}" | grep -q '"build": "${{ github.run_number }}"' || {
             echo "The image did not report BUILD_NUMBER=${{ github.run_number }}." >&2

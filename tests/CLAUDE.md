@@ -1470,6 +1470,7 @@ either twenty-odd edits saying the same thing, or one place saying it once.
 | `tools/attach-admin-token.js` | Presents it. Preloaded into every job by `run-report.js` with `--require`; it wraps global `fetch` and `http`/`https.request` and adds the header to `/admin-api` calls that do not already carry one. |
 | the two DOCKER launchers | Mint it once per mode, before any job runs, and hand it over as `STS_ADMIN_API_TOKEN`. They have to: the service is a CONTAINER they brought up, so nothing downstream can choose its client secret. |
 | `tools/run-report.js` | Mints it for a service **it** started — the throwaway. It pins `ADMIN_API_CLIENT_SECRET` before the child starts and mints once it answers. See *The third path* below. |
+| `.github/workflows/build-container.yml` + `tools/container-smoke.js` | **Not a job runner, and the one path that is not a launcher** (2026-09-15). The workflow's smoke test pins the secret on `docker run`, mints through `tools/admin-api-token.js`, and `container-smoke.js` requires the preload itself, signs in with `vendored/console_signin.js` and reads `/admin/sts-metadata`. It passed `ADMIN_AUTH_REQUIRED=false` for a curl until then — a setting removed on 2026-09-06 that nothing failed on, so every merge to main from 2026-09-09 died at that step with a 303. `admin_api_token_wiring.js` does not look at it. |
 
 **WHY A PRELOAD AND NOT A SHARED CLIENT.** A shared client is the right answer
 for a suite being written today. Adopting one across twenty-odd files that each
