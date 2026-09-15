@@ -390,8 +390,32 @@ SELECT format('ALTER ROLE %I LOGIN PASSWORD %L',
 -- one an operator made by hand, or one an earlier run of a different script
 -- made — and inheriting whatever that role happened to have would make the
 -- sentence at the top of this section false without anything failing.
+--
+-- **BUT ONLY A SUPERUSER MAY SAY THREE OF THEM, EVEN TO SAY NO (2026-09-15).**
+-- PostgreSQL 16 and later refuse `NOSUPERUSER`, `NOREPLICATION` and
+-- `NOBYPASSRLS` from a role that is not a superuser — "Only roles with the
+-- SUPERUSER attribute may change the SUPERUSER attribute" — and a managed
+-- database's master user is not one: this file stopped at this statement on
+-- RDS (issue #51), rolling the whole schema back. So a superuser (the compose
+-- stack's database) still sets all five, and anybody else sets the two it may
+-- and then CHECKS the other three rather than skipping them: an existing role
+-- holding any of them fails the run, because a non-superuser cannot take them
+-- away and the sentence at the top of this section would otherwise be false.
 SELECT format('ALTER ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE ' ||
               'NOREPLICATION NOBYPASSRLS', :'sts_app_role')
+WHERE (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+\gexec
+
+SELECT format('ALTER ROLE %I NOCREATEDB NOCREATEROLE', :'sts_app_role')
+WHERE NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+\gexec
+
+SELECT format('DO $check$ BEGIN IF EXISTS (SELECT 1 FROM pg_roles ' ||
+              'WHERE rolname = %L AND (rolsuper OR rolreplication OR ' ||
+              'rolbypassrls)) THEN RAISE EXCEPTION ''sts-schema: the ' ||
+              'application role holds SUPERUSER, REPLICATION or BYPASSRLS, ' ||
+              'which only a superuser can remove''; END IF; END $check$',
+              :'sts_app_role')
 \gexec
 
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I',

@@ -36,15 +36,19 @@ resource "aws_db_parameter_group" "main" {
   family      = "postgres18"
   description = "mock-sts ${var.environment}: TLS required"
 
+  # `apply_method` is spelt as RDS reports it back; left to default, every
+  # plan shows these two as changed although the values are already in force.
   parameter {
-    name  = "rds.force_ssl"
-    value = "1"
+    name         = "rds.force_ssl"
+    value        = "1"
+    apply_method = "pending-reboot"
   }
 
   # The CA bundle in the image verifies TLS 1.2 and later; nothing older.
   parameter {
-    name  = "ssl_min_protocol_version"
-    value = "TLSv1.2"
+    name         = "ssl_min_protocol_version"
+    value        = "TLSv1.2"
+    apply_method = "pending-reboot"
   }
 
   lifecycle {
