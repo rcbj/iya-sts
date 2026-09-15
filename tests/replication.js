@@ -353,6 +353,51 @@ async function run(t) {
           'supported configuration rather than a degraded one');
 
   // -------------------------------------------------------------------------
+  // 8b. A READ BARRIER WAITS OUT A TRANSACTION STILL COMMITTING (2026-09-15).
+  //
+  // `syncNow()` gave up after two hundred pulls, and a pull that meets a hole
+  // returns at once — so the barrier gave up in a few hundred milliseconds
+  // while the transaction behind the hole was still open, and answered from a
+  // copy missing a row committed after it. `sts_acme_enrollment` met it in
+  // `dispatch` mode as "There is no such order". Here the hole fills 400ms
+  // later, which the old loop exhausted long before.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a read barrier waits out a transaction still committing ===');
+  // Section 8 turned coordination off; a barrier with none resolves at once.
+  coordinate(true);
+  replication.reset();
+  const holey = fakeDriver('me');
+  const seen = [];
+  await replication.start(holey, {
+    directory: function (change) {
+      log.debug("Entering directory().");
+      seen.push(change.key);
+      log.debug("Leaving directory().");
+    }
+  });
+  holey.write('them', 'directory', '', 'cn=committing');
+  holey.write('them', 'directory', '', 'cn=behind-the-hole');
+  const late = holey.rows.shift();
+  const filled = new Promise(function (resolve) {
+    setTimeout(function () {
+      holey.rows.unshift(late);
+      resolve();
+    }, 400);
+  });
+  const barrierStarted = Date.now();
+  const barrier = await replication.syncNow();
+  await filled;
+  t.check(barrier.caughtUp === true,
+          'THE BARRIER CAUGHT UP ACROSS A HOLE THAT FILLED 400MS LATER — it ' +
+          'gave up after two hundred millisecond pulls and answered from a ' +
+          'copy missing the row behind the hole',
+          JSON.stringify(barrier) + ' after ' +
+          (Date.now() - barrierStarted) + 'ms');
+  t.equal(seen.join(','), 'cn=committing,cn=behind-the-hole',
+          'and both rows were applied, in order, before the reader was ' +
+          'released');
+
+  // -------------------------------------------------------------------------
   // 9. THE ldif STORE CANNOT COORDINATE AND SAYS SO.
   // -------------------------------------------------------------------------
   t.log.info('=== a driver that cannot coordinate ===');

@@ -73,7 +73,7 @@
 #   STS_MODE_TIMEOUT=2400 ./docker-run-tests.sh
 #                                             # seconds a single mode may take
 #                                             # before this script stops waiting
-#                                             # on docker (default 1500); see
+#                                             # on docker (default 3000); see
 #                                             # THE TWO WALL CLOCKS below
 #   STS_TEARDOWN_TIMEOUT=600 ./docker-run-tests.sh
 #                                             # the same for every `down` and
@@ -165,9 +165,11 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # actually reached.
 #
 #   STS_MODE_TIMEOUT      the suite, once, for one mode. The slowest mode ever
-#                         measured here is `dispatch` at 16m; 25m is that with
-#                         half again on top, which is roughly the spread
-#                         between a fast runner and a slow one.
+#                         measured here was `dispatch` at 16m when this was
+#                         25m; the suite has grown to 225 jobs since, and on
+#                         2026-09-14 `dispatch` was killed at 25m at job 203
+#                         of 225 with nothing wrong. 50m is that measurement
+#                         (about 28m) with most of it again on top.
 #   STS_TEARDOWN_TIMEOUT  every `down`, and the `logs` that precedes it. These
 #                         are seconds of work when they work at all, so five
 #                         minutes is already the pathological case.
@@ -175,7 +177,7 @@ CONFIG_FILE="${CONFIG_FILE:-}"
 # Both are seconds and both are overridable, because a machine slower than any
 # CI runner is a machine somebody will run this on.
 # ---------------------------------------------------------------------------
-STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-1500}"
+STS_MODE_TIMEOUT="${STS_MODE_TIMEOUT:-3000}"
 STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 
 BUILD=1
@@ -551,12 +553,32 @@ captureContainerLogs()
 # the only evidence there is. The fallback name carries the MODE, because three
 # modes falling back would otherwise be three writes to one path and only the
 # last of them would survive.
+#
+# **AND ONLY BESIDE A REPORT THIS MODE WROTE (2026-09-14).** `latest` is the
+# newest report of that mode from ANY run — `./local-run-tests.sh`'s included —
+# so a mode whose runner never started wrote its two logs over another run's
+# `00-mock-sts-service.log` and `00-test-runner.log`, destroying that report's
+# evidence and leaving this run's where nobody would look for it.
+MODE_MARKER="${CURRENT_DIR}/tests/report/.docker-run-tests-mode-start"
+
+# Did the runner write a report under tests/report/<mode> after this mode's
+# `up` began? A report directory's `logs` gains an entry per job, so its
+# modification time moves during the mode.
+modeWroteReport()
+{
+  local mode="$1"
+  local logs="${CURRENT_DIR}/tests/report/${mode}/latest/logs"
+  [ -f "${MODE_MARKER}" ] && [ -d "${logs}" ] &&
+    [ "${logs}" -nt "${MODE_MARKER}" ]
+}
+
 captureOneContainerLog()
 {
   local mode="$1" service="$2" name="$3" label="$4"
   local logs="${CURRENT_DIR}/tests/report/${mode}/latest/logs"
   local dest="${logs}/${name}"
-  if ! ( [ -d "${logs}" ] && touch "${dest}" 2> /dev/null );
+  if ! modeWroteReport "${mode}" ||
+     ! ( [ -d "${logs}" ] && touch "${dest}" 2> /dev/null );
   then
     mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
     dest="${CURRENT_DIR}/tests/report/${mode}-${name}"
@@ -974,6 +996,10 @@ do
 
   STACK_UP=1
   MODE_RC=0
+  # This mode's start, which modeWroteReport() compares a report against, so a
+  # report from an earlier mode or run is never taken for this one's.
+  mkdir -p "${CURRENT_DIR}/tests/report" 2> /dev/null || true
+  touch "${MODE_MARKER}"
   if ! docker_compose -f "${COMPOSE_FILE}" up -d sts;
   then
     echo "The mock STS would not start in mode ${MODE}. Nothing was run." >&2
@@ -1016,12 +1042,36 @@ do
       MODE_RC=1
     else
       COMPOSE_ENV+=("STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN}")
+      # THE TWO ONE-SHOT CONTAINERS ARE NOT ATTACHED (2026-09-14), OR THEIR
+      # FINISHING ENDS THE MODE. `openbao-tls` and `openbao-seed` exit 0 by
+      # design. The `up -d sts` above already ran both; this `up` names every
+      # service, so compose STARTS them again, and `--abort-on-container-exit`
+      # counts an ATTACHED container's exit — any container's — as the signal
+      # to stop the stack. So each mode stopped `sts` a few seconds after
+      # starting it, the runner never ran, and the screen showed the OpenBao
+      # containers exiting and nothing after. Not attaching them keeps their
+      # exit out of that rule; the runner's exit is still what ends the mode.
+      # Reproduced with a two-step `up` against a toy stack before this was
+      # written.
       docker_compose_bounded "${STS_MODE_TIMEOUT}" -f "${COMPOSE_FILE}" up \
+        --no-attach openbao-tls --no-attach openbao-seed \
         --abort-on-container-exit --exit-code-from tests
       MODE_RC=$?
       if [ "${MODE_RC}" -ge 124 ];
       then
         MODE_RC="$(recoverModeVerdict "${MODE}" "${MODE_RC}")"
+      fi
+      # A MODE WHOSE RUNNER WROTE NO REPORT DID NOT PASS, whatever compose
+      # returned. The stack stopping before the runner started is exactly the
+      # case compose can report as 0, and a green mode that ran no job is the
+      # one verdict this launcher must never give.
+      if [ "${MODE_RC}" -eq 0 ] && ! modeWroteReport "${MODE}";
+      then
+        echo "" >&2
+        echo "Mode ${MODE}: compose returned 0, but the test runner wrote no" >&2
+        echo "report under tests/report/${MODE} during this mode. Nothing was" >&2
+        echo "run, so the mode is a failure. The runner log below says why." >&2
+        MODE_RC=1
       fi
     fi
   fi

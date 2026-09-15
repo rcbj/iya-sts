@@ -128,6 +128,20 @@ docker_compose()
 # about `env docker_compose`, one layer along. `sudo timeout ... env ...` is
 # correct for the sudo path too: sudo empties the environment and `env` fills
 # it back with exactly what the compose file substitutes.
+#
+# **AND COMPOSE IS KEPT OFF THE TERMINAL (2026-09-14), OR `up` FROM A TERMINAL
+# NEVER STARTS.** `timeout` runs its command in a process group of its own, so
+# that the kill reaches everything under it — which also makes that command a
+# BACKGROUND job on the terminal. An attached `docker compose up` on a TTY
+# turns on its interactive shortcut menu and reads the keyboard, the kernel
+# answers a background read with SIGTTIN, and compose sits STOPPED (state `T`)
+# after `Container ... Created`: no log output, the runner container never
+# started, until this bound kills it and the mode is lost. CI never saw it,
+# having no terminal. `COMPOSE_MENU=false` turns the menu off and stdin from
+# /dev/null leaves nothing to read; each alone was enough when reproduced under
+# a pseudo-terminal, and both are kept because nothing a launcher asks compose
+# for reads stdin. `timeout --foreground` was not the fix: it gives up timing
+# out the command's children, and the compose plugin IS a child.
 # ---------------------------------------------------------------------------
 docker_compose_bounded()
 {
@@ -143,11 +157,13 @@ docker_compose_bounded()
   if [ -n "${DOCKER_SUDO}" ];
   then
     sudo "${timeoutCmd}" --kill-after=30s "${seconds}" \
-      env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} ${COMPOSE_CMD} "$@"
+      env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} COMPOSE_MENU=false \
+      ${COMPOSE_CMD} "$@" < /dev/null
     return $?
   fi
   "${timeoutCmd}" --kill-after=30s "${seconds}" \
-    env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} ${COMPOSE_CMD} "$@"
+    env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} COMPOSE_MENU=false \
+    ${COMPOSE_CMD} "$@" < /dev/null
   return $?
 }
 

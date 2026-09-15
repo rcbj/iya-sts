@@ -890,6 +890,12 @@ function ocspResponseParts(der) {
   const basic = parseDer(bytes.children[1].value);
   const data = basic.children[0];
   out.tbsRaw = data.raw;
+  // The responderID, for a signature that does not verify: `byKey` (tag 0xa2)
+  // is the SHA-1 of the key the responder says it signed with.
+  const responder = data.children[data.children[0].tag === 0xa0 ? 1 : 0];
+  out.responderKeyHash = responder.tag === 0xa2 && responder.children &&
+                         responder.children[0]
+    ? Buffer.from(responder.children[0].value).toString("hex") : "";
   out.sigAlg = oidOf(basic.children[1].children[0]);
   out.signature = basic.children[2].value.subarray(1);
   const i = data.children[0].tag === 0xa0 ? 1 : 0;
@@ -921,6 +927,44 @@ function ocspResponseParts(der) {
 }
 
 // One OCSP exchange, judged. `expect` is `good` or `unknown`.
+// WHAT A SIGNATURE THAT DID NOT VERIFY WAS SIGNED WITH (2026-09-14).
+//
+// It failed once, in one docker-run-tests memory run, for one GET of one
+// Intermediate at the Root's responder, while the POST for the same
+// certificate verified — and did not reproduce in thirteen soak runs or in 840
+// answers asked of the responder directly. So the evidence is recorded rather
+// than guessed at: whether the responder NAMED the key this job holds for the
+// issuer, whether any OTHER collected certificate with that subject verifies
+// it (the job picked the wrong one of two same-named CAs), and the response
+// itself, base64, in the job's log.
+function signatureFailureEvidence(o, r, issuer) {
+  log.debug("Entering signatureFailureEvidence().");
+  const held = nodeCrypto.createHash("sha1").update(issuer.spkiKeyBits)
+    .digest("hex");
+  const sameName = [];
+  certificates.forEach(function (entry) {
+    if (entry.parts.subject === issuer.subject) {
+      sameName.push(entry.parts);
+    }
+  });
+  const others = sameName.filter(function (parts) {
+    return parts.fingerprint !== issuer.fingerprint &&
+           signatureVerifies(o.sigAlg, o.tbsRaw, o.signature, parts) === true;
+  });
+  log.warn("OCSP signature evidence: responderID byKey " +
+           (o.responderKeyHash || "(not byKey)") + ", issuer key " + held +
+           ", signature algorithm " + o.sigAlg + ", response base64 " +
+           r.bytes.toString("base64"));
+  log.debug("Leaving signatureFailureEvidence().");
+  return " [evidence: the responder named key " +
+         (o.responderKeyHash || "(not byKey)") + (o.responderKeyHash === held
+           ? ", which IS the key held for the issuer"
+           : ", which is NOT the key held for the issuer (" + held + ")") +
+         "; " + sameName.length + " collected certificate(s) carry that " +
+         "subject, " + others.length + " other of which verify the " +
+         "signature; the response is in this job's log]";
+}
+
 function judgeOcsp(r, where, certId, issuer, nonce, expect) {
   log.debug("Entering judgeOcsp().");
   const problems = [];
@@ -1023,7 +1067,8 @@ function judgeOcsp(r, where, certId, issuer, nonce, expect) {
   if (verified === false) {
     problems.push(where + ": the response signature does not verify with " +
                   issuer.subject + "'s key — this responder signs with the " +
-                  "CA itself, so it must (section 4.2.2.2)");
+                  "CA itself, so it must (section 4.2.2.2)" +
+                  signatureFailureEvidence(o, r, issuer));
   }
   log.debug("Leaving judgeOcsp().");
   return problems;

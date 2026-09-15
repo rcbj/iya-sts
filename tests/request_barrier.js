@@ -642,8 +642,40 @@ async function checkABehindWorkerStaysBehind(t) {
   log.debug("Leaving checkABehindWorkerStaysBehind().");
 }
 
+// ---------------------------------------------------------------------------
+// 10. A REQUEST THE FRONT PROCESS KEEPS WAITS FOR ANSWERED WRITES TOO
+//     (2026-09-14).
+//
+// The undispatched branch caught up with `syncNow()` alone, which pulls what
+// is COMMITTED. A console sign-in answered on a surface worker and not yet
+// committed left `/admin/tls/trust` — pinned to the front process — answering
+// 401 to the browser that had just signed in (`sts_realm_administrators` in
+// `dispatch` mode). Asserted as SOURCE, for `tls_trust_anchor.js`'s reason:
+// the branch needs a live store to run, and what went wrong was a call left
+// out, which a behavioural check of the barrier alone passes.
+// ---------------------------------------------------------------------------
+function checkTheFrontProcessWaitsForAnsweredWrites(t) {
+  log.debug("Entering checkTheFrontProcessWaitsForAnsweredWrites().");
+  t.log.info('=== a kept request waits for answered writes before catching ' +
+             'up ===');
+  const source = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'common', 'request_pool.js'), 'utf8');
+  const start = source.indexOf('if (!dispatched(req.originalUrl || req.url))');
+  const end = source.indexOf('THE ROUTING POLICY, IN ONE LINE', start);
+  const branch = start >= 0 && end > start ? source.slice(start, end) : '';
+  const waits = branch.indexOf('awaitCommitConfirmations(null)');
+  const syncs = branch.indexOf('persistence.syncNow()');
+  t.check(branch.length > 0, 'the undispatched branch is found', '');
+  t.check(waits >= 0 && syncs > waits,
+          'it waits for answered writes (awaitCommitConfirmations) BEFORE ' +
+          'pulling what is committed',
+          'waits at ' + waits + ', syncs at ' + syncs);
+  log.debug("Leaving checkTheFrontProcessWaitsForAnsweredWrites().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
+  checkTheFrontProcessWaitsForAnsweredWrites(t);
   await checkAnArmedTicketBlocksUntilItCommits(t);
   await checkAnUnansweredRequestReleasesItsTicket(t);
   await checkAFreshTicketSurvivesItsFirstTimeout(t);

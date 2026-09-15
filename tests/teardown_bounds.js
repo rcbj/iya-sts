@@ -109,6 +109,23 @@ function checkTheBoundedHelperExists(t) {
           'kernel, so this is the difference between a bounded compose call ' +
           'and no compose call at all');
 
+  // `timeout` makes compose a BACKGROUND job on a terminal (2026-09-14): its
+  // shortcut menu reads the keyboard, the kernel stops it with SIGTTIN, and
+  // `up` sits after `Created` with no output until the bound kills the mode.
+  // Both bounded calls must keep it off the terminal. Asserted per call — the
+  // sudo one and the plain one — because a fix made to one of two copies is
+  // the shape this file exists to catch.
+  const boundedCalls = helper.split('--kill-after=30s').slice(1)
+    .map(function (rest) { return rest.split('return $?')[0]; });
+  t.check(boundedCalls.length === 2 && boundedCalls.every(function (call) {
+    return /COMPOSE_MENU=false/.test(call) && /<\s*\/dev\/null/.test(call);
+  }),
+          'every bounded compose call has COMPOSE_MENU=false and stdin from ' +
+          '/dev/null',
+          'without them `docker-run-tests.sh` run from a terminal stops ' +
+          'compose `up` after `Created` and prints nothing until the mode ' +
+          'timeout; found ' + boundedCalls.length + ' bounded call(s)');
+
   // A machine without coreutils `timeout` must behave exactly as it did
   // before this existed. A bound is a safety net, never a requirement.
   t.check(/command -v timeout/.test(helper) &&
@@ -143,6 +160,36 @@ function checkTheLauncherIsBounded(t) {
           'the mode\'s `up` runs under STS_MODE_TIMEOUT',
           'that single call runs the suite AND stops the stack afterwards, ' +
           'and it is the second half that wedged');
+
+  // THE ONE-SHOT SERVICES ARE NOT ATTACHED TO IT (2026-09-14). Every service
+  // the compose file marks `restart: "no"` exits 0 by design, that `up`
+  // starts it again, and `--abort-on-container-exit` stops the stack on any
+  // ATTACHED container's exit — so each mode stopped `sts` seconds in and the
+  // runner never ran. Read off the compose file rather than listed here, so a
+  // third one-shot service added there is a failure here until it is added.
+  const composeFile = read('docker-compose-run-tests.yml');
+  const oneShots = composeFile.split(/\n(?=  [a-z][a-z0-9-]*:\n)/)
+    .filter(function (block) { return /\n    restart: "no"/.test(block); })
+    .map(function (block) { return block.match(/^\s*([a-z][a-z0-9-]*):/)[1]; });
+  const runnerUp = (launcher.match(
+    /docker_compose_bounded "\$\{STS_MODE_TIMEOUT\}" -f "\$\{COMPOSE_FILE\}" up[\s\S]*?--exit-code-from tests/) ||
+    [''])[0];
+  t.check(oneShots.length >= 2 && oneShots.every(function (name) {
+    return runnerUp.indexOf('--no-attach ' + name) >= 0;
+  }),
+          'the mode\'s `up` does not attach the one-shot services (' +
+          oneShots.join(', ') + ')',
+          'an attached one-shot container finishing is an exit ' +
+          '`--abort-on-container-exit` stops the whole stack for, before the ' +
+          'runner starts');
+
+  // AND A MODE WITH NO REPORT IS NOT GREEN, whatever compose returned.
+  t.check(/! modeWroteReport "\$\{MODE\}"/.test(launcher) &&
+          /MODE_RC=1/.test(launcher.split('! modeWroteReport')[1] || ''),
+          'a mode whose runner wrote no report is failed',
+          'the stack stopping before the runner started can come back as 0, ' +
+          'and a green mode that ran no job is the verdict this launcher ' +
+          'must never give');
 
   // NO unbounded `down` may remain. This is the check that a later edit
   // trips: adding a teardown is easy and adding a bounded one is a decision.

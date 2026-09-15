@@ -244,8 +244,14 @@ ENV NODE_PATH=/opt/sts-sdk/node_modules
 # timeout sits above the sum of the two ./docker-run-tests.sh reaches itself,
 # so the workflow is the subject of a test and has to be in the context. The
 # rest of `.github` is still excluded and nothing here reads any of it.
+#
+# **AND `docs` AND `docker-compose-run-tests.yml` ON 2026-09-14**, for the same
+# reason again: tests/error_codes.js reads docs/error-codes.md and
+# docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
+# read the test compose file. Excluded from the context, all three failed with
+# ENOENT in the first ./docker-run-tests.sh run that reached them.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
-           ./.github
+           ./.github ./docs ./docker-compose-run-tests.yml
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory

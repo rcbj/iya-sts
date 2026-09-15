@@ -91,7 +91,13 @@ jobs:
     #
     # Not larger, for the reason it exists at all: without a number here a
     # stuck job holds a runner for six hours.
-    timeout-minutes: 60
+    #
+    # 120 SINCE 2026-09-14. The suite is 225 jobs now and `dispatch` alone
+    # outgrew the launcher's 25-minute mode bound, which went to 50; this has
+    # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
+    # and above three healthy modes, measured at about 70 minutes on a
+    # developer machine. 120 is that test's own ceiling.
+    timeout-minutes: 120
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git

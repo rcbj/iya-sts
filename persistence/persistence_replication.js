@@ -136,6 +136,12 @@ let running = false;   // one catch-up at a time
 let holeAt = 0;
 let holeSince = 0;
 const HOLE_WAIT_MS = 4000;
+// How long syncNow() waits to reach its target, and how long it pauses after a
+// pull that advanced nothing. The first is HOLE_WAIT_MS plus room for the skip
+// to be applied, and below request_pool.js's five-second round bound; see
+// syncNow() for the run that measured a count of attempts falling short.
+const SYNC_DEADLINE_MS = HOLE_WAIT_MS + 600;
+const SYNC_IDLE_PAUSE_MS = 10;
 // THE PULL THAT IS RUNNING, so a caller that needs one CAN WAIT for it rather
 // than being told there is nothing to do. `pull()` answers immediately when one
 // is already in flight — right for a timer, and wrong for `syncNow()`, which is
@@ -408,14 +414,39 @@ function syncNow() {
     });
     return opening.then(function () {
 
-    function step(attempts) {
+    // ----------------------------------------------------------------------
+    // A DEADLINE, NOT A COUNT OF ATTEMPTS (2026-09-15).
+    //
+    // This was `step(200)`: two hundred pulls, and it gave up after the last.
+    // A pull that meets a HOLE — a sequence value allocated by a transaction
+    // still committing in another process — applies nothing and returns in a
+    // millisecond or two, so two hundred of them were over in a few hundred
+    // milliseconds while that transaction was still open. `pull()` itself waits
+    // `HOLE_WAIT_MS` (four seconds) before calling a hole a rollback, so the
+    // bound fired an order of magnitude sooner than the thing it was bounding.
+    // Measured in `dispatch` mode: `sts_acme_enrollment`'s finalize reached a
+    // worker whose barrier "gave up at 20799 of 20804", was answered from a
+    // copy without the order another worker had created and committed moments
+    // earlier (behind the hole), and got `There is no such order` — the one
+    // STS-STORE-0039 in the run.
+    //
+    // So the bound is TIME: long enough for a hole to be skipped as a rollback
+    // (`HOLE_WAIT_MS`) with a little to spare, and still inside the pool's own
+    // round bound (`request_pool.js`'s BARRIER_TIMEOUT_MS, five seconds), so a
+    // reader is answered by this rather than abandoned by that. A pull that
+    // advanced nothing is followed by a short pause rather than another query
+    // at once, which is what kept the old loop busy for no gain.
+    // ----------------------------------------------------------------------
+    const deadline = Date.now() + SYNC_DEADLINE_MS;
+
+    function step() {
       log.debug("Entering step().");
       if (applied >= want) {
         log.debug("Leaving step().");
         return { caughtUp: true, applied: applied, target: want,
                  coordinating: true };
       }
-      if (attempts <= 0) {
+      if (Date.now() >= deadline) {
         // A BOUND rather than a spin. Reaching it means something is wrong
         // with the store rather than that more time is needed, and a request
         // held for ever is worse than one answered from a copy that is a
@@ -435,16 +466,24 @@ function syncNow() {
         return new Promise(function (resolve) {
           setTimeout(resolve, 5);
         }).then(function () {
-          return step(attempts - 1);
+          return step();
         });
       }
+      const before = applied;
       log.debug("Leaving step().");
       return pull().then(function () {
-        return step(attempts - 1);
+        if (applied > before) {
+          return step();
+        }
+        return new Promise(function (resolve) {
+          setTimeout(resolve, SYNC_IDLE_PAUSE_MS);
+        }).then(function () {
+          return step();
+        });
       });
     }
 
-    return step(200);
+    return step();
     });
   }).catch(function (err) {
     log.warn(errorCodes.tag('STS-STORE-0040') +

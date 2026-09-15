@@ -850,16 +850,27 @@ async function anOperatorCanClearIt(state) {
     });
   });
 
-  // The audit log, fetched once for the three assertions below. It was read in
-  // the block this section replaced; keeping the fetch here rather than inside
-  // each check means one request for three questions about the same list.
-  const rows = await apiGet("/audit?per=200");
+  // The audit log, read ONE ACTION AT A TIME (2026-09-14). It was one fetch
+  // of the newest 200 rows for all three questions, and in `dispatch` mode the
+  // rows written between this person's confirm (section 3) and here — every
+  // request, every Shared Signals push, from several processes — pushed the
+  // confirm off that page: "no portal.mfa.backup-codes.confirmed row" about a
+  // row that was there. Narrowing by action is the question actually asked.
+  async function rowsFor(action) {
+    log.debug("Entering rowsFor().");
+    const answer = await apiGet("/audit?per=200&action=" +
+                                encodeURIComponent(action));
+    log.debug("Leaving rowsFor().");
+    return (answer.body && (answer.body.events || answer.body.rows)) || [];
+  }
+  const clearedRows = await rowsFor("admin.mfa.backup-codes.cleared");
+  const generatedRows = await rowsFor("portal.mfa.backup-codes.generated");
+  const confirmedRows = await rowsFor("portal.mfa.backup-codes.confirmed");
 
   check("and the clear is in the audit log as an ADMIN act — a security " +
         "downgrade performed by a third party, which is the one shape of act " +
         "an audit log exists for", function () {
-    const events = (rows.body.events || rows.body.rows || []);
-    assert.ok(events.some(function (e) {
+    assert.ok(clearedRows.some(function (e) {
       return e.action === "admin.mfa.backup-codes.cleared" &&
              JSON.stringify(e.detail || {}).indexOf(OWNER) >= 0;
     }), "no admin.mfa.backup-codes.cleared row naming " + OWNER + ".");
@@ -873,16 +884,14 @@ async function anOperatorCanClearIt(state) {
   // recording only the second would leave the more sensitive act unlogged.
   check("generating a set is audited — it is the moment a live credential is " +
         "put in front of somebody", function () {
-    const events = (rows.body.events || rows.body.rows || []);
-    assert.ok(events.some(function (e) {
+    assert.ok(generatedRows.some(function (e) {
       return e.action === "portal.mfa.backup-codes.generated" &&
              e.actor === OWNER;
     }), "no portal.mfa.backup-codes.generated row for " + OWNER + ".");
   });
   check("and so is confirming it, which is the moment the account's way back " +
         "actually changed", function () {
-    const events = (rows.body.events || rows.body.rows || []);
-    assert.ok(events.some(function (e) {
+    assert.ok(confirmedRows.some(function (e) {
       return e.action === "portal.mfa.backup-codes.confirmed" &&
              e.actor === OWNER;
     }), "no portal.mfa.backup-codes.confirmed row for " + OWNER + ".");

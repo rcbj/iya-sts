@@ -3461,8 +3461,12 @@ function receiveSync(entry, message) {
 // the realm is what the worker has to be told and app.js's first middleware is
 // what works it out.
 // ---------------------------------------------------------------------------
-function middleware() {
+function middleware(options) {
   log.debug("Entering middleware().");
+  // `enterRealm` is app.js's realm middleware, asked once more for a request
+  // kept here that it could not place in a realm before the catch-up below.
+  const enterRealm = options && typeof options.enterRealm === 'function'
+    ? options.enterRealm : null;
   if (IS_REQUEST_WORKER) {
     // A worker HANDLES requests; it does not dispatch them. Returning a bare
     // pass-through rather than checking on every request keeps the hot path in
@@ -3510,11 +3514,32 @@ function middleware() {
       // protocol module, so a top-level require would pull the store into the
       // router's position. By now it is a cache hit.
       const persistence = require('../persistence/persistence');
-      persistence.syncNow().catch(function (e) {
+      // **AND IT WAITS FOR WHAT A WORKER HAS ANSWERED FIRST (2026-09-14).**
+      // `syncNow()` pulls what is COMMITTED, and a write a worker answered a
+      // moment ago may not be yet — that is exactly the window the tickets
+      // exist for, and a dispatched reader waits them out below. This process
+      // did not: a console sign-in finished on a surface worker and the very
+      // next request, to `/admin/tls/trust`, was answered here 30ms later with
+      // a 401, because the session was answered and not committed.
+      // `sts_realm_administrators` failed on it in `dispatch` mode. No worker
+      // answers this request, so none is exempted (`servedBy` null).
+      awaitCommitConfirmations(null).then(function () {
+        return persistence.syncNow();
+      }).catch(function (e) {
         log.debug('request_pool: the front process could not catch up before ' +
                   'answering ' + (req.originalUrl || req.url) + ': ' +
                   e.message);
       }).then(function () {
+        // **AND A REALM THE CATCH-UP BROUGHT IS ENTERED NOW (2026-09-15).**
+        // app.js placed this request in a realm before the wait above, so a
+        // realm a worker created a moment ago was unknown then and the
+        // `/realm/<id>` prefix was left on the path — which the router answers
+        // `Cannot POST`. A request already in a realm is not asked again;
+        // `enterRealm` calls `next()` itself whether or not it matches now.
+        if (!req.realm && enterRealm) {
+          enterRealm(req, res, next);
+          return;
+        }
         next();
       });
       return;

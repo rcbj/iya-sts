@@ -3517,6 +3517,19 @@ function permissionRefusal(scope, clientId) {
 // console page.
 function jtiOf(token) {
   log.debug("Entering jtiOf().");
+  // NO TOKEN IS NOT AN UNREADABLE TOKEN (2026-09-14). The token exchange asks
+  // this about `exchanged.id_token` and `exchanged.refresh_token` whether or
+  // not the exchange minted them, and the delegation act drops the absent ones
+  // itself. Without this line `String(undefined || '').split('.')[1]` is
+  // `undefined`, `b64uDecode()` base64-decodes the WORD "undefined", and the
+  // bytes fail JSON.parse — so every exchange that minted no ID Token logged
+  // STS-OAUTH-0182 at error with `Unexpected token '�', "�w^~)�"`, once per
+  // suite mode, about a token that was never issued.
+  const parts = String(token || '').trim().split('.');
+  if (!token || parts.length < 2) {
+    log.debug("Leaving jtiOf(). No token, or not a JWT.");
+    return '';
+  }
   try {
     // An encrypted refresh token is opened first; every other token this
     // service issues is a JWS and is read as it always was.

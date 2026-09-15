@@ -110,8 +110,20 @@ const app = express();
 // not merely behave as it did — it runs the same code it did, with two
 // comparisons added.
 // ---------------------------------------------------------------------------
-app.use(function (req, res, next) {
-  log.debug("Entering the realm middleware.");
+//
+// **IT IS A NAMED FUNCTION BECAUSE `request_pool.js` ASKS IT AGAIN
+// (2026-09-15).** A request the front process answers itself waits for other
+// processes' writes before it is routed — and a realm another process created a
+// moment ago is one of those writes. This middleware runs BEFORE that wait, so
+// such a request found no realm, kept its `/realm/<id>` prefix, and reached the
+// router as a path nothing registers: `sts_admin_api_operations` got
+// `Cannot POST /realm/adminapi-…/admin-api/tls/trust/…` 270ms after creating
+// the realm on a worker, in `dispatch` mode only. The pool is handed this
+// function and applies it once more after catching up, to a request it had not
+// placed in a realm. It wraps `res.location` and `res.send` only on a match, so
+// asking twice cannot wrap them twice.
+function enterRealm(req, res, next) {
+  log.debug("Entering enterRealm().");
   const match = realms.matchPath(String(req.url || '').split('?')[0]);
 
   // Not in a realm — including a path that opens with the realm SEGMENT and an
@@ -123,7 +135,7 @@ app.use(function (req, res, next) {
   // under the segment. `GET /realms` is where somebody finds out what the
   // realms are.
   if (!match) {
-    log.debug("Leaving the realm middleware. Not in a realm.");
+    log.debug("Leaving enterRealm(). Not in a realm.");
     next();
     return;
   }
@@ -199,9 +211,11 @@ app.use(function (req, res, next) {
     return send.apply(res, arguments);
   };
 
-  log.debug("Leaving the realm middleware. In realm " + match.realm + ".");
+  log.debug("Leaving enterRealm(). In realm " + match.realm + ".");
   realms.run(match.realm, next);
-});
+}
+
+app.use(enterRealm);
 
 // ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and
@@ -293,7 +307,7 @@ realms.reserve(function () {
 // With `workers.dispatch` empty — the default — this calls next() for
 // everything and the service behaves exactly as it did.
 // ---------------------------------------------------------------------------
-app.use(requestPool.middleware());
+app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // CORS preflight carrying Access-Control-Request-Private-Network and require
 // this header on the response. Answer it so the call isn't blocked. Registered
@@ -803,3 +817,6 @@ module.exports.CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY;
 // For the one page that builds URLs in a script and therefore cannot have its
 // markup rewritten. See the comment on res.send above.
 module.exports.withRealmLinks = withRealmLinks;
+// For tests/front_process_realm_arrival.js, which drives it beside the request
+// pool's second ask; nothing in the service calls it off the export.
+module.exports.enterRealm = enterRealm;

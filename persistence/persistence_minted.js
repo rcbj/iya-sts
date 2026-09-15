@@ -259,6 +259,9 @@ let droppedStale = 0;
 let droppedUnreadable = 0;
 let droppedUnknown = 0;
 let unsupportedReason = '';
+// Whether flush() has said, once, that a product-mode realm's minted state is
+// being dropped by a development process with no key. See flush().
+let realmOnlyKeylessWarned = false;
 
 // ---------------------------------------------------------------------------
 // THE SETTINGS. Read per call like the rest of this service.
@@ -340,6 +343,18 @@ function enabled() {
 // is dispatched however many workers were forked — and dispatch without
 // coordination is refused at startup, so this being true means the store is
 // shared as well.
+// The PROCESS's mode, whichever realm is ambient: the default realm's answer,
+// which is what the environment and the appconfig file said. A realm override
+// of `global.mode` changes that realm's behaviour and not what this process
+// was started as.
+function processIsProduct() {
+  log.debug("Entering processIsProduct().");
+  log.debug("Leaving processIsProduct().");
+  return realms.run(null, function () {
+    return mode.isProduct();
+  });
+}
+
 function severalProcesses() {
   log.debug("Entering severalProcesses().");
   const count = Number(config.value('workers.requestCount')) || 0;
@@ -837,9 +852,33 @@ function flush() {
     journal.clear();
     lastError = 'no key-encryption key is available, so nothing minted can ' +
                 'be sealed';
-    log.error(errorCodes.tag('STS-STORE-0018') +
-              'persistence: ' + lastError + '. Minted state is not being ' +
-              'written down.');
+    // A PRODUCT-MODE REALM IN A PROCESS THAT IS NOT IN PRODUCT MODE IS NOT THE
+    // SAME FAILURE (2026-09-14). `enabled()` reads `global.mode` through the
+    // AMBIENT realm, and a flush scheduled from a request inherits that
+    // request's realm — so a development process with no key-encryption key,
+    // serving a realm somebody switched to product, reached this line on every
+    // flush that realm's traffic scheduled and logged an ERROR each time: 11
+    // lines in one postgres-mode suite run, about a configuration that is
+    // stated once and does not change. The process-level case is the one this
+    // line was written for — a product service whose keystore is not open —
+    // and it stays an error per flush. The realm-level case is said ONCE, as a
+    // warning, with the same code (the no-per-event-logs rule). `enabled()` is
+    // deliberately NOT narrowed to require a key: `restore()` reads it too, and
+    // a product process with no key must go on failing that fatally
+    // (STS-STORE-0022) rather than restoring nothing in silence.
+    if (processIsProduct()) {
+      log.error(errorCodes.tag('STS-STORE-0018') +
+                'persistence: ' + lastError + '. Minted state is not being ' +
+                'written down.');
+    } else if (!realmOnlyKeylessWarned) {
+      realmOnlyKeylessWarned = true;
+      log.warn(errorCodes.tag('STS-STORE-0018') +
+               'persistence: a trust realm in product mode wrote minted ' +
+               'state, and this process is in development mode with no ' +
+               'key-encryption key, so ' + lastError + '. That realm\'s ' +
+               'sessions, tokens and codes are held in memory only. Said ' +
+               'once per process.');
+    }
     log.debug('Leaving flush(). Nothing to seal with.');
     return Promise.resolve({ written: false, error: lastError });
   }
@@ -1275,6 +1314,7 @@ function reset() {
   droppedUnreadable = 0;
   droppedUnknown = 0;
   unsupportedReason = '';
+  realmOnlyKeylessWarned = false;
   log.debug("Leaving reset().");
 }
 
