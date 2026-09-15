@@ -51,6 +51,7 @@
 // over there, in `tests/sts_userinfo_protected.js`.
 // ===========================================================================
 
+const child_process = require('child_process');
 const pool = require('../common/worker_pool');
 const pqJose = require('../common/pq_jose');
 const crypto = require('../common/crypto');
@@ -460,6 +461,62 @@ module.exports = {
     // keeps about its own previous behaviour.
     t.equal(typeof config.value('workers.jobTimeoutS'), 'number',
             'the bound is a number of seconds and is settable');
+
+    // -----------------------------------------------------------------------
+    t.log.info('G. A WORKER WHOSE CHANNEL CLOSES MID-JOB EXITS, IT DOES NOT ' +
+               'CRASH');
+    // -----------------------------------------------------------------------
+    // **SECTION F LEFT A WORKER COMPUTING, AND IT DIED ON ITS WAY OUT.** A job
+    // is synchronous, so the channel can close while one runs — the bound
+    // fired, the pool drained, or the front process exited — and the worker
+    // cannot see the `disconnect` until the job returns. Its answer then went
+    // to a closed pipe, node reported that as an `'error'` on `process`,
+    // nothing listened, and the child printed an unhandled `write EPIPE` stack
+    // onto the stderr it shares with its parent. Seen at the foot of this
+    // file's own log in a `cluster` run on 2026-09-15, after `0 failed`.
+    //
+    // The child is forked BY HAND rather than through the pool: `stop()`
+    // disconnects and then kills, and a killed child exits by signal whatever
+    // its send did, which would pass this section on the defect.
+    await new Promise(function (resolve) {
+      const child = child_process.fork(require.resolve('../common/worker'), [],
+        { serialization: 'advanced', stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+      let stdout = '';
+      let stderr = '';
+      let sent = false;
+      child.stderr.on('data', function (d) {
+        stderr += d;
+      });
+      child.stdout.on('data', function (d) {
+        stdout += d;
+        if (sent || !/ready\./.test(stdout)) {
+          return;
+        }
+        sent = true;
+        const pair = pqJose.generate(SLOW_ALG);
+        child.send({ id: 1, kind: 'pq.sign',
+                     job: { alg: SLOW_ALG, priv: pair.priv,
+                            message: MESSAGE } },
+          function () {
+            // Long enough for the message to be read and the signature to
+            // start; far shorter than an SLH-DSA signature (section F's bound
+            // of one second fires before one finishes).
+            setTimeout(function () {
+              child.disconnect();
+            }, 200);
+          });
+      });
+      child.on('exit', function (code, signal) {
+        t.check(code === 0 && !signal,
+                'the worker exits 0 once the job it was computing returns',
+                'code ' + code + ', signal ' + signal);
+        t.check(!/EPIPE|Unhandled 'error'/.test(stderr),
+                'and writes no unhandled EPIPE onto the shared stderr',
+                stderr.trim().split('\n').slice(0, 3).join(' | ') ||
+                  '(nothing)');
+        resolve();
+      });
+    });
     log.debug("Leaving run().");
 
   }
