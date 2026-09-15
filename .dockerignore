@@ -141,3 +141,10 @@ data/
 # image (the Dockerfile's `debugger` stage), so a stale checkout copy must not
 # reach the build context and shadow it.
 debugger/embedded/
+
+# TERRAFORM'S PROVIDER CACHE, from `terraform init` in deploy/aws/foundation and
+# deploy/aws/environment: about 800 MB each, none of it read by either image,
+# and on 2026-09-15 it made a 1.8 GB build context that the machine building
+# the suite runner ran out of memory sending. The lock files beside them are
+# committed and small, and neither image needs them either.
+**/.terraform
