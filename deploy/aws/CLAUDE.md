@@ -11,10 +11,12 @@ Dockerfile removes this directory from the image.
 | `environment/` | per run | VPC, NLB (443, 9443, 389, 8082), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
+| `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `suite`, `ecr-password` — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
+| `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
 | `run-suite-in-aws.sh` | per run | starts the suite task in the VPC, waits, downloads the report — **every job** | CI, or a person |
 | `reset-environment.js` | per run | removes every realm but the default one and clears the default realm's runtime overrides before a run, so an environment can be reused | both runners |
 | `run-suite.sh` | per run | runs the suite from the machine it is started on, less the two jobs the nodes must call back to | a person |
-| `../../.github/workflows/aws-cluster.yml` | per run | build, apply, suite, report, destroy — one job | GitHub Actions (dispatch only) |
+| `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
 
 ## The decisions, and what each costs
 
@@ -128,6 +130,28 @@ and NAT gateway actions (tagged), `ecs:RunTask` on a project task definition in
 a project cluster, reading the report bucket, and — in the BOUNDARY — writing
 to it, which is the one thing the runner's role does.
 
+## The workflow, and why it looks like the parent's
+
+`aws-cluster.yml` follows `id-proto-debugger/.github/workflows/website-deploy-test.yml`
+and `terraform.yml`: Terraform runs **inside a container built from the
+repository** (`deploy/aws/Dockerfile`), the same one `terraform-local.sh` runs,
+so the workflow installs neither Terraform nor the AWS CLI and a plan behaves
+the same on a laptop and in CI; **static-key secrets** (`AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`) are handed to `docker run`; the jobs are **ordered in
+one workflow** and serialised per environment. Two things differ, and both are
+about this stack rather than taste:
+
+* **The key is the deployer USER's, and the entrypoint assumes the deployer
+  ROLE** — that user may do nothing else. The role ARN is built from the account,
+  so there is no third secret.
+* **`test` is its own action**, because an environment is reusable
+  (`reset-environment.js`): apply once, test many times, destroy at the end.
+  `apply-and-test` is the throwaway run, and its `teardown` job runs whatever the
+  suite said unless `keep` is set.
+
+Checked against `dev` on 2026-09-15 with the deployer user's key: `output`,
+`plan` (no changes against the stack applied by hand) and `ecr-password`.
+
 ## Running it by hand
 
 ```bash
@@ -149,6 +173,11 @@ terraform -chdir=deploy/aws/environment apply -var environment=dev -var image_ta
   -var 'allowed_cidrs=["<your ip>/32"]'
 deploy/aws/run-suite-in-aws.sh dev      # every job, inside the VPC
 deploy/aws/run-suite.sh dev             # or from here, less gnap_core and remote_pep
+
+# or the same through the container, with nothing installed but docker:
+IMAGE_TAG=<tag> deploy/aws/terraform-local.sh dev apply
+deploy/aws/terraform-local.sh dev suite
+deploy/aws/terraform-local.sh dev destroy
 terraform -chdir=deploy/aws/environment destroy -var environment=dev -var image_tag=<tag> \
   -var 'allowed_cidrs=["<your ip>/32"]'
 ```

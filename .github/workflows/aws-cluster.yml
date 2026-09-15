@@ -1,34 +1,56 @@
-# ---------------------------------------------------------------------------
-# THE AWS CLUSTER, UP, TESTED AND DOWN (issue #51).
-#
-# One job, deliberately: it holds the environment's Terraform state and
-# credentials from create to destroy. The GitHub runner does not run the
-# suite: the nodes must call back to whatever does (GNAP push, the remote
-# PEP's nudge), and nothing can dial a GitHub-hosted runner. The suite runs as
-# a task in the environment's VPC; allowed_cidrs is this runner's address so a
-# person debugging a kept environment from the job's IP is not refused.
-#
-#   1. assume the deployer role (the project IAM user's key, in secrets)
-#   2. build the service, schema-init, suite runner and remote PEP images, push
-#      them to the project's ECR repository, tagged with the commit
-#   3. terraform apply deploy/aws/environment with allowed_cidrs = the runner
-#   4. deploy/aws/run-suite-in-aws.sh: start the suite task, wait for it, and
-#      download the report it uploaded to the report bucket
-#   5. upload the report as an artifact
-#   6. terraform destroy — ALWAYS, unless `keep` is set — and say where the
-#      container logs are (CloudWatch keeps them after the destroy)
-#
-# DISPATCH ONLY. This repository is public and the job holds AWS credentials,
-# so it never runs on a pull request, where a fork's change to this file would
-# run with them. `foundation/` is not applied here: it creates the deployer
-# identity, and the deployer cannot create itself.
-#
-# Repository secrets it needs:
-#   MOCK_STS_AWS_ACCESS_KEY_ID      the mock-sts-deployer user's access key
-#   MOCK_STS_AWS_SECRET_ACCESS_KEY
-#   MOCK_STS_DEPLOYER_ROLE_ARN      arn:aws:iam::<account>:role/mock-sts-deployer
-# ---------------------------------------------------------------------------
 name: AWS cluster test
+
+# ---------------------------------------------------------------------------
+# THE THREE-NODE AWS CLUSTER: TERRAFORM, THE SUITE, AND THE TEARDOWN (issue #51)
+#
+# Modelled on the parent project's static-site pipeline
+# (id-proto-debugger/.github/workflows/website-deploy-test.yml and
+# terraform.yml):
+#
+#   * TERRAFORM RUNS INSIDE A CONTAINER, the same image a developer runs with
+#     deploy/aws/terraform-local.sh (deploy/aws/Dockerfile, entrypoint.sh), so
+#     this workflow installs neither Terraform nor the AWS CLI. State is remote
+#     (s3://mock-sts-terraform-state-<account>/environment/<env>.tfstate).
+#   * STATIC-KEY SECRETS, handed to `docker run`: AWS_ACCESS_KEY_ID and
+#     AWS_SECRET_ACCESS_KEY are the `mock-sts-deployer` IAM user's key, and the
+#     entrypoint exchanges them for the deployer role — the role ARN is derived
+#     from the account, so there is no third secret.
+#   * ORDERED JOBS IN ONE WORKFLOW:
+#
+#       images     build and push the service, schema-init, suite runner and
+#                  remote PEP images, tagged with the commit
+#                  (apply, apply-and-test)
+#       terraform  plan | apply | destroy the environment      (needs: images)
+#       suite      run the whole suite INSIDE the environment's VPC and upload
+#                  the report                                (needs: terraform)
+#       teardown   destroy it again                              (needs: suite)
+#                  (apply-and-test, unless `keep`)
+#
+#   * MANUAL DISPATCH ONLY. This repository is public and every job holds AWS
+#     credentials, so it never runs on a pull request, where a fork's change to
+#     this file would run with them.
+#   * ONE RUN PER ENVIRONMENT AT A TIME (concurrency, in addition to the S3
+#     backend's lock), never cancelled mid-apply.
+#
+# THE ACTIONS:
+#   apply-and-test  images, apply, suite, destroy — the whole throwaway run
+#   apply           images and apply; leaves the environment up
+#   test            the suite against an environment already up (reusable: each
+#                   run first removes the previous run's realms and overrides,
+#                   deploy/aws/reset-environment.js)
+#   plan            what an apply would change, for the current commit
+#   destroy         take the environment down
+#
+# `foundation/` is not applied here: it creates the deployer identity, and the
+# deployer cannot create itself.
+#
+# Repository secrets:
+#   AWS_ACCESS_KEY_ID       the mock-sts-deployer user's access key
+#   AWS_SECRET_ACCESS_KEY
+#
+# NOTE: a workflow_dispatch workflow can only be dispatched once the file is on
+# the default branch.
+# ---------------------------------------------------------------------------
 
 on:
   workflow_dispatch:
@@ -37,12 +59,17 @@ on:
         description: "Environment name (2-12 lower-case letters/digits)"
         type: string
         default: ci
+      action:
+        description: "What to do"
+        type: choice
+        options: [apply-and-test, apply, test, plan, destroy]
+        default: apply-and-test
       keep:
-        description: "Leave the environment running after the suite (you must destroy it)"
+        description: "apply-and-test only: leave the environment running afterwards (you must destroy it)"
         type: boolean
         default: false
       exclude:
-        description: "Extra job files to skip, comma-separated (e.g. the SCIM and API bulk loads)"
+        description: "Suite job files to skip, comma-separated (e.g. the SCIM and API bulk loads)"
         type: string
         default: ""
 
@@ -50,151 +77,212 @@ permissions:
   contents: read
 
 concurrency:
-  group: aws-cluster-${{ inputs.environment }}
+  group: aws-cluster-${{ github.event.inputs.environment }}
   cancel-in-progress: false
 
 env:
   AWS_REGION: us-west-2
-  TF_IN_AUTOMATION: "1"
-  TF_INPUT: "0"
+  TF_ENV: ${{ github.event.inputs.environment }}
+  TF_IMAGE: mock-sts-terraform
 
 jobs:
-  cluster:
+  # ---- The four images, tagged with the commit ----
+  images:
+    if: ${{ github.event.inputs.action == 'apply-and-test' || github.event.inputs.action == 'apply' }}
     runs-on: ubuntu-latest
-    # About 25 minutes to create (RDS), up to an hour for the suite, and ten
-    # to destroy — with room, because a job killed by its own timeout skips
-    # nothing but it can leave the destroy half-done.
-    timeout-minutes: 180
+    timeout-minutes: 60
+    outputs:
+      tag: ${{ steps.names.outputs.tag }}
     steps:
-      - name: Check out
-        uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
-      - name: Assume the deployer role
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ env.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.MOCK_STS_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.MOCK_STS_AWS_SECRET_ACCESS_KEY }}
-          role-to-assume: ${{ secrets.MOCK_STS_DEPLOYER_ROLE_ARN }}
-          role-session-name: gha-${{ github.run_id }}
-          # The whole job, destroy included. Credentials that expire before
-          # the destroy leave the environment running and billing.
-          role-duration-seconds: 14400
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.16.2
-          terraform_wrapper: false
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.16.0
+      - name: Build terraform image
+        run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
 
       - name: Work out names
         id: names
-        run: |
-          set -euo pipefail
-          account="$(aws sts get-caller-identity --query Account --output text)"
-          echo "account=${account}" >> "$GITHUB_OUTPUT"
-          echo "registry=${account}.dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
-          echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
-          echo "bucket=mock-sts-terraform-state-${account}" >> "$GITHUB_OUTPUT"
-          echo "runner_ip=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+        run: echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push the images
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          repo="${{ steps.names.outputs.registry }}/mock-sts"
-          tag="${{ steps.names.outputs.tag }}"
-          docker build -t "${repo}:${tag}" \
+          password="$(docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION -e TF_ENV -e TF_ACTION=ecr-password "${TF_IMAGE}")"
+          echo "::add-mask::${password}"
+          account="$(docker run --rm --entrypoint aws -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY -e AWS_REGION "${TF_IMAGE}" \
+            sts get-caller-identity --query Account --output text)"
+          echo "REGISTRY=${account}.dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_ENV"
+          printf '%s' "${password}" | docker login -u AWS --password-stdin "${account}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+      - name: Build and push the images
+        env:
+          TAG: ${{ steps.names.outputs.tag }}
+        run: |
+          set -euo pipefail
+          repo="${REGISTRY}/mock-sts"
+          docker build -t "${repo}:${TAG}" \
             --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
             --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
             --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
             --build-arg BUILD_NUMBER="${{ github.run_number }}" .
-          docker build -t "${repo}:schema-${tag}" -f deploy/aws/schema-init/Dockerfile .
-          # The suite runs as a task inside the VPC (environment/runner.tf):
-          # the tests image plus the S3 client, and the remote PEP beside it.
+          docker build -t "${repo}:schema-${TAG}" -f deploy/aws/schema-init/Dockerfile .
           docker build -t mock-sts-tests -f tests/Dockerfile .
-          docker build -t "${repo}:runner-${tag}" --build-arg TESTS_IMAGE=mock-sts-tests \
+          docker build -t "${repo}:runner-${TAG}" --build-arg TESTS_IMAGE=mock-sts-tests \
             -f deploy/aws/runner/Dockerfile deploy/aws/runner
-          docker build -t "${repo}:pep-${tag}" -f xacml-pep/Dockerfile \
+          docker build -t "${repo}:pep-${TAG}" -f xacml-pep/Dockerfile \
             --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
             --build-arg BUILD_NUMBER="${{ github.run_number }}" .
-          docker push "${repo}:${tag}"
-          docker push "${repo}:schema-${tag}"
-          docker push "${repo}:runner-${tag}"
-          docker push "${repo}:pep-${tag}"
+          for image in "${TAG}" "schema-${TAG}" "runner-${TAG}" "pep-${TAG}"; do
+            docker push "${repo}:${image}"
+          done
 
-      - name: Create the environment
-        working-directory: deploy/aws/environment
+  # ---- Plan, apply or destroy the environment ----
+  terraform:
+    needs: images
+    # `images` is skipped for plan, test and destroy; this job still runs.
+    if: >-
+      ${{ always() && github.event.inputs.action != 'test' &&
+          (needs.images.result == 'success' || needs.images.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Build terraform image
+        run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
+
+      - name: Terraform ${{ github.event.inputs.action == 'apply-and-test' && 'apply' || github.event.inputs.action }} (${{ env.TF_ENV }})
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_ACTION: ${{ github.event.inputs.action == 'apply-and-test' && 'apply' || github.event.inputs.action }}
+          # The images job's tag, or this commit's for a plan.
+          IMAGE_TAG: ${{ needs.images.outputs.tag }}
         run: |
           set -euo pipefail
-          terraform init \
-            -backend-config="bucket=${{ steps.names.outputs.bucket }}" \
-            -backend-config="key=environment/${{ inputs.environment }}.tfstate"
-          terraform apply -auto-approve \
-            -var "environment=${{ inputs.environment }}" \
-            -var "image_tag=${{ steps.names.outputs.tag }}" \
-            -var 'allowed_cidrs=["${{ steps.names.outputs.runner_ip }}/32"]'
+          tag="${IMAGE_TAG:-$(git rev-parse --short=12 HEAD)}"
+          # The load balancer admits this runner's address beside the suite
+          # runner's own NAT address, so a person debugging a kept environment
+          # from this job's logs is not refused.
+          runner_ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          docker run --rm \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION \
+            -e TF_ENV \
+            -e TF_ACTION \
+            -e TF_VAR_image_tag="${tag}" \
+            -e TF_VAR_allowed_cidrs="[\"${runner_ip}/32\"]" \
+            "${TF_IMAGE}"
 
-      # Every job in the manifest, as a task in the environment's VPC: the
-      # nodes can call back to it (GNAP push, the remote PEP), which they
-      # cannot do to this runner. The script downloads the report the task
-      # uploaded to the report bucket.
-      - name: Run the suite inside the environment
+  # ---- The whole suite, inside the environment's VPC ----
+  suite:
+    needs: terraform
+    if: >-
+      ${{ always() &&
+          (github.event.inputs.action == 'test' ||
+           (github.event.inputs.action == 'apply-and-test' && needs.terraform.result == 'success')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Build terraform image
+        run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
+
+      - name: Run the suite in ${{ env.TF_ENV }}
         env:
-          STS_SUITE_EXCLUDE: ${{ inputs.exclude }}
-          STS_SUITE_REPORT_DIR: ${{ github.workspace }}/tests/report/aws-cluster
-        run: deploy/aws/run-suite-in-aws.sh "${{ inputs.environment }}"
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          STS_SUITE_EXCLUDE: ${{ github.event.inputs.exclude }}
+        run: |
+          set -euo pipefail
+          mkdir -p report
+          # The container runs as uid 10001.
+          chmod 0777 report
+          docker run --rm \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION \
+            -e TF_ENV \
+            -e TF_ACTION=suite \
+            -e STS_SUITE_EXCLUDE \
+            -v "${GITHUB_WORKSPACE}/report:/workspace/report" \
+            "${TF_IMAGE}"
 
       - name: Upload the test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aws-cluster-report-${{ inputs.environment }}
-          path: tests/report/aws-cluster
+          name: aws-cluster-report-${{ env.TF_ENV }}-${{ github.run_number }}
+          path: report
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Destroy the environment
-        if: always() && !inputs.keep
-        working-directory: deploy/aws/environment
-        run: |
-          set -uo pipefail
-          # Retried once: an ENI a Fargate task held can take a minute to be
-          # released after the service is gone, and the subnet or security
-          # group delete fails until it is.
-          for attempt in 1 2;
-          do
-            if terraform destroy -auto-approve \
-                 -var "environment=${{ inputs.environment }}" \
-                 -var "image_tag=${{ steps.names.outputs.tag }}" \
-                 -var 'allowed_cidrs=["${{ steps.names.outputs.runner_ip }}/32"]';
-            then
-              exit 0
-            fi
-            sleep 60
-          done
-          echo "::error::terraform destroy failed twice; the environment '${{ inputs.environment }}' may still be running."
-          exit 1
-
-      - name: Where the logs are
+      - name: Summarise
         if: always()
         run: |
+          summary="$(ls -1d report/*/latest/summary.json 2>/dev/null | tail -1)"
           {
-            echo "### Container logs"
-            echo "CloudWatch log group \`/mock-sts/containers\`, streams \`${{ inputs.environment }}-node-*\` (kept 14 days after the destroy):"
-            echo '```'
-            echo "aws logs tail /mock-sts/containers --log-stream-name-prefix ${{ inputs.environment }}-node-a --since 3h --region ${AWS_REGION}"
-            echo '```'
-            if [ "${{ inputs.keep }}" = "true" ]; then
-              echo "**The environment was KEPT.** Destroy it with deploy/aws/environment and \`terraform destroy\`."
+            echo "### AWS cluster suite — \`${TF_ENV}\`"
+            if [ -n "${summary}" ]; then
+              node -e '
+                const s = require(process.argv[1]);
+                const count = {};
+                s.jobs.forEach(function (j) { count[j.status] = (count[j.status] || 0) + 1; });
+                console.log("| status | jobs |\n|---|---|");
+                Object.keys(count).forEach(function (k) { console.log("| " + k + " | " + count[k] + " |"); });
+                const bad = s.jobs.filter(function (j) { return j.status !== "passed"; });
+                if (bad.length) {
+                  console.log("\n**Not passed:** " + bad.map(function (j) { return "`" + j.name + "`"; }).join(", "));
+                }' "${GITHUB_WORKSPACE}/${summary}"
+            else
+              echo "No report was downloaded."
             fi
+            echo ""
+            echo "Container logs: CloudWatch \`/mock-sts/containers\`, streams \`${TF_ENV}-node-*\` and \`${TF_ENV}-suite/*\` (kept 14 days)."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---- Take a throwaway environment down again ----
+  teardown:
+    needs: [terraform, suite]
+    # Whenever apply-and-test created (or tried to create) an environment,
+    # whatever the suite said — unless it was asked to keep it.
+    if: >-
+      ${{ always() && github.event.inputs.action == 'apply-and-test' &&
+          github.event.inputs.keep != 'true' && needs.terraform.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Build terraform image
+        run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
+
+      - name: Terraform destroy (${{ env.TF_ENV }})
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          docker run --rm \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_REGION \
+            -e TF_ENV \
+            -e TF_ACTION=destroy \
+            "${TF_IMAGE}"
+
+      - name: Say so if it did not come down
+        if: failure()
+        run: |
+          echo "::error::terraform destroy failed; the environment '${TF_ENV}' may still be running and billing. Re-run this workflow with action=destroy."
