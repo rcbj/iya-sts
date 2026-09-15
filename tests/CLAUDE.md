@@ -2321,6 +2321,13 @@ container; this one is the first in which the thing under test is BETWEEN
 containers, which is what `cluster/` exists for and what nothing in the suite
 exercised until now (`cluster/CLAUDE.md` listed it as not done).
 
+**CI RUNS IT ON EVERY PUSH SINCE 2026-09-15**, as a `cluster` job of its own in
+`.github/workflows/tests.yml` beside `tests` and `coverage` — not as a fourth
+mode of the `tests` job, whose 120 minutes three modes already mostly fill, and
+not in `STS_ALL_MODES`, so a bare local run is unchanged.
+`teardown_bounds.js` holds that job to the same arithmetic as the `tests` job,
+for one mode.
+
 **THE STACK** is an override layered over the mode's usual compose files and
 read in no other mode, so `memory`, `postgres` and `dispatch` start exactly the
 stacks they started before:

@@ -1,6 +1,7 @@
-# Runs this repository's whole test suite, in containers — TWICE, in two jobs
-# that do not depend on each other: the plain suite, and the same suite with
-# coverage collected.
+# Runs this repository's whole test suite, in containers — THREE TIMES, in
+# three jobs that do not depend on each other: the plain suite, the same suite
+# with coverage collected, and the suite in the `cluster` mode (two nodes behind
+# a load balancer, 2026-09-15).
 #
 # Both wrap a launcher that needs docker and NOTHING ELSE: no node, no npm
 # install, no Chrome, no checkout of the parent project. That is the property
@@ -16,6 +17,11 @@
 #             measures as a child process in there, because V8 writes coverage
 #             from inside the process being measured and a service container
 #             next door can never be under the report.
+#   cluster   ./docker-run-tests.sh --modes=cluster — the fourth mode of
+#             tests/tools/modes.sh, which no bare run includes: two
+#             active-active nodes on one postgres and one OpenBao, behind an
+#             HAProxy in TCP mode, every job's requests alternating between
+#             them. tests/CLAUDE.md's *THE `cluster` MODE* argues it.
 #
 # WHY THEY ARE TWO JOBS RATHER THAN TWO STEPS, which is the shape
 # ../id-proto-debugger/.github/workflows/tests.yml uses and the reason to copy
@@ -244,5 +250,74 @@ jobs:
         with:
           name: coverage-test-report
           path: tests/report/latest
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # THE SUITE AGAIN, IN THE `cluster` MODE (issue #46). What this adds is the
+  # one question neither job above can answer: whether two containers on one
+  # store agree. The three default modes differ in what shares state INSIDE one
+  # container; this is the only run in which the thing under test is BETWEEN
+  # containers. Red here and green in the `tests` job's `postgres` mode is a
+  # CLUSTER defect, and that comparison is why both run on every push.
+  #
+  # A JOB OF ITS OWN RATHER THAN `--modes=memory,postgres,dispatch,cluster` IN
+  # THE `tests` JOB, for three reasons. The time: three modes already take
+  # about 80 minutes of that job's 120, and a fourth would push it past the
+  # ceiling tests/teardown_bounds.js holds it to. The verdict: a cluster defect
+  # would turn the status that means "the tree is green" red for a reason that
+  # says nothing about the single-node service, where a job of its own names
+  # what broke. And the machine: two nodes, a balancer, postgres, OpenBao and a
+  # runner with Chrome in it is the heaviest stack this suite starts, and the
+  # launcher's default container names are machine-wide — a job of its own is
+  # a runner of its own, so neither stack can meet the other's memory or names.
+  # It also runs in parallel with the other two, so the wall clock is the
+  # slowest job rather than the sum.
+  # ---------------------------------------------------------------------------
+  cluster:
+    runs-on: ubuntu-latest
+    # The `tests` job's argument, for ONE mode: above the launcher's mode bound
+    # (STS_MODE_TIMEOUT, 50m) plus its teardowns (STS_TEARDOWN_TIMEOUT, 5m
+    # each), so the bound that fires is the one that can explain itself —
+    # tests/teardown_bounds.js asserts it — and the image builds on top. The
+    # mode took 24.7 minutes on a developer machine on 2026-09-15.
+    timeout-minutes: 90
+    steps:
+      # See the tests job: recursive, for the nested node-ldapjs submodule.
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show docker and compose versions
+        run: |
+          docker --version
+          docker compose version
+
+      # The same launcher as the tests job, asked for the one mode it never
+      # runs unless named. It builds both images, layers
+      # tests/docker-compose-run-tests-cluster.yml over the usual file, and
+      # exits with the runner's status.
+      - name: Run the containerized test suite in the cluster mode
+        run: ./docker-run-tests.sh --modes=cluster
+
+      # See the tests job: the runner writes tests/report as root.
+      - name: Normalize report permissions
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" tests/report || true
+
+      # The tests job's upload, under a name of its own (artifact names are
+      # unique per workflow run). The tree carries node B's and the balancer's
+      # logs beside node A's and the runner's — the launcher collects all four
+      # in this mode — which is what tells a node that refused to join from a
+      # job that failed. pep-credential/ is excluded for the tests job's reason.
+      - name: Upload the cluster test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cluster-test-report
+          path: |
+            tests/report
+            !tests/report/pep-credential
           if-no-files-found: warn
           retention-days: 30

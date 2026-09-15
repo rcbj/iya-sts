@@ -376,6 +376,37 @@ function checkTheJobTimeoutIsAboveOurs(t) {
             jobMinutes + 'm)',
           'without a number here a stuck job holds a runner for six hours, ' +
           'which is what the workflow header says this setting is for');
+
+  // THE `cluster` JOB (2026-09-15) runs the same launcher for ONE mode, so the
+  // same arithmetic holds with a count of one: its bound plus a teardown for
+  // the mode and one for the stack before it. It is the last job in the file,
+  // which is why its block runs to the end.
+  const clusterAt = workflow.indexOf('\n  cluster:');
+  t.check(clusterAt !== -1,
+          'the workflow has a `cluster` job',
+          'the fourth mode is in no bare run, so without that job nothing in ' +
+          'CI runs two nodes behind a balancer at all');
+  if (clusterAt !== -1) {
+    const clusterJob = workflow.slice(clusterAt);
+    t.check(/docker-run-tests\.sh --modes=cluster\b/.test(clusterJob),
+            'the `cluster` job runs ./docker-run-tests.sh --modes=cluster',
+            'a job of that name running anything else would leave the mode ' +
+            'as unrun as having no job');
+    const clusterMinutes = Number(
+      (/timeout-minutes:\s*(\d+)/.exec(clusterJob) || [])[1]);
+    const clusterWorst = modeBound + teardownBound * 2;
+    t.check(clusterMinutes * 60 > clusterWorst,
+            'the `cluster` job timeout (' + clusterMinutes + 'm) is above ' +
+              'its one mode plus its teardowns (' +
+              Math.ceil(clusterWorst / 60) + 'm)',
+            'the tests job\'s argument for one mode: the bound that fires ' +
+            'must be the one that can explain itself');
+    t.check(clusterMinutes <= 120,
+            'and the `cluster` job\'s is still an outer bound (' +
+              clusterMinutes + 'm)',
+            'the six-hour argument again, for the second job running this ' +
+            'launcher');
+  }
   log.debug("Leaving checkTheJobTimeoutIsAboveOurs().");
 }
 

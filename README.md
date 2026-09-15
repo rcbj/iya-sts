@@ -7777,7 +7777,10 @@ rather than two steps because both launchers move the `tests/report/latest`
 symlink, so in one workspace the second run would quietly relabel the first
 run's artifact; two jobs are two workspaces. It also means the coverage pass
 still runs when the suite goes red, which is when its report is worth most, and
-that the two run in parallel. All three uploads are `if: always()`.
+that the two run in parallel. **A third job, `cluster` (2026-09-15), runs
+`./docker-run-tests.sh --modes=cluster`** — the fourth mode, two active-active
+nodes behind a load balancer, which no bare run includes — on a runner of its
+own and uploads `cluster-test-report`. All four uploads are `if: always()`.
 
 Neither can disturb a mock you are already running. Each is its own compose
 project with its own container names, `./local-run-tests.sh` publishes a free
