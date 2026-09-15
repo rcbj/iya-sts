@@ -8,9 +8,11 @@
 # remote (S3), so this runs the same in GitHub Actions and on a laptop.
 #
 # AWS credentials come from OUTSIDE the container, as environment variables.
-# When they are the `mock-sts-deployer` IAM USER's key — which is all that user
-# may do — the entrypoint assumes the `mock-sts-deployer` ROLE first, so a
-# caller needs the user's key and nothing else (the two repository secrets).
+# When they are the key of one of the deployer role's two IAM USERS —
+# `mock-sts-deployer` (a person's) or `git_user6` (the workflow's), neither of
+# which may do anything else — the entrypoint assumes the `mock-sts-deployer`
+# ROLE first, so a caller needs the user's key and nothing else (the two
+# repository secrets).
 # Any other identity (an administrator, or role credentials already assumed) is
 # used as it is. MOCK_STS_DEPLOYER_ROLE_ARN forces a role.
 #
@@ -65,10 +67,15 @@ account="$(jq -r .Account <<<"${identity}")"
 arn="$(jq -r .Arn <<<"${identity}")"
 
 role_arn="${MOCK_STS_DEPLOYER_ROLE_ARN:-}"
-if [ -z "${role_arn}" ] && [[ "${arn}" == *":user/mock-sts/mock-sts-deployer" ]];
-then
-  role_arn="arn:aws:iam::${account}:role/mock-sts-deployer"
-fi
+# The deployer role's two users (foundation/iam_deployer.tf): a person's, and
+# the workflow's (git_user6). MOCK_STS_DEPLOYER_USERS names others.
+deployer_users="${MOCK_STS_DEPLOYER_USERS:-mock-sts/mock-sts-deployer git_user6}"
+for user in ${deployer_users}; do
+  if [ -z "${role_arn}" ] && [[ "${arn}" == *":user/${user}" ]];
+  then
+    role_arn="arn:aws:iam::${account}:role/mock-sts-deployer"
+  fi
+done
 if [ -n "${role_arn}" ];
 then
   say "assuming ${role_arn}"

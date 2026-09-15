@@ -39,3 +39,14 @@ variable "deployer_session_seconds" {
   type        = number
   default     = 14400
 }
+
+variable "ci_user_name" {
+  description = <<-EOT
+    The IAM user GitHub Actions authenticates as (.github/workflows/aws-cluster.yml),
+    named in the account's git_userN series. Like git_user5, it has no console
+    login, no groups and one inline policy: assume the deployer role. Its access
+    key is created by hand so the secret never lands in Terraform state.
+  EOT
+  type        = string
+  default     = "git_user6"
+}

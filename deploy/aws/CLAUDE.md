@@ -141,9 +141,16 @@ the same on a laptop and in CI; **static-key secrets** (`AWS_ACCESS_KEY_ID`,
 one workflow** and serialised per environment. Two things differ, and both are
 about this stack rather than taste:
 
-* **The key is the deployer USER's, and the entrypoint assumes the deployer
-  ROLE** — that user may do nothing else. The role ARN is built from the account,
-  so there is no third secret.
+* **The key is `git_user6`'s, and the entrypoint assumes the deployer ROLE** —
+  that user may do nothing else. It is the account's `git_userN` pattern
+  (`git_user5` assumes `rcbj-deploy` for the rcbj.net site): path `/`, no login
+  profile, no groups, one inline policy `assume-mock-sts-deployer`, and the role
+  trusts it by name (`foundation/iam_deployer.tf`, `ci_user_name`). It is a
+  SECOND principal of the role beside `mock-sts-deployer`, a person's, so either
+  key can be rotated or revoked without the other. Its key was created by hand
+  (`aws iam create-access-key`) and set as the repository's `AWS_ACCESS_KEY_ID`
+  and `AWS_SECRET_ACCESS_KEY` secrets on 2026-09-15; it is in no Terraform state.
+  The role ARN is built from the account, so there is no third secret.
 * **`test` is its own action**, because an environment is reusable
   (`reset-environment.js`): apply once, test many times, destroy at the end.
   `apply-and-test` is the throwaway run, and its `teardown` job runs whatever the

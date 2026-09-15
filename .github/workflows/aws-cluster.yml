@@ -12,9 +12,11 @@ name: AWS cluster test
 #     this workflow installs neither Terraform nor the AWS CLI. State is remote
 #     (s3://mock-sts-terraform-state-<account>/environment/<env>.tfstate).
 #   * STATIC-KEY SECRETS, handed to `docker run`: AWS_ACCESS_KEY_ID and
-#     AWS_SECRET_ACCESS_KEY are the `mock-sts-deployer` IAM user's key, and the
-#     entrypoint exchanges them for the deployer role — the role ARN is derived
-#     from the account, so there is no third secret.
+#     AWS_SECRET_ACCESS_KEY are the key of `git_user6`, the workflow's IAM user
+#     (modelled on git_user5: no console, no groups, one inline policy to
+#     assume one role), and the entrypoint exchanges them for the
+#     `mock-sts-deployer` role — the role ARN is derived from the account, so
+#     there is no third secret.
 #   * ORDERED JOBS IN ONE WORKFLOW:
 #
 #       images     build and push the service, schema-init, suite runner and
@@ -45,7 +47,7 @@ name: AWS cluster test
 # deployer cannot create itself.
 #
 # Repository secrets:
-#   AWS_ACCESS_KEY_ID       the mock-sts-deployer user's access key
+#   AWS_ACCESS_KEY_ID       git_user6's access key (set 2026-09-15)
 #   AWS_SECRET_ACCESS_KEY
 #
 # NOTE: a workflow_dispatch workflow can only be dispatched once the file is on

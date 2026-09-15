@@ -37,3 +37,8 @@ output "reports_bucket" {
   description = "Where a suite run inside AWS uploads its report, under <environment>/<run id>/."
   value       = aws_s3_bucket.reports.bucket
 }
+
+output "ci_user_name" {
+  description = "GitHub Actions' IAM user. Create its key by hand: aws iam create-access-key --user-name <this>"
+  value       = aws_iam_user.ci.name
+}

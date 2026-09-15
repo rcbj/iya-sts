@@ -45,12 +45,42 @@ resource "aws_iam_user_policy" "deployer" {
   policy = data.aws_iam_policy_document.deployer_user.json
 }
 
+# ---------------------------------------------------------------------------
+# THE WORKFLOW'S USER, IN THE ACCOUNT'S git_userN SERIES.
+#
+# Modelled on git_user5 (which assumes rcbj-deploy for the rcbj.net site): path
+# `/`, no login profile, no groups, and ONE inline policy named
+# `assume-<role>` allowing sts:AssumeRole on ONE role, which trusts it by name.
+# It is a second principal of the deployer role rather than a replacement for
+# mock-sts-deployer, so a person's key and the workflow's key can be rotated or
+# revoked apart: the workflow's secrets hold this user's key and nothing else.
+# ---------------------------------------------------------------------------
+resource "aws_iam_user" "ci" {
+  name = var.ci_user_name
+  path = "/"
+}
+
+data "aws_iam_policy_document" "ci_user" {
+  statement {
+    sid       = "AssumeDeployRole"
+    actions   = ["sts:AssumeRole", "sts:TagSession"]
+    resources = [aws_iam_role.deployer.arn]
+  }
+}
+
+resource "aws_iam_user_policy" "ci" {
+  name   = "assume-${var.name}-deployer"
+  user   = aws_iam_user.ci.name
+  policy = data.aws_iam_policy_document.ci_user.json
+}
+
 data "aws_iam_policy_document" "deployer_trust" {
   statement {
+    sid     = "IamUsersMayAssume"
     actions = ["sts:AssumeRole", "sts:TagSession"]
     principals {
       type        = "AWS"
-      identifiers = [aws_iam_user.deployer.arn]
+      identifiers = [aws_iam_user.deployer.arn, aws_iam_user.ci.arn]
     }
   }
 }
