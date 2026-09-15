@@ -456,29 +456,44 @@ function pushSet(url, token, options) {
       log.debug("Leaving done().");
     };
     let request = null;
+    const requestOptions = {
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || (secure ? 443 : 80),
+      path: target.pathname + target.search,
+      method: 'POST',
+      headers: headers,
+      // The ordinary certificate check, and it is deliberately NOT this
+      // service's usual "verify nothing" posture: what is being protected
+      // is the receiver's authorization_header and the fact that somebody's
+      // session was revoked. `ssf.pushAllowInsecure` turns it off for
+      // localhost work and is warned about above.
+      //
+      // For one of this service's own receivers it stays ON and the anchor
+      // above is what it checks against — a PIN rather than a relaxation,
+      // which is the whole difference between this and setting that
+      // setting.
+      rejectUnauthorized: secure && (!!anchor || !allowInsecure()),
+      ca: anchor ? [anchor] : undefined
+    };
+    // **ADDED ONLY WHEN THERE IS A PIN, AND NEVER AS `undefined`**
+    // (2026-09-15). Node validates this option by PRESENCE: an explicit
+    // `checkServerIdentity: undefined` throws `The "options.
+    // checkServerIdentity" property must be of type function` synchronously
+    // out of `https.request()`, so from f76594d until this change every push
+    // to a receiver that is NOT one of this service's own — which is every
+    // push anybody configures — failed before it dialled, dead-lettered as
+    // STS-SSF-0041 "the request could not be built", and logged nothing a
+    // receiver's operator would connect with a certificate option. `ca:
+    // undefined` above is harmless by contrast: that option is read by value.
+    if (anchor) {
+      requestOptions.checkServerIdentity = function () {
+        return undefined;
+      };
+    }
     try {
-      request = (secure ? https : http).request({
-        protocol: target.protocol,
-        hostname: target.hostname,
-        port: target.port || (secure ? 443 : 80),
-        path: target.pathname + target.search,
-        method: 'POST',
-        headers: headers,
-        // The ordinary certificate check, and it is deliberately NOT this
-        // service's usual "verify nothing" posture: what is being protected
-        // is the receiver's authorization_header and the fact that somebody's
-        // session was revoked. `ssf.pushAllowInsecure` turns it off for
-        // localhost work and is warned about above.
-        //
-        // For one of this service's own receivers it stays ON and the anchor
-        // above is what it checks against — a PIN rather than a relaxation,
-        // which is the whole difference between this and setting that
-        // setting.
-        rejectUnauthorized: secure && (!!anchor || !allowInsecure()),
-        ca: anchor ? [anchor] : undefined,
-        checkServerIdentity: anchor ? function () { return undefined; }
-                                    : undefined
-      }, function (response) {
+      request = (secure ? https : http).request(requestOptions,
+                                                function (response) {
         const status = response.statusCode || 0;
         const location = response.headers.location;
         if (status >= 300 && status < 400 && location) {
