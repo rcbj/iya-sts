@@ -183,9 +183,11 @@ jobs:
   # ---------------------------------------------------------------------------
   coverage:
     runs-on: ubuntu-latest
-    # The instrumented pass is a suite plus a render on top of the image build,
-    # so it gets more room than the plain one.
-    timeout-minutes: 60
+    # The instrumented pass is a suite plus a render on top of the image build.
+    # 90 since 2026-09-15: the suite alone took 2,807s of a 49-minute job on
+    # develop (244 jobs), and the post-quantum jobs that used to fail at the
+    # service's 120s worker bound now wait out their signatures instead.
+    timeout-minutes: 90
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out

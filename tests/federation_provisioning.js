@@ -349,6 +349,17 @@ function run(t) {
       clean[key] = process.env[key];
     }
   });
+  // UNDER COVERAGE THE PARTNER'S FIRST JWKS IS SLOWER THAN THE BACK CHANNEL
+  // WAITS (2026-09-15). The child inherits NODE_V8_COVERAGE, and that first
+  // read — the one that makes the realm's keys — took 17.6s instrumented
+  // against 1.6s plain, past federation.outboundTimeoutMs's 15s, so every
+  // sign-in below was refused "did not answer within 15000ms" in the
+  // coverage job only. Set after the filter above, which would strip it,
+  // and to the setting's maximum; tests/tools/service.js does the same for
+  // the throwaway service.
+  if (process.env.NODE_V8_COVERAGE) {
+    clean.STS_FEDERATION_OUTBOUND_TIMEOUT_MS = '60000';
+  }
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean,

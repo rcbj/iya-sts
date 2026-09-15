@@ -149,8 +149,16 @@ async function run(t) {
     const first = await ask();
     // Node adds a few of its own on start (NODE_CHANNEL_FD and the like), so
     // what is asserted is that nothing of THIS process's crossed.
+    //
+    // NODE_V8_COVERAGE is one of node's own too, and it failed the coverage
+    // job until 2026-09-15: a process collecting coverage copies it into
+    // every child it spawns, even one handed an explicit `env` with nothing
+    // in it — node does that so a child's coverage is collected as well, and
+    // the service cannot prevent it. It only appears when the test itself is
+    // instrumented, which is why no plain run ever saw it.
     const leaked = first.env.filter(function (name) {
-      return allowed.indexOf(name) < 0 && !/^NODE_(CHANNEL|UNIQUE)/.test(name);
+      return allowed.indexOf(name) < 0 &&
+             !/^NODE_(CHANNEL|UNIQUE|V8_COVERAGE$)/.test(name);
     });
     t.equal(JSON.stringify(leaked), '[]',
             'the child holds only the contract\'s variables and PATH, HOME, ' +

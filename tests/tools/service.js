@@ -223,6 +223,35 @@ function environmentFor(base, opts) {
   }
   if (opts.coverageDir) {
     env.NODE_V8_COVERAGE = opts.coverageDir;
+    // -------------------------------------------------------------------
+    // THE SERVICE'S OWN WAITS, WIDENED FOR AN INSTRUMENTED SERVICE
+    // (2026-09-15) — and only for one, and a caller's own value still wins.
+    //
+    // Three of this service's bounds are right for a deployment and wrong
+    // for a process NODE_V8_COVERAGE is instrumenting, and the coverage job
+    // failed seven jobs on develop for that alone. Measured on a developer
+    // machine, a realm's FIRST /oauth2/jwks read — the one that makes its
+    // keys — took 1,644ms plain and 17,562ms instrumented, and a two-core
+    // runner is slower again:
+    //   oidcRp.backChannelTimeoutS (10s): the console's and portal's first
+    //     sign-in to a new realm reads that JWKS — four jobs refused with
+    //     "did not answer its own /realm/<id>/oauth2/jwks within 10s";
+    //   workers.jobTimeoutS (120s): one SLH-DSA-SHAKE-128s signature for
+    //     sts_userinfo_protected — "the pq.sign job ... did not come back
+    //     within 120000ms";
+    //   federation.outboundTimeoutMs (15s): the same first JWKS read, from a
+    //     federation partner — not hit here yet, and set for the same reason.
+    // Each is its setting's maximum or near it. The job watchdog, not these,
+    // is what still catches a service that has really stopped.
+    // -------------------------------------------------------------------
+    const WIDENED = { STS_OIDC_RP_BACK_CHANNEL_TIMEOUT_S: '120',
+                      STS_WORKERS_JOB_TIMEOUT_S: '900',
+                      STS_FEDERATION_OUTBOUND_TIMEOUT_MS: '60000' };
+    Object.keys(WIDENED).forEach(function (name) {
+      if (process.env[name] === undefined) {
+        env[name] = WIDENED[name];
+      }
+    });
   }
   log.debug('Leaving environmentFor().');
   return env;
