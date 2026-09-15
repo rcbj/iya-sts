@@ -500,7 +500,14 @@ const JOBS = [
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
   { file: 'sts_saml11.js',               browser: false },
   { file: 'sts_saml_encryption.js',      browser: false },
-  { file: 'sts_userinfo_protected.js',   browser: false },
+  // Signs a UserInfo response and an ID Token with every advertised
+  // algorithm, and one SLH-DSA-SHAKE-128s signature takes 190-310s under the
+  // coverage run's instrumentation (2026-09-15). The job took 434s on a run
+  // that passed and would be past the coverage watchdog's 900s on a runner
+  // twice as slow, which is why it is raised — its own busy window, ten
+  // minutes per request, is what reports a mock that has really stopped.
+  { file: 'sts_userinfo_protected.js',   browser: false,
+    timeoutMs: 1500000 },
   { file: 'sts_xacml_editor.js',         browser: true,  local: true },
   { file: 'sts_xacml_endpoints.js',      browser: false, local: true },
   { file: 'sts_xacml_remote_pep.js',     browser: false, local: true,
