@@ -50,6 +50,7 @@ header_pages:
   - persistence.md
   - encryption-at-rest.md
   - caches.md
+  - aws-cluster.md
   - remote-pep.md
   - what-is-not-checked.md
   - error-codes.md

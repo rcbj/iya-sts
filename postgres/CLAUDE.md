@@ -76,3 +76,15 @@ REQUIRED AT BOTH ENDS* — along with the thing this arrangement deliberately do
 NOT do: the certificate is signed by nobody, so the connection is encrypted and
 the server is not authenticated, and `/admin/persistence` reports those as two
 facts rather than one tick. Do not argue it again here.
+
+## On a managed database the owner is not a superuser (2026-09-15)
+
+RDS's master user is a member of `rds_superuser` and not a superuser, and
+PostgreSQL 16 and later refuse `NOSUPERUSER`, `NOREPLICATION` and
+`NOBYPASSRLS` from such a role even when turning them off. `schema.sql` stopped
+there on its first run against RDS (issue #51) and rolled the whole schema back.
+It now sets all five attributes only as a superuser; otherwise it sets the two a
+non-superuser may and **checks** the other three, failing the run if the
+application role holds any of them. `deploy/aws/schema-init/` is how that file
+reaches RDS: an init container that runs it with psql before each node starts.
+
