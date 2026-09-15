@@ -131,13 +131,13 @@ const BUILD_INFO = version.buildInfo(APP_VERSION);
 //
 // The documentation URL is GitHub Pages' own arrangement of the same
 // repository: `docs/` is built and deployed by `.github/workflows/pages.yml`,
-// and `docs/_config.yml` sets `baseurl: /mock-sts`, so the site is served under
+// and `docs/_config.yml` sets `baseurl: /iya-sts`, so the site is served under
 // the repository name. Change the repository and all three of these change
 // together — and so does that baseurl.
 // ---------------------------------------------------------------------------
-const REPO_URL = 'https://github.com/rcbj/mock-sts';
+const REPO_URL = 'https://github.com/rcbj/iya-sts';
 const ISSUES_URL = REPO_URL + '/issues';
-const DOCS_URL = 'https://rcbj.github.io/mock-sts/';
+const DOCS_URL = 'https://rcbj.github.io/iya-sts/';
 // Relative on purpose. This service is reached as localhost, as `sts` on a
 // compose network and through a published port, and `baseUrlOf()` exists
 // because documents that carry absolute URLs have to follow the request. A

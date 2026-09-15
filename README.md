@@ -588,8 +588,8 @@ continuing would mean starting a service configured as nobody asked for.
 In Docker:
 
 ```bash
-docker build -t mock-sts .
-docker run --rm -p 8081:8081 mock-sts
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts
 ```
 
 That publishes the HTTP port only, which is enough for everything except a raw
@@ -5620,7 +5620,7 @@ not reach an identity provider's private network.
 **Running it from a checkout:**
 
 ```bash
-(cd ../id-proto-debugger && embedded/build.sh --out ../mock-sts/debugger/embedded)
+(cd ../id-proto-debugger && embedded/build.sh --out ../iya-sts/debugger/embedded)
 CONFIG_FILE=./env/local.js node server.js
 # then open https://localhost:8444/ and sign in as a console administrator
 ```

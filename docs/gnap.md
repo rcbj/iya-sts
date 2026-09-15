@@ -5,7 +5,7 @@ nav_order: 13
 
 # GNAP
 
-mock-sts is an **authorization server for the Grant Negotiation and
+iya-sts is an **authorization server for the Grant Negotiation and
 Authorization Protocol** ([RFC 9635](https://www.rfc-editor.org/rfc/rfc9635))
 and speaks the **resource server connections** of
 [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767). Every trust realm has its
@@ -17,7 +17,7 @@ every request after. The grant is a **negotiation**: it can wait for a person,
 be continued, be modified onto different access, and be revoked.
 
 ```
-  client instance                     mock-sts                        resource owner
+  client instance                     iya-sts                         resource owner
        │                                  │                                  │
        │  POST /gnap  (signed) ──────────▶│                                  │
        │  ◀── interact.redirect, continue │                                  │

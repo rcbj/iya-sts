@@ -8,7 +8,7 @@ nav_order: 2
 ## Clone it with `--recursive`
 
 ```bash
-git clone --recursive https://github.com/rcbj/mock-sts.git
+git clone --recursive https://github.com/rcbj/iya-sts.git
 ```
 
 The LDAP directory is built on [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs),

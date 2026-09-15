@@ -14,7 +14,7 @@ It is the one directory in this repository that is not part of the mock, and it
 is opt-in: a plain `docker compose up` does not start it.
 
 ```
-   your client                xacml-pep                     mock-sts
+   your client                xacml-pep                     iya-sts
                           (the PEP: engine                (the PDP, the PAP,
                            + pulled policy)                and the PIP)
 
