@@ -1530,7 +1530,9 @@ the same way when its authority is a realm's.
 
 `runClaimed()` wraps the two action endpoints: for `action=create` where a
 create can race another process (`directory_create_claims.active()`), the name
-is claimed across nodes first and a loser answers 409 (`STS-LDAP-0092`) or 503
+is claimed across nodes first; a create that finds it claimed waits for the
+release (up to five seconds) and then meets the directory's own check, answering
+409 (`STS-LDAP-0092`) only if the name is still claimed after that, or 503
 when the store cannot be asked (`STS-LDAP-0093`); an action that threw after
 claiming gives the claim back and answers 500 (`STS-API-0113`). Everywhere else
 the handler runs synchronously as it did. The directory module is found in the

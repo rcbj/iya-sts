@@ -2370,9 +2370,10 @@ that names nothing.
 So the doors that can wait claim what they are about to create BEFORE they
 check, through `directory_create_claims.js` over `cluster/cluster_claims.js`:
 the normalised DN, and for a person the lower-cased username, both computed by
-`createClaimSpec()` here. The second of two concurrent creates is refused
-exactly as if the first had been visible — `STS-LDAP-0092`, LDAP 68 / HTTP 409 —
-and a store that cannot be asked refuses too (`STS-LDAP-0093`, LDAP 52 / HTTP
+`createClaimSpec()` here. The second of two concurrent creates waits for the
+first and then meets the directory's own refusal, exactly as if the first had
+been visible; only a name still claimed after the wait is `STS-LDAP-0092`,
+LDAP 68 / HTTP 409 — and a store that cannot be asked refuses at once (`STS-LDAP-0093`, LDAP 52 / HTTP
 503 on `/admin-api`, 500 on SCIM, whose section 3.12 has no 503). The doors: an LDAP add (`claimingTheAdd()`, the OUTERMOST wrapper at
 registration, so the process holding the socket claims whichever process runs
 the handler), a SCIM create of a User or a Group, and `POST
@@ -2386,6 +2387,23 @@ the handler), a SCIM create of a User or a Group, and `POST
   win the released claim and ask a directory not yet holding the entry), and a person deleted and created again a moment later is not
   refused by the claim of their first life. The two-minute lifetime is only the
   ceiling for a process that dies holding one.
+* **A create that finds its name claimed WAITS, then asks again
+  (2026-09-15).** A claim is released after its create's flush, which is
+  after its response — so the SAME client's next create of that name,
+  sequential and not concurrent, found it still claimed and was refused 409
+  `STS-LDAP-0092` instead of the directory's own "already exists";
+  `sts_admin_api_operations` hit it in a dispatch run 70ms after its own
+  create. `claim()` now gives back what it holds, waits `CLAIM_RETRY_MS` and
+  claims again until `CLAIM_WAIT_MS` (5s); the winner catches up and its door
+  meets the entry. **Two creates that really overlap therefore get one success
+  and the directory's refusal (LDAP 68, HTTP 400 on `/admin-api`, 409
+  `uniqueness` on SCIM) rather than 0092**, which is left for a holder still
+  there when the wait runs out. A store that cannot be asked is not waited on.
+  **Answering the first create only after its release was tried first and
+  measured** — `/admin-api` creates went from 11ms to 37ms in the dispatch
+  bulk load and SCIM from 28ms to 46ms, because the flush is a real commit —
+  so the cost was moved onto the collision instead.
+  `tests/cluster_followups.js` E2, E2b, E2c, E5 and E5b.
 * **Inert unless several processes write one store** (active-active, or
   dispatched request workers on a shared store): no round trip on a single node,
   so a bulk load is as fast as it was, and the console's and admin API's create

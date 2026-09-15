@@ -18,9 +18,11 @@
 // So a door that can wait claims what it is about to create BEFORE it asks the
 // directory: the DN, and the username for a person, through
 // `cluster/cluster_claims.js` — one atomic statement against every node. The
-// second of two concurrent creates is refused (`STS-LDAP-0092`: LDAP 68, HTTP
-// 409) exactly as if the first had already been visible, and a store that
-// cannot be asked refuses too (`STS-LDAP-0093`), which is that module's
+// second of two concurrent creates WAITS for the first to finish (see
+// `CLAIM_WAIT_MS`) and then meets the directory's own "already exists", and is
+// refused as in progress (`STS-LDAP-0092`: LDAP 68, HTTP 409) only when the
+// first is still holding the name when the wait runs out. A store that cannot
+// be asked refuses at once (`STS-LDAP-0093`), which is that module's
 // fail-closed rule.
 //
 // **THE CLAIM GUARDS THE WINDOW AND NOTHING LONGER.** Once the create has
@@ -84,6 +86,30 @@ config.registerLogger(log);
 // milliseconds; two minutes is long past every barrier and every retry.
 const CLAIM_TTL_MS = 2 * 60 * 1000;
 
+// ---------------------------------------------------------------------------
+// A CREATE THAT FINDS ITS NAME CLAIMED WAITS, AND ASKS AGAIN (2026-09-15).
+// A claim is released AFTER its create's flush and its response, so for a few
+// tens of milliseconds after a 200 the name is still claimed — and the SAME
+// client's next create of that name, sequential rather than concurrent, was
+// refused 409 "being created by another request" where it should have been
+// told the entry exists. `sts_admin_api_operations` met exactly that in a
+// dispatch run: its create, then its duplicate 70ms later on the same worker.
+//
+// Answering the first create only after its release fixed it and cost every
+// create in a multi-process service a store commit before it answered —
+// /admin-api creates went from 11ms to 37ms in the bulk load, three times
+// slower, to spare a cost that only a COLLISION should pay. So the cost moved
+// to the collision: a refused claim gives back what it holds, waits
+// `CLAIM_RETRY_MS`, and claims again until `CLAIM_WAIT_MS` has passed. The
+// holder commits and releases; the waiter wins, catches up with the store
+// below, and its door refuses the duplicate by its own check — or, if the
+// holder's create failed, creates the entry itself. Only a name still held when
+// the wait runs out is refused as in progress. A store that cannot be asked is
+// not waited on.
+// ---------------------------------------------------------------------------
+const CLAIM_WAIT_MS = 5000;
+const CLAIM_RETRY_MS = 50;
+
 function persistence() {
   log.debug("Entering persistence().");
   log.debug("Leaving persistence().");
@@ -114,7 +140,9 @@ function active() {
 // caller's to compute, because deciding what a DN and a username are is
 // `ldap_server.js`'s job. Every value is claimed or none is: a partial set
 // is given back before the refusal is answered. `settle(true)` releases once
-// the write has been flushed; `settle(false)` releases now.
+// the write has been flushed; `settle(false)` releases now. A value another
+// request holds is waited for — `waitMs`, `CLAIM_WAIT_MS` by default, which
+// only a test passes — before `used` is answered.
 // ---------------------------------------------------------------------------
 function claim(spec) {
   log.debug("Entering claim().");
@@ -137,10 +165,65 @@ function claim(spec) {
     log.debug("Leaving claim(). Nothing to claim here.");
     return Promise.resolve({ ok: true, settle: function () {} });
   }
+  const realm = String(o.realm || '');
+  const waitMs = o.waitMs === undefined ? CLAIM_WAIT_MS
+    : Math.max(0, Number(o.waitMs) || 0);
+  const deadline = Date.now() + waitMs;
+  let attempts = 0;
+  const attempt = function () {
+    attempts += 1;
+    return claimAll(wanted, realm).then(function (answer) {
+      if (answer.ok || answer.reason === 'store' || Date.now() >= deadline) {
+        return answer;
+      }
+      log.debug("claim(): " + answer.what + " is claimed; asking again in " +
+                CLAIM_RETRY_MS + "ms (attempt " + attempts + ").");
+      return new Promise(function (resolve) {
+        setTimeout(resolve, CLAIM_RETRY_MS);
+      }).then(attempt);
+    });
+  };
   log.debug("Leaving claim(). Asking for " + wanted.length + ".");
+  return attempt().then(function (answer) {
+    if (!answer.ok) {
+      log.info(errorCodes.tag(answer.code) + 'ldap: a create of ' +
+               answer.whatKind + answer.what + ' was refused: ' +
+               (answer.reason === 'store'
+                 ? 'the store that decides whether it is already being ' +
+                   'created elsewhere could not be asked.'
+                 : 'another request was still creating it after ' + waitMs +
+                   'ms and ' + attempts + ' attempt(s).'));
+      return { ok: false, reason: answer.reason, code: answer.code,
+               what: answer.what };
+    }
+    // -----------------------------------------------------------------------
+    // AND CAUGHT UP BEFORE THE DOOR LOOKS. A claim held by a create that has
+    // since committed is released at once, so a request that arrived before
+    // that commit — whose barrier therefore did not wait for it — could win
+    // the claim a moment later and then ask a directory that does not hold
+    // the entry yet. Catching up after the claim closes that: whoever held it
+    // committed before releasing, so the door's own check now sees the entry
+    // and refuses the duplicate. A catch-up that fails is not a refusal; the
+    // flush's merge still keeps the first add.
+    // -----------------------------------------------------------------------
+    return Promise.resolve().then(function () {
+      return persistence().syncNow();
+    }).catch(function (e) {
+      log.debug("Caught in claim(): " + ((e && e.message) || e));
+    }).then(function () {
+      return answer;
+    });
+  });
+}
+
+// One attempt at every value in `wanted`: all of them held, or none (a partial
+// set is given back) and the first refusal described.
+function claimAll(wanted, realm) {
+  log.debug("Entering claimAll().");
+  log.debug("Leaving claimAll().");
   return Promise.all(wanted.map(function (one) {
     return claims.claim({ scope: one.scope, value: one.value,
-                          realm: String(o.realm || ''), ttlMs: CLAIM_TTL_MS })
+                          realm: realm, ttlMs: CLAIM_TTL_MS })
       .then(function (answer) {
         return { one: one, answer: answer };
       });
@@ -161,17 +244,11 @@ function claim(spec) {
     if (refused) {
       releaseAll();
       const store = refused.answer.reason === 'store';
-      log.info(errorCodes.tag(store ? 'STS-LDAP-0093' : 'STS-LDAP-0092') +
-               'ldap: a create of ' +
-               (refused.one.scope === 'directory.dn' ? 'the DN ' : 'the ' +
-                'username ') + refused.one.value + ' was refused: ' +
-               (store ? 'the store that decides whether it is already being ' +
-                        'created elsewhere could not be asked.'
-                      : 'another request is creating it at this moment and ' +
-                        'has not committed yet.'));
       return { ok: false, reason: refused.answer.reason,
                code: store ? 'STS-LDAP-0093' : 'STS-LDAP-0092',
-               what: refused.one.value };
+               what: refused.one.value,
+               whatKind: refused.one.scope === 'directory.dn' ? 'the DN '
+                 : 'the username ' };
     }
     let settled = false;
     const granted = {
@@ -199,23 +276,7 @@ function claim(spec) {
         log.debug("Leaving settle(). Released after the flush.");
       }
     };
-    // -----------------------------------------------------------------------
-    // AND CAUGHT UP BEFORE THE DOOR LOOKS. A claim held by a create that has
-    // since committed is released at once, so a request that arrived before
-    // that commit — whose barrier therefore did not wait for it — could win
-    // the claim a moment later and then ask a directory that does not hold
-    // the entry yet. Catching up after the claim closes that: whoever held it
-    // committed before releasing, so the door's own check now sees the entry
-    // and refuses the duplicate. A catch-up that fails is not a refusal; the
-    // flush's merge still keeps the first add.
-    // -----------------------------------------------------------------------
-    return Promise.resolve().then(function () {
-      return persistence().syncNow();
-    }).catch(function (e) {
-      log.debug("Caught in claim(): " + ((e && e.message) || e));
-    }).then(function () {
-      return granted;
-    });
+    return granted;
   });
 }
 
@@ -294,5 +355,6 @@ module.exports = {
   claimFor: claimFor,
   runClaimed: runClaimed,
   refusalMessage: refusalMessage,
-  CLAIM_TTL_MS: CLAIM_TTL_MS
+  CLAIM_TTL_MS: CLAIM_TTL_MS,
+  CLAIM_WAIT_MS: CLAIM_WAIT_MS
 };

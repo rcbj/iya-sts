@@ -1810,7 +1810,7 @@ Raised from: ldap/.
 | `STS-LDAP-0078` | A flag of the bootstrap administrator (pwdReset, stsBootstrapAdministrator or stsConsoleClaimedAt) could not be written because the account has no entry in this realm. | none — logged |
 | `STS-LDAP-0090` | A person was refused creation under a username that is a subject identifier (urn:uuid: or a bare UUID). | action result ok:false (console, /admin-api HTTP 400, SCIM 400) |
 | `STS-LDAP-0091` | No entry was created for an authentication whose identity is a urn:uuid: subject naming nobody in this realm's directory. | none — logged |
-| `STS-LDAP-0092` | A create was refused because the same DN or username is being created at this moment by another request, on this node or another one, whose write has not committed yet. | LDAP_ENTRY_ALREADY_EXISTS (68); HTTP 409 on SCIM and /admin-api |
+| `STS-LDAP-0092` | A create was refused because the same DN or username was still being created by another request, on this node or another one, when the create had waited for it as long as it waits. | LDAP_ENTRY_ALREADY_EXISTS (68); HTTP 409 on SCIM and /admin-api |
 | `STS-LDAP-0093` | A create was refused because the store that decides whether a DN or username is already being created elsewhere could not be asked (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
 | `STS-LDAP-0094` | A bind could not be completed after the shared rate limiter was asked; the bind is answered operationsError. | RFC 4511 section 4.1.9, operationsError (1) |
 | `STS-LDAP-0095` | This node's bound directory connections could not be read for, or committed to, the cluster connection table; other nodes list what it published last (a sign-out still reaches them by identity). | none — logged |

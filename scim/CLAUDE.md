@@ -536,9 +536,11 @@ asserts every created id is a UUID and sends them back as member values.
 ## Several nodes: a create claims its name first (2026-09-14, #46 section 3)
 
 `createHandler()` claims the `userName` (a User) or the `displayName` (a Group)
-across nodes before the resource is written, and a create that loses to a
-concurrent one is a 409 `uniqueness` (`STS-LDAP-0092`; 500 when the store cannot
-be asked, `STS-LDAP-0093`). The design is the directory's, in `ldap/CLAUDE.md`,
+across nodes before the resource is written. A create that finds the name
+claimed waits for the release (since 2026-09-15) and then meets the
+directory's own 409 `uniqueness` "already a user called"; it is refused as in
+progress (`STS-LDAP-0092`) only if the name is still claimed after the wait,
+and 500 when the store cannot be asked (`STS-LDAP-0093`). The design is the directory's, in `ldap/CLAUDE.md`,
 *Several nodes: a create claims its name*. **A Bulk create is claimed too since
 2026-09-14**: a BulkRequest's POST operations never pass through
 `createHandler()`, so both ingress handlers are wrapped in `claimingIngress()`,

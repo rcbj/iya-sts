@@ -6883,9 +6883,9 @@ const CODES = [
       'a urn:uuid: subject naming nobody in this realm\'s directory.',
     spec: 'none — logged' },
   { code: 'STS-LDAP-0092',
-    summary: 'A create was refused because the same DN or username is being ' +
-      'created at this moment by another request, on this node or another ' +
-      'one, whose write has not committed yet.',
+    summary: 'A create was refused because the same DN or username was still ' +
+      'being created by another request, on this node or another one, when ' +
+      'the create had waited for it as long as it waits.',
     spec: 'LDAP_ENTRY_ALREADY_EXISTS (68); HTTP 409 on SCIM and ' +
       '/admin-api' },
   { code: 'STS-LDAP-0093',

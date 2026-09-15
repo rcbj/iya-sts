@@ -22,9 +22,11 @@
 //      included, and not when a failed write's keys are put back. And
 //      `persistence.js` hands its scheduler over.
 //   E. A CREATE CLAIMS ITS NAME at the doors that did not: two concurrent
-//      console creates of one name through `runClaimed()` — one runs, one is
-//      refused; where nothing can race it runs synchronously. The three
-//      console handlers call it.
+//      console creates of one name through `runClaimed()` never overlap — the
+//      second waits for the first to release; a create sent the moment the
+//      first was answered is not refused as in progress; a claim still held
+//      when the wait runs out is refused; where nothing can race it runs
+//      synchronously. The three console handlers call it.
 //   F. A WEBAUTHN REGISTRATION CLAIMS ITS CREDENTIAL ID: two concurrent
 //      registrations of one id for one person — one row; a later one of the
 //      same id is refused on the entry.
@@ -419,21 +421,73 @@ function childMain() {
       process.env.STS_WORKERS_REQUEST_COUNT = '1';
       process.env.STS_WORKERS_DISPATCH = '*';
       const outcomes = [];
+      let running = 0;
       await Promise.all([1, 2].map(function () {
         return createClaims.runClaimed({ username: 'cfu-dup' },
           function (held) {
-            outcomes.push('ran');
-            held.settle(true);
+            running += 1;
+            outcomes.push(running > 1 ? 'overlapped' : 'ran');
+            return later(function () {
+              running -= 1;
+              held.settle(true);
+            });
           }, function (held) {
             outcomes.push('refused:' + held.code);
           }, function (e) {
             outcomes.push('threw:' + e.message);
           });
       }));
-      note(outcomes.filter(function (o) { return o === 'ran'; }).length === 1 &&
-           outcomes.indexOf('refused:STS-LDAP-0092') >= 0,
-           'E2. TWO CONCURRENT CONSOLE CREATES OF ONE NAME: one runs, one is ' +
-           'refused (STS-LDAP-0092)', outcomes.join(','));
+      note(outcomes.join(',') === 'ran,ran',
+           'E2. TWO CONCURRENT CONSOLE CREATES OF ONE NAME NEVER OVERLAP: the ' +
+           'second waits for the first to release, then runs (and meets the ' +
+           'directory\'s own check)', outcomes.join(','));
+      // E2c. A NAME STILL HELD WHEN THE WAIT RUNS OUT IS REFUSED AS IN
+      // PROGRESS — the waiting is bounded, and a holder that never finishes
+      // (a process that died holding the claim) is not waited on forever.
+      const holding = await createClaims.claim({ usernames: ['cfu-held'] });
+      const waitedFrom = Date.now();
+      const late = await createClaims.claim({ usernames: ['cfu-held'],
+                                              waitMs: 300 });
+      const waited = Date.now() - waitedFrom;
+      holding.settle(false);
+      note(holding.ok && !late.ok && late.code === 'STS-LDAP-0092' &&
+           waited >= 300 && waited < 3000,
+           'E2c. a claim held past the wait is refused STS-LDAP-0092, after ' +
+           'the wait and not before it',
+           JSON.stringify({ code: late.code, waited: waited }));
+      // E2b. SEQUENTIAL IS NOT CONCURRENT (2026-09-15). A door answers
+      // before its claim is released (the release follows the flush), so a
+      // client that creates the same name again the moment it has its answer
+      // finds the name still claimed. It must wait for the release and reach
+      // the directory's own "already exists", not a 409 "being created". A
+      // dispatch run of sts_admin_api_operations got the 409, 70ms after its
+      // own 200.
+      const sequence = [];
+      await new Promise(function (answered) {
+        createClaims.runClaimed({ username: 'cfu-seq' }, function (held) {
+          held.settle(true);
+          sequence.push('answered');
+          answered();
+        }, function (held) {
+          sequence.push('refused:' + held.code);
+          answered();
+        }, function (e) {
+          sequence.push('threw:' + e.message);
+          answered();
+        });
+      });
+      await createClaims.runClaimed({ username: 'cfu-seq' }, function (held) {
+        sequence.push('ran');
+        held.settle(false);
+      }, function (held) {
+        sequence.push('refused:' + held.code);
+      }, function (e) {
+        sequence.push('threw:' + e.message);
+      });
+      note(sequence.join(',') === 'answered,ran',
+           'E2b. the next create of a name, sent the moment the first was ' +
+           'answered and before its claim is released, waits and runs rather ' +
+           'than being refused as in progress', sequence.join(','));
       const adminSource = fs.readFileSync(ROOT + '/admin-ui/admin.js', 'utf8');
       const handlers = ["app.post('/admin/users',",
                         "app.post('/admin/users/new',",
@@ -456,18 +510,19 @@ function childMain() {
       const bulkReq = { headers: {}, socket: { remoteAddress: '127.0.0.1' },
                         get: function () { return ''; }, protocol: 'https',
                         originalUrl: '/scim/v2/Bulk' };
-      const bulkOnce = function () {
+      const bulkOnce = function (userName) {
         return new SCIMMY.Messages.BulkRequest({
           schemas: ['urn:ietf:params:scim:api:messages:2.0:BulkRequest'],
           Operations: [{ method: 'POST', path: '/Users', bulkId: 'one',
             data: { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
-                    userName: 'cfu-bulk-dup' } }]
+                    userName: userName } }]
         }, 10).apply([SCIMMY.Resources.User, SCIMMY.Resources.Group],
                      { req: bulkReq }).then(function (answer) {
           return answer.Operations[0];
         });
       };
-      const bulk = await Promise.all([bulkOnce(), bulkOnce()]);
+      const bulk = await Promise.all([bulkOnce('cfu-bulk-dup'),
+                                      bulkOnce('cfu-bulk-dup')]);
       const statuses = bulk.map(function (op) {
         return String(op.status);
       }).sort().join(',');
@@ -475,12 +530,31 @@ function childMain() {
         return String(op.status) === '409';
       })[0];
       note(statuses === '201,409' && lost &&
-           /being created by another request/.test(
+           /already a user called/.test(
              String(lost.response && lost.response.detail)),
            'E5. TWO CONCURRENT SCIM BULK CREATES OF ONE userName: one 201, ' +
-           'and the other a 409 refused BY THE CLAIM — the directory\'s own ' +
-           'check would say "already a user called"', statuses + ' ' +
+           'and the other waits for its claim and meets the directory\'s own ' +
+           '"already a user called" (2026-09-15; it was a 409 "being ' +
+           'created" before the wait)', statuses + ' ' +
            String(lost && lost.response && lost.response.detail).slice(0, 80));
+      // E5b. AND THE BULK INGRESS REALLY ASKS THE CLAIM: with the name held
+      // elsewhere and given back 150ms later, a bulk create of it waits for
+      // the release and then creates. In one process the directory's check
+      // alone would answer E5 identically, so this is what shows the claim.
+      const realmsModule = require(ROOT + '/common/realms');
+      const heldElsewhere = await createClaims.claim({
+        realm: realmsModule.currentId(), usernames: ['cfu-bulk-wait'] });
+      setTimeout(function () {
+        heldElsewhere.settle(false);
+      }, 150);
+      const bulkFrom = Date.now();
+      const waitedOp = await bulkOnce('cfu-bulk-wait');
+      const bulkWaited = Date.now() - bulkFrom;
+      note(heldElsewhere.ok && String(waitedOp.status) === '201' &&
+           bulkWaited >= 140,
+           'E5b. a SCIM Bulk create of a name another request holds waits ' +
+           'for the release and then creates',
+           JSON.stringify({ status: waitedOp.status, waited: bulkWaited }));
 
       // ================= F. A WEBAUTHN REGISTRATION =========================
       const credentials = require(ROOT + '/common/credentials');
