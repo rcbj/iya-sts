@@ -51,6 +51,8 @@ data "aws_cloudwatch_log_group" "containers" {
   name = "/${var.name}/containers"
 }
 
+# By ARN, not by name: a lookup by name lists every policy in the account,
+# which the deployer is deliberately not allowed to do.
 data "aws_iam_policy" "workload_boundary" {
-  name = "${var.name}-workload-boundary"
+  arn = "arn:${local.partition}:iam::${local.account_id}:policy/${var.name}-workload-boundary"
 }

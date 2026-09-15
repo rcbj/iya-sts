@@ -188,10 +188,26 @@ data "aws_iam_policy_document" "deploy_network" {
     }
   }
 
-  # A rule is its own resource (security-group-rule/sgr-…) with the tag set on
-  # it at creation, so revoking or describing one is decided by its own tag too
-  # — which the statement above covers. Nothing here reaches a rule in another
-  # project's group, because the group is a resource of the same call.
+  # A RULE IS ITS OWN RESOURCE (security-group-rule/sgr-…), and one created
+  # WITH tags — which is how the provider creates every
+  # `aws_vpc_security_group_*_rule` — is a resource of the Authorize call that
+  # does not exist yet, so the `aws:ResourceTag` condition above refuses it.
+  # Found on the first apply: the rules sat in "Creating..." retrying
+  # UnauthorizedOperation on `security-group-rule/*`. The new rule is judged by
+  # the tag it is created with; the group it goes in is still judged by its own
+  # tag in the statement above, so no rule reaches another project's group.
+  statement {
+    sid = "Ec2SecurityGroupRulesCreatedTagged"
+    actions = [
+      "ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress",
+    ]
+    resources = ["arn:${local.partition}:ec2:${local.region}:${local.account_id}:security-group-rule/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = [local.project_tag]
+    }
+  }
 
   statement {
     sid       = "ElbRead"
@@ -351,6 +367,7 @@ data "aws_iam_policy_document" "deploy_data" {
       "ecr:GetDownloadUrlForLayer", "ecr:InitiateLayerUpload",
       "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage",
       "ecr:DescribeImages", "ecr:DescribeRepositories",
+      "ecr:ListTagsForResource",
     ]
     resources = [aws_ecr_repository.main.arn]
   }
@@ -359,6 +376,12 @@ data "aws_iam_policy_document" "deploy_data" {
     sid       = "ReadTheContainerLogs"
     actions   = ["logs:GetLogEvents", "logs:FilterLogEvents", "logs:DescribeLogStreams"]
     resources = ["${aws_cloudwatch_log_group.containers.arn}:*"]
+  }
+
+  statement {
+    sid       = "ReadTheContainerLogGroupTags"
+    actions   = ["logs:ListTagsForResource"]
+    resources = [aws_cloudwatch_log_group.containers.arn]
   }
 
   statement {

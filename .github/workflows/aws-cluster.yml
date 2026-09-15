@@ -1,0 +1,190 @@
+# ---------------------------------------------------------------------------
+# THE AWS CLUSTER, UP, TESTED AND DOWN (issue #51).
+#
+# One job, deliberately: the load balancer admits one address, and that
+# address is the RUNNER's. Separate jobs run on separate runners with separate
+# addresses, so creating the environment in one job and testing it from
+# another would test a load balancer that refuses the tester.
+#
+#   1. assume the deployer role (the project IAM user's key, in secrets)
+#   2. build the service image (AWS SDK + RDS CA) and the schema-init image,
+#      push both to the project's ECR repository, tagged with the commit
+#   3. terraform apply deploy/aws/environment with allowed_cidrs = the runner
+#   4. deploy/aws/run-suite.sh: wait for the NLB, mint an /admin-api token,
+#      run the protocol suite against https://<nlb>
+#   5. upload the report
+#   6. terraform destroy — ALWAYS, unless `keep` is set — and say where the
+#      container logs are (CloudWatch keeps them after the destroy)
+#
+# DISPATCH ONLY. This repository is public and the job holds AWS credentials,
+# so it never runs on a pull request, where a fork's change to this file would
+# run with them. `foundation/` is not applied here: it creates the deployer
+# identity, and the deployer cannot create itself.
+#
+# Repository secrets it needs:
+#   MOCK_STS_AWS_ACCESS_KEY_ID      the mock-sts-deployer user's access key
+#   MOCK_STS_AWS_SECRET_ACCESS_KEY
+#   MOCK_STS_DEPLOYER_ROLE_ARN      arn:aws:iam::<account>:role/mock-sts-deployer
+# ---------------------------------------------------------------------------
+name: AWS cluster test
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment name (2-12 lower-case letters/digits)"
+        type: string
+        default: ci
+      keep:
+        description: "Leave the environment running after the suite (you must destroy it)"
+        type: boolean
+        default: false
+      exclude:
+        description: "Extra job files to skip, comma-separated (e.g. the SCIM and API bulk loads)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-cluster-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-west-2
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
+jobs:
+  cluster:
+    runs-on: ubuntu-latest
+    # About 25 minutes to create (RDS), up to an hour for the suite, and ten
+    # to destroy — with room, because a job killed by its own timeout skips
+    # nothing but it can leave the destroy half-done.
+    timeout-minutes: 180
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Assume the deployer role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.MOCK_STS_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.MOCK_STS_AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.MOCK_STS_DEPLOYER_ROLE_ARN }}
+          role-session-name: gha-${{ github.run_id }}
+          # The whole job, destroy included. Credentials that expire before
+          # the destroy leave the environment running and billing.
+          role-duration-seconds: 14400
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+
+      - name: Work out names
+        id: names
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "account=${account}" >> "$GITHUB_OUTPUT"
+          echo "registry=${account}.dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+          echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "bucket=mock-sts-terraform-state-${account}" >> "$GITHUB_OUTPUT"
+          echo "runner_ip=$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the images
+        run: |
+          set -euo pipefail
+          repo="${{ steps.names.outputs.registry }}/mock-sts"
+          tag="${{ steps.names.outputs.tag }}"
+          docker build -t "${repo}:${tag}" \
+            --build-arg STS_CLOUD_SDKS=@aws-sdk/client-secrets-manager \
+            --build-arg STS_DATABASE_CA_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+            --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+            --build-arg BUILD_NUMBER="${{ github.run_number }}" .
+          docker build -t "${repo}:schema-${tag}" -f deploy/aws/schema-init/Dockerfile .
+          docker push "${repo}:${tag}"
+          docker push "${repo}:schema-${tag}"
+
+      - name: Create the environment
+        working-directory: deploy/aws/environment
+        run: |
+          set -euo pipefail
+          terraform init \
+            -backend-config="bucket=${{ steps.names.outputs.bucket }}" \
+            -backend-config="key=environment/${{ inputs.environment }}.tfstate"
+          terraform apply -auto-approve \
+            -var "environment=${{ inputs.environment }}" \
+            -var "image_tag=${{ steps.names.outputs.tag }}" \
+            -var 'allowed_cidrs=["${{ steps.names.outputs.runner_ip }}/32"]'
+
+      - name: Install the suite's dependencies
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev
+          npm ci --prefix tests
+
+      - name: Run the suite against the cluster
+        env:
+          STS_SUITE_EXCLUDE: ${{ inputs.exclude }}
+          STS_SUITE_REPORT_DIR: ${{ github.workspace }}/tests/report/aws-cluster
+        run: deploy/aws/run-suite.sh "${{ inputs.environment }}"
+
+      - name: Upload the test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-cluster-report-${{ inputs.environment }}
+          path: tests/report/aws-cluster
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Destroy the environment
+        if: always() && !inputs.keep
+        working-directory: deploy/aws/environment
+        run: |
+          set -uo pipefail
+          # Retried once: an ENI a Fargate task held can take a minute to be
+          # released after the service is gone, and the subnet or security
+          # group delete fails until it is.
+          for attempt in 1 2;
+          do
+            if terraform destroy -auto-approve \
+                 -var "environment=${{ inputs.environment }}" \
+                 -var "image_tag=${{ steps.names.outputs.tag }}" \
+                 -var 'allowed_cidrs=["${{ steps.names.outputs.runner_ip }}/32"]';
+            then
+              exit 0
+            fi
+            sleep 60
+          done
+          echo "::error::terraform destroy failed twice; the environment '${{ inputs.environment }}' may still be running."
+          exit 1
+
+      - name: Where the logs are
+        if: always()
+        run: |
+          {
+            echo "### Container logs"
+            echo "CloudWatch log group \`/mock-sts/containers\`, streams \`${{ inputs.environment }}-node-*\` (kept 14 days after the destroy):"
+            echo '```'
+            echo "aws logs tail /mock-sts/containers --log-stream-name-prefix ${{ inputs.environment }}-node-a --since 3h --region ${AWS_REGION}"
+            echo '```'
+            if [ "${{ inputs.keep }}" = "true" ]; then
+              echo "**The environment was KEPT.** Destroy it with deploy/aws/environment and \`terraform destroy\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
