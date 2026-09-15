@@ -1,18 +1,20 @@
 # ---------------------------------------------------------------------------
 # THE AWS CLUSTER, UP, TESTED AND DOWN (issue #51).
 #
-# One job, deliberately: the load balancer admits one address, and that
-# address is the RUNNER's. Separate jobs run on separate runners with separate
-# addresses, so creating the environment in one job and testing it from
-# another would test a load balancer that refuses the tester.
+# One job, deliberately: it holds the environment's Terraform state and
+# credentials from create to destroy. The GitHub runner does not run the
+# suite: the nodes must call back to whatever does (GNAP push, the remote
+# PEP's nudge), and nothing can dial a GitHub-hosted runner. The suite runs as
+# a task in the environment's VPC; allowed_cidrs is this runner's address so a
+# person debugging a kept environment from the job's IP is not refused.
 #
 #   1. assume the deployer role (the project IAM user's key, in secrets)
-#   2. build the service image (AWS SDK + RDS CA) and the schema-init image,
-#      push both to the project's ECR repository, tagged with the commit
+#   2. build the service, schema-init, suite runner and remote PEP images, push
+#      them to the project's ECR repository, tagged with the commit
 #   3. terraform apply deploy/aws/environment with allowed_cidrs = the runner
-#   4. deploy/aws/run-suite.sh: wait for the NLB, mint an /admin-api token,
-#      run the protocol suite against https://<nlb>
-#   5. upload the report
+#   4. deploy/aws/run-suite-in-aws.sh: start the suite task, wait for it, and
+#      download the report it uploaded to the report bucket
+#   5. upload the report as an artifact
 #   6. terraform destroy — ALWAYS, unless `keep` is set — and say where the
 #      container logs are (CloudWatch keeps them after the destroy)
 #
@@ -117,8 +119,18 @@ jobs:
             --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
             --build-arg BUILD_NUMBER="${{ github.run_number }}" .
           docker build -t "${repo}:schema-${tag}" -f deploy/aws/schema-init/Dockerfile .
+          # The suite runs as a task inside the VPC (environment/runner.tf):
+          # the tests image plus the S3 client, and the remote PEP beside it.
+          docker build -t mock-sts-tests -f tests/Dockerfile .
+          docker build -t "${repo}:runner-${tag}" --build-arg TESTS_IMAGE=mock-sts-tests \
+            -f deploy/aws/runner/Dockerfile deploy/aws/runner
+          docker build -t "${repo}:pep-${tag}" -f xacml-pep/Dockerfile \
+            --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
+            --build-arg BUILD_NUMBER="${{ github.run_number }}" .
           docker push "${repo}:${tag}"
           docker push "${repo}:schema-${tag}"
+          docker push "${repo}:runner-${tag}"
+          docker push "${repo}:pep-${tag}"
 
       - name: Create the environment
         working-directory: deploy/aws/environment
@@ -132,17 +144,15 @@ jobs:
             -var "image_tag=${{ steps.names.outputs.tag }}" \
             -var 'allowed_cidrs=["${{ steps.names.outputs.runner_ip }}/32"]'
 
-      - name: Install the suite's dependencies
-        run: |
-          set -euo pipefail
-          npm ci --omit=dev
-          npm ci --prefix tests
-
-      - name: Run the suite against the cluster
+      # Every job in the manifest, as a task in the environment's VPC: the
+      # nodes can call back to it (GNAP push, the remote PEP), which they
+      # cannot do to this runner. The script downloads the report the task
+      # uploaded to the report bucket.
+      - name: Run the suite inside the environment
         env:
           STS_SUITE_EXCLUDE: ${{ inputs.exclude }}
           STS_SUITE_REPORT_DIR: ${{ github.workspace }}/tests/report/aws-cluster
-        run: deploy/aws/run-suite.sh "${{ inputs.environment }}"
+        run: deploy/aws/run-suite-in-aws.sh "${{ inputs.environment }}"
 
       - name: Upload the test report
         if: always()

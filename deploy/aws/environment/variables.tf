@@ -49,6 +49,55 @@ variable "schema_image_tag" {
   default     = ""
 }
 
+variable "runner_image_tag" {
+  description = "The suite runner image tag. Empty means `runner-<image_tag>`."
+  type        = string
+  default     = ""
+}
+
+variable "pep_image_tag" {
+  description = "The remote XACML PEP image tag. Empty means `pep-<image_tag>`."
+  type        = string
+  default     = ""
+}
+
+variable "suite_runner" {
+  description = <<-EOT
+    Whether to create what runs the protocol suite inside the VPC (runner.tf):
+    a subnet, a NAT gateway and its Elastic IP, a security group, a role and
+    the task definition. About $0.05 an hour while the environment exists,
+    whether or not a suite is running. Off, the suite can still be run from
+    outside with run-suite.sh, less sts_gnap_core and sts_xacml_remote_pep.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "ldap_max_entries" {
+  description = <<-EOT
+    The directory's entry ceiling (LDAP_MAX_ENTRIES) on every node. The service
+    default is 2000; the three bulk-load jobs leave about 15,000 entries in the
+    default realm on every run, and an environment is reused run after run, so
+    reset-environment.js resets the override they leave back to THIS value
+    rather than to one that refuses every later create. Entries are held in
+    each node's memory: raise the task memory with it.
+  EOT
+  type        = number
+  default     = 200000
+}
+
+variable "runner_task_cpu" {
+  description = "Fargate CPU units for the suite task (runner, PEP and credential containers)."
+  type        = number
+  default     = 2048
+}
+
+variable "runner_task_memory" {
+  description = "Fargate memory (MiB) for the suite task. Chrome runs in it."
+  type        = number
+  default     = 8192
+}
+
 variable "sts_mode" {
   description = <<-EOT
     `development` or `product`. The test suite drives development mode — most

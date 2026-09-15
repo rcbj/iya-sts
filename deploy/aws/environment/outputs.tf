@@ -55,3 +55,33 @@ output "task_role_arn" {
   description = "What the mock-sts containers run as."
   value       = aws_iam_role.task.arn
 }
+
+output "load_balancer_ports" {
+  description = "Every port the load balancer publishes, and the node port behind it."
+  value       = local.published_ports
+}
+
+output "runner_task_definition" {
+  description = "The suite task's family (run-suite-in-aws.sh runs its latest revision)."
+  value       = var.suite_runner ? aws_ecs_task_definition.suite[0].family : ""
+}
+
+output "runner_subnet_id" {
+  description = "The subnet the suite task runs in."
+  value       = var.suite_runner ? aws_subnet.runner[0].id : ""
+}
+
+output "runner_security_group_id" {
+  description = "The suite task's security group."
+  value       = var.suite_runner ? aws_security_group.runner[0].id : ""
+}
+
+output "runner_egress_ip" {
+  description = "The NAT gateway address the suite task reaches the load balancer from."
+  value       = var.suite_runner ? aws_eip.runner[0].public_ip : ""
+}
+
+output "reports_bucket" {
+  description = "Where the suite task uploads its report, under <environment>/<run id>/."
+  value       = local.reports_bucket
+}

@@ -4,11 +4,18 @@
 # Public subnets hold the load balancer and the three nodes; private subnets
 # hold the two database instances and have no route out of the VPC at all.
 #
-# NO NAT GATEWAY. Each node gets a public IP so it can reach ECR, Secrets
-# Manager and CloudWatch Logs, and its security group accepts nothing but the
-# load balancer on 8081. A NAT gateway would cost $0.045 an hour plus data
-# processing — more than the three nodes' public addresses — to buy outbound
-# traffic that leaves by a different door.
+# NO NAT GATEWAY FOR THE NODES. Each node gets a public IP so it can reach
+# ECR, Secrets Manager and CloudWatch Logs, and its security group accepts
+# nothing but the load balancer on the published ports. A NAT gateway would
+# cost $0.045 an hour plus data processing to buy outbound traffic that leaves
+# by a different door.
+#
+# ONE NAT GATEWAY FOR THE SUITE RUNNER (`suite_runner`, on by default). The
+# runner task (runner.tf) sits in a subnet of its own with no public address,
+# and reaches the load balancer through the NAT gateway's Elastic IP — a
+# FIXED address, which is what lets security.tf admit it to the load balancer
+# before the task exists. A Fargate task given a public IP instead would get a
+# different address every run, known only after it started.
 # ---------------------------------------------------------------------------
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
@@ -58,3 +65,48 @@ resource "aws_route_table_association" "public" {
 
 # The private subnets keep the VPC's main route table, which has the local
 # route only: nothing in them can reach, or be reached from, the internet.
+
+# ---------------------------------------------------------------------------
+# THE SUITE RUNNER'S SUBNET AND ITS WAY OUT.
+# ---------------------------------------------------------------------------
+resource "aws_subnet" "runner" {
+  count             = var.suite_runner ? 1 : 0
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = local.runner_cidr
+  availability_zone = local.azs[0]
+  tags              = { Name = "${local.prefix}-runner-${local.azs[0]}" }
+}
+
+resource "aws_eip" "runner" {
+  count  = var.suite_runner ? 1 : 0
+  domain = "vpc"
+  tags   = { Name = "${local.prefix}-runner-nat" }
+}
+
+resource "aws_nat_gateway" "runner" {
+  count         = var.suite_runner ? 1 : 0
+  allocation_id = aws_eip.runner[0].id
+  subnet_id     = aws_subnet.public[0].id
+  tags          = { Name = "${local.prefix}-runner-nat" }
+
+  depends_on = [aws_internet_gateway.main]
+}
+
+resource "aws_route_table" "runner" {
+  count  = var.suite_runner ? 1 : 0
+  vpc_id = aws_vpc.main.id
+  tags   = { Name = "${local.prefix}-runner-rt" }
+}
+
+resource "aws_route" "runner_default" {
+  count                  = var.suite_runner ? 1 : 0
+  route_table_id         = aws_route_table.runner[0].id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.runner[0].id
+}
+
+resource "aws_route_table_association" "runner" {
+  count          = var.suite_runner ? 1 : 0
+  subnet_id      = aws_subnet.runner[0].id
+  route_table_id = aws_route_table.runner[0].id
+}

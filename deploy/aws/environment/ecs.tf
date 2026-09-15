@@ -65,6 +65,18 @@ locals {
     STS_DATABASE_URL                     = "postgres://${local.db_app_user}@${aws_db_instance.primary.address}:${local.db_port}/${local.db_name}?sslmode=require"
     STS_DATABASE_TLS_REJECT_UNAUTHORIZED = "true"
     NODE_EXTRA_CA_CERTS                  = "/opt/sts-sdk/database-ca.pem"
+
+    # WHERE A CERTIFICATE SAYS ITS CRL AND OCSP ADDRESSES ARE. Without these
+    # the node writes its own container ports on `localhost`, which no relying
+    # party can follow; sts_pki_distribution_points follows them as written.
+    PKI_DISTRIBUTION_BASE_URL  = "http://${aws_lb.main.dns_name}:${local.published_ports.pki.listener}"
+    PKI_DISTRIBUTION_LDAP_HOST = aws_lb.main.dns_name
+    PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
+
+    # The directory's ceiling, as the ENVIRONMENT's value rather than an
+    # override, so resetting the override the bulk loads leave lands here
+    # (variables.tf, reset-environment.js).
+    LDAP_MAX_ENTRIES = tostring(var.ldap_max_entries)
   }, var.extra_environment)
 }
 
@@ -114,10 +126,10 @@ resource "aws_ecs_task_definition" "node" {
       image     = "${local.ecr_repository_url}:${var.image_tag}"
       essential = true
       dependsOn = [{ containerName = "schema-init", condition = "SUCCESS" }]
-      portMappings = [{
-        containerPort = local.container_port
-        protocol      = "tcp"
-      }]
+      portMappings = [
+        for p in values(local.published_ports) :
+        { containerPort = p.container, protocol = "tcp" }
+      ]
       environment = [
         for k, v in merge(local.node_environment, { STS_CLUSTER_NODE_NAME = each.key }) :
         { name = k, value = v }
@@ -174,16 +186,19 @@ resource "aws_ecs_service" "first" {
     assign_public_ip = true
   }
 
-  load_balancer {
-    target_group_arn = aws_lb_target_group.nodes.arn
-    container_name   = "mock-sts"
-    container_port   = local.container_port
+  dynamic "load_balancer" {
+    for_each = local.published_ports
+    content {
+      target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
+      container_name   = "mock-sts"
+      container_port   = load_balancer.value.container
+    }
   }
 
   # The replica is not needed to start, but a node that starts before the
   # primary's parameter group and security rules exist cannot connect.
   depends_on = [
-    aws_lb_listener.https,
+    aws_lb_listener.ports,
     aws_iam_role_policy.execution,
     aws_iam_role_policy.task,
     aws_secretsmanager_secret_version.main,
@@ -221,10 +236,13 @@ resource "aws_ecs_service" "others" {
     assign_public_ip = true
   }
 
-  load_balancer {
-    target_group_arn = aws_lb_target_group.nodes.arn
-    container_name   = "mock-sts"
-    container_port   = local.container_port
+  dynamic "load_balancer" {
+    for_each = local.published_ports
+    content {
+      target_group_arn = aws_lb_target_group.nodes[load_balancer.key].arn
+      container_name   = "mock-sts"
+      container_port   = load_balancer.value.container
+    }
   }
 
   depends_on = [aws_ecs_service.first]

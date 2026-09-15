@@ -32,3 +32,8 @@ output "state_bucket" {
   description = "The Terraform state bucket (created by bootstrap-state.sh)."
   value       = local.state_bucket
 }
+
+output "reports_bucket" {
+  description = "Where a suite run inside AWS uploads its report, under <environment>/<run id>/."
+  value       = aws_s3_bucket.reports.bucket
+}

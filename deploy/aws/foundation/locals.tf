@@ -4,7 +4,8 @@ locals {
   partition   = data.aws_partition.current.partition
   region      = var.aws_region
 
-  state_bucket = "${var.name}-terraform-state-${local.account_id}"
+  state_bucket   = "${var.name}-terraform-state-${local.account_id}"
+  reports_bucket = "${var.name}-test-reports-${local.account_id}"
 
   # Names the environment stack creates, spelt here because the deployer policy
   # and the permissions boundary scope to them. Keep in step with
@@ -23,5 +24,6 @@ locals {
     elb          = "arn:${local.partition}:elasticloadbalancing:${local.region}:${local.account_id}"
     ecr_repo     = "arn:${local.partition}:ecr:${local.region}:${local.account_id}:repository/${var.name}"
     state_bucket = "arn:${local.partition}:s3:::${local.state_bucket}"
+    reports      = "arn:${local.partition}:s3:::${local.reports_bucket}"
   }
 }

@@ -1,5 +1,7 @@
 # ---------------------------------------------------------------------------
-# THE PUBLIC FRONT DOOR: AN NLB, 443 → 8081, TLS PASSED THROUGH.
+# THE PUBLIC FRONT DOOR: AN NLB, 443 → 8081 AND THREE MORE PORTS, TLS PASSED
+# THROUGH. locals.tf's `published_ports` lists them and says which job needs
+# each; a listener and a target group per entry.
 #
 # Network and not application load balancer, because mock-sts terminates its
 # own TLS and some of what it serves is mutual TLS: a client certificate only
@@ -28,8 +30,10 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "nodes" {
-  name                   = "${local.prefix}-8081"
-  port                   = local.container_port
+  for_each = local.published_ports
+
+  name                   = "${local.prefix}-${each.value.container}"
+  port                   = each.value.container
   protocol               = "TCP"
   target_type            = "ip"
   vpc_id                 = aws_vpc.main.id
@@ -49,13 +53,27 @@ resource "aws_lb_target_group" "nodes" {
   }
 }
 
-resource "aws_lb_listener" "https" {
+resource "aws_lb_listener" "ports" {
+  for_each = local.published_ports
+
   load_balancer_arn = aws_lb.main.arn
-  port              = 443
+  port              = each.value.listener
   protocol          = "TCP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.nodes.arn
+    target_group_arn = aws_lb_target_group.nodes[each.key].arn
   }
+}
+
+# The main port's target group and listener were single resources before the
+# other ports were published; these keep them rather than replacing them.
+moved {
+  from = aws_lb_target_group.nodes
+  to   = aws_lb_target_group.nodes["https"]
+}
+
+moved {
+  from = aws_lb_listener.https
+  to   = aws_lb_listener.ports["https"]
 }

@@ -101,6 +101,13 @@ data "aws_iam_policy_document" "workload_boundary" {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.containers.arn}:*"]
   }
+  # The suite task (environment/runner.tf) uploads its report. Objects only:
+  # no listing, no reading, no deleting another run's report.
+  statement {
+    sid       = "WriteTestReports"
+    actions   = ["s3:PutObject", "s3:AbortMultipartUpload"]
+    resources = ["${local.arn.reports}/*"]
+  }
 }
 
 resource "aws_iam_policy" "workload_boundary" {
@@ -124,6 +131,9 @@ data "aws_iam_policy_document" "deploy_network" {
     actions = [
       "ec2:CreateVpc", "ec2:CreateSubnet", "ec2:CreateInternetGateway",
       "ec2:CreateRouteTable", "ec2:CreateSecurityGroup",
+      # The suite runner's egress (environment/network.tf): one Elastic IP and
+      # the NAT gateway it is attached to.
+      "ec2:AllocateAddress", "ec2:CreateNatGateway",
     ]
     resources = ["*"]
     condition {
@@ -148,6 +158,23 @@ data "aws_iam_policy_document" "deploy_network" {
     }
   }
 
+  # A NAT gateway is created FROM an Elastic IP and IN a subnet, both resources
+  # of the call — each must be the project's. Found on the first apply: the
+  # request-tag statement above covers the gateway, not the address it uses.
+  statement {
+    sid     = "Ec2NatGatewayFromProjectAddressAndSubnet"
+    actions = ["ec2:CreateNatGateway"]
+    resources = [
+      "arn:${local.partition}:ec2:${local.region}:${local.account_id}:elastic-ip/*",
+      "arn:${local.partition}:ec2:${local.region}:${local.account_id}:subnet/*",
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = [local.project_tag]
+    }
+  }
+
   statement {
     sid       = "Ec2TagOnlyWhileCreating"
     actions   = ["ec2:CreateTags"]
@@ -159,6 +186,7 @@ data "aws_iam_policy_document" "deploy_network" {
         "CreateVpc", "CreateSubnet", "CreateInternetGateway",
         "CreateRouteTable", "CreateSecurityGroup",
         "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress",
+        "AllocateAddress", "CreateNatGateway",
       ]
     }
   }
@@ -179,6 +207,7 @@ data "aws_iam_policy_document" "deploy_network" {
       "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
       "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
       "ec2:DeleteSecurityGroup", "ec2:CreateTags", "ec2:DeleteTags",
+      "ec2:DeleteNatGateway", "ec2:ReleaseAddress", "ec2:DisassociateAddress",
     ]
     resources = ["*"]
     condition {
@@ -354,6 +383,19 @@ data "aws_iam_policy_document" "deploy_data" {
     resources = ["${local.arn.state_bucket}/environment/*"]
   }
 
+  # A suite run's report, downloaded by run-suite-in-aws.sh and the workflow.
+  statement {
+    sid       = "ReadTestReports"
+    actions   = ["s3:ListBucket"]
+    resources = [local.arn.reports]
+  }
+
+  statement {
+    sid       = "ReadTestReportObjects"
+    actions   = ["s3:GetObject"]
+    resources = ["${local.arn.reports}/*"]
+  }
+
   statement {
     sid       = "EcrLogin"
     actions   = ["ecr:GetAuthorizationToken"]
@@ -430,6 +472,20 @@ data "aws_iam_policy_document" "deploy_compute" {
       "${local.arn.ecs}:task/${var.name}-*",
       "${local.arn.ecs}:task-definition/${var.name}-*",
     ]
+  }
+
+  # The suite runs as a one-off task (environment/runner.tf), started by
+  # run-suite-in-aws.sh. Only a project task definition, only in a project
+  # cluster.
+  statement {
+    sid       = "EcsRunTheSuiteTask"
+    actions   = ["ecs:RunTask"]
+    resources = ["${local.arn.ecs}:task-definition/${var.name}-*"]
+    condition {
+      test     = "ArnLike"
+      variable = "ecs:cluster"
+      values   = ["${local.arn.ecs}:cluster/${var.name}-*"]
+    }
   }
 
   statement {

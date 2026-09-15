@@ -17,17 +17,21 @@
 #   3. mints an /admin-api access token with that secret;
 #   4. runs `tests/tools/run-report.js --protocol=only` against the URL, with
 #      the cluster-mode settings for three nodes behind a load balancer, and
-#      every vendored job EXCEPT the four that cannot work through a single
-#      public 443 endpoint.
+#      every vendored job EXCEPT the two that need the service to reach the
+#      machine running them.
 #
-# THE FOUR EXCLUSIONS, and each is a fact about the deployment rather than a
-# defect: `sts_xacml_remote_pep` (a PEP container on the RUNNER that the
-# cluster would have to reach), `sts_directory_bulk_load_ldap` (LDAP 389, not
-# exposed), `sts_pki_distribution_points` (follows http://…:8082 and ldap://
-# addresses written into certificates, not exposed) and `sts_gnap_core` (the
-# service posts back to a listener on the runner). The job list is computed
-# from tests/vendored/MANIFEST.js minus those four, so a job added there runs
-# here without this file being edited.
+# THIS IS THE FROM-OUTSIDE PATH. deploy/aws/run-suite-in-aws.sh runs every job,
+# as a task inside the VPC, and is what the workflow uses; this one is for a
+# quick run from a developer machine whose address is in allowed_cidrs.
+#
+# THE TWO EXCLUSIONS, and each is a fact about where this runs rather than a
+# defect: `sts_xacml_remote_pep` (a PEP container beside the runner that the
+# cluster nudges) and `sts_gnap_core` (the service posts back to a listener on
+# the runner) — nothing behind NAT can be dialled. The load balancer publishes
+# 9443, 389 and 8082 as well as 443 (environment/locals.tf), so the mutual-TLS
+# sign-in, the LDAP bulk load and the CRL addresses in certificates all work
+# from here. The job list is computed from tests/vendored/MANIFEST.js minus
+# the two, so a job added there runs here without this file being edited.
 #
 # THE PER-JOB WATCHDOG IS TWENTY MINUTES, NOT THE RUNNER'S FIVE. Every request
 # crosses the internet on a new TLS connection (so the balancer spreads them),
@@ -84,7 +88,13 @@ then
   echo "::add-mask::${TOKEN}"
 fi
 
-EXCLUDE="sts_xacml_remote_pep.js,sts_directory_bulk_load_ldap.js,sts_pki_distribution_points.js,sts_gnap_core.js"
+# The previous run's realms, removed so the environment can be reused
+# (deploy/aws/reset-environment.js). STS_SUITE_KEEP_REALMS=1 keeps them.
+STS_ADMIN_API_TOKEN="${TOKEN}" node deploy/aws/reset-environment.js "${URL}"
+
+EXCLUDE="sts_xacml_remote_pep.js,sts_gnap_core.js"
+NLB_HOST="${URL#https://}"
+NLB_HOST="${NLB_HOST%%/*}"
 if [ -n "${STS_SUITE_EXCLUDE:-}" ];
 then
   EXCLUDE="${EXCLUDE},${STS_SUITE_EXCLUDE}"
@@ -112,6 +122,9 @@ STS_TEST_CLUSTER_NODES="${STS_TEST_CLUSTER_NODES:-3}" \
 STS_TEST_FRESH_CONNECTIONS=1 \
 STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
 STS_PUBLIC_BASE_URL="${URL}" \
+STS_LDAP_URL="ldap://${NLB_HOST}:389" \
+STS_LDAP_PORT=389 \
+STS_MTLS_PORT=9443 \
   node tests/tools/run-report.js --protocol=only \
     --service-url="${URL}" \
     --timeout="${STS_SUITE_JOB_TIMEOUT_MS:-1200000}" \
