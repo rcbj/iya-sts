@@ -771,10 +771,20 @@ waitForStsHealthy()
 # and be a 401 on every job in modes two and three.
 #
 # **RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
-# ELSE"** — the same argument mintThePepCredential() makes, and cheaper here:
-# `admin-api-token.js` requires nothing but node's own `http` and `https`, so
-# the repository is mounted read-only and the image supplies the runtime. On
-# the project's network, dialling `sts` by the name in the certificate.
+# ELSE"** — the same argument mintThePepCredential() makes: the repository is
+# mounted read-only and the image supplies the runtime. On the project's
+# network, dialling `sts` by the name in the certificate.
+#
+# **NODE_PATH, BECAUSE THE TOOL IS NOT DEPENDENCY-FREE ANY MORE.** It said
+# here that `admin-api-token.js` needed only node's `http` and `https`, and
+# the 2026-09-12 style sweep gave it (and `pep-credential.js`) a bunyan
+# logger. node resolves a package by walking up from the SCRIPT, which is
+# /repo/tests/tools — the host checkout, which has node_modules on a
+# developer's machine and none on a CI runner — and `-w` does not change
+# that. So every CI run of this launcher failed here with `Cannot find module
+# 'bunyan'` in all three modes while every local run passed. The image's own
+# /usr/src/sts/node_modules has bunyan; NODE_PATH is where node looks when
+# the walk finds nothing, so a checkout that has its own still uses it.
 # ---------------------------------------------------------------------------
 mintAdminApiToken()
 {
@@ -783,6 +793,7 @@ mintAdminApiToken()
        --network "${COMPOSE_PROJECT}_default" \
        -v "${CURRENT_DIR}:/repo:ro" \
        -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
+       -e NODE_PATH=/usr/src/sts/node_modules \
        -w /usr/src/sts \
        "${STS_IMAGE:-rcbj/sts}" \
        node /repo/tests/tools/admin-api-token.js \
@@ -841,7 +852,8 @@ mintThePepCredential()
   # ---------------------------------------------------------------------
   # RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
   # ELSE". The tool is a node script that needs `common/vendored/x509.js` and
-  # its three npm packages; this host may have neither node nor node_modules.
+  # its three npm packages (and bunyan, for its logger — see NODE_PATH at
+  # mintAdminApiToken()); this host may have neither node nor node_modules.
   # The service image has both — so the REPOSITORY is mounted read-only for the
   # tool itself (the image deletes ./tests, see the root Dockerfile) and
   # MOCK_STS_DIR points the tool at the image's own copy of the engine.
@@ -854,6 +866,7 @@ mintThePepCredential()
        -v "${CURRENT_DIR}:/repo:ro" \
        -v "${XACML_PEP_CERT_DIR}:/out" \
        -e MOCK_STS_DIR=/usr/src/sts \
+       -e NODE_PATH=/usr/src/sts/node_modules \
        -w /usr/src/sts \
        "${STS_IMAGE:-rcbj/sts}" \
        node /repo/tests/tools/pep-credential.js \
