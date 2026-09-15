@@ -5,7 +5,7 @@ nav_order: 7
 
 # EST — Enrollment over Secure Transport
 
-mock-sts is an **EST server** ([RFC 7030](https://www.rfc-editor.org/rfc/rfc7030),
+iya-sts is an **EST server** ([RFC 7030](https://www.rfc-editor.org/rfc/rfc7030),
 with the clarifications of [RFC 8951](https://www.rfc-editor.org/rfc/rfc8951)).
 A device, a person or an application authenticates, sends a PKCS#10 request,
 and receives a certificate from the trust realm's **EST Issuing CA** — one of

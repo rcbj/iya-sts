@@ -342,7 +342,7 @@ async function everyAdvertisedClientAssertionAlgorithmWorks() {
 
     // AWAITED SINCE THE MOCK'S 2026-08-30 BUMP. `clientAuth.verify()` became
     // an `async function` when the post-quantum verification moved to that
-    // service's worker pool (rcbj/mock-sts#6) — a composite ML-DSA assertion
+    // service's worker pool (rcbj/iya-sts#6) — a composite ML-DSA assertion
     // took 17.8 and 23.3 seconds on the one thread that also answers its KDC.
     //
     // WITHOUT THE `await` THIS TEST FAILS IN A WAY THAT NAMES THE WRONG THING,

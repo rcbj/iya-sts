@@ -55,10 +55,10 @@
 # SO THE SITE WAS CREATED ONCE, OUT OF BAND, on 2026-08-29, with a credential
 # that has admin on the repository:
 #
-#     gh api -X POST repos/rcbj/mock-sts/pages -f build_type=workflow
+#     gh api -X POST repos/rcbj/iya-sts/pages -f build_type=workflow
 #
 # (Settings → Pages → Source: GitHub Actions is the same thing through the web
-# interface.) The next run went green and https://rcbj.github.io/mock-sts/ is
+# interface.) The next run went green and https://rcbj.github.io/iya-sts/ is
 # the site. `enablement: true` is KEPT rather than removed because it costs one
 # warning line and is what makes a FORK — where the person running it may well
 # have the rights this token does not — work with no step at all; it is simply

@@ -135,7 +135,7 @@ function engineDir() {
     'The XACML engine is not here. Looked in ' + here + ' and ' + repo +
     '. In the image the Dockerfile copies ' + MODULES.length + ' modules ' +
     'from xacml/ into ./xacml; on a developer machine this file expects to ' +
-    'be run from inside the mock-sts checkout.');
+    'be run from inside the iya-sts checkout.');
 }
 
 // THE SHIM, INSTALLED UNDER THE PATH THE ENGINE WILL ASK FOR. See the header.

@@ -81,7 +81,7 @@ function requireSharedModule(candidates, what) {
 // ---------------------------------------------------------------------------
 // Locating a module that lives in the mock STS.
 //
-// sts/ is a SUBMODULE — a separate repository (rcbj/mock-sts) — so a change to the
+// sts/ is a SUBMODULE — a separate repository (rcbj/iya-sts) — so a change to the
 // mock KDC is written in a sibling checkout, pushed there, and only then does this
 // repository's gitlink move. Between those two steps the submodule does not carry the
 // change, and a test that could not run until the push would make that loop unusable.
@@ -90,7 +90,7 @@ function requireSharedModule(candidates, what) {
 // after it cost a debugging round:
 //
 //  1. Normally: the submodule, then the tests image's flat copies.
-//  2. `MOCK_STS_DIR=../mock-sts` — an EXPLICIT override, for verifying a change to a
+//  2. `MOCK_STS_DIR=../iya-sts` — an EXPLICIT override, for verifying a change to a
 //     module that ALREADY EXISTS in the submodule. The fallback below cannot help
 //     there: the file is present, just stale, so it is found and used and the change
 //     under test is silently not exercised. That failure is genuinely confusing,
@@ -254,7 +254,7 @@ function mockStsModule(name, warn) {
   // loaded on their own and have no relative requires to satisfy.
   const flattened = path.join(__dirname, "sts_" + name);
   if (fs.existsSync(flattened)) return flattened;
-  const siblingRoot = path.join(__dirname, "..", "..", "mock-sts");
+  const siblingRoot = path.join(__dirname, "..", "..", "iya-sts");
   const sibling = findInMockSts(siblingRoot, name);
   if (sibling) {
     alignConfigFileForMockSts(siblingRoot, say);

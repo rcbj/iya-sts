@@ -5,7 +5,7 @@ nav_order: 7
 
 # ACME — Automatic Certificate Management Environment
 
-mock-sts is an **ACME server** ([RFC 8555](https://www.rfc-editor.org/rfc/rfc8555))
+iya-sts is an **ACME server** ([RFC 8555](https://www.rfc-editor.org/rfc/rfc8555))
 with [RFC 9773](https://www.rfc-editor.org/rfc/rfc9773) renewal information,
 the `ip` ([RFC 8738](https://www.rfc-editor.org/rfc/rfc8738)) and `email`
 ([RFC 8823](https://www.rfc-editor.org/rfc/rfc8823)) identifier types,

@@ -5,7 +5,7 @@ nav_order: 18
 
 # A three-node cluster in AWS
 
-`deploy/aws/` builds a test environment with Terraform: three mock-sts nodes
+`deploy/aws/` builds a test environment with Terraform: three iya-sts nodes
 running active-active on ECS Fargate, one in each of three availability zones,
 behind an internet-facing Network Load Balancer, against RDS PostgreSQL 18 with
 a read replica. The encryption key and the database password come from AWS

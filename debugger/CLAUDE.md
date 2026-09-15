@@ -191,7 +191,7 @@ the rule `common/CLAUDE.md` states about anything that is not a row in a store.
 
 ## Where the built tree comes from
 
-* **A checkout:** `embedded/build.sh --out ../mock-sts/debugger/embedded` in the
+* **A checkout:** `embedded/build.sh --out ../iya-sts/debugger/embedded` in the
   debugger project.
 * **The image:** the Dockerfile's `ARG DEBUGGER_IMAGE` (default the empty stage
   `debugger-none`) and `COPY --from=debugger /debugger/ ./debugger/embedded/`.

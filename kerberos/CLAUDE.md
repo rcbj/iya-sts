@@ -397,7 +397,7 @@ two refusal warnings, which is the header's source when one was read. The UDP
 socket is not covered — a datagram has no stream to put a header in front of —
 so behind a load balancer Kerberos clients use TCP.
 
-`MOCK_STS_DIR=/path/to/mock-sts` still points those tests at a working copy,
+`MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
 says loudly that the run reflects an unpushed working copy.
 

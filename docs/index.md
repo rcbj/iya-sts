@@ -1,9 +1,9 @@
 ---
-title: mock-sts
+title: iya-sts
 nav_order: 1
 ---
 
-# mock-sts
+# iya-sts
 
 A mock identity service that speaks **nineteen protocol families** in one small
 Node process. It exists to exercise *clients*: it checks no password, validates
@@ -20,8 +20,8 @@ says exactly where the line is.
 ## Start here
 
 ```bash
-git clone --recursive https://github.com/rcbj/mock-sts.git
-cd mock-sts
+git clone --recursive https://github.com/rcbj/iya-sts.git
+cd iya-sts
 npm install
 CONFIG_FILE=./env/local.js node server.js
 ```
@@ -56,7 +56,7 @@ what to do when 389 or 88 will not bind.
 
 ## Architecture
 
-[![mock-sts architecture: the leader process and its listeners, the request dispatcher and three worker pools, the protocol subsystems and hosted surfaces, the shared services, and the embedded directory and key material above their stores](mock-sts.jpeg)](mock-sts.jpeg)
+[![iya-sts architecture: the leader process and its listeners, the request dispatcher and three worker pools, the protocol subsystems and hosted surfaces, the shared services, and the embedded directory and key material above their stores](mock-sts.jpeg)](mock-sts.jpeg)
 
 One leader process owns every listener — HTTPS, LDAP and LDAPS, the Kerberos
 KDC, the SPIFFE gRPC sockets and the Workload API's domain sockets. Behind it the

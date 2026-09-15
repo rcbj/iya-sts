@@ -1,4 +1,4 @@
-# Jekyll configuration for the mock-sts documentation site.
+# Jekyll configuration for the iya-sts documentation site.
 #
 # GitHub's own Pages workflow builds this directory — see
 # ../.github/workflows/pages.yml, which runs actions/jekyll-build-pages against
@@ -10,7 +10,7 @@
 # `minima` is the theme GitHub Pages ships. Choosing anything else means either
 # vendoring a theme or adding a Gemfile, and this project's whole reason for
 # preferring Jekyll over MkDocs was not adding a second toolchain.
-title: mock-sts
+title: iya-sts
 description: >-
   A permissive mock identity service that speaks sixteen protocol families.
   It exists to exercise CLIENTS: it checks no password, validates no access
@@ -24,7 +24,7 @@ show_excerpts: false
 # rendered site and when the markdown is read in the repository — the second of
 # those is the case that matters most, because that is where a maintainer reads
 # it.
-baseurl: "/mock-sts"
+baseurl: "/iya-sts"
 
 # What Jekyll must not try to render. There is nothing else in this directory,
 # but a future `images/` or a downloaded artefact should not be processed.

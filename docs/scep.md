@@ -5,7 +5,7 @@ nav_order: 7
 
 # SCEP — Simple Certificate Enrolment Protocol
 
-mock-sts is a **SCEP server** ([RFC 8894](https://www.rfc-editor.org/rfc/rfc8894)).
+iya-sts is a **SCEP server** ([RFC 8894](https://www.rfc-editor.org/rfc/rfc8894)).
 A device holding a **challenge password** sends a PKCS#10 request, signed by
 the device and encrypted to the SCEP RA, and receives a certificate from the
 trust realm's **SCEP Issuing CA** — one of the Issuing CAs of the realm's

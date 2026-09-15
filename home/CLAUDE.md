@@ -51,7 +51,7 @@ Three are written out as constants rather than derived. `package.json` carries n
 from it would make a reader open two files to answer *where does this link go*.
 The documentation URL is GitHub Pages' arrangement of the same repository —
 `.github/workflows/pages.yml` builds `docs/` and `docs/_config.yml` sets
-`baseurl: /mock-sts` — so **changing the repository changes all three and that
+`baseurl: /iya-sts` — so **changing the repository changes all three and that
 baseurl together**.
 
 The fourth and fifth, `/admin` and `/portal`, are **relative on purpose**. This

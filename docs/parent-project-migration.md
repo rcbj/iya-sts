@@ -54,7 +54,7 @@ document used to carry has been deleted rather than corrected, because every row
 of it was an edit that would now break something that works.
 
 `MOCK_STS_DIR` keeps working unchanged, and there is a third candidate below it:
-a sibling `../../mock-sts` checkout, which resolves and then says loudly that the
+a sibling `../../iya-sts` checkout, which resolves and then says loudly that the
 run reflects an unpushed working copy rather than the commit the gitlink points
 at.
 

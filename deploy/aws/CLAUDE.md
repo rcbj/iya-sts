@@ -1,6 +1,6 @@
 # deploy/aws/
 
-**A three-node mock-sts cluster in AWS, built and destroyed by Terraform, and a
+**A three-node iya-sts cluster in AWS, built and destroyed by Terraform, and a
 workflow that tests it (issue #51).** Nothing here runs inside the service; the
 Dockerfile removes this directory from the image.
 
