@@ -764,6 +764,42 @@ async function liveSessionsFor(username) {
   });
 }
 
+// THE SESSIONS LEFT AFTER A GLOBAL SIGN-OUT, WAITED FOR ONLY WHERE THE LISTING
+// IS KNOWN TO LAG (2026-09-15, #51). With several nodes, a bind held on
+// another node is closed by an instruction that node acts on when the row
+// reaches it, and its per-node connection table is republished 250ms after
+// the close (ldap/CLAUDE.md, *And across NODES*) — so the list read the
+// instant the sign-out answers can still name a connection that is being
+// closed. Measured on two local nodes the close lands 4–22ms after the
+// answer; against three Fargate nodes on RDS the first run read one LDAP row
+// that had not yet left the table. So with STS_TEST_CLUSTER_NODES above one,
+// and ONLY while every survivor is an LDAP connection, the list is read again
+// for up to fifteen seconds. A browser session, a token or anything else that
+// survives is reported at once, exactly as before, and an LDAP row still there
+// after the wait is the failure it always was.
+async function sessionsAfterTheSweep(username) {
+  log.debug("Entering sessionsAfterTheSweep().");
+  const nodes = Number(process.env.STS_TEST_CLUSTER_NODES || 1);
+  let rows = await liveSessionsFor(username);
+  const onlyConnections = function (list) {
+    return list.length > 0 && list.every(function (r) {
+      return /^ldap/i.test(String(r.protocol || ""));
+    });
+  };
+  if (nodes > 1 && onlyConnections(rows)) {
+    const started = Date.now();
+    while (Date.now() - started < 15000 && onlyConnections(rows)) {
+      await new Promise(function (resolve) { setTimeout(resolve, 500); });
+      rows = await liveSessionsFor(username);
+    }
+    log.info("  waited " + (Date.now() - started) + "ms for another node's " +
+             "LDAP connection table to catch up with the sign-out; " +
+             rows.length + " row(s) left.");
+  }
+  log.debug("Leaving sessionsAfterTheSweep().");
+  return rows;
+}
+
 // ---------------------------------------------------------------------------
 // SETTING THE WORLD UP. Everything is configured BEFORE anybody authenticates,
 // which is the shape this test was asked for and is also the only shape that
@@ -960,7 +996,7 @@ async function runScenario(label, username, applicationFor) {
   // WHAT MUST BE DEAD. Every one of these is asked at a door a real client
   // would use, not at the console's own list.
   // -----------------------------------------------------------------------
-  const after = { sessions: await liveSessionsFor(username),
+  const after = { sessions: await sessionsAfterTheSweep(username),
                   issued: await issuedFor(username) };
 
   check(label + ": NO SESSION SURVIVES", function () {

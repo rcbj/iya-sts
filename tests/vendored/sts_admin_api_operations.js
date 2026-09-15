@@ -1714,14 +1714,18 @@ async function aClaimSetBelongsToItsRealm() {
 
   // The default realm's own token endpoint, which nothing in this section
   // configured.
+  // The client is named for this run: it is created in the DEFAULT realm,
+  // which a run does not clean up, so a fixed name met the previous run's
+  // client — holding the previous run's secret — on a long-lived service.
   const elsewhereUser = names.usernameFor("stsapi-elsewhere");
-  await ensureTokenParties(elsewhereUser, "claim-realm-elsewhere", true);
+  const elsewhereClient = "claim-realm-elsewhere-" + REALM;
+  await ensureTokenParties(elsewhereUser, elsewhereClient, true);
   const elsewhere = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=password&username=" + encodeURIComponent(elsewhereUser) +
         "&password=" + encodeURIComponent(MINT_PASSWORD) +
-        "&client_id=claim-realm-elsewhere" +
+        "&client_id=" + encodeURIComponent(elsewhereClient) +
         "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
         "&scope=openid"
   });
