@@ -927,10 +927,36 @@ async function theVerifierRequestCanBeChangedAndPutBack() {
 // The bulk revocations, and the restore that undoes them. `revoke-all` has no
 // opposite, so what is put back is every jti that was NOT already revoked when
 // this started — which is why the set is read first.
+// EVERY REVOKED RECORD, NOT THE FIRST PAGE OF THEM (2026-09-15, #51). The
+// list pages by token SET, 300 to a page, and this section read one page
+// three times — before, after revoking and after restoring. On a service that
+// had minted fewer than 300 sets that is the whole list. On a reused AWS
+// cluster holding 1,852 tokens it was not: records past the first page were
+// never restored, and records already revoked before this job ran moved onto
+// page one once others were restored, so 913 tokens were reported as left
+// revoked that were either restored by nothing or never this job's to restore.
+async function allRevoked() {
+  log.debug("Entering allRevoked().");
+  const records = [];
+  let page = 1;
+  let pages = 1;
+  let first;
+  do {
+    const body = await get("/tokens?state=revoked&per=300&page=" + page);
+    first = first || body;
+    (body.issued || []).forEach(function (r) { records.push(r); });
+    pages = Math.max(1, Number(body.pages) || 1);
+    page += 1;
+  } while (page <= pages);
+  log.debug("Leaving allRevoked(). " + records.length + " record(s) on " +
+            pages + " page(s).");
+  return { matched: first.matched, issued: records };
+}
+
 async function theBulkRevocationsWorkAndAreUndone() {
   log.debug("Entering theBulkRevocationsWorkAndAreUndone().");
   log.info("=== The bulk revocations ===");
-  const before = await get("/tokens?state=revoked&per=300");
+  const before = await allRevoked();
   const alreadyRevoked = new Set(before.issued.map(function (r) {
     return r.jti;
   }));
@@ -950,7 +976,7 @@ async function theBulkRevocationsWorkAndAreUndone() {
   assert.strictEqual(all.status, 200, "revoke-all should be applied.");
   assert.ok(typeof all.body.revoked === "number",
     "and report how many it revoked; got " + JSON.stringify(all.body));
-  const nowRevoked = await get("/tokens?state=revoked&per=300");
+  const nowRevoked = await allRevoked();
   assert.ok(nowRevoked.matched >= before.matched,
     "and the revoked list should not have shrunk.");
 
@@ -964,7 +990,7 @@ async function theBulkRevocationsWorkAndAreUndone() {
       "restoring " + record.jti + " should be applied; got " + put.status);
     restored += 1;
   }
-  const after = await get("/tokens?state=revoked&per=300");
+  const after = await allRevoked();
   const leftBehind = after.issued.filter(function (record) {
     return !alreadyRevoked.has(record.jti);
   }).map(function (record) { return record.jti; });

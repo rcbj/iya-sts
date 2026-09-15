@@ -76,7 +76,8 @@ locals {
     # The directory's ceiling, as the ENVIRONMENT's value rather than an
     # override, so resetting the override the bulk loads leave lands here
     # (variables.tf, reset-environment.js).
-    LDAP_MAX_ENTRIES = tostring(var.ldap_max_entries)
+    LDAP_MAX_ENTRIES     = tostring(var.ldap_max_entries)
+    STS_APPLICATIONS_MAX = tostring(var.applications_max)
   }, var.extra_environment)
 }
 

@@ -86,6 +86,20 @@ variable "ldap_max_entries" {
   default     = 200000
 }
 
+variable "applications_max" {
+  description = <<-EOT
+    How many entries the default realm's ou=applications may hold
+    (STS_APPLICATIONS_MAX) on every node. The service default is 500, and a
+    suite run registers a few hundred OAuth clients and relying parties in the
+    default realm that no run removes. On a reused environment the registry
+    filled on the fourth run and every later registration was refused
+    (STS-REG-0020) — which sts_userinfo_protected reported as an unencrypted
+    UserInfo response.
+  EOT
+  type        = number
+  default     = 10000
+}
+
 variable "runner_task_cpu" {
   description = "Fargate CPU units for the suite task (runner, PEP and credential containers)."
   type        = number

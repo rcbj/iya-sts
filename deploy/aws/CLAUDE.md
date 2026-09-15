@@ -63,7 +63,12 @@ nodes start with `LDAP_MAX_ENTRIES = ldap_max_entries` (200,000). The default
 realm's CONTENTS are not cleared — a job writing there names what it writes for
 the run — so the directory grows by about 15,000 entries a run (the bulk loads),
 held in every node's memory; destroy and re-create the environment, or raise
-`ldap_max_entries` and `task_memory`, when that matters.
+`ldap_max_entries` and `task_memory`, when that matters. The same growth fills
+the default realm's application registry — a few hundred clients a run, against
+a service default of 500 — so the nodes start with `STS_APPLICATIONS_MAX =
+applications_max` (10,000). The second reuse of the dev cluster found it full:
+every registration was refused `STS-REG-0020`, which `sts_userinfo_protected`
+reported as an unencrypted UserInfo response.
 `STS_SUITE_KEEP_REALMS=1` skips the reset.
 
 **Four published ports.** 443 → 8081, and 9443 (the mutual-TLS listener), 389
