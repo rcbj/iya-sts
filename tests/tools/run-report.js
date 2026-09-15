@@ -1331,6 +1331,66 @@ async function mintTheManagementApiToken(url) {
   log.debug('Leaving mintTheManagementApiToken().');
 }
 
+// ---------------------------------------------------------------------------
+// A TOKEN THAT WOULD EXPIRE DURING THE NEXT JOB IS REPLACED BEFORE IT
+// (2026-09-15, issue #51).
+//
+// The token is minted once and every job is handed it at spawn, so a run
+// longer than the token's lifetime (an hour by default) sends every later job
+// in with an expired one. Against a local stack a run rarely lasts that long;
+// against the AWS cluster, where every request crosses the internet on a new
+// connection, the first run did — and from the 61st minute twenty jobs failed
+// at once on `GET /admin-api/status answered 401`, reading like twenty defects.
+//
+// So before each job, if this runner can mint (the client secret is in its
+// environment) and the current token's own `exp` is closer than this job's
+// watchdog plus five minutes, a fresh one replaces it. The deadline is read
+// off the token rather than remembered, so a token a launcher handed in is
+// judged the same way. A failure keeps the old token: the job then fails on
+// it, which says the same thing more loudly.
+// ---------------------------------------------------------------------------
+async function refreshAdminApiToken(instance, jobTimeoutMs) {
+  log.debug('Entering refreshAdminApiToken().');
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  const canMint = !!(process.env.STS_ADMIN_API_CLIENT_SECRET ||
+                     process.env.ADMIN_API_CLIENT_SECRET);
+  if (!instance || !token || !canMint) {
+    log.debug('Leaving refreshAdminApiToken(). Nothing to refresh with.');
+    return;
+  }
+  let expMs = 0;
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split('.')[1] || '',
+                                           'base64url').toString('utf8'));
+    expMs = Number(payload.exp) * 1000 || 0;
+  } catch (e) {
+    // Not a JWT this runner can read; judged by nothing, so left alone.
+    log.debug('Caught in refreshAdminApiToken(): ' + ((e && e.message) || e));
+    log.debug('Leaving refreshAdminApiToken(). Unreadable token.');
+    return;
+  }
+  const needMs = (Number(jobTimeoutMs) || 300000) + 5 * 60 * 1000;
+  if (!expMs || expMs - Date.now() > needMs) {
+    log.debug('Leaving refreshAdminApiToken(). Still good.');
+    return;
+  }
+  if (!process.env.STS_ADMIN_API_CLIENT_SECRET) {
+    process.env.STS_ADMIN_API_CLIENT_SECRET =
+      process.env.ADMIN_API_CLIENT_SECRET;
+  }
+  try {
+    process.env.STS_ADMIN_API_TOKEN =
+      await adminApiToken.tokenFor(instance.url);
+    log.info('replaced the /admin-api access token, which had ' +
+             Math.max(0, Math.round((expMs - Date.now()) / 60000)) +
+             ' minute(s) left — less than the next job may take');
+  } catch (e) {
+    log.warn('could not replace the /admin-api access token before it ' +
+             'expires: ' + e.message + '. Jobs from here on may answer 401.');
+  }
+  log.debug('Leaving refreshAdminApiToken().');
+}
+
 async function main() {
   log.debug('Entering main().');
   const opts = parseArgs(process.argv.slice(2));
@@ -1666,6 +1726,8 @@ async function main() {
           trusted = fresh;
         }
       }
+      await refreshAdminApiToken(instance,
+        Math.max(opts.timeoutMs, Number(job.timeoutMs) || 0));
       job.cwd = job.dir;
       job.cmd = [process.execPath, path.join(job.dir, job.file)];
       job.env = Object.assign({}, process.env, {

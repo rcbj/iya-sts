@@ -1714,14 +1714,18 @@ async function aClaimSetBelongsToItsRealm() {
 
   // The default realm's own token endpoint, which nothing in this section
   // configured.
+  // The client is named for this run: it is created in the DEFAULT realm,
+  // which a run does not clean up, so a fixed name met the previous run's
+  // client — holding the previous run's secret — on a long-lived service.
   const elsewhereUser = names.usernameFor("stsapi-elsewhere");
-  await ensureTokenParties(elsewhereUser, "claim-realm-elsewhere", true);
+  const elsewhereClient = "claim-realm-elsewhere-" + REALM;
+  await ensureTokenParties(elsewhereUser, elsewhereClient, true);
   const elsewhere = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=password&username=" + encodeURIComponent(elsewhereUser) +
         "&password=" + encodeURIComponent(MINT_PASSWORD) +
-        "&client_id=claim-realm-elsewhere" +
+        "&client_id=" + encodeURIComponent(elsewhereClient) +
         "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
         "&scope=openid"
   });
@@ -4475,24 +4479,27 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     "sentence somebody deploys against.");
 
   // A process-wide override, then a realm one. They take different branches
-  // and land in different places.
+  // and land in different places. The counters are compared as SNAPSHOTS —
+  // one status per node — for the reason above settleThenStatus().
+  const beforeWrites = await persistenceSnapshot();
   await ok("/config/set",
     { key: candidate.key, value: Number(candidate.value) + 2 },
     "set a process-wide setting to be persisted", true);
-  const afterProcess = await settleThenStatus(before);
-  assert.ok(afterProcess.writes > before.writes,
+  const afterProcess = await settleThenStatus(beforeWrites);
+  const wasProcess = comparable(beforeWrites, afterProcess);
+  assert.ok(afterProcess.writes > wasProcess.writes,
     "A PROCESS-WIDE SETTING CHANGE MUST REACH THE STORE. persistence.mode=" +
     before.mode + " and persistsAppconfig=" + before.persistsAppconfig +
-    ", and the write counter went from " + before.writes + " to " +
+    ", and the write counter went from " + wasProcess.writes + " to " +
     afterProcess.writes + ". The flush is scheduled rather than immediate, " +
     "so this waited for it; a counter that never moves means the override " +
     "store's slot in config.js is not filled.");
-  assert.strictEqual(afterProcess.failures, before.failures,
+  assert.strictEqual(afterProcess.failures, wasProcess.failures,
     "and the write must have SUCCEEDED. A failure is recorded rather than " +
     "thrown here — a mock that refused to start because a database blinked " +
     "would be the one failure mode a mock must not have — so the failure " +
     "counter is the only thing that says it did not work. It went from " +
-    before.failures + " to " + afterProcess.failures + ": " +
+    wasProcess.failures + " to " + afterProcess.failures + ": " +
     afterProcess.lastError);
   assert.strictEqual(afterProcess.pending, false,
     "and nothing should still be waiting to be written.");
@@ -4514,14 +4521,15 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     { id: REALM, key: "saml.issuer", value: "urn:test:" + REALM + ":stored" },
     "set a REALM setting to be persisted", true);
   const afterRealm = await settleThenStatus(beforeRealm);
-  assert.ok(afterRealm.writes > beforeRealm.writes,
+  const wasRealm = comparable(beforeRealm, afterRealm);
+  assert.ok(afterRealm.writes > wasRealm.writes,
     "A REALM'S OVERRIDES MUST REACH THE STORE TOO, and by a different route: " +
     "config.js decides whether an override is a realm's or the process's, " +
     "and persistence.js is TOLD which — a realm's lives on the realm row and " +
     "a process-wide one in the appconfig store, which are two different " +
     "files and two different tables. The counter went from " +
-    beforeRealm.writes + " to " + afterRealm.writes);
-  assert.strictEqual(afterRealm.failures, beforeRealm.failures,
+    wasRealm.writes + " to " + afterRealm.writes);
+  assert.strictEqual(afterRealm.failures, wasRealm.failures,
     "and that write must have succeeded too: " + afterRealm.lastError);
   assert.ok(afterRealm.realmsTracked >= 1,
     "and the store should be tracking at least this realm; it tracks " +
@@ -4537,7 +4545,8 @@ async function theConfigurationChangeReachesTheStore(candidate) {
            (before.dataDir || JSON.stringify(before.database)) + ". A " +
            "process-wide setting change and a realm setting change each " +
            "advanced the write counter with no failure and nothing left " +
-           "pending.");
+           "pending, compared node for node across " + afterRealm.nodes +
+           " node(s).");
   log.debug("Leaving theConfigurationChangeReachesTheStore().");
 }
 
@@ -4545,24 +4554,118 @@ async function theConfigurationChangeReachesTheStore(candidate) {
 // is `writeDelayMs` — the store's own, read off it rather than guessed — plus a
 // margin, and it polls rather than sleeping the whole time so that a fast store
 // does not cost the run a second.
+//
+// **BEHIND A LOAD BALANCER THE COUNTERS ARE EACH NODE'S OWN (2026-09-15, #51).**
+// `writes`, `failures` and `pending` are counted by the process that answers,
+// and with `STS_TEST_CLUSTER_NODES` above one every request may reach a
+// different node — so the AWS cluster run compared node A's counter before
+// with node B's after and reported it going from 2880 to 2393, about a store
+// that had written the setting. A status read is therefore a SNAPSHOT: one
+// status per node, keyed by the instant that node's replication started
+// (`replication.startedAt`, which no two processes share), collected until
+// every node has answered. `writes` and `failures` are SUMMED over the nodes
+// both snapshots saw, so a counter still only ever moves forward and "some
+// node wrote" is "the sum went up"; `pending` is any node's. With one node the
+// snapshot is the one status read and nothing is summed, so a single-node run
+// asserts exactly what it asserted before.
+const CLUSTER_NODES =
+  Math.max(1, Math.floor(Number(process.env.STS_TEST_CLUSTER_NODES) || 1));
+
+async function persistenceSnapshot() {
+  log.debug("Entering persistenceSnapshot().");
+  const byNode = {};
+  if (CLUSTER_NODES === 1) {
+    byNode.self = (await get("/persistence", true)).body.status;
+    log.debug("Leaving persistenceSnapshot(). One node.");
+    return snapshotOf(byNode);
+  }
+  // Each read reaches one node the balancer chose, so reading until every
+  // node has answered takes more reads than there are nodes; the cap turns a
+  // node that never answers into a failure naming how many did.
+  const maxReads = CLUSTER_NODES * 25;
+  for (let i = 0; i < maxReads &&
+       Object.keys(byNode).length < CLUSTER_NODES; i++) {
+    const status = (await get("/persistence", true)).body.status;
+    const key = status && status.replication && status.replication.startedAt;
+    assert.ok(key,
+      "IN THE CLUSTER MODE A PERSISTENCE STATUS MUST SAY WHICH PROCESS " +
+      "ANSWERED, and this one carries no replication.startedAt — so its " +
+      "counters cannot be told apart from another node's. " +
+      JSON.stringify(status && status.replication));
+    byNode[String(key)] = status;
+  }
+  assert.strictEqual(Object.keys(byNode).length, CLUSTER_NODES,
+    "the persistence status should have been answered by all " +
+    CLUSTER_NODES + " node(s) (STS_TEST_CLUSTER_NODES) within " + maxReads +
+    " reads, and only " + Object.keys(byNode).length + " answered: " +
+    Object.keys(byNode).join(", "));
+  log.debug("Leaving persistenceSnapshot(). " + CLUSTER_NODES + " nodes.");
+  return snapshotOf(byNode);
+}
+
+// The figures the assertions read, from a snapshot — summed over the nodes
+// `previous` also saw when it is given, so a node answering only one of the
+// two snapshots is never counted against the other.
+function snapshotOf(byNode, previous) {
+  log.debug("Entering snapshotOf().");
+  const keys = Object.keys(byNode).filter(function (key) {
+    return !previous || Object.prototype.hasOwnProperty.call(previous.byNode,
+                                                             key);
+  });
+  const statuses = keys.map(function (key) { return byNode[key]; });
+  const sum = function (member) {
+    return statuses.reduce(function (total, status) {
+      return total + Number(status[member] || 0);
+    }, 0);
+  };
+  const failing = statuses.filter(function (status) {
+    return status.lastError;
+  });
+  const snapshot = {
+    byNode: byNode,
+    nodes: keys.length,
+    writes: sum("writes"),
+    failures: sum("failures"),
+    pending: statuses.some(function (status) { return !!status.pending; }),
+    lastError: failing.length ? failing[0].lastError : null,
+    realmsTracked: statuses.reduce(function (most, status) {
+      return Math.max(most, Number(status.realmsTracked || 0));
+    }, 0)
+  };
+  log.debug("Leaving snapshotOf().");
+  return snapshot;
+}
+
+// `previous` re-summed over the nodes `current` saw, so the two are compared
+// node for node.
+function comparable(previous, current) {
+  log.debug("Entering comparable().");
+  log.debug("Leaving comparable().");
+  return snapshotOf(previous.byNode, current);
+}
+
 async function settleThenStatus(previous) {
   log.debug("Entering settleThenStatus().");
-  const budget = Math.max(3000, Number(previous.writeDelayMs || 0) * 3);
+  const first = previous.byNode[Object.keys(previous.byNode)[0]];
+  const budget = Math.max(CLUSTER_NODES === 1 ? 3000 : 20000,
+                          Number(first.writeDelayMs || 0) * 3);
   const until = Date.now() + budget;
-  let status = previous;
+  let snapshot = previous;
   while (Date.now() < until) {
     await new Promise(function (resolve) { setTimeout(resolve, 150); });
-    status = (await get("/persistence", true)).body.status;
-    if (!status.pending && status.writes > previous.writes) {
+    const read = await persistenceSnapshot();
+    snapshot = snapshotOf(read.byNode, previous);
+    const was = comparable(previous, snapshot);
+    if (!snapshot.pending && snapshot.writes > was.writes) {
       break;
     }
-    if (status.failures > previous.failures) {
+    if (snapshot.failures > was.failures) {
       break;
     }
   }
-  log.debug("Leaving settleThenStatus(). writes=" + status.writes +
-            ", pending=" + status.pending);
-  return status;
+  log.debug("Leaving settleThenStatus(). writes=" + snapshot.writes +
+            ", pending=" + snapshot.pending);
+  return snapshot;
 }
 
 // ---------------------------------------------------------------------------

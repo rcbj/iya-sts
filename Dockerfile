@@ -193,6 +193,38 @@ RUN mkdir -p /opt/sts-sdk \
     && npm cache clean --force
 ENV NODE_PATH=/opt/sts-sdk/node_modules
 # ---------------------------------------------------------------------------
+# A CLOUD SDK AND A DATABASE CA, FOR AN IMAGE THAT RUNS IN A CLOUD (2026-09-15).
+#
+# The paragraph above leaves the three cloud SDKs out, and for THIS stack that
+# is still right. `deploy/aws/` (issue #51) runs the same image on ECS against
+# AWS Secrets Manager and RDS, so it needs `@aws-sdk/client-secrets-manager`
+# and the RDS certificate bundle — and "a deployment runs one `npm install` in
+# its own image" is exactly what these two build arguments are, spelt once
+# here rather than in a second Dockerfile that would drift from this one.
+#
+# * `STS_CLOUD_SDKS` — space-separated package names, installed into the same
+#   prefix as node-vault (npm's peer rule above applies to them too). Empty by
+#   default, so the image every other launcher builds is unchanged.
+# * `STS_DATABASE_CA_URL` — a PEM bundle fetched into
+#   /opt/sts-sdk/database-ca.pem. Node reads it through `NODE_EXTRA_CA_CERTS`,
+#   which the deployment sets; this service has no CA-file setting of its own
+#   for the database (`persistence/CLAUDE.md`). Fetched at BUILD time, so a
+#   container never needs the network to trust its own database.
+# ---------------------------------------------------------------------------
+ARG STS_CLOUD_SDKS=
+ARG STS_DATABASE_CA_URL=
+RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
+    then \
+      cd /opt/sts-sdk \
+      && npm install --omit=dev ${STS_CLOUD_SDKS} \
+      && npm cache clean --force; \
+    fi \
+    && if [ -n "${STS_DATABASE_CA_URL}" ]; \
+    then \
+      curl -fsSL "${STS_DATABASE_CA_URL}" -o /opt/sts-sdk/database-ca.pem \
+      && grep -q 'BEGIN CERTIFICATE' /opt/sts-sdk/database-ca.pem; \
+    fi
+# ---------------------------------------------------------------------------
 # AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
 #
 # `tests/` is in the build context since 2026-08-29 and it is not here by
@@ -250,8 +282,10 @@ ENV NODE_PATH=/opt/sts-sdk/node_modules
 # docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
 # read the test compose file. Excluded from the context, all three failed with
 # ENOENT in the first ./docker-run-tests.sh run that reached them.
+# `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
+# from a workstation or CI and never by the service.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
-           ./.github ./docs ./docker-compose-run-tests.yml
+           ./.github ./docs ./docker-compose-run-tests.yml ./deploy
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory
