@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# THE PUBLIC FRONT DOOR: AN NLB, 443 → 8081, TLS PASSED THROUGH.
+#
+# Network and not application load balancer, because mock-sts terminates its
+# own TLS and some of what it serves is mutual TLS: a client certificate only
+# reaches the service if the TCP stream does. Each node presents its own leaf
+# and every leaf chains to the cluster's one Root (tls/CLAUDE.md), so a client
+# that trusts the Root trusts whichever node it lands on.
+#
+# PROXY PROTOCOL V2 ON, CLIENT-IP PRESERVATION OFF. With preservation on, the
+# node sees the client's address as its peer and refuses it as an untrusted
+# proxy; with v2 on, the NLB's address is the peer and the header carries the
+# client's. `STS_TRUSTED_PROXIES` is the public subnets, where the NLB's
+# addresses are.
+#
+# CROSS-ZONE ON. Without it an NLB address in one AZ reaches only that AZ's
+# node, and `sts_cluster_alternation` — which requires every node to answer —
+# would see one.
+# ---------------------------------------------------------------------------
+resource "aws_lb" "main" {
+  name                             = local.prefix
+  load_balancer_type               = "network"
+  internal                         = false
+  subnets                          = aws_subnet.public[*].id
+  security_groups                  = [aws_security_group.nlb.id]
+  enable_cross_zone_load_balancing = true
+  enable_deletion_protection       = false
+}
+
+resource "aws_lb_target_group" "nodes" {
+  name                   = "${local.prefix}-8081"
+  port                   = local.container_port
+  protocol               = "TCP"
+  target_type            = "ip"
+  vpc_id                 = aws_vpc.main.id
+  proxy_protocol_v2      = true
+  preserve_client_ip     = "false"
+  deregistration_delay   = 30
+  connection_termination = true
+
+  # A TCP connect. mock-sts accepts the PROXY v2 LOCAL header the NLB sends on
+  # a health check, and counts a connection closed with no data as a probe.
+  health_check {
+    protocol            = "TCP"
+    port                = "traffic-port"
+    interval            = 10
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.nodes.arn
+  }
+}
