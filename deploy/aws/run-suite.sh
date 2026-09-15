@@ -29,6 +29,13 @@
 # from tests/vendored/MANIFEST.js minus those four, so a job added there runs
 # here without this file being edited.
 #
+# THE PER-JOB WATCHDOG IS TWENTY MINUTES, NOT THE RUNNER'S FIVE. Every request
+# crosses the internet on a new TLS connection (so the balancer spreads them),
+# and the first run against AWS lost eight jobs — the cluster alternation job
+# among them, passing its checks — to the 300-second default rather than to any
+# assertion. STS_SUITE_JOB_TIMEOUT_MS overrides it; a job whose manifest entry
+# asks for longer keeps its own.
+#
 # STS_SUITE_EXCLUDE adds more (comma-separated file names), e.g. the two
 # remaining bulk loads for a faster run:
 #   STS_SUITE_EXCLUDE=sts_directory_bulk_load_scim.js,sts_directory_bulk_load_api.js
@@ -89,6 +96,12 @@ ONLY="$(EXCLUDE="${EXCLUDE}" node -e '
     .filter(function (f) { return !skip.has(f); });
   process.stdout.write(jobs.join(","));
 ')"
+# STS_SUITE_ONLY replaces the computed list — for re-running the jobs a
+# previous run failed without paying for the ones that passed.
+if [ -n "${STS_SUITE_ONLY:-}" ];
+then
+  ONLY="${STS_SUITE_ONLY}"
+fi
 echo "run-suite: $(echo "${ONLY}" | tr ',' '\n' | wc -l) job(s); excluded ${EXCLUDE}."
 
 mkdir -p "${REPORT_DIR}"
@@ -101,6 +114,7 @@ STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
 STS_PUBLIC_BASE_URL="${URL}" \
   node tests/tools/run-report.js --protocol=only \
     --service-url="${URL}" \
+    --timeout="${STS_SUITE_JOB_TIMEOUT_MS:-1200000}" \
     --report-dir="${REPORT_DIR}" \
     --only="${ONLY}"
 rc=$?

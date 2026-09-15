@@ -408,10 +408,6 @@ async function test() {
   await ok(realmApi + "/scep/add-host-name",
            { kind: "person", identifier: ALICE, hostName: HOST },
            "registered a host name on " + ALICE);
-  // Made now and redeemed last, when its sixty seconds have run out.
-  const startedAt = Date.now();
-  const expiring = await challengeFor(realmApi, "person", ALICE, "tls-client",
-                                      60);
 
   // -------------------------------------------------------------------------
   log.info("=== 1. GetCACaps, GetCACert and the HTTP refusals ===");
@@ -992,6 +988,17 @@ async function test() {
           assert.ok(throttled, "no request was throttled");
           assert.ok(Number(throttled.r.headers.get("retry-after")) > 0);
         });
+  // THE EXPIRING CHALLENGE IS MADE HERE, AFTER THE LAST OTHER CHALLENGE FOR
+  // ALICE, AND NOT AT THE TOP (2026-09-15, issue #51). Creating a challenge
+  // keeps only the entry's LIVE ones, so a challenge that has already expired
+  // is pruned by the next one made for the same person. Made at the top, it
+  // survived only while everything above ran inside its sixty seconds — true
+  // against a local stack, false against a cluster across the internet, where
+  // `throttle` was created after it expired and the redemption below was
+  // (correctly) refused as unknown, STS-ENROLL-0083, instead of expired.
+  const startedAt = Date.now();
+  const expiring = await challengeFor(realmApi, "person", ALICE, "tls-client",
+                                      60);
   const waitMs = startedAt + 62000 - Date.now();
   if (waitMs > 0) {
     log.info("  waiting " + Math.ceil(waitMs / 1000) + "s for a sixty-second " +
