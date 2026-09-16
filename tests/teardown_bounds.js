@@ -225,27 +225,9 @@ function checkTheLauncherIsBounded(t) {
           'it runs against the stopped stack, so the case worth having a ' +
           'log for is the case where this call is the one that hangs');
 
-  // ------------------------------------------------------------------------
-  // AND THE OTHER LAUNCHER, WHICH IS NOT WHAT CI RUNS AND IS BOUNDED ANYWAY.
-  //
-  // ./local-run-tests.sh brings up ONE service and drives it from the
-  // developer's own machine, so its `up` is detached and it has no stop phase
-  // to wedge in. What it does have is the same three `down` calls, reached by
-  // the same trap — the incident cost CI a green suite and would cost a
-  // developer a terminal that never comes back. The helper is shared, so
-  // bounding one launcher and not the other would be a decision nobody made.
-  // ------------------------------------------------------------------------
-  const local = read('local-run-tests.sh');
-  const localUnbounded = local.split('\n').filter(function (line) {
-    return /docker_compose\s+"\$\{COMPOSE_FILE_ARGS\[@\]\}"[^|]*down|^\s*docker_compose\s+"\$\{COMPOSE_FILE_ARGS\[@\]\}" --profile xacml\s*\\$/
-      .test(line);
-  });
-  t.check(localUnbounded.length === 0 &&
-          /STS_TEARDOWN_TIMEOUT="\$\{STS_TEARDOWN_TIMEOUT:-\d+\}"/.test(local),
-          './local-run-tests.sh bounds its three teardowns too',
-          'same helper, same trap, same failure — a `down` that never ' +
-          'returns after the run has finished; found: ' +
-          localUnbounded.join(' | '));
+  // There was a second launcher here, ./local-run-tests.sh, with the same
+  // three `down` calls and its own bound. It was removed on 2026-09-16 (#50):
+  // ./docker-run-tests.sh is the one way the whole suite runs.
   log.debug("Leaving checkTheLauncherIsBounded().");
 }
 

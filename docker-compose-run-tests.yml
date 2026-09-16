@@ -11,24 +11,26 @@
 # them down again.
 #
 # THE HOST NEEDS DOCKER AND NOTHING ELSE — no node, no npm install, no Chrome,
-# no checkout of the parent project. That is the whole reason this file exists
-# beside ./local-run-tests.sh, which is the fast development loop and needs all
-# four.
+# no checkout of the parent project. That is why this file existed beside
+# ./local-run-tests.sh, the host-run loop that needed all four, and why it is
+# the whole suite's only stack since that launcher was removed (2026-09-16):
+# #50 compiles part of the service only inside an image build.
 #
 # ---------------------------------------------------------------------------
-# THE THREE COMPOSE FILES IN THIS REPOSITORY, AND WHICH ONE TO REACH FOR.
+# THE COMPOSE FILES IN THIS REPOSITORY, AND WHICH ONE TO REACH FOR.
 #
 #   docker-compose.yml            an operator's mock: the service plus postgres,
 #                                 persisting, on 8081, container `sts`. What
 #                                 `docker compose up` in this directory gives.
-#   docker-compose.yml + a free   ./local-run-tests.sh — the SERVICE in a
-#   port, project mock-sts-tests  container, the tests as plain node processes
-#                                 on the developer's machine, driving the
-#                                 machine's own Chrome.
 #   THIS FILE                     ./docker-run-tests.sh — service AND tests in
-#                                 containers. What CI runs.
+#                                 containers. What CI runs. ./run-coverage.sh
+#                                 runs its `tests` service alone.
 #
-# The three never collide, and that is by construction rather than by luck:
+# There was a third use until 2026-09-16: ./local-run-tests.sh brought
+# docker-compose.yml up on a free port as project mock-sts-tests and drove it
+# from host processes. That launcher is gone.
+#
+# They never collide, and that is by construction rather than by luck:
 # each run is its own compose PROJECT with its own container names, and this
 # one publishes NO PORTS AT ALL (see the `sts` service). A test run must never
 # be able to take down, or take the port of, a mock somebody is using.
@@ -59,8 +61,12 @@
 #   **What is unchecked here is the remote PEP end to end**: what stands on this
 #   stack is tests/xacml_pep.js (that container's modules, in a child process,
 #   no HTTP) and sts_xacml_endpoints.js (the three PEP endpoints, with the TEST
-#   impersonating a PEP), both one-sided by construction. ./local-run-tests.sh
-#   runs the container job, and that is the stack the seam is driven on.
+#   impersonating a PEP), both one-sided by construction.
+#   **THAT SKIP IS NOW THE FALLBACK, NOT THIS STACK'S CASE**: the `xacml-pep`
+#   service below is the container, brought up by the launcher, and the job
+#   drives it over XACML_PEP_URL — tests/vendored/MANIFEST.js's `docker: true`
+#   note says when the skip still happens. (./local-run-tests.sh used to be
+#   the only stack that drove the seam; it was removed on 2026-09-16.)
 #
 #   Mounting the daemon's socket in here would close both gaps and is NOT done
 #   on a judgement rather than an oversight: this container carries a Chrome and
@@ -456,13 +462,14 @@ services:
     # anyway.
     #
     # IT COSTS `memory` MODE A DATABASE IT NEVER DIALS, and that is deliberate
-    # rather than overlooked. ./local-run-tests.sh suppresses it there with
-    # `--no-deps`, which works because that launcher starts exactly one service;
-    # this one also runs `up` over the whole file to start the runner, so the
-    # same suppression would have to be a hand-written list of services that
-    # goes stale the moment one is added. A database nothing connects to is a
-    # few seconds and no behaviour — STS_PERSISTENCE_MODE is what decides
-    # whether this service opens a store, and in `memory` it opens none.
+    # rather than overlooked. ./local-run-tests.sh (removed 2026-09-16)
+    # suppressed it on its own stack with `--no-deps`, which worked because that
+    # launcher started exactly one service; this one also runs `up` over the
+    # whole file to start the runner, so the same suppression would have to be
+    # a hand-written list of services that goes stale the moment one is added.
+    # A database nothing connects to is a few seconds and no behaviour —
+    # STS_PERSISTENCE_MODE is what decides whether this service opens a
+    # store, and in `memory` it opens none.
     depends_on:
       postgres:
         condition: service_healthy
@@ -648,12 +655,12 @@ services:
       # the same reason XACML_PEP_URL below names a container and not a
       # published port.
       #
-      # **./local-run-tests.sh has to work harder for this and that asymmetry
-      # is the point.** Over there the runner is a host process, so the socket
-      # must be published — and `docker-compose.yml` deliberately does not
+      # **./local-run-tests.sh had to work harder for this, until it was
+      # removed (2026-09-16).** Its runner was a host process, so the socket
+      # had to be published — and `docker-compose.yml` deliberately does not
       # publish it, because 389 is the assigned LDAP port and the host most
       # likely to want a mock directory is a host already running slapd. That
-      # launcher layers `tests/docker-compose-ldap.yml` with a free host port.
+      # launcher layered `tests/docker-compose-ldap.yml` with a free host port.
       # Here one line does it.
       #
       # `sts` is the hostname of the service in this file and 389 is the
@@ -712,11 +719,11 @@ services:
       # `./docker-run-tests.sh` has been putting this in its compose
       # environment since the anchor existed, and this file never named it —
       # so compose dropped it and the variable reached the runner in
-      # ./local-run-tests.sh alone, where the runner is a host process that
-      # inherits the shell. The job says so rather than failing
-      # ("XACML_PEP_CA_PEM is not set, so this job cannot put the PEP back"),
-      # which is exactly why nobody noticed: it degrades in the launcher CI
-      # runs and works in the one a developer runs.
+      # ./local-run-tests.sh alone (removed 2026-09-16), where the runner was
+      # a host process that inherited the shell. The job says so rather than
+      # failing ("XACML_PEP_CA_PEM is not set, so this job cannot put the PEP
+      # back"), which is exactly why nobody noticed: it degrades in the launcher
+      # CI runs and works in the one a developer runs.
       #
       # What it is for: the truststore is a Map in the service's process and
       # `POST /tls/trust/clear` needs no credential, so any job may empty it.
@@ -762,10 +769,10 @@ services:
     shm_size: '2gb'
     volumes:
       # THE REPORT, OUT ONTO THE HOST. tests/report/ is gitignored and is where
-      # ./local-run-tests.sh writes too, so a containerized run and a local one
-      # leave the same thing in the same place — including `latest`, which is
-      # what CI uploads. Written by root inside the container, which is why the
-      # workflow chowns it before the upload step reads it.
+      # ./run-coverage.sh writes too, so every run leaves its report in the
+      # same place — including `latest`, which is what CI uploads. Written by
+      # root inside the container, which is why the workflow chowns it before
+      # the upload step reads it.
       - ./tests/report:/usr/src/sts/tests/report
     depends_on:
       sts:

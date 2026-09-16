@@ -671,8 +671,9 @@ binding long enough to be truncated, and the `saml2.*` settings turned off one a
 a time — especially `signAssertion`, since an unsigned assertion being ACCEPTED
 by a service provider is the finding that matters and no happy path shows it.
 
-**`./local-run-tests.sh --saml-only=sts` IS THE FAST LOOP** and needs no
-Keycloak at all — four SAML 2.0 jobs and the SAML 1.1 one, against this service
+**The parent project's `../id-proto-debugger/local-run-tests.sh --saml-only=sts`
+IS THE FAST LOOP** (that launcher, not this repository's of the same name,
+which was removed on 2026-09-16) and needs no Keycloak at all — four SAML 2.0 jobs and the SAML 1.1 one, against this service
 alone.
 
 **`tests/saml_encrypted_sso.js` IS DELIBERATELY NOT PAIRED**, and that is a

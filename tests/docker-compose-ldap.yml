@@ -6,9 +6,13 @@
 # memberships over RFC 4511 on the raw socket. Under `./docker-run-tests.sh` it
 # needs nothing: the runner is a container on the bridge with the service and
 # reaches `ldap://sts:389` with no port published anywhere. Under
-# `./local-run-tests.sh` the runner is a HOST PROCESS and the service is a
-# container, so the socket has to be reachable from the host — and
+# `./local-run-tests.sh` the runner was a HOST PROCESS and the service a
+# container, so the socket had to be reachable from the host — and
 # `docker-compose.yml` deliberately does not publish it.
+#
+# **NO LAUNCHER LAYERS THIS FILE SINCE 2026-09-16**, when
+# `./local-run-tests.sh` was removed. It is kept for the hand run at the end of
+# the next section, which is the one use it still has.
 #
 # ---------------------------------------------------------------------------
 # WHY THAT FILE DOES NOT, AND WHY THIS IS AN OVERRIDE RATHER THAN AN EDIT TO IT.
@@ -30,10 +34,11 @@
 # ---------------------------------------------------------------------------
 # THE HOST PORT IS PICKED AT RUN TIME AND IS NOT 389.
 #
-# `./local-run-tests.sh` chooses a free port above 11389 with the same
-# `freePort()` it uses for the service's own 8081 and the remote PEP's 9090, and
-# passes it in as `STS_LDAP_HOST_PORT`. Two runs on one machine therefore do not
-# collide with each other, and neither collides with a real directory on 389.
+# `./local-run-tests.sh` chose a free port above 11389 with the same
+# `freePort()` it used for the service's own 8081 and the remote PEP's 9090,
+# and passed it in as `STS_LDAP_HOST_PORT`. Two runs on one machine therefore
+# did not collide with each other, and neither collided with a real directory
+# on 389.
 # The CONTAINER side stays 389: the service runs as root in that image and binds
 # the assigned port directly, and `LDAP_PORT` is for a run outside a container.
 #

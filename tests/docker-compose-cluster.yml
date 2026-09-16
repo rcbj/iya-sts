@@ -3,6 +3,11 @@
 # docker-compose.yml AND tests/docker-compose-ldap.yml BY ./local-run-tests.sh
 # (2026-09-14, issue #46).
 #
+# **NO LAUNCHER LAYERS IT SINCE 2026-09-16**, when ./local-run-tests.sh was
+# removed. `./docker-run-tests.sh --modes=cluster` runs the mode from
+# tests/docker-compose-run-tests-cluster.yml instead; "the launcher" below is
+# the removed one.
+#
 # TWO NODES OF THIS SERVICE AGAINST ONE POSTGRES AND ONE OPENBAO, ACTIVE-ACTIVE,
 # BEHIND AN L4 LOAD BALANCER THAT OWNS EVERY PUBLISHED PORT. What the mode
 # proves and what it does not is in tests/CLAUDE.md; the balancer's own

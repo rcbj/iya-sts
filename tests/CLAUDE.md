@@ -14,7 +14,7 @@ first or the rest of this file will read as though it contradicts itself:
 Everything this file says about what belongs HERE is about the first row. The
 COPIES in the second row are argued in `tests/vendored/MANIFEST.js`, and the
 rule that governs them is `common/vendored/`'s: **edit the parent's copy, then
-`./local-run-tests.sh --vendor-sync`.** A fix made in `tests/vendored/` is
+`node tests/tools/vendor-check.js --sync`.** A fix made in `tests/vendored/` is
 overwritten by the next sync and never reaches the stack that gates that
 project.
 
@@ -37,8 +37,9 @@ suite until 2026-08-28 and were deleted there that day, on the argument that a
 test asserting something about this console belongs in the tree where a control
 is ADDED to that console — the tree that should go red when the control loses
 its operation. **There is no copy of them over there to sync from**, which is
-what the flag is for: `allFiles()` leaves them out, so `--vendor-check` cannot
-report them GONE UPSTREAM and `--vendor-sync` cannot overwrite them. They are
+what the flag is for: `allFiles()` leaves them out, so
+`tools/vendor-check.js` cannot report them GONE UPSTREAM and its `--sync`
+cannot overwrite them. They are
 edited HERE, and only here.
 
 **THE FIFTH WAS NEVER OVER THERE AND IT BREAKS ONE RULE ON PURPOSE.**
@@ -116,12 +117,14 @@ are worth knowing because neither is about testing:
 * `tests/docker-compose-ldap.yml` publishes 389 for the test stack and for
   nothing else. `./docker-run-tests.sh` needs none of it — its runner is a
   container on the bridge with the service — but `./local-run-tests.sh`'s
-  runner is a host process, and `docker-compose.yml` deliberately publishes
+  runner was a host process, and `docker-compose.yml` deliberately publishes
   neither 389 nor 636, because the host most likely to want a mock directory is
-  a host already running slapd. That launcher picks a free host port with the
-  same `freePort()` it uses for 8081, layers the override, and exports
-  `STS_LDAP_URL`. The THIRD arrangement is the throwaway service
-  (`--no-docker`, and every coverage run), where `run-report.js` builds the URL
+  a host already running slapd. That launcher picked a free host port with the
+  same `freePort()` it used for 8081, layered the override, and exported
+  `STS_LDAP_URL`. **No launcher layers the file since that one was removed
+  (2026-09-16)**; it is kept for a hand run. The other arrangement still in
+  use is the throwaway service (every coverage run, and a bare
+  `run-report.js`), where `run-report.js` builds the URL
   from `instance.ports.LDAP_PORT` — by NAME rather than as an offset from the
   base, so a listener added to or removed from the middle of that block cannot
   silently move it.
@@ -186,7 +189,7 @@ promise that can hang is the one failure a suite cannot report about itself.
 **THE LDAP JOB IS NOT MARKED `docker: true` AND THAT IS DELIBERATE.** That flag
 is for a job needing a DAEMON, and this one needs a PORT. Run with neither
 launcher and no `STS_LDAP_URL`, it FAILS on its own connect, naming the
-variable and both launchers — it is never skipped, because the socket is the
+variable and the launcher — it is never skipped, because the socket is the
 thing under test and a job reporting green having driven nothing is worse than
 one that is honestly absent.
 
@@ -266,9 +269,10 @@ load in 2.6 seconds.
 RUNNER.** `./docker-run-tests.sh` puts the suite INSIDE a container with no
 docker socket in it, deliberately — that file argues why where it also excludes
 the parent suite's postgres job — so a job that started its own PEP could never
-run in the stack that gates this repository. Both launchers therefore bring one
-up beside the service and hand the job three variables; the job shells out to
-nothing at all, and **the same test runs in both stacks**.
+run in the stack that gates this repository. The launcher therefore brings one
+up beside the service and hands the job three variables; the job shells out to
+nothing at all. (`./local-run-tests.sh` did the same until it was removed on
+2026-09-16, and **the same test ran in both stacks**.)
 
 It needs a docker daemon only when NEITHER launcher is involved — a bare
 `node tests/tools/run-report.js`, or a coverage run, both of which drive a
@@ -381,8 +385,9 @@ and the modify handler's change loop were exercised by nothing anywhere. `docker
 636 — the host most likely to want a mock directory is a host already running
 slapd — so the parent's stacks cannot reach it and this one has to arrange it:
 the containerized runner is on the bridge and needs nothing,
-`./local-run-tests.sh` layers `tests/docker-compose-ldap.yml` on a free host
-port, and the throwaway service hands its own `LDAP_PORT` over. **It is not
+the throwaway service hands its own `LDAP_PORT` over, and
+`./local-run-tests.sh` layered `tests/docker-compose-ldap.yml` on a free host
+port until it was removed on 2026-09-16. **It is not
 `docker: true`** — that flag is for a job needing a DAEMON, and this one needs
 a PORT — so with neither launcher it FAILS naming the variable rather than
 reporting green having driven nothing.
@@ -390,12 +395,19 @@ reporting green having driven nothing.
 ## Running it
 
 ```bash
-npm test              # from the repository root
-LOG_LEVEL=debug npm test
-node tests/run.js     # the same thing
-node tests/run.js --only=ldif      # one file, by any part of its name
-node tests/run.js --list           # what there is
+./docker-npm-test.sh                 # from the repository root (#50)
+./docker-npm-test.sh --only=ldif     # one file, by any part of its name
+./docker-npm-test.sh --list          # what there is
 ```
+
+**IN THE TESTS IMAGE SINCE 2026-09-16 (#50).** Part of the service is
+TypeScript and is compiled only inside an image build, so `npm test` and
+`node tests/run.js` on a checkout refuse (`common/compiled_tree.js`,
+`STS-CORE-0093`) rather than dying at the first converted module.
+`docker-npm-test.sh` builds `tests/Dockerfile` (which compiles the tree) under
+a tag of its own and runs `npm test -- <args>` in a throwaway container.
+Inside it, `npm test` and `node tests/run.js` are what they always were, and
+what the paragraphs below describe.
 
 It needs `npm install` to have been run (it uses `bunyan`, a normal dependency)
 and **nothing else** — no fixed port, no container, no browser, no network. The
@@ -408,8 +420,14 @@ belongs in the parent suite.
 
 **That paragraph is about `npm test` and the files in this directory.** The
 VENDORED half does need a stack, a browser and a second npm package
-(`tests/package.json` — see below); it is reached by `./local-run-tests.sh` and
-never by `npm test`.
+(`tests/package.json` — see below); it is reached by `./docker-run-tests.sh`
+and `./run-coverage.sh`, and never by `npm test`.
+
+**Since #50 neither half runs on a checkout.** Part of the service is
+TypeScript compiled only inside an image build, so `npm test` refuses there
+(`common/compiled_tree.js`, STS-CORE-0093) and `./docker-npm-test.sh` runs it
+in the tests image instead — `./docker-npm-test.sh --only=<substring>`,
+`./docker-npm-test.sh --list`.
 
 **`--only` IS A FILTER OVER THE DISCOVERED LIST, NOT A LIST**, which is the
 distinction the design of `run.js` turns on — there is still nothing to keep up
@@ -419,46 +437,48 @@ because a typo in a filter must never read as "everything passed".
 ### The report, and where the tooling lives
 
 ```bash
-./local-run-tests.sh                 # EVERY job, with a report written —
-                                     # the service in a container built from
-                                     # this working tree
-./local-run-tests.sh --no-docker     # the same, with the service run on this
-                                     # machine
-./local-run-tests.sh --keep-stack    # leave the container up afterwards
-./local-run-tests.sh --no-protocol   # only the in-process files
-./local-run-tests.sh --only=crypto --open
-./local-run-tests.sh --vendor-check  # is tests/vendored/ still in sync?
-./local-run-tests.sh --vendor-sync   # re-copy the parent's files over it
-./docker-run-tests.sh                # the same jobs with the RUNNER in a
-                                     # container too: docker and nothing else
-./run-coverage.sh                    # the same set, with coverage collected —
-                                     # in a container too, with the RUNNER in
-                                     # it rather than the service, because V8
-                                     # collects from inside the process it
-                                     # measures. --no-docker is the host run
+./docker-run-tests.sh                # EVERY job, with a report written — the
+                                     # service AND the runner in containers
+                                     # built from this working tree
+./docker-run-tests.sh --modes=memory # one mode of tools/modes.sh, not all
+                                     # three; --modes=cluster is the fourth
+./docker-run-tests.sh --no-build     # reuse the images already built
+./docker-run-tests.sh --only=crypto --no-browser
+                                     # anything else goes to run-report.js
+./docker-npm-test.sh                 # only the in-process files, in the
+                                     # tests image (--only=<substring>, --list)
+./run-coverage.sh                    # coverage, on its own — the RUNNER in a
+                                     # container and the service its child,
+                                     # because V8 collects from inside the
+                                     # process it measures
+node tests/tools/vendor-check.js         # is tests/vendored/ still in sync?
+node tests/tools/vendor-check.js --sync  # re-copy the parent's files over it
 ```
 
-**`./docker-run-tests.sh` IS THE SAME SUITE AND A DIFFERENT ENVIRONMENT**, and
-the two files in this directory that serve it are not tests: `Dockerfile`
+`vendor-check.js` needs the parent project checked out beside this one (or
+`--parent=<dir>`) and this repository's `npm install`; it reads files and runs
+nothing of the parent's. `./local-run-tests.sh`, which carried all of these as
+options, was removed on 2026-09-16.
+
+**`./docker-run-tests.sh` IS THE WHOLE SUITE**, and the two files in this
+directory that serve it are not tests: `Dockerfile`
 (node, a Chrome and this working tree, built with the repository root's
 `.dockerignore` — see below) and `run-tests-in-container.sh` (the image's CMD —
 wait for the service, then `tools/run-report.js --service-url=https://sts:8081`).
 `../docker-compose-run-tests.yml` brings the pair up.
 
-Which to reach for: **this one when the question is the environment**, because
-it needs docker and nothing else and is what CI runs, so a failure here and a
-pass locally is a difference in node, in an installed package or in the image;
-**`./local-run-tests.sh` when the question is a test**, because there the jobs
-are node processes on this machine and re-running one costs nothing where here
-it costs an image build. The jobs, the runner and the report are the same in
-both.
+There were two launchers until 2026-09-16: this one for the environment, and
+`./local-run-tests.sh` — the jobs as node processes on the host, the
+development loop — for a test. #50 ended the second, because a job run on a
+checkout meets the refusal above, so re-running one job is now
+`./docker-run-tests.sh --only=<job> --modes=memory` and costs an image build
+(`--no-build` when the service has not changed).
 
-`./local-run-tests.sh` is this repository's answer to the parent project's
-launcher of the same name, and `tests/tools/run-report.js` is what it drives.
-It writes `tests/report/<mode>/<timestamp>/` — `report.html`, JUnit
+`tests/tools/run-report.js` is what the launcher drives, inside the tests
+container. It writes `tests/report/<mode>/<timestamp>/` — `report.html`, JUnit
 `report.xml`, `summary.json` and one log per job — and points
 `tests/report/<mode>/latest` at it. Both are gitignored. **The `<mode>` segment
-is the mode matrix's and both launchers pass it as `--report-dir`**, so the
+is the mode matrix's and the launcher passes it as `--report-dir`**, so the
 bare `tests/report/latest` is not any current run's report; three places named
 it anyway until 2026-09-07 (both launchers' log capture, and the CI workflow's
 upload, which had therefore been uploading nothing at all).
@@ -469,8 +489,8 @@ READ.**
 
 | File | What it is | Where it comes from |
 |---|---|---|
-| `logs/00-mock-sts-service.log` | the mock's own account of what it issued | `run-report.js` writes it in `--no-docker` mode, where it started the service itself; otherwise the launcher takes it out of `docker compose logs sts` before the teardown removes the container |
-| `logs/00-test-runner.log` | **the RUNNER's own output** — which jobs it chose, the ones it could not start and why, the reason a job was reported SKIPPED, the summary | `./docker-run-tests.sh` takes it out of `docker compose logs tests`, because there the runner IS a container; `./local-run-tests.sh` tees it, because there it is a node process |
+| `logs/00-mock-sts-service.log` | the mock's own account of what it issued | `run-report.js` writes it when it started the service itself (a coverage run, or a bare run); otherwise the launcher takes it out of `docker compose logs sts` before the teardown removes the container |
+| `logs/00-test-runner.log` | **the RUNNER's own output** — which jobs it chose, the ones it could not start and why, the reason a job was reported SKIPPED, the summary | `./docker-run-tests.sh` takes it out of `docker compose logs tests`, because there the runner IS a container (`./local-run-tests.sh` tee'd it, until it was removed on 2026-09-16) |
 
 **THE SECOND ONE IS NOT THE JOBS' LOGS AND THAT IS THE WHOLE REASON IT EXISTS.**
 `logs/NN-<job>.log` holds the JOB's output, so **a job that never started has no
@@ -534,19 +554,21 @@ Three things about `refreshTrust()` are decisions rather than mechanics:
 **The service-side half of the same day is in `tls/CLAUDE.md`**: a request
 worker was certifying a certificate it does not serve, and the front process was
 not re-issuing the one it does. Everything that PROBES rather than
-tests — `./local-run-tests.sh`'s `stsProbe`, `run-report.js`'s own wait,
+tests — `run-report.js`'s own wait,
 `tools/service.js`'s readiness loop, both compose healthchecks — asks with
 `rejectUnauthorized: false`, because the question there is whether the port
 answers and not whether it is trusted. **The JOBS get a real anchor**, which is
 what keeps an assertion about a certificate meaningful.
 
-**THE STACK'S OWN DECISIONS ARE ARGUED WHERE THEY LIVE**, not here: why the test
-stack is its own compose project on a free host port found at start (so a run
-can never take, or tear down, the `sts` container a plain `docker compose up`
-gives somebody), why it persists NOTHING, why the image is REBUILT every run,
-and why a stack that will not come up is a FAILED run rather than a quiet fall
-back to the host — all in `../local-run-tests.sh`'s header. The containerized
-runner's three — no published port at all, a database with NO VOLUME, and the
+**THE STACK'S OWN DECISIONS ARE ARGUED WHERE THEY LIVE**, not here. The
+host-run stack's — why it was its own compose project on a free host port
+found at start (so a run could never take, or tear down, the `sts` container a
+plain `docker compose up` gives somebody), why it persisted NOTHING, why the
+image was REBUILT every run, and why a stack that would not come up was a
+FAILED run rather than a quiet fall back to the host — were in
+`../local-run-tests.sh`'s header, and went with it on 2026-09-16 (git history
+has them). The containerized runner's
+three — no published port at all, a database with NO VOLUME, and the
 tests image built from the SAME context and the SAME `.dockerignore` as the
 service — are in `../docker-compose-run-tests.yml` and `Dockerfile`, the latter
 with a guard that says so rather than failing later inside node.
@@ -619,16 +641,20 @@ Three things about the report runner are decisions rather than mechanics:
   `devDependencies` because `.npmrc` carries `omit=dev` — the same trap the
   coverage renderer below was written around — and not root `dependencies`
   because a browser driver has no business in the service's production image.
-  `./local-run-tests.sh` installs them when they are missing; a job that cannot
-  load because they are absent FAILS naming the command, rather than skipping.
+  `tests/Dockerfile` installs them into the tests image (`./local-run-tests.sh`
+  installed them on the host when they were missing, until it was removed on
+  2026-09-16); a job that cannot load because they are absent FAILS naming the
+  command, rather than skipping.
 * **The VENDORED jobs run against a copy of THIS working tree, IN A CONTAINER
   since 2026-08-28.** The copied ones are authored over there by the rule at
   the top of this file, and that suite drives the pinned `sts/` gitlink — so
   those jobs do not otherwise run against what you just edited.
-  `./local-run-tests.sh` builds an image from this tree, brings up one
-  container from the repository's own `docker-compose.yml`, and hands this
-  runner its URL with `--service-url`; the jobs themselves are still plain node
-  processes on this machine. It was about a minute plus the image build when
+  `./docker-run-tests.sh` builds the service image and the tests image from
+  this tree, brings both up from `docker-compose-run-tests.yml`, and the tests
+  container hands this runner the service's URL with `--service-url`.
+  (`./local-run-tests.sh` did the same with `docker-compose.yml` and ran the
+  jobs as node processes on the host, until it was removed on 2026-09-16.) It
+  was about a minute plus the image build when
   this was written; it is far longer now (the bulk loads alone take minutes),
   and the two browser jobs — `sts_admin_console.js`, which walks every page,
   and `sts_xacml_editor.js`, which drives one page in depth — are among the
@@ -640,9 +666,7 @@ Three things about the report runner are decisions rather than mechanics:
   owns it, which is what makes `--keep-stack` possible and what stops a run
   from tearing down a stack somebody asked to keep. `tools/service.js` — the
   throwaway process on a block of ports of its own, stopped by the pid it
-  started —
-  is still what `--no-docker` uses and still the whole of what a COVERAGE run
-  can use, because V8 writes its data from inside the process being measured
+  started — is still the whole of what a COVERAGE run can use, because V8 writes its data from inside the process being measured
   and nothing here can reach into a container to collect it.
 
   **WHICH jobs is a LIST now, in `tests/vendored/MANIFEST.js`, and that reverses
@@ -841,7 +865,7 @@ Two rules that are not optional here:
 | `admin_actions_layer.js` | **THAT THE DECISIONS BOTH ADMIN SURFACES MAKE LIVE IN A LAYER NEITHER OF THEM OWNS** (2026-09-12). Thirty-one actions moved from `admin-ui/admin.js` to `admin-core/admin_actions.js`, and `mgmt-api/admin_api.js` requires that directly rather than reaching its decisions through the console module. Four claims: the layer registers no ROUTE (it is required by two modules, so a route in it would be registered twice and rule 1 means the second can never win); it touches no `req`, no `res` and no markup (an action that read the request would work from one door and throw from the other — the exact defect the split exists to make impossible); the management API calls no action on the console module and the console does not re-export one either (**the quietest way this could rot**: one `admin.xAction()` added back restores the old direction for that operation and NOTHING fails); and each forwarded collaborator (`FORWARDED` names them per half) has exactly one writer besides its declaration, which is what makes two caches one answer rather than two. Plus the load-order rule the directory exists to state — the layer pulls in four route-registering modules, so only those two files may require it. **IT GREW A SECOND HALF THE SAME DAY**, when `admin-core/admin_views.js` took the thirty-eight PURE view functions — so every refusal is asked of both files, with one difference stated rather than smoothed over: an ACTION may not touch `req` at all, a VIEW may read `req.query` and nothing else, and neither may touch `res`. Plus two checks that exist because the move shipped defects past `npm test`: **that every name each half uses is in scope there** — five `ReferenceError`s (`numberWord`, `signJwt`, `baseUrlOf`, `stsKeysFor`, `sessions`) came from `admin.js` destructuring fourteen names over comment-interleaved lines, each found by a different HTTP job, one at a time — and **that nothing anywhere reaches a moved function through `admin.*`**, which is how `api_explorer.js` kept calling `admin.gateStateFor()` after it stopped existing, loading fine and throwing when somebody opened the page. **AND THE VIEWS WERE SPLIT AFTER THAT, WHICH THIS FILE CANNOT SEE AT ALL.** Twelve families of page had their computation lifted into the layer and their markup left behind, and ELEVEN OF THE TWELVE shipped a defect the two HTTP jobs caught: a dropped page parameter, locals of a sort comparator lifted as though they were the page's, a value declared after the markup that needed it, a dispatcher reading `?id=` where the page reads `?relationship=`, a missing no-directory branch, a blanket text replacement that hit four other functions, and one resource handed `undefined` because two sibling functions return different shapes. Not one was found by reading and not one by `npm test`. **In process on `teardown_bounds.js`'s argument, and the file says out loud what it CANNOT check**: whether the actions still work. Nothing here would have caught `numberWord is not defined`, which is what the first run of `tests/vendored/sts_admin_api_operations.js` answered on one refusal path — a helper the move had not carried across, from a destructure spread over thirty comment-interleaved lines. That job and `sts_admin_console.js` are what verify this change; this file only stops it drifting back |
 | `ssf_receivers.js` (sections B2, B3) | **ONE STREAM PER SURFACE HOWEVER MANY PROCESSES SEED IT** (2026-09-12) — **and B3 (2026-09-14): another realm's receiver stream in this realm is swept by its id, while an ordinary receiver's stream beside it survives** (one mutant, caught). The check above it — seed, seed again, nothing made — passes in ONE process and always will: the second call finds the first call's record in the same in-memory store. **What it cannot see is the arrangement this service actually runs in `dispatch` mode**: the front process and every request worker load the protocol stack and each calls `seedStreams()`, against a store that is SHARED because it is persisted and coordinated. With a random stream id each of them created one of its own and the store kept them all — measured on a four-hour stack, **fourteen streams in the default realm where two belong**, seven pairs at seven timestamps, and a bulk load pushing every one of 16,421 events to twelve of them: ~197,000 loopback pushes, 19,737 `connect EAGAIN`, the front process pinned at a full core and four bulk-load jobs failing on a CONNECT timeout rather than on any assertion. Three claims: a process that never set the `internalSurface` marker still finds the stream (the lookup asks for the DERIVED id first, because the marker is the half a persisted round-trip can lose — and a miss would now OVERWRITE a stream somebody had paused); a legacy duplicate delivering to the same loopback path is SWEPT, identified by where it delivers rather than by that marker; and rotating the per-run receiver secret seeds nothing, because an id derived from THAT would agree across one run's processes and mint a fresh set on the next start — the same defect one level along. **Asserted through `seedStreams()` rather than by rebuilding the id**, since a test that recomputes the string it checks proves only that two copies of one expression agree, which is what the first version did. Three mutants, all caught |
 | `ssf_queue_rows.js` | **A SHARED SIGNALS STREAM'S QUEUE IS ONE JOURNALLED ROW PER SET** (2026-09-13). Queueing, a poll's acknowledgement and a refusal never reached the persistence journal — the queue was an array on the record — so in `dispatch` mode `sts_ssf_allowed_events` polled `[]` after an emission and `sts_gnap_signals` was handed a SET it had acknowledged. "Another worker wrote this" is the two accessor calls `persistence_minted.js`'s `applyLocally()` makes, and "this process wrote that" is what reached a real persist observer, in a CHILD PROCESS for `realm_isolation.js`'s reason. Asserted: each SET change journals THAT SET's key; a STALE record replicated from another process neither takes SETs away nor, queueing from it, puts an acknowledged one back — the race a `touch()` on a whole-valued record would have left open; a redelivery writes no row; a replicated delete is final; a replaced record is not written back and `liveRecord()` answers the one held; a disable and a removal drop the rows. Plus a source guard that nothing in `ssf/` or `gnap/gnap_signals.js` reads `record.queue`. Four mutants, all caught |
-| `stack_network.js` | **THAT NAMING A COMPOSE PROJECT ISOLATES THE NETWORK AS WELL AS THE CONTAINERS** (2026-09-12), and it is the THIRD thing to escape that sentence. `./local-run-tests.sh`'s own header is the record of the first two: a project scopes containers, networks and volumes, `container_name` is machine-wide, and for a while `STS_TEST_COMPOSE_PROJECT=mine` handed the other run's containers straight back. Then a realm's SPIFFE listeners needed ADDRESSES that do not move between starts — `spiffe.grpcHost` is a literal IP — and both compose files grew a subnet written out as a literal. **AN ADDRESS SPACE IS MACHINE-WIDE IN EXACTLY THE WAY A `container_name` IS**, so the second run in this tree, however it was named, was refused with `invalid pool request: Pool overlaps with other one on this address space` before ONE container started — which names nothing in the tree and reads as a service that never came up. Five claims: the scan exists and is SHARED (`freeSubnet()` in `tests/tools/compose.sh`, beside the three functions there for the same reason); it asks BOTH questions the daemon asks, docker's networks AND this machine's routes, because the same refusal is what a VPN route or a libvirt bridge produces; both launchers call it with DIFFERENT bases, so one run of each never reaches the scan; each base is its own compose file's declared default, which is what keeps a plain run on an idle machine byte-for-byte what it was; and all four variables travel together, because three of them are addresses INSIDE the first. **The last claim is the one an edit trips**: an address built from the BASE rather than from the chosen subnet is right for `<base>.0.0/24` and wrong for the other 255 — so it is correct on every machine where the scan changes nothing, and wrong on exactly the second run the scan exists for. In process on `teardown_bounds.js`'s argument, every claim being a comparison between FILES. **Fourteen mutants, all caught**, and one of them only after the file was tightened: the scan asks docker in TWO calls — `network ls` for the names, `network inspect` for the subnet each holds — and a check that accepted either would pass a helper that answers *nothing is in use* |
+| `stack_network.js` | **THAT NAMING A COMPOSE PROJECT ISOLATES THE NETWORK AS WELL AS THE CONTAINERS** (2026-09-12), and it is the THIRD thing to escape that sentence. `./local-run-tests.sh`'s own header was the record of the first two (that launcher was removed on 2026-09-16; git history has it): a project scopes containers, networks and volumes, `container_name` is machine-wide, and for a while `STS_TEST_COMPOSE_PROJECT=mine` handed the other run's containers straight back. Then a realm's SPIFFE listeners needed ADDRESSES that do not move between starts — `spiffe.grpcHost` is a literal IP — and both compose files grew a subnet written out as a literal. **AN ADDRESS SPACE IS MACHINE-WIDE IN EXACTLY THE WAY A `container_name` IS**, so the second run in this tree, however it was named, was refused with `invalid pool request: Pool overlaps with other one on this address space` before ONE container started — which names nothing in the tree and reads as a service that never came up. Five claims: the scan exists and is SHARED (`freeSubnet()` in `tests/tools/compose.sh`, beside the three functions there for the same reason); it asks BOTH questions the daemon asks, docker's networks AND this machine's routes, because the same refusal is what a VPN route or a libvirt bridge produces; the launcher calls it with a base DIFFERENT from `docker-compose.yml`'s, so a test run beside a development stack never reaches the scan (until 2026-09-16 this compared the two launchers' bases, `./local-run-tests.sh`'s being that file's); each base is its own compose file's declared default, which is what keeps a plain run on an idle machine byte-for-byte what it was; and all four variables travel together, because three of them are addresses INSIDE the first. **The last claim is the one an edit trips**: an address built from the BASE rather than from the chosen subnet is right for `<base>.0.0/24` and wrong for the other 255 — so it is correct on every machine where the scan changes nothing, and wrong on exactly the second run the scan exists for. In process on `teardown_bounds.js`'s argument, every claim being a comparison between FILES. **Fourteen mutants, all caught**, and one of them only after the file was tightened: the scan asks docker in TWO calls — `network ls` for the names, `network inspect` for the subnet each holds — and a check that accepted either would pass a helper that answers *nothing is in use* |
 | `unit_job_environment.js` | **that the in-process half runs in the configuration it describes, and not in the stack's** (2026-09-12). Both launchers export `tests/tools/modes.sh`'s variables — that is how the compose stack is handed the mode — and the report runner's unit children inherited them, which was silent until `dispatch` mode set `STS_KEYS_SOURCE=persisted` and **eight unit jobs failed in one mode about a service none of them touches**: a keystore turned on in a process with no store to open. What is asserted is the SEAM rather than the symptom — `tests/keystore.js` already owns the refusal — because what can break again is the LIST: a mode grows a fourth variable and the next unit job to read it fails for a reason three files away. So the names are read from `modes.sh` here too, by an expression written independently of the runner's, and the two have to agree. It also holds modes.sh's OWN stated rule, which nothing was checking: every mode names every variable any mode names, because an unnamed one is not off — it is whatever the previous mode in the same shell exported. And it checks that no unit file READS one of them without setting it first, which is what makes the scrub safe rather than merely correct |
 | `oidc_rp_addresses.js` | **THE CONSOLE'S AND THE PORTAL'S REDIRECT URI, AND WHAT IS WRITTEN ONTO THEIR OWN CLIENT ENTRIES** (2026-09-12). An anonymous `GET /admin` with an invented `Host` wrote a callback onto `sts-admin-console` for good — `forwardedFrom()` reads the Host header whether or not `global.trustProxy` is on, which the comment above the learning said it did not. Four claims, each asserted by reading the REGISTRY after the call rather than the redirect, because a refusal that still wrote and a pinned redirect that still learnt both produce the right response: product mode refuses an unregistered address before a browser is sent anywhere; `global.publicBaseUrl` is used and never learnt; development still learns, up to `oidcRp.maxRedirectUris`; the back channel dials `helpers.loopbackHost()`. **It found that learning had never worked at all** — `updateApplication()` was handed one object where it takes an identifier and a change — so the development half asserts a behaviour that first happened the day this was written. Nine mutants, all caught; the socket's host survived until a source check was added, since dialling it for real means binding this service's port on another interface in a shared process |
 | `return_address_provenance.js` | **A RETURN ADDRESS DEVELOPMENT LEARNT IS NOT ONE PRODUCT BELIEVES** (2026-09-12). A development sighting that ADDS a SAML ACS URL, a `shire`, a `wreply` or a learnt console callback marks it on `appReturnAddressObserved`, and one that repeats a registered address does not demote it; in product `applications.returnAddressesOf()` withholds a marked address and `saml/return_address.js` refuses it with `STS-REG-0049` and the confirm operation named, including for an entry holding ONLY observed addresses and a request naming none; confirm keeps the address and drops the mark, discard drops both, an explicit `add`, a `remove` and an RFC 7592 registration each settle the mark, and an `observed` flag can mark nothing in product; the console's own client is refused in product at a learnt callback and used once confirmed. Section G reads the three protocol modules and `clientConfigOf()` as SOURCE, because a call site reading the raw attribute passes every behavioural check here — the saml2 mutant is caught ONLY there. **In process because the claim is what is WRITTEN and what a mode believes**; `sts_admin_api_operations.js` drives the two operations and the product refusal over HTTP and `sts_admin_console.js` presses the buttons. Seventeen mutants, all caught |
@@ -1156,7 +1180,8 @@ finished and can be worth nothing.
 renderer), `vendor-check.js` (the drift check over `vendored/`, and a TOOL
 rather than a job on purpose — its own header argues why a check that needs the
 other checkout must not be what decides whether this repository is green),
-the compose-stack helpers (`compose.sh`, shared by both launchers),
+the compose-stack helpers (`compose.sh`, shared by `./docker-run-tests.sh`
+and `./run-coverage.sh`),
 `service.js` (one throwaway copy of this service, started and
 stopped by pid, on a block of ports of its own) and `coverage_entry.js` (`server.js`
 started so that its coverage survives being stopped — V8 writes on a CLEAN
@@ -1536,6 +1561,9 @@ go through a launcher that mints:
   and they mint against it
 * **`./run-coverage.sh`, `./local-run-tests.sh --no-docker`, and a bare `node
   tests/tools/run-report.js`** — a THROWAWAY `run-report.js` started itself
+
+(`./local-run-tests.sh` and its `--no-docker` were removed on 2026-09-16; the
+other paths are unchanged.)
 
 The gate landed with the first two taught and the third untouched, and the third
 is what CI's coverage job runs. That job drove the whole protocol half against a
@@ -2336,7 +2364,7 @@ leaving the feature covered only on a developer's machine.
 ## THE `cluster` MODE: TWO NODES BEHIND A LOAD BALANCER (2026-09-14, issue #46)
 
 `tests/tools/modes.sh` has a FOURTH mode, and it is **asked for by name**
-(`--modes=cluster`, either launcher) rather than run by default — a fourth whole
+(`./docker-run-tests.sh --modes=cluster`) rather than run by default — a fourth whole
 run of the suite and two services' worth of memory, on a bare run that is
 already an hour. The three default modes differ in what shares state INSIDE one
 container; this one is the first in which the thing under test is BETWEEN
@@ -2360,7 +2388,7 @@ stacks they started before:
 | node B | `sts2`, which `extends` node A — one definition, so nothing the override does not name can differ — started only once node A is HEALTHY, so a cold start's first key set is never a race the suite depends on |
 | the store | ONE postgres and ONE OpenBao, shared; the key-encryption key comes out of OpenBao (`STS_KEYS_SOURCE=persisted`), without which active-active refuses to start (`STS-CLUSTER-0008`) |
 | `sts-lb` | HAProxy (`haproxy:3.2.23-alpine`, pinned), `mode tcp`, round robin, **TLS passed through**, `send-proxy-v2` (below), on 8081, 8082, 389, 636, 88/tcp and 8444 (8443 and 9443 were there until 2026-09-16, when both listeners were deleted; mutual TLS rides 8081, which is why passthrough is still right), a TCP-connect health check on each. It owns every published port under the variables the service used to, so every address a launcher computes is the balancer's with no second set of names |
-| the files | `tests/docker-compose-cluster.yml` (over `docker-compose.yml` and the LDAP layer, `./local-run-tests.sh`), `tests/docker-compose-run-tests-cluster.yml` (over `docker-compose-run-tests.yml`, `./docker-run-tests.sh`), `tests/cluster/haproxy.cfg` (both) |
+| the files | `tests/docker-compose-run-tests-cluster.yml` (over `docker-compose-run-tests.yml`, `./docker-run-tests.sh`), `tests/cluster/haproxy.cfg`, and `tests/docker-compose-cluster.yml` (over `docker-compose.yml` and the LDAP layer, for `./local-run-tests.sh`, which was removed on 2026-09-16; no launcher layers it now) |
 
 Both nodes are **development mode** (the suite signs people in with no
 password — the `postgres` arm of `modes.sh` says why), **one process each**
@@ -2432,7 +2460,7 @@ the one fetch it always was.
   the network name its own client address. So a non-loopback connection to a
   node from anywhere else is refused, and the suite has no such client (the
   healthchecks are loopback, the remote PEP dials `sts-lb`).
-  `STS_TEST_CLUSTER_PROXY_PROTOCOL=off` on either launcher runs the mode
+  `STS_TEST_CLUSTER_PROXY_PROTOCOL=off ./docker-run-tests.sh` runs the mode
   without it, which is how a PROXY-protocol failure is told from a cluster
   one. The rate limits needed no raising either way: the suite already came
   from ONE address (the runner's), and the budget is shared by both nodes

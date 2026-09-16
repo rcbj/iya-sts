@@ -48,12 +48,13 @@ delete process.env.CONFIG_FILE;
 // Section E asserts the three sentences this page gives when there is NO
 // DATABASE, and it reaches that state by starting no store — which was the
 // whole of it for as long as this file was only ever run by `npm test`.
-// `./local-run-tests.sh` runs the suite once per mode and exports each mode's
-// environment into the runner, which hands `process.env` to every in-process
-// job: so in the `postgres` and `dispatch` modes this file read
-// `persistence.mode` as `postgres` while having opened nothing, asserted
-// `memory`, and failed twice — in two modes, about a page that was correct,
-// naming a mismatch that is this line's absence and not a defect anywhere.
+// `./local-run-tests.sh` ran the suite once per mode and exported each mode's
+// environment into the runner (until it was removed on 2026-09-16), which
+// hands `process.env` to every in-process job: so in the `postgres` and
+// `dispatch` modes this file read `persistence.mode` as `postgres` while
+// having opened nothing, asserted `memory`, and failed twice — in two modes,
+// about a page that was correct, naming a mismatch that is this line's absence
+// and not a defect anywhere.
 //
 // **DELETED RATHER THAN SET, AND THAT IS THE SAME ARGUMENT AS THE LINE ABOVE**:
 // the state this file wants is the DEFAULT, so it removes what is overriding

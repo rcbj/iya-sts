@@ -176,6 +176,22 @@ has changed: it is a statement about *that document*, which describes a
 
 ## Running it
 
+**It runs from an image, not from a checkout (since 2026-09-16).** Part of the
+service is written in TypeScript and is compiled only while the image is built;
+`node server.js` on a checkout stops and says so. Build the image and run it:
+
+```bash
+git submodule update --init --recursive
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts            # 8081; add -e VAR=value for any setting
+```
+
+Every environment variable this page mentions for `node server.js` is passed the
+same way, with `-e`.
+
+What follows is how the image's own process starts, and it is what the
+`Dockerfile` does; on a checkout the last line refuses (see above).
+
 ```bash
 # Once per checkout: the LDAP directory is built on node-ldapjs, which is a
 # SUBMODULE. An uninitialised submodule is an empty directory, so without this
@@ -7925,50 +7941,45 @@ service has ever issued.
 ## Running the tests
 
 ```bash
-npm test                          # the in-process suite: one process, under
-                                  # two seconds, no port and no container
-./docker-run-tests.sh             # ALL 23 jobs, ENTIRELY IN CONTAINERS: the
+./docker-npm-test.sh              # the in-process suite, in the tests image
+./docker-npm-test.sh --only=crypto  # ...only the files whose name matches
+./docker-npm-test.sh --list       # ...name them and run none
+./docker-run-tests.sh             # EVERY job, ENTIRELY IN CONTAINERS: the
                                   # service AND the runner, on a host that has
                                   # docker and nothing else. What CI runs
-./local-run-tests.sh              # ALL 23 jobs, with a report written: that
-                                  # suite AND the protocol jobs, the latter
-                                  # against a CONTAINER built from this tree
-./local-run-tests.sh --only=crypto --open
-./local-run-tests.sh --no-protocol  # the in-process suite alone, 3 seconds
-./local-run-tests.sh --no-docker    # the protocol jobs against a service run
-                                    # on this machine instead of a container
-./local-run-tests.sh --keep-stack   # leave the container up afterwards, to
-                                    # read /admin or re-run one job by hand
-./local-run-tests.sh --modes=cluster  # a fourth mode, only when named: two
+./docker-run-tests.sh --modes=memory  # one mode rather than all three
+./docker-run-tests.sh --modes=cluster # a fourth mode, only when named: two
                                       # service containers active-active on one
                                       # postgres behind an HAProxy, every job's
                                       # requests alternating between them
-./run-coverage.sh                 # the same run, with coverage collected —
-                                  # in containers too, with the RUNNER in the
+./docker-run-tests.sh --only=crypto --no-browser
+                                  # anything else goes to the runner
+./run-coverage.sh                 # coverage, collected by a run of its own —
+                                  # in a container, with the RUNNER in the
                                   # container rather than the service
-./run-coverage.sh --no-docker     # ...and the same collection on this machine
 ```
 
-**THE TWO LAUNCHERS RUN THE SAME TWENTY-THREE JOBS AND DIFFER ONLY IN WHERE THE
-TESTS THEMSELVES RUN**, which is the whole reason both exist.
-`./local-run-tests.sh` is the development loop: the service is a container, the
-jobs are plain node processes on your machine driving your Chrome, so editing a
-test and re-running it costs nothing. `./docker-run-tests.sh` puts the runner in
-a container too — node, the browser and this working tree, built from
-`tests/Dockerfile` — brings both up from `docker-compose-run-tests.yml` on a
-private network, and exits with the suite's status. It needs **docker and
-nothing else**: no node, no `npm install`, no Chrome, no checkout of the parent
-project. That makes it what `.github/workflows/tests.yml` runs on every push,
-and what to reach for when a run passes on one machine and not on another —
-a difference between the two launchers is a difference in the environment and
-in nothing else.
+**SINCE #50 NOTHING HERE RUNS ON A CHECKOUT.** Part of the service is
+TypeScript, compiled only inside an image build, so `npm test` and
+`node server.js` refuse on a checkout (`common/compiled_tree.js`,
+`STS-CORE-0093`) and the in-process suite runs through `./docker-npm-test.sh`.
+**`./local-run-tests.sh` — the host-run development loop, the jobs as node
+processes against a service container — was removed on 2026-09-16 for the
+same reason**, so `./docker-run-tests.sh` is the whole suite.
 
-**CI RUNS BOTH LAUNCHERS, IN TWO JOBS THAT DO NOT DEPEND ON EACH OTHER** —
+`./docker-run-tests.sh` puts the runner in a container — node, the browser and
+this working tree, built from `tests/Dockerfile` — brings it and the service up
+from `docker-compose-run-tests.yml` on a private network, and exits with the
+suite's status. It needs **docker and nothing else**: no node, no
+`npm install`, no Chrome, no checkout of the parent project. That makes it what
+`.github/workflows/tests.yml` runs on every push.
+
+**CI RUNS THE SUITE AND COVERAGE IN TWO JOBS THAT DO NOT DEPEND ON EACH OTHER** —
 `tests` wraps `./docker-run-tests.sh` and `coverage` wraps `./run-coverage.sh`,
 and three artifacts come out of a run: `test-report` (the plain suite's
 `tests/report/latest`), `coverage-report` (the rendered `coverage/`) and
 `coverage-test-report` (the instrumented run's own report). They are two jobs
-rather than two steps because both launchers move the `tests/report/latest`
+rather than two steps because both scripts move the `tests/report/latest`
 symlink, so in one workspace the second run would quietly relabel the first
 run's artifact; two jobs are two workspaces. It also means the coverage pass
 still runs when the suite goes red, which is when its report is worth most, and
@@ -7978,20 +7989,18 @@ nodes behind a load balancer, which no bare run includes — on a runner of its
 own and uploads `cluster-test-report`. All four uploads are `if: always()`.
 
 Neither can disturb a mock you are already running. Each is its own compose
-project with its own container names, `./local-run-tests.sh` publishes a free
-port found at start and `./docker-run-tests.sh` publishes none at all, so
-`docker compose up`'s `sts` on 8081 is untouched by both — including by their
-teardowns.
+project with its own container names, and `./docker-run-tests.sh` publishes no
+port at all, so `docker compose up`'s `sts` on 8081 is untouched by both —
+including by their teardowns.
 
-`npm test` is what `tests/` is for and is unchanged by everything below it: it
-needs `npm install` to have been run and nothing else — no port, no container,
-no browser, no network — and it asserts this repository's own module contracts,
-which no caller over HTTP could check. `tests/CLAUDE.md` argues where the line
-is.
+The in-process suite (`npm test`, run by `./docker-npm-test.sh`) is what
+`tests/` is for: no port, no stack, no browser, no network — and it asserts
+this repository's own module contracts, which no caller over HTTP could check.
+`tests/CLAUDE.md` argues where the line is.
 
-**`./local-run-tests.sh` adds a report** — `tests/report/<timestamp>/` with
-`report.html`, JUnit `report.xml`, `summary.json` and one log per job, and
-`tests/report/latest` pointing at the newest. It runs each test file in a
+**`./docker-run-tests.sh` writes a report** — `tests/report/<mode>/<timestamp>/`
+with `report.html`, JUnit `report.xml`, `summary.json` and one log per job, and
+`tests/report/<mode>/latest` pointing at the newest. It runs each test file in a
 process of its own, so a file that hangs is a job that times out rather than a
 suite that never finishes, and a file that takes its process down is one red job
 rather than a run with no report at all. The per-assertion detail in the report
@@ -8006,7 +8015,7 @@ pin. FOURTEEN jobs live in `tests/vendored/` — nine of them byte-identical
 copies of the parent's, and FIVE this repository's own: the four that drive
 `/admin` and `/admin-api`, ours since 2026-08-28, and the delegated permission
 example added 2026-09-01, which was never over there at all. Every
-`./local-run-tests.sh` runs the lot: the metadata drift checks, the management
+`./docker-run-tests.sh` runs the lot: the metadata drift checks, the management
 API and every one of its operations, the whole admin console in a real browser,
 the five-application delegated permission example, DPoP, the authorization
 server's endpoints, the DID-named issuer, SAML 1.1, SAML encryption, the
@@ -8015,19 +8024,14 @@ it the browser job. `--no-protocol` is the way back to the in-process suite
 alone, and it says in the report that nothing was checked about any protocol
 surface.
 
-**What they drive is a CONTAINER, built from this working tree by this
-repository's own `docker-compose.yml`.** The launcher builds the image, brings
-up one container — its own compose project, its own container name, a free host
-port, `persistence.mode=memory`, no database — hands the runner its URL, and
-LEAVES IT RUNNING when the suite finishes, printing how to reach it and how to
-stop it (`--tear-down` is the way back); the tests themselves are ordinary node
-scripts on this machine. What that buys is that the thing under test is the IMAGE: the same
-`npm install --omit=dev` against the committed lock, the same node, the same
-`COPY . ./` with `.dockerignore` deciding what is in it — so a module missing
-from the build context or a submodule that was never initialised fails HERE
-rather than in somebody's deployment. `--no-docker` runs the service on this
-machine instead (nine ports of its own, both SPIFFE Unix sockets off, stopped
-by the pid it started), which is what a machine with no docker falls back to.
+**What they drive is a CONTAINER, built from this working tree.** The launcher
+builds the image and brings it up from `docker-compose-run-tests.yml` — its
+own compose project, its own container names, no published port — once per
+mode, and tears it down after each. What that buys is that the thing under
+test is the IMAGE: the same `npm install --omit=dev` against the committed
+lock, the same node, the same `COPY . ./` with `.dockerignore` deciding what is
+in it — so a module missing from the build context or a submodule that was
+never initialised fails HERE rather than in somebody's deployment.
 
 **A coverage run is the one that cannot drive that container**, and the reason
 is worth keeping straight from a claim about containers in general: V8 writes
@@ -8037,15 +8041,17 @@ RUNNER into a container instead — `docker compose run --rm --no-deps` on
 `docker-compose-run-tests.yml`'s `tests` service, which never starts the `sts`
 service — and lets it start the service it measures as a child process in
 there, with `./coverage` and `./tests/report` bind-mounted out. So a coverage
-run needs docker and nothing else too; `./run-coverage.sh --no-docker` is the
-host run, and a machine without docker falls back to it loudly.
+run needs docker and nothing else too. `./run-coverage.sh --no-docker` is the
+host run, and a machine without docker falls back to it loudly — but since #50
+a host run meets the same refusal as `npm test` on a checkout.
 
 A vendored job can be AHEAD of this tree — those jobs are developed against the
 parent's own checkout of this service — and it then fails here naming a feature
 this tree has not got. That is a fact about when the copy was taken rather than
-a fault in the runner; `./local-run-tests.sh --vendor-check` reports the drift
-when both checkouts are present, and `--vendor-sync` is the only sanctioned way
-those copies change.
+a fault in the runner; `node tests/tools/vendor-check.js` reports the drift
+when both checkouts are present (the parent project beside this one, or
+`--parent=<dir>`), and `node tests/tools/vendor-check.js --sync` is the only
+sanctioned way those copies change.
 
 **`./run-coverage.sh` collects coverage with nothing installed.** It uses node's
 own `NODE_V8_COVERAGE` and renders the result with `tests/tools/coverage-report.js`

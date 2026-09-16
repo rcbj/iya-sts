@@ -90,7 +90,7 @@ files did not change; the paths did.
 | `debugger/` | **The embedded identity protocol debugger** (2026-09-13): the parent project's client and api served on a listener of their own (`debugger.port`), signed in to through this service's authorization server, the api a FORKED CHILD behind an access token only a console administrator is issued. `debugger/embedded/` is that project's build output, never source. `debugger/CLAUDE.md`. |
 | `postgres/` | Four files the database container runs, never this service: TLS setup, TLS enforcement, the schema and the least-privilege `sts_app` role. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site — how to USE this service. `docs/CLAUDE.md`. |
-| `types/`, `tsconfig.json` | **THE TYPESCRIPT CONVERSION'S FIRST STEP (#50, 2026-09-16)**: declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, `server.js` and `sts_metadata.js`, all but the vendored copies — and `tests/typecheck.js` runs it and holds the list. The decisions for the rest of the conversion are on issue #50. |
+| `types/`, `tsconfig.json`, `tsconfig.build.json`, `build-typescript.sh` | **THE TYPESCRIPT CONVERSION (#50, 2026-09-16)**: `types/` is declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, `server.js` and `sts_metadata.js`, all but the vendored copies — and `tests/typecheck.js` runs it and holds the list. `build-typescript.sh` compiles — inside an image build only — each `x.ts` to `x.js` beside it (`tsconfig.build.json`), and with `--strip` removes the sources for the service image. The decisions for the rest of the conversion are on issue #50. |
 | `env/` | The appconfig files, each a layer over the generated `defaults.js`. `env/CLAUDE.md`. |
 
 At the package root there are exactly two modules, and both earn it:
@@ -160,9 +160,18 @@ suite is still WRITTEN in that project and a copy of it RUNS here** — see
 ## Running it
 
 ```bash
-npm install
-CONFIG_FILE=./env/local.js node server.js      # 8081; STS_PORT overrides
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts           # 8081; STS_PORT overrides
 ```
+
+**THE SERVICE RUNS FROM AN IMAGE, NOT FROM A CHECKOUT, SINCE 2026-09-16 (#50).**
+Part of it is TypeScript, compiled only inside an image build
+(`build-typescript.sh`, the `typescript` stage of `Dockerfile`), and rcbj's
+rules are that nothing compiled is written to the host and no `.ts` is in the
+final image. `node server.js` on a checkout refuses and says why
+(`common/compiled_tree.js`, `STS-CORE-0093`). On the host,
+`tests/node_modules/.bin/tsc -p tsconfig.json` checks the types and writes
+nothing.
 
 **That port is HTTPS** — every appconfig file in `env/` sets `global.https`, and
 `STS_HTTPS=false` is the supported way back (`env/CLAUDE.md`). **The selected
@@ -321,7 +330,8 @@ this table says what the constraint is and the named file says why.
 
 | # | Required | Constraint | Argument in |
 |---|---|---|---|
-| 1 | `common/config_file` | First of all; every reader of `CONFIG_FILE` is below it. | `common/CLAUDE.md` |
+| 0 | `common/compiled_tree` | Before everything (#50): refuses a tree whose TypeScript is not compiled, and requires nothing of this service. Called by `server.js` itself rather than listed in `protocol_stack.js`. | `common/CLAUDE.md` |
+| 1 | `common/config_file` | First of all that configures anything; every reader of `CONFIG_FILE` is below it. | `common/CLAUDE.md` |
 | 2 | `common/app` | Before every protocol module: they register against it, and middleware applies only to routes added after it. Also installs the JWT recorder (rule 3e). | `common/CLAUDE.md` |
 | 2a | `common/realms` | No line of its own (loaded by `app` and `helpers`), but above every setting read and every store: requiring it fills `config.js`'s realm slot (rule 3m). | `common/CLAUDE.md` |
 | 3–4 | `common/helpers`, `common/config` | `config.js` is below `helpers.js` and requires nothing here. | `common/CLAUDE.md` |
@@ -662,6 +672,14 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   beside the code; a cast (`/** @type {any} */ (x)`) is for a library whose
   declared types are wrong, and says so in a comment. **Checking may not
   change behaviour** — an edit made for the checker is the same program.
+* **A module converted to TypeScript (#50) is a CLASS whose dependencies arrive
+  through its constructor**, requires with `import x = require('...')` (the
+  same `require` once compiled, so rule 1's order is untouched) and exports
+  with `export =`. A small helper is a STATIC method of a utility class
+  (`common/html.ts`'s `Html.esc()`), never a free function. Until the
+  composition root exists, a converted module also exports the names its
+  unconverted callers require, from an instance it builds — marked
+  TRANSITIONAL. `common/realm_chooser.ts` is the pattern.
 * **A refusal or a failure carries an error code** — see *Every failure has an
   error code* above. `errorCodes.mark(res, 'STS-…')` on the line before the
   call that sends an HTTP refusal, `errorCode: 'STS-…'` on an audit row, and
@@ -723,11 +741,16 @@ copy.
 Those are two claims and keeping them apart is the whole of this section.
 
 ```bash
-npm test                # the in-process half: no port, no container
-./local-run-tests.sh    # EVERY job — the development loop
-./docker-run-tests.sh   # runner and service both in containers; what CI runs
-./run-coverage.sh       # the same run with coverage collected
+./docker-npm-test.sh    # the in-process half, in the tests image (#50)
+./docker-run-tests.sh   # EVERY job, runner and service in containers; what CI runs
+./run-coverage.sh       # coverage, collected by a run of its own
 ```
+
+**`npm test` refuses on a checkout since #50** (the TypeScript is compiled
+only inside an image), so `./docker-npm-test.sh` builds the tests image and
+runs it there. **`./local-run-tests.sh` was removed on 2026-09-16**: it ran
+its jobs on the host, which #50 made impossible, so `./docker-run-tests.sh` is
+the whole suite (`--modes=` narrows it; `tests/CLAUDE.md` has the options).
 
 Where a new test goes, asked in this order:
 
@@ -735,7 +758,8 @@ Where a new test goes, asked in this order:
 2. **Can it be asserted over HTTP against a running service?** Then `../id-proto-debugger/tests/`.
 3. **Otherwise here**: it chooses how the process starts, needs a second container on the service's network, or needs a socket no stack publishes.
 
-**Never edit a vendored copy** — the next `--vendor-sync` overwrites it and the
+**Never edit a vendored copy** — the next
+`node tests/tools/vendor-check.js --sync` overwrites it and the
 fix never reaches the parent. The `local: true` jobs are the inversion, edited
 here only. `tests/vendored/MANIFEST.js` says which is which.
 

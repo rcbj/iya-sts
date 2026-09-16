@@ -28,22 +28,20 @@
 # service remembers neither.
 #
 # ---------------------------------------------------------------------------
-# WHICH LAUNCHER TO USE, AND WHY THERE ARE TWO.
+# WHICH LAUNCHER TO USE, AND WHY THIS IS THE ONLY ONE FOR THE WHOLE SUITE.
 #
-#   ./local-run-tests.sh   the DEVELOPMENT loop. The service in a container,
-#                          the tests as plain node processes on this machine,
-#                          driving this machine's Chrome. Edit a test, re-run
-#                          it, no image rebuild. Needs node, npm install, a
-#                          Chrome and docker.
-#   ./docker-run-tests.sh  THIS. Everything in containers. Needs docker and
-#                          nothing else — no node, no npm install, no Chrome —
-#                          which is what makes it the CI command and what makes
-#                          it the thing to reach for when a run passes locally
-#                          and somebody else cannot reproduce it.
+#   ./docker-run-tests.sh  THIS. Every job, everything in containers. Needs
+#                          docker and nothing else — no node, no npm install,
+#                          no Chrome — which is what makes it the CI command.
+#   ./docker-npm-test.sh   the in-process suite alone, in the tests image
+#                          (`--only=<substring>`, `--list`).
+#   ./run-coverage.sh      a coverage run, on its own; see its header.
 #
-# They run the SAME jobs through the same runner, so a difference
-# between them is a difference in the environment and nothing else, which is
-# the whole point of having both.
+# There were two whole-suite launchers until 2026-09-16. The other,
+# ./local-run-tests.sh, ran the jobs as node processes on this machine against
+# a service container, and it was removed when #50 made the service partly
+# TypeScript compiled only inside an image build: a job run on a checkout
+# meets the refusal in common/compiled_tree.js (STS-CORE-0093).
 #
 # ---------------------------------------------------------------------------
 # WHAT IT WILL NOT TOUCH.
@@ -114,14 +112,14 @@ set -u -o pipefail
 CURRENT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 cd "${CURRENT_DIR}" || exit 1
 
-# The mode matrix — the same file ./local-run-tests.sh reads. See its header.
+# The mode matrix. See tests/tools/modes.sh's header.
 # shellcheck source=tests/tools/modes.sh
 . "${CURRENT_DIR}/tests/tools/modes.sh"
 RUN_MODES=("${STS_ALL_MODES[@]}")
 
-# resolveCompose() and docker_compose(), shared with ./local-run-tests.sh. See
-# that file for why they are not duplicated and tests/tools/compose.sh for the
-# globals they read.
+# resolveCompose() and docker_compose(), shared with ./run-coverage.sh. See
+# tests/tools/compose.sh for why they are not duplicated and for the globals
+# they read.
 COMPOSE_SH="${CURRENT_DIR}/tests/tools/compose.sh"
 if [ ! -r "${COMPOSE_SH}" ];
 then
@@ -223,7 +221,7 @@ STACK_UP=0
 
 # The header of this file IS the usage, printed by reading it back rather than
 # by keeping a second copy of it in a here-document — which is the only way the
-# two cannot drift apart. The same trick as ./local-run-tests.sh's.
+# two cannot drift apart. The same trick as ./run-coverage.sh's.
 usage()
 {
   awk 'NR > 1 { if ($0 !~ /^#/) { exit } sub(/^# ?/, ""); print }' "$0"
@@ -242,12 +240,12 @@ do
     --no-build)   BUILD=0 ;;
     --keep-stack) KEEP_STACK=1 ;;
     # WHICH MODES TO RUN, AND THIS LAUNCHER LACKED IT UNTIL 2026-09-09.
-    # ./local-run-tests.sh has had `--modes=` since the matrix arrived, and the
-    # asymmetry cost an afternoon: the failure being chased was in `dispatch`,
-    # on a listener only THIS stack publishes, so reproducing it meant running
-    # `memory` and `postgres` first every time. Same spelling and same meaning
-    # as the other launcher's, so what a developer learns on one works on the
-    # other. A run with no `--modes=` is unchanged: all three, in order.
+    # ./local-run-tests.sh (removed 2026-09-16) had `--modes=` since the
+    # matrix arrived, and the asymmetry cost an afternoon: the failure being
+    # chased was in `dispatch`, on a listener only THIS stack publishes, so
+    # reproducing it meant running `memory` and `postgres` first every time.
+    # It took the other launcher's spelling and meaning. A run with no
+    # `--modes=` is unchanged: all three, in order.
     --modes=*)    IFS=',' read -r -a RUN_MODES <<< "${1#--modes=}" ;;
     --verbose)    set -x ;;
     -h|--help)    usage; exit 0 ;;
@@ -270,9 +268,6 @@ preflight()
     echo "to: without docker there is nothing to run. Either the daemon is" >&2
     echo "not running, or this user cannot reach it and sudo would need a" >&2
     echo "password (this script never prompts for one)." >&2
-    echo "" >&2
-    echo "./local-run-tests.sh --no-docker runs the same jobs on this" >&2
-    echo "machine, if node and a Chrome are installed." >&2
     return 1
   fi
 
@@ -298,10 +293,10 @@ preflight()
 
   # The report's bind mount. Created HERE, by this user, rather than left to
   # docker: the daemon creates a missing mount point as root, and the next
-  # `./local-run-tests.sh` on this machine then cannot write its own report
-  # into it. It is still written by root INSIDE the container — which is why
-  # the workflow chowns it before uploading — but the directory itself stays
-  # the developer's.
+  # host-side writer of tests/report (./run-coverage.sh --no-docker, or
+  # somebody clearing old reports) then cannot write into it. It is still
+  # written by root INSIDE the container — which is why the workflow chowns it
+  # before uploading — but the directory itself stays the developer's.
   mkdir -p "${CURRENT_DIR}/tests/report" || return 1
   return 0
 }
@@ -403,9 +398,9 @@ ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET:-$(head -c 24 /dev/urandom \
 export ADMIN_API_CLIENT_SECRET
 
 # ---------------------------------------------------------------------------
-# THE STACK'S OWN SUBNET (2026-09-12), chosen exactly as ./local-run-tests.sh
-# chooses its own and for the same reason — see freeSubnet() in
-# tests/tools/compose.sh, which argues it once for both launchers.
+# THE STACK'S OWN SUBNET (2026-09-12), chosen as ./local-run-tests.sh chose
+# its own until it was removed (2026-09-16) — see freeSubnet() in
+# tests/tools/compose.sh, which argues it.
 #
 # docker-compose-run-tests.yml names `172.30.0.0/24` because a realm's SPIFFE
 # listeners need addresses that do not move between starts, and a network is
@@ -414,8 +409,8 @@ export ADMIN_API_CLIENT_SECRET
 # exists for — collided on the address space before either brought up a
 # container.
 #
-# THE BASE IS 172.30 AND THE OTHER LAUNCHER'S IS 172.29, which is what keeps
-# one run of each off the scan entirely. Placed after the preflight because
+# THE BASE IS 172.30; THE REMOVED LAUNCHER'S WAS 172.29, which kept one run of
+# each off the scan entirely. Placed after the preflight because
 # freeSubnet() asks docker, and whether that needs `sudo` is what
 # resolveCompose() answers.
 # ---------------------------------------------------------------------------
@@ -625,7 +620,8 @@ captureContainerLogs()
 # last of them would survive.
 #
 # **AND ONLY BESIDE A REPORT THIS MODE WROTE (2026-09-14).** `latest` is the
-# newest report of that mode from ANY run — `./local-run-tests.sh`'s included —
+# newest report of that mode from ANY run — ./local-run-tests.sh's included,
+# while it existed (removed 2026-09-16) —
 # so a mode whose runner never started wrote its two logs over another run's
 # `00-mock-sts-service.log` and `00-test-runner.log`, destroying that report's
 # evidence and leaving this run's where nobody would look for it.
@@ -1004,17 +1000,19 @@ fi
 # exit with ITS status rather than with the service's, which is always 0 or 137
 # and says nothing about the suite.
 # ===========================================================================
-# ONCE PER MODE. `tests/tools/modes.sh` is the one definition of the modes, and
-# ./local-run-tests.sh reads the same file — so the launcher CI runs and the one
-# a developer runs cannot come to disagree about what a green run covers.
+# ONCE PER MODE. `tests/tools/modes.sh` is the one definition of the modes, so
+# they are named in one place however many launchers read them (two until
+# ./local-run-tests.sh was removed on 2026-09-16).
 #
 # EACH MODE GETS ITS OWN REPORT TREE, and the stack is brought DOWN between
 # modes: this launcher's whole point is that the runner is a container too, so
 # two modes cannot share a compose project any more than two runs can.
 #
-# Unlike ./local-run-tests.sh, NOTHING IS LEFT UP at the end. That launcher
-# keeps its last stack for debugging; this one is what CI runs, and a CI job
-# that left containers behind would leak them run after run.
+# NOTHING IS LEFT UP at the end. ./local-run-tests.sh kept its last stack for
+# debugging until it was removed (2026-09-16); this one is what CI runs, and a
+# CI job that left containers behind would leak them run after run. (The
+# down after each mode below runs whatever --keep-stack says, so that option
+# only spares a stack the EXIT trap finds still up.)
 # ===========================================================================
 RC=0
 MODES_RUN=()
@@ -1097,7 +1095,9 @@ do
       "PKI_DISTRIBUTION_LDAP_HOST=sts-lb"
       "STS2_ADDRESS=${STS_NETWORK_PREFIX}.20"
       # PROXY protocol v2 and its one trusted source, the balancer pinned at
-      # `.30` — see ./local-run-tests.sh's cluster block for why not the subnet.
+      # `.30`. Not the subnet: a trusted list that named the whole subnet
+      # would let any container on this network forge a client address,
+      # which is the thing the setting exists to stop.
       # STS_TEST_CLUSTER_PROXY_PROTOCOL=off runs the mode without it.
       "STS_PROXY_PROTOCOL=${STS_TEST_CLUSTER_PROXY_PROTOCOL:-v2}"
       "STS_LB_ADDRESS=${STS_NETWORK_PREFIX}.30"

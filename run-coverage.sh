@@ -53,8 +53,9 @@
 #   than preference: V8 writes coverage from INSIDE the process being measured,
 #   into a directory that process can write, so a runner that only speaks HTTP
 #   to a service container learns NOTHING about which of its lines ran. That is
-#   why ./local-run-tests.sh --coverage cannot simply point at
-#   docker-compose.yml's `sts`, and this script's header said for one day that
+#   why a coverage run cannot simply point at docker-compose.yml's `sts`
+#   (./local-run-tests.sh --coverage could not either, before that launcher
+#   was removed on 2026-09-16), and this script's header said for one day that
 #   coverage therefore could not be containerized at all.
 #
 #   IT CAN. What moves into the container is not the service but the RUNNER: a
@@ -79,8 +80,15 @@
 #   with no docker falls back to it LOUDLY rather than silently, and --docker
 #   turns that fallback into an error.
 #
-# Options: the same as ./local-run-tests.sh, which is what usually calls this,
-# plus the three this script's own container needs.
+# Options. This script RUNS ON ITS OWN — no other launcher calls it since
+# ./local-run-tests.sh was removed (2026-09-16) — and most of its options are
+# tests/tools/run-report.js's, passed through; the three about where the run
+# happens are this script's own.
+#
+# --no-docker runs on the host, so since #50 it meets the same refusal as
+# `npm test` on a checkout (common/compiled_tree.js, STS-CORE-0093): the
+# TypeScript is compiled only inside an image build. The container run is the
+# one that works there.
 #   --only=<substr>[,...]  --protocol[=on|off|only]  --no-protocol / --unit-only
 #   --parent=<dir>
 #   --docker / --no-docker  where the run happens. Default: docker, with a loud
@@ -106,9 +114,9 @@ QUIET=0
 OPEN=0
 
 # WHERE THE RUN HAPPENS, and WHERE_ASKED separates "the default" from "somebody
-# asked for this" — the same distinction ./local-run-tests.sh's SERVICE_ASKED
-# makes, and for the same reason: a default may fall back with a warning, an
-# explicit request must fail instead.
+# asked for this" — the distinction ./local-run-tests.sh's SERVICE_ASKED made
+# until it was removed (2026-09-16), and for the same reason: a default may
+# fall back with a warning, an explicit request must fail instead.
 WHERE="docker"
 WHERE_ASKED=0
 BUILD=1
@@ -191,7 +199,7 @@ fi
 
 if [ "${WHERE}" = "host" ] && [ ! -d "${CURRENT_DIR}/node_modules" ];
 then
-  echo "node_modules is missing. Run ./local-run-tests.sh once, or npm install."
+  echo "node_modules is missing: npm install, then npm install --prefix tests."
   echo "(A containerized run needs neither: ./run-coverage.sh --docker.)"
   exit 1
 fi
@@ -207,11 +215,10 @@ mkdir -p "${COVERAGE_DIR}" "${CURRENT_DIR}/tests/report"
 
 # UNSET rather than merely not set: run-report.js reads STS_TEST_SERVICE_URL as
 # the environment fallback for --service-url, so one left exported in somebody's
-# shell (by a run that kept its stack, which local-run-tests.sh now does by
-# default) would point this run at a
-# CONTAINER — and the protocol half of the coverage would come out empty, which
-# reads as "the protocols are untested" rather than as "this run could not
-# look". The runner warns when it happens; this makes it not happen.
+# shell (a hand run against a kept stack sets exactly that) would point this
+# run at a CONTAINER — and the protocol half of the coverage would come out
+# empty, which reads as "the protocols are untested" rather than as "this run
+# could not look". The runner warns when it happens; this makes it not happen.
 unset STS_TEST_SERVICE_URL
 
 # ---------------------------------------------------------------------------
@@ -243,7 +250,7 @@ unset STS_TEST_SERVICE_URL
 # it: run-report.js starts the service in process here, and the VENDORED
 # modules under common/vendored/ each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel`, never seeing STS_LOG_LEVEL. So
-# the file is chosen the same way ./local-run-tests.sh chooses it, and by the
+# the file is chosen the way ./docker-run-tests.sh chooses its own, and by the
 # same rule — the level picks it, a STS_TEST_CONFIG_FILE named in the
 # environment wins, and trace or debug asks for the whole record and gets
 # env/local.js with it — which is at `info` itself since 2026-09-12, like every
@@ -264,7 +271,7 @@ then
 elif [ -n "${STS_TEST_CONFIG_FILE}" ];
 then
   # A FILE was named and no level was: it decides both halves, and this script
-  # exports no level of its own. ./local-run-tests.sh does the same, and the
+  # exports no level of its own. ./docker-run-tests.sh does the same, and the
   # reason is there — a service logging at `info` out of a file that says
   # `debug` is nobody's idea of an answer.
   :
