@@ -34,7 +34,7 @@
 //     realm works inside a realm, which is the observable half of that
 //     decision. Since 2026-09-14 (#32) a realm's own key does sign a token of
 //     its own — believed under that realm's prefix only and refused every
-//     service-wide operation (mgmt-api/admin_api.js's gate) — and that half is
+//     service-wide operation (mgmt-api/admin_api.ts's gate) — and that half is
 //     `sts_realm_administrators.js`'s.
 //
 // ---------------------------------------------------------------------------

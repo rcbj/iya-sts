@@ -5,16 +5,16 @@ browser-side explorer.
 
 | File | What it is |
 |---|---|
-| `admin_api.js` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.ts`; every one that READS calls a view in `../admin-core/admin_views.ts`, bar the four console-structure functions still on `../admin-ui/admin.js` (table below). **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
-| `admin_api_spec.js` | The OpenAPI document, GENERATED from that table. |
-| `admin_api_docs.js` | The explorer's stylesheet, its script (read off disk) and the body `admin-ui/api_explorer.js` draws inside the console. It registers no route; it served `/admin-api/docs` until 2026-09-09. |
-| `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.js` and served verbatim. Its own header says so at length. |
+| `admin_api.ts` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.ts`; every one that READS calls a view in `../admin-core/admin_views.ts`, bar the four console-structure functions still on `../admin-ui/admin.js` (table below). **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
+| `admin_api_spec.ts` | The OpenAPI document, GENERATED from that table. |
+| `admin_api_docs.ts` | The explorer's stylesheet, its script (read off disk) and the body `admin-ui/api_explorer.js` draws inside the console. It registers no route; it served `/admin-api/docs` until 2026-09-09. |
+| `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.ts` and served verbatim. Its own header says so at length. |
 
-`admin_api_docs.js` reads its sibling with `path.join(__dirname,
+`admin_api_docs.ts` reads its sibling with `path.join(__dirname,
 'admin_api_explorer.js')`, which is why the two moved together and why nothing
 about that line had to change.
 
-7. **`admin_api.js` must stay after `admin.js`, and the rule it carries is about
+7. **`admin_api.ts` must stay after `admin.js`, and the rule it carries is about
    the FUTURE rather than about load order.** The plain dependency first: it
    requires that module for the four console-structure functions listed under
    *THE DECISIONS MOVED OUT OF THE CONSOLE* below, so it must come after it.
@@ -57,7 +57,7 @@ about that line had to change.
      this reason: they used to be built
      inline in the route handlers, which was fine while there was one caller. So
      adding an action to a console switch is most of adding it here, and what
-     remains is one row of `admin_api.js`'s table.
+     remains is one row of `admin_api.ts`'s table.
 
      **TWO RESOURCES CAN SHARE ONE ACTION FUNCTION, and the claim sets are the
      case.** `/admin-api/claims/:action` and `/admin-api/saml-attributes/:action`
@@ -72,7 +72,7 @@ about that line had to change.
      The parity check that reads the refusal sentence off each resource sees the
      same seven action names from both, which is the property that makes them
      one behaviour rather than two.
-   * **The OpenAPI document is GENERATED from that table** (`admin_api_spec.js`),
+   * **The OpenAPI document is GENERATED from that table** (`admin_api_spec.ts`),
      so an operation cannot exist and be undocumented, nor be documented and not
      exist. Do not write a spec file beside the code — that is the thing that is
      wrong within a month.
@@ -164,10 +164,10 @@ same day and needed nothing here at all**, for the same reason — `/admin/scim`
 `/admin/audit`, `/admin/delegation` and the rest already had their GETs.
 
 **The eight rows are GENERATED from a table** (`PROTOCOL_SETTINGS_OPERATIONS` in
-`admin_api.js`, thirteen rows since TOTP, WebAuthn, recovery codes, persistence
+`admin_api.ts`, thirteen rows since TOTP, WebAuthn, recovery codes, persistence
 and the cluster joined it) for the reason `claimSetActions(family)` is: the operations
 differ only in prose, and eight hand-written rows would be seven copies plus the
-one somebody edited. `admin_api_spec.js` reads the array and cannot tell the
+one somebody edited. `admin_api_spec.ts` reads the array and cannot tell the
 difference. They share one response schema, `PageSettings`, which is also what
 the `settings` member of `/admin-api/saml2`, `/admin-api/saml11`,
 `/admin-api/scim` and the rest now carries — one shape a caller learns once.
@@ -422,7 +422,7 @@ carry a token minted for the reader with exactly the scopes those roles grant.
 `admin-ui/CLAUDE.md` argues the page; `admin-ui/api_explorer.js` builds it, at
 19a, after this module — it needs the route table below to build its document.
 
-**TWO FILES DID NOT MOVE AND ARE STILL HERE**: `admin_api_docs.js` and
+**TWO FILES DID NOT MOVE AND ARE STILL HERE**: `admin_api_docs.ts` and
 `admin_api_explorer.js`. The stylesheet, the browser script and the
 realm-prefix argument belong to THIS API's document rather than to the
 console's shell, and the console requires them. The first grew a
@@ -497,7 +497,7 @@ base path, so every operation is covered by construction rather than by one
 remembered check per operation. The scopes become the built-in `ADMIN_READ` and
 `ADMIN_WRITE` roles and the XACML `access-control` document asks for the one
 the action needs — so what this surface demands is stated where every other
-access decision in this service is stated, and `admin_api.js` decides the
+access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
@@ -864,7 +864,7 @@ sentence survived the gate by pointing at a property that was never the point:
 what a test cannot do is drive a browser, and minting a token is not driving a
 browser.
 
-**Their response schemas are deliberately shallow**, and `admin_api_spec.js`
+**Their response schemas are deliberately shallow**, and `admin_api_spec.ts`
 says why beside them: what they return is DIRECTORY ENTRIES, and this directory
 is schemaless on purpose, so an `attributes` member written out property by
 property would be a document making a promise the store does not keep. The names
@@ -1531,7 +1531,7 @@ for a page in `admin-core/protocol_endpoints.ts`'s table, putting the rows on
 `res.locals`; `sendJson()` adds them as `protocolEndpoints` to a 200 whose body
 is a plain object. A `mirrors` naming two pages is a mirror of neither and gets
 nothing — the one whose `mirrors` reads `GET /admin/pki and GET
-/admin/crypto-metadata` is the case. `admin_api_spec.js`'s `operationOf()` says so in those operations'
+/admin/crypto-metadata` is the case. `admin_api_spec.ts`'s `operationOf()` says so in those operations'
 descriptions from the same test (37 of them), rather than in each response
 schema: every one is an `openObject`, and the member is added outside the view
 every schema describes.

@@ -227,7 +227,7 @@ async function theOldPageIsGone() {
   });
 
   // THE RESOURCE IS KEPT AND THE PAGE IS NOT, which is rule 7 read the way
-  // round it usually is not — see `mgmt-api/admin_api.js`. Asserted because
+  // round it usually is not — see `mgmt-api/admin_api.ts`. Asserted because
   // deleting it would be the tidy-looking mistake, and because a caller's
   // script is the thing that would find out.
   const roster = await get("/mfa");

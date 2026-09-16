@@ -2446,7 +2446,7 @@ async function theSamlRegistriesRoundTrip() {
   // It was found by ENFORCING the operation's own schema: every action here
   // declares a `requestBody` with `additionalProperties: false`, the OpenAPI
   // document has always published it, and since 2026-09-06
-  // `mgmt-api/admin_api.js` compiles that same object with ajv and refuses a
+  // `mgmt-api/admin_api.ts` compiles that same object with ajv and refuses a
   // body that does not match.
   //
   // That is precisely the hazard the comment twenty lines below this one warns
@@ -3559,7 +3559,7 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
 //
 // It also asserts the one refusal the gate is responsible for rather than
 // this resource: a token carrying only `admin:read` may LIST the truststore and
-// may not change it. That is `mgmt-api/admin_api.js`'s middleware, by method,
+// may not change it. That is `mgmt-api/admin_api.ts`'s middleware, by method,
 // and it is asserted HERE because a truststore anybody with a read token could
 // add to would be `POST /tls/trust` all over again with a credential in front.
 // ---------------------------------------------------------------------------
