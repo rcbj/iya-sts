@@ -117,8 +117,8 @@
 // WHAT IT REQUIRES, AND WHAT IT MUST NOT BE REQUIRED BY.
 //
 // A LIBRARY (rule 3): it registers no route. It requires the principal
-// database, the codec, the keytab writer and six `common/` leaves — none of
-// which requires it back. Two slots point INTO it and two OUT of it:
+// database, the codec, the keytab writer and eight `common/` libraries —
+// none of which requires it back. Two slots point INTO it and two OUT of it:
 //
 //   * `credentials.setPasswordObserver()` and `principals.setKeySource()` are
 //     filled HERE, at require time. See each for its rule-3e argument.
@@ -209,8 +209,9 @@ function currentDirectory() {
   return directory;
 }
 
-// Whether the KDC in this process is a product one — decided when the principal
-// database was built, which is the only mode the KDC answers in.
+// Whether the AMBIENT trust realm's KDC is a product one — decided when that
+// realm's principal database was built, which is the only mode its KDC answers
+// in.
 function productKdc() {
   log.debug("Entering productKdc().");
   log.debug("Leaving productKdc().");

@@ -101,13 +101,13 @@ account policy is not**, and those are two different sentences.
 
 Five things about it are load-bearing:
 
-* **IT NEEDS NO INVERTED HOOK, and rule 3e's list is six slots long so a
-  seventh is the obvious move.** `authn.js` has to know two things about this
-  door: the PATH, which is in the `/authn/*` space that module already owns, so
-  it declares the constant and this file imports it; and whether the door is
-  open, which is `krb5.spnegoAuthentication` and is read from `config.js` by
-  both. Rule 3e's test is whether a require would close a cycle or move a
-  route — here nothing has to point anywhere.
+* **IT NEEDS NO INVERTED HOOK, and rule 3e's inventory already holds many
+  slots, so one more is the obvious move.** `authn.js` has to know two things
+  about this door: the PATH, which is in the `/authn/*` space that module
+  already owns, so it declares the constant and this file imports it; and
+  whether the door is open, which is `krb5.spnegoAuthentication` and is read
+  from `config.js` by both. Rule 3e's test is whether a require would close a
+  cycle or move a route — here nothing has to point anywhere.
 * **The require goes ONE WAY**: this file requires `authn/authn.js` for
   `startSession()`, `pendingFor()` and `completeAuthentication()`, and that
   module requires nothing in this directory and must not. `authn.js` is #8,
@@ -291,10 +291,12 @@ polices delegation at all** — WS-Trust puts no authorization on `OnBehalfOf` o
 Two halves, and they live where their stores do:
 
 * **`krb5_kdc.js` records the ACTS**, through `../common/delegation.js` (rule
-  3l). `resolveS4u()` can refuse ELEVEN ways and every one of them goes through
+  3l). `resolveS4u()` can refuse TWELVE ways (the twelfth — evidence sealed
+  under a key version neither current nor kept, `STS-KRB-0115` — arrived on
+  2026-09-12) and every one of them goes through
   **`refuseS4u()`**, which attaches the `intent` built at the top of that
   function to the error it is already returning; `handleTgsReq()` then records at
-  the ONE place it handles `s4u.error`. That is what keeps eleven refusal sites
+  the ONE place it handles `s4u.error`. That is what keeps twelve refusal sites
   to one recording site — the same arrangement `recordAuthentication()` has for
   the sixteen families. **The reason on the row is the error's own `e-text`**,
   not a second sentence written for the console: that text is what the client is
@@ -308,10 +310,11 @@ Two halves, and they live where their stores do:
   intermediary on that row means and is the definition of unconstrained
   delegation.
 * **`krb5_principals.js` publishes the POLICY**, as `delegationPolicy()`. It
-  owns the two attributes, so it is where what they MEAN is decided; `admin.js`
-  requires it and renders the answer. It reports the pairs from both
-  `msDS-AllowedToDelegateTo` (front end) and
-  `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) in ONE list with a field
+  owns the two attributes, so it is where what they MEAN is decided;
+  `../admin-core/admin_views.js` requires it and the console renders the
+  answer. It reports the pairs from both `msDS-AllowedToDelegateTo` (front end)
+  and `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) in ONE list with a
+  field
   saying which account carries the permission — the messages and the KDC options
   are identical and that is the whole difference — plus the account flags that
   STOP delegation (`NOT_DELEGATED`) or enable protocol transition
@@ -478,8 +481,8 @@ wrong:**
   rather than implying a completeness it has not got.
 
 `logout.kerberosSignOut` turns the whole thing off, and then this KDC behaves
-exactly as it did before the feature existed — the same switchability every
-refusal in this service has, for the reason RFC 9700 mode's have it.
+exactly as it did before the feature existed — the same switchability most
+refusals in this service have, for the reason RFC 9700 mode's have it.
 
 `signOut()` **creates nothing**: a name nobody has authenticated as has no
 principal here, and stamping one into existence would put an account in the
@@ -523,7 +526,7 @@ rather than burying it.
 **A REAL-GSSAPI JOB IS NOW POSSIBLE AND IS NOT WRITTEN.** It was impossible
 until 2026-08-27 for a reason nothing had noticed: this KDC advertised no
 PA-ENC-TIMESTAMP, so no MIT-derived client could get a ticket from it at all —
-see *The KDC advertises PA-ENC-TIMESTAMP* in `kerberos/CLAUDE.md`. With that
+see *The KDC advertises PA-ENC-TIMESTAMP* above. With that
 fixed, `kinit`, `kvno` and `curl --negotiate` complete against this service end
 to end, and a browser with a ccache and an allow-list entry would too. Such a
 job needs `krb5-user` in the parent's `tests/Dockerfile` and a per-run

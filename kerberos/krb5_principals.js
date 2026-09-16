@@ -6,9 +6,11 @@
 // The mock KDC's principal database.
 //
 // A Kerberos KDC is, at bottom, a table of principals and their long-term keys.
-// This is that table, held in memory and derived on first use from passwords in
-// configuration — because a key committed to a repository is a key, and this
-// service is started fresh for every test run anyway.
+// This is that table — one per trust realm, in a persisted store (see ONE
+// PRINCIPAL DATABASE PER TRUST REALM below) — with every key derived on first
+// use from a password in configuration rather than written down, because a key
+// committed to a repository is a key. The stored keys of directory people and
+// operator-made services are the exception (KEY SOURCE, below).
 //
 // **The misconfigured principals are the point, not padding.** A debugger is
 // judged on how it renders failure, and the failures worth rendering are the
@@ -241,14 +243,14 @@ function userSalt(realm, name) {
 // ---------------------------------------------------------------------------
 // One password, and an account for anybody who asks.
 //
-// Everything else in this service checks no password at all — the username
-// typed at /authn/login becomes the identity and that is the end of it.
-// Kerberos cannot be made to work that way, and the reason is structural rather
-// than a decision: the password IS the key. Pre-authentication is a timestamp
-// encrypted under it, and the AS-REP's enc-part is encrypted under it too, so a
-// KDC that accepted any password would still have to pick one to encrypt the
-// reply with, and a client that used a different one could not read the ticket
-// it was sent.
+// Everything else in this service checks no password at all in development
+// mode — the username typed at /authn/login becomes the identity and that is
+// the end of it. Kerberos cannot be made to work that way, and the reason is
+// structural rather than a decision: the password IS the key.
+// Pre-authentication is a timestamp encrypted under it, and the AS-REP's
+// enc-part is encrypted under it too, so a KDC that accepted any password would
+// still have to pick one to encrypt the reply with, and a client that used a
+// different one could not read the ticket it was sent.
 //
 // So the nearest thing the protocol allows is what happens here: ONE password,
 // shared by every user account, and an account for every username that turns
@@ -314,9 +316,10 @@ function reservedUnknown() {
 //
 // WHAT STAYS REFUSED, because the error has to remain reachable on purpose:
 // anything whose host matches none of these entries.
-// `HTTP/app.elsewhere.invalid` is the case tests/krb5_tgs_ap.js relies on as
-// the control for its cross-realm referrals, and it must keep failing. So must
-// a name in the TRUSTED realm's domain, which is answered with a REFERRAL long
+// `HTTP/app.elsewhere.invalid` is the case the parent project's
+// tests/krb5_tgs_ap.js relies on as the control for its cross-realm
+// referrals, and it must keep failing. So must a name in the TRUSTED realm's
+// domain, which is answered with a REFERRAL long
 // before this is reached — see realmForService() and handleTgsReq().
 //
 // The matching rule is one list with one rule: a host matches an entry when it
@@ -1311,7 +1314,9 @@ function register(def) {
       fullName: null,
       passwordMustChange: null
     }, def.pac || {}),
-    // `krb5.kvno`, one version for every account. Rotation is not modelled.
+    // `krb5.kvno`, the fixed version of every account built from a password
+    // in the configuration. A stored-key principal's version is its key
+    // record's, set over this by directoryUser() and storedService().
     kvno: ctx.KVNO,
     // WHEN THIS PRINCIPAL LAST SIGNED OUT, as a Date, or null for never.
     //
@@ -1696,8 +1701,8 @@ function buildContext(realm) {
       DOMAIN: name.toLowerCase(),
       SEEDS_DEMO: mode.seedsDemoData(),
       KDC_ETYPES: etypes.ids || [],
-      // Every account's key version. One per account: rotation is not
-      // modelled — see `krb5.kvno`.
+      // The key version of every account built from a password in the
+      // configuration — see `krb5.kvno`. Stored keys carry their own.
       KVNO: config.value('krb5.kvno'),
       USER_PASSWORD: config.value('krb5.userPassword'),
       AUTO_SERVICE_PASSWORD: config.value('krb5.autoServicePassword'),
@@ -1971,9 +1976,6 @@ function clearSignOut(nameComponents, realm) {
   return was;
 }
 
-// The instant, or null. Without entering/leaving logs: the TGS handler calls it
-// on every request it answers, and a pair of lines there would be most of the
-// Kerberos log on a busy run.
 // ---------------------------------------------------------------------------
 // THE STAMP AS A `Date`, WHATEVER IT IS ON THE ENTRY (2026-09-08).
 //
@@ -1991,6 +1993,10 @@ function clearSignOut(nameComponents, realm) {
 // one thing every reader shares is this accessor. Callers reading the field
 // directly are the two below and `logout.js`'s row builder, which take a
 // principal from `find()` and are given the same treatment.
+//
+// No Entering/Leaving pair on asDate(): it is on the hot path — every reader
+// of the stamp calls it, the TGS handler on every request it answers — and a
+// pair of lines there would be most of the Kerberos log on a busy run.
 // ---------------------------------------------------------------------------
 function asDate(value) {
   if (!value) {
@@ -2032,10 +2038,6 @@ function signedOutPrincipals() {
   return out;
 }
 
-// `realm` defaults to this KDC's own, so every existing single-realm caller
-// keeps working unchanged. A caller that means "in the realm this ticket came
-// from" has to say so — and in handleTgsReq that is the difference between
-// opening a cross-realm ticket-granting ticket and failing to.
 // ---------------------------------------------------------------------------
 // THE DERIVED LONG-TERM KEYS ARE A CACHE, AND THEY MUST NOT BE PERSISTED
 // (2026-09-08).
@@ -2327,8 +2329,8 @@ function retainedKvnosOf(principal) {
 }
 
 // The whole lookup an AS exchange makes, with the REASON beside a refusal.
-// `findOrCreateUser()` is this with the reason thrown away, for its four other
-// callers.
+// `findOrCreateUser()` is this with the reason thrown away, for S4U2Self in
+// krb5_kdc.js and the in-process tests.
 function lookupUser(nameComponents, realm) {
   log.debug('Entering lookupUser().');
   if (personShaped(nameComponents, realm)) {
@@ -2419,6 +2421,10 @@ function storedService(nameComponents, realm) {
   return principal;
 }
 
+// `realm` defaults to the ambient KDC's own, so every single-realm caller
+// works unchanged. A caller that means "in the realm this ticket came from"
+// has to say so — and in handleTgsReq that is the difference between opening a
+// cross-realm ticket-granting ticket and failing to.
 function find(nameComponents, realm) {
   log.debug("Entering find().");
   const ctx = current();
@@ -2490,8 +2496,9 @@ function find(nameComponents, realm) {
 // not honour.
 //
 // The map grows by one entry per distinct username seen, and nothing evicts.
-// Bounded in practice by a process that is restarted for every test run, and
-// each entry is a name, a salt and lazily-derived keys.
+// Bounded in practice because only development mode creates accounts (below),
+// where a store rarely outlives its test run; each entry is a name, a salt and
+// lazily-derived keys.
 // ---------------------------------------------------------------------------
 function findOrCreateUser(nameComponents, realm) {
   log.debug("Entering findOrCreateUser().");
@@ -2523,8 +2530,9 @@ function findOrCreateUserInDatabase(nameComponents, realm) {
   // about the deployment rather than a log of every name anybody has tried.
   //
   // It is checked HERE and not at the caller for the reason every predicate in
-  // common/mode.js is centralised: this function has four callers and a
-  // check at each is three chances to forget.
+  // common/mode.js is centralised: every user lookup reaches this function —
+  // the AS exchange through lookupUser(), S4U2Self through findOrCreateUser()
+  // — and a check at each caller is another chance to forget.
   if (!mode.autoCreates()) {
     log.info('krb5: product mode, so ' + (nameComponents || []).join('/') +
              '@' + inRealm + ' was NOT created on demand. Principals must be ' +
@@ -2574,7 +2582,8 @@ function findOrCreateUserInDatabase(nameComponents, realm) {
 
 // ---------------------------------------------------------------------------
 // The service account for a host this mock is willing to be, created on first
-// sight. See SERVICE_DOMAINS above for why this exists and what it must not do.
+// sight. See THE HOSTS THIS MOCK WILL BE A SERVICE FOR, above
+// serviceDomainsFor(), for why this exists and what it must not do.
 //
 // Called only AFTER the referral path has had its say, so a name in the trusted
 // realm's domain has already been answered with a ticket-granting ticket for
@@ -2725,9 +2734,6 @@ function chooseEtype(principal, requested) {
   return null;
 }
 
-// The ETYPE-INFO2 entries for a principal: one per supported etype, each with
-// the salt the client must use. arcfour carries NO salt, and that absence is
-// meaningful — its string-to-key ignores the salt entirely.
 // ---------------------------------------------------------------------------
 // Whether PA-ETYPE-INFO2 carries s2kparams, and why this is a switch rather
 // than a constant.
@@ -2762,6 +2768,9 @@ function s2kparamsMode() {
     ? 'send' : 'omit';
 }
 
+// The ETYPE-INFO2 entries for a principal: one per supported etype, each with
+// the salt the client must use. arcfour carries NO salt, and that absence is
+// meaningful — its string-to-key ignores the salt entirely.
 function etypeInfo2For(principal) {
   log.debug("Entering etypeInfo2For().");
   log.debug("Leaving etypeInfo2For().");
@@ -2789,7 +2798,9 @@ function etypeInfo2For(principal) {
 //
 // The rest of that page is a log of acts that have happened. This is the
 // policy behind them, and it is here rather than in common/delegation.js or in
-// admin.js for the reason every store rule in this repository is where it is:
+// the console's view model (admin-core/admin_views.js, which requires this and
+// renders the answer) for the reason every store rule in this repository is
+// where it is:
 // what these two attributes MEAN is a statement about the principal database,
 // and a second opinion about it in the renderer is the drift the console's own
 // text keeps warning about. That store is here; so is this.
@@ -3097,9 +3108,9 @@ module.exports = {
   UAC: UAC,
   RID: RID,
   // The sign-out instant. Four functions rather than an exported field, because
-  // this is a database and the callers are in three other directories: the KDC
-  // reads it on every TGS-REQ, /logout writes it, the console reports it. See
-  // the block above them.
+  // this is a database and the callers are in three directories: the KDC reads
+  // it on every TGS-REQ, /logout writes it, the console (admin-core/) reports
+  // it. See the block above them.
   signOut: signOut,
   clearSignOut: clearSignOut,
   signedOutAt: signedOutAt,

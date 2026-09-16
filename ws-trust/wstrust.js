@@ -23,11 +23,13 @@
 // OnBehalfOf/ActAs token (delegation) is accepted on top of either. It does not
 // verify request signatures or enforce delegation policy.
 //
-// **THAT PARAGRAPH IS DEVELOPMENT MODE, AND PRODUCT MODE IS DIFFERENT IN FOUR
+// **THAT PARAGRAPH IS DEVELOPMENT MODE, AND PRODUCT MODE IS DIFFERENT IN FIVE
 // PLACES (2026-09-12)** — every one of them asked through
 // `mode.verifiesCredentials()`, because each is the question "is a presented
 // credential actually checked":
 //
+//   * a UsernameToken's password is verified against the stored
+//     `userPassword` (`common/credentials.js`), not only against "invalid";
 //   * a request with NO credential is refused, where development issues a token
 //     for the literal subject `anonymous` (and a Renew for whoever its
 //     RenewTarget names);
@@ -79,7 +81,8 @@ const { log, logArtifact, STS, xmlEscape, iso, randomId, signJwtAs,
         firstByLocal, textByLocal,
         subjectForName, hasSubjectResolver } = require('../common/helpers');
 // The input validator. A LEAF (rule 3): it registers no route and requires only
-// `config`, `bunyan`, zod and the vendored XML parser, so it closes no cycle.
+// `config`, `error_codes`, bunyan, zod, zlib and @xmldom/xmldom, so it closes
+// no cycle.
 const validation = require('../common/validation');
 // wstrust.issuer. A SAML token requested THROUGH WS-Trust is built by the
 // SAML modules and carries saml.issuer instead; the two are separate
@@ -91,10 +94,9 @@ const stats = require('../common/admin_stats');
 // library that registers no route, so it cannot move anything in the require
 // order this module sits in.
 const applications = require('../common/applications');
-// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, so a
-// require from 7 — the first protocol module in the route order — moves no
-// route and closes no cycle. See `common/issuance_gate.js`; an unfilled
-// decider answers "allowed".
+// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
+// `error_codes`, so a require from here moves no route and closes no cycle.
+// See `common/issuance_gate.js`; an unfilled decider answers "allowed".
 const gate = require('../common/issuance_gate');
 // The delegation register (/admin/delegation). Two of the eight mechanisms that
 // page knows are this module's — OnBehalfOf and ActAs — and they are the two
@@ -103,13 +105,15 @@ const gate = require('../common/issuance_gate');
 // no route.
 const delegation = require('../common/delegation');
 // THE SESSION STORE. A plain require in the ordinary direction, and it is why
-// this module moved BELOW authn.js in server.js on 2026-09-05 rather than
-// keeping its old place — see the note on that line. Requiring it from above
+// this module moved BELOW authn.js in the require order on 2026-09-05 rather
+// than keeping its old place — see the note on its line in
+// common/protocol_stack.js. Requiring it from above
 // would have dragged every /authn route to the front of the router (rule 1);
 // `authn.js` does not require this module, so no cycle closes either way.
 const authn = require('../authn/authn');
-// The credential verifier and the mode. Both LEAVES (rule 3) that register
-// nothing and require nothing here.
+// The credential verifier and the mode. Libraries that register no route and
+// never require this module: `mode.js` is a leaf, and `credentials.js`
+// requires only other libraries.
 const credentials = require('../common/credentials');
 const mode = require('../common/mode');
 // The one reading of how a requester authenticated, in SAML 2.0's vocabulary,
@@ -1286,15 +1290,15 @@ function handleRst(rawBody, contentType, options) {
            body: envelope(version, trustNs + '/RSTRC/IssueFinal', rstrc) };
 }
 
-// **`no-store`, LIKE EVERY OTHER DOCUMENT HERE THAT DESCRIBES A KEY.** This
-// certificate is made when the process starts and is thrown away when it stops
-// — the same fact CLAUDE.md's *The signing key is regenerated on every start*
-// rests on — so a cached copy outlives the key it names, and a client that
-// re-read it from a proxy would be checking this service's signatures against
-// the certificate of a service that is no longer running. It was the ONE
-// metadata document in this service served without the header, which
-// tests/vendored/sts_metadata_anonymous.js found by asking the same question of
-// all nineteen of them at once.
+// **`no-store`, LIKE EVERY OTHER DOCUMENT HERE THAT DESCRIBES A KEY.** In
+// development mode this certificate is made when the process starts and is
+// thrown away when it stops — the root CLAUDE.md's *Signing keys, and any
+// document that publishes one* — so a cached copy outlives the key it names,
+// and a client that re-read it from a proxy would be checking this service's
+// signatures against the certificate of a service that is no longer running.
+// It was the ONE metadata document in this service served without the header,
+// which tests/vendored/sts_metadata_anonymous.js found by asking the same
+// question of all nineteen of them at once.
 app.get('/sts/cert', function (req, res) {
   log.debug("Entering the STS certificate endpoint.");
   res.type('text/plain').set('Cache-Control', 'no-store').send(STS.certPem);
@@ -1360,11 +1364,12 @@ app.post('/sts', function (req, res) {
         // `request` so a UsernameToken exchange from a BROWSER replaces
         // whatever session it was on. A SOAP client sends no cookie, so this
         // ends nothing for the ordinary caller — which is right.
+        //
         // A NULL MEANS THE ISSUANCE POLICY REFUSED THE SESSION (2026-09-06),
         // and it is deliberately NOT a refusal of the exchange. The token was
-        // already built and the caller is entitled to it — `wstrust.token`
-        // asked the gate in its own right a few hundred lines up, with
-        // `WSTRUST_TOKEN`, and that is the decision about what this endpoint
+        // already built and the caller is entitled to it — handleRst() asked
+        // the gate in its own right, with `gate.ISSUANCE.WSTRUST_TOKEN`, and
+        // that is the decision about what this endpoint
         // issues. This one is about the browser SESSION a UsernameToken
         // exchange also starts, which is a side effect of the exchange rather
         // than its product. Refusing the RSTR here would refuse a credential
