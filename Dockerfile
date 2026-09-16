@@ -33,6 +33,40 @@ FROM ubuntu:latest AS debugger-none
 RUN mkdir -p /debugger
 FROM ${DEBUGGER_IMAGE} AS debugger
 
+# ---------------------------------------------------------------------------
+# THE TYPESCRIPT BUILD (#50, 2026-09-16): COMPILED HERE, SHIPPED WITHOUT ITS
+# SOURCE.
+#
+# rcbj's three rules for the conversion: transpiling happens in a container
+# build step, nothing compiled is ever written to the host, and the final image
+# carries no `.ts`. So this stage takes the whole context, runs
+# `build-typescript.sh --strip` — the type check, then `tsc` emitting each
+# `x.js` beside its `x.ts`, then every `.ts`, `types/` and the tsconfig files
+# deleted — and the final stage below copies THIS stage's tree where it used to
+# copy the context. A layer of the final image therefore never held a `.ts`;
+# deleting them in the final stage instead would have left them in an earlier
+# layer of it.
+#
+# **AN OFFICIAL NODE IMAGE, UNLIKE THE FINAL STAGE**, which pins node through
+# nvm for the parent project's reason (the header). Nothing from this stage
+# runs: it only produces files, `tsc` is a native binary whose output does not
+# depend on the node beside it, and the version is still 24.16.0.
+#
+# The installs are the final stage's (for the types of what the service
+# requires) and `tests/package.json`'s (the compiler). Both `node_modules` are
+# removed at the end, so the COPY below cannot replace the final stage's own.
+# ---------------------------------------------------------------------------
+FROM node:24.16.0-bookworm-slim AS typescript
+WORKDIR /usr/src/sts
+COPY package*.json .npmrc ./
+COPY node-ldapjs ./node-ldapjs
+RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+COPY tests/package*.json ./tests/
+RUN npm install --prefix ./tests && npm cache clean --force
+COPY . ./
+RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
+ && rm -rf ./node_modules ./tests/node_modules ./node-ldapjs/node_modules
+
 FROM ubuntu:latest
 
 # replace shell with bash so we can source files
@@ -150,7 +184,11 @@ RUN npm install --omit=dev && npm cache clean --force
 # node_modules, .git, the documentation and the CI definitions are excluded in
 # .dockerignore; node-ldapjs is copied above, ahead of the install, and copying
 # it again here is a no-op on identical content.
-COPY . ./
+#
+# **FROM THE `typescript` STAGE, NOT FROM THE CONTEXT, SINCE #50
+# (2026-09-16)**: the same tree, with every `.ts` compiled and then removed —
+# see that stage. Everything said above about what rides along still holds.
+COPY --from=typescript /usr/src/sts/ ./
 
 # ---------------------------------------------------------------------------
 # THE SECRET-STORE SDK, AND WHY IT IS INSTALLED HERE RATHER THAN DECLARED AS A
@@ -287,7 +325,8 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
 # from a workstation or CI and never by the service.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
-           ./.github ./docs ./docker-compose-run-tests.yml ./deploy
+           ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
+           ./build-typescript.sh
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory

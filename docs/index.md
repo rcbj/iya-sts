@@ -22,9 +22,12 @@ says exactly where the line is.
 ```bash
 git clone --recursive https://github.com/rcbj/iya-sts.git
 cd iya-sts
-npm install
-CONFIG_FILE=./env/local.js node server.js
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts
 ```
+
+It runs from an image: part of the service is TypeScript, compiled while the
+image is built, and a checkout does not run on its own.
 
 **https, and your browser will warn you once.** Every appconfig file here sets
 `global.https`, so the main port is TLS on the same self-signed certificate the

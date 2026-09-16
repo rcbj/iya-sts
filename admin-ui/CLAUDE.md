@@ -3466,7 +3466,7 @@ one-time page carrying it rather than a redirect, for `/admin/users/new`'s
 reason. The account is protected from deletion in its realm
 (`isBootstrapAdministratorEntry()`).
 
-### The realm chooser, `common/realm_chooser.js`
+### The realm chooser, `common/realm_chooser.ts`
 
 A GET of exactly `/admin` or `/portal`, in the default realm, with no session,
 while realms are defined, draws a chooser (`STS-ADMIN-0790` / `STS-PORTAL-0074`

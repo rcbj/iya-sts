@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2680** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2681** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 46
+* [Service core (`STS-CORE`)](#sts-core) — 47
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 41
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 59
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 27
@@ -183,6 +183,7 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 | `STS-CORE-0090` | setSubjectResolver() was given an object without both subjectFor() and nameFor(), so no person in this process is issued a subject. | none — logged |
 | `STS-CORE-0091` | The subject resolver threw, and the person was given no subject (or a subject was treated as naming nobody). | none — logged |
 | `STS-CORE-0092` | A realm's key set could not be generated off the event loop; the first read of it generates it on the loop instead. | none — logged |
+| `STS-CORE-0093` | The service or its in-process suite was started from a tree whose TypeScript sources are not compiled, which only an image build does (#50). | none — the process exits before listening |
 
 ## STS-WORKER
 

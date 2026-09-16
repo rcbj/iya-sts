@@ -46,6 +46,10 @@
 // arguments and behaves exactly as it did.
 // ===========================================================================
 
+// Refused on a tree whose TypeScript is not compiled — see
+// `common/compiled_tree.js`. The in-process suite runs in an image
+// (`./docker-npm-test.sh`) since #50.
+require('../common/compiled_tree').refuseUncompiledTree('npm test');
 const fs = require('fs');
 const path = require('path');
 const bunyan = require('bunyan');

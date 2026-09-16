@@ -66,6 +66,11 @@
 // longer resolves against the package root from where those modules sit. This
 // makes it absolute once, in place, so every direct reader agrees. See
 // common/config_file.js.
+// A TREE WHOSE TYPESCRIPT IS NOT COMPILED IS REFUSED, BEFORE ANYTHING ELSE
+// (#50). TypeScript here is compiled only inside an image build, so a checkout
+// cannot run the service; this says so instead of a "Cannot find module"
+// from the first converted module. See `common/compiled_tree.js`.
+require('./common/compiled_tree').refuseUncompiledTree('node server.js');
 require('./common/config_file').resolveConfigFile();
 
 const http = require('http');

@@ -592,7 +592,7 @@ const REQUIREMENTS = [
     product: 'The same page asks for the realm\'s id in a text box, so the ' +
              'deployment\'s realms are not published to anybody who can ' +
              'reach it.',
-    where: 'common/realm_chooser.js' },
+    where: 'common/realm_chooser.ts' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
     development: 'An assertion or token that should have been encrypted and ' +

@@ -675,6 +675,11 @@ const CODES = [
     summary: 'A realm\'s key set could not be generated off the event loop; ' +
       'the first read of it generates it on the loop instead.',
     spec: 'none — logged' },
+  { code: 'STS-CORE-0093',
+    summary: 'The service or its in-process suite was started from a tree ' +
+      'whose TypeScript sources are not compiled, which only an image ' +
+      'build does (#50).',
+    spec: 'none — the process exits before listening' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +

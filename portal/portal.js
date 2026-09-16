@@ -1769,7 +1769,7 @@ function requireSignIn(req, res, returnTo, want) {
   // -------------------------------------------------------------------
   // WHICH REALM FIRST (2026-09-14, #32): a bare /portal on a service with
   // realms defined asks which realm the person belongs to before anything
-  // sends them to sign in — `common/realm_chooser.js`, shared with the
+  // sends them to sign in — `common/realm_chooser.ts`, shared with the
   // console. A choice is a redirect to that realm's own portal.
   const choice = realmChooser.decide(req, 'portal');
   if (choice && choice.kind === 'redirect') {
@@ -1777,7 +1777,7 @@ function requireSignIn(req, res, returnTo, want) {
     log.debug("Leaving requireSignIn(). To the chosen realm.");
     return null;
   }
-  if (choice) {
+  if (choice && choice.kind === 'page') {
     if (choice.error) {
       errorCodes.mark(res, 'STS-PORTAL-0074');
     }

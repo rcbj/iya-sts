@@ -35,8 +35,15 @@ const childProcess = require('child_process');
 const log = require('bunyan').createLogger({ name: 'typecheck',
   level: process.env.LOG_LEVEL || 'info' });
 
-const ROOT = path.join(__dirname, '..');
-const TSC = path.join(__dirname, 'node_modules', 'typescript', 'bin', 'tsc');
+// THE SOURCE TREE TO CHECK. The checkout this file is in, on the host; in the
+// tests image, `STS_TYPECHECK_ROOT` names a pristine copy of the sources taken
+// before `build-typescript.sh` compiled the tree the jobs run from (see
+// `tests/Dockerfile`), because a compiled `.js` beside a `.ts` is exactly
+// what the last check below refuses.
+const ROOT = process.env.STS_TYPECHECK_ROOT || path.join(__dirname, '..');
+const TSC = path.join(ROOT, 'tests', 'node_modules', 'typescript', 'bin',
+                      'tsc');
+const compiledTree = require('../common/compiled_tree');
 
 // The directories whose own files have opted in — every directory the
 // service runs from since 2026-09-16 — and the two root modules. The files
@@ -114,6 +121,31 @@ function run(t) {
   });
   t.equal(missing.join(', '), '',
           'and tsconfig.json includes every one of them');
+
+  // NO COMPILED OUTPUT IN THE SOURCE TREE (#50): TypeScript is compiled only
+  // inside an image build, so a `.js` beside a `.ts` here is an artifact the
+  // rules forbid — or a stale one that would shadow nothing and mislead.
+  // `uncompiledSources()` lists the sources WITHOUT a twin; every source
+  // must be on it.
+  const all = [];
+  fs.readdirSync(ROOT, { withFileTypes: true }).forEach(function (dir) {
+    if (!dir.isDirectory() ||
+        compiledTree.NOT_SOURCES.indexOf(dir.name) >= 0) {
+      return;
+    }
+    fs.readdirSync(path.join(ROOT, dir.name)).forEach(function (name) {
+      if (/\.ts$/.test(name) && !/\.d\.ts$/.test(name)) {
+        all.push(dir.name + '/' + name);
+      }
+    });
+  });
+  const uncompiled = compiledTree.uncompiledSources(ROOT).found;
+  const twinned = all.filter(function (rel) {
+    return uncompiled.indexOf(rel) < 0;
+  });
+  t.equal(twinned.join(', '), '',
+          'no TypeScript source in ' + ROOT + ' has a compiled .js beside it ' +
+          '(' + all.length + ' source(s))');
 
   t.log.info('=== tsc finds no error ===');
   if (!fs.existsSync(TSC)) {

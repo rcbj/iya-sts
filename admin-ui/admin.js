@@ -5562,7 +5562,7 @@ app.use('/admin', function (req, res, next) {
     // it again.
     if (req.method === 'GET' || req.method === 'HEAD') {
       // WHICH REALM FIRST (2026-09-14, #32), for a bare /admin on a service
-      // with realms defined: `common/realm_chooser.js` says when, and a
+      // with realms defined: `common/realm_chooser.ts` says when, and a
       // choice is a redirect to that realm's own console.
       const choice = loginRealmChooser.decide(req, 'admin');
       if (choice && choice.kind === 'redirect') {
@@ -5570,7 +5570,7 @@ app.use('/admin', function (req, res, next) {
         log.debug("Leaving the admin console gate. To the chosen realm.");
         return;
       }
-      if (choice) {
+      if (choice && choice.kind === 'page') {
         if (choice.error) {
           errorCodes.mark(res, 'STS-ADMIN-0790');
         }
