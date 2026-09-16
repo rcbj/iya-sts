@@ -887,7 +887,8 @@ function decryptElement(xml, privateKeyPem, opts) {
                              transport.scheme, transportOptions(transport));
     if (!key || key.length !== cipher.keyBytes) {
       // A WRONG KEY IS THE ORDINARY FAILURE and it is worth naming: this
-      // service regenerates its key on every start, so a service provider that
+      // service regenerates its key on every start in development mode (the
+      // default; product mode keeps it), so a service provider that
       // cached the certificate from a previous run encrypts to a key that no
       // longer exists. Under RSA-1_5 that unwraps to plausible-looking garbage
       // of the wrong length rather than failing, which is the whole reason the
@@ -1692,12 +1693,15 @@ function verifyJwsAsync(token, key, opts) {
 // notion of what an `enc` value means. They are together here, over one table,
 // so a third algorithm is one row rather than two edits that have to agree.
 //
-// `common/vendored/jose_jwe.js` is the obvious alternative and is deliberately
-// not used: its own header says it exists so that OID4VCI's two ends do not
-// each implement the Concat KDF — and this service uses neither ECDH-ES nor the
-// KDF, only RSA-OAEP-256 with AES-GCM, which is the part of JWE with no room
-// for two readings to disagree. That file stays vendored for `key_material.js`
-// and `x509.js`, which SPIFFE reaches through.
+// `common/vendored/jose_jwe.js` is the obvious alternative and is not used
+// here. This paragraph used to justify that by saying this service used
+// neither ECDH-ES nor the Concat KDF, only RSA-OAEP-256 with AES-GCM — which
+// stopped being true when the table below grew to RFC 7518 section 4 entire
+// (2026-09-10): ECDH-ES and its KDF are implemented in this file
+// (`concatKdf()`), so the two-implementations risk that module's header warns
+// about is real and is answered by the interop tests rather than avoided.
+// That file stays vendored for `key_material.js` and `x509.js`, which require
+// it and which SPIFFE and `pki.js` reach through.
 // ---------------------------------------------------------------------------
 
 // The content encryption algorithms this service speaks, in both families RFC
@@ -2300,7 +2304,8 @@ function unwrapCek(header, encryptedKey, options, spec) {
 //   allowedEnc    the `enc` values this endpoint accepts. Required.
 //   expectedKid   when set, the header's kid must equal it. Checking it is
 //                 what makes key rotation DETECTABLE: this service regenerates
-//                 its keys on every start, so a wallet holding a stale one is
+//                 its keys on every start in development mode (and on a
+//                 rotation in product mode), so a wallet holding a stale one is
 //                 told exactly that instead of getting an opaque decryption
 //                 failure it will blame on its own code.
 //
@@ -2423,11 +2428,12 @@ function decryptJweCompact(compact, opts) {
 // ---------------------------------------------------------------------------
 // A CERTIFICATE SERIAL NUMBER, AND WHY IT CANNOT BE THE CONSTANT IT WAS.
 //
-// Every certificate this service mints is self-signed, regenerated on every
-// start, and carries a subject that never varies — `CN=localhost, O=sts`
-// for the listeners' one. The serial was a CONSTANT beside all that: '02' for
-// the signing key, '03' for the TLS server certificate, '04' for the ML-DSA
-// one. So two starts of this service produced two DIFFERENT KEYS under one
+// Every certificate this service minted was — until every key pair became a
+// leaf of `common/pki.js` on 2026-09-11 — self-signed, regenerated on every
+// start, and carried a subject that never varied: `CN=localhost, O=sts` for
+// the listeners' one. The serial was a CONSTANT beside all that: '02' for the
+// signing key, '03' for the TLS server certificate, '04' for the ML-DSA one.
+// So two starts of this service produced two DIFFERENT KEYS under one
 // (issuer, serial) pair, and that pair is the primary key NSS files a
 // certificate under.
 //
@@ -3269,8 +3275,8 @@ function scryptParameters() {
   log.debug("Leaving scryptParameters().");
   return { N: n, r: r, p: p, keylen: SCRYPT_KEYLEN,
            // RFC 7914's memory is 128 * N * r (plus 128 * r * p for the
-           // parallel blocks); doubled for headroom exactly as the constant
-           // above is, so node never refuses a cost this file chose.
+           // parallel blocks); doubled for headroom exactly as the retired
+           // constant was, so node never refuses a cost this file chose.
            maxmem: 2 * 128 * r * (n + p) };
 }
 
@@ -3578,10 +3584,7 @@ function decryptWithKek(kek, stored, label) {
                                                Buffer.from(subkey), iv);
   decipher.setAuthTag(tag);
   // THROWS ON A BAD TAG, and that is the whole point of GCM here: the caller
-  // gets an error rather than the wrong key. `keystore.js` turns it into a
-  // fatal at startup, because a service that cannot read its own signing key
-  // must not come up generating a new one and silently invalidating every token
-  // it ever issued.
+  // gets an error rather than the wrong key.
   // **THE `final()` IS WRAPPED SO THAT A BAD TAG IS COUNTED AND STILL
   // THROWS.** The throw is the whole point of GCM here and must not be
   // softened into a return: `keystore.js` turns it into a fatal at startup,
@@ -3767,9 +3770,9 @@ function hashSecretAsync(plaintext, opts) {
   return deriveAsync(plaintext, spec, opts).then(function (derived) {
     return encodeStoredSecret(spec.N, spec.r, spec.p, salt, derived);
   }, function (e) {
-    // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block on
-    // deriveAsync() below for why that is the right answer rather than a
-    // fallback that hides something.
+    // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block in
+    // verifySecretAsync() below for why that is the right answer rather than
+    // a fallback that hides something.
     log.warn(errorCodes.tag('STS-KEYS-0006') +
              'crypto: the worker pool could not derive a password hash and ' +
              'it is being computed in this process instead: ' + e.message);
@@ -3885,8 +3888,8 @@ module.exports = {
   verifyJwsAsync: verifyJwsAsync,
   verifyCompactJwsAsync: verifyCompactJwsAsync,
   tokenClockSkew: tokenClockSkew,
-  // --- JWE ---
-  // The one JWS algorithm table and the operations built on it.
+  // The one JWS algorithm table and the operations built on it (the JWE
+  // exports follow from JWE_ALG down).
   b64u: b64u,
   JWS_ALGS: JWS_ALGS,
   JWS_SIGNING_ALGS: JWS_SIGNING_ALGS,

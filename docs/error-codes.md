@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 70
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 76
-* [TLS listeners (`STS-TLS`)](#sts-tls) — 32
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 51
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
@@ -2007,7 +2007,7 @@ Raised from: spiffe/.
 
 ## STS-TLS
 
-**TLS listeners.** The client-certificate truststore, the sign-in a verified one starts, and the server certificate the main port and LDAPS 636 share. The 8443 and 9443 listeners it was named for were deleted on 2026-09-16.
+**TLS and client certificates.** The client-certificate truststore, the sign-in a verified one starts, and the server certificate the main port and LDAPS 636 share. The 8443 and 9443 listeners it was named for were deleted on 2026-09-16.
 
 Raised from: tls/.
 

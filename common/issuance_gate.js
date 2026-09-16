@@ -25,18 +25,20 @@
 // Rule 3e's test, and it fails both ways round, which is exactly when a slot
 // is the answer:
 //
-//   * A require from an issuance site to `xacml/` would MOVE ROUTES. Nine
-//     modules issue something and every one of them is required BEFORE
-//     `xacml/xacml.js` at 23c — `authn` at 8, `oauth2` at 9, the two SAML
-//     profiles at 10a and 10b. Requiring the XACML family from any of them
-//     registers seven `/xacml` routes and five `/admin/xacml` pages at that
-//     position instead, ahead of the management API's own, which is the
-//     failure CLAUDE.md's require-order table exists to prevent.
+//   * A require from an issuance site to `xacml/` would MOVE ROUTES. Eight
+//     modules issue something and all but one are required BEFORE
+//     `xacml/xacml.js` at 23c — `wstrust` at 7, `authn` at 8, `oauth2` at 9,
+//     `wsfed` at 10, the two SAML profiles at 10a and 10b, the KDC at 15.
+//     (GNAP, at 23d, came later and asks through this file like the rest.)
+//     Requiring the XACML family from any of the seven registers eight
+//     `/xacml` routes and six `/admin/xacml` pages at that position
+//     instead, ahead of the management API's own, which is the failure
+//     CLAUDE.md's require-order table exists to prevent.
 //   * And it would CLOSE A CYCLE. `xacml_admin.js` requires
 //     `admin-ui/admin.js`, which requires `oauth2.js`.
 //
 // A require in the other direction — the PEP reaching into `oauth2.js` — is
-// not a candidate at all: the PEP would then have to know about nine callers.
+// not a candidate at all: the PEP would then have to know about every caller.
 //
 // **SO THIS FILE REQUIRES ALMOST NOTHING AND MUST STAY THAT WAY.** `helpers`
 // and `config`, both of which every module here already has. It is a LEAF, and
@@ -135,11 +137,11 @@ function deciderInstalled() {
 // issuance site branches on and everything else is what it puts in a log, an
 // error description or an audit record.
 //
-// IT NEVER THROWS AND NEVER RETURNS A PROMISE. Nine issuance sites call it,
-// several of them inside code paths this service has always run
-// synchronously, and an authorization check that could make a token endpoint
-// asynchronous would be a change to nine protocol implementations rather than
-// to one file.
+// IT NEVER THROWS AND NEVER RETURNS A PROMISE. A dozen issuance sites in
+// eight modules call it, several of them inside code paths this service has
+// always run synchronously, and an authorization check that could make a
+// token endpoint asynchronous would be a change to eight protocol
+// implementations rather than to one file.
 // ---------------------------------------------------------------------------
 function check(request) {
   log.debug('Entering check(). kind=' + (request || {}).kind);

@@ -7,7 +7,9 @@
 // key pair already. This is the third thing on that page and the first whose
 // use is a HANDSHAKE rather than a document: a key pair and an X.509
 // certificate carrying `clientAuth`, which the person installs in a browser
-// and presents to this service's TLS listeners, where it signs them in.
+// and presents on this service's main port, where `GET /tls/sign-in` signs
+// them in. (It was the 8443 and 9443 listeners until they were deleted on
+// 2026-09-16.)
 //
 // THREE HALVES, AND THEY ARE ONE MODULE BECAUSE THEY ARE ONE RULE READ THREE
 // WAYS:
@@ -28,11 +30,12 @@
 // ---------------------------------------------------------------------------
 // WHY THE GATE EXISTS AT ALL, AND IT IS THE SECURITY POINT OF THE FEATURE.
 //
-// A certificate this service issues is useless at a TLS listener unless the
-// listener trusts its chain, and the listeners' client truststore was EMPTY by
-// default — anchors arrived only through /tls/trust. So since this module the
-// listeners trust the SERVICE ROOT as well (`trustAnchorPem()`, behind
-// `tls.trustIssuedClientCertificates`). OpenSSL will not end a path at an
+// A certificate this service issues is useless at a listener unless the
+// listener trusts its chain, and the client truststore every listener shares
+// (`tls/tls_server.js`) was EMPTY by default — anchors arrived only through
+// /tls/trust. So since this module it trusts the SERVICE ROOT as well
+// (`trustAnchorPem()`, behind `tls.trustIssuedClientCertificates`), which
+// reaches the main port. OpenSSL will not end a path at an
 // Intermediate or an Issuing CA without a partial-chain flag node does not
 // expose, so the anchor HAS to be the Root.
 //
@@ -47,13 +50,17 @@
 // SO A CHAIN THROUGH A HELD AUTHORITY IS AN IDENTITY ONLY WHEN ALL OF THIS IS
 // TRUE, and otherwise it is reported as `issuedHere` and `accepted: false`:
 //
-//   * the leaf was signed by a realm's `tls-client` Issuing CA — found by NAME
-//     AND SIGNATURE through `revocation_status.js`'s walk, because two
-//     authorities here share a subject and only the key tells them apart;
+//   * the leaf was signed by a realm Issuing CA in `IDENTITY_USE_CASES` (below)
+//     — found by NAME AND SIGNATURE through `revocation_status.js`'s walk,
+//     because two authorities here share a subject and only the key tells
+//     them apart;
 //   * it carries `clientAuth` in its extended key usage;
-//   * its subjectAltName carries `urn:sts:person:<CN>` — the name `issue()`
-//     wrote, so a leaf whose CN and SAN disagree is somebody else's
-//     construction and is refused rather than believed on its CN.
+//   * its subjectAltName names exactly ONE `urn:sts:person:` or
+//     `urn:sts:application:` entry, which is the identity;
+//   * for this module's own `tls-client` authority, that name is also the CN
+//     — `issue()` writes both from one name, so a leaf whose CN and SAN
+//     disagree is somebody else's construction and is refused rather than
+//     believed on its CN.
 //
 // A chain through NO authority this process holds is not this module's
 // business and is answered `issuedHere: false`: that is an anchor somebody
@@ -62,12 +69,12 @@
 // ---------------------------------------------------------------------------
 // THE REALM IS THE ISSUING CA'S.
 //
-// The TLS listeners are shared by every realm and a socket has no path to put a
-// realm in. A certificate from `acme`'s `tls-client` Issuing CA therefore names
-// its realm by WHO SIGNED IT, and `identityOf()` answers `realm`. The listeners
-// start the session in that realm; the doors on the main port, which DO have an
-// ambient realm, refuse a certificate from another realm's authority
-// (`checkRequest()`), for the reason `pki.verifyLeaf()` requires this realm's
+// A socket is shared by every realm and has no path to put a realm in. A
+// certificate from `acme`'s `tls-client` Issuing CA therefore names its realm
+// by WHO SIGNED IT, and `identityOf()` answers `realm`. `GET /tls/sign-in`
+// starts the session in that realm; the doors that read a certificate under an
+// ambient realm refuse a certificate from another realm's authority
+// (`checkSocket()`), for the reason `pki.verifyLeaf()` requires this realm's
 // own Intermediate on an assertion's path.
 // ===========================================================================
 
@@ -106,7 +113,8 @@ const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
 // stays OUT is every authority that issues keys for a purpose that is not
 // "this is who is connecting": JOSE and XML signing, the assertion key pairs,
 // SPIFFE (whose identities are SPIFFE IDs at the SPIRE Server API, not people
-// at a sign-in), the TLS listeners' own and a remote PEP's.
+// at a sign-in), this service's own TLS server certificates (`tls`) and a
+// remote PEP's.
 // ---------------------------------------------------------------------------
 const IDENTITY_USE_CASES = ['tls-client', 'acme', 'est', 'scep'];
 
@@ -565,7 +573,7 @@ function revoke(realmId, username, serialHex, reasonId, kind) {
 }
 
 // ---------------------------------------------------------------------------
-// THE ANCHOR THE LISTENERS ADD, or '' when they add none.
+// THE ANCHOR THE CLIENT TRUSTSTORE ADDS, or '' when it adds none.
 //
 // Read per call, so a Root rebuilt on /admin/pki is what the next
 // `applyAnchors()` hands OpenSSL — `tls_server.js` re-applies its context when
@@ -595,8 +603,8 @@ function trustAnchorPem() {
 // RECOGNISE.
 //
 // `input` is `revocation_status.fromSocket()`'s shape — `{ leaf, chain,
-// verified }` — which is what makes one function serve a real socket on 8443
-// and a request worker's shim on the main port.
+// verified }` — which is what makes one function serve a real socket on the
+// main port and a request worker's shim for a dispatched request.
 //
 // The walk is memoised by the leaf's digest AND by which authorities are held:
 // a replaced Issuing CA is a different authority, and a memo that outlived it
@@ -800,8 +808,9 @@ function identityOf(input) {
 // three enrollment authorities it is the certificate on the entry, found
 // through `cert_enrollment.findEnrolled()` in the certificate's realm.
 //
-// Revocation is NOT asked here: the listener's verdict already refused a
-// revoked certificate before any door reaches this, and a second answer to
+// Revocation is NOT asked here: the door's revocation verdict
+// (`req.certificateRevocation`, `revocation_status.js`'s annotation) already
+// refused a revoked certificate before this is reached, and a second answer to
 // "is it revoked" is the one that disagrees with the first.
 // ---------------------------------------------------------------------------
 function stillHeld(identity) {

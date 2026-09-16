@@ -128,7 +128,8 @@
 // keeps `server.listen()`, `address()`, `setSecureContext()` and
 // `getConnections()` exactly as every listener module already calls them, on
 // the same object; a second `net.Server` in front would have needed each of
-// those re-plumbed at seven call sites.
+// those re-plumbed at every listener's call sites (seven listeners when this
+// was written, before 8443 and 9443 were deleted on 2026-09-16).
 //
 // Bytes that arrived with the header — a ClientHello coalesced into the same
 // segment, which is ordinary — are UNSHIFTED back onto the paused socket.

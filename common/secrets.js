@@ -96,7 +96,8 @@
 // `reachOf()` is the one place that decision is made.
 //
 // A LIBRARY (rule 3): it registers no route. It requires only `config` and
-// `helpers` for the log.
+// `error_codes` from this repository (and makes its own logger — see below),
+// plus node's `fs` and `crypto` and, lazily, the provider SDKs.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -142,20 +143,6 @@ function missingModule(pkg, provider, err) {
     'underlying error was: ' + err.message), 'STS-KEYS-0045');
 }
 
-// ---------------------------------------------------------------------------
-// file — THE DEFAULT.
-//
-// A path, read as bytes. It is the default because it is what every container
-// platform already does: a Kubernetes Secret, a Docker secret and a mounted
-// volume all arrive as a file, so the platform's own access control is the
-// access control and this service adds none of its own.
-//
-// **THE FILE'S PERMISSIONS ARE CHECKED AND REPORTED RATHER THAN ENFORCED.** A
-// world-readable key file is a real problem and refusing to start over it would
-// be worse: the fix may be impossible inside a container whose mount the
-// operator does not control, and a service that will not start is a service
-// somebody works around by putting the key in an environment variable.
-// ---------------------------------------------------------------------------
 // ===========================================================================
 // WHAT A SECRET IS, HERE: a descriptor naming where its location is
 // configured (2026-09-12).
@@ -345,6 +332,20 @@ function pick(raw, spec, borrowed) {
   return String(value);
 }
 
+// ---------------------------------------------------------------------------
+// file — THE DEFAULT.
+//
+// A path, read as bytes. It is the default because it is what every container
+// platform already does: a Kubernetes Secret, a Docker secret and a mounted
+// volume all arrive as a file, so the platform's own access control is the
+// access control and this service adds none of its own.
+//
+// **THE FILE'S PERMISSIONS ARE CHECKED AND REPORTED RATHER THAN ENFORCED.** A
+// world-readable key file is a real problem and refusing to start over it would
+// be worse: the fix may be impossible inside a container whose mount the
+// operator does not control, and a service that will not start is a service
+// somebody works around by putting the key in an environment variable.
+// ---------------------------------------------------------------------------
 const fileProvider = {
   id: 'file',
   label: 'A file mounted into the container',
@@ -571,16 +572,6 @@ const azureProvider = {
 };
 
 // ---------------------------------------------------------------------------
-// vault — HashiCorp Vault, through node-vault.
-//
-// `keys.kekRef` is the read path and `keys.kekField` the field within the
-// secret, defaulting to `value`. **BOTH KV ENGINE VERSIONS ARE HANDLED**: v2
-// nests the data one level deeper (`data.data`) than v1 (`data`), the path
-// differs too, and a deployment usually does not know which it is on — so the
-// answer is unwrapped by shape rather than by a setting nobody can fill in
-// correctly.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // HOW THIS SERVICE PROVES WHO IT IS TO A VAULT (2026-09-12).
 //
 // A TOKEN in a configuration file is a bearer credential: whoever reads the
@@ -723,6 +714,16 @@ async function vaultConnect(spec) {
            how: 'a client certificate' };
 }
 
+// ---------------------------------------------------------------------------
+// vault — HashiCorp Vault, through node-vault.
+//
+// `keys.kekRef` is the read path and `keys.kekField` the field within the
+// secret, defaulting to `value`. **BOTH KV ENGINE VERSIONS ARE HANDLED**: v2
+// nests the data one level deeper (`data.data`) than v1 (`data`), the path
+// differs too, and a deployment usually does not know which it is on — so the
+// answer is unwrapped by shape rather than by a setting nobody can fill in
+// correctly.
+// ---------------------------------------------------------------------------
 const vaultProvider = {
   id: 'vault',
   label: 'HashiCorp Vault',
@@ -819,7 +820,8 @@ function configuredFor(spec) {
   return !!named && named !== 'none';
 }
 
-// THE KEK. Asynchronous because four of the five providers are — a network
+// ONE SECRET — the KEK or the database password, whichever `spec` describes.
+// Asynchronous because four of the five providers are — a network
 // call to somebody else's secret store — and the file one is made to look the
 // same so that no caller has to know which is configured.
 async function read(spec) {
@@ -1074,12 +1076,13 @@ const NEVER_REPORTED = ['value', 'values', 'data', 'token', 'client_token',
                         'keys_base64', 'recovery_keys', 'recovery_keys_base64',
                         'SecretString', 'SecretBinary', 'payload'];
 
-// **IT DOES NOT LOG, WHICH IS THE ONE PLACE IN THIS FILE THAT RULE IS
-// BROKEN ON PURPOSE.** It recurses over every member of every probe's
-// answer, so an `Entering`/`Leaving` pair would be some hundreds of lines
-// per render — and it is the function whose whole job is to handle values
-// nobody should see, so a debug line about what it is looking at is the
-// last thing this module should be able to emit.
+// **IT WAS WRITTEN NOT TO LOG, AS A HOT-PATH EXCEPTION, AND IT LOGS ANYWAY.**
+// It recurses over every member of every probe's answer, so an
+// `Entering`/`Leaving` pair is some hundreds of debug lines per render — and
+// it is the function whose whole job is to handle values nobody should see.
+// The pair below carries no value, so nothing secret reaches the log, but the
+// exception this comment claimed is not what the code does (the 2026-09-12
+// style sweep added the pair); whether to restore it is an open question.
 function scrub(what, depth) {
   log.debug("Entering scrub().");
   const level = depth || 0;

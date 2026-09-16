@@ -42,7 +42,8 @@
 //     responder its Authority Information Access names and by the CRL its
 //     `cRLDistributionPoints` names** — in the order `pki.revocationOcsp`
 //     chooses, `first` by default, with the other as the fallback — each
-//     fetched over http or https only, with a timeout, a size cap and a cache
+//     fetched over http or https (and a CRL over LDAP too, point 1 below),
+//     with a timeout, a size cap and a cache
 //     that honours the document's own validity, and each verified against a
 //     key the certificate's ISSUER vouched for: its own, a delegated OCSP
 //     responder it certified, or the CRL issuer it named. A CRL and an OCSP

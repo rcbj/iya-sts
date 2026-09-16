@@ -93,11 +93,11 @@
 // are the ones that silently end or change the string there.
 //
 // ---------------------------------------------------------------------------
-// IT IS A LIBRARY (rule 3) AND A LEAF. It requires `helpers.js`, `mode.js` and
-// an npm package, registers no route, and reaches the directory through a slot
-// `ldap/ldap_server.js` fills — `common/roles.js`'s arrangement exactly, and
-// for its reason: that module is required at 21, so a require from here would
-// drag every `/ldap` route to the front of the router.
+// IT IS A LIBRARY (rule 3) AND A LEAF. It requires `helpers.js`, `mode.js`,
+// `error_codes.js` and an npm package, registers no route, and reaches the
+// directory through a slot `ldap/ldap_server.js` fills — `common/roles.js`'s
+// arrangement exactly, and for its reason: that module is required at 21, so a
+// require from here would drag every `/ldap` route to the front of the router.
 // ---------------------------------------------------------------------------
 
 const { log } = require('./helpers');
@@ -111,7 +111,8 @@ const errorCodes = require('./error_codes');
 
 const DEFAULT_PROFILE = 'default';
 
-// The character the generator leaves out of its symbol pool. See the header.
+// The two characters the generator leaves out of its symbol pool. See the
+// header.
 const GENERATOR_EXCLUDES = '"`';
 
 // Drawing stops here rather than looping forever. With the limits below —

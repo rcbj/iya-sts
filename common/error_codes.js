@@ -37,7 +37,7 @@
 //    wire would be this service inventing a member no specification has, in
 //    front of the client whose error handling it exists to exercise. So
 //    `mark()` writes to the RESPONSE OBJECT, which the call-log funnel reads
-//    after the bytes have gone, and never to anything that is serialised.
+//    as the answer is handed over, and never to anything that is serialised.
 //
 // 2. **THE SPEC ERROR IS UNCHANGED AND IS DOCUMENTED BESIDE THE CODE.** Where a
 //    condition is reported to the client in a specification's vocabulary, the
@@ -62,8 +62,8 @@
 //
 // It requires NOTHING from this repository — not `helpers.js`, not `config.js`,
 // not even a logger — so it can be required from `config.js` and `crypto.js`,
-// which are themselves leaves, and from `audit.js`, which may require
-// `helpers.js` and `config.js` and nothing else. A registry of failures that
+// which are themselves leaves, and from `audit.js` and `realms.js`, which most
+// of the service requires. A registry of failures that
 // could close a require cycle would be a registry that caused one. `fs` and
 // `path` are required only inside the command-line half at the foot.
 //
@@ -245,7 +245,7 @@ const SUBSYSTEMS = [
   { id: 'SPIFFE', label: 'SPIFFE',
     where: 'spiffe/',
     what: 'The bundle endpoint, the Workload API and the SPIRE Server API.' },
-  { id: 'TLS', label: 'TLS listeners',
+  { id: 'TLS', label: 'TLS and client certificates',
     where: 'tls/',
     what: 'The client-certificate truststore, the sign-in a verified one ' +
           'starts, and the server certificate the main port and LDAPS 636 ' +
@@ -11902,13 +11902,14 @@ function describe(code) {
 //
 // or as a statement of its own on the line before. Nothing about the response
 // changes — no header, no body — which is rule 1. `common/app.js`'s call log
-// reads it back from `finish`, after the bytes have gone, and puts it on the
-// audit row.
+// reads it back when the answer is handed to `res.end()` (or on `finish` for a
+// response that bypassed it), and puts it on the audit row.
 //
-// **A SYMBOL AND NOT `res.locals`.** Three listeners here write responses that
-// are not Express's (`tls/tls_server.js` has a handler of its own), and a
-// property under a Symbol cannot be serialised by `res.json(res.locals)` or
-// collide with a template variable. It is not enumerable for the same reason.
+// **A SYMBOL AND NOT `res.locals`.** Not every response here was always
+// Express's (`tls/tls_server.js` had a handler of its own until its listeners
+// were deleted on 2026-09-16), and a property under a Symbol cannot be
+// serialised by `res.json(res.locals)` or collide with a template variable. It
+// is not enumerable for the same reason.
 //
 // **THE LAST MARK WINS.** A shared helper that marks a general condition can
 // be overridden by a caller that knows the specific one, simply by marking

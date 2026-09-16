@@ -26,7 +26,7 @@ more than one family needs it, not because it felt general.
 | `pqc_support.js` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
 | `certificate_details.js` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.js` does. |
 | `pki_merge.js` | **ONE CERTIFICATE AUTHORITY ROW WRITTEN BY SEVERAL NODES AT ONCE (2026-09-14, #46).** The three-way merge `keystore.js` applies under the row's lock: revocations and issued serials are unions, a CA tier or certificate slot is first writer wins, the register's CRL number adds. Pure JSON in, JSON out; a LEAF over config and bunyan. Its header argues why a merge and not a row per revocation. |
-| `pki.js` | **A CERTIFICATE AUTHORITY PER TRUST REALM, since 2026-09-10** — Root, Intermediate, Issuing, and the signing key pairs it issues to applications. **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms` and the two vendored PKI modules. |
+| `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
 | `cert_enrollment.js` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
 | `enrollment_monitor.js` | **WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE (2026-09-13)** — one vocabulary of counters for `/admin/{acme,est,scep}/monitor`, per realm, merged across processes in `gnap_monitor.js`'s shape, and unable to throw into the request it counts. |
 | `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. |
@@ -46,11 +46,15 @@ worked from all fourteen by accident. From `common/` it resolves to
 `common/env/local.js`, which does not exist: `config.js` and `helpers.js` read it
 UNGUARDED and would die with `MODULE_NOT_FOUND` naming a path nobody typed, and
 the eleven guarded readers would quietly fall back to `info`. So the variable is
-made absolute once, in place, before anything reads it. Three callers require it
+made absolute once, in place, before anything reads it. Five callers require it
 first and between them cover every way this service is loaded — `server.js`,
-`config.js` and `helpers.js` — and it is idempotent, so all three costs nothing.
-Four of the fourteen readers are VENDORED files this repository may not edit,
-which is why the fix is a mutation of `process.env` rather than fourteen edits.
+`worker.js`, `request_worker.js`, `config.js` and `helpers.js` — and it is
+idempotent, so all of them calling costs nothing. Those counts are from
+2026-08-23; on 2026-09-16 nineteen modules read the file directly and sixteen of
+them are VENDORED (the `common/vendored/` modules and the Kerberos codec copies)
+this repository may not edit, which is why the fix is a mutation of
+`process.env` rather than an edit per reader. `config_file.js`'s header keeps
+the list.
 
 ---
 
@@ -411,10 +415,12 @@ stateless workers*. Everything else about the pool is here, including the
 five things to know, which used to be over there.
 
 **This service is one node process and it owns six listener families** — the
-express app, the KDC on TCP and UDP 88, the Kerberos service on 8888, the LDAP
-directory, two gRPC surfaces and two HTTPS endpoints. Node runs all of them on
-ONE THREAD, so a synchronous computation does not slow this service down, it
-STOPS it.
+express app (on the main port and on the plain-HTTP revocation port), the KDC
+on TCP and UDP 88, the Kerberos service on 8888, the LDAP directory, two gRPC
+surfaces and the embedded debugger's listener. (The two HTTPS endpoints on 8443
+and 9443 were the sixth until they were deleted on 2026-09-16.) Node runs all
+of them on ONE THREAD, so a synchronous computation does not slow this service
+down, it STOPS it.
 
 Post-quantum signing is that computation, and until 2026-08-30 it ran on that
 thread. Stalls measured on 2026-08-29 while the parent project's suite ran:
@@ -676,6 +682,13 @@ point rather than a workaround: **the pool does not merely move the cost off
 the request that pays it, it makes paying it EARLY free.** Measured: a realm
 created through `/admin-api/realms/create` answers its first JWKS in 8ms.
 
+**THE WATCHER WAS REMOVED ON 2026-08-30 AND THE PARAGRAPH ABOVE IS HISTORY.**
+Test suites create realms constantly and never sign a post-quantum token in
+them, so eager generation spent minutes of worker time on keys nobody asked
+for. `warmPqKeys()` is now called for the DEFAULT realm alone, from
+`server.js`'s `announce()`; a realm created at runtime makes its keys on first
+use. `helpers.js`'s block below `warmPqKeys()` carries the measurement.
+
 `tests/worker_pool.js` has the four contracts and the measurement that shows the
 loop is free.
 
@@ -695,8 +708,11 @@ second copy of the require order would be a second answer to "which handler
 wins", and the two processes would disagree in exactly the cases hardest to see:
 a route registered before a middleware in one and after it in the other.
 
-The five modules that own listeners are returned rather than merely required,
-because `server.js` needs the handles for `listen()`. Requiring them still
+The five modules that own listeners — the two Kerberos ones, the directory,
+SPIFFE and the debugger — are returned rather than merely required, because
+`server.js` needs the handles for `listen()`; so is `tls/tls_server`, whose
+8443/9443 listeners were deleted on 2026-09-16 and which `server.js` still
+reads for the main port's certificate and truststore. Requiring them still
 registers their HTTP views and starts nothing — which is a separation that
 predates this change by a fortnight, made for a different reason (binding can
 fail and a `require` that throws takes the process down), and is what makes a
@@ -780,9 +796,10 @@ this repository already built *several processes against one store* —
 `persistence/persistence_replication.js`, five appliers, a change log that is
 the contract and a notification that is only latency — and **a request worker is
 exactly one more such process.** So a worker runs `common/service_state.js`, the
-same four startup steps `server.js` runs and from the same file: the store, the
-signing keys, the minted rows, and COORDINATION. What makes dispatch correct is
-that last step, not anything written for the pool.
+same startup steps `server.js` runs and from the same file: the store, the
+signing keys, the minted rows, COORDINATION, and (since 2026-09-11) the
+certificate authority. What makes dispatch correct is coordination, not
+anything written for the pool.
 
 **AND THERE IS EXACTLY ONE THING THE STORE CANNOT CARRY, WHICH IS WHY THE
 SENTENCE ABOVE NEEDED A SECOND MECHANISM AFTER ALL (2026-09-09): A SOCKET.**
@@ -992,7 +1009,7 @@ portal's own Shared Signals receivers go with their surfaces, which is what
 takes a CAEP storm's loopback pushes off the protocol workers that sent them.
 
 **ONE TABLE OF WORKERS, AND ONLY ROUTING IS PER POOL.** A surface worker loads
-the same stack and runs the same four startup steps; it is one more process
+the same stack and runs the same startup steps; it is one more process
 against the store. So everything that keeps PROCESSES agreeing stays global and
 walks the one `workers` array — the barrier's generation and tickets (a write
 answered in either pool must make both stale), the key registry, the PKI and
@@ -1430,9 +1447,11 @@ reader derives from four directory files. The short version:
   beside a correctly partitioned `tokens.held`, with
   `POST /realm/acme/oauth2/revoke` able to kill a jti the default realm issued.
   `tests/realm_isolation.js` guards both directions and the purge.
-* **Kerberos and SPIFFE's four sockets are shared**, for
-  the same reason — and the two TLS listeners were, until they were deleted on
-  2026-09-16 (`tls/CLAUDE.md`). **SPIFFE'S X.509 AUTHORITY STOPPED BEING SHARED ON
+* **Kerberos and SPIFFE's four sockets WERE shared**, for the same reason, and
+  so were the two TLS listeners until they were deleted on 2026-09-16
+  (`tls/CLAUDE.md`). **Neither family is on this list any longer** — SPIFFE
+  left it on 2026-09-12 (the bullet below) and Kerberos on 2026-09-15 (the end
+  of this one); what follows is the record of how each got off it. **SPIFFE'S X.509 AUTHORITY STOPPED BEING SHARED ON
   2026-09-11 AND ITS SOCKETS DID NOT**, which looks like a contradiction and is
   not: the authority is a realm's SPIFFE Issuing CA, the trust ANCHOR is the
   service Root that no realm owns, so every realm's bundle is the same document
@@ -1566,13 +1585,13 @@ a non-default realm only, so the default realm's bytes are not merely unchanged
 but untouched.
 
 **A URL built inside a SCRIPT is not markup and is not rewritten.** There is one
-such page — `/admin-api/docs`, whose explorer builds request URLs from the
-OpenAPI document's `path` members — and it is handled by being HANDED the prefix
-as `data-realm-prefix` rather than by having its markup rewritten. Without that,
-pressing "Try it" inside a realm would call the DEFAULT realm's API: the page
-would look right, the call would succeed, and it would have changed the wrong
-service. A fifth scripted page would need the same treatment and would not get it
-for free.
+such page — `/admin/api-explorer` (it was `/admin-api/docs` until 2026-09-09),
+whose explorer builds request URLs from the OpenAPI document's `path` members —
+and it is handled by being HANDED the prefix as `data-realm-prefix` rather than
+by having its markup rewritten. Without that, pressing "Try it" inside a realm
+would call the DEFAULT realm's API: the page would look right, the call would
+succeed, and it would have changed the wrong service. Another page that builds
+URLs in a script would need the same treatment and would not get it for free.
 
 ## `config.js` is the only place a setting is read
 
@@ -1599,8 +1618,9 @@ consumed before the service was listening, so changing it now would do nothing �
 `set` refuses it with the `restartReason` rather than accepting it, because an
 accepted change that does nothing reads as having worked. Three kinds qualify and it
 is worth knowing which: a **bound socket** (the HTTP port AND ITS SCHEME — see
-`global.https`, which is why `oauth2.rfc9700` is restart-only — both TLS ports,
-both LDAP ports, both Kerberos ports); **material derived at startup** (the TLS certificate is
+`global.https`, which is why `oauth2.rfc9700` is restart-only — both LDAP ports,
+both Kerberos ports; the two TLS ports were on this list until they were
+deleted on 2026-09-16); **material derived at startup** (the TLS certificate is
 issued for `tls.hostnames`/`tls.ips` at boot, and the DEFAULT realm's Kerberos principal
 database and every long-term key in it comes from the realm, the SIDs and the passwords at
 require time — another trust realm's is built when its Kerberos is turned on, which is why
@@ -1610,8 +1630,9 @@ setting runtime when the thing derived from it is not rebuilt is worse than mark
 it restart-only, because the two then disagree silently.
 
 **`realmRuntime` IS THE ONE EXEMPTION AND IT IS AN APPLICATION OF THAT RULE
-RATHER THAN A HOLE IN IT.** One row carries it — `oauth2.rfc9700` — and the
-argument is short: that flag is restart-only for exactly one reason, that
+RATHER THAN A HOLE IN IT.** It began with one row — `oauth2.rfc9700` (the
+count since is below) — and the argument is short: that flag is restart-only
+for exactly one reason, that
 `global.https` derives its default from it and a listener's scheme is settled
 when the socket is bound. **A realm binds no socket.** It answers on the port
 this process already opened, in the scheme that port was opened in, so nothing
@@ -1628,10 +1649,12 @@ control the same page in the default realm correctly refuses.
 `checkRealmOverride()` passes `true` explicitly, because it validates a realm's
 overrides before any realm is ambient — it is the only caller that can know the
 answer without asking. Every OTHER caller is inside a request, so the realm is
-the ambient one, and every one of them passed nothing: `setOverride()` here,
-and the three places in `admin-ui/admin.js` that pre-validate a whole section
-before writing any of it. **So the exemption was unreachable through the four
-doors a person actually uses**, and the symptom was worse than the rule being
+the ambient one, and every one of them passed nothing: `setOverride()` here
+(which passes the realm it computed since), and the three places in
+`admin-ui/admin.js` — `admin-core/admin_actions.js` now — that pre-validate a
+whole section before writing any of it. **So the exemption was unreachable
+through the four doors a person actually uses**, and the symptom was worse than
+the rule being
 absent. The console draws this control ENABLED inside a realm — correctly — and
 a settings section's Save posts `set-many`, which is ALL-OR-NOTHING, so pressing
 Save on `/realm/acme/admin/oauth2` was refused BY NAME every time, including
@@ -1664,17 +1687,17 @@ KERBEROS ROWS WERE MARKED — BY THE TEST ABOVE RATHER THAN AGAINST IT.** The
 material a realm's Kerberos is built from is no longer built at startup: a realm
 is created with `krb5.enabled` off and builds its principal database when it is
 turned on, rebuilding it when one of those ten changes. So for a realm nothing
-was consumed at any startup, which is the same argument SPIFFE's six made on
+was consumed at any startup, which is the same argument SPIFFE's ten made on
 2026-09-12. What is still consumed for the PROCESS is still a no: `krb5.kdcPort`
 and `krb5.servicePort` are bound sockets, and `krb5.trustedRealm` and its three
 build the development-mode second realm at startup.
 
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE
-TWO PARAGRAPHS ABOVE, WHICH SAY ONE ROW** — a realm may be in RFC 9700 mode while
-the process is not: the `realmRuntime` marker, which had SEVEN rows from
-2026-09-12 (it had one until then), TWELVE from 2026-09-13 and **TWENTY-TWO since
-2026-09-15**, and must not get a twenty-third by analogy: `oauth2.rfc9700`,
-`oauth2.oauth21`, the six SPIFFE rows a realm's own listeners are bound from, and
+FIRST-ROW PARAGRAPHS ABOVE** — a realm may be in RFC 9700 mode while the process
+is not: the `realmRuntime` marker, which had one row until 2026-09-12, TWELVE
+from 2026-09-13 and **TWENTY-TWO since 2026-09-15**, and must not get a
+twenty-third by analogy: `oauth2.rfc9700`, `oauth2.oauth21`, the ten SPIFFE rows
+a realm's own listeners and authorities are built from, and
 the ten Kerberos rows a realm's own principal database is built from — each
 group's argument made at the head of its own group in `config.js` rather than
 borrowed from this one. `tests/config_realm_layer.js` pins the list, which is
@@ -1827,8 +1850,9 @@ hundred-and-fourteen-name warning on every in-process Kerberos run. Both drift
 warnings now cap their name list at twelve and a count, for the same reason: a
 list long enough to scroll is a list nobody reads.
 
-**It is a library (rule 3) and it sits UNDER `helpers.js`.** It requires only bunyan
-and `process.env.CONFIG_FILE`, and makes a bunyan logger of its own rather than
+**It is a library (rule 3) and it sits UNDER `helpers.js`.** It requires only bunyan,
+`process.env.CONFIG_FILE` and two leaves (`config_file.js`, `error_codes.js`),
+and makes a bunyan logger of its own rather than
 taking the shared one, because `helpers.js` requires IT. A cycle here would hand
 `helpers.js` a half-initialised module whose `value` is undefined, and the symptom
 would arrive somewhere else entirely as "value is not a function".
@@ -1865,8 +1889,9 @@ with `Cannot find module` naming a file the operator never mentioned.
 ---
 
 3b. **`admin_stats.js` is a library like `dpop.js`, and one dependency into it is
-   INVERTED.** It registers nothing and requires only `helpers.js`, which it needs to
-   stay that way more than `dpop.js` does: it is called from `app.js`'s call log,
+   INVERTED.** It registers nothing and requires only `helpers.js` and libraries
+   that never require it back (its header lists them), which it needs to stay
+   true more than `dpop.js` does: it is called from `app.js`'s call log,
    `helpers.js`'s `signJwt()`, both assertion builders, the KDC and the credential
    issuer. Because `helpers.js` cannot require it back (that is the cycle rule 2
    exists for), `helpers.js` offers a slot — `setJwtRecorder()` — and `admin_stats.js`
@@ -1918,8 +1943,9 @@ with `Cannot find module` naming a file the operator never mentioned.
 3c. **`audit.js` is a library too, it sits BESIDE `admin_stats.js` rather than
    under it, and one dependency into it is inverted.** `admin_stats.js` answers
    "how much"; this answers "what, when, and to whom", as a list of discrete
-   events. It requires `helpers.js` and `config.js` and NOTHING ELSE in this
-   repository, and that has to stay true: it is called from `app.js`'s call log,
+   events. It requires `helpers.js`, `config.js`, `realms.js`, the error-code
+   table and the replication fan-in and NOTHING ELSE in this repository, and
+   that has to stay true: it is called from `app.js`'s call log,
    from `admin_stats.js`'s `recordAuthentication()`, from `authn.js`'s session
    store and from every LDAP handler, which between them are most of the
    service. In particular it must not require `admin_stats.js`, because that
@@ -1995,13 +2021,13 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    **There is no clear operation and there must not be one.** An erase control
    on an unprotected console would make an audit log unable to answer the one
-   question it exists for. Restarting the service is how you get an empty one:
-   the ring is in memory and dies with the process, and **it stays that way now
-   that some things do not** — see `persistence/CLAUDE.md`. An audit log is
-   something this process RECORDED rather than something somebody TYPED, which
-   is the line that decides what is written down, and it is on the resetting
-   side of it. Persisting it would also make "restart to clear" stop being
-   true, which is the only clear operation there is.
+   question it exists for. Outside product mode on postgres, restarting the
+   service is how you get an empty one: the ring is in memory and dies with the
+   process. **Where minted state persists it is written down with the rest of
+   it** (`realms.arr({ persist: 'audit.events', merge: 'own', segment: 32 })`,
+   `persistence/CLAUDE.md`) — this paragraph used to say it was on the
+   resetting side of that line, and the declaration says otherwise — so there
+   a restart does not clear it either, and nothing does.
 
 
 3ac. **`error_codes.js`: every failure has a name, and the name never reaches
@@ -2040,7 +2066,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    | Situation | How |
    |---|---|
-   | an HTTP response that refuses or fails | `errorCodes.mark(res, code)` before the call that sends it; `audit.recordHttp()` reads it off the response on `finish` |
+   | an HTTP response that refuses or fails | `errorCodes.mark(res, code)` before the call that sends it; `audit.recordHttp()` reads it off the response when the answer is handed to `res.end()` |
    | a non-HTTP refusal (LDAP, KRB-ERROR, gRPC), an outbound or background failure | `errorCode:` on the audit row that already exists, or `audit.failure(code, …)` where none does (`service.failure` for one that belongs to no request) |
    | a failure no audit row can hold — the process is exiting, or the module cannot require `audit.js` without a cycle | `errorCodes.tag(code)` at the front of the log message |
 
@@ -2166,9 +2192,10 @@ with `Cannot find module` naming a file the operator never mentioned.
    territory, and it is the only one that reads the directory's GROUPS.**
    `vc_claims.js` says what a CREDENTIAL carries, `vc_verifier_config.js` what
    the Verifier ASKS FOR, `claim_attributes.js` which ATTRIBUTES a token
-   carries; this puts the GROUPS somebody is a member of into all four claim
-   sets at once. It registers no route and requires `helpers.js`, `config.js`
-   and `admin_stats.js`, none of which requires it back.
+   carries; this puts the GROUPS somebody is a member of into all five claim
+   sets at once. It registers no route and requires `helpers.js`, `config.js`,
+   `applications.js`, `admin_stats.js` and `error_codes.js`, none of which
+   requires it back.
 
    **IT IS AUTOMATIC AND THEREFORE NOT A SELECTION.** There is nothing to tick
    per user and nothing to tick per set — with `groups.claim` on, all five
@@ -2243,8 +2270,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    OAuth client, an OIDC relying party, a SAML 2.0 or 1.1 service provider, a
    WS-Federation application, a WS-Trust relying party, the OID4VP verifier, a
    Kerberos service — as entries under `ou=applications`. It registers no route
-   and requires only `helpers.js`, `audit.js` and `config.js`, so it cannot join
-   a cycle;
+   and requires only libraries (`helpers.js`, `audit.js`, `config.js` and the
+   leaves its header lists at each require), so it cannot join a cycle;
    `admin_stats.js`, `oauth2.js`, `wsfed.js`, `wstrust.js`, `krb5_kdc.js` and
    `krb5_service.js` require it in the ordinary direction, and `ldap_server.js`
    fills its `setDirectory()` slot at require time for the reason
@@ -2617,12 +2644,13 @@ with `Cannot find module` naming a file the operator never mentioned.
      that names the entry rather than a redirect into a flow that cannot
      complete. That is the seeding rule (*an operator who deleted one meant
      it*) finally having an observable consequence.
-   * **`realmScope` decides where each is seeded**, and the three answers are
-     three different arguments — argued on the rows themselves. The console's
-     client is the DEFAULT realm's alone, because its gate accepts that realm's
-     session wherever the console is reached; the portal's is in EVERY realm,
-     because `/portal` reads the ambient realm's session; the management API's
-     is a description of a caller rather than a client anything signs in as.
+   * **`realmScope` decides where each is seeded**, and each answer is argued
+     on its own row. All three are in EVERY realm by now: the portal's because
+     `/portal` reads the ambient realm's session; the console's since
+     2026-09-11, when its code flow moved to the ambient realm (it was the
+     DEFAULT realm's alone until then); the management API's since 2026-09-14
+     (#32), for a realm's own administrators. The embedded debugger's two
+     entries are the default realm's alone.
    * **BOTH CARRY `oauthGlobalConsent`.** `oauth2.consentRequired` is on by
      default and is the only policy here that is, so without it a person
      signing in to look at their own account would first be asked to consent to
@@ -2661,10 +2689,12 @@ with `Cannot find module` naming a file the operator never mentioned.
    `admin_stats.js` answers "how much", `audit.js` answers "what, when and to
    whom", and this answers *who acted on whose behalf, through what, to reach
    what* — one model over Kerberos S4U2Self, S4U2Proxy (classic and
-   resource-based) and a forwarded TGT, WS-Trust `OnBehalfOf` and `ActAs`, and
-   RFC 8693 token exchange in both its shapes.
+   resource-based) and a forwarded TGT, WS-Trust `OnBehalfOf` and `ActAs`,
+   RFC 8693 token exchange in both its shapes, and the RFC 7523 and RFC 7522
+   assertion grants.
 
-   It requires `helpers.js`, `config.js` and `admin_stats.js` — that last one
+   It requires `helpers.js`, `config.js`, `realms.js`, `error_codes.js`,
+   `persistence/persistence_replication.js` and `admin_stats.js` — that last one
    for `identityKeyOf()`'s normalisation only, so that `alice`, `alice@REALM`
    and her `urn:uuid:<entryUUID>` (or the retired `urn:sts:user:alice`) are
    one person on a chain rather than three.
@@ -2815,9 +2845,9 @@ with `Cannot find module` naming a file the operator never mentioned.
    `delegation.js` above holds ACTS — one row per exchange, at a moment, with a
    credential in it. This holds GRANTS: which client applications have been
    given which permissions on which resource applications, typed in before
-   anybody asked for anything. It requires `helpers.js` and `applications.js`
-   and nothing else; neither requires it back, so there is no cycle and none of
-   rule 3e's slots is needed.
+   anybody asked for anything. It requires `helpers.js`, `applications.js` and
+   the `error_codes.js` leaf and nothing else; none requires it back, so there
+   is no cycle and none of rule 3e's slots is needed.
 
    **THE TWO MUST NEVER BE DRAWN AS ONE REGISTER**, and this repository already
    keeps exactly that distinction one file over: `appProtocol` is what happened
@@ -2928,8 +2958,9 @@ with `Cannot find module` naming a file the operator never mentioned.
 
 3p. **`user_graph.js` is a library over TWO registers, and the whole of it is
    the argument for why the union is here rather than in the console.** It
-   requires `helpers.js`, `admin_stats.js` and `delegation.js`; nothing requires
-   it but `../admin-ui/admin.js`, which renders it at `/admin/delegation/user`.
+   requires `helpers.js`, `admin_stats.js`, `delegation.js` and
+   `applications.js`; nothing requires it but `../admin-ui/admin.js`, which
+   renders it at `/admin/delegation/user`, and `credential_graph.js` (3q).
    It registers no route, so rule 3e's test is not even reached — a plain
    require in the ordinary direction closes no cycle and moves nothing.
 
@@ -3196,8 +3227,9 @@ require time; `settingFor()` reads it, `overridableSettings()` publishes it, and
 Adding an eleventh override is a row in `SCHEMA.attributes` and nothing else — a
 map written by hand here would be the first thing to disagree with the schema.
 
-**`config` IS PASSED IN RATHER THAN REQUIRED**, which keeps this module's near-
-empty require list true (rule 3g) and keeps the resolver testable with a stub.
+**`config` IS PASSED IN**, which keeps the resolver testable with a stub. (It
+also kept the module's require list near-empty when this was written;
+`applications.js` requires `config.js` itself by now.)
 
 **ALL TEN ARE `single`, AGAINST THE GRAIN OF EVERY IDENTIFIER HERE.** Those are
 `multi` because an application answering to two client_ids is one application. A
@@ -3470,8 +3502,8 @@ on its own and silently disagreed with an `ldapsearch`. It also means an
 `ldapmodify` IS a configuration change here, exactly as it is for a redirect
 URI.
 
-It requires `helpers.js`, `config.js`, `applications.js` and `admin_stats.js`
-(for `identityKeyOf()`, so that `alice`, `alice@EXAMPLE.COM` and her
+It requires `helpers.js`, `config.js`, `applications.js`, `error_codes.js` and
+`admin_stats.js` (for `identityKeyOf()`, so that `alice`, `alice@EXAMPLE.COM` and her
 `urn:uuid:<entryUUID>` — or the retired `urn:sts:user:alice` — are one person
 here exactly as they are one entry in the directory), and nothing requires it back. **The directory arrives through
 `setDirectory()`, which `ldap_server.js` fills at ITS require time** — the same
@@ -3574,7 +3606,7 @@ rather than one for a reason worth stating before anything else: **one of them
 holds the answer and the other one holds nothing at all.**
 
 `roles.js` is the register — who HOLDS a role. `issuance_gate.js` is an empty
-shell that nine issuance sites ask before this service issues anything, and
+shell that every issuance site asks before this service issues anything, and
 whose decider is filled by `xacml/xacml_role_pep.js` at 23c. A process that
 never loaded the XACML family has no decider installed and every call answers
 `allowed`, which is what keeps `npm test`, the parent project's in-process
@@ -3613,7 +3645,9 @@ container: `EVERYBODY`, `ALL_AUTHENTICATED_USERS`,
 `ALL_UNAUTHENTICATED_USERS`, `ALL_APPLICATIONS`,
 `ALL_AUTHENTICATED_APPLICATIONS`, `ALL_UNAUTHENTICATED_APPLICATIONS`.
 
-**THERE ARE EIGHT NOW, AND THE LAST TWO ARE A DIFFERENT SHAPE.** The six above
+**THERE ARE TEN NOW.** `ADMIN_READ` and `ADMIN_WRITE` (2026-09-09) are read off
+the scopes of an access token for `/admin-api`; `roles.js` argues them at their
+rows. **The other two are a different shape again.** The six above
 read `kind` and `authenticated` and touch no store. `REMOTE_PEPS` (2026-09-06)
 and `XACML_USER` (beside it) are held by whoever is in one named GROUP —
 `roles.remotePepGroup` and `roles.xacmlUserGroup` — which makes them hybrids,
@@ -3685,9 +3719,11 @@ is not the file that decides what a restriction means.
 the XACML `action-id` of the request, so adding one is adding a word a policy
 author can match on, and RENAMING one silently stops every policy that named the
 old word from matching — which is a policy that permits nothing rather than an
-error. The nine are spread over eight `gate.check()` calls in seven modules,
-because the two SAML profiles both issue `issue-saml-assertion` and `oauth2.js`
-asks twice.
+error. The nine were spread over eight `gate.check()` calls in seven modules
+when this was written; by 2026-09-16 there are twelve calls in eight issuing
+modules (`authn.js` three, `oauth2.js` and `gnap/gnap_grants.js` two each, and
+one each in WS-Trust, WS-Federation, both SAML profiles and the KDC), plus the
+portal's preview.
 
 ### The six built-in roles became reachable on 2026-09-05, and three of them were not before
 
@@ -3867,10 +3903,12 @@ there.
   parsed `KeyObject` rebuilt from `privateKeyPem`, and every `kid` is recomputed
   from the public material — storing a derived value is how a store comes to
   disagree with itself after a change to the derivation.
-* **What is NOT stored, and each is a decision**: the eleven post-quantum keys
-  per realm (generated on the worker pool because generating them is expensive,
-  and cached by `pq_jose.js`), the TLS server certificate, and the SPIFFE JWT
-  authority. All are named in `mode.js`'s `NOT_YET`. **The SPIFFE X.509
+* **What is NOT stored, and each is a decision**: the TLS server certificate
+  and the SPIFFE JWT authority, both named in `mode.js`'s `NOT_YET` (under the
+  id `post-quantum-keys`, kept for clients that match on it). **The eleven
+  post-quantum keys per realm came off this list on 2026-09-12** — they are
+  written with the realm's key set and restored with it (`keystore.js`,
+  *WHAT IS STORED*). **The SPIFFE X.509
   authority came off that list on 2026-09-11** — it is `pki.js`'s SPIFFE Issuing
   CA now, so it is in the `pki:` row family and inherits that module's mode
   exactly as the rest of the hierarchy does. The JWT half has no certificate and
@@ -4495,8 +4533,9 @@ secret — and **a signing key nobody vouched for is a key an operator has to mo
 by hand.** So this builds a hierarchy and issues from it.
 
 **IT IS A LEAF (rule 3).** It registers no route, so its position in the require
-order is not a position. It requires `config`, `crypto`, `keystore`, `realms`
-and `vendored/x509.js` / `vendored/key_material.js` — none of which requires it
+order is not a position. It requires `config`, `crypto`, `keystore`, `realms`,
+`error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules
+(`x509.js`, `key_material.js`, `pqc_x509.js`, `pqc.js`) — none of which requires it
 back — and it is read by `oauth-oidc/assertion_grant.js`,
 `admin-ui/pki_admin.js`, `admin-ui/crypto_metadata.js` and `mgmt-api`. **It
 makes a logger of its own rather than requiring `helpers.js`**, for
@@ -4707,10 +4746,11 @@ Four things the console's Build form could say and nothing else could:
   page about a different object. `roomForObject()` answers before a key is
   generated, a REPLACEMENT of an id already held always has room, and
   `MAX_OBJECTS` is a GETTER on the exports so a reader of `pki.MAX_OBJECTS`
-  sees the setting. **`common/pki_authoring.js` does not yet check
-  `putObject()`'s `ok`**, so an issue into a full store reports the certificate
-  and stores nothing; that file is the caller and the gap is recorded rather
-  than papered over.
+  sees the setting. **`common/pki_authoring.js`'s `issue()` asks
+  `roomForObject()` before it generates a key and checks `putObject()`'s `ok`
+  after** (`STS-PKI-0027`), so an issue into a full store is refused rather
+  than reported as issued with nothing stored — this bullet recorded that gap
+  while it was open.
 
 `tests/pki_defaults.js` pins all four, mutation-tested against nine.
 
@@ -4791,8 +4831,10 @@ anywhere in it is a key.
 
 `verifyLeaf()` decides whether an `x5c` header counts, and **a chain to somebody
 else's anchor verifies every link of itself and means nothing here** — so it
-refuses a path that does not end at this realm's own Root, in those words,
-rather than reporting a bad signature about signatures that were all fine.
+refuses a path that does not end at the service Root, in those words, rather
+than reporting a bad signature about signatures that were all fine — and, since
+the Root was shared (above), one that does not pass through this realm's own
+Intermediate.
 
 **IT FILLS IN THIS REALM'S TIERS ONLY WHERE THE PRESENTED PATH DOES NOT ALREADY
 END SOMEWHERE**, and grafting them unconditionally was the first version's bug:
@@ -4812,12 +4854,12 @@ have no valid issuer), every certificate names its own over plain http and ldap
 serves `/pki/` and nothing else), and
 anything rotated goes on its issuer's list as `superseded` automatically.
 
-**From the root `CLAUDE.md`'s index of things this service does not do — and
-its sentence about schemes DISAGREES with the paragraph above, which says http
-and ldap only:** the lists and responders are served at `/pki/crl/{scope}/{ca}`,
+**From the root `CLAUDE.md`'s index of things this service does not do:** the
+lists and responders are served at `/pki/crl/{scope}/{ca}`,
 `/pki/ocsp/{scope}/{ca}` and `/pki/ca/{scope}/{ca}.cer` with an index at
 `/pki/revocation`, published into the directory under `ou=crl`, and named inside
-every certificate this service issues in THREE SCHEMES (http, ldap, ldaps). A
+every certificate this service issues in TWO SCHEMES (http, ldap — it was three,
+with ldaps, until 2026-09-13; `pki_revocation.js`'s `httpBase()` argues it). A
 pane on `/admin/pki` revokes by hand with any of the nine reasons RFC 5280
 section 5.3.1 defines. What is left of CONSULTING are limits — a BARE registered
 key names no list, a relative name needs `pki.revocationLdapDirectory` — and
@@ -4931,7 +4973,8 @@ put a key pair on the wrong attribute set with nothing saying so.
 
 **IT IS NO LONGER BYTE-FOR-BYTE, AND THAT IS THE 2026-09-12 CHANGE.** Every
 key pair from this function — `jwt`, `saml`, an application's and a person's —
-now carries `cRLDistributionPoints` (http, ldap, ldaps) and an Authority
+now carries `cRLDistributionPoints` (http and ldap; ldaps too until
+2026-09-13) and an Authority
 Information Access (OCSP, caIssuers) naming the `assertions` Issuing CA that
 signed it, which `certify()` and `issueCaTier()` had done since 2026-09-11 and
 this door had not. So the one certificate this hierarchy hands to something
@@ -5361,8 +5404,8 @@ page has event handlers. `admin-ui/CLAUDE.md` argues
 the PAGE; this is the module.
 
 **IT IS A LIBRARY (rule 3)** — it registers no route, so its position in the
-require order is not a position. It requires `config`, `pki` and the two
-vendored PKI modules; none of them requires it back.
+require order is not a position. It requires `config`, `pki`, `error_codes`
+and the two vendored PKI modules; none of them requires it back.
 
 ### It is not `pki.js` and it is not the renderer
 
@@ -5985,8 +6028,10 @@ entry carries. It is the one thing it must not do, and the reason is not
 tidiness: **an entry in this directory carries whatever anybody put on it.** A
 TLS client certificate's subject becomes attributes RDN by RDN, SCIM writes its
 own mapping, an `ldapadd` on 389 writes anything at all — and this service puts
-four `sts`-prefixed CREDENTIALS on that same object, one of which
-(`stsTotpCredential`) can be read back and used.
+its own `sts`-prefixed CREDENTIALS on that same object (four when this was
+written, ten secret ones by 2026-09-16 — `ldap/ldap_server.js`'s
+`SECRET_ATTRIBUTES`), one of which (`stsTotpCredential`) can be read back and
+used.
 
 So a page that printed the entry would print a shared secret the day somebody
 enrolled an authenticator, with nothing anywhere having decided that it should.
@@ -6107,24 +6152,25 @@ one available and an unedited service behaves exactly as it did.
 | `user-portal` | `portal/portal.js`'s `requireSignIn()` | a sign-on session |
 | `scim` | `scim/scim_auth.js`'s `authenticate()` funnel | six RFC 7644 schemes, then the scope |
 | `spire-server-api` | `spiffe/spiffe_grpc.js`'s `prepareCall()` | SPIRE's own per-method table |
-| `management-api` | `mgmt-api/admin_api.js`'s middleware, **product mode only** | the two console roles |
-| `xacml-pep-api` | `xacml/xacml.js`'s `pepAccess()` | a VERIFIED client certificate resolved to a directory entry |
+| `management-api` | `mgmt-api/admin_api.js`'s middleware — for an access token (`adminApi.authRequired`, on by default, every mode), and for a console session in **product mode** with that setting off | the token's scopes, or the two console roles |
+| `xacml-pep-api` | `xacml/xacml.js`'s `pepAccess()`, including `POST /xacml/pip` | a VERIFIED client certificate resolved to a directory entry |
 | `xacml-api` | `xacml/xacml.js`'s `xacmlAccess()` | the same chain, with `XACML_USER` on the end |
+| `protocol-debugger` | `debugger/debugger_access.js` | the two console roles, carried in the request |
 
-**THE TWO XACML ROWS ARE NOT LIKE THE FIVE ABOVE THEM, AND THE DIFFERENCE IS
-THE DEFAULT.** The five are surfaces an operator NARROWS: they require
-`EVERYBODY` until somebody says otherwise, which is what kept this layer from
-changing behaviour the day it was added. The two XACML ones carry their
-requirement in the REQUEST and are restricted out of the box, because a gate
-that is permissive until configured is a gate that is open on every deployment
-nobody has configured. It is still a POLICY decision either way — one
-`access-control` document decides all seven, and `xacml.enforceAccess` is the
-one switch that stops it deciding.
+**THE TWO XACML ROWS AND THE DEBUGGER ARE NOT LIKE THE FIVE ABOVE THEM, AND
+THE DIFFERENCE IS THE DEFAULT.** The five are surfaces an operator NARROWS:
+they require `EVERYBODY` until somebody says otherwise, which is what kept this
+layer from changing behaviour the day it was added. The last three carry their
+requirement in the REQUEST (as the management API's token path does) and are
+restricted out of the box, because a gate that is permissive until configured
+is a gate that is open on every deployment nobody has configured. It is still a
+POLICY decision either way — one `access-control` document decides all eight,
+and `xacml.enforceAccess` is the one switch that stops it deciding.
 
 **THE MANAGEMENT API IS THE ONE ASYMMETRY AND IT IS ARGUED RATHER THAN
-INHERITED.** That surface is open in development by design — it is what the
-tests drive and the way back in when nobody holds a role — so there is no
-credential, no session and no subject. Asking a policy whose built-in document
+INHERITED.** With `adminApi.authRequired` off, that surface is open in
+development by design — it is what the tests drive and the way back in when
+nobody holds a role — so there is no credential, no session and no subject. Asking a policy whose built-in document
 refuses an unauthenticated subject would close the recovery path. **A policy
 layer must not be the thing that removes the way back in.**
 
