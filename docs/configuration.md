@@ -267,8 +267,7 @@ cannot be asked for.
 **The debugger's listener began asking for a client certificate on 2026-09-15**
 so that a bound token can be presented there at all — `requestCert` with
 `rejectUnauthorized: false`, the posture the main port already takes (as 8443
-did, until that listener was deleted on 2026-09-16), so
-the handshake succeeds either way and what a certificate is worth is decided per
+did, until that listener was deleted on 2026-09-16), so the handshake succeeds either way and what a certificate is worth is decided per
 request. A listener that never asked would have made this setting an exemption
 dressed up as a refusal.
 
