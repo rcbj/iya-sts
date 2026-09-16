@@ -24,7 +24,7 @@
 //      realm and holds nothing in any other; and a realm person who shares a
 //      service administrator's NAME is asked their own realm's roster — the
 //      hole #32 closed.
-//   5. THE SCOPE TABLE (`admin-ui/admin_scope.js`) refuses a realm authority
+//   5. THE SCOPE TABLE (`admin-ui/admin_scope.ts`) refuses a realm authority
 //      the service pages, actions, settings and another realm's reads, and
 //      refuses a service authority nothing.
 //   6. THE REALM CHOOSER (`common/realm_chooser.ts`) asks only at a bare

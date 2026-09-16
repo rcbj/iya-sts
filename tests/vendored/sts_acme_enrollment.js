@@ -29,7 +29,7 @@
 //     every job after this one, and nothing in ACME reads it. (The reason
 //     given here first — a member closing the console's empty-roster door — no
 //     longer applies to a stack started through server.js, whose roster holds
-//     the seeded bootstrap administrator: `admin-ui/admin_rbac.js`,
+//     the seeded bootstrap administrator: `admin-ui/admin_rbac.ts`,
 //     `rolesOf()`.)
 //   * THE RECORD: the certificate listed by `GET /admin-api/acme` against its
 //     entry; OCSP `good` from the ACME Issuing CA's responder before

@@ -397,7 +397,7 @@ function checkNothingRequiresItEarly(t) {
   // rather than a directory that quietly grew. Every file here sits at 18 or
   // later in the require order: the console, the page it draws for the
   // management API's explorer, and the management API itself.
-  const allowed = ['admin-ui/admin.js', 'admin-ui/api_explorer.js',
+  const allowed = ['admin-ui/admin.js', 'admin-ui/api_explorer.ts',
                    'mgmt-api/admin_api.ts', 'ldap/ldap_server.js',
                    // GNAP's view/action layer (2026-09-12), for `adminViews`'
                    // paging only. It is loaded at 23d, from
@@ -420,7 +420,7 @@ function checkNothingRequiresItEarly(t) {
                    // only — its Applications and People tables. It is
                    // required at 18a, immediately after the console, so the
                    // require is a cache hit and moves no route.
-                   'admin-ui/pki_admin.js',
+                   'admin-ui/pki_admin.ts',
                    'tests/admin_actions_layer.js'];
   const offenders = [];
   function walk(dir) {
@@ -599,7 +599,7 @@ function checkEveryNameResolves(t) {
 // ---------------------------------------------------------------------------
 // AND NOTHING ANYWHERE REACHES A MOVED FUNCTION THROUGH THE CONSOLE MODULE.
 //
-// The management API was repointed deliberately; `admin-ui/api_explorer.js`
+// The management API was repointed deliberately; `admin-ui/api_explorer.ts`
 // was not, and it called `admin.gateStateFor()` — which stopped existing the
 // moment the console stopped re-exporting it. Nothing failed at load: it threw
 // a TypeError when somebody opened the page, which is how it was found.

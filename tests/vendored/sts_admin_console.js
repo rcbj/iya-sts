@@ -5679,7 +5679,7 @@ async function settleStore(previous) {
 //
 // THIS RUNS LAST. It is pressed at the ROOT, on the default realm's roster —
 // the SERVICE roster. While that roster's window is open (the bootstrap
-// administrator has not yet signed in to the console; admin-ui/admin_rbac.js)
+// administrator has not yet signed in to the console; admin-ui/admin_rbac.ts)
 // a person holding NO role is given both, and a person holding a role is held
 // to the roles they hold — which is what makes a reader granted only `read`
 // an enforcement this section can observe. (Until 2026-09-13 the first grant
@@ -5850,7 +5850,7 @@ const PICKER_HITS_SCRIPT = `
 // (2026-09-13).** Since `admin` is seeded into both role groups at startup it
 // is the first name the picker offers, and the caller SIGNS IN as whoever this
 // returns — and that account's first console sign-in closes the open console
-// for every later job in the run (`admin-ui/admin_rbac.js`'s
+// for every later job in the run (`admin-ui/admin_rbac.ts`'s
 // noteConsoleSignIn()). A holder of a role is left out as well, because the
 // grant below asserts the reader then holds `read` and nothing else.
 async function somebodyThePickerOffers(driver, notThisOne) {
