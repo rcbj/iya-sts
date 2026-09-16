@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: est.js
@@ -848,6 +849,7 @@ async function serverkeygen(req, res, ctx) {
 // What csrattrs says about one profile.
 function csrAttributesFor(profileId) {
   log.debug("Entering csrAttributesFor(). profile=" + profileId);
+  /** @type {any[]} */
   const items = codec.SIGNATURE_ALGORITHMS.map(function (one) {
     return { oid: one.oid };
   });

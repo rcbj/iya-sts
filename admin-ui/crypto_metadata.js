@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: admin-ui/crypto_metadata.js

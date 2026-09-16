@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: federation_http.js

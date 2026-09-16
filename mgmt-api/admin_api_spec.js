@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: admin_api_spec.js

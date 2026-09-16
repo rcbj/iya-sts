@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: oauth2.js
@@ -9546,13 +9547,13 @@ async function tokenGrant(req, res) {
                     'may exchange any token for a token about anybody. The ' +
                     '`may_act` claim is the mechanism a real deployment ' +
                     'would use, and this service neither issues nor reads it.',
-      consumed: [{
+      consumed: /** @type {any[]} */ ([{
         kind: 'subject_token',
         identifier: String(subject.jti || ''),
         note: subjectVerified
           ? 'signed by this service and verified'
           : 'NOT signed by this service; read without verifying'
-      }].concat(act ? [{
+      }]).concat(act ? [{
         kind: 'actor_token',
         note: 'read without verifying — only its `sub` is taken, which is ' +
               'what goes into the `act` claim'

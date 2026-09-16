@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: saml2_sso.js

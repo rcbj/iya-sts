@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: token_macaroon.js
@@ -248,6 +249,7 @@ function parseCaveat(text) {
       continue;
     }
     const kind = CAVEATS[i].kind;
+    /** @type {any} */
     let value = m[1];
     if (kind === 'iat' || kind === 'exp' || kind === 'nbf') {
       value = Number(value);

@@ -1,3 +1,4 @@
+// @ts-check
 // File: webauthn.js
 //
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ const crypto = require('crypto');
 // load threw a TypeError from inside its own fallback. The caught reason is
 // kept in `loadProblem` and reported by the silent logger's owner, if any.
 const noop = function () {};
+/** @type {any} */
 let log = { debug: noop, info: noop, warn: noop, error: noop };
 let loadProblem = '';
 try {

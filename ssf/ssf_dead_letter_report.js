@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ssf_dead_letter_report.js

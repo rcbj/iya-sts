@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: introspection_jwt.js

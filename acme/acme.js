@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: acme.js
@@ -517,6 +518,7 @@ async function authenticate(ctx, spec) {
   // a claim in the store, so two copies of one signed request at two nodes
   // cannot both pass. `acme_store.js`'s `spendNonceOnce()` argues it, and it is
   // why this function is asynchronous.
+  /** @type {any} */
   const spent = await store.spendNonceOnce(nonce.id, nonce.expiresS);
   if (!spent.ok && spent.reason === 'store') {
     log.error(errorCodes.tag('STS-ACME-0099') + 'acme: a Replay-Nonce could ' +

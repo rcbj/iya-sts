@@ -1,3 +1,4 @@
+// @ts-check
 // File: authn.js
 //
 // THE AUTHENTICATION SERVICE — the screen where a person proves who they are,

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: gnap_httpsig.js
@@ -188,7 +189,7 @@ function contentDigest(body, algorithm) {
                   '": only sha-256 and sha-512, the two Active algorithms of ' +
                   'the RFC 9530 registry, are supported.';
       log.warn(errorCodes.tag('STS-GNAP-0200') + why);
-      const err = new Error(why);
+      const err = /** @type {any} */ (new Error(why));
       err.errorCode = 'STS-GNAP-0200';
       errorCodes.mark(err, 'STS-GNAP-0200');
       log.debug("Leaving contentDigest(). Unsupported algorithm.");

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: oauth2_monitor.js

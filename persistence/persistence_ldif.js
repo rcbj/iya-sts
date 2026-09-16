@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: persistence/persistence_ldif.js

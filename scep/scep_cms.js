@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: scep_cms.js
@@ -909,8 +910,9 @@ function node(der) {
 function algorithmIdentifier(oid, withNull) {
   log.debug("Entering algorithmIdentifier().");
   log.debug("Leaving algorithmIdentifier().");
-  return new asn1js.Sequence({ value: [new asn1js.ObjectIdentifier({
-    value: oid })].concat(withNull ? [new asn1js.Null()] : []) });
+  return new asn1js.Sequence({ value: /** @type {any[]} */ ([
+    new asn1js.ObjectIdentifier({ value: oid })])
+    .concat(withNull ? [new asn1js.Null()] : []) });
 }
 
 function octetString(bytes) {
@@ -1073,6 +1075,7 @@ function certRep(spec) {
     algorithmIdentifier(signatureOid, true),
     octetString(signature)
   ] });
+  /** @type {any[]} */
   const encap = [new asn1js.ObjectIdentifier({ value: OID.data })];
   if (content) {
     encap.push(new asn1js.Constructed({ idBlock: { tagClass: 3,

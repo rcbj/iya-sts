@@ -331,12 +331,12 @@ function forApplication(identifier) {
 // ---------------------------------------------------------------------------
 
 // THE BASE URI. Set it, or clear it by sending an empty value.
-function setBaseUri(resource, value) {
+function setBaseUri(resource, value, actor) {
   log.debug("Entering setBaseUri(). resource=" + resource);
   const asked = String(value == null ? '' : value).trim();
   const result = applications.updateApplication(resource, {
     attribute: 'oauthPermissionBaseUri', mode: 'set', value: asked,
-    actor: arguments[2] || ''
+    actor: actor || ''
   });
   if (!result.ok) {
     log.debug("Leaving setBaseUri(). Refused.");
@@ -368,14 +368,14 @@ function setBaseUri(resource, value) {
 // separately and are joined here, because `name|description` is the SCHEMA's
 // spelling and a caller should not have to know it — that is exactly the kind
 // of thing that ends up spelled two ways.
-function definePermission(resource, name, description) {
+function definePermission(resource, name, description, actor) {
   log.debug("Entering definePermission(). resource=" + resource + ", name=" +
             name);
   const leaf = String(name == null ? '' : name).trim();
   const value = applications.permissionValueOf(leaf, description);
   const result = applications.updateApplication(resource, {
     attribute: 'oauthPermission', mode: 'add', value: value,
-    actor: arguments[3] || ''
+    actor: actor || ''
   });
   if (!result.ok) {
     log.debug("Leaving definePermission(). Refused.");
@@ -401,7 +401,7 @@ function definePermission(resource, name, description) {
 // and all — so it is composed from the permission this module found rather than
 // from what a form typed, which is why the caller passes the NAME and this
 // looks the raw value up.
-function removePermission(resource, name) {
+function removePermission(resource, name, actor) {
   log.debug("Entering removePermission(). resource=" + resource + ", name=" +
             name);
   const leaf = String(name == null ? '' : name).trim();
@@ -429,7 +429,7 @@ function removePermission(resource, name) {
   }
   const result = applications.updateApplication(resource, {
     attribute: 'oauthPermission', mode: 'remove', value: found.raw,
-    actor: arguments[2] || ''
+    actor: actor || ''
   });
   if (!result.ok) {
     log.debug("Leaving removePermission(). Refused.");
@@ -461,12 +461,12 @@ function removePermission(resource, name) {
 // GRANT one to a client. The ordering rule — the permission must already
 // exist — is checked in `applications.updateApplication()`; see this file's
 // header for why it is there and not here.
-function grant(client, permissionId) {
+function grant(client, permissionId, actor) {
   log.debug("Entering grant(). client=" + client);
   const id = String(permissionId == null ? '' : permissionId).trim();
   const result = applications.updateApplication(client, {
     attribute: 'oauthDelegatedPermission', mode: 'add', value: id,
-    actor: arguments[2] || ''
+    actor: actor || ''
   });
   if (!result.ok) {
     log.debug("Leaving grant(). Refused.");
@@ -488,12 +488,12 @@ function grant(client, permissionId) {
   });
 }
 
-function revoke(client, permissionId) {
+function revoke(client, permissionId, actor) {
   log.debug("Entering revoke(). client=" + client);
   const id = String(permissionId == null ? '' : permissionId).trim();
   const result = applications.updateApplication(client, {
     attribute: 'oauthDelegatedPermission', mode: 'remove', value: id,
-    actor: arguments[2] || ''
+    actor: actor || ''
   });
   if (!result.ok) {
     log.debug("Leaving revoke(). Refused.");

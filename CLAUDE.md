@@ -90,7 +90,7 @@ files did not change; the paths did.
 | `debugger/` | **The embedded identity protocol debugger** (2026-09-13): the parent project's client and api served on a listener of their own (`debugger.port`), signed in to through this service's authorization server, the api a FORKED CHILD behind an access token only a console administrator is issued. `debugger/embedded/` is that project's build output, never source. `debugger/CLAUDE.md`. |
 | `postgres/` | Four files the database container runs, never this service: TLS setup, TLS enforcement, the schema and the least-privilege `sts_app` role. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site — how to USE this service. `docs/CLAUDE.md`. |
-| `types/`, `tsconfig.json` | **THE TYPESCRIPT CONVERSION'S FIRST STEP (#50, 2026-09-16)**: declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` (all of `common/` but `vendored/`), and `tests/typecheck.js` runs it. The decisions for the rest of the conversion are on issue #50. |
+| `types/`, `tsconfig.json` | **THE TYPESCRIPT CONVERSION'S FIRST STEP (#50, 2026-09-16)**: declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` — since 2026-09-16 every directory the service runs from, `server.js` and `sts_metadata.js`, all but the vendored copies — and `tests/typecheck.js` runs it and holds the list. The decisions for the rest of the conversion are on issue #50. |
 | `env/` | The appconfig files, each a layer over the generated `defaults.js`. `env/CLAUDE.md`. |
 
 At the package root there are exactly two modules, and both earn it:
@@ -657,7 +657,7 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   is used.
 * **A file in a type-checked directory starts with `// @ts-check`** (after a
   `#!` line, if it has one), and `npm test` fails on a type error in it
-  (`tests/typecheck.js`). `common/` is the first such directory (#50). A type
+  (`tests/typecheck.js`). Every service directory is one (#50). A type
   the JavaScript cannot state goes in `types/` as a declaration, or in JSDoc
   beside the code; a cast (`/** @type {any} */ (x)`) is for a library whose
   declared types are wrong, and says so in a comment. **Checking may not

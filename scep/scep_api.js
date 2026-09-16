@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: scep_api.js

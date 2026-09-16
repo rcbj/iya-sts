@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: acme_console.js
@@ -172,6 +173,7 @@ function profilesJson() {
 
 function modeJson() {
   log.debug("Entering modeJson().");
+  /** @type {any} */
   const row = mode.REQUIREMENTS.filter(function (one) {
     return one.id === 'certificate-enrollment';
   })[0] || {};

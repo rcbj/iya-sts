@@ -11,8 +11,40 @@
     "types": ["node"],
     "typeRoots": ["./tests/node_modules/@types"]
   },
-  "include": ["server.js", "sts_metadata.js", "types/**/*.d.ts",
-              "common/*.js"],
-  "exclude": ["node_modules", "tests/node_modules", "node-ldapjs",
-              "common/vendored", "debugger/embedded"]
+  "include": [
+    "server.js", "sts_metadata.js", "types/**/*.d.ts",
+    "acme/*.js",
+    "admin-core/*.js",
+    "admin-ui/*.js",
+    "authn/*.js",
+    "cluster/*.js",
+    "common/*.js",
+    "debugger/*.js",
+    "est/*.js",
+    "federation/*.js",
+    "gnap/*.js",
+    "home/*.js",
+    "kerberos/*.js",
+    "ldap/*.js",
+    "logout/*.js",
+    "mgmt-api/*.js",
+    "oauth-oidc/*.js",
+    "oid4vc/*.js",
+    "persistence/*.js",
+    "pki/*.js",
+    "portal/*.js",
+    "saml/*.js",
+    "scep/*.js",
+    "scim/*.js",
+    "spiffe/*.js",
+    "ssf/*.js",
+    "tls/*.js",
+    "ws-federation/*.js",
+    "ws-trust/*.js",
+    "xacml/*.js"
+  ],
+  "exclude": [
+    "node_modules", "tests/node_modules", "node-ldapjs",
+    "common/vendored", "debugger/embedded"
+  ]
 }

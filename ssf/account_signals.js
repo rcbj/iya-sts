@@ -1,3 +1,4 @@
+// @ts-check
 // ---------------------------------------------------------------------------
 // ssf/account_signals.js — WHAT A CREDENTIAL CHANGE SAYS OVER SHARED SIGNALS,
 // FOR THE DOORS THAT MAKE ONE (2026-09-13).

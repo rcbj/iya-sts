@@ -11,3 +11,7 @@ declare module '@google-cloud/secret-manager';
 declare module '@azure/keyvault-secrets';
 declare module '@azure/identity';
 declare module 'node-vault';
+
+// `admin-core/admin_views.js` reads the password generator's version out of its
+// package.json, which the package's own declarations do not cover.
+declare module 'generate-password/package.json';

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ldap/directory_create_claims.js
@@ -173,7 +174,8 @@ function claim(spec) {
   let attempts = 0;
   const attempt = function () {
     attempts += 1;
-    return claimAll(wanted, realm).then(function (answer) {
+    return claimAll(wanted, realm).then(/** @param {any} answer */
+                                        function (answer) {
       if (answer.ok || answer.reason === 'store' || Date.now() >= deadline) {
         return answer;
       }

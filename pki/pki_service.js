@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: pki_service.js
@@ -600,7 +601,7 @@ function listen() {
     });
     server.listen(port, config.value('global.host'), function () {
       httpListening = true;
-      httpBoundPort = server.address().port;
+      httpBoundPort = (/** @type {any} */ (server.address())).port;
       resolve({ port: httpBoundPort });
     });
   });

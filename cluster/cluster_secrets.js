@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: cluster/cluster_secrets.js

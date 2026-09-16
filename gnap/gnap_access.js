@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: gnap_access.js
@@ -719,7 +720,7 @@ function checkPresentation(model, context, lists) {
 // ---------------------------------------------------------------------------
 function packageDir(name) {
   log.debug("Entering packageDir().");
-  const dirs = module.paths || [];
+  const dirs = /** @type {any} */ (module).paths || [];
   for (let i = 0; i < dirs.length; i++) {
     const candidate = path.join(dirs[i], name);
     if (fs.existsSync(path.join(candidate, 'package.json'))) {

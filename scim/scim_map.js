@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: scim_map.js
@@ -314,7 +315,8 @@ const GROUP_ATTRIBUTES = [
 function checkSpellings() {
   log.debug("Entering checkSpellings().");
   let checked = 0;
-  USER_ATTRIBUTES.concat(GROUP_ATTRIBUTES).forEach(function (row) {
+  /** @type {any[]} */ (USER_ATTRIBUTES).concat(GROUP_ATTRIBUTES)
+    .forEach(function (row) {
     if (row.kind === 'derived') {
       return;
     }

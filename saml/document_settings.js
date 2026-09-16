@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: document_settings.js

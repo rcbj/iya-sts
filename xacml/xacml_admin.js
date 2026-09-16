@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: xacml_admin.js
@@ -1165,7 +1166,7 @@ app.get('/admin/xacml/monitor', function (req, res) {
   // counting decisions has to be able to see all of them, and it is marked as
   // an endpoint on the row with an empty enforcement cell rather than a zero.
   // ---------------------------------------------------------------------
-  const allRows = json.rows.concat(json.remoteRows);
+  const allRows = /** @type {any[]} */ (json.rows).concat(json.remoteRows);
   const table = '<h2>Every enforcement point</h2>' +
     '<table><tr><th>Point</th><th>State</th><th>Bias</th>' +
     '<th class="num">Decisions</th><th class="num">Allowed</th>' +
@@ -1731,6 +1732,7 @@ function editFormFor(policy, row) {
   // offer something the edit then refuses.
   if (row.kind === 'policy' || row.kind === 'policySet') {
     const menu = editor.algorithmMenuFor(node);
+    /** @type {any} */
     const chosen = menu.filter(function (one) {
       return one.uri === node.combiningAlgId;
     })[0] || {};

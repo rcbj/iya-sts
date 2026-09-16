@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: xacml_role_pep.js

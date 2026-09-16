@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ssf/ssf_cluster.js

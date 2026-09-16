@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: delegation_map.js

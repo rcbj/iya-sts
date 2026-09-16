@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: portal.js
@@ -4041,6 +4042,7 @@ function personOf(session) {
 function signalsPage(session, message, error, wanted) {
   log.debug('Entering signalsPage().');
   const view = signals.view(signals.PORTAL, { person: personOf(session) });
+  /** @type {any} */
   const st = view.status || {};
   const rows = view.received;
   const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));

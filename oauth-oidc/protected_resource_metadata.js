@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: protected_resource_metadata.js
@@ -513,12 +514,14 @@ const INTERNAL = (function () {
    ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15],
    ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 4],
    ['240.0.0.0', 4]].forEach(function (row) {
-    list.addSubnet(row[0], row[1], 'ipv4');
+    list.addSubnet(/** @type {string} */ (row[0]),
+                   /** @type {number} */ (row[1]), 'ipv4');
   });
   [['::', 128], ['::1', 128], ['64:ff9b::', 96], ['100::', 64],
    ['2001:db8::', 32], ['fc00::', 7], ['fe80::', 10],
    ['ff00::', 8]].forEach(function (row) {
-    list.addSubnet(row[0], row[1], 'ipv6');
+    list.addSubnet(/** @type {string} */ (row[0]),
+                   /** @type {number} */ (row[1]), 'ipv6');
   });
   return list;
 })();

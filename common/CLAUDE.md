@@ -60,6 +60,14 @@ the list.
 
 ## Every file here is type-checked (#50, 2026-09-16)
 
+**`common/` went first and every other service directory followed the same
+day**, with the same three kinds of fix below; the second pass also gave
+`realms.map()` a signature (a Map plus `realmMap()`). The checker found three
+real defects on the way, each fixed with a test: `SyncAuthorizedEntries`
+reading a `call` it was never given, every gRPC call counted on one metrics
+row with no method or path, and a property listed twice in a management API
+schema.
+
 Each file in this directory except `vendored/` starts with `// @ts-check`, and
 `tests/typecheck.js` fails on a type error in any of them — a new file needs the
 marker too, and that test says so. The first pass fixed 252 errors without

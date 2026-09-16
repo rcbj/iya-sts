@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: est_console.js

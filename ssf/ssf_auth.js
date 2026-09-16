@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ssf_auth.js

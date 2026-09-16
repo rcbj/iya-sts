@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: scim_auth.js

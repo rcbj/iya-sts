@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: token_zcap.js

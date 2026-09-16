@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: refresh_token_crypto.js

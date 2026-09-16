@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: spiffe_api.js
@@ -1410,6 +1411,7 @@ function bundleDocumentFromProto(message) {
   (proto.x509_authorities || []).forEach(function (authority) {
     const der = Buffer.from(authority.asn1 || []);
     if (!der.length) return;
+    /** @type {any} */
     let jwk = {};
     try {
       const cert = new crypto.X509Certificate(der);

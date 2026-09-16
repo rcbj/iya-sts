@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: debugger_server.js
@@ -1104,7 +1105,8 @@ function close() {
   log.debug("Leaving close().");
   return Promise.all([
     apiProcess.stop(),
-    new Promise(function (resolve) {
+    new Promise(/** @param {(value?: any) => void} resolve */
+                function (resolve) {
       if (!closing) {
         resolve();
         return;

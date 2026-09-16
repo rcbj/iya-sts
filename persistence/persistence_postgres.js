@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: persistence/persistence_postgres.js
@@ -1039,7 +1040,8 @@ function create(options) {
   // needed it, unless the role is the service itself). cluster.js decides.
   function fenced(reason, message, lost) {
     log.debug("Entering fenced().");
-    const err = new Error(errorCodes.tag('STS-CLUSTER-0001') + message);
+    const err = /** @type {any} */ (
+      new Error(errorCodes.tag('STS-CLUSTER-0001') + message));
     err.fenced = true;
     err.reason = reason;
     err.lost = lost || [];

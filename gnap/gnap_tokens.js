@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: gnap_tokens.js
@@ -236,7 +237,8 @@ async function mint(format, model, ctx) {
     const valid = access.validateModel(model);
     if (!valid.ok) {
       log.debug("Leaving mint(). Model invalid.");
-      const refused = new Error('the token model is not valid: ' + valid.why);
+      const refused = /** @type {any} */ (
+        new Error('the token model is not valid: ' + valid.why));
       refused.errorCode = valid.errorCode;
       throw errorCodes.mark(refused, valid.errorCode);
     }

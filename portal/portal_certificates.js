@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // portal/portal_certificates.js — /portal/certificates, WHERE A PERSON GETS

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: gnap_interact.js
@@ -174,6 +175,7 @@ function startMode(mode) {
     // ONCE ACROSS THE CLUSTER (#46): `one.used` is a field on a replicated
     // grant, so another node still reading the grant before this start would
     // follow the same link. Claimed for the interaction's own lifetime.
+    /** @type {any} */
     const spent = await store.spend('interaction', mode + ':' +
                                     params.value.id,
                                     grant.interaction.expiresAt - nowSec(),
@@ -456,6 +458,7 @@ function afterDecision(res, grant, finished) {
 // ---------------------------------------------------------------------------
 async function claimDecision(res, grant) {
   log.debug("Entering claimDecision().");
+  /** @type {any} */
   const spent = await store.spend('decision', grant.id + ':' +
                                   grant.interaction.approvalId,
                                   grant.interaction.expiresAt - nowSec(),

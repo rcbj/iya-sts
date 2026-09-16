@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: gnap_grants.js
@@ -1499,6 +1500,7 @@ async function continueGrant(req, grantId) {
     log.debug("Leaving continueGrant(). Caller refused.");
     return caller;
   }
+  /** @type {any} */
   const spent = await store.spend('continuation', caller.token, 0,
                                   'STS-GNAP-0710');
   if (!spent.ok) {
@@ -1822,6 +1824,7 @@ async function manageToken(req, handle) {
 
 async function spendManagement(req, presented, spentBox) {
   log.debug("Entering spendManagement().");
+  /** @type {any} */
   const spent = await store.spend('management', presented, 0,
                                   'STS-GNAP-0714');
   if (spent.ok) {

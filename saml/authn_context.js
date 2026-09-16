@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: authn_context.js

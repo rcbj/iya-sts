@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: gnap_schemas.js
@@ -46,8 +47,10 @@
 // object (2.5.2).
 // ---------------------------------------------------------------------------
 
-const Ajv2020 = require('ajv/dist/2020');
-const addFormats = require('ajv-formats');
+// `any` for the type checker (#50): CommonJS modules whose declared types are
+// ES default exports.
+const Ajv2020 = /** @type {any} */ (require('ajv/dist/2020'));
+const addFormats = /** @type {any} */ (require('ajv-formats'));
 const { log } = require('../common/helpers');
 const validation = require('../common/validation');
 

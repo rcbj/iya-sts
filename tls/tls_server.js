@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: tls_server.js
@@ -267,6 +268,8 @@ function truststoreOpenToAnybody() {
 // ---------------------------------------------------------------------------
 function protocolOptions() {
   log.debug("Entering protocolOptions().");
+  // `any`: the setting is a string, and the TLS types want a version literal.
+  /** @type {any} */
   const options = { minVersion: String(config.value('tls.minVersion') ||
                                        'TLSv1.2') };
   const ciphers = String(config.value('tls.ciphers') || '').trim();

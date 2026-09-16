@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: debugger_api_process.js

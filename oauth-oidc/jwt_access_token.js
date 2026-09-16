@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: jwt_access_token.js

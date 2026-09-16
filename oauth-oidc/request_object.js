@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: request_object.js

@@ -3664,17 +3664,19 @@ function decryptWithKek(kek, stored, label) {
 // purpose from being the credential for another if a second caller ever
 // appears.
 // ---------------------------------------------------------------------------
-function deriveSharedCredential(secret, label) {
+// `...parts` rather than `arguments` (#50): the same inputs, in the same
+// order, and a signature the type checker can read.
+function deriveSharedCredential(secret, label, ...parts) {
   log.debug('Entering deriveSharedCredential(). label=' + label);
   const mac = nodeCrypto.createHmac('sha256', Buffer.from(String(secret || ''),
                                                           'utf8'));
   mac.update(String(label || ''), 'utf8');
-  for (let i = 2; i < arguments.length; i++) {
+  for (let i = 0; i < parts.length; i++) {
     // A SEPARATOR THAT CANNOT APPEAR IN A PART. Without one, ('ab', 'c') and
     // ('a', 'bc') derive the same credential, which is the ordinary way a
     // concatenated MAC input goes wrong.
     mac.update('\u0000', 'utf8');
-    mac.update(String(arguments[i] == null ? '' : arguments[i]), 'utf8');
+    mac.update(String(parts[i] == null ? '' : parts[i]), 'utf8');
   }
   log.debug('Leaving deriveSharedCredential().');
   return b64u(mac.digest());

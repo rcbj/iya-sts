@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: sender_constraints.js

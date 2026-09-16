@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: ldap_server.js
@@ -15006,7 +15007,8 @@ function ldapRolesView(req) {
   }).join('');
   const builtInRows = roles.builtInCatalogue().map(function (one) {
     return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.what || one.description || '') + '</td></tr>';
+      xmlEscape(one.what || /** @type {any} */ (one).description || '') +
+      '</td></tr>';
   }).join('');
 
   const inner = '<p class="sub">' + all.length + ' of a maximum ' +

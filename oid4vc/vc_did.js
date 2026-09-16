@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: vc_did.js
@@ -183,6 +184,7 @@ async function stsDidDocument(req) {
                  .toString('base64')
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   };
+  /** @type {any[]} */
   const methods = [{
     id: did + '#' + STS.kid,
     type: 'JsonWebKey2020',

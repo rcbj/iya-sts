@@ -1,3 +1,4 @@
+// @ts-check
 //
 // File: admin_api_explorer.js
 //
@@ -45,6 +46,9 @@
   // inside log.debug() would be infinite recursion.
   var LEVELS = { debug: 20, info: 30, warn: 40, error: 50 };
   var LOG_LEVEL = LEVELS.info;
+  // `any` for the type checker (#50): the methods pass `arguments` on, which
+  // it reads as taking none.
+  /** @type {any} */
   var log = {
     debug: function () {
       if (LOG_LEVEL <= LEVELS.debug) {

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: saml_assertion_grant.js

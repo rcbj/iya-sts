@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: federation_graph.js
@@ -143,7 +144,9 @@ function brokerKey(application, relationship) {
 function describe(record) {
   log.debug('Entering describe(). id=' + record.fedId);
   const readiness = federation.readinessOf(record);
+  /** @type {any} */
   const protocolRow = federation.protocolRow(record.fedProtocol) || {};
+  /** @type {any} */
   const roleRow = federation.roleRow(record.fedRole) || {};
   const mechanismId = String(record.fedAuthnMechanism || '').trim();
   const mechanismRow = mechanismId ? federation.mechanismRow(mechanismId) :

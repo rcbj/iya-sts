@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: api_explorer.js

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: krb5_keytab.js

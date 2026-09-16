@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: scim.js
@@ -185,7 +186,9 @@
 // that eventually disagree about whether `a+b` is a name.
 // ---------------------------------------------------------------------------
 
-const SCIMMY = require('scimmy');
+// `any` for the type checker (#50): scimmy's declared types are stricter than
+// the loose shapes its own documentation passes, which is what this file does.
+const SCIMMY = /** @type {any} */ (require('scimmy'));
 
 const app = require('../common/app');
 const { log, xmlEscape, baseUrlOf } = require('../common/helpers');
@@ -1644,6 +1647,7 @@ const HOBA_REGISTER_PATH = '/.well-known/hoba/register';
 app.get(HOBA_REGISTER_PATH, function (req, res) {
   log.debug("Entering GET " + HOBA_REGISTER_PATH + ".");
   const auth = scimAuth.describe(req);
+  /** @type {any} */
   const hoba = auth.schemes.filter(function (row) {
     return row.id === 'hoba';
   })[0] || {};

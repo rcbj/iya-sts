@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: admin.js
@@ -3265,6 +3266,7 @@ function shortCrumb(text) {
 // pages and not others would be a trail nobody looks for.
 function trailBar(active, up, title) {
   log.debug("Entering trailBar(). active=" + active);
+  /** @type {any[]} */
   const crumbs = [{ label: 'Admin console',
                     href: active === '/admin' ? null : '/admin' }];
   if (active !== '/admin') {
@@ -16464,6 +16466,7 @@ function mfaSection(row, key, state, back) {
     '</table>';
 
   // --- the authenticator app -----------------------------------------------
+  /** @type {any} */
   const d = mech.totpDetail || {};
   const totpBlock = '<h3>Authenticator app (RFC 6238)</h3>' +
     (!mech.totp
@@ -28921,6 +28924,7 @@ function scimSchemeRow(id, name, enabled, count, note) {
 app.get('/admin/scim/monitor', function (req, res) {
   log.debug("Entering the admin SCIM monitor page.");
   const json = scimMonitorJson(req);
+  /** @type {any} */
   const c = json.counters;
 
   const tiles = '<div class="tiles">' +
@@ -29306,6 +29310,7 @@ app.post('/admin/signals', function (req, res) {
 app.get('/admin/signals', function (req, res) {
   log.debug("Entering the admin signals page.");
   const json = signalsJson(req);
+  /** @type {any} */
   const st = json.status || {};
   const stream = st.stream;
 
@@ -34663,6 +34668,7 @@ function spiffeListenerRows(bindings, what) {
 
 function spiffePage(req) {
   log.debug("Entering spiffePage().");
+  /** @type {any} */
   const json = spiffeJson(req);
   const state = spiffeCa.state();
   const x509Rows = state.x509Authorities.map(function (authority) {

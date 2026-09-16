@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: database_admin.js

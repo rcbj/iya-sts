@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: spiffe_grpc.js
@@ -235,7 +236,7 @@ function securityHeaderPresent(call) {
 // error-code: none — the constructor every refusal is built with; each caller marks its own condition
 function statusError(code, message) {
   log.debug("Entering statusError().");
-  const err = new Error(message);
+  const err = /** @type {any} */ (new Error(message));
   err.code = code;
   log.debug("Leaving statusError().");
   return err;
@@ -616,7 +617,12 @@ function prepareCall(call, surface, method) {
 function recordCall(surface, method, ok, detail, caller, errorCode) {
   log.debug('Entering recordCall().');
   try {
-    stats.recordCall('grpc:' + method, ok ? 200 : 500, 0);
+    // ONE OBJECT, the shape `app.js`'s call log passes. This passed three
+    // positional arguments until 2026-09-16, so every gRPC call was counted
+    // on one row keyed "undefined undefined" with status 0xx; the type
+    // checker (#50) found it.
+    stats.recordCall({ method: 'GRPC', path: 'grpc:' + method, matched: true,
+                       status: ok ? 200 : 500, durationMs: 0 });
   } catch (e) {
     // Statistics must never be able to fail a call — the same rule the JWT
     // recorder follows in helpers.js.

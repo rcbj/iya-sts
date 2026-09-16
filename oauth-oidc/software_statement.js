@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: software_statement.js

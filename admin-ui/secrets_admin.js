@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: secrets_admin.js

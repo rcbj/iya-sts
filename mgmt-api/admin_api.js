@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: admin_api.js
@@ -221,8 +222,10 @@ const spec = require('./admin_api_spec');
 // — the opposite of `common/validation.js`'s first-issue-only rule, and for a
 // reason: this is a developer with a document open, not a browser mid-sign-in.
 // ---------------------------------------------------------------------------
-const Ajv = require('ajv');
-const addFormats = require('ajv-formats');
+// `any` for the type checker (#50): CommonJS modules whose declared types are
+// ES default exports.
+const Ajv = /** @type {any} */ (require('ajv'));
+const addFormats = /** @type {any} */ (require('ajv-formats'));
 
 const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false });
 addFormats(ajv);
@@ -1363,6 +1366,7 @@ function familyScopeNote() {
          'and `ldapmodify` reaches them like every other attribute.\n\n';
 }
 
+/** @type {any[]} */
 const ROUTES = [
   { method: 'GET', path: BASE, tag: 'Service',
     operationId: 'getIndex',
@@ -1574,7 +1578,7 @@ const ROUTES = [
                    '(`perRealmKey: false`).' },
     handler: function (req, res) {
       log.debug("Entering the management API encryption report endpoint.");
-      sendJson(res, 200, encryptionAdmin.encryptionView(req));
+      sendJson(res, 200, encryptionAdmin.encryptionView());
       log.debug("Leaving the management API encryption report endpoint.");
     } },
 
@@ -5600,11 +5604,6 @@ const ROUTES = [
                       description: 'A format id. `GET ' +
                                    '/admin-api/verifier-request` lists them ' +
                                    'under `formats`.' },
-            name: { type: 'string',
-                  description: 'An alias for `claim`; `vpConfigAction()` ' +
-                               'reads `body.claim || body.name`, so both ' +
-                               'spellings have always worked and only one ' +
-                               'was published.' },
             name: { type: 'string',
                   description: 'An alias for `claim`; `vpConfigAction()` ' +
                                'reads `body.claim || body.name`, so both ' +
