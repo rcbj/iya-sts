@@ -56,19 +56,20 @@
 //    application; the ENDPOINTS stay per-application either way, because that
 //    is what makes the documents worth having separately.
 //
-// 2. **THERE IS NO SIGN-IN SCREEN IN THIS FILE, and that is the deliberate
-//    difference from `ws-federation/wsfed.js`.** That module has one because
-//    section 13.2.1 lets a WS-Federation sign-in request arrive as a cross-site
-//    form POST, which `SameSite=Lax` keeps the session cookie off, so it cannot
-//    read the session it would need to skip the screen. The HTTP POST binding
-//    has exactly the same problem — and the answer here is to STASH the request
-//    and 303 the browser to a GET on this same endpoint, which is a top-level
-//    GET navigation and therefore DOES carry a Lax cookie. So this profile
-//    reaches `authn.js`'s screen through `beginAuthentication()` like the
-//    authorization endpoint does, and three things follow that WS-Federation
-//    does not get: single sign-on with OAuth and WS-Federation in one session,
-//    a WebAuthn ceremony available at the screen, and one fewer place asking
-//    for a username. A screen of this profile's own would have been a second
+// 2. **THERE IS NO SIGN-IN SCREEN IN THIS FILE, and that was once the
+//    deliberate difference from `ws-federation/wsfed.js`.** That module had
+//    one, because section 13.2.1 lets a WS-Federation sign-in request arrive
+//    as a cross-site form POST, which `SameSite=Lax` keeps the session cookie
+//    off, so it could not read the session it would need to skip the screen.
+//    The HTTP POST binding has exactly the same problem — and the answer here
+//    is to STASH the request and 303 the browser to a GET on this same
+//    endpoint, which is a top-level GET navigation and therefore DOES carry a
+//    Lax cookie. So this profile reaches `authn.js`'s screen through
+//    `beginAuthentication()` like the authorization endpoint does, and gets
+//    single sign-on with OAuth in one session, a WebAuthn ceremony at the
+//    screen, and one fewer place asking for a username. (WS-Federation gave
+//    up its own screen for the same funnel on 2026-08-26 — `wsfed.js` says
+//    why.) A screen of this profile's own would have been a second
 //    authentication service for no reason at all.
 //
 // 3. **EVERY ENTITYID IS ACCEPTED AND NOTHING IS VERIFIED — including a
@@ -114,9 +115,9 @@
 // ===========================================================================
 
 const zlib = require('zlib');
-// TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// TRUST REALMS: the stores below are partitioned by realm. It requires only
+// config.js and error_codes.js here, so it cannot join a cycle and it
+// registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const crypto = require('crypto');
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
@@ -147,14 +148,15 @@ const spMetadata = require('./sp_metadata');
 // own: `beginAuthentication()` sends the browser to authn.js's screen and back.
 const { sessionOf, endSession, beginAuthentication, notePresented,
         noteSessionChanged } = require('../authn/authn');
-// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, so it
-// can be required from 10a without moving a route or closing a cycle — which
-// is the whole reason `common/issuance_gate.js` exists rather than this module
+// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
+// `error_codes`, so it can be required from 10a without moving a route or
+// closing a cycle — which is the whole reason `common/issuance_gate.js` exists rather than this module
 // reaching into `xacml/` at 23c. An unfilled decider answers "allowed".
 const gate = require('../common/issuance_gate');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
-// nothing about the route order this module's position in server.js fixes.
+// nothing about the route order this module's position in
+// `common/protocol_stack.js` fixes.
 const applications = require('../common/applications');
 // THE MODE, and four libraries beside this file (2026-09-12), each a leaf that
 // registers nothing: the one reading of how a session authenticated, the
@@ -504,9 +506,9 @@ function fieldsOf(spEntityId) {
 // rather than of anything here. A few hundred kilobytes reaches gigabytes.
 //
 // **AND IT IS SYNCHRONOUS ON THE THREAD THAT OWNS EVERY SOCKET.** That is the
-// argument the root CLAUDE.md makes about post-quantum signing and the whole
-// reason `common/worker_pool.js` exists: this process runs six listener
-// families on one thread, so a computation like this does not slow the service
+// argument `common/CLAUDE.md` makes about post-quantum signing and the whole
+// reason `common/worker_pool.js` exists: this process runs every listener
+// family on one thread, so a computation like this does not slow the service
 // down, it STOPS it — the KDC stops answering, the directory stops answering,
 // and from the outside that is indistinguishable from a service that is not
 // running.

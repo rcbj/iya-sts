@@ -43,9 +43,9 @@
 // **THE SECOND IMPLEMENTATION IS `pg`'s OWN PARSER**, and claim 3 is asserted
 // against it rather than against this repository's idea of a URL:
 // `ConnectionParameters` is the code that will really read the string at
-// runtime, so a round-trip through it is the arrangement
-// `tests/webauthn_cross_impl.js` describes — two implementations meeting,
-// where one of them is the one that matters.
+// runtime, so a round-trip through it is the arrangement the parent
+// project's `tests/webauthn_cross_impl.js` describes — two implementations
+// meeting, where one of them is the one that matters.
 // ===========================================================================
 
 const fs = require('fs');
@@ -66,9 +66,10 @@ const ConnectionParameters = require('pg/lib/connection-parameters.js');
 const log = require('bunyan').createLogger({ name: 'database_password',
   level: process.env.LOG_LEVEL || 'info' });
 
-// The settings this file moves. All four are RESTART-ONLY — the pool is opened
-// before the listener binds — so `config.setOverride()` would refuse them and a
-// test that used it would silently assert against the defaults. The
+// The settings this file moves. Every one is RESTART-ONLY — the key and the
+// pool are both read before the listener binds — so `config.setOverride()`
+// would refuse them and a test that used it would silently assert against the
+// defaults. The
 // environment layer is what `config.value()` resolves on every call.
 const VARS = ['STS_KEYS_KEK_PROVIDER', 'STS_KEYS_KEK_FILE', 'STS_KEYS_KEK_REF',
               'STS_KEYS_KEK_FIELD', 'STS_DATABASE_PASSWORD_PROVIDER',

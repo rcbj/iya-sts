@@ -1,10 +1,11 @@
 # ---------------------------------------------------------------------------
 # THE IMAGE REPOSITORY.
 #
-# Two images per commit: `<sha>` (the service, built with the AWS SDK and the
-# RDS CA bundle) and `schema-<sha>` (the init container). Private, scanned on
-# push, and trimmed so a CI job that builds on every run does not accumulate
-# storage for ever.
+# Four images per commit: `<sha>` (the service, built with the AWS SDK and the
+# RDS CA bundle), `schema-<sha>` (the init container), `runner-<sha>` (the
+# suite runner) and `pep-<sha>` (the remote XACML PEP the suite task runs).
+# Private, scanned on push, and trimmed so a CI job that builds on every run
+# does not accumulate storage for ever.
 # ---------------------------------------------------------------------------
 resource "aws_ecr_repository" "main" {
   name                 = var.name

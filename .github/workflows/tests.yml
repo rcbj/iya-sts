@@ -3,14 +3,14 @@
 # with coverage collected, and the suite in the `cluster` mode (two nodes behind
 # a load balancer, 2026-09-15).
 #
-# Both wrap a launcher that needs docker and NOTHING ELSE: no node, no npm
+# All three wrap a launcher that needs docker and NOTHING ELSE: no node, no npm
 # install, no Chrome, no checkout of the parent project. That is the property
 # this workflow exists to use, and it is why the suite was made self-contained
 # on 2026-08-28 and why ./run-coverage.sh was containerized on 2026-08-29.
 #
 #   tests     ./docker-run-tests.sh — builds docker-compose-run-tests.yml (the
 #             service from this repository's Dockerfile, and a test runner with
-#             node and a Chrome in it), runs all twenty-seven jobs against the
+#             node and a Chrome in it), runs every job against the
 #             service over the compose network, and always tears the stack down.
 #   coverage  ./run-coverage.sh — HALF of that same compose file. It puts the
 #             RUNNER in the `tests` image and lets it start the service it
@@ -31,8 +31,9 @@
 # why the two uploads name different paths. In one job the second run would
 # write into the tree the first one's upload has not read yet, so an artifact
 # named for the plain suite could hold the coverage run's report — wrong, and
-# wrong silently. Two jobs are two workspaces, so each tree is its own. Two more things fall out of it: the
-# coverage pass still runs when the plain suite goes red, which is when its
+# wrong silently. Two jobs are two workspaces, so each tree is its own. Two
+# more things fall out of it: the coverage pass still runs when the plain suite
+# goes red, which is when its
 # report is most worth having, and the two run in PARALLEL, so the wall clock
 # is the slower of them rather than the sum. What it costs is a second image
 # build, since nothing is shared between jobs — that is the trade, and it is
@@ -41,16 +42,16 @@
 # WHAT THIS COVERS THAT build-container.yml DOES NOT. That workflow builds the
 # image and waits for /healthcheck, which proves every module resolved and the
 # port bound — the failure mode this repository has actually had most often.
-# This one drives the running service: the ten in-process jobs that assert
-# module contracts, and the thirteen protocol jobs that exercise OAuth 2.0,
-# OIDC, DPoP, SAML 1.1 and 2.0, the credential issuer, the DID chain, the
-# management API and — in a real browser — the admin console. The two overlap
+# This one drives the running service: the in-process jobs that assert module
+# contracts, and the protocol jobs (tests/vendored/MANIFEST.js is the count)
+# that exercise every protocol family, the management API and — in a real
+# browser — the admin console. The two overlap
 # only in that both start the image.
 #
 # WHY IT IS NOT THE PARENT PROJECT'S SUITE. Most of what covers this service is
 # authored in ../id-proto-debugger/tests/ (the root CLAUDE.md argues that
 # decision), and their CI drives the `sts/` gitlink — which is a PIN. A change
-# made here is not covered by that run until somebody bumps it. Thirteen of
+# made here is not covered by that run until somebody bumps it. Many of
 # those jobs are vendored into tests/vendored/ precisely so that this repository
 # can run them against its own working tree; this workflow is where that
 # happens on every push. It does not replace bumping the pin, because that is
@@ -73,7 +74,7 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # THE PLAIN SUITE. All twenty-seven jobs, service and runner both in
+  # THE PLAIN SUITE. Every job, service and runner both in
   # containers, nothing instrumented. This is the one whose status means "the
   # tree is green".
   # ---------------------------------------------------------------------------
@@ -177,7 +178,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # THE SAME SUITE AGAIN, INSTRUMENTED. What this adds is the only question the
-  # job above cannot answer: WHICH LINES of this tree the twenty-seven jobs
+  # job above cannot answer: WHICH LINES of this tree the jobs
   # actually reached. It is the second half of the picture for anybody deciding
   # what to test next, and it is worth a CI run because the report is the thing
   # nobody generates by hand.

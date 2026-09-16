@@ -28,7 +28,7 @@
 // never reach a token. Not one of them sends a request, so not one of them can
 // see a grant that is registered and unreachable, a metadata member that
 // promises an algorithm the endpoint refuses, or a key pair written to the
-// wrong six attributes. **Every function involved can be correct while the
+// wrong seven attributes. **Every function involved can be correct while the
 // feature does not work**, which is this suite's standing argument for an
 // over-HTTP job.
 //
@@ -62,7 +62,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -1044,7 +1044,7 @@ async function test() {
   // 14. ONCE, EVER (2026-09-13) — ONE HISTORY FOR BOTH USES, SPENT ONLY WHEN
   // TOKENS ARE ISSUED, AND ONE VERIFICATION PER REQUEST.
   //
-  // Section 5 asserts a replay inside ONE use. What it cannot see is the four
+  // Section 5 asserts a replay inside ONE use. What it cannot see is the three
   // things `common/used_assertions.js` changed: a JWT that authenticated a
   // client could ALSO be spent as a grant (two caches keyed two ways); a token
   // request that failed for another reason used the assertion up anyway; and in

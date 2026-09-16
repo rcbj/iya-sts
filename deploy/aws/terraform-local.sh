@@ -13,12 +13,14 @@
 #   deploy/aws/terraform-local.sh [env] [action]
 #     env    = an environment name, 2-12 [a-z0-9]      (default: dev)
 #     action = init | validate | plan | apply | destroy | output | suite
-#                                                       (default: plan)
+#              | ecr-password                           (default: plan)
 #
 #   deploy/aws/terraform-local.sh dev plan
 #   deploy/aws/terraform-local.sh dev apply          # IMAGE_TAG=<tag> required
 #   deploy/aws/terraform-local.sh dev suite          # report in tests/report/aws-dev
-#   TF_STACK=foundation deploy/aws/terraform-local.sh - apply   # administrator
+#   TF_STACK=foundation deploy/aws/terraform-local.sh dev apply # administrator
+#     (the env name is not used by `foundation`, but entrypoint.sh still
+#     checks its shape, so it must be a valid name and not `-`)
 #
 # CREDENTIALS: the AWS_* variables already in your environment if there are any
 # (the deployer user's key, or role credentials), otherwise whatever

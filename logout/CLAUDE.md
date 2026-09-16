@@ -74,15 +74,15 @@ once.
 
 Rule 3e's test: a slot is what you reach for when a require would close a cycle
 or move a route. Neither applies to the nine requires at the top of `logout.js`,
-because `server.js` requires this module SECOND TO LAST — after every one of
-them, before `sts_metadata.js` — so each is a cache hit that registers nothing,
-and nothing in this service requires this file back.
+because `common/protocol_stack.js` requires this module SECOND TO LAST — after
+every one of them, before `sts_metadata.js` — so each is a cache hit that
+registers nothing, and nothing in this service requires this file back.
 
 **The one exception is `admin.js`, and it fails the test BOTH ways round**,
 which is why `setLogoutReader()` exists and is the console's sixth slot. This
 module requires `ldap_server.js`; `ldap_server.js` requires `admin.js`; so
 `admin.js -> logout.js -> ldap_server.js -> admin.js` is a cycle, and it would
-also drag every `/ldap` route into the router ahead of the console's own. The
+also drag every `/admin/ldap/*` route into the router ahead of the console's own. The
 slot carries ONE object — `FAMILIES`, `inventoryFor`, `terminate` — validated
 whole at install time, because a partial one would leave `/admin/logout` listing
 what is live and unable to end any of it.
@@ -154,7 +154,7 @@ something that has since been reissued under the same id.
 |---|---|---|---|
 | `GET|POST /logout` | a person, about themselves | none | defaults to the session cookie; **renders the notifications**, because they are iframes in that person's browser |
 | `GET|POST /admin/logout` | an operator, about somebody | Admin Read / Admin Write | always names a `user`; filters, pages, and has the two **NON-SPEC undos** |
-| `GET|POST /admin-api/logout[/{action}]` | a test | none | the same two functions; four actions |
+| `GET|POST /admin-api/logout[/{action}]` | a test or a machine | an access token carrying `admin:read` / `admin:write` (`mgmt-api/CLAUDE.md`) | the same two functions; four actions |
 
 The console and the API call `admin.js`'s `logoutView()` / `logoutAction()`,
 which call this module — rule 7, which is what makes them one behaviour rather
@@ -302,9 +302,10 @@ anything but `true`.
 That is not a simplification of the other two, it is what they are. A Kerberos
 TGT exists because an AS-REQ decrypted under a real long-term key; an LDAP row
 exists because a Bind returned success. Both are a credential having been
-accepted — this service refuses no bind, which is a low bar, but it is still a
-credential presented and accepted, and an ANONYMOUS bind never reaches this
-list at all because it has no key and is left off a few lines earlier. So both
+accepted — in development mode this service refuses no bind, which is a low
+bar, but it is still a credential presented and accepted, and an ANONYMOUS bind
+never reaches this list at all because it has no key and is left off a few
+lines earlier. So both
 state `true` rather than leaving the field off: a missing field on two kinds of
 three would read as "unknown" on a page that is about exactly this distinction.
 

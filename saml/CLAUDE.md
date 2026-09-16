@@ -130,18 +130,19 @@ implementation:
 The file's own header argues all six at length. Two of them are the ones somebody
 will try to "fix":
 
-**1. THERE IS NO SIGN-IN SCREEN IN THIS DIRECTORY, and that is the deliberate
-difference from `../ws-federation/wsfed.js`.** That module has a screen of its
-own because section 13.2.1 lets a WS-Federation sign-in request arrive as a
-cross-site form POST, which `SameSite=Lax` keeps the session cookie off — so it
-cannot read the session it would need in order to skip the screen. The HTTP POST
-binding has exactly the same problem and this profile answers it differently:
-**hold the request and 303 to a GET on the same endpoint**, which is a top-level
-GET navigation and therefore DOES carry a Lax cookie. Three things follow that
-WS-Federation does not get — single sign-on with OAuth and WS-Federation in one
-session, a WebAuthn ceremony available at the screen, and one fewer place asking
-for a username. Do not give this profile a screen of its own to "make it
-symmetrical with wsfed": the asymmetry is the improvement.
+**1. THERE IS NO SIGN-IN SCREEN IN THIS DIRECTORY, and that was once the
+deliberate difference from `../ws-federation/wsfed.js`.** That module had a
+screen of its own because section 13.2.1 lets a WS-Federation sign-in request
+arrive as a cross-site form POST, which `SameSite=Lax` keeps the session cookie
+off — so it could not read the session it would need in order to skip the
+screen. The HTTP POST binding has exactly the same problem and this profile
+answers it differently: **hold the request and 303 to a GET on the same
+endpoint**, which is a top-level GET navigation and therefore DOES carry a Lax
+cookie. What follows is single sign-on with OAuth in one session, a WebAuthn
+ceremony available at the screen, and one fewer place asking for a username.
+**WS-Federation gave up its own screen for the same funnel on 2026-08-26**
+(`wsfed.js` says why), so the asymmetry is gone the right way round. Do not give
+this profile a screen of its own.
 
 **2. THE METADATA IS PER SERVICE PROVIDER AND IS MINTED FOR ANYTHING ASKED FOR.**
 `/saml2/metadata/{sp}` names an identity provider of its own —
@@ -242,7 +243,7 @@ is refused, and the refusal reads as a trust-store problem.
 
 ---
 
-## `buildSaml11Assertion()` GREW SEVEN OPTIONS TOO, AND ONE OF THEM IS THE PROFILE
+## `buildSaml11Assertion()` GREW OPTIONS TOO, AND ONE OF THEM IS THE PROFILE
 
 The same growth `buildSamlAssertion()` took, for the same stated reason — one
 assertion writer means one place where the element order, the attribute spelling
@@ -250,9 +251,10 @@ and the signature location are decided — and with the same payoff: **the custo
 SAML 1.1 attributes configured on `/admin/saml-attributes` reach a browser-profile
 assertion with no wiring at all.**
 
-The seven: `issuer`, `nameIdFormat`, `nameIdValue`, `nameQualifier`,
-`confirmationMethod`, `subjectLocality`, `doNotCache` and `sign`. Every default
-reproduces what WS-Trust and WS-Federation were already getting.
+They are `issuer`, `nameIdFormat`, `nameIdValue`, `nameQualifier`,
+`confirmationMethod`, `subjectLocality`, `doNotCache` and `sign`, and — since
+2026-09-12, for the attribute authority — `authenticationStatement`. Every
+default reproduces what WS-Trust and WS-Federation were already getting.
 
 **`confirmationMethod` is the one that is not a preference.**
 saml-profile-1.1 section 4.1.1.4 requires `urn:oasis:names:tc:SAML:1.0:cm:artifact`
@@ -400,14 +402,17 @@ lines away. The message is now chosen from the error.
 
 ## FOUR SETTINGS GROUPS, AND `saml.issuer` IS NOT ONE OF THE PROFILES'
 
-The *SAML* group holds TWO rows since 2026-08-27 — `saml.issuer` and
-`saml.clockSkewS` — and what they have in common is the entry test for that
-group: both are read by BOTH builders and therefore reach WS-Trust and
-WS-Federation as well. See *The validity window* below for the second.
+The *SAML* group held TWO rows from 2026-08-27 — `saml.issuer` and
+`saml.clockSkewS` — and five more since 2026-09-12: `saml.signatureAlgorithm`,
+`saml.canonicalizationAlgorithm` and the three `saml.organization*` rows
+(`document_settings.js`). What they have in common is the entry test for that
+group: each is read by what BOTH profiles sign and therefore reaches WS-Trust
+or WS-Federation as well. See *The validity window* below for
+`saml.clockSkewS`.
 
 `saml.issuer` (group *SAML*) governs who SIGNED an assertion and is shared by
-WS-Trust and WS-Federation. The nine `saml2.*` rows (group *SAML 2.0*) and the
-nine `saml11.*` rows (group *SAML 1.1*) govern how this service behaves as an
+WS-Trust and WS-Federation. The `saml2.*` rows (group *SAML 2.0*) and the
+`saml11.*` rows (group *SAML 1.1*) govern how this service behaves as an
 identity provider in each browser profile. Folding any of them together would
 make a change to one look like a change to the assertions WS-Trust hands out,
 which it is not. `wsfed.entityId` is separate from all of them for the same
@@ -423,10 +428,10 @@ service mints.
 
 ---
 
-## TEN OF THESE SETTINGS ARE PER APPLICATION, AND `settingFor()` IS THE ONLY PLACE THAT IS DECIDED
+## FOURTEEN OF THESE SETTINGS ARE PER APPLICATION, AND `settingFor()` IS THE ONLY PLACE THAT IS DECIDED
 
-Since 2026-08-27 five settings in each profile are DEFAULTS rather than
-decisions. An application entry may carry its own answer, and where it does,
+Since 2026-08-27 five settings in each profile, and the four SAML 2.0
+encryption settings, are DEFAULTS rather than decisions. An application entry may carry its own answer, and where it does,
 that answer wins for that application alone:
 
 | Setting | Attribute on the application entry |
@@ -437,6 +442,7 @@ that answer wins for that application alone:
 | `saml2.nameIdFormat` | `saml2NameIdFormat` |
 | `saml2.artifactTtlS` | `saml2ArtifactTtlS` |
 | `saml11.*` | `saml11*`, the same five |
+| `saml2.encryptAssertion`, `saml2.encryptionAlgorithm`, `saml2.keyTransportAlgorithm`, `saml2.encryptLogoutNameId` | `saml2EncryptAssertion`, `saml2EncryptionAlgorithm`, `saml2KeyTransportAlgorithm`, `saml2EncryptLogoutNameId` |
 
 `saml.clockSkewS` is NOT among them, and the section below says why.
 
@@ -575,11 +581,14 @@ enforced for these two, because `exp` collides with nothing in an assertion.
 
 ## The require order
 
-`saml2.js` and `saml11.js` require only `../common/helpers`, `../common/config`
-and `../common/admin_stats`, so they cannot join a cycle and their position is
-not a position at all.
+`saml2.js` and `saml11.js` require only libraries — `../common/helpers`,
+`../common/config`, `../common/crypto`, `../common/error_codes`,
+`../common/admin_stats`, and this directory's `document_settings.js` and
+`authn_context.js` — none of which requires them back, so they cannot join a
+cycle and their position is not a position at all.
 
-**`saml2_sso.js` is position 10a in `server.js` and has one real constraint**: it
+**`saml2_sso.js` is position 10a in `common/protocol_stack.js` (the require
+order `server.js` loads) and has one real constraint**: it
 must come after `../authn/authn.js`, and it is a STRONGER dependency than
 WS-Federation's rather than a weaker one — that module signs users into the
 session `authn.js` owns, and this one has no sign-in screen at all and reaches
@@ -588,10 +597,10 @@ that service's through `beginAuthentication()`. It has no constraint against
 each other. It sits between them and OID4VC so that the two browser SSO profiles
 read together in the route order and on `/admin/sts-metadata`.
 
-`../admin-ui/admin.js` requires it in the ORDINARY direction — a plain require,
-not a sixth inverted slot — and rule 3e's test is why: `server.js` requires this
-module at 10a and that one at 18, so a require from there closes no cycle and
-moves no route.
+`../admin-ui/admin.js` (and `../admin-core/`) require it in the ORDINARY
+direction — a plain require, not another inverted slot — and rule 3e's test is
+why: `common/protocol_stack.js` requires this module at 10a and those at 18 or
+later, so a require from there closes no cycle and moves no route.
 
 **`saml11_sso.js` is position 10b and has TWO constraints**, the second of which
 is the only require between the two profiles. It must come after
@@ -719,9 +728,10 @@ record of the decisions.
   AuthenticationStatement. Now an AuthenticationQuery is answered from a live,
   authenticated session (`authn.sessionsOf()`) or with Success and NO assertion,
   and an AttributeQuery omits the AuthenticationStatement
-  (`buildSaml11Assertion`'s new `authenticationStatement: false`). **The vendored
-  `tests/vendored/sts_saml11.js` asserts the old AuthenticationQuery answer** about
-  a person who never signed in and is the parent's to update.
+  (`buildSaml11Assertion`'s new `authenticationStatement: false`). The vendored
+  `tests/vendored/sts_saml11.js` asserted the old AuthenticationQuery answer
+  about a person who never signed in; the parent has since updated it to ask
+  about a user who really signed in.
 * **NO SIGNER PASSED AN ALGORITHM.** `saml.signatureAlgorithm` and
   `saml.canonicalizationAlgorithm` reach all ten signers across `saml/`,
   `ws-federation/` and `federation/` through `document_settings.js`, and the
@@ -741,7 +751,7 @@ record of the decisions.
 | An empty `saml2.entityId` / `saml11.providerId` is not replaced with `urn:sts:idp[:saml11]`; SSO and metadata refuse, naming the setting | `inventsClaimValues()` | unchanged |
 | Given name, surname, mail, display name come off the directory entry or are omitted | `inventsClaimValues()` (via `userFor()` and `person_attributes.js`) | unchanged |
 | SAML 1.1 AttributeQuery / AuthenticationQuery refused | `opensTestControls()` | answered |
-| SAML 2.0: an assertion configured to be encrypted that cannot be is a Responder status, not plaintext | `opensTestControls()` — the plaintext fallback exists so a test can drive the setting before a certificate exists; no predicate names this exactly | plaintext + WARN |
+| SAML 2.0: an assertion configured to be encrypted that cannot be is a Responder status, not plaintext | `sendsWeakerThanAsked()` — it used `opensTestControls()` for an hour, for want of a predicate that named the question | plaintext + WARN |
 
 **A refusal for an unregistered address is a PAGE and not a SAML Response**: the
 address a Response would go to is the address in question.

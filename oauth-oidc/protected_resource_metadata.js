@@ -23,8 +23,9 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route. It requires `common/`
 // modules, `federation/federation_http.js` for the outbound policy, and two
-// libraries beside it, none of which requires it back; `admin-core/` and
-// `mgmt-api/` require it. It decides; the two admin surfaces answer.
+// libraries beside it, none of which requires it back; `admin-core/`,
+// `admin-ui/` and `mgmt-api/` require it. It decides; the two admin surfaces
+// answer.
 //
 // ---------------------------------------------------------------------------
 // FIVE DECISIONS, FOUR OF THEM THE OWNER'S (asked before this was built):
@@ -717,8 +718,9 @@ function fetchDocument(url) {
 
 // ---------------------------------------------------------------------------
 // THE AUTHORIZATION SERVERS OF THIS TRUST REALM, with the issuer each
-// publishes at the address this request arrived on — the same `issuerOf()`
-// `oauth2.js` builds its discovery documents from, so the comparison is against
+// publishes at the address this request arrived on — through
+// `jwt_access_token.issuerFor()`, which `oauth2.js`'s `issuerOf()` (what its
+// discovery documents are built from) calls, so the comparison is against
 // what a client of this realm would actually read.
 // ---------------------------------------------------------------------------
 function authorizationServersOf(req) {

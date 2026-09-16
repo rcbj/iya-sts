@@ -27,10 +27,11 @@
 //
 // **REQUIRED AT 18f**, from `common/protocol_stack.js`, for 18a's reason: it
 // requires `admin-ui/admin` for the shell — a require the other way would
-// close a cycle — and `oauth-oidc/par.js`, `oauth-oidc/oauth2_monitor.js` and
-// `admin-core/admin_views.js`, which are libraries already loaded by that
-// line. `oauth2.js` at 9 cannot require it: that would drag the whole console
-// in front of the authorization server.
+// close a cycle — and `oauth2_monitor_console.js`, which requires
+// `oauth-oidc/par.js`, `oauth-oidc/oauth2_monitor.js`, `oauth-oidc/step_up.js`
+// and `admin-core/admin_views.js`, libraries already loaded by that line.
+// `oauth2.js` at 9 cannot require it: that would drag the whole console in
+// front of the authorization server.
 //
 // No script, like every page of this console but one: paging and the filter
 // are GET links and a GET form, and Withdraw is a POST form the console gate

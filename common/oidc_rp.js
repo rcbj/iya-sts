@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: oidc_rp.js
@@ -35,9 +36,11 @@
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3): IT REGISTERS NOTHING.
 //
-// The two callback routes are registered by the two surfaces —
-// `/admin/callback` in `admin-ui/admin.js` and `/portal/callback` in
-// `portal/portal.js` — and that is deliberate rather than tidy. A route
+// The callback routes are registered by the surfaces —
+// `/admin/callback` in `admin-ui/admin.js`, `/portal/callback` in
+// `portal/portal.js`, and (since 2026-09-13) the debugger's `/_sts/callback`
+// on its own listener in `debugger/debugger_server.js` — and that is
+// deliberate rather than tidy. A route
 // registered HERE would land wherever this file was first required, which is a
 // position decided by whoever edits an import list; a route registered there
 // lands where that surface's other routes are, which is what
@@ -49,18 +52,20 @@
 // so requiring it here is a cache hit and cannot move a route.
 //
 // **AND IT REQUIRES `tls/tls_server.js` LAZILY, INSIDE THE ONE FUNCTION THAT
-// NEEDS IT.** That module is at 20 and registers three routes; a require at the
-// top of this file would drag them ahead of `/admin`'s own, of `/admin-api`'s,
-// and of ldap, scim and spiffe (rule 1). The precedent is `xacml_admin.js`,
-// which requires `xacml.js` back the same way and for the same reason. By the
-// time anybody signs in, every module is loaded and the require is a cache hit.
+// NEEDS IT.** That module is at 20 and registers every /tls route; a require
+// at the top of this file would drag them ahead of `/admin`'s own, of
+// `/admin-api`'s, and of ldap, scim and spiffe (rule 1). The precedent is
+// `xacml_admin.js`, which requires `xacml.js` back the same way and for the
+// same reason. By the time anybody signs in, every module is loaded and the
+// require is a cache hit.
 //
 // ---------------------------------------------------------------------------
-// THE BACK CHANNEL IS A REAL HTTP REQUEST, AND IT IS THE FOURTH OUTBOUND ONE.
+// THE BACK CHANNEL IS A REAL HTTP REQUEST, AND IT WAS THE FOURTH OUTBOUND ONE.
 //
-// This repository has three (federation's, SSF's push, and XACML's nudge) and
-// each argues its own case rather than citing the others. This is the fourth
-// and it is the narrowest of the four, because of who it dials: **itself, at a
+// This repository had three when it was written (federation's, SSF's push, and
+// XACML's nudge) — more have followed since — and each argues its own case
+// rather than citing the others. This one is the narrowest, because of who it
+// dials: **itself, at a
 // loopback address it computes, on a port it is listening on.** Nothing about
 // it is influenced by a caller. `DIALLABLE` in `federation_http.js` exists to
 // stop a URL from a request becoming a URL this service fetches; here there is
@@ -90,13 +95,14 @@
 //     loopback, and the ID Token comes back issued by `https://127.0.0.1:8081`
 //     — which is not the issuer the authorization endpoint advertised to the
 //     browser, so the RP would have to accept an issuer it should refuse.
-//   * **TLS IS VERIFIED AGAINST THIS SERVICE'S OWN CERTIFICATE**, passed as the
-//     trust anchor. The certificate is self-signed and generated at start, so
-//     it IS its own root; what is skipped is the HOSTNAME check, because the
-//     certificate names the service and the connection names the loopback
-//     interface. Skipping the hostname while pinning the key is the stronger
-//     half of the two — it is the same argument `federation/CLAUDE.md` makes
-//     about a pinned partner certificate.
+//   * **TLS IS VERIFIED AGAINST THIS SERVICE'S OWN TRUST ANCHOR** — the
+//     service Root since 2026-09-11, when the listener certificate became a
+//     leaf of it, and the self-signed certificate itself where there is no
+//     Root (see `backChannel()`); what is skipped is the HOSTNAME check,
+//     because the certificate names the service and the connection names the
+//     loopback interface. Skipping the hostname while pinning the anchor is
+//     the stronger half of the two — it is the same argument
+//     `federation/CLAUDE.md` makes about a pinned partner certificate.
 //   * **NO REDIRECT IS FOLLOWED.** A 302 from the token endpoint would hand the
 //     Basic credential in the `Authorization` header to whatever `Location`
 //     said. This service's token endpoint does not redirect; the rule is here
@@ -169,7 +175,8 @@ function coded(code, answer, res) {
 }
 
 // ---------------------------------------------------------------------------
-// THE TWO SURFACES.
+// THE SURFACES — the console and the portal, and since 2026-09-13 the embedded
+// debugger (see its row).
 //
 // `clientId` is the identifier of the entry `applications.js` seeds under
 // `ou=applications` — this file does not create it and must not: that container
@@ -178,10 +185,10 @@ function coded(code, answer, res) {
 // which is what makes "an operator who deleted one of these meant it" a
 // sentence with an observable consequence.
 //
-// `cookie` is the surface's own session cookie and is never `authn.js`'s. Two
-// surfaces, two cookies: signing in to the portal does not sign anybody in to
-// the console, which is what makes them two applications rather than one
-// wearing two paths.
+// `cookie` is the surface's own session cookie and is never `authn.js`'s. One
+// cookie per surface: signing in to the portal does not sign anybody in to
+// the console, which is what makes them separate applications rather than one
+// wearing several paths.
 //
 // **A SURFACE HAS TWO REALMS AND THEY ARE NOT THE SAME QUESTION (2026-09-11).**
 // It had one — `realm`, meaning both — and that one answer is what stopped
@@ -357,9 +364,9 @@ function surfaceOf(id) {
 
 // Run `fn` in the realm this surface's CODE FLOW belongs to — the authorization
 // request, the token request, the JWKS fetch and the flow record that joins
-// them. Both surfaces answer `ambient` today; the branch stays because the
-// field is what makes the decision readable, and a surface added later may want
-// the other answer.
+// them. The console and the portal answer `ambient`; the debugger, added
+// later, is the surface that wanted the other answer — its listener has no
+// realm prefix, so its flow runs in the default realm.
 function inFlowRealm(surface, fn) {
   log.debug("Entering inFlowRealm().");
   if (surface.flowRealm === 'default') {
@@ -373,7 +380,8 @@ function inFlowRealm(surface, fn) {
 // Run `fn` in the realm this surface's OWN SESSION belongs to. The console's is
 // always the default realm, so that one console session is found by the gate
 // from every realm; the portal's is the realm it was reached in, because a
-// person in `acme` is a different person from the one in the default realm.
+// person in `acme` is a different person from the one in the default realm;
+// the debugger's is the default realm's, like its flow.
 function inSessionRealm(surface, fn) {
   log.debug("Entering inSessionRealm().");
   if (surface.sessionRealm === 'default') {
@@ -682,11 +690,11 @@ function safeReturnTo(value, fallback) {
 // symptom is a sign-in that works and then immediately asks again, with nothing
 // in the flow having failed.
 //
-// It is fixed HERE rather than at the seven `requireSignIn()` call sites,
-// because a prefix somebody has to remember to add is a prefix that will be
-// missing from the eighth. It is IDEMPOTENT for the same reason — the console's
-// address already carries the prefix, and a caller should not have to know
-// which kind it is holding.
+// It is fixed HERE rather than at the `requireSignIn()` call sites, because
+// a prefix somebody has to remember to add is a prefix that will be missing
+// from the next one added. It is IDEMPOTENT for the same reason — the
+// console's address already carries the prefix, and a caller should not have
+// to know which kind it is holding.
 //
 // The default realm's prefix is empty, so this is inert there: the bytes of
 // every redirect in a service with no realms defined are untouched.
@@ -718,7 +726,7 @@ function backChannel(options) {
   return new Promise(function (resolve) {
     const useHttps = config.value('global.https');
     // THE LAZY REQUIRE. See the header: at the top of this file it would move
-    // three routes; here every module is loaded and it is a cache hit.
+    // every /tls route; here every module is loaded and it is a cache hit.
     let anchor = null;
     if (useHttps) {
       try {
@@ -817,10 +825,11 @@ function backChannel(options) {
       method: options.method,
       path: options.path,
       headers: headers,
-      // THE PIN. Our own certificate as the trust anchor — it is self-signed,
-      // so it is its own root — and the hostname check skipped, because the
-      // certificate names this service and the connection names the loopback
-      // interface. Pinning the key is the stronger half of the two.
+      // THE PIN. Our own trust anchor — the service Root, or the self-signed
+      // certificate where there is no Root (see the anchor block above) — and
+      // the hostname check skipped, because the certificate names this service
+      // and the connection names the loopback interface. Pinning the anchor is
+      // the stronger half of the two.
       ca: anchor ? [anchor] : undefined,
       checkServerIdentity: useHttps ? function () { return undefined; } :
                            undefined

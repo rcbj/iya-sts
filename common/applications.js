@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: applications.js
@@ -96,19 +97,20 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3), AND ITS DIRECTORY HALF IS INVERTED (rule 6).
 //
-// It registers no route and requires `helpers.js`, `audit.js` and `config.js`
-// (and `crypto`) — none of which requires it back, so it cannot join a cycle
-// and its position in the require order does not matter. `config.js` requires
-// nothing from this repository at all, which is the property that makes it safe
-// to reach for here; it is read by the startup seeding at the foot of this file
-// and by nothing else. `admin_stats.js` requires it in the ORDINARY direction
+// It registers no route and requires only libraries — `helpers.js`,
+// `audit.js`, `config.js`, and the leaves annotated at each require below —
+// none of which requires it back, so it cannot join a cycle and its position
+// in the require order does not matter. `config.js` requires nothing from this
+// repository at all, which is the property that makes it safe to reach for
+// here. `admin_stats.js` requires it in the ORDINARY direction
 // (there is no fifth hook here; see rule 3e — a slot is what you reach for when
 // a require would close a cycle or move a route, and this one would do
 // neither).
 //
 // The DIRECTORY half has to be inverted, for the reason `vc_claims.js`'s is:
-// `ldap_server.js` is last in the require order because requiring it pulls
-// every `/ldap` route into the router at that point, and a module the token
+// `ldap_server.js` is required late (21 in `common/protocol_stack.js`) because
+// requiring it pulls every `/ldap` route into the router at that point, and a
+// module the token
 // endpoint reads cannot drag those routes to the front. So this file offers
 // `setDirectory()` and `ldap_server.js` fills it at ITS require time — with
 // READ as well as write functions now, since the entries are the store.
@@ -123,13 +125,15 @@
 // THE CLIENT SECRET IS STORED, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.
 //
 // `oauthClientSecret` holds the secret this service minted at registration, on
-// an entry in a directory where every bind succeeds and which `GET
-// /admin/ldap/directory` prints on an unprotected page. The same objection
-// applies to `GET /krb5/principals`, which prints every Kerberos password, and
-// the answer is the one written there: a debugger whose accounts are unusable
-// without reading the source is worse than one that says what they are. The
-// secret is generated per registration, lives in memory and dies with the
-// process.
+// an entry that `GET /admin/ldap/directory` prints to a console administrator.
+// (That page was unprotected when this was written; it is behind the console
+// gate since 2026-09-06, and an LDAP search never returns the attribute —
+// `ldap/ldap_server.js`'s `SECRET_ATTRIBUTES`.) The same objection applies to
+// `GET /krb5/principals`, which prints Kerberos passwords, and the answer is
+// the one written there: a debugger whose accounts are unusable without
+// reading the source is worse than one that says what they are. The secret is
+// generated per registration and lives on the entry, so it is written down
+// wherever the directory is (`persistence/CLAUDE.md`).
 //
 // It is worth being precise about what that costs now that RFC 9700 mode
 // CHECKS that secret (section 2.5): anyone who can read this directory can
@@ -141,9 +145,10 @@
 // ===========================================================================
 
 const crypto = require('crypto');
-// For three TABLES only — the JWS and JWE algorithms RFC 9701's client metadata
-// may name (introspectionResponseProblem()). A leaf `helpers.js` already
-// requires, so this adds nothing to the load path and closes no cycle.
+// For TABLES only — the JWS and JWE algorithms RFC 9701's and RFC 9101's
+// client metadata may name (introspectionResponseProblem(), and the
+// REQUEST_OBJECT_* lists). A leaf `helpers.js` already requires, so this adds
+// nothing to the load path and closes no cycle.
 const stsCrypto = require('./crypto');
 const config = require('./config');
 // The mode. A LEAF (rule 3) requiring only `config`, which is already required
@@ -282,15 +287,17 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // page already makes about the entry as a whole ("an entry here grants
 // nothing") narrowed to one attribute.
 //
-// **FIVE ATTRIBUTES DO MORE THAN DECLARE, AND ALL FIVE ARE FAMILY-SCOPED.**
+// **FIFTEEN ATTRIBUTES DO MORE THAN DECLARE, AND ALL ARE FAMILY-SCOPED.**
 // `oauthTokenExchangeRefreshToken` changes what the token endpoint issues;
 // since 2026-09-12 `ssfAllowedEvents` LIMITS which Shared Signals event types a
 // stream owned by the application is sent; and since 2026-09-13 RFC 9701's
 // three `oauthIntrospection*` attributes decide how /oauth2/introspect signs
-// and encrypts the JWT response it gives the application. The declaration
-// itself is still a
-// declaration; what changed is that each of those attributes may only be
-// written onto an entry that makes it.
+// and encrypts the JWT response it gives the application — joined the same day
+// by RFC 9101's five request-object attributes, RFC 9126's PAR requirement,
+// RFC 9396's two authorization-details attributes and RFC 9470's two step-up
+// attributes. Every one carries `families:` on its SCHEMA row. The declaration
+// itself is still a declaration; what changed is that each of those
+// attributes may only be written onto an entry that makes it.
 //
 // `kinds` IS WHAT MAKES THE DECLARATION COMPARABLE WITH WHAT HAPPENED, and it
 // is deliberately the kinds rather than the protocol LABELS on `appProtocol`.
@@ -348,7 +355,7 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 // `samlEntityId` and `samlAssertionConsumerService` for the same reason. The
 // console walks this table, DEDUPES BY ATTRIBUTE and draws one field per
 // attribute, listing the families it serves — so the form has eleven identifier
-// fields for fourteen families and says why.
+// fields for sixteen families (fourteen when this was written) and says why.
 //
 // **EVERY ONE OF THEM IS MULTI-VALUED BAR ONE.** An application legitimately
 // answers to two client_ids, two entityIDs or two SPNs here — one per
@@ -1366,9 +1373,9 @@ const SCHEMA = {
             'insufficient_user_authentication with max_age. 0 means an ' +
             'authentication this second. EMPTY requires nothing.' },
     // -------------------------------------------------------------------
-    // RFC 7521 / RFC 7523 (2026-09-10). SEVEN ATTRIBUTES, and the split
-    // between them is the split between what an OPERATOR says and what this
-    // service ISSUED.
+    // RFC 7521 / RFC 7523 (2026-09-10). SEVEN ATTRIBUTES (eight since the key
+    // source joined them on 2026-09-13), and the split between them is the
+    // split between what an OPERATOR says and what this service ISSUED.
     //
     // The first is a DECLARATION and is the whole trust decision: this
     // application may present assertions under these `iss` values. There is no
@@ -1478,8 +1485,8 @@ const SCHEMA = {
             'one on the entry.' },
     // -------------------------------------------------------------------
     // RFC 7522 — THE SAML 2.0 PROFILE OF THE SAME FRAMEWORK (2026-09-11).
-    // SEVEN MORE ATTRIBUTES, AND THE WHOLE POINT OF THEM IS THAT THEY ARE
-    // NOT THE SEVEN ABOVE.
+    // SEVEN MORE ATTRIBUTES (eight with the key source), AND THE WHOLE POINT
+    // OF THEM IS THAT THEY ARE NOT THE ONES ABOVE.
     //
     // An application may hold TWO key pairs issued by this realm's
     // certificate authority — one for RFC 7523 and one for RFC 7522 — and no
@@ -1977,13 +1984,13 @@ const SCHEMA = {
     // THE GROUP CLAIM, PER APPLICATION, added 2026-08-27.
     //
     // The one override group here that is NOT a protocol's: these four reach an
-    // OAuth 2.0 access token, an OIDC ID Token, a SAML 2.0 assertion and a SAML
-    // 1.1 one at once, because `group_claims.js` answers all four claim sets
-    // from one place. So an application that carries them gets its own group
-    // claim in whichever of those four it actually uses, and an application
-    // declared for two protocols gets the same answer in both — which is the
-    // behaviour a claim mapping should have and the reason these are four
-    // attributes rather than eight.
+    // OAuth 2.0 access token, an OIDC ID Token, a UserInfo response, a SAML 2.0
+    // assertion and a SAML 1.1 one at once, because `group_claims.js` answers
+    // all five claim sets from one place. So an application that carries them
+    // gets its own group claim in whichever of those it actually uses, and an
+    // application declared for two protocols gets the same answer in both —
+    // which is the behaviour a claim mapping should have and the reason these
+    // are four attributes rather than eight.
     // ---------------------------------------------------------------------
     // THE ROLES THIS APPLICATION REQUIRES, added 2026-09-05 with the role
     // register.
@@ -2555,10 +2562,13 @@ const SCHEMA = {
 
     // --- AND THE ONE PAIR HERE THAT DOES DECIDE SOMETHING ----------------
     //
-    // Every attribute above this line either records what happened or declares
-    // something nothing reads — `appAllowedProtocol` says so in capitals, and
-    // the four identifiers just above it are declaration and only declaration.
-    // These two are read, by `authn.js`, on the way to the sign-in screen.
+    // When this block was written, every attribute above this line either
+    // recorded what happened or declared something nothing reads —
+    // `appAllowedProtocol` says so in capitals, and the four declaration-only
+    // identifiers above are still that. (Several rows above are READ by now:
+    // the setting overrides, `ssfAllowedEvents`, and the RFC 9701, 9101, 9126,
+    // 9396 and 9470 attributes — each says so on its own row.) These two are
+    // read, by `authn.js`, on the way to the sign-in screen.
     //
     // WHAT THEY ANSWER is a question this registry could not answer before:
     // WHERE ARE THIS APPLICATION'S USERS AUTHENTICATED? A relationship under
@@ -2875,9 +2885,9 @@ const EDITABLE = {
   oauthRefreshTokenTtlS: 'set',
   oauthRefreshIdleSeconds: 'set',
   oauthRevokeRefreshOnLogout: 'set',
-  // The sixth, and the one whose row carries `families`. Editable like the five
-  // above it and refused on an entry declared for neither OAuth 2.0 nor OpenID
-  // Connect — see familyRefusal(), and the block above the row itself.
+  // The sixth, and the first whose row carried `families`. Editable like the
+  // five above it and refused on an entry declared for neither OAuth 2.0 nor
+  // OpenID Connect — see familyRefusal(), and the block above the row itself.
   oauthTokenExchangeRefreshToken: 'set',
   appGroupsClaim: 'set',
   appGroupsClaimName: 'set',
@@ -3025,14 +3035,14 @@ function editableAttributes(mode) {
 // AN ATTRIBUTE THAT ONLY MEANS SOMETHING TO SOME FAMILIES, AND THE TWO
 // FUNCTIONS THAT ARE THE WHOLE MECHANISM.
 //
-// A SCHEMA row may carry `families: ['oauth2', 'oidc']`. Five do today —
+// A SCHEMA row may carry `families: ['oauth2', 'oidc']`. Fifteen do today —
 // `oauthTokenExchangeRefreshToken`, whose own block argues why it is the first,
 // `ssfAllowedEvents` (2026-09-12), which carries its own `familyWhy` so the
-// refusal names what IT does rather than the token endpoint, and RFC 9701's
-// three `oauthIntrospection*` attributes (2026-09-13), each with its own — and
-// the rule it
-// declares is that the attribute may be WRITTEN only onto an entry declared for
-// at least one of those families.
+// refusal names what IT does rather than the token endpoint, RFC 9701's three
+// `oauthIntrospection*` attributes (2026-09-13), each with its own, and the
+// RFC 9101, RFC 9126, RFC 9396 and RFC 9470 attributes of the same day — and
+// the rule it declares is that the attribute may be WRITTEN only onto an entry
+// declared for at least one of those families.
 //
 // IT IS A TABLE AND NOT A SPECIAL CASE, deliberately, and for the reason
 // OVERRIDE_ATTRIBUTES is built from the rows rather than written out: a second
@@ -3110,8 +3120,8 @@ function familyRefusal(attributeName, declared, identifier) {
 // its own idea of which attribute a family's identifier goes in, and
 // `createApplication()` would have had another.
 //
-// **IT IS DEDUPED BY ATTRIBUTE**, which is what makes it fourteen rows for
-// fourteen families rather than fourteen for fourteen by coincidence. Three
+// **IT IS DEDUPED BY ATTRIBUTE**, which is why there are fewer identifier
+// rows than families (eleven for sixteen today). Three
 // families name `oauthClientId` and two name `samlEntityId`, because the
 // specifications genuinely share those identifiers — see the PROTOCOLS header —
 // so a row carries the LIST of families it serves and the form says so under
@@ -3653,8 +3663,9 @@ function corsOriginsOfRealm() {
 // `/admin/pki` issues an application a signing key pair for RFC 7521 / RFC
 // 7523 and writes it onto that application's own entry, because
 // `common/pki.js` hands one over ONCE and keeps no copy — `ou=applications` is
-// the only place the answer exists. Five of the six attributes it writes are
-// public by construction: a certificate, a chain, a JWKS, a kid and an expiry
+// the only place the answer exists. Five of the six attributes it wrote then
+// are public by construction (the seventh, the key source of 2026-09-13, is
+// public too): a certificate, a chain, a JWKS, a kid and an expiry
 // are all things a relying party is MEANT to be given, and `client_auth.js`
 // and `assertion_grant.js` read the JWKS to verify what the key signs. **The
 // sixth is the private half**, and it is sealed at rest under the same
@@ -3663,12 +3674,12 @@ function corsOriginsOfRealm() {
 // **IT IS THE SAME MECHANISM AND DELIBERATELY NOT A NEW ONE.**
 // `keystore.seal()` and `keystore.open()` — AES-256-GCM under a key this
 // service never generates and never stores, read from a mounted file or one of
-// four cloud secret stores. That is what seals this service's own signing
-// keys, what seals `common/pki.js`'s three CA key pairs in the `sts_keys` row
-// family, what seals every minted row in product mode, and what
-// `common/credentials.js` seals an authenticator's shared secret with. A key
-// pair issued FROM that hierarchy being the one piece of private key material
-// left in the clear was the gap this closes.
+// four secret managers (`common/secrets.js`). That is what seals this
+// service's own signing keys, what seals `common/pki.js`'s three CA key pairs
+// in the `sts_keys` row family, what seals every minted row in product mode,
+// and what `common/credentials.js` seals an authenticator's shared secret
+// with. A key pair issued FROM that hierarchy being the one piece of private
+// key material left in the clear was the gap this closes.
 //
 // **`keystore.persists()` AND NOT `keystore.sealed()`**, which is
 // `writeTotpRecord()`'s rule word for word and for its reason: the question is
@@ -3699,7 +3710,9 @@ function corsOriginsOfRealm() {
 // hands over the ciphertext, because ciphertext is what the store holds. That
 // is every surface that was giving the key away without asking this module:
 // `/admin/ldap/directory`, an `ldapsearch` on TCP 389 where every bind
-// succeeds, an `ldif` file on disk, a `postgres` row, a backup of either.
+// succeeds (a search no longer returns the attribute at all —
+// `ldap/ldap_server.js`'s `SECRET_ATTRIBUTES`), an `ldif` file on disk, a
+// `postgres` row, a backup of either.
 //
 // **A VALUE THAT WILL NOT OPEN IS LEFT AS IT IS AND REPORTED.** Rotating the
 // key-encryption key is what produces one, the key pair is unusable either
@@ -4544,10 +4557,11 @@ let authorizationDetailsAjv = null;
 function authorizationDetailsSchemaCompiler() {
   log.debug("Entering authorizationDetailsSchemaCompiler().");
   if (!authorizationDetailsAjv) {
-    const Ajv2020 = require('ajv/dist/2020');
+    // `any`: both are CommonJS modules whose declared types are ES defaults.
+    const Ajv2020 = /** @type {any} */ (require('ajv/dist/2020'));
     authorizationDetailsAjv = new Ajv2020({ strict: false, allErrors: false,
                                             coerceTypes: false });
-    require('ajv-formats')(authorizationDetailsAjv);
+    /** @type {any} */ (require('ajv-formats'))(authorizationDetailsAjv);
   }
   log.debug("Leaving authorizationDetailsSchemaCompiler().");
   return authorizationDetailsAjv;
@@ -5134,12 +5148,16 @@ function normaliseFields(value) {
 // ---------------------------------------------------------------------------
 // THE STORE IS THE DIRECTORY. These are the only ways in and out of it.
 //
-// `ldap_server.js` fills this at its require time with four functions:
+// `ldap_server.js` fills this at its require time. The four the store is
+// made of:
 //
 //   readApplication(identifier)   the entry, or null
 //   writeApplication(identifier, attributes)  create or update it
 //   allApplications()             every entry, in tree order
 //   countApplications()           how many there are, for the cap message
+//
+// and, beside them, `deleteApplication`, `containerDn`, `maxApplications` and
+// `applicationsVersion` (when anything under ou=applications last changed).
 //
 // The two directions are DELIBERATELY NOT SYMMETRICAL, which is worth saying
 // because it looks like an oversight. A WRITE speaks in ATTRIBUTE OBJECTS
@@ -5756,11 +5774,11 @@ function seen(detail) {
   // exactly what product mode removes.
   //
   // **IT RETURNS NULL RATHER THAN THROWING, AND THE CALLER DECIDES.** This
-  // function is reached from eleven protocol sites, all of them in the middle
-  // of an exchange, and none of them wants the registry to be able to fail a
-  // request: the REFUSAL belongs at the protocol's own door, where it can be
-  // said in that protocol's own vocabulary. What this guarantees is only that
-  // nothing was written.
+  // function is reached from a score of protocol sites, all of them in the
+  // middle of an exchange, and none of them wants the registry to be able to
+  // fail a request: the REFUSAL belongs at the protocol's own door, where it
+  // can be said in that protocol's own vocabulary. What this guarantees is
+  // only that nothing was written.
   if (!known && !mode.autoCreates()) {
     log.info('applications: product mode, so "' + identifier + '"' +
              kindPhrase +
@@ -6263,6 +6281,7 @@ function registrationOf(clientId) {
     return null;
   }
   const record = loaded.record;
+  /** @type {any} */
   let document = {};
   const raw = record.fields.appRegistrationJson;
   if (raw) {
@@ -6971,7 +6990,7 @@ function updateApplication(identifier, change) {
   // AND THE RULE THAT READS THAT ATTRIBUTE BACK: an attribute scoped to a
   // protocol family may only be written onto an entry declared for one of them.
   // See familyRefusal() and the block above `oauthTokenExchangeRefreshToken`,
-  // and the `ssfAllowedEvents` row, the two carrying `families` today.
+  // the first row to carry `families` (fifteen do today).
   //
   // HERE rather than in the console for the reason every rule in this function
   // is: this is the ONE door the form and `POST /admin-api/applications/update`
@@ -7000,8 +7019,8 @@ function updateApplication(identifier, change) {
   // PROTOCOL FAMILY CHECK ABOVE IS: this function is the ONE door the console
   // form and `POST /admin-api/applications/update` both go through, and a rule
   // enforced in either of them alone would be a rule the other could walk
-  // around. `common/app_permissions.js`'s four actions call this function too,
-  // so there is one implementation of each rule and not four.
+  // around. `common/app_permissions.js`'s five actions call this function too,
+  // so there is one implementation of each rule and not five.
   //
   // Three rules, and each of them is about something that would otherwise fail
   // silently rather than loudly:
@@ -7909,21 +7928,21 @@ function list() {
 // `settingFor('urn:sp', 'saml2.signAssertion', config)` answers what THAT
 // application should get: the value on its entry if it carries one, and the
 // setting's own value if it does not. It is the whole of what makes the ten
-// `saml2*`/`saml11*` attributes above mean anything.
+// `saml2*`/`saml11*` attributes above mean anything — and every override row
+// added since, in the OAuth, WS-Federation and group-claim groups.
 //
 // THREE PROPERTIES WORTH KNOWING BEFORE CHANGING IT.
 //
-// **The attribute is found from the SCHEMA, not from a second table.** Each of
-// the ten rows carries `overrides: '<setting key>'`, and this scans for it. A
+// **The attribute is found from the SCHEMA, not from a second table.** Each
+// override row carries `overrides: '<setting key>'`, and this scans for it. A
 // map here from key to attribute name would be the second place that mapping
 // lived, and the first thing to disagree with the schema when somebody added an
 // eleventh.
 //
-// **`config` is PASSED IN rather than required.** This module is required by
-// `admin_stats.js` and by six protocol modules, and it deliberately requires
-// almost nothing itself — see the header. Taking the caller's `config` keeps
-// that true and keeps this function testable with a stub, which is how the
-// bounds behaviour below was checked.
+// **`config` is PASSED IN.** This module requires `config.js` itself by now
+// (see the header), so the parameter no longer keeps its require list short;
+// what it still does is keep this function testable with a stub, which is how
+// the bounds behaviour below was checked.
 //
 // **A value that will not parse is IGNORED and logged, never thrown.** An
 // `ldapmodify` can put "yes" on `saml2SignAssertion`, and an identity provider
@@ -8015,7 +8034,7 @@ function get(identifier) {
 // read against each other. What is here is everything a reader of one entry
 // needs; what is there is everything that needs two.
 //
-// Four functions and they are all this module contributes:
+// Five functions and they are all this module contributes:
 //
 //   * `permissionIdOf(base, name)` — the concatenation, in ONE place, because
 //     a second copy of it in the console and a third at the token endpoint is
@@ -8235,8 +8254,9 @@ function permissionsOf(source) {
 
 // WHICH APPLICATION DEFINES THIS PERMISSION IDENTIFIER, or null.
 //
-// The fourth lookup in this module, and it is the same shape as the three above
-// for the same reasons — it walks the container, it is not case-folded, and it
+// The fourth lookup in this module, and it is the same shape as the three
+// further down (forAudience(), forClientId(), forAppliesTo()) for the same
+// reasons — it walks the container, it is not case-folded, and it
 // REFUSES NOTHING. What it adds over them is that the answer names two things:
 // the application AND which of its permissions was matched, because the caller
 // needs both (the base becomes the audience, the name becomes the scope) and a
@@ -8292,7 +8312,7 @@ function forPermission(id) {
 // to. It exists because of what `oauth2.js`'s `audienceScopes()` writes onto a
 // token — the base URI becomes the `aud` and the bare names become the `scope`
 // — so a reader holding an ISSUED token holds the base and nothing else, and
-// the four lookups above cannot turn it back into an application:
+// the other four lookups cannot turn it back into an application:
 // `forAudience()` reads `oauthAudience`, which is a DIFFERENT attribute that a
 // resource is under no obligation to have set; `forClientId()` reads a bare
 // name; and `forPermission()` needs a name on the end that the reader is trying
@@ -8385,9 +8405,9 @@ function holdsPermission(clientId, id) {
 // ---------------------------------------------------------------------------
 // WHICH APPLICATION ANSWERS TO THIS AUDIENCE, or null.
 //
-// The one lookup in this module that is not by identifier, and the only thing
-// in this service that READS `oauthAudience`. The token endpoint calls it when
-// it records a delegation: a client exchanging a token for
+// The first lookup in this module that is not by identifier, and the only
+// thing in this service that READS `oauthAudience`. The token endpoint calls
+// it when it records a delegation: a client exchanging a token for
 // `https://esb1.example.com` has named a resource rather than a client_id, and
 // a register that filed the act under the URL would draw a box in
 // /admin/delegation/map that nothing else in the picture ever mentions — while
@@ -8655,7 +8675,8 @@ function maxApplications() {
 }
 
 // ---------------------------------------------------------------------------
-// THIS SERVICE'S OWN TWO APPLICATIONS, SEEDED AT STARTUP.
+// THIS SERVICE'S OWN APPLICATIONS, SEEDED AT STARTUP — TWO WHEN THIS WAS
+// WRITTEN; THE USER PORTAL AND THE EMBEDDED DEBUGGER'S TWO HAVE JOINED THEM.
 //
 // Every other entry in this registry arrives because somebody PRESENTED an
 // identifier — a client_id at the authorization endpoint, a wtrealm on a
@@ -8695,17 +8716,16 @@ function maxApplications() {
 // read. **That now has teeth: deleting one of these entries takes the surface
 // it names offline until a restart**, which is the behaviour the seeding rule
 // two paragraphs down ("an operator who deleted one of these meant it") always
-// promised and could not previously demonstrate. The same goes for the two
-// scopes on the API's registration, which are named after the console's two
-// roles and GRANT NOTHING — nothing under /admin-api is gated at all, and a
-// scope that looked like a permission without being one would be worse than no
-// scope.
+// promised and could not previously demonstrate. The two scopes on the API's
+// registration (`admin:read`, `admin:write`) said here that they GRANT
+// NOTHING, because nothing under /admin-api was gated; since 2026-09-09 they
+// are what `/admin-api`'s access token is checked for (`mgmt-api/CLAUDE.md`).
 //
-// THE SECRETS ARE MINTED PER START and sit in the clear on an entry in a
-// directory where every bind succeeds. That is the decision `oauthClientSecret`
-// argues at length in its schema row, made once more here and for the same
-// reason; they die with the process, and neither is ever written to the audit
-// log.
+// THE SECRETS ARE MINTED WHEN AN ENTRY IS SEEDED — except the management
+// API's in the default realm, which `adminApi.clientSecret` pins where it is
+// set (see its row) — and sit on the entry. That is the decision
+// `oauthClientSecret` argues in its schema row, made once more here and for
+// the same reason; neither is ever written to the audit log.
 //
 // SEEDED ONLY WHERE THE IDENTIFIER IS FREE, which is `spiffe_registry.js`'s
 // seeding rule and is here for its reason: an operator who deleted one of these
@@ -8927,15 +8947,13 @@ function internalApplications() {
         token_endpoint_auth_method: 'client_secret_basic'
       } },
     // THE USER PORTAL, ADDED 2026-09-06 WITH THE MOVE ONTO THE CODE FLOW. It
-    // is the admin console's row with one difference that is not cosmetic:
-    // `realmScope: 'every'`. The console is reachable in every realm and its
-    // GATE accepts the DEFAULT realm's session only — `admin_rbac.js` pins the
-    // roster there, and a per-realm console administrator would mean anybody
-    // who can create a realm can administer the service — so ONE client entry
-    // in the default realm is the whole of what it needs. The portal is the
-    // opposite: `/portal` reads the AMBIENT realm's session, a person in
-    // `acme` is a different person from the one in the default realm, and a
-    // realm whose portal had no client could not sign anybody in at all.
+    // was the admin console's row with one difference, `realmScope: 'every'`,
+    // argued against a console seeded in the default realm only; the console's
+    // row is `every` too since 2026-09-11 (its own comment says why). The
+    // portal's reason stands on its own: `/portal` reads the AMBIENT realm's
+    // session, a person in `acme` is a different person from the one in the
+    // default realm, and a realm whose portal had no client could not sign
+    // anybody in at all.
     { identifier: 'sts-user-portal',
       name: 'User portal',
       kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -9017,7 +9035,7 @@ function internalApplications() {
         scope: 'admin:read admin:write',
         token_endpoint_auth_method: 'client_secret_basic'
       } }
-  ].concat(debuggerApplications());
+  ].concat(/** @type {any} */ (debuggerApplications()));
   log.debug("Leaving internalApplications(). " + rows.length + " row(s).");
   return rows;
 }
@@ -9106,8 +9124,9 @@ function seedInternalApplications(options) {
   // WHICH OF THEM BELONG IN THE REALM BEING SEEDED. `scope` is 'default' when
   // this is the process starting up and 'every' when a trust realm is being
   // built, and each row says which realms it belongs in — see the rows
-  // themselves, where the three answers are argued separately rather than
-  // together. A realm gets the portal's client and nothing else.
+  // themselves, where the answers are argued separately rather than
+  // together. A realm gets the console's, the portal's and the management
+  // API's clients; the embedded debugger's two stay in the default realm.
   const wanted = String((options || {}).scope || 'default');
   const rows = internalApplications().filter(function (one) {
     return wanted === 'default' || one.realmScope === 'every';

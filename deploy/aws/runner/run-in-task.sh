@@ -85,9 +85,10 @@ TOKEN="$(node tests/tools/admin-api-token.js "${URL}")" || {
 
 # THE PREVIOUS RUN'S REALMS AND OVERRIDES GO FIRST, so the environment can be
 # reused: the suite leaves every realm it creates, and a long-lived cluster
-# would otherwise carry every run's. deploy/aws/reset-environment.js argues it; a failure to remove
-# one is the run's failure, because a realm with a fixed id left behind fails
-# the job that creates it with a message about something else.
+# would otherwise carry every run's. deploy/aws/reset-environment.js argues it;
+# a failure to remove one is the run's failure, because a realm with a fixed id
+# left behind fails the job that creates it with a message about something
+# else.
 STS_ADMIN_API_TOKEN="${TOKEN}" node deploy/aws/reset-environment.js "${URL}" || {
   echo "run-in-task: the previous run's realms could not all be removed." >&2
   exit 1

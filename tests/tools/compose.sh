@@ -14,8 +14,8 @@
 # does: tools/ is NOT tests. run.js's discovery rule walks tests/*.js and would
 # otherwise have to be told to skip a file, and it is a `.sh` besides.
 #
-# THE CONTRACT WITH A CALLER, because these two read and write globals rather
-# than taking arguments:
+# THE CONTRACT WITH A CALLER, because these functions read and write globals
+# rather than taking arguments:
 #
 #   DOCKER_SUDO    set by resolveCompose(); "" or "yes".
 #   COMPOSE_CMD    set by resolveCompose(); "docker compose" or
@@ -124,10 +124,10 @@ docker_compose()
 #
 # THE VARIABLES GO THROUGH `env` HERE RATHER THAN AS BARE `NAME=value` WORDS.
 # `timeout NAME=value docker compose ...` asks the kernel to execute a program
-# called `NAME=value`, which is the same trap this file's header describes
-# about `env docker_compose`, one layer along. `sudo timeout ... env ...` is
-# correct for the sudo path too: sudo empties the environment and `env` fills
-# it back with exactly what the compose file substitutes.
+# called `NAME=value`, which is the same trap `docker_compose()` avoids by
+# putting `env` in front of those words, one layer along. `sudo timeout ...
+# env ...` is correct for the sudo path too: sudo empties the environment and
+# `env` fills it back with exactly what the compose file substitutes.
 #
 # **AND COMPOSE IS KEPT OFF THE TERMINAL (2026-09-14), OR `up` FROM A TERMINAL
 # NEVER STARTS.** `timeout` runs its command in a process group of its own, so

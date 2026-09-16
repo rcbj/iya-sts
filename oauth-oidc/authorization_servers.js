@@ -85,7 +85,7 @@
 // when this service signs RS256 and nothing else; a `token_endpoint` pointing
 // at another host. Those are still publishable, because producing a
 // misconfigured document on purpose is a thing a client author needs, and they
-// are still reported — `enforceable` on the catalogue row is what tells the two
+// are still reported — `enforces` on the catalogue row is what tells the two
 // kinds apart.
 //
 // ---------------------------------------------------------------------------
@@ -96,12 +96,15 @@
 // is a thing in the world, and an LDAP client asking what relying parties exist
 // is a reasonable question. An authorization server profile is this service's
 // own CONFIGURATION, in the same family as the custom claim sets and the
-// verifier's request: in memory, gone on restart, changed through the console
-// and the management API. Putting it in the directory would make `ou=` a place
-// where this service keeps its settings, which is what `config.js` is for.
+// verifier's request: a persisted store (`persistence/CLAUDE.md` — gone on
+// restart in development mode, kept in product mode on postgres), changed
+// through the console and the management API. Putting it in the directory would
+// make `ou=` a place where this service keeps its settings, which is what
+// `config.js` is for.
 //
 // It is a LIBRARY (rule 3): it registers no route and requires only
-// `helpers.js`, so it cannot join a cycle and its position in the require order
+// `helpers.js`, `config.js`, `realms.js` and `mode.js`, none of which requires
+// it back, so it cannot join a cycle and its position in the require order
 // does not matter.
 // ===========================================================================
 
@@ -421,8 +424,10 @@ const GROUPS = MEMBERS.reduce(function (out, row) {
 }, []);
 
 // ---------------------------------------------------------------------------
-// The store. In memory, gone on restart, exactly like the custom claim sets and
-// the verifier's request — see the header for why this is not in the directory.
+// The store. Persisted like any minted store — gone on restart in development
+// mode, kept in product mode on postgres — exactly like the custom claim sets
+// and the verifier's request; see the header for why this is not in the
+// directory.
 // ---------------------------------------------------------------------------
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is

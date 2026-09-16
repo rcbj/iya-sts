@@ -66,6 +66,7 @@ files did not change; the paths did.
 | `saml/` | The SAML 2.0 and SAML 1.1 assertion builders, each with a SEPARATE browser-facing identity provider rather than one with a version flag. `saml/CLAUDE.md`. |
 | `ws-trust/` | WS-Trust 1.0–1.4. `ws-trust/CLAUDE.md`. |
 | `ws-federation/` | WS-Federation 1.2's passive requestor profile and a mock relying party. `ws-federation/CLAUDE.md`. |
+| `pki/` | `pki_service.js`: the certificate authority's PUBLIC surface — a CRL and an OCSP responder per CA, each CA's own certificate, and the chain documents at `/pki/chain/`. No gate and no credential, by construction; the authority itself is `common/pki.js`. Its header is its documentation (no `CLAUDE.md`). |
 | `federation/` | Federation relationships in either direction, in five protocols; `ou=federations` is the register, and it holds the first and strongest of the outbound requests. `federation/CLAUDE.md`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO (the negotiation, the page, and the sign-in that turns a ticket into a session), and eight codec modules **VENDORED from the parent project and not editable here**, despite not being under `common/vendored/`. `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory — the store for people, groups, applications and the SPIFFE registry — and the eight `/admin/ldap/*` console pages that show it. `ldap/CLAUDE.md`. |
@@ -89,6 +90,7 @@ files did not change; the paths did.
 | `debugger/` | **The embedded identity protocol debugger** (2026-09-13): the parent project's client and api served on a listener of their own (`debugger.port`), signed in to through this service's authorization server, the api a FORKED CHILD behind an access token only a console administrator is issued. `debugger/embedded/` is that project's build output, never source. `debugger/CLAUDE.md`. |
 | `postgres/` | Four files the database container runs, never this service: TLS setup, TLS enforcement, the schema and the least-privilege `sts_app` role. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site — how to USE this service. `docs/CLAUDE.md`. |
+| `types/`, `tsconfig.json` | **THE TYPESCRIPT CONVERSION'S FIRST STEP (#50, 2026-09-16)**: declarations only, loaded by nothing at runtime — the shared shapes (`cluster/` results, a password policy profile, the fields this service hangs on a request) and the optional SDKs `common/secrets.js` loads. `tsc` checks every file that carries `// @ts-check` (all of `common/` but `vendored/`), and `tests/typecheck.js` runs it. The decisions for the rest of the conversion are on issue #50. |
 | `env/` | The appconfig files, each a layer over the generated `defaults.js`. `env/CLAUDE.md`. |
 
 At the package root there are exactly two modules, and both earn it:
@@ -328,11 +330,12 @@ this table says what the constraint is and the named file says why.
 | 5 | `common/claim_attributes` | Ahead of everything that ISSUES: it fills `setAttributeResolver()`. | `common/CLAUDE.md` |
 | 6 | `common/group_claims` | Same reason, for `setGroupResolver()`. | `common/CLAUDE.md` |
 | 6a | `home/home` | No constraint; first among the route modules. | `home/CLAUDE.md` |
-| 7 | `ws-trust/wstrust` | No constraint. | `ws-trust/CLAUDE.md` |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
+| 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
+| 8a | `portal/portal` | After `authn`, whose session every portal route reads; an OIDC relying party of `oauth2`, which needs that module's routes registered, not required. | `portal/CLAUDE.md` |
 | 8b | `oauth-oidc/consent_screen` | After `authn`, before `oauth2`. | `oauth-oidc/CLAUDE.md` |
-| 9 | `oauth-oidc/oauth2` | Before `wsfed` and `admin-ui/admin`. | `oauth-oidc/CLAUDE.md` |
-| 10 | `ws-federation/wsfed` | After `oauth2` (rule 4). | `ws-federation/CLAUDE.md` |
+| 9 | `oauth-oidc/oauth2` | Before `admin-ui/admin` (rule 5). | `oauth-oidc/CLAUDE.md` |
+| 10 | `ws-federation/wsfed` | After `authn` (rule 4), whose session it signs people in to. | `ws-federation/CLAUDE.md` |
 | 10a | `saml/saml2_sso` | After `authn`; it has no sign-in screen of its own. | `saml/CLAUDE.md` |
 | 10b | `saml/saml11_sso` | After `authn` and after `saml2_sso` (`slugOf()`). | `saml/CLAUDE.md` |
 | 10c | `federation/federation_sp` | After `authn`; it calls `startSession()` directly. | `federation/CLAUDE.md` |
@@ -414,7 +417,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3m | `logout/logout.js` holds no state, and the reading order is not the ending order | `logout/CLAUDE.md` |
 | 3n | `frontchannel_logout.js` | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
-| 4 | `wsfed.js` after `oauth2.js` | `ws-federation/CLAUDE.md` |
+| 4 | `wsfed.js` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
 | 6 | `ldap_server.js` after `admin.js` and `tls_server.js` | `ldap/CLAUDE.md` |
 | 6a (SCIM), 6a-ii | `scim.js`, `scim_auth.js` | `scim/CLAUDE.md` |
@@ -449,11 +452,13 @@ repository where failing to open something stops the process.
 
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
-RFC 9700 section 4.14. `app.js` sets the policy on every response, and five routes
-relax it to load a named script by SETTING THE WHOLE HEADER — so each of them could
-lose the framing clause with nothing failing: the page works, the script runs, and
-the protection is gone. **`frame-ancestors` has no fallback from `default-src`**,
-which is why `default-src 'none'` alone is not enough and why this needs saying.
+RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
+growing number of routes relax it — the seven scripted pages below, and others
+that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
+THE WHOLE HEADER, so each of them could lose the framing clause with nothing
+failing: the page works, the script runs, and the protection is gone.
+**`frame-ancestors` has no fallback from `default-src`**, which is why
+`default-src 'none'` alone is not enough and why this needs saying.
 
 Two rules come out of it:
 
@@ -464,7 +469,7 @@ Two rules come out of it:
   REPLACES the header with `default-src 'none'`, so every unrouted path was framable
   as far as CSP was concerned; nothing here could have shown it, because the header
   this service set was correct and something else overwrote it. The check is "does it
-  still carry the clause", not "is it the value I set", so the five relaxations are
+  still carry the clause", not "is it the value I set", so the relaxations are
   untouched.
 
 **Do not replace Express's 404 body.** `Cannot GET /path` is how
@@ -650,6 +655,13 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   `REQUIREMENTS` is where each is described to `/admin/mode` and the API. A new
   tunable is a `config.js` row whose default is the old literal, read where it
   is used.
+* **A file in a type-checked directory starts with `// @ts-check`** (after a
+  `#!` line, if it has one), and `npm test` fails on a type error in it
+  (`tests/typecheck.js`). `common/` is the first such directory (#50). A type
+  the JavaScript cannot state goes in `types/` as a declaration, or in JSDoc
+  beside the code; a cast (`/** @type {any} */ (x)`) is for a library whose
+  declared types are wrong, and says so in a comment. **Checking may not
+  change behaviour** — an edit made for the checker is the same program.
 * **A refusal or a failure carries an error code** — see *Every failure has an
   error code* above. `errorCodes.mark(res, 'STS-…')` on the line before the
   call that sends an HTTP refusal, `errorCode: 'STS-…'` on an audit row, and
@@ -765,7 +777,7 @@ the file the row names.
 | Deactivate anybody on SCIM `active: false` | `scim/CLAUDE.md` |
 | Attest a workload or a node | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one, which is a different claim | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
-| Let a group grant anything — bar the TWO that grant the admin console and nothing else | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
+| Let a group grant anything BY BEING A GROUP — what a group grants is what a role or a roster names it for: the console rosters, REMOTE_PEPS and XACML_USER, and a configured role's group members; the groups claim grants nothing | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |
 | ~~Issue a set of recovery codes on request~~ — **reversed 2026-09-11**: a person generates a set, is shown it once, and it is stored HASHED | `common/CLAUDE.md`, `portal/CLAUDE.md` |
 | Offer a self-service reset of a second factor | `admin-ui/CLAUDE.md` |

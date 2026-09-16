@@ -40,6 +40,8 @@ let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
+  // The launchers always set CONFIG_FILE; a hand-run without one must still
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -156,6 +158,7 @@ async function apiPost(where, body) {
     parsed = JSON.parse(raw);
   } catch (e) {
     log.debug("Caught in apiPost(): " + ((e && e.message) || e));
+    // Not JSON — the raw text says more than a parse failure.
     parsed = raw;
   }
   log.debug("Leaving apiPost().");
@@ -171,6 +174,7 @@ async function apiGet(where) {
     parsed = JSON.parse(raw);
   } catch (e) {
     log.debug("Caught in apiGet(): " + ((e && e.message) || e));
+    // Not JSON — the raw text says more than a parse failure.
     parsed = raw;
   }
   log.debug("Leaving apiGet().");

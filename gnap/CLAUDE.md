@@ -175,9 +175,11 @@ A store that cannot be asked refuses with `STS-GNAP-0716`. What is decided:
   `verifyRequestOnce()`, which every acting caller awaits — so `identifyCaller()`,
   `continuationCaller()`, `introspect()` and `register()` became asynchronous.
   `presentation()` stays synchronous because `ssf/ssf_auth.js` calls it that
-  way; `authenticate()` spends its keys. **The SSF gate's GNAP scheme is
-  therefore still the in-memory check only** — the fix is one `await
-  proof.spendProof(presented)` in `ssf_auth.js`, SSF's file.
+  way; `authenticate()` spends its keys. **The SSF gate's GNAP scheme spends
+  them ahead of the handler**: `ssf/ssf_cluster.js`'s `spendGnapProof` route
+  middleware runs `presentation()` and the spend, and `ssf_auth.js` reads the
+  result (`STS-SSF-0099` where a shared store has no spend) — `ssf/CLAUDE.md`
+  carries it.
 * Lifetimes: a key proof `2 × gnap.signatureMaxAgeS`, an interaction value its
   `expiresAt`, a token with no expiry of its own a day — past every replication
   delay, including the ten minutes the change log waits for a late commit — each

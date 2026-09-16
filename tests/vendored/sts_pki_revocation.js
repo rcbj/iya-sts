@@ -5,10 +5,10 @@
 // ===========================================================================
 // THE REVOCATION ENDPOINTS AND THE CONSOLE PANE, OVER HTTP (2026-09-11).
 //
-// **THIS REPOSITORY'S OWN (`local: true`)**, on the first of
-// `tests/CLAUDE.md`'s two questions: most of what it drives is `/admin-api/pki`
-// and the pane on `/admin/pki`, and the tree that ADDS a control to that
-// console is the tree that should go red when the control loses its operation.
+// **THIS REPOSITORY'S OWN (`local: true`)**, on the first question
+// `tests/CLAUDE.md` asks: most of what it drives is `/admin-api/pki` and the
+// pane on `/admin/pki`, and the tree that ADDS a control to that console is
+// the tree that should go red when the control loses its operation.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS ASSERTS THAT `tests/pki_revocation.js` CANNOT.
@@ -37,7 +37,7 @@
 //     action the handler does not know answers a refusal that reads like a
 //     refusal.
 //
-// **THE NEGATIVES ARE MOST OF IT**, for `tests/sts_dpop.js`'s reason: a
+// **THE NEGATIVES ARE MOST OF IT**, for `sts_dpop.js`'s reason: a
 // responder that answers `good` for a good certificate looks finished and is
 // worth nothing.
 // ===========================================================================
@@ -51,7 +51,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -293,6 +293,11 @@ async function test() {
           assert.ok(garbage.bytes.length > 0,
             "even a refusal has to be a real response with bytes in it");
         });
+  // THIS ANSWER IS A REFUSAL, which is why it is `no-store`. An AUTHORITATIVE
+  // OCSP answer carries RFC 5019 section 6.2's cache headers
+  // (`pki/pki_service.js`'s `sendOcsp()`), and
+  // `sts_pki_distribution_points.js` asserts those; the label below predates
+  // that and describes every OCSP answer rather than this one.
   check("and an OCSP answer is NOT cached, unlike a CRL — it carries " +
         "nextUpdate, and the interesting thing a person does with this " +
         "responder is revoke something and ask again", function () {
@@ -313,6 +318,21 @@ async function test() {
           assert.strictEqual(empty.status, 200, "status " + empty.status);
           assert.ok(/application\/ocsp-response/.test(empty.type), empty.type);
           assert.strictEqual(empty.bytes.toString("hex"), "30030a0101",
+            "an unsigned OCSPResponse with responseStatus malformedRequest");
+        });
+
+  // A PARSED BODY IS NO REQUEST EITHER. A JSON content type reaches the
+  // handler as an object rather than bytes, and until 2026-09-16 that threw
+  // and the responder answered 500.
+  const jsonBody = await anonymous("/pki/ocsp/" + scope + "/" + ca, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}"
+  });
+  check("a POST with a JSON body is answered malformedRequest the same way, " +
+        "not with a server error", function () {
+          assert.strictEqual(jsonBody.status, 200, "status " + jsonBody.status);
+          assert.strictEqual(jsonBody.bytes.toString("hex"), "30030a0101",
             "an unsigned OCSPResponse with responseStatus malformedRequest");
         });
 

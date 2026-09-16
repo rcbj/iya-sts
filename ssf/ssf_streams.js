@@ -22,20 +22,24 @@
 // tidiness problem — it is one receiver reading another tenant's delivery
 // endpoint and authorization header.
 //
-// **AND THE SAME GOES FOR THE QUEUES.** They are on the stream record, so they
-// are partitioned by construction rather than by a second call to `realms`.
-// That is the shape `common/CLAUDE.md` warns about getting half right: the two
-// halves of one claim set were held in two modules and only one was per realm.
+// **AND THE SAME GOES FOR THE QUEUES.** They were on the stream record and so
+// partitioned by construction; since 2026-09-13 they are stores of their own
+// (`queued`, and `deadLetters` since 2026-09-14), each a `realms.map()` beside
+// the streams, so they are partitioned the same way. That is the shape
+// `common/CLAUDE.md` warns about getting half right: the two halves of one
+// claim set held in two places and only one of them per realm.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS SERVICE KEEPS AND WHAT IT DOES NOT.
 //
-// Streams are IN MEMORY and die with the process, like every other thing this
-// service mints. `persistence/CLAUDE.md`'s rule decides it and the reason is
-// the same one it gives everywhere: the signing key is regenerated on every
-// start, so a queue of SETs restored from disk would be a queue of tokens
-// nothing can verify. A receiver that reconnects after a restart creates its
-// stream again, which is what a receiver has to be able to do anyway.
+// Every store here is declared with `persist`, so `persistence/CLAUDE.md`'s
+// minted-state rule decides what is kept: in development they are in memory
+// and die with the process — the signing key is regenerated on every start
+// there, so a queue of SETs restored from disk would be a queue of tokens
+// nothing can verify, and a receiver that reconnects after a restart creates
+// its stream again, which it has to be able to do anyway. In product mode on
+// postgres they are written down and shared with every process (2026-09-06),
+// beside keys that are kept too.
 //
 // ---------------------------------------------------------------------------
 // EVERY LIMIT HERE IS A SETTING AND EVERY ONE OF THEM IS A REACHABLE
@@ -49,7 +53,8 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route. It requires `helpers.js`,
-// `config.js`, `realms.js`, `ssf_subjects.js` and `ssf_events.js`, none of
+// `config.js`, the error-code registry, `realms.js`, `ssf_subjects.js` and
+// `ssf_events.js` (and `applications.js` and `persistence.js` lazily), none of
 // which requires it, so it cannot join a cycle.
 // ---------------------------------------------------------------------------
 
@@ -246,7 +251,7 @@ function createStream(asked, context) {
   const record = {
     // THE ID IS THE CALLER'S ONLY WHEN THE CALLER IS THIS SERVICE, AND IT
     // RIDES ON `ctx` RATHER THAN ON `body` FOR ONE REASON (2026-09-12): `body`
-    // is the REQUEST BODY at ssf.js's POST /ssf/streams, so a `stream_id` read
+    // is the REQUEST BODY at ssf.js's POST /ssf/stream, so a `stream_id` read
     // from there would let a receiver name its own stream — and therefore name
     // somebody else's, which is a stream takeover with a string as the only
     // input. `contextOf()` builds its object from the request's identity and

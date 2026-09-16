@@ -18,14 +18,14 @@
 // So the run starts THIS instead: it installs a handler that asks V8 for the
 // coverage explicitly (`v8.takeCoverage()`, node 14.8+) and only then exits,
 // and requires server.js so that everything else about the process — the
-// module graph, the require ORDER that is also the route order, the nine
-// listeners — is byte for byte what a plain start does.
+// module graph, the require ORDER that is also the route order, every
+// listener — is byte for byte what a plain start does.
 //
 // It is in `tools/` rather than beside the tests for the reason that directory
 // exists: `tests/run.js` discovers every `.js` file next to it as a test, and
 // this one exports no `run()`.
 //
-// A FORCED EXIT IS DELIBERATE. Four listener families keep the event loop
+// A FORCED EXIT IS DELIBERATE. Several listener families keep the event loop
 // alive, so returning from the handler would hang; and `process.exit(0)` after
 // `takeCoverage()` has already written the file loses nothing.
 // ===========================================================================
@@ -41,7 +41,8 @@ const log = require('bunyan').createLogger({ name: 'coverage_entry',
 
 let stopping = false;
 
-// Longer than ten lines, so it says so at both ends like everything else here.
+// Entered and left out loud, like every named function here (the code style
+// in the root CLAUDE.md).
 function flushAndExit(signal) {
   log.debug("Entering flushAndExit().");
   if (stopping) {

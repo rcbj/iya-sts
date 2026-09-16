@@ -153,7 +153,9 @@ async function federatedBundles(t) {
 }
 
 // ---------------------------------------------------------------------------
-// 12. A NEW REALM DOES NOT INHERIT THE DEFAULT REALM'S TCP LISTENERS OR ADMINS.
+// 12. A NEW REALM DOES NOT INHERIT THE DEFAULT REALM'S TCP LISTENERS OR ITS
+//     SPIFFE ADMIN IDS (`spiffe.adminIds` — not the realm's own console
+//     administrators, which are another roster).
 // ---------------------------------------------------------------------------
 function realmSeeding(t) {
   log.debug("Entering realmSeeding().");

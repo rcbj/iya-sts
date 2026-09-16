@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: pki_revocation.js
@@ -32,9 +33,10 @@
 //
 // A CRL is signed BY AN ISSUER and lists serial numbers ISSUED BY THAT ISSUER.
 // One CRL per realm would therefore be a document with no valid issuer — the
-// realm has three Issuing CAs and an Intermediate, and a serial is only unique
-// within one of them. So every CA in the tree has a CRL of its own and an OCSP
-// responder of its own, which is also what the request asked for.
+// realm has an Intermediate and an Issuing CA per use case, and a serial is
+// only unique within one of them. So every CA in the tree has a CRL of its
+// own and an OCSP responder of its own, which is also what the request asked
+// for.
 //
 // **THE ROOT AND THE INTERMEDIATES HAVE ONE TOO**, and they are not decoration:
 // an Intermediate revokes Issuing CAs and the Root revokes Intermediates, which
@@ -52,9 +54,9 @@
 // is `pki.js`'s placement argument applied once more: a second store would be a
 // second thing to seal, purge with the realm, and share with a request worker.
 //
-// A LIBRARY (rule 3): it registers no route. It requires `config`, `pki` and
-// the two vendored PKI modules plus pkijs and asn1js; none of them requires it
-// back.
+// A LIBRARY (rule 3): it registers no route. It requires `config`, `pki`,
+// `realms`, `error_codes` and the two vendored PKI modules plus pkijs and
+// asn1js; none of them requires it back.
 // ===========================================================================
 
 const bunyan = require('bunyan');
@@ -515,7 +517,8 @@ function scopeFromSegment(segment) {
   return one === 'default' ? '' : one;
 }
 
-// The three CRL addresses for one authority, and the one OCSP address.
+// The two CRL addresses for one authority (http and ldap — see above), the
+// one OCSP address, the caIssuers address, and the directory DN.
 //
 // **THE LDAP FORM IS RFC 4516's AND THE ATTRIBUTE DESCRIPTION MATTERS.**
 // `?certificateRevocationList;binary` is not decoration: RFC 4523 section 4
@@ -652,9 +655,21 @@ module.exports = {
   httpBase: httpBase,
   setDirectory: setDirectory,
   directoryBaseFor: directoryBaseFor,
-  // Filled in below by the CRL and OCSP halves.
-  buildCrl: null,
-  answerOcsp: null
+  // The CRL and OCSP halves below. Named here rather than assigned onto the
+  // export after each half (#50, 2026-09-16): every one is a function
+  // declaration, hoisted, so the object is the same at the end of the load,
+  // and the type checker accepts one export object where it refuses an
+  // assignment followed by additions.
+  buildCrl: buildCrl,
+  serialBytes: serialBytes,
+  publishSoon: publishSoon,
+  publishAll: publishAll,
+  publishScopeSoon: publishScopeSoon,
+  keepDirectoryCurrent: keepDirectoryCurrent,
+  agreedCrlNumber: agreedCrlNumber,
+  answerOcsp: answerOcsp,
+  issuedHere: issuedHere,
+  issuedList: issuedList
 };
 
 // ===========================================================================
@@ -696,9 +711,9 @@ function derFromPem(pem) {
   log.debug("Entering initEngine().");
   try {
     if (typeof crypto !== 'undefined' && crypto.subtle) {
-      pkijs.setEngine('webcrypto',
-                      new pkijs.CryptoEngine({ name: 'webcrypto',
-                                               crypto: crypto }));
+      // `any`: pkijs's declared engine interface lags its own class.
+      pkijs.setEngine('webcrypto', /** @type {any} */ (
+        new pkijs.CryptoEngine({ name: 'webcrypto', crypto: crypto })));
     }
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0062') + 'pki_revocation: the Web ' +
@@ -1173,12 +1188,6 @@ function keepDirectoryCurrent() {
   return true;
 }
 
-module.exports.buildCrl = buildCrl;
-module.exports.serialBytes = serialBytes;
-module.exports.publishSoon = publishSoon;
-module.exports.publishAll = publishAll;
-module.exports.publishScopeSoon = publishScopeSoon;
-module.exports.keepDirectoryCurrent = keepDirectoryCurrent;
 
 // ===========================================================================
 // THE OCSP RESPONDER — RFC 6960.
@@ -1249,7 +1258,7 @@ function bareResponse(status) {
   const response = new pkijs.OCSPResponse();
   response.responseStatus.valueBlock.valueDec = status;
   log.debug("Leaving bareResponse().");
-  return Buffer.from(response.toSchema(true).toBER(false));
+  return Buffer.from(/** @type {any} */ (response).toSchema(true).toBER(false));
 }
 
 // How many octets a request's nonce is. RFC 8954 section 2.1 makes the
@@ -1331,9 +1340,9 @@ async function answerOcsp(scopeId, caId, requestDer) {
       // NOT THIS AUTHORITY'S CERTIFICATE. `unknown`, which is the honest
       // answer and the one the specification asks for — answering `good`
       // would make this responder vouch for every issuer in the world.
-      single.certStatus = new asn1js.Primitive({
+      single.certStatus = new asn1js.Primitive(/** @type {any} */ ({
         idBlock: { tagClass: 3, tagNumber: 2 }, lenBlockLength: 1
-      });
+      }));
       reported.push({ serial: serial, status: 'unknown',
                       why: 'another issuer' });
       responses.push(single);
@@ -1363,17 +1372,17 @@ async function answerOcsp(scopeId, caId, requestDer) {
     // is `unknown`: a responder that answered `good` for a certificate it has
     // no record of is a responder that vouches for forgeries.
     if (!issuedHere(scopeId, caId, serial)) {
-      single.certStatus = new asn1js.Primitive({
+      single.certStatus = new asn1js.Primitive(/** @type {any} */ ({
         idBlock: { tagClass: 3, tagNumber: 2 }, lenBlockLength: 1
-      });
+      }));
       reported.push({ serial: serial, status: 'unknown',
                       why: 'no record of that serial' });
       responses.push(single);
       continue;
     }
-    single.certStatus = new asn1js.Primitive({
+    single.certStatus = new asn1js.Primitive(/** @type {any} */ ({
       idBlock: { tagClass: 3, tagNumber: 0 }, lenBlockLength: 1
-    });
+    }));
     reported.push({ serial: serial, status: 'good' });
     responses.push(single);
   }
@@ -1454,7 +1463,8 @@ async function answerOcsp(scopeId, caId, requestDer) {
   response.responseBytes.response = new asn1js.OctetString({
     valueHex: basic.toSchema().toBER(false)
   });
-  const der = Buffer.from(response.toSchema(true).toBER(false));
+  const der = Buffer.from(/** @type {any} */ (response).toSchema(true)
+    .toBER(false));
   log.debug('Leaving answerOcsp(). ' + reported.length + ' answer(s).');
   return { ok: true, der: der, status: 'successful', answers: reported,
            // For `pki/pki_service.js`'s RFC 5019 section 6.2 cache headers,
@@ -1480,14 +1490,15 @@ async function answerOcsp(scopeId, caId, requestDer) {
 // responder comes to answer `unknown` about a certificate the console is
 // happily offering to revoke.
 //
-// **FOUR SOURCES, AND THE THREE AFTER THE FIRST ARE WHY IT IS NOT A
+// **FIVE SOURCES, AND THE FOUR AFTER THE FIRST ARE WHY IT IS NOT A
 // ONE-LINER.** An authority signs AUTHORITIES as well as leaves: an
 // Intermediate issued this scope's Issuing CAs and the Root issued every
 // scope's Intermediate. Without those two branches a perfectly valid Issuing CA
 // reports `unknown` at its own parent's responder — which is the most confusing
 // answer available, because the certificate verifies and the responder disowns
 // it. The fourth is the object store, where the Certificate & Key Configuration
-// pane's leaves live rather than in the certificate register.
+// pane's leaves live rather than in the certificate register, and the fifth
+// (2026-09-12) is the issued-serial record — see item 5 below.
 // ---------------------------------------------------------------------------
 function issuedList(scopeId, caId) {
   log.debug('Entering issuedList(). scope=' + scopeId + ' ca=' + caId);
@@ -1510,7 +1521,8 @@ function issuedList(scopeId, caId) {
   }
 
   // 1. The leaves this use case's Issuing CA certified — the signing keys of
-  //    this realm, the TLS server certificate, a SPIFFE authority.
+  //    this realm, the TLS server certificates, a remote PEP's listener, a
+  //    person's or application's TLS client certificate.
   pki.certificatesFor(scopeId, id).forEach(function (one) {
     add(one.serialHex, one.subject, one.notAfter, 'leaf',
         one.label || one.slot || '');
@@ -1550,10 +1562,13 @@ function issuedList(scopeId, caId) {
   });
 
   // 5. The RFC 7523 / RFC 7522 signing key pairs issued to applications and
-  //    people (2026-09-12). Their certificates name this authority's CRL and
-  //    OCSP responder, so a responder with no record of them would answer
-  //    `unknown` about a certificate that sends a relying party here to ask.
-  //    Guarded, because a `pki.js` without the accessor has no such records.
+  //    people (2026-09-12) — and, in the same record, the certificates ACME,
+  //    EST and SCEP enrolled (`pki.issueEnrolled()`) and the serials a
+  //    cluster merge displaced from a slot (`pki_merge.js`). Their
+  //    certificates name this authority's CRL and OCSP responder, so a
+  //    responder with no record of them would answer `unknown` about a
+  //    certificate that sends a relying party here to ask. Guarded, because a
+  //    `pki.js` without the accessor has no such records.
   if (typeof pki.issuedKeyPairsFor === 'function') {
     pki.issuedKeyPairsFor(scopeId, id).forEach(function (one) {
       add(one.serialHex, one.subject, one.notAfter, 'key-pair',
@@ -1579,7 +1594,6 @@ function issuedHere(scopeId, caId, serialHex) {
   });
 }
 
-module.exports.agreedCrlNumber = agreedCrlNumber;
 
 // DECLARED AT REQUIRE TIME (cluster/CLAUDE.md). Both halves of the row: a
 // revocation or an issued serial recorded on one node survives another node's
@@ -1588,7 +1602,3 @@ module.exports.agreedCrlNumber = agreedCrlNumber;
 // shared store so it only goes up across nodes (`agreedCrlNumber()` above).
 const capabilities = require('../cluster/cluster_capabilities');
 capabilities.provide('pki.revocation-register');
-
-module.exports.answerOcsp = answerOcsp;
-module.exports.issuedHere = issuedHere;
-module.exports.issuedList = issuedList;

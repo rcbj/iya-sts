@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: helpers.js
@@ -11,12 +12,14 @@
 //
 //   * the LOG and the artifact log. This mock exists to show what it did, so
 //     every module writes to one logger at one level.
-//   * the KEYS. One RSA key pair signs everything (SAML assertions, every JWT,
-//     the RFC 8414 and OID4VCI metadata, the DID documents) and one BBS key
-//     pair signs every ldp_vc credential. They are generated once per start, so
-//     they cannot be per-module: two modules generating their own would publish
-//     two keys under one issuer and the symptom is "the signature does not
-//     verify".
+//   * the KEYS. One key set per trust realm — an RSA key pair and the curve
+//     and post-quantum keys beside it — signs everything (SAML assertions,
+//     every JWT, the RFC 8414 and OID4VCI metadata, the DID documents), and
+//     one BBS key pair signs every ldp_vc credential. They are made once per
+//     start in development mode (once, then kept, in product mode — see
+//     `keystore.js`), so they cannot be per-module: two modules generating
+//     their own would publish two keys under one issuer and the symptom is
+//     "the signature does not verify".
 //   * the small helpers that more than one protocol needs — base64url, the
 //     request's own base URL, a body parser that copes with form or JSON, the
 //     two error-response shapes, and the mock's one user.
@@ -67,10 +70,11 @@ const bbs2023 = require('./vendored/bbs2023.js');
 // is below and stays here.
 // ---------------------------------------------------------------------------
 const stsCrypto = require('./crypto');
-// THE KEYSTORE. A LEAF (rule 3) requiring `config`, `crypto`, `mode` and
-// `secrets` — and NOT this module, which is what keeps it requirable from
-// here. It answers null for every realm in development mode, so requiring it
-// changes nothing about how a development service starts.
+// THE KEYSTORE. A LEAF (rule 3) requiring `config`, `crypto`, `mode`,
+// `realms`, `secrets` and a few other leaves — and NOT this module, which is
+// what keeps it requirable from here. It answers null for every realm in
+// development mode, so requiring it changes nothing about how a development
+// service starts.
 const keystore = require('./keystore');
 const pqJose = require('./pq_jose');
 // TRUST REALMS. Two things in this file are per realm and both are here rather
@@ -591,8 +595,9 @@ function makeStsKeys(made) {
   //
   // So every curve the JOSE registry names for a signature gets a key, at
   // startup, always. The cost is the argument for doing it rather than against:
-  // the RSA key above is ~100ms and these four together are under a
-  // millisecond, so they are free beside what this function already spends.
+  // the RSA key above is ~100ms and these six together (four when this was
+  // written) are a few milliseconds, so they are free beside what this
+  // function already spends.
   // They are NOT lazy for the same reason — a lazily-made key is one that might
   // not exist when the JWKS is published, and a JWKS that varies by what has
   // been asked for is a JWKS a client cannot cache.
@@ -625,9 +630,11 @@ function makeStsKeys(made) {
     // holding a cached copy.
     { alg: 'EdDSA', curve: 'Ed448', kty: 'OKP', gen: ['ed448', undefined] }
   ].map(function (spec) {
+    // `any`: the key type is a table value, and the overloads want literals.
+    const generate = /** @type {any} */ (crypto.generateKeyPairSync);
     const pair = spec.gen[1]
-      ? crypto.generateKeyPairSync(spec.gen[0], spec.gen[1])
-      : crypto.generateKeyPairSync(spec.gen[0]);
+      ? generate(spec.gen[0], spec.gen[1])
+      : generate(spec.gen[0]);
     const publicJwk = pair.publicKey.export({ format: 'jwk' });
     // The kid is derived from the key's own public material, the way the RSA
     // one is derived from its certificate: two instances of this mock must not
@@ -693,63 +700,6 @@ function makeStsKeys(made) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// ONE SIGNING KEY PER TRUST REALM, AND `STS` IS A VIEW ONTO THE CURRENT ONE.
-//
-// A realm that shared the process's key would not be a trust realm. The whole
-// claim a realm makes is that a token it issued is ITS token — so a verifier
-// that fetched realm `acme`'s JWKS and is handed a token minted in the default
-// realm must find that the signature does not verify. Two realms on one key
-// would make every realm's tokens interchangeable, which is the one property
-// somebody defining a second realm is trying not to have.
-//
-// LAZY, per realm: `makeStsKeys()` generates a 2048-bit RSA key, which is a
-// tenth of a second, and a realm that has issued nothing has not paid for one.
-// The default realm's is made on the first read, which is during module load
-// here — so a service with no realms does exactly what it did before, at
-// exactly the same moment.
-//
-// A PROXY rather than a function, and the reason is the call sites again: eight
-// modules destructure `const { STS } = require('./helpers')` and then read
-// `STS.kid`, `STS.certPem`, `STS.privateKey`. A function would have been
-// `stsKeys().kid` at every one of them; the proxy leaves all eight untouched
-// and correct. What it forwards is a property READ — there is nothing here that
-// writes to STS after this file has finished, and the one thing that used to
-// (`STS.privateKey = …` below) is now part of what the factory returns.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// A KEY SET WHOSE PUBLIC HALF IS RESIDENT AND WHOSE PRIVATE HALF IS A GETTER
-// (2026-09-06).
-//
-// Where key material persists, `keystore.js` holds the CIPHERTEXT and decrypts
-// on demand — and that buys nothing at all if this file then caches the
-// decrypted PEM and the parsed `KeyObject` on an object it keeps for the life
-// of the process, which is exactly what it used to do. So the set built here
-// holds:
-//
-//   * everything PUBLIC as an ordinary property — the kid, the certificate,
-//     each curve key's public JWK. None of it is a secret, all of it is
-//     already published at `/oauth2/jwks`, and the JWKS endpoint walking
-//     `extraKeys` must not cause a decrypt;
-//   * everything PRIVATE as a GETTER that asks the keystore afresh. That is
-//     what re-arms the idle timer on use, and it is why the getter takes the
-//     realm ID rather than closing over the material it was built from.
-//
-// **NOTHING IN THIS FUNCTION MAY CLOSE OVER `stored`.** It is the plaintext
-// blob, and a closure holding it would keep the private key reachable for as
-// long as the key set exists — which is the life of the process, which is the
-// thing being removed. Each getter therefore captures the realm ID and, for a
-// curve key, its `kid`, and nothing else. Read `one.publicJwk.kid` out into a
-// local before defining the getter; capturing `one` captures the PEM beside it.
-//
-// The GETTERS ARE ENUMERABLE, because the `STS` proxy forwards `ownKeys` and
-// `getOwnPropertyDescriptor` and something that spread this set would otherwise
-// come out with no private key at all — a failure that would look like a
-// signing bug rather than a visibility one.
-//
-// The eight modules that do `STS.privateKey` are untouched: a property read of
-// a getter is a property read. That is the whole reason the proxy was worth
-// having, and this change is the second thing it has paid for.
 // ---------------------------------------------------------------------------
 // THE `kid` DERIVATION, IN ONE PLACE. It was written out three times once
 // `plainKeySet()` joined makeStsKeys() and lazyKeySet(), and the comment in
@@ -1028,17 +978,51 @@ function certifiedView(set, realmId, stored) {
   return set;
 }
 
+// ---------------------------------------------------------------------------
+// A KEY SET WHOSE PUBLIC HALF IS RESIDENT AND WHOSE PRIVATE HALF IS A GETTER
+// (2026-09-06).
+//
+// Where key material persists, `keystore.js` holds the CIPHERTEXT and decrypts
+// on demand — and that buys nothing at all if this file then caches the
+// decrypted PEM and the parsed `KeyObject` on an object it keeps for the life
+// of the process, which is exactly what it used to do. So the set built here
+// holds:
+//
+//   * everything PUBLIC as an ordinary property — the kid, the certificate,
+//     each curve key's public JWK. None of it is a secret, all of it is
+//     already published at `/oauth2/jwks`, and the JWKS endpoint walking
+//     `extraKeys` must not cause a decrypt;
+//   * everything PRIVATE as a GETTER that asks the keystore afresh. That is
+//     what re-arms the idle timer on use, and it is why the getter takes the
+//     realm ID rather than closing over the material it was built from.
+//
+// **NOTHING IN THIS FUNCTION MAY CLOSE OVER `stored`.** It is the plaintext
+// blob, and a closure holding it would keep the private key reachable for as
+// long as the key set exists — which is the life of the process, which is the
+// thing being removed. Each getter therefore captures the realm ID and, for a
+// curve key, its `kid`, and nothing else. Read `one.publicJwk.kid` out into a
+// local before defining the getter; capturing `one` captures the PEM beside it.
+//
+// The GETTERS ARE ENUMERABLE, because the `STS` proxy forwards `ownKeys` and
+// `getOwnPropertyDescriptor` and something that spread this set would otherwise
+// come out with no private key at all — a failure that would look like a
+// signing bug rather than a visibility one.
+//
+// The eight modules that do `STS.privateKey` are untouched: a property read of
+// a getter is a property read. That is the whole reason the proxy was worth
+// having, and this change is the second thing it has paid for.
+// ---------------------------------------------------------------------------
 function lazyKeySet(realmId, stored) {
   log.debug("Entering lazyKeySet(). realm=" + realmId);
   const set = {
     realm: realmId,
     createdAt: stored.createdAt || 0,
-    // `certPem`, `certB64` and `kid` are GETTERS, installed by
-    // `certifiedView()` above: the certificate this key set publishes is the
-    // one `common/pki.js` issued for it where there is one, and the
-    // self-signed one it was born with where there is not. The `kid` is
-    // DERIVED from whichever that is — see makeStsKeys() — so storing it would
-    // be storing a derived value, which is how a store comes to disagree with
+    // `certPem` and `certB64` are GETTERS, installed by `certifiedView()`
+    // above: the certificate this key set publishes is the one `common/pki.js`
+    // issued for it where there is one, and the self-signed one it was born
+    // with where there is not. The `kid` is a plain value DERIVED from the
+    // self-signed one — see certifiedView()'s header — so storing it would be
+    // storing a derived value, which is how a store comes to disagree with
     // itself after a change to the derivation.
     extraKeys: (stored.extraKeys || []).map(function (one) {
       const kid = one.publicJwk && one.publicJwk.kid;
@@ -1334,6 +1318,31 @@ keystore.onAdopt(function (realmId) {
   }
 });
 
+// ---------------------------------------------------------------------------
+// ONE SIGNING KEY PER TRUST REALM, AND `STS` IS A VIEW ONTO THE CURRENT ONE.
+//
+// A realm that shared the process's key would not be a trust realm. The whole
+// claim a realm makes is that a token it issued is ITS token — so a verifier
+// that fetched realm `acme`'s JWKS and is handed a token minted in the default
+// realm must find that the signature does not verify. Two realms on one key
+// would make every realm's tokens interchangeable, which is the one property
+// somebody defining a second realm is trying not to have.
+//
+// LAZY, per realm: `makeStsKeys()` generates a 2048-bit RSA key, which is a
+// tenth of a second, and a realm that has issued nothing has not paid for one.
+// The default realm's is made on the first read, which is during module load
+// here — so a service with no realms does exactly what it did before, at
+// exactly the same moment.
+//
+// A PROXY rather than a function (`STS`, below), and the reason is the call
+// sites again: eight modules destructure `const { STS } = require('./helpers')`
+// and then read `STS.kid`, `STS.certPem`, `STS.privateKey`. A function would
+// have been `stsKeys().kid` at every one of them; the proxy leaves all eight
+// untouched and correct. What it forwards is a property READ — there is
+// nothing here that writes to STS after this file has finished, and the one
+// thing that used to (`STS.privateKey = …`) is now part of what the factory
+// returns.
+// ---------------------------------------------------------------------------
 const stsKeysFor = realms.keyed(function (realm) {
   // ---------------------------------------------------------------------
   // THE STORED KEYS FIRST, WHERE THERE ARE ANY (2026-09-06).
@@ -1388,8 +1397,10 @@ const stsKeysFor = realms.keyed(function (realm) {
   // Nothing is stored — this is development mode, or a realm made at runtime —
   // but this process may not be the only one running the stack. When
   // `workers.requestCount` is set, the front process and every request worker
-  // load this file, and each one's realm watcher calls warmPqKeys() the moment
-  // a realm appears: four processes, four independently generated key sets,
+  // load this file, and each one generated a realm's keys on its own first
+  // read of them (a realm watcher did it the moment a realm appeared, until
+  // 2026-08-30 — see below warmPqKeys()): four processes, four independently
+  // generated key sets,
   // four different `kid`s advertised from one port. A token minted by one
   // worker then failed to verify at another, which is most of what a dispatched
   // run measured as broken.
@@ -1458,8 +1469,9 @@ const stsKeysFor = realms.keyed(function (realm) {
   // It lives ON the key set rather than beside it because every module that
   // signs already destructures `STS` from this file, so the eight call sites
   // needed nothing new imported. `privateKeyPem` is KEPT and is still what the
-  // three XML signers use — xml-crypto takes the PEM — so nothing that read it
-  // before had to change.
+  // XML signer uses — `crypto.js`'s `signXml()` hands a PEM to the vendored
+  // signer (it was three xml-crypto signers when this was written) — so
+  // nothing that read it before had to change.
   //
   // It is derived rather than stored: there is exactly one private key per
   // realm and this is the same one, so the two cannot drift apart.
@@ -1504,8 +1516,8 @@ const stsKeysFor = realms.keyed(function (realm) {
   keystore.remember(realm.id, keys);
   // AND OFFERED TO EVERY OTHER PROCESS IN THIS SERVICE, which is the other half
   // of the sharedFor() lookup above. In a service with no request pool there is
-  // no publisher and this records the set locally and returns. See the block
-  // above keystore.js's storedFor().
+  // no publisher and this records the set locally and returns. See the SHARED
+  // KEY MATERIAL block above keystore.js's sharedFor().
   keystore.publishShared(realm.id, keys);
   // ---------------------------------------------------------------------
   // AND WHERE IT WAS WRITTEN DOWN, HAND BACK THE LAZY VIEW OF IT RATHER THAN
@@ -1861,7 +1873,7 @@ function resetStsKeys() {
   log.debug("Leaving resetStsKeys().");
 }
 
-const STS = new Proxy({}, {
+const STS = /** @type {any} */ (new Proxy({}, {
   get: function (target, prop) {
     log.debug("Entering get().");
     log.debug("Leaving get().");
@@ -1887,15 +1899,16 @@ const STS = new Proxy({}, {
     // over this — the JWKS builder spreads it.
     return d ? Object.assign({}, d, { configurable: true }) : undefined;
   }
-});
+}));
 
 
 // Every document that carries or describes this key is served `Cache-Control:
 // no-store` (the RFC 8414 metadata, the OID4VCI credential issuer metadata, the
-// jwt-vc-issuer document and the JWKS). The key is regenerated on every start,
-// so a cached copy of any of them outlives the key it describes — and the
-// resulting failure is a signature that does not verify, which looks like a
-// broken document rather than a stale one. Nothing about a mock is worth
+// jwt-vc-issuer document and the JWKS). The key is regenerated on every start
+// in development mode (and on a rotation in product mode), so a cached copy
+// of any of them outlives the key it describes — and the resulting failure is
+// a signature that does not verify, which looks like a broken document rather
+// than a stale one. Nothing about a mock is worth
 // caching.
 
 // --- helpers ---------------------------------------------------------------
@@ -1951,8 +1964,6 @@ function iso(offsetMin) {
   return new Date(Date.now() + (offsetMin || 0) * 60000).toISOString();
 }
 
-// base64url, in both directions. Deliberately without entering/leaving logs:
-// these are called several times per token and would drown the log.
 // base64url, from common/crypto.js and not written again here. This file had
 // its own — a base64 encode plus three replaces, which is what you write before
 // node had `'base64url'` — and authn/webauthn.js had a third. They agreed, so
@@ -2116,8 +2127,6 @@ async function bbsKeyPairForSharing() {
   return bbsKeyPairText(pair);
 }
 
-// Request bodies arrive as raw text (the SOAP parser takes every content type),
-// so form-encoded and JSON are both decoded here.
 // ---------------------------------------------------------------------------
 // DOES THIS SCOPE STRING CARRY THAT SCOPE.
 //
@@ -2139,6 +2148,8 @@ function hasScope(scope, name) {
   return String(scope || '').split(/\s+/).indexOf(name) >= 0;
 }
 
+// Request bodies arrive as raw text (the SOAP parser takes every content type),
+// so form-encoded and JSON are both decoded here.
 function parseBody(req) {
   log.debug("Entering parseBody(). content-type=" +
             (req.headers['content-type'] || '(none)'));
@@ -2339,36 +2350,6 @@ function oauthError(res, status, error, description) {
   log.debug("Leaving oauthError().");
 }
 
-// --- token minting ----------------------------------------------------------
-// Every OAuth token this server issues goes through here, so this is where each
-// one is recorded: the claim set before it is signed, and the JWT after.
-//
-// `context` is optional and is NOT part of the token: nothing in it is signed,
-// read back or sent anywhere. It is how a caller states what the payload cannot
-// say — at present the browser sign-on session the token was issued under and
-// the grant that issued it, neither of which appears in any claim, because
-// OIDC's `sid` is for front-channel logout and adding claims to every token to
-// make an admin page easier to draw would change what every client receives. A
-// caller that passes nothing is unaffected, which is why the parameter is at
-// the end and optional.
-// ---------------------------------------------------------------------------
-// WHICH KEY SIGNS A GIVEN ALGORITHM — the one answer, for the whole service.
-//
-// `signJwt()` below signs RS256 with the service key, which is what almost
-// everything here wants. This is for the places where a CLIENT chose the
-// algorithm: a registered `userinfo_signed_response_alg`, a registered
-// `id_token_signed_response_alg`, and anything else a specification lets a
-// relying party ask for.
-//
-// It lives here rather than beside any one of those because the mapping from
-// algorithm to key is a property of THIS SERVICE'S KEY MATERIAL and not of the
-// endpoint doing the signing — it was written once inside the UserInfo
-// endpoint and a second caller would have copied it.
-//
-// HMAC is deliberately not here: its key is the CLIENT'S secret, which this
-// function has no way to know and no business holding. A caller wanting an
-// HS\* signature passes the secret itself.
-// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE POST-QUANTUM KEYS, GENERATED LAZILY AND KEPT.
 //
@@ -2540,6 +2521,11 @@ function pqKeysForAsync(keys) {
 // A REALM'S ELEVEN KEYS ARE MADE WHEN THE REALM IS, NOT WHEN SOMEBODY FIRST
 // ASKS FOR THEM — AND THIS IS THE FIX FOR A FAILURE THE WORKER POOL EXPOSED
 // RATHER THAN CAUSED.
+//
+// **HALF-REVERSED ON 2026-08-30 — read the block after this function.** The
+// eager warm-up is now the DEFAULT REALM's alone, called from `server.js`'s
+// announce(); a realm created at runtime makes its keys on first use again.
+// This block is kept as the argument for warming at all.
 //
 // One of these eleven is expensive out of all proportion to the rest: an
 // SLH-DSA-SHAKE-128s KEY GENERATION is about 5.1 of the 5.8 seconds the whole
@@ -2865,6 +2851,24 @@ function kidNamesKey(headerKid, internalKid) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// WHICH KEY SIGNS A GIVEN ALGORITHM — the one answer, for the whole service.
+//
+// `signJwt()` below signs RS256 with the service key, which is what almost
+// everything here wants. This is for the places where a CLIENT chose the
+// algorithm: a registered `userinfo_signed_response_alg`, a registered
+// `id_token_signed_response_alg`, and anything else a specification lets a
+// relying party ask for.
+//
+// It lives here rather than beside any one of those because the mapping from
+// algorithm to key is a property of THIS SERVICE'S KEY MATERIAL and not of the
+// endpoint doing the signing — it was written once inside the UserInfo
+// endpoint and a second caller would have copied it.
+//
+// HMAC is deliberately not here: its key is the CLIENT'S secret, which this
+// function has no way to know and no business holding. A caller wanting an
+// HS\* signature passes the secret itself.
+// ---------------------------------------------------------------------------
 function signingKeyFor(alg) {
   log.debug("Entering signingKeyFor(). alg=" + alg);
   const direct = signingKeyWithoutList(alg);
@@ -2981,6 +2985,19 @@ function signJwtAsAsync(payload, alg, secret, opts) {
   });
 }
 
+// --- token minting ----------------------------------------------------------
+// Every OAuth token this server issues goes through here, so this is where each
+// one is recorded: the claim set before it is signed, and the JWT after.
+//
+// `context` is optional and is NOT part of the token: nothing in it is signed,
+// read back or sent anywhere. It is how a caller states what the payload cannot
+// say — at present the browser sign-on session the token was issued under and
+// the grant that issued it, neither of which appears in any claim, because
+// OIDC's `sid` is for front-channel logout and adding claims to every token to
+// make an admin page easier to draw would change what every client receives. A
+// caller that passes nothing is unaffected, which is why the parameter is
+// optional.
+//
 // `opts.certificateHeader` is `signJwtAs()`'s, for the RS256 key. It is a
 // THIRD parameter rather than a member of `context`, because `context` is
 // handed to the token registry whole and a header decision is not a fact about

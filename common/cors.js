@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: cors.js
@@ -93,9 +94,10 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route. It requires `helpers`,
 // `config`, `mode`, `validation`, `error_codes`, `applications` and
-// `oauth2_bcp` — all of which `app.js` has already loaded (the registry through
-// `admin_stats.js`) — and none of which requires this file, so it closes no
-// cycle and moves nothing in the route order.
+// `oauth2_bcp` — all but the last already loaded by the time `app.js` requires
+// this (the registry through `admin_stats.js`), and `oauth2_bcp` registers no
+// route either — and none of which requires this file, so it closes no cycle
+// and moves nothing in the route order.
 // ===========================================================================
 
 const cors = require('cors');

@@ -1,10 +1,11 @@
 # ---------------------------------------------------------------------------
 # THE PROJECT'S DEPLOYER: ONE USER, ONE ROLE, ONE BOUNDARY (issue #51).
 #
-# The USER has one permission: assume the ROLE. Its access key is what GitHub
-# Actions holds (created by hand, `aws iam create-access-key`, so the secret
-# never lands in Terraform state). The ROLE holds everything an environment
-# apply and destroy needs, and nothing else.
+# The USER has one permission: assume the ROLE. Its access key is a person's
+# (created by hand, `aws iam create-access-key`, so the secret never lands in
+# Terraform state); GitHub Actions holds the key of a SECOND such user, the
+# `ci` one below. The ROLE holds everything an environment apply and destroy
+# needs, and nothing else.
 #
 # How "minimum" is enforced, in three layers:
 #
@@ -95,8 +96,9 @@ resource "aws_iam_role" "deployer" {
 # ---------------------------------------------------------------------------
 # THE BOUNDARY EVERY ROLE THE DEPLOYER CREATES MUST CARRY.
 #
-# The union of what the ECS task role (mock-sts reading its two secrets) and the
-# ECS execution role (pulling the image, writing logs, injecting two secrets)
+# The union of what the ECS task role (mock-sts reading its two secrets), the
+# ECS execution role (pulling the images, writing logs, injecting the
+# environment's secrets) and the suite runner's role (uploading its report)
 # can do. A role's effective permissions are the intersection of its own policy
 # and this, so a policy that grants more is inert.
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: jose_certificate_header.js

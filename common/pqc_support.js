@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: pqc_support.js
@@ -66,7 +67,8 @@ const STANDARDS = {
   'Composite ML-DSA': 'draft-ietf-lamps-pq-composite-sigs'
 };
 
-// RFC 5280 / X.509 (2019) clause 9.8: the alternative public key extension.
+// X.509 (2019) clause 9.8 (ITU-T, not RFC 5280): the alternative public key
+// extension.
 const ALT_KEY_OID = '2.5.29.72';
 
 function describeTrad(trad) {
@@ -163,7 +165,8 @@ function ofCertificate(pem) {
   }
   try {
     const parsed = asn1js.fromBER(alt.extnValue.valueBlock.valueHexView);
-    const oid = parsed.result.valueBlock.value[0].valueBlock.value[0]
+    const oid = /** @type {any} */ (parsed.result).valueBlock.value[0]
+      .valueBlock.value[0]
       .valueBlock.toString();
     const altKey = ofAlgorithm(oid);
     if (altKey) {

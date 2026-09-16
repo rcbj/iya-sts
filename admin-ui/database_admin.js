@@ -12,10 +12,10 @@
 // WHY IT IS IN MONITORING AND NOT A SECOND HALF OF `/admin/persistence`.
 //
 // `admin-ui/CLAUDE.md`'s filing rule is that a page goes where the QUESTION it
-// answers goes. `/admin/persistence` is filed under Settings and answers *what
-// is this service configured to write down, where, and is the connection
-// encrypted* — configuration, plus the eighteen `persistence.*` settings,
-// and it reads identically on a service that started a second ago.
+// answers goes. `/admin/persistence` is filed under Server configuration and
+// answers *what is this service configured to write down, where, and is the
+// connection encrypted* — configuration, plus the nineteen `persistence.*`
+// settings, and it reads identically on a service that started a second ago.
 //
 // This one answers **what has that database been doing** — commits, rollbacks,
 // cache hit ratio, sequential scans, dead tuples, checkpoints, WAL — and the
@@ -41,20 +41,21 @@
 //     is decided by the database it is pointed at**, which is the only way
 //     "pull everything available" can stay true across a major version.
 //   * **AND THERE IS NO QUERY BOX**, and there must never be one. The role
-//     this service dials with can INSERT, UPDATE and DELETE on six tables —
-//     so a console that could hand it a statement would be a console that
-//     could empty the directory. Every statement behind this page is a
-//     literal in a table in another module and none is composed from anything
-//     a request carries.
+//     this service dials with can INSERT, UPDATE and DELETE on every table
+//     in its schema — so a console that could hand it a statement would be a
+//     console that could empty the directory. Every statement behind this
+//     page is a literal in a table in another module and none is composed
+//     from anything a request carries.
 //
 // ---------------------------------------------------------------------------
 // A PROBE THAT FAILED IS A ROW AND NOT AN ABSENCE.
 //
-// The role is `sts_app`: SELECT/INSERT/UPDATE/DELETE on six tables, USAGE on
-// one schema, and NOT `pg_monitor`. Most catalog views are readable by
-// anybody, a few are not, and which few depends on the server version and on
-// the operator's grants. So the page draws what failed, with PostgreSQL's own
-// SQLSTATE beside it, and tells the two ordinary causes apart:
+// The role is `sts_app`: SELECT/INSERT/UPDATE/DELETE on the tables of one
+// schema, USAGE on that schema, and NOT `pg_monitor`. Most catalog views are
+// readable by anybody, a few are not, and which few depends on the server
+// version and on the operator's grants. So the page draws what failed, with
+// PostgreSQL's own SQLSTATE beside it, and tells the two ordinary causes
+// apart:
 //
 //   * **42P01**, no such relation — a view this server version does not have.
 //     `pg_stat_checkpointer` on anything before 17 is the one that happens.
@@ -317,7 +318,7 @@ function derived(probes) {
     }).map(function (one) {
       return one.table_name + '.' + one.index_name;
     }),
-    // SEQUENTIAL SCANS AGAINST INDEX SCANS. On six small tables a sequential
+    // SEQUENTIAL SCANS AGAINST INDEX SCANS. On small tables a sequential
     // scan is often the right plan, which the page says out loud — this is
     // here to be read alongside the row counts and not as a fault.
     seqScans: tables.reduce(function (n, one) {

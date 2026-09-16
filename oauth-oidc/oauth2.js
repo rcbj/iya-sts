@@ -6,9 +6,10 @@
 // The endpoints the RFC 8414 metadata advertises.
 //
 // A dummy authorization server: every endpoint in the metadata document
-// answers, and every token it issues is a real RS256 JWT signed with the STS
-// key, so it verifies against the JWKS the same document points at
-// (/oauth2/jwks).
+// answers, and every token it issues is a real JWT signed with the STS key
+// (RS256 unless a client registered another ID Token algorithm), so it
+// verifies against the JWKS the same document points at (/oauth2/jwks). A
+// refresh token is then encrypted to its realm as well.
 //
 //   GET  /oauth2/authorize   authorization endpoint (code / implicit / hybrid)
 //   POST /oauth2/token       authorization_code, refresh_token, password,
@@ -17,21 +18,29 @@
 //                            endpoint here that verifies the token first
 //   POST /oauth2/introspect  RFC 7662
 //   POST /oauth2/revoke      RFC 7009
+//   POST /oauth2/par         RFC 9126 pushed authorization requests
 //   *    /oauth2/register    RFC 7591 registration + RFC 7592 management
 //   GET  /oauth2/logout      end_session_endpoint (RP-Initiated Logout)
+//   *    /oauth2/step-up/resource/:application
+//                            NON-SPEC: RFC 9470's stand-in resource server
 //   GET  /oauth2/rfc9700     NON-SPEC: whether the RFC 9700 Security BCP mode
 //                            is on, and every requirement it does and does not
 //                            enforce (oauth2_bcp.js)
+//   GET  /oauth2/oauth21     NON-SPEC: the same for OAuth 2.1 mode (oauth21.js)
+//   *    /dpop/nonce-mode    NON-SPEC: a development test control
+//   *    /{id}/oauth2/...    every OAuth endpoint again, per named
+//                            authorization server (authorization_servers.js)
 //   GET  /oauth2/jwks        the signing key (above, with the metadata)
 //   GET  /docs /policy /tos  the documents the metadata links to
 //
-// It authenticates NOBODY: the authorization endpoint issues a code for whoever
-// asks (the "user" is the login_hint, or a fixed mock subject), and any client
-// secret is accepted — with ONE exception, and only in RFC 9700 mode: a client
-// that registered HERE as confidential must present the secret this service
-// minted for it (section 2.5, and see `oauth2_bcp.js`). No END USER's password
-// is checked in any mode. That is the point — it exists so the debugger's panes
-// have something complete to talk to, not to enforce anything. What it does do
+// In development mode it authenticates almost NOBODY: the person is signed in
+// by `authn/authn.js`, which checks no password there, and any client secret
+// is accepted — with the exceptions `oauth2_bcp.js` (RFC 9700 mode, section
+// 2.5), `oauth21.js` and `/oauth2/introspect` (RFC 9701) argue. No END USER's
+// password is checked in development; product mode (`common/mode.js`) checks
+// it at the sign-in screen and at the password grant. That is the point — it
+// exists so the debugger's panes have something complete to talk to, not to
+// enforce anything. What it does do
 // properly is the mechanics a client can check: PKCE verification, single-use
 // authorization codes, real signatures, honest introspection, and revocation
 // that actually takes effect.
@@ -63,8 +72,8 @@
 
 const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// config.js and error_codes.js and nothing else here, so it cannot join a
+// cycle, and it registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const forge = require('node-forge');
 const jwt = require('jsonwebtoken');
@@ -108,19 +117,21 @@ const softwareStatement = require('./software_statement');
 // it requires nothing that requires it back, and it deliberately does not
 // require `assertion_grant.js` either. Its header argues both.
 const samlAssertionGrant = require('./saml_assertion_grant');
-// The mode. A LEAF (rule 3): registers nothing, requires only `config`.
+// The mode. A LEAF (rule 3): registers nothing, requires only `config` (and
+// bunyan).
 const mode = require('../common/mode');
 // MORE THAN ONE AUTHORIZATION SERVER out of one process: the path component the
 // two discovery shapes already carry now selects a CONFIGURATION as well as an
 // issuer identifier. A library that registers no route and requires only
-// helpers.js, so it cannot create a cycle. A path nobody has configured
+// `common/` leaves (helpers, realms, mode, config), so it cannot create a
+// cycle. A path nobody has configured
 // publishes the document this service always published, which is what keeps
 // every existing caller unaffected.
 const authorizationServers = require('./authorization_servers');
 // The service's statistics and its ONE set of revoked jtis. It is a library
-// like dpop.js — it registers nothing and requires only helpers.js — so
-// requiring it here cannot create a cycle. The revocation set used to be a Set
-// in this file; see the comment where it was, below.
+// like dpop.js — it registers nothing, and nothing it requires requires this
+// module — so requiring it here cannot create a cycle. The revocation set used
+// to be a Set in this file; see the comment where it was, below.
 const stats = require('../common/admin_stats');
 const { VCI_CONFIGS, VCI_CONFIG_ID, VCI_SCOPE,
         vciFormatOf } = require('../oid4vc/vc_configs');
@@ -139,8 +150,9 @@ const authn = require('../authn/authn');
 const { sessionOf, endSession } = authn;
 // RFC 9700, the OAuth 2.0 Security Best Current Practice, as a mode this
 // service can be put into. A library like dpop.js — it registers nothing and
-// requires only helpers.js and config.js — so requiring it here cannot create a
-// cycle and its position in the require order does not matter. It DECIDES; what
+// requires only libraries, none of which requires this module — so requiring
+// it here cannot create a cycle and its position in the require order does
+// not matter. It DECIDES; what
 // a refusal looks like stays here, because that is protocol knowledge: a bad
 // redirect_uri is answered on this server rather than redirected to, which is
 // the difference between honouring section 2.1 and being the open redirector it
@@ -177,24 +189,26 @@ function oauthError(res, status, error, description) {
 // metadata members, the list of relying parties a session has signed into, and
 // the iframe fan-out /oauth2/logout renders. A library (rule 3): it registers
 // nothing, so its place in the require order does not matter, and it requires
-// only helpers.js, config.js, app.js and applications.js — none of which
-// requires it back, so it cannot join a cycle. It exists as a file of its own
-// rather than as code in here for one reason: `/logout` and the console have to
-// render the SAME fan-out, and reaching into this module for it would be a
-// require in the wrong direction.
+// only helpers.js, config.js, app.js, applications.js, validation.js and
+// error_codes.js — none of which requires it back, so it cannot join a cycle.
+// It exists as a file of its own rather than as code in here for one reason:
+// `/logout` and the console have to render the SAME fan-out, and reaching into
+// this module for it would be a require in the wrong direction.
 const frontchannel = require('./frontchannel_logout');
 // The application registry, which lives in the embedded LDAP directory. A
 // library like the two above — it registers no route and requires only
-// helpers.js and audit.js — so requiring it here cannot create a cycle and
-// cannot move a route. It is where the RFC 7591 registrations are kept and
-// where every client_id this endpoint accepts is recorded.
+// `common/` libraries, none of which requires this module — so requiring it
+// here cannot create a cycle and cannot move a route. It is where the RFC 7591
+// registrations are kept and where every client_id this endpoint accepts is
+// recorded.
 const applications = require('../common/applications');
 
 // The input validator. A LEAF (rule 3) — registers no route, requires only
-// `config`, `bunyan` and zod, so it closes no cycle and moves nothing in the
-// route order. `common/validation.js` argues the shape/existence line: what a
-// value may BE is refused in both modes, and whether the client is KNOWN stays
-// with `mode.js` and the application registry.
+// `config`, `error_codes` and npm packages (bunyan, zod, xmldom), so it closes
+// no cycle and moves nothing in the route order. `common/validation.js` argues
+// the shape/existence line: what a value may BE is refused in both modes, and
+// whether the client is KNOWN stays with `mode.js` and the application
+// registry.
 const validation = require('../common/validation');
 // The registry of error codes, a leaf. Every refusal below is MARKED on the
 // response before it is sent, and a code is never written into one.
@@ -243,10 +257,11 @@ const delegation = require('../common/delegation');
 // CONSENT: the register, and the screen that fills it.
 //
 // `common/consent.js` is a LIBRARY (rule 3) — it registers no route and
-// requires helpers.js, config.js, applications.js and admin_stats.js — so
-// requiring it here can neither create a cycle nor move a route.
-// `./consent_screen.js` DOES register two routes, and this require does not
-// move them: server.js requires it BEFORE this module, exactly as it requires
+// requires helpers.js, config.js, applications.js, error_codes.js and
+// admin_stats.js — so requiring it here can neither create a cycle nor move a
+// route. `./consent_screen.js` DOES register two routes, and this require does
+// not move them: `common/protocol_stack.js` requires it BEFORE this module,
+// exactly as it requires
 // `authn/authn.js` before this module, and for the identical reason — the
 // authorization endpoint hands a browser to a screen somebody else owns and
 // takes it back afterwards.
@@ -257,23 +272,26 @@ const consentScreen = require('./consent_screen');
 // individual claims it wants back from the UserInfo endpoint, and answering
 // that means finding the attribute on that person's entry under ou=users which
 // produces the named claim. A library (rule 3) — it registers no route and
-// requires helpers.js, realms.js, admin_stats.js, vc_claims.js and audit.js,
-// none of which requires it back — so it can neither create a cycle nor move a
+// requires helpers.js, realms.js, admin_stats.js, vc_claims.js, audit.js and
+// error_codes.js, none of which requires it back — so it can neither create a
+// cycle nor move a
 // route. It is required here rather than reached through admin_stats.js's slot
 // because the slot answers "what did an administrator TICK" and this is the
 // other question: "what did the CLIENT ask for".
 const claimAttributes = require('../common/claim_attributes');
-// THE ROLE GATE. A LEAF (rule 3): it registers nothing, requires `helpers` and
-// `config` and nothing else here, and answers "allowed" in any process that
-// never loaded the XACML family — so this require cannot move a route, cannot
-// close a cycle and cannot change what this module does on its own. What fills
-// its decider is `xacml/xacml_role_pep.js` at 23c, fourteen positions below
-// this line, which is exactly why the gate exists rather than this file
-// requiring the PEP. See `common/issuance_gate.js`.
+// THE ROLE GATE. A LEAF (rule 3): it registers nothing, requires `helpers`,
+// `config` and `error_codes` and nothing else here, and answers "allowed" in
+// any process that never loaded the XACML family — so this require cannot move
+// a route, cannot close a cycle and cannot change what this module does on its
+// own. What fills its decider is `xacml/xacml_role_pep.js` at 23c, far below
+// this module in `common/protocol_stack.js`, which is exactly why the gate
+// exists rather than this file requiring the PEP. See
+// `common/issuance_gate.js`.
 const gate = require('../common/issuance_gate');
 // WHO MAY BE GRANTED THE EMBEDDED DEBUGGER'S PERMISSION (2026-09-13). A
 // library (rule 3) that registers nothing and requires only libraries —
-// `admin-ui/admin_rbac.js`, `common/access_gate.js`, `common/audit.js` — so it
+// `admin-ui/admin_rbac.js`, `common/access_gate.js`, `common/audit.js`,
+// `common/helpers.js`, `common/realms.js` — so it
 // cannot move a route or close a cycle. See `debugger/debugger_access.js`.
 const debuggerAccess = require('../debugger/debugger_access');
 // THE ONE PLACE A PRESENTED PASSWORD IS CHECKED, for the RFC 6749 section 4.3
@@ -289,8 +307,9 @@ const websecurity = require('../common/websecurity');
 // and the barrier a request that lost that race waits on to see what the
 // winner wrote. Neither registers a route; `cluster_claims.js` requires
 // `config`, `realms`, `error_codes` and the capability table, and requires
-// `persistence.js` LAZILY; `cluster_barrier.js` requires the same three and
-// `persistence.js` lazily too — so neither can move a route or close a cycle.
+// `persistence.js` LAZILY; `cluster_barrier.js` requires `config`,
+// `error_codes` and the table, and `persistence.js` and `cluster.js` lazily —
+// so neither can move a route or close a cycle.
 // `capabilities` is the table this module declares `oauth.codes-once` in.
 const clusterClaims = require('../cluster/cluster_claims');
 const clusterBarrier = require('../cluster/cluster_barrier');
@@ -368,7 +387,7 @@ function issuerOf(base) {
   return jwtAccessToken.issuerFor(base);
 }
 
-// `raw` is set by capabilitiesFor() above and means "build the document this
+// `raw` is set by capabilitiesFor() below and means "build the document this
 // service would publish, without applying a profile" — the DEFAULTS a profile
 // is merged onto. Without it, asking for the capabilities would apply the
 // profile, then merge the profile onto the result again: harmless today and
@@ -456,7 +475,7 @@ function asMetadata(req, raw) {
                             // OID4VCI's pre-authorized code grant, which the
                             // cross-device Credential Offers use.
                             'urn:ietf:params:oauth:grant-type:pre-authorized_code']
-      // RFC 7523 section 2.1, and it is CONDITIONAL where the six above are
+      // RFC 7523 section 2.1, and it is CONDITIONAL where the seven above are
       // not — `oauth2.jwtBearerGrant` can switch it off, and a
       // grant_types_supported member is a PROMISE. The check at the top of the
       // token endpoint refuses anything this list does not carry, so a client
@@ -634,8 +653,10 @@ function asMetadata(req, raw) {
   }
   // RFC 9700 mode, when it is on, narrows three of the members above:
   // response_types_supported loses everything that would issue an access token
-  // from the authorization endpoint, grant_types_supported loses `implicit`,
-  // and code_challenge_methods_supported becomes S256 alone. It happens HERE
+  // from the authorization endpoint, grant_types_supported loses `implicit`
+  // and `password`, and code_challenge_methods_supported becomes S256 alone
+  // (and OAuth 2.1 mode drops `saml2_bearer` from the client authentication
+  // methods). It happens HERE
   // rather than in each document because the OIDC document is this one
   // extended, and a mode that narrowed one of the two would produce exactly the
   // drift building them from one object exists to prevent — a client configured
@@ -711,10 +732,6 @@ function forProfile(handler) {
   };
 }
 
-// The capabilities THIS request's authorization server has, which are the
-// members of the document it publishes. `asMetadata()` builds the defaults and
-// the profile is applied on top, so there is no second table to disagree with
-// what was advertised.
 // The path prefix this authorization server's endpoints live under: '' for the
 // default one and '/{id}' for a named one. One function, because getting it
 // wrong in one place sends a request to a different authorization server with
@@ -738,6 +755,10 @@ function asBaseOf(req) {
   return baseUrlOf(req) + asPathOf(req);
 }
 
+// The capabilities THIS request's authorization server has, which are the
+// members of the document it publishes. `asMetadata()` builds the defaults and
+// the profile is applied on top, so there is no second table to disagree with
+// what was advertised.
 function capabilitiesFor(req) {
   log.debug("Entering capabilitiesFor().");
   log.debug("Leaving capabilitiesFor().");
@@ -892,7 +913,8 @@ const signedMetadataCache = realms.map();
 
 // RFC 8414 section 2.1: signed_metadata is a JWT whose claims are the metadata
 // members, signed by the issuer, and carrying iss and sub. Genuinely signed
-// with the STS key so it can be verified (public key at /sts/cert, JWKS below).
+// with the STS key, in `oauth2.signedMetadataAlgorithm`, so it can be verified
+// (the JWKS below).
 function signedMetadata(meta) {
   log.debug("Entering signedMetadata().");
   const claims = Object.assign({}, meta, { sub: meta.issuer });
@@ -1051,13 +1073,14 @@ function oidcMetadata(req, issuer) {
     // recipient know who signed it.
     //
     // The signing list is what this service can actually do with the key
-    // material it holds: one RSA key, so the RSASSA-PKCS1 and RSASSA-PSS
-    // families, plus the HMAC family, whose key is the client_secret this
-    // service already issued to that client (OIDC Core section 10.1's symmetric
-    // case — it needs no published key, which is exactly why it works here).
-    // ES* and EdDSA are absent because there is no EC key in the JWKS to verify
-    // them against, and advertising an algorithm whose key a client cannot
-    // fetch would be worse than not offering it.
+    // material it holds: the RSA key (the RSASSA-PKCS1 and RSASSA-PSS
+    // families), the curve and post-quantum keys the JWKS publishes beside it,
+    // plus the HMAC family, whose key is the client_secret this service already
+    // issued to that client (OIDC Core section 10.1's symmetric case — it
+    // needs no published key, which is exactly why it works here). An
+    // algorithm whose key a client cannot fetch would be worse than not
+    // offering it, which is why the curve algorithms waited for their keys —
+    // see USERINFO_EC_ALGS.
     //
     // `none` is the default and means the plain JSON of section 5.3.2.
     userinfo_signing_alg_values_supported: USERINFO_SIGNING_ALGS,
@@ -1077,8 +1100,7 @@ function oidcMetadata(req, issuer) {
     // Claiming `pairwise` would be a claim about a calculation this server does
     // not perform.
     subject_types_supported: ['public'],
-    // Every JWT this service signs goes through signJwt(), which is RS256 and
-    // only RS256. The id_token is not encrypted, so there is no *_enc member.
+    // The id_token is not encrypted, so there is no *_enc member.
     // OIDC Core section 3.1.3.7: a client may register
     // `id_token_signed_response_alg`. This service holds a key for every
     // asymmetric algorithm in the table and can use a client's own secret for
@@ -1124,19 +1146,18 @@ function oidcMetadata(req, issuer) {
     claims_parameter_supported: true,
     // OpenID Connect RP-Initiated Logout 1.0. /oauth2/logout drops the session
     // cookie and returns to post_logout_redirect_uri — but it neither requires
-    // nor checks id_token_hint, and it does not validate the redirect target
-    // against anything, so this is the shape of RP-initiated logout rather than
-    // its security. It is advertised because the alternative is a client with
-    // no way to end a session that this server really does end.
+    // nor checks id_token_hint, and outside RFC 9700 and OAuth 2.1 mode it does
+    // not validate the redirect target against anything
+    // (`bcp.checkPostLogoutRedirectUri()`), so by default this is the shape of
+    // RP-initiated logout rather than its security. It is advertised because
+    // the alternative is a client with no way to end a session that this server
+    // really does end.
     end_session_endpoint: at + '/oauth2/logout',
-    // Neither logout notification specification is implemented: no
-    // front-channel iframe is rendered and no back-channel POST is sent. Both
-    // members default to false, and both are stated because "the OP did not
-    // mention it" and "the OP said no" read identically to a client and only
-    // one of them is a fact this server is prepared to stand behind.
-    // ---------------------------------------------------------------------
     // FRONT-CHANNEL LOGOUT IS SUPPORTED NOW AND BACK-CHANNEL IS NOT, which is
-    // the honest pair rather than the tidy one.
+    // the honest pair rather than the tidy one. Both members are stated
+    // because "the OP did not mention it" and "the OP said no" read
+    // identically to a client and only one of them is a fact this server is
+    // prepared to stand behind.
     //
     // Front-Channel Logout 1.0: a relying party registers a
     // `frontchannel_logout_uri` and every sign-out here loads it in a hidden
@@ -1250,7 +1271,8 @@ app.get('/*/.well-known/openid-configuration', function (req, res) {
 });
 
 // The JWKS the metadata advertises, so jwks_uri actually resolves: the STS
-// signing key as a single RS256 JWK.
+// RSA signing key first, then the curve and post-quantum signing keys, then
+// the request object encryption keys (the ordering rule is inside).
 //
 // ASYNCHRONOUS SINCE THE WORKER POOL EXISTED, and this endpoint is the reason
 // the pool reaches key GENERATION at all. The eleven post-quantum keys are made
@@ -1561,9 +1583,10 @@ const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes' });
 // is the same reasoning that keeps WS-Federation out of a session store of its
 // own.
 //
-// Read in four places (UserInfo, introspection, the refresh grant, and the
-// console) and written in two (RFC 7009's /oauth2/revoke below, and the
-// console).
+// Read wherever a token of this service is judged (UserInfo and the other
+// resource servers, introspection, the refresh grant, the console) and written
+// wherever one is retired (RFC 7009's /oauth2/revoke below, the RFC 9700
+// rotation and replay refusals, sign-out, and the console).
 
 // The RFC 7591 registrations used to be a Map here. They are entries under
 // `ou=applications` in the embedded directory now, reached through
@@ -1577,13 +1600,14 @@ const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes' });
 // Client credentials from either client_secret_basic or client_secret_post.
 //
 // The secret is CARRIED now and still not checked by default — what matters
-// here is which client is being claimed. The one exception is RFC 9700 mode,
-// where a client that registered at /oauth2/register as confidential must
-// present the secret this service minted for it; that check is
-// `bcp.checkClientAuthentication()` and this function is where the value it
-// compares comes from. It is read for every request either way, because a
-// function that returned the secret only in one mode would be two functions
-// with one name.
+// here is which client is being claimed. The exceptions are RFC 9700 and
+// OAuth 2.1 mode, where a client that declared a confidential method must
+// present its credential (`bcp.checkClientAuthentication()`,
+// `oauth21.js`), product mode (`mode.requiresClientSecret()`), and a caller
+// of `/oauth2/introspect` that RFC 9701 requires to authenticate; this
+// function is where the value those checks compare comes from. It is read for
+// every request either way, because a function that returned the secret only in
+// one mode would be two functions with one name.
 function clientFrom(req, body) {
   log.debug("Entering clientFrom().");
   const auth = req.headers['authorization'] || '';
@@ -1962,9 +1986,9 @@ function refreshToken(base, opts) {
                                                 { certificateHeader:
                                                     'refresh-token' }));
   // RFC 9700 section 2.2.2. `parent_refresh_jti` is set only by the refresh
-  // grant, so an empty one means this token is the root of its own family: an
-  // authorization code or a pre-authorized code redeemed for the first time.
-  // A no-op while the mode is off.
+  // grant, so an empty one means this token is the root of its own family: any
+  // grant minting its first refresh token. A no-op while rotation is not
+  // required (neither compliance mode nor `oauth2.refreshTokenRotation`).
   bcp.noteRefreshIssued(refreshJti, opts.parent_refresh_jti, opts.client_id,
                         opts.parent_refresh_family);
   log.debug("Leaving refreshToken().");
@@ -2134,8 +2158,6 @@ async function idToken(base, opts) {
   return token;
 }
 
-// ASYNCHRONOUS BECAUSE idToken() IS, and for no other reason: everything else
-// it mints is RS256 and stays in this process.
 // ---------------------------------------------------------------------------
 // THE ROLE GATE, ASKED ONCE PER KIND OF THING A TOKEN RESPONSE CARRIES.
 //
@@ -2192,9 +2214,8 @@ function issuanceKindsOf(opts) {
 // The party the requirement is about. In every browser grant it is the PERSON;
 // in `client_credentials` there is no person at all and it is the CLIENT — see
 // `common/roles.js`, where an application being a first-class member of a role
-// exists for exactly this request. `authenticated` is true either way at this
-// point: a person reached here through a session or a grant that stands in for
-// one, and a client reached here through `checkClientAuthentication()`.
+// exists for exactly this request. Whether it `authenticated` is the block
+// below.
 // ---------------------------------------------------------------------------
 // WHO THE ROLE GATE IS BEING ASKED ABOUT, AND WHETHER THEY AUTHENTICATED.
 //
@@ -2268,6 +2289,8 @@ function checkIssuance(opts) {
   return null;
 }
 
+// ASYNCHRONOUS BECAUSE idToken() IS, and for no other reason: everything else
+// it mints is RS256 and stays in this process.
 async function tokenSet(base, opts) {
   log.debug("Entering tokenSet(). scope=" + (opts.scope || '(none)'));
   // ONE IDENTIFIER FOR EVERYTHING THIS REPLY CARRIES, minted here because this
@@ -2346,9 +2369,11 @@ async function tokenSet(base, opts) {
   const access = accessToken(base, issuing);
   // RFC 9700 section 2.2, and it refuses nothing: whether a token is
   // sender-constrained is the CLIENT's decision, since it binds by sending a
-  // DPoP proof. Noted at the one place every grant mints a token set, so that
-  // "this server issued a bearer token" is a line somebody can find rather than
-  // an absence they have to notice. A no-op while the mode is off.
+  // DPoP proof or presenting a certificate (the settings that REQUIRE one are
+  // `sender_constraints.js`'s, asked elsewhere). Noted at the one place every
+  // grant mints a token set, so that "this server issued a bearer token" is a
+  // line somebody can find rather than an absence they have to notice. A no-op
+  // while the mode is off.
   bcp.noteTokenBinding({
     // The scope the token actually CARRIES. Section 2.3's least-privilege note
     // reads what was issued, so a scope that became the audience must not be
@@ -2446,11 +2471,12 @@ async function tokenSet(base, opts) {
 // safe to keep no state here: everything the response is built from is on the
 // query string both times.
 //
-// No password is checked over there — the username typed in is simply who the
-// tokens then describe. A session cookie means the next authorization request
-// does not prompt again; prompt=login forces it to, and is dropped from the
-// return URL so that it forces it exactly once.
-// the redirect back after login is the same request over again.
+// In development mode no password is checked over there — the username typed
+// in is simply who the tokens then describe (product mode verifies it). A
+// session cookie means the next authorization request does not prompt again;
+// prompt=login forces it to, and is dropped from the return URL so that it
+// forces it exactly once.
+// ---------------------------------------------------------------------------
 // The request as it arrived, rebuilt — which is what the authentication service
 // is given as a return URL, so that the second pass through the authorization
 // endpoint sees the SAME request the client made.
@@ -2481,18 +2507,14 @@ function queryString(query, omit) {
   return usp.toString();
 }
 
-// Build the authorization response for a signed-in user and redirect back to
-// the client. Everything after authentication — which is "as normal".
-// authorization_details (RFC 9396) as OID4VCI uses it: an array of objects of
-// type openid_credential, each naming a credential_configuration_id. Unreadable
-// JSON is not silently dropped — a wallet that sent nonsense should be told.
 // The OPTIONAL `claims` member of an openid_credential authorization detail
 // (OID4VCI section 5.1.1): which claims the Wallet wants the issued Credential
 // to carry, as claims description objects (Appendix A.1) holding claims path
 // pointers (Appendix B).
 //
 // Three kinds of refusal, and each is a refusal rather than a silent drop for
-// the same reason the type check above is: a wallet whose selection was quietly
+// the same reason unreadable authorization_details are
+// (`parseAuthorizationDetails()`): a wallet whose selection was quietly
 // ignored gets a credential carrying claims it did not ask for and no way to
 // discover why.
 //
@@ -2609,8 +2631,8 @@ function parseClaimsDescriptions(raw, configId) {
 // happens at the AUTHORIZATION endpoint, which is the last point at which the
 // client is still being talked to: a token endpoint refusal for a parameter
 // sent an interaction earlier is a message nobody is reading for. Same
-// reasoning as RFC 8707's `resource`, which is refused two functions below for
-// the same reason.
+// reasoning as RFC 8707's `resource`, which is refused further below for the
+// same reason.
 //
 // **`essential`, `value` and `values` ARE CARRIED AND ARE NOT ENFORCED, and
 // that is the honest reading of the section rather than a shortfall.**
@@ -3466,14 +3488,14 @@ function audienceScopes(scope, clientId) {
 // `audienceScopes()` above TRANSLATES and refuses nothing: it turns a
 // permission identifier into an audience and a scope whether or not the client
 // holds the grant, and reports which. This function is the policy, and it is
-// separate for the reason that keeps `bcp.js` out of the minting path — a
-// translation called from six grants must not also be the place a request is
-// turned away, or the decision is made six times and one of them will get it
-// wrong.
+// separate for the reason that keeps `oauth2_bcp.js` out of the minting path —
+// a translation called from six grants must not also be the place a request
+// is turned away, or the decision is made six times and one of them will get
+// it wrong.
 //
 // **IT IS OFF UNLESS `oauth2.delegatedPermissionsEnforced` IS SET**, which is
-// off by default. Everything in this service is, for the reason README.md gives
-// on its first page: a mock exists to exercise clients, and a client is
+// off by default. Most refusals in this service are, for the reason README.md
+// gives on its first page: a mock exists to exercise clients, and a client is
 // exercised by both answers.
 //
 // **IT IS NOT PART OF RFC 9700 MODE and must never be folded into it.** Every
@@ -3540,11 +3562,6 @@ function permissionRefusal(scope, clientId) {
   return description;
 }
 
-// The `aud` claim for a list of them: one value where there is one, an array
-// where there are several. The same shape rule the RFC 8707 call sites use, in
-// one place because there are now four of them — a single-element array is a
-// shape some libraries read differently from a string, so the ordinary case
-// stays a string.
 // ---------------------------------------------------------------------------
 // THE `jti` OF A TOKEN THIS FUNCTION JUST SIGNED, for the delegation register.
 //
@@ -3602,6 +3619,11 @@ function jtiOf(token) {
   }
 }
 
+// The `aud` claim for a list of them: one value where there is one, an array
+// where there are several. The same shape rule the RFC 8707 call sites use, in
+// one place because there are now four of them — a single-element array is a
+// shape some libraries read differently from a string, so the ordinary case
+// stays a string.
 function audienceClaim(list) {
   log.debug("Entering audienceClaim().");
   if (!list || !list.length) {
@@ -3750,6 +3772,9 @@ function SenderConstraintRefused(refusal) {
 }
 SenderConstraintRefused.prototype = Object.create(Error.prototype);
 
+// Build the authorization response for a signed-in user and redirect back to
+// the client. Everything after authentication — which is "as normal".
+//
 // ASYNCHRONOUS BECAUSE idToken() IS — the implicit and hybrid flows mint one
 // here rather than at the token endpoint, and a client may have registered a
 // post-quantum `id_token_signed_response_alg` for either.
@@ -4794,8 +4819,9 @@ function vetAuthorizationRequest(req, options) {
   // check: the registry lives in the directory and there is exactly one of it.
   // The lookup misses for every client_id this service has never registered,
   // which is the ordinary case, and that is not an error — it means the
-  // oauth2.redirectUris setting is what this request is judged against, and it
-  // also means the client is treated as PUBLIC and must therefore use PKCE.
+  // oauth2.redirectUris setting is what this request is judged against (not
+  // in OAuth 2.1 mode, which reads no service-wide list), and it also means
+  // the client is treated as PUBLIC and must therefore use PKCE.
   // The application's ENTRY, normalised — not its RFC 7591 registration. The
   // two stopped being the same thing when the console gained the ability to
   // create an application and give it redirect URIs without a registration
@@ -4975,18 +5001,6 @@ function vetAuthorizationRequest(req, options) {
     }
   }
 
-  // The rest of what RFC 9700 mode has to say about this request: no response
-  // type that issues an access token here (section 2.1.2), PKCE from any client
-  // this server cannot see to be confidential and S256 when there is one
-  // (section 2.1.1), and a nonce with any id_token. These CAN be reported to
-  // the client, because redirect_uri has been validated above — and they are,
-  // rather than answered as a 400, because a client that asked for something
-  // this server will not do has a protocol error handler and no reason to be
-  // looking at this server's own output.
-  //
-  // Note where this sits: above the session check, so it is answered on the
-  // first pass and the person is never sent to sign in for a request that was
-  // going to be refused when they came back.
   // RFC 9470: an acr value is repeated in a WWW-Authenticate challenge and
   // compared as a string, so one outside RFC 6749's NQCHAR (less the quote and
   // backslash a quoted-string cannot carry) is refused by name rather than
@@ -5002,6 +5016,18 @@ function vetAuthorizationRequest(req, options) {
       }).join(', ') + ' cannot be an acr value — a value is printable ASCII ' +
       'with no double quote or backslash.');
   }
+  // The rest of what RFC 9700 mode has to say about this request: no response
+  // type that issues an access token here (section 2.1.2), PKCE from any client
+  // this server cannot see to be confidential and S256 when there is one
+  // (section 2.1.1), and a nonce with any id_token. These CAN be reported to
+  // the client, because redirect_uri has been validated above — and they are,
+  // rather than answered as a 400, because a client that asked for something
+  // this server will not do has a protocol error handler and no reason to be
+  // looking at this server's own output.
+  //
+  // Note where this sits: above the session check, so it is answered on the
+  // first pass and the person is never sent to sign in for a request that was
+  // going to be refused when they came back.
   const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
                                                        client:
                                                          registeredClient });
@@ -5564,8 +5590,9 @@ app.get('/oauth2/authorize', authorizeEndpoint);
 // — so it is turned on at /admin/config or through POST /admin-api/config like
 // every other setting, which is what gives it a console control, a management
 // API operation and an audit row without a line being written for any of the
-// three. /dpop/nonce-mode is a switch for the opposite reason: it is a per-run
-// testing state rather than configuration, and it predates config.js.
+// three. /dpop/nonce-mode is a switch as well, and a test control: it writes
+// the setting `oauth2.dpopNonceRequired` for the realm it is reached in (see
+// its header below).
 //
 // Read-only, so there is no console control here and therefore nothing for
 // rule 7 in CLAUDE.md to require of the management API.
@@ -5589,9 +5616,9 @@ app.get('/oauth2/rfc9700', function (req, res) {
   log.debug("Leaving the RFC 9700 mode report. enabled=" + bcp.enabled());
 });
 
-// Ends the session, so the next authorization request prompts again.
-// The shell for the ONE response in this module that is a page rather than a
-// redirect or a line of text. Deliberately tiny and local: this module is an
+// The shell for the sign-out page, the one page here drawn in this shell
+// (the form_post page and the authorization error interstitial build their
+// own markup). Deliberately tiny and local: this module is an
 // authorization server and not a web site, `admin.js` owns the console's shell,
 // and requiring that module from here would invert rule 5.
 function logoutPage(inner) {
@@ -5636,6 +5663,7 @@ function logoutTargetConsidered(target) {
   return bcp.enabled() && validation.isPrivateUseRedirect(text);
 }
 
+// Ends the session, so the next authorization request prompts again.
 function logoutEndpoint(req, res) {
   log.debug("Entering the logout endpoint.");
   // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -5841,8 +5869,9 @@ function dropCode(code) {
 //     expired token and a forged one are different problems and "invalid_token"
 //     alone sends people looking in the wrong place)
 //   * `typ`, so a refresh token or an id_token presented here is refused rather
-//     than quietly answered. They are all RS256 JWTs from the same key, so
-//     nothing but this claim distinguishes them
+//     than quietly answered. They are all JWTs this service signed, so nothing
+//     but this claim — and RFC 9068's `at+jwt` header beside it since
+//     2026-09-13 — distinguishes them
 //   * revocation, because /oauth2/revoke has to mean the same thing at every
 //     endpoint that reads a token — introspection reporting `active: false`
 //     while UserInfo still answers would make revocation decorative
@@ -6060,7 +6089,7 @@ function tokenFailure(token) {
 // ---------------------------------------------------------------------------
 
 // What this service can sign a UserInfo response with. The RSA families use the
-// one key in the JWKS; the HMAC family uses that client's own client_secret,
+// RSA key in the JWKS; the HMAC family uses that client's own client_secret,
 // which is why it needs no published key.
 const USERINFO_RSA_ALGS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384',
                            'PS512'];
@@ -6523,10 +6552,11 @@ app.post('/oauth2/step-up/resource/:application', stepUpResource);
 // worth being able to try — a wallet that handles the happy path but not the
 // handshake is a wallet that works until it meets a server that asks.
 //
-// So it is a runtime switch rather than configuration: a test, or somebody
-// reading the page, can turn it on, watch the retry, and turn it off again
-// without restarting the service. GET reports; POST {"required": true|false}
-// sets. Listed on /admin/sts-metadata as non-spec, because it is.
+// So it is a runtime switch: a test, or somebody reading the page, can turn it
+// on, watch the retry, and turn it off again without restarting the service.
+// GET reports; POST {"required": true|false} sets — the runtime setting
+// `oauth2.dpopNonceRequired` since 2026-09-12 (below). Listed on
+// /admin/sts-metadata as non-spec, because it is.
 // ---------------------------------------------------------------------------
 app.get('/dpop/nonce-mode', function (req, res) {
   log.debug("Entering the DPoP nonce-mode endpoint (read).");
@@ -7063,11 +7093,6 @@ const LOGOUT_QUERY = vz.looseObject({
   ui_locales: vz.string().max(256).optional()
 });
 
-// WHICH CLIENT AUTHENTICATION A TOKEN REQUEST CARRIED, read off the request
-// rather than out of `clientFrom()` — which answers with ONE method, preferring
-// a Basic header, and so cannot say that a request carried two. OAuth 2.1
-// section 2.4 refuses that, and the secret rate limit below counts only
-// requests that carried a secret.
 // The Basic challenge an invalid_client answer carries when the client used
 // Basic (RFC 6749 section 5.2). The realm is `oauth2.basicAuthRealm`
 // (2026-09-12), for `scim.authRealm`'s reason: it is what a browser prints in
@@ -7083,6 +7108,11 @@ function basicChallenge() {
     '"';
 }
 
+// WHICH CLIENT AUTHENTICATION A TOKEN REQUEST CARRIED, read off the request
+// rather than out of `clientFrom()` — which answers with ONE method, preferring
+// a Basic header, and so cannot say that a request carried two. OAuth 2.1
+// section 2.4 refuses that, and the secret rate limit below counts only
+// requests that carried a secret.
 function presentedClientAuthentication(req, body) {
   log.debug("Entering presentedClientAuthentication().");
   const presented = {
@@ -7294,16 +7324,13 @@ async function tokenGrant(req, res) {
     dpopJkt = checked.jkt;
     log.debug("This Token Request carries a valid DPoP proof. jkt=" + dpopJkt);
   }
-  // Note there is no "DPoP required" mode here. Nonce mode makes proofs
-  // FRESHER; it does not make them mandatory. A request with no DPoP header is
-  // a Bearer request and is answered as one, so turning nonce mode on cannot
-  // break the Bearer clients this server also exists to exercise.
+  // Nonce mode is not a "DPoP required" mode: it makes proofs FRESHER, not
+  // mandatory. A request with no DPoP header is a Bearer request and is
+  // answered as one, so turning nonce mode on cannot break the Bearer clients
+  // this server also exists to exercise. The settings that DO require a proof
+  // (#34) are `sender_constraints.js`'s, asked where a refresh token is minted
+  // or redeemed (below) and at the resources.
 
-  // RFC 9700 section 2.4 — the password grant, refused before anything else is
-  // considered. It is checked here rather than inside that grant's own branch
-  // because the answer does not depend on any of the parameters: this server
-  // will not perform that grant at all, which is what unsupported_grant_type
-  // means and what the metadata says by leaving `password` out.
   // WHAT THIS AUTHORIZATION SERVER SAYS IT GRANTS. Same rule as the
   // authorization endpoint's: the document a client read is the list this
   // endpoint performs.
@@ -7343,6 +7370,12 @@ async function tokenGrant(req, res) {
       'any authorization server here, but only in a way that server offers.');
   }
 
+  // RFC 9700 section 2.4 — the password grant, refused before any grant
+  // branch is considered. It is checked here rather than inside that grant's
+  // own branch because the answer does not depend on any of the parameters:
+  // this server will not perform that grant at all, which is what
+  // unsupported_grant_type means and what the metadata says by leaving
+  // `password` out.
   const grantCheck = bcp.checkGrantType(grant);
   if (!grantCheck.ok) {
     log.debug("Leaving the token endpoint. RFC 9700 mode refused the grant " +
@@ -7353,12 +7386,6 @@ async function tokenGrant(req, res) {
     return oauthError(res, 400, grantCheck.error, grantCheck.description);
   }
 
-  // RFC 9700 section 2.5 — the one credential this service checks, and only for
-  // a client that registered HERE as confidential. Above every grant, because a
-  // client that cannot authenticate has not authenticated whichever grant it
-  // was about to ask for. 401 rather than 400: invalid_client is the one OAuth
-  // error RFC 6749 section 5.2 gives that status, and a client_secret_basic
-  // caller needs the WWW-Authenticate header to know what to retry with.
   // WHAT A CLIENT ASSERTION MAY NAME AS ITS AUDIENCE, decided ONCE for the
   // policy below and the observation after it. They must be handed the same
   // list: `client_auth.js` verifies one document once per request and keeps
@@ -7374,6 +7401,13 @@ async function tokenGrant(req, res) {
   const assertionAudiences = [base + '/oauth2/token', issuerOf(base), base];
   const strictAudience = oauth21.strictClientAssertionAudience() ?
                          issuerOf(base) : '';
+  // RFC 9700 section 2.5 — the client's credential, checked in that mode (and
+  // OAuth 2.1 mode) for a client whose entry declares a confidential method.
+  // Above every grant, because a client that cannot authenticate has not
+  // authenticated whichever grant it was about to ask for. 401 rather than
+  // 400: invalid_client is the one OAuth error RFC 6749 section 5.2 gives that
+  // status, and a client_secret_basic caller needs the WWW-Authenticate header
+  // to know what to retry with.
   const clientAuth = await bcp.checkClientAuthentication({
     clientId: String(client.client_id || ''),
     clientSecret: client.client_secret,
@@ -8469,7 +8503,7 @@ async function tokenGrant(req, res) {
     // refusal above, so a refused refresh spends nothing. A claim already held
     // is a replay that `checkRefreshRequest()`'s local mark could not see —
     // another request at the same moment, on this node or another. A no-op
-    // while the mode is off. See `bcp.spendRefreshToken()`.
+    // while rotation is not required. See `bcp.spendRefreshToken()`.
     const spent = await bcp.spendRefreshToken({ claims: claims, res: res });
     if (!spent.ok) {
       (spent.revoke || []).forEach(function (jti) {
@@ -8557,11 +8591,17 @@ async function tokenGrant(req, res) {
     //
     // After the new token set exists, not before: a failure between the two
     // would otherwise leave a client with no working refresh token and nothing
-    // to show for it. Both calls are no-ops while the mode is off, which is
+    // to show for it. Neither runs while rotation is not required, which is
     // what keeps a refresh token reusable for the whole of its life by default
     // — `oauth2.refreshTokenTtlS`, twenty-four hours unless it has been
     // changed.
-    if (bcp.enabled()) {
+    //
+    // ASKED OF `rotationRequired()`, NOT `enabled()` (fixed 2026-09-16): with
+    // `oauth2.refreshTokenRotation` on and neither mode, this was skipped, so
+    // a redeemed token still introspected as active and its replay was never
+    // detected as one (STS-OAUTH-0138) — rotation without the half rule 3ao
+    // says it is for.
+    if (bcp.rotationRequired()) {
       bcp.noteRefreshRotated(claims.jti);
       stats.revoke(claims.jti, 'RFC 9700 section 2.2.2: rotated on use');
     }
@@ -8589,30 +8629,30 @@ async function tokenGrant(req, res) {
     // has to let a resource server tell them apart.
     //
     // The `sub` of a client_credentials token was the bare client_id while a
-    // person's is `urn:sts:user:<name>`. Different in practice and not by
-    // any rule: nothing stopped a client registering an id that looked like a
-    // subject, and a resource server keying on `sub` alone had no way to know
-    // which kind of thing it was holding. That is the collision the section is
-    // about, and the MUST beside it asks for "another mechanism allowing
-    // resource servers to distinguish client credentials from resource-owner
-    // credentials".
+    // person's was `urn:sts:user:<name>` (`urn:uuid:<entryUUID>` since
+    // 2026-09-14). Different in practice and not by any rule: nothing stopped
+    // a client registering an id that looked like a subject, and a resource
+    // server keying on `sub` alone had no way to know which kind of thing it
+    // was holding. That is the collision the section is about, and the MUST
+    // beside it asks for "another mechanism allowing resource servers to
+    // distinguish client credentials from resource-owner credentials".
     //
-    // In RFC 9700 mode there are TWO such mechanisms and they are different in
-    // kind, which is why both are here:
+    // There is one such mechanism in each mode, and they are different in
+    // kind — `client-subject-separated` in `oauth2_bcp.js` states both:
     //
-    //   * A SEPARATE NAMESPACE. `urn:sts:client:<id>` beside
-    //     `urn:sts:user:<name>` — two prefixes that cannot collide however
-    //     a client is named, so the ids no longer share a namespace at all,
-    //     which is what the SHOULD asks for.
-    //   * `sub` EQUALS `client_id`. True of a client_credentials token and of
-    //     nothing else here, and it needs no invented claim and no convention a
-    //     resource server has to be told about — RFC 9700 suggests this
-    //     comparison itself. It stays true in BOTH modes, which is why it is
-    //     the one the row recommends.
+    //   * WITH THE MODE OFF, `sub` EQUALS `client_id`. True of a
+    //     client_credentials token and of nothing else here, and it needs no
+    //     invented claim and no convention a resource server has to be told
+    //     about — RFC 9700 suggests this comparison itself.
+    //   * IN RFC 9700 MODE, A SEPARATE NAMESPACE. `urn:sts:client:<id>` beside
+    //     a person's `urn:uuid:<entryUUID>` — two forms that cannot collide
+    //     however a client is named, which is what the SHOULD asks for. `sub`
+    //     then no longer equals `client_id`, so a resource server written
+    //     against the comparison must read the prefix instead.
     //
     // The namespace is mode-gated because it changes the `sub` of every
     // client_credentials token, and a subject identifier is something callers
-    // key on. The comparison costs nothing and is always available.
+    // key on.
     // ---------------------------------------------------------------------
     const clientSubject = bcp.enabled()
       ? 'urn:sts:client:' + (client.client_id || 'unknown-client')
@@ -8824,8 +8864,9 @@ async function tokenGrant(req, res) {
       return oauthError(res, 400, checked.error, checked.description);
     }
     // The subject is a PERSON, named by somebody this service trusts, and need
-    // not be anybody it has heard of — `userFor()` mints the persona exactly as
-    // typing the name at the sign-in screen does. That is the permissiveness
+    // not be anybody it has heard of before — recording the authentication
+    // creates their entry exactly as typing the name at the sign-in screen
+    // does (`provisionedPerson()` below). That is the permissiveness
     // this service keeps everywhere: what is real here is the SIGNATURE, and
     // `assertion_grant.js`'s header says which half is which.
     stats.recordAuthentication({
@@ -9271,7 +9312,8 @@ async function tokenGrant(req, res) {
     // exactly what this branch has always answered with, because section 2.1's
     // own reading is that the type is a REQUEST rather than an instruction —
     // and refusing one would be this service enforcing something by default,
-    // which nothing here does outside RFC 9700 mode.
+    // which it keeps for the compliance modes and the few refusals that argue
+    // their own case.
     // -----------------------------------------------------------------------
     const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
     const REFRESH_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:refresh_token';
@@ -9566,7 +9608,8 @@ async function tokenGrant(req, res) {
 //
 // `tokenEndpoint` is an `async function` (see its header). Express 4 does not
 // look at what a handler returns, so a promise that rejects — from a defect
-// anywhere in those 900 lines, from a worker process that died mid-signature —
+// anywhere in the token endpoint, from a worker process that died
+// mid-signature —
 // would be an unhandled rejection and a request that never gets an answer,
 // where the same throw used to be a 500 with the reason in it. This puts that
 // back, and puts it back for the asynchronous half as well.
@@ -10206,8 +10249,9 @@ app.use(['/oauth2/par', '/:as/oauth2/par'], function (req, res, next) {
 // it: it is not a hardening on top of the feature, it is what the feature is.
 //
 // **ONE AUTHENTICATION, THE TOKEN ENDPOINT'S.**
-// `bcp.observeClientAuthentication()` is the fact the token endpoint's role gate already uses — all six methods,
-// the used-assertion history, the revocation check on a certificate — and the
+// `bcp.observeClientAuthentication()` is the fact the token endpoint's role
+// gate already uses — all six methods, the used-assertion history, the
+// revocation check on a certificate — and the
 // secret rate limit is the same bucket, so a secret cannot be guessed at this
 // endpoint that is throttled at that one. A credential presented to a mode that
 // does not require one is NOT checked, which is what development did before.
@@ -11077,8 +11121,8 @@ module.exports = {
   // The outstanding authorization codes, for the protocol-independent logout.
   // Functions rather than the Map, and both stores behind them — see the block
   // above outstandingCodesFor(). `logout/logout.js` requires this module in the
-  // ordinary direction: server.js loads it long before that one, so the require
-  // moves no route and closes no cycle.
+  // ordinary direction: `common/protocol_stack.js` loads it long before that
+  // one, so the require moves no route and closes no cycle.
   outstandingCodesFor: outstandingCodesFor,
   dropCode: dropCode,
   // Which issuer identifier a sign-out should put in a front-channel

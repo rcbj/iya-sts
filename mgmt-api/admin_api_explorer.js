@@ -2,13 +2,14 @@
 // File: admin_api_explorer.js
 //
 // ---------------------------------------------------------------------------
-// THIS FILE RUNS IN A BROWSER. It is not a node module, nothing requires it,
-// and it is the only script this service serves.
+// THIS FILE RUNS IN A BROWSER. It is not a node module and nothing requires
+// it; it is one of the seven scripts the root CLAUDE.md lists.
 //
-// admin_api_docs.js reads it off disk at require time and GET /admin-api/docs/
-// explorer.js sends it verbatim, which is why it is a file rather than a string
-// constant in that module: a 400-line program inside a JavaScript string is a
-// program nobody can read a diff of.
+// admin_api_docs.js reads it off disk at require time and
+// GET /admin/api-explorer/explorer.js (`admin-ui/api_explorer.js`; it was
+// /admin-api/docs/explorer.js until 2026-09-09) sends it verbatim, which is
+// why it is a file rather than a string constant in that module: a 400-line
+// program inside a JavaScript string is a program nobody can read a diff of.
 //
 // Two consequences follow from where it runs, and both are exemptions from this
 // repository's code style rather than oversights:
@@ -24,8 +25,9 @@
 //     response body, and a failure shows the error where the response would
 //     have been. Code handed to `driver.executeScript` is still exempt.
 //   * **It is served under a RELAXED Content-Security-Policy** — `script-src
-//     'self'` on this one page, where every other page in this service has
-//     `script-src 'none'`. That is why this is a separate resource and not an
+//     'self'` on this page, where the service default is `script-src 'none'`
+//     and only the root CLAUDE.md's scripted pages relax it, each naming one
+//     resource. That is why this is a separate resource and not an
 //     inline block: `'self'` is enough for a file and `'unsafe-inline'` would
 //     have been required for a block, and `'unsafe-inline'` is the clause that
 //     would make the relaxation matter.
@@ -433,7 +435,8 @@
 
   // The document is read from the CONSOLE's own path rather than from
   // `/admin-api/openapi.json`, so it arrives on the console session this page
-  // was drawn with and needs no token of its own. See api_explorer.js.
+  // was drawn with and needs no token of its own. See
+  // admin-ui/api_explorer.js.
   fetch(SPEC_URL).then(function (response) {
     return response.json();
   }).then(render).catch(function (error) {

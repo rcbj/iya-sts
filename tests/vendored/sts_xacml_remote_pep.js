@@ -46,18 +46,20 @@
 //      private bridge — not `localhost`, and not the published port. That is
 //      the address `docker-compose.yml` ships, and it is a different name in
 //      the certificate.
-//   3. **IT VERIFIES THAT CERTIFICATE FOR REAL**, with `PEP_TLS_CA` pointing at
-//      an anchor copied into the container, rather than `PEP_TLS_INSECURE`.
-//      Both are supported and the insecure one is what the compose file ships;
-//      this job takes the strict path so that a certificate this service could
-//      not actually be verified under fails HERE.
+//   3. **IT DOES NOT YET VERIFY THAT CERTIFICATE.** This read "it verifies it
+//      for real, with `PEP_TLS_CA`", and no path here has ever done that: both
+//      the launchers' container and the one `startThePep()` makes run with
+//      `PEP_TLS_INSECURE=true`, which is what `docker-compose.yml` ships,
+//      because development mode regenerates the service Root on every start
+//      (`xacml-pep/sync.js` argues it). `PEP_TLS_CA` is supported by `pep.js`
+//      and exercised by nothing in this file.
 //   4. **THE NUDGE IS DELIVERABLE.** The PDP dials `http://<pep>:9090/notify`
-//      across the bridge — this repository's THIRD outbound request, and the
-//      only one of the three with no test against a real listener anywhere
-//      until this file. Section 6 measures it: a change reaches the PEP in tens
-//      of milliseconds against a five-second poll, and the PDP's own row
-//      records what the PEP answered.
-//   5. **`docker cp` PUTS THE CLIENT CERTIFICATE WHERE `pep.js` READS ONE**, so
+//      across the bridge — the third outbound request this repository grew,
+//      and the only one of the first three with no test against a real
+//      listener anywhere until this file. Section 6 measures it: a change
+//      reaches the PEP in tens of milliseconds against a five-second poll,
+//      and the PDP's own row records what the PEP answered.
+//   5. **A MOUNT PUTS THE CLIENT CERTIFICATE WHERE `pep.js` READS ONE**, so
 //      the registration is a real mutual-TLS handshake between two containers
 //      and the row on `/admin/xacml/peps` is marked authenticated by a
 //      certificate this service saw on a connection.
@@ -68,8 +70,8 @@
 // ---------------------------------------------------------------------------
 // WHY IT IS IN THIS DIRECTORY, WHICH IS TWO ARGUMENTS AND NOT ONE.
 //
-// CLAUDE.md's placement rule asks two questions in order, and this file answers
-// the first one YES and the second one NO, so both point here:
+// The root CLAUDE.md's placement rule asks two questions in order, and this
+// file answers the first one YES and the second one NO, so both point here:
 //
 //   1. Is the thing under test this service's `/admin` console or `/admin-api`?
 //      It is, in part: the policies below are deployed, promoted, disabled and
@@ -84,7 +86,10 @@
 //
 // **BOTH LAUNCHERS BRING A REMOTE PEP UP AS PART OF THE STACK** and hand this
 // job three variables — `XACML_PEP_URL`, `XACML_PEP_NAME` and
-// `XACML_PEP_REALM`. That is the primary arrangement and the one CI runs:
+// `XACML_PEP_REALM` — plus `XACML_PEP_CA_PEM` (the anchor for the client
+// certificate they mint and mount) and, since 2026-09-13,
+// `XACML_PEP_HTTPS_URL` and `XACML_PEP_SERVER_CERT_DIR` for section 1b. That
+// is the primary arrangement and the one CI runs:
 //
 //   * `./local-run-tests.sh` adds `--profile xacml` to the project it already
 //     brings the service up in, on a free host port, and exports the three.
@@ -107,10 +112,10 @@
 // checked nothing must never read as a pass.
 //
 // The two paths differ in WHO CREATES THE CONTAINER and in nothing else. The
-// configuration is identical, deliberately: no client certificate, no anchor,
-// the same intervals — which is exactly what `docker-compose.yml` ships, so
-// what is asserted below is the deployment somebody actually gets rather than
-// one this file arranged for itself.
+// configuration is identical, deliberately: a client certificate minted by
+// `tests/tools/pep-credential.js` and mounted at `/certs`, the same bias, the
+// same unverified PDP certificate — see `startThePep()`'s header, which
+// records the three days the two paths were NOT identical.
 //
 // ---------------------------------------------------------------------------
 // THE REALM IS CREATED BY THIS JOB AND THE CONTAINER IS POINTED AT IT FIRST.
@@ -128,20 +133,21 @@
 // appearing on nobody's console. `sync.js`'s header argues it.
 //
 // ---------------------------------------------------------------------------
-// NO CLIENT CERTIFICATE, AND THAT IS THE SHIPPED DEFAULT RATHER THAN A GAP.
+// A CLIENT CERTIFICATE, AND THE REALM LEFT AT ITS DEFAULTS.
 //
-// `docker-compose.yml` ships this container without one and says why: putting
-// a key in the image would mean committing a private key to this repository or
-// writing a first-start script for a demonstration container. So this job turns
-// `xacml.pepRequireCertificate` off IN ITS OWN REALM and asserts the row is
-// marked UNAUTHENTICATED — which is what the PDP does with a registration that
-// proved nothing, and is worth checking precisely because it is the state an
-// operator will actually be looking at.
+// `docker-compose.yml` still ships this container WITHOUT one and says why:
+// putting a key in the image would mean committing a private key to this
+// repository or writing a first-start script for a demonstration container.
+// This job used to match that by turning `xacml.pepRequireCertificate` off in
+// its realm and asserting an UNAUTHENTICATED row. Since 2026-09-06
+// `/xacml/pep/*` requires a VERIFIED chain holding `REMOTE_PEPS`, so the
+// container here carries a minted certificate, the realm is left at its
+// defaults, and section 1 asserts the row is AUTHENTICATED — see the comment
+// in `test()` where the setting used to be turned off.
 //
-// **THE AUTHENTICATED PATH IS ASSERTED NEXT DOOR AND MORE STRICTLY THAN THIS
-// JOB COULD**: `sts_xacml_endpoints.js` section 7 presents a real certificate
-// over a real handshake AND presents one claiming to be somebody else, which is
-// the security half of that door.
+// **THE REGISTRATION'S SECURITY HALF IS ASSERTED NEXT DOOR**:
+// `sts_xacml_endpoints.js` section 7 presents a certificate AND a body
+// claiming to be somebody else, which this job's container never does.
 //
 // ---------------------------------------------------------------------------
 // THE ONE THING THIS JOB WILL NOT DO UNTIL SECTION 6.
@@ -1140,9 +1146,9 @@ async function until(what, probe, budgetMs) {
 }
 
 // A decision AT THE REMOTE PEP. Every parameter other than the three XACML ones
-// becomes a subject attribute the CALLER asserted about itself — which is what
-// a PEP with no Policy Information Point has to work from, and is the whole
-// subject of section 3.
+// becomes a subject attribute the CALLER asserted about itself — which is all
+// a PEP had to work from before `xacml-pep/pip.js`, and what section 3 still
+// shows deciding where the directory holds nothing.
 async function askThePep(query) {
   log.debug("Entering askThePep(). " + JSON.stringify(query));
   const url = new URL(pep.url + "/protected");
@@ -2245,10 +2251,11 @@ async function aDisabledPolicyStopsBeingEnforced() {
 //
 // **THIS SECTION IS THE REASON THE PEP IS A CONTAINER RATHER THAN A CHILD
 // PROCESS**, and it is the only test anywhere that dials `xacml_pep_http.js`'s
-// outbound request at a listener that answers. This service makes exactly three
-// outbound requests and CLAUDE.md argues each separately; the nudge is the
-// weakest of the three and pays for itself by carrying nothing — and until this
-// section it had never been delivered to anything in a test.
+// outbound request at a listener that answers. Every outbound request this
+// service makes is argued separately (the root CLAUDE.md indexes them); the
+// nudge was one of the first three and the weakest of them, and pays for
+// itself by carrying nothing — and until this section it had never been
+// delivered to anything in a test.
 //
 // **THE PROOF IS THE PDP'S OWN ROW AND THE TIMING IS THE CORROBORATION**, and
 // they are that way round on purpose. `recordNotify()` writes what the PEP
@@ -2483,8 +2490,9 @@ async function thePdpSeesWhatItNeverSaw() {
 //      what changed is discovered by pulling from the PEP's own configured URL.
 //      A nudge that could tell a PEP what the policy now is would be an
 //      unauthenticated caller supplying policy — and it is precisely because
-//      the nudge carries nothing that a third outbound requester was affordable
-//      at all (CLAUDE.md).
+//      the nudge carries nothing that it was affordable as an outbound request
+//      at all (`xacml/CLAUDE.md`, indexed from the root CLAUDE.md's *Things
+//      this service deliberately does not do*).
 //
 // The second is asserted with a body that WOULD change the decision if it were
 // believed, which is the only version of that assertion worth making.
@@ -2580,11 +2588,11 @@ async function theNudgeCarriesNothing() {
 // reads when the run went red, and in this job it holds the policy documents
 // the whole file is about. It is made by turning `xacml.remotePeps` OFF in the
 // realm instead, which is a better instrument as well as a permitted one: the
-// three endpoints under /xacml/pep answer 501 to that container and to nothing
-// else in the service, so the outage is scoped exactly to the seam under test
-// and is REVERSIBLE, where a removal was not. From the PEP's side the two are
-// the same event — a pull that does not return a policy set — and `sync.js`
-// takes any non-200 through the same `keep()`.
+// three endpoints under /xacml/pep and `POST /xacml/pip` answer 501 to that
+// container and to nothing else in the service, so the outage is scoped
+// exactly to the seam under test and is REVERSIBLE, where a removal was not.
+// From the PEP's side the two are the same event — a pull that does not return
+// a policy set — and `sync.js` takes any non-200 through the same `keep()`.
 //
 // Stopping the `sts` container would be the more literal outage and is not
 // available: the rest of the suite is using it.
@@ -2782,8 +2790,8 @@ async function test() {
   log.info("Driving a REAL remote PEP CONTAINER against " + base);
 
   // A SERVICE THAT IS NOT THERE IS A FAILURE AND NOT A SKIP, which is the rule
-  // CLAUDE.md records the 2026-08-28 default flip for: a job that reports green
-  // having driven nothing is worse than one that is honestly absent.
+  // tests/CLAUDE.md records the 2026-08-28 default flip for: a job that reports
+  // green having driven nothing is worse than one that is honestly absent.
   const status = await get(base + "/admin-api/status");
   assert.strictEqual(status.status, 200,
     "GET /admin-api/status answered " + status.status + " at " + base +

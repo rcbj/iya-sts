@@ -40,9 +40,11 @@
 // It validates the MODEL, so it is the same check for a policy that arrived as
 // XACML XML, as JSON, or as ALFA — which is the rule this whole directory is
 // built on (see `xacml_model.js`). `xacml_xml.js` calls it at the end of
-// `parsePolicy()`; the JSON and ALFA readers call the same function. Putting
-// the logic in any one reader would mean the other two accepted policies the
-// first refused.
+// `parsePolicy()`; an ALFA import reaches the same call because the console
+// writes the converted model out as XML and `xacml_store.js`'s write parses
+// that document through `parsePolicy()`. (The JSON Profile reads requests,
+// never policies.) Putting the logic in any one reader would mean another
+// accepted policies the first refused.
 //
 // ---------------------------------------------------------------------------
 // IT IS DELIBERATELY INCOMPLETE IN ONE DIRECTION AND SAYS SO.

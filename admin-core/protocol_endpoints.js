@@ -38,8 +38,10 @@
 // register no route, so the router cannot see them —
 // the blind spot `sts_metadata.js` states about itself. Their rows are built
 // here from the settings those listeners bind from, and SPIFFE's from the
-// realm's actual bindings, since a SPIFFE realm is told apart by ADDRESS. A
-// KDC and a TLS listener are shared by every realm and carry no prefix; the
+// realm's actual bindings, since a SPIFFE realm is told apart by ADDRESS. The
+// KDC's sockets and the main port's client-certificate handshake are shared by
+// every realm and carry no prefix — the KDC row names this realm's Kerberos
+// realm, which is what routes a request there (since 2026-09-15); the
 // directory's rows carry the realm's own base DN.
 //
 // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: common/client_address.js
@@ -48,8 +49,9 @@
 // file reads is already the client's and the balancer is never a hop here.
 //
 // A LEAF (rule 3): it registers no route and requires only `net`, bunyan and
-// `config`, so `helpers.js`, `websecurity.js` and `request_pool.js` — which
-// loads before the protocol stack — can all require it.
+// `config`, so `helpers.js`, `websecurity.js`, `proxy_protocol.js` and
+// `request_pool.js` — which loads before the protocol stack — can all require
+// it.
 // ===========================================================================
 
 const net = require('net');
@@ -184,7 +186,8 @@ function peerIsTrustedProxy(req) {
 
 // ---------------------------------------------------------------------------
 // THE SAME RANGES, ASKED ONE LAYER DOWN (2026-09-14):
-// `common/proxy_protocol.js` believes a PROXY protocol header from these addresses and from nobody else.
+// `common/proxy_protocol.js` believes a PROXY protocol header from these
+// addresses and from nobody else.
 // Unlike `peerIsTrustedProxy()`, an empty list trusts NOBODY here — the old
 // rule that list keeps for forwarded headers would let any caller name any
 // address, which is why that file refuses to start with none.

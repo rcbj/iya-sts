@@ -27,10 +27,9 @@
 // This module owns the SCHEMA — what a policy entry carries — and the
 // directory functions arrive through `setDirectory()`, filled by
 // `ldap/ldap_server.js` at require time. That is the same inverted install
-// `federation.js`, `spiffe_registry.js` and `scim_map.js` take, and for the
-// same reason: this module must not require `ldap_server.js`, because doing so
-// would drag every `/ldap` route into the router at whatever point this file
-// is first loaded.
+// `federation.js` and `spiffe_registry.js` take, and for the same reason: this
+// module must not require `ldap_server.js`, because doing so would drag every
+// `/ldap` route into the router at whatever point this file is first loaded.
 //
 // ---------------------------------------------------------------------------
 // A POLICY IS STORED AS ITS XML, AND THE PARSE IS CACHED BESIDE IT.

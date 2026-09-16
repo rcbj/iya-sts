@@ -13,7 +13,7 @@
 // because no local path makes an anonymous request to the console.
 //
 // **SIGNING IN IS THE FIX, AND IT IS NOT WRITTEN HERE.** The five-hop walk is
-// `tests/vendored/console_signin.js`'s, which three jobs already share, and
+// `tests/vendored/console_signin.js`'s, which five jobs already share, and
 // the token it needs to create its account is `tools/admin-api-token.js`'s
 // (minted by the workflow and handed over as `STS_ADMIN_API_TOKEN`). A third
 // copy of either would agree on the day it was written and report a broken

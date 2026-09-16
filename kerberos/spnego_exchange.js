@@ -19,10 +19,11 @@
 // reverse, and neither would show up as a failure anywhere.
 //
 // So the split is the same one `krb5_service.js` already made one layer down
-// and for the same reason, which that module's header states as a promise:
-// *"the acceptor logic here is written as its own function so that phase adds a
-// transport and no protocol code"*. This is that promise kept a second time.
-// The layering is now three deep and each layer adds exactly one thing:
+// and for the same reason, which that module's header stated as a promise when
+// it was written: *"the acceptor logic here is written as its own function so
+// that phase adds a transport and no protocol code"*. This is that promise
+// kept a second time. The layering is now three deep and each layer adds
+// exactly one thing:
 //
 //   krb5_service.js   the AP-REQ. Every Kerberos check, over any transport.
 //   THIS FILE         the RFC 4178 negotiation and the RFC 4559 header around
@@ -94,12 +95,11 @@ const capabilities = require('../cluster/cluster_capabilities');
 // could act on.
 const SUPPORTED_MECHS = [spnego.KRB5_MECH_OID, spnego.MS_KRB5_MECH_OID];
 
-// The canonical SPN both doors are behind. One name, because a client derives
-// its SPN from the URL's host and both doors are on the same host — see
-// principals.SERVICE_DOMAINS, which is the list of hosts this service holds a
-// key for.
-// The acceptor's SPN in the AMBIENT trust realm — a function since 2026-09-15,
-// because `krb5.servicePrincipal` is a setting a trust realm may carry.
+// The canonical SPN both doors are behind, in the AMBIENT trust realm. One
+// name, because a client derives its SPN from the URL's host and both doors are
+// on the same host — see principals.SERVICE_DOMAINS, which is the list of hosts
+// this service holds a key for. A function since 2026-09-15, because
+// `krb5.servicePrincipal` is a setting a trust realm may carry.
 function spn() {
   log.debug("Entering spn().");
   log.debug("Leaving spn().");
@@ -236,9 +236,10 @@ function applyVerdict(res, verdict) {
 // 4559 section 5 means by the authentication being connection-based, and it is
 // why HTTP/2 and connection-pooling proxies break SPNEGO in ways nothing
 // reports. Node's Express gives no stable connection identity here, so this
-// stands in with the remote address plus the mechanism list, held briefly.
-// Being a stand-in is stated rather than hidden: it is the one place this mock
-// is structurally unlike a real server.
+// stood in with the remote address plus the mechanism list, held briefly — and
+// since 2026-09-14 with a negotiation id the client carries (see below). Being
+// a stand-in is stated rather than hidden: it is the one place this mock is
+// structurally unlike a real server.
 //
 // **THE DOOR IS PART OF THE KEY SINCE 2026-08-26, and that is not tidiness.**
 // The stand-in was only ever a diagnostic while one door used it; with a
@@ -307,7 +308,8 @@ function maxPending() {
 // SPENDS the negotiation through a claim before it is accepted, so the one
 // continuation cannot be answered twice at two nodes.
 // ---------------------------------------------------------------------------
-// **AND THE SPLIT FIXED A BUG RATHER THAN ONLY SATISFYING A RULE**: the key is
+// **AND THE PER-REALM SPLIT (2026-09-15) FIXED A BUG RATHER THAN ONLY
+// SATISFYING A RULE**: the key is
 // `door|id`, where the door is the path with the realm prefix already stripped,
 // so a negotiation begun under one realm's prefix could be continued under
 // another's — one shared row under one key, whichever realm asked. A realm's

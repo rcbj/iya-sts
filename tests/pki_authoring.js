@@ -48,8 +48,9 @@ const authoring = require('../common/pki_authoring');
 const pki = require('../common/pki');
 const x509 = require('../common/vendored/x509');
 // The page. Requiring it registers `/admin/pki` and starts nothing (see the
-// four-modules rule in the root CLAUDE.md), so an in-process test may require
-// it and no port is bound.
+// root CLAUDE.md's
+// *Socket owners start their listeners from `listen()`*), so an
+// in-process test may require it and no port is bound.
 const pkiAdmin = require('../admin-ui/pki_admin');
 
 // This file's own logger, for the Entering/Leaving lines and the handled

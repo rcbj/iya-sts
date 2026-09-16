@@ -4,17 +4,19 @@
 //
 // NOTE ON THE NAME. The RFC 4178 codec beside this file is krb5_spnego.js and
 // is VENDORED — a byte-identical copy of common/krb5/krb5_spnego.js in the
-// parent project, kept honest by tests/krb5_codec_sync.js. This file is the
-// mock's own, so it is named for the protocol like wsfed.js and wstrust.js
-// rather than for the codec. Do not merge the two: one is somebody else's file.
+// parent project, kept honest by that project's tests/krb5_codec_sync.js.
+// This file is the mock's own, so it is named for the protocol like wsfed.js
+// and wstrust.js rather than for the codec. Do not merge the two: one is
+// somebody else's file.
 //
 // ---------------------------------------------------------------------------
 // A SPNEGO-protected web page: Kerberos over HTTP, RFC 4559 and RFC 4178.
 //
-// krb5_service.js said this would come — "an HTTP service wrapping the same
-// token in a `Negotiate` header is SPNEGO, which is the next phase; the
-// acceptor logic here is written as its own function so that phase adds a
-// transport and no protocol code". This is that phase, and the promise held:
+// krb5_service.js's header said, when it was written, that this would come —
+// "an HTTP service wrapping the same token in a `Negotiate` header is SPNEGO,
+// which is the next phase; the acceptor logic here is written as its own
+// function so that phase adds a transport and no protocol code". This is that
+// phase, and the promise held:
 // every Kerberos check still happens in krb5_service.js's accept(), and what is
 // here is the negotiation around it and the HTTP that carries it.
 //
@@ -106,10 +108,11 @@ const SUPPORTED_MECHS = exchange.SUPPORTED_MECHS;
 
 // ---------------------------------------------------------------------------
 // The HTML the two pages share. A local copy of wsfed.js's page() rather than a
-// require of it: server.js's require order IS the route order and the modules
-// deliberately do not reach sideways into each other (see CLAUDE.md rule 2), so
-// a shared page helper would belong in helpers.js and moving it there means
-// touching five protocols for one new page.
+// require of it: the require order in common/protocol_stack.js IS the route
+// order and the modules deliberately do not reach sideways into each other
+// (the root CLAUDE.md, rule 1), so a shared page helper would belong in
+// helpers.js and moving it there means touching five protocols for one new
+// page.
 // ---------------------------------------------------------------------------
 function page(title, inner) {
   log.debug('Entering page().');

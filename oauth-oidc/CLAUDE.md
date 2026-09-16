@@ -52,10 +52,13 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    Security Best Current Practice) — the whole of that BCP's section 2, as a table
    of requirements with a check citing each by id. It registers nothing and
    requires `crypto`, `helpers.js`, `config.js`, `realms.js`, `applications.js`,
-   `client_auth.js`, `validation.js` and `oauth21.js` — this sentence named only
-   the first three until 2026-09-13, when a reviewer found it had been out of
-   date for weeks — none of which requires it back, so it cannot join a cycle
-   and its position in the require order does not matter. **`common/cors.js`
+   `client_auth.js`, `validation.js`, `oauth21.js`, `sender_constraints.js`
+   (#34), `error_codes.js` and `cluster/`'s claims and capability table (#46)
+   — this sentence named only the first three until 2026-09-13, when a
+   reviewer found it had been out of date for weeks — none of which requires
+   it back (`dpop.js` requires this file, not the reverse), so it cannot join
+   a cycle and its position in the require order does not matter.
+   **`common/cors.js`
    requires it too** (it was `app.js` until 2026-09-13, when CORS became an
    allowlist), for one decision (section 2.6's "no CORS at the authorization
    endpoint"), which is safe for exactly that reason and is the only middleware
@@ -346,7 +349,8 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    draft-ietf-oauth-v2-1-16 — an Internet-Draft, which every row and
    `GET /oauth2/oauth21` say by revision — and it is a LEAF: `helpers.js` and
    `config.js`, nothing else, with every record it decides about PASSED IN.
-   `oauth2_bcp.js` and `oauth2.js` require it. It decides; `oauth2.js` answers,
+   `oauth2_bcp.js`, `sender_constraints.js` (#34) and `oauth2.js` require it.
+   It decides; `oauth2.js` answers,
    which is 3f's split.
 
    **`oauth2.oauth21` IMPLIES `oauth2.rfc9700`.** `oauth2_bcp.js`'s `enabled()`
@@ -429,8 +433,9 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
 3i. **`client_auth.js` verifies all six token-endpoint methods, and it is the
    PROTOCOL half of section 2.5.** `oauth2_bcp.js` decides whether a client has
    to authenticate at all (the policy); this decides whether what arrived proves
-   it (the mechanics). It registers nothing and requires `helpers.js`,
-   `config.js` and `mtls.js`, so it cannot join a cycle. Four things:
+   it (the mechanics). It registers nothing and requires `common/` libraries,
+   `mtls.js`, `assertion_grant.js` and `saml_assertion_grant.js`, none of which
+   requires it back, so it cannot join a cycle. Four things:
 
    **NOTHING FALLS THROUGH UNCHECKED ANY MORE.** `private_key_jwt` and
    `client_secret_jwt` used to be advertised and ACCEPTED without an assertion
@@ -490,8 +495,9 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
 3h. **`mtls.js` is a library like `dpop.js`, and it is the OTHER half of RFC
    9700 section 2.2.** `dpop.js` binds a token to a KEY proved per request;
    this binds it to the CLIENT CERTIFICATE the TLS connection was made with (RFC
-   8705 section 3). It registers nothing and requires only `helpers.js` and
-   `config.js`, so it cannot join a cycle. Five things are load-bearing:
+   8705 section 3). It registers nothing and requires only `helpers.js`,
+   `config.js` and `common/crypto.js` (and `common/tls_client_certificates.js`
+   lazily), so it cannot join a cycle. Five things are load-bearing:
 
    **`dpop.js` REQUIRES IT, and that is where the resource-server check goes.**
    `presentedAccessToken()` there is the single check `/oauth2/userinfo` and the
@@ -606,7 +612,7 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    live under that name (`/{id}/oauth2/…`, registered in one block in
    `oauth2.js` so the prefixed set cannot drift from the unprefixed one); and
    the capabilities in its document DRIVE those endpoints. A library requiring
-   only `helpers.js`. Nine things:
+   only `helpers.js`, `config.js`, `realms.js` and `mode.js`. Nine things:
 
    **EVERY AUTHORIZATION SERVER STARTS EQUAL, and every name is one.** An
    unconfigured profile has the defaults `asMetadata()` builds, and a name
@@ -686,8 +692,10 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
 3x. **`assertion_grant.js` holds RFC 7521 and RFC 7523 in one file, and the
    dependency runs ONE WAY.** It is a library like `dpop.js`: it registers no
    route, so its position in the require order is not a position, and it
-   requires `helpers.js`, `config.js`, `applications.js`, `common/crypto.js`,
-   `common/pki.js` and `common/realms.js` — none of which requires it back.
+   requires only `common/` libraries — `helpers.js`, `config.js`,
+   `applications.js`, `crypto.js`, `pki.js`, `revocation_status.js`,
+   `person_assertions.js`, `used_assertions.js` and `error_codes.js` — none of
+   which requires it back.
 
    **ONE FILE BECAUSE RFC 7521 HAS NO WIRE FORMAT.** It is a framework: two
    request parameters, an error vocabulary and a list of checks. RFC 7523 is the
@@ -842,8 +850,8 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
 
 3z. **`saml_assertion_grant.js` IS RFC 7522, AND IT IS A SECOND IMPLEMENTATION
    RATHER THAN A FORMAT FLAG ON 3x.** A library like that one: it registers no
-   route, requires `helpers.js`, `config.js`, `applications.js`,
-   `common/crypto.js` and `common/realms.js`, and none of them requires it back.
+   route, requires the same `common/` libraries 3x lists, and none of them
+   requires it back.
    **It does NOT require `assertion_grant.js` and must not** — a require between
    the two would be the first step towards the flag this rule refuses, and
    `tests/saml_assertion_grant.js` asserts its absence out of the source.
@@ -1047,8 +1055,8 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
 3ai. **`introspection_jwt.js` IS RFC 9701, AND IT CHANGED WHO MAY CALL
    `/oauth2/introspect` (2026-09-13).** A library (rule 3): it registers
    nothing and requires `helpers.js`, `common/crypto.js`,
-   `common/applications.js` and `error_codes.js`, none of which requires it
-   back. `introspectEndpoint()` in `oauth2.js` answers; this decides. Three
+   `common/applications.js`, `error_codes.js` and `jwt_access_token.js`, none
+   of which requires it back. `introspectEndpoint()` in `oauth2.js` answers; this decides. Three
    decisions were asked of rcbj before it was built and each took the
    recommended answer, and they are the design:
 
@@ -1858,9 +1866,9 @@ and a deployment wanting a strict assertion check and a forgiving expiry reading
 has to be able to say so. Capped at 300, which is what `krb5.clockSkew` allows,
 because a window wider than that has stopped being a tolerance.
 
-**`dpop.js` requires `config.js` for it and is still a leaf** — that module
-requires nothing from this repository, so the no-cycle property rule 3 asserts
-about `dpop.js` is unchanged.
+**`dpop.js` requires `config.js` for it and joins no cycle** — that module
+requires only `config_file.js` and `error_codes.js`, so the no-cycle property
+rule 3 asserts about `dpop.js` is unchanged.
 
 ## THE USERINFO ENDPOINT HAS FOUR LAYERS AND A CLIENT CONTROLS ONE OF THEM
 
@@ -1984,9 +1992,10 @@ pages that relax `script-src`. The argument for it is made in `oauth2.js`, above
   minted for it at the token endpoint. Nothing else changes: a `client_id` this
   service never registered has no credential on file and is untouched, a
   registered public client has nothing to authenticate with, and a client
-  declaring `private_key_jwt` is ACCEPTED AND NOT VERIFIED (reported as such,
-  because an unverified assertion that is accepted looks exactly like a verified
-  one from the client's side). **No end user's password is checked in that mode
+  declaring a method with nothing on file to check it against is let through
+  and logged (`credentialOnFile()`). Every one of the six methods is VERIFIED
+  when there is something to verify against — `private_key_jwt` used to be
+  accepted unverified (3i). **No end user's password is checked in that mode
   or any other IN DEVELOPMENT**, which is the next bullet and is not affected
   by this one. Product mode (`global.mode`) is a different axis from RFC 9700
   mode and does check it — at the sign-in screen and, since 2026-09-12, at the
@@ -2146,7 +2155,9 @@ produced is one good for a day and renewable.
 3n. **`frontchannel_logout.js` is a library (rule 3) and it exists because THREE
    sign-outs have to fan out identically.** It registers no route, so its place
    in the require order does not matter, and it requires `helpers.js`,
-   `config.js`, `app.js` and `applications.js` — none of which requires it back.
+   `config.js`, `app.js`, `applications.js`, `validation.js` and
+   `error_codes.js` (and `authn/authn.js` lazily) — none of which requires it
+   back.
 
    It holds four things: which clients a session signed into
    (`noteClient()`, written on the session at `issueAuthorizationResponse()`, the
@@ -2173,7 +2184,8 @@ produced is one good for a day and renewable.
    switches would let somebody advertise a capability whose claim is off, which
    is a discovery document that lies.
 
-   **THE IFRAMES ARE THE SIXTH CSP RELAXATION AND THE NARROWEST.** `frame-src`
+   **THE IFRAMES ARE A CSP RELAXATION (THE SIXTH WHEN WRITTEN) AND THE
+   NARROWEST.** `frame-src`
    falls back from `default-src 'none'`, so an iframe to another origin is
    blocked — correct everywhere else here. The sign-out page relaxes it to THE
    ORIGINS IT IS ACTUALLY LOADING, enumerated from the URIs, rather than to `*`.

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: credential_graph.js

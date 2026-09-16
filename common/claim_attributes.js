@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: claim_attributes.js
@@ -55,8 +56,9 @@
 // FOUR THINGS ARE LOAD-BEARING.
 //
 // **It is a LIBRARY (rule 3) and it registers no route**, so its position in
-// the require order does not matter. It requires helpers.js, admin_stats.js,
-// vc_claims.js and audit.js, and NONE of those requires it back — which is what
+// the require order does not matter. It requires helpers.js, realms.js,
+// admin_stats.js, vc_claims.js, audit.js and error_codes.js, and NONE of those
+// requires it back — which is what
 // keeps it out of the cycles rule 2 exists for. admin_stats.js in particular
 // cannot require it: vc_claims.js requires admin_stats.js, so a require in that
 // direction would close a loop and node would hand back a half-initialised
@@ -67,11 +69,12 @@
 // this service are.** admin_stats.js offers a slot — setAttributeResolver() —
 // and this file fills it at ITS require time, exactly as helpers.js offers
 // setJwtRecorder() and admin_stats.js offers setUserObserver(). The consequence
-// is the one that matters: NO ISSUANCE SITE CHANGES. oauth2.js's two calls to
-// stats.jwtClaims() and the two assertion builders' calls to
-// stats.samlAttributes() are the same four lines they were, and the attribute
-// claims arrive through them. Four call sites edited would have been four that
-// drift, and a fifth added later that nobody remembers to edit.
+// is the one that matters: NO ISSUANCE SITE CHANGES. oauth2.js's three calls
+// to stats.jwtClaims() (the access token, the ID Token and, since 2026-08-26,
+// the UserInfo response) and the two assertion builders' calls to
+// stats.samlAttributes() are the same lines they were, and the attribute
+// claims arrive through them. Five call sites edited would have been five
+// that drift, and a sixth added later that nobody remembers to edit.
 //
 // **NOTHING IS SELECTED ON A FRESH START, in any of the five sets.** That is
 // not timidity, it is the only defensible default: this page changes what every
@@ -91,10 +94,10 @@
 
 const { log } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// config.js and error_codes.js and nothing else here, so it cannot join a
+// cycle and it registers no route, so its position is not a position at all.
 const realms = require('./realms');
-// The counters and the four claim sets. This is the module whose slot is filled
+// The counters and the five claim sets. This is the module whose slot is filled
 // at the bottom of this file, and the dependency runs in this direction only.
 const stats = require('./admin_stats');
 // The catalogue, the persona and the directory read. See the header: it is not
@@ -173,12 +176,13 @@ CATALOGUE.forEach(function (row) {
 // is derived.
 const SET_IDS = stats.CLAIM_SET_IDS;
 
-// setId -> Set of lower-cased attribute names. Empty on a fresh start, in every
-// one of them; see the header for why that is the only defensible default. Held
-// in memory like every other piece of configuration in this service — the
-// signing key is regenerated on every start, so a selection that outlived it
-// would describe tokens nothing can verify. PER TRUST REALM. `realms.obj()` is
-// a object that holds a separate one for each realm and hands out the ambient
+// setId -> list of lower-cased attribute names (see below for why a list).
+// Empty on a fresh start, in every one of them; see the header for why that is
+// the only defensible default. This comment used to say it was held in memory
+// only, because the signing key died with the process; since 2026-09-07 it is
+// persisted (`persist:` below) like the rest of an operator's configuration.
+// PER TRUST REALM. `realms.obj()` is
+// an object that holds a separate one for each realm and hands out the ambient
 // realm's — so every reader below is unchanged and every one of them is now
 // realm-correct. In the default realm, and in a service with no realms defined,
 // there is exactly one partition and this behaves as the plain object it
@@ -236,9 +240,10 @@ function selectedRows(setId) {
   });
 }
 
-// Canonically spelled, because this list is published: both claim-set pages
-// answer it in their JSON and GET /admin-api/claims and GET
-// /admin-api/saml-attributes serve the same object. A reply naming
+// Canonically spelled, because this list is published: all three claim-set
+// pages answer it in their JSON and GET /admin-api/claims, GET
+// /admin-api/userinfo-claims and GET /admin-api/saml-attributes serve the same
+// object. A reply naming
 // `schacdateofbirth` beside a catalogue naming `schacDateOfBirth` reads as two
 // different attributes.
 function selectedNames(setId) {
@@ -446,7 +451,7 @@ function clearSelection(setId) {
 // neither spelling is wrong — oauth2.js's context calls it `username` because
 // that is the claim it carries, and the assertion builders call it `subject`
 // because that is what a SAML Subject is. Reading both here is one line; making
-// them agree would have meant editing four issuance sites, which is exactly
+// them agree would have meant editing five issuance sites, which is exactly
 // what the slot in admin_stats.js exists to avoid.
 function subjectOf(context) {
   log.debug("Entering subjectOf().");

@@ -132,6 +132,10 @@ function maybePurge(theStore) {
 // Resolves to `{ ok: true, handle }`, `{ ok: false, reason: 'used', existing }`
 // or `{ ok: false, reason: 'store', why }`. It never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').ClaimResult>}
+ */
 function claim(opts) {
   log.debug("Entering claim().");
   const o = opts || {};

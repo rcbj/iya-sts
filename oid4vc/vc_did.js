@@ -26,12 +26,13 @@ const { log, logArtifact, PORT, STS, baseUrlOf, bbsKeyPair, signingKeyFor,
 // The identity registry, for ONE call at the generator endpoint below: a DID
 // this service mints is an identity it has created, and this is the funnel the
 // embedded directory grows an entry off. A library — it registers no route and
-// requires only helpers.js — so requiring it here cannot move a route or make a
-// cycle.
+// nothing it requires reaches this module — so requiring it here cannot move a
+// route or make a cycle.
 const stats = require('../common/admin_stats');
 // The configuration table, for the two DID flags below. A library like the
-// others here: it registers no route and requires nothing from this repository,
-// so it cannot join a cycle wherever it is required from.
+// others here: it registers no route and requires only two leaves
+// (`config_file.js`, `error_codes.js`), so it cannot join a cycle wherever it
+// is required from.
 const config = require('../common/config');
 // The error codes (common/error_codes.js). A LEAF that requires nothing; a code
 // is marked on the response object and never written into a response.
@@ -161,9 +162,11 @@ function didSigner() {
   return { alg: alg, key: signer.key, kid: signer.kid };
 }
 
-// The DID Document. Two verification methods, because this issuer signs two
-// quite different things: RS256 JWTs (the SD-JWT VCs and every token) and
-// bbs-2023 Data Integrity proofs (the ldp_vc credentials). A BBS key has no
+// The DID Document. At least two verification methods, because this issuer
+// signs two quite different things: JWTs (RS256 for every token, and for the
+// SD-JWT VCs unless `oid4vci.credentialSigningAlgorithm` names another key —
+// which is then a third method, below) and bbs-2023 Data Integrity proofs (the
+// ldp_vc credentials). A BBS key has no
 // registered JOSE kty, so it appears as a Multikey exactly as it does at
 // /bbs/keys/1 rather than being forced into a publicKeyJwk it does not fit.
 async function stsDidDocument(req) {
@@ -251,8 +254,9 @@ function didHasPath(req) {
 }
 
 // did:web resolution is a plain GET of this document. no-store for the same
-// reason the JWKS is: the keys it describes are regenerated on every start, so
-// a cached copy outlives them.
+// reason the JWKS is: the keys it describes are regenerated on every start in
+// development mode, so a cached copy outlives them — and every document that
+// describes a key is no-store in either mode (root CLAUDE.md).
 async function sendDidDocument(req, res) {
   log.debug("Entering the did:web document endpoint.");
   const doc = await stsDidDocument(req);
@@ -333,8 +337,9 @@ app.get('/did.json', async function (req, res) {
 //     jsonwebtoken adds iat unless told noTimestamp.
 //
 // Note the origin here is whatever this container is reached at, http included.
-// The spec assumes https; the local and containerized stacks have no TLS, and
-// the same deviation is already taken by did:web resolution over http.
+// The spec assumes https; the stacks here are https by default, but one run
+// with `STS_HTTPS=false` has no TLS, and the same deviation is already taken by
+// did:web resolution over http.
 // ---------------------------------------------------------------------------
 const DID_CONFIGURATION_CONTEXT =
     'https://identity.foundation/.well-known/did-configuration/v1';
@@ -389,7 +394,8 @@ app.get('/.well-known/did-configuration.json', async function (req, res) {
   };
   logArtifact('DID Configuration', 'as served', doc);
   // no-store for the same reason as the DID document: the key that signed this
-  // is regenerated on every start, so a cached copy verifies against nothing.
+  // is regenerated on every start in development mode, so a cached copy
+  // verifies against nothing.
   res.set('Cache-Control', 'no-store');
   res.status(200).type('application/json').send(JSON.stringify(doc, null, 2));
   log.debug("Leaving the DID Configuration endpoint.");
@@ -577,7 +583,7 @@ app.get('/did/generate', async function (req, res) {
               { method: body.method, did: body.did });
   // no-store for the same reason as every other document describing these keys:
   // a jwk DID is new on every call, and the web one describes a key regenerated
-  // at each start.
+  // at each start in development mode.
   res.set('Cache-Control', 'no-store');
   res.status(200).type('application/json').send(JSON.stringify(body, null, 2));
   log.debug("Leaving the DID generator endpoint. method=" + body.method + ".");

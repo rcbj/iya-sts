@@ -6,9 +6,9 @@
 |---|---|
 | `defaults.js` | **GENERATED, and never hand-edited.** One row per setting in `common/config.js`'s `SETTINGS`, written from its `dflt` column by `generate_defaults.js`. It is not selected by anything — it is the layer UNDER whichever file is. |
 | `generate_defaults.js` | `node env/generate_defaults.js` writes the above. Adding a setting is one edit: add the row to `SETTINGS`, regenerate. |
-| `local.js` | the appconfig for a host run — `CONFIG_FILE=./env/local.js node server.js` |
-| `test.js` | the appconfig the throwaway service in `tests/tools/service.js` runs under |
-| `docker-tests.js` | the appconfig the container in `docker-compose.yml` runs under |
+| `local.js` | the appconfig for a host run — `CONFIG_FILE=./env/local.js node server.js` — and the default of the image (`Dockerfile`) and of `docker-compose.yml` |
+| `test.js` | the appconfig the test launchers pick for a run below debug level (`local-run-tests.sh`'s *THE SERVICE'S LOG LEVEL*) |
+| `docker-tests.js` | the default appconfig of the service container in `docker-compose-run-tests.yml` |
 
 **`CONFIG_FILE` selects one of the last three and it is a LAYER, not the whole
 configuration.** The selected file is unioned on top of `defaults.js`, key by
@@ -23,8 +23,8 @@ its default.
 
 **`common/config_file.js` makes `CONFIG_FILE` absolute before anything reads
 it**, because a relative path resolves against the directory of the module doing
-the requiring and thirteen modules read it directly. It is the first require in
-`server.js` for that reason.
+the requiring and nineteen modules read it directly (the list is in that file's
+header). It is the first require in `server.js` for that reason.
 
 ## THESE FILES ARE WHAT MADE THE MAIN PORT HTTPS (2026-08-30)
 
@@ -32,10 +32,10 @@ the requiring and thirteen modules read it directly. It is the first require in
 files set `STS_HTTPS` to the same answer** so a container's healthcheck probes
 the scheme its service is bound in. That is where the switch lives — **the
 SETTING was not touched.** `global.https` is still `derived: true` with
-`oauth2.rfc9700` as its default, so a service handed somebody else's appconfig
-file (the parent project's in-process Kerberos jobs) still gets plain HTTP, and
-`tests/config_realm_layer.js` still asserts what it always did. What changed is
-what these files SAY.
+`oauth2.rfc9700` (or, since 2026-09-13, `oauth2.oauth21`) as its default, so a
+service handed somebody else's appconfig file (the parent project's in-process
+Kerberos jobs) still gets plain HTTP, and `tests/config_realm_layer.js` still
+asserts what it always did. What changed is what these files SAY.
 
 The argument was one sentence: 8443, 9443 and LDAPS 636 were TLS on a certificate
 the main port did not use, so a caller who had trusted this service's key for

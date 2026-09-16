@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: certificate_details.js
@@ -53,8 +54,9 @@
 // is what guarantees every certificate reaching it is one this service holds.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, node's
-// `crypto`, `pkijs`, `asn1js` and the vendored x509 module — none of which
-// requires it back — so it is a LEAF and anything here may require it.
+// `crypto`, `pkijs`, `asn1js` and the vendored `x509` and `pqc_x509` modules —
+// none of which requires it back — so it is a LEAF and anything here may
+// require it.
 // ===========================================================================
 
 const bunyan = require('bunyan');
@@ -75,8 +77,9 @@ const x509 = require('./vendored/x509');
 const pqcX509 = require('./vendored/pqc_x509');
 
 // How far a path may be walked. Every hierarchy this service builds is at most
-// four certificates deep (a leaf under a SPIFFE downstream CA); a limit well
-// past that is only a guard against a loop two certificates could make.
+// five certificates deep (a leaf under a SPIFFE downstream CA: Root, realm
+// Intermediate, SPIFFE Issuing CA, downstream CA, leaf); a limit well past
+// that is only a guard against a loop two certificates could make.
 const MAX_PATH = 8;
 
 // ---------------------------------------------------------------------------

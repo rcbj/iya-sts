@@ -14,9 +14,12 @@
 //   1. AGREEMENT. A stream the application creates or PATCHes is agreed only
 //      the types its entry allows; the rest are absent from `events_delivered`.
 //   2. DELIVERY. Tightening the entry after the stream exists stops that type
-//      reaching it, and loosening it restores the type — so the limit cannot be
-//      escaped by creating a stream first. The stream's own configuration
-//      reports what delivery will actually do.
+//      reaching it — so the limit cannot be escaped by creating a stream first.
+//      Loosening it again gives back only what the stream was AGREED, never a
+//      type withheld at agreement (section 6): delivery is the agreement less
+//      what the entry no longer allows (`ssf/ssf_streams.js`,
+//      `deliversEvent()`). The stream's own configuration reports what
+//      delivery will actually do.
 //
 // Plus the two write refusals (a value that is not `caep`, `risc` or a known
 // event type URI; an entry not declared for Shared Signals), and the rule that

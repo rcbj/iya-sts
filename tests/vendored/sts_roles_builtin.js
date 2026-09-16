@@ -1,12 +1,17 @@
 // ===========================================================================
-// THE SIX BUILT-IN ROLES, ONE SECTION EACH, IN A THROWAWAY TRUST REALM.
+// THE SIX COMPUTED BUILT-IN ROLES, ONE SECTION EACH, IN A THROWAWAY TRUST
+// REALM.
 //
 // `sts_roles.js` beside this file drives the role REGISTER — a role somebody
 // was put in, a group that carries one, an application narrowed to one. Every
 // role it uses is CONFIGURED. This file drives the six that are not
-// configurable at all: they are computed from what the party IS, they are the
-// only roles an unedited service already has, and until 2026-09-05 three of
-// them could not be held or failed by anything arriving at an endpoint.
+// configurable at all: they are computed from what the party IS, they were the
+// only roles an unedited service had when this file was written, and until
+// 2026-09-05 three of them could not be held or failed by anything arriving at
+// an endpoint. The four built-in roles added since — REMOTE_PEPS and
+// XACML_USER, held through a group, and ADMIN_READ and ADMIN_WRITE, held
+// through an access token's scope — are not driven here (`common/roles.js`
+// argues each).
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS A SECOND FILE AND NOT SIX MORE SECTIONS IN THE FIRST.
@@ -35,7 +40,7 @@
 // is missing.
 //
 // The other five are asserted in BOTH directions, and the negative is the one
-// that carries the weight, for `tests/sts_dpop.js`'s reason: a service that
+// that carries the weight, for `sts_dpop.js`'s reason: a service that
 // issues a token to a party holding the role is what an unmodified service
 // does for everybody, so the positive alone would pass against a gate that was
 // never consulted. Every negative here is paired with a positive taken in the
@@ -130,7 +135,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -498,7 +503,7 @@ async function createTheRealm() {
 // here; what changed is an operator requirement rather than anything about the
 // feature — **a realm a test run created stays, because it is what a person
 // reads when the run went red.** Its six applications, its two clients and its
-// one setting are the record of what this job actually built, and a teardown
+// settings are the record of what this job actually built, and a teardown
 // that removed it threw that away at the moment it was worth something. The id
 // carries `names.runStamp()` and every write is inside the realm, so leaving it
 // meets neither a later run of this job nor anything else in the suite.
@@ -512,19 +517,20 @@ async function theRealmIsLeftBehind() {
   log.debug("Leaving theRealmIsLeftBehind().");
 }
 
-// THE WORLD. Six applications, two clients, and the one setting this feature
-// needs — all of it in the realm, none of it anywhere else.
+// THE WORLD. Six applications, two clients, the one setting this feature
+// needs and the one it must turn off — all of it in the realm, none of it
+// anywhere else.
 async function buildTheWorld() {
   log.debug("Entering buildTheWorld().");
   log.info("=== Building the world ===");
 
   // THE CONSENT SCREEN IS TURNED OFF, and that needs saying rather than doing
-  // quietly. `oauth2.consentRequired` is ON by default — the one policy here
-  // that is — and it sits between the authorization endpoint and its redirect,
-  // so every `verdictOf()` below would see a consent screen instead of the
-  // decision this file is about. `sts_consent.js` is what covers that screen;
-  // this file is about what happens after it, and the two must not each be
-  // half-testing the other's subject.
+  // quietly. `oauth2.consentRequired` is ON by default — one of the few
+  // policies here that is — and it sits between the authorization endpoint
+  // and its redirect, so every `verdictOf()` below would see a consent screen
+  // instead of the decision this file is about. `sts_consent.js` is what
+  // covers that screen; this file is about what happens after it, and the two
+  // must not each be half-testing the other's subject.
   await setSetting("oauth2.consentRequired", false);
 
   // AND THE THIRD BUTTON IS TURNED ON. Off by default, because it changes a

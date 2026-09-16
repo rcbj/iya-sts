@@ -5,9 +5,12 @@
 // ===========================================================================
 // THE RATE LIMITER, WHICH NOTHING TESTED UNTIL 2026-09-06.
 //
-// `websecurity.attempt()` guards three doors — a sign-in, an activation link
-// and a password change — and its whole job is to say NO. Nothing in either
-// suite ever asserted that it does.
+// `websecurity.attempt()` guarded three doors when this file was written — a
+// sign-in, an activation link and a password change — and its whole job is to
+// say NO. Nothing in either suite ever asserted that it does. The doors now
+// reach it through `attemptShared()` (which is `attempt()` when no cluster
+// store shares the windows), and there are many more of them: second-factor
+// codes, password resets, LDAP binds, the enrollment protocols and others.
 //
 // **IT WAS BEING EXERCISED BY ACCIDENT AND THAT IS WHY THIS FILE EXISTS NOW.**
 // The shipped limit is 20 attempts per address per 60s, every job in the suite
@@ -46,9 +49,10 @@ const websecurity = require('../common/websecurity');
 const log = require('bunyan').createLogger({ name: 'rate_limiter',
   level: process.env.LOG_LEVEL || 'info' });
 
-// A stand-in for the `req` the limiter reads an address off. It looks at
-// `req.socket.remoteAddress` (and, with `global.trustProxy`, at
-// `x-forwarded-for`), so this is the whole of what it needs.
+// A stand-in for the `req` the limiter reads an address off. Through
+// `common/client_address.js` it looks at `req.socket.remoteAddress` (and, with
+// `global.trustProxy`, at `x-forwarded-for`), so this is the whole of what it
+// needs.
 function from(address) {
   log.debug("Entering from().");
   log.debug("Leaving from().");

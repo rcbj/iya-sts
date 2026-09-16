@@ -18,10 +18,12 @@
 // So the claim list is CONFIGURATION, /admin/vc is the page that sets it, and
 // this module is where it lives. It is a LIBRARY in the sense dpop.js and
 // admin_stats.js are: it registers no route, so its position in the require
-// order does not matter, and it requires only helpers.js (plus node's crypto)
-// so it cannot join a cycle. That matters more here than usual, because THREE
-// modules read it and they sit at three different points of the require order —
-// vc_issuer.js (early), admin.js (late) and ldap_server.js (last).
+// order does not matter, and it requires only libraries that never require it
+// back (each require below says why), so it cannot join a cycle. That matters
+// more here than usual, because its readers sit at very different points of
+// the require order — `common/claim_attributes.js` (first of all),
+// `oauth2.js` and vc_issuer.js (early), `federation_map.js`, `admin.js` and
+// `admin-core/` (late), and `ldap_server.js` and `scim_map.js` (later still).
 //
 // ---------------------------------------------------------------------------
 // THE CATALOGUE IS OF LDAP ATTRIBUTES, NOT OF CLAIMS, and that is the decision
@@ -81,9 +83,10 @@ const { log } = require('../common/helpers');
 // `urn:uuid:<entryUUID>` inventing a second alice, with her directory entry
 // sitting right there unread.
 //
-// admin_stats.js is a library that requires only helpers.js, so this is no
-// cycle and no ordering constraint. It is also already required by vc_issuer.js
-// and app.js, so nothing is loaded here that was not loaded anyway.
+// admin_stats.js is a library that registers no route and whose requires
+// never reach this module, so this is no cycle and no ordering constraint. It
+// is also already required by vc_issuer.js and app.js, so nothing is loaded
+// here that was not loaded anyway.
 const stats = require('../common/admin_stats');
 // THE MODE, for one question: may a value be INVENTED where the directory
 // holds none? A LEAF (rule 3) — it requires only `config` — so this require
@@ -340,10 +343,8 @@ function ldpTermFor(row) {
 // ---------------------------------------------------------------------------
 // The selection.
 //
-// A Set of lower-cased attribute names. Held in memory like every other piece
-// of configuration in this service — the signing key is regenerated on every
-// start, so a selection that outlived it would describe credentials nothing can
-// verify.
+// A list of lower-cased attribute names, per realm and persisted — see `state`
+// below for why it is a list and not a Set.
 // ---------------------------------------------------------------------------
 // Canonically spelled, because this list is published — /admin/vc answers it in
 // its JSON — and a page reporting `schacdateofbirth` as the default beside
@@ -687,11 +688,12 @@ function generatedFor(name) {
 // ---------------------------------------------------------------------------
 // THE DIRECTORY, WHICH THIS MODULE MUST NOT REQUIRE.
 //
-// ldap_server.js is the LAST module server.js requires, and the reasons are in
-// CLAUDE.md rule 6 — requiring it from here would drag its routes into the
-// express router ahead of every console route, and /admin/sts-metadata is built
-// by walking that router. vc_issuer.js requiring it would be worse still: that
-// is module 88 of 142 in the require order.
+// ldap_server.js is required late in `common/protocol_stack.js`, after the
+// console and the TLS module, and the reasons are in CLAUDE.md rule 6 —
+// requiring it from here would drag its routes into the express router ahead
+// of every console route, and /admin/sts-metadata is built by walking that
+// router. vc_issuer.js requiring it would be worse still: that module is
+// required well before the console.
 //
 // So the dependency is inverted exactly as admin_stats.js's user observer and
 // admin.js's directory reader are: this module offers a slot, and

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: app_permissions.js
@@ -56,10 +57,11 @@
 // IT IS A LIBRARY (rule 3) AND IT HOLDS NO STORE.
 //
 // It registers no route, so its position in the require order does not matter
-// and it cannot be the reason a route is missing. It requires `helpers.js` and
-// `applications.js`, and NOTHING ELSE in this service — no config, no
-// directory, no express app. `applications.js` does not require it back, so
-// there is no cycle and none of rule 3e's slots is needed.
+// and it cannot be the reason a route is missing. It requires `helpers.js`,
+// `applications.js` and the `error_codes.js` leaf, and NOTHING ELSE in this
+// service — no config, no directory, no express app. `applications.js` does
+// not require it back, so there is no cycle and none of rule 3e's slots is
+// needed.
 //
 // **`ou=applications` IS THE STORE AND THERE IS NO SECOND ONE HERE.** Every
 // function below is a read of the registry or a write through

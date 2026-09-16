@@ -10,8 +10,9 @@
 // field and its trust chain in a dialog over the page. Three modules make it —
 // `common/certificate_details.js` (the model),
 // `admin-core/certificate_views.js` (which certificates may be opened) and
-// `admin-ui/certificate_dialog.js` (the one renderer) — and `tests/vendored/sts_admin_api_operations.js` drives the
-// same answer over HTTP. What is here is what a request cannot choose:
+// `admin-ui/certificate_dialog.js` (the one renderer) — and
+// `tests/vendored/sts_admin_api_operations.js` drives the same answer over
+// HTTP. What is here is what a request cannot choose:
 //
 //   A. THE FIELDS AGAINST OPENSSL. The model is built on pkijs; node's
 //      X509Certificate and the `openssl` binary are a second reading, so a

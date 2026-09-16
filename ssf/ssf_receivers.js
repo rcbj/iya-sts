@@ -46,22 +46,21 @@
 // than left to be discovered as "the page shows nothing".
 //
 // ---------------------------------------------------------------------------
-// THE STREAMS ARE IN EVERY REALM AND THE CONSOLE'S CLIENT ENTRY IS IN ONE, AND
-// THAT DISAGREEMENT IS DELIBERATE.
+// THE STREAMS ARE IN EVERY REALM, AND FOR A REASON OF THEIR OWN.
 //
-// `applications.js` seeds `sts-admin-console` in the DEFAULT realm only,
-// because the console's gate reads the default realm's session wherever the
-// console is reached — a per-realm console administrator would mean anybody who
-// can create a realm can administer the service. A STREAM is not that kind of
-// thing. Events happen in the realm they happen in, streams are per realm
-// (`ssf_streams.js` argues why at length), and the console draws ONE REALM AT A
-// TIME through its switcher — so a console with no stream in `acme` would show
-// an empty page in `acme` while `acme`'s sessions were being revoked.
+// This section once argued that the streams were in every realm while the
+// console's CLIENT entry was in the default realm only. That disagreement is
+// gone: `applications.js` seeds `sts-admin-console` in every realm since
+// 2026-09-11 (its row says why), and a realm has administrators of its own
+// since 2026-09-14 (#32, `admin-ui/admin_scope.js`). The streams' reason never
+// depended on either. Events happen in the realm they happen in, streams are
+// per realm (`ssf_streams.js` argues why at length), and the console draws ONE
+// REALM AT A TIME — so a console with no stream in `acme` would show an empty
+// page in `acme` while `acme`'s sessions were being revoked.
 //
 // The rule underneath it: **a client entry is about signing somebody IN and a
-// stream is about what HAPPENED**, and those two questions have different
-// answers about where they live. The portal's client entry is in every realm
-// already, so its two halves agree by accident rather than by a different rule.
+// stream is about what HAPPENED**, and those two questions are answered
+// separately even where, as now, the answers agree.
 //
 // ---------------------------------------------------------------------------
 // THE INBOX IS A MAP KEYED BY `jti` AND NOT AN ARRAY, WHICH IS THE ONE PLACE
@@ -86,11 +85,13 @@
 // IT IS A LIBRARY (rule 3). It registers no route: the two receive endpoints
 // and the two pages are registered by the two SURFACES, because a receiver
 // hosts its own endpoint and a page belongs to the application it is a page
-// of. It requires `helpers`, `config`, `realms`, `audit`, `ssf_subjects`,
-// `ssf_events`, `ssf_streams` and `ssf_http` — every one of them a library
-// that registers nothing and none of which requires this file — so it can be
-// required from `admin-ui/admin.js` (18) and `portal/portal.js` (8c) without
-// moving a route or closing a cycle, which is the test rule 3e sets.
+// of. It requires `helpers`, `config`, `realms`, `audit`, `mode`,
+// `common/crypto.js`, `cluster/cluster_secrets.js`, the error-code registry,
+// `ssf_subjects`, `ssf_events`, `ssf_streams` and `ssf_http` — every one of
+// them a library that registers nothing and none of which requires this file —
+// so it can be required from `admin-ui/admin.js` (18) and `portal/portal.js`
+// (just after `authn`, 8) without moving a route or closing a cycle, which is
+// the test rule 3e sets.
 // ===========================================================================
 
 const nodeCrypto = require('crypto');
@@ -267,10 +268,11 @@ function endpointFor(surface) {
 // console's token is still not the portal's. `crypto.js` carries the
 // derivation, because that is where this service does cryptography.
 //
-// **THE SECRET IS PER RUN AND IS NEVER WRITTEN DOWN**, which keeps the sentence
-// above `randomId(32)` true: a credential this service mints for itself, dying
-// with the process, that nothing but this service's own transmitter has ever
-// been given.
+// **THE SECRET WAS PER RUN AND NEVER WRITTEN DOWN**, which kept the sentence
+// above `randomId(32)` true: a credential this service mints for itself that
+// nothing but this service's own transmitter has ever been given. The second
+// half still holds; the first changed with #46, below — on a store several
+// nodes share, the secret is kept there, sealed, so every node agrees on it.
 // ---------------------------------------------------------------------------
 const SECRET_VAR = 'STS_SSF_RECEIVER_SECRET';
 
@@ -318,12 +320,13 @@ function receiverToken(surface) {
 // So the id is derived, and the two rules it has to satisfy are different from
 // the token's:
 //
-//   * **IT MUST NOT USE `internalSecret()`.** That secret is per RUN — it is
-//     generated at startup and put in the environment so a forked worker
-//     inherits it — which is exactly right for a credential and exactly wrong
-//     here: an id derived from it agrees across the processes of ONE run and
-//     changes on the next start, which is the accumulation this exists to
-//     stop, moved one level along.
+//   * **IT MUST NOT USE `internalSecret()`.** That secret was per RUN when
+//     this was written, and still is on a store that cannot share (#46 keeps
+//     it in a store that can) — it is generated at startup and put in the
+//     environment so a forked worker inherits it — which is exactly right for
+//     a credential and exactly wrong here: an id derived from it agrees
+//     across the processes of ONE run and changes on the next start, which is
+//     the accumulation this exists to stop, moved one level along.
 //   * **IT IS NOT A SECRET AND MUST NOT LOOK LIKE ONE.** A stream id is
 //     published on /admin/ssf and in every stream configuration. So it is the
 //     realm and the surface, written out, rather than a hash of them: a reader
@@ -509,7 +512,7 @@ function seedStreams() {
       }
     }, { issuer: issuerForSeeding(), principal: 'internal',
          // ON THE CONTEXT AND NOT IN THE BODY ABOVE — see createStream(). The
-         // body is what a remote receiver sends at POST /ssf/streams, so an id
+         // body is what a remote receiver sends at POST /ssf/stream, so an id
          // read from there would let one name another's stream.
          streamId: internalStreamId(surface) });
     if (!created.ok) {
@@ -997,10 +1000,10 @@ function matchesSubject(subject, person) {
     log.debug('Leaving matchesSubject(). did: ' + hit);
     return hit;
   }
-  // `phone_number`, and anything a future RFC adds. There is no phone number
-  // on a directory entry here, so an event carrying one is about somebody this
-  // function cannot name — and the rule in the header says what to do about
-  // that.
+  // `phone_number`, and anything a future RFC adds. The `person` this is
+  // handed carries no phone number (see namesPerson()), so an event carrying
+  // one is about somebody this function cannot name — and the rule in the
+  // header says what to do about that.
   log.debug('Leaving matchesSubject(). ' + format + ': not resolvable to a ' +
             'person here.');
   return false;

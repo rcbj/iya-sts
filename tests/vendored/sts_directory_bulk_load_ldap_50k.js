@@ -93,6 +93,11 @@ const log =
 // IT IS LAST IN THE MANIFEST, after the other three bulk jobs, because it
 // leaves the directory an order of magnitude larger than they found it and
 // every job that walks a page or reads a register should have run first.
+//
+// **AND IT IS DISABLED THERE SINCE 2026-09-13**, to make the suite faster: the
+// entry is commented out rather than deleted, so restoring it is the whole of
+// re-enabling this job (`MANIFEST.js` says so beside it). While it is out,
+// nothing holds the add path to constant time past five thousand.
 // ===========================================================================
 
 function setDefault(name, value) {
@@ -108,7 +113,7 @@ setDefault("BULK_GROUPS", "1");
 setDefault("BULK_MEMBERS_PER_GROUP", "1");
 setDefault("BULK_DOOR", "ldap50k");
 
-// AND THEN THE JOB ITSELF. It reads those variables at load and runs `main()`
+// AND THEN THE JOB ITSELF. It reads those variables at load and runs `test()`
 // on its own, so there is nothing to call here — which is also why the
 // assignments above have to happen BEFORE this line rather than after it.
 require("./sts_directory_bulk_load_ldap.js");

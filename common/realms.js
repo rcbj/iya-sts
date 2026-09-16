@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: realms.js
@@ -59,12 +60,14 @@
 // WHAT A REALM DOES **NOT** GET ITS OWN OF, and why saying so matters.
 //
 // The sockets that are not HTTP have no path to put a realm segment in:
-// Kerberos' UDP/TCP 88, the directory's 389 and 636, and SPIFFE's four. So is
-// the certificate the main port presents, which is a property of the socket
-// rather than of the realm a request names on it. Those are shared, and each
-// family that can be realm-aware on
-// them is realm-aware by a DIFFERENT discriminator — the Kerberos realm name
-// inside the request, the base DN a search names, the trust domain in an SVID.
+// Kerberos' UDP/TCP 88, the directory's 389 and 636, and SPIFFE's gRPC
+// sockets. Nor can the certificate the main port presents carry a realm: it
+// is a property of the socket rather than of the realm a request names on it,
+// and it is shared. Each family that can be realm-aware on those sockets is
+// realm-aware by a DIFFERENT discriminator — the Kerberos realm name inside
+// the request, the base DN a search names, and for SPIFFE the ADDRESS a
+// realm's own sockets are bound on (the process's four stay the default
+// realm's).
 // `kerberos/CLAUDE.md`, `ldap/CLAUDE.md` and `spiffe/CLAUDE.md` carry those;
 // the index of which family is realm-aware how is in `realmSupport()` at the
 // foot of this file, so that a reader can ask this service rather than guess.
@@ -73,7 +76,8 @@
 const { AsyncLocalStorage } = require('async_hooks');
 const bunyan = require('bunyan');
 // config.js is required in the ORDINARY direction and it is safe: that module
-// requires only bunyan and config_file.js, so it cannot reach back here. The
+// requires only bunyan and two leaves (config_file.js, error_codes.js), so it
+// cannot reach back here. The
 // dependency the other way — config.js needing to know a realm's overrides — is
 // an INVERTED HOOK filled at the foot of this file, which is rule 3e's shape
 // and passes rule 3e's test: a require in that direction would close a cycle.
@@ -856,13 +860,16 @@ function checkRealmOverride(key, raw) {
       '/admin-api/config/set.';
   }
   log.debug("Leaving checkRealmOverride().");
-  // `true` is the `forRealm` argument, and it is what admits the one setting
-  // that is restart-only for the PROCESS and legitimate on a realm:
-  // `oauth2.rfc9700`. See the `realmRuntime` paragraph at the top of config.js
-  // — a realm binds no socket, so the reason that flag is restart-only (it
-  // derives `global.https`, and a listener's scheme is settled when it is
-  // bound) is not a reason a realm cannot carry it. Everything else that is
-  // restart-only is still refused here, in the same sentence as before.
+  // `true` is the `forRealm` argument, and it is what admits the settings
+  // that are restart-only for the PROCESS and legitimate on a realm — the
+  // `realmRuntime` rows: `oauth2.rfc9700` (the first), `oauth2.oauth21`, and
+  // the SPIFFE and Kerberos rows a realm's own sockets and principal database
+  // are built from. See the `realmRuntime` paragraph at the top of config.js:
+  // for `oauth2.rfc9700`, a realm binds no socket, so the reason that flag is
+  // restart-only (it derives `global.https`, and a listener's scheme is
+  // settled when it is bound) is not a reason a realm cannot carry it.
+  // Everything else that is restart-only is still refused here, in the same
+  // sentence as before.
   return config.checkOverride(key, raw, true);
 }
 
@@ -1817,8 +1824,10 @@ function arr(options) {
   // ONE ROW FOR THE WHOLE ARRAY, under the empty key. An array's key is its
   // POSITION, and a `splice` renumbers every row after it — so a row per index
   // would need the flush to work out which positions moved, which is the diff
-  // this design exists to avoid. The two arrays here are an audit ring and the
-  // issued register, and both are read whole by everything that reads them.
+  // this design exists to avoid. The arrays declared persisted — the audit ring
+  // and the issued register were the first two — are read whole by everything
+  // that reads them. (The audit ring is segmented since 2026-09-14; see
+  // segmentedArr() below.)
   const handle = declareHandle(options, 'arr', {
     dump: function (realmId) {
       log.debug("Entering dump().");
@@ -1876,7 +1885,7 @@ function arr(options) {
       // been, because wrapping `map` or `slice` would cost every reader a
       // closure for nothing.
       // ---------------------------------------------------------------
-      if (!handle || MUTATORS.indexOf(prop) < 0) {
+      if (!handle || MUTATORS.indexOf(/** @type {string} */ (prop)) < 0) {
         log.debug("Leaving get().");
         return v.bind(real);
       }
@@ -1886,8 +1895,8 @@ function arr(options) {
         // WHOLE-STORE, not per index. `splice` and `sort` move rows the
         // caller never names, and an array's KEY is its position — so any
         // mutation potentially renumbers every row after it. The flush
-        // rewrites the list, which for the two arrays here (an audit ring
-        // and the issued register) is what it would have had to do anyway.
+        // rewrites the list, which for a ring or a register read whole is
+        // what it would have had to do anyway.
         noteWrite(handle, null);
         return out;
       };
@@ -2141,7 +2150,7 @@ function segmentedArr(options, per, size) {
         log.debug("Leaving get().");
         return v;
       }
-      if (!handle || MUTATORS.indexOf(prop) < 0) {
+      if (!handle || MUTATORS.indexOf(/** @type {string} */ (prop)) < 0) {
         log.debug("Leaving get().");
         return v.bind(real);
       }
@@ -2207,6 +2216,15 @@ function segmentedArr(options, per, size) {
 // seq: 0 }))` and spelling the reads `nums.seq` moves the counter into the
 // partition with the thing it counts — `nums.seq++` works through the proxy
 // exactly as it did through the binding.
+//
+// The JSDoc is for the type checker (#50): the proxy answers with the shape
+// the factory builds, so a reader of `nums.seq` is checked against it.
+/**
+ * @template T
+ * @param {(realm?: any) => T} [factory]
+ * @param {object} [options]
+ * @returns {T}
+ */
 function obj(factory, options) {
   log.debug("Entering obj().");
   const per = keyed(factory || function () { return {}; });
@@ -2254,7 +2272,7 @@ function obj(factory, options) {
     }
   });
   log.debug("Leaving obj().");
-  return new Proxy({}, {
+  return /** @type {T} */ (new Proxy({}, {
     get: function (target, prop) {
       log.debug("Entering get().");
       const real = per();
@@ -2301,7 +2319,7 @@ function obj(factory, options) {
       log.debug("Leaving defineProperty().");
       return true;
     }
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -2589,9 +2607,10 @@ function realmSupport() {
             'because the directory is: a client registered under one realm ' +
             'lives in that realm\'s ou=applications and is unknown to every ' +
             'other. This line said the opposite until then. RFC 9700 MODE IS ' +
-            'PER REALM TOO — `oauth2.rfc9700` is the one setting here that ' +
-            'is restart-only for the process and settable on a realm, ' +
-            'because a realm binds no socket — so one process can answer ' +
+            'PER REALM TOO — `oauth2.rfc9700`, and `oauth2.oauth21` which ' +
+            'implies it, are restart-only for the process and settable on a ' +
+            'realm, because a realm binds no socket — so one process can ' +
+            'answer ' +
             'permissively at /oauth2/authorize and enforce the BCP at a ' +
             'realm\'s. What a realm cannot bring with it is a SCHEME: the ' +
             'main port is https or it is not, for every realm at once, and ' +
@@ -2603,9 +2622,10 @@ function realmSupport() {
             'is shared only in the sense that this service checks no ' +
             'password anywhere — the PERSON is an entry in the realm\'s own ' +
             'directory. The admin console is the ONE reader that crosses ' +
-            'this line, and it crosses it in exactly one direction: it ' +
-            'accepts the DEFAULT realm\'s session and no other. The row ' +
-            'below says why.' },
+            'this line: it signs a person in through the realm it is ' +
+            'reached in, and keeps its OWN session in the DEFAULT realm, ' +
+            'so that one console session can be found from every realm. The ' +
+            'row below says whom that session may administer.' },
     { family: 'SAML 2.0 / SAML 1.1', state: 'full', by: 'path',
       note: 'Its own entityID and providerID (seeded distinct when the realm ' +
             'is created), its own signing key, request state, artifacts and ' +
@@ -2702,10 +2722,11 @@ function realmSupport() {
             '2026-09-15 there was one KDC, one principal database and one ' +
             'realm name for the whole process.' },
     { family: 'TLS certificate', state: 'none', by: 'shared',
-      note: 'ONE CERTIFICATE FOR THE PROCESS, presented by the main port ' +
-            'and by LDAPS 636. What a socket presents is a property of the ' +
-            'socket and not of a realm, and each of those two carries every ' +
-            'realm. This row read `TLS (8443 / 9443)` until 2026-09-16, ' +
+      note: 'ONE CERTIFICATE FOR THE PROCESS, presented by the main port, ' +
+            'by LDAPS 636 and by the embedded debugger\'s listener. What a ' +
+            'socket presents is a property of the socket and not of a realm, ' +
+            'and the first two carry every realm. This row read ' +
+            '`TLS (8443 / 9443)` until 2026-09-16, ' +
             'when those two listeners were deleted: what a client ' +
             'certificate is worth is decided where it is USED, and that is ' +
             'in the realm the request arrived in.' },

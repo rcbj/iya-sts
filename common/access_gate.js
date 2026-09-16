@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: access_gate.js
@@ -53,8 +54,9 @@
 // check that made either asynchronous would be a change to every surface rather
 // than to one file.
 //
-// A LIBRARY (rule 3): it registers no route and requires only `config` and
-// `helpers`, so it is a LEAF and everything above it may require it.
+// A LIBRARY (rule 3): it registers no route and requires only `config`,
+// `helpers` and the error-code table, so it is a LEAF and everything above it
+// may require it.
 // ---------------------------------------------------------------------------
 
 const { log } = require('./helpers');
@@ -69,7 +71,6 @@ const errorCodes = require('./error_codes');
 // one call site is a policy nobody can write against — an operator writing a
 // rule has to be able to name the thing, and this is where the names are.
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // ALL FIVE ASK NOW (2026-09-06). Three of them did not until that date, and
 // the prose in four files said otherwise for the whole of the day between —
 // which is why each entry below names its caller: a resource id that nothing
@@ -77,21 +78,26 @@ const errorCodes = require('./error_codes');
 //
 //   admin-console       `admin-ui/admin.js`'s gate, on every page and form
 //   user-portal         `portal/portal.js`'s requireSignIn()
-//   management-api      `mgmt-api/admin_api.js`'s middleware, PRODUCT MODE
-//                       ONLY — that surface is open in development by design
+//   management-api      `mgmt-api/admin_api.js`'s middleware — for a caller
+//                       with an access token (`adminApi.authRequired`, on by
+//                       default), and for a console session in PRODUCT MODE
+//                       with that setting off; see the asymmetry below
 //   scim                `scim/scim_auth.js`'s authenticate() funnel
 //   spire-server-api    `spiffe/spiffe_grpc.js`'s prepareCall()
 //   xacml-pep-api       `xacml/xacml.js`'s pepAccess()
 //   xacml-api           `xacml/xacml.js`'s xacmlAccess()
+//   protocol-debugger   `debugger/debugger_access.js`
 //
-// **THE LAST TWO ARE NOT LIKE THE FIVE ABOVE THEM AND THE DIFFERENCE IS THE
+// **THE LAST THREE ARE NOT LIKE THE FIVE ABOVE THEM AND THE DIFFERENCE IS THE
 // DEFAULT.** The five are surfaces an operator NARROWS: they require
 // `EVERYBODY` until somebody says otherwise, so this layer changed nothing the
-// day it was added. The two XACML ones carry their requirement in the REQUEST
-// and are restricted out of the box, because a gate that is permissive until
-// configured is a gate that is open on every deployment nobody has configured.
+// day it was added. The two XACML ones and the debugger carry their
+// requirement in the REQUEST and are restricted out of the box, because a gate
+// that is permissive until configured is a gate that is open on every
+// deployment nobody has configured. (The management API's token path does the
+// same: it names ADMIN_READ or ADMIN_WRITE in the request.)
 // It is still a POLICY decision either way — the same document decides all
-// seven, and `xacml.enforceAccess` is the one switch that stops it deciding.
+// eight, and `xacml.enforceAccess` is the one switch that stops it deciding.
 //
 // **AND ONE OF THE FIVE HAS CALLERS THERE IS NOBODY TO DECIDE ABOUT
 // (2026-09-10).** The SPIRE Server API's TCP port asks for a client
@@ -113,12 +119,12 @@ const errorCodes = require('./error_codes');
 // exactly as it did — the built-in document asks for a role only where
 // somebody has required one.
 //
-// **THE MANAGEMENT API IS THE ONE ASYMMETRY AND IT IS DELIBERATE.** In
-// development that surface is open, so there is no credential, no session and
-// no subject; asking a policy that refuses an unauthenticated subject would
-// close the door the tests drive and the door somebody locked out of the
-// console gets back in through. A policy layer must not remove the recovery
-// path.
+// **THE MANAGEMENT API IS THE ONE ASYMMETRY AND IT IS DELIBERATE.** With
+// `adminApi.authRequired` off, in development, that surface is open, so there
+// is no credential, no session and no subject; asking a policy that refuses an
+// unauthenticated subject would close the door the tests drive and the door
+// somebody locked out of the console gets back in through. A policy layer must
+// not remove the recovery path.
 // ---------------------------------------------------------------------------
 const RESOURCE = {
   CONSOLE: 'admin-console',
@@ -126,10 +132,11 @@ const RESOURCE = {
   PORTAL: 'user-portal',
   SCIM: 'scim',
   SPIRE_SERVER_API: 'spire-server-api',
-  // THE THREE ENDPOINTS A REMOTE POLICY ENFORCEMENT POINT LIVES ON
-  // (2026-09-06): register, policies, heartbeat. It is the sixth resource and
-  // the FIRST that is not permissive by default — see `requiredRoles` on
-  // `check()` below, and `xacml/xacml.js` where it is asked.
+  // THE ENDPOINTS A REMOTE POLICY ENFORCEMENT POINT LIVES ON (2026-09-06):
+  // register, policies, heartbeat — and `POST /xacml/pip`, which asks for this
+  // resource too. It is the sixth resource and the FIRST that is not
+  // permissive by default — see `requiredRoles` in the request, and
+  // `xacml/xacml.js`'s pepAccess() where it is asked.
   XACML_PEP_API: 'xacml-pep-api',
   // THE XACML SURFACE PROPER: GET /xacml, POST /xacml/pdp, GET
   // /xacml/policies, GET /xacml/protected. The seventh resource and the second
@@ -139,7 +146,7 @@ const RESOURCE = {
   // **A SEPARATE RESOURCE FROM `XACML_PEP_API` AND NOT A WIDENING OF IT**, and
   // the two ids are what make the separation writable: an operator adding a
   // second Permit rule for a helpdesk role, or narrowing one surface and not
-  // the other, needs two names to target. One id covering all seven endpoints
+  // the other, needs two names to target. One id covering all eight endpoints
   // would mean every policy anybody wrote about the demonstration surface also
   // decided who may pull the documents this service enforces its own access
   // with, which is the collapse `roles.js` keeps the two roles apart to
@@ -215,6 +222,11 @@ function allow(why) {
 //                the subject. The portal sets it; nothing else does yet. It is
 //                what lets a policy say "the subject is the owner" — and what
 //                lets a LATER policy say "or the subject holds helpdesk".
+//     requiredRoles
+//                the roles this request demands, where the CALLER states the
+//                requirement (the XACML surfaces, the debugger, the
+//                management API's token path); absent for a surface an
+//                operator narrows by policy.
 //     context    anything else worth deciding on: the method, the path. For
 //                the log and for a policy that wants it. }
 //

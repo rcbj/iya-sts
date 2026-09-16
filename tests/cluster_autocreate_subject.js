@@ -13,7 +13,8 @@
 // tokens carry a `sub` that names nobody. With a value derived from the realm
 // and the DN — the seed's version 5 UUID — both nodes create the SAME entry.
 //
-// The rule is narrowed to where the race exists: a clustered node. A single
+// The rule is narrowed to where the race exists: a clustered node, or a
+// dispatched request-worker pool (`clusteredNode()` asks both). A single
 // node keeps random values, which is the account-recycling protection
 // `ldap_server.js`'s entryUUID block records. The version nibble is what tells
 // the two apart, and it is what this asserts.

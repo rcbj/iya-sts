@@ -1,6 +1,7 @@
 # ws-trust/
 
-WS-Trust 1.0 through 1.4, at `/wstrust`. One file.
+WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
+`/sts/cert`). One file.
 
 **ONE PARSER ANSWERS ALL FOUR VERSIONS**, and that is not a simplification. The
 trust namespace alone has four versions in use, so `firstByLocal()` and
@@ -147,17 +148,17 @@ what to present:**
 
 `tests/saml_family_hardcoded.js` section E pins all of it in process.
 
-## There is no test for this in either repository
+## What is tested, and what is not
 
 The parent project has `tests/wstrust.js` and
 `tests/wstrust_schema_validate.js`, which drive the DEBUGGER's client side
-against this endpoint. Nothing tested this module on its own until `tests/saml_family_hardcoded.js`
-(2026-09-12), which holds the product-mode refusals above; the negatives below
-are where the value is: `Validate` and `Cancel` answering above the
-`authenticate()` call, a document carrying both a UsernameToken and an
-`OnBehalfOf`, a `Renew` with no security header. Every one of those is drivable
-over HTTP, so by the root `CLAUDE.md`'s rule they belong in the PARENT project's
-suite.
+against this endpoint. Nothing tested this module on its own until
+`tests/saml_family_hardcoded.js` (2026-09-12), which holds the product-mode
+refusals above. Still untested, and where the value is: `Validate` and
+`Cancel` answering above the `authenticate()` call, a document carrying both a
+UsernameToken and an `OnBehalfOf`, a `Renew` with no security header. Every one
+of those is drivable over HTTP, so by the root `CLAUDE.md`'s rule they belong
+in the PARENT project's suite.
 
 ## A JWT'S `sub` IS A SUBJECT, AND THERE IS NONE WITHOUT AN ENTRY (2026-09-14)
 

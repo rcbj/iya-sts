@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: mode.js
@@ -47,20 +48,23 @@
 //      what has been tried.
 //   3. EVERY OAUTH 2.0 / OIDC APPLICATION HOLDS A SECRET, and authenticates
 //      with it. There are no public clients in product mode.
-//   4. `/admin-api` IS GATED. It is ungated in development on purpose — it is
-//      what the tests drive and the way back in when nobody holds a role — and
-//      that is a total authentication bypass which cannot survive into a
-//      product.
+//   4. `/admin-api` IS GATED. It was ungated in development on purpose — it
+//      is what the tests drive and the way back in when nobody holds a role —
+//      and that is a total authentication bypass which cannot survive into a
+//      product. Since 2026-09-09 an OAuth 2.0 access token is required in BOTH
+//      modes (`adminApi.authRequired`, on by default); what this file decides
+//      is what happens with that setting OFF — open in development, the
+//      console's session and roles in product. See `gatesManagementApi()`.
 //
 // ---------------------------------------------------------------------------
 // IT IS PER TRUST REALM, and that is worth stating because it is unusual.
 //
-// `global.mode` is `realmRuntime`, following `oauth2.rfc9700` exactly: a realm
-// binds no socket, so nothing about the mode is a property of a listener, and
-// one process can serve a development realm and a product realm at once. A
-// client can then be exercised against both without a second service — which is
-// the same argument that made RFC 9700 mode a realm rather than a second
-// instance.
+// `global.mode` is an ordinary RUNTIME row, so a realm may carry one of its
+// own — and it is NOT `realmRuntime`, which `config.js` argues at the row:
+// nothing about the mode is a property of a listener, so one process can serve
+// a development realm and a product realm at once. A client can then be
+// exercised against both without a second service — which is the same
+// argument that made RFC 9700 mode a realm rather than a second instance.
 //
 // **WHAT IS NOT PER REALM IS ISOLATION**, and the two must not be confused. A
 // trust realm is fully isolated from every other in BOTH modes; the mode says
@@ -68,10 +72,10 @@
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route, so its position in the require
-// order is not a position. It requires only `config`, which requires nothing
-// here, so it is a LEAF and must stay one: everything above it may require it
-// and it may never require any of them back. Every predicate takes no argument
-// and reads the AMBIENT realm, exactly as `config.value()` does.
+// order is not a position. It requires only `config`, which requires only two
+// leaves here, so it is a LEAF and must stay one: everything above it may
+// require it and it may never require any of them back. Every predicate takes
+// no argument and reads the AMBIENT realm, exactly as `config.value()` does.
 // ---------------------------------------------------------------------------
 
 const config = require('./config');
@@ -472,9 +476,12 @@ function acceptsNonconformingResourceMetadata() {
   return !isProduct();
 }
 
-// Is the management API gated? See the note above on why it is not, in
-// development. **THIS IS THE ONLY GATE THE MODE TURNS ON**, because it is the
-// only one that was ever off.
+// Is the management API gated by the console's session and roles WHEN
+// `adminApi.authRequired` IS OFF? Since 2026-09-09 that setting — on by
+// default, in both modes — puts an access token in front of `/admin-api`
+// first, and `mgmt-api/admin_api.js` asks this only below it. See the note
+// above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
+// TURNS ON**, because it is the only one that was ever off.
 function gatesManagementApi() {
   log.debug("Entering gatesManagementApi().");
   log.debug("Leaving gatesManagementApi().");
@@ -654,13 +661,20 @@ const REQUIREMENTS = [
              'request is refused invalid_request_uri. In both modes a ' +
              'request_uri is fetched only when the client registered it.',
     where: 'oauth-oidc/request_object.js' },
+  // 2026-09-09: `adminApi.authRequired` (on by default, both modes) put an
+  // access token in front of this surface, so the two columns below are what
+  // happens with that setting OFF. Both columns say so.
   { id: 'management-api',
     what: '/admin-api requires a sign-in and a role',
-    development: 'Open. It is what the tests drive and the way back in when ' +
-                 'nobody holds a role — which also means anybody who can ' +
-                 'reach this port can grant themselves both roles through it.',
-    product: 'Gated exactly as /admin is: the same session, the same two ' +
-             'roles.',
+    development: 'An OAuth 2.0 access token carrying admin:read or ' +
+                 'admin:write, while adminApi.authRequired is on (the ' +
+                 'default). With it off: open. It is what the tests drive ' +
+                 'and the way back in when nobody holds a role — which also ' +
+                 'means anybody who can reach this port can grant themselves ' +
+                 'both roles through it.',
+    product: 'The same access token while adminApi.authRequired is on. With ' +
+             'it off: gated exactly as /admin is — the same session, the ' +
+             'same two roles.',
     where: 'mgmt-api/admin_api.js' },
   { id: 'console',
     what: '/admin requires a sign-in and a role',
@@ -871,7 +885,8 @@ const REQUIREMENTS = [
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
 // discovered, because a mode called `product` invites the assumption that
-// everything in it is production-grade, and three things are not:
+// everything in it is production-grade, and three things were not — all three
+// narrowed or paid since, and NOT_YET below is the current list:
 //
 //   * ~~NO REVOCATION IS CHECKED ON A CLIENT CERTIFICATE~~ — **PAID ON
 //     2026-09-12.** It read "there is no OCSP responder and no CRL fetch, in
@@ -889,10 +904,11 @@ const REQUIREMENTS = [
 //     artifacts, tickets, counters and audit log beside them. DEVELOPMENT
 //     MODE IS UNCHANGED and the sentence is still true of it, which is why
 //     it is qualified here rather than deleted.
-//   * A KERBEROS ACCOUNT POLICY IS STILL PERMISSIVE in the sense that every
-//     seeded principal shares one password. Product mode stops the KDC creating
-//     principals on demand; it does not give the existing ones distinct
-//     long-term keys.
+//   * ~~A KERBEROS ACCOUNT POLICY IS STILL PERMISSIVE~~ — **REWRITTEN ON
+//     2026-09-12.** It read "every seeded principal shares one password;
+//     product mode does not give the existing ones distinct long-term keys".
+//     Product mode now seeds no fixture principals at all; what is left is
+//     the `kerberos-keys` row in NOT_YET below.
 const NOT_YET = [
   // **THIS ROW NARROWED ON 2026-09-11 AND DID NOT GO AWAY.** It read *there
   // is no OCSP responder and no CRL fetch*; the first half stopped being true
@@ -943,17 +959,23 @@ const NOT_YET = [
   // survives a restart. The JWT authority does not: it has no certificate and
   // no hierarchy to hang from, so there is nothing for the keystore to keep it
   // beside.
+  //
+  // **AND THE POST-QUANTUM HALF CAME OFF IT ON 2026-09-12**, though the row
+  // kept its id: `helpers.js`'s `pqKeysForAsync()` writes a realm's eleven
+  // post-quantum keys into its stored key set (`keystore.remember()`), and a
+  // restore puts them back — see common/CLAUDE.md, *THE POST-QUANTUM HALF WAS
+  // WRITTEN AND NEVER READ BACK*. The id is an identifier a client may match
+  // on, so it was not renamed.
   { id: 'post-quantum-keys',
-    what: 'The eleven post-quantum keys per realm are NOT persisted, in ' +
-          'either mode: they are generated on the worker pool because ' +
-          'generating them is expensive, and cached by pq_jose.js. Nor are ' +
-          'the TLS server certificate and the SPIFFE JWT authority, which ' +
-          'belong to their own modules. The SPIFFE X.509 authority came off ' +
-          'this row on 2026-09-11: it is this realm\'s SPIFFE Issuing CA ' +
-          'under the service Root, so it persists in product mode exactly as ' +
-          'the rest of the certificate authority does. Only the RSA signing ' +
-          'key and the eight EC/Ed keys beside it survive a restart ' +
-          'otherwise.' },
+    what: 'The TLS server certificate and the SPIFFE JWT authority are NOT ' +
+          'persisted, in either mode: they belong to their own modules and ' +
+          'are made again at every start (unless tls.certificateFile ' +
+          'supplies the certificate). A realm\'s eleven post-quantum ' +
+          'keys came off this row on 2026-09-12 — in product mode they are ' +
+          'written with the realm\'s key set and restored with it — and the ' +
+          'SPIFFE X.509 authority on 2026-09-11: it is this realm\'s SPIFFE ' +
+          'Issuing CA under the service Root, so it persists in product mode ' +
+          'exactly as the rest of the certificate authority does.' },
   { id: 'key-never-in-memory',
     what: 'A private key is DECRYPTED IN THIS PROCESS while it signs. Since ' +
           '2026-09-06 what is resident between signatures is the ciphertext, ' +

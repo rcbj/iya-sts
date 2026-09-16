@@ -30,9 +30,10 @@
 // over 389 and asserts the socket closes; when that fails, the two candidates
 // are "the worker never saw the connection" and "the worker saw it and could
 // not close it", and the job cannot tell them apart because both look like a
-// socket that is still open. The four sections below are those halves, plus
-// the two ways the mechanism is allowed to fail, asserted separately and with
-// no port, no container and no fork.
+// socket that is still open. The first two sections below are those halves,
+// the third is the two ways the mechanism is allowed to fail, and the last two
+// are the header and the timing that join the halves — each asserted
+// separately and with no port, no container and no fork.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS ASSERTED, AND WHAT DELIBERATELY IS NOT.

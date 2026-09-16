@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: totp.js
@@ -34,8 +35,9 @@
 // THE CODE IS VERIFIED FOR REAL, IN BOTH MODES, AND THAT IS THE SURPRISING
 // PART OF THIS FILE.
 //
-// Everything else in this service is permissive by default: the sign-in screen
-// takes any password, an LDAP bind takes any DN, WS-Trust takes any
+// Everything else in this service is permissive by default — that is, in
+// development mode; product mode checks them: the sign-in screen takes any
+// password, an LDAP bind takes any DN, WS-Trust takes any
 // UsernameToken. `common/credentials.js`'s header argues at length that
 // permissiveness is an IMPLEMENTATION here rather than an absence.
 //
@@ -85,10 +87,11 @@
 // enrolment lives, what a secret is encoded as, and what goes in the QR code.
 //
 // A LIBRARY (rule 3): it registers no route, so its position in the require
-// order is not a position. It requires `config`, `crypto`, `helpers` and
-// `realms` — none of which requires it back — and it is required by
-// `common/credentials.js`, `portal/portal.js`, `authn/authn.js` and
-// `admin-ui/admin_mfa.js`.
+// order is not a position. It requires `config`, `crypto`, `helpers`,
+// `realms` and `error_codes` — none of which requires it back — and it is
+// required by `common/credentials.js`, `portal/portal.js`, `authn/authn.js`,
+// `admin-ui/admin.js`, `admin-ui/crypto_metadata.js` and
+// `admin-core/admin_views.js`.
 // ===========================================================================
 
 const nodeCrypto = require('crypto');

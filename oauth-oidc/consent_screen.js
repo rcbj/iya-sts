@@ -85,8 +85,8 @@ const validation = require('../common/validation');
 const vt = validation.types;
 const vz = validation.z;
 // The session, and the stylesheet the sign-in screen is drawn with. This module
-// is required AFTER authn.js in server.js, so this moves no route; and that
-// module does not require this one, so there is no cycle.
+// is required AFTER authn.js in `common/protocol_stack.js`, so this moves no
+// route; and that module does not require this one, so there is no cycle.
 const authn = require('../authn/authn');
 // RFC 9396: what an authorization_details row says, and the one-time Allow.
 // A library that registers nothing, so requiring it here moves no route.

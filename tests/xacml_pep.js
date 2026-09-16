@@ -38,9 +38,10 @@
 // file starts no PEP, registers nothing and makes NO HTTP REQUEST — it loads
 // the container's modules and calls their functions. So `xacml-pep/sync.js`,
 // the registrar and the poller, is not loaded by it, and neither is `start()`.
-// That half is `tests/vendored/sts_xacml_remote_pep.js`, which spawns
-// `pep.js` for real against a running mock and asserts that a policy deployed
-// through `/admin-api/xacml` changes what that process allows. The two are
+// That half is `tests/vendored/sts_xacml_remote_pep.js`, which drives the
+// real container — the one a launcher brought up, or one it builds and starts
+// itself — against a running mock and asserts that a policy deployed through
+// `/admin-api/xacml` changes what that container allows. The two are
 // complements rather than overlaps and the split is worth keeping: this file
 // can see the engine growing a dependency on the identity service, which no
 // running PEP could show; that one can see the client half being wrong, which
@@ -672,11 +673,27 @@ async function run(t) {
           'and in the PDP\'s own namespace');
 
   // -------------------------------------------------------------------------
+  // 3d. THE PIP QUERY TRUSTS WHAT THE PULL TRUSTS.
+  //
+  // `pip.js`'s request is not exported, so this reads the source. Until
+  // 2026-09-16 it took its anchor from `options.ca`, which nothing sets —
+  // `pep.js` stores PEP_TLS_CA as `pdpCa` — so the PIP query ignored the
+  // configured anchor that the pull beside it used.
+  // -------------------------------------------------------------------------
+  const pipSource = fs.readFileSync(path.join(PEP_DIR, 'pip.js'), 'utf8');
+  const syncSource = fs.readFileSync(path.join(PEP_DIR, 'sync.js'), 'utf8');
+  t.check(/ca:\s*options\.pdpCa\b/.test(pipSource) &&
+          /ca:\s*options\.pdpCa\b/.test(syncSource) &&
+          !/ca:\s*options\.ca\b/.test(pipSource),
+          'the PIP query and the policy pull both verify the PDP against ' +
+          'options.pdpCa, the name pep.js gives PEP_TLS_CA');
+
+  // -------------------------------------------------------------------------
   // 4. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE.
   //
   // `xacml.js`'s `enforce()` and `xacml-pep/pep.js`'s are two readings of
-  // section 7.2, deliberately not shared. Two readings is the point — it is
-  // the same argument `tests/sts_dpop.js` makes for writing its own DPoP
+  // section 7.2, deliberately not shared. Two readings is the point — it is the
+  // same argument `tests/vendored/sts_dpop.js` makes for writing its own DPoP
   // client — and it is worth nothing unless somebody checks that they agree.
   //
   // The container's is asked in the child, over the SEVEN cases that matter:

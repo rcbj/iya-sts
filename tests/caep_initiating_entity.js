@@ -39,8 +39,9 @@
 // function call with no port, and the defect above lived precisely in the
 // seam between them — each module was correct on its own.
 //
-// The EXPIRY half additionally cannot be driven over HTTP at all: the session
-// lifetime is an hour, and nothing anywhere can shorten it from outside.
+// The EXPIRY half is impractical over HTTP: the session lifetime
+// (`authn.sessionLifetimeS`) is an hour by default and a minute at the least,
+// and here the session's `expires` is simply set in the past.
 // ===========================================================================
 
 // Deleted rather than set, for the reason config_realm_layer.js gives: nothing

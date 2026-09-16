@@ -138,6 +138,10 @@ function verdictOf(wanted, answer) {
 // `{ ok: false, reason: 'behind', highest }` or
 // `{ ok: false, reason: 'store', why }`. It never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').AdvanceResult>}
+ */
 function advance(opts) {
   log.debug("Entering advance().");
   const o = opts || {};
@@ -284,6 +288,10 @@ function windowFailure(what, scope, e) {
 // realm (websecurity.js says why). Resolves `{ ok: true, count, remainingMs }`
 // or `{ ok: false, reason: 'store' | 'unshared', why }`. Never rejects.
 // ---------------------------------------------------------------------------
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').WindowResult>}
+ */
 function countInWindow(opts) {
   log.debug("Entering countInWindow().");
   const args = windowArgs(opts);
@@ -308,6 +316,10 @@ function countInWindow(opts) {
 }
 
 // The count of a window, counting nothing.
+/**
+ * @param {any} opts
+ * @returns {Promise<import('../types/cluster').WindowResult>}
+ */
 function peekWindow(opts) {
   log.debug("Entering peekWindow().");
   const args = windowArgs(opts);

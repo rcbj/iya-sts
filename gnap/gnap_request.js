@@ -32,8 +32,8 @@
 // label, a flag twice). It does NOT decide whether a known client may ask for
 // bearer tokens, whether a finish URI is registered, or whether a reference
 // string names anything — those change with configuration and mode, and they
-// are `gnap.js`'s. That is the test `common/validation.js`'s header states:
-// would the answer change if the operator flipped `global.mode`?
+// are `gnap_grants.js`'s. That is the test `common/validation.js`'s header
+// states: would the answer change if the operator flipped `global.mode`?
 //
 // Every refusal is `{ ok:false, errorCode, why, gnapError }`, carrying the RFC
 // 9635 section 3.6 (or RFC 9767 section 3.5) code the client is told.

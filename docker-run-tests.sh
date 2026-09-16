@@ -6,8 +6,9 @@
 # It builds and brings up docker-compose-run-tests.yml: the `sts` service from
 # this repository's own Dockerfile, and a `tests` container with node, a Chrome
 # and this working tree in it. The tests container runs
-# tests/run-tests-in-container.sh — all twenty-seven jobs, the Selenium
-# admin-console one included — against the service by its compose DNS name, and
+# tests/run-tests-in-container.sh — every job (tests/vendored/MANIFEST.js and
+# tests/run.js's discovery are the count), the Selenium admin-console one
+# included — against the service by its compose DNS name, and
 # compose exits when it does. This script's exit code is that container's
 # (`--exit-code-from tests`), and the stack is always torn down.
 #
@@ -16,8 +17,10 @@
 # differ in one way worth knowing before porting anything between them: that
 # stack has ten services and has to PROVISION most of them — Keycloak realms, a
 # WS-Federation side-car, two walt.id services, browser bundles — before a test
-# can run. This one has four and provisions almost nothing, because the service
-# under test accepts any client, any entityID and any username on first sight.
+# can run. This one has a handful (the service, its database and secret store,
+# the remote PEP and the runner) and provisions almost nothing, because the
+# service under test accepts any client, any entityID and any username on first
+# sight.
 # That is what it is for. The two things it does prepare are CREDENTIALS rather
 # than configuration, each is obtained FROM the service, and both are therefore
 # minted once per MODE — the remote PEP's client certificate and an /admin-api
@@ -38,7 +41,7 @@
 #                          it the thing to reach for when a run passes locally
 #                          and somebody else cannot reproduce it.
 #
-# They run the SAME twenty-seven jobs through the same runner, so a difference
+# They run the SAME jobs through the same runner, so a difference
 # between them is a difference in the environment and nothing else, which is
 # the whole point of having both.
 #
@@ -323,8 +326,8 @@ preflight || exit 1
 # THE SECOND KNOB IS THE APPCONFIG FILE, AND WITHOUT IT THIS WOULD LOOK LIKE IT
 # WORKED WHILE DOING ALMOST NOTHING. STS_LOG_LEVEL reaches the loggers
 # config.js registers — its own, and the `sts` logger in helpers.js that every
-# protocol module destructures. It does NOT reach the six VENDORED modules
-# under common/vendored/, which each build a bunyan logger at load from
+# protocol module destructures. It does NOT reach the VENDORED modules under
+# common/vendored/, which each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel` and cannot be edited here. On the
 # run that measured this, the level alone left 3,869 debug lines of 3,951 —
 # 3,582 of them from `xmldsig`, which is every canonicalization of every signed
@@ -466,16 +469,17 @@ COMPOSE_ENV=(
   # TLS ON THE MAIN PORT (2026-08-30), and the URL the runner dials with it.
   #
   # BOTH, because they are two variables in the compose file and a stack where
-  # they disagree is a stack where thirteen protocol jobs fail on a closed
+  # they disagree is a stack where every protocol job fails on a closed
   # socket. The compose file defaults each to the same answer; naming them
   # here is what makes an operator's `STS_HTTPS=false ./docker-run-tests.sh`
   # actually reach compose, since `sudo` empties the environment — see
   # tests/tools/compose.sh.
   #
   # `sts` and not `localhost`: this runner publishes no port at all, and that
-  # hostname is one of the certificate's SANs (common/crypto.js: localhost,
-  # sts, sts-mock, sts.example.com, 127.0.0.1). A different name here would be
-  # a certificate error in every job rather than a connection error in one.
+  # hostname is one of the certificate's SANs (`tls.hostnames` in
+  # common/config.js: localhost, sts, sts-mock, sts.example.com). A different
+  # name here would be a certificate error in every job rather than a
+  # connection error in one.
   # ---------------------------------------------------------------------
   "STS_HTTPS=${STS_HTTPS:-true}"
   "STS_TEST_SERVICE_URL=$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)://sts:8081"
@@ -660,8 +664,8 @@ captureOneContainerLog()
 
 # Always tear the stack down, even when the tests fail, so the next run starts
 # clean. A TRAP rather than a line at the end: an interrupted run (^C, a failing
-# step) would otherwise leave two containers and a network behind, and the next
-# run would be the one that had to explain them.
+# step) would otherwise leave the stack's containers, volumes and network
+# behind, and the next run would be the one that had to explain them.
 teardown()
 {
   if [ "${KEEP_STACK}" = "1" ] && [ "${STACK_UP}" = "1" ];
@@ -824,8 +828,9 @@ mintAdminApiToken()
 #
 # **IT WAS ONCE PER RUN UNTIL 2026-09-09 AND THAT WAS WRONG THE MOMENT THIS
 # LAUNCHER GREW MODES.** The truststore is a Map in the service's process, this
-# loop tears the stack DOWN between modes, and the mock generates a fresh
-# self-signed server certificate on every start — so mode 2 and mode 3 met a
+# loop tears the stack DOWN between modes, and the mock generated a fresh
+# self-signed server certificate on every start (a fresh Root and a server
+# certificate under it, since) — so mode 2 and mode 3 met a
 # service whose truststore had never been filled, while their PEP container
 # came up beside it and started registering. It failed in `postgres` and
 # `dispatch` with UNABLE_TO_GET_ISSUER_CERT_LOCALLY, and passed in `memory`
@@ -999,7 +1004,7 @@ fi
 # exit with ITS status rather than with the service's, which is always 0 or 137
 # and says nothing about the suite.
 # ===========================================================================
-# ONCE PER MODE. `tests/tools/modes.sh` is the one definition of the three, and
+# ONCE PER MODE. `tests/tools/modes.sh` is the one definition of the modes, and
 # ./local-run-tests.sh reads the same file — so the launcher CI runs and the one
 # a developer runs cannot come to disagree about what a green run covers.
 #
@@ -1129,8 +1134,9 @@ do
     # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
     #
     # The truststore is a Map in the service's process that ANY job can empty:
-    # `POST /tls/trust/clear` needs no credential, and a job exercising the
-    # truststore is entitled to use it. Nothing noticed until 2026-09-06, when
+    # `POST /tls/trust/clear` needs no credential in development mode (every
+    # mode this launcher runs), and a job exercising the truststore is entitled
+    # to use it. Nothing noticed until 2026-09-06, when
     # a client certificate stopped being a turnstile — this container's pull,
     # its heartbeat and its PIP queries all resolve a VERIFIED chain now, so
     # one such job left it authenticating as nobody for the rest of the run,
