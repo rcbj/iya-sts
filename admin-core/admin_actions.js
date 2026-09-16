@@ -268,38 +268,6 @@ function setTruststore(value) {
   log.debug("Leaving setTruststore().");
 }
 
-// (MISPLACED BY THE 2026-09-12 MOVE: the next two blocks describe `respond()`
-// and `withCsrf()` in `admin-ui/admin.js`, which is where they belong. Only the
-// third, above FORM_FURNITURE, is about this file.)
-//
-// Both response shapes for a page, chosen by ?format=json. `no-store` on all of
-// them: they describe live state, and a cached metrics page is a wrong one.
-// `up`, when given, is what upTo() returned for the section this page hangs
-// under. Only a drill-down passes it; a section's own list page does not, and
-// the JSON answer ignores it either way — a way back up is a property of a page
-// a person is reading, and a caller of ?format=json has the URL it asked for.
-// ---------------------------------------------------------------------------
-// THE CSRF TOKEN GOES INTO EVERY POST FORM THIS SHELL DRAWS (2026-09-06).
-// OWASP A01/A08.
-//
-// **AT THE SHELL AND NOT AT EACH FORM, DELIBERATELY.** This console builds
-// something like a hundred and forty forms as inline strings across sixty
-// pages, and a scheme that required each author to remember a hidden field is a
-// scheme that is one page away from being incomplete for ever — silently, since
-// a missing token looks exactly like a page that works. Adding it HERE means a
-// page written tomorrow is protected by having been drawn at all.
-//
-// It is a string rewrite, which is the part worth being uncomfortable about,
-// and it is narrow on purpose: it matches the opening tag of a form whose
-// method is post and inserts one input directly after it. It cannot match
-// anything else, because `<form` with `method="post"` is not a sequence that
-// occurs in prose here — and if it ever did, the worst outcome is a stray
-// hidden input in a paragraph rather than a missing control.
-//
-// **A PAGE DRAWN FOR SOMEBODY WITH NO SESSION GETS NO TOKEN AND NEEDS NONE**:
-// `checkCsrf()` passes a request with no session, because there is nothing to
-// forge on behalf of an anonymous caller. See websecurity.js.
-// ---------------------------------------------------------------------------
 // THE FIELDS EVERY FORM ON THIS CONSOLE CARRIES THAT ARE NOT SETTINGS.
 //
 // Several action handlers refuse a field they do not recognise BY NAME rather
