@@ -10,7 +10,7 @@
 //
 //   A. the permission, the client id and the resource identifier are ONE
 //      spelling in the three files that write them — `debugger_access.js`,
-//      `common/applications.js`'s seed and `common/oidc_rp.js`'s surface — and
+//      `common/applications.js`'s seed and `common/oidc_rp.ts`'s surface — and
 //      the seeded entries define and grant it;
 //   B. `narrowScope()` takes the permission off for somebody who is not a
 //      console administrator, for an application, for an unauthenticated

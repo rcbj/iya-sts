@@ -8,7 +8,7 @@
 //
 // An operator watched a console session expire an hour after signing in, with
 // its ID Token and access token, and was sent back through the sign-in screen.
-// `common/oidc_rp.js` now keeps the tokens a sign-in was issued, and when they
+// `common/oidc_rp.ts` now keeps the tokens a sign-in was issued, and when they
 // run out redeems the refresh token and writes the new ones onto THE SAME
 // SESSION. The end-to-end half — a real refresh token grant over the loopback
 // back channel, a page answered 200 on the same cookie — is

@@ -112,15 +112,15 @@ const CAPABILITIES = [
     what: 'A DPoP proof\'s jti is accepted once across the cluster, and the ' +
           'server nonce verifies on every node.' },
   { id: 'authn.second-factors-once', section: '2',
-    by: 'common/credentials.js',
+    by: 'common/credentials.ts',
     what: 'A TOTP step and a recovery code are accepted once across the ' +
           'cluster, and a WebAuthn signature counter never goes backwards.' },
   { id: 'credentials.links-once', section: '2',
-    by: 'common/credentials.js',
+    by: 'common/credentials.ts',
     what: 'An activation or password-reset link is used once across the ' +
           'cluster.' },
   { id: 'enrollment.credentials-once', section: '2',
-    by: 'common/cert_enrollment.js',
+    by: 'common/cert_enrollment.ts',
     what: 'An ACME External Account Binding key binds one account, a SCEP ' +
           'challenge password and an ACME nonce are spent once, and a SPIFFE ' +
           'join token is used once.' },
@@ -141,7 +141,7 @@ const CAPABILITIES = [
     what: 'A Kerberos AP-REQ authenticator is accepted once across the ' +
           'cluster.' },
   { id: 'security.rate-limits', section: '2',
-    by: 'common/websecurity.js',
+    by: 'common/websecurity.ts',
     what: 'Rate limits and LDAP bind throttling count every node\'s attempts ' +
           'against one budget.' },
   // ---- section 3: last writer wins -----------------------------------------
@@ -165,7 +165,7 @@ const CAPABILITIES = [
           'and the session inventory lists them all.' },
   // ---- section 5: valid requests refused -----------------------------------
   { id: 'secrets.protocol-keys', section: '5',
-    by: 'common/websecurity.js',
+    by: 'common/websecurity.ts',
     what: 'The CSRF key, the ACME nonce key and the SSF receiver secret are ' +
           'the cluster\'s shared secrets rather than generated per process ' +
           'or per run.' },
@@ -187,7 +187,7 @@ const CAPABILITIES = [
     by: 'persistence/persistence_replication.js',
     what: 'The change log is trimmed below what every live node has applied.' },
   { id: 'ops.bootstrap-once', section: '8',
-    by: 'common/credentials.js',
+    by: 'common/credentials.ts',
     what: 'A cold start of several nodes against an empty store generates one ' +
           'bootstrap administrator password.' }
 ];

@@ -1,7 +1,6 @@
-// @ts-check
 'use strict';
 //
-// File: access_gate.js
+// File: access_gate.ts
 //
 // ---------------------------------------------------------------------------
 // EVERY ACCESS-CONTROL DECISION IN THIS SERVICE, ASKED IN ONE PLACE
@@ -59,12 +58,21 @@
 // may require it.
 // ---------------------------------------------------------------------------
 
-const { log } = require('./helpers');
-const config = require('./config');
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16). `AccessGate` takes the logger,
+// `config` and the error-code table through its constructor
+// (`AccessGateDeps`); the decider slot is a field of the instance. The module
+// still exports `RESOURCE`, `ACTION`, `setDecider`, `deciderInstalled` and
+// `check` from ONE instance built with the real modules, which is TRANSITIONAL:
+// it goes when the composition root builds an `AccessGate` and hands it to the
+// surfaces. `AccessGate` is exported beside them for that root.
+// ---------------------------------------------------------------------------
+
+import helpers = require('./helpers');
+import config = require('./config');
 // The error-code registry. A LEAF that requires nothing here, so this file
 // stays one; the two failures below are tagged in the log rather than audited,
 // because `audit.js` is a heavier require than a leaf gate should carry.
-const errorCodes = require('./error_codes');
+import errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // THE RESOURCES. A closed list, because a resource id that only ever appears at
@@ -177,111 +185,188 @@ const ACTION = {
   MANAGE_OWN: 'manage-own'
 };
 
-let decider = null;
-
-function setDecider(fn) {
-  log.debug('Entering setDecider().');
-  if (typeof fn !== 'function' && fn !== null) {
-    log.error(errorCodes.tag('STS-XACML-0050') +
-              'access_gate: setDecider() was given something that is not a ' +
-              'function, so it was refused. Every access decision will be ' +
-              'ALLOWED, which is what a process without the XACML family ' +
-              'does.');
-    log.debug("Leaving setDecider().");
-    return false;
-  }
-  decider = fn;
-  log.debug('Leaving setDecider(). ' + (fn ? 'Installed.' : 'Cleared.'));
-  return true;
+// The person a decision is about — the SECURITY CONTEXT's, never the
+// request's. See `check()` below.
+interface AccessSubject {
+  name?: string;
+  authenticated?: boolean;
+  roles?: string[];
+  sub?: string;
+  sessionId?: string | null;
+  [key: string]: unknown;
 }
 
-function deciderInstalled() {
-  log.debug("Entering deciderInstalled().");
-  log.debug("Leaving deciderInstalled().");
-  return !!decider;
+// What `check()` is asked. See the comment above `check()`.
+interface AccessRequest {
+  resource?: string;
+  action?: string;
+  subject?: AccessSubject | null;
+  owner?: unknown;
+  requiredRoles?: string[];
+  context?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
-function allow(why) {
-  log.debug("Entering allow().");
-  log.debug("Leaving allow().");
-  return { allowed: true, decision: 'NotApplicable', why: why, policy: null };
+// What it answers. A decider's answer may carry more (an error code under a
+// Symbol, the policy's own detail), which is passed through untouched.
+interface AccessAnswer {
+  allowed: boolean;
+  decision?: string;
+  why?: string;
+  policy?: unknown;
+  [key: string]: unknown;
 }
 
-// ---------------------------------------------------------------------------
-// THE QUESTION.
-//
-//   { resource   one of RESOURCE above — WHAT is being reached.
-//     action     one of ACTION — what is being done to it.
-//     subject    the SECURITY CONTEXT's person:
-//                  { name, authenticated, roles, sub, sessionId }
-//                `name` is `session.user.username` and nothing else. A caller
-//                that has no session passes `null`, which is a subject the
-//                policy can decide about (ALL_UNAUTHENTICATED_USERS holds for
-//                it) rather than an error.
-//     owner      WHOSE resource it is, where that is a different person from
-//                the subject. The portal sets it; nothing else does yet. It is
-//                what lets a policy say "the subject is the owner" — and what
-//                lets a LATER policy say "or the subject holds helpdesk".
-//     requiredRoles
-//                the roles this request demands, where the CALLER states the
-//                requirement (the XACML surfaces, the debugger, the
-//                management API's token path); absent for a surface an
-//                operator narrows by policy.
-//     context    anything else worth deciding on: the method, the path. For
-//                the log and for a policy that wants it. }
-//
-// The answer is `{ allowed, decision, why, policy }` — `allowed` is what a
-// caller branches on and the rest is what it logs or shows.
-// ---------------------------------------------------------------------------
-function check(request) {
-  log.debug("Entering check().");
-  const asked = request || {};
-  log.debug('Entering check(). resource=' + asked.resource +
-            ', action=' + asked.action);
-  if (!decider) {
-    log.debug('Leaving check(). No decider, so nothing is gated.');
-    return allow('The XACML access subsystem is not loaded in this process, ' +
-                 'so access is not gated by policy.');
-  }
-  if (config.value('xacml.enforceAccess') === false) {
-    log.debug('Leaving check(). Enforcement is off.');
-    return allow('xacml.enforceAccess is off, so the decision was not asked ' +
-                 'for.');
-  }
-  if (!asked.resource || !asked.action) {
-    // A caller that does not know what it is asking about. Allowed rather than
-    // refused, and logged, because the alternative is a gate that refuses
-    // because of a bug in the code that called it.
-    log.warn('access_gate: a check named ' +
-             (asked.resource ? 'no action' : 'no resource') +
-             ', so it was allowed. That is a defect at the call site rather ' +
-             'than a decision.');
-    log.debug("Leaving check().");
-    return allow('The check named no resource or no action.');
-  }
-  let answer;
-  try {
-    answer = decider(asked);
-  } catch (error) {
-    // See the header: a THROW is a defect, not a Deny.
-    log.error(errorCodes.tag('STS-XACML-0051') +
-              'access_gate: the decider threw and access was ALLOWED; this ' +
-              'is a defect in the embedded PEP rather than a decision. ' +
-              error.message);
-    log.debug("Leaving check().");
-    return allow('The embedded PEP threw, which is a defect rather than a ' +
-                 'decision: ' + error.message);
-  }
-  const result = answer || allow('The embedded PEP answered nothing.');
-  log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
-            result.why));
-  return result;
+type AccessDecider =
+  (request: AccessRequest) => AccessAnswer | null | undefined;
+
+// What the gate needs from the rest of the service.
+interface AccessGateDeps {
+  log: {
+    debug(message: string): void;
+    warn(message: string): void;
+    error(message: string): void;
+  };
+  config: { value(key: string): unknown };
+  errorCodes: { tag(code: string): string };
 }
 
-module.exports = {
+class AccessGate {
+  static readonly RESOURCE = RESOURCE;
+  static readonly ACTION = ACTION;
+
+  private decider: AccessDecider | null = null;
+
+  constructor(private readonly deps: AccessGateDeps) {
+    deps.log.debug("Entering AccessGate.constructor().");
+    deps.log.debug("Leaving AccessGate.constructor().");
+  }
+
+  setDecider(fn: AccessDecider | null): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessGate.setDecider().");
+    if (typeof fn !== 'function' && fn !== null) {
+      log.error(errorCodes.tag('STS-XACML-0050') +
+                'access_gate: setDecider() was given something that is not ' +
+                'a function, so it was refused. Every access decision will ' +
+                'be ALLOWED, which is what a process without the XACML ' +
+                'family does.');
+      log.debug("Leaving AccessGate.setDecider().");
+      return false;
+    }
+    this.decider = fn;
+    log.debug("Leaving AccessGate.setDecider(). " +
+              (fn ? 'Installed.' : 'Cleared.'));
+    return true;
+  }
+
+  deciderInstalled(): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccessGate.deciderInstalled().");
+    log.debug("Leaving AccessGate.deciderInstalled().");
+    return !!this.decider;
+  }
+
+  private allow(why: string): AccessAnswer {
+    const { log } = this.deps;
+    log.debug("Entering AccessGate.allow().");
+    log.debug("Leaving AccessGate.allow().");
+    return { allowed: true, decision: 'NotApplicable', why: why,
+             policy: null };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE QUESTION.
+  //
+  //   { resource   one of RESOURCE above — WHAT is being reached.
+  //     action     one of ACTION — what is being done to it.
+  //     subject    the SECURITY CONTEXT's person:
+  //                  { name, authenticated, roles, sub, sessionId }
+  //                `name` is `session.user.username` and nothing else. A caller
+  //                that has no session passes `null`, which is a subject the
+  //                policy can decide about (ALL_UNAUTHENTICATED_USERS holds for
+  //                it) rather than an error.
+  //     owner      WHOSE resource it is, where that is a different person from
+  //                the subject. The portal sets it; nothing else does yet. It
+  //                is what lets a policy say "the subject is the owner" — and
+  //                what lets a LATER policy say "or the subject holds
+  //                helpdesk".
+  //     requiredRoles
+  //                the roles this request demands, where the CALLER states the
+  //                requirement (the XACML surfaces, the debugger, the
+  //                management API's token path); absent for a surface an
+  //                operator narrows by policy.
+  //     context    anything else worth deciding on: the method, the path. For
+  //                the log and for a policy that wants it. }
+  //
+  // The answer is `{ allowed, decision, why, policy }` — `allowed` is what a
+  // caller branches on and the rest is what it logs or shows.
+  // ---------------------------------------------------------------------------
+  check(request?: AccessRequest | null): AccessAnswer {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering AccessGate.check().");
+    const asked: AccessRequest = request || {};
+    log.debug('Entering AccessGate.check(). resource=' + asked.resource +
+              ', action=' + asked.action);
+    if (!this.decider) {
+      log.debug("Leaving AccessGate.check(). No decider, so nothing is " +
+                "gated.");
+      return this.allow('The XACML access subsystem is not loaded in this ' +
+                        'process, so access is not gated by policy.');
+    }
+    if (config.value('xacml.enforceAccess') === false) {
+      log.debug("Leaving AccessGate.check(). Enforcement is off.");
+      return this.allow('xacml.enforceAccess is off, so the decision was ' +
+                        'not asked for.');
+    }
+    if (!asked.resource || !asked.action) {
+      // A caller that does not know what it is asking about. Allowed rather
+      // than refused, and logged, because the alternative is a gate that
+      // refuses because of a bug in the code that called it.
+      log.warn('access_gate: a check named ' +
+               (asked.resource ? 'no action' : 'no resource') +
+               ', so it was allowed. That is a defect at the call site ' +
+               'rather than a decision.');
+      log.debug("Leaving AccessGate.check().");
+      return this.allow('The check named no resource or no action.');
+    }
+    let answer: AccessAnswer | null | undefined;
+    try {
+      answer = this.decider(asked);
+    } catch (error) {
+      log.debug("Caught in AccessGate.check(): " +
+                ((error && error.message) || error));
+      // See the header: a THROW is a defect, not a Deny.
+      log.error(errorCodes.tag('STS-XACML-0051') +
+                'access_gate: the decider threw and access was ALLOWED; ' +
+                'this is a defect in the embedded PEP rather than a ' +
+                'decision. ' + error.message);
+      log.debug("Leaving AccessGate.check().");
+      return this.allow('The embedded PEP threw, which is a defect rather ' +
+                        'than a decision: ' + error.message);
+    }
+    const result = answer || this.allow('The embedded PEP answered nothing.');
+    log.debug("Leaving AccessGate.check(). " +
+              (result.allowed ? 'Allowed.' : 'REFUSED: ' + result.why));
+    return result;
+  }
+}
+
+// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
+// the composition root will build one.
+const accessGate = new AccessGate({
+  log: helpers.log,
+  config: config,
+  errorCodes: errorCodes
+});
+
+export = {
+  AccessGate: AccessGate,
   RESOURCE: RESOURCE,
   ACTION: ACTION,
-  setDecider: setDecider,
-  deciderInstalled: deciderInstalled,
-  check: check
+  setDecider: accessGate.setDecider.bind(accessGate) as
+    AccessGate['setDecider'],
+  deciderInstalled: accessGate.deciderInstalled.bind(accessGate) as
+    AccessGate['deciderInstalled'],
+  check: accessGate.check.bind(accessGate) as AccessGate['check']
 };

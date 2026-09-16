@@ -1,7 +1,6 @@
-// @ts-check
 'use strict';
 //
-// File: inetorgperson.js
+// File: inetorgperson.ts
 //
 // ===========================================================================
 // WHAT A PERSON IS, IN THE SCHEMA THE PEOPLE IN THIS DIRECTORY ACTUALLY CARRY
@@ -84,9 +83,63 @@
 // `config`, not `realms` — because it is a SCHEMA and there is nothing about
 // it a deployment or a trust realm could change. It is required by
 // `portal/portal.js` and by `ldap/ldap_server.js`.
+//
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16).
+//
+// `InetOrgPerson` takes its logger through `InetOrgPersonDeps`; the schema
+// tables stay module-level constants, because they are data and not state.
+// The module still exports `CLASSES`, `CANONICAL_NAMES`, `classes`,
+// `attributes`, `attribute`, `rowFor` and `describe`, from an instance built
+// with the real logger. That instance is TRANSITIONAL: it goes when the
+// composition root exists and hands an `InetOrgPerson` to the portal and the
+// directory. `InetOrgPerson` is exported beside it for that root.
 // ===========================================================================
 
-const { log } = require('./helpers');
+import helpers = require('./helpers');
+
+// One row of the schema.
+interface SchemaRow {
+  ldap: string;
+  label: string;
+  rfc: string;
+  must?: boolean;
+  secret?: boolean;
+  binary?: boolean;
+  note?: string;
+}
+
+// One object class, with its rows.
+interface SchemaClass {
+  id: string;
+  name: string;
+  rfc: string;
+  oid: string;
+  what: string;
+  attributes: SchemaRow[];
+}
+
+// A row ready to draw: see `rowFor()`.
+interface DrawnRow {
+  ldap: string;
+  label: string;
+  rfc: string;
+  note: string;
+  must: boolean;
+  secret: boolean;
+  binary: boolean;
+  present: boolean;
+  count: number;
+  values: string[];
+  bytes?: number;
+}
+
+// A stored attribute map: lower-cased names, array values.
+type StoredEntry = Record<string, unknown> | null | undefined;
+
+interface InetOrgPersonDeps {
+  log: { debug(message: string): void };
+}
 
 // ---------------------------------------------------------------------------
 // RFC 4519 SECTION 3.12 — `person`. The base, and the only one of the three
@@ -98,7 +151,7 @@ const { log } = require('./helpers');
 // admitted, because a page that drew it twice would look like a bug in the
 // page rather than a curiosity of the schema.
 // ---------------------------------------------------------------------------
-const PERSON = [
+const PERSON: SchemaRow[] = [
   { ldap: 'cn', label: 'Common name', must: true, rfc: 'RFC 4519 2.3',
     note: 'The full name this entry is filed under. Required by the schema, ' +
           'and the RDN of every person this service creates.' },
@@ -117,7 +170,7 @@ const PERSON = [
 // RFC 4519 SECTION 3.10 — `organizationalPerson`. Where this person is, in an
 // organisation and on a map: almost all of it is address and telecoms.
 // ---------------------------------------------------------------------------
-const ORGANIZATIONAL_PERSON = [
+const ORGANIZATIONAL_PERSON: SchemaRow[] = [
   { ldap: 'title', label: 'Job title', rfc: 'RFC 4519 2.38' },
   { ldap: 'ou', label: 'Organizational unit', rfc: 'RFC 4519 2.20' },
   { ldap: 'l', label: 'Locality', rfc: 'RFC 4519 2.16' },
@@ -167,7 +220,7 @@ const ORGANIZATIONAL_PERSON = [
 // worth doing once rather than trusting: two other catalogues in this
 // repository had a wrong one each, found by the same check.
 // ---------------------------------------------------------------------------
-const INET_ORG_PERSON = [
+const INET_ORG_PERSON: SchemaRow[] = [
   { ldap: 'uid', label: 'User id', rfc: 'RFC 4519 2.39',
     note: 'The login name. This service uses it as the username, and it is ' +
           'what everything else on this page is keyed by.' },
@@ -235,7 +288,7 @@ const INET_ORG_PERSON = [
 // the union of three object classes learns it from the headings, which is
 // worth more on an account page than a flat alphabetical list would be.
 // ---------------------------------------------------------------------------
-const CLASSES = [
+const CLASSES: SchemaClass[] = [
   { id: 'person', name: 'person', rfc: 'RFC 4519 3.12', oid: '2.5.6.6',
     what: 'The base class. The only one of the three with attributes the ' +
           'schema REQUIRES.',
@@ -256,7 +309,7 @@ const CLASSES = [
 // Every row, flat, in class order. Built once — the rows are shared because
 // they are read-only everywhere, and a caller that wants to sort gets a copy
 // from `attributes()` below.
-const ALL = CLASSES.reduce(function (into, klass) {
+const ALL: SchemaRow[] = CLASSES.reduce(function (into: SchemaRow[], klass) {
   return into.concat(klass.attributes);
 }, []);
 
@@ -265,7 +318,7 @@ const ALL = CLASSES.reduce(function (into, klass) {
 // attribute descriptions case-insensitive), so a lookup against the stored map
 // has to be lower-cased or every row on the page is empty. That is the one
 // mistake this table exists to make impossible.
-const BY_NAME = new Map();
+const BY_NAME: Map<string, SchemaRow> = new Map();
 ALL.forEach(function (row) {
   BY_NAME.set(row.ldap.toLowerCase(), row);
 });
@@ -274,125 +327,157 @@ ALL.forEach(function (row) {
 // own table through `learnName()`. The same shape `oid4vc/vc_claims.ts` offers
 // and for the same reason — see the header: two lists of spellings that
 // disagree are REPORTED rather than resolved by whichever was merged first.
-const CANONICAL_NAMES = {};
+const CANONICAL_NAMES: Record<string, string> = {};
 ALL.forEach(function (row) {
   CANONICAL_NAMES[row.ldap.toLowerCase()] = row.ldap;
 });
 
-// The classes, for a caller that is going to draw them. A shallow copy of the
-// list and of each class's row array, so that a caller sorting or splicing
-// cannot reorder the schema for everybody else.
-function classes() {
-  log.debug("Entering classes().");
-  log.debug("Leaving classes().");
-  return CLASSES.map(function (klass) {
-    return Object.assign({}, klass, { attributes: klass.attributes.slice(0) });
-  });
-}
+class InetOrgPerson {
+  static readonly CLASSES = CLASSES;
+  static readonly CANONICAL_NAMES = CANONICAL_NAMES;
 
-function attributes() {
-  log.debug("Entering attributes().");
-  log.debug("Leaving attributes().");
-  return ALL.slice(0);
-}
-
-function attribute(name) {
-  log.debug("Entering attribute().");
-  log.debug("Leaving attribute().");
-  return BY_NAME.get(String(name == null ? '' : name).trim().toLowerCase()) ||
-         null;
-}
-
-// ---------------------------------------------------------------------------
-// ONE ROW, READY TO DRAW: the schema row, and whatever the entry holds for it.
-//
-// **THE REFUSALS ARE APPLIED HERE AND NOT AT THE PAGE**, which is the whole
-// reason this function exists rather than each caller joining the two halves
-// itself. A `secret` row never returns a value and a `binary` row returns its
-// SIZE, so a second surface that draws this list cannot leak what the first
-// one was careful about.
-//
-// `entry` is the stored attribute map — lower-cased names, array values, which
-// is exactly what `ldap/ldap_server.js` holds and hands over.
-// ---------------------------------------------------------------------------
-function rowFor(row, entry) {
-  log.debug("Entering rowFor().");
-  const held = (entry || {})[row.ldap.toLowerCase()];
-  const values = Array.isArray(held) ? held :
-                 (held === undefined ? [] : [held]);
-  const present = values.length > 0 &&
-                  values.some(function (one) { return String(one) !== ''; });
-  const out = {
-    ldap: row.ldap,
-    label: row.label,
-    rfc: row.rfc,
-    note: row.note || '',
-    must: !!row.must,
-    secret: !!row.secret,
-    binary: !!row.binary,
-    present: present,
-    count: values.length,
-    values: []
-  };
-  if (!present) {
-    log.debug("Leaving rowFor().");
-    return out;
+  constructor(private readonly deps: InetOrgPersonDeps) {
+    deps.log.debug("Entering InetOrgPerson.constructor().");
+    deps.log.debug("Leaving InetOrgPerson.constructor().");
   }
-  if (row.secret) {
-    log.debug("Leaving rowFor().");
-    // NAMED AND NOT PRINTED. See the header.
-    return out;
-  }
-  if (row.binary) {
-    // THE SIZE, not the octets. A Buffer knows its length; a string that came
-    // back from a store that stringified it is measured in bytes rather than
-    // characters, because what a reader wants to know is how big the thing is.
-    out.bytes = values.reduce(function (total, one) {
-      return total + (Buffer.isBuffer(one)
-        ? one.length : Buffer.byteLength(String(one), 'utf8'));
-    }, 0);
-    log.debug("Leaving rowFor().");
-    return out;
-  }
-  out.values = values.map(String);
-  log.debug("Leaving rowFor().");
-  return out;
-}
 
-// ---------------------------------------------------------------------------
-// THE WHOLE THING FOR ONE ENTRY, grouped by class, which is what a page wants.
-//
-// `held` on each class is how many of its attributes this entry actually
-// carries — a page that can say *4 of 6* in a heading can let a reader skip a
-// section, and computing it here means the page does not walk the rows twice.
-// ---------------------------------------------------------------------------
-function describe(entry) {
-  log.debug('Entering describe(). ' +
-            Object.keys(entry || {}).length + ' stored attribute(s).');
-  const groups = CLASSES.map(function (klass) {
-    const rows = klass.attributes.map(function (row) {
-      return rowFor(row, entry);
+  // The classes, for a caller that is going to draw them. A shallow copy of
+  // the list and of each class's row array, so that a caller sorting or
+  // splicing cannot reorder the schema for everybody else.
+  classes(): SchemaClass[] {
+    const { log } = this.deps;
+    log.debug("Entering InetOrgPerson.classes().");
+    log.debug("Leaving InetOrgPerson.classes().");
+    return CLASSES.map(function (klass) {
+      return Object.assign({}, klass,
+                           { attributes: klass.attributes.slice(0) });
     });
-    return {
-      id: klass.id, name: klass.name, rfc: klass.rfc, oid: klass.oid,
-      what: klass.what,
-      rows: rows,
-      held: rows.filter(function (one) { return one.present; }).length,
-      total: rows.length
+  }
+
+  attributes(): SchemaRow[] {
+    const { log } = this.deps;
+    log.debug("Entering InetOrgPerson.attributes().");
+    log.debug("Leaving InetOrgPerson.attributes().");
+    return ALL.slice(0);
+  }
+
+  attribute(name: unknown): SchemaRow | null {
+    const { log } = this.deps;
+    log.debug("Entering InetOrgPerson.attribute().");
+    log.debug("Leaving InetOrgPerson.attribute().");
+    return BY_NAME.get(
+      String(name == null ? '' : name).trim().toLowerCase()) || null;
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE ROW, READY TO DRAW: the schema row, and whatever the entry holds for
+  // it.
+  //
+  // **THE REFUSALS ARE APPLIED HERE AND NOT AT THE PAGE**, which is the whole
+  // reason this function exists rather than each caller joining the two halves
+  // itself. A `secret` row never returns a value and a `binary` row returns its
+  // SIZE, so a second surface that draws this list cannot leak what the first
+  // one was careful about.
+  //
+  // `entry` is the stored attribute map — lower-cased names, array values,
+  // which is exactly what `ldap/ldap_server.js` holds and hands over.
+  // -------------------------------------------------------------------------
+  rowFor(row: SchemaRow, entry: StoredEntry): DrawnRow {
+    const { log } = this.deps;
+    log.debug("Entering InetOrgPerson.rowFor().");
+    const held = (entry || {})[row.ldap.toLowerCase()];
+    const values: unknown[] = Array.isArray(held) ? held :
+                   (held === undefined ? [] : [held]);
+    const present = values.length > 0 &&
+      values.some(function (one) {
+        return String(one) !== '';
+      });
+    const out: DrawnRow = {
+      ldap: row.ldap,
+      label: row.label,
+      rfc: row.rfc,
+      note: row.note || '',
+      must: !!row.must,
+      secret: !!row.secret,
+      binary: !!row.binary,
+      present: present,
+      count: values.length,
+      values: []
     };
-  });
-  const held = groups.reduce(function (n, g) { return n + g.held; }, 0);
-  log.debug('Leaving describe(). ' + held + ' of ' + ALL.length +
-            ' standard attribute(s) are set.');
-  return { classes: groups, held: held, total: ALL.length };
+    if (!present) {
+      log.debug("Leaving InetOrgPerson.rowFor().");
+      return out;
+    }
+    if (row.secret) {
+      log.debug("Leaving InetOrgPerson.rowFor().");
+      // NAMED AND NOT PRINTED. See the header.
+      return out;
+    }
+    if (row.binary) {
+      // THE SIZE, not the octets. A Buffer knows its length; a string that
+      // came back from a store that stringified it is measured in bytes rather
+      // than characters, because what a reader wants to know is how big the
+      // thing is.
+      out.bytes = values.reduce<number>(function (total: number, one) {
+        return total + (Buffer.isBuffer(one)
+          ? one.length : Buffer.byteLength(String(one), 'utf8'));
+      }, 0);
+      log.debug("Leaving InetOrgPerson.rowFor().");
+      return out;
+    }
+    out.values = values.map(String);
+    log.debug("Leaving InetOrgPerson.rowFor().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE WHOLE THING FOR ONE ENTRY, grouped by class, which is what a page
+  // wants.
+  //
+  // `held` on each class is how many of its attributes this entry actually
+  // carries — a page that can say *4 of 6* in a heading can let a reader skip
+  // a section, and computing it here means the page does not walk the rows
+  // twice.
+  // -------------------------------------------------------------------------
+  describe(entry: StoredEntry) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering InetOrgPerson.describe(). ' +
+              Object.keys(entry || {}).length + ' stored attribute(s).');
+    const groups = CLASSES.map(function (klass) {
+      const rows = klass.attributes.map(function (row) {
+        return self.rowFor(row, entry);
+      });
+      return {
+        id: klass.id, name: klass.name, rfc: klass.rfc, oid: klass.oid,
+        what: klass.what,
+        rows: rows,
+        held: rows.filter(function (one) {
+          return one.present;
+        }).length,
+        total: rows.length
+      };
+    });
+    const held = groups.reduce(function (n, g) {
+      return n + g.held;
+    }, 0);
+    log.debug('Leaving InetOrgPerson.describe(). ' + held + ' of ' +
+              ALL.length + ' standard attribute(s) are set.');
+    return { classes: groups, held: held, total: ALL.length };
+  }
 }
 
-module.exports = {
+// THE TRANSITIONAL INSTANCE — see the header. Built with the real logger, as
+// the composition root will build one.
+const schema = new InetOrgPerson({ log: helpers.log });
+
+export = {
+  InetOrgPerson: InetOrgPerson,
   CLASSES: CLASSES,
   CANONICAL_NAMES: CANONICAL_NAMES,
-  classes: classes,
-  attributes: attributes,
-  attribute: attribute,
-  rowFor: rowFor,
-  describe: describe
+  classes: schema.classes.bind(schema) as InetOrgPerson['classes'],
+  attributes: schema.attributes.bind(schema) as InetOrgPerson['attributes'],
+  attribute: schema.attribute.bind(schema) as InetOrgPerson['attribute'],
+  rowFor: schema.rowFor.bind(schema) as InetOrgPerson['rowFor'],
+  describe: schema.describe.bind(schema) as InetOrgPerson['describe']
 };

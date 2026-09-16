@@ -11,7 +11,7 @@
 // setting on would have meant nobody could sign in to the console — and the
 // alternative, exempting them, is the kind of hole that becomes permanent.
 //
-// So `common/oidc_rp.js` makes a proof. This is the one place in the service
+// So `common/oidc_rp.ts` makes a proof. This is the one place in the service
 // that does, and `oauth-oidc/dpop.js` is the one place that checks one; a
 // signer and a verifier written from the same specification by the same hand
 // agree with each other far more readily than either agrees with the

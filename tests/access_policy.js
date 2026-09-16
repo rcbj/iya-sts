@@ -12,7 +12,7 @@ const log = require('bunyan').createLogger({ name: 'access_policy',
 // THE ACCESS-CONTROL POLICY DECIDES WHO REACHES THE FIVE GATED SURFACES, AND
 // OWNERSHIP IS A CONSTRAINT RATHER THAN A WAY ROUND THE ROLES.
 //
-// `common/access_gate.js` is the LEAF the admin console, the management API,
+// `common/access_gate.ts` is the LEAF the admin console, the management API,
 // the User Portal, SCIM and the SPIRE Server API ask before they let anybody
 // in; `xacml/xacml_access_pep.js` fills its decider and turns the question
 // into a XACML request against the `access-control` policy. This file asserts

@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE SCHEMA THE ACCOUNT PAGE IS DRAWN FROM, AND THE TWO REFUSALS IN IT.
 //
-// `common/inetorgperson.js` is the fixed list `/portal`'s Overview looks each
+// `common/inetorgperson.ts` is the fixed list `/portal`'s Overview looks each
 // attribute up in. Four things about it are worth asserting in process, and
 // the middle two are the ones that matter:
 //
@@ -102,7 +102,7 @@ function run(t) {
           'the page prints both and a reader on a mock is about to go and ' +
           'write the attribute over LDAP');
 
-  // THE INVARIANT. `common/inetorgperson.js`'s whole reason for existing is
+  // THE INVARIANT. `common/inetorgperson.ts`'s whole reason for existing is
   // that the account page draws a LIST rather than the entry, because this
   // service writes credentials onto the same object. If one of those names
   // ever reached this list the page would print it, and nothing else in the

@@ -736,7 +736,7 @@ function checkTheSurfacePool(t) {
   t.check(/req\.stsProtocolWorker\s*=/.test(workerSource) &&
           /delete req\.headers\[PROTOCOL_WORKER_HEADER\]/.test(workerSource),
           'and puts it on the request and strips it', 'request_worker.js');
-  const rpSource = read('common/oidc_rp.js');
+  const rpSource = read('common/oidc_rp.ts');
   t.check(/STS_REQUEST_WORKER_POOL === 'surfaces'/.test(rpSource) &&
           /options\.from && options\.from\.stsProtocolWorker/.test(rpSource),
           'oidc_rp.js pins the back channel to the hinted worker in a ' +
@@ -746,9 +746,12 @@ function checkTheSurfacePool(t) {
   // else — `from` included — to `backChannel()`. Counting only the direct
   // calls would have quietly dropped the two that matter most here: the code
   // redemption and the renewal are the hops this whole check exists about.
-  const calls = (rpSource.match(/await backChannel\(\{[\s\S]*?\}\);/g) || [])
+  // Since #50 both are methods, so a call may read `await self.backChannel(`.
+  const calls = (rpSource.match(
+    /await (?:\w+\.)?backChannel\(\{[\s\S]*?\}\);/g) || [])
     .concat(rpSource.match(
-      /await tokenRequestWithProof\([^,]+, \{[\s\S]*?\}\);/g) || []);
+      /await (?:\w+\.)?tokenRequestWithProof\([^,]+, \{[\s\S]*?\}\);/g) ||
+      []);
   t.check(calls.length >= 4 && calls.every(function (one) {
     return /from: req/.test(one);
   }), 'and every one of its ' + calls.length + ' back-channel calls passes ' +

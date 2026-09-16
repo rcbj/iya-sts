@@ -14,7 +14,7 @@
 // by driving a running service:
 //
 //   * **THE FORM AGAINST THE PAGE.** The field table is declared in
-//     `common/pki_authoring.js` and DRAWN in `admin-ui/pki_admin.js`, and the
+//     `common/pki_authoring.ts` and DRAWN in `admin-ui/pki_admin.js`, and the
 //     two going out of step is the failure this arrangement is most likely to
 //     produce — a field parsed and never drawn falls to its default on every
 //     round trip, and one drawn and never parsed is a control that does

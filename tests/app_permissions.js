@@ -6,7 +6,7 @@
 // A CONFIGURED PERMISSION IS NOT AN ACT, AND THE PICTURE OF ONE MUST NOT LOOK
 // LIKE THE PICTURE OF THE OTHER.
 //
-// `common/app_permissions.js` builds a graph in `common/delegation.js`'s shape
+// `common/app_permissions.ts` builds a graph in `common/delegation.js`'s shape
 // and hands it to the SAME renderer the acts picture uses. That is what makes
 // `/admin/delegation/allowed` cost one new relation instead of a second
 // `delegation_map.js` — and it is also the whole risk of the arrangement: a

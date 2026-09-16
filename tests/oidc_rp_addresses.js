@@ -6,7 +6,7 @@
 // WHERE THE ADMIN CONSOLE AND THE USER PORTAL SEND A BROWSER, WHAT THEY WRITE
 // ONTO THEIR OWN CLIENT ENTRIES, AND WHERE THEY DIAL THEMSELVES (2026-09-12).
 //
-// `common/oidc_rp.js` built the console's and the portal's redirect URI from
+// `common/oidc_rp.ts` built the console's and the portal's redirect URI from
 // `baseUrlOf(req)` and ADDED it to the seeded client entry the first time a
 // flow went through a base it had not seen. Its comment said an invented Host
 // reached `baseUrlOf()` only with `global.trustProxy` on. That was false —
@@ -264,7 +264,7 @@ function run(t) {
       // so the options are read as SOURCE, `version.js`'s shape: a mutant
       // putting the literal back survived every behavioural check above.
       const source = require('fs').readFileSync(
-        require('path').join(__dirname, '..', 'common', 'oidc_rp.js'), 'utf8');
+        require('path').join(__dirname, '..', 'common', 'oidc_rp.ts'), 'utf8');
       const requestBlock = source.slice(source.indexOf('.request({'),
                                         source.indexOf('.request({') + 400);
       t.check(/host:\s*helpers\.loopbackHost\(\)/.test(requestBlock) &&

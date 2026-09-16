@@ -14,7 +14,7 @@
 // **THIS FILE HAS THE OPPOSITE PROBLEM.** Nobody ever wrote a specification
 // for a recovery code. There are no vectors, no external answer, and every
 // property below is one this service chose. A test that only re-stated those
-// choices would be a second copy of `common/backup_codes.js` written in
+// choices would be a second copy of `common/backup_codes.ts` written in
 // assertions — it would pass for ever and would catch nothing.
 //
 // So what is asserted here is deliberately not "does it do what the code
@@ -56,7 +56,7 @@
 //
 // `verifyBackupCode()` REFUSES a code that verified when the spend will not
 // write — the opposite of what `verifyTotp()` does with its counter, and
-// argued at length in `common/credentials.js`: a one-time code that cannot be
+// argued at length in `common/credentials.ts`: a one-time code that cannot be
 // counted is replayable for ninety seconds, and a recovery code that cannot be
 // marked spent works for ever. **Nothing here reaches that branch**, and the
 // reason is worth stating so that the next person does not waste the hour:

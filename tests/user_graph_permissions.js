@@ -14,7 +14,7 @@
 // the permission. So the one picture that shows what a client DID was the one
 // that could not say what it did it WITH.
 //
-// `common/user_graph.js`'s `permissionsAddressedTo()` is the rule that closed
+// `common/user_graph.ts`'s `permissionsAddressedTo()` is the rule that closed
 // that, and this file is its guard. What it asserts is the READING rather than
 // the plumbing: a client can name what it wants in TWO spellings, one of which
 // leaves a permission name on the token and one of which deliberately does not,
