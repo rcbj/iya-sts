@@ -1,7 +1,6 @@
-// @ts-check
 'use strict';
 //
-// File: document_settings.js
+// File: document_settings.ts
 //
 // ===========================================================================
 // THE TWO THINGS EVERY SIGNED SAML-SHAPED DOCUMENT HERE ASKS THE CONFIGURATION,
@@ -29,9 +28,31 @@
 // and `crypto`, none of which requires it back.
 // ===========================================================================
 
-const config = require('../common/config');
-const { log, xmlEscape } = require('../common/helpers');
-const stsCrypto = require('../common/crypto');
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
+// shape: `DocumentSettings` takes `config`, the logger, `xmlEscape` and the
+// two URI tables through its constructor; the tables are its static members,
+// and the module still exports the old four names from a TRANSITIONAL instance
+// for the unconverted modules that require it.
+// ---------------------------------------------------------------------------
+
+import config = require('../common/config');
+import helpers = require('../common/helpers');
+import stsCrypto = require('../common/crypto');
+
+// What `signatureOptions()` answers.
+interface SignatureOptions {
+  sigAlg: string;
+  c14nAlg: string;
+  sigName: string;
+  c14nName: string;
+}
+
+interface DocumentSettingsDeps {
+  config: { value(key: string): unknown };
+  log: { debug(message: string): void; warn(message: string): void };
+  xmlEscape(value: unknown): string;
+}
 
 // The URIs, taken from the vendored engine's own names where it has them so
 // there is one spelling in the process. RSA only: the key every one of these
@@ -39,90 +60,113 @@ const stsCrypto = require('../common/crypto');
 // signer's digest table (`sigAlgSpec()`) is the RSA family.
 const XMLDSIG_MORE = 'http://www.w3.org/2001/04/xmldsig-more#';
 
-const SIGNATURE_ALGORITHMS = {
-  'rsa-sha256': stsCrypto.SIG_RSA_SHA256,
-  'rsa-sha384': XMLDSIG_MORE + 'rsa-sha384',
-  'rsa-sha512': XMLDSIG_MORE + 'rsa-sha512',
-  'rsa-sha1': 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
-};
+class DocumentSettings {
+  static readonly SIGNATURE_ALGORITHMS: Record<string, string> = {
+    'rsa-sha256': stsCrypto.SIG_RSA_SHA256,
+    'rsa-sha384': XMLDSIG_MORE + 'rsa-sha384',
+    'rsa-sha512': XMLDSIG_MORE + 'rsa-sha512',
+    'rsa-sha1': 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
+  };
 
-// EXCLUSIVE ONLY, and `saml.canonicalizationAlgorithm`'s description says why:
-// an assertion is signed standalone and then embedded under ancestors that
-// declare prefixes of their own.
-const CANONICALIZATIONS = {
-  'exclusive': stsCrypto.C14N_EXCLUSIVE,
-  'exclusive-with-comments': stsCrypto.C14N_EXCLUSIVE + 'WithComments'
-};
+  // EXCLUSIVE ONLY, and `saml.canonicalizationAlgorithm`'s description says
+  // why: an assertion is signed standalone and then embedded under ancestors
+  // that declare prefixes of their own.
+  static readonly CANONICALIZATIONS: Record<string, string> = {
+    'exclusive': stsCrypto.C14N_EXCLUSIVE,
+    'exclusive-with-comments': stsCrypto.C14N_EXCLUSIVE + 'WithComments'
+  };
 
-// The configured pair, as URIs. A value the table does not know falls back to
-// today's pair with a warning rather than throwing into a sign-in — the enum
-// on the setting already refuses one at the door, so this is reachable only by
-// a table and a setting that disagree, which is a bug worth a log line and not
-// worth a failed assertion.
-function signatureOptions() {
-  log.debug("Entering signatureOptions().");
-  const sigName = String(config.value('saml.signatureAlgorithm') ||
-                         'rsa-sha256');
-  const c14nName = String(config.value('saml.canonicalizationAlgorithm') ||
-                          'exclusive');
-  let sigAlg = SIGNATURE_ALGORITHMS[sigName];
-  let c14nAlg = CANONICALIZATIONS[c14nName];
-  if (!sigAlg) {
-    log.warn('saml: saml.signatureAlgorithm is "' + sigName + '", which this ' +
-             'service cannot sign with; RSA-SHA256 is used instead.');
-    sigAlg = SIGNATURE_ALGORITHMS['rsa-sha256'];
+  constructor(private readonly deps: DocumentSettingsDeps) {
+    deps.log.debug("Entering DocumentSettings.constructor().");
+    deps.log.debug("Leaving DocumentSettings.constructor().");
   }
-  if (!c14nAlg) {
-    log.warn('saml: saml.canonicalizationAlgorithm is "' + c14nName + '", ' +
-             'which this service does not offer; exclusive c14n is used ' +
-             'instead.');
-    c14nAlg = CANONICALIZATIONS.exclusive;
+
+  // The configured pair, as URIs. A value the table does not know falls back
+  // to today's pair with a warning rather than throwing into a sign-in — the
+  // enum on the setting already refuses one at the door, so this is reachable
+  // only by a table and a setting that disagree, which is a bug worth a log
+  // line and not worth a failed assertion.
+  signatureOptions(): SignatureOptions {
+    const { log, config } = this.deps;
+    const SIGNATURE_ALGORITHMS = DocumentSettings.SIGNATURE_ALGORITHMS;
+    const CANONICALIZATIONS = DocumentSettings.CANONICALIZATIONS;
+    log.debug("Entering DocumentSettings.signatureOptions().");
+    const sigName = String(config.value('saml.signatureAlgorithm') ||
+                           'rsa-sha256');
+    const c14nName = String(config.value('saml.canonicalizationAlgorithm') ||
+                            'exclusive');
+    let sigAlg = SIGNATURE_ALGORITHMS[sigName];
+    let c14nAlg = CANONICALIZATIONS[c14nName];
+    if (!sigAlg) {
+      log.warn('saml: saml.signatureAlgorithm is "' + sigName + '", which ' +
+               'this service cannot sign with; RSA-SHA256 is used instead.');
+      sigAlg = SIGNATURE_ALGORITHMS['rsa-sha256'];
+    }
+    if (!c14nAlg) {
+      log.warn('saml: saml.canonicalizationAlgorithm is "' + c14nName + '", ' +
+               'which this service does not offer; exclusive c14n is used ' +
+               'instead.');
+      c14nAlg = CANONICALIZATIONS.exclusive;
+    }
+    log.debug("Leaving DocumentSettings.signatureOptions(). " + sigName +
+              ", " + c14nName + ".");
+    return { sigAlg: sigAlg, c14nAlg: c14nAlg, sigName: sigName,
+             c14nName: c14nName };
   }
-  log.debug("Leaving signatureOptions(). " + sigName + ", " + c14nName + ".");
-  return { sigAlg: sigAlg, c14nAlg: c14nAlg, sigName: sigName,
-           c14nName: c14nName };
+
+  // -------------------------------------------------------------------------
+  // <md:Organization>, which was the literal "mock-sts" / "Mock security
+  // token service" in two signed metadata documents.
+  //
+  // EMPTY OMITS THE ELEMENT, IN EITHER MODE. saml-metadata-2.0-os section
+  // 2.3.2.1 makes OrganizationName, OrganizationDisplayName and
+  // OrganizationURL each one-or-more, so half an Organization is a
+  // schema-invalid document; an operator who empties the name has said there
+  // is no organisation to publish, and the element is optional. The URL
+  // defaults to the base URL as before.
+  //
+  // WHY NOT OMIT IT IN PRODUCT MODE AUTOMATICALLY: a setting whose value is
+  // silently ignored in one mode is a setting that lies on the console. The
+  // default is the name this service always published, product mode
+  // included, and README says to set or empty it.
+  // -------------------------------------------------------------------------
+  organizationElement(base?: unknown): string {
+    const { log, config, xmlEscape } = this.deps;
+    log.debug("Entering DocumentSettings.organizationElement().");
+    const name = String(config.value('saml.organizationName') || '').trim();
+    const display = String(config.value('saml.organizationDisplayName') ||
+                           '').trim();
+    if (!name || !display) {
+      log.debug("Leaving DocumentSettings.organizationElement(). Omitted: " +
+                "no name or no display name.");
+      return '';
+    }
+    const url = String(config.value('saml.organizationUrl') || '').trim() ||
+      (String(base || '') + '/');
+    log.debug("Leaving DocumentSettings.organizationElement().");
+    return '<md:Organization>' +
+      '<md:OrganizationName xml:lang="en">' + xmlEscape(name) +
+      '</md:OrganizationName><md:OrganizationDisplayName ' +
+      'xml:lang="en">' + xmlEscape(display) +
+      '</md:OrganizationDisplayName>' +
+      '<md:OrganizationURL xml:lang="en">' + xmlEscape(url) +
+      '</md:OrganizationURL></md:Organization>';
+  }
 }
 
-// ---------------------------------------------------------------------------
-// <md:Organization>, which was the literal "mock-sts" / "Mock security token
-// service" in two signed metadata documents.
-//
-// EMPTY OMITS THE ELEMENT, IN EITHER MODE. saml-metadata-2.0-os section 2.3.2.1
-// makes OrganizationName, OrganizationDisplayName and OrganizationURL each
-// one-or-more, so half an Organization is a schema-invalid document; an
-// operator who empties the name has said there is no organisation to publish,
-// and the element is optional. The URL defaults to the base URL as before.
-//
-// WHY NOT OMIT IT IN PRODUCT MODE AUTOMATICALLY: a setting whose value is
-// silently ignored in one mode is a setting that lies on the console. The
-// default is the name this service always published, product mode included,
-// and README says to set or empty it.
-// ---------------------------------------------------------------------------
-function organizationElement(base) {
-  log.debug("Entering organizationElement().");
-  const name = String(config.value('saml.organizationName') || '').trim();
-  const display = String(config.value('saml.organizationDisplayName') ||
-                         '').trim();
-  if (!name || !display) {
-    log.debug("Leaving organizationElement(). Omitted: no name or no display " +
-              "name.");
-    return '';
-  }
-  const url = String(config.value('saml.organizationUrl') || '').trim() ||
-    (String(base || '') + '/');
-  log.debug("Leaving organizationElement().");
-  return '<md:Organization>' +
-    '<md:OrganizationName xml:lang="en">' + xmlEscape(name) +
-    '</md:OrganizationName><md:OrganizationDisplayName ' +
-    'xml:lang="en">' + xmlEscape(display) +
-    '</md:OrganizationDisplayName>' +
-    '<md:OrganizationURL xml:lang="en">' + xmlEscape(url) +
-    '</md:OrganizationURL></md:Organization>';
-}
+// THE TRANSITIONAL INSTANCE — see the header above.
+const settings = new DocumentSettings({
+  config: config,
+  log: helpers.log,
+  xmlEscape: helpers.xmlEscape
+});
 
-module.exports = {
-  SIGNATURE_ALGORITHMS: SIGNATURE_ALGORITHMS,
-  CANONICALIZATIONS: CANONICALIZATIONS,
-  signatureOptions: signatureOptions,
-  organizationElement: organizationElement
+export = {
+  DocumentSettings: DocumentSettings,
+  SIGNATURE_ALGORITHMS: DocumentSettings.SIGNATURE_ALGORITHMS,
+  CANONICALIZATIONS: DocumentSettings.CANONICALIZATIONS,
+  signatureOptions: settings.signatureOptions.bind(settings) as
+    DocumentSettings['signatureOptions'],
+  organizationElement: settings.organizationElement.bind(settings) as
+    DocumentSettings['organizationElement']
 };
