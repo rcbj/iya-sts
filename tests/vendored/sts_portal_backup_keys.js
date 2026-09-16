@@ -33,9 +33,13 @@
 //      the credential that produced it, and a service that checked whichever
 //      key it found first would refuse every assertion from the others while
 //      looking perfectly correct with one key enrolled.
-//   4. **REMOVING THE LOST ONE IS SELF-SERVICE, AND REMOVING THE LAST IS
-//      NOT.** The first is what makes a backup useful; the second is the
-//      refusal that stops somebody locking themselves out with one click.
+//   4. **REMOVING THE LOST ONE IS SELF-SERVICE, AND SO IS REMOVING THE LAST
+//      `mfa` KEY.** The first is what makes a backup useful; the second is
+//      allowed because a second-factor key was never a way IN, so taking the
+//      last one drops the account to one factor rather than to none. The
+//      refusal that stops somebody locking themselves out with one click is
+//      for a `primary` key, and `tests/portal_access.js` asserts it at the
+//      layer that decides it (section 4 below).
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS HERE AND NOT IN THE PARENT SUITE — `sts_consent.js`'s third
@@ -60,7 +64,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }

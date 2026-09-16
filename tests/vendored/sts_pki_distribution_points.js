@@ -119,7 +119,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -926,7 +926,6 @@ function ocspResponseParts(der) {
   return out;
 }
 
-// One OCSP exchange, judged. `expect` is `good` or `unknown`.
 // WHAT A SIGNATURE THAT DID NOT VERIFY WAS SIGNED WITH (2026-09-14).
 //
 // It failed once, in one docker-run-tests memory run, for one GET of one
@@ -965,6 +964,7 @@ function signatureFailureEvidence(o, r, issuer) {
          "signature; the response is in this job's log]";
 }
 
+// One OCSP exchange, judged. `expect` is `good` or `unknown`.
 function judgeOcsp(r, where, certId, issuer, nonce, expect) {
   log.debug("Entering judgeOcsp().");
   const problems = [];
