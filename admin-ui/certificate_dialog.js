@@ -50,8 +50,8 @@
 // like one: it is written into an `href`.
 //
 // A LIBRARY: it registers no route. It requires `admin-ui/admin.js` for the
-// escaper and the certificate details model's label function, and nothing
-// requires it but the two pages.
+// escaper and `admin-ui/pqc_badge.js` for the post-quantum icon, and nothing
+// requires it but the two pages (and `tests/certificate_details.js`).
 // ===========================================================================
 
 const bunyan = require('bunyan');

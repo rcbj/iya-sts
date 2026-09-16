@@ -47,21 +47,24 @@
 // somebody to `cn=developers` changed what their token could do.
 //
 // ---------------------------------------------------------------------------
-// THE EMPTY ROSTER, which is the only interesting decision in the file.
+// THE OPEN WINDOW, which is the only interesting decision in the file.
 //
-// This service has no password anywhere. It checks none, it stores none, and
-// the roster lives in memory and dies with the process — so there is no
-// bootstrap administrator and no way to make one out of band. The console gate
-// is unconditional — `mode.gatesConsole()`, where this used to read
-// `admin.authRequired` — so a service with an empty roster and no opening rule
+// The console gate is unconditional — `mode.gatesConsole()`, where this used
+// to read `admin.authRequired` — so a new service whose roster opened nothing
 // would have a console that NO browser could ever reach, and no amount of
 // signing in would help.
 //
-// So: while NEITHER role group has a single member, anybody who signs in holds
-// BOTH roles, and every page says so in a banner that cannot be missed. The
-// moment the first grant is made the roster is enforced, and the banner goes.
-// `admin.openWhenEmpty` turns that off for somebody who wants the locked case,
-// and the way back in from it is `/admin-api`, which is not gated.
+// So a window is open while nobody has taken charge, and anybody who signs in
+// holds BOTH roles in it, with a banner on every page that says so. SINCE
+// 2026-09-13 what closes it is the BOOTSTRAP ADMINISTRATOR's first console
+// sign-in (see `seedBootstrapAdministrator()` below, and
+// `admin-ui/CLAUDE.md` 8a) rather than the first grant, which locked out an
+// operator who granted themselves Admin Read alone. Where no bootstrap account
+// was seeded (an in-process test that never runs `server.js`) the older rule
+// still applies: open while neither role group has a member.
+// `admin.openWhenEmpty` turns the window off for somebody who wants the locked
+// case; the way back in from it is `POST /admin-api/rbac/grant`, with an
+// access token carrying `admin:write`.
 //
 // It is deliberately "no members" rather than "the groups do not exist": a
 // group that exists with nobody in it is the state a revoke of the last grant
@@ -72,23 +75,26 @@
 // ---------------------------------------------------------------------------
 // This module is a LIBRARY (rule 3). It registers no route, so its position in
 // `server.js`'s require order does not matter, and it cannot join a cycle: it
-// requires `config.js`, `helpers.js` and `audit.js`, none of which requires it.
+// requires `config.js`, `helpers.js`, `mode.js`, `audit.js`, `error_codes.js`
+// and `realms.js`, none of which requires it.
 //
 // It reaches the directory through a SLOT that `ldap_server.js` fills at its
-// own require time, for the reason `admin.js`'s five slots exist (rule 3e):
+// own require time, for the reason `admin.js`'s directory slots exist
+// (rule 3e):
 // requiring `ldap_server.js` from here would pull every `/ldap` route into the
 // express router ahead of every `/admin` route, and `GET /admin/sts-metadata`
-// is built by walking that router. The slot is on THIS module rather than a
-// sixth on `admin.js` because what fills it is one coherent thing — the group
+// is built by walking that router. The slot is on THIS module rather than
+// another on `admin.js` because what fills it is one coherent thing — the group
 // functions — and because both callers of it (`admin.js` and `admin_api.js`)
 // want the decisions here rather than the raw directory.
 //
-// The slot takes ONE OBJECT where `admin.js` deliberately takes five separate
-// functions, and the concern stated there — "a module that filled a combined
-// slot with only the readers would silently disable creation" — is answered
-// rather than ignored: `setDirectory()` CHECKS every member it needs and
-// refuses a partial object loudly. A half-filled slot is a startup warning
-// here, not a control that quietly does nothing.
+// The slot takes ONE OBJECT where `admin.js`'s original directory slots
+// deliberately took separate functions, and the concern stated there — "a
+// module that filled a combined slot with only the readers would silently
+// disable creation" — is answered rather than ignored: `setDirectory()`
+// CHECKS every member it needs and refuses a partial object loudly. A
+// half-filled slot is a startup warning here, not a control that quietly does
+// nothing.
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
@@ -463,13 +469,6 @@ function roster() {
   return out;
 }
 
-// Is the whole roster empty — which is what opens the console to anybody who
-// signs in, while `admin.openWhenEmpty` says so.
-//
-// Note what it counts: MEMBERSHIP VALUES, not resolvable members. A grant to
-// somebody who has never authenticated is a value naming an entry that is not
-// there yet, and it is still a grant — treating it as empty would mean granting
-// a role to a future colleague quietly leaving the door open.
 // ---------------------------------------------------------------------------
 // THE BOOTSTRAP ADMINISTRATOR (2026-09-13).
 //
@@ -481,8 +480,8 @@ function roster() {
 // prints once.
 //
 // **UNTIL THAT ACCOUNT FIRST SIGNS IN TO THE CONSOLE, EVERY SIGNED-IN PERSON
-// MAY USE THE CONSOLE** — the window the empty roster used to open, kept open by
-// something that cannot happen by accident. It replaced "open while nobody
+// MAY USE THE CONSOLE** — the window the empty roster used to open, kept open
+// by something that cannot happen by accident. It replaced "open while nobody
 // holds a role" because that rule closed on the FIRST GRANT: an operator who
 // granted themselves only Admin Read locked themselves out of every write, with
 // nobody left who could undo it from the console. Seeding both roles onto one
@@ -491,8 +490,8 @@ function roster() {
 //
 // Three facts, all on the account's own entry (`ldap_server.js`'s
 // readPersonFlags()), so they persist and replicate with it:
-// `stsBootstrapAdministrator` says it was seeded, `stsConsoleClaimedAt` says the
-// window is closed, and `pwdReset` is the password rule.
+// `stsBootstrapAdministrator` says it was seeded, `stsConsoleClaimedAt` says
+// the window is closed, and `pwdReset` is the password rule.
 // ---------------------------------------------------------------------------
 function bootstrapName() {
   log.debug("Entering bootstrapName().");
@@ -690,6 +689,14 @@ function closeBootstrapWindow(name, wanted) {
   return true;
 }
 
+// Is the whole roster empty — which is what opens the console to anybody who
+// signs in, while `admin.openWhenEmpty` says so, where no bootstrap
+// administrator was seeded (see `rolesOf()`).
+//
+// Note what it counts: MEMBERSHIP VALUES, not resolvable members. A grant to
+// somebody who has never authenticated is a value naming an entry that is not
+// there yet, and it is still a grant — treating it as empty would mean granting
+// a role to a future colleague quietly leaving the door open.
 function rosterEmpty() {
   log.debug("Entering rosterEmpty().");
   log.debug("Leaving rosterEmpty().");
@@ -1153,13 +1160,14 @@ function refusalText(written, dn) {
 }
 
 // ---------------------------------------------------------------------------
-// WHO CAN BE CHOSEN, for the screen's select.
+// WHO CAN BE CHOSEN, for the screen's person search (a `<select>` until
+// 2026-09-13; `admin-ui/CLAUDE.md` says why it is a search pane now).
 //
 // Two sources, unioned, and the difference between them is the difference this
 // console keeps straight everywhere: the DIRECTORY holds whoever somebody wrote
 // an entry for, and the console's user list holds whoever has actually
 // presented a credential. A person can be in either and not the other, and a
-// select built from one of them alone would silently refuse to offer half the
+// picker built from one of them alone would silently refuse to offer half the
 // people somebody wants to grant a role to.
 //
 // It is not a whitelist. A name that is in neither list can still be granted a
@@ -1188,7 +1196,7 @@ function candidates(seen) {
   if (directory) {
     directory.allPersons().forEach(function (person) {
       // The RDN value, which is what `existingUserEntry()` matches a typed name
-      // against — so what the select offers is what a grant will find.
+      // against — so what the search offers is what a grant will find.
       const rdn = String(person.dn).split(',')[0];
       const eq = rdn.indexOf('=');
       add(eq > 0 ? rdn.slice(eq + 1) : '', 'inDirectory');
@@ -1198,7 +1206,7 @@ function candidates(seen) {
 
   const rows = Array.from(out.values()).filter(function (row) {
     // A name that cannot be spelt in a DN cannot be granted a role, so offering
-    // it in the select would be offering a control that answers with a refusal.
+    // it in the search would be offering a control that answers with a refusal.
     // They are still listed on /admin/users; this is a grant form.
     return !directory || directory.nameUsableInDn(row.username);
   });
@@ -1283,8 +1291,8 @@ function inContextRealm(fn) {
   };
 }
 
-// The id an ambient authority names for a realm, for a caller that has a realm
-// record rather than an id.
+// Whether a realm id names the SERVICE roster's realm — the default one, which
+// an empty or absent id also means here.
 function isServiceRealm(realmId) {
   log.debug("Entering isServiceRealm().");
   const id = realmIdOf(realmId);

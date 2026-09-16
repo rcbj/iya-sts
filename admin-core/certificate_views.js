@@ -35,8 +35,9 @@
 // ---------------------------------------------------------------------------
 // THE CATALOGUE IS PER REALM, AND THAT IS THE REALM BOUNDARY APPLIED TO A VIEW.
 //
-// It holds the service Root, the PROCESS branch (TLS and SPIFFE, which certify
-// sockets every realm answers on) and THIS realm's Intermediate, Issuing CAs
+// It holds the service Root, the PROCESS branch (TLS, which certifies the
+// sockets every realm answers on — SPIFFE moved to a realm's branch on
+// 2026-09-11) and THIS realm's Intermediate, Issuing CAs
 // and what they certified — exactly the tree `/admin/pki` draws — plus this
 // realm's signing-key certificates, the certificate authority workbench's
 // store, the TLS listener certificates, the SPIFFE authorities, and every

@@ -11,12 +11,13 @@
 // route is missing. `admin.js` registers `/admin/delegation/map` and calls
 // `render()`; this file holds the geometry and none of the console's HTML.
 //
-// It requires `../common/helpers` (for `log` and `xmlEscape`) and
-// `@dagrejs/dagre`, and NOTHING ELSE IN THIS SERVICE — no config, no directory,
-// no store. That is deliberate and it is the whole reason this is a separate
-// file: everything it draws arrives as an argument, so the picture can be drawn
-// of any graph the caller can build, and a change to how the console decides
-// what a box IS cannot reach the code that decides where a box GOES.
+// It requires `../common/helpers` (for `log` and `xmlEscape`), the error-code
+// table (a leaf) and `@dagrejs/dagre`, and NOTHING ELSE IN THIS SERVICE — no
+// config, no directory, no store. That is deliberate and it is the whole
+// reason this is a separate file: everything it draws arrives as an argument,
+// so the picture can be drawn of any graph the caller can build, and a change
+// to how the console decides what a box IS cannot reach the code that decides
+// where a box GOES.
 //
 // ---------------------------------------------------------------------------
 // WHY THERE IS A DEPENDENCY HERE AT ALL, WEIGHED THE WAY `scimmy` AND
@@ -52,7 +53,8 @@
 // says a scripted page needs its argument made again from scratch, and the
 // console has never needed one. A client-side graph library — mermaid,
 // cytoscape, d3 — would have made this the FIFTH scripted page in the service
-// and the first one in the console, to draw a picture that does not move. The
+// and the first one in the console (there are seven now, and the console's one
+// is the API explorer), to draw a picture that does not move. The
 // SVG here is generated on the server and arrives as markup, so
 // `script-src 'none'` is untouched and `img-src` is not even reached: the
 // document is inline in the page rather than fetched.
