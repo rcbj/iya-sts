@@ -1651,9 +1651,9 @@ function attemptCookie(req, ctx) {
 // THE TLS CLIENT CERTIFICATE.
 //
 // The first scheme RFC 7644 section 2 names. Available only where this request
-// arrived over TLS and the certificate VERIFIED — which on the main port means
-// `global.https` is on and somebody has POSTed an anchor to /tls/trust, and on
-// 8443/9443 is what those listeners are for.
+// arrived over TLS and the certificate VERIFIED — which means `global.https`
+// is on, so the main port asks every connection for one, and somebody has
+// POSTed an anchor to /tls/trust.
 //
 // **VERIFIED IS THE WHOLE OF WHAT IS CHECKED, and that is the same sentence
 // /tls says.** No revocation is consulted and no directory entry has to exist.

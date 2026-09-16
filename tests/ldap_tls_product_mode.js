@@ -18,6 +18,15 @@
 // add a trust anchor, had no protocol floor or cipher setting, and every one of
 // the three families bound '0.0.0.0' whatever `global.host` said.
 //
+// **THE TLS MODULE'S OWN LISTENERS — 8443 AND 9443 — WERE DELETED ON
+// 2026-09-16, AND ONE SECTION HERE MOVED RATHER THAN GOING WITH THEM.**
+// `tls.minVersion` reaching a real handshake was asserted by refusing a TLS
+// 1.2 client on 8443; it is now asserted on LDAPS 636, which `ldap_server.js`
+// builds from the same `tlsServer.protocolOptions()`. The argument is beside
+// the assertion. Nothing else here was about those two sockets: `POST
+// /tls/trust` is a route on the main port and always was, and the bind-address
+// section now asks the four raw sockets that are left.
+//
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, and why most of it in a CHILD process.
 //
@@ -273,17 +282,19 @@ function listenersHonourTheBindAddress(t) {
   log.debug("Entering listenersHonourTheBindAddress().");
   t.log.info('=== every listener binds global.host ===');
   const run = inAChild({ STS_HOST: '127.0.0.1', LDAP_PORT: '0', LDAPS_PORT: '0',
-                         STS_TLS_PORT: '0', STS_MTLS_PORT: '0',
                          KRB5_KDC_PORT: '0',
                          KRB5_SERVICE_PORT: '0' },
+    // tls_server.js had two listeners of its own here until 2026-09-16. They
+    // were deleted; the main port is `server.js`'s and binds global.host with
+    // every other HTTP route on it, so the four raw sockets below are what is
+    // left to ask.
     'const kdc = require(R + "/kerberos/krb5_kdc.js");const svc = require(R ' +
-    '+ "/kerberos/krb5_service.js");const tls = require(R + ' +
-    '"/tls/tls_server.js");const ldap = require(R + ' +
+    '+ "/kerberos/krb5_service.js");const ldap = require(R + ' +
     '"/ldap/ldap_server.js");const k = kdc.listen(0); const kr = await ' +
     'k.whenReady;const s = svc.listen(0); await new Promise(function (ok) { ' +
     's.listening ? ok() : s.once("listening", ok); });const l = ' +
-    'ldap.listen(); await l.whenReady;const tr = tls.listen(); await ' +
-    'tr.whenReady;return { kdcTcp: kr.tcp.address().address, kdcUdp: ' +
+    'ldap.listen(); await l.whenReady;' +
+    'return { kdcTcp: kr.tcp.address().address, kdcUdp: ' +
     'kr.udp.address().address, service: s.address().address, ldap: ' +
     'l.server.address().address, ldaps: l.secureServer && ' +
     'l.secureServer.address().address };');
@@ -418,21 +429,43 @@ async function theProtocolPolicyIsApplied(t) {
           'naming the setting',
           'exit ' + bad.status);
 
-  const floor = inAChild({ STS_TLS_MIN_VERSION: 'TLSv1.3', STS_TLS_PORT: '0',
-                           STS_MTLS_PORT: '0', STS_HOST: '127.0.0.1' },
-    'const tlsServer = require(R + "/tls/tls_server.js");const ready = await ' +
-    'tlsServer.listen().whenReady;const tls = require("tls");function ' +
+  // -------------------------------------------------------------------------
+  // THE HANDSHAKE THIS IS ASSERTED ON MOVED TO LDAPS ON 2026-09-16, AND THE
+  // MOVE IS HONEST RATHER THAN CONVENIENT.
+  //
+  // It was 8443 — `tls.port`, a listener of `tls_server.js`'s own — and that
+  // listener and 9443 were deleted. LDAPS 636 is the socket this claim can
+  // still be made on: `ldap_server.js` builds it through `tlsProtocolOptions()`
+  // in that file, which is a call to the SAME `tlsServer.protocolOptions()`
+  // the deleted listener used and the main port still uses in `server.js`. So
+  // this is one statement of the policy reaching a real handshake, which is
+  // what the assertion was ever about — a setting read and never applied
+  // passes every comparison.
+  //
+  // **THE MAIN PORT WOULD NOT HAVE BEEN HONEST HERE**: this file's child does
+  // not start `server.js`, so a listener it built itself would be spreading
+  // `protocolOptions()` with its own hands and then asserting that spreading
+  // it worked. The directory's socket is built by a module that is not this
+  // test.
+  // -------------------------------------------------------------------------
+  const floor = inAChild({ STS_TLS_MIN_VERSION: 'TLSv1.3', LDAP_PORT: '0',
+                           LDAPS_PORT: '0', STS_HOST: '127.0.0.1' },
+    'const ldap = require(R + "/ldap/ldap_server.js");const ready = await ' +
+    'ldap.listen().whenReady;const port = ready.ldapsPort;' +
+    'const tls = require("tls");function ' +
     'attempt(max) { return new Promise(function (ok) {  const s = ' +
-    'tls.connect({ host: "127.0.0.1", port: ready.tlsPort, maxVersion: ' +
+    'tls.connect({ host: "127.0.0.1", port: port, maxVersion: ' +
     'max,    rejectUnauthorized: false }, function () { const v = ' +
     's.getProtocol(); s.destroy(); ok(v); });  s.on("error", function (e) { ' +
-    'ok("refused: " + e.code); }); }); }return { twelve: await ' +
+    'ok("refused: " + e.code); }); }); }return { port: port, twelve: await ' +
     'attempt("TLSv1.2"), thirteen: await attempt("TLSv1.3") };');
   const f = floor.report || {};
   t.check(/^refused/.test(String(f.twelve)) && f.thirteen === 'TLSv1.3',
-          'with tls.minVersion TLSv1.3 a TLS 1.2 client is REFUSED on 8443 ' +
+          'with tls.minVersion TLSv1.3 a TLS 1.2 client is REFUSED on LDAPS ' +
           'and a 1.3 client is served — the setting reaches the handshake, ' +
-          'not only a report',
+          'not only a report. It was asserted on 8443 until that listener ' +
+          'was deleted (2026-09-16); LDAPS builds its context from the same ' +
+          'tlsServer.protocolOptions()',
           JSON.stringify(f) + floor.output.slice(-300));
   log.debug("Leaving theProtocolPolicyIsApplied().");
 }

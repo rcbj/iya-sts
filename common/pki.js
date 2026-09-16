@@ -232,8 +232,10 @@ const USE_CASES = [
           'the others, under a name that says which of the five it is.' },
   { id: 'tls', scope: 'process', label: 'TLS listeners',
     cn: 'TLS Issuing CA',
-    what: 'The certificate served on 8443, on the mutual-TLS listener 9443, ' +
-          'on LDAPS 636 and on the main port when global.https is on. ' +
+    what: 'The certificate served on LDAPS 636 and on the main port when ' +
+          'global.https is on — two sockets since 2026-09-16, when the 8443 ' +
+          'and 9443 listeners this use case is still named for were ' +
+          'deleted. ' +
           'PROCESS-scoped because those sockets are: one certificate answers ' +
           'every realm, so a realm\'s Intermediate signing it would make one ' +
           'realm vouch for every other realm\'s front door.' },
@@ -312,8 +314,8 @@ const USE_CASES = [
           'with an RSA key because SCEP\'s key transport is RSA.' },
   // **A PERSON'S TLS CLIENT CERTIFICATE (2026-09-13).** Issued on
   // /portal/signing-key by the person it names, installed in a browser, and
-  // presented to the TLS listeners — which trust the service Root for client
-  // certificates since the same day and accept a chain through it as an
+  // presented to the main port — which trusts the service Root for client
+  // certificates since the same day and accepts a chain through it as an
   // identity ONLY when the leaf came from THIS use case's Issuing CA (see
   // `common/tls_client_certificates.js`). That is why it is an authority of
   // its own and not the `assertions` one: "issued here" stopped being a
@@ -326,7 +328,8 @@ const USE_CASES = [
     what: 'The TLS client certificates people issue themselves on the user ' +
           'portal: clientAuth, the person\'s urn:sts:person: name, and a ' +
           'private key handed over once as a PKCS#12. A certificate from ' +
-          'this authority signs its holder in on the TLS listeners, in this ' +
+          'this authority signs its holder in at GET /tls/sign-in on the ' +
+          'main port, in this ' +
           'realm; a certificate from any other authority of this service ' +
           'does not, although every one of them chains to the same Root.' }
 ];

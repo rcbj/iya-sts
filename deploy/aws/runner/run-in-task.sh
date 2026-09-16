@@ -11,9 +11,11 @@
 #
 #   * NO JOB IS EXCLUDED. The nodes can reach this task, so sts_gnap_core's
 #     push listener (GNAP_PUSH_HOST, this task's own address) and the PEP
-#     container beside it (localhost) work; the load balancer publishes 9443,
-#     389 and 8082, so sts_global_logout, the LDAP bulk load and
-#     sts_pki_distribution_points do.
+#     container beside it (localhost) work; the load balancer publishes
+#     389 and 8082 beside 443, so sts_global_logout, the LDAP bulk load and
+#     sts_pki_distribution_points do. (It published 9443 too until 2026-09-16,
+#     for the service's mutual-TLS listener; that listener was deleted and a
+#     certificate sign-in is GET /tls/sign-in on the main port.)
 #   * THE REPORT GOES TO S3, at s3://$STS_REPORTS_BUCKET/<environment>/<run id>/
 #     as report.tar.gz and summary.json, because nothing outside the task can
 #     see its file system.

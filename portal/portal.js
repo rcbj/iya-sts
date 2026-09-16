@@ -2996,10 +2996,10 @@ function profileCard(profile, held, csrf, issuable, offered) {
 //
 // The two cards above hand a person a key that signs a DOCUMENT. This one hands
 // them a key and a certificate that sign a TLS HANDSHAKE: installed in a
-// browser, presented to this service's TLS listeners, it signs them in as the
-// person it names, in the realm this page was reached in.
-// `common/tls_client_certificates.js` issues, packages, revokes and — for the
-// listeners and the main-port doors — decides what counts as an identity.
+// browser and presented to this service's main port at `GET /tls/sign-in`, it
+// signs them in as the person it names, in the realm this page was reached in.
+// `common/tls_client_certificates.js` issues, packages, revokes and — for that
+// route and the other main-port doors — decides what counts as an identity.
 //
 // **IT IS FILED HERE AND NOT ON A PAGE OF ITS OWN**, which is what rcbj asked
 // for and what the section's own description supports: the credentials on your
@@ -3017,26 +3017,26 @@ function profileCard(profile, held, csrf, issuable, offered) {
 // person, used once to build the files, and not stored, logged or audited.
 // ===========================================================================
 
-// Where a certificate from here is used: the two TLS listeners, on the host
-// this page was reached at. The ports are the configured ones — this module is
-// required long before `tls/tls_server.js`, whose bound ports it cannot ask
-// for without moving its routes — and a deployment publishing them elsewhere
-// says so in `tls.port` and `tls.mutualPort`.
+// ---------------------------------------------------------------------------
+// WHERE A CLIENT CERTIFICATE WORKS (rewritten 2026-09-16).
+//
+// This answered two URLs — the 8443 and 9443 listeners — and both were
+// deleted. A person's certificate is presented to the MAIN port now, which
+// asks every connection for one and requires none, so the answer is one URL
+// and the route that turns it into a session.
+//
+// It is built from `base` — `helpers.baseUrlOf(req)`, which both callers
+// already hold — and not from the request. The 2026-09-16 rewrite took a `req`
+// while both callers still passed the base STRING, so `req.get` threw, the
+// catch swallowed it, and every card said `localhost`. The base also honours
+// `global.publicBaseUrl`, a trusted proxy's headers and the realm prefix,
+// none of which a bare `Host` does.
+// ---------------------------------------------------------------------------
 function tlsListenerUrls(base) {
   log.debug("Entering tlsListenerUrls().");
-  let host = 'localhost';
-  try {
-    host = new URL(String(base || 'https://localhost')).hostname || host;
-  } catch (e) {
-    log.debug("Caught in tlsListenerUrls(): " + ((e && e.message) || e));
-    host = 'localhost';
-  }
-  const hostPart = host.indexOf(':') >= 0 ? '[' + host + ']' : host;
+  const root = String(base || '').replace(/\/+$/, '');
   log.debug("Leaving tlsListenerUrls().");
-  return {
-    mutual: 'https://' + hostPart + ':' + config.value('tls.mutualPort') + '/',
-    optional: 'https://' + hostPart + ':' + config.value('tls.port') + '/'
-  };
+  return { signIn: root + '/tls/sign-in', base: root + '/' };
 }
 
 // The signed-in person's `mail`, read off their own entry, for the rfc822Name a
@@ -3079,16 +3079,16 @@ function tlsClientCard(session, csrf, issuable, offered, base) {
     esc(username) + '</code>), and carries <code>clientAuth</code>. You ' +
     'download it once, as a password-protected <code>.p12</code>, and ' +
     'install it in each browser or device you want to sign in from.</p>' +
-    '<p class="note">Where it works: <a href="' + esc(urls.mutual) + '">' +
-    esc(urls.mutual) + '</a> (a certificate is required) and <a href="' +
-    esc(urls.optional) + '">' + esc(urls.optional) + '</a> (a certificate ' +
-    'is asked for). Presenting it there starts a sign-on session for you ' +
-    'in this realm, and your other applications here then sign you in ' +
-    'without asking. Your browser will first ask you to trust this ' +
+    '<p class="note">Where it works: <a href="' + esc(urls.signIn) + '">' +
+    esc(urls.signIn) + '</a>. This service asks every connection for a ' +
+    'client certificate and requires none, so your browser sends this one ' +
+    'when you choose it; that page starts a sign-on session for you in this ' +
+    'realm, and your other applications here then sign you in without ' +
+    'asking. Your browser will first ask you to trust this ' +
     'service&rsquo;s server certificate if it does not already.</p>' +
     (report.trusted
       ? ''
-      : '<p class="note"><strong>The TLS listeners will not accept it at the ' +
+      : '<p class="note"><strong>This service will not accept it at the ' +
         'moment.</strong> ' + esc(report.note) + ' An administrator can ' +
         'change that.</p>');
 
@@ -3248,17 +3248,17 @@ function tlsClientFreshCard(fresh, base) {
       esc(p12) + '</code>.']) +
     step('curl or openssl', [
       '<code>curl --cert ' + esc(chain) + ' --key ' + esc(key) +
-      ' --pass &lt;file password&gt; ' + esc(urls.mutual) + 'tls/whoami</code>',
+      ' --pass &lt;file password&gt; ' + esc(urls.signIn) + '</code>',
       'If a macOS release older than your browser refuses the ' +
       '<code>.p12</code> with a message about the password, rebuild it with ' +
       'the older algorithms it expects: <code>openssl pkcs12 -export ' +
       '-legacy -inkey ' + esc(key) + ' -in ' + esc(chain) + ' -out ' +
       'legacy.p12</code>.']) +
-    '<h3>Use it</h3><p>Open <a href="' + esc(urls.mutual) + '">' +
-    esc(urls.mutual) + '</a> in the browser you installed it in and choose ' +
-    'this certificate when asked. The page that comes back says who it ' +
-    'signed in; then come back to <a href="' + BASE + '">your account</a>, ' +
-    'which will not ask you to sign in again.</p></div>';
+    '<h3>Use it</h3><p>Open <a href="' + esc(urls.signIn) + '">' +
+    esc(urls.signIn) + '</a> in the browser you installed it in and choose ' +
+    'this certificate when asked. What comes back says whether it signed ' +
+    'you in and who as; then come back to <a href="' + BASE + '">your ' +
+    'account</a>, which will not ask you to sign in again.</p></div>';
   log.debug("Leaving tlsClientFreshCard().");
   return html;
 }

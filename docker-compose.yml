@@ -561,12 +561,14 @@ services:
       # them directly, and LDAP_PORT/LDAPS_PORT are for a run outside a container.
       # - "389:389"
       # - "636:636"
-      # The TLS endpoint, likewise unpublished by default. 8443 asks for a client
-      # certificate and never refuses one; 9443 requires it. The LDAPS listener
-      # above serves the same certificate these do, so trusting this service is
-      # one fetch of GET /tls/server-certificate whichever of the three you use.
-      # - "8443:8443"
-      # - "9443:9443"
+      # THE TLS ENDPOINT'S TWO PORTS WERE HERE UNTIL 2026-09-16, commented out
+      # like the rest: 8443 asked for a client certificate and never refused
+      # one, 9443 required it. Both listeners were deleted from the service, so
+      # there is nothing to publish — the main port above asks every connection
+      # for a client certificate and requires none, and GET /tls/sign-in signs
+      # the holder of a verified one in. The LDAPS listener above still serves
+      # the same certificate the main port does, so trusting this service is one
+      # fetch of GET /tls/server-certificate whichever of them you use.
       # The embedded protocol debugger (debugger.port), unpublished by default
       # like the two above. It is ON in development mode when the image carries
       # the debugger's built tree; publish it to open it in a browser. The host
@@ -647,7 +649,9 @@ services:
       # STS_HTTPS=true while this one — the repository's own — never did. So a
       # caller who trusted this service's certificate for 8443, 9443 and LDAPS
       # 636 still met an unencrypted fourth listener, on the port every one of
-      # the sixteen protocol families actually answers on.
+      # the sixteen protocol families actually answers on. (The first two of
+      # those listeners were deleted on 2026-09-16; that port is now also where
+      # a client certificate arrives, which makes the argument stronger.)
       #
       # It is a SUBSTITUTION and not a bare `STS_HTTPS=true`, so
       # `STS_HTTPS=false docker compose up` is the way back to a plain port for
@@ -959,9 +963,12 @@ services:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
       # THE HTTPS LISTENER (2026-09-13), which answers nothing until a pair is
       # written where PEP_HTTPS_CERT and PEP_HTTPS_KEY below point. Published
-      # on 9444 rather than 9443 by default because 9443 is the mock's own
-      # mutual-TLS listener, which a reader of the sts service above may have
-      # uncommented.
+      # on 9444 rather than 9443 by default. That was because 9443 was the
+      # mock's own mutual-TLS listener, which a reader of the sts service above
+      # may have uncommented; that listener was deleted on 2026-09-16 and the
+      # collision is gone, but the default stays 9444 because it is in every
+      # launcher, every kept stack and XACML_PEP_HTTPS_URL. The container side
+      # is still 9443, which is this PEP's port and never was the mock's.
       - "${XACML_PEP_HTTPS_HOST_PORT:-9444}:9443"
     volumes:
       # WHERE A LAUNCHER PUTS THE CLIENT CREDENTIAL. It defaults to this

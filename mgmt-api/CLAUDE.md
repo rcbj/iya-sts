@@ -577,6 +577,50 @@ be reached at all.
 
 ---
 
+## THE GATE READS `DPoP` TOO, AND HAD BEEN HONOURING ONE CONSTRAINT OUT OF TWO (#34, 2026-09-15)
+
+Three changes to the one middleware, and the first two are fixes rather than
+policy.
+
+**`presentedTokenOf()` replaced `bearerOf()`, and reads both schemes.** The gate
+tested `/^bearer\s+/i` and nothing else, so a DPoP-bound token presented the way
+RFC 9449 says to present it — `Authorization: DPoP <token>` — counted as no
+token at all and got *this API requires an access token*, which is the least
+useful thing it could say to a client doing the stricter thing. The scheme comes
+back beside the value because the refusal below needs to tell "a bound token
+sent as Bearer" from "a token that did not verify". `bearerOf()` is kept as a
+one-line wrapper, since the operations call it.
+
+**`cnf.jkt` is checked now, in every mode.** The certificate binding
+(`cnf["x5t#S256"]`, `STS-API-0110`) was added here on 2026-09-13 and the DPoP
+one beside it was never written, so a token whose whole point is that holding it
+is not enough was accepted here as a bearer token. **This gate verifies its own
+token instead of going through `dpop.presentedAccessToken()`, which is where
+every other resource server in this service refuses that** — so it has to ask
+for itself, and the same hole existed one door along at the debugger
+(`debugger/CLAUDE.md`). A bound token sent as Bearer is `STS-API-0120`; a proof
+that fails is the proof's own code, or `STS-API-0121` where it reported none,
+with `use_dpop_nonce` and a fresh `DPoP-Nonce` where that is what it needed.
+**It is not one of the settings below**: it runs whatever they say, because it
+is about honouring a constraint the TOKEN already carries.
+
+**And `oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` are
+honoured here**, through the same `senderConstraints.accessTokenRefusal()` every
+other surface asks — one function, so an operator who turns one on cannot find
+that one door out of nine kept its own opinion. The refusal carries its own code
+(one of `STS-OAUTH-0527..0531`) and the `WWW-Authenticate` names `DPoP` or
+`Bearer` according to which setting is on, with the scope this method wants.
+Both are off by default and neither compliance mode implies one;
+`oauth-oidc/CLAUDE.md` rule 3ao argues the five.
+
+**`/admin/api-explorer` STOPS WORKING while `oauth2.accessTokenRequireDpop` is
+on**, and that is stated rather than worked around: the explorer's script sends
+a plain `Bearer` header and has no key to prove. An operator wanting both runs
+the API with `curl` and a proof, or leaves the setting off in the realm the
+console is reached in. Making the explorer mint and prove a DPoP key in the
+browser would be a second implementation of RFC 9449 in a page that exists to
+show what an operation returns.
+
 ## `/admin-api/logout` — four operations, and one that differs from its console form
 
 The sign-out resource mirrors `/admin/logout` and calls the same two functions
@@ -1190,8 +1234,11 @@ Four things a caller is told, and the descriptions tell them:
   key back afterwards, the GET included. A lost keytab is a rotation, not a read.
 * **NEITHER LIST CARRIES A KEY** — people and services are enctypes, kvno, salt
   and when, which is the public half (`stsKrb5KeyInfo`, `krb5ServiceKeyInfo`).
-* **IT IS THE DEFAULT TRUST REALM'S**, under every prefix, and every reply says
-  `trustRealm: "default"`: the KDC's sockets and `krb5.realm` are the process's.
+* **IT IS THE REALM THE CALL IS IN (2026-09-15)**, and every reply says which as
+  `trustRealm`. It read *IT IS THE DEFAULT TRUST REALM'S, under every prefix* while
+  the KDC was the process's; each trust realm whose `krb5.enabled` is on now has a
+  Kerberos realm and a principal database of its own, and a realm with none answers
+  with empty lists and says so.
 * **`clear-person-keys` for somebody with no keys is `ok` with `cleared: false`**
   rather than a refusal, because the state asked for is the state that holds.
 * **SIX ACTIONS SINCE LATER THE SAME DAY**: `drop-previous-service-keys` (`spn`)
@@ -1359,7 +1406,9 @@ holds the PKCS#12 (base64), the encrypted PEM key and the chain, all under
 through the handler's existing `refresh-metadata` branch. The revoke looks among
 THIS application's certificates only. Codes `STS-ADMIN-0720..0723`,
 `STS-PKI-0180..0181`. **`/admin-api` also checks RFC 8705's `cnf["x5t#S256"]`
-since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an.
+since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an. **The
+DPoP half of that check was missing until #34 (2026-09-15)**: see *THE GATE
+READS `DPoP` TOO* above.
 
 ## `issue-software-statement` (2026-09-13)
 

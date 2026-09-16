@@ -102,7 +102,7 @@
 // Everything that asks where a connection came from asks the SOCKET:
 // express's `req.ip` and `client_address.js` read `req.socket.remoteAddress`,
 // `ldap_server.js`'s bind limiter and audit read the ldapjs connection's,
-// `tls_server.js`'s whoami and handshake refusals read the TLS socket's, and
+// `tls_server.js`'s certificate sighting reads the TLS socket's, and
 // `request_pool.js` forwards `clientAddressOf(req)` to a worker. A field of
 // our own would have to be taught to each of those readers and to every one
 // written after them. So the address is put where they already look: the

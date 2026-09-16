@@ -1022,8 +1022,9 @@ would misfile the other three.
 Asked for by rcbj beside the RFC 7523 and RFC 7522 key pairs: a person generates
 a TLS client certificate that maps to their identity and installs it in their
 browser. `common/tls_client_certificates.js` issues, packages and revokes;
-`common/CLAUDE.md` 3ag argues the gate that makes the listeners' trust in the
-service Root safe, and `tls/CLAUDE.md` the listeners. What is this page's:
+`common/CLAUDE.md` 3ag argues the gate that makes trusting the
+service Root safe, and `tls/CLAUDE.md` what a presented certificate is worth.
+What is this page's:
 
 * **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
   one-time card with three `data:` links carrying `download` — the `.p12`, an
@@ -1042,21 +1043,37 @@ service Root safe, and `tls/CLAUDE.md` the listeners. What is this page's:
 * **A LIST WITH A REVOKE PER VALID ROW**, and the serial in that form is looked
   up among the signed-in person's own certificates, so another person naming it
   gets 400 `STS-PKI-0171` — `/portal/remove-key`'s arrangement. Revoking is real
-  revocation (the CRL, OCSP, the listeners refusing it), with two reasons a person
+  revocation (the CRL, OCSP, and every door that reads a certificate refusing
+  it), with two reasons a person
   can honestly give: `cessationOfOperation` and `keyCompromise`.
 * **A PACKAGING FAILURE REVOKES THE CERTIFICATE AT ONCE** (`STS-PORTAL-0042`): its
   key is gone, and a valid certificate nobody can present or knows to revoke is
   worse than a line on a list.
-* **WHERE IT WORKS** is drawn from `tls.port` and `tls.mutualPort` on the host the
-  page was reached at, because this module is required long before
-  `tls/tls_server.js` and cannot ask for the bound ports without moving routes.
+* **WHERE IT WORKS IS ONE ADDRESS SINCE 2026-09-16**, and the card says so:
+  `GET /tls/sign-in` on the host the page was reached at. It named two — the
+  8443 and 9443 listeners, built from `tls.port` and `tls.mutualPort`, because
+  this module is required long before `tls/tls_server.js` and could not ask for
+  the bound ports without moving routes — and both listeners and both settings
+  were deleted. `tlsListenerUrls()` now builds the address from the page's
+  `base` (`helpers.baseUrlOf(req)`), so it needs no setting and no require and
+  honours `global.publicBaseUrl` and the realm prefix. **The same commit
+  deleted the signing-key half of this page with it** — `SIGNING_KEY_PROFILES`,
+  `signingKeyProfile()`, `heldProfile()`, `freshInstructions()`,
+  `profileCard()` — and took a `req` its callers never passed, so every
+  `GET /portal/signing-key` answered 500 and the card said `localhost`; both
+  were restored on 2026-09-16, and `sts_portal_signing_key` is what caught it.
+  **The
+  card also stopped promising a port that REQUIRES a certificate**: the main
+  port asks every connection for one and requires none, so it is the browser
+  that decides to send it.
 
 **NO `/admin-api` MIRROR**, for this page's standing reason: the answer is
 per-person. An operator revokes one on `/admin/pki`'s revocation pane, where it
 is listed like every other leaf of the `tls-client` authority.
 `tests/vendored/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
-handshake is `tests/tls_client_certificates.js`, because no launcher publishes
-9443 to a job.
+handshake was `tests/tls_client_certificates.js` in process, because no launcher
+published 9443 to a job — **a certificate now arrives on the port every job
+already uses**, which is the deletion's one gift to this page.
 
 ## THE SIGN-IN CAN BE REFUSED FOR A SECOND REASON, AND THE 503 SAYS WHICH (2026-09-12)
 

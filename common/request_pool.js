@@ -1433,8 +1433,8 @@ function poolFor(url) {
 // SPIFFE's came off after an hour. SPIFFE's authority was STATE that happened
 // to be private — two module arrays — and the fix was to make it a row every
 // process shares. The truststore is not state in that sense. It is the
-// CONFIGURATION OF A LISTENER: the `ca` half of the secure context 8443, 9443,
-// LDAPS 636 and the main port were created with, applied by
+// CONFIGURATION OF A LISTENER: the `ca` half of the secure context LDAPS 636
+// and the main port were created with, applied by
 // `setSecureContext()` on server objects only the front process holds. A
 // worker has the same module loaded and its own copy of the array, and
 // changing that copy changes nothing any handshake reads — so an add answered
@@ -3247,15 +3247,18 @@ let generation = 0;
 //
 // The generation moved only in receiveCommitted(), on a WORKER's announcement.
 // That is the whole story for anything that arrives over the dispatched HTTP
-// port — and this process answers on five more socket families that are never
-// dispatched at all, because they are not `app`: the two TLS listeners have a
-// handler of their own (`tls_server.js`), the directory has its own protocol,
-// and so do the KDC and SPIFFE's gRPC pair. Every session, principal and entry
-// minted there is written by THIS process, and no worker was ever told.
+// port — and this process answers on three more socket families that are never
+// dispatched at all, because they are not `app`: the directory has its own
+// protocol, and so do the KDC and SPIFFE's gRPC pair. `/tls` IS on `app` and
+// is still answered here, by `NEVER_DISPATCHED` above, because what it reads
+// is the connection. Every session, principal and entry minted there is
+// written by THIS process, and no worker was ever told.
 //
 // **THE SYMPTOM WAS A SIGN-OUT THAT LEFT A SESSION BEHIND.** A verified client
-// certificate on 9443 starts a sign-on session (2026-09-05); the session is
-// minted here, `/logout` is answered by a worker, and the worker's own copy of
+// certificate starts a sign-on session (2026-09-05, and at GET /tls/sign-in on
+// the main port since 2026-09-16, which is why that path is never dispatched);
+// the session is minted here, `/logout` is answered by a worker, and the
+// worker's own copy of
 // the session store had never heard of it — so a global sign-out reported
 // ending everything and left a live way in. It is intermittent by nature: the
 // worker gets there eventually on the replication poll, so the failure depends
@@ -4258,9 +4261,9 @@ function runOperation(kind, args, opts) {
     // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST ONE, before the
     // generation is read. It matters more here than on the HTTP path, not
     // less: the front process is the one that holds every socket this service
-    // has, so it is the process that mints a session on 9443 and writes the
-    // Kerberos replay cache — and an LDAP operation is very often the next
-    // thing that has to see it.
+    // has, so it is the process that mints a session at /tls/sign-in and
+    // writes the Kerberos replay cache — and an LDAP operation is very often
+    // the next thing that has to see it.
     noteLocalWrites(localWriteCount());
     const wanted = generation;
     if (entry.generation >= wanted) {

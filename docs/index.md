@@ -28,7 +28,7 @@ CONFIG_FILE=./env/local.js node server.js
 
 **https, and your browser will warn you once.** Every appconfig file here sets
 `global.https`, so the main port is TLS on the same self-signed certificate the
-8443, 9443 and LDAPS 636 listeners use — one pair, regenerated on every start,
+LDAPS 636 listener uses — one pair, regenerated on every start,
 so nothing can have trusted it in advance. Accept it, or fetch it with
 `curl -k https://localhost:8081/tls/server-certificate`; `STS_HTTPS=false` runs
 the plain port this used to be.
@@ -56,23 +56,11 @@ what to do when 389 or 88 will not bind.
 
 ## Architecture
 
-[![iya-sts architecture: the leader process and its listeners, the request dispatcher and three worker pools, the protocol subsystems and hosted surfaces, the shared services, and the embedded directory and key material above their stores](mock-sts.jpeg)](mock-sts.jpeg)
-
-One leader process owns every listener — HTTPS, LDAP and LDAPS, the Kerberos
-KDC, the SPIFFE gRPC sockets and the Workload API's domain sockets. Behind it the
-request dispatcher hands work to three worker pools: one for the expensive
-cryptography, one for the admin console and the user portal, and one for the
-protocols themselves. The protocol subsystems and the hosted surfaces share one
-layer of tokens, assertions, tickets and DIDs, one session model, and the audit,
-logging, crypto, metadata, configuration and monitoring services. The embedded
-LDAP directory — people, groups, applications and roles — is written to the
-persistence store, and where keys persist (product mode) they are sealed under a
-key-encryption key read from a secret store. Select the diagram for full size.
-
-Only the crypto pool runs by default, and it forks nothing until the first
-post-quantum signature or password hash. The admin and request pools are off
-until `workers.surfaceCount` and `workers.requestCount` are set; with them off,
-the leader process answers every request itself.
+One leader process owns every listener, and a request dispatcher hands work
+from it to three worker pools. The protocol subsystems and hosted surfaces
+share one session model and one set of services, over an embedded directory
+and key material sealed in their stores. [Architecture](architecture.md) has
+the diagram and a walk through each layer.
 
 ## What it speaks
 
@@ -98,7 +86,7 @@ the leader process answers every request itself.
 | SPNEGO (RFC 4559/4178) | `/spnego` |
 | LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 |
 | SCIM 2.0 provisioning | `/scim/v2` |
-| TLS and mutual TLS reporting | 8443 and 9443 |
+| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls`, `/tls/sign-in` |
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` |
 | OpenID4VP 1.0 — a Verifier | `/oid4vp/verifier` |
@@ -149,6 +137,7 @@ assertion is accepted. See [what is not checked](what-is-not-checked.md).
 ## Pages
 
 - [Getting started](getting-started.md) — running it, the ports, the container
+- [Architecture](architecture.md) — the diagram, layer by layer: the leader process and its listeners, the dispatcher and worker pools, the subsystems and hosted surfaces, the session every artifact is projected from, and the stores underneath
 - [Configuration](configuration.md) — every setting, and which can change at runtime
 - [Endpoints](endpoints.md) — how to find out, rather than a list that goes stale
 - [Trust realms](trust-realms.md) — several logical identity services in one process, told apart by a path segment: what each one separates, and what every realm shares

@@ -8,7 +8,7 @@
 // `common/pki_revocation.js` PUBLISHES — every certificate authority this
 // service holds signs an RFC 5280 CRL and answers RFC 6960 OCSP. Until this
 // file existed nothing here CONSULTED anything: a client certificate presented
-// on 8443, 9443 or the main port, an X509-SVID at the SPIRE Server API and a
+// on the main port, an X509-SVID at the SPIRE Server API and a
 // chain in an assertion's `x5c` were all checked against their anchors and
 // never against a list, so **a certificate revoked on this service's own
 // /admin/pki still authenticated to this service.** `common/mode.js` carried
@@ -252,7 +252,7 @@ const log = bunyan.createLogger({
 const mode = require('./mode');
 // The registry of failures (a leaf). A verdict this module RETURNS carries its
 // code non-enumerably through `mark()`, because verdicts are copied whole onto
-// `/tls/whoami` and `/admin-api` replies and a code must never reach a client.
+// `/tls/sign-in` and `/admin-api` replies and a code must never reach a client.
 const errorCodes = require('./error_codes');
 const keystore = require('./keystore');
 const pki = require('./pki');
@@ -3930,7 +3930,7 @@ function describePolicy() {
     effective: p.effective,
     decidedBy: p.decidedBy,
     requireDistributionPoint: p.requireDistributionPoint,
-    consultedAt: ['the 8443 and 9443 listeners (a session and the recorded ' +
+    consultedAt: ['GET /tls/sign-in (a session and the recorded ' +
                   'authentication)', 'the main port (the remote XACML PEP ' +
                   'and XACML user chains, SCIM\'s client-certificate scheme, ' +
                   'RFC 8705 client ' +

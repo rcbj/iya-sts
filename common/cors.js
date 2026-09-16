@@ -19,10 +19,9 @@
 //      at all. `oauth-oidc/oauth2_bcp.js`'s `corsForbidden()` decides, as it
 //      did before this module existed.
 //   2. **THIS SERVICE'S OWN ORIGINS ARE ALWAYS ALLOWED.** The address the
-//      request was made to, `global.publicBaseUrl`, the 8443 and 9443
-//      listeners on the same host, the embedded debugger's listener (a
-//      separate origin by design, whose pages fetch discovery and JWKS from
-//      the main port) and whatever `global.corsOrigins` names. "No
+//      request was made to, `global.publicBaseUrl`, the embedded debugger's
+//      listener (a separate origin by design, whose pages fetch discovery and
+//      JWKS from the main port) and whatever `global.corsOrigins` names. "No
 //      third-party origin" was the requirement, and none of these is a third
 //      party.
 //   3. **A REQUEST THAT NAMES A CLIENT IS JUDGED AGAINST THAT CLIENT ALONE.**
@@ -227,9 +226,9 @@ function ownOrigins(req) {
   hostnames.filter(function (one) {
     return !!one;
   }).forEach(function (hostname) {
-    add(originOfUrl('https://' + hostname + ':' + config.value('tls.port')));
-    add(originOfUrl('https://' + hostname + ':' +
-                    config.value('tls.mutualPort')));
+    // The 8443 and 9443 origins were added here until 2026-09-16, when both
+    // listeners were deleted. Nothing of this service answers on them, so an
+    // origin naming one is no longer this service's own.
     if (mode.embedsProtocolDebugger()) {
       add(originOfUrl(scheme + '://' + hostname + ':' +
                       config.value('debugger.port')));

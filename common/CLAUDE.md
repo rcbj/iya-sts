@@ -940,14 +940,17 @@ a caller that needs to know it is up to date.
 2026-09-09 — IT DID NOT, AND THAT IS A SECOND BUG OF THE SAME FAMILY AS THE
 LDAP ONE ABOVE.** It was bumped in exactly one place: a WORKER announcing that
 its flush had committed. That is the whole story for the dispatched HTTP port,
-and **this process answers on five more socket families that are never
-dispatched** — the two TLS listeners (which have a handler of their own rather
-than going through `app`), the directory, the KDC and SPIFFE's gRPC pair.
+and **this process answers on more socket families that are never
+dispatched** — the directory, the KDC and SPIFFE's gRPC pair. (The two TLS
+listeners, which had a handler of their own rather than going through `app`,
+were on that list until they were deleted on 2026-09-16; what replaced them is
+an ordinary route.)
 Everything minted there is written by the front process, and no worker was ever
 marked stale for it.
 
 The symptom was a sign-out that left a session behind. A verified client
-certificate on 9443 starts a sign-on session; the session is minted here,
+certificate starts a sign-on session — on 9443 then, at `GET /tls/sign-in` since
+the two TLS listeners were deleted on 2026-09-16; the session is minted here,
 `/logout` is answered by a worker, and that worker's copy of the session store
 had never heard of it — so a global sign-out reported ending everything and
 left a live way in. **It is intermittent by construction**: the worker gets
@@ -1427,25 +1430,35 @@ reader derives from four directory files. The short version:
   beside a correctly partitioned `tokens.held`, with
   `POST /realm/acme/oauth2/revoke` able to kill a jti the default realm issued.
   `tests/realm_isolation.js` guards both directions and the purge.
-* **Kerberos, the two TLS listeners and SPIFFE's four sockets are shared**, for
-  the same reason. **SPIFFE'S X.509 AUTHORITY STOPPED BEING SHARED ON
+* **Kerberos and SPIFFE's four sockets are shared**, for
+  the same reason — and the two TLS listeners were, until they were deleted on
+  2026-09-16 (`tls/CLAUDE.md`). **SPIFFE'S X.509 AUTHORITY STOPPED BEING SHARED ON
   2026-09-11 AND ITS SOCKETS DID NOT**, which looks like a contradiction and is
   not: the authority is a realm's SPIFFE Issuing CA, the trust ANCHOR is the
   service Root that no realm owns, so every realm's bundle is the same document
   and an SVID minted on those shared sockets — which answer in the default realm
   — verifies against it wherever it was fetched. What partitioning the authority
   buys is a chain that says which realm issued an SVID; what it deliberately
-  does not touch is the trust domain, which is still one for the whole service. Kerberos is the one with an obvious way forward, and it is
-  written down in `realmSupport()` rather than left to be rediscovered: Kerberos
-  already HAS a realm, so give each trust realm a `krb5.realm` of its own and
-  dispatch a request on the realm name it carries. What stands in the way is
-  that `krb5.realm` is not runtime-settable — the principal database and its
-  long-term keys are built from it at require time — so that database has to
-  become per-realm and lazily built first.
+  does not touch is the trust domain, which is still one for the whole service.
+  **KERBEROS LEFT THIS BULLET ON 2026-09-15 (#33)**, by the route written down
+  here while it was still owed: Kerberos already HAS a realm, so each trust
+  realm gets a `krb5.realm` of its own and a request is dispatched on the realm
+  name it carries. What stood in the way — *the principal database and its
+  long-term keys are built from it at require time* — was the thing to change
+  rather than the obstacle: the DEFAULT realm's database is still built at
+  require time, another realm's is built when its Kerberos is turned on and
+  rebuilt when a setting it was built from changes, and `krb5.realm` is
+  `realmRuntime` for exactly that reason. The two sockets and the
+  development-mode trust are still the process's. `kerberos/CLAUDE.md` argues
+  it.
 * **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT IS LATER THAN
-  THE BULLET ABOVE:** Kerberos and the two TLS listeners are still shared,
-  because a socket has no path to put a segment in and — unlike the directory —
-  no name inside it to put one in either. **SPIFFE LEFT THIS LIST ON 2026-09-12
+  THE BULLET ABOVE:** what is still shared is the certificate a handshake
+  presents and the client certificate it carries, because a socket has no path
+  to put a segment in and — unlike the directory — no name inside it to put one
+  in either. **The two TLS listeners were on this list until 2026-09-16**, when
+  they were DELETED and what they did moved onto the main port. **Kerberos was
+  on it until 2026-09-15**, when the realm name inside the protocol turned out
+  to be exactly such a name. **SPIFFE LEFT THIS LIST ON 2026-09-12
   AND THE SENTENCE IT LEFT BEHIND IS WORTH KEEPING**: it read *SPIFFE's sockets
   are still shared and its X.509 authority is not, since 2026-09-11, and the two
   facts are compatible for exactly one reason — the trust ANCHOR is the service
@@ -1588,9 +1601,11 @@ accepted change that does nothing reads as having worked. Three kinds qualify an
 is worth knowing which: a **bound socket** (the HTTP port AND ITS SCHEME — see
 `global.https`, which is why `oauth2.rfc9700` is restart-only — both TLS ports,
 both LDAP ports, both Kerberos ports); **material derived at startup** (the TLS certificate is
-issued for `tls.hostnames`/`tls.ips` at boot, and the Kerberos principal database and
-every long-term key in it comes from the realm, the SIDs and the passwords at require
-time); and **the directory tree**, which `ldap.baseDn` is the root of. Marking a
+issued for `tls.hostnames`/`tls.ips` at boot, and the DEFAULT realm's Kerberos principal
+database and every long-term key in it comes from the realm, the SIDs and the passwords at
+require time — another trust realm's is built when its Kerberos is turned on, which is why
+those ten rows are `realmRuntime`); and **the directory tree**, which `ldap.baseDn` is the
+root of. Marking a
 setting runtime when the thing derived from it is not rebuilt is worse than marking
 it restart-only, because the two then disagree silently.
 
@@ -1640,19 +1655,30 @@ requirements that are properties of the deployment come back `no` rather than
 **Do not add a second `realmRuntime` row by analogy.** The test is the paragraph
 above: the restart reason has to be something a realm demonstrably does not have.
 Anything whose value was consumed at startup to build MATERIAL — the TLS
-certificate, the Kerberos principal database, the directory tree — was consumed
-for the whole process, realms included, so marking one of those would be exactly
-the silent disagreement this section warns about. `krb5.realm` is the one
-somebody will reach for first and it is the clearest no; `NAMED_BY_REALM` in
-`realms.js` says the same thing from the other end.
+certificate, the directory tree — was consumed for the whole process, realms
+included, so marking one of those would be exactly the silent disagreement this
+section warns about.
+
+**THIS PARAGRAPH NAMED `krb5.realm` AS "THE CLEAREST NO", AND ON 2026-09-15 TEN
+KERBEROS ROWS WERE MARKED — BY THE TEST ABOVE RATHER THAN AGAINST IT.** The
+material a realm's Kerberos is built from is no longer built at startup: a realm
+is created with `krb5.enabled` off and builds its principal database when it is
+turned on, rebuilding it when one of those ten changes. So for a realm nothing
+was consumed at any startup, which is the same argument SPIFFE's six made on
+2026-09-12. What is still consumed for the PROCESS is still a no: `krb5.kdcPort`
+and `krb5.servicePort` are bound sockets, and `krb5.trustedRealm` and its three
+build the development-mode second realm at startup.
 
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE
 TWO PARAGRAPHS ABOVE, WHICH SAY ONE ROW** — a realm may be in RFC 9700 mode while
-the process is not: the `realmRuntime` marker, which has SEVEN rows since
-2026-09-12 (it had one until then) and must not get an eighth by analogy:
-`oauth2.rfc9700` and the six SPIFFE rows a realm's own listeners are bound from,
-whose argument is made at the head of that group in `config.js` rather than
-borrowed from this one. **`oauth2.oauth21` (2026-09-13) made the argument again
+the process is not: the `realmRuntime` marker, which had SEVEN rows from
+2026-09-12 (it had one until then), TWELVE from 2026-09-13 and **TWENTY-TWO since
+2026-09-15**, and must not get a twenty-third by analogy: `oauth2.rfc9700`,
+`oauth2.oauth21`, the six SPIFFE rows a realm's own listeners are bound from, and
+the ten Kerberos rows a realm's own principal database is built from — each
+group's argument made at the head of its own group in `config.js` rather than
+borrowed from this one. `tests/config_realm_layer.js` pins the list, which is
+what makes adding one a decision. **`oauth2.oauth21` (2026-09-13) made the argument again
 rather than copying the line**: it turns RFC 9700 mode on, so its ONE
 restart-only consequence is the same socket through the same derivation —
 `global.https` reads both flags through `processValue()` — and nothing else is
@@ -4502,8 +4528,9 @@ for the process, and an Issuing CA under each for every use case: `jose`,
 `scep` and `tls-client` under a realm, `tls` under the process. (This sentence put `spiffe` under the
 process for two days after the paragraph below moved it.) **Every key pair this
 service generates is a leaf of it**, so an
-operator installs one anchor and it covers 8443, 9443, LDAPS 636, the main port
-and every token, assertion and signed document this service issues.
+operator installs one anchor and it covers the main port, LDAPS 636, the
+debugger listener and every token, assertion and signed document this service
+issues.
 
 **WHAT REVERSED IS THE SENTENCE BELOW, and what replaced it is not a weaker
 claim.** *IT IS PER REALM* used to be argued here as: a CA shared across realms
@@ -5152,7 +5179,7 @@ that — the fix lives in two files, and a mutation run showed that pinning only
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
 `pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client
-certificate on 8443, 9443 or the main port, an X509-SVID at the SPIRE Server API
+certificate on the main port (and on 8443 and 9443, deleted 2026-09-16), an X509-SVID at the SPIRE Server API
 and an assertion's `x5c` were checked against their anchors and never against a
 list. **One function answers** — `verdictFor(input)` (asynchronous) or
 `localVerdictFor(input)` (the register only, synchronous) — `good`, `revoked`
@@ -6666,10 +6693,11 @@ missing. Fourteen mutants, all caught.
 ## 3ag. `tls_client_certificates.js`: TRUSTING THE ROOT IS NOT TRUSTING WHAT IT ISSUED (2026-09-13)
 
 `/portal/signing-key` hands a person a TLS client certificate to install in a
-browser. It is useless unless the TLS listeners trust its chain, their client
-truststore was empty by default, and OpenSSL will not end a path at an Issuing CA
-without a partial-chain flag node does not expose — **so the listeners trust the
-SERVICE ROOT**, behind `tls.trustIssuedClientCertificates` (`tls/CLAUDE.md`).
+browser. It is useless unless the listener it is presented to trusts its chain,
+that client truststore was empty by default, and OpenSSL will not end a path at
+an Issuing CA without a partial-chain flag node does not expose — **so every
+listener trusts the SERVICE ROOT**, behind `tls.trustIssuedClientCertificates`
+(`tls/CLAUDE.md`).
 
 **THE ROOT VOUCHES FOR EVERY KEY PAIR THIS SERVICE HAS EVER ISSUED.** An
 application's RFC 7523 key pair has no extended key usage, which OpenSSL reads as
@@ -6693,11 +6721,11 @@ because a leaf failing two at once hid two deleted checks in the first round:
 A chain through NO held authority answers `issuedHere: false` and every door
 treats it exactly as before — that is an anchor somebody installed at `/tls/trust`.
 
-**THE REALM IS THE ISSUING CA'S.** The TLS listeners are shared by every realm and
-a socket has no path to carry one, so `identityOf()` answers the realm of the
-authority that signed the leaf and the listeners start the session and record the
-authentication there (`realms.run()`). `checkSocket()`, for the main-port doors
-that DO have an ambient realm — `mtls.peerVerified()` and SCIM's client-certificate
+**THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
+`identityOf()` answers the realm of the authority that signed the leaf, and
+`GET /tls/sign-in` starts the session and records the
+authentication there (`realms.run()`). `checkSocket()`, for the doors
+that read a certificate under an ambient realm — `mtls.peerVerified()` and SCIM's client-certificate
 scheme — refuses a certificate from another realm's authority, which is
 `pki.verifyLeaf()`'s Intermediate rule read at a TLS door.
 
@@ -6728,7 +6756,7 @@ whether the holder's record still lists a certificate — the `tls-client`
 register for this module's own, `cert_enrollment.findEnrolled()` in the
 certificate's realm for ACME, EST and SCEP — and is what RFC 8705's implicit
 mapping at the token endpoint asks (`oauth-oidc/CLAUDE.md` 3an). An
-application's certificate signs nobody in at 8443 or 9443 (`tls/CLAUDE.md`).
+application's certificate signs nobody in at `GET /tls/sign-in` (`tls/CLAUDE.md`).
 
 **A PERSON'S CERTIFICATE FOLLOWS THEIR ENTRY SINCE 2026-09-14.** The CN, the SAN, the
 slot and an enrolled certificate's issued record all carry the name the person had at
@@ -7046,8 +7074,8 @@ provided by `websecurity.js` at require time. What a maintainer needs:
   `helpers.forwardedFrom()` asks the same question for the base URL.
 * **Mutual TLS needs L4 passthrough.** No forwarded client-certificate header is
   read in any mode and none will be (a forwarded certificate is a certificate
-  anybody can forge). A balancer that TERMINATES TLS on 8443, 9443, the main
-  port when `global.https` is on, or the SPIRE Server API disables RFC 8705
+  anybody can forge). A balancer that TERMINATES TLS on the main
+  port when `global.https` is on, or on the SPIRE Server API, disables RFC 8705
   `tls_client_auth` and certificate-bound tokens, certificate sign-in, the XACML
   certificate gates and SPIRE's SVID authentication. Pass those listeners
   through at L4 (TCP) and terminate TLS on the node. Behind an L4 balancer the
@@ -7059,8 +7087,9 @@ provided by `websecurity.js` at require time. What a maintainer needs:
 
 `global.proxyProtocol` (`off` | `v2`, restart-only) reads a HAProxy PROXY
 protocol v2 header off every TCP listener this service owns — the main port,
-8443/9443, LDAP 389/636, the KDC's TCP listener, the debugger and the plain PKI
-listener — for an AWS Network Load Balancer with TLS passthrough and
+LDAP 389/636, the KDC's TCP listener, the debugger and the plain PKI
+listener (and 8443/9443 until both were deleted on 2026-09-16) — for an AWS
+Network Load Balancer with TLS passthrough and
 `proxy_protocol_v2.enabled`. The file's header argues every point; the ones a
 maintainer of a listener has to know:
 
@@ -7080,7 +7109,7 @@ maintainer of a listener has to know:
 * **The address is put on the SOCKET, not in a field.** The TCP handle gets an
   own `getpeername()` and the socket's `_peername` is replaced, so express's
   `req.ip`, `clientAddressOf()`, the request pool's `X-Forwarded-For`, ldapjs's
-  connection id, the LDAP bind limiter, the KDC and `/tls/whoami` read the
+  connection id, the LDAP bind limiter and the KDC read the
   client with no change. The HANDLE because a `TLSSocket` asks its TLSWrap,
   which proxies `getpeername` to the TCP handle — shadowing the JS socket's
   getter would miss every TLS reader (measured).

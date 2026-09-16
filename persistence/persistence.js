@@ -1804,8 +1804,12 @@ function restoreRealms(rows, replicated) {
       // The realm is here because it replicated. Take what another process
       // changed — its overrides above all, which is what a realm-scoped
       // setting IS.
+      // `replicated`, so the realm registry does not re-judge a change the
+      // process that made it already judged (realms.js,
+      // kerberosOverrideProblem()).
       realms.update(row.id, { name: row.name, description: row.description,
-                              overrides: row.overrides || {} });
+                              overrides: row.overrides || {},
+                              replicated: true });
       return;
     }
     const result = realms.create({
@@ -2246,7 +2250,7 @@ function applyKeysChange(change) {
   // it was the worst defect in the issue for several: a realm created on node
   // A and first used on node B got two key sets and the later upsert won the
   // row; `keystore.rotate()` reached one node; and a rebuilt Root reached one
-  // node while the others served the old leaf on 8443, 9443 and 636.
+  // node while the others served the old leaf on the main port and 636.
   //
   // What changed is that the STORE now arbitrates (`mergeKeys()`, first
   // writer wins for a key set, a merge for a certificate authority), so the

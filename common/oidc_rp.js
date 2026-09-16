@@ -867,7 +867,13 @@ function backChannel(options) {
           json = null;
         }
         log.debug('Leaving backChannel(). status=' + response.statusCode);
+        // THE RESPONSE HEADERS TRAVEL WITH IT SINCE #34 (2026-09-15), for one
+        // reader: `DPoP-Nonce`, which RFC 9449 section 8 says a client takes
+        // off the refusal and puts in its next proof. Nothing else here reads
+        // them, and no credential is among them — this is a loopback call to
+        // this service's own token endpoint.
         resolve({ ok: true, status: response.statusCode, json: json,
+                  headers: response.headers || {},
                   text: text.slice(0, 2000) });
       });
     });
@@ -1005,6 +1011,120 @@ function verifyIdToken(token, keys, expected) {
 // members to `form` where the method puts the secret in the body, and answers
 // the headers to send.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THIS RELYING PARTY PROVES POSSESSION OF A KEY (#34, 2026-09-15).
+//
+// `oauth2.refreshTokenRequireDpop` refuses to issue a refresh token to a
+// request that carries no DPoP proof, and `oauth2.accessTokenRequireDpop`
+// refuses an unbound access token at every resource. The console and the
+// portal are ordinary confidential clients of this authorization server, so
+// with either setting on and nothing done here, turning it on would have meant
+// "nobody can sign in to /admin any more" — which is not what either setting
+// says, and is the kind of exemption that quietly becomes permanent.
+//
+// So they carry a key instead. ONE KEY PER SIGN-IN, generated at the code
+// redemption and kept with that session's tokens: the refresh token minted
+// there is bound to it (`cnf.jkt`), and the renewal months later has to prove
+// the SAME key or the grant is refused. It is an ordinary EC P-256 key,
+// generated per sign-in and never written down — it lives exactly as long as
+// the session it belongs to, and a session ending takes it with it.
+//
+// The proof is built here rather than in `dpop.js` because that file is the
+// SERVER side — it verifies proofs and knows nothing about making one — and a
+// verifier that grew a signer would be a module that could be asked to forge
+// what it checks. The two meet at the specification, and at
+// `tests/oidc_rp_dpop.js`, which puts a proof from here through `verifyProof()`
+// there.
+// ---------------------------------------------------------------------------
+function dpopKey() {
+  log.debug("Entering dpopKey().");
+  const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = pair.publicKey.export({ format: 'jwk' });
+  log.debug("Leaving dpopKey().");
+  return {
+    privateKeyPem: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    // The PUBLIC members only, in the order RFC 7638 thumbprints them. A
+    // private member in a proof's `jwk` header is refused by `verifyProof()`,
+    // and rightly — it would be this client publishing its own key.
+    publicJwk: { crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y }
+  };
+}
+
+// RFC 9449 section 4.2. `nonce` is set only on the retry after the server
+// asked for one; `accessToken` only where a proof accompanies one, which this
+// client never does — it presents its access token to no resource server.
+function dpopProof(key, method, url, opts) {
+  log.debug("Entering dpopProof(). " + method + " " + url);
+  const o = opts || {};
+  const payload = {
+    jti: nodeCrypto.randomBytes(16).toString('hex'),
+    htm: String(method || 'POST').toUpperCase(),
+    // WITHOUT QUERY OR FRAGMENT, which is what section 4.2 asks for and what
+    // `dpop.htuOf()` compares against on the other side.
+    htu: String(url || '').split('#')[0].split('?')[0],
+    iat: Math.floor(Date.now() / 1000)
+  };
+  if (o.nonce) {
+    payload.nonce = String(o.nonce);
+  }
+  if (o.accessToken) {
+    payload.ath = stsCrypto.b64u(nodeCrypto.createHash('sha256')
+      .update(String(o.accessToken), 'ascii').digest());
+  }
+  // A DPoP proof is verified by the `jwk` in its own header (RFC 9449 section
+  // 4.2) — an x5c or x5t beside it would name a certificate nobody here has
+  // and nothing on the other side reads.
+  // certificate-header: none — the proof carries its own public key.
+  const proof = stsCrypto.signJws(payload, key.privateKeyPem, {
+    algorithm: 'ES256',
+    header: { typ: 'dpop+jwt', jwk: key.publicJwk }
+  });
+  log.debug("Leaving dpopProof().");
+  return proof;
+}
+
+// The URL a proof is made for: the token endpoint this request is about to be
+// sent to, spelled the way the server will read it back off the request.
+function tokenEndpointUrl(host, path) {
+  log.debug("Entering tokenEndpointUrl().");
+  const scheme = config.value('global.https') ? 'https' : 'http';
+  log.debug("Leaving tokenEndpointUrl().");
+  return scheme + '://' + String(host || '') + String(path || '');
+}
+
+// A token request carrying a proof, with RFC 9449 section 8's ONE retry. Nonce
+// mode answers the first request with `use_dpop_nonce` and a `DPoP-Nonce`
+// header, and a client that does not retry is a client that never gets a token
+// while `oauth2.dpopNonceRequired` is on. One retry and no more: a server that
+// asks twice for a nonce it has just supplied is a server this client cannot
+// satisfy by trying again, and a loop here would be a loop inside a sign-in.
+async function tokenRequestWithProof(key, options) {
+  log.debug("Entering tokenRequestWithProof().");
+  const url = tokenEndpointUrl(options.host, options.path);
+  const send = function (nonce) {
+    return backChannel(Object.assign({}, options, {
+      headers: Object.assign({}, options.headers,
+                             { dpop: dpopProof(key, 'POST', url,
+                                               { nonce: nonce }) })
+    }));
+  };
+  const first = await send('');
+  const needsNonce = first.ok && first.json &&
+                     String(first.json.error || '') === 'use_dpop_nonce';
+  if (!needsNonce) {
+    log.debug("Leaving tokenRequestWithProof(). One request was enough.");
+    return first;
+  }
+  const nonce = String((first.headers || {})['dpop-nonce'] || '');
+  if (!nonce) {
+    log.debug("Leaving tokenRequestWithProof(). Asked for a nonce and sent " +
+              "none.");
+    return first;
+  }
+  log.debug("Leaving tokenRequestWithProof(). Retrying with the nonce.");
+  return send(nonce);
+}
+
 function clientAuthentication(surface, client, form) {
   log.debug("Entering clientAuthentication().");
   const method = String(client.token_endpoint_auth_method ||
@@ -1065,7 +1185,12 @@ function tokensFrom(json, claims, flowRealmId, host, previous) {
     sub: String((claims && claims.sub) || kept.sub || ''),
     authTime: Number(kept.authTime || (claims && claims.auth_time)) || 0,
     flowRealm: String(flowRealmId || kept.flowRealm || realms.DEFAULT_ID),
-    host: String(host || kept.host || '')
+    host: String(host || kept.host || ''),
+    // #34: the DPoP key this session's tokens are bound to. Carried forward on
+    // a renewal — `previous` is where it comes from — because the refresh
+    // token the renewal presents is bound to THIS key and a new one would be
+    // refused. It never leaves this process and dies with the session.
+    dpop: (previous && previous.dpop) || null
   };
   log.debug("Leaving tokensFrom().");
   return tokens;
@@ -1312,7 +1437,14 @@ async function handleCallback(req, res, surfaceId, options) {
       code_verifier: flow.verifier
     });
     const headers = clientAuthentication(surface, client, form);
-    const tokenAnswer = await backChannel({
+    // #34: the key this sign-in proves possession of, from here to the last
+    // renewal of the session it becomes. Made even when no setting requires
+    // one — a proof is accepted in every mode, the tokens come back bound, and
+    // a relying party that only carried a key when it had to would be one
+    // whose behaviour changed under an operator turning a setting on, which is
+    // the thing that would break at the worst moment.
+    const dpop = dpopKey();
+    const tokenAnswer = await tokenRequestWithProof(dpop, {
       method: 'POST',
       path: realms.currentPrefix() + TOKEN_PATH,
       host: host,
@@ -1440,8 +1572,10 @@ async function handleCallback(req, res, surfaceId, options) {
     // came from two steps up, rather than decoded out of the refresh token,
     // which is encrypted to the authorization server and is nothing this
     // client can or should read. See renewIfDue().
+    // `{ dpop: dpop }` as the PREVIOUS record, which is how the key made for
+    // this redemption becomes the key the session keeps (#34).
     const tokens = tokensFrom(tokenAnswer.json, claims, parentRealm, host,
-                              null);
+                              { dpop: dpop });
     const refreshTtlS = Number(applications.settingFor(surface.clientId,
                                                        'oauth2.refreshTokenTtlS',
                                                        config));
@@ -1645,7 +1779,14 @@ async function renewNow(req, res, surface, session, sessionRealmId) {
     refresh_token: tokens.refreshToken
   });
   const headers = clientAuthentication(surface, found.client, form);
-  const tokenAnswer = await backChannel({
+  // #34: THE SAME KEY THE SIGN-IN USED, or a new one for a session that
+  // predates this code. A session from before carries an UNBOUND refresh
+  // token, so any key proves what there is to prove; with
+  // `oauth2.refreshTokenRequireDpop` on, that token is refused outright and
+  // the person signs in again, which is what the setting says it does to every
+  // unbound refresh token.
+  const dpop = tokens.dpop || dpopKey();
+  const tokenAnswer = await tokenRequestWithProof(dpop, {
     method: 'POST',
     path: realms.currentPrefix() + TOKEN_PATH,
     host: host,
@@ -1714,8 +1855,12 @@ async function renewNow(req, res, surface, session, sessionRealmId) {
     }
     claims = verified.claims;
   }
+  // The key travels with them, and a session that had none keeps the one this
+  // renewal just made — so the refresh token that came back bound to it can be
+  // proved next time (#34).
   const renewedTokens = tokensFrom(tokenAnswer.json, claims, tokens.flowRealm,
-                                   tokens.host, tokens);
+                                   tokens.host,
+                                   Object.assign({}, tokens, { dpop: dpop }));
   const renewed = realms.run(realms.get(sessionRealmId), function () {
     return authn.renewRelyingPartySession({ realmId: sessionRealmId,
                                             id: session.id,
@@ -1941,6 +2086,12 @@ module.exports = {
   renewalDecision: renewalDecision,
   checkRenewedClaims: checkRenewedClaims,
   tokensFrom: tokensFrom,
+  // #34: the key and the proof, exported for `tests/oidc_rp_dpop.js` — which
+  // puts a proof made here through `dpop.verifyProof()` there, so the one
+  // place in this service that MAKES a DPoP proof is held to the same reading
+  // as the one that checks them. Nothing else calls either.
+  dpopKey: dpopKey,
+  dpopProof: dpopProof,
   // For the two surfaces' own metadata pages and for the tests: which client a
   // surface is, so that nothing has to write the identifier down twice.
   clientIdFor: function (surfaceId) {

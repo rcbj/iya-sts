@@ -333,9 +333,15 @@ ENV CONFIG_FILE=./env/local.js
 
 # 8081 is the HTTP service. The rest are the listeners that are NOT HTTP and so
 # are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected test
-# service, 389 the LDAP directory, 636 the same directory over TLS, 8443 the TLS
-# endpoint that asks for a client certificate and 9443 the one that requires it.
+# service, 389 the LDAP directory and 636 the same directory over TLS.
 # EXPOSE documents them; each compose file decides which it publishes.
+#
+# **8443 AND 9443 WERE HERE UNTIL 2026-09-16** — the TLS endpoint that asked
+# for a client certificate and the one that required it. Both listeners were
+# deleted and neither number is bound by anything now: a client certificate is
+# presented to 8081, which asks for one and requires none. Removed rather than
+# left behind, because EXPOSE is read by `docker run -P` and a mapping onto a
+# port nothing listens on is a connection refused with no explanation.
 #
 # The four raw-socket ports were named in that sentence long before they were
 # listed below it, which made the sentence false in the direction that matters:
@@ -357,8 +363,6 @@ EXPOSE 88/tcp
 EXPOSE 88/udp
 EXPOSE 389
 EXPOSE 636
-EXPOSE 8443
-EXPOSE 9443
 # 8888 IS THE KERBEROS-PROTECTED TEST SERVICE (krb5.servicePort), and it was
 # missing from this list until 2026-09-07 — found by `tests/readme_ports.js`,
 # which holds the README's ports table to config.js and this file to the table.

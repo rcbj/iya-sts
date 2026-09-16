@@ -816,7 +816,7 @@ function publicJwkOf(publicPem) {
 //     not the TLS certificate.** It is a SIBLING of it — its own Issuing CA,
 //     its own key, under its own realm's Intermediate — and the only thing the
 //     two now share is the anchor an operator installs. That was the whole ask:
-//     one Root covering 8443, 9443, LDAPS 636, the main port, every token this
+//     one Root covering the main port, LDAPS 636, every token this
 //     service signs AND every SVID it mints. Narrowing trust to SPIFFE alone is
 //     still sayable, and is now sayable in the ordinary X.509 way — pin the
 //     SPIFFE Issuing CA instead of the Root.

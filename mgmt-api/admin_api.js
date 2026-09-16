@@ -457,6 +457,12 @@ const jwtAccessToken = require('../oauth-oidc/jwt_access_token');
 // other resource server here makes through `dpop.presentedAccessToken()`. A
 // library that registers nothing; `oauth2.js` already required it.
 const mtls = require('../oauth-oidc/mtls');
+// RFC 9449 (#34, 2026-09-15): this gate never looked at `cnf.jkt`, so a
+// DPoP-bound token was usable here as a plain Bearer token — the hole RFC 8705
+// had closed above and this one had not. Both libraries register nothing and
+// `oauth2.js` has already required them, so these are cache hits.
+const dpop = require('../oauth-oidc/dpop');
+const senderConstraints = require('../oauth-oidc/sender_constraints');
 // THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
 // from this repository, so it cannot move a route or join a cycle.
 //
@@ -1173,8 +1179,8 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'follows about the connection string: the host, port, ' +
                  'database and user are parsed out of it and the string ' +
                  'itself is never returned.\n\nIT SHARES STATE AND NOT ' +
-                 'SOCKETS. The KDC, both LDAP listeners, the two TLS ports ' +
-                 'and SPIFFE\'s four are bound per process. And the replay ' +
+                 'SOCKETS. The KDC, both LDAP listeners, the main port and ' +
+                 'SPIFFE\'s four are bound per process. And the replay ' +
                  'caches and DPoP jti sets CONVERGE rather than synchronise: ' +
                  'between a write in one process and its arrival in another ' +
                  'there is a window the size of persistence.pollInterval in ' +
@@ -1235,19 +1241,23 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'says so rather than implying a missing one.' },
   { path: '/tls', console: '/admin/tls', tag: 'TLS',
     operationId: 'getTlsSettings',
-    summary: 'The two TLS listeners\' own settings',
-    description: 'The four `tls.*` settings: the two ports, and the ' +
-                 'hostnames and IP addresses that go into the self-signed ' +
-                 'certificate this service mints on every start.\n\nALL FOUR ' +
-                 'ARE RESTART-ONLY: the certificate is minted and the ' +
-                 'sockets are bound before anything is listening. One ' +
-                 'certificate serves 8443, 9443, LDAPS 636 and — when ' +
-                 '`global.https` is on — the main port, so a caller trusts ' +
-                 'this service once rather than four times.\n\nWhether the ' +
-                 'MAIN port is HTTPS is `global.https`, which is on `GET ' +
-                 '/config` with the rest of the process\'s own settings: it ' +
-                 'is a fact about the process rather than about these ' +
-                 'listeners, and it defaults to whatever `oauth2.rfc9700` is.' }
+    summary: 'The TLS certificate\'s own settings',
+    description: 'The `tls.*` settings: the hostnames and IP addresses that ' +
+                 'go into the self-signed certificate this service mints on ' +
+                 'every start, and what it makes of a CLIENT\'s.\n\nTHE ' +
+                 'CERTIFICATE ONES ARE RESTART-ONLY: it is minted before ' +
+                 'anything is listening. One certificate serves LDAPS 636 ' +
+                 'and — when `global.https` is on — the main port, so a ' +
+                 'caller trusts this service once rather than twice.\n\n' +
+                 'THERE ARE NO PORTS HERE SINCE 2026-09-16, when `tls.port` ' +
+                 '(8443) and `tls.mutualPort` (9443) were removed with the ' +
+                 'two listeners they named: the main port already asks every ' +
+                 'connection for a client certificate and requires none of ' +
+                 'any of them.\n\nWhether the MAIN port is HTTPS is ' +
+                 '`global.https`, which is on `GET /config` with the rest of ' +
+                 'the process\'s own settings: it is a fact about the ' +
+                 'process rather than about this certificate, and it ' +
+                 'defaults to whatever `oauth2.rfc9700` is.' }
 ].map(function (row) {
   return { method: 'GET', path: BASE + row.path, tag: row.tag,
            operationId: row.operationId,
@@ -4406,8 +4416,9 @@ const ROUTES = [
                  'applications for the whole process — which means OAuth ' +
                  'client registrations, SAML service provider entries, the ' +
                  'SPIFFE registry and the two admin console roles are ' +
-                 'shared. Kerberos, the two TLS listeners and SPIFFE\'s four ' +
-                 'sockets are shared for the same reason.\n\n`reserved` is ' +
+                 'shared. Kerberos, the certificate the main port and LDAPS ' +
+                 '636 present, and SPIFFE\'s four sockets are shared for ' +
+                 'the same reason.\n\n`reserved` is ' +
                  'the list of ids a realm may not be called, read off the ' +
                  'live router: they are the first segments of paths this ' +
                  'service already serves, and the refusal stands whatever ' +
@@ -10907,8 +10918,8 @@ const ROUTES = [
         summary: 'Build or replace the Root CA for the whole service',
         description: 'One Root, shared by every realm and by the process ' +
                      'branch — which is what lets an operator install ONE ' +
-                     'anchor and have it cover 8443, 9443, LDAPS 636, the ' +
-                     'main port and every token this service ' +
+                     'anchor and have it cover LDAPS 636, the main port and ' +
+                     'every token this service ' +
                      'signs.\n\n**REPLACING IT RE-ISSUES EVERY BRANCH IN THE ' +
                      'SAME ACT**, because an Intermediate still hanging from ' +
                      'the old Root chains to nothing — a new Root with the ' +
@@ -11151,8 +11162,8 @@ const ROUTES = [
                      'validator is entitled to act on the first moment it ' +
                      'was told about.\n\n**AND THIS SERVICE DOES NOT ' +
                      'CONSULT ITS OWN LISTS.** A client certificate revoked ' +
-                     'here still authenticates on 8443, 9443, the main port ' +
-                     'and LDAPS 636, because those check the anchors on ' +
+                     'here still authenticates on the main port and LDAPS ' +
+                     '636, because those check the anchors on ' +
                      '`/tls/trust` and fetch nothing. What this operation ' +
                      'buys is that a relying party which DOES check can now ' +
                      'find out.',
@@ -11426,7 +11437,7 @@ const ROUTES = [
   { method: 'GET', path: BASE + '/tls/trust', tag: 'TLS',
     operationId: 'getTruststore',
     summary: 'Every client-certificate trust anchor, and where each came from',
-    description: 'The anchors 8443, 9443, LDAPS 636 and the main HTTPS port ' +
+    description: 'The anchors LDAPS 636 and the main HTTPS port ' +
                  'verify a CLIENT certificate against. A certificate that ' +
                  'chains to one of these is verified, and a verified ' +
                  'certificate is an identity here — it starts a sign-on ' +
@@ -11571,8 +11582,12 @@ const ROUTES = [
   // key back out afterwards — a lost keytab is replaced by rotating. The GET is
   // built from the public half of each pair of attributes and opens nothing.
   //
-  // **ONE KDC FOR THE PROCESS**, so every realm prefix reads and writes the
-  // DEFAULT trust realm's principals, and each reply says `trustRealm`.
+  // **A KDC PER TRUST REALM SINCE 2026-09-15**, so a call under a realm prefix
+  // reads and writes THAT realm's principals — the people in its directory and
+  // the service principals in its registry — and each reply says `trustRealm`.
+  // A realm whose `krb5.enabled` is off has no principals and says so. Until
+  // that date there was one KDC for the process and every prefix reached the
+  // default realm's.
   // ---------------------------------------------------------------------------
   { method: 'GET', path: BASE + '/kerberos/principals', tag: 'Kerberos',
     operationId: 'getKerberosPrincipals',
@@ -13766,15 +13781,29 @@ function operationSummaries() {
 // the management API needs ADMIN_READ" without the document knowing that OAuth
 // exists.
 // ---------------------------------------------------------------------------
+// BOTH SCHEMES SINCE #34 (2026-09-15). It read `Bearer` alone until then, so a
+// DPoP-bound token presented here — with `Authorization: DPoP` — counted as no
+// token at all and got the "this API requires an access token" 401, which is
+// the least useful thing it could say to a client doing the stricter thing.
+// `scheme` is returned with the value because the gate below has to refuse a
+// BOUND token presented as Bearer, and that is a different refusal from a
+// token that does not verify.
+function presentedTokenOf(req) {
+  log.debug("Entering presentedTokenOf().");
+  const said = String((req.headers && req.headers.authorization) || '');
+  const matched = /^(Bearer|DPoP)\s+(\S+)\s*$/i.exec(said);
+  if (!matched) {
+    log.debug("Leaving presentedTokenOf(). Nothing presented.");
+    return { token: '', scheme: '' };
+  }
+  log.debug("Leaving presentedTokenOf(). " + matched[1]);
+  return { token: matched[2].trim(), scheme: matched[1].toLowerCase() };
+}
+
 function bearerOf(req) {
   log.debug("Entering bearerOf().");
-  const said = String((req.headers && req.headers.authorization) || '');
-  if (!/^bearer\s+/i.test(said)) {
-    log.debug("Leaving bearerOf().");
-    return '';
-  }
   log.debug("Leaving bearerOf().");
-  return said.replace(/^bearer\s+/i, '').trim();
+  return presentedTokenOf(req).token;
 }
 
 // What `aud` has to name. The CONFIGURED audience first — since 2026-09-13
@@ -13968,7 +13997,8 @@ function realmTokenRefusal(claims, req) {
 app.use(BASE, function (req, res, next) {
   if (config.value('adminApi.authRequired')) {
     const scopesWanted = req.method === 'GET' ? 'admin:read' : 'admin:write';
-    const presented = bearerOf(req);
+    const presentation = presentedTokenOf(req);
+    const presented = presentation.token;
     if (!presented) {
       errorCodes.mark(res, 'STS-API-0001');
       res.set('WWW-Authenticate',
@@ -14111,6 +14141,76 @@ app.use(BASE, function (req, res, next) {
               'Bearer error="invalid_token", scope="' + scopesWanted + '"');
       return sendJson(res, 401, { error: 'invalid_token',
                                   errors: [certificateProblem.description] });
+    }
+    // ---------------------------------------------------------------------
+    // RFC 9449 SECTION 7, AND THE SAME HOLE ONE CONSTRAINT ALONG (#34,
+    // 2026-09-15). The check above was added for RFC 8705 and the DPoP one
+    // beside it was never written, so a token carrying `cnf.jkt` — a token
+    // whose whole point is that holding it is not enough — was accepted here
+    // as a bearer token. Every other resource server in this service refuses
+    // that through `dpop.presentedAccessToken()`; this gate verifies its own
+    // token and so has to ask for itself.
+    //
+    // It is NOT the two settings: this runs whatever they say, because it is
+    // about honouring a constraint the TOKEN already carries.
+    // ---------------------------------------------------------------------
+    const boundJkt = dpop.jktOf(claims);
+    let proofOk = false;
+    if (boundJkt) {
+      if (presentation.scheme !== 'dpop') {
+        errorCodes.mark(res, 'STS-API-0120');
+        res.set('WWW-Authenticate',
+                'DPoP error="invalid_token", scope="' + scopesWanted + '"');
+        return sendJson(res, 401, { error: 'invalid_token', errors: [
+          'That access token is DPoP-bound (it carries cnf.jkt), so it must ' +
+          'be sent as "Authorization: DPoP <token>" with a DPoP proof — not ' +
+          'as a Bearer token. Presenting it as a bearer token would throw ' +
+          'the binding away.'] });
+      }
+      const checked = dpop.verifyProof(req.headers['dpop'], {
+        htm: req.method, htu: dpop.htuOf(req), accessToken: presented,
+        expectedJkt: boundJkt, req: req
+      });
+      if (!checked.ok) {
+        errorCodes.mark(res, checked.errorCode || 'STS-API-0121');
+        if (checked.needNonce) {
+          res.set('DPoP-Nonce', dpop.issueNonce());
+          res.set('WWW-Authenticate', 'DPoP error="use_dpop_nonce"');
+        } else {
+          res.set('WWW-Authenticate', 'DPoP error="invalid_dpop_proof", ' +
+                                      'scope="' + scopesWanted + '"');
+        }
+        // error-code: none — marked above with the proof's own code, or
+        // STS-API-0121 where it reported none.
+        return sendJson(res, 401, { error: 'invalid_dpop_proof',
+                                    errors: [checked.description] });
+      }
+      proofOk = true;
+    }
+    // #34's two settings, asked of this surface as of every other. The answer
+    // is one function, so an operator who turns them on cannot find that one
+    // door out of nine kept its own opinion.
+    const required = senderConstraints.accessTokenRefusal({
+      where: 'the management API',
+      boundJkt: boundJkt,
+      proofOk: proofOk,
+      boundThumbprint: mtls.boundThumbprintOf(claims),
+      certificate: !!mtls.peerCertificate(req),
+      certificateMatches: !!mtls.boundThumbprintOf(claims) &&
+                          mtls.peerVerified(req) &&
+                          mtls.presentedThumbprint(req) ===
+                            mtls.boundThumbprintOf(claims),
+      mtlsAvailable: mtls.available()
+    });
+    if (required) {
+      errorCodes.mark(res, required.errorCode);
+      res.set('WWW-Authenticate',
+              (senderConstraints.accessTokenDpopRequired() ? 'DPoP' : 'Bearer') +
+              ' error="' + required.error + '", scope="' + scopesWanted + '"');
+      // error-code: none — marked above with the refusal's own code, one of
+      // STS-OAUTH-0527 to 0531.
+      return sendJson(res, 401, { error: required.error,
+                                  errors: [required.description] });
     }
     const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
     const who = String(claims.client_id || claims.sub || '(a client)');

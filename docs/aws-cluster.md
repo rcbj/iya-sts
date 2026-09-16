@@ -31,9 +31,13 @@ you (allowed CIDRs) ──443──▶ NLB ──8081, PROXY v2──▶ node-a 
 | Identity | the containers run as a task role that can read two secrets and nothing else; the environment is created by a dedicated deployer role |
 
 **What is reachable**: only `https://<nlb-dns-name>` on 443. The directory's
-LDAP ports, Kerberos, the 8443/9443 TLS listeners and the PKI distribution port
-are bound inside the nodes but not published, so the suite skips the four jobs
-that need them.
+LDAP ports, Kerberos and the PKI distribution port
+are bound inside the nodes but not published, so the suite skips the jobs
+that need them. **The 9443 mutual-TLS listener was published as a fourth port
+until 2026-09-16**, for the certificate sign-in; it and the 8443 listener beside
+it were deleted from the service, and a certificate is presented to 443 like
+everything else — the main port asks every connection for one and requires
+none.
 
 **Cost**: about $0.30 for an idle hour and $0.42 for an hour with a suite run
 (us-west-2 on-demand, 2026-09). The long-lived pieces — the KMS key, the image
