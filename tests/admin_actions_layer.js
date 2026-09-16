@@ -7,7 +7,7 @@
 // STOPS BEING ONE.
 //
 // Until 2026-09-12 every decision both admin surfaces make lived in
-// `admin-ui/admin.js`, and `mgmt-api/admin_api.js` reached them by requiring
+// `admin-ui/admin.ts`, and `mgmt-api/admin_api.js` reached them by requiring
 // the console module and calling its functions. Rule 7 was satisfied — a page
 // and its operation could not disagree, because they were the same call — and
 // the price was that the surface a machine drives sat downstream of the
@@ -67,7 +67,7 @@ const ROOT = path.join(__dirname, '..');
 // are held to the same three refusals below, because the reason for each is
 // about being required by two surfaces rather than about writing or reading.
 const LAYERS = ['admin-core/admin_actions.ts', 'admin-core/admin_views.ts'];
-const CONSOLE_MODULE = 'admin-ui/admin.js';
+const CONSOLE_MODULE = 'admin-ui/admin.ts';
 const API_MODULE = 'mgmt-api/admin_api.js';
 
 // What the console forwards into each half. Named here rather than derived,
@@ -256,7 +256,11 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
   // And the console must not have re-exported them, which would publish a
   // second route to the same function.
   const consoleSrc = read(CONSOLE_MODULE);
-  const exportsAt = consoleSrc.indexOf('\nmodule.exports = {');
+  // Since #50 the console builds its exports as `consoleExports` and hands
+  // that to `export =`. Not found is a failure, not an empty list.
+  const exportsAt = consoleSrc.search(
+    /\n(?:module\.exports|export|const consoleExports) = \{/);
+  t.check(exportsAt >= 0, 'the console\'s exports object is found');
   const exported = consoleSrc.slice(exportsAt);
   const reExported = (exported.match(/^\s{2}([A-Za-z0-9_$]+Action):/gm) || [])
     .map(function (l) { return l.trim().replace(':', ''); })
@@ -397,7 +401,7 @@ function checkNothingRequiresItEarly(t) {
   // rather than a directory that quietly grew. Every file here sits at 18 or
   // later in the require order: the console, the page it draws for the
   // management API's explorer, and the management API itself.
-  const allowed = ['admin-ui/admin.js', 'admin-ui/api_explorer.js',
+  const allowed = ['admin-ui/admin.ts', 'admin-ui/api_explorer.js',
                    'mgmt-api/admin_api.js', 'ldap/ldap_server.js',
                    // GNAP's view/action layer (2026-09-12), for `adminViews`'
                    // paging only. It is loaded at 23d, from
@@ -465,7 +469,7 @@ function checkNothingRequiresItEarly(t) {
 // each found by a different HTTP job, each a `ReferenceError` on one code
 // path: `numberWord`, `signJwt`, `baseUrlOf`, `stsKeysFor` and `sessions`.
 //
-// All five came from the same place. `admin-ui/admin.js` pulls fourteen names
+// All five came from the same place. `admin-ui/admin.ts` pulls fourteen names
 // into scope through DESTRUCTURED requires — `const { log, xmlEscape,
 // baseUrlOf, … } = require('../common/helpers')` and one more from `authn` —
 // and both of those are spread over comment-interleaved lines. A function that
@@ -487,10 +491,17 @@ function checkEveryNameResolves(t) {
   adminSrc.split('\n').forEach(function (l) {
     let m = /^(?:async )?function ([A-Za-z0-9_$]+)\(/.exec(l);
     if (m) { inAdmin.add(m[1]); return; }
-    m = /^(?:const|let|var) ([A-Za-z0-9_$]+)/.exec(l);
+    // Since #50 the console is a TypeScript class: its requires are
+    // `import x = require(...)` and its functions are methods of the class.
+    m = /^(?:const|let|var|import) ([A-Za-z0-9_$]+)/.exec(l);
+    if (m) { inAdmin.add(m[1]); return; }
+    m = /^  (?:async )?([A-Za-z0-9_$]+)\(/.exec(l);
     if (m) { inAdmin.add(m[1]); }
   });
-  const destructure = /const \{([\s\S]*?)\} = require\('([^']+)'\)/g;
+  // `const { … } = require('…')`, or since #50 `const { … } = helpers;` on
+  // the line after `import helpers = require('…')`.
+  const destructure =
+    /const \{([\s\S]*?)\} = (?:require\('([^']+)'\)|[A-Za-z0-9_$]+;)/g;
   let d;
   while ((d = destructure.exec(adminSrc)) !== null) {
     d[1].replace(/\/\/[^\n]*/g, '').split(',').forEach(function (n) {
