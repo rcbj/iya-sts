@@ -13,8 +13,9 @@
 // `admin.js` renders it at /admin/delegation/user; this file holds the model
 // and none of the HTML.
 //
-// It requires `helpers.js`, `admin_stats.js` and `delegation.js`, and nothing
-// requires IT except the console — so it cannot join a cycle and it cannot move
+// It requires `helpers.js`, `admin_stats.js`, `delegation.js` and
+// `applications.js`, and nothing requires IT except the console and
+// `credential_graph.js` — so it cannot join a cycle and it cannot move
 // a route. Rule 3e's test is therefore not reached: no slot is needed, because
 // a plain require in the ordinary direction closes nothing.
 //
@@ -148,10 +149,10 @@ const { log } = require('./helpers');
 const stats = require('./admin_stats');
 const delegation = require('./delegation');
 // THE REGISTRY, for `audienceParties()` and `permissionsAddressedTo()` — see
-// the sixth and seventh decisions in the header. It requires `helpers.js`,
-// `config.js` and `audit.js` and nothing here, so this is a plain require in
-// the ordinary direction: no cycle to close, and it registers no route so there
-// is none to move. Rule 3e's test is not reached.
+// the sixth and seventh decisions in the header. None of the libraries it
+// requires reaches this file, so this is a plain require in the ordinary
+// direction: no cycle to close, and it registers no route so there is none to
+// move. Rule 3e's test is not reached.
 const applications = require('./applications');
 
 // ---------------------------------------------------------------------------
@@ -870,7 +871,7 @@ function userList() {
 // stops the two pictures disagreeing.
 //
 // The nodes and edges the fold ADDS carry the same fields the delegation ones
-// do, plus the three this page needs, and `normaliseNode()` below is what
+// do, plus the few this page needs, and `normaliseNode()` below is what
 // guarantees a node from either half answers the same questions. A renderer
 // reading `node.credentials` on a node that came out of `delegation.graph()`
 // must get 0 rather than `undefined`, or every count on the page is `NaN`.
@@ -1391,7 +1392,7 @@ function activityFor(key) {
   const built = graphFor(wanted);
   // Which flows this person's credentials actually used, in the order the table
   // above declares them, so the page can explain the ones on the picture and
-  // stay silent about the five that are not. It is derived from the credentials
+  // stay silent about the ones that are not. It is derived from the credentials
   // rather than counted into a map as they are built, because the same
   // derivation then serves `?format=json` without a second walk.
   const used = [];

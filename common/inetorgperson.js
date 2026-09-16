@@ -26,10 +26,11 @@
 // file: **an entry in this directory carries whatever anybody put on it.** A
 // TLS client certificate's subject becomes attributes RDN by RDN, SCIM writes
 // its own mapping, `/admin/users/new` writes the credential catalogue's set,
-// and this service puts four `sts`-prefixed CREDENTIALS on the same object.
-// A page that printed the entry would print `stsTotpCredential` — a shared
-// secret — the day somebody enrolled an authenticator, with nothing anywhere
-// having decided that it should.
+// and this service puts its own `sts`-prefixed CREDENTIALS on the same object
+// (ten secret ones by now — `ldap/ldap_server.js`'s `SECRET_ATTRIBUTES`
+// lists them). A page that printed the entry would print
+// `stsTotpCredential` — a shared secret — the day somebody enrolled an
+// authenticator, with nothing anywhere having decided that it should.
 //
 // So the page draws a FIXED LIST and looks each name up. **A new attribute
 // this service invents cannot appear on it by accident**, which is the
@@ -48,7 +49,7 @@
 // so at startup instead of one page quietly rendering `seealso`.
 //
 // **ONE NAME IS DELIBERATELY NOT SPELT THE WAY RFC 2798 SPELLS IT.** That
-// document writes `x500uniqueIdentifier`; RFC 4519 section 2.40, which is where
+// document writes `x500uniqueIdentifier`; RFC 4519 section 2.43, which is where
 // the attribute type is actually registered, writes `x500UniqueIdentifier`.
 // `ldap/ldap_server.js` chose the registered spelling and said why, and this
 // file follows it rather than having the merge report a disagreement nobody

@@ -99,11 +99,11 @@
 // `ldapsearch` — the same rule `applications.js` and `app_permissions.js` both
 // state about themselves at length.
 //
-// It requires `helpers.js`, `config.js`, `applications.js` and `admin_stats.js`
-// (for `identityKeyOf()`, so that `alice`, `urn:uuid:<entryUUID>` and
-// `alice@REALM` are one person here exactly as they are one entry in the
-// directory), and NOTHING requires it back — so it closes no cycle and moves no
-// route.
+// It requires `helpers.js`, `config.js`, `applications.js`, `error_codes.js`
+// and `admin_stats.js` (for `identityKeyOf()`, so that `alice`,
+// `urn:uuid:<entryUUID>` and `alice@REALM` are one person here exactly as they
+// are one entry in the directory), and NOTHING requires it back — so it closes
+// no cycle and moves no route.
 //
 // **THE DIRECTORY ARRIVES THROUGH `setDirectory()`, WHICH `ldap_server.js`
 // FILLS AT ITS OWN REQUIRE TIME.** That is the same inversion
@@ -344,7 +344,7 @@ function globalConsentsOf(clientId) {
 }
 
 // GRANT one. It goes through `applications.updateApplication()` rather than
-// writing the attribute here, for the reason app_permissions.js's four actions
+// writing the attribute here, for the reason app_permissions.js's five actions
 // do: that function is the ONE door the console form, the management API's
 // generic `update` operation and this action all pass through, so the rules
 // about what may be written live in one place and the `application.update`
@@ -454,8 +454,8 @@ function consentsOf(username) {
 //
 // Given a person, a client and the `scope` a request carries, which scopes have
 // not been agreed to? Everything about the decision is here rather than at the
-// endpoint, for `permissionRefusal()`'s reason one section over: a rule spread
-// across the caller and the library is a rule that gets decided twice.
+// endpoint, for the reason `oauth2.js`'s `permissionRefusal()` gives: a rule
+// spread across the caller and the library is a rule that gets decided twice.
 //
 // `all: true` is `prompt=consent` — OIDC Core section 3.1.2.1 says the server
 // SHOULD prompt the person for consent again, so every requested scope becomes
@@ -506,7 +506,7 @@ function outstanding(request) {
 // rather than five of each.
 //
 // It returns `stored: false` rather than failing when there is no entry to
-// write to — `ldap.autoCreateUsers` can be off, and a service that refused to
+// write to — `ldap.autocreateUsers` can be off, and a service that refused to
 // issue because it could not file the paperwork would be a mock that stopped
 // answering. The log says so, and the person is asked again next time, which is
 // the honest consequence.

@@ -6,10 +6,12 @@
 // ONE CHILD PROCESS OF THE POOL, AND THE TABLE OF EVERYTHING IT WILL DO.
 //
 // This service is one node process and it owns six listener families — the
-// express app, the KDC on TCP and UDP 88, the Kerberos service on 8888, the
-// LDAP directory, two gRPC surfaces and two HTTPS endpoints. Node runs all of
-// them on ONE THREAD, so a synchronous computation does not slow this service
-// down, it STOPS it.
+// express app (on the main port and on the plain-HTTP revocation port), the
+// KDC on TCP and UDP 88, the Kerberos service on `krb5.servicePort` (8888),
+// the LDAP directory, two gRPC surfaces and the embedded debugger's listener.
+// (The two HTTPS endpoints on 8443 and 9443 that used to complete the six
+// were deleted on 2026-09-16.) Node runs all of them on ONE THREAD, so a
+// synchronous computation does not slow this service down, it STOPS it.
 //
 // Post-quantum signing is that computation. Stalls of 14.6, 15.4, 17.8 and 23.3
 // seconds were measured on 2026-08-29 while the parent project's suite ran

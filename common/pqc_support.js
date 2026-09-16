@@ -66,7 +66,8 @@ const STANDARDS = {
   'Composite ML-DSA': 'draft-ietf-lamps-pq-composite-sigs'
 };
 
-// RFC 5280 / X.509 (2019) clause 9.8: the alternative public key extension.
+// X.509 (2019) clause 9.8 (ITU-T, not RFC 5280): the alternative public key
+// extension.
 const ALT_KEY_OID = '2.5.29.72';
 
 function describeTrad(trad) {

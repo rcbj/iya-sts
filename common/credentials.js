@@ -5,9 +5,11 @@
 // ---------------------------------------------------------------------------
 // THE ONE PLACE A PRESENTED PASSWORD IS VERIFIED (2026-09-06).
 //
-// Four doors take a password and none of them checked one until product mode:
+// Four doors took a password and none of them checked one until product mode:
 // the sign-in screen (`authn.js`), an LDAP bind (`ldap_server.js`), a
 // WS-Security UsernameToken (`wstrust.js`) and SCIM Basic (`scim_auth.js`).
+// More have joined since — the OAuth password grant, EST Basic, the portal's
+// password forms (see *A PASSWORD THAT MUST BE CHANGED* below for the list).
 // They all ask here now, and that is the whole point — four verifications is
 // four chances to write the comparison differently, and the one written with
 // `===` is a timing oracle nobody notices because it looks like every other
@@ -48,8 +50,9 @@
 // read and not the write would leave a service that can verify a password and
 // can never set one, which is a product-mode deployment nobody can get into.
 //
-// A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto` and
-// `mode`, none of which requires it back.
+// A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto`,
+// `mode` and the further leaves each argued beside its require below, none of
+// which requires it back.
 // ---------------------------------------------------------------------------
 
 const { log } = require('./helpers');
@@ -60,20 +63,23 @@ const mode = require('./mode');
 // require this file back: `realms` holds the pending enrolment (per realm, like
 // every other pending record here), `keystore` seals the shared secret where
 // the key-encryption key outlives the process, and `totp` is the mechanism
-// itself. `keystore` requires `config`, `crypto`, `mode`, `realms` and
-// `secrets`; `totp` requires `config`, `crypto`, `helpers` and `realms`. So
-// this file stays a LEAF of the same shape it was.
+// itself. `keystore` requires `config`, `crypto`, `mode`, `realms`, `secrets`
+// and a few other leaves; `totp` requires `config`, `crypto`, `helpers`,
+// `realms` and `error_codes`. So this file stays a LEAF of the same shape it
+// was.
 const realms = require('./realms');
 const keystore = require('./keystore');
 const totp = require('./totp');
 // THE THIRD SECOND FACTOR (2026-09-10), and it is on this list for the same
 // reason `totp` is: it owns what a recovery code IS and this file owns where
-// the set lives. It requires `config`, `crypto` and `helpers` and nothing
-// else, so it cannot reach back here and this file stays the leaf it was.
+// the set lives. It requires `config`, `crypto`, `helpers` and `error_codes`
+// and nothing else, so it cannot reach back here and this file stays the leaf
+// it was.
 const backupCodes = require('./backup_codes');
 // THE PASSWORD POLICY (2026-09-12). What a password here must look like, which
 // of a person's old ones it may not be, and how one is made up. A LEAF that
-// requires `helpers`, `mode` and an npm package, so it cannot reach back here;
+// requires `helpers`, `mode`, `error_codes` and an npm package, so it cannot
+// reach back here;
 // its directory arrives through a slot `ldap_server.js` fills, like this
 // file's.
 const passwordPolicy = require('./password_policy');
@@ -82,7 +88,8 @@ const passwordPolicy = require('./password_policy');
 //
 // It is a LIBRARY (rule 3): it registers no route, so requiring it moves
 // nothing in the route order, and it requires only `config`, `helpers` and
-// `authn/webauthn.js` — none of which can reach back here — so it cannot join
+// `authn/webauthn.js` (and `error_codes`) — none of which can reach back
+// here — so it cannot join
 // a cycle. What it carries is the answer to *may a key be enrolled in this
 // role, and how many may one person hold*, which is a question about the
 // MECHANISM and belongs beside the mechanism. The alternative was a second
@@ -188,8 +195,10 @@ const PASSWORD_ATTRIBUTE = 'userPassword';
 // PASSWORD, and this is not one.
 const WEBAUTHN_ATTRIBUTE = 'stsWebauthnCredential';
 
-// WHAT A KEY IS FOR. Two roles and no third, because this service has exactly
-// one second factor:
+// WHAT A KEY IS FOR. Two roles and no third, because a key can do exactly two
+// things here (this was written when a key was the only second factor; an
+// authenticator app and recovery codes joined it on 2026-09-10, and neither
+// has a role — see the TOTP section below):
 //
 //   'primary'  the key signs somebody in ON ITS OWN — passwordless. The
 //              credential IS the account.
@@ -931,10 +940,12 @@ function hasPassword(username) {
 //     restored from a persistence store, has accounts already and this does
 //     nothing — so it cannot overwrite a password or resurrect a disabled
 //     administrator.
-//   * THE PASSWORD IS 32 BYTES OF `randomBytes`, base64url. Not a fixed default
-//     and not derived from anything: a well-known bootstrap password is the
-//     single most reliable way into a product, and this service would ship one
-//     to every deployment at once.
+//   * THE PASSWORD IS GENERATED — `generatePassword()`, drawn against the
+//     password policy since 2026-09-12 (it was 32 bytes of `randomBytes` as
+//     base64url before that). Not a fixed default and not derived from
+//     anything: a well-known bootstrap password is the single most reliable
+//     way into a product, and this service would ship one to every deployment
+//     at once.
 //   * IT IS ANNOUNCED LOUDLY AND SAYS TO CHANGE IT. A bootstrap credential that
 //     is not obviously temporary becomes permanent.
 //
@@ -1175,9 +1186,10 @@ function addKey(username, credential, role) {
   // (2026-09-10).
   //
   // HERE AND NOT AT EACH DOOR, which is the same argument `setPassword()`
-  // makes about hashing: there are three ways to enrol a key — the portal's
-  // setup form, the portal's key page and an activation link — and a check at
-  // each is three chances for one of them to be added without it. This is the
+  // makes about hashing: there are several ways to enrol a key — the sign-in
+  // screen's ceremony, the portal's setup form, the portal's key page and an
+  // activation link — and a check at each is one more chance for one of them
+  // to be added without it. This is the
   // only function that puts a key on an entry, so a policy enforced here is a
   // policy enforced everywhere.
   //
@@ -1296,10 +1308,6 @@ function addKey(username, credential, role) {
              : '' };
 }
 
-// Update the signature counter after a successful assertion. WebAuthn's replay
-// defence: an authenticator's counter only ever goes up, so a counter that went
-// backwards is a cloned key. `webauthn.js` performs the CHECK; this records the
-// new value so the next assertion has something to check against.
 // ---------------------------------------------------------------------------
 // AN ASSERTION, SPENT ACROSS THE CLUSTER (2026-09-14, #46 section 2).
 //
@@ -1465,6 +1473,10 @@ function spendAssertion(spec) {
   });
 }
 
+// Update the signature counter after a successful assertion. WebAuthn's replay
+// defence: an authenticator's counter only ever goes up, so a counter that went
+// backwards is a cloned key. `webauthn.js` performs the CHECK; this records the
+// new value so the next assertion has something to check against.
 function noteKeyUsed(username, credentialId, signCount) {
   log.debug('Entering noteKeyUsed().');
   if (!directory || typeof directory.replaceWebauthn !== 'function') {
@@ -1635,12 +1647,13 @@ function removeKey(username, credentialId) {
 // ---------------------------------------------------------------------------
 // ENROLMENT IS TWO STEPS AND THE FIRST ONE WRITES NOTHING.
 //
-// `beginEnrolment()` mints a secret and holds it IN MEMORY;
-// `confirmEnrolment()` takes a code, checks it against that secret, and only
-// then writes the attribute. **An unconfirmed secret on somebody's entry would
-// be a second factor they cannot produce** — a person who opens the page,
-// never scans the code and comes back tomorrow would be locked out of their
-// own account by a form they abandoned. The pending record expires
+// `beginTotpEnrolment()` mints a secret and holds it in a PENDING record, not
+// on the entry (a sealed persisted row since 2026-09-14 — see `pendingTotp`);
+// `confirmTotpEnrolment()` takes a code, checks it against that secret, and
+// only then writes the attribute. **An unconfirmed secret on somebody's entry
+// would be a second factor they cannot produce** — a person who opens the
+// page, never scans the code and comes back tomorrow would be locked out of
+// their own account by a form they abandoned. The pending record expires
 // (`totp.enrolmentTtlMinutes`) and is per realm, like every other pending
 // record in this service.
 // ===========================================================================
@@ -1986,8 +1999,9 @@ function confirmTotpEnrolment(username, code) {
 // somebody is refused.
 //
 // **IT IS REAL IN BOTH MODES.** See `common/totp.js`'s header — this is the
-// SPNEGO exception read a second time, and the only other place in this
-// service where a credential presented by an end user is actually checked.
+// SPNEGO exception read a second time: when it was written, the only other
+// place in this service where a credential presented by an end user was
+// checked in development mode (recovery codes joined it the same day).
 // ---------------------------------------------------------------------------
 // PREPARE / FINISH, `backupPrepare()`'s shape: everything decided against the
 // entry is decided in the first half, so the synchronous door and the
@@ -2140,19 +2154,6 @@ function verifyTotpAsync(username, code, opts) {
 }
 
 // ---------------------------------------------------------------------------
-// REMOVE IT. **THIS ONE CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which
-// is the whole difference from `removeKey()` beside it: a TOTP secret is never
-// the only way in, because it can never be a primary credential. What removing
-// it does is drop the account to one factor, which is a real change and is
-// therefore audited by every caller.
-//
-// It is used by the person themselves on `/portal/mfa` and by an operator on
-// the operator's Clear on their row under `/admin/users` — the second being
-// what somebody who has lost their phone
-// needs, since there is no other way back: the secret is on a device this
-// service cannot reach.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // WHO HOLDS WHAT, ACROSS THE WHOLE REALM (2026-09-10).
 //
 // **THE ONE FUNCTION HERE THAT ANSWERS ABOUT SOMEBODY OTHER THAN A NAMED
@@ -2270,6 +2271,18 @@ function secondFactorHolders(alsoKnown, opts) {
            store: !!directory };
 }
 
+// ---------------------------------------------------------------------------
+// REMOVE IT. **THIS ONE CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which
+// is the whole difference from `removeKey()`: a TOTP secret is never the only
+// way in, because it can never be a primary credential. What removing it does
+// is drop the account to one factor, which is a real change and is therefore
+// audited by every caller.
+//
+// It is used by the person themselves on `/portal/mfa` and by an operator's
+// Clear on their row under `/admin/users` — the second being what somebody who
+// has lost their phone needs, since there is no other way back: the secret is
+// on a device this service cannot reach.
+// ---------------------------------------------------------------------------
 function removeTotp(username) {
   log.debug("Entering removeTotp().");
   const name = String(username || '').trim();
@@ -2303,12 +2316,13 @@ function removeTotp(username) {
 // ===========================================================================
 // RECOVERY CODES, ON THE SAME ENTRY AS EVERYTHING ELSE (2026-09-10).
 //
-// The THIRD second factor, and the one nobody has to choose: a set is issued
-// automatically the first time a person comes to hold either of the other two.
-// `common/backup_codes.js` owns what a code IS — the alphabet, the length, the
-// comparison; this section owns WHERE THE SET LIVES, WHEN IT IS ISSUED and
-// what spending one does, because those are credential-store questions and
-// this file is the credential store.
+// The THIRD second factor. It was the one nobody had to choose — a set was
+// issued automatically the first time a person came to hold either of the
+// other two — until 2026-09-11, when that reversed (see below): a person now
+// generates a set when they ask. `common/backup_codes.js` owns what a code
+// IS — the alphabet, the length, the comparison; this section owns WHERE THE
+// SET LIVES, WHEN IT IS ISSUED and what spending one does, because those are
+// credential-store questions and this file is the credential store.
 //
 // ---------------------------------------------------------------------------
 // IT IS ISSUED WHEN THE PERSON ASKS TO SEE ONE, IN TWO STEPS, AND NOTHING IS
@@ -2398,7 +2412,12 @@ function removeTotp(username) {
 // sealed sets, which are exactly the ones somebody is holding on paper.
 //
 // ---------------------------------------------------------------------------
-// THE WHOLE SET IS ONE SEALED BLOB AND THE COUNTS ARE OUTSIDE IT.
+// THE WHOLE SET IS ONE BLOB AND THE COUNTS ARE OUTSIDE IT.
+//
+// (It was SEALED until 2026-09-11 and its entries were codes; since then the
+// entries are hashes and the blob is stored in the clear — see
+// `writeBackupCodesRecord()`. The argument below for one blob and the counts
+// beside it is unchanged.)
 //
 // `vault` is a JSON array of `{ code, usedAt }` — sealed as one string — and
 // `total`, `remaining`, `generatedAt` and `lastUsedAt` sit beside it in the
@@ -2713,11 +2732,12 @@ function beginBackupCodes(username, opts) {
     }
   });
   // A handle and not the username: two tabs must not be able to confirm each
-  // other's set, and the form carries this back. `require('crypto')` inline is
-  // how `generatePassword()` above does it in this same file — the module
-  // name `crypto` is taken here by THIS service's crypto module, and shadowing
-  // that at the top of the file to save a require is how somebody later
-  // reaches for `crypto.hashSecret()` and gets node's.
+  // other's set, and the form carries this back. `require('crypto')` inline
+  // (as `generatePassword()` above once did, before the password policy drew
+  // its passwords) because the module name `crypto` is taken here by THIS
+  // service's crypto module, and shadowing that at the top of the file to save
+  // a require is how somebody later reaches for `crypto.hashSecret()` and gets
+  // node's.
   const handle = require('crypto').randomBytes(24).toString('base64url');
   pendingBackupCodes.set(handle, {
     username: name,
@@ -3382,9 +3402,11 @@ function spendBackupCode(name, held, found, realm) {
 }
 
 // ---------------------------------------------------------------------------
-// CLEAR THE SET. An operator's act on that person's row under `/admin/users`,
-// and the ONLY way to a second set — the next second factor they enrol issues
-// one.
+// CLEAR THE SET. An operator's act on that person's row under `/admin/users`.
+// (This said it was the ONLY way to a second set, issued by the next second
+// factor enrolled; since 2026-09-11 a person generates a new set themselves
+// and nothing issues one automatically — the log line below still says the
+// old thing.)
 //
 // **IT CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which is
 // `removeTotp()`'s position exactly: a recovery code is never a way in on its
@@ -3550,44 +3572,6 @@ function mechanismsFor(username) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// THE ACTIVATION LINK (2026-09-06). HOW SOMEBODY WHO WAS PROVISIONED COMES TO
-// HOLD A CREDENTIAL.
-//
-// **IT IS IN THIS FILE BECAUSE IT IS A CREDENTIAL**, and the most dangerous one
-// here. A user object arrives from the management API or from SCIM with no way
-// to authenticate; something has to let the person set one up, and that
-// something can complete an account setup ON ITS OWN. A leaked activation URL
-// is an account takeover — no password needed, no second factor, nothing else
-// to guess.
-//
-// So it is treated as the credential it is, and every one of these is load
-// bearing:
-//
-//   * **32 BYTES OF `randomBytes`**, base64url. Not derived from the username,
-//     not a counter, not a UUIDv1 — an activation token that can be guessed
-//     from a name is a list of accounts anybody can take.
-//   * **HASHED AT REST**, with the same scrypt `hashSecret()` a password uses.
-//     A directory dump must not be a list of working account-takeover URLs, and
-//     this directory has pages that print every attribute of every entry.
-//   * **SINGLE USE.** Consumed the moment it succeeds, so a link in a browser
-//     history or a proxy log is spent.
-//   * **TIME LIMITED**, `security.activationTtlMinutes`, a day by default
-//     because the link is delivered by hand here.
-//   * **RATE LIMITED** at the door it is spent at — see `websecurity.js`. A
-//     32-byte token is not guessable, but the endpoint that takes one must not
-//     be the one place in this service that answers guesses at network speed.
-//   * **SHOWN ONCE**, at the moment it is minted, exactly like the bootstrap
-//     password and a client secret.
-//
-// **IT DOES NOT SIGN ANYBODY IN.** Spending a link lets somebody CREATE a
-// credential and nothing else; when the setup finishes they are sent to the
-// ordinary sign-in screen to use it. That is the difference between a setup
-// link and a magic link, and it is deliberate: a link that both proved identity
-// and granted a session would be a permanent bypass of every mechanism the
-// person is in the middle of configuring.
-// ---------------------------------------------------------------------------
-
 // ===========================================================================
 // ENROLLING A SECURITY KEY, IN TWO STEPS (2026-09-10).
 //
@@ -3610,7 +3594,8 @@ function mechanismsFor(username) {
 // TWO STEPS, AND THE FIRST WRITES NOTHING — the shape the RFC 6238 pair above
 // already has, for the same reason.
 //
-// `beginKeyEnrolment()` mints a CHALLENGE and holds it in memory;
+// `beginKeyEnrolment()` mints a CHALLENGE and holds it in a pending record
+// (persisted since 2026-09-14 — see `pendingKeys`);
 // `confirmKeyEnrolment()` takes what the browser produced, verifies it against
 // that challenge, and only then writes the key. A challenge on somebody's
 // entry would be nothing at all — it is the ceremony that produces the
@@ -3732,8 +3717,8 @@ function beginKeyEnrolment(username, opts) {
   }
   sweepPendingKeys();
   const record = {
-    // `require('crypto')` inline, which is what `issueActivation()` above
-    // already does: the module-level `crypto` here is this service's OWN
+    // `require('crypto')` inline, which is what `issueActivation()` below
+    // also does: the module-level `crypto` here is this service's OWN
     // crypto module, and node's is wanted for nothing but random bytes.
     id: require('crypto').randomBytes(24).toString('base64url'),
     username: name,
@@ -3922,6 +3907,43 @@ function keyEnrolmentWritten(name, held, stored) {
            credentialId: stored.credentialId, held: keysOf(name).length };
 }
 
+// ---------------------------------------------------------------------------
+// THE ACTIVATION LINK (2026-09-06). HOW SOMEBODY WHO WAS PROVISIONED COMES TO
+// HOLD A CREDENTIAL.
+//
+// **IT IS IN THIS FILE BECAUSE IT IS A CREDENTIAL**, and the most dangerous one
+// here. A user object arrives from the management API or from SCIM with no way
+// to authenticate; something has to let the person set one up, and that
+// something can complete an account setup ON ITS OWN. A leaked activation URL
+// is an account takeover — no password needed, no second factor, nothing else
+// to guess.
+//
+// So it is treated as the credential it is, and every one of these is load
+// bearing:
+//
+//   * **32 BYTES OF `randomBytes`**, base64url. Not derived from the username,
+//     not a counter, not a UUIDv1 — an activation token that can be guessed
+//     from a name is a list of accounts anybody can take.
+//   * **HASHED AT REST**, with the same scrypt `hashSecret()` a password uses.
+//     A directory dump must not be a list of working account-takeover URLs, and
+//     this directory has pages that print every attribute of every entry.
+//   * **SINGLE USE.** Consumed the moment it succeeds, so a link in a browser
+//     history or a proxy log is spent.
+//   * **TIME LIMITED**, `security.activationTtlMinutes`, a day by default
+//     because the link is delivered by hand here.
+//   * **RATE LIMITED** at the door it is spent at — see `websecurity.js`. A
+//     32-byte token is not guessable, but the endpoint that takes one must not
+//     be the one place in this service that answers guesses at network speed.
+//   * **SHOWN ONCE**, at the moment it is minted, exactly like the bootstrap
+//     password and a client secret.
+//
+// **IT DOES NOT SIGN ANYBODY IN.** Spending a link lets somebody CREATE a
+// credential and nothing else; when the setup finishes they are sent to the
+// ordinary sign-in screen to use it. That is the difference between a setup
+// link and a magic link, and it is deliberate: a link that both proved identity
+// and granted a session would be a permanent bypass of every mechanism the
+// person is in the middle of configuring.
+// ---------------------------------------------------------------------------
 function activationTtlMs() {
   log.debug("Entering activationTtlMs().");
   log.debug("Leaving activationTtlMs().");
@@ -4587,10 +4609,9 @@ module.exports = {
   // --- the authenticator app (RFC 6238) ---
   TOTP_ATTRIBUTE: TOTP_ATTRIBUTE,
   totpOf: totpOf,
-  // THE RECOVERY CODES (2026-09-10). `revealBackupCodes()` is the one export
-  // here that hands back a live credential, and its own header says who may
-  // call it: `/portal/mfa`, behind that person's own session, and nothing on
-  // the console or the management API.
+  // THE RECOVERY CODES (2026-09-10). `revealBackupCodes()` used to be the one
+  // export here that handed back a live credential; since 2026-09-11 the set
+  // is hashed and it only refuses — its own header says why it is kept.
   BACKUP_CODES_ATTRIBUTE: BACKUP_CODES_ATTRIBUTE,
   // THE TWO-STEP ISSUE (2026-09-11). `ensureBackupCodes()` is gone: it issued
   // a set as a side effect of enrolling a second factor, which cannot survive

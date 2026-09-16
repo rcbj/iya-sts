@@ -110,10 +110,12 @@
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route, so its position in the require
-// order is not a position. It requires `config` and `crypto` — neither of
-// which requires it back — and it is required by `common/credentials.js`,
-// `portal/portal.js`, `authn/authn.js`, `admin-ui/admin.js` and
-// `admin-ui/crypto_metadata.js`.
+// order is not a position. It requires `helpers` (for `log`), `config`,
+// `crypto` and `error_codes` — none of which requires it back — and it is
+// required by `common/credentials.js`, `portal/portal.js`,
+// `admin-ui/admin.js`, `admin-ui/crypto_metadata.js` and
+// `admin-core/admin_views.js` (`authn/authn.js` reaches it through
+// `credentials.js`).
 // ===========================================================================
 
 const nodeCrypto = require('crypto');
@@ -437,7 +439,7 @@ function report() {
                 'dropping the spaces and dashes this service itself prints.',
     // **THIS SENTENCE SAID "ENCRYPTED and not hashed" FOR A DAY AFTER IT
     // STOPPED BEING TRUE** (fixed 2026-09-12). The set has been a scrypt hash
-    // per code since 2026-09-11 — `hash()` below — and `/admin/crypto-metadata`
+    // per code since 2026-09-11 — `hash()` above — and `/admin/crypto-metadata`
     // reads this report, so the one page whose subject is what this service
     // does to a secret was describing the design that had been reversed.
     atRest: 'A scrypt HASH of each code, through crypto.hashSecret() — the ' +

@@ -6,27 +6,29 @@
 // THE DIRECTORY'S GROUPS, IN A TOKEN.
 //
 // For anybody who is a member of a group in the embedded LDAP directory, every
-// OAuth 2.0 access token, OIDC ID Token, SAML 2.0 assertion and SAML 1.1
-// assertion this service issues carries a claim naming those groups. It is
+// OAuth 2.0 access token, OIDC ID Token, UserInfo response, SAML 2.0 assertion
+// and SAML 1.1 assertion this service issues carries a claim naming those
+// groups — all five claim sets in `admin_stats.js`. It is
 // automatic — there is nothing to tick per user and nothing to tick per set —
 // and `groups.claim` turns the whole of it off.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS DOES NOT CHANGE, AND THE SENTENCE IT DOES CHANGE.
 //
-// A GROUP HERE STILL GRANTS NOTHING. No endpoint in this service reads this
-// claim, nothing decides anything on it, and adding somebody to
-// `cn=directory-admins` still does not let them do one thing they could not do
-// before. /admin/groups says so and goes on saying so.
+// THE CLAIM GRANTS NOTHING. No endpoint in this service reads this claim and
+// nothing decides anything on it. /admin/groups says so and goes on saying so.
 //
-// TWO GROUPS ARE NOW AN EXCEPTION AND NOT TO THIS SENTENCE. `admin.readGroup`
-// and `admin.writeGroup` — `cn=admin-read` and `cn=admin-write` by default —
-// decide who may use the ADMIN CONSOLE, and nothing about that reaches here:
-// they are put in this claim exactly like any other group a person is in, and
-// no endpoint reads the claim to find them. A client that saw `admin-write` in
-// an access token and concluded the token could do something would be making
-// precisely the mistake the paragraph above is about. See
-// `admin-ui/admin_rbac.js`.
+// A GROUP ITSELF CAN GRANT SOMETHING NOW, AND NONE OF IT GOES THROUGH HERE.
+// This paragraph used to say a group granted nothing at all, bar two. By now:
+// `admin.readGroup` and `admin.writeGroup` (`cn=admin-read`, `cn=admin-write`)
+// decide who may use the ADMIN CONSOLE (`admin-ui/admin_rbac.js`);
+// `roles.remotePepGroup` and `roles.xacmlUserGroup` grant the built-in
+// REMOTE_PEPS and XACML_USER roles; and a group may be a member of a
+// configured role in `ou=roles` (`common/roles.js`). Every one of those reads
+// the DIRECTORY at decision time, never this claim: the groups are put in the
+// claim exactly like any other group a person is in. A client that saw
+// `admin-write` in an access token and concluded the token could do something
+// would be making precisely the mistake the paragraph above is about.
 //
 // What stopped being true is the OTHER half of that sentence, which used to run
 // "...and no token carries a group from this directory". One now can. The two
@@ -48,9 +50,10 @@
 //
 // **It is a LIBRARY (rule 3) and it registers no route**, so its position in
 // the require order is not a position at all. It requires `helpers.js`,
-// `config.js` and `admin_stats.js`, and none of those requires it back — which
+// `config.js`, `applications.js`, `admin_stats.js` and `error_codes.js`, and
+// none of those requires it back — which
 // is what keeps it out of the cycles rule 2 exists for. In particular
-// `admin_stats.js` CANNOT require it: this file requires that one (for the four
+// `admin_stats.js` CANNOT require it: this file requires that one (for the
 // set ids, the reserved names and `identityKeyOf()`), so a require in the other
 // direction would close a loop and node would hand back a half-initialised
 // module whose exports are undefined. The symptom would arrive later and
@@ -66,11 +69,12 @@
 // reasoning that keeps `signJwt()` the single token counter.
 //
 // **AND THE DIRECTORY ARRIVES THROUGH A SECOND SLOT, pointing the other way.**
-// The membership can only be answered by `ldap_server.js`, which is the LAST
-// module `server.js` requires (rule 6): requiring it from here would drag every
-// `/ldap` route to the front of the express router that `/admin/sts-metadata`
-// is built by walking. So this file offers `setDirectory()` and that one fills
-// it, the same shape `vc_claims.js` and `applications.js` already have.
+// The membership can only be answered by `ldap_server.js`, which
+// `common/protocol_stack.js` requires at 21 (rule 6): requiring it from here
+// would drag every `/ldap` route to the front of the express router that
+// `/admin/sts-metadata` is built by walking. So this file offers
+// `setDirectory()` and that one fills it, the same shape `vc_claims.js` and
+// `applications.js` already have.
 //
 // **THE CLAIM IS OMITTED ENTIRELY FOR SOMEBODY IN NO GROUP.** Not an empty
 // array — absent. That is what makes `groups.claim` defensible as ON by
@@ -98,7 +102,7 @@
 
 const { log } = require('./helpers');
 const config = require('./config');
-// The four claim sets, the reserved names, the SAML 1.1 default namespace and
+// The claim sets, the reserved names, the SAML 1.1 default namespace and
 // the identity normalisation. This is the module whose slot is filled at the
 // bottom of this file, and the dependency runs in this direction only.
 // A LIBRARY REQUIRING A LIBRARY (rule 3e's test): applications.js registers no
@@ -207,12 +211,9 @@ function directoryLoaded() {
 // somebody can see and diagnose; a token endpoint returning 500 because an
 // entry was mid-write is a bug that looks like the token endpoint.
 //
-// NO ENTERING/LEAVING PAIR HERE, NOR ON nameProblem() OR valuesFrom(), and the
-// omission is deliberate rather than an oversight of the style rule. All three
-// run inside groupsOf(), whose own pair already brackets them, and groupsOf()
-// runs once per token and twice per assertion — three pairs around one call
-// would be most of what the log said about issuing one. It is the same
-// judgement admin_stats.js states beside its two resolver wrappers.
+// This comment used to say readGroups(), nameProblem() and valuesFrom() carry
+// no Entering/Leaving pair because groupsOf() already brackets them. The
+// 2026-09-12 style sweep gave all three a pair, so the log now shows them.
 function readGroups(username) {
   log.debug("Entering readGroups().");
   if (!directoryLoaded()) {
@@ -396,11 +397,11 @@ function subjectOf(context) {
 // both go through groupsOf() rather than reading the directory themselves, so
 // the console's preview cannot come to disagree with the token.
 //
-// `setId` is accepted and deliberately unread: all four sets carry the claim,
+// `setId` is accepted and deliberately unread: all five sets carry the claim,
 // because "automatically" is what this feature is for and a per-set selection
 // is what the claim-set pages already offer for everything that wants one. It
 // stays in the signature because the resolver contract has it and because a
-// future per-set rule would go here rather than at four call sites.
+// future per-set rule would go here rather than at five call sites.
 // ---------------------------------------------------------------------------
 function jwtClaimsFor(setId, context) {
   log.debug("Entering jwtClaimsFor().");
@@ -441,9 +442,10 @@ function samlAttributesFor(setId, context) {
   return [attribute];
 }
 
-// The feature's own state, for both claim-set pages and both their GETs. Built
-// here rather than in admin.js because two surfaces answer it and neither of
-// them should be reading the four settings itself.
+// The feature's own state, for the console's section and for all three
+// claim-set pages' JSON replies (`admin-core/admin_views.js`). Built here
+// rather than in admin.js because two surfaces answer it and neither of them
+// should be reading the four settings itself.
 function state() {
   log.debug("Entering state().");
   const out = {

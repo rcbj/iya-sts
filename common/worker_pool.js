@@ -441,9 +441,10 @@ function run(kind, job, opts) {
   const entry = workerFor(options.session);
   if (!entry) {
     // workers.count is 0, the pool has given up on children, or this process is
-    // shutting down. The SAME job table runs, in this process — see the note at
-    // the foot of worker.js. Blocking, and the only thing that changes about
-    // the answer is how long the event loop was busy producing it.
+    // shutting down. The SAME job table runs, in this process — see the header
+    // of worker.js (THE JOB TABLE IS EXPORTED). Blocking, and the only thing
+    // that changes about the answer is how long the event loop was busy
+    // producing it.
     log.debug('Leaving run(). Computing in this process.');
     try {
       log.debug("Leaving run().");

@@ -32,9 +32,10 @@
 //
 // A CRL is signed BY AN ISSUER and lists serial numbers ISSUED BY THAT ISSUER.
 // One CRL per realm would therefore be a document with no valid issuer — the
-// realm has three Issuing CAs and an Intermediate, and a serial is only unique
-// within one of them. So every CA in the tree has a CRL of its own and an OCSP
-// responder of its own, which is also what the request asked for.
+// realm has an Intermediate and an Issuing CA per use case, and a serial is
+// only unique within one of them. So every CA in the tree has a CRL of its
+// own and an OCSP responder of its own, which is also what the request asked
+// for.
 //
 // **THE ROOT AND THE INTERMEDIATES HAVE ONE TOO**, and they are not decoration:
 // an Intermediate revokes Issuing CAs and the Root revokes Intermediates, which
@@ -52,9 +53,9 @@
 // is `pki.js`'s placement argument applied once more: a second store would be a
 // second thing to seal, purge with the realm, and share with a request worker.
 //
-// A LIBRARY (rule 3): it registers no route. It requires `config`, `pki` and
-// the two vendored PKI modules plus pkijs and asn1js; none of them requires it
-// back.
+// A LIBRARY (rule 3): it registers no route. It requires `config`, `pki`,
+// `realms`, `error_codes` and the two vendored PKI modules plus pkijs and
+// asn1js; none of them requires it back.
 // ===========================================================================
 
 const bunyan = require('bunyan');
@@ -515,7 +516,8 @@ function scopeFromSegment(segment) {
   return one === 'default' ? '' : one;
 }
 
-// The three CRL addresses for one authority, and the one OCSP address.
+// The two CRL addresses for one authority (http and ldap — see above), the
+// one OCSP address, the caIssuers address, and the directory DN.
 //
 // **THE LDAP FORM IS RFC 4516's AND THE ATTRIBUTE DESCRIPTION MATTERS.**
 // `?certificateRevocationList;binary` is not decoration: RFC 4523 section 4
@@ -1480,14 +1482,15 @@ async function answerOcsp(scopeId, caId, requestDer) {
 // responder comes to answer `unknown` about a certificate the console is
 // happily offering to revoke.
 //
-// **FOUR SOURCES, AND THE THREE AFTER THE FIRST ARE WHY IT IS NOT A
+// **FIVE SOURCES, AND THE FOUR AFTER THE FIRST ARE WHY IT IS NOT A
 // ONE-LINER.** An authority signs AUTHORITIES as well as leaves: an
 // Intermediate issued this scope's Issuing CAs and the Root issued every
 // scope's Intermediate. Without those two branches a perfectly valid Issuing CA
 // reports `unknown` at its own parent's responder — which is the most confusing
 // answer available, because the certificate verifies and the responder disowns
 // it. The fourth is the object store, where the Certificate & Key Configuration
-// pane's leaves live rather than in the certificate register.
+// pane's leaves live rather than in the certificate register, and the fifth
+// (2026-09-12) is the issued-serial record — see item 5 below.
 // ---------------------------------------------------------------------------
 function issuedList(scopeId, caId) {
   log.debug('Entering issuedList(). scope=' + scopeId + ' ca=' + caId);
@@ -1510,7 +1513,8 @@ function issuedList(scopeId, caId) {
   }
 
   // 1. The leaves this use case's Issuing CA certified — the signing keys of
-  //    this realm, the TLS server certificate, a SPIFFE authority.
+  //    this realm, the TLS server certificates, a remote PEP's listener, a
+  //    person's or application's TLS client certificate.
   pki.certificatesFor(scopeId, id).forEach(function (one) {
     add(one.serialHex, one.subject, one.notAfter, 'leaf',
         one.label || one.slot || '');
@@ -1550,10 +1554,13 @@ function issuedList(scopeId, caId) {
   });
 
   // 5. The RFC 7523 / RFC 7522 signing key pairs issued to applications and
-  //    people (2026-09-12). Their certificates name this authority's CRL and
-  //    OCSP responder, so a responder with no record of them would answer
-  //    `unknown` about a certificate that sends a relying party here to ask.
-  //    Guarded, because a `pki.js` without the accessor has no such records.
+  //    people (2026-09-12) — and, in the same record, the certificates ACME,
+  //    EST and SCEP enrolled (`pki.issueEnrolled()`) and the serials a
+  //    cluster merge displaced from a slot (`pki_merge.js`). Their
+  //    certificates name this authority's CRL and OCSP responder, so a
+  //    responder with no record of them would answer `unknown` about a
+  //    certificate that sends a relying party here to ask. Guarded, because a
+  //    `pki.js` without the accessor has no such records.
   if (typeof pki.issuedKeyPairsFor === 'function') {
     pki.issuedKeyPairsFor(scopeId, id).forEach(function (one) {
       add(one.serialHex, one.subject, one.notAfter, 'key-pair',

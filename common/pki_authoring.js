@@ -5,11 +5,12 @@
 // ===========================================================================
 // THE CERTIFICATE & KEY CONFIGURATION PANE, AS A MODEL.
 //
-// `common/pki.js` builds this realm's three-tier certificate authority and
-// issues ONE kind of leaf from it — a signing key pair for an application,
-// because that is what RFC 7521 and RFC 7523 need. This file is the other
-// half: **an arbitrary certificate, with every field and every extension
-// exposed**, issued from any authority whose private key is here.
+// `common/pki.js` builds this service's certificate authority and issues the
+// FIXED kinds of leaf this service needs from it — signing key pairs for RFC
+// 7521 and RFC 7523, TLS certificates, enrolled certificates — each to a
+// profile it decides. This file is the other half: **an arbitrary
+// certificate, with every field and every extension exposed**, issued from
+// any authority whose private key is here.
 //
 // ---------------------------------------------------------------------------
 // IT IS MODELLED ON THE PARENT PROJECT'S *PKI / X.509* PAGE AND IS NOT A COPY
@@ -61,8 +62,9 @@
 // key* — and it draws NO HTML, which is `admin-ui/pki_admin.js`'s.
 //
 // A LIBRARY (rule 3): it registers no route, so its position in the require
-// order is not a position. It requires `config`, `pki` and the two vendored
-// PKI modules; none of them requires it back, so it cannot close a cycle.
+// order is not a position. It requires `config`, `pki`, `error_codes` and the
+// two vendored PKI modules; none of them requires it back, so it cannot close
+// a cycle.
 //
 // ---------------------------------------------------------------------------
 // ONE COST IS REAL AND IS SAID OUT LOUD RATHER THAN DISCOVERED.

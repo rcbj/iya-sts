@@ -437,8 +437,10 @@ function verify(alg, pub, message, signature) {
 // its own, recursively, and the first symptom would have been a machine out of
 // processes.
 //
-// `common/crypto.js` fills it, because that is the module that routes an `alg`
-// to this file in the first place.
+// `common/worker_pool.js` fills it, from the last line of that file, so that
+// requiring the pool is what arms this module. `common/crypto.js` filled it
+// for one afternoon and that was a mistake — the foot of `worker_pool.js`
+// records why.
 // ---------------------------------------------------------------------------
 let workerPool = null;
 

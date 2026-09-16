@@ -19,11 +19,12 @@
 //
 // A per-session token, in a hidden field, checked on every POST that changes
 // something. **THE TOKEN IS DERIVED FROM THE SESSION AND NOT STORED BESIDE
-// IT**: HMAC-SHA256 over the session id under a per-process key, so there is no
-// second map to keep in step with the session store, nothing to sweep when a
-// session ends, and a token cannot outlive the session it belongs to. That is
-// the "signed double submit" pattern and it is what lets this be one function
-// rather than a store.
+// IT**: HMAC-SHA256 over the session id under a key every process shares where
+// a store can share one (per process otherwise — see THE CSRF KEY below), so
+// there is no second map to keep in step with the session store, nothing to
+// sweep when a session ends, and a token cannot outlive the session it belongs
+// to. That is the "signed double submit" pattern and it is what lets this be
+// one function rather than a store.
 //
 // **THE COMPARISON IS CONSTANT-TIME**, through `crypto.js`'s
 // `constantTimeEquals()` — the same one every other secret comparison here
@@ -59,8 +60,9 @@
 // **A REFUSAL IS AUDITED**, because a lockout nobody can see is a support call
 // with no evidence in it.
 //
-// A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto` and
-// `helpers`, none of which requires it back.
+// A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto`,
+// `helpers`, `realms`, the error-code table, `client_address` and three
+// `cluster/` libraries, none of which requires it back.
 // ---------------------------------------------------------------------------
 
 const nodeCrypto = require('crypto');
@@ -170,10 +172,11 @@ function checkCsrf(sessionId, body) {
 // ---------------------------------------------------------------------------
 // THE RATE LIMITER.
 //
-// PER PROCESS and not per realm, deliberately: an attacker choosing which realm
-// to guess in must not get a fresh allowance for each, and the buckets are
-// keyed by a string the caller composes — which is where the realm goes if a
-// caller wants it counted separately.
+// PER PROCESS and not per realm, deliberately (and per CLUSTER where a store is
+// shared — see `attemptShared()`): an attacker choosing which realm to guess in
+// must not get a fresh allowance for each, and the buckets are keyed by a
+// string the caller composes — which is where the realm goes if a caller wants
+// it counted separately.
 // ---------------------------------------------------------------------------
 // -------------------------------------------------------------------------
 // PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06).
@@ -445,9 +448,9 @@ function succeeded(what, req, identity, options) {
 // functions use, digested, and the realm is '' for the reason the header of
 // this section gives. A caller changes one name and an `await`.
 //
-// **WITH NO SHARED STORE THEY ARE THE SYNCHRONOUS FUNCTIONS**, resolved — memory
-// and ldif stores, development mode, `npm test` — so nothing that does not
-// share a store changes by a byte.
+// **WITH NO SHARED STORE THEY ARE THE SYNCHRONOUS FUNCTIONS**, resolved —
+// memory and ldif stores, development mode, `npm test` — so nothing that does
+// not share a store changes by a byte.
 //
 // **A STORE THAT CANNOT BE ASKED FALLS BACK TO THIS PROCESS'S BUCKETS**, logged
 // `STS-CLUSTER-0023`, and that is a deliberate difference from a claim, which
@@ -666,7 +669,7 @@ function succeededShared(what, req, identity, options) {
   });
 }
 
-// DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason. The three
+// DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason. The shared
 // functions above are the fix; every door that counts — the sign-in screen,
 // the password grant, the second-factor steps, the portal's links and forms,
 // client secrets, the enrollment throttles, GNAP's user code, the PIP and the

@@ -5,11 +5,14 @@
 // ---------------------------------------------------------------------------
 // BRINGING THIS PROCESS'S STATE UP, IN THE ONE ORDER THERE IS.
 //
-// Four asynchronous steps, and **the order between them is a dependency rather
-// than a preference** — each one's argument is written out below, verbatim,
-// where it has always been. The sequence lived in `server.js` until 2026-09-07
-// and moved here for the reason `protocol_stack.js` moved: it acquired a second
-// reader.
+// Five asynchronous steps — the store, the signing keys, the minted rows,
+// coordination and the certificate authority, with the cluster's settings
+// agreement, shared secrets and key settle between them (#46) — and **the
+// order between them is a dependency rather than a preference**: each one's
+// argument is written out below, where it has always been. It was four until
+// the certificate authority joined on 2026-09-11. The sequence lived in
+// `server.js` until 2026-09-07 and moved here for the reason
+// `protocol_stack.js` moved: it acquired a second reader.
 //
 // `server.js` runs it and then binds the sockets. `common/request_worker.js`
 // runs it and binds none of them — and it MUST run it, which is the whole
