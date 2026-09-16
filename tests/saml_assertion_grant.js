@@ -52,10 +52,11 @@
 // in that file and the one thing a wrong copy would hide, because a test whose
 // own signer is broken in the same way as its expectations passes.
 //
-// It is the only require from `tests/` into `tests/vendored/` and it should
-// stay the only one: what makes this one worth it is that the file is a
-// SECOND IMPLEMENTATION of something under test, which no other helper there
-// is.
+// It was the first require from `tests/` into `tests/vendored/`, and the
+// ones that followed it — this signer in other files, and the ACME, SCEP and
+// GNAP clients — are there on the same argument and no other: what makes such
+// a require worth it is that the file is a SECOND IMPLEMENTATION of something
+// under test, which the shared helpers there are not.
 // ===========================================================================
 
 // Deleted rather than set, for the reason config_realm_layer.js gives: this

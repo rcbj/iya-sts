@@ -38,9 +38,10 @@
 // file starts no PEP, registers nothing and makes NO HTTP REQUEST — it loads
 // the container's modules and calls their functions. So `xacml-pep/sync.js`,
 // the registrar and the poller, is not loaded by it, and neither is `start()`.
-// That half is `tests/vendored/sts_xacml_remote_pep.js`, which spawns
-// `pep.js` for real against a running mock and asserts that a policy deployed
-// through `/admin-api/xacml` changes what that process allows. The two are
+// That half is `tests/vendored/sts_xacml_remote_pep.js`, which drives the
+// real container — the one a launcher brought up, or one it builds and starts
+// itself — against a running mock and asserts that a policy deployed through
+// `/admin-api/xacml` changes what that container allows. The two are
 // complements rather than overlaps and the split is worth keeping: this file
 // can see the engine growing a dependency on the identity service, which no
 // running PEP could show; that one can see the client half being wrong, which
@@ -675,8 +676,8 @@ async function run(t) {
   // 4. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE.
   //
   // `xacml.js`'s `enforce()` and `xacml-pep/pep.js`'s are two readings of
-  // section 7.2, deliberately not shared. Two readings is the point — it is
-  // the same argument `tests/sts_dpop.js` makes for writing its own DPoP
+  // section 7.2, deliberately not shared. Two readings is the point — it is the
+  // same argument `tests/vendored/sts_dpop.js` makes for writing its own DPoP
   // client — and it is worth nothing unless somebody checks that they agree.
   //
   // The container's is asked in the child, over the SEVEN cases that matter:

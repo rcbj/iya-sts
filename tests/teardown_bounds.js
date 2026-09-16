@@ -103,9 +103,9 @@ function checkTheBoundedHelperExists(t) {
           'hands the hang straight back');
 
   // `timeout NAME=value cmd` asks the kernel to execute a program called
-  // `NAME=value`. That is the trap compose.sh's own header describes about
-  // `env docker_compose`, one layer along, and it is how every mode of this
-  // launcher failed on its first run.
+  // `NAME=value`. That is the trap compose.sh's `docker_compose()` avoids by
+  // putting `env` in front of those words, one layer along, and it is how
+  // every mode of this launcher failed on its first run.
   t.check(/timeoutCmd\}"?\s+--kill-after=30s\s+"\$\{seconds\}"\s*\\?\s*\n?\s*env\s/
     .test(helper) ||
           /--kill-after=30s "\$\{seconds\}" \\\n\s*env /.test(helper),

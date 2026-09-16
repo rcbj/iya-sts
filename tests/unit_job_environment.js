@@ -6,7 +6,7 @@
 // A UNIT JOB DOES NOT INHERIT THE STACK'S DEPLOYMENT VARIABLES, AND THIS IS
 // THE RECORD OF THE DAY IT DID.
 //
-// `tests/tools/modes.sh` defines the three modes the suite runs in as blocks
+// `tests/tools/modes.sh` defines the modes the suite runs in as blocks
 // of `NAME=value` lines, and both launchers EXPORT them — they have to, since
 // that is how the compose stack and a host-mode service are handed the mode.
 // The runner's unit jobs are children of that same shell, so they inherited

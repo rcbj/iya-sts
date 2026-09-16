@@ -29,9 +29,9 @@
 //
 // The messages are built with `tests/vendored/scep_client.js` — the protocol
 // job's own client — rather than with `scep/scep_cms.js`, for that job's
-// reason: a codec checked against itself agrees with itself. It is the second
-// require from `tests/` into `tests/vendored/`, and the first is argued in
-// `tests/saml_assertion_grant.js` on the same ground.
+// reason: a codec checked against itself agrees with itself. It is one of the
+// few requires from `tests/` into `tests/vendored/`, and the first of them is
+// argued in `tests/saml_assertion_grant.js` on the same ground.
 //
 // The in-process server is `common/app.js` on an ephemeral port; the realm it
 // creates is removed in a `finally`, and every setting it touches is cleared.
