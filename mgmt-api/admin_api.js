@@ -2805,7 +2805,7 @@ const ROUTES = [
   // parameter on the one below could not have answered it, because the answer
   // has no user in it.
   //
-  // Both read `logout/logout.js`, which is the one model of what a live session
+  // Both read `logout/logout.ts`, which is the one model of what a live session
   // is — and the POST here is `terminate()` with a selection of one, the SAME
   // function `POST /admin-api/logout/selective` calls. Two operations over one
   // termination, which is the arrangement rule 7 asks for: the console grew a
@@ -7250,7 +7250,7 @@ const ROUTES = [
   // SERVICE WILL DIAL, and the one place that URL may come from is a receiver
   // that authenticated at `POST /ssf/stream` and asked. A management API that
   // could mint one would be a second door onto the outbound request
-  // `ssf/ssf_http.js` spends its header bounding, and the one with the weaker
+  // `ssf/ssf_http.ts` spends its header bounding, and the one with the weaker
   // credential (it read "ungated door" until 2026-09-09) — so the console has
   // no create form either, and the parity holds because there is no control
   // to mirror.
@@ -9321,7 +9321,7 @@ const ROUTES = [
         log.debug("Leaving the management API Shared Signals action " +
                   "endpoint.");
       }).catch(function (e) {
-        // A rejection here is a bug in ssf/ssf.js rather than anything a
+        // A rejection here is a bug in ssf/ssf.ts rather than anything a
         // request can cause — its action function resolves a refusal rather
         // than throwing one — so it is reported as a refusal instead of
         // becoming an unhandled rejection that ends the process.
@@ -14310,7 +14310,7 @@ app.use(BASE, function (req, res, next) {
   // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET needs
   // Admin Read and anything else needs Admin Write. Asking `admin.js` rather
   // than re-deriving it is what stops this becoming a second answer to who may
-  // administer this service — the mistake `logout.js` exists to prevent one
+  // administer this service — the mistake `logout.ts` exists to prevent one
   // layer down.
   const needed = req.method === 'GET' ? gate.read : gate.write;
   if (needed) {

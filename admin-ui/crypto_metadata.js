@@ -198,7 +198,7 @@ const esc = xmlEscape;
 const xmldsig = stsCrypto.xmldsig;
 const scimAuth = require('../scim/scim_auth');
 // The Shared Signals event catalogue and its gate. BOTH ARE LIBRARIES that
-// register no route — `ssf/ssf.js`, which does, is deliberately NOT required
+// register no route — `ssf/ssf.ts`, which does, is deliberately NOT required
 // here: server.js loads it after this module, so requiring it would register
 // every /ssf endpoint and the well-known document AT THIS POINT in the router
 // (rule 1), ahead of ldap, scim and spiffe. What this page needs is the

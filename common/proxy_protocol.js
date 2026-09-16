@@ -52,7 +52,7 @@
 //      the connection's own local address — is served plain**, and this is
 //      the one exception, argued: the service dials itself. The OpenID
 //      Connect back channel of `/admin` and `/portal` (`common/oidc_rp.js`),
-//      the Shared Signals push to its own receivers (`ssf/ssf_http.js`) and
+//      the Shared Signals push to its own receivers (`ssf/ssf_http.ts`) and
 //      every request worker's back channel open a TCP connection to
 //      `helpers.loopbackHost()` on the main port and write no header — so
 //      refusing them would break sign-in to the console the moment this

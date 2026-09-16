@@ -22,8 +22,8 @@
 // `oauth2.js`, because that module requires THIS one. That is the whole reason
 // this file exists rather than the code living in `oauth2.js`:
 // `/oauth2/logout`, the protocol-independent `/logout` and the console's
-// sign-outs (both through `logout/logout.js`) all have to render the same
-// fan-out, and `logout/logout.js` reaching into `oauth2.js` for it would be a
+// sign-outs (both through `logout/logout.ts`) all have to render the same
+// fan-out, and `logout/logout.ts` reaching into `oauth2.js` for it would be a
 // require this file makes unnecessary.
 //
 // ---------------------------------------------------------------------------
@@ -34,8 +34,8 @@
 // is the one point where both the client and the session are in scope. It is on
 // the session object rather than in a map of its own because that is exactly
 // the lifetime it should have: when the session goes, so does the list, and
-// nothing has to be swept. The same decision `wsfed.js` makes about
-// `session.wsfedRealms` and `saml2_sso.js` makes about
+// nothing has to be swept. The same decision `wsfed.ts` makes about
+// `session.wsfedRealms` and `saml2_sso.ts` makes about
 // `session.saml2ServiceProviders` — three protocols, one shape, deliberately.
 //
 // **`sid` IS THE SESSION ID AND IT REVERSED A DOCUMENTED DECISION.**
@@ -69,7 +69,7 @@
 // of the specification says as much: the OP cannot know whether the logout
 // succeeded. So the page shows each URL as a link, which is the only thing that
 // turns "nothing happened" into something a person can click and see. It is the
-// same decision `wsfed.js` made about its cleanup pings, for the same reason.
+// same decision `wsfed.ts` made about its cleanup pings, for the same reason.
 //
 // **IT SENDS `iss` AND `sid` ONLY WHERE THE CLIENT ASKED FOR THEM.** Section 2
 // says the two are sent when `frontchannel_logout_session_required` is true and

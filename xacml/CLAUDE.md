@@ -655,8 +655,8 @@ push decisions. So something has to move policy from here to there, and it
 could have gone either way. It goes by pull for three reasons:
 
 1. **A push would be an outbound request CARRYING CONTENT.** Outbound requests
-   are deliberately rare in this repository — `federation/federation_http.js`
-   and `ssf/ssf_http.js` each argue their own — and a push would make policy
+   are deliberately rare in this repository — `federation/federation_http.ts`
+   and `ssf/ssf_http.ts` each argue their own — and a push would make policy
    DISTRIBUTION depend on this service being able to dial every PEP.
 2. **A PEP knows when it is behind and this service does not.** Under push, a
    PEP that was down for a minute has a stale copy and no way to discover it;
@@ -673,7 +673,7 @@ When the repository changes, this service POSTs a few bytes to each registered
 PEP that gave a notify URL, saying only "something changed, pull now".
 
 `xacml_pep_http.js`'s header makes the argument from scratch, as
-`ssf_http.js`'s does rather than citing federation's — and it opens by saying
+`ssf_http.ts`'s does rather than citing federation's — and it opens by saying
 it can make NEITHER of the other two arguments. Federation's rule is *those
 URLs are supplied by the caller, these by the administrator*, enforced by
 refusing to take a URL at all; a notify URL is supplied by the PEP that
@@ -688,7 +688,7 @@ credential and not even the new sync token. Every PEP converges without it. So:
 * `xacml.pepNotify` can be turned off in a deployment with no egress and nothing
   breaks — not the feature, not a test, not a PEP;
 * there is no retry and nothing to redeliver, because there is nothing to lose
-  (where `ssf_http.js` records a failed push on the stream and offers a
+  (where `ssf_http.ts` records a failed push on the stream and offers a
   redeliver, because a lost push IS a lost event);
 * a refusal is worth RECORDING and never worth escalating.
 

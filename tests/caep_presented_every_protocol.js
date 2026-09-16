@@ -52,9 +52,9 @@ const log =
 // section B by name.
 const PROFILES = [
   { file: '../oauth-oidc/oauth2.js', via: 'OAuth 2.0 / OIDC' },
-  { file: '../saml/saml2_sso.js', via: 'SAML 2.0' },
-  { file: '../saml/saml11_sso.js', via: 'SAML 1.1' },
-  { file: '../ws-federation/wsfed.js', via: 'WS-Federation' },
+  { file: '../saml/saml2_sso.ts', via: 'SAML 2.0' },
+  { file: '../saml/saml11_sso.ts', via: 'SAML 1.1' },
+  { file: '../ws-federation/wsfed.ts', via: 'WS-Federation' },
   // GNAP (2026-09-12): an interaction that meets a live sign-on session
   // approves without a new authentication, which is a presentation.
   { file: '../gnap/gnap_interact.js', via: 'GNAP' }

@@ -4,7 +4,7 @@
 // File: federation_diagram.js
 //
 // ===========================================================================
-// THE FEDERATION PICTURE. `federation/federation_graph.js`'s graph, drawn.
+// THE FEDERATION PICTURE. `federation/federation_graph.ts`'s graph, drawn.
 //
 // It is a LIBRARY, like `delegation_map.js` beside it: it registers no route,
 // so its position in the require order does not matter and it cannot be the
@@ -21,11 +21,11 @@
 // because two answers to either of those is two pictures that do not look like
 // one console.
 //
-// It is NAMED `federation_diagram.js` AND NOT `federation_map.js` for one
+// It is NAMED `federation_diagram.js` AND NOT `federation_map.ts` for one
 // reason, and it is worth a line because the collision is real:
-// `federation/federation_map.js` already exists and is something else entirely
+// `federation/federation_map.ts` already exists and is something else entirely
 // — it maps a partner's ATTRIBUTE NAMES onto directory attributes. Two files
-// called federation_map.js doing unrelated things in one repository is a bug
+// called federation_map.ts doing unrelated things in one repository is a bug
 // waiting for somebody to open the wrong one.
 //
 // ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@
 // leaving it in the flow made a staircase. This graph is the opposite shape:
 // the hexagon is the MIDDLE RANK of a three-rank left-to-right flow, and which
 // side of it a box sits on is the entire claim the picture makes (see
-// `federation_graph.js`'s header — left asks, right authenticates). Hoisting it
+// `federation_graph.ts`'s header — left asks, right authenticates). Hoisting it
 // into a band would delete exactly the thing being said.
 //
 // **AND ITS EDGE VOCABULARY IS DELEGATION'S.** `edgeLook()` and
@@ -407,7 +407,7 @@ function edgeLabelLines(edge) {
     // a count nothing writes.
     //
     // What HAS happened for this partner is on `edge.use`: the brokered pair's
-    // own row, carried onto this arrow by `federation_graph.js` precisely
+    // own row, carried onto this arrow by `federation_graph.ts` precisely
     // because the arrow it belongs to is drawn here rather than on the onward
     // relationship. A partner brokered through a service-provider-side
     // relationship really has had people signed in for it, and that is the
@@ -529,7 +529,7 @@ function edgeTitle(edge) {
 // ---------------------------------------------------------------------------
 // RENDER. graph -> { svg, width, height, nodes, edges }.
 //
-//   graph     federation_graph.js's graph()
+//   graph     federation_graph.ts's graph()
 //   options   `resolve(node)`, which may add an `href` and override a label;
 //             `links`, which wraps every box in an <a> to its page in this
 //             console; `id`, a prefix for every generated id in the document,

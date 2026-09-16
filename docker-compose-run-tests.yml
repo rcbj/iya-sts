@@ -583,7 +583,7 @@ services:
       - PEP_HTTPS_RELOAD_INTERVAL_MS=1000
       # The service's certificate is issued under a Root generated when this
       # stack starts, so there is no anchor any image could hold. `pep.js` logs this on every start
-      # rather than once, for federation_http.js's reason.
+      # rather than once, for federation_http.ts's reason.
       - PEP_TLS_INSECURE=true
       # THE ADDRESS THE SERVICE NUDGES, and it is deliverable in this stack
       # once the job turns xacml.pepNotifyAllowInsecure on in its realm — which

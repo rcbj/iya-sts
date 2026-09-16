@@ -66,7 +66,7 @@
 //      that produces at the far end is a client verifying today's signatures
 //      against yesterday's certificate. **`/sts/cert` was the one document
 //      here without that header** and this job is what found it; the header
-//      and the reason are now in `ws-trust/wstrust.js` beside the route.
+//      and the reason are now in `ws-trust/wstrust.ts` beside the route.
 //
 // ---------------------------------------------------------------------------
 // A BAD CREDENTIAL IS NOT THE ABSENCE OF ONE, AND SCIM IS THE ONE ROW WHERE
@@ -1347,7 +1347,7 @@ function everyFamilyIsAccountedFor() {
 // The other half of the drift check, one level down: a family that already has
 // a card can grow a SECOND document, and nothing above would notice. This
 // reads the registrations rather than the prose — the literal in `app.get()`,
-// and the constant where the path is one (ssf.js's WELL_KNOWN and scim.js's
+// and the constant where the path is one (ssf.ts's WELL_KNOWN and scim.js's
 // HOBA_REGISTER_PATH today; a scan of string literals would have matched
 // sentences of documentation instead).
 // ===========================================================================

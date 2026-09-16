@@ -26,7 +26,7 @@
 // `authorization_details`) is read from the query string both times.
 //
 // **THE RECORD IS SERVER-SIDE AND `returnTo` IS NEVER IN THE URL.** Same rule
-// `federation_sp.js`'s decision 3 states: a page carrying a return address
+// `federation_sp.ts`'s decision 3 states: a page carrying a return address
 // anybody could rewrite is an open redirect with a heading on it. The only
 // thing on the query string is an unguessable id.
 //

@@ -166,8 +166,8 @@ const sessions = realms.map({ persist: 'authn.sessions' });
 Every mutation of the three shapes already funnels through `set`, `delete`,
 `clear` or an array mutator, so naming the store names every write to it.
 **What that does NOT name is an edit to an OBJECT the store holds**, and two
-stores declared on 2026-09-12 are made of them: `ssf/caep.js`'s and
-`ssf/risc.js`'s registers, whose state machines do `row.counts[uri] += 1` on a
+stores declared on 2026-09-12 are made of them: `ssf/caep.ts`'s and
+`ssf/risc.ts`'s registers, whose state machines do `row.counts[uri] += 1` on a
 row already in the map. Each has a `touch()` that re-sets the key after an edit;
 without it the flush would write every row as it was CREATED, and a restart
 would put back a session that was never revoked. A new store holding mutable
@@ -204,7 +204,7 @@ verdict for each; a new undeclared store owes a row here.
 | `ldap_server.js` `entries` | Persisted another way — the directory's diff, above. |
 | `ldap_server.js` `usernameIndexes`, `subtreeClocks`, `groupIndexes`, `uuidIndexes`; `federation.js` `releaseIndexes` | Fine — derived from the directory and rebuilt from it. |
 | `helpers.js` `stsKeysFor` | Persisted another way — `keystore.js`. |
-| `ssf_streams.js` `deadCounts`, `tally`; `ssf_dead_letter_report.js` `sweepNotes` | Fine — this process's estimate and its own sweep report; the letters themselves are persisted. |
+| `ssf_streams.ts` `deadCounts`, `tally`; `ssf_dead_letter_report.ts` `sweepNotes` | Fine — this process's estimate and its own sweep report; the letters themselves are persisted. |
 
 `memory` is still the default. A run that says nothing about persistence behaves
 exactly as every run before this existed — which is the whole compatibility

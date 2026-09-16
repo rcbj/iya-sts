@@ -45,7 +45,7 @@ grew a gate.
 
    So the rule that survives is the one that was doing the work all along: this
    file READS the session map and writes it nowhere. `/admin/logout` calls
-   `logout/logout.js`, which calls `authn.js`. A `sessions.delete()` here would
+   `logout/logout.ts`, which calls `authn.js`. A `sessions.delete()` here would
    be the fourth way, and the one that skipped the RFC 9700 refresh revocation
    and the audit row.
 
@@ -56,7 +56,7 @@ grew a gate.
    would be sent and does not pretend to send it.
 
 8c. **`setLogoutReader()` IS THE SIXTH SLOT AND IT IS THE SECOND THAT FAILED
-   RULE 3e'S TEST BOTH WAYS ROUND.** `logout/logout.js` requires
+   RULE 3e'S TEST BOTH WAYS ROUND.** `logout/logout.ts` requires
    `ldap_server.js` — for the bound connections that ARE the LDAP session — and
    `ldap_server.js` requires THIS file, so a require in the obvious direction
    closes a cycle AND drags every `/ldap` route into the router ahead of the
@@ -72,7 +72,7 @@ grew a gate.
 
    **`FAMILIES` is the PROSE and this file must not carry a second copy.** What
    a logout reaches, what it cannot, and the specification each family cites are
-   written once in `logout/logout.js` and rendered here — the same division
+   written once in `logout/logout.ts` and rendered here — the same division
    `/admin/groups` keeps with `ldap_server.js` and `/admin/delegation` keeps with
    `delegation.js`. A family added over there appears on this page with no edit.
 
@@ -759,7 +759,7 @@ the CLOCKS IN THE ESTATE this service issues into, which a deployment decides
 once. It is applied inside the two builders rather than at their callers, so
 WS-Trust and WS-Federation get it without either module knowing it exists —
 the same choke-point argument `recordAssertion()` makes two lines away in
-`saml/saml2.js`.
+`saml/saml2.ts`.
 
 **IT BECAME THE DEFAULTS PAGE ON 2026-08-27, AND THAT IS WHY IT HOLDS ELEVEN
 ROWS RATHER THAN THREE.** The five settings each SAML profile had on its
@@ -788,7 +788,7 @@ attribute name the connection is a paragraph somebody has to find.
 **AND IT IS NOT `oauth2.clockSkewS`, WHICH IS THE THING TO CHECK BEFORE
 "SIMPLIFYING" THE TWO INTO ONE.** That one is a TOLERANCE applied wherever this
 service READS a document back — including an inbound federation partner's SAML
-assertion, where `federation/federation_sp.js` argues that a reading tolerance
+assertion, where `federation/federation_sp.ts` argues that a reading tolerance
 is decided once and reuses it deliberately. `saml.clockSkewS` is what this
 service WRITES into a document it issues. One is about somebody else's clock;
 the other is about how much of somebody else's clock this service pays for in
@@ -1972,14 +1972,14 @@ pretending otherwise would mean this page reporting "sent" before anything had
 been. So `app.post('/admin/ssf')` awaits and `respondToAction()` is called from
 the `then`; a rejection is turned into a refusal naming the message, because
 `consoleAction()` resolves a refusal rather than throwing one and a rejection
-here would be a bug in `ssf/ssf.js` rather than anything a request can cause.
+here would be a bug in `ssf/ssf.ts` rather than anything a request can cause.
 
 **THERE IS DELIBERATELY NO CREATE FORM, AND THAT IS RULE 7 READ EXACTLY RATHER
 THAN A GAP.** Every other registry page here can create the thing it lists. A
 Shared Signals stream carries a **delivery endpoint this service will DIAL**, and
 the one place that URL may come from is a receiver that authenticated at
 `POST /ssf/stream` and asked for it. A form here that could mint one would be a
-second door onto the outbound request `ssf/ssf_http.js` spends its whole header
+second door onto the outbound request `ssf/ssf_http.ts` spends its whole header
 bounding — and this console takes a person's sign-in while `/admin-api` takes a
 token anybody holding the seeded client's secret can mint, so the second door
 would be the one reached with the weaker credential. (That read "while
@@ -2926,8 +2926,8 @@ sizes for one string, and `wrapLabel` in particular would be got wrong a second
 time — it is not a word-wrap, it breaks after the characters an IDENTIFIER is
 built out of, because there are no spaces in a service principal name.
 
-**The name is `federation_diagram.js` and not `federation_map.js` on purpose**:
-`../federation/federation_map.js` already exists and maps a partner's ATTRIBUTE
+**The name is `federation_diagram.js` and not `federation_map.ts` on purpose**:
+`../federation/federation_map.ts` already exists and maps a partner's ATTRIBUTE
 NAMES onto directory attributes. Two files with one name doing unrelated things
 is a bug waiting for somebody to open the wrong one.
 
@@ -3563,7 +3563,7 @@ would cost an afternoon:
   base as `'http://' + req.get('host')`, the one expression in this file not
   going through the helper, and so was wrong three ways at once. No realm
   prefix, so the URL named a path that 404s while the AuthnRequest this service
-  actually sends carried the right one (`federation_sp.js` does use
+  actually sends carried the right one (`federation_sp.ts` does use
   `baseUrlOf()`) — the page and the wire disagreed, and the page is the half a
   person acts on. Always `http://`, on a service that binds TLS whenever
   `global.https` is set, which every launcher in the parent project's suite
@@ -4089,7 +4089,7 @@ is what came out of one, so a reader working out what is going on reads them in
 that direction.
 
 **IT DRAWS NOTHING OF ITS OWN.** Every row comes from
-`logout/logout.js`'s `liveSessions()` through the SIXTH SLOT, which grew that
+`logout/logout.ts`'s `liveSessions()` through the SIXTH SLOT, which grew that
 function and `SESSION_EXPIRY_RULES` in the same change; the slot is still
 validated whole, so a reader carrying the inventory and not this is refused
 rather than half installed. `logout/CLAUDE.md` argues why the enumeration lives
@@ -4179,7 +4179,7 @@ application I am testing getting anything, and what* — and neither of the othe
 two could answer it: the register counts per session and the streams table says
 only what a stream WOULD take.
 
-**It is computed in `ssf/ssf.js` and not here**, on the report the slot already
+**It is computed in `ssf/ssf.ts` and not here**, on the report the slot already
 carries, for rule 7's reason: `/admin/caep` and `GET /admin-api/caep` answer
 with that same report, so a second aggregation in this file would be a second
 answer to "what has been said to whom". `caepApplicationsState()` here is the
@@ -4648,7 +4648,7 @@ the console losing your place rather than as a missing line in a whitelist.
 `stats.revokeWhere()` over the JWT registry — access tokens, ID Tokens and
 refresh tokens, under every spelling of the identity — and it did nothing else.
 
-**Measured against the ten families `logout/logout.js`'s `terminate()` walks, it
+**Measured against the ten families `logout/logout.ts`'s `terminate()` walks, it
 touched one.** The other nine, in that module's own `endOrder`:
 
 | Family | What the button did |
@@ -4718,7 +4718,7 @@ rule on the tokens page, for `backTo()`'s reason: a `back` field carrying
 The management API, SCIM and the SPIRE Server API hold sessions since that date,
 and they appear on this page with **no edit to `admin.js` at all**. That is the
 sixth slot's design working rather than a coincidence worth mentioning in
-passing: this page draws whatever `logout/logout.js`'s `liveSessions()` returns,
+passing: this page draws whatever `logout/logout.ts`'s `liveSessions()` returns,
 and a console that had its own idea of what a session is would have needed one.
 
 Two things a reader of this page should know, both decided in `logout/CLAUDE.md`
@@ -5207,7 +5207,7 @@ actions answer on both paths.
 It has a **stream of its own** — `sts-admin-console`, seeded in every trust
 realm — asking for every CAEP and every RISC event type; each event is POSTed
 to `/admin/signals/receive` over RFC 8935 push carrying that stream's own
-bearer token; and this page draws what arrived. `ssf/ssf_receivers.js` holds the
+bearer token; and this page draws what arrived. `ssf/ssf_receivers.ts` holds the
 design and `ssf/CLAUDE.md` argues it. Four things belong here.
 
 **IT IS FILED UNDER `Monitoring`, WHICH IS THE FIFTH INSTANCE OF THE RULE AND
@@ -5236,7 +5236,7 @@ to be guessed: `ssf.enabled` off, `ssf.internalReceivers` off, the stream
 deleted, `ssf.pushDelivery` off, or `caep.enabled` / `risc.enabled` off under
 it. That is `status().why` and it is drawn even when rows ARE present, because a
 stream paused since this morning explains a page that STOPS rather than a page
-that is empty. It is the same argument `caep.js`'s "no stream takes it" line
+that is empty. It is the same argument `caep.ts`'s "no stream takes it" line
 makes: *nothing arrived* is the commonest report about any Shared Signals
 deployment and it is almost never what it looks like.
 

@@ -88,7 +88,7 @@ the package root. **The files did not change; the paths did.**
 
 At the package root there are exactly two modules: **`server.js`**, the shell that
 requires the others and listens, and **`sts_metadata.js`**, which reads the router
-to list what everything else registered and is therefore required last. `logout/logout.js`
+to list what everything else registered and is therefore required last. `logout/logout.ts`
 is required immediately before it, second to last, because it reads nine of the
 modules above and must come after every one of them.
 
@@ -154,7 +154,7 @@ requires an authentication scheme, and what this service would have installed is
 handler that accepts everything, dressed as a check.
 
 **WS-Federation used to be the gap here, and this note used to say so.** Until
-`wsfed.js` existed, the pieces a passive-requestor profile needs — the assertion
+`wsfed.ts` existed, the pieces a passive-requestor profile needs — the assertion
 builder, the signer, the login screen — were all present and the profile that joins
 them was not, which made this an assertion *issuer* rather than an identity provider
 with a browser-facing SSO profile. It now has one; see *WS-Federation* below. What
@@ -1125,7 +1125,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. It was a hardcoded 60 in wsfed.js until 2026-08-27. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
+| `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. It was a hardcoded 60 in wsfed.ts until 2026-08-27. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
 | `wsfed.entityId` | `STS_WSFED_ENTITY_ID`<br>or `STS_ISSUER` | `urn:wstrust:mock:sts` | yes | The entityID in the federation metadata at /FederationMetadata/2007-06/FederationMetadata.xml. Split from the SAML issuer because the two are different things that happened to share a value: this names the IdP, that names whoever signed an assertion. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock relying party at /wsfed/rp remembers a wctx it minted. |
 
@@ -1568,7 +1568,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 
 ## How it is put together
 
-A mock Security Token Service used by the test suite, **split across forty-nine files at its root** (it was one 4,489-line `server.js` until 2026-08-03; eight protocol families in one file meant no way to see what was in it short of reading it). `server.js` is now the shell — it requires `app.js` (the express app and every middleware, which must load before any route) and `helpers.js` (the log, the keys, and the helpers more than one protocol needs), then the modules that register routes, and listens: `authn.js`, `wstrust.js`, `oauth2.js`, `wsfed.js`, `vc_offers.js`, `vc_did.js`, `vc_issuer.js`, `vc_verifier.js`, `krb5_kdc.js`, `krb5_service.js`, `spnego.js`, `admin.js`, `admin_api.js`, `ldap_server.js`, `tls_server.js`, `sts_metadata.js`. The rest are reached through those rather than named there — `saml2.js`, `saml11.js`, `vc_configs.js`, `vc_claims.js`, `vc_verifier_config.js`, `claim_attributes.js`, `group_claims.js`, `dpop.js`, `admin_stats.js`, `audit.js`, `bbs2023.js`, `webauthn.js`, `admin_api_spec.js`, `admin_api_docs.js` and the nine `krb5_*.js` files under the KDC and the negotiation — which is not a hierarchy so much as the consequence of the rule below. One file among them is **not a module at all**: `admin_api_explorer.js` is browser code, read off disk by `admin_api_docs.js` and served verbatim at `/admin/api-explorer/explorer.js`, and nothing in node ever requires it.
+A mock Security Token Service used by the test suite, **split across forty-nine files at its root** (it was one 4,489-line `server.js` until 2026-08-03; eight protocol families in one file meant no way to see what was in it short of reading it). `server.js` is now the shell — it requires `app.js` (the express app and every middleware, which must load before any route) and `helpers.js` (the log, the keys, and the helpers more than one protocol needs), then the modules that register routes, and listens: `authn.js`, `wstrust.ts`, `oauth2.js`, `wsfed.ts`, `vc_offers.js`, `vc_did.js`, `vc_issuer.js`, `vc_verifier.js`, `krb5_kdc.js`, `krb5_service.js`, `spnego.js`, `admin.js`, `admin_api.js`, `ldap_server.js`, `tls_server.js`, `sts_metadata.js`. The rest are reached through those rather than named there — `saml2.ts`, `saml11.ts`, `vc_configs.js`, `vc_claims.js`, `vc_verifier_config.js`, `claim_attributes.js`, `group_claims.js`, `dpop.js`, `admin_stats.js`, `audit.js`, `bbs2023.js`, `webauthn.js`, `admin_api_spec.js`, `admin_api_docs.js` and the nine `krb5_*.js` files under the KDC and the negotiation — which is not a hierarchy so much as the consequence of the rule below. One file among them is **not a module at all**: `admin_api_explorer.js` is browser code, read off disk by `admin_api_docs.js` and served verbatim at `/admin/api-explorer/explorer.js`, and nothing in node ever requires it.
 
 The Kerberos files are a stack rather than a feature list, bottom up: `krb5_primitives.js`
 (what no runtime gives you — CTS, RC4, MD4, MD5), `krb5_crypto.js` (the RFC 3961
@@ -4036,7 +4036,7 @@ view — the same lists for a person *named*, filtered and paged, behind the
 console's two roles, and with the two NON-SPEC undos this page has not (restoring
 a revoked token, clearing a Kerberos sign-out instant). `GET|POST
 /admin-api/logout` is the same again for a test, with four operations. All three
-call one pair of functions in `logout/logout.js`, which is what stops them coming
+call one pair of functions in `logout/logout.ts`, which is what stops them coming
 to disagree about what a live session is.
 
 ### OpenID Connect Front-Channel Logout 1.0
@@ -4692,7 +4692,7 @@ types. A federation relationship is created through the gated console or through
 than make this process issue a GET.
 
 The mechanism that keeps that honest is the API rather than the intention.
-`federation_http.js` **will not take a URL**: it takes a relationship and the
+`federation_http.ts` **will not take a URL**: it takes a relationship and the
 *name* of the attribute holding one, and refuses any name outside its list of
 three. A caller with a URL from anywhere else cannot use it. Beside that: `https`
 only unless `federation.outboundAllowInsecure` says otherwise (warned on every
@@ -4766,7 +4766,7 @@ bugs rather than fidelity bugs, and a happy path proves close to nothing.
 
 ### WS-Federation — the profile that joins the pieces
 
-`wsfed.js` is the Web (Passive) Requestor Profile of WS-Federation 1.2 section 13,
+`wsfed.ts` is the Web (Passive) Requestor Profile of WS-Federation 1.2 section 13,
 and it is the browser-facing SSO profile this service went without for a long time.
 Everything it needs already existed — an assertion builder, a signer, a login screen,
 a session — and what was missing was the thing that hands an assertion to a relying
@@ -4803,7 +4803,7 @@ them as before. When `wsfed.entityId` and `saml.issuer` differ — the metadata
 names one and every assertion names the other — `/wsfed` says so and the process
 logs it at startup.
 
-**SAML 1.1 is the default token, not SAML 2.0**, which is why `saml11.js` exists.
+**SAML 1.1 is the default token, not SAML 2.0**, which is why `saml11.ts` exists.
 WS-Federation is token-type agnostic and this service has issued SAML 2.0 for years,
 so 2.0 looks like the obvious default — but AD FS issues **1.1** to a WS-Federation
 relying party unless told otherwise, and the RP libraries written against it (WIF,
@@ -4839,7 +4839,7 @@ every SAML 1.1 assertion this service issued carried an `Id="_0"` attribute the
 schema does not have, verified anyway, and had to be fixed at six signers
 independently.
 
-**The session is the one `oauth2.js` owns.** `wsfed.js` is required after it in
+**The session is the one `oauth2.js` owns.** `wsfed.ts` is required after it in
 `server.js`, so the dependency is one-way and no cycle exists, and `startSession` /
 `endSession` are functions rather than four repeated lines precisely so the cookie's
 name, path and `SameSite` cannot drift apart between the two protocols — two sessions
@@ -5638,7 +5638,7 @@ Values may contain `${username}`-style placeholders, because a claim that can on
 
 **Three rules decide what a claim's value actually is, and they are stated on the page because two of them only show up in the collision.** The protocol's own claim wins: an ID Token always carries `name`, `given_name`, `family_name`, `preferred_username` and `email` built from the sign-in, so ticking `cn`, `givenName`, `sn`, `uid` or `mail` *on that set* changes nothing the client sees — while the same five reach an access token from the directory, because the protocol sets none of them there. Then a typed claim beats a directory attribute of the same name, since somebody who wrote `email` by hand said something more specific than somebody who ticked `mail`. Then the attribute, read from the entry, or invented from the username where the entry has nothing — deterministically, so one username is one invented person across restarts. A nested claim stays nested in a JWT (`address.locality` is a member of an `address` object, per OIDC Core 5.1.1) and becomes the attribute's literal name in an assertion, where the content model cannot nest; both families then call one claim by one name.
 
-**Adding the checkboxes surfaced a bug that had been reachable all along, in both assertion builders.** `saml2.js` and `saml11.js` appended the configured attributes to their own without deduplicating, so a configured claim called `name` produced *two* `<saml:Attribute Name="name">` elements and the relying party read whichever the builder happened to emit first. Typing that name was always possible; ticking `cn` made it a checkbox away. Both now filter the configured attributes against what is already there — by name for SAML 2.0, and by **namespace and name together** for SAML 1.1, since that profile splits a claim URI into the two and a filter on the local name alone would drop an attribute that collided with nothing. It is the same rule the JWT builders have always followed, written as a filter because an assertion is a list of elements and not an object: there, a duplicate name is not an overwrite.
+**Adding the checkboxes surfaced a bug that had been reachable all along, in both assertion builders.** `saml2.ts` and `saml11.ts` appended the configured attributes to their own without deduplicating, so a configured claim called `name` produced *two* `<saml:Attribute Name="name">` elements and the relying party read whichever the builder happened to emit first. Typing that name was always possible; ticking `cn` made it a checkbox away. Both now filter the configured attributes against what is already there — by name for SAML 2.0, and by **namespace and name together** for SAML 1.1, since that profile splits a claim URI into the two and a filter on the local name alone would drop an attribute that collided with nothing. It is the same rule the JWT builders have always followed, written as a filter because an assertion is a list of elements and not an object: there, a duplicate name is not an overwrite.
 
 **Every change to a claim set writes a row in the audit log**, both halves of it and refusals included, naming which set, what was added and what was removed — and never a value, because a claim value on this service is whatever somebody typed into a web form. That row is *in addition* to the `admin.change` or `api.change` row the call log writes for the same POST, which is the arrangement the audit log's own section explains: one act, several facts, at different layers. It is recorded from `setClaimSet()` and from the selection's own installer rather than at the seven action branches, because those two are the funnels every branch already passes through — the same reason `recordAuthentication()` is one line and not fourteen.
 

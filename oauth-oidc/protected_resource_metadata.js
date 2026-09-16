@@ -23,7 +23,7 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route. It requires `common/`
-// modules, `federation/federation_http.js` for the outbound policy, and two
+// modules, `federation/federation_http.ts` for the outbound policy, and two
 // libraries beside it, none of which requires it back; `admin-core/`,
 // `admin-ui/` and `mgmt-api/` require it. It decides; the two admin surfaces
 // answer.
@@ -32,7 +32,7 @@
 // FIVE DECISIONS, FOUR OF THEM THE OWNER'S (asked before this was built):
 //
 //   * THE URL FETCH IS AN ADMINISTRATOR'S AND FOLLOWS THE OUTBOUND POLICY.
-//     `federation/federation_http.js` argues that a URL supplied by the CALLER
+//     `federation/federation_http.ts` argues that a URL supplied by the CALLER
 //     is never dialled and a URL supplied by the ADMINISTRATOR may be. Loading a
 //     document is an Admin Write action on both surfaces, so it is the second
 //     kind — and it takes that module's rules rather than a copy of them: the
@@ -96,7 +96,7 @@ const audit = require('../common/audit');
 const applications = require('../common/applications');
 const validation = require('../common/validation');
 // The outbound policy — the kill switch, the scheme rule and the insecure
-// switch — from the module that owns it, for `saml/sp_metadata.js`'s reason: a
+// switch — from the module that owns it, for `saml/sp_metadata.ts`'s reason: a
 // second copy of the policy is the copy that drifts.
 const fedHttp = require('../federation/federation_http');
 const jwtAccessToken = require('./jwt_access_token');
@@ -607,7 +607,7 @@ function vetHost(hostname) {
 
 // ---------------------------------------------------------------------------
 // FETCH ONE DOCUMENT BY URL. A promise of `{ ok, text, url, status }` or a
-// refusal, and it NEVER rejects — `federation_http.js`'s rule, for its reason.
+// refusal, and it NEVER rejects — `federation_http.ts`'s rule, for its reason.
 // ---------------------------------------------------------------------------
 function fetchDocument(url) {
   log.debug("Entering fetchDocument(). url=" + url);
@@ -643,7 +643,7 @@ function fetchDocument(url) {
       const agent = parsed.protocol === 'https:' ? https : http;
       const insecure = fedHttp.allowInsecure();
       if (parsed.protocol !== 'https:') {
-        // Every insecure request, not only the setting — federation_http.js's
+        // Every insecure request, not only the setting — federation_http.ts's
         // rule.
         log.warn('resource metadata: fetching ' + parsed.origin + ' over ' +
                  'plain http because federation.outboundAllowInsecure is ON.');

@@ -3173,11 +3173,11 @@ async function theRegisteredDoors(t) {
   // failure guarded against is a sign-in path added or edited to reach
   // completeSignIn() without the check.
   const fedSource = fs.readFileSync(path.join(ROOT, 'federation',
-                                              'federation_sp.js'), 'utf8')
+                                              'federation_sp.ts'), 'utf8')
     .split('\n');
   const sites = [];
   fedSource.forEach(function (line, at) {
-    if (/^\s*return completeSignIn\(/.test(line)) {
+    if (/^\s*return (?:this\.)?completeSignIn\(/.test(line)) {
       const before = fedSource.slice(Math.max(0, at - 3), at).join('\n');
       sites.push({ line: at + 1, wrapped: /signerStillAccepted\(/.test(before),
                    opaque: /The profile endpoint answered/.test(before) });

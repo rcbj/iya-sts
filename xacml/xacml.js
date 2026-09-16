@@ -172,7 +172,7 @@ function enabled() {
   return config.value('xacml.enabled') !== false;
 }
 
-// The same shape `ssf.js`'s `offCheck()` has, and the same argument: the
+// The same shape `ssf.ts`'s `offCheck()` has, and the same argument: the
 // routes stay REGISTERED and answer 501, because the feature being off and the
 // URL being wrong are different sentences to a client.
 function offCheck(res) {

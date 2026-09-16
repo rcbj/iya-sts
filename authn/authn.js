@@ -56,7 +56,7 @@
 //
 // Nothing in here requires oauth2.js, which is what keeps this a one-way
 // dependency and free of the import cycles this service's module split exists
-// to avoid: oauth2.js, wsfed.js and admin.js require THIS.
+// to avoid: oauth2.js, wsfed.ts and admin.js require THIS.
 const crypto = require('crypto');
 // The constant-time comparison a session handle is checked with. A LEAF that
 // never requires anything here back (rule 3r).
@@ -81,9 +81,9 @@ const stats = require('../common/admin_stats');
 // this file — so there is no cycle to close.
 //
 // It is THIS module that requires the register rather than the other way about,
-// and that is the arrangement rather than an accident: `federation_sp.js`
+// and that is the arrangement rather than an accident: `federation_sp.ts`
 // requires THIS file (it has no sign-in screen of its own and calls
-// startSession() directly, which is the same dependency saml2_sso.js has), so a
+// startSession() directly, which is the same dependency saml2_sso.ts has), so a
 // require back from here to that module would be a cycle. The register in the
 // middle is what both halves can safely reach.
 const federation = require('./../federation/federation');
@@ -254,7 +254,7 @@ function sessionIdleTimeoutMs() {
 
 // ---------------------------------------------------------------------------
 // IS THIS SESSION OVER? The one answer, for every reader in this file, for the
-// sweep, and for `logout/logout.js`'s list of what is live.
+// sweep, and for `logout/logout.ts`'s list of what is live.
 //
 // '' means live. 'expired' means the absolute expiry passed; 'idle' means it
 // has gone unused longer than `authn.sessionIdleTimeoutS`. An ARRIVAL session
@@ -311,8 +311,8 @@ function noteSessionUsed(store, id, session) {
 // (2026-09-14, #46).
 //
 // Four modules record, ON the session object, the parties it signed into —
-// `saml2_sso.js`'s `saml2ServiceProviders`, `saml11_sso.js`'s
-// `saml11RelyingParties`, `wsfed.js`'s `wsfedRealms`, and
+// `saml2_sso.ts`'s `saml2ServiceProviders`, `saml11_sso.ts`'s
+// `saml11RelyingParties`, `wsfed.ts`'s `wsfedRealms`, and
 // `frontchannel_logout.js`'s `oidcClients` — and each did it with a plain
 // assignment. `sessions` journals a `set()`, never an edit to an object it
 // holds (`persistence/CLAUDE.md`, the `touch()` rule), so the list reached the
@@ -909,7 +909,7 @@ const ARRIVAL_PATHS = [
 // The list above is FRONT DOORS and is matched by prefix, which is right for
 // every path a person can reach. `/admin/signals/receive` and
 // `/portal/signals/receive` are not: they are this service's own two Shared
-// Signals receivers, and what arrives at them is `ssf/ssf_http.js` POSTing a
+// Signals receivers, and what arrives at them is `ssf/ssf_http.ts` POSTing a
 // Security Event Token over the loopback interface.
 //
 // **THIS IS THE FAILURE THE PARAGRAPH ABOVE NAMES, ARRIVING FROM A DIRECTION
@@ -926,7 +926,7 @@ const ARRIVAL_PATHS = [
 // It is an exclusion HERE rather than two paths moved out of `/admin` and
 // `/portal`, because the path is what says WHICH RECEIVER a SET was delivered
 // to and a receiver's endpoint living somewhere other than the receiver would
-// be the tidier version of a worse design. See `ssf/ssf_receivers.js`.
+// be the tidier version of a worse design. See `ssf/ssf_receivers.ts`.
 //
 // **A THIRD ENTRY NEEDS THE SAME TEST**: is this path reached by a BROWSER
 // that will hold a cookie? If yes it belongs on neither list and is already
@@ -1076,7 +1076,7 @@ function arrivalSessionOf(req) {
 //
 // **THEY ARE IN ONE STORE, and that is rule 3m rather than a shortcut.** A
 // second register would be a second answer to "is somebody signed in" —
-// `logout/logout.js` reads this map, `/admin/sessions` draws it, CAEP observes
+// `logout/logout.ts` reads this map, `/admin/sessions` draws it, CAEP observes
 // it, and the half a reader happened to look at would be the half that was
 // wrong. This is the same argument the KEYED sessions above make, one shape
 // along: the management API, SCIM and the SPIRE Server API are rows in this
@@ -1088,7 +1088,7 @@ function arrivalSessionOf(req) {
 //     authenticated at the authorization endpoint and `startSession()` counted
 //     it there. A second `recordAuthentication()` here would double every
 //     console sign-in on `/admin/users` and in the audit log — which is
-//     exactly the defect `federation_sp.js` records having shipped once, and
+//     exactly the defect `federation_sp.ts` records having shipped once, and
 //     the reason its `completeSignIn()` passes through `startSession()`'s
 //     sixth argument rather than calling the funnel twice.
 //   * **IT CARRIES ITS OWN COOKIE, NAMED BY THE SURFACE.** Two surfaces, two
@@ -1280,7 +1280,7 @@ function startRelyingPartySession(spec) {
   // outlived the provider session would be refused on the next read anyway (see
   // the parent check above), so making it longer would only mean listing a row
   // that is already dead. Shorter is a legitimate thing for a deployment to
-  // want and is not built: one lifetime is what `logout.js`'s
+  // want and is not built: one lifetime is what `logout.ts`'s
   // SESSION_EXPIRY_RULES can describe honestly. THE PARENT MAY BE IN ANOTHER
   // PARTITION. `spec.parentRealm` is the realm the code flow ran in, which for
   // the admin console is the ambient realm while this session is being created
@@ -1320,7 +1320,7 @@ function startRelyingPartySession(spec) {
     acr: claims.acr || spec.acr || '',
     via: spec.via || 'OAuth 2.0 / OIDC',
     // WHAT MAKES IT A DERIVED SESSION. `rpSurface` is what /admin/sessions
-    // draws in its Kind column and what `logout.js` reads; `rpClientId` is the
+    // draws in its Kind column and what `logout.ts` reads; `rpClientId` is the
     // application entry it belongs to, so a row can be followed back to the
     // client that holds it.
     derivedFrom: spec.parent || '',
@@ -1345,7 +1345,7 @@ function startRelyingPartySession(spec) {
     // Host it was asked under. It is ON THE SESSION because that is what it
     // belongs to: a store of its own would be a second record of who is signed
     // in to the console, and it goes when the session does. Never drawn by a
-    // view — `logout.js` builds its rows field by field — and never audited.
+    // view — `logout.ts` builds its rows field by field — and never audited.
     // At rest it is what the whole session row is: sealed wherever minted rows
     // persist (`persistence/persistence_minted.js`).
     rpTokens: tokens,
@@ -1610,7 +1610,7 @@ function consoleSession(req) {
 
 // --- starting and ending a session -----------------------------------------
 // Both are functions rather than four lines repeated at each call site, and the
-// reason is WS-Federation. `wsfed.js` signs a user in at its own login screen
+// reason is WS-Federation. `wsfed.ts` signs a user in at its own login screen
 // and must land them in THE SAME session this service owns, because the two
 // protocols share the browser and single sign-on between them is the
 // interesting behaviour: sign in at this screen with a security key, arrive at
@@ -1630,7 +1630,7 @@ function consoleSession(req) {
 // POST. Such a request therefore sees no session and is shown the login screen
 // even though one exists. The alternative is SameSite=None, which requires
 // Secure, which this service cannot be over http://localhost — so the quirk
-// stays, and wsfed.js says so on the screen rather than leaving it to look like
+// stays, and wsfed.ts says so on the screen rather than leaving it to look like
 // a broken session.
 //
 // `via` names the screen the person actually used, and it is a parameter rather
@@ -1715,13 +1715,13 @@ function methodPhraseFor(amr) {
 // THE SESSION OBSERVER — AN INVERTED HOOK, AND THE ONLY ONE THIS MODULE
 // OFFERS.
 //
-// `ssf/caep.js` needs to know when a session starts, is presented and ends,
+// `ssf/caep.ts` needs to know when a session starts, is presented and ends,
 // because that is what a CAEP event is ABOUT. It cannot be required from here:
 // this module is 8 in the require order (`common/protocol_stack.js`) and
-// `ssf/ssf.js` is 23b, so a require the other way would REGISTER EVERY `/ssf`
+// `ssf/ssf.ts` is 23b, so a require the other way would REGISTER EVERY `/ssf`
 // ROUTE HERE — ahead of `oauth2.js`, ahead of the admin console, ahead of
 // ldap, scim and spiffe — which is rule 1, and it would close a cycle
-// besides. So this module holds a function and `ssf/ssf.js` fills it at its
+// besides. So this module holds a function and `ssf/ssf.ts` fills it at its
 // own require time, exactly as `admin.setSignalsReporter()` works one layer
 // up.
 //
@@ -2250,7 +2250,7 @@ const MAX_SESSION_EVENTS = 20;
 //     one — the directory's second-factor flags and `/admin/users` count it;
 //   * it writes `session.reauthenticate`, not `session.start`;
 //   * it tells the observer `reauthenticated` with what the session said
-//     BEFORE, and `ssf/caep.js` decides whether that is an
+//     BEFORE, and `ssf/caep.ts` decides whether that is an
 //     `assurance-level-change` (only when `acr` moved);
 //   * it sets `firstPresentationIsTheSignIn`, because the browser is about to
 //     come back to the protocol that asked, and that trip is this act and not
@@ -2259,7 +2259,7 @@ const MAX_SESSION_EVENTS = 20;
 // It does NOT end the session, end the sessions derived from it, forget the
 // relying parties it answered, revoke a refresh token, emit
 // `session-revoked` or `session-established`, or move `expires` — a sign-on
-// session's lifetime is absolute (`logout.js`'s SESSION_EXPIRY_RULES) and
+// session's lifetime is absolute (`logout.ts`'s SESSION_EXPIRY_RULES) and
 // proving yourself again is not a reason to extend it.
 //
 // The issuance gate has already been asked by the caller, `startSession()`,
@@ -2493,21 +2493,21 @@ function startSession(res, username, amr, acr, via, detail) {
   // it.
   //
   // **A SECOND SESSION REGISTER WAS THE OBVIOUS ANSWER AND IS THE WRONG ONE.**
-  // This map is where a session lives; `logout/logout.js` reads it, the console
+  // This map is where a session lives; `logout/logout.ts` reads it, the console
   // draws it, CAEP observes it, and a second store beside it would be a second
   // answer to "is somebody signed in" — the thing rule 3m exists to prevent,
   // with the wrong half being whichever surface a reader happened to look at.
   // So the fix is one field on the record and this branch, not a new file.
   //
   // `detail.key` is a FINGERPRINT OF WHAT WAS PRESENTED and never the value —
-  // its caller hashes it, for the reason `logout.js` gives about not putting an
+  // its caller hashes it, for the reason `logout.ts` gives about not putting an
   // authorization code in a row id. Sessions are already bounded by the sweep,
   // so this scans rather than keeping an index: an index would be a second map
   // to hold in step with this one, which is the same mistake one size down.
   //
   // Touching EXTENDS the session, which is deliberate and is the one place a
   // session here is extended by use — a browser session is absolute and
-  // `logout.js`'s SESSION_EXPIRY_RULES says so. The difference is real: a
+  // `logout.ts`'s SESSION_EXPIRY_RULES says so. The difference is real: a
   // browser holds a cookie that outlives its own use, and these rows exist only
   // while a client is actually calling.
   if (extra.key) {
@@ -2696,7 +2696,7 @@ function startSession(res, username, amr, acr, via, detail) {
     // (2026-09-04). It was already handed to `recordAuthentication()` and to
     // the CAEP observer below and kept in neither place the session lives, so
     // "what is this session" could only be answered fully by a register that
-    // may not be loaded — `ssf/ssf.js` is what fills the CAEP one, and a
+    // may not be loaded — `ssf/ssf.ts` is what fills the CAEP one, and a
     // process without it lost the answer entirely. /admin/sessions reads it
     // here, which is the store that owns the session.
     //
@@ -2797,7 +2797,7 @@ function startSession(res, username, amr, acr, via, detail) {
     }
   });
   // THE ONE ACT IN THIS SERVICE THAT MAKES SOMETHING GO OUT WITHOUT ANYBODY
-  // ASKING. See setSessionObserver() above, and `ssf/caep.js` for what is
+  // ASKING. See setSessionObserver() above, and `ssf/caep.ts` for what is
   // built. It is last in this function on purpose: the audit row and the
   // cookie are this service's own record of the sign-in and must not depend on
   // a transmitter, and the observer is handed a session that is already
@@ -3577,7 +3577,7 @@ function beginAuthentication(opts) {
   // being drawn. A record minted here would be one nothing could ever spend.
   //
   // `returnTo` has already been checked to be a path on this service, and
-  // `federation_sp.js` checks it AGAIN on the way in — see decision 4 there.
+  // `federation_sp.ts` checks it AGAIN on the way in — see decision 4 there.
   // Two checks on one value is deliberate: this one catches a caller's bug and
   // that one catches somebody handing the federated entry point a returnTo of
   // their own.
@@ -3655,7 +3655,7 @@ function beginAuthentication(opts) {
   // what it says, on the one page where the password box is the point.
   //
   // The record is minted through the same store the screen uses, which is what
-  // keeps `returnTo` server-side and out of the URL — federation_sp.js's
+  // keeps `returnTo` server-side and out of the URL — federation_sp.ts's
   // decision 3, one layer up. Without it the chooser would be a page carrying
   // a return address anybody could rewrite, and the buttons on it would be an
   // open redirect with a heading.
@@ -7561,7 +7561,7 @@ module.exports = {
   rpIdOf: rpIdOf,
   SESSION_COOKIE: SESSION_COOKIE,
   // THE SESSION CLOCKS (2026-09-12). `sessionEnded()` is exported for
-  // `logout/logout.js`'s list of what is live, which must agree with this file
+  // `logout/logout.ts`'s list of what is live, which must agree with this file
   // about what has ended; the three readers are for the tests and for the
   // sentences `/admin/sessions` prints about the rule in force.
   sessionEnded: sessionEnded,
@@ -7600,12 +7600,12 @@ module.exports = {
   renewRelyingPartySession: renewRelyingPartySession,
   tokensExpireAt: tokensExpireAt,
   relyingPartySessionOf: relyingPartySessionOf,
-  // Exported for `logout/logout.js`, which lists what is live and has to be
+  // Exported for `logout/logout.ts`, which lists what is live and has to be
   // able to say which rows hang off which. It is a walk rather than an index;
   // see its header.
   derivedFrom: derivedFrom,
   endSession: endSession,
-  // The inverted hook `ssf/ssf.js` fills, and the one call site that spends
+  // The inverted hook `ssf/ssf.ts` fills, and the one call site that spends
   // it from outside this module. See setSessionObserver()'s header for why a
   // require the other way would move every /ssf route.
   setSessionObserver: setSessionObserver,

@@ -216,13 +216,13 @@ const version = require('../common/version');
 // moving a route or closing a cycle — which matters more here than in the
 // console, because this module is required BEFORE `oauth-oidc/oauth2.js`.
 //
-// It is emphatically NOT `ssf/ssf.js` (23b), which registers every /ssf route
+// It is emphatically NOT `ssf/ssf.ts` (23b), which registers every /ssf route
 // and the well-known document: a require of that from here would put the whole
 // Shared Signals surface ahead of the authorization server.
 // ---------------------------------------------------------------------------
 const signals = require('../ssf/ssf_receivers');
 // WHAT SPENDING A PASSWORD RESET LINK SAYS OVER CAEP (2026-09-13). A LIBRARY
-// that requires only the logger and reads `ssf/ssf.js` out of the require cache
+// that requires only the logger and reads `ssf/ssf.ts` out of the require cache
 // when an event is due, so it moves no route from here — see its header.
 const accountSignals = require('../ssf/account_signals');
 const APP_VERSION = version.load();
@@ -1734,7 +1734,7 @@ function requireSignIn(req, res, returnTo, want) {
   // `/authn/login` is not a page somebody can simply be sent to: it draws a
   // form for a PENDING AUTHENTICATION RECORD, and a POST that names no record
   // is answered `This sign-in form has expired`. Every other flow here enters
-  // it the same way — `saml2_sso.js`, `consent_screen.js`, `wsfed.js` — by
+  // it the same way — `saml2_sso.ts`, `consent_screen.js`, `wsfed.ts` — by
   // asking this function for the address to send the browser to, and the
   // portal is no different from them in this respect even though it is not a
   // protocol.
@@ -3952,7 +3952,7 @@ app.get(BASE + '/applications', function (req, res) {
 // YOUR SECURITY ACTIVITY — THIS PORTAL AS A SHARED SIGNALS RECEIVER
 // (2026-09-10).
 //
-// `ssf/ssf_receivers.js` holds the design and is not summarised here. Two
+// `ssf/ssf_receivers.ts` holds the design and is not summarised here. Two
 // things about it belong in THIS file, because they are this application's
 // rules rather than that module's.
 //

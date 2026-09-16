@@ -967,7 +967,7 @@ async function start() {
   log.info('xacml-pep: starting. PDP=' + options.pdpUrl + ' name=' +
            options.name + ' bias=' + options.bias);
   if (options.insecure) {
-    // ON EVERY START rather than once somewhere, for `federation_http.js`'s
+    // ON EVERY START rather than once somewhere, for `federation_http.ts`'s
     // reason about insecure requests: a certificate check turned off months
     // ago and forgotten is the worst kind of leftover.
     log.warn('xacml-pep: PEP_TLS_INSECURE is on, so this PEP does NOT verify ' +

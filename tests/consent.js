@@ -175,7 +175,7 @@ function run(t) {
   // backing, and they were the first files to require `ldap/ldap_server.js`,
   // whose require-time `setDirectory()` repaired the damage on its way past.
   // The moment any earlier file required that module — which
-  // `caep_initiating_entity.js` does, through `logout/logout.js` — node's
+  // `caep_initiating_entity.js` does, through `logout/logout.ts` — node's
   // module cache meant it was not required again, the repair never happened,
   // and two tests failed inside `applications.js` naming a function this stub
   // does not have. **A test that leaves process-wide state behind is a test
