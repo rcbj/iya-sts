@@ -44,7 +44,7 @@
 // the JWK's kid, and the algorithm MUST be the JWK's alg). So these are
 // refusals in development too — the same argument `common/validation.js` makes
 // for shape. What IS mode-gated is what happens to a WELL-FORMED key the AS has
-// never seen, and that decision is `gnap.js`'s, not this file's.
+// never seen, and that decision is `gnap_grants.js`'s, not this file's.
 // ---------------------------------------------------------------------------
 
 const nodeCrypto = require('crypto');

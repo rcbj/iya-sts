@@ -11,15 +11,19 @@ family here and the first one that TALKS BACK.
 | `ssf_events.js` | The event vocabulary — SSF's two — and the **RFC 8417** Security Event Token they travel in. A LIBRARY. |
 | `ssf_streams.js` | The streams, their subjects and their queues, per trust realm — the queue as a row per SET since 2026-09-13. A LIBRARY. |
 | `ssf_http.js` | **THE SECOND OUTBOUND REQUEST IN THIS REPOSITORY.** RFC 8935 push delivery. A LIBRARY. |
-| `ssf_auth.js` | Who may drive a stream: two schemes and two scopes. A LIBRARY. |
+| `ssf_auth.js` | Who may drive a stream: three schemes (OAuth 2.0, Basic, GNAP) and two scopes. A LIBRARY. |
 | `caep.js` | **CAEP's session register**: what state CAEP believes each session is in, and how many events of which type have been sent about it. A LIBRARY, and one of the two files here that are not vocabulary. |
 | `risc.js` | **RISC's account register**: the three states RISC tracks per account, the opt-out gate, and how many events of which type have been sent. A LIBRARY, and `caep.js`'s SIBLING rather than a generalization of it — see below. |
 | `ssf_receivers.js` | **THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS** (2026-09-10): the seeded streams, the inboxes, what a receive endpoint checks, and the per-person filter the portal narrows with. A LIBRARY — the two receive endpoints and the two inbox pages are registered by the SURFACES, because a receiver hosts its own endpoint. |
+| `ssf_dead_letter_report.js` | What the dead-letter queues hold, counted, for Monitoring → Shared Signals → Dead letters and `/admin-api/ssf/dead-letters` (2026-09-14). A LIBRARY. |
+| `ssf_cluster.js` | Several nodes (2026-09-14, #46): one report per stream health transition, one prober, and the GNAP key-proof spend as route middleware. A LIBRARY. |
+| `account_signals.js` | What a credential change on the admin and portal doors says over CAEP and RISC (2026-09-13), read out of `require.cache`. A LIBRARY. |
 
-Eight of the nine register nothing (rule 3), so their position in the route
-order is not a position. `ssf.js` is required at **23b in `server.js`** — after
-`admin-ui/admin.js`, whose eighth slot it fills, and before `sts_metadata.js`,
-which is last for everybody.
+Twelve of the thirteen register nothing (rule 3), so their position in the
+route order is not a position. `ssf.js` is required at **23b in
+`common/protocol_stack.js`** — after `admin-ui/admin.js`, whose slots
+(`setSignalsReporter`, `setCaepReporter`, `setRiscReporter`) it fills, and
+before `sts_metadata.js`, which is last for everybody.
 
 ---
 
@@ -59,16 +63,17 @@ which reads as a hang rather than as a fan-out.
 `internalStreamId()` is `'ssf-internal-' + realm + '-' + surface`, and
 `createStream()` takes it **on the context and never from the body** — that
 argument is in `ssf_streams.js` beside the line: `body` is the request body at
-`POST /ssf/streams`, so an id read from there would let a receiver name its own
+`POST /ssf/stream`, so an id read from there would let a receiver name its own
 stream and therefore somebody else's. The store writes with
 `store.set(stream_id, …)`, so a second process seeding the same id overwrites
 rather than adds.
 
 Two rules it has to satisfy that the token does not:
 
-* **IT MUST NOT USE `internalSecret()`.** That secret is per RUN — generated at
-  startup, put in the environment so a forked worker inherits it — which is
-  right for a credential and fatal here: an id derived from it agrees across
+* **IT MUST NOT USE `internalSecret()`.** That secret was per RUN — generated
+  at startup, put in the environment so a forked worker inherits it (a store
+  several nodes share has kept one since #46, *Several nodes* below) — which
+  is right for a credential and fatal here: an id derived from it agrees across
   the processes of ONE run and mints a fresh set on the next start, which is
   this defect moved one level along.
 * **IT IS NOT A SECRET AND MUST NOT LOOK LIKE ONE.** A stream id is published
@@ -281,8 +286,8 @@ were:
   any event type or derivable from the catalogue.
 * **one refusal in `transmit()`**, and it is written against the ROW rather
   than against a vocabulary: an event whose row says `subject: 'required'` and
-  that carries none is refused. RISC's rows will be `required` too and that
-  line will not change.
+  that carries none is refused. RISC's rows are `required` too, and that line
+  did not change for them.
 * **one rule in `streamCoversSubject()`**, without which CAEP would deliver
   nothing at all: a stream that names a PERSON covers a complex subject naming
   a session of theirs. That is SSF section 4's own intent rather than CAEP's,
@@ -390,22 +395,24 @@ seeding time, on both inbox pages and in `status()`. `isOwnLoopback()` is an
 ORIGIN comparison and never a substring match, and `tests/ssf_receivers.js`
 asserts the refusal rather than the match.
 
-**3. THE CERTIFICATE IS PINNED RATHER THAN THE CHECK RELAXED.** The listener's
-certificate is generated per start and signed by nobody, so the ordinary check
-would refuse every internal push — and `ssf.pushAllowInsecure` is NOT the way
-round it, because that setting turns the check off for every receiver in the
-world to fix a connection to ourselves. Our own certificate as the trust anchor,
-the hostname check skipped: `oidc_rp.js`'s back channel does exactly this and
-these are the same three lines.
+**3. THE ANCHOR IS PINNED RATHER THAN THE CHECK RELAXED.** The listener's
+certificate is issued by this service's own Root (or, with none, is
+self-signed per start) — nobody a public truststore knows — so the ordinary
+check would refuse every internal push, and `ssf.pushAllowInsecure` is NOT the
+way round it, because that setting turns the check off for every receiver in
+the world to fix a connection to ourselves. Our own trust anchor
+(`tls_server.serverCertificate().trustAnchorPem`), the hostname check skipped:
+`oidc_rp.js`'s back channel does exactly this and these are the same three
+lines.
 
-**4. THE STREAMS ARE IN EVERY REALM AND THE CONSOLE'S CLIENT ENTRY IS IN ONE.**
-That disagreement is the interesting part. `applications.js` seeds
-`sts-admin-console` in the default realm only, because the console's gate reads
-the default realm's session wherever it is reached. A stream is not that kind of
-thing: events happen in the realm they happen in, streams are per realm, and the
-console draws one realm at a time — so a console with no stream in `acme` would
-show an empty page in `acme` while `acme`'s sessions were being revoked. **A
-client entry is about signing somebody IN and a stream is about what HAPPENED.**
+**4. THE STREAMS ARE IN EVERY REALM.** This point once contrasted them with the
+console's client entry, seeded in the default realm only; that entry is in
+every realm since 2026-09-11 (`applications.js`), so the contrast is gone and
+the reason is the streams' own: events happen in the realm they happen in,
+streams are per realm, and the console draws one realm at a time — so a
+console with no stream in `acme` would show an empty page in `acme` while
+`acme`'s sessions were being revoked. **A client entry is about signing
+somebody IN and a stream is about what HAPPENED.**
 
 **5. THE RECEIVE ENDPOINTS ARE GUARDED BY THE STREAM'S OWN
 `authorization_header`**, minted per stream and per start and given to nothing
@@ -442,7 +449,8 @@ it. The only signal was a `warn` line in a log nobody reads while the suite is
 green.
 
 So the token is DERIVED — one per-run secret in the environment, which a forked
-worker inherits, and an HMAC over the realm and the surface, so every process
+worker inherits (the cluster's shared secret since #46; see *Several nodes*
+above), and an HMAC over the realm and the surface, so every process
 arrives at the same answer without being told and the console's token is still
 not the portal's. `crypto.js`'s `deriveSharedCredential()` is the derivation,
 because that is the one place this service does cryptography.
@@ -555,10 +563,13 @@ path works. What changed is that this service now SAYS so, over RISC — which i
 exactly the division the profile draws: a transmitter reports and a receiver
 decides.
 
-The other ten describe things nothing here does — no breach corpus is searched
-by this service and no recovery flow runs in it — so they are emitted by hand
-from `/admin/risc` or `POST /admin-api/risc/emit`. **Four of those ten change
-real state when they go**, because RISC section 2.8 defines each opt-out event
+Of the other ten, two have been sent by the admin doors since 2026-09-13
+(`account-credential-change-required`, `recovery-information-changed` — see
+*Credential changes from the admin doors* below). The remaining eight describe
+things nothing here does — no breach corpus is searched by this service and no
+recovery flow runs in it — so they are emitted by hand from `/admin/risc` or
+`POST /admin-api/risc/emit`. **Four of those eight change real state when they
+go**, because RISC section 2.8 defines each opt-out event
 as *"the account is in the X state"* rather than as a report that it moved.
 
 ---
@@ -677,8 +688,8 @@ API is gated unconditionally — `mode.gatesSharedSignals()`, where this was
 `ssf.authRequired` until 2026-09-06 — but every credential this
 service accepts is a turnstile in development: anybody can get a token with
 either SSF scope, and any username with any password but `invalid` passes Basic
-(in product mode the Basic password is verified — see *Two schemes* below). "A receiver
-created the stream" is therefore not evidence of much.
+(in product mode the Basic password is verified — see *Three schemes* below).
+"A receiver created the stream" is therefore not evidence of much.
 
 ---
 
@@ -901,7 +912,7 @@ SSF" from "the path is wrong".
 
 ---
 
-## TWO SCHEMES AND TWO SCOPES
+## THREE SCHEMES AND TWO SCOPES
 
 SSF 1.0 section 8 requires these endpoints to be protected and — unlike RFC
 7644, which names six schemes and leaves it there — has the transmitter
@@ -909,7 +920,8 @@ SSF 1.0 section 8 requires these endpoints to be protected and — unlike RFC
 how to authenticate rather than guessing, and `ssf_auth.js`'s list and that
 member are one table.
 
-**Two schemes and not six, and that is a decision.** SCIM offers all six of RFC
+**Two schemes and not six, and that is a decision** — the third, GNAP, came
+later and for a different reason (below). SCIM offers all six of RFC
 7644's because that RFC names all six and a provisioning client meets them in
 the wild. SSF names none — `authorization_schemes` is an open list of
 `spec_urn` values and the only one its examples use is OAuth 2.0 — so this
@@ -1019,11 +1031,14 @@ the half a reader cannot discover from a protocol trace.
   satisfy, an `authn_error`, an IsPassive with nothing usable — since those end
   in a refusal and nothing was honoured. `tests/caep_presented_every_protocol.js`
   holds all four to it. `caep.autoEmit` puts the old behaviour back rather
-  than leaving it only in the history of this file. The other five CAEP events
-  describe things nothing here does — no device reports compliance to this
-  service and no risk engine talks to it — so those are still emitted only
-  when asked for.
-* **It never retries a failed push.** See above.
+  than leaving it only in the history of this file. `credential-change`
+  (2026-09-13) and `assurance-level-change` (2026-09-14) have automatic
+  triggers too, and `token-claims-change` goes out for a modified GNAP grant;
+  the other two describe things nothing here does — no device reports
+  compliance to this service and no risk engine talks to it — so those are
+  still emitted only when asked for.
+* **It does not retry a failed push unless `ssf.pushRetries` says to.** See
+  above.
 * **It verifies nothing about a subject.** A stream may name somebody who has
   never been here, which is what a receiver's "I do not know this subject" path
   needs.
@@ -1171,7 +1186,7 @@ For the next person adding one, this family's full list:
   what caught them, in the direction only it checks: registered and described
   nowhere;
 * `oauth-oidc/oauth2.js` — the two scopes in `scopes_supported`;
-* `server.js` — the require, at 23b.
+* `server.js` (now `common/protocol_stack.js`) — the require, at 23b.
 
 ---
 
@@ -1226,7 +1241,7 @@ administrator credential acts below) and `assurance-level-change` on
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a session is created | `session-established` | `authn.startSession()` |
-| a session is presented and honoured | `session-presented` | `oauth-oidc/oauth2.js`'s authorization endpoint, through `authn.notePresented()` |
+| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.js`'s authorization endpoint, `saml2_sso.js`, `saml11_sso.js`, `wsfed.js` and `gnap/gnap_interact.js` |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
 | the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
 
@@ -1245,9 +1260,10 @@ the default for an event emitted BY HAND. `change_direction` comes from
 and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
 an authenticated identity is here*, carries the design and the probe.
 
-What remains — token claims change, device compliance change, risk level
-change, and credential changes other than an administrator's — has **no act
-here that could cause it**. No device reports compliance to this service and no risk
+What remains — token claims change (except for a modified GNAP grant,
+`gnap/gnap_signals.js`), device compliance change, risk level change, and
+credential changes other than an administrator's — has **no act here that
+could cause it**. No device reports compliance to this service and no risk
 engine talks to it, so an automatic emission of one would be this service
 inventing a fact. They are emitted by hand from `/admin/caep` or
 `POST /admin-api/caep/emit`, and a row in `caep.autoEmitTypes` naming one is
@@ -1314,10 +1330,10 @@ checks that depend on it: `tests/vendored/admin_api.js` requires
 check, so `/ssf`'s four actions were being compared against nothing — and
 `tests/vendored/sts_admin_api_operations.js` matches `Unknown action "x".
 <count phrase>: <list>.` across every documented resource, which is what caught
-it. It is `Unknown action "x". The four are: …` now, with the count coming from
-`CONSOLE_ACTIONS.length` through `helpers.numberWord()` rather than from a word
-typed beside it. **This sentence is not prose — it is READ**, and that is the
-whole reason it is worth a paragraph in this file.
+it. It is `Unknown action "x". The six are: …` now (four then), with the count
+coming from `CONSOLE_ACTIONS.length` through `helpers.numberWord()` rather than
+from a word typed beside it. **This sentence is not prose — it is READ**, and
+that is the whole reason it is worth a paragraph in this file.
 
 ---
 
@@ -1473,7 +1489,8 @@ above it.
 (`sts-admin-console`, `sts-user-portal`) and receive paths. They are the seeded
 client ids and the routes the surfaces register; deriving them from
 `common/oidc_rp.js`'s table would put a require from this directory into a
-module at 8b for two strings that change only with those files.
+module the portal loads just after `authn` (8) for two strings that change
+only with those files.
 
 ## CREDENTIAL CHANGES FROM THE ADMIN DOORS: `account_signals.js` (2026-09-13)
 
@@ -1491,12 +1508,12 @@ reset links and remove second factors, and each owes a signal. The acts are:
 | clear-backup-codes | — | `recovery-information-changed` |
 
 **`ssf/account_signals.js` IS A LIBRARY THAT READS `ssf.js` OUT OF
-`require.cache`**, because the doors are at 18 (the actions layer) and 8b (the
-portal) and a require of `ssf.js` from either would register every `/ssf` route
-ahead of theirs and close a cycle through the console. Not a slot: there is no
-require at all, only a cache lookup — `admin-core/protocol_endpoints.js`'s
-arrangement. A process that never loaded SSF gets a no-op that says so. Nothing
-in it throws and callers do not await it: a slow receiver must not hold a page,
+`require.cache`**, because the doors are at 18 (the actions layer) and just
+after `authn`, 8 (the portal), and a require of `ssf.js` from either would
+register every `/ssf` route ahead of theirs and close a cycle through the
+console. Not a slot: there is no require at all, only a cache lookup —
+`admin-core/protocol_endpoints.js`'s arrangement. A process that never loaded
+SSF gets a no-op that says so. Nothing in it throws and callers do not await it: a slow receiver must not hold a page,
 and a failed emission must not undo a credential change already written.
 
 **`ssf.js` gained `emitCredentialChange()` and `emitRiscAccountAct()`**

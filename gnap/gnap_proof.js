@@ -24,7 +24,7 @@
 // unsigned request would issue a token BOUND to a key nobody proved they held,
 // and every later step — continuation, rotation, the RS — would be checking a
 // binding to nothing. What stays permissive is what the AS decides ABOUT a
-// proved key it has never seen, and that is `gnap.js`'s, mode-gated.
+// proved key it has never seen, and that is `gnap_grants.js`'s, mode-gated.
 //
 // ---------------------------------------------------------------------------
 // WHAT EACH METHOD MUST COVER (section 7.3: "all relevant portions of the

@@ -16,8 +16,8 @@
 //     rights compared with what the request needs.
 //   * the SHARED SIGNALS endpoints, which accept a GNAP access token as their
 //     third authorization scheme since 2026-09-12, so that a GNAP web
-//     application can own a stream (gnap_signals.js). They call
-//     `authenticate()` exactly as the demonstration RS does.
+//     application can own a stream (gnap_signals.js). They take
+//     `presentation()` only, the synchronous half — see below.
 //
 // **A TOKEN IS JUDGED BY ITS RECORD AND BY ITS FORMAT, AND BOTH MUST AGREE.**
 // This AS holds every token it issued (gnap_store.js), which is what makes

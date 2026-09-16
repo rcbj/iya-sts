@@ -11,14 +11,15 @@
 // Security Event Tokens — `emitCredentialChange()` and `emitRiscAccountAct()`.
 //
 // **THIS FILE EXISTS BECAUSE THOSE DOORS CANNOT REQUIRE `ssf/ssf.js`.** The
-// console's actions are at 18 in the require order, the portal at 8b, and SSF
-// at 23b: a require from either would register every `/ssf` route ahead of
-// theirs (rule 1) and close a cycle through `admin-ui/admin.js`. So this is a
-// LIBRARY that requires nothing but the logger, and it reads `ssf.js` out of
-// `require.cache` at the moment an event is due — which, in a running service,
-// is always after the whole stack has loaded. A process that never loaded SSF
-// (an in-process test, the parent project's Kerberos jobs) gets a no-op, and is
-// told so in the answer rather than by a thrown `Cannot find module`.
+// console's actions are at 18 in the require order, the portal just after
+// `authn` (8), and SSF at 23b: a require from either would register every
+// `/ssf` route ahead of theirs (rule 1) and close a cycle through
+// `admin-ui/admin.js`. So this is a LIBRARY that requires nothing but the
+// logger, and it reads `ssf.js` out of `require.cache` at the moment an event
+// is due — which, in a running service, is always after the whole stack has
+// loaded. A process that never loaded SSF (an in-process test, the parent
+// project's Kerberos jobs) gets a no-op, and is told so in the answer rather
+// than by a thrown `Cannot find module`.
 //
 // **NOT A SLOT, AND RULE 3e'S TEST SAYS WHY.** A slot is the price of a require
 // that would close a cycle or move a route; there is no require here at all,

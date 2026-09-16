@@ -25,8 +25,8 @@
 //
 //   1. **A switch.** `gnap.pushFinish` off refuses before any socket opens, and
 //      discovery stops advertising `push`.
-//   2. **The address is checked BEFORE it is dialled, in `gnap.js`**: in
-//      product mode it must be a finish URI REGISTERED on the client's
+//   2. **The address is checked BEFORE it is dialled, in `gnap_grants.js`**:
+//      in product mode it must be a finish URI REGISTERED on the client's
 //      application entry (`applications.returnAddressesOf()`, the same decision
 //      every return address here goes through), and a sighting never registers
 //      one.
@@ -39,7 +39,7 @@
 // The result NEVER rejects: `{ ok, status, errorCode, why, url }`, because the
 // caller has already answered the browser and the only honest thing to do with
 // a failed push is record it — on the grant's history, on the audit log and on
-// the monitor — which is what `gnap.js` does with this shape.
+// the monitor — which is what `gnap_grants.js` does with this shape.
 // ---------------------------------------------------------------------------
 
 const http = require('http');

@@ -27,10 +27,10 @@
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). IT REGISTERS NO ROUTE AND IT SENDS NOTHING.
 //
-// It requires `helpers`, `config`, `audit`, `ssf_events` and `ssf_subjects`
-// and nothing else, so it cannot join a cycle — and in particular it does NOT
-// require `ssf.js`, which requires IT. The division of labour is `caep.js`'s
-// exactly:
+// It requires `helpers`, `config`, `realms`, `mode`, `audit`, `ssf_events` and
+// `ssf_subjects` and nothing else, so it cannot join a cycle — and in
+// particular it does NOT require `ssf.js`, which requires IT. The division of
+// labour is `caep.js`'s exactly:
 //
 //   THIS FILE DECIDES WHAT AN EVENT WOULD BE. `observe()` takes a notice about
 //   a directory write and ANSWERS with the events that ought to go out.
@@ -93,7 +93,8 @@
 
 const { log, nowSec, iso, nameForSubject } = require('../common/helpers');
 const config = require('../common/config');
-// The partition. A LEAF requiring `config` and nothing else here.
+// The partition. A LEAF requiring `config` and the error-code registry and
+// nothing else here.
 const realms = require('../common/realms');
 // For `inventsClaimValues()` in `defaultEmailFor()`. A leaf requiring only
 // config.
@@ -232,7 +233,7 @@ function supportedEventUris() {
   return out;
 }
 
-// Which of the four acts emit on their own. An entry naming an event this
+// Which of the six acts emit on their own. An entry naming an event this
 // service cannot cause is DROPPED WITH A WARNING rather than honoured: there
 // is no code path that would ever fire it, so honouring it would leave a
 // setting that reads as configured and does nothing.
@@ -1103,7 +1104,7 @@ function dueForActs(row, acts, asked) {
       return;
     }
     // THE SUBJECT IS COMPOSED FROM THE ROW AS IT WAS BEFORE THIS ACT, which
-    // matters for exactly one of the four: an identifier-changed names the
+    // matters for exactly one of the six: an identifier-changed names the
     // OLD address, and applying the act first would name the new one — an
     // event that is well-formed, delivers, and tells the receiver that an
     // address it has never heard of has become the one it already holds.
@@ -1315,9 +1316,9 @@ function identifierMoves(before, after) {
 // the division RISC draws as sharply as CAEP does.
 //
 // It reaches the wire for one event type only — credential-compromise is the
-// only one of the fourteen with a reason member — so for the other three acts
-// it is composed and dropped by commonClaims(). That is deliberate rather than
-// wasteful: the alternative is a caller that has to know which types take
+// only one of the fourteen with a reason member — so for every act observed
+// here it is composed and dropped by commonClaims(). That is deliberate rather
+// than wasteful: the alternative is a caller that has to know which types take
 // reasons, which is the catalogue's business and not the observer's.
 function reasonFor(act, notice) {
   log.debug('Entering reasonFor(). ' + act.act);
