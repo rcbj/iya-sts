@@ -38,6 +38,11 @@ function childScript() {
     "require(" + JSON.stringify(path.join(ROOT, 'common/app')) + ");",
     "require(" + JSON.stringify(path.join(ROOT, 'ldap/ldap_server')) + ");",
     "require(" + JSON.stringify(path.join(ROOT, 'spiffe/spiffe_server')) + ");",
+    "const EventEmitter = require('events');",
+    "const auth = require(" +
+    JSON.stringify(path.join(ROOT, 'spiffe/spiffe_auth')) + ");",
+    "const api = require(" +
+    JSON.stringify(path.join(ROOT, 'spiffe/spiffe_api')) + ");",
     "const grpc = require(" +
     JSON.stringify(path.join(ROOT, 'spiffe/spiffe_grpc')) + ");",
     "const ca = require(" +
@@ -110,6 +115,40 @@ function childScript() {
     "  };",
     "  out.jwtForeign = await jwtCode('underB');",
     "  out.jwtOwn = await jwtCode('underAlias');",
+    // The STREAM, through the real bidi wrapper. The caller is what the
+    // wrapper derives from the TLS peer, which a test has none of, so the
+    // derivation is replaced for this call with agent A's verified identity.
+    "  const realCallerOf = auth.callerOf;",
+    "  auth.callerOf = function (call, surface) {",
+    "    const c = realCallerOf(call, surface);",
+    "    c.authenticated = true; c.spiffeId = A; c.entities.agent = true;",
+    "    return c;",
+    "  };",
+    "  const entry = api.SERVICE_HANDLERS.filter(function (s) {",
+    "    return s.name === 'entry'; })[0].handlers;",
+    "  const stream = new EventEmitter();",
+    "  stream.getPeer = function () { return '127.0.0.1:1'; };",
+    "  stream.getAuthContext = function () { return null; };",
+    "  stream.metadata = { get: function () { return []; } };",
+    "  stream.end = function () {};",
+    "  const synced = new Promise(function (resolve) {",
+    "    stream.write = function (reply) { resolve({ reply: reply }); };",
+    "    stream.on('error', function (err) {",
+    "      resolve({ error: String(err && (err.details || err.message)) });",
+    "    });",
+    "  });",
+    "  entry.SyncAuthorizedEntries(stream);",
+    "  stream.emit('data', { ids: [made.underA] });",
+    "  const sync = await synced;",
+    "  auth.callerOf = realCallerOf;",
+    "  out.syncError = sync.error || '';",
+    "  const byId = function (list) {",
+    "    const ids = (list || []).map(function (e) { return e.id; });",
+    "    return Object.keys(made).filter(function (k) {",
+    "      return ids.indexOf(made[k]) >= 0; }).sort();",
+    "  };",
+    "  out.syncRevisions = sync.reply ? byId(sync.reply.entry_revisions) : [];",
+    "  out.syncEntries = sync.reply ? byId(sync.reply.entries) : [];",
     "  require('fs').writeFileSync(process.env.PROBE_OUT, JSON.stringify(out));",
     "  process.exit(0);",
     "})().catch(function (e) {",
@@ -166,6 +205,15 @@ function run(t) {
           'a caller whose identity did not verify is authorized for nothing');
   t.equal(out.forNoCaller.length, 0,
           'and so is a call with no caller at all');
+
+  t.log.info('=== the stream answers the same set ===');
+  t.equal(out.syncError, '', 'SyncAuthorizedEntries answers rather than ' +
+          'failing — until 2026-09-16 its narrowing named a variable its ' +
+          'handler was never given');
+  t.equal(out.syncRevisions.join(','), 'alias,grandchildA,underA,underAlias',
+          'it lists the revisions of agent A\'s set and no other entry');
+  t.equal(out.syncEntries.join(','), 'alias,grandchildA,underAlias',
+          'and sends in full only the ones the agent did not say it holds');
 
   t.log.info('=== and is issued nothing from any other entry ===');
   // gRPC status codes: 7 is PERMISSION_DENIED, 3 is INVALID_ARGUMENT. The

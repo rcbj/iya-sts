@@ -619,7 +619,7 @@ const entryHandlers = {
   // for a registry this size. A client that handles `more: true` is untested by
   // this; a client that does not handle it works.
   SyncAuthorizedEntries: rpc.bidiStream('server', 'Entry.SyncAuthorizedEntries',
-    async function (request) {
+    async function (request, call) {
       const held = {};
       (request.ids || []).forEach(function (id) { held[String(id)] = true; });
       // The same narrowing as GetAuthorizedEntries: a stream that listed every
@@ -829,7 +829,7 @@ const agentHandlers = {
   // only the public key is read out of it, so an agent still cannot name itself
   // something it is not — the join token's single use, and the ban.
   AttestAgent: rpc.bidiStream('server', 'Agent.AttestAgent',
-                              async function (request, call) {
+                              async function (request) {
     await ca.ready();
     // A challenge response arriving when no challenge was issued. Refused
     // rather than ignored: a client in that state has misread the protocol, and
