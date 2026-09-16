@@ -94,8 +94,9 @@ var log = bunyan.createLogger({ name: "sts_route_inputs",
                                 level: appconfig.LOG_LEVEL || "info" });
 log.info("Log initialized. logLevel=" + log.level());
 
-// run-report.js decides a job needs the mock by looking for these names, so the
-// read is what enlists this file rather than an entry in a list somewhere.
+// Where the service's address arrives. run-report.js once decided a job needed
+// the mock by looking for these names; since the jobs became copies the
+// manifest is the list (tests/CLAUDE.md), and these are only the address.
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = (process.env.OID4VCI_ISSUER_URL ||
             stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
@@ -190,10 +191,10 @@ const CASES = [
 // what to probe would mean trusting the thing under test to describe itself.
 //
 // Constants are resolved one level (`const X = '/lit'`, and `const Y = X +
-// '/more'`), which is what the seven route modules here actually use. Anything
-// it cannot resolve is COUNTED AND REPORTED rather than skipped silently —
-// `unresolved` is printed, so a new registration idiom shows up as a number
-// going up instead of as coverage quietly shrinking.
+// '/more'`), which is the shape the route modules here that register through a
+// constant use. Anything it cannot resolve is COUNTED AND REPORTED rather than
+// skipped silently — `unresolved` is printed, so a new registration idiom shows
+// up as a number going up instead of as coverage quietly shrinking.
 // ---------------------------------------------------------------------------
 function routesFrom(root) {
   log.debug("Entering routesFrom().");
@@ -263,7 +264,7 @@ function routesFrom(root) {
         //
         // This job reaches it for the same reason — it drives every route it
         // can find — and the consequence is identical and just as hard to
-        // read: `sts_xacml_remote_pep` runs eleven jobs later and its
+        // read: `sts_xacml_remote_pep` runs later in the manifest and its
         // container, whose pull, heartbeat and PIP queries all resolve a
         // VERIFIED client certificate, authenticates as nobody for the rest
         // of the run. It reports `403 ... they hold ALL_UNAUTHENTICATED_USERS`
@@ -434,7 +435,9 @@ program
   .name("sts_route_inputs")
   .description("Send malformed input to every route this service registers " +
       "and require that each one REFUSES rather than throws.")
-  // Accepted and ignored: run-report.js passes --url to every job.
+  // Accepted and ignored: the parent project's run-report.js passes --url to
+  // every job it runs (this repository's hands the URL over in the
+  // environment instead).
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

@@ -3,7 +3,7 @@
 //
 // **THE QUESTION THIS FILE ASKS IS THE ONLY ONE A SIGN-OUT REALLY HAS:** after
 // it, is there anything left? Every other job in this suite drives one family
-// and proves that family works. This one drives ten at once, on purpose, and
+// and proves that family works. This one drives nine at once, on purpose, and
 // then tries to find something that survived.
 //
 // It is the test that could not be written until 2026-09-05, and three things
@@ -23,13 +23,13 @@
 // TWO SCENARIOS, AND THE SECOND IS NOT THE FIRST AGAIN.
 //
 //   A. ONE APPLICATION that every protocol authenticates against. This is the
-//      single-sign-on shape: one relying party a person reaches ten ways.
-//   B. ONE APPLICATION PER PROTOCOL. This is the portfolio shape: ten relying
+//      single-sign-on shape: one relying party a person reaches nine ways.
+//   B. ONE APPLICATION PER PROTOCOL. This is the portfolio shape: nine relying
 //      parties, one person, one sign-out.
 //
 // They can fail differently and that is why both are here. A sign-out keyed
 // accidentally on the APPLICATION rather than on the IDENTITY passes A
-// completely and fails B on nine of ten rows; one that swept by identity but
+// completely and fails B on eight of nine rows; one that swept by identity but
 // collected rows per application would do the reverse. Neither would be found
 // by running either scenario alone.
 //
@@ -37,11 +37,12 @@
 // WHY THERE IS NO BROWSER HERE, WHICH IS THE FIRST THING TO CHECK.
 //
 // Every sign-in below is a form POST and a redirect, and **not one of these
-// pages runs a line of JavaScript** — `app.js` sets `script-src 'none'` for
-// the whole service and the six exceptions are all autopost forms with a real
-// submit button. So a cookie jar and `fetch` drive them exactly as a browser
-// would, deterministically, in about a second, with no driver to install and
-// no headless flake.
+// pages needs a line of JavaScript** — `app.js` sets `script-src 'none'` for
+// the whole service, and every page that relaxes it (the root CLAUDE.md lists
+// seven; the ones reached here are the autopost forms) carries a real submit
+// button. So a cookie jar and `fetch` drive them exactly as a browser would,
+// deterministically, in about a second, with no driver to install and no
+// headless flake.
 //
 // Selenium is still right where the DOM is the thing under test — that is
 // `sts_admin_console.js` and `sts_xacml_editor.js`, and both stay — and the
@@ -53,19 +54,22 @@
 // IT RUNS IN THE DEFAULT REALM, WHICH EVERY OTHER JOB LIKE IT AVOIDS.
 //
 // That is forced and it is worth knowing why rather than reading it as
-// carelessness. **The TLS listeners are SHARED ACROSS TRUST REALMS** — the root
-// CLAUDE.md lists them among the socket families with no path to put a realm
-// segment in and no name inside the protocol to put one in either — so a
-// throwaway realm cannot have an X.509 sign-in of its own, and one of the ten
-// protocols would drop out of a test whose whole point is that none of them
-// does.
+// carelessness. **A client certificate is SHARED ACROSS TRUST REALMS at the
+// handshake** (the root CLAUDE.md, *Trust realms*), and `GET /tls/sign-in`
+// starts the session in the realm of the authority that signed the leaf —
+// which, for a leaf under an anchor posted to `/tls/trust` as this job's is,
+// is the DEFAULT realm, whatever prefix the request carried (`tls/CLAUDE.md`).
+// So in a throwaway realm one of the nine protocols would drop out of a test
+// whose whole point is that none of them does, unless that realm's own CA
+// issued the leaf, which this job does not do. (This paragraph named the 8443
+// and 9443 listeners until 2026-09-16, when both were deleted.)
 //
 // **KERBEROS LEFT THAT LIST ON 2026-09-15**, and this file has not moved with
 // it: a trust realm whose `krb5.enabled` is on now has a Kerberos realm and a
 // principal database of its own, so a throwaway realm COULD have a TGT of its
 // own — it would have to be given a `krb5.realm` nothing else answers to, and
-// the TLS half would still hold this job here. Doing it would be a way to
-// exercise a realm's KDC end to end, which nothing does yet.
+// the certificate half would still hold this job here. Doing it would be a way
+// to exercise a realm's KDC end to end, which nothing does yet.
 //
 // What makes that safe is that **a global sign-out is keyed on an IDENTITY**.
 // The username here is unique per run, so the sweep cannot reach any other
@@ -103,7 +107,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -121,11 +125,14 @@ var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
 
-// The Kerberos realm the KDC serves. Shared across trust realms, like the
-// socket it answers on.
+// The DEFAULT trust realm's Kerberos realm, which is where this job signs in.
+// The socket on 88 is shared; since 2026-09-15 a trust realm with Kerberos
+// on has a Kerberos realm of its own, told apart by this name
+// (kerberos/CLAUDE.md).
 const KRB_REALM = process.env.KRB5_REALM || "EXAMPLE.COM";
-// Every seeded principal here has this one password — see kerberos/CLAUDE.md
-// on why the KDC's permissiveness lives in its account policy.
+// Every user account shares this one password in development mode — see
+// kerberos/CLAUDE.md on why the KDC's permissiveness lives in its account
+// policy.
 const KRB_PASSWORD = "password!";
 
 // ---------------------------------------------------------------------------
@@ -146,10 +153,11 @@ const KRB_PASSWORD = "password!";
 // URI, ACS URL and reply URL the requests below will be answered at, and a
 // client secret the token requests present.
 //
-// **KERBEROS IS THE ONE DOOR THAT STILL LEANS ON THE MOCK**: the KDC's account
-// policy is one shared password for any name, and there is no operation on
-// `/admin-api` that provisions a user principal with a key of its own. That is
-// recorded here rather than papered over.
+// **KERBEROS IS THE ONE DOOR THAT STILL LEANS ON THE MOCK**: the KDC's
+// development-mode account policy is one shared password for any name, so the
+// AS-REQ below presents that password and not the person's. A person's own
+// keys are derived from their own password only in product mode
+// (kerberos/CLAUDE.md). That is recorded here rather than papered over.
 // ---------------------------------------------------------------------------
 const PERSON_PASSWORD = "global-logout-Passw0rd!-" +
                         String(Date.now()).slice(-6);
@@ -311,7 +319,7 @@ async function throughTheScreens(cookies, started, username) {
 }
 
 // ---------------------------------------------------------------------------
-// THE TEN SIGN-INS. Each returns what the assertions afterwards need to name
+// THE NINE SIGN-INS. Each returns what the assertions afterwards need to name
 // what it made — a session cookie, a token, an artifact — and each takes the
 // application to authenticate against, which is the ONLY difference between
 // the two scenarios.
@@ -493,8 +501,9 @@ async function kerberos(username) {
 // start: a certificate in a repository is a private key in a repository.
 //
 // THE COMMON NAME IS THE USERNAME and that is the whole point of the section:
-// `tls_server.js` signs in the CN, so a certificate naming this person signs in
-// the SAME person the other nine protocols did — one identity, ten doors —
+// `tls/tls_server.js` signs in the CN of a leaf under an installed anchor, so a
+// certificate naming this person signs in the SAME person the other eight
+// protocols did — one identity, nine doors —
 // which is what makes a single global sign-out the right question to ask.
 // ---------------------------------------------------------------------------
 // A serial that differs per person and per certificate. Hex, because that is
@@ -610,10 +619,9 @@ async function x509(username) {
       const req = https.request({
         host: host, port: port, path: "/tls/sign-in", method: "GET",
         cert: pki.certPem, key: pki.keyPem,
-        // The SERVER's certificate is self-signed and regenerated on every
-        // start — that is this service's design, not a misconfiguration — so
-        // it is not verified here. What is under test is the CLIENT
-        // certificate.
+        // The SERVER's certificate is not verified here: what is under test
+        // is the CLIENT certificate. (This said the server's was self-signed;
+        // it is certified under the service Root now, `tls/CLAUDE.md`.)
         rejectUnauthorized: false
       }, function (res) {
         let body = "";
@@ -645,6 +653,7 @@ async function x509(username) {
       lastError = new Error("answered " + reply.status + " with no session " +
                             "cookie: " + reply.body);
     } catch (e) {
+      // Kept for the assertion below, which quotes it if every attempt fails.
       lastError = e;
     }
     await new Promise(function (r) { setTimeout(r, 250); });
@@ -849,6 +858,7 @@ async function postJson(url, payload) {
     body = JSON.parse(text);
   } catch (e) {
     log.debug("Caught in postJson(): " + ((e && e.message) || e));
+    // Not JSON; `text` carries the answer into every message that quotes it.
     body = null;
   }
   log.debug("Leaving postJson().");
@@ -920,7 +930,7 @@ async function createApplication(identifier, protocols) {
 
 // EVERY PROTOCOL FAMILY THIS SERVICE WILL AUTHENTICATE A PERSON WITH, as the
 // application registry names them. Declared on the entry so that
-// /admin/applications shows one application answering to ten protocols, which
+// /admin/applications shows one application answering to nine protocols, which
 // is the thing scenario A is about.
 // `mtls` and not `tls` — the registry's own name for the family, and the one
 // the create refuses anything else with. It is a list the registry publishes
@@ -943,7 +953,7 @@ async function runScenario(label, username, applicationFor) {
 
   // Each sign-in is attempted independently and a failure is COLLECTED rather
   // than thrown, so one protocol being unavailable in this stack does not hide
-  // what the other nine would have said. The floor below is what makes that
+  // what the other eight would have said. The floor below is what makes that
   // safe: a run where most of them quietly failed cannot pass.
   async function attempt(what, fn) {
     log.debug("Entering attempt().");
@@ -1106,8 +1116,9 @@ async function runScenario(label, username, applicationFor) {
     });
     try {
       ldapRow.client.destroy();
-    } catch (e) { /* already gone */ 
+    } catch (e) {
       log.debug("Caught in runScenario(): " + ((e && e.message) || e));
+      // Already gone: the server closed it, which is what was just asserted.
     }
   }
 
@@ -1119,6 +1130,7 @@ async function runScenario(label, username, applicationFor) {
     try {
       await krb5.getTgt(base, KRB_REALM, username, KRB_PASSWORD);
     } catch (e) {
+      // Recorded rather than thrown: the check below is the verdict.
       refused = true;
       why = e.message;
     }
@@ -1210,9 +1222,9 @@ async function test() {
     function (protocol) {
       return perProtocol[protocol] || perProtocol.oauth2;
     });
-  // `tls` is what the sign-in functions above call the certificate family and
-  // `mtls` is what the registry calls it; the map is keyed on the registry's
-  // name, so the alias is stated once here rather than at the call site.
+  // Three of the entries above are declared and never named by a sign-in:
+  // `kerberos()`, `x509()` and `ldapBind()` take no application, so the
+  // `krb5`, `mtls` and `ldap` entries are only what /admin/applications shows.
 
   // THE TWO SCENARIOS MUST HAVE BEEN THE SAME TEST. If B established markedly
   // fewer sessions than A, the per-application fixture is what failed rather
