@@ -1163,7 +1163,7 @@ three differences:
 * **On success it spends the link, clears `pwdReset`, clears the rate-limit
   bucket, audits `portal.password-reset`, and sends a CAEP `credential-change`
   (password, create, initiated by the user)** through
-  `ssf/account_signals.js`. It signs nobody in: the page links to `/portal`,
+  `ssf/account_signals.ts`. It signs nobody in: the page links to `/portal`,
   where the ordinary sign-in happens with the new password, for
   `/portal/activate`'s magic-link argument.
 

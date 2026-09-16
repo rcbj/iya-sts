@@ -415,7 +415,7 @@ function claimsFor(sessionUser, authnMethod, authnInstant) {
 // profile refuses to fake — and it would have satisfied a wauth demanding two
 // factors with a session that had one.
 //
-// **SINCE 2026-09-12 THE READING IS `saml/authn_context.js`'s**, shared with
+// **SINCE 2026-09-12 THE READING IS `saml/authn_context.ts`'s**, shared with
 // both SAML profiles, and it fixed a defect all three copies had: the fall
 // through answered `am:password` / PasswordProtectedTransport for a TLS client
 // certificate, a Kerberos ticket, a federated sign-in and the unauthenticated

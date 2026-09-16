@@ -195,7 +195,7 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
   // password was used, and this builder putting one in the AuthnStatement on
   // its behalf is how WS-Trust came to assert a password sign-in for an
   // anonymous request. Every caller in this service now passes the class
-  // `saml/authn_context.js` computed; the default is what an unknown caller
+  // `saml/authn_context.ts` computed; the default is what an unknown caller
   // gets, and it overstates nothing.
   const authnContextClassRef = opts.authnContextClassRef ||
                                authnContext.AC_UNSPECIFIED;

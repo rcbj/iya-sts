@@ -17,7 +17,7 @@ family here and the first one that TALKS BACK.
 | `ssf_receivers.js` | **THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS** (2026-09-10): the seeded streams, the inboxes, what a receive endpoint checks, and the per-person filter the portal narrows with. A LIBRARY — the two receive endpoints and the two inbox pages are registered by the SURFACES, because a receiver hosts its own endpoint. |
 | `ssf_dead_letter_report.js` | What the dead-letter queues hold, counted, for Monitoring → Shared Signals → Dead letters and `/admin-api/ssf/dead-letters` (2026-09-14). A LIBRARY. |
 | `ssf_cluster.js` | Several nodes (2026-09-14, #46): one report per stream health transition, one prober, and the GNAP key-proof spend as route middleware. A LIBRARY. |
-| `account_signals.js` | What a credential change on the admin and portal doors says over CAEP and RISC (2026-09-13), read out of `require.cache`. A LIBRARY. |
+| `account_signals.ts` | What a credential change on the admin and portal doors says over CAEP and RISC (2026-09-13), read out of `require.cache`. A LIBRARY. |
 
 Twelve of the thirteen register nothing (rule 3), so their position in the
 route order is not a position. `ssf.js` is required at **23b in
@@ -1492,7 +1492,7 @@ client ids and the routes the surfaces register; deriving them from
 module the portal loads just after `authn` (8) for two strings that change
 only with those files.
 
-## CREDENTIAL CHANGES FROM THE ADMIN DOORS: `account_signals.js` (2026-09-13)
+## CREDENTIAL CHANGES FROM THE ADMIN DOORS: `account_signals.ts` (2026-09-13)
 
 A person's `/admin/users` page gained controls that reset passwords, issue
 reset links and remove second factors, and each owes a signal. The acts are:
@@ -1507,7 +1507,7 @@ reset links and remove second factors, and each owes a signal. The acts are:
 | clear-totp | `app`, `delete` | — |
 | clear-backup-codes | — | `recovery-information-changed` |
 
-**`ssf/account_signals.js` IS A LIBRARY THAT READS `ssf.js` OUT OF
+**`ssf/account_signals.ts` IS A LIBRARY THAT READS `ssf.js` OUT OF
 `require.cache`**, because the doors are at 18 (the actions layer) and just
 after `authn`, 8 (the portal), and a require of `ssf.js` from either would
 register every `/ssf` route ahead of theirs and close a cycle through the

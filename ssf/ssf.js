@@ -2880,7 +2880,7 @@ function sendOneRiscEvent(due) {
 // can read a meaning off (a password hash moving says nothing about who
 // required what) and none is a SESSION CAEP's register could hang an event on,
 // so the two functions below are asked by name, through
-// `ssf/account_signals.js`, by the doors that know what they did.
+// `ssf/account_signals.ts`, by the doors that know what they did.
 //
 // **THEY TAKE THE SAME SWITCHES THE AUTOMATIC EMISSIONS DO.** `caep.autoEmit`
 // and `caep.autoEmitTypes` (the act `credential`), `risc.autoEmit` and
@@ -3449,7 +3449,7 @@ module.exports = {
   CAEP_CONSOLE_ACTIONS: CAEP_CONSOLE_ACTIONS,
   riscAutoEmit: riscAutoEmit,
   // What an administrator did to somebody's credentials (2026-09-13); reached
-  // through `ssf/account_signals.js`.
+  // through `ssf/account_signals.ts`.
   emitRiscAccountAct: emitRiscAccountAct,
   emitCredentialChange: emitCredentialChange,
   riscReport: riscReport,

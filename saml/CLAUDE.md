@@ -10,7 +10,7 @@ provider for each of them**.
 | `saml2_sso.js` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
 | `saml11_sso.js` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
 | `sp_metadata.js` | A service provider's metadata: parsing it, and fetching it by an explicit refresh — through `../federation/federation_http.js`'s outbound policy since 2026-09-12. Registers nothing. |
-| `authn_context.js` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
+| `authn_context.ts` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
 | `document_settings.js` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
 | `return_address.js` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
 | `person_attributes.js` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
@@ -584,7 +584,7 @@ enforced for these two, because `exp` collides with nothing in an assertion.
 `saml2.js` and `saml11.js` require only libraries — `../common/helpers`,
 `../common/config`, `../common/crypto`, `../common/error_codes`,
 `../common/admin_stats`, and this directory's `document_settings.js` and
-`authn_context.js` — none of which requires them back, so they cannot join a
+`authn_context.ts` — none of which requires them back, so they cannot join a
 cycle and their position is not a position at all.
 
 **`saml2_sso.js` is position 10a in `common/protocol_stack.js` (the require
@@ -717,7 +717,7 @@ record of the decisions.
   `saml11_sso.js`, `wsfed.js` — plus both builders' defaults called every
   session that was not two factors or a key alone a PASSWORD: a TLS client
   certificate (amr `swk`), a Kerberos ticket over SPNEGO, a federated sign-in and
-  the unauthenticated session. `authn_context.js` is the one reading now, in this
+  the unauthenticated session. `authn_context.ts` is the one reading now, in this
   directory rather than `common/` because both vocabularies are SAML's, and in
   this direction because `wsfed.js` already required `saml/`. **An ordinary
   password sign-in, a key alone and two factors produce byte-for-byte what they

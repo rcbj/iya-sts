@@ -281,7 +281,7 @@ function buildSaml11Assertion(opts) {
   // `unspecified` rather than `am:password` since 2026-09-12, for the reason
   // saml2.js gives beside its own default: a caller that names no method has
   // not said a password was used. Every caller here passes the method
-  // `saml/authn_context.js` computed.
+  // `saml/authn_context.ts` computed.
   const authnMethod = opts.authnMethod || authnContext.AM_UNSPECIFIED;
   // The NameIdentifier, and the one thing to know about the defaults: they are
   // what this service has said for years and nothing consumed, so they stay the

@@ -98,7 +98,7 @@ is the whole mechanism. See the root `CLAUDE.md`.
   answer** (the same day): a `wreply` a development sighting wrote is marked
   OBSERVED on `appReturnAddressObserved`, and product refuses it with
   `STS-REG-0049` until an operator confirms it. See `../common/CLAUDE.md`.
-* **`authnMethodsFor()` is `../saml/authn_context.js`'s reading now**, which
+* **`authnMethodsFor()` is `../saml/authn_context.ts`'s reading now**, which
   fixed the defect all three copies had (a certificate, a Kerberos ticket, a
   federated or unauthenticated session was `am:password`). The `wauth` hardware
   and multi-factor checks read `hardwareKey` / `multiFactor` off the same answer.

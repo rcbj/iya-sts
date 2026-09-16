@@ -1,0 +1,200 @@
+'use strict';
+// ---------------------------------------------------------------------------
+// ssf/account_signals.ts — WHAT A CREDENTIAL CHANGE SAYS OVER SHARED SIGNALS,
+// FOR THE DOORS THAT MAKE ONE (2026-09-13).
+//
+// The administrator's controls on a person's /admin/users page (and the same
+// actions on /admin-api/users) reset passwords, issue reset links, and take
+// security keys, authenticator apps and recovery codes off an entry; the user
+// portal's /portal/reset-password sets the password a link was for. Each of
+// those is a CAEP `credential-change`, and a password reset or a cleared set of
+// recovery codes is also a RISC event. `ssf/ssf.js` is what turns them into
+// Security Event Tokens — `emitCredentialChange()` and `emitRiscAccountAct()`.
+//
+// **THIS FILE EXISTS BECAUSE THOSE DOORS CANNOT REQUIRE `ssf/ssf.js`.** The
+// console's actions are at 18 in the require order, the portal just after
+// `authn` (8), and SSF at 23b: a require from either would register every
+// `/ssf` route ahead of theirs (rule 1) and close a cycle through
+// `admin-ui/admin.js`. So this is a LIBRARY that requires nothing but the
+// logger, and it reads `ssf.js` out of `require.cache` at the moment an event
+// is due — which, in a running service, is always after the whole stack has
+// loaded. A process that never loaded SSF (an in-process test, the parent
+// project's Kerberos jobs) gets a no-op, and is told so in the answer rather
+// than by a thrown `Cannot find module`.
+//
+// **NOT A SLOT, AND RULE 3e'S TEST SAYS WHY.** A slot is the price of a require
+// that would close a cycle or move a route; there is no require here at all,
+// only a cache lookup, which is the arrangement
+// `admin-core/protocol_endpoints.js` uses for route-registering modules it
+// must never load.
+//
+// **NOTHING HERE WAITS AND NOTHING HERE THROWS.** Every function returns a
+// promise that resolves, and callers do not await it: a receiver's endpoint
+// being slow must not hold up a page, and a failure must not undo a credential
+// change that has already been written.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
+// shape: `AccountSignals` takes the logger and the way to find a loaded
+// `ssf.js` through its constructor, and the module still exports the old
+// names from a TRANSITIONAL instance for `admin-core/admin_actions.js` and
+// `portal/portal.js`, which are not converted.
+// ---------------------------------------------------------------------------
+
+import helpers = require('../common/helpers');
+
+// What a delivery answers. `sent` and `streams` are `ssf.js`'s own counts
+// when it ran; `why` is set when nothing was sent.
+interface Delivery {
+  sent: number;
+  streams: number;
+  why?: string;
+  [member: string]: unknown;
+}
+
+// The two `ssf.js` emitters this module calls, and nothing else of it.
+interface SsfEmitters {
+  emitCredentialChange?(notice: object): Delivery | Promise<Delivery>;
+  emitRiscAccountAct?(notice: object): Delivery | Promise<Delivery>;
+}
+
+type EmitterName = 'emitCredentialChange' | 'emitRiscAccountAct';
+
+interface AccountSignalsDeps {
+  log: { debug(m: string): void; warn(m: string): void };
+  // `ssf.js`'s exports when that module is loaded in this process, else null.
+  // Never a require: see the header.
+  findSsf(): SsfEmitters | null;
+}
+
+// A CAEP credential-change, as the doors describe it.
+interface CredentialChange {
+  username?: string;
+  credentialType?: string;
+  changeType?: string;
+  friendlyName?: string;
+  initiatingEntity?: string;
+  reasonAdmin?: string;
+  reasonUser?: string;
+  via?: string;
+}
+
+class AccountSignals {
+  // A security key, in CAEP's credential-type vocabulary. The record keeps no
+  // authenticator attachment, so a key cannot be told apart as platform or
+  // roaming after the fact; `fido2-roaming` is the reading that is true of
+  // every security key this service's ceremony enrols by default, and the
+  // label goes out as `friendly_name` so a receiver can tell two keys apart.
+  static readonly KEY_CREDENTIAL_TYPE = 'fido2-roaming';
+  // An authenticator app, in the same vocabulary: CAEP's `app`.
+  static readonly TOTP_CREDENTIAL_TYPE = 'app';
+
+  constructor(private readonly deps: AccountSignalsDeps) {
+    deps.log.debug('Entering AccountSignals.constructor().');
+    deps.log.debug('Leaving AccountSignals.constructor().');
+  }
+
+  // `ssf.js` as it is loaded in THIS process, found in `require.cache`, or
+  // null. The default `findSsf` for the transitional instance below.
+  static loadedSsf(): SsfEmitters | null {
+    const { log } = helpers;
+    log.debug('Entering AccountSignals.loadedSsf().');
+    let id = '';
+    try {
+      id = require.resolve('./ssf');
+    } catch (e) {
+      log.debug('Caught in AccountSignals.loadedSsf(): ' +
+                ((e && e.message) || e));
+      log.debug('Leaving AccountSignals.loadedSsf(). Not resolvable.');
+      return null;
+    }
+    const cached = require.cache[id];
+    log.debug('Leaving AccountSignals.loadedSsf(). ' +
+              (cached ? 'Loaded.' : 'Not loaded.'));
+    return cached && cached.exports ? cached.exports as SsfEmitters : null;
+  }
+
+  // Hand one call to ssf.js, swallowing everything, so a caller can fire and
+  // forget. `what` names the call for the log.
+  private deliver(what: string, name: EmitterName,
+                  notice: object): Promise<Delivery> {
+    const { log, findSsf } = this.deps;
+    log.debug('Entering AccountSignals.deliver(). ' + what);
+    const ssf = findSsf();
+    const emit = ssf ? ssf[name] : undefined;
+    if (!ssf || typeof emit !== 'function') {
+      log.debug('Leaving AccountSignals.deliver(). Shared Signals is not ' +
+                'loaded in this process, so nothing is sent.');
+      return Promise.resolve({ sent: 0, streams: 0, why: 'ssf not loaded' });
+    }
+    let answer: Promise<Delivery>;
+    try {
+      answer = Promise.resolve(emit.call(ssf, notice));
+    } catch (e) {
+      log.warn('account signals: ' + what + ' threw and nothing was sent: ' +
+               ((e && e.message) || e));
+      log.debug('Leaving AccountSignals.deliver(). Threw.');
+      return Promise.resolve({ sent: 0, streams: 0,
+                               why: String(e && e.message) });
+    }
+    log.debug('Leaving AccountSignals.deliver(). Handed over.');
+    return answer.catch(function (e): Delivery {
+      log.warn('account signals: ' + what + ' failed and nothing more is ' +
+               'sent: ' + ((e && e.message) || e));
+      return { sent: 0, streams: 0, why: String((e && e.message) || e) };
+    });
+  }
+
+  // CAEP credential-change.
+  credentialChanged(change?: CredentialChange): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.credentialChanged().');
+    log.debug('Leaving AccountSignals.credentialChanged().');
+    return this.deliver('a CAEP credential-change', 'emitCredentialChange',
+                        change || {});
+  }
+
+  // RISC account-credential-change-required: a password was reset for
+  // somebody or a reset link issued, so what they held is no longer trusted.
+  credentialChangeRequired(notice?: object): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.credentialChangeRequired().');
+    log.debug('Leaving AccountSignals.credentialChangeRequired().');
+    return this.deliver('a RISC account-credential-change-required',
+                        'emitRiscAccountAct',
+                        Object.assign({}, notice || {},
+                                      { act: 'credentialChangeRequired' }));
+  }
+
+  // RISC recovery-information-changed: somebody's recovery codes were
+  // cleared.
+  recoveryInformationChanged(notice?: object): Promise<Delivery> {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.recoveryInformationChanged().');
+    log.debug('Leaving AccountSignals.recoveryInformationChanged().');
+    return this.deliver('a RISC recovery-information-changed',
+                        'emitRiscAccountAct',
+                        Object.assign({}, notice || {},
+                                      { act: 'recoveryChanged' }));
+  }
+}
+
+// THE TRANSITIONAL INSTANCE — see the header above.
+const signals = new AccountSignals({
+  log: helpers.log,
+  findSsf: AccountSignals.loadedSsf
+});
+
+export = {
+  AccountSignals: AccountSignals,
+  credentialChanged: signals.credentialChanged.bind(signals) as
+    AccountSignals['credentialChanged'],
+  credentialChangeRequired: signals.credentialChangeRequired.bind(signals) as
+    AccountSignals['credentialChangeRequired'],
+  recoveryInformationChanged:
+    signals.recoveryInformationChanged.bind(signals) as
+      AccountSignals['recoveryInformationChanged'],
+  KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
+  TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE
+};

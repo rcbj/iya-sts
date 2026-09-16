@@ -1111,7 +1111,7 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 //   stop-requiring-mfa     screen, and the requirement taken away.
 //
 // **EACH SAYS WHAT HAPPENED OVER SHARED SIGNALS**, through
-// `ssf/account_signals.js`: a CAEP credential-change for every credential that
+// `ssf/account_signals.ts`: a CAEP credential-change for every credential that
 // changed, RISC account-credential-change-required for a reset, RISC
 // recovery-information-changed for cleared recovery codes. The sign-out's own
 // sessions each say session-revoked through `dropSession()`, as every sign-out

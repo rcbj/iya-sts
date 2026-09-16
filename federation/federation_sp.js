@@ -809,7 +809,7 @@ function audienceCheck(assertion, base, record, required) {
 // identical — so a partner's authentication context was read and then thrown
 // away. `federated` stays FIRST, because it is the fact about what THIS service
 // did (it verified a partner's signature), and it is what
-// `saml/authn_context.js` keys on to read everything after it as the PARTNER's
+// `saml/authn_context.ts` keys on to read everything after it as the PARTNER's
 // statement rather than this service's own sign-in.
 function federatedAmr(partner) {
   log.debug("Entering federatedAmr().");
@@ -1740,7 +1740,7 @@ function consumeSamlResponse(req, res, record, params, version) {
 
   // A SAML partner states its authentication context as a class or a method
   // URI, not as RFC 8176 values, so nothing joins `federated` in the amr — the
-  // statement travels on `acr`, where saml/authn_context.js reads it. The old
+  // statement travels on `acr`, where saml/authn_context.ts reads it. The old
   // code pushed the context onto an amr and then discarded the list.
   log.debug('Leaving consumeSamlResponse(). Verified; completing the sign-in ' +
             'once the signing certificate is known not to be revoked.');

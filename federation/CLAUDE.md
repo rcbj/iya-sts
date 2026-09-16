@@ -198,7 +198,7 @@ permissive, and each of the three was permissive:
 3. **THE PARTNER'S AUTHENTICATION CONTEXT** was read and thrown away
    (`amr: amr.length ? ['federated'] : ['federated']`). `federatedAmr()` keeps
    `federated` FIRST — the fact about what this service did — and the partner's
-   values behind it; a SAML partner's class travels on `acr`. `saml/authn_context.js`
+   values behind it; a SAML partner's class travels on `acr`. `saml/authn_context.ts`
    reads both, so a SAML assertion this service re-issues for a federated session
    carries the partner's class rather than a password. **A federated OpenID
    session's `amr` changed from the partner's list to `['federated', …that list]`**,

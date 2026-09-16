@@ -232,7 +232,7 @@ const NAMEID_FORMATS = [
 ];
 
 // How the End-User authenticated, in SAML 2.0's vocabulary. **SINCE 2026-09-12
-// THIS IS `saml/authn_context.js` AND NOT A COPY HERE.** This file used to say
+// THIS IS `saml/authn_context.ts` AND NOT A COPY HERE.** This file used to say
 // it would not share the answer with `wsfed.js` because a require from `saml/`
 // into `ws-federation/` points the wrong way — which stays true, and is why the
 // shared reading lives in THIS directory and `wsfed.js` requires it. What the
@@ -722,7 +722,7 @@ function signQueryString(queryString, sigAlg) {
 
 // --- what a session says ---------------------------------------------------
 // The shape this file has always used — `{ classRef, multiFactor, hardwareKey
-// }` — over the one shared reading in `saml/authn_context.js`. See the note
+// }` — over the one shared reading in `saml/authn_context.ts`. See the note
 // above AC_MULTIFACTOR for why the reading moved and what it fixed.
 function authnContextFor(session) {
   log.debug("Entering authnContextFor().");

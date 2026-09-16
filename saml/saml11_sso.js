@@ -315,7 +315,7 @@ const NAMEID_FORMATS = [
 // instead of one (one factor, and a key).
 //
 // **SINCE 2026-09-12 IT IS SHARED, WITH `saml2_sso.js` AND `wsfed.js`, IN
-// `saml/authn_context.js`.** This comment used to say it was deliberately not
+// `saml/authn_context.ts`.** This comment used to say it was deliberately not
 // shared, because a require into `ws-federation/` would point the wrong way —
 // which stays true, and is why the one reading lives in `saml/` and the
 // passive requestor profile requires it. What the three copies shared was the
@@ -1934,7 +1934,7 @@ function respond(req, res) {
       // a mock breaking a relying party's assumption; it is this service
       // SIGNING a falsehood, which no mode should do. So the answer is the
       // newest AUTHENTICATED, unexpired session this realm holds for that name:
-      // its method from `saml/authn_context.js` and its real authTime. With
+      // its method from `saml/authn_context.ts` and its real authTime. With
       // none, the answer is Success with NO assertion and a message saying so —
       // saml-core-1.1 section 3.4.1 lets a Response carry zero assertions, and
       // "nothing is recorded" is the true answer to "how did they sign in".

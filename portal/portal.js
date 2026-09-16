@@ -1468,7 +1468,7 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
 // chose is not one they must change.
 //
 // **CAEP credential-change (`password`, `create`, initiated by the user)** is
-// said when it is stored, through `ssf/account_signals.js`.
+// said when it is stored, through `ssf/account_signals.ts`.
 // ---------------------------------------------------------------------------
 const RESET_REFUSAL =
   'This password reset link is not valid. It may have expired, it may ' +
