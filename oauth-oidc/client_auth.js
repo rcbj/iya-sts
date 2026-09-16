@@ -25,7 +25,9 @@
 // what this file is for.
 //
 // ---------------------------------------------------------------------------
-// THE SIX METHODS, and which of them is real here.
+// THE SIX METHODS, and which of them is real here — beside `none`, and
+// `saml2_bearer` (RFC 7522 section 2.2, this service's own name; see
+// `METHODS` below).
 //
 //   none                        public client; nothing to check
 //   client_secret_basic         the secret, from an Authorization: Basic header
@@ -41,7 +43,8 @@
 //                               by thumbprint or in its jwks (section 2.2)
 //
 // All of them are verified. The two shared-secret ones compare in constant
-// time; the two assertion ones do the full RFC 7523 section 3 check; the two
+// time; the two assertion ones do the full RFC 7523 section 3 check
+// (`saml2_bearer` RFC 7522 section 3's, in `saml_assertion_grant.js`); the two
 // certificate ones read the connection `mtls.js` already looks at.
 //
 // **RFC 8705 section 2 is client AUTHENTICATION and section 3 is token
@@ -65,13 +68,13 @@
 // authenticates rather than as a silent failure to verify.
 //
 // ---------------------------------------------------------------------------
-// It is a LIBRARY (rule 3): it registers no route and requires `helpers.js`,
-// `config.js` and `mtls.js` — none of which requires it back — so it cannot
-// join a cycle. It holds NO state of its own since 2026-09-13: the assertion
-// `jti` cache it kept became `common/used_assertions.js`, the one history every
-// RFC 7523 and RFC 7522 assertion is spent against, whatever it is presented
-// as. A replayed assertion is a replayed credential, and RFC 7523 section 3
-// says so.
+// It is a LIBRARY (rule 3): it registers no route and requires `common/`
+// libraries, `mtls.js`, `assertion_grant.js` and `saml_assertion_grant.js` —
+// none of which requires it back — so it cannot join a cycle. It holds NO state
+// of its own since 2026-09-13: the assertion `jti` cache it kept became
+// `common/used_assertions.js`, the one history every RFC 7523 and RFC 7522
+// assertion is spent against, whatever it is presented as. A replayed assertion
+// is a replayed credential, and RFC 7523 section 3 says so.
 // ===========================================================================
 
 const crypto = require('crypto');
@@ -360,10 +363,10 @@ async function verifyAssertion(opts) {
     //                         chain to this realm's own Root CA, because a key
     //                         that arrives with the signature proves nothing.
     //
-    // The first two are read by `assertion_grant.js`'s `keysForParty()` ... no:
-    // they are read here through `keysFrom()` twice, because this function is
-    // handed FIELDS by its caller rather than an entry. Same table, same
-    // reader, one call per attribute.
+    // `assertion_grant.js`'s `keysForParty()` reads the first two off an
+    // entry; here they are read through `keysFrom()` once per attribute,
+    // because this function is handed FIELDS by its caller rather than an
+    // entry. Same table, same reader.
     // -------------------------------------------------------------------
     const found = [];
     let readingProblem = '';
@@ -742,7 +745,7 @@ async function verifyAssertion(opts) {
 //
 // **THE CHAIN IS VERIFIED FOR BOTH, AND IT WAS NOT.** Until 2026-09-13 this
 // function compared the subject DN and logged that no chain had been checked,
-// because the truststore started empty. It is the listener's verdict now —
+// because the truststore started empty. It is the main port's verdict now —
 // `mtls.peerVerified()`, which is the chain, revocation and the identity gate
 // in one answer — and section 2.1 is the PKI method precisely because the
 // subject is believed only from a certificate an anchor vouched for.
@@ -1004,22 +1007,14 @@ function verifyCertificate(opts) {
 }
 
 // ---------------------------------------------------------------------------
-// THE ONE ENTRY POINT. Given what the request presented and what the client's
-// entry says, does this client authenticate?
-//
-// It decides nothing about whether authentication is REQUIRED — that is section
-// 2.5's policy question and it lives in `oauth2_bcp.js`. This answers only
-// "does what arrived prove this client", which is protocol.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // ONE VERIFICATION OF ONE ASSERTION PER REQUEST. See the header above
 // `usedAssertions` for the double-spend this closes. Keyed by a digest of
-// everything that decides the answer — the method, the client, the type and
-// the document — so a request presenting two different assertions verifies
-// both, and one presenting the same one twice is answered once. The PROMISE
-// is kept rather than the result, so a second caller that arrives while the
-// first is still verifying waits for that verification instead of starting a
-// second one that would find the first one's claim.
+// everything that decides the answer — the method, the client, the type, the
+// document and, for a JWT, the audience policy — so a request presenting two
+// different assertions verifies both, and one presenting the same one twice is
+// answered once. The PROMISE is kept rather than the result, so a second caller
+// that arrives while the first is still verifying waits for that verification
+// instead of starting a second one that would find the first one's claim.
 // ---------------------------------------------------------------------------
 function verifiedOnce(request, parts, run) {
   log.debug("Entering verifiedOnce().");
@@ -1044,6 +1039,15 @@ function verifiedOnce(request, parts, run) {
   return answer;
 }
 
+// ---------------------------------------------------------------------------
+// THE ONE ENTRY POINT. Given what the request presented and what the client's
+// entry says, does this client authenticate?
+//
+// It decides nothing about whether authentication is REQUIRED — that is section
+// 2.5's policy question and it lives in `oauth2_bcp.js`. This answers only
+// "does what arrived prove this client", which is protocol.
+// ---------------------------------------------------------------------------
+//
 // ASYNCHRONOUS BECAUSE verifyAssertion() IS. The four methods that are not an
 // assertion — the two secret ones and the two RFC 8705 certificate ones —
 // resolve without leaving this process; nothing about what any of them decides
