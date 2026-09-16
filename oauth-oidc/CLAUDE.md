@@ -1969,9 +1969,9 @@ pages that relax `script-src`. The argument for it is made in `oauth2.js`, above
 * **It is permissive on purpose, and it can be told not to be.** Everything in this
   list is the default; `oauth2.rfc9700` turns the OAuth 2.0 / OIDC authorization
   flow into an RFC 9700-conforming one (see rule 3f and `oauth2_bcp.js`) and, with
-  it, **turns the main port into an HTTPS listener** on the certificate 8443, 9443
-  and LDAPS 636 already share — so there is then no plain listener in this process
-  and `/tls/trust` has to be bootstrapped with verification off. The flag is OFF by
+  it, **turns the main port into an HTTPS listener** on the certificate LDAPS 636
+  and the debugger's listener already share — so there is then no plain listener
+  in this process and `/tls/trust` has to be bootstrapped with verification off. The flag is OFF by
   default, changes nothing until it is set, and is RESTART-ONLY because of that
   socket. What it does and does not enforce is published at `GET /oauth2/rfc9700`
   rather than left to be read out of the code. Nothing else here has such a mode.

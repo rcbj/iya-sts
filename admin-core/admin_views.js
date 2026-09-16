@@ -2668,8 +2668,8 @@ function truststoreJson(req) {
       'reaches every other process against the same store; each row says ' +
       'whether it was. An anchor from tls.trustAnchorsFile is not stored ' +
       'there and comes back at the next start however it was removed.',
-    scope: 'ONE TRUSTSTORE FOR THE PROCESS, not one per trust realm: 8443, ' +
-      '9443, LDAPS 636 and the main port are shared by every realm, so this ' +
+    scope: 'ONE TRUSTSTORE FOR THE PROCESS, not one per trust realm: the ' +
+      'main port and LDAPS 636 are shared by every realm, so this ' +
       'answer is the same under every realm prefix.',
     effect: 'A change applies to the NEXT handshake. Connections already ' +
       'open keep the truststore they were made under.',

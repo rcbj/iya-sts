@@ -1705,7 +1705,7 @@ const SCHEMA = {
             'what the RFC names: since 2026-09-13 a certificate also ' +
             'authenticates the client when it is the x5c[0] of a key in the ' +
             'jwks it registered (section 2.2.2). Fetch a certificate\'s ' +
-            'thumbprint with GET /tls/whoami, or compute it: openssl x509 ' +
+            'thumbprint with GET /tls/sign-in, or compute it: openssl x509 ' +
             '-outform DER | openssl dgst -sha256 -binary | base64url.' },
     { name: 'oauthConfidential', kind: 'single', from: 'this registry',
       what: 'TRUE/FALSE, the determination RFC 9700 mode makes about it — ' +

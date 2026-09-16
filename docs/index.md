@@ -28,7 +28,7 @@ CONFIG_FILE=./env/local.js node server.js
 
 **https, and your browser will warn you once.** Every appconfig file here sets
 `global.https`, so the main port is TLS on the same self-signed certificate the
-8443, 9443 and LDAPS 636 listeners use — one pair, regenerated on every start,
+LDAPS 636 listener uses — one pair, regenerated on every start,
 so nothing can have trusted it in advance. Accept it, or fetch it with
 `curl -k https://localhost:8081/tls/server-certificate`; `STS_HTTPS=false` runs
 the plain port this used to be.
@@ -98,7 +98,7 @@ the leader process answers every request itself.
 | SPNEGO (RFC 4559/4178) | `/spnego` |
 | LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 |
 | SCIM 2.0 provisioning | `/scim/v2` |
-| TLS and mutual TLS reporting | 8443 and 9443 |
+| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls`, `/tls/sign-in` |
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` |
 | OpenID4VP 1.0 — a Verifier | `/oid4vp/verifier` |

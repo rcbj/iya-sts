@@ -32,7 +32,7 @@ service can be told to be strict, it can.
 | Register a client only for an administrator — **in development mode** | `POST /oauth2/register` (RFC 7591) answers anybody. **Product mode closes it** — 403 — unless `oauth2.openRegistration` is on, or the registration carries a software statement this realm trusts (it issued it, or an application declares its issuer) while `oauth2.softwareStatementOpensRegistration` is on; with neither, `registration_endpoint` leaves the discovery documents. **A software statement is verified in both modes**: an invalid one is `invalid_software_statement` and one from an undeclared issuer `unapproved_software_statement` |
 | Check the password on the OAuth 2.0 password grant — **in development mode** | Any password but `invalid` is accepted, exactly as at the sign-in screen. **Product mode verifies it** against the stored `userPassword`, rate-limits it with the sign-in screen, and refuses a person who holds a second factor, because the grant has nowhere to carry one |
 | Hold a new password to a policy — **in development mode** | Any password is SET, at every door. **Product mode enforces the realm's password policy** (Directory → Policies, `/admin/policies`): a minimum length, a symbol count, an uppercase letter, a number, and none of the current password or the last five — on the console, `/admin-api`, `/portal/password`, `/portal/activate` and an LDAP modify of `userPassword` alike. The history is recorded in both modes, and a generated password meets the policy in both. Passwords already stored are not re-checked |
-| Turn a verified client certificate into a login | No session, no token, no privilege. It *is* recorded — see below |
+| ~~Turn a verified client certificate into a login~~ — **reversed 2026-09-05, and this row said *No session, no token, no privilege* until 2026-09-16** | `GET /tls/sign-in` starts a sign-on session for the holder of a certificate that verified — its common name, or its RFC 4514 subject where it has none — after consulting revocation. An application's certificate signs nobody in: it is an RFC 8705 client credential. The certificate is *recorded* as well, which is a different claim — see below |
 | Turn a verified presentation into a sign-on | The OID4VP Verifier checks properly and then says yes on a web page and stops |
 | Verify anything in an issued credential's values | They come off the directory entry, and — **in development mode** — what the entry lacks is *invented* from the username. **In product mode nothing is invented**: an attribute the entry does not hold is absent from the credential, from a claims request and from the ID Token and UserInfo profile claims, and `email_verified` is never asserted |
 | Deactivate anybody on SCIM `active: false` | Stored as `scimActive` and read by nothing |
@@ -50,8 +50,11 @@ service can be told to be strict, it can.
 everywhere.** A verified TLS client certificate, a verified presentation and an
 accepted SPIFFE credential all appear on `/admin/users` and seed a directory
 entry — because an identity turned up here and something about it was accepted.
-None of them starts a session or issues a token. A mock that quietly promoted one
-into the other would teach a client something false about every real server it
+The recording is not what signs anybody in: it happens once per handshake,
+wherever the certificate arrived and whatever it was presented for, while a
+session is started only by asking for one at `GET /tls/sign-in`. A presentation
+and an SVID start none at all. A mock that quietly promoted a record into a
+session would teach a client something false about every real server it
 will ever meet.
 
 ## Consent is ASKED, and it is the one thing here that is on by default
@@ -383,8 +386,9 @@ list as `superseded` with nobody asking.
 **AND SINCE 2026-09-12 IT CONSULTS THEM.** This read *what this service does
 NOT do is CONSULT one — its own included … a certificate revoked on this
 service's own `/admin/pki` still authenticates to this service*. A certificate
-presented on 8443, 9443, the main port (XACML, SCIM, RFC 8705 client
-authentication), at the SPIRE Server API or in an assertion's `x5c` is now
+presented on the main port (XACML, SCIM, RFC 8705 client authentication and
+`GET /tls/sign-in`; it was 8443 and 9443 too until both listeners were deleted
+on 2026-09-16), at the SPIRE Server API or in an assertion's `x5c` is now
 checked under `pki.revocationCheck` — the register for one this service issued,
 the OCSP responder and the CRL it names for one from anybody else, with delta
 CRLs merged and indirect CRLs read per issuer — and `auto` is **hard-fail in

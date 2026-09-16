@@ -266,7 +266,8 @@ cannot be asked for.
 
 **The debugger's listener began asking for a client certificate on 2026-09-15**
 so that a bound token can be presented there at all — `requestCert` with
-`rejectUnauthorized: false`, the posture the main port and 8443 already take, so
+`rejectUnauthorized: false`, the posture the main port already takes (as 8443
+did, until that listener was deleted on 2026-09-16), so
 the handshake succeeds either way and what a certificate is worth is decided per
 request. A listener that never asked would have made this setting an exemption
 dressed up as a refusal.
@@ -459,7 +460,10 @@ Why it was turned on: 8443, 9443 and LDAPS 636 were TLS and the main port —
 the one every one of the seventeen protocol families actually answers on — was
 not, so a caller who had already trusted this service's key for three sockets
 still met an unencrypted fourth. One certificate, one trust decision, every
-port.
+port. **The first two of those listeners were deleted on 2026-09-16**, which
+makes the argument shorter rather than weaker: the port every protocol answers
+on is also the port a client certificate is presented to, so it is the last
+place that should be in the clear.
 
 `STS_HTTPS=false` is the way back to a plain listener, and it is a supported
 configuration rather than an escape hatch: a client that cannot be taught to
@@ -477,8 +481,9 @@ curl -k https://localhost:8081/tls/server-certificate > /tmp/sts.pem
 export NODE_EXTRA_CA_CERTS=/tmp/sts.pem      # node trusts it from here on
 ```
 
-It uses the same per-start certificate as 8443, 9443 and LDAPS 636, so a caller
-trusts this service once per start rather than four times. `NODE_EXTRA_CA_CERTS`
+It uses the same per-start certificate as LDAPS 636 and the embedded debugger's
+listener, so a caller trusts this service once per start rather than three
+times. `NODE_EXTRA_CA_CERTS`
 accepts it despite its `basicConstraints CA:FALSE` — OpenSSL takes a self-signed
 leaf found in the trust store as an anchor — and without it a node client fails
 with `DEPTH_ZERO_SELF_SIGNED_CERT`, or, through `fetch()`, with a bare
@@ -652,7 +657,7 @@ inside the transaction that made it, and each process applies what the others
 committed; a `LISTEN`/`NOTIFY` nudge only makes that prompt, so a missed
 notification costs latency and never a change. `persistence.coordinate` turns it
 off and `persistence.pollInterval` sets the worst-case lag. It shares **state and
-not sockets** — the KDC, the LDAP listeners, the TLS ports and SPIFFE's four are
+not sockets** — the KDC, the LDAP listeners and SPIFFE's four are
 per process — and the replay caches *converge* rather than synchronise, except
 the RFC 7523 / RFC 7522 used-assertion history, which is claimed atomically. See
 [Persistence](persistence.md).

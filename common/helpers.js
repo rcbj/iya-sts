@@ -3148,7 +3148,7 @@ function baseUrlOf(req) {
 //
 // Every socket family here used to bind the literal `0.0.0.0` whatever
 // `global.host` said, so `STS_HOST=127.0.0.1` confined the HTTP port and left
-// the KDC, both LDAP ports and 8443/9443 open on every interface — a setting
+// the KDC and both LDAP ports open on every interface — a setting
 // that did half of what it claims is worse than none. `listenHost()` is what
 // they bind now.
 //

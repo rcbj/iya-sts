@@ -172,8 +172,6 @@ var config = {
 
   // --- TLS ---------------------------------------------------------------
   tls: {
-    port: 8443,                                          // restart to apply
-    mutualPort: 9443,                                    // restart to apply
     hostnames: "localhost,sts,sts-mock,sts.example.com", // restart to apply
     ips: "127.0.0.1"                                     // restart to apply
   },

@@ -1042,10 +1042,10 @@ const FAMILIES = [
            'subjectAltName that is the only place the names are, because RFC ' +
            '6125 has said the CN is ignored since 2011). SPIFFE\'s authority ' +
            'is the third and is configured separately.',
-    verifies: 'A client certificate presented on 9443 or on the main port, ' +
-              'against whatever anchors have been added — and then turns it ' +
-              'into a THUMBPRINT rather than into a login.',
-    encrypts: 'Every byte on 8443, 9443, LDAPS 636 and, since 2026-08-30, ' +
+    verifies: 'A client certificate presented on the main port or on LDAPS ' +
+              '636, against whatever anchors have been added — and then ' +
+              'turns it into a THUMBPRINT rather than into a login.',
+    encrypts: 'Every byte on LDAPS 636 and, since 2026-08-30, ' +
               'the main port too. The cipher suite and the key exchange are ' +
               'node\'s OpenSSL defaults; nothing here narrows them.',
     decrypts: 'The same.',
@@ -1660,7 +1660,7 @@ const STANDARDS = [
               'chooses no cipher suite, no protocol floor and no curve — ' +
               'what it configures is which sockets are TLS and which ' +
               'certificate they serve.',
-    what: 'Four listeners plus the main port share one certificate. ' +
+    what: 'LDAPS 636 and the main port share one certificate. ' +
           '`STS_HTTPS=false` is the supported way back to plain HTTP, not an ' +
           'escape hatch.' },
   { key: 'cose', name: 'COSE — CBOR Object Signing and Encryption',
@@ -1970,7 +1970,7 @@ function keyMaterial() {
       notAfter: cert.notAfter,
       perRealm: false,
       what: 'RSA 2048, SHA-256, self-signed, serial 03, two years. Shared by ' +
-            '8443, 9443, LDAPS 636 and — when `global.https` is on — the ' +
+            'LDAPS 636 and — when `global.https` is on — the ' +
             'main port. Two years rather than five because this one is put ' +
             'in somebody\'s truststore by hand.'
     },
@@ -2292,8 +2292,10 @@ function encryption() {
             'cipher suite, no protocol floor and no curve — what it ' +
             'configures is which sockets are TLS and which certificate they ' +
             'serve.',
-      sockets: ['main port (when global.https is on)', '8443 (TLS)',
-                '9443 (mutual TLS)', 'LDAPS 636']
+      // TWO SOCKETS SINCE 2026-09-16, and it was four: the 8443 and 9443
+      // listeners were deleted, so the certificate this service mints is
+      // presented by the main port and by LDAPS 636 and nowhere else.
+      sockets: ['main port (when global.https is on)', 'LDAPS 636']
     }
   };
   log.debug("Leaving encryption(). " + out.xml.blockCiphers.length +
@@ -3534,7 +3536,6 @@ function keyInventory() {
     hasCertificate: true,
     formats: ['pem', 'der', 'jwk', 'pkcs12'],
     usedFor: [
-      'The TLS listener on 8443 and the mutual-TLS listener on 9443.',
       'LDAPS on 636.',
       'The main port, when global.https is on.',
       'Published as a certificate at /tls/server-certificate — this page is ' +

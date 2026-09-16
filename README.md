@@ -105,7 +105,7 @@ is written down in
 | **SAML 2.0 Web Browser SSO** | a full identity provider at `/saml2`: the Single Sign-On service over **HTTP Redirect** and **HTTP POST**, and the Response over **HTTP POST, HTTP Redirect or HTTP Artifact** — the third with a **SOAP Artifact Resolution Service** behind it, where the assertion never passes through the browser at all and an artifact resolves **exactly once**. Plus **Single Logout** in both directions, and **signed metadata PER SERVICE PROVIDER**: `/saml2/metadata/{sp}` names an identity provider of its own with its own endpoints, the way Okta and Ping do, and **it is minted for any entityID asked for** — nothing has to be provisioned before a service provider can be pointed here, and the first valid AuthnRequest creates its application entry. It accepts every entityID and verifies no request signature (both are recorded); `NameIDPolicy`, `ForceAuthn`, `IsPassive` (answered with `NoPassive`, not a screen) and `RequestedAuthnContext` are all honoured, and a `ProtocolBinding` it does not implement is refused **by name**. It has no sign-in screen of its own — see below for the SameSite hop that makes that possible — and a mock service provider at `/saml2/sp` verifies a response check by check |
 | **WS-Federation 1.2** | the Web (Passive) Requestor Profile of section 13 — `wsignin1.0` with `wtrealm`, `wreply`, `wctx`, `wct`, `wfresh`, `wauth`, `whr` and `wreq`, the response as a **form POST**, `wsignout1.0` with front-channel cleanup, signed federation metadata at AD FS's path, and a mock relying party that verifies the response check by check |
 | **Federation, in five of those protocols** | this service as **either end** of a relationship with a foreign identity service — SAML 2.0, SAML 1.1, WS-Federation 1.2, OpenID Connect and OAuth 2.0. As a **service provider** it sends the request, consumes what comes back at `/federation/acs/{id}`, **verifies it against a certificate configured on that relationship**, maps the attributes onto an entry under `ou=users` and starts a session — the SAME session every other protocol here reads, which is what lets a federated identity satisfy an OAuth 2.0 authorization request, a WS-Federation `wsignin1.0` or a SAML `AuthnRequest` without any of those knowing federation exists. `/authn/login` grows a button per usable partner for exactly that reason. As an **identity provider** it marks a partner as a federation partner rather than a test client and decides **which attributes are released to it**. **It is the one feature here that has to be configured before it will do anything, and the one that refuses by default** — see *Federation* below, where that inversion is argued rather than assumed: "accept any SAML Response" is not a permissive mock, it is an authentication bypass for every protocol in the process. It is also the only thing here that makes an **outbound** request, and `jwks_uri` on an application entry and WS-Federation's `wreqptr` are still never followed — the difference is a URL an administrator configured against a URL a caller supplied |
-| **OAuth 2.0** | a full authorization server: RFC 8414 metadata plus every endpoint it advertises — authorize (which redirects to the authentication service when nobody is signed in), token, userinfo, introspect, revoke, register (RFC 7591 with software statements — verified against this realm's key or a declared publisher's, and issued from the console — and the RFC 7592 read/update/delete operations), jwks. Introspection answers as RFC 7662 JSON or, when asked, as an **RFC 9701 JWT** signed and optionally encrypted for the resource server that asked. Authorization requests may be **JWT-secured (RFC 9101)** — a signed, optionally encrypted request object by value or from a `request_uri` the client registered — or **pushed first (RFC 9126)** to `/oauth2/par`, authenticated as at the token endpoint, for a one-time `request_uri`. PKCE (RFC 7636), **Rich Authorization Requests (RFC 9396)** — `authorization_details` of every type a resource application declares, with JSON Schemas, consent drawn per detail and the token addressed to that resource — the `iss` authorization response parameter (RFC 9207), and every one of the seven grant types its metadata advertises — including **Token Exchange (RFC 8693)**. It is permissive by design, and it can be told not to be: `oauth2.rfc9700` puts the authorization flow into **RFC 9700** mode — exact-string redirect URI matching with RFC 8252's loopback port exception, no open redirector at either redirecting endpoint, PKCE required of public clients with S256 only, the PKCE downgrade and value reuse refused, and no response type that issues an access token from the authorization endpoint, refresh token rotation with replay detection that revokes the whole chain, no password grant, no CORS at the authorization endpoint, and the one client credential this service checks — and it turns port 8081 itself into an **HTTPS** listener, on the certificate 8443, 9443 and LDAPS 636 already share, so the issuer and every endpoint in every metadata document follow. Off by default; `GET /oauth2/rfc9700` says what it does and does not enforce |
+| **OAuth 2.0** | a full authorization server: RFC 8414 metadata plus every endpoint it advertises — authorize (which redirects to the authentication service when nobody is signed in), token, userinfo, introspect, revoke, register (RFC 7591 with software statements — verified against this realm's key or a declared publisher's, and issued from the console — and the RFC 7592 read/update/delete operations), jwks. Introspection answers as RFC 7662 JSON or, when asked, as an **RFC 9701 JWT** signed and optionally encrypted for the resource server that asked. Authorization requests may be **JWT-secured (RFC 9101)** — a signed, optionally encrypted request object by value or from a `request_uri` the client registered — or **pushed first (RFC 9126)** to `/oauth2/par`, authenticated as at the token endpoint, for a one-time `request_uri`. PKCE (RFC 7636), **Rich Authorization Requests (RFC 9396)** — `authorization_details` of every type a resource application declares, with JSON Schemas, consent drawn per detail and the token addressed to that resource — the `iss` authorization response parameter (RFC 9207), and every one of the seven grant types its metadata advertises — including **Token Exchange (RFC 8693)**. It is permissive by design, and it can be told not to be: `oauth2.rfc9700` puts the authorization flow into **RFC 9700** mode — exact-string redirect URI matching with RFC 8252's loopback port exception, no open redirector at either redirecting endpoint, PKCE required of public clients with S256 only, the PKCE downgrade and value reuse refused, and no response type that issues an access token from the authorization endpoint, refresh token rotation with replay detection that revokes the whole chain, no password grant, no CORS at the authorization endpoint, and the one client credential this service checks — and it turns port 8081 itself into an **HTTPS** listener, on the certificate LDAPS 636 and the embedded debugger's listener already share, so the issuer and every endpoint in every metadata document follow. Off by default; `GET /oauth2/rfc9700` says what it does and does not enforce |
 | **Consent, at `/oauth2/consent`** | **The one policy in this service that is ON by default.** The first time a given username signs in to a given `client_id` for a given scope, a screen lists the scopes that are new and nothing is issued until they answer; Allow writes one `oauthConsent` value per scope onto that person's own entry under `ou=users`, so the second sign-in is silent and an `ldapsearch` can read what somebody agreed to, and Deny returns `access_denied` to the client and records nothing at all. A delegated permission is recorded by its **whole identifier** and never by the bare permission name, because two resources may each expose a `read`. `oauthGlobalConsent` on an APPLICATION's entry consents a scope for everybody who signs in to it and **writes nothing about anybody** — an override rather than a record, so removing it asks everybody again, including the people who would have said yes. `prompt=consent` asks again and takes nothing away; `prompt=none` with something outstanding is `consent_required`. It carries no script, so the service-wide `script-src 'none'` is untouched. Off with `oauth2.consentRequired`, and OFF means nothing asked and nothing recorded rather than everybody consented |
 | **OpenID Connect 1.0** | `id_token` with `nonce`, `at_hash` and `c_hash` across all three flows, the section 5.3 UserInfo endpoint, **Discovery 1.0** at all three URLs a client may look at, RP-Initiated Logout, and **Front-Channel Logout 1.0** — the provider's side of it: the two discovery members, the two per-client registration members, the `sid` claim on an ID Token issued on a browser session, and a hidden iframe per registered `frontchannel_logout_uri` on every sign-out. Back-channel logout is a different specification and is not implemented; the metadata says so |
 | **A protocol-independent sign-out** | `GET /logout` lists **everything this service is still holding for one identity across every family** — sessions, relying parties, realms, service providers, revocable tokens, outstanding authorization and pre-authorized codes, directory connections bound as them, and the Kerberos ticket position — with a checkbox against each, and a POST that ticks nothing ends all of it. Two of those mechanisms are new: a **Kerberos sign-out instant**, after which a `TGS-REQ` carrying an older ticket is refused KDC_ERR_TGT_REVOKED (20), and closing the **LDAP connections** bound as that person, which is the only sign-out RFC 4511 has. **What cannot be ended is listed anyway, with the reason** — an assertion, a service ticket or an SVID already issued is beyond recall because nothing consults this service when one is presented, and hiding those would make a global logout look complete when it is not |
@@ -122,7 +122,7 @@ is written down in
 | **OpenID4VCI 1.0** | a Credential Issuer: SD-JWT VC (RFC 9901), `jwt_vc_json`, `ldp_vc` with bbs-2023; Credential Offers, the pre-authorized code grant with `tx_code`, `authorization_details` (including its `claims` member, so a wallet can ask for a subset of the claims), batch issuance, response encryption, deferred issuance, the Notification Endpoint |
 | **OpenID4VP 1.0** | a Verifier with DCQL that **actually verifies** what it is sent, check by check |
 | **W3C DID Core 1.0** | its own `did:web` document, and the DIF Well Known DID Configuration that links it to its origin |
-| **TLS / mutual TLS (RFC 8446)** | two **HTTPS listeners of its own** — 8443 asks for a client certificate and never refuses one, 9443 *requires* it — whose entire content is what the **server** saw: the request as it arrived, what TLS negotiated underneath it, and the client certificate exactly as presented, chain and all. It is the half of a handshake a client cannot report. It already knows what it sent; what it cannot know is which chain the server built out of that, which anchor it verified against, or whether the certificate was accepted at all — which, under TLS 1.3, it has not learned by the time its own handshake completes. The client truststore starts **empty** and is filled at runtime through `POST /tls/trust`, because the CA it has to verify is usually generated in a *browser* minutes before the connection and exists nowhere a file could hold it. `GET /tls` describes it; `GET /tls/whoami` over either listener is the report |
+| **TLS / mutual TLS (RFC 8446)** | **the main port asks every connection for a client certificate and requires none**, so presenting one is the client's decision and mutual TLS happens where every other protocol answers. `GET /tls/sign-in` signs the holder of a verified one in — revocation first, then the identity gate, then an application's certificate refused because it is an RFC 8705 client credential — and RFC 8705 binds a token to whatever was presented. The client truststore starts **empty** and is filled at runtime through `POST /tls/trust`, because the CA it has to verify is usually generated in a *browser* minutes before the connection and exists nowhere a file could hold it. `GET /tls` describes all of it. **This was two HTTPS listeners of its own until 2026-09-16** — 8443 asking for a certificate, 9443 requiring one — whose content was what the server saw of the connection; both were deleted, that report has no successor here, and nothing refuses a certificate at the handshake any more |
 | **SPIFFE, and the SPIRE Server API** | a **SPIFFE issuing authority** for one trust domain PER TRUST REALM (2026-09-12 — a realm is created with `<realm>.<the service's>` and with SPIFFE off; turning it on binds a Workload API and a SPIRE Server API of its own, on an address of its own, because gRPC's path is the method name and the endpoint is the only thing a client can name a tenant with), in all three of its server-side shapes. The **bundle endpoint** is plain HTTPS at `/spiffe/bundle` — a JWK Set with `spiffe_sequence` and `spiffe_refresh_hint`, every key carrying the `use` a consumer must have to consider it at all. The **Workload API** is the gRPC service `SpiffeWorkloadAPI` on a **Unix socket** (SPIRE's own `/tmp/spire-agent/public/api.sock`, which is what `SPIFFE_ENDPOINT_SOCKET` means to every real client) and on TCP: X509-SVIDs with their private keys and the trust bundle, JWT-SVIDs for an audience, both bundle streams, and a `ValidateJWTSVID` that really verifies. The streams are held open and re-sent at half the SVID lifetime, so a client's **rotation** path runs without anybody waiting an hour. The **SPIRE Server API** is six gRPC services and 42 methods from the vendored `spire-api-sdk` protos — Entry, Agent, Bundle, SVID, TrustDomain, Debug — of which 36 are implemented and the other six each answer with a reason. **Its TCP port is mutual TLS**: a caller presents an X509-SVID from this trust domain and every method is authorized against SPIRE's own per-method table, with the Unix socket trusted as `local` the way a real `spire-server` trusts its private one (`spiffe.trustLocalSocket`). **Nothing is attested** either way — a Workload API caller is identified only by its transport, the endpoint it reached and its peer address, because node cannot read a socket's peer credentials, and an agent's attestation payload is taken on trust. `GET /spiffe` is all of that at length |
 | **LDAP v3 (RFC 4511)** | an embedded **directory on two raw sockets — TCP 389 in the clear and TCP 636 over TLS (LDAPS)**, one set of handlers and one store behind both: simple bind, unbind, add, delete, modify, modifyDN, compare and search with RFC 4515 filters and all three scopes, a root DSE, and result codes 0, 2, 4, 11, 16, 32, 49, 66 and 68 all reachable. Built on the [`ldapjs`](https://github.com/rcbj/node-ldapjs) submodule and used unmodified. It is **schemaless on purpose** and says so, it enforces the four structural rules whose absence would teach a client something false — plus one of its own, that an add under `ou=users` whose username is already there is `LDAP_ENTRY_ALREADY_EXISTS` (68), because one person is one entry however they got in — and it deliberately does not do referential integrity. `GET /admin/ldap/service` describes it and `GET /admin/ldap/directory` lists every entry. **`LDAP_AUTOCREATE_USERS`, on by default, grows an entry under `ou=users` for anybody who authenticates through any of the other twelve families** — and `ou=applications` grows one for the CLIENT, relying party, service provider or Kerberos service on the other side of that authentication, which is a **registry rather than a record**: the RFC 7591 registrations live there, nothing caches them, and an `ldapmodify` of `oauthRedirectUri` changes which redirect URI RFC 9700 mode accepts — one hook on the single funnel they all already pass |
 | **Certificate enrollment: ACME (RFC 8555), EST (RFC 7030), SCEP (RFC 8894)** | three ways for a client, a device or a person to get a **certificate from this realm's own certificate authority** — each protocol has an Issuing CA of its own under the realm's Intermediate. **Who a certificate is for is one rule for all three**: yourself, or — for a holder of Admin Write — any person or application in the realm, and every certificate names that directory entry (`urn:sts:person:` / `urn:sts:application:`) and is kept on it. ACME at `/enroll/acme/directory` binds an account to an entry with an **External Account Binding** key; EST at `/.well-known/est` takes a directory password, a client secret or a certificate this realm issued, and can generate the key (`/serverkeygen`, the only path that keeps a private key, sealed, on the entry); SCEP at `/enroll/scep` takes a **single-use challenge password** issued for one entry and one profile. The nine leaf profiles of `/admin/pki` are issued; Root, Intermediate and Issuing CA, OCSP Responder and Kerberos KDC are refused. A DNS name or address is issued only when it is registered on the entry — nothing is ever dialled to prove control. A person makes their own EAB key and challenge on `/portal/certificates`. See [docs/acme.md](docs/acme.md), [docs/est.md](docs/est.md) and [docs/scep.md](docs/scep.md) |
@@ -182,11 +182,12 @@ CONFIG_FILE=./env/local.js node server.js      # 8081, LDAP on 389, LDAPS on 636
 
 **THE MAIN PORT IS HTTPS**, and has been since 2026-08-30: every appconfig file
 in `env/` carries `global.https: true`, so 8081 answers on the same self-signed
-certificate 8443, 9443 and LDAPS 636 already served — one pair, regenerated on
-every start. That is one trust decision for the whole service instead of four,
-and it is what closed the gap where a caller who had trusted this key for three
-sockets still met an unencrypted fourth on the port every protocol family
-actually answers on.
+certificate LDAPS 636 and the embedded debugger's listener serve — one pair,
+regenerated on every start. That is one trust decision for the whole service
+instead of three, and it is what closed the gap where a caller who had trusted
+this key for the other sockets still met an unencrypted one on the port every
+protocol family actually answers on. (It served 8443 and 9443 as well until
+both of those listeners were deleted on 2026-09-16.)
 
 It costs one unverified call, necessarily: with it on there is no plain listener
 left in this process, and the key does not exist until the process starts, so
@@ -204,15 +205,13 @@ per-start certificate is exactly the thing this service exists to exercise.
 
 ### The ports
 
-Twelve bindings across eleven numbers — 88 is listed twice because TCP and UDP are two
+Ten bindings across nine numbers — 88 is listed twice because TCP and UDP are two
 sockets. Every default is in the table; every one is settable.
 
 | Port | | Setting / env var | What is on it |
 |---|---|---|---|
-| **8081** | tcp | `global.port` / `STS_PORT` | **The main port, and everything path-based is here** — OAuth 2.0 / OIDC, both SAML profiles, WS-Trust, WS-Federation, federation, SCIM, OID4VC, Shared Signals, XACML, `/admin`, `/portal`, `/admin-api`, the SPIFFE **bundle** endpoint, and Kerberos over **MS-KKDCP at `/KdcProxy`**. **HTTPS** unless `STS_HTTPS=false` — one listener, never both schemes |
+| **8081** | tcp | `global.port` / `STS_PORT` | **The main port, and everything path-based is here** — OAuth 2.0 / OIDC, both SAML profiles, WS-Trust, WS-Federation, federation, SCIM, OID4VC, Shared Signals, XACML, `/admin`, `/portal`, `/admin-api`, the SPIFFE **bundle** endpoint, and Kerberos over **MS-KKDCP at `/KdcProxy`**. **HTTPS** unless `STS_HTTPS=false` — one listener, never both schemes. It **asks every connection for a client certificate and requires none**, so presenting one is the client's decision: `GET /tls/sign-in` signs the holder of a verified one in, and RFC 8705 binds a token to it. This is what the 8443 and 9443 listeners did until they were deleted on 2026-09-16; the handshake REFUSAL 9443 made has no successor, because refusing there is a property of a socket and this one carries every protocol |
 | **8082** | tcp | `pki.httpPort` / `PKI_HTTP_PORT` | **Plain HTTP, `/pki/` and nothing else** — the CRLs, OCSP responders and CA certificates, at the address every certificate this service issues names for them. Plain on purpose: RFC 5280 section 8 says a CA SHOULD NOT write an https URI into an extension, and RFC 5019 section 5 says an OCSP responder MUST answer HTTP. Every other path is a 404. `0` turns it off, and certificates then name the main port |
-| **8443** | tcp | `tls.port` / `STS_TLS_PORT` | The TLS endpoint that **asks** for a client certificate and never refuses one |
-| **9443** | tcp | `tls.mutualPort` / `STS_MTLS_PORT` | The one that **requires** it — node refuses an unverified certificate during the handshake, so nothing here runs for one |
 | **88** | **tcp** | `krb5.kdcPort` / `KRB5_KDC_PORT` | The KDC. `0` asks for any free port — it does not turn it off |
 | **88** | **udp** | *(the same setting)* | The KDC again: both transports, two sockets, one number |
 | **8888** | tcp | `krb5.servicePort` / `KRB5_SERVICE_PORT` | The Kerberized test service that accepts an AP-REQ |
@@ -236,7 +235,7 @@ RECORDED rather than thrown.** A route cannot fail to register; a port can, so
 binding one at require time would let a busy port take down a service whose
 other sixteen protocol families were fine. **Every socket reports itself
 separately** rather than through one flag per family — `GET /krb5/principals`,
-`GET /admin/ldap/service`, `GET /tls`, `GET /spiffe` — for the reason given
+`GET /admin/ldap/service`, `GET /spiffe` — for the reason given
 below about 389 and 636.
 
 **`/admin/sts-metadata` cannot see any of them.** That page is built by walking
@@ -268,7 +267,7 @@ that would have to lie about one.
 **Put this service behind a Network Load Balancer, not an Application Load
 Balancer**, and pass TLS through. An L7 balancer terminates TLS, and every
 feature here that reads the client's certificate — RFC 8705
-`tls_client_auth` and certificate-bound tokens, certificate sign-in, 9443, the
+`tls_client_auth` and certificate-bound tokens, `GET /tls/sign-in`, the
 XACML certificate gates, the SPIRE Server API — needs the handshake to happen on
 the node; no forwarded certificate header is believed, in any mode. An L7
 balancer also cannot carry LDAP, LDAPS or Kerberos at all.
@@ -278,8 +277,10 @@ set to `v2` is how the client's address still arrives: the balancer writes a
 binary header at the front of each TCP connection, and this service takes it off
 before TLS, LDAP or the KDC read a byte. For an **AWS Network Load Balancer**:
 
-* **TCP listeners** (not TLS listeners) for 443→8081, 8443, 9443, 389, 636 and 88,
-  each forwarding to a **TCP target group** on the node's port. The KDC's UDP 88
+* **TCP listeners** (not TLS listeners) for 443→8081, 389, 636 and 88,
+  each forwarding to a **TCP target group** on the node's port. (8443 and 9443
+  were two more until those listeners were deleted on 2026-09-16; a client
+  certificate arrives on 443 now.) The KDC's UDP 88
   cannot carry a header; put Kerberos clients on TCP.
 * **`proxy_protocol_v2.enabled = true`** on every one of those target groups.
   AWS documents that health checks then carry the header too, with no client
@@ -575,19 +576,21 @@ purpose. Only the identifier moves: every endpoint in the discovery document
 stays on the request's base URL, because an endpoint has to be reachable and a
 pinned issuer may not be.
 
-**Seven listeners, not one.** 8081 is the main service, and it is **HTTPS** with
+**Five listeners, not one.** 8081 is the main service, and it is **HTTPS** with
 every appconfig file this repository ships — `global.https`, which is also what
-`oauth2.rfc9700` derives — serving the same certificate as the three TLS sockets
-below, with no plain port left in the process. `STS_HTTPS=false` makes it plain
+`oauth2.rfc9700` derives — serving the same certificate as LDAPS 636, with no
+plain port left in the process. `STS_HTTPS=false` makes it plain
 HTTP, which is what it was before 2026-08-30; the KDC also binds **TCP and
 UDP 88**, the Kerberos-protected service a TCP socket of its own (8888), the
-directory **TCP 389** and — the same directory over TLS — **TCP 636**, and the TLS
-endpoint **8443** and **9443**. Every one of them
+directory **TCP 389** and — the same directory over TLS — **TCP 636**. **It was
+seven until 2026-09-16**, the other two being the TLS endpoint's 8443 and 9443,
+both deleted: a client certificate is presented to the main port, which asks
+every connection for one and requires none. Every one of them
 is started from an exported `listen()` that `server.js` calls *after* the HTTP server
 is up, and a failure to bind is logged rather than thrown — ports 88, 389 and 636 are
 privileged, a host run is usually not root, and a require that throws would take the
 whole service down over a protocol family the caller may not be using. Set
-`KRB5_KDC_PORT`, `LDAP_PORT`, `LDAPS_PORT`, `STS_TLS_PORT` and `STS_MTLS_PORT` to
+`KRB5_KDC_PORT`, `LDAP_PORT` and `LDAPS_PORT` to
 something unprivileged or unoccupied for a host run, and remember that the parent
 project's api allowlists the port it will reach on each of them: its
 `krb5AllowedPorts` and `ldapAllowedPorts` have to allow whatever these become,
@@ -679,11 +682,17 @@ Four things about these settings do not fit in a cell and have cost real time:
   `ou=users`, `ou=groups`, `ou=applications` and `ou=spiffe` are derived from it
   rather than configured, because two variables that could disagree with it
   would put entries in a tree nobody is searching.
-* **`STS_TLS_PORT` and `STS_MTLS_PORT` are two ports rather than one port and a
-  flag.** 8443 *asks* for a client certificate and never refuses one; 9443
-  *requires* one. "Does this server require a client certificate" is a question
-  a debugger answers by connecting twice, so it needs a server that answers each
-  way at the same time.
+* **`STS_TLS_PORT` and `STS_MTLS_PORT` WERE two ports rather than one port and a
+  flag, and both are gone since 2026-09-16.** 8443 *asked* for a client
+  certificate and never refused one; 9443 *required* one, so that "does this
+  server require a client certificate" — a question a debugger answers by
+  connecting twice — had a server answering each way at the same time. The main
+  port already had 8443's posture, which made that listener a second socket
+  doing what the first did; and the second answer cannot be given on the port
+  every other protocol arrives at, so it is not given at all. A certificate that
+  does not verify is refused where it is USED: RFC 8705 client authentication,
+  `/xacml`, `/scim/v2` and `GET /tls/sign-in`. Neither setting was replaced, so
+  a deployment that still sets one gets an "unknown setting" warning at startup.
 
 
 #### Trust realms
@@ -705,10 +714,10 @@ are refused at both ends.
 | `global.mode` | `STS_MODE` | `development` | yes — and it is **per trust realm**, so one process can serve a development realm and a product realm at once | What this service IS. `development` is every release before 2026-09-06 and is what makes it a mock: no password is checked, anything named is created, and there are no public-client restrictions. `product` runs the SAME protocol implementations with the permissiveness taken out — a presented password is verified against the hashed `userPassword` on the person's own entry, nothing is created because it was named, every OAuth application holds a secret, and `/admin-api` is gated. **It replaced `admin.authRequired`, `scim.authRequired`, `spiffe.authRequired` and `ssf.authRequired`, which are gone**: "is authentication required here" had four answers and now has one. Those four gates are ON in BOTH modes — what the mode changes is whether the credential they ask for is CHECKED. |
 | `global.host` | `STS_HOST` | `0.0.0.0` | **restart** — the listener is bound when the process starts | The address the HTTP listener binds. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines this service to the machine it runs on. |
 | `global.port` | `STS_PORT` | `8081` | **restart** — the listener is bound when the process starts | The port everything HTTP here answers on: the protocol endpoints, the console and this API. The two TLS listeners are separate and are under TLS below. **Several nodes against one store must all use the same value**: the console's and portal's own Shared Signals receivers are seeded at `<loopback>:<global.port>` and every node pushes to that address on its own loopback (`ssf/CLAUDE.md`, *Several nodes*). |
-| `global.https` *(derived)* | `STS_HTTPS` | `false`, but **`true` in every appconfig file shipped here** — see *Running it* | **restart** — the listener is bound when the process starts, and its scheme is decided there | Serve the main port over HTTPS, with the SAME certificate and key the 8443, 9443 and LDAPS 636 listeners use — one self-signed pair generated per start, so a caller trusts this service once rather than four times. |
+| `global.https` *(derived)* | `STS_HTTPS` | `false`, but **`true` in every appconfig file shipped here** — see *Running it* | **restart** — the listener is bound when the process starts, and its scheme is decided there | Serve the main port over HTTPS, with the SAME certificate and key the LDAPS 636 listener and the embedded debugger's use — one self-signed pair generated per start, so a caller trusts this service once rather than three times. It is also what lets the main port ask for a client certificate, which is where mutual TLS happens since the 8443 and 9443 listeners were deleted on 2026-09-16. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe X-Forwarded-Proto and X-Forwarded-Host — which is what a TLS-terminating reverse proxy sets to say what the CLIENT used. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDR ranges this deployment's own proxies connect from. Read for forwarded headers only with `global.trustProxy` on, and for a PROXY protocol header whenever `global.proxyProtocol` is `v2` — where empty trusts nobody and the service does not start. **Empty keeps the old rule** — forwarded headers believed from any caller, the rate limiter taking the left-most `X-Forwarded-For` entry. Set, they are believed only from a peer in a range and the client is the right-most hop outside them, so a caller reaching a node directly cannot choose its own rate-limit address or this service's URL. `common/CLAUDE.md`, *Several nodes*, also says why mutual TLS needs L4 passthrough. |
-| `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | **restart** — installed on each listener when it binds | `v2` reads a HAProxy PROXY protocol version 2 header at the front of every connection to the main port, 8443, 9443, 389, 636, the KDC's TCP 88 (not UDP), the debugger and 8082 — **before TLS**, so the client's address reaches the rate limiter, LDAP, `/tls/whoami` and the request workers while TLS and mutual TLS still terminate on the node. A connection from `global.trustedProxies` must carry a valid header (a `LOCAL` one — a health check — keeps the balancer's address); any other address is closed, except this host's own, which is served plain. Version 1 is refused; the SPIFFE gRPC listeners are not covered. See *Behind an L4 load balancer* above. |
+| `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | **restart** — installed on each listener when it binds | `v2` reads a HAProxy PROXY protocol version 2 header at the front of every connection to the main port, 389, 636, the KDC's TCP 88 (not UDP), the debugger and 8082 — it covered 8443 and 9443 until those listeners were deleted on 2026-09-16 — **before TLS**, so the client's address reaches the rate limiter, LDAP and the request workers while TLS and mutual TLS still terminate on the node. A connection from `global.trustedProxies` must carry a valid header (a `LOCAL` one — a health check — keeps the balancer's address); any other address is closed, except this host's own, which is served plain. Version 1 is refused; the SPIFFE gRPC listeners are not covered. See *Behind an L4 load balancer* above. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `5000` | yes | How long a trusted proxy may take to send its complete header before the connection is closed. |
 | `global.corsOrigins` | `STS_CORS_ORIGINS` | *(empty)* | yes | Origins CORS treats as this deployment's OWN, comma-separated — allowed on every path whichever client a request names, beside this service's listeners, `global.publicBaseUrl` and the embedded debugger. **Empty adds none**; every other origin must be listed in an application's `appCorsOrigin`. A value that is not an origin is ignored and logged. |
 | `global.logLevel` | `STS_LOG_LEVEL` | `info` | yes | debug is the useful level for a mock whose job is to show what it did: every endpoint call, and every token and assertion both before and after it was signed. |
@@ -868,7 +877,7 @@ unedited service behaves exactly as it did.
 | `oauth2.refreshTokenRequireDpop` | `STS_OAUTH2_REFRESH_TOKEN_REQUIRE_DPOP` | `false` | yes | REFUSE to issue a refresh token to a request carrying no DPoP proof, and refuse the refresh grant unless the presented refresh token is bound (`cnf.jkt`) to the key that proves this request (RFC 9449 section 5). **Neither OAuth 2.1 nor RFC 9700 asks for this** — section 4.3.1 wants a public client's refresh token sender-constrained *or* rotated, and this service rotates — so it is off unless somebody sets it. An UNBOUND refresh token is refused rather than bound on first use: binding it here would let whoever is holding it choose the key, which is the opposite of the guarantee the setting was turned on for. The WHOLE token request is refused rather than the refresh token quietly dropped, so a client never receives an access token it can use beside a refresh token it cannot. **Nothing is exempt from this row and nothing needs to be**: `/admin` and `/portal` are OpenID Connect clients of this service and carry a DPoP key of their own, proving it on every back-channel token call since 2026-09-15, so turning this on does not lock an operator out of either. The two clients named on the row below are exempt from THAT row alone. |
 | `oauth2.refreshTokenRequireMtls` | `STS_OAUTH2_REFRESH_TOKEN_REQUIRE_MTLS` | `false` | yes | The same refusal for RFC 8705: no refresh token is issued over a connection carrying no verified client certificate, and the refresh grant requires the presented token's `cnf["x5t#S256"]` to match the certificate on THIS connection. Section 7.1 still passes a client that authenticated with `tls_client_auth` or `self_signed_tls_client_auth` on the same request and owns the token — its refresh token is bound to the CLIENT, so it may rotate its certificate. **It needs the main port bound as HTTPS** (`global.https`), which is the only way a certificate can be asked for at all; with HTTP every affected request is refused instead. The seeded `sts-admin-console` and `sts-user-portal` clients are EXEMPT from this row and nothing else: they redeem over a loopback call from this process to itself, where there is no certificate to present and nobody on the other end who is not already this process. `sts-debugger-ui` is deliberately NOT exempt — the embedded debugger is an ordinary client and is configured to match the realm it points at. |
 | `oauth2.accessTokenRequireDpop` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP` | `false` | yes | Refuse any inbound request that presents an access token as anything other than a proved, DPoP-bound token — the token must carry `cnf.jkt` and the request must carry a proof for that key. It covers every surface that accepts a PRESENTED access token: UserInfo, the RFC 9470 step-up resource, the three OpenID4VCI endpoints, `/scim/v2`, the Shared Signals endpoints, `/admin-api` and the embedded debugger's listener. It does not cover what is not an OAuth access token presented as a credential: GNAP's own tokens, an RFC 7592 registration access token, or the endpoints that take a token as a PARAMETER (introspection, revocation, token exchange). **This is a resource-side refusal only**: the token endpoint goes on minting Bearer tokens, which those resources then refuse — which is exactly what lets a client be tested against the refusal. A token this service did not issue is held to it too, because the confirmation a token carries can be read without trusting the token. `/admin/api-explorer` stops working while it is on, because its script sends a plain `Bearer` header. |
-| `oauth2.accessTokenRequireMtls` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_MTLS` | `false` | yes | The RFC 8705 half of the row above, at the same surfaces: a presented access token must carry `cnf["x5t#S256"]` and the connection must carry that certificate. **It needs the main port bound as HTTPS** (`global.https`), and the debugger's listener began ASKING for a client certificate on 2026-09-15 so that a bound token can be presented there at all — asked for, never required, the posture the main port and 8443 already take. Where a certificate cannot be asked for the affected request is refused with `STS-OAUTH-0527` rather than let through. |
+| `oauth2.accessTokenRequireMtls` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_MTLS` | `false` | yes | The RFC 8705 half of the row above, at the same surfaces: a presented access token must carry `cnf["x5t#S256"]` and the connection must carry that certificate. **It needs the main port bound as HTTPS** (`global.https`), and the debugger's listener began ASKING for a client certificate on 2026-09-15 so that a bound token can be presented there at all — asked for, never required, the posture the main port already takes (and 8443 took, until that listener was deleted on 2026-09-16). Where a certificate cannot be asked for the affected request is refused with `STS-OAUTH-0527` rather than let through. |
 | `oauth2.openRegistration` | `STS_OAUTH2_OPEN_REGISTRATION` | `false` | yes | Whether POST /oauth2/register (RFC 7591) accepts a registration from anybody who can reach it IN PRODUCT MODE. Development always does — it is how a client under test registers itself — and this setting changes nothing there. In product it is OFF, the endpoint refuses with `access_denied` naming this setting, and `registration_endpoint` is left out of both discovery documents: a published endpoint that refuses every caller is a promise broken. Create applications through /admin or /admin-api instead, which require a credential. Turning it on is a decision to let the internet mint confidential clients on this authorization server. |
 | `oauth2.softwareStatementRequireTrustedIssuer` | `STS_OAUTH2_SOFTWARE_STATEMENT_REQUIRE_TRUSTED_ISSUER` | `true` | yes | Whether registration refuses a `software_statement` whose issuer nothing in this realm trusts, with `unapproved_software_statement`, in both modes. Off, such a statement is accepted UNVERIFIED: its claims lose to the JSON, the entry records it as untrusted, and it never opens a closed endpoint. A malformed, unsigned, badly signed or expired statement is refused either way. |
 | `oauth2.softwareStatementOpensRegistration` | `STS_OAUTH2_SOFTWARE_STATEMENT_OPENS_REGISTRATION` | `true` | yes | Whether a registration carrying a TRUSTED software statement is accepted where `POST /oauth2/register` is otherwise closed (product mode, `oauth2.openRegistration` off). While on, `registration_endpoint` stays advertised, and a client registered this way must present a trusted statement from the same issuer with every RFC 7592 update. |
@@ -917,7 +926,7 @@ unedited service behaves exactly as it did.
 | `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | The same for an Intermediate CA — at startup, for a realm created at runtime, and for a branch rebuilt under a replaced Root. Zero is the profile's ten. |
 | `pki.issuingLifetimeYears` | `STS_PKI_ISSUING_LIFETIME_YEARS` | `0` | yes | The same for each Issuing CA. Zero is the profile's five. |
 | `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate & Key Configuration pane keeps per realm. **A full store refuses the next one** rather than discarding the oldest, which may carry a private key somebody kept. |
-| `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a certificate PRESENTED to this service — on 8443/9443, on the main port (XACML, SCIM, RFC 8705 client authentication), at the SPIRE Server API or in an assertion's `x5c` — is checked for revocation: `off`, `soft-fail` (refuse a revoked one), `hard-fail` (refuse one whose status could not be established too). One this service issued is looked up in its own register; one from another authority against the CRL it names. **`auto` is hard-fail in product mode and soft-fail in development.** |
+| `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a certificate PRESENTED to this service — on the main port (XACML, SCIM, RFC 8705 client authentication and `GET /tls/sign-in`), at the SPIRE Server API or in an assertion's `x5c` — is checked for revocation: `off`, `soft-fail` (refuse a revoked one), `hard-fail` (refuse one whose status could not be established too). One this service issued is looked up in its own register; one from another authority against the CRL it names. **`auto` is hard-fail in product mode and soft-fail in development.** |
 | `pki.revocationRequireDistributionPoint` | `STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT` | `false` | yes | Under hard-fail, whether a foreign certificate naming no http/https CRL distribution point is refused. Off by default: there is no fetch an attacker could block, and refusing it makes every private CA without a CRL unusable. |
 | `pki.revocationFetchTimeoutMs` | `STS_PKI_REVOCATION_FETCH_TIMEOUT_MS` | `3000` | yes | How long fetching a foreign CRL may take. |
 | `pki.revocationMaxCrlBytes` | `STS_PKI_REVOCATION_MAX_CRL_BYTES` | `1048576` | yes | The largest CRL fetched; a bigger answer is refused as unreachable. |
@@ -1096,13 +1105,11 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `tls.port` | `STS_TLS_PORT` | `8443` | **restart** — the listener is bound when the process starts | The permissive listener: it always asks for a client certificate, never refuses one, and reports what it saw. |
-| `tls.mutualPort` | `STS_MTLS_PORT` | `9443` | **restart** — the listener is bound when the process starts | The strict listener: node refuses an unverified client certificate during the handshake, so nothing in this service runs for one. |
-| `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | **restart** — the service Root is put into the listeners' client truststore when their TLS context is built | Adds this service's own Root CA to the client truststore of 8443, 9443 and the main port, so a TLS client certificate issued on the user portal signs its holder in, in the realm whose TLS client Issuing CA signed it. A chain through that Root is an identity only for a TLS client or enrollment (ACME, EST, SCEP) leaf with `clientAuth` and one `urn:sts:person:`/`urn:sts:application:` name; every other key pair this service issues is refused as one. |
+| `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | **restart** — the service Root is put into the listeners' client truststore when their TLS context is built | Adds this service's own Root CA to the client truststore of the main port, so a TLS client certificate issued on the user portal signs its holder in, in the realm whose TLS client Issuing CA signed it. A chain through that Root is an identity only for a TLS client or enrollment (ACME, EST, SCEP) leaf with `clientAuth` and one `urn:sts:person:`/`urn:sts:application:` name; every other key pair this service issues is refused as one. |
 | `tls.hostnames` | `STS_TLS_HOSTNAMES` | `localhost,sts,sts-mock,sts.example.com` | **restart** — the server certificate is issued at startup for these names | The subjectAltName DNS entries on the certificate both TLS listeners present. |
 | `tls.ips` | `STS_TLS_IPS` | `127.0.0.1` | **restart** — the server certificate is issued at startup for these addresses | The subjectAltName IP entries on the same certificate. |
 | `tls.certificateAlgorithms` | `STS_TLS_CERT_ALGS` | `rsa` | **restart** — the certificates are issued when the listeners are bound | Which server certificates the two TLS listeners present: `rsa` (the default), and any of `ml-dsa-44`, `ml-dsa-65` and `ml-dsa-87`. MORE THAN ONE IS THE INTERESTING SETTING — OpenSSL 3.5 serves whichever certificate matches the signature algorithms the CLIENT offered, so `rsa,ml-dsa-65` answers an ordinary client with RSA and a post-quantum one with ML-DSA over the same port. It is not the default because an ML-DSA certificate is refused by everything older than OpenSSL 3.5. |
-| `tls.minVersion` | `STS_TLS_MIN_VERSION` | `TLSv1.2` | **restart** — the TLS contexts are built when the listeners are created | The lowest protocol version 8443, 9443, LDAPS and the main HTTPS port negotiate: `TLSv1`, `TLSv1.1`, `TLSv1.2` (node's own default, and what this service always did) or `TLSv1.3`. |
+| `tls.minVersion` | `STS_TLS_MIN_VERSION` | `TLSv1.2` | **restart** — the TLS contexts are built when the listeners are created | The lowest protocol version LDAPS, the main HTTPS port and the debugger's listener negotiate: `TLSv1`, `TLSv1.1`, `TLSv1.2` (node's own default, and what this service always did) or `TLSv1.3`. |
 | `tls.ciphers` | `STS_TLS_CIPHERS` | *(empty)* | **restart** — the TLS contexts are built when the listeners are created | An OpenSSL cipher list for the same four listeners. Empty means node's default list. A list matching no cipher stops the service at startup, naming this setting. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | **restart** — the anchors are read when the listeners are created | A PEM file of CA certificates that client certificates are verified against, read at startup. The product-mode way to fill the truststore: `POST /tls/trust` and `/tls/trust/clear` answer anybody in development mode and are refused (403, naming this setting) in product mode. A file that cannot be read stops the service. |
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | **restart** — the certificate is generated when the process starts | The RSA key size of the self-signed listener certificate made when no other certificate is available. 2048–8192, in steps of 1024. |
@@ -2147,8 +2154,8 @@ the **socket**, so it is settled where the socket is bound.
 `global.https`, whose default *is* that flag — a row of its own so it can be set
 either way independently, which both directions of are a real case. It is not a
 fourth keypair: `tls_server.js` generates **one** self-signed certificate per
-start and 8443, 9443 and the directory's LDAPS 636 already serve it, so a caller
-trusts this service once rather than four times.
+start and the directory's LDAPS 636 and the embedded debugger's listener already
+serve it, so a caller trusts this service once rather than three times.
 
 Everything a client reads then follows the socket **by itself**. `baseUrlOf()`
 builds every URL from `req.protocol` and the Host header — which is what already
@@ -2296,7 +2303,8 @@ DPoP works for public clients, which is exactly why the wallet flows here use it
 
 **RFC 8705 certificate binding is new.** When `global.https` is on — which RFC 9700
 mode turns on — the main listener now *asks* for a client certificate and never
-requires one, the posture port 8443 has. A Token Request made with one comes back
+requires one, the posture port 8443 had until it was deleted on 2026-09-16, and
+the only place a client certificate arrives since. A Token Request made with one comes back
 with `cnf: {"x5t#S256": …}`, the base64url SHA-256 of the certificate's **DER**, and
 the four protected endpoints thumbprint the connection's certificate again and
 compare. Verified against `openssl` end to end: the same certificate is accepted, a
@@ -3528,7 +3536,8 @@ own. `pki.applicationTlsClientCertificateMax` caps the valid ones. The subject
 parameters are ordinary attributes (`oauthTlsClientAuthSubjectDn`,
 `oauthTlsClientAuthSanDns`, `…SanUri`, `…SanIp`, `…SanEmail`), set with the
 attribute editor or through RFC 7591 registration; a second one is refused. An
-application's certificate presented to 8443 or 9443 **signs nobody in**.
+application's certificate presented at `GET /tls/sign-in` **signs nobody in**:
+it is a client credential.
 
 **Certificate-bound access tokens (section 3).** A token request on a connection
 carrying a client certificate — authenticated by it or not — gets
@@ -5378,7 +5387,7 @@ echoed back when:
 
 | The request | The origin must be |
 |---|---|
-| comes from this service's own origin — the address it was made to, `global.publicBaseUrl`, the 8443/9443 listeners, the embedded debugger, or `global.corsOrigins` | nothing more: always allowed |
+| comes from this service's own origin — the address it was made to, `global.publicBaseUrl`, the embedded debugger, or `global.corsOrigins` (the 8443 and 9443 origins were on this list until those listeners were deleted on 2026-09-16) | nothing more: always allowed |
 | **names a client** — a `client_id` in the query or body, a `client_assertion`'s `sub`, `/oauth2/register/{client_id}`, a Basic user name, a JWT access token's `client_id` or `azp`, a GNAP instance reference | listed in **that application's** `appCorsOrigin`. A name no application answers to gets no CORS header at all, so a page sees a CORS error rather than `invalid_client` |
 | **names no client** — discovery, a JWKS, a DID document, credential issuer metadata, and **every preflight** (which carries no body and no `Authorization`) | listed by **any** application in the realm |
 
@@ -6124,8 +6133,8 @@ listener and not the other, which presents as a search that works on 389 and fai
 "are you up".
 
 **One certificate for every TLS socket in this process.** The LDAPS listener serves the
-certificate and key `tls_server.js` generates at require time — the same pair 8443 and
-9443 present — rather than a second one. That is a decision about what a *caller* has to
+certificate and key `tls_server.js` generates at require time — the same pair the main
+port presents — rather than a second one. That is a decision about what a *caller* has to
 do rather than a saved keypair: the certificate is self-signed and regenerated on every
 start, so anybody who wants to verify this service has to fetch it and trust it, and one
 anchor covering all three sockets is **one fetch**. Two keypairs would mean an
@@ -7186,8 +7195,8 @@ produces an identifier that looks right in a log:
 **This section was headed *One process, two PKIs* and said there were two
 authorities, generated per start, both in memory.** The first half of its
 argument is unchanged and still load-bearing: the SPIFFE authority is **not**
-the certificate that 8443, 9443, LDAPS 636 and (under `global.https`) the main
-port share. That one is a leaf with `CA:FALSE` and `extKeyUsage serverAuth`; it
+the certificate that LDAPS 636, the embedded debugger's listener and (under
+`global.https`) the main port share. That one is a leaf with `CA:FALSE` and `extKeyUsage serverAuth`; it
 cannot sign anything, and a trust domain's CA and a host's TLS identity are two
 unrelated trust decisions.
 
@@ -7345,16 +7354,61 @@ Two things that cost real time and are recorded so they cost it once:
   Struct with no fields. `ValidateJWTSVID` answered 200 with the right
   `spiffe_id` and an empty `claims` until a real client asked for the claims.
 
-### TLS and mutual TLS — the other side of a handshake
+### TLS and mutual TLS — a client certificate on the port everything else answers on
 
-`tls_server.js` puts up **two HTTPS listeners of its own**, and their entire content
-is what the *server* saw. Fetch `GET /tls/whoami` over either one and the reply
-describes the very connection it is travelling on: the HTTPS request as it arrived
-(method, path, every header, where from), what TLS negotiated underneath it (version,
-cipher, SNI, ALPN, session reuse, the server certificate), and the client
-certificate — presented or not, verified or not, with the whole chain the client
-sent, leaf first. `GET /tls` describes the endpoint over plain HTTP, and both pages
-take `?format=json`.
+**The main port asks every connection for a client certificate and requires
+none** (`requestCert: true, rejectUnauthorized: false`), so presenting one is the
+CLIENT's decision and mutual TLS happens where every other protocol already
+arrives. What a certificate is worth is then decided **where it is used**:
+
+| Where | What it takes |
+|---|---|
+| `GET /tls/sign-in` | a certificate that VERIFIED starts a sign-on session for its common name — or its RFC 4514 subject where it has none — in the realm of the authority that signed it. Revocation is consulted first, an application's certificate is refused because it is an RFC 8705 client credential, and a browser that already holds a session keeps it. The answer says what arrived, whether it verified, its SHA-256 thumbprint, the revocation verdict and whether anybody was signed in |
+| The token endpoint | RFC 8705: `tls_client_auth` and `self_signed_tls_client_auth` authenticate a client, and a token is bound to whatever certificate the connection carried |
+| `/xacml/*` and `POST /xacml/pip` | a verified chain whose subject DN resolves to an entry holding `REMOTE_PEPS` or `XACML_USER` |
+| `/scim/v2` | RFC 7644 section 2's client-certificate scheme |
+
+`GET /tls` describes all of it — what this service presents, what it trusts, the
+protocol floor, the revocation policy — and takes `?format=json`.
+
+**THIS WAS TWO HTTPS LISTENERS OF ITS OWN UNTIL 2026-09-16, AND BOTH WERE
+DELETED.** 8443 (`tls.port`) asked for a client certificate and never refused
+one; 9443 (`tls.mutualPort`) required one at the handshake. Their whole content
+was what the SERVER saw of the connection, at `GET /tls/whoami` — the request as
+it arrived, what TLS negotiated underneath it, and the client certificate exactly
+as presented, chain and all. Three things follow and each is worth stating
+plainly:
+
+* **The permissive half moved nowhere**, because the main port already had that
+  exact posture — so 8443 was a second socket doing what the one every other
+  protocol answers on was already doing, and a deployment paid for three HTTPS
+  ports to get two behaviours.
+* **The report is gone and has no successor here.** It is a debugging surface
+  rather than a protocol, and it is being taken up in a separate project. No
+  endpoint of this service reports what it made of a handshake any more, and
+  nothing in this document should be read as pointing at a replacement.
+* **Nothing refuses a certificate at the handshake, deliberately.** Refusing
+  there is a property of a SOCKET, and this socket carries every other protocol:
+  `rejectUnauthorized: true` on it would refuse every caller that presents no
+  certificate, which is almost all of them. A certificate that does not verify is
+  refused at the four doors in the table above — the same answer, one layer up,
+  and what is lost with it is the one thing reaching 9443 proved: that the
+  certificate was acceptable before any handler ran.
+
+Neither setting was replaced, so a deployment that still sets `STS_TLS_PORT` or
+`STS_MTLS_PORT` gets an "unknown setting" warning at startup rather than a silent
+no-op. `tls_server.js` binds nothing now; it keeps `listen()` and `close()` as
+no-ops so that `server.js` and three tests did not have to change on the same day.
+
+**What a client still cannot report about its own handshake is unchanged, and is
+why that page was written.** A client knows what it sent. What it cannot see is
+which chain the server built out of it, which anchor it verified against, or
+whether the certificate was accepted at all. Under **TLS 1.3** it has not even
+been told: the client sends its Certificate and Finished *last*, so its handshake
+is complete before the server has said anything, and the verdict arrives
+afterwards — as a post-handshake alert, or as a bare hang-up, which is what
+node's own TLS server does. `GET /tls/sign-in` answers the one question of that
+family this service still answers: *did my certificate arrive, and as what.*
 
 **The client truststore has a test control in development mode and gated doors in every
 mode.** `POST /tls/trust` and `/tls/trust/clear` answer anybody in development; in product
@@ -7367,33 +7421,23 @@ Write to change — **and `GET /admin-api/tls/trust` with `POST /admin-api/tls/t
 a runtime anchor either adds is written to `ou=trustAnchors` in the default realm's directory
 and so survives a restart wherever the directory is persisted (a removed `file` anchor still
 comes back from the file), an add is refused whole if OpenSSL cannot read one block of it, and with
-request workers both are answered by the process that holds the listeners. Every TLS
-listener here — 8443, 9443, LDAPS and the main port — takes `tls.minVersion` (TLSv1.2 by
+request workers both are answered by the front process, which is the one that holds
+the listeners. Every TLS
+listener here — the main port, LDAPS and the embedded debugger's — takes
+`tls.minVersion` (TLSv1.2 by
 default) and `tls.ciphers` (node's list by default), and binds `global.host`.
 
-**Why it exists, given that any client already reports its own handshake.** Because
-that report is the side that already knows what it sent. What a client cannot see is
-which chain the server built out of what arrived, which anchor it verified against,
-what it read out of the leaf, or whether the certificate was accepted at all. Under
-**TLS 1.3** it has not even been told: the client sends its Certificate and Finished
-*last*, so its handshake is complete before the server has said anything, and the
-verdict arrives afterwards — as a post-handshake alert, or as a bare hang-up. Node's
-own TLS server does the latter. So a client that reports success on `secureConnect`
-will cheerfully report a working mutual-TLS connection to a server that rejected the
-certificate a millisecond later, and this endpoint is where that gets found out.
-
-**Two listeners, because the question has two answers.**
-
-| | |
-|---|---|
-| `8443` | `requestCert: true, rejectUnauthorized: false`. It always asks, accepts whatever arrives including nothing, and *reports* the verdict rather than enforcing it. Point a debugger here: a refusal at the TLS layer tells you almost nothing, and this listener can tell you which check failed and why |
-| `9443` | `requestCert: true, rejectUnauthorized: true`. It refuses an unverified certificate during the handshake, the way a real server does — which is to say by closing the socket with no alert at all. Reaching it *is* the proof that the certificate verified |
-
-That pair is what makes a caller's mutual-authentication verdicts reachable against a
-real server rather than a fixture: `required` against 9443 once the issuing CA is
-trusted here, `required-and-rejected` before it is (the case an operator hits most,
-and the one a single connection cannot tell from the first), and `not-required`
-against 8443, which is true — it asks and does not insist.
+**What that pair of listeners made reachable, and what a caller loses with
+them.** Against 8443 and 9443 together, a caller's own mutual-authentication
+verdicts could be exercised against a real server rather than a fixture:
+`required` against 9443 once the issuing CA was trusted here,
+`required-and-rejected` before it was — the case an operator hits most, and the
+one a single connection cannot tell from the first — and `not-required` against
+8443. Only the last of those three is reachable now, because it is the main
+port's posture and the other two need a socket that insists. **That is a real
+loss and it is not being papered over**; what it bought was a second and a third
+HTTPS port on every deployment, for a question this service is not the only way
+to ask.
 
 **The client truststore starts empty, and it has to.** The certificate authority
 whose clients this verifies is generated in somebody's *browser*, minutes before the
@@ -7413,25 +7457,29 @@ Three details in there are load-bearing and each was measured rather than assume
   no business verifying a client certificate from a private CA. The empty case is
   passed explicitly, so the starting state is "nothing verifies", which is correct and
   is what the page says.
-* **The trust endpoint is on the PLAIN port**, not on 8443. That port is the one
+* **The trust endpoint is on the MAIN port**, which was the plain one when this
+  was written and is the only one there is since 2026-09-16. It is the port
   reachable before anything is trusted; an endpoint that could only be called by
   somebody already trusted would be a chicken-and-egg with a specification citation
-  attached.
+  attached. With `global.https` on there is no plain listener at all, so the first
+  fetch of the certificate and the first POST of an anchor are made with
+  verification off.
 * **The server certificate is regenerated on every start**, like the signing key, and
   for the same reason — a certificate committed to a repository is a private key
   committed to a repository. Since 2026-09-11 it is **issued by this service's own Root
-  CA** rather than self-signed, so one anchor covers 8443, 9443, LDAPS 636, the main
-  port and every token this service signs. `GET /tls/server-certificate` hands out the
+  CA** rather than self-signed, so one anchor covers the main port, LDAPS 636, the
+  embedded debugger's listener and every token this service signs. `GET /tls/server-certificate` hands out the
   PEM (`Cache-Control: no-store`, since a cached copy outlives the key it describes)
   so a caller can put it in its own truststore rather than switching verification off,
   which is the habit this whole workflow exists to break. **The chain and the Root come
   with it, and the leaf is first** — a truststore holding only the leaf builds no path
   now, and fails with `unable to get local issuer certificate` about a Root it was
   never given.
-* **It is served on three sockets, not two.** The directory's LDAPS listener on 636
-  presents this same certificate and key, read from this module rather than generated
-  again — so one fetch is one anchor for 8443, 9443 *and* `ldaps://`. Two keypairs
-  would have made an `ldapsearch` fail against a truststore built for the HTTPS ports
+* **It is served on three sockets, and this module owns none of them.** The
+  directory's LDAPS listener on 636 presents this same certificate and key, read
+  from this module rather than generated again — so one fetch is one anchor for
+  `https://` *and* `ldaps://`. Two keypairs
+  would have made an `ldapsearch` fail against a truststore built for the HTTPS port
   with `unable to get local issuer certificate`, which names nothing. The private key
   crosses a module boundary to do it and does not cross a network one: it is generated
   per start, lives in memory, dies with the process, and nothing writes it to a
@@ -7439,14 +7487,19 @@ Three details in there are load-bearing and each was measured rather than assume
   **636 is re-keyed on its way into `listen()`** rather than at require time, because
   this module is required before the certificate authority exists: reading it once at
   the top left that one socket presenting the self-signed certificate this process had
-  already replaced, while the other three presented the certified one.
+  already replaced, while the others presented the certified one.
 
-**And a verified client certificate is not a login.** It means a chain was built from
-what the client sent to an anchor somebody POSTed to this process, and no more: no
-session is started, no token is issued, no revocation is checked, and no endpoint here
-will let its holder do anything an anonymous caller cannot. The report says so in as
-many words, because a mock that quietly turned a certificate into an identity would
-teach a client something false about every server it will meet afterwards.
+**A verified client certificate IS a login, at one address and nowhere else.**
+This paragraph read *and a verified client certificate is not a login* until
+2026-09-05, and the argument it made is still the right one about the CHAIN:
+verification means a path was built from what the client sent to an anchor
+somebody supplied, and no more. What changed is that this service now records
+that somebody got in rather than refusing to — `GET /tls/sign-in` starts a
+sign-on session, after consulting revocation, for a leaf the identity gate
+accepts; an application's certificate gets none, because it is a client
+credential. Presenting a certificate anywhere else on the port signs nobody in:
+it authenticates a client at the token endpoint, or a caller at `/xacml` or
+`/scim/v2`, and does nothing at all at a route that reads no certificate.
 
 **It is, however, recorded, and that is a different claim.** `/admin/users` answers
 "who has this service seen, in an interaction that succeeded", and a mutual-TLS client
@@ -7464,13 +7517,19 @@ handshake** (`secureConnection`) and not in the request handler, because the han
 is where the credential was accepted — recording per request would report one
 connection carrying six of them as six authentications, where the honest count is one
 per handshake and a client that opens six connections did present its certificate six
-times. It is recorded **only when `authorized` is true**, so the permissive listener
-writes nothing down for a certificate that failed to verify or was never sent. And the
+times. It is recorded **only when `authorized` is true**, so nothing is
+written down for a certificate that failed to verify or was never sent. And the
 identity is the subject in **RFC 4514 form** — leaf first, no spaces after the commas,
-values escaped — which is a *different string* from the display DN the report shows
-next to it and than the one `openssl x509 -subject` prints. Both forms are on the
-report, side by side and labelled, because the difference is the sort of thing that
-otherwise gets discovered in an hour of comparing two strings that look the same.
+values escaped — which is a *different string* from the display DN shown beside it
+and from the one `openssl x509 -subject` prints; the difference is the sort of thing
+that otherwise gets discovered in an hour of comparing two strings that look the
+same.
+
+**The recording moved to the main port on 2026-09-16, and that was a FIX.** It
+hung on the two deleted listeners' `secureConnection`, so the port where every
+certificate that authenticates a client, a remote PEP or a SCIM caller actually
+arrives recorded nothing at all, and `/admin/tls` looked quiet while they came
+in. `server.js` installs `observeConnectionsOn()` on the main listener now.
 
 **The directory entry is the one identity here that did not have to be invented**, and
 it is worth reading `certificatePlan()` in `ldap_server.js` before changing where it
@@ -7496,13 +7555,15 @@ identities because it keys on the whole DN. A renewed certificate for the same s
 does not make a second entry either; its serial, validity and fingerprint are appended
 to the one that is there, so the entry shows the history.
 
-One thing worth knowing about the log: a certificate refused by the strict listener
-never reaches a handler, so without help it would be invisible from both ends — the
-caller sees a closed socket and this service says nothing. Both listeners therefore
-log `tlsClientError` with OpenSSL's own reason, and the strict one's message names the
-truststore, the trust endpoint and the permissive port. It is the single most
-confusing failure in mutual TLS and it is the one this service refuses to be silent
-about.
+One thing worth knowing about the log: **a handshake that fails never reaches a
+handler**, so without help it is invisible from both ends — the caller sees a
+closed socket and this service says nothing. The same `observeConnectionsOn()`
+logs `tlsClientError` with OpenSSL's own reason and records a refusal audit row.
+On this port a client certificate is never REQUIRED, so what lands there is a
+broken handshake rather than a refused credential; it was the strict listener's
+refusals until 2026-09-16, and that message named the truststore, the trust
+endpoint and the permissive port. It is the single most confusing failure in
+mutual TLS and it is the one this service refuses to be silent about.
 
 ### The issuer named by a DID
 
@@ -7648,9 +7709,9 @@ loud because there is no honest way to hide it.
 **ONE ROOT FOR THE SERVICE, AN INTERMEDIATE PER REALM AND PER THE PROCESS, AND
 AN ISSUING CA UNDER EACH PER USE CASE (2026-09-11).** Every key pair this
 service generates is a leaf of it — the signing keys of every realm, and the
-certificate the TLS listeners serve — so an operator installs ONE anchor and it
-covers 8443, 9443, LDAPS 636, the main port and every token, assertion and
-signed document this service issues. It is built at startup
+certificate every TLS socket here serves — so an operator installs ONE anchor and
+it covers the main port, LDAPS 636, the embedded debugger's listener and every
+token, assertion and signed document this service issues. It is built at startup
 (`pki.autoBuild`), and the key generation itself is untouched: the same keys, in
 the same order, at the same moment, with a certificate added afterwards.
 

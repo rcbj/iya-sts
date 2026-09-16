@@ -16,8 +16,9 @@
 // THREE THINGS HERE ARE NOT INCIDENTAL, and each is a mistake this repository
 // has already made once:
 //
-//  1. **NINE PORTS, NOT ONE.** `STS_PORT` alone leaves the KDC, both TLS
-//     listeners, LDAP, LDAPS and SPIFFE's two gRPC sockets on their defaults,
+//  1. **EIGHT PORTS, NOT ONE.** `STS_PORT` alone leaves the KDC, the Kerberos
+//     test service, the plain-HTTP revocation listener, LDAP, LDAPS and
+//     SPIFFE's two gRPC sockets on their defaults,
 //     and a sibling stack is usually already holding them. A run that took
 //     8081 from somebody's local stack would be a test suite that breaks the
 //     machine it runs on.
@@ -74,23 +75,31 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const log = bunyan.createLogger({ name: 'service',
                                   level: process.env.LOG_LEVEL || 'info' });
 
-// The ten listeners, in the order the offsets are handed out. The NAME is the
+// The eight listeners, in the order the offsets are handed out. The NAME is the
 // environment variable this service reads for it — README.md's *Configuration*
 // table is the authority for these spellings, and a misspelt one is SILENT: it
 // is ignored and the listener takes its default port, which is the shared one.
+//
+// **THIS LIST IS POSITIONAL AND TWO ENTRIES WERE REMOVED FROM THE MIDDLE OF IT
+// ON 2026-09-16.** `STS_TLS_PORT` and `STS_MTLS_PORT` sat at offsets 1 and 2,
+// and the listeners they named — 8443 and 9443 — were deleted; a client
+// certificate is presented to the main port now. Every offset below them moved
+// down by two, which is safe ONLY because `instance.ports` is read by NAME and
+// never by arithmetic. A caller that had written `base + 5` for the directory
+// would have started dialling SPIFFE silently, which is exactly what the block
+// at `start()` says the named map exists to prevent.
 const PORT_VARS = [
   'STS_PORT',
-  'STS_TLS_PORT',
-  'STS_MTLS_PORT',
   'KRB5_KDC_PORT',
   'KRB5_SERVICE_PORT',
   'LDAP_PORT',
   'LDAPS_PORT',
   'STS_SPIFFE_WORKLOAD_PORT',
   'STS_SPIFFE_SERVER_PORT',
-  // The plain-HTTP revocation listener (2026-09-13). Last, so no offset above
-  // moved — `instance.ports` is read by NAME, and appending keeps a port that
-  // somebody noted from an earlier run where it was.
+  // The plain-HTTP revocation listener (2026-09-13). Last, and it was appended
+  // here so that no offset above it moved — which was still true until the two
+  // removals above, and is the reason a port somebody noted from an earlier
+  // run may not be where they left it.
   'PKI_HTTP_PORT'
 ];
 
@@ -130,10 +139,11 @@ function udpFree(port) {
 }
 
 // ---------------------------------------------------------------------------
-// A block of nine consecutive ports that are ALL free, or null after enough
-// tries. Consecutive rather than nine independent ones so that a person
-// reading `ss` while a run is going can see at a glance which ports belong to
-// it — and so the log line that reports them is one range rather than a list.
+// A block of `PORT_VARS.length` consecutive ports that are ALL free, or null
+// after enough tries. Consecutive rather than that many independent ones so
+// that a person reading `ss` while a run is going can see at a glance which
+// ports belong to it — and so the log line that reports them is one range
+// rather than a list.
 // ---------------------------------------------------------------------------
 async function findPortBlock(preferredBase, log) {
   log.debug('Entering findPortBlock().');
@@ -141,8 +151,8 @@ async function findPortBlock(preferredBase, log) {
   if (preferredBase) {
     bases.push(Number(preferredBase));
   }
-  // A spread of candidates well above the service's own defaults (8081, 88,
-  // 389, 636, 8443, 9443, 8092, 8181) so a plain local stack is never touched.
+  // A spread of candidates well above the service's own defaults (8081, 8082,
+  // 88, 8888, 389, 636, 8092, 8181) so a plain local stack is never touched.
   for (let i = 0; i < 40; i++) {
     bases.push(18100 + Math.floor(Math.random() * 400) * 10);
   }
@@ -305,7 +315,7 @@ function probe(url) {
 
 // ---------------------------------------------------------------------------
 // Start it, and do not return until it ANSWERS. `up` is a request that got a
-// response, not a process that was spawned: this service binds ten listeners
+// response, not a process that was spawned: this service binds eight listeners
 // and reads its store before the first of them, so "the child exists" and "the
 // service is ready" are seconds and several failure modes apart.
 // ---------------------------------------------------------------------------
@@ -362,8 +372,11 @@ async function start(opts) {
       // THE PORTS, BY THE NAME THE SERVICE READS THEM UNDER, and not just the
       // base (2026-09-06). A caller that needed the directory's socket was
       // otherwise obliged to do `base + 5` — index arithmetic over PORT_VARS,
-      // in another file, silently wrong the moment a listener is added to that
-      // list in the middle. `tests/vendored/sts_directory_bulk_load_ldap.js`
+      // in another file, silently wrong the moment a listener is added to or
+      // removed from the middle of that list. **Two were removed from the
+      // middle of it on 2026-09-16**, which moved the directory from `base +
+      // 5` to `base + 3` and cost nothing.
+      // `tests/vendored/sts_directory_bulk_load_ldap.js`
       // is the caller that needed it and run-report.js is what hands it over.
       const ports = {};
       PORT_VARS.forEach(function (name, i) { ports[name] = base + i; });

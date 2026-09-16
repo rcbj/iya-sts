@@ -1179,8 +1179,8 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'follows about the connection string: the host, port, ' +
                  'database and user are parsed out of it and the string ' +
                  'itself is never returned.\n\nIT SHARES STATE AND NOT ' +
-                 'SOCKETS. The KDC, both LDAP listeners, the two TLS ports ' +
-                 'and SPIFFE\'s four are bound per process. And the replay ' +
+                 'SOCKETS. The KDC, both LDAP listeners, the main port and ' +
+                 'SPIFFE\'s four are bound per process. And the replay ' +
                  'caches and DPoP jti sets CONVERGE rather than synchronise: ' +
                  'between a write in one process and its arrival in another ' +
                  'there is a window the size of persistence.pollInterval in ' +
@@ -1241,19 +1241,23 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'says so rather than implying a missing one.' },
   { path: '/tls', console: '/admin/tls', tag: 'TLS',
     operationId: 'getTlsSettings',
-    summary: 'The two TLS listeners\' own settings',
-    description: 'The four `tls.*` settings: the two ports, and the ' +
-                 'hostnames and IP addresses that go into the self-signed ' +
-                 'certificate this service mints on every start.\n\nALL FOUR ' +
-                 'ARE RESTART-ONLY: the certificate is minted and the ' +
-                 'sockets are bound before anything is listening. One ' +
-                 'certificate serves 8443, 9443, LDAPS 636 and — when ' +
-                 '`global.https` is on — the main port, so a caller trusts ' +
-                 'this service once rather than four times.\n\nWhether the ' +
-                 'MAIN port is HTTPS is `global.https`, which is on `GET ' +
-                 '/config` with the rest of the process\'s own settings: it ' +
-                 'is a fact about the process rather than about these ' +
-                 'listeners, and it defaults to whatever `oauth2.rfc9700` is.' }
+    summary: 'The TLS certificate\'s own settings',
+    description: 'The `tls.*` settings: the hostnames and IP addresses that ' +
+                 'go into the self-signed certificate this service mints on ' +
+                 'every start, and what it makes of a CLIENT\'s.\n\nTHE ' +
+                 'CERTIFICATE ONES ARE RESTART-ONLY: it is minted before ' +
+                 'anything is listening. One certificate serves LDAPS 636 ' +
+                 'and — when `global.https` is on — the main port, so a ' +
+                 'caller trusts this service once rather than twice.\n\n' +
+                 'THERE ARE NO PORTS HERE SINCE 2026-09-16, when `tls.port` ' +
+                 '(8443) and `tls.mutualPort` (9443) were removed with the ' +
+                 'two listeners they named: the main port already asks every ' +
+                 'connection for a client certificate and requires none of ' +
+                 'any of them.\n\nWhether the MAIN port is HTTPS is ' +
+                 '`global.https`, which is on `GET /config` with the rest of ' +
+                 'the process\'s own settings: it is a fact about the ' +
+                 'process rather than about this certificate, and it ' +
+                 'defaults to whatever `oauth2.rfc9700` is.' }
 ].map(function (row) {
   return { method: 'GET', path: BASE + row.path, tag: row.tag,
            operationId: row.operationId,
@@ -4412,8 +4416,9 @@ const ROUTES = [
                  'applications for the whole process — which means OAuth ' +
                  'client registrations, SAML service provider entries, the ' +
                  'SPIFFE registry and the two admin console roles are ' +
-                 'shared. Kerberos, the two TLS listeners and SPIFFE\'s four ' +
-                 'sockets are shared for the same reason.\n\n`reserved` is ' +
+                 'shared. Kerberos, the certificate the main port and LDAPS ' +
+                 '636 present, and SPIFFE\'s four sockets are shared for ' +
+                 'the same reason.\n\n`reserved` is ' +
                  'the list of ids a realm may not be called, read off the ' +
                  'live router: they are the first segments of paths this ' +
                  'service already serves, and the refusal stands whatever ' +
@@ -10913,8 +10918,8 @@ const ROUTES = [
         summary: 'Build or replace the Root CA for the whole service',
         description: 'One Root, shared by every realm and by the process ' +
                      'branch — which is what lets an operator install ONE ' +
-                     'anchor and have it cover 8443, 9443, LDAPS 636, the ' +
-                     'main port and every token this service ' +
+                     'anchor and have it cover LDAPS 636, the main port and ' +
+                     'every token this service ' +
                      'signs.\n\n**REPLACING IT RE-ISSUES EVERY BRANCH IN THE ' +
                      'SAME ACT**, because an Intermediate still hanging from ' +
                      'the old Root chains to nothing — a new Root with the ' +
@@ -11157,8 +11162,8 @@ const ROUTES = [
                      'validator is entitled to act on the first moment it ' +
                      'was told about.\n\n**AND THIS SERVICE DOES NOT ' +
                      'CONSULT ITS OWN LISTS.** A client certificate revoked ' +
-                     'here still authenticates on 8443, 9443, the main port ' +
-                     'and LDAPS 636, because those check the anchors on ' +
+                     'here still authenticates on the main port and LDAPS ' +
+                     '636, because those check the anchors on ' +
                      '`/tls/trust` and fetch nothing. What this operation ' +
                      'buys is that a relying party which DOES check can now ' +
                      'find out.',
@@ -11432,7 +11437,7 @@ const ROUTES = [
   { method: 'GET', path: BASE + '/tls/trust', tag: 'TLS',
     operationId: 'getTruststore',
     summary: 'Every client-certificate trust anchor, and where each came from',
-    description: 'The anchors 8443, 9443, LDAPS 636 and the main HTTPS port ' +
+    description: 'The anchors LDAPS 636 and the main HTTPS port ' +
                  'verify a CLIENT certificate against. A certificate that ' +
                  'chains to one of these is verified, and a verified ' +
                  'certificate is an identity here — it starts a sign-on ' +

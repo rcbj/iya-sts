@@ -529,8 +529,6 @@ var config = {
 
   // --- TLS -------------------------------------------------------------
   tls: {
-    port: 8443,                                          // TLS port; restart to apply
-    mutualPort: 9443,                                    // Mutual-TLS port; restart to apply
     trustIssuedClientCertificates: true,                 // Trust TLS client certificates issued on the user portal; restart to apply
     hostnames: "localhost,sts,sts-mock,sts.example.com", // Certificate hostnames; restart to apply
     ips: "127.0.0.1",                                    // Certificate IP addresses; restart to apply

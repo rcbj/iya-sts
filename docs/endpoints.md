@@ -67,11 +67,14 @@ things here are exactly that:
 Those are described by hand in the page's own table. If you add one, describe it
 there or it goes unlisted with nothing failing.
 
-The TLS listeners on 8443 and 9443 are a milder version of the same thing: they
-speak HTTP, so they look as though they belong on the plain listener, but
-`/admin/sts-metadata` walks the *plain* listener's router and cannot see them. Their
-rows there are the plain-HTTP views only, and the listeners are described in the
-text.
+**The TLS family used to be a milder version of the same thing and no longer
+is.** It had two listeners of its own, 8443 and 9443, which spoke HTTP and so
+looked as though they belonged on the main listener, while `/admin/sts-metadata`
+— walking that listener's router — could not see them; their rows there were the
+plain-HTTP views only and the listeners were described in the text. Both were
+deleted on 2026-09-16. Everything that family answers is now a route on the
+router the page walks: `/tls`, `/tls/sign-in`, `/tls/server-certificate`,
+`/tls/forwarded` and the two truststore controls.
 
 ## The other things the service publishes about itself
 

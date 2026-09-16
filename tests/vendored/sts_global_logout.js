@@ -576,8 +576,15 @@ async function x509(username) {
     "the test CA should be accepted at /tls/trust; it answered " +
     installed.status);
 
-  const port = Number(process.env.STS_MTLS_PORT || 9443);
-  const host = new URL(base).hostname;
+  // **THE MAIN PORT, SINCE 2026-09-16.** This dialled `STS_MTLS_PORT` (9443),
+  // the listener that required a client certificate at the handshake; it and
+  // 8443 were deleted, and the sign-in they performed as a side effect of
+  // being reached is now `GET /tls/sign-in` on the port everything else
+  // answers on. That port asks every connection for a certificate and requires
+  // none, so this request is the same one with a path on it.
+  const url = new URL(base);
+  const port = Number(url.port || 443);
+  const host = url.hostname;
   // **THE TRUSTSTORE IS APPLIED WITH `setSecureContext()` AND THE NEXT
   // HANDSHAKE IS JUDGED AGAINST IT** — which is not quite the same as "the
   // anchor is usable the instant the POST returns". A connection opened in the
@@ -585,12 +592,16 @@ async function x509(username) {
   // that as a bare `socket hang up` with nothing in it about certificates. So
   // the connection is retried rather than the anchor being assumed live, and
   // the assertion below is then about the SIGN-IN rather than about a race.
+  //
+  // **THE RETRY IS STILL NEEDED ON THIS PORT.** `trustClientCertificatesOn()`
+  // re-keys the main port's context the same way, and the race is the install
+  // against the handshake rather than anything about which socket it was.
   const connect = function () {
     log.debug("Entering connect().");
     log.debug("Leaving connect().");
     return new Promise(function (resolve, reject) {
       const req = https.request({
-        host: host, port: port, path: "/", method: "GET",
+        host: host, port: port, path: "/tls/sign-in", method: "GET",
         cert: pki.certPem, key: pki.keyPem,
         // The SERVER's certificate is self-signed and regenerated on every
         // start — that is this service's design, not a misconfiguration — so
@@ -601,7 +612,7 @@ async function x509(username) {
         let body = "";
         res.on("data", function (d) { body += d; });
         res.on("end", function () {
-          resolve({ status: res.statusCode,
+          resolve({ status: res.statusCode, body: body.slice(0, 600),
                     cookie: (res.headers["set-cookie"] || []).join("; ") });
         });
       });
@@ -609,31 +620,44 @@ async function x509(username) {
       req.end();
     });
   };
+  // **THE LOOP RETRIES ON A SIGN-IN THAT DID NOT HAPPEN, NOT ONLY ON A THROWN
+  // CONNECTION**, and that is the one thing this move had to change. 9443
+  // refused the handshake outright while the anchor was still landing, so a
+  // race showed up as an exception. This port requires no certificate, so the
+  // same race completes the handshake with `authorized` false and gets a tidy
+  // 200 saying `signedIn: false` — which the old loop would have accepted as
+  // the answer and failed on, blaming the sign-in.
   let reply = null;
   let lastError = null;
-  for (let attempt = 0; attempt < 4 && !reply; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       reply = await connect();
+      if (/sts_session=/.test(reply.cookie || "")) {
+        break;
+      }
+      lastError = new Error("answered " + reply.status + " with no session " +
+                            "cookie: " + reply.body);
     } catch (e) {
       lastError = e;
-      await new Promise(function (r) { setTimeout(r, 250); });
     }
+    await new Promise(function (r) { setTimeout(r, 250); });
   }
-  assert.ok(reply, "the mutual-TLS listener refused every attempt: " +
-    (lastError && lastError.message) + ". That listener requires a client " +
+  assert.ok(reply, "GET /tls/sign-in refused every attempt: " +
+    (lastError && lastError.message) + ". It signs in the holder of a client " +
     "certificate that verifies against an anchor at /tls/trust, and this " +
     "test installed one — so a refusal here is the anchor not taking rather " +
     "than the certificate being wrong.");
   assert.strictEqual(reply.status, 200,
-    "the mutual-TLS listener should answer a connection carrying a verified " +
+    "GET /tls/sign-in should answer a connection carrying a verified " +
     "certificate; it answered " + reply.status);
   const match = /sts_session=([A-Za-z0-9_-]+)/.exec(reply.cookie || "");
   assert.ok(match,
     "A VERIFIED CLIENT CERTIFICATE MUST START A SESSION (2026-09-05). The " +
-    "listener answered 200 and set no session cookie, so either the sign-in " +
+    "route answered 200 and set no session cookie, so either the sign-in " +
     "did not happen or the cookie was written on a response object that " +
     "could not carry it — which is exactly the half-state setCookieHeader() " +
-    "was added to close. Set-Cookie was: " + (reply.cookie || "(none)"));
+    "was added to close. Set-Cookie was: " + (reply.cookie || "(none)") +
+    "; the body was: " + reply.body);
   log.debug("Leaving x509().");
   return { protocol: "X.509 client certificate", sessionId: match[1] };
 }

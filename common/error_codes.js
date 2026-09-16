@@ -247,8 +247,10 @@ const SUBSYSTEMS = [
     what: 'The bundle endpoint, the Workload API and the SPIRE Server API.' },
   { id: 'TLS', label: 'TLS listeners',
     where: 'tls/',
-    what: 'The 8443 and 9443 listeners, the trust store, and the server ' +
-          'certificate three other sockets share.' },
+    what: 'The client-certificate truststore, the sign-in a verified one ' +
+          'starts, and the server certificate the main port and LDAPS 636 ' +
+          'share. The 8443 and 9443 listeners it was named for were deleted ' +
+          'on 2026-09-16.' },
   { id: 'VC', label: 'OpenID4VCI, OpenID4VP and DID',
     where: 'oid4vc/',
     what: 'The credential issuer, the verifier, credential offers and DID ' +
@@ -609,9 +611,10 @@ const CODES = [
       'service runs.',
     spec: '' },
   { code: 'STS-CORE-0032',
-    summary: 'The 8443/9443 TLS endpoints could not start; the rest of the ' +
-      'service runs.',
-    spec: '' },
+    summary: 'The 8443/9443 TLS endpoints could not start. Retired ' +
+      '2026-09-16: both listeners were deleted and this module binds nothing, ' +
+      'so there is no bind here to fail',
+    spec: '', retired: true },
   { code: 'STS-CORE-0033',
     summary: 'The last flush at shutdown failed, so the process exited ' +
       'non-zero and a change made just before it may not have been ' +
@@ -2017,8 +2020,9 @@ const CODES = [
     summary: 'A presented certificate chain was refused because a ' +
       'certificate in it is REVOKED — on this service\'s own register, or ' +
       'on the verified CRL of a foreign issuer (common/revocation_status.js).',
-    spec: 'Per door: HTTP 403 on 9443; no session and no recorded ' +
-      'authentication on 8443; invalid_client at the token endpoint ' +
+    spec: 'Per door: no session at GET /tls/sign-in (HTTP 200 with ' +
+      'signedIn false) and no recorded authentication for the sighting on ' +
+      'the main port; invalid_client at the token endpoint ' +
       '(tls_client_auth, and an x5c assertion as invalid_client or ' +
       'invalid_grant); HTTP 403 access_denied at /xacml; the SCIM ' +
       'client-certificate scheme not accepted (401 if nothing else ' +
@@ -7652,14 +7656,17 @@ const CODES = [
       'certificate.',
     spec: '' },
   { code: 'STS-TLS-0021',
-    summary: 'The required-client-certificate listener refused a handshake, ' +
-      'usually a client certificate missing or not verifying against ' +
-      'the truststore.',
+    summary: 'A TLS handshake failed on a listener this module watches — ' +
+      'a version, cipher or certificate mismatch, or a non-TLS client. It ' +
+      'named the required-client-certificate listener until 2026-09-16, when ' +
+      'that listener was deleted; it is now the main port, where a client ' +
+      'certificate is asked for and never required',
     spec: 'TLS handshake failure' },
   { code: 'STS-TLS-0022',
     summary: 'A TLS handshake failed on the optional-client-certificate ' +
-      'listener (a version, cipher or non-TLS mismatch).',
-    spec: 'TLS handshake failure' },
+      'listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the ' +
+      'one code for a failed handshake now',
+    spec: 'TLS handshake failure', retired: true },
   { code: 'STS-TLS-0023',
     summary: 'A /tls or /tls/forwarded request carried a format parameter ' +
       'other than json or html.',
@@ -7670,8 +7677,9 @@ const CODES = [
       'reach the port.',
     spec: 'HTTP 403' },
   { code: 'STS-TLS-0025',
-    summary: 'A TLS listener could not bind its port.',
-    spec: '' },
+    summary: 'A TLS listener could not bind its port. Retired 2026-09-16: ' +
+      'this module owns no listener to bind',
+    spec: '', retired: true },
   { code: 'STS-TLS-0026',
     summary: 'The TLS listener certificate does not chain to this service\'s ' +
       'Root and re-issuing it produced the same certificate.',
@@ -7696,11 +7704,11 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0031',
     summary: 'The required-client-certificate listener refused a verified ' +
-      'certificate this service issued that is not a TLS client identity ' +
-      '(not from a TLS client or enrollment Issuing CA, no clientAuth, or no ' +
-      'single urn:sts:person:/application: name).',
-    spec: 'HTTP 403 with the connection report' },
-  // ===== VC ================================================================
+      'certificate this service issued that is not a TLS client identity. ' +
+      'Retired 2026-09-16 with that listener: the same certificate is now ' +
+      'refused where it is USED — no session at GET /tls/sign-in, no client ' +
+      'authentication at the token endpoint — rather than at a socket',
+    spec: 'HTTP 403 with the connection report', retired: true },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

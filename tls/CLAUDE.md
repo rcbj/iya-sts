@@ -1,42 +1,109 @@
 # tls/
 
-TLS and mutual TLS: two HTTPS listeners of its own, 8443 and 9443, whose whole
-content is what the SERVER saw of the connection. One file — and it is the source
-of the certificate and key that THREE other sockets in this process use.
+TLS and mutual TLS. **This directory owned two HTTPS listeners of its own — 8443
+(`tls.port`) and 9443 (`tls.mutualPort`) — and since 2026-09-16 it owns no socket
+at all.** Both were deleted and both settings went with them. One file, and it is
+still the source of the certificate and key that THREE sockets in this process
+present, and the only place this service decides whose client certificate
+verifies.
 
-`tls_server.js` is the newest of the four and the one whose sockets are easiest to
-forget are sockets — and there are now TWO MORE TLS sockets in this process that are
-not its own, both on `serverCertificate()`'s certificate and key rather than a second
-pair: the directory's LDAPS listener on 636, and — when `global.https` is set, which
-`oauth2.rfc9700` does by default — THE MAIN PORT ITSELF, bound as HTTPS from
-`listen()` in `server.js`. So one anchor covers 8443, 9443, 636 and 8081, and a
-caller trusts this service once per start rather than four times. The LDAPS half is
-what makes `ldap_server.js` require this module, and therefore what fixes their order
-in `server.js` (rule 6); the main-port half needs no require order at all, because
-`server.js` already has this module in hand by the time it listens. The private key
-crosses a module boundary and no network one: it is generated per start, held in
-memory, and `GET /tls/server-certificate` publishes the certificate alone.
+## WHAT THIS MODULE IS NOW (2026-09-16)
 
-**The two listeners are started from `listen()` in `server.js`, not at require
-time** — requiring this module registers its HTTP view (`/tls`) like everything
-else, but binding a port can fail, and a `require` that throws takes the whole
-service down where a route cannot. A failure to bind is RECORDED rather than
-thrown, and published (`listening` / `listenError` on `GET /tls`), because the
-HTTP view answers 200 either way and there is otherwise no way to tell a running
-listener from one whose port was already taken — by a second copy of this
-service. The root `CLAUDE.md`'s *Socket owners start their listeners from
-`listen()`* is the rule this is an instance of.
+A LIBRARY with six routes on the main app. Nothing here binds anything.
 
-**The two TLS listeners are shared by every trust realm**, because a socket has
-no path to put a segment in and — unlike the directory — no name inside it to
-put one in either. `realmSupport()` is the index, and both `/admin/realms` and
-`GET /realms` render it.
+* **The certificate and key.** `serverCertificate()` is generated at require
+  time, certified under this service's own Root by `common/pki.js` afterwards,
+  and PRESENTED BY THREE SOCKETS THIS MODULE DOES NOT OWN: the main port, bound
+  as HTTPS from `listen()` in `server.js` when `global.https` is set (which
+  `oauth2.rfc9700` does by default); the directory's LDAPS listener on 636; and
+  the embedded debugger's listener. So one anchor covers all three and a caller
+  trusts this service once per start rather than three times. The LDAPS half is
+  what makes `ldap_server.js` require this module, and therefore what fixes
+  their order in `server.js` (rule 6); the other two need no require order,
+  because `server.js` and `debugger_server.js` already have this module in hand
+  by the time they listen. The private key crosses a module boundary and no
+  network one: it is generated per start, held in memory, and
+  `GET /tls/server-certificate` publishes the certificate alone.
+* **The client truststore.** The anchors every listener in this process verifies
+  a CLIENT certificate against — one array, applied to whatever registered
+  through `trustClientCertificatesOn()`. It starts EMPTY, and every section
+  below about it is unchanged by the deletion.
+* **The sighting.** `observeConnectionsOn()`, which `server.js` installs on the
+  main port.
+* **Six routes**, all on the main app and all visible to
+  `GET /admin/sts-metadata`: `GET /tls` (what this service presents, what it
+  trusts and what it does with a client certificate), `GET /tls/sign-in`,
+  `GET /tls/server-certificate`, `GET /tls/forwarded`, and the two test
+  controls `POST /tls/trust` and `POST /tls/trust/clear`.
+* **`listen()` and `close()` are KEPT AS NO-OPS.** `server.js` and three tests
+  call them, and a socket owner that stops owning a socket should not change the
+  shape of its module on the same day. `listen()` resolves immediately and
+  reports no ports; `ports()` answers `{ main }`, because every caller ever
+  wanted one thing from it — where do I send a client certificate.
+
+**There is no metadata blind spot here any more, and that is worth saying
+because this file used to be the example of one.** `GET /admin/sts-metadata`
+walks the Express router, so it could never see 8443 or 9443, and this module's
+rows there were the plain-HTTP views with the listeners described in their text.
+Everything this module now answers is a route on the router the page walks.
+
+## What moved, what was replaced and what was lost
+
+`common/config.js`'s removal note and the block above `observeConnectionsOn()`
+in `tls_server.js` carry the argument; this is the index.
+
+| What 8443 / 9443 did | Where it is now |
+|---|---|
+| Asked every connection for a client certificate and required none | **The main port already did this** — `server.js` binds it `requestCert: true, rejectUnauthorized: false`. 8443 was a second socket with the same posture as the one every other protocol answers on, and a deployment paid for three HTTPS ports to get two behaviours. |
+| Recorded the sighting on `secureConnection` | `observeConnectionsOn()`, installed by `server.js` on the main port. **This is a FIX and not a move**: the main port is where every certificate that authenticates a client, a remote PEP or a SCIM caller actually arrives, and it recorded nothing, so `/admin/tls` looked quiet while they came in. |
+| Started a session for a verified certificate | **`GET /tls/sign-in`**, same `startCertificateSession()` and the same order of refusals. |
+| Logged a failed handshake | `observeConnectionsOn()`'s `tlsClientError` handler, on the main port. |
+| Reported the connection back — `/tls/whoami` and its HTML page | **DELETED, WITH NO SUCCESSOR HERE.** It was the two listeners' whole content, it is a debugging surface rather than a protocol, and it is being taken up in a separate project. Nothing in this repository answers it and nothing should be pointed at a replacement. |
+| Refused an unverified client certificate AT THE HANDSHAKE (9443) | **NOTHING, DELIBERATELY.** Refusing at the handshake is a property of a SOCKET, and this socket carries every other protocol in the service: `rejectUnauthorized: true` on the main port would refuse every caller that presents no certificate, which is almost all of them. A certificate that does not verify is refused WHERE IT IS USED — RFC 8705 client authentication at the token endpoint, `/xacml`, `/scim/v2`, and `/tls/sign-in`. That is the same answer arriving one layer up, and what is lost with it is the one thing reaching 9443 proved: that the certificate was acceptable before any handler ran. |
+
+Four error codes were retired with the sockets: `STS-TLS-0022`, `STS-TLS-0025`,
+`STS-TLS-0031` and `STS-CORE-0032`. A code is never renumbered or reused.
+
+## A VERIFIED CLIENT CERTIFICATE IS A SIGN-IN, AND IT IS NOW A ROUTE (2026-09-16)
+
+`GET /tls/sign-in` on the main port. It replaces a sign-in that was a SIDE
+EFFECT of reaching 8443 or 9443 at all — the deleted handler started a session
+for whatever verified, and every page load did it again — and being a route is
+better than what it replaced, because a sign-in that happens because somebody
+loaded a diagnostic page is a sign-in nobody asked for.
+
+* **THE CLIENT DECIDES WHETHER TO PRESENT A CERTIFICATE.** The main port asks
+  every connection for one and requires none, so a browser or a `curl` that has
+  one sends it and a caller that has none is simply not signed in — the route
+  says so in as many words rather than refusing.
+* **Everything it decides is `startCertificateSession()`'s**, unchanged from
+  when the listeners called it: revocation first, then the identity gate, then
+  an application's certificate refused as a sign-in (it is an RFC 8705 client
+  credential), then the session in the certificate's own realm.
+* **It answers JSON**, with `signedIn`, the session, whether a certificate was
+  presented and verified, the thumbprint the token endpoint would bind a token
+  to, and the revocation verdict. One request answers *is my certificate
+  arriving, and as what*.
+* **It is behind the cluster barrier**, for the reason the deleted handler was:
+  it STARTS A SESSION, and in active-active mode an answer sent before the
+  session committed left a sign-out on another node unable to see it.
+
+**Client certificates are still shared by every trust realm** at the socket,
+because a socket has no path to put a segment in and — unlike the directory — no
+name inside it to put one in either. `realmSupport()` is the index, and both
+`/admin/realms` and `GET /realms` render it. What is per realm is the SESSION:
+`inCertificateRealm()` starts it in the realm of the authority that signed the
+leaf.
 
 ## The truststore reaches the MAIN listener too, since 2026-09-06
 
-`POST /tls/trust` filled the client truststore for 8443 and 9443. It now fills
-it for the main HTTPS port as well, and that is one function
-(`trustClientCertificatesOn()`) plus one registration in `server.js`.
+`POST /tls/trust` filled the client truststore for 8443 and 9443. It fills it
+for the main HTTPS port as well since that day, and that is one function
+(`trustClientCertificatesOn()`) plus one registration in `server.js`. **Since
+2026-09-16 the main port is the only listener that reads it that anybody
+presents a client certificate to**, the two it was written for having been
+deleted — which makes the registration the whole mechanism rather than an
+extension of one.
 
 **WHY IT DID NOT BEFORE, AND WHY THAT STOPPED BEING RIGHT.** The main port has
 always been `requestCert: true, rejectUnauthorized: false` — asked for, never
@@ -59,10 +126,12 @@ is that a certificate which DOES chain is now known to, and
 carrying node's own `authorizationError` out whole, because that string is what
 tells somebody which of a dozen things went wrong.
 
-Three listeners share one anchor list, so a single `POST /tls/trust` covers all
-of them and `clearAnchors()` empties all of them. A listener created outside
-this module registers rather than being required, for the ordinary reason:
-`server.js` requires this module, so this module cannot require it back.
+Every registered listener shares one anchor list, so a single `POST /tls/trust`
+covers all of them and `clearAnchors()` empties all of them. A listener created
+outside this module registers rather than being required, for the ordinary
+reason: `server.js` requires this module, so this module cannot require it back.
+**Since the deletion every listener is one created outside this module**, which
+is why that function is not a convenience.
 
 
 ## The serial number is random, and a constant one was a browser-only bug
@@ -111,8 +180,8 @@ CA as those two, one trusted root covers all three and survives restarts — whi
 what `../generate-tls-cert.sh` in the parent repository now issues, with this
 service's own `tls.hostnames` defaults (`localhost`, `sts`, `sts-mock`,
 `sts.example.com`) in the leaf's subjectAltNames so it answers to the names its
-callers already use. One supplied pair reaches all four sockets, since they share
-one.
+callers already use. One supplied pair reaches every socket that presents this
+certificate, since they share one.
 
 The file may be a CHAIN — leaf first, issuers after — and all of it is sent, which is
 what lets a client build a path to a root it holds. Everything that reads a
@@ -139,14 +208,12 @@ this process, so `POST /tls/trust` and `GET /tls/server-certificate` — which e
 be reachable BEFORE anything is trusted — have to be called the first time with
 verification off.
 
-Its own sockets: they speak **HTTP**, so they look as though they belong on the
-plain listener — but they are HTTPS on 8443 and 9443, and `GET /admin/sts-metadata` walks
-the plain listener's router, which cannot see them. Its four rows there are the
-plain-HTTP views only, and the listeners are described in their text. Its truststore
+Its truststore
 for CLIENT certificates is empty at startup and is filled at runtime through
 `POST /tls/trust`, because the CA it verifies is generated in somebody's browser
 minutes before the connection; that endpoint is on the MAIN port on purpose, since
-that is normally the one reachable before anything is trusted. `global.https` —
+that is normally the one reachable before anything is trusted — **and since
+2026-09-16 there is no other port it could be on**. `global.https` —
 which `oauth2.rfc9700` turns on — takes that property away by making the main port
 TLS as well, so the first fetch of the certificate and the first POST of an anchor
 then have to be made with verification off. Every sentence in that module which
@@ -163,12 +230,13 @@ verified client certificate is not a login".** The old text is below, kept
 rather than deleted, because it was a good argument and knowing exactly what it
 protected is how to avoid losing that.
 
-* **A request on a connection carrying a verified client certificate starts a
-  sign-on session** for the certificate's common name — or its RFC 4514 subject
-  where it has none — and the response carries the session cookie. Cookies are
-  not port-scoped, so a browser that presents a certificate to 9443 comes away
-  signed in on the main port too, which is single sign-on and is the same thing
-  every other family here already gives it.
+* **A request carrying a verified client certificate starts a sign-on session**
+  for the certificate's common name — or its RFC 4514 subject where it has none
+  — and the response carries the session cookie. It was any request on either
+  listener until 2026-09-16 and is `GET /tls/sign-in` now; the session is the
+  same session the password screen, the KDC and the SAML profile start, so the
+  holder comes away signed in to every surface on the port, which is single sign
+  on and is the same thing every other family here already gives.
 * **What did NOT change is the strength of the CHAIN claim.** Verification still
   means one thing exactly: OpenSSL built a chain from what the client sent to an
   anchor in the truststore. ~~**No revocation is checked**~~ — **since
@@ -182,7 +250,7 @@ protected is how to avoid losing that.
   same tension the same way and always has — the KDC issues tickets to anybody
   with the one shared password, the sign-in screen checks nothing, LDAP refuses
   no bind — and all three start real sessions. **The permissiveness lives in what
-  is ACCEPTED, not in refusing to record what was accepted.** This listener was
+  is ACCEPTED, not in refusing to record what was accepted.** This family was
   the one place that made the opposite choice, and what it cost was that a global
   sign-out could not end a way in that nothing on `/admin/sessions` could see.
 * **The identity is the COMMON NAME and the record is the SUBJECT**, and they are
@@ -194,11 +262,13 @@ protected is how to avoid losing that.
 * **`amr` is `["swk"]`** — RFC 8176's software key — and `acr` is `"1"`. One
   factor, and a factor whose private key sits in a file: claiming `hwk` would
   say a hardware key was used and this service cannot know that.
-* **One session per connection at most.** The cookie comes back on the next
-  request and is honoured, so six requests on one connection are one sign-in —
-  the same property `recordClientCertificate()` gets by living on
-  `secureConnection`, reached differently because a cookie needs a response to be
-  written on and that event has none.
+* **One session per browser at most.** `startCertificateSessionIn()` reads an
+  existing session rather than replacing it, so a second call to
+  `/tls/sign-in` from a browser that already holds one starts nothing — which
+  would otherwise leave a global sign-out reporting two where the person
+  experienced one. The SIGHTING has the same property by a different route:
+  `recordClientCertificate()` lives on `secureConnection`, so six requests on
+  one connection are one authentication.
 
 ### The argument that used to be here
 
@@ -258,14 +328,15 @@ presents it here. So `secureContextOptions()`'s `ca` is the truststore's anchors
 twice if somebody POSTed it), behind `tls.trustIssuedClientCertificates` —
 restart-only, on by default. Four things are this directory's:
 
-* **THE HANDSHAKE NOW COMPLETES FOR EVERY KEY PAIR THIS SERVICE ISSUED**, on 9443
-  as well, and `common/tls_client_certificates.js`'s `identityOf()` is what
-  separates an identity from a verified chain. `answer()` asks it once and hands
-  it down: a leaf that is `issuedHere` and not `accepted` starts no session, is not
-  recorded as an authentication, is reported as `authentication.refusedAsIdentity`
-  and `clientCertificate.issuedHere`, and **on the required listener answers 403**
-  with `STS-TLS-0031` — "reaching it proves the certificate is acceptable" is still
-  that listener's promise. `common/CLAUDE.md` 3ag argues the four conditions.
+* **THE HANDSHAKE COMPLETES FOR EVERY KEY PAIR THIS SERVICE ISSUED**, and
+  `common/tls_client_certificates.js`'s `identityOf()` is what separates an
+  identity from a verified chain. `/tls/sign-in` asks it once and hands it down:
+  a leaf that is `issuedHere` and not `accepted` starts no session, is not
+  recorded as an authentication, and is reported as `refusedAsIdentity`.
+  **It answered 403 with `STS-TLS-0031` on 9443 until 2026-09-16** — "reaching
+  it proves the certificate is acceptable" was that listener's promise, that
+  listener is gone, and the code is retired: there is no socket left whose
+  promise it could be. `common/CLAUDE.md` 3ag argues the four conditions.
 * **AN APPLICATION'S CERTIFICATE SIGNS NOBODY IN** (2026-09-13). The gate
   accepts a leaf naming a `urn:sts:application:` — RFC 8705's implicit mapping at
   the token endpoint reads exactly that — and `startCertificateSession()` used to
@@ -278,10 +349,12 @@ restart-only, on by default. Four things are this directory's:
   `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
   username is the leaf's `urn:sts:person:` name. A certificate from an anchor
   somebody installed is unchanged: default realm, common name.
-* **`listen()` RE-APPLIES THE CONTEXT.** The two servers are created at require
-  time, before the certificate authority starts, so the Root was not there to add;
-  a certified listener has it re-applied when it is certified, a supplied
-  certificate never is.
+* **THE CONTEXT IS RE-APPLIED WHEN THE CERTIFICATE IS CERTIFIED.** A listener
+  is created before the certificate authority starts, so the Root was not there
+  to add; `onCertified` calls `applyAnchors()`, which re-applies it to every
+  registered listener. A supplied certificate is never certified, so nothing is
+  re-applied for it. `listen()` used to do this for the two sockets this module
+  owned and does nothing at all now.
 * **THE TRUSTSTORE PAGE DOES NOT LIST IT.** It is not an anchor anybody added and
   cannot be removed there; `GET /tls` carries it at
   `truststore.issuedClientCertificates`, and `tests/truststore_admin.js` counts
@@ -289,22 +362,24 @@ restart-only, on by default. Four things are this directory's:
 
 `mtls.peerVerified()` and SCIM's client-certificate scheme ask the same gate
 through `checkSocket()`, which also refuses a realm mismatch — they have an
-ambient realm, these two listeners do not.
+ambient realm. `/tls/sign-in` has one too, being a route like any other, and
+still does not use it: the session goes in the realm of the authority that
+signed the leaf, because that is the realm the certificate names.
 
 ## A PRESENTED CERTIFICATE'S REVOCATION IS CONSULTED (2026-09-12)
 
 `common/revocation_status.js` is the check and `common/CLAUDE.md` 3ad argues it.
 What is this directory's:
 
-* **8443 AND 9443 CHECK BEFORE THEY ACT.** The handler awaits the verdict
-  (`checkedSocket()`) and then answers (`answer()`); `secureConnection` awaits it
-  before `recordClientCertificate()`. A certificate the policy refuses starts
-  **no session**, is **not recorded** as an authentication (it gets a refusal
-  audit row with `STS-PKI-0118` or `-0119` instead), and on the **required
-  listener answers 403** with the report as its body. The optional listener still
-  answers 200 — reporting is what it is for — and its `authentication` block says
-  `refusedOnRevocation: true`. `/tls/whoami` carries the whole verdict at
-  `clientCertificate.revocation`; `GET /tls` carries the policy at `revocation`.
+* **THE SIGN-IN AND THE SIGHTING BOTH CHECK BEFORE THEY ACT.**
+  `GET /tls/sign-in` awaits the verdict (`checkedSocket()`) before it calls
+  `startCertificateSession()`; `observeConnectionsOn()`'s `secureConnection`
+  awaits it before `recordClientCertificate()`. A certificate the policy refuses
+  starts **no session** and is **not recorded** as an authentication — it gets a
+  refusal audit row with `STS-PKI-0118` or `-0119` instead — and the route says
+  so in its answer, which carries the whole verdict at `revocation`. **It also
+  answered 403 on 9443 until 2026-09-16**; that listener is gone and nothing
+  here refuses a connection any more. `GET /tls` carries the policy.
 * **NOT AT THE HANDSHAKE, AND THAT WAS MEASURED RATHER THAN ASSUMED.** Node's
   `crl` secure-context option turns on OpenSSL's CRL check for the leaf, which
   then REQUIRES a CRL for every issuer: a client from an authority with no list
@@ -312,7 +387,8 @@ What is this directory's:
   client was refused). It is also static, leaf-only and fetches nothing. So the
   handshake completes and the request, the session and the recorded identity are
   what get refused.
-* **THE MAIN PORT IS `common/app.js`'s ANNOTATION**, read by
+* **THE MAIN PORT IS `common/app.js`'s ANNOTATION** — which since 2026-09-16 is
+  every door there is — read by
   `oauth-oidc/mtls.js`'s `peerVerified()` — which answers `verified: false` with
   `error: 'CERT_REVOKED'` for a refused chain, so every caller that resolves a
   certificate to an identity refuses it — and by SCIM's and RFC 8705's
@@ -322,40 +398,41 @@ What is this directory's:
 * **LDAPS 636 IS NOT A DOOR**: it asks for no client certificate.
 * **A FOREIGN CLIENT CERTIFICATE IS ASKED ABOUT BY OCSP TOO, THE SAME DAY**, and
   its delta and indirect CRLs are read — which matters here more than anywhere,
-  because these two listeners are where a certificate from somebody else's CA
-  most often arrives. Two consequences for this directory. **A first request can
-  wait on two fetches**, the responder and then the CRL when the responder fails,
-  each bounded by `pki.revocationFetchTimeoutMs`; the answers are cached, so the
-  second request with the same certificate waits on neither. **And the 403 on
-  9443 now also means "the issuer's own responder does not know this
-  certificate"** under hard-fail — `unknownKind: 'responder-unknown'` on the
-  link in `clientCertificate.revocation`, which is where to look before reading
-  a 403 as a revocation.
+  because a certificate from somebody else's CA is what this family most often
+  meets. Two consequences for this directory. **A first request can wait on two
+  fetches**, the responder and then the CRL when the responder fails, each
+  bounded by `pki.revocationFetchTimeoutMs`; the answers are cached, so the
+  second request with the same certificate waits on neither. **And a refusal now
+  also means "the issuer's own responder does not know this certificate"** under
+  hard-fail — `unknownKind: 'responder-unknown'` on the link in the verdict,
+  which is where to look before reading a refusal as a revocation.
 * **AND SINCE THE THIRD PASS THE FIRST REQUEST CAN WAIT ON MORE THAN TWO.** A
   delegated responder's own CRL is fetched before its answer is used; a list whose
   signer nothing here holds has that signer fetched from the list's caIssuers
   address; a distribution point may be `ldaps:` (or `ldap:`, where
   `pki.revocationLdap` allows it). Each is bounded by the same timeout and cached.
-  **Under hard-fail a 403 can therefore also mean** a delegated responder whose own
+  **Under hard-fail a refusal can therefore also mean** a delegated responder whose own
   status could not be established (`STS-PKI-0127` in the log), a caIssuers address
   that did not answer (`STS-PKI-0126`), or a directory that answered unusably
-  (`STS-PKI-0128`) — each named in `clientCertificate.revocation`'s `why`.
+  (`STS-PKI-0128`) — each named in the verdict's `why`.
   **A presented chain whose issuer the client did not send is not path-built**
   from caIssuers: the handshake could not have verified without it, so the case
-  does not reach these listeners.
+  does not arise here.
 
-`tests/revocation_status.js` binds both listeners on port 0 in a child process
-and asserts the 403, the 200 and the absent session over a real handshake. Its
-OpenSSL child (sections 8 to 11) holds OCSP, delta and indirect CRLs against a
-real `openssl ocsp` responder and `openssl ca` lists; it calls `verdictFor()`
-directly, because what those sections vary is the documents, and the listener
-half already shows that a refused verdict reaches both ports.
+`tests/revocation_status.js` asserts the absent session over a real handshake in
+a child process — **it was written against the two deleted listeners and its
+listener half is the tests' to bring across.** Its OpenSSL child (sections 8 to
+11) holds OCSP, delta and indirect CRLs against a real `openssl ocsp` responder
+and `openssl ca` lists; it calls `verdictFor()` directly, because what those
+sections vary is the documents rather than the socket, and that half is
+untouched by the deletion.
 
 ## Post-quantum certificates
 
-`tls.certificateAlgorithms` (`STS_TLS_CERT_ALGS`) decides what the two
-listeners present. It is `rsa` alone by default and takes any of `ml-dsa-44`,
-`ml-dsa-65` and `ml-dsa-87` beside it, comma separated.
+`tls.certificateAlgorithms` (`STS_TLS_CERT_ALGS`) decides what this module makes
+and therefore what every socket presenting its certificate serves. It is `rsa`
+alone by default and takes any of `ml-dsa-44`, `ml-dsa-65` and `ml-dsa-87`
+beside it, comma separated.
 
 **More than one is the setting worth having.** node takes parallel `key`/`cert`
 arrays and OpenSSL serves whichever certificate matches the signature
@@ -391,7 +468,7 @@ post-quantum JOSE algorithms are untouched by any of it: they come from
 asserts the refusal names the runtime and the requirement, which is the only
 branch of this a node 22 can reach.
 
-Three consequences are worth knowing before turning it on:
+Two consequences are worth knowing before turning it on:
 
 * **`GET /tls/server-certificate` returns every certificate**, concatenated. A
   truststore built from the first one alone fails to verify the connection it
@@ -401,20 +478,24 @@ Three consequences are worth knowing before turning it on:
   `ubuntu:latest`'s until recently — says `Unable to load certificate`. Node
   reads it whatever the binary does, because node's OpenSSL moves with the node
   version rather than with the image.
-* **`/tls/whoami` reports the post-quantum posture in two independent halves**,
-  the key exchange and the certificates, because they answer different
-  questions on different timescales and a single boolean would be wrong for
-  almost every connection made today. Node cannot NAME a hybrid ML-KEM group —
-  `getEphemeralKeyInfo()` knows ECDH and DH only — so an unnamed group is
-  reported as unnamed, with both readings (a hybrid group, or a resumed
-  session) rather than a guess.
+**NOTHING HERE REPORTS THE POST-QUANTUM POSTURE OF A CONNECTION ANY MORE.**
+`/tls/whoami` did, in two independent halves — the key exchange and the
+certificates — because they answer different questions on different timescales
+and a single boolean would be wrong for almost every connection made today; it
+also had to say that node cannot NAME a hybrid ML-KEM group
+(`getEphemeralKeyInfo()` knows ECDH and DH only), so an unnamed group was
+reported as unnamed with both readings rather than a guess. That page went with
+the listeners on 2026-09-16 and has no successor here. What survives is the
+CERTIFICATE half, which is a property of this service rather than of a
+connection: `GET /tls` and `/admin/crypto-metadata` list every certificate
+configured, and `GET /tls/server-certificate` hands them over.
 
 LDAPS on 636 keeps serving the FIRST certificate, which is the RSA one unless
 the setting says otherwise: no LDAP client in reach speaks ML-DSA, and the
-point of that listener is that one anchor covers 8443, 9443 and 636.
+point of sharing the certificate is that one anchor covers every socket.
 
 **AND THE ML-DSA CERTIFICATE IS A LEAF OF THE TLS ISSUING CA TOO, SINCE
-2026-09-13.** It was the one key pair on these sockets still self-signed after
+2026-09-13.** It was the one key pair this module made that was still self-signed after
 the RSA certificate came under the Root, so a post-quantum client that OpenSSL
 handed it had to pin it while a classical client on the same port trusted the
 anchor. Each ML-DSA certificate is registered with `common/pki.js` beside the
@@ -438,13 +519,14 @@ certificate and trust it, a restart invalidated what they had trusted, and
 `POST /tls/trust` exists partly because of it.
 
 Now `common/pki.js` builds a Root for the service at startup and this
-listener's key is a leaf of it — under a **process** Intermediate rather than
-a realm's, because these sockets are shared by every realm and one realm's
-Intermediate signing the certificate every realm's front door presents would be
-that realm vouching for all the others.
+certificate's key is a leaf of it — under a **process** Intermediate rather than
+a realm's, because the sockets that present it are shared by every realm and one
+realm's Intermediate signing the certificate every realm's front door presents
+would be that realm vouching for all the others.
 
-**So ONE anchor covers 8443, 9443, LDAPS 636, the main port AND every token
-this service signs**, and it survives a restart wherever the keystore does.
+**So ONE anchor covers the main port, LDAPS 636, the debugger listener AND every
+token this service signs**, and it survives a restart wherever the keystore
+does.
 
 Four things about how it is wired are worth knowing before changing any of it:
 
@@ -455,14 +537,14 @@ Four things about how it is wired are worth knowing before changing any of it:
   `common/service_state.js`, above everything.
 * **THE ORDERING IS WHAT MAKES IT WORK.** This module is required at 20 and its
   certificate is built at require time; `pki.start()` runs afterwards and
-  BEFORE `listen()` binds anything. So no client ever sees the self-signed one
-  and nothing is re-keyed under a live listener.
-* **THE LISTENERS HAVE TO BE TOLD.** `permissiveServer` and `strictServer` are
-  created at module top level with their secure context evaluated THERE, so
-  mutating the certificate record is invisible to them. `onCertified` calls
-  `applyAnchors()` — the rebuild path `POST /tls/trust` already uses — and
-  without that line the certificate is issued, recorded, reported on every page
-  and **not served**, which is the most convincing way for this to look
+  BEFORE `server.js`'s `listen()` binds anything. So no client ever sees the
+  self-signed one and nothing is re-keyed under a live listener.
+* **THE LISTENERS HAVE TO BE TOLD.** A TLS server evaluates its secure context
+  when it is CREATED, so mutating the certificate record is invisible to one
+  already made. `onCertified` calls `applyAnchors()` — the rebuild path
+  `POST /tls/trust` already uses, and which reaches every registered listener —
+  and without that line the certificate is issued, recorded, reported on every
+  page and **not served**, which is the most convincing way for this to look
   finished and be wrong.
 * **THE CHAIN GOES ON THE WIRE.** `secureContextOptions()` sends the leaf
   followed by the Issuing CA and the Intermediate, because a client holding
@@ -809,7 +891,7 @@ sequentially is not, which is a slot-per-node question this work did not take.
 and since 2026-09-06 an anchor decides whose client certificate becomes an IDENTITY — a
 directory entry, a group, a role, and for a remote XACML PEP the documents this service
 enforces its own access with. **In product mode both answer 403**, naming
-`tls.trustAnchorsFile`: a PEM file read at require time, before 8443 and 9443 are created
+`tls.trustAnchorsFile`: a PEM file read at require time, before any listener is created
 from `secureContextOptions()` (which is why it pushes into `anchors` directly — `addAnchors()`
 re-applies the context to listeners that do not exist yet). A file that cannot be read, or
 holds no certificate, is FATAL.
@@ -884,37 +966,47 @@ and `sts_admin_console` drive both doors over HTTP with a CA they mint and remov
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
 **`protocolOptions()` is where `tls.minVersion` and `tls.ciphers` are stated for every TLS
-socket this process owns** — it rides in `secureContextOptions()`, so 8443 and 9443 are
-created with it AND every truststore change re-applies it to every registered listener
-(the main port among them), `server.js` passes it when creating the main port, and
+socket this process owns** — it rides in `secureContextOptions()`, so every truststore
+change re-applies it to every registered listener (the main port among them),
+`server.js` passes it when creating the main port, and
 `ldap_server.js` asks for it for LDAPS. The defaults are node's own written down, so an
 unedited service negotiates exactly what it did. **A cipher list that builds no context is
 FATAL at require time**: found later it would be a TypeError from `createServer()`, or a
 listener silently keeping its old context after a `setSecureContext()` throws.
+**This module created two of those sockets until 2026-09-16 and creates none
+now**, which changes nothing about where the policy is stated and everything
+about who applies it: `server.js` and `ldap_server.js` do, and a caller that
+forgets to ask gets node's defaults rather than this service's.
 
-Both listeners bind `global.host` (`helpers.listenHost()`), which they ignored for the
-literal `'0.0.0.0'`. The self-signed fallback certificate's three literals are
+The bind address is the caller's — `global.host` through `helpers.listenHost()` — for the
+same reason. The self-signed fallback certificate's three literals are
 `tls.selfSignedKeyBits`, `tls.selfSignedValidityYears` and `tls.selfSignedOrganization`,
 defaults unchanged; the CN is still the first of `tls.hostnames`.
 
 `tests/ldap_tls_product_mode.js` asserts the 403, the anchors file (and its fatal
-refusal), the fatal cipher list, and — as a real handshake — that `tls.minVersion=TLSv1.3`
-refuses a TLS 1.2 client on 8443. Mutation-tested against the product refusal removed.
+refusal) and the fatal cipher list. **Its real-handshake assertion that
+`tls.minVersion=TLSv1.3` refuses a TLS 1.2 client was made against 8443** — the
+socket, not the setting — so it is one of the places the deletion reaches the
+suite. Mutation-tested against the product refusal removed.
 
 ## THE PROXY PROTOCOL COMES OFF BEFORE THE HANDSHAKE (2026-09-14, #46)
 
-`listen()` installs `common/proxy_protocol.js` on `permissiveServer` and
-`strictServer`, and `server.js` on the main port, when `global.proxyProtocol` is
-`v2`. It shadows each server's `connection` emit, so the TLS engine `tls.Server`
-attaches is handed a socket whose header is gone — mutual TLS is unaffected, the
-client certificate verifies exactly as before (`tests/proxy_protocol.js` 3i, with
-the header coalesced into the ClientHello's segment and in a segment of its own).
-`secureConnection`, `tlsClientError` and `/tls/whoami` read the header's address
-from the TLS socket with no change here, because the module shadows the TCP
-handle's `getpeername` that a TLSWrap proxies to. `/tls/whoami` gained one field,
-`https.proxyProtocol`: what the header said, including the balancer's own address
-(`via`), or null. This is what makes an AWS Network Load Balancer with TLS
-passthrough a supported front for 8443 and 9443 — the balancer never terminates.
+`server.js` installs `common/proxy_protocol.js` on the main port when
+`global.proxyProtocol` is `v2`; this module's `listen()` installed it on
+`permissiveServer` and `strictServer` until both were deleted on 2026-09-16, and
+installs nothing now. It shadows the server's `connection` emit, so the TLS
+engine `tls.Server` attaches is handed a socket whose header is gone — mutual
+TLS is unaffected, the client certificate verifies exactly as before
+(`tests/proxy_protocol.js` 3i, with the header coalesced into the ClientHello's
+segment and in a segment of its own). `secureConnection` and `tlsClientError` —
+which `observeConnectionsOn()` is what now listens for — read the header's
+address from the TLS socket with no change here, because the module shadows the
+TCP handle's `getpeername` that a TLSWrap proxies to. **What the header said was
+also published, at `https.proxyProtocol` on `/tls/whoami`, and that went with
+the listeners**: what the header carried, the balancer's own address (`via`)
+included, is no longer published by anything in this directory. This is what
+makes an AWS Network Load Balancer with TLS passthrough a
+supported front for the main port — the balancer never terminates.
 
 ## A RUNTIME ANCHOR SURVIVES A RESTART (2026-09-12)
 
@@ -968,15 +1060,18 @@ controls and a real restart against an `ldif` store, in child processes. It
 found a pre-existing defect in `persistence/persistence.js` on its first run —
 see that directory's `CLAUDE.md`.
 
-## THE TWO LISTENERS ARE BEHIND THE CLUSTER BARRIER (2026-09-14, #46 section 4)
+## THE CERTIFICATE SIGN-IN IS BEHIND THE CLUSTER BARRIER (2026-09-14, #46 section 4)
 
-A verified client certificate on 8443 or 9443 STARTS A SESSION, and
-`makeHandler()`'s handler is not the express app `common/app.js` installs the
-cluster barrier on. In active-active mode a certificate sign-in on node A was
-therefore answered before its session committed, and a global sign-out
-answered by node B a moment later listed the sessions B had and missed it —
-the issue's "certificate sign-ins on 9443". The handler now runs through
-`cluster_barrier.middleware()` before the revocation check: catch up with what
-other nodes committed, and hold the answer until this request's writes commit.
-Outside active-active the middleware calls straight through. Not measured on a
-live pair.
+A verified client certificate STARTS A SESSION, and until 2026-09-16 that
+happened in `makeHandler()`'s handler on 8443 and 9443, which is not the express
+app `common/app.js` installs the cluster barrier on. In active-active mode a
+certificate sign-in on node A was therefore answered before its session
+committed, and a global sign-out answered by node B a moment later listed the
+sessions B had and missed it — the issue's "certificate sign-ins on 9443". That
+handler ran through `cluster_barrier.middleware()` before the revocation check,
+and **`GET /tls/sign-in` still calls it explicitly** although it is an ordinary
+route on the barriered app: one call is cheap, the middleware calls straight
+through outside active-active, and the requirement belongs to the act rather
+than to the socket it used to arrive on. Catch up with what other nodes
+committed, and hold the answer until this request's writes commit. Not measured
+on a live pair.

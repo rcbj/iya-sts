@@ -112,7 +112,8 @@ Four changes, and only the third is one of #34's settings.
 **The listener asks for a client certificate and requires none.**
 `https.createServer()` gets `requestCert: true` with `rejectUnauthorized:
 false` over `tlsServer.clientTruststoreOptions()` — exactly the posture the main
-port and 8443 take, so the handshake succeeds either way and what a certificate
+port takes (and 8443 took, until it was deleted on 2026-09-16 for being a second
+socket with it), so the handshake succeeds either way and what a certificate
 is worth is decided per request against the truststore. It was added because
 `oauth2.accessTokenRequireMtls` covers this listener, and **a listener that
 never asks makes a certificate-bound token impossible to present here rather

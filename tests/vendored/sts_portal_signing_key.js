@@ -798,9 +798,15 @@ async function test() {
   //    response to the POST, and are what they say they are; a mismatched file
   //    password and a missing CSRF token issue nothing; one person cannot
   //    revoke another's certificate by naming its serial; the holder can. The
-  //    HANDSHAKE — 9443 signing the holder in, in their realm, and refusing the
-  //    certificate once it is revoked — is `tests/tls_client_certificates.js`,
-  //    because no launcher here publishes 9443 to a job.
+  //    HANDSHAKE — the holder signed in, in their realm, and signed in no
+  //    longer once the certificate is revoked — is
+  //    `tests/tls_client_certificates.js`. It was 9443 there, and the reason
+  //    it was not here was that no launcher publishes 9443 to a job. **That
+  //    reason expired on 2026-09-16**, when 8443 and 9443 were deleted and the
+  //    sign-in became `GET /tls/sign-in` on the BASE URL every job already
+  //    holds — so this could now be asserted here as well, over a handshake a
+  //    launcher's own stack made. It is not yet, and that is the gap rather
+  //    than a decision.
   // -------------------------------------------------------------------------
   log.info("=== 9. a TLS client certificate ===");
   const FILE_PASSWORD = "file password " + jti().slice(0, 8);

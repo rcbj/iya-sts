@@ -997,7 +997,7 @@ const NOT_YET = [
   // `truststore-door` WAS HERE AND WAS PAID IN TWO STEPS ON 2026-09-12: first
   // the gated door (/admin/tls/trust, POST /admin-api/tls/trust/{add,remove}),
   // then persistence — a runtime anchor is written to ou=trustAnchors in the
-  // default realm's directory, restored before the TLS listeners bind, and
+  // default realm's directory, restored before any listener binds, and
   // re-applied when another process changes the container. What is left is
   // narrower and is the directory's: any LDAP client allowed to write
   // ou=trustAnchors can add an anchor, which the directory authorization gap

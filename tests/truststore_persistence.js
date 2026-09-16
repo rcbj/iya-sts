@@ -236,10 +236,11 @@ function runChild(t, phase, dir, pems) {
   });
   const env = Object.assign(clean, {
     LOG_LEVEL: 'fatal',
-    TRUST_PEM_A: pems.a, TRUST_PEM_B: pems.b,
-    // Ports nobody else here is using: requiring the stack builds listeners
-    // this child never binds, but a stray bind must not meet a live service.
-    STS_TLS_PORT: '0', STS_MTLS_PORT: '0'
+    TRUST_PEM_A: pems.a, TRUST_PEM_B: pems.b
+    // `STS_TLS_PORT` and `STS_MTLS_PORT` were pinned to 0 here so that
+    // requiring the stack could not bind a listener onto a live service. Both
+    // settings went with the 8443 and 9443 listeners on 2026-09-16, and
+    // nothing this child requires binds anything.
   });
   if (dir) {
     Object.assign(env, {
@@ -314,17 +315,52 @@ async function run(t) {
   // replication applier means standing up two processes against one database.
   // What can go wrong at both is a call being deleted, which a behavioural
   // test that calls reloadStoredAnchors() itself would never notice.
-  const tlsSource = fs.readFileSync(path.join(__dirname, '..', 'tls',
-                                              'tls_server.js'), 'utf8');
-  const listenBody = tlsSource.slice(tlsSource.indexOf('function listen() {'));
+  // -------------------------------------------------------------------------
+  // WHERE THE STARTUP RESTORE LIVES CHANGED ON 2026-09-16, AND THIS CHECK HAD
+  // TO CHANGE SHAPE RATHER THAN MOVE.
+  //
+  // It was `tls_server.js`'s `listen()`, which restored the stored anchors and
+  // then bound 8443 and 9443 — so the check was "the reload statement comes
+  // before `start(permissiveServer`". Both listeners were deleted and
+  // `listen()` is a no-op, so there is no longer a `start(` in it to be before
+  // and the old check could only fail.
+  //
+  // **WHAT MUST STILL BE TRUE IS THE THING THE OLD CHECK WAS ABOUT**: a
+  // process that starts against a store holding anchors must have them in
+  // force before it answers anything, because a client certificate now arrives
+  // at the MAIN port and is verified against exactly this array. So the
+  // requirement is a `reloadStoredAnchors();` statement reached at startup —
+  // in `tls_server.js`'s `listen()` as before, or in `server.js` before it
+  // binds the main port, which is where the sockets those anchors protect now
+  // are. Either satisfies this; neither is present as of the listener deletion,
+  // and that is a REGRESSION rather than a stale test.
+  //
   // A STATEMENT on a line of its own, not the text: the first version of this
   // check matched `// reloadStoredAnchors();` and passed a listen() whose
   // restore had been commented out.
-  const reloadMatch = /^[ \t]*reloadStoredAnchors\(\);/m.exec(listenBody);
-  const reloadAt = reloadMatch ? reloadMatch.index : -1;
-  const bindAt = listenBody.indexOf('start(permissiveServer');
-  t.check(reloadAt > 0 && bindAt > 0 && reloadAt < bindAt,
-          'listen() restores the stored anchors BEFORE it binds a listener');
+  const tlsSource = fs.readFileSync(path.join(__dirname, '..', 'tls',
+                                              'tls_server.js'), 'utf8');
+  const listenBody = tlsSource.slice(tlsSource.indexOf('function listen() {'));
+  const inListen = /^[ \t]*reloadStoredAnchors\(\);/m.test(listenBody);
+  const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'),
+                                       'utf8');
+  const serverReload =
+      /^[ \t]*tlsServer\.reloadStoredAnchors\(\);/m.exec(serverSource);
+  const mainBindAt = serverSource.indexOf('mainServer.listen(PORT');
+  const inServer = !!serverReload && mainBindAt > 0 &&
+                   serverReload.index < mainBindAt;
+  t.check(inListen || inServer,
+          'the stored anchors are restored at STARTUP, before anything a ' +
+          'client certificate reaches answers — in tls_server.js\'s listen() ' +
+          'or in server.js before it binds the main port',
+          'neither call site has a `reloadStoredAnchors();` statement. This ' +
+          'was tls_server.js\'s listen(), which restored them and then bound ' +
+          '8443 and 9443; those listeners were deleted on 2026-09-16 and ' +
+          'listen() became a no-op, and the restore went with it — so a ' +
+          'product service starts with an EMPTY client truststore however ' +
+          'many anchors its store holds, and every certificate that used to ' +
+          'verify against one is unverified at the main port. Section 2 ' +
+          'below cannot see this: it calls reloadStoredAnchors() itself.');
   const ldapSource = fs.readFileSync(path.join(__dirname, '..', 'ldap',
                                                'ldap_server.js'), 'utf8');
   const applyBody = ldapSource.slice(ldapSource.indexOf('applyEntry: ' +

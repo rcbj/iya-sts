@@ -8,7 +8,7 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `mock-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the permissions boundary, the KMS key, the ECR repository, the container log group, the test report bucket `mock-sts-test-reports-<account>` | an administrator |
-| `environment/` | per run | VPC, NLB (443, 9443, 389, 8082), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 389, 8082), RDS primary + replica, secrets, ECS cluster, task and execution roles, three services, and the suite runner's subnet, NAT gateway and task definition (`runner.tf`) | the deployer role |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `runner/` | per image | the suite runner image (the tests image plus the S3 client) and the two scripts its task runs | built by CI |
 | `Dockerfile`, `entrypoint.sh` | per run | the Terraform image (AWS CLI v2, Terraform 1.16.2, node): one stack, one environment, one action — `init`, `validate`, `plan`, `apply`, `destroy`, `output`, `suite`, `ecr-password` — the parent project's `infra/` arrangement | the workflow, and `terraform-local.sh` |
@@ -73,13 +73,23 @@ every registration was refused `STS-REG-0020`, which `sts_userinfo_protected`
 reported as an unencrypted UserInfo response.
 `STS_SUITE_KEEP_REALMS=1` skips the reset.
 
-**Four published ports.** 443 → 8081, and 9443 (the mutual-TLS listener), 389
+**Three published ports.** 443 → 8081, and 389
 (the directory) and 8082 (the plain-HTTP CRL/OCSP listener) on the same numbers
 inside and out, because the service writes those numbers into what it
 publishes: `PKI_DISTRIBUTION_BASE_URL` and `PKI_DISTRIBUTION_LDAP_HOST` name the
 NLB, so a certificate's CRL address is followable. Every node listener reads the
 PROXY v2 header (`common/proxy_protocol.js`). ECS allows five target groups per
-service; this uses four.
+service; this uses three.
+
+**IT WAS FOUR UNTIL 2026-09-16**, the fourth being 9443, the service's
+mutual-TLS listener, which `sts_global_logout`'s certificate sign-in reached.
+That listener and the permissive one beside it were deleted (`tls/CLAUDE.md`)
+and the sign-in is `GET /tls/sign-in` on 443, so the row came out of
+`environment/locals.tf`'s `published_ports` and took an NLB listener, a target
+group, a security-group rule pair, a port mapping and the runner's
+`STS_MTLS_PORT` with it — every one of those iterates the map. **The XACML PEP
+container's own `PEP_HTTPS_PORT=9443` is a different port in a different
+container and is untouched.**
 
 **TLS passes through the NLB.** TCP 443 → 8081 with PROXY protocol v2, client
 IP preservation off, cross-zone on. Each node presents its own leaf chaining to

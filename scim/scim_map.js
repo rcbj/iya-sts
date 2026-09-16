@@ -668,7 +668,8 @@ function toScimUser(entry, context) {
   // client certificate's entry `cn=<CN>,ou=users` and deliberately writes no
   // `uid` — the certificate is the identity, and `namePlan()`'s fold is what
   // later adds one if that person also signs in by name — so a single mutual
-  // TLS connection to 9443 was enough to break every SCIM list until somebody
+  // TLS connection presenting a client certificate was enough to break every
+  // SCIM list until somebody
   // deleted the entry. An `ldapadd` can produce the same thing at will: this
   // directory enforces no schema, on purpose.
   //

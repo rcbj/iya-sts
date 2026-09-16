@@ -75,7 +75,7 @@
 // request was insecure using the same insecure channel. It is a property of the
 // SOCKET, so it is settled where the socket is bound: `global.https` — whose
 // default is this mode's own flag — makes the main port an HTTPS listener
-// carrying the same certificate 8443, 9443 and LDAPS 636 already serve, and
+// carrying the same certificate LDAPS 636 already serves, and
 // then there is no unencrypted connection for an authorization response to be
 // sent over. That is also why `oauth2.rfc9700` is restart-only: a bound socket
 // is decided before the service is listening.
@@ -319,8 +319,8 @@ const REQUIREMENTS = [
                'http-scheme-refused), ' +
                'and the connection the response goes out over is TLS: ' +
                'global.https is on, so the main port is an HTTPS listener ' +
-               'serving the same self-signed certificate 8443, 9443 and ' +
-               'LDAPS 636 use — one pair per start, so a caller trusts this ' +
+               'serving the same self-signed certificate LDAPS 636 uses — ' +
+               'one pair per start, so a caller trusts this ' +
                'service once. It is not a check and could not be one: a ' +
                'request has already arrived by the time any code here runs, ' +
                'so this is settled by the socket rather than decided per ' +
@@ -369,8 +369,7 @@ const REQUIREMENTS = [
              'certificate regenerated every start is a real cost to pay ' +
              'before anything works. Turn global.https on — which RFC 9700 ' +
              'mode does by default — and every endpoint moves to TLS ' +
-             'together, on the certificate 8443, 9443 and LDAPS 636 already ' +
-             'share.';
+             'together, on the certificate LDAPS 636 already serves.';
     } },
 
   { id: 'proxy-headers-not-trusted', section: '2.6', level: 'MUST',

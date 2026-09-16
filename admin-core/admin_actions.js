@@ -4360,8 +4360,8 @@ function truststoreAction(body, context) {
              message: added.length + ' anchor(s) added' +
                (result.duplicates ? ', ' + result.duplicates + ' already held' :
                 '') +
-               '. The next handshake on 8443, 9443, LDAPS 636 and the main ' +
-               'port is judged against ' + after.anchors.length + ' ' +
+               '. The next handshake on the main port and LDAPS 636 is ' +
+               'judged against ' + after.anchors.length + ' ' +
                'anchor(s); connections already open keep the truststore they ' +
                'were made under. ' + (persisted
                  ? 'Written to ou=trustAnchors in the directory, so it ' +

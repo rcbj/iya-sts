@@ -58,9 +58,11 @@
 // ---------------------------------------------------------------------------
 // WHAT A REALM DOES **NOT** GET ITS OWN OF, and why saying so matters.
 //
-// The four sockets that are not HTTP have no path to put a realm segment in:
-// Kerberos' UDP/TCP 88, the directory's 389 and 636, the two TLS listeners and
-// SPIFFE's four. Those are shared, and each family that can be realm-aware on
+// The sockets that are not HTTP have no path to put a realm segment in:
+// Kerberos' UDP/TCP 88, the directory's 389 and 636, and SPIFFE's four. So is
+// the certificate the main port presents, which is a property of the socket
+// rather than of the realm a request names on it. Those are shared, and each
+// family that can be realm-aware on
 // them is realm-aware by a DIFFERENT discriminator — the Kerberos realm name
 // inside the request, the base DN a search names, the trust domain in an SVID.
 // `kerberos/CLAUDE.md`, `ldap/CLAUDE.md` and `spiffe/CLAUDE.md` carry those;
@@ -2486,9 +2488,14 @@ function realmSupport() {
             'its long-term keys are built from it when the process starts — ' +
             'so that database has to become per realm and lazily built ' +
             'first.' },
-    { family: 'TLS (8443 / 9443)', state: 'none', by: 'shared',
-      note: 'Their whole content is what the server saw of the connection, ' +
-            'which is a property of the socket and not of a realm.' },
+    { family: 'TLS certificate', state: 'none', by: 'shared',
+      note: 'ONE CERTIFICATE FOR THE PROCESS, presented by the main port ' +
+            'and by LDAPS 636. What a socket presents is a property of the ' +
+            'socket and not of a realm, and each of those two carries every ' +
+            'realm. This row read `TLS (8443 / 9443)` until 2026-09-16, ' +
+            'when those two listeners were deleted: what a client ' +
+            'certificate is worth is decided where it is USED, and that is ' +
+            'in the realm the request arrived in.' },
     { family: 'SPIFFE', state: 'full', by: 'socket',
       note: 'A TRUST DOMAIN, AN AUTHORITY, A REGISTRY AND A PAIR OF gRPC ' +
             'SOCKETS PER REALM since 2026-09-12 — this row read `none` until ' +

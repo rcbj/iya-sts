@@ -82,7 +82,7 @@
 //
 // Three kinds of setting are restart-only and they are not the same kind:
 //
-//   * A BOUND SOCKET. The HTTP port, the two TLS ports, both LDAP ports and the
+//   * A BOUND SOCKET. The HTTP port, both LDAP ports and the
 //     two Kerberos ports are held by a listener that started once. Rebinding in
 //     place was considered and rejected: a failed rebind leaves the service
 //     unreachable on the port the caller used to reach it, and that includes
@@ -568,9 +568,11 @@ const SETTINGS = [
     env: 'STS_PORT', type: 'port', dflt: 8081, runtime: false,
     restartReason: 'the listener is bound when the process starts',
     description: 'The port everything HTTP here answers on: the protocol ' +
-                 'endpoints, the console and this API. The two TLS listeners ' +
-                 'are separate and are the tls.* settings, which the console ' +
-                 'draws on its own TLS page.' },
+                 'endpoints, the console and this API. It is the only HTTP ' +
+                 'listener this service has since 2026-09-16, when the two ' +
+                 'TLS listeners were deleted; what certificate it presents, ' +
+                 'and what it makes of one a client presents, are the tls.* ' +
+                 'settings, which the console draws on its own TLS page.' },
 
   // ---------------------------------------------------------------------
   // The scheme the port above answers on, and it is DERIVED (`derived: true`,
@@ -611,9 +613,11 @@ const SETTINGS = [
     restartReason: 'the listener is bound when the process starts, and its ' +
                    'scheme is decided there',
     description: 'Serve the main port over HTTPS, with the SAME certificate ' +
-                 'and key the 8443, 9443 and LDAPS 636 listeners use — one ' +
+                 'and key the LDAPS 636 listener uses — one ' +
                  'self-signed pair generated per start, so a caller trusts ' +
-                 'this service once rather than four times. Defaults to on ' +
+                 'this service once rather than twice. With it on, this port ' +
+                 'asks every connection for a client certificate and ' +
+                 'requires none. Defaults to on ' +
                  'when oauth2.rfc9700 or oauth2.oauth21 is; set it ' +
                  'explicitly to run RFC 9700 mode over plain http (for a ' +
                  'client that cannot trust a per-start certificate) or to ' +
@@ -700,13 +704,14 @@ const SETTINGS = [
                    'cannot be told the rules changed',
     description: 'Whether every TCP listener this service owns expects a ' +
                  'HAProxy PROXY protocol version 2 header at the front of ' +
-                 'each connection: the main port, 8443 and 9443, LDAP 389 ' +
+                 'each connection: the main port, LDAP 389 ' +
                  'and LDAPS 636, the KDC\'s TCP 88 (not UDP), the embedded ' +
                  'debugger and the plain-HTTP revocation listener. `off`, ' +
                  'the default, reads no header. `v2` reads it BEFORE TLS, ' +
                  'so the client\'s address reaches the rate limiter, the ' +
-                 'audit, LDAP and /tls/whoami while TLS — and mutual TLS — ' +
-                 'still terminates here; it is what an AWS Network Load ' +
+                 'audit and LDAP while TLS — and the client certificate the ' +
+                 'main port asks for — still terminates here; it is what an ' +
+                 'AWS Network Load ' +
                  'Balancer sends with the target group attribute ' +
                  'proxy_protocol_v2.enabled, and HAProxy with send-proxy-v2. ' +
                  'A connection from global.trustedProxies MUST begin with a ' +
@@ -4023,9 +4028,9 @@ const SETTINGS = [
     env: 'STS_PKI_REVOCATION_CHECK', type: 'enum',
     enumValues: ['auto', 'off', 'soft-fail', 'hard-fail'],
     dflt: 'auto', runtime: true,
-    description: 'Whether a certificate PRESENTED to this service — on 8443 ' +
-                 'and 9443, on the main port (XACML, SCIM, RFC 8705 client ' +
-                 'authentication), at the SPIRE Server API or in an ' +
+    description: 'Whether a certificate PRESENTED to this service — on the ' +
+                 'main port (XACML, SCIM, RFC 8705 client authentication, ' +
+                 'GET /tls/sign-in), at the SPIRE Server API or in an ' +
                  'assertion\'s x5c — is checked for revocation. One this ' +
                  'service issued is looked up in its own register; one from ' +
                  'another authority against the CRL it names. `off` consults ' +
@@ -6041,19 +6046,25 @@ const SETTINGS = [
                  'RP_CONTEXT_TTL_MS in wsfed.js.' },
 
   // --- TLS -----------------------------------------------------------------
-  { key: 'tls.port', group: 'TLS', label: 'TLS port',
-    env: 'STS_TLS_PORT', type: 'port', dflt: 8443, runtime: false,
-    restartReason: 'the listener is bound when the process starts',
-    description: 'The permissive listener: it always asks for a client ' +
-                 'certificate, never refuses one, and reports what it saw.' },
-
-  { key: 'tls.mutualPort', group: 'TLS', label: 'Mutual-TLS port',
-    env: 'STS_MTLS_PORT', type: 'port', dflt: 9443, runtime: false,
-    restartReason: 'the listener is bound when the process starts',
-    description: 'The strict listener: node refuses an unverified client ' +
-                 'certificate during the handshake, so nothing in this ' +
-                 'service runs for one.' },
-
+  // -------------------------------------------------------------------------
+  // `tls.port` (8443) AND `tls.mutualPort` (9443) WERE REMOVED ON 2026-09-16.
+  //
+  // They named two HTTPS listeners of this module's own: one that asked for a
+  // client certificate and never required it, and one that required it at the
+  // handshake. The main port already had the first posture — `server.js` binds
+  // it `requestCert: true, rejectUnauthorized: false` — so the first was a
+  // second socket doing what the one every other protocol answers on already
+  // did, and a deployment paid for three HTTPS ports to get two behaviours.
+  //
+  // The second cannot be had here at all any more, and that is the deliberate
+  // loss: refusing at the handshake is a property of a socket, and this socket
+  // carries every other protocol. A certificate that does not verify is now
+  // refused where it is USED — RFC 8705 client authentication, /xacml,
+  // /scim/v2, and GET /tls/sign-in, which starts a session for a verified one.
+  //
+  // Nothing replaced the settings, so a deployment that set either gets the
+  // "unknown setting" warning at startup rather than a silent no-op.
+  // -------------------------------------------------------------------------
   { key: 'tls.trustIssuedClientCertificates', group: 'TLS',
     label: 'Trust TLS client certificates issued on the user portal',
     env: 'STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES', type: 'bool', dflt: true,
@@ -6061,7 +6072,7 @@ const SETTINGS = [
     restartReason: 'the service Root is put into the listeners\' client ' +
                    'truststore when their TLS context is built',
     description: 'On adds this service\'s own Root CA to the client ' +
-                 'truststore of 8443, 9443 and the main port, so a TLS client ' +
+                 'truststore of the main port, so a TLS client ' +
                  'certificate a person issues themselves on /portal/signing-key ' +
                  'verifies and signs them in — in the realm whose TLS client ' +
                  'Issuing CA signed it. A chain through that Root is an ' +
@@ -6095,7 +6106,7 @@ const SETTINGS = [
     label: 'Server certificate algorithms', env: 'STS_TLS_CERT_ALGS',
     type: 'csv', dflt: 'rsa', runtime: false,
     restartReason: 'the certificates are issued when the listeners are bound',
-    description: 'Which server certificates the two TLS listeners present: ' +
+    description: 'Which server certificates the main port and LDAPS present: ' +
                  '"rsa" (the default), and any of ml-dsa-44, ml-dsa-65 and ' +
                  'ml-dsa-87. MORE THAN ONE IS THE INTERESTING SETTING — ' +
                  'OpenSSL 3.5 serves whichever certificate matches the ' +
@@ -6135,8 +6146,9 @@ const SETTINGS = [
 
   // ---------------------------------------------------------------------
   // THE PROTOCOL FLOOR AND THE CIPHER LIST, FOR EVERY TLS SOCKET THIS PROCESS
-  // OWNS (2026-09-12): 8443, 9443, LDAPS 636 and — when global.https is on —
-  // the main port. There were none, so each listener took node's defaults
+  // OWNS (2026-09-12): LDAPS 636 and — when global.https is on — the main
+  // port; it was four sockets until the 8443 and 9443 listeners were deleted
+  // on 2026-09-16. There were none, so each listener took node's defaults
   // silently, which is a policy nobody could see or change.
   //
   // THE DEFAULTS ARE NODE'S OWN, WRITTEN DOWN, so an unedited service
@@ -6151,7 +6163,7 @@ const SETTINGS = [
     enumValues: ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'],
     dflt: 'TLSv1.2', runtime: false,
     restartReason: 'the TLS contexts are built when the listeners are created',
-    description: 'The lowest protocol version 8443, 9443, LDAPS and the main ' +
+    description: 'The lowest protocol version LDAPS and the main ' +
                  'HTTPS port will negotiate. TLSv1.2 is node\'s own default ' +
                  'and what this service always did; TLSv1.3 refuses every ' +
                  'client that cannot speak it, which is the setting a ' +
@@ -6164,8 +6176,8 @@ const SETTINGS = [
     env: 'STS_TLS_CIPHERS', type: 'string', dflt: '', runtime: false,
     restartReason: 'the TLS contexts are built when the listeners are created',
     description: 'An OpenSSL cipher list for the TLS 1.2 suites (and, with ' +
-                 'TLS_ prefixed names, the TLS 1.3 ones) on the same four ' +
-                 'listeners. Empty means node\'s default list, which is what ' +
+                 'TLS_ prefixed names, the TLS 1.3 ones) on the same two ' +
+                 'sockets. Empty means node\'s default list, which is what ' +
                  'this service always used. A list matching NO cipher stops ' +
                  'the service at startup naming this setting, rather than ' +
                  'leaving listeners that complete no handshake.' },
@@ -6176,7 +6188,7 @@ const SETTINGS = [
     runtime: false,
     restartReason: 'the anchors are read when the listeners are created',
     description: 'A PEM file of CA certificates that client certificates on ' +
-                 '8443, 9443 and the main port are verified against, loaded ' +
+                 'the main port are verified against, loaded ' +
                  'at startup. It is the PRODUCT-MODE way to fill the ' +
                  'truststore: POST /tls/trust and /tls/trust/clear answer ' +
                  'anybody in development and are refused in product mode, ' +
@@ -9676,7 +9688,7 @@ const SETTINGS = [
                  'about its own pull. Turning it off is what this service ' +
                  'did before this existed: correct, and each process alone ' +
                  'with its own copy. IT SHARES STATE AND NOT SOCKETS — the ' +
-                 'KDC, the LDAP listeners, the two TLS ports and SPIFFE\'s ' +
+                 'KDC, the LDAP listeners, the main port and SPIFFE\'s ' +
                  'four are bound per process — and the replay caches ' +
                  'CONVERGE rather than synchronise, so between a write in ' +
                  'one process and its arrival in another there is a window ' +

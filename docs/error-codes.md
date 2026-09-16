@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2674** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2670** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -168,7 +168,7 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 | `STS-CORE-0029` | The Kerberos KDC's TCP/UDP listeners could not start (often port 88 is privileged or taken); the rest of the service runs. | — |
 | `STS-CORE-0030` | The embedded LDAP directory's listener could not start; the rest of the service runs. | — |
 | `STS-CORE-0031` | The SPIFFE gRPC listeners could not start; the rest of the service runs. | — |
-| `STS-CORE-0032` | The 8443/9443 TLS endpoints could not start; the rest of the service runs. | — |
+| `STS-CORE-0032` *(retired)* | The 8443/9443 TLS endpoints could not start. Retired 2026-09-16: both listeners were deleted and this module binds nothing, so there is no bind here to fail | — |
 | `STS-CORE-0033` | The last flush at shutdown failed, so the process exited non-zero and a change made just before it may not have been written down. | — |
 | `STS-CORE-0034` | The BBS key pair could not be shared with the request workers; each generates its own and a did:web document may name a key its siblings did not sign with. | — |
 | `STS-CORE-0035` | The service refused to start because its signing key material (or the key-encryption key that opens it) could not be read. | — |
@@ -530,7 +530,7 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 | `STS-PKI-0115` | An application's signing key pair was issued and one of its attributes could not be written; the private key is lost. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0116` | An application key-pair removal found nothing to take off for that profile. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0117` | A PKI console or API action named an action that does not exist. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0118` | A presented certificate chain was refused because a certificate in it is REVOKED — on this service's own register, or on the verified CRL of a foreign issuer (common/revocation_status.js). | Per door: HTTP 403 on 9443; no session and no recorded authentication on 8443; invalid_client at the token endpoint (tls_client_auth, and an x5c assertion as invalid_client or invalid_grant); HTTP 403 access_denied at /xacml; the SCIM client-certificate scheme not accepted (401 if nothing else authenticates); gRPC UNAUTHENTICATED at the SPIRE Server API |
+| `STS-PKI-0118` | A presented certificate chain was refused because a certificate in it is REVOKED — on this service's own register, or on the verified CRL of a foreign issuer (common/revocation_status.js). | Per door: no session at GET /tls/sign-in (HTTP 200 with signedIn false) and no recorded authentication for the sighting on the main port; invalid_client at the token endpoint (tls_client_auth, and an x5c assertion as invalid_client or invalid_grant); HTTP 403 access_denied at /xacml; the SCIM client-certificate scheme not accepted (401 if nothing else authenticates); gRPC UNAUTHENTICATED at the SPIRE Server API |
 | `STS-PKI-0119` | A presented certificate chain was refused under pki.revocationCheck=hard-fail because its revocation status could not be established — a foreign CRL could not be fetched, did not verify, was stale, or no issuer certificate was available to verify one. | The same refusals as STS-PKI-0118, per door |
 | `STS-PKI-0120` | The CRL named by a presented certificate's cRLDistributionPoints could not be fetched: a network failure, a timeout, a non-2xx status, a redirect or a body over pki.revocationMaxCrlBytes. | — |
 | `STS-PKI-0121` | A fetched CRL could not be used: it did not parse, named another issuer, failed its signature, carried an unsupported critical extension or was past its nextUpdate — or a presented chain could not be walked at all. | — |
@@ -1999,7 +1999,7 @@ Raised from: spiffe/.
 
 ## STS-TLS
 
-**TLS listeners.** The 8443 and 9443 listeners, the trust store, and the server certificate three other sockets share.
+**TLS listeners.** The client-certificate truststore, the sign-in a verified one starts, and the server certificate the main port and LDAPS 636 share. The 8443 and 9443 listeners it was named for were deleted on 2026-09-16.
 
 Raised from: tls/.
 
@@ -2025,17 +2025,17 @@ Raised from: tls/.
 | `STS-TLS-0018` | Recording a verified client certificate as an authentication threw; the connection was unaffected. | — |
 | `STS-TLS-0019` | The service did not start: tls.trustAnchorsFile could not be read. | — |
 | `STS-TLS-0020` | The service did not start: tls.trustAnchorsFile holds no PEM certificate. | — |
-| `STS-TLS-0021` | The required-client-certificate listener refused a handshake, usually a client certificate missing or not verifying against the truststore. | TLS handshake failure |
-| `STS-TLS-0022` | A TLS handshake failed on the optional-client-certificate listener (a version, cipher or non-TLS mismatch). | TLS handshake failure |
+| `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version, cipher or certificate mismatch, or a non-TLS client. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
+| `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
 | `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
 | `STS-TLS-0024` | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. | HTTP 403 |
-| `STS-TLS-0025` | A TLS listener could not bind its port. | — |
+| `STS-TLS-0025` *(retired)* | A TLS listener could not bind its port. Retired 2026-09-16: this module owns no listener to bind | — |
 | `STS-TLS-0026` | The TLS listener certificate does not chain to this service's Root and re-issuing it produced the same certificate. | — |
 | `STS-TLS-0027` | The runtime trust anchor store was installed without one of its list, write and remove functions, and was refused whole; runtime anchors are not persisted. | — |
 | `STS-TLS-0028` | A runtime trust anchor is in force but could not be written to ou=trustAnchors, so it will not survive a restart. | — |
 | `STS-TLS-0029` | A runtime trust anchor was removed from every listener but could not be removed from ou=trustAnchors, so it will come back on a restart. | — |
 | `STS-TLS-0030` | The stored trust anchors could not be read; the truststore was left as it was. | — |
-| `STS-TLS-0031` | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity (not from a TLS client or enrollment Issuing CA, no clientAuth, or no single urn:sts:person:/application: name). | HTTP 403 with the connection report |
+| `STS-TLS-0031` *(retired)* | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity. Retired 2026-09-16 with that listener: the same certificate is now refused where it is USED — no session at GET /tls/sign-in, no client authentication at the token endpoint — rather than at a socket | HTTP 403 with the connection report |
 
 ## STS-VC
 

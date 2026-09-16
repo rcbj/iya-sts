@@ -23,25 +23,43 @@
 //      an unverified chain is not this module's business; another realm's
 //      certificate is refused at a main-port door; `mtls.peerVerified()` says
 //      the same thing.
-//   D. THE LISTENERS, over a real handshake: the Root is in the client
-//      truststore; 9443 signs the TLS client certificate's holder in, IN ITS
-//      REALM; the assertion key pair gets a 403 and no session on 9443 and no
-//      session on 8443; a revocation by somebody else is refused and one by the
-//      holder makes 9443 refuse the certificate.
+//   D. THE DOOR, over a real handshake: the Root is in the client truststore;
+//      `GET /tls/sign-in` signs the TLS client certificate's holder in, IN ITS
+//      REALM; the assertion key pair starts no session there and says why; a
+//      revocation by somebody else is refused and one by the holder stops the
+//      certificate signing anybody in.
+//
+// **SECTION D WAS THE 8443 AND 9443 LISTENERS UNTIL 2026-09-16, AND THEY ARE
+// GONE.** It dialled `/tls/whoami` on each and asserted 9443's sign-in, its
+// 403 for an assertion key pair, and 8443's 200-with-no-session. What replaced
+// both is one route on the MAIN port — `GET /tls/sign-in`, running the same
+// `startCertificateSession()` — so the same four claims are made against it.
+// **What is not made any more is the HANDSHAKE REFUSAL**: 9443 required a
+// client certificate that verified before any code here ran, and the main port
+// asks for one and requires none because it carries every other protocol. A
+// certificate that does not verify is refused where it is USED, which is what
+// the rest of this file asserts. The 403 status is gone with it — the route
+// answers 200 and says `signedIn: false`, which is a report rather than a
+// refusal, so the assertions are about the SESSION and never about the status.
+//
+// THE CHILD BUILDS ITS OWN HTTPS LISTENER over `common/app`, the way
+// `tests/rfc8705_mtls.js` section 3 does, because this module has no listener
+// of its own any more: `requestCert: true, rejectUnauthorized: false` over
+// `clientTruststoreOptions()`, which is the main port's posture in `server.js`.
 //
 // ALL OF IT RUNS IN ONE CHILD PROCESS, for `tests/revocation_status.js`'s
-// reason: the listeners read their ports at require time, and the certificate
-// authority, the realm and the revocation register are process state another
-// file in `run.js`'s single process would otherwise inherit.
+// reason: the certificate authority, the realm and the revocation register are
+// process state another file in `run.js`'s single process would otherwise
+// inherit.
 //
 // MUTATION-TESTED, and the first round is why section C has three fixtures
 // that each break ONE rule. Nine mutants: the use-case check, the clientAuth
 // check, the CN-equals-SAN check, the realm comparison at a main-port door,
-// the Root in the truststore, the realm the listener runs in, and the strict
-// listener's 403 all go red — but the use-case, clientAuth and CN checks
-// SURVIVED at first, because the only refused fixture was an assertion key
-// pair failing two rules at once, so deleting either left the other refusing
-// it.
+// the Root in the truststore, the realm the session is started in, and the
+// identity gate's refusal all go red — but the use-case, clientAuth and CN
+// checks SURVIVED at first, because the only refused fixture was an assertion
+// key pair failing two rules at once, so deleting either left the other
+// refusing it.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -84,7 +102,7 @@ function ask(port, cert, key) {
   log.debug("Leaving ask().");
   return new Promise(function (resolve) {
     const req = https.request({ host: '127.0.0.1', port: port,
-      path: '/tls/whoami', method: 'GET', cert: cert, key: key,
+      path: '/tls/sign-in', method: 'GET', cert: cert, key: key,
       rejectUnauthorized: false, agent: false }, function (res) {
       let text = '';
       res.on('data', function (c) { text += c; });
@@ -383,41 +401,58 @@ async function childBody() {
           JSON.stringify(verdictAssertion));
 
   // -------------------------------------------------------------------------
-  // D. THE LISTENERS
+  // D. THE DOOR: GET /tls/sign-in, over a real handshake
   // -------------------------------------------------------------------------
   const tls = require('../tls/tls_server');
-  await tls.listen().whenReady;
+  const expressApp = require('../common/app');
   const root = pki.serviceRoot();
   t.check(tls.clientTruststoreOptions().ca.some(function (pem) {
     return String(pem).trim() === String(root.certificatePem).trim();
   }), 'D: the service Root is in the client truststore');
-  const ports = tls.ports();
+  // THE MAIN PORT'S POSTURE, built here because this module binds nothing any
+  // more: a client certificate ASKED FOR and never required, over the same
+  // truststore and the same protocol policy `server.js` uses.
+  const serverCert = tls.serverCertificate();
+  const listener = https.createServer(Object.assign({
+    cert: serverCert.certPem, key: serverCert.privateKeyPem,
+    ca: tls.clientTruststoreOptions().ca,
+    requestCert: true, rejectUnauthorized: false
+  }, tls.protocolOptions()), expressApp);
+  tls.trustClientCertificatesOn(listener,
+                                'the tls_client_certificates test listener');
+  await new Promise(function (ok) {
+    listener.listen(0, '127.0.0.1', ok);
+  });
+  const port = listener.address().port;
   const clientCert = issued.certificatePem + issued.chainPem.join('');
-  const strict = await ask(ports.mtls, clientCert, issued.privateKeyPem);
-  const session = strict.body.session || {};
-  t.check(strict.status === 200 && session.started === true &&
+  const signedIn = await ask(port, clientCert, issued.privateKeyPem);
+  const session = signedIn.body.session || {};
+  t.check(signedIn.status === 200 && signedIn.body.signedIn === true &&
+          session.started === true &&
           session.username === PERSON && session.realm === REALM,
-          'D: 9443 signs the holder in, in the certificate\'s realm',
-          JSON.stringify({ status: strict.status, session: session,
-                           raw: strict.body.raw, error: strict.body.error }));
+          'D: /tls/sign-in signs the holder in, in the certificate\'s realm',
+          JSON.stringify({ status: signedIn.status, session: session,
+                           raw: signedIn.body.raw,
+                           error: signedIn.body.error }));
+  t.check((signedIn.body.clientCertificate || {}).presented === true &&
+          (signedIn.body.clientCertificate || {}).verified === true,
+          'D: and reports the certificate as presented and verified',
+          JSON.stringify(signedIn.body.clientCertificate));
   const assertionCert = assertion.issued.certificatePem +
                         assertion.issued.chainPem.join('');
-  const strictRefused = await ask(ports.mtls, assertionCert,
-                                  assertion.issued.privateKeyPem);
-  t.check(strictRefused.status === 403 &&
-          !(strictRefused.body.session || {}).started &&
-          (strictRefused.body.authentication || {}).refusedAsIdentity === true,
-          'D: 9443 answers the assertion key pair 403 and starts no session',
-          JSON.stringify({ status: strictRefused.status,
-                           session: strictRefused.body.session }));
-  const optionalRefused = await ask(ports.tls, assertionCert,
-                                    assertion.issued.privateKeyPem);
-  t.check(optionalRefused.status === 200 &&
-          !(optionalRefused.body.session || {}).started &&
-          (optionalRefused.body.authentication || {}).authenticated === false,
-          'D: 8443 reports it and starts no session',
-          JSON.stringify({ status: optionalRefused.status,
-                           session: optionalRefused.body.session }));
+  const refusedAsIdentity = await ask(port, assertionCert,
+                                      assertion.issued.privateKeyPem);
+  // NO STATUS IS ASSERTED HERE AND THAT IS THE POINT: 9443 answered 403
+  // because the socket itself refused, and this route reports rather than
+  // refuses. What must be true is that NO SESSION STARTED and the answer says
+  // which rule stopped it.
+  t.check(refusedAsIdentity.status === 200 &&
+          refusedAsIdentity.body.signedIn === false &&
+          (refusedAsIdentity.body.session || {}).refusedAsIdentity === true,
+          'D: the assertion key pair verifies, starts NO session, and is ' +
+          'reported as not an identity',
+          JSON.stringify({ status: refusedAsIdentity.status,
+                           session: refusedAsIdentity.body.session }));
   const notTheirs = tlsClient.revoke(REALM, 'bob', issued.serialHex,
                                      'keyCompromise');
   t.check(!notTheirs.ok && errorCodes.codeOf(notTheirs) === 'STS-PKI-0171',
@@ -426,13 +461,18 @@ async function childBody() {
                                    'keyCompromise');
   t.check(revoked.ok && tlsClient.listFor(REALM, PERSON)[0].state === 'revoked',
           'D: the holder revokes it', JSON.stringify(revoked.errors || ''));
-  const afterRevoke = await ask(ports.mtls, clientCert, issued.privateKeyPem);
-  t.check(afterRevoke.status === 403 &&
-          !(afterRevoke.body.session || {}).started,
-          'D: and 9443 refuses it from then on',
+  const afterRevoke = await ask(port, clientCert, issued.privateKeyPem);
+  t.check(afterRevoke.status === 200 && afterRevoke.body.signedIn === false &&
+          (afterRevoke.body.session || {}).refusedOnRevocation === true,
+          'D: and from then on it signs nobody in, refused on revocation — ' +
+          'the chain still VERIFIES, which is why the refusal has to be made ' +
+          'here rather than by the handshake',
           JSON.stringify({ status: afterRevoke.status,
-                           session: afterRevoke.body.session }));
-  tls.close();
+                           session: afterRevoke.body.session,
+                           revocation: afterRevoke.body.revocation }));
+  await new Promise(function (ok) {
+    listener.close(ok);
+  });
   log.debug("Leaving childBody().");
   return t.rows;
 }
@@ -446,8 +486,6 @@ function spawnChild() {
     }
   });
   clean[CHILD_FLAG] = '1';
-  clean.STS_TLS_PORT = '0';
-  clean.STS_MTLS_PORT = '0';
   clean.LOG_LEVEL = 'fatal';
   const result = childProcess.spawnSync(process.execPath, [__filename], {
     cwd: ROOT, env: clean, encoding: 'utf8', timeout: 240000,
@@ -468,7 +506,7 @@ function spawnChild() {
 function run(t) {
   log.debug("Entering run().");
   t.log.info('=== a person\'s TLS client certificate, its files, the ' +
-             'identity gate and the listeners ===');
+             'identity gate and GET /tls/sign-in ===');
   const got = spawnChild();
   if (got.error) {
     t.bad('the child did not run', got.error);
@@ -497,7 +535,8 @@ module.exports = {
   describe: 'A person\'s TLS client certificate: clientAuth from the ' +
             'realm\'s ' +
             'TLS Client Issuing CA, a PKCS#12 OpenSSL opens, the gate that ' +
-            'refuses every other key pair under the same Root, and 9443 ' +
-            'signing the holder in to their realm until they revoke it',
+            'refuses every other key pair under the same Root, and GET ' +
+            '/tls/sign-in on the main port signing the holder in to their ' +
+            'realm until they revoke it',
   run: run
 };

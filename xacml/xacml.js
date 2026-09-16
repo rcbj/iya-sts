@@ -862,8 +862,9 @@ function callerIdentity(req) {
 //      certificate that verified against nothing is a name the caller chose
 //      for itself, and everything below would be reading it.
 //   2. WHICH ENTRY IS THAT? `peps.certificateIdentity()` across the registry's
-//      slot, which is the same lookup a certificate arriving on 8443 or 636
-//      gets — so one certificate is one person here however it turns up.
+//      slot, which is the same lookup a certificate arriving on the main port
+//      or 636 gets — so one certificate is one person here however it turns
+//      up.
 //   3. WHAT DO THEY HOLD? `roles.rolesOf()` with the groups LEFT UNRESOLVED,
 //      deliberately: passing no `groups` is what makes that module read them
 //      out of the directory, and passing `[]` would mean "in no group" and

@@ -34,8 +34,8 @@
 // protocol, and the realm's copy of them is the page the reader is on.
 //
 // **SOCKETS ARE WRITTEN BY HAND, AND ONLY THERE.** The KDC, the protected
-// Kerberos service, both directory listeners, the 8443/9443 TLS listeners and
-// SPIFFE's gRPC sockets register no route, so the router cannot see them —
+// Kerberos service, both directory listeners and SPIFFE's gRPC sockets
+// register no route, so the router cannot see them —
 // the blind spot `sts_metadata.js` states about itself. Their rows are built
 // here from the settings those listeners bind from, and SPIFFE's from the
 // realm's actual bindings, since a SPIFFE realm is told apart by ADDRESS. A
@@ -391,16 +391,18 @@ const SOCKETS = {
   },
   tls: function (host) {
     log.debug("Entering the tls socket builder.");
+    // ONE ROW SINCE 2026-09-16, and it is the MAIN port. This was the 8443
+    // and 9443 listeners, both deleted; what a client certificate is
+    // presented to is the port everything else answers on, which asks for one
+    // and requires none.
+    //
     // SHARED BY EVERY REALM: a TLS handshake has no path to carry a realm in,
-    // so these two answer the same under every prefix and carry none.
+    // so this answers the same under every prefix and carries none.
     log.debug("Leaving the tls socket builder.");
     return [
-      { name: 'TLS listener', methods: [],
-        url: 'https://' + host + ':' + config.value('tls.port') + '/',
-        transport: 'TLS' },
-      { name: 'Mutual-TLS listener', methods: [],
-        url: 'https://' + host + ':' + config.value('tls.mutualPort') + '/',
-        transport: 'mutual TLS' }
+      { name: 'Client certificates on the main port', methods: [],
+        url: 'https://' + host + ':' + config.value('global.port') + '/',
+        transport: 'TLS (a client certificate asked for, never required)' }
     ];
   },
   'spiffe-workload': function () {
