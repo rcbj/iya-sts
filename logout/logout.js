@@ -39,11 +39,11 @@
 //
 // **IT IS A PLAIN REQUIRE OF EVERYTHING AND NEEDS NO SLOT.** Rule 3e says a
 // slot is what you reach for when a require would close a cycle or move a
-// route, and neither applies here: `server.js` requires this module SECOND TO
-// LAST — after every module it reads, before `sts_metadata.js` — so each
-// require below is a cache hit that registers nothing, and nothing in this
-// service requires this file back. Do not add an inverted hook for a family
-// added later; add a row to `FAMILIES`.
+// route, and neither applies here: `common/protocol_stack.js` requires this
+// module SECOND TO LAST — after every module it reads, before `sts_metadata.js`
+// — so each require below is a cache hit that registers nothing, and nothing in
+// this service requires this file back. Do not add an inverted hook for a
+// family added later; add a row to `FAMILIES`.
 //
 // **A FAMILY IS ONE ROW IN `FAMILIES` AND THAT IS THE EXTENSION POINT.** Each
 // carries `collect()` (what is live for this person) and `terminate()` (end one
@@ -214,9 +214,11 @@ function row(family, kind, handle, detail) {
 }
 
 // The sessions this identity holds, worked out once per inventory because four
-// families hang off them. `identityKeyOf()` is applied to the session's
-// username so that a session started as `alice@REALM` is found by a logout for
-// `alice` — the normalisation every other door here uses.
+// families hang off them. `holderKeyOf()` is applied to the session's
+// username and subject so that a session started as `alice@REALM` is found by
+// a logout for `alice` — the normalisation every other door here uses — and
+// one started before a rename is still found by the entry's `urn:uuid:`
+// subject (2026-09-14).
 function sessionsForKey(key) {
   log.debug("Entering sessionsForKey(). key=" + key);
   const wanted = String(key || '');
@@ -1433,9 +1435,10 @@ function liveSessions() {
               // ending it is an instruction that node carries out.
               (c.remote ? ' on node ' + (c.nodeName || c.node) + ' (as it ' +
                 'last published; ending it instructs that node)' : ''),
-      // A BOUND CONNECTION IS A BIND THAT SUCCEEDED. This service refuses no
-      // bind, so that is a low bar — but it is still a credential having been
-      // presented and accepted, which is the distinction this column draws.
+      // A BOUND CONNECTION IS A BIND THAT SUCCEEDED. In development mode this
+      // service refuses no bind, so that is a low bar — but it is still a
+      // credential having been presented and accepted, which is the
+      // distinction this column draws.
       // An ANONYMOUS bind never reaches here: it has no key and is left off
       // the list entirely, a few lines above.
       authenticated: true,
@@ -1779,7 +1782,7 @@ function terminate(key, selection, opts) {
 // functions and wears the console's chrome, which is what rule 7's parity asks
 // for.
 //
-// NO SCRIPT, like every page in this service bar the four that argue for one.
+// NO SCRIPT, like every page in this service bar the seven that argue for one.
 // The checkboxes are checkboxes and the buttons are submit buttons; the
 // selective and global forms are two forms rather than one with a script
 // deciding, because that is what makes both work with `script-src 'none'`.
@@ -2355,10 +2358,10 @@ app.post(LOGOUT_PATH, function (req, res) {
 // module cannot require this one: this one requires `ldap_server.js` (for the
 // bound connections that ARE the LDAP session) and `ldap_server.js` requires
 // `admin.js` to fill its five slots — so the require would close a cycle AND
-// drag every `/ldap` route into the router ahead of the console's own. Both
-// halves of the test, so the direction is inverted, exactly as it is for the
-// directory reader, the SPIFFE reader, the SCIM reader, the group reader and
-// the directory writer.
+// drag every `/admin/ldap/*` route into the router ahead of the console's own.
+// Both halves of the test, so the direction is inverted, exactly as it is for
+// the directory reader, the SPIFFE reader, the SCIM reader, the group reader
+// and the directory writer.
 //
 // It is ONE object and `setLogoutReader()` validates it whole, because a
 // partial one would leave that page listing what is live and unable to end any
@@ -2411,7 +2414,7 @@ module.exports = {
   SESSION_EXPIRY_RULES: SESSION_EXPIRY_RULES,
   // WHO A /logout REQUEST IS ABOUT, exported for `tests/session_clocks.js`
   // (2026-09-12) and for no caller. Whether an anonymous `?username=` may name
-  // somebody else is a decision about two settings and a mode, and it is the
-  // one piece of this endpoint a test can ask without a listener.
+  // somebody else is a decision about a setting and a mode, and it is the one
+  // piece of this endpoint a test can ask without a listener.
   subjectOf: subjectOf
 };

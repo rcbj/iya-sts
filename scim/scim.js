@@ -68,22 +68,24 @@
 //
 // **It must come AFTER `ldap_server.js`.** It requires that module directly,
 // for the twelve functions that make ou=users and ou=groups a store, and
-// requiring it from anywhere EARLIER would pull every /ldap route into the
-// express router at that point — the same reason `server.js` requires
-// ./tls_server before ./ldap_server. Note what this is NOT: it is not one of
-// the five inverted hooks in that file. Rule 3e says a slot is what you reach
-// for when a require would close a cycle or move a route, and to test a new
-// proposal both ways round. This one fails that test both ways: there is no
-// cycle (ldap_server.js knows nothing about SCIM) and no route moves (the /ldap
-// routes are already registered by the time this file is read). So it is a
-// plain require.
+// requiring it from anywhere EARLIER would pull every /admin/ldap route into
+// the express router at that point — the same reason the require order
+// (`common/protocol_stack.js`) puts ./tls_server before ./ldap_server. Note
+// what this is NOT: it is not one of the inverted hooks that file fills. Rule
+// 3e says a slot is what you reach for when a require would close a cycle or
+// move a route, and to test a new proposal both ways round. This one fails that
+// test both ways: there is no cycle (ldap_server.js knows nothing about SCIM)
+// and no route moves (the /admin/ldap routes are already registered by the time
+// this file is read). So it is a plain require.
 //
 // It must still come BEFORE `sts_metadata.js`, which is last for everybody.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT DOES NOT DO, AND WHY EACH ONE IS DELIBERATE.
 //
-// **IT AUTHENTICATES, AND IT IS THE ONLY SURFACE HERE THAT DOES.** That is a
+// **IT AUTHENTICATES.** This said "and it is the only surface here that does";
+// the SPIRE Server API, the console, `/admin-api`, the XACML gates and the
+// debugger listener do too now (the root CLAUDE.md lists them). That is a
 // reversal of what this file used to say and the reason for it is the sentence
 // that was already here: a SCIM endpoint is the most dangerous URL an identity
 // provider exposes, because it creates and DELETES accounts. So `scim_auth.js`
@@ -94,14 +96,16 @@
 // the OAuth ones must carry `scim:read` or `scim:write` for what they are
 // about to do. That is the first scope requirement anywhere in this service.
 //
-// **IT IS STILL PERMISSIVE, WHICH IS A DIFFERENT SENTENCE.** Anybody can get a
-// token with either scope from this service's own token endpoint, with any
-// grant. Any username with any password but `invalid` passes Basic. Any
-// username passes Digest with the one shared password. Anybody can register a
-// HOBA key for any name. It is a turnstile rather than a lock, and what it
-// makes possible is a client's 401, 403, challenge-response and scope-handling
-// paths — none of which an unauthenticated endpoint can exercise at all. Do
-// not put this port on a public address on the strength of it.
+// **IN DEVELOPMENT MODE IT IS STILL PERMISSIVE, WHICH IS A DIFFERENT SENTENCE**
+// — in product mode passwords are verified, Digest is not offered and HOBA
+// registration is confined (scim/CLAUDE.md). Anybody can get a token with
+// either scope from this service's own token endpoint, with any grant. Any
+// username with any password but `invalid` passes Basic. Any username passes
+// Digest with the one shared password. Anybody can register a HOBA key for any
+// name. It is a turnstile rather than a lock, and what it makes possible is a
+// client's 401, 403, challenge-response and scope-handling paths — none of
+// which an unauthenticated endpoint can exercise at all. Do not put this port
+// on a public address on the strength of it.
 //
 // The whole of that lives in `scim_auth.js`; what is in THIS file is one call
 // in `handle()` and a `need` on each route.
@@ -119,19 +123,22 @@
 // unsupported rather than half-implemented. An ETag over an entry whose
 // modifyTimestamp has one-second resolution would produce a version that two
 // different states share, which is worse than no concurrency control because a
-// client would trust it. `changePassword` has nothing to change: no password in
-// this service is checked, so there is none to set.
+// client would trust it. `changePassword` had nothing to change when this was
+// written: no password in this service was checked, so there was none to set.
+// Product mode verifies passwords now, and a password is still not something
+// SCIM sets here — the ServiceProviderConfig says `supported: false`.
 //
 // **`/Me` IS AN ALIAS NOW, AND ITS 501 IS STILL REACHABLE.** It answered 501
 // for one reason — there was never an authenticated subject — and that stopped
 // being true when these endpoints started requiring a credential. So it
 // resolves the caller to a directory entry and delegates to the same User
 // handlers /Users/{id} uses. The 501 remains the right answer in two cases and
-// is kept for both: an ANONYMOUS caller (authentication turned off) has no
-// subject to alias, and POST /Me would create a subject that by definition
-// already exists. A credential naming somebody with no entry — a
-// client_credentials token, a client certificate — gets a 404 instead, which
-// is the alias resolving to nothing rather than the alias being unavailable.
+// is kept for both: an ANONYMOUS caller has no subject to alias (unreachable
+// since 2026-09-06, when authentication stopped being something that could be
+// turned off, and kept as the guard), and POST /Me would create a subject that
+// by definition already exists. A credential naming somebody with no entry — a
+// client_credentials token, a client certificate — gets a 404 instead, which is
+// the alias resolving to nothing rather than the alias being unavailable.
 //
 // **THE DISCOVERY ENDPOINTS ARE OPEN.** /ServiceProviderConfig, /ResourceTypes
 // and /Schemas answer without a credential unless `scim.authDiscovery` says
@@ -205,8 +212,8 @@ const createClaims = require('../ldap/directory_create_claims');
 // WWW-Authenticate challenge and this document's authenticationSchemes.
 const scimAuth = require('./scim_auth');
 // The console, for its reader slot only — see the bottom of this file.
-// Requiring it moves nothing: server.js requires ./admin long before ./scim, so
-// node already has it in hand.
+// Requiring it moves nothing: the require order (`common/protocol_stack.js`)
+// loads ./admin long before ./scim, so node already has it in hand.
 const adminConsole = require('../admin-ui/admin');
 const scimMap = require('./scim_map');
 // Every SCIM error this module sends carries an STS-SCIM-* code on the
@@ -1388,7 +1395,7 @@ function auditScim(action, dn, attributes, req) {
 //     routed as an id of `.search`, and the failure would be a 404 for a
 //     request that looks perfectly correct.
 //   * every one of these is visible to `GET /admin/sts-metadata`, which is the
-// reason     they are here rather than behind a mounted Router. See the header.
+//     reason they are here rather than behind a mounted Router. See the header.
 // ---------------------------------------------------------------------------
 
 // --- discovery (section 4) -------------------------------------------------
@@ -1495,8 +1502,9 @@ app.get(BASE + '/Schemas/:id', handle(
 //
 // **THE 501 IS STILL REACHABLE AND IS STILL THE RIGHT ANSWER IN TWO CASES**,
 // which is why it was worth keeping rather than replacing: when the caller is
-// ANONYMOUS (authentication turned off, or a discovery-only request), because
-// there genuinely is no subject; and on POST, because /Me creates the
+// ANONYMOUS, because there genuinely is no subject (unreachable at /Me since
+// authentication stopped being something that could be turned off on
+// 2026-09-06, and kept as the guard); and on POST, because /Me creates the
 // authenticated subject and the subject of a request is by definition already
 // there. A caller whose credential names somebody with no directory entry gets
 // a 404 instead — the alias resolved and there is nothing at the end of it,
@@ -1580,11 +1588,13 @@ app.patch(BASE + '/Me', handle(
 app.delete(BASE + '/Me', handle(
   { operation: 'delete', resourceType: 'Self', need: 'write' },
   async function (req, res) {
-    // It deletes the caller's own entry, and nothing here stops it. That is the
-    // same permissiveness as the rest of this surface rather than an oversight
-    // — a provisioning client's deprovisioning path is exactly what this mock
-    // exists to let somebody run, and refusing self-deletion would be this
-    // service inventing a rule the specification does not have.
+    // It deletes the caller's own entry, and nothing here stops it — bar the
+    // default realm's bootstrap administrator, which the shared delete handler
+    // refuses at every door. That is the same permissiveness as the rest of
+    // this surface rather than an oversight — a provisioning client's
+    // deprovisioning path is exactly what this mock exists to let somebody run,
+    // and refusing self-deletion would be this service inventing a rule the
+    // specification does not have.
     await new SCIMMY.Resources.User(meSubject(req)).dispose({ req: req });
     sendScim(req, res, { operation: 'delete', resourceType: 'Self' }, 204,
              undefined);
@@ -1618,10 +1628,13 @@ app.post(BASE + '/Me', handle(
 //     would have been a path nothing knows about.
 //   * It is UNAUTHENTICATED for the reason POST /tls/trust is: it is how a
 //     caller GETS a credential, so requiring one to reach it would make the
-//     scheme unusable by anybody who did not already have another. Anybody may
-//     register any key for any name, which is the same statement as "every LDAP
-//     bind succeeds" — the signature is then really verified, which is the half
-//     that makes the scheme worth implementing at all.
+//     scheme unusable by anybody who did not already have another. In
+//     development mode anybody may register any key for any name, which is the
+//     same statement as "every LDAP bind succeeds"; outside it a key may be
+//     added only to the existing account the caller's own session is
+//     (2026-09-12, `registerHobaKey()` in scim_auth.js). Either way the
+//     signature is then really verified, which is the half that makes the
+//     scheme worth implementing at all.
 //
 // GET describes it, because a well-known path that answers 404 to a browser is
 // indistinguishable from one nobody implemented.
@@ -2340,11 +2353,12 @@ app.get('/scim', function (req, res) {
 // thing GET /scim?format=json does. A page carrying its own copy of "active:
 // false deactivates nobody" would be the copy that stops being true.
 //
-// The direction is inverted for the reason ldap_server.js's two readers are,
-// and it passes rule 3e's test on both grounds: a require from admin.js into
-// this module would pull every /scim route — and, because this module requires
-// ldap_server.js, every /ldap route as well — into the express router ahead of
-// the console's own, and /admin/sts-metadata is built by walking that router.
+// The direction is inverted for the reason ldap_server.js's readers are, and it
+// passes rule 3e's test on both grounds: a require from admin.js into this
+// module would pull every /scim route — and, because this module requires
+// ldap_server.js, every /admin/ldap route as well — into the express router
+// ahead of the console's own, and /admin/sts-metadata is built by walking that
+// router.
 //
 // Guarded, exactly as those two are: a copy of admin.js without the slot costs
 // a warning rather than a TypeError at require time, which would take the whole

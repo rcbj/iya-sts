@@ -6,18 +6,18 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 | File | What it is |
 |---|---|
 | `scim.js` | The seventeen routes, and the scimmy resources behind them. |
-| `scim_auth.js` | Who is asking. The only authentication this service ENFORCES anywhere. |
+| `scim_auth.js` | Who is asking. The first authentication this service ENFORCED, and one of several now (the root `CLAUDE.md` lists them). |
 | `scim_map.js` | Which LDAP attribute each SCIM member is, in both directions. |
 
 6a. **`scim.js` must stay after `ldap_server.js`, and the interesting thing
-   about it is that it is a PLAIN REQUIRE where five things in that file are
-   inverted hooks.** It requires that module directly, for the twelve functions
+   about it is that it is a PLAIN REQUIRE where several things that file fills
+   are inverted hooks.** It requires that module directly, for the twelve functions
    that make `ou=users` and `ou=groups` a store, and requiring it from anywhere
-   EARLIER would pull every `/ldap` route into the express router at that point.
+   EARLIER would pull every `/admin/ldap/*` route into the express router at that point.
    Rule 3e says a slot is what you reach for when a require would close a cycle
    or move a route, and to test a new proposal BOTH WAYS ROUND before adding one.
    This proposal fails that test both ways — there is no cycle (`ldap_server.js`
-   knows nothing about SCIM) and no route moves (the `/ldap` routes are already
+   knows nothing about SCIM) and no route moves (the `/admin/ldap/*` routes are already
    registered by the time this file is read) — so it is a require. It must still
    come before `sts_metadata.js`, which is last for everybody, and it starts
    NOTHING: it is HTTP all the way down, so requiring it is the whole of its
@@ -83,16 +83,19 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    call for the provisioned person to make the two pages agree.
 
 
-6a-ii. **`scim_auth.js` IS WHO IS ASKING AT `/scim/v2`, AND IT IS THE ONLY
-   AUTHENTICATION THIS SERVICE ENFORCES ANYWHERE.** A library like `scim_map.js`
+6a-ii. **`scim_auth.js` IS WHO IS ASKING AT `/scim/v2`, AND IT WAS THE FIRST
+   AUTHENTICATION THIS SERVICE ENFORCED** (the SPIRE Server API, the console,
+   `/admin-api`, the XACML gates and the debugger listener have followed; the
+   root `CLAUDE.md` lists them). A library like `scim_map.js`
    — it registers nothing and NEVER TOUCHES `res`: it decides and `scim.js`
    answers in SCIM's own error shape, the same split `oauth2_bcp.js` has with
    `oauth2.js`. It requires `helpers.js`, `config.js`, `dpop.js`, `mtls.js`,
    `admin_stats.js`, `audit.js` by way of those, `authn.js`, `tls_server.js` and
-   `ldap_server.js`; the last three register routes, and requiring them is safe
-   for rule 3e's reason applied rather than assumed — `scim.js` is the only
-   thing that requires this file and it already sits after all three in
-   `server.js`, so there is no cycle and no route moves. Eight things:
+   `ldap_server.js` (and a handful of leaves); the last three register routes,
+   and requiring them is safe for rule 3e's reason applied rather than assumed —
+   `scim.js` is the only thing that requires this file and it already sits
+   after all three in the require order (`common/protocol_stack.js`), so there
+   is no cycle and no route moves. Eight things:
 
    **THE TABLE IS THE MODULE.** `SCHEMES` is the single source for the
    WWW-Authenticate challenge, for `authenticationSchemes` in the
@@ -214,7 +217,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    is the route-order one: `admin.js` draws the mapping table on `/admin/scim`
    and must be able to require what it draws. A require from the console into
    `scim.js` would drag every `/scim` route — and, since that module requires
-   `ldap_server.js`, every `/ldap` route — into the express router ahead of the
+   `ldap_server.js`, every `/admin/ldap/*` route — into the express router ahead of the
    console's own, and `/admin/sts-metadata` is built by walking that router. So there
    are two readers of two different halves: `scim.js` reads the CONVERSIONS on
    every request, `admin.js` reads the CATALOGUE to draw it.
@@ -265,11 +268,9 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    which is affordable only because the check exists.
 
    **FIVE DECISIONS IN IT ARE LOAD-BEARING and each is easy to undo.** The SCIM
-   `id` IS THE ENTRY'S DN — RFC 7643 section 3.1 asks for an opaque
-   server-assigned identifier and the DN already is one, where a `uid` is not
-   unique in this tree and a synthesised id would be a stored second definition
-   that goes stale on a rename; the cost, that a rename gives the same person a
-   new id, is stated on the page rather than hidden. A PUT REPLACES ONLY WHAT IS
+   `id` WAS THE ENTRY'S DN until 2026-09-14 and is its `entryUUID` now — see
+   *The `id` is the entry's `entryUUID`* below for why the DN argument lost.
+   A PUT REPLACES ONLY WHAT IS
    INSIDE THE MAPPING'S WINDOW, because read strictly it would delete
    `schacDateOfBirth`, `authnMethod` and every `x509*` attribute the moment a
    client updated a phone number — facts SCIM never knew about and cannot
@@ -298,8 +299,8 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 
 ## What it deliberately does not do
 
-* **SCIM WRITES INTO THE DIRECTORY AND IS THE ONE SURFACE HERE THAT ASKS WHO IS
-  DOING IT.** The `/scim/v2` endpoints create, replace, patch and DELETE
+* **SCIM WRITES INTO THE DIRECTORY AND WAS THE FIRST SURFACE HERE THAT ASKED
+  WHO IS DOING IT.** The `/scim/v2` endpoints create, replace, patch and DELETE
   accounts, so they are the exception to everything above: a credential is
   REQUIRED — unconditionally, in both modes, `mode.gatesScim()` — all six
   schemes RFC 7644 section 2 names are
@@ -322,17 +323,25 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   somebody ship a path that has never worked. There is no ETag and no
   `changePassword`, both ADVERTISED as unsupported rather than half-implemented
   (a version over a one-second timestamp is a concurrency control a client
-  trusts and that is wrong; and no password here is checked outside Digest).
+  trusts and that is wrong; and in development mode no password here is
+  checked outside Digest).
   `/Me` is an ALIAS now that there can be an authenticated subject, delegating
   to the same User handlers, and its 501 is kept for the two cases where it is
   still right — an anonymous caller, and POST. A member naming nothing is
   ACCEPTED, because refusing it would make the
   dangling-member state `/admin/groups` exists to report impossible to produce.
 
-## There is no test for this in either repository, and it is the cheapest one left to write
+## The protocol test is the parent project's, and it is not vendored here
 
 **By the root `CLAUDE.md`'s rule it belongs in the PARENT project's suite** —
-every assertion below is made by driving the running service over HTTP.
+every assertion below is made by driving the running service over HTTP — and
+the parent now has one (`tests/scim_protocol.js`, which reads each write back
+through the directory); `tests/vendored/MANIFEST.js` does not copy it. What
+runs here is in-process (`tests/scim_monitor.js`,
+`tests/ssf_spiffe_scim_hardening.js`, `tests/stable_subject.js` section E and
+the cluster jobs named below) plus the `local: true`
+`sts_directory_bulk_load_scim.js`. The rest of this section is what such a test
+has to cover.
 It is plain JSON over HTTP with no browser, no signature and
 no XML, its whole surface is seventeen routes, and the interesting half is
 negatives that are hard to provoke from a permissive server and are deliberately

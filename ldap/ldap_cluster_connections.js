@@ -70,10 +70,11 @@
 // lease holder binds anything. Everywhere else this module writes nothing and
 // lists nothing, so a single container behaves exactly as it did.
 //
-// A LIBRARY (rule 3): it registers no route. It requires config, realms and
-// the error-code table at the top and `cluster/cluster.js` LAZILY, and it
-// reaches the sockets through hooks `ldap_server.js` installs — that module
-// requires this one, and a require back would close a cycle.
+// A LIBRARY (rule 3): it registers no route. It requires config, realms, the
+// error-code table and `cluster/cluster_capabilities.js` at the top, and
+// `cluster/cluster.js` and `persistence/persistence.js` LAZILY, and it reaches
+// the sockets through hooks `ldap_server.js` installs — that module requires
+// this one, and a require back would close a cycle.
 // ===========================================================================
 
 const bunyan = require('bunyan');

@@ -32,9 +32,11 @@
 //
 // It exists to be the far end of the parent project's LDAP debugger: something
 // a client can bind to, search, and write to, whose every answer is written to
-// this service's log. Like everything else here it authenticates nobody —
-// **every bind succeeds**, whatever DN and whatever password, including an
-// anonymous one.
+// this service's log. In development mode, like everything else here, it
+// authenticates nobody — **every bind succeeds**, whatever DN and whatever
+// password, including an anonymous one. Product mode verifies binds and
+// authorizes writes (2026-09-12): see the block headed *THE DIRECTORY'S READ
+// AND BIND SECURITY* below and ldap/CLAUDE.md.
 //
 // The single exception is the literal password `invalid`, which is refused with
 // LDAP_INVALID_CREDENTIALS (49). That is not a softening of "authenticates
@@ -157,7 +159,7 @@ const realms = require('../common/realms');
 // THE DEPENDENCY IN THE OTHER DIRECTION IS A SLOT, filled a few lines below,
 // and that one is not optional: that module has to READ this directory to write
 // it down and to REPLACE it at startup, and a require from there to here would
-// drag `/ldap` and `/ldap/directory` into the express router at position #4a —
+// drag the `/admin/ldap/*` pages into the express router at position #4a —
 // far ahead of `admin.js`, and exactly the failure rule 1 exists to prevent.
 // ---------------------------------------------------------------------------
 const persistence = require('../persistence/persistence');
@@ -209,7 +211,7 @@ const certEnrollment = require('../common/cert_enrollment');
 // one owns where the containers are, how an entry is created and what the cap
 // is. Its setDirectory() slot is filled below at require time, for the reason
 // every slot in this file exists — a require reaching this module from there
-// would drag every /ldap route to the front of the express router.
+// would drag every /admin/ldap route to the front of the express router.
 // The federation register's schema and both conversions, on exactly the same
 // terms: THAT module owns what a relationship IS and this one owns where the
 // container is. Its setDirectory() slot is filled below at require time, and it
@@ -223,7 +225,7 @@ const scimMap = require('../scim/scim_map');
 // schema and take their directory functions through a setDirectory() slot
 // filled below at require time — the same arrangement federation.js,
 // spiffe_registry.js and scim_map.js have, and for the same reason: a require
-// in the other direction would drag every /ldap route into the router at
+// in the other direction would drag every /admin/ldap route into the router at
 // whatever point those files were first loaded.
 const xacmlStore = require('../xacml/xacml_store');
 const xacmlPepRegistry = require('../xacml/xacml_pep_registry');
@@ -249,8 +251,9 @@ const errorCodes = require('../common/error_codes');
 const proxyProtocol = require('../common/proxy_protocol');
 // The admin console, for ONE reason: to hand it the reader below so that a
 // user's page can show that user's directory entry. It is required here rather
-// than the other way round because server.js requires ./admin BEFORE this
-// module (rule 6), so admin.js must not require this one back — see the note
+// than the other way round because the require order
+// (`common/protocol_stack.js`) loads ./admin BEFORE this module (rule 6), so
+// admin.js must not require this one back — see the note
 // above objectFor().
 const admin = require('../admin-ui/admin');
 // THE PAGING HELPERS MOVED ON 2026-09-12. `pagedRows()` and `pagingJson()`
@@ -259,11 +262,6 @@ const admin = require('../admin-ui/admin');
 // module draws page with the same ones. This module is at 21 in the require
 // order, well past the 18 that layer may first be loaded at, so this is a
 // cache hit. See admin-core/CLAUDE.md.
-// The paging helpers moved to the read layer on 2026-09-12 — `pagedRows()` and
-// `pagingJson()` are pure arithmetic over a row count, and the eight
-// /admin/ldap/* pages this module draws page with the same ones the views do.
-// This module is at 21 and the layer may first be required at 18, so this is a
-// cache hit. See admin-core/CLAUDE.md.
 const adminViews = require('../admin-core/admin_views');
 // The TLS module, for ONE thing: the server certificate and key it generates at
 // its own require time. The LDAPS listener below serves that same pair rather
@@ -271,15 +269,16 @@ const adminViews = require('../admin-core/admin_views');
 // for why one certificate for every TLS socket in this process is the property
 // worth having, and this file's own LDAPS section for what it costs.
 //
-// This is a plain require rather than one of the two inverted hooks above,
-// because neither of the things that force an inversion applies: tls_server.js
-// requires app.js, helpers.js and admin_stats.js and knows nothing about this
-// module, so there is no cycle to make; and its routes are /tls, which collide
-// with nothing here. What the require DOES do is pull those routes into the
-// express router at this point rather than after this module's, so server.js
-// now requires ./tls_server BEFORE ./ldap_server to say so out loud. It changes
-// no output — /admin/sts-metadata sorts its rows by path within a group — and
-// the line over there is for the next reader rather than for the page.
+// This is a plain require rather than one of the inverted hooks above, because
+// neither of the things that force an inversion applies: tls_server.js requires
+// app.js, helpers.js and admin_stats.js and knows nothing about this module, so
+// there is no cycle to make; and its routes are /tls, which collide with
+// nothing here. What the require DOES do is pull those routes into the express
+// router at this point rather than after this module's, so the require order
+// (`common/protocol_stack.js`) now requires ./tls_server BEFORE ./ldap_server
+// to say so out loud. It changes no output — /admin/sts-metadata sorts its rows
+// by path within a group — and the line over there is for the next reader
+// rather than for the page.
 const tlsServer = require('../tls/tls_server');
 // WHICH attributes a person's entry should carry so that the credentials this
 // service issues have something to say, and what to invent for them. Another
@@ -303,8 +302,9 @@ const vcClaims = require('../oid4vc/vc_claims');
 // directory's routes should exist.
 const groupClaims = require('../common/group_claims');
 // The ROLE REGISTER. `ou=roles` is its store the way ou=policies is the policy
-// repository's, and this file fills its directory slot below — a require in
-// the other direction would drag every /ldap route to the front of the router.
+// repository's, and this file fills its directory slot below — a require in the
+// other direction would drag every /admin/ldap route to the front of the
+// router.
 const roles = require('../common/roles');
 // The admin console's two roles, which are two groups in THIS directory.
 // Required outright rather than through a slot in the other direction because
@@ -319,8 +319,8 @@ const adminRbac = require('../admin-ui/admin_rbac');
 // requires this file — so naming it here changes nothing about the require
 // order. The four functions this module contributes go the other way through
 // its setDirectory() slot further down, because THAT module is read from
-// `oauth-oidc/consent_screen.js` and from the console, both of which server.js
-// requires long before this directory's routes should exist.
+// `oauth-oidc/consent_screen.js` and from the console, both of which the
+// require order loads long before this directory's routes should exist.
 const consent = require('../common/consent');
 // The credential store's other half. A LEAF (rule 3) that registers no route
 // and requires nothing here, so this require can neither move a route nor close
@@ -991,12 +991,14 @@ let directoryVersion = 0;
 // A NUL BYTE IN A DIRECTORY VALUE, WHICH IS THE ONE THING THIS SOCKET REFUSES
 // ABOUT WHAT A VALUE CONTAINS (2026-09-06).
 //
-// **THIS SERVICE ACCEPTS ANY BIND, ANY DN AND ANY ATTRIBUTE, AND THAT DOES NOT
-// CHANGE.** The directory is schemaless on purpose and its permissiveness is
-// the product. What is refused here is one byte, and the argument is that a NUL
-// is not an odd value somebody might legitimately be testing with — it is
-// malformed under every LDAP string syntax there is, and it is uniquely
-// dangerous downstream in a way the other control characters are not.
+// **IN DEVELOPMENT MODE THIS SERVICE ACCEPTS ANY BIND, ANY DN AND ANY
+// ATTRIBUTE, AND THAT DOES NOT CHANGE.** (Product mode verifies binds and
+// authorizes writes; neither touches what a value may contain.) The directory
+// is schemaless on purpose and its permissiveness is the product. What is
+// refused here is one byte, and the argument is that a NUL is not an odd value
+// somebody might legitimately be testing with — it is malformed under every
+// LDAP string syntax there is, and it is uniquely dangerous downstream in a way
+// the other control characters are not.
 //
 // Measured before it was refused: an `ldapadd` carrying
 // `before\u0000after\r\nInjected: yes` was ACCEPTED, stored, and read back
@@ -1179,10 +1181,10 @@ const usernameIndexes = realms.keyed(function () {
 // normalizeDn() beside the store has none. The style rule is about functions a
 // reader follows, not about a helper in an inner loop.
 //
-// BOTH sources, because that is the pair the walk
-// compared — an entry added by hand as `cn=Alice Example,ou=users` carrying
-// `uid: alice` was found under either, and an index holding one of them would
-// have quietly narrowed the rule it is enforcing.
+// BOTH sources, because that is the pair the walk compared — an entry added by
+// hand as `cn=Alice Example,ou=users` carrying `uid: alice` was found under
+// either, and an index holding one of them would have quietly narrowed the rule
+// it is enforcing.
 function usernameKeysOf(entry) {
   log.debug("Entering usernameKeysOf().");
   const names = (entry.attributes.uid || []).concat([usernameOfEntry(entry)]);
@@ -1985,7 +1987,7 @@ Object.keys(vcClaims.CANONICAL_NAMES).forEach(function (lower) {
 
 // And the applications registry's, for the same reason and from the same kind
 // of source: `applications.js` owns that schema and spells every attribute the
-// way `/ldap/applications` publishes it — `oauthClientId`,
+// way `/admin/ldap/applications` publishes it — `oauthClientId`,
 // `appRegistrationJson`, `samlEntityId`. Without this merge every applications
 // page and every reply from the management API showed `oauthclientid` beside a
 // published schema that says `oauthClientId`, which reads as a bug in the page
@@ -2260,19 +2262,18 @@ function hasChildren(dn) {
 //     writer in this file reaches the store through that function, and most of
 //     them REBUILD the attribute set (`writePerson()`, `writeApplication()`,
 //     the CRL containers), so the value is taken from the entry already at that
-//     DN
-//     and never from the attributes a caller handed in. A delete followed by a
-//     create at the same DN is a NEW entry and gets a new value — which is the
-//     whole difference from a name-derived subject.
+//     DN and never from the attributes a caller handed in. A delete followed
+//     by a create at the same DN is a NEW entry and gets a new value — which is
+//     the whole difference from a name-derived subject.
 //   * **A RENAME KEEPS IT**, because `modifyDN` moves the stored object rather
 //     than writing a new one.
 //   * **A SEEDED ENTRY'S IS DETERMINISTIC** — a name-based (version 5) UUID
 //     over the realm and the DN — and every other entry's is random (version
 //     4). The seed runs on every start, so a random value would give alice a
 //     new `sub` on every restart of a development service; nothing created by
-//     a door is
-//     treated that way, because a deterministic value is exactly what makes a
-//     re-created person the same subject again (rcbj's choice).
+//     a door is treated that way (bar a sign-in's entry where two processes
+//     can race — see putEntry()), because a deterministic value is exactly
+//     what makes a re-created person the same subject again (rcbj's choice).
 //   * **A RESTORED OR REPLICATED ROW WITHOUT ONE IS BACKFILLED THE SAME WAY**
 //     (version 5 over the realm and the stored key), so every process that
 //     reads a row written before this change computes the SAME value without
@@ -3119,19 +3120,20 @@ seed();
 //
 // **IT IS THE SAME seed(), RUN IN THE REALM.** Not a copy, and not a reduced
 // version: a realm is a whole logical copy of this service, so its directory
-// starts as the same smallest-useful tree — the six containers, the bind
-// account, alice, bob, carol and the two groups — under its own base. Anything
-// else would mean a realm where an `ldapsearch` teaches less than the default
-// one does, and the seeded people are the reason that search shows anything at
-// all. They are separate objects from the default realm's: `uid=alice,ou=users,
-// dc=acme,dc=example,dc=com` shares nothing with `uid=alice,ou=users,
-// dc=example,dc=com` but a first name.
+// starts as the same smallest-useful tree — the containers and, in development
+// mode, the bind account, alice, bob, carol and the two groups — under its own
+// base. Anything else would mean a realm where an `ldapsearch` teaches less
+// than the default one does, and the seeded people are the reason that search
+// shows anything at all. They are separate objects from the default realm's:
+// `uid=alice,ou=users,dc=acme,dc=example,dc=com` shares nothing with
+// `uid=alice,ou=users,dc=example,dc=com` but a first name.
 //
 // **THE TWO ADMIN ROLE GROUPS ARE NOT SEEDED ANYWHERE AND ARE NOT THE POINT
-// HERE.** `ou=groups` under a realm is that realm's, but the console reads the
-// roles from the DEFAULT realm only — see the note above the admin_rbac
-// setDirectory() install further down. A `cn=admin-write` created inside `acme`
-// is an ordinary group in acme's directory and grants nothing.
+// HERE.** `ou=groups` under a realm is that realm's. Until 2026-09-14 the
+// console read the roles from the DEFAULT realm only; since #32 a
+// `cn=admin-write` created inside `acme` grants acme's roles and nothing
+// outside acme — see the note above the admin_rbac setDirectory() install
+// further down.
 // ---------------------------------------------------------------------------
 realms.onCreate(function (id) {
   log.debug('Entering the realm directory builder. id=' + id);
@@ -3184,7 +3186,7 @@ realms.onRemove(function (id) {
   // used to walk the one shared Map deleting every DN under the realm's base;
   // the store is `realms.map()` now, which registers its own purge, so the
   // realm's whole directory is dropped in one reference. There is nothing left
-  // behind to find: the realm's root entry, its six containers and everything
+  // behind to find: the realm's root entry, its containers and everything
   // written into them lived in that store and nowhere else.
   //
   // It stays because this is where a reader looks for the answer to "what
@@ -3466,7 +3468,7 @@ persistence.setDirectory({
     // until then a person could only come to be known that way. A restored
     // directory is the first thing that ever put an entry under `ou=users`
     // without a sign-in, and the symptom was exact and misleading: twenty
-    // entries restored, `ldapsearch` and `/ldap/directory` showing all of
+    // entries restored, `ldapsearch` and `/admin/ldap/directory` showing all of
     // them, `/admin/users` reporting `known: 0`. It reads as a failed
     // restore and is a page reading a different store.
     //
@@ -3885,7 +3887,7 @@ function existingUserEntry(name) {
 // certificate and would read as a bug in the directory rather than as a choice
 // here. So the facts go into names that are obviously this service's own, and
 // the certificate itself stays where it is already published in full: the TLS
-// listener's own report.
+// module's own report (`/admin/tls`).
 // ---------------------------------------------------------------------------
 // **PRECONDITION: `subject` AND `issuer` ARRIVE AS STRINGS.** This function
 // does `String()` on both, and node's own `getPeerCertificate()` hands back
@@ -3941,9 +3943,9 @@ function certificatePlan(info) {
     // THE PERSON THIS CERTIFICATE NAMES IS ALREADY HERE, so this is not a new
     // entry — it is a second credential for one that exists. `CN=rcbj` and the
     // `rcbj` who signed in at the password screen are one person as far as this
-    // service is concerned (it authenticates nobody, so a name is a name), and
-    // filing them apart would put two objects in the directory for one row on
-    // /admin/users.
+    // service is concerned (in development it authenticates nobody, so a name
+    // is a name), and filing them apart would put two objects in the directory
+    // for one row on /admin/users.
     //
     // Nothing is lost by folding: `merge` below carries the whole subject, the
     // issuer, the serial and the validity onto the entry, so what the
@@ -4123,7 +4125,7 @@ function didPlan(info) {
   const did = String(info.key || '').trim();
   // The method name — `jwk`, `web`, `key`. Kept because it is the one fact
   // about a DID that is readable without resolving it, so "which methods has
-  // this service seen" becomes an ordinary filter on /ldap/directory rather
+  // this service seen" becomes an ordinary filter on /admin/ldap/directory
   // than a question nobody can ask.
   const method = (did.split(':')[1] || '').toLowerCase();
   const persona = vcClaims.personaFor(did);
@@ -5175,10 +5177,11 @@ function autoCreateUser(detail) {
 // console's and the management API's), and scim.js's create of a User and of a
 // Group. A name carrying one of these would build a DN that means something
 // other than what was typed, and this service files people and groups BY NAME
-// everywhere — /admin/users, /admin/groups, the persona, the SCIM id, which IS
-// the DN. An `ldapadd` can still create such an entry with the escaping written
-// out by the client, which is the line applications.js already draws between
-// what a door offers and what it merely does not prevent.
+// everywhere — /admin/users, /admin/groups, the persona, and the DN a SCIM id
+// resolves to (the id itself is the entry's `entryUUID` since 2026-09-14). An
+// `ldapadd` can still create such an entry with the escaping written out by the
+// client, which is the line applications.js already draws between what a door
+// offers and what it merely does not prevent.
 //
 // Three copies of this regex would be three doors that eventually disagree
 // about whether `a+b` is a name, and the one that said yes would be the one
@@ -5488,11 +5491,11 @@ function createUser(name, options) {
   // directory — they read `admin_stats.js`'s register, which until 2026-08-27
   // could only be filled by somebody AUTHENTICATING. So a person created
   // through this function got a directory entry that `ldapsearch`,
-  // `/ldap/directory` and SCIM could all see, and appeared on the console's
-  // Users page NOWHERE until they signed in — while `/admin/users`'s own blurb
-  // said "a person can be created here ahead of their first sign-in". Three
-  // doors reach this function (the console, `POST /admin-api/users/create` and
-  // a SCIM create) and all three had it.
+  // `/admin/ldap/directory` and SCIM could all see, and appeared on the
+  // console's Users page NOWHERE until they signed in — while `/admin/users`'s
+  // own blurb said "a person can be created here ahead of their first sign-in".
+  // Three doors reach this function (the console,
+  // `POST /admin-api/users/create` and a SCIM create) and all three had it.
   //
   // They are registered as KNOWN WITHOUT A SIGN-IN — `authenticated` false on
   // the row — so `authenticatedHere` keeps counting sign-ins rather than
@@ -5540,9 +5543,9 @@ function createUser(name, options) {
 // THE FACTS A CREDENTIAL NEEDS, INVENTED ONCE AND KEPT HERE.
 //
 // /admin/vc chooses which attributes an issued credential carries. Those
-// attributes have to have VALUES, and this service authenticates nobody — there
-// is no source of a real birthdate, and there had better not be. So
-// vc_claims.js invents a consistent person per username and this function
+// attributes have to have VALUES, and in development this service authenticates
+// nobody — there is no source of a real birthdate, and there had better not be.
+// So vc_claims.js invents a consistent person per username and this function
 // writes what is missing onto their entry.
 //
 // Three rules, and each of them is the answer to a way this could go wrong:
@@ -5846,22 +5849,22 @@ function vcAttributesFor(key) {
 // /admin/users?user=<name> is the page that answers "what does this service
 // hold about this person", and the directory entry autoCreateUser() seeded
 // above is part of that answer — so the console shows it there rather than
-// making a reader find the same object again on /ldap/directory.
+// making a reader find the same object again on /admin/ldap/directory.
 //
 // The direction of the dependency is inverted here for the same reason the
 // observer above is, and it is worth stating because it is the OPPOSITE way
 // round from what the call graph looks like. admin.js renders this; it would
-// naturally require this module and read `entries`. It must not: server.js
-// requires ./admin before ./ldap_server (rule 6 — this module needs
-// admin_stats' identity normalisation), and a require from admin.js would drag
-// this module's routes in ahead of the console's, which reorders the express
-// router that /admin/sts-metadata reads. So admin.js offers a slot and this
-// module fills it, exactly as admin_stats.js does for the observer.
+// naturally require this module and read `entries`. It must not: the require
+// order (`common/protocol_stack.js`) loads ./admin before ./ldap_server (rule 6
+// — this module needs admin_stats' identity normalisation), and a require from
+// admin.js would drag this module's routes in ahead of the console's, which
+// reorders the express router that /admin/sts-metadata reads. So admin.js
+// offers a slot and this module fills it, exactly as admin_stats.js does for
+// the observer.
 //
 // It is given the IDENTITY KEY the console files a person under — the local
 // name, with a subject already resolved and any realm stripped — which is the
-// same
-// string autoCreateUser() built the DN from, so the two cannot drift.
+// same string autoCreateUser() built the DN from, so the two cannot drift.
 //
 // What comes back is deliberately more than the entry: the DN is reported
 // whether or not anything is there, because "no entry at uid=bob,ou=users" and
@@ -6067,11 +6070,11 @@ function objectFor(name) {
 // answers and no third.
 //
 // A real directory would answer with a SCHEMA: an entry is a group when its
-// objectClass says so. This one has no schema (that is deliberate, and GET
-// /ldap says so), and a client can `add` anything anywhere through the
-// protocol — a groupOfNames under ou=users, or an entry under ou=groups
-// carrying no objectClass at all. So both rules are applied and neither is
-// allowed to hide the other:
+// objectClass says so. This one has no schema (that is deliberate, and
+// /admin/ldap/service says so), and a client can `add` anything anywhere
+// through the protocol — a groupOfNames under ou=users, or an entry under
+// ou=groups carrying no objectClass at all. So both rules are applied and
+// neither is allowed to hide the other:
 //
 //   * PLACEMENT — it sits under ou=groups and is not that container itself.
 //   * OBJECTCLASS — it carries one of the four group classes below, wherever
@@ -6732,7 +6735,7 @@ if (typeof admin.setGroupWriter === 'function') {
 // outright. That is not a contradiction: vc_claims.js is required above for the
 // catalogue and the invented people, and it calls back into these two functions
 // through a slot because IT must not require THIS module — it is read by
-// vc_issuer.js, which server.js requires fifty lines before ./admin, and a
+// vc_issuer.js, which the require order loads well before ./admin, and a
 // require from there would drag this directory's routes to the front of the
 // express router that /admin/sts-metadata is built by walking. Guarded like the
 // two above: an older vc_claims.js without the slot costs a warning, not a
@@ -6773,9 +6776,9 @@ if (typeof groupClaims.setDirectory === 'function') {
 // `common/pki_revocation.js` offers the slot and this fills it. It is an
 // INVERTED HOOK for rule 3e's test in both directions: that module is a LEAF
 // required by `common/pki.js` and by the certificate authority's own startup,
-// so a require from it to THIS module would drag every `/ldap` route into the
-// router ahead of everything — and a require the other way is exactly what
-// happens, harmlessly, because this module is at 21 and that one registers
+// so a require from it to THIS module would drag every `/admin/ldap/*` route
+// into the router ahead of everything — and a require the other way is exactly
+// what happens, harmlessly, because this module is at 21 and that one registers
 // nothing.
 //
 // It carries TWO functions and is validated whole, for `setLogoutReader()`'s
@@ -6979,14 +6982,14 @@ if (typeof xacmlPip.setDirectory === 'function') {
 // ---------------------------------------------------------------------------
 // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12).
 //
-// `tls/tls_server.js` is already required at the top of this file — this
-// module serves its certificate on 636 — so filling its slot is a call in the
-// ORDINARY direction and costs no require at all. The other direction is out:
+// `tls/tls_server.js` is already required at the top of this file — this module
+// serves its certificate on 636 — so filling its slot is a call in the ORDINARY
+// direction and costs no require at all. The other direction is out:
 // `tls_server.js` is loaded from inside `admin-ui/admin.js`'s require, long
-// before this module, and a require from there to here would register every
-// /ldap route and the eight /admin/ldap/* pages ahead of the console's (rule
-// 3e). Three functions, validated whole over there, all pinned to the DEFAULT
-// realm because the truststore belongs to the process.
+// before this module, and a require from there to here would register the eight
+// /admin/ldap/* pages ahead of the console's (rule 3e). Three functions,
+// validated whole over there, all pinned to the DEFAULT realm because the
+// truststore belongs to the process.
 // ---------------------------------------------------------------------------
 if (typeof tlsServer.setTrustAnchorStore === 'function') {
   tlsServer.setTrustAnchorStore({
@@ -7351,7 +7354,9 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 //
 //   * an ANONYMOUS connection writes nothing;
 //   * an ADMINISTRATOR writes anything — somebody whose bound DN names an entry
-//     in the DEFAULT realm's directory whose identity holds Admin Write;
+//     in the DEFAULT realm's directory whose identity holds Admin Write — and,
+//     since #32, a realm's own administrator writes that realm's directory
+//     (see `boundDnIsRealmAdministrator()` below);
 //   * anybody else may MODIFY THEIR OWN ENTRY, and only the attributes
 //     `ldap.selfWritableAttributes` names. No add, no delete, no rename.
 //
@@ -7359,10 +7364,11 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 // management API and SCIM's write scope already answer "who may change what
 // this service holds", and a second roster for the socket would be a second
 // answer that drifts from the first the day somebody is granted one and not the
-// other. **THE DEFAULT REALM ONLY**, for the reason the roster itself is pinned
-// there: a person in `acme` sharing a name with a default-realm administrator
-// is a different person, and anybody who can provision a realm can provision
-// one.
+// other. **THE DEFAULT REALM'S ROSTER COVERS EVERY REALM, AND A REALM'S OWN
+// COVERS ONLY THAT REALM** (#32, 2026-09-14): a person in `acme` sharing a name
+// with a default-realm administrator is a different person, and anybody who
+// can provision a realm can provision one — so acme's roster never reaches
+// past acme.
 //
 // **THE CONSOLE'S EMPTY-ROSTER RULE DOES NOT COUNT HERE.** While no role group
 // has a member `rolesOf()` may answer that everybody holds both
@@ -8097,8 +8103,9 @@ if (typeof credentials.setDirectory === 'function') {
     // written.
     //
     // It is the AMBIENT realm's, unlike the nine functions `admin_rbac.js`
-    // takes: those decide who may administer the service and are pinned to the
-    // default realm on purpose, and this one is a page LOOKING AT a realm.
+    // takes: those decide who may administer, are bound to the default realm
+    // unless a caller names another (#32), and this one is a page LOOKING AT a
+    // realm.
     persons: function () {
       log.debug("Entering persons().");
       log.debug("Leaving persons().");
@@ -8201,11 +8208,10 @@ if (typeof credentials.setDirectory === 'function') {
 //
 // **IT IS A SLOT FOR THE ORDINARY REASON AND THE DIRECTION IS THE INTERESTING
 // HALF.** `portal/portal.js` sits at 8b and this module at 21, so a require
-// from there to here would register every `/ldap` route and the eight
-// `/admin/ldap/*` pages ahead of the authorization server and the console
-// (rule 1); a require from here to there would move every `/portal` route
-// behind the management API. Rule 3e's test answers yes both ways round, which
-// is what a slot is for.
+// from there to here would register all eight `/admin/ldap/*` pages ahead of
+// the authorization server and the console (rule 1); a require from here to
+// there would move every `/portal` route behind the management API. Rule 3e's
+// test answers yes both ways round, which is what a slot is for.
 //
 // **IT HANDS OVER THE WHOLE ENTRY, WHERE `credentials.persons()` ABOVE
 // DELIBERATELY HANDS OVER ONLY NAMES**, and the difference is worth reading
@@ -8263,10 +8269,10 @@ if (typeof portal.setDirectory === 'function') {
 //
 // **RULE 3e's TEST ANSWERS YES BOTH WAYS ROUND.** That module is required by
 // `oauth-oidc/assertion_grant.js`, which `oauth2.js` requires at 9, so a
-// require from there to this module would register every `/ldap` route and all
-// eight `/admin/ldap/*` console pages ahead of the authorization server (rule
-// 1); and a require from this module to `assertion_grant.js` would be a second
-// path to it through a module at 21, which is where a cycle starts.
+// require from there to this module would register all eight `/admin/ldap/*`
+// console pages ahead of the authorization server (rule 1); and a require from
+// this module to `assertion_grant.js` would be a second path to it through a
+// module at 21, which is where a cycle starts.
 //
 // **THREE FUNCTIONS AND THEY ARE THE THREE SHAPES THIS FILE ALREADY HANDS
 // OVER.** `read()` answers ONE PERSON'S assertion attributes in their canonical
@@ -8369,8 +8375,8 @@ if (typeof personAssertions.setDirectory === 'function') {
 // two protocol credentials, and an administrator's registered host names — ON
 // THE ENTRY THE CERTIFICATE NAMES, a person's or an application's. Rule 3e's
 // test answers yes both ways round, for `personAssertions.setDirectory()`'s
-// reason: that module is required by the three protocol families, and a
-// require from it to this file would register every `/ldap` route ahead of
+// reason: that module is required by the three protocol families, and a require
+// from it to this file would register every `/admin/ldap/*` route ahead of
 // them.
 //
 // THREE FUNCTIONS, AND THEY ARE GENERIC OVER AN ATTRIBUTE NAME on purpose: the
@@ -8486,9 +8492,9 @@ if (typeof consent.setDirectory === 'function') {
 }
 
 // ---------------------------------------------------------------------------
-// THE KERBEROS KEY REGISTER'S SLOT (2026-09-12), and it is the one directory
-// slot in this file that is pinned to the DEFAULT realm for a reason that is
-// not about administrators.
+// THE KERBEROS KEY REGISTER'S SLOT (2026-09-12). It was the one directory slot
+// in this file pinned to the DEFAULT realm for a reason that was not about
+// administrators, and since 2026-09-15 it is not pinned at all — see below.
 //
 // `kerberos/krb5_person_keys.js` owns what a stored Kerberos key IS — the
 // sealed record, the stamp, the kvno, the keytab — and this module owns where
@@ -8499,10 +8505,9 @@ if (typeof consent.setDirectory === 'function') {
 //
 // **RULE 3e ANSWERS YES BOTH WAYS ROUND.** That module is required by the two
 // `admin-core/` halves at 18, so a require from there to this module would
-// register every `/ldap` route and all eight `/admin/ldap/*` pages ahead of the
-// management API (rule 1); and it requires `krb5_principals.js`, which the KDC
-// at 15 requires, so the directory reached from the KDC's side would move them
-// further still.
+// register all eight `/admin/ldap/*` pages ahead of the management API (rule
+// 1); and it requires `krb5_principals.js`, which the KDC at 15 requires, so
+// the directory reached from the KDC's side would move them further still.
 //
 // **EVERY FUNCTION RUNS IN THE AMBIENT REALM SINCE 2026-09-15**, where all six
 // were wrapped in `inDefaultRealm()` before it. The paragraph here read *the
@@ -8642,9 +8647,9 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // ORDINARY GROUPS in this directory: `cn=admin-read` and `cn=admin-write` under
 // `ou=groups` by default. It is a slot rather than a require in the other
 // direction for exactly the reason the console's own five are (rule 3e): a
-// require of this module from there would pull every `/ldap` route into the
-// express router ahead of every `/admin` route, and `GET /admin/sts-metadata`
-// is built by walking that router.
+// require of this module from there would pull every `/admin/ldap/*` route into
+// the express router ahead of every `/admin` route, and
+// `GET /admin/sts-metadata` is built by walking that router.
 //
 // WHAT CROSSES IS THIS MODULE'S OWN FUNCTIONS AND NOT A COPY OF ITS RULES, the
 // same division the five above keep. `groupsOfUser()` answers whether somebody
@@ -9273,8 +9278,8 @@ servers.forEach(function (one) {
 });
 
 // A socket this process now holds, until it closes. A function of its own so
-// that `tests/ldap_cluster_signout.js` can hand it a socket without a listener:
-// the cross-node close is only worth asserting against the real Set.
+// that `tests/cluster_signout_signals.js` can hand it a socket without a
+// listener: the cross-node close is only worth asserting against the real Set.
 function holdSocket(socket) {
   log.debug("Entering holdSocket().");
   liveConnections.add(socket);
@@ -11567,9 +11572,10 @@ registerWorkerOperations();
 //
 // GET /admin/sts-metadata is built by walking the express router, so a protocol
 // that registers no route is invisible to it — which is exactly what a raw TCP
-// listener is. The FIVE routes below are what make this directory visible from
-// a browser AND what make it appear in that index; the two listeners
-// themselves are described by hand there, as the KDC's are.
+// listener is. The eight `/admin/ldap/*` routes below (five until 2026-09-05)
+// are what make this directory visible from a browser AND what make it appear
+// in that index; the two listeners themselves are described by hand there, as
+// the KDC's are.
 //
 // THEY ARE ADMIN CONSOLE PAGES SINCE 2026-09-01 (`/admin/ldap/*`, drawn in
 // that console's shell through `admin.respond()`), and the long block above
@@ -11594,7 +11600,8 @@ function description(req) {
     url: 'ldap://' + host + ':' + boundPort,
     port: boundPort,
     // WHETHER THE SOCKET ACTUALLY BOUND, and it is published because this page
-    // is HTTP and the directory is not: /ldap answers 200 whether or not port
+    // is HTTP and the directory is not: /admin/ldap/service answers 200
+    // whether or not port
     // 389 was available, so a reader — or a test — has no other way to tell a
     // running directory from one whose listener lost a race with the host's own
     // slapd. It is a privileged port and this service does not treat a failure
@@ -11638,11 +11645,13 @@ function description(req) {
     //
     // Published HERE, on the page that describes the directory, rather than
     // only on /admin/persistence, because this is the page somebody reads
-    // before they trust the thing with anything — and because /admin is gated
-    // and this is not, so a test driving the directory can see it. The answer
-    // is persistence.js's own status object verbatim rather than a summary of
-    // it: a second sentence about what is persisted is a second sentence that
-    // will disagree with the first.
+    // before they trust the thing with anything — and because this page's
+    // `?format=json` and its `/admin-api` mirror are how a test driving the
+    // directory sees it. (It said "/admin is gated and this is not" while the
+    // page was `/ldap`; it has been `/admin/ldap/service` since 2026-09-01.)
+    // The answer is persistence.js's own status object verbatim rather than a
+    // summary of it: a second sentence about what is persisted is a second
+    // sentence that will disagree with the first.
     //
     // In the default memory mode it says `mode: "memory"`, which is what every
     // reader of this page saw implicitly for the whole life of this service.
@@ -11757,7 +11766,8 @@ function description(req) {
 }
 
 // ---------------------------------------------------------------------------
-// THE FIVE HTML VIEWS, WHICH ARE ADMIN CONSOLE PAGES SINCE 2026-09-01.
+// THE FIVE HTML VIEWS, WHICH ARE ADMIN CONSOLE PAGES SINCE 2026-09-01 — AND
+// EIGHT SINCE 2026-09-05 (see the block above `setDirectoryPages()` below).
 //
 // They were `/ldap`, `/ldap/directory`, `/ldap/applications`,
 // `/ldap/federations` and `/ldap/spiffe` — five pages in a shell of their own,
@@ -11785,8 +11795,8 @@ function description(req) {
 //     can reach and it is the right one: a dump of every attribute of every
 //     entry prints `oauthClientSecret` and `fedClientSecret` in the clear, and
 //     these were the one surface in this service handing those to anybody who
-//     could reach the port. `/admin-api` mirrors all five and is still
-//     ungated, which is what a test drives.
+//     could reach the port. `/admin-api` mirrors all eight and takes an
+//     access token of its own, which is what a test drives.
 //   * **NOTHING ABOUT THE CONTENT CHANGED, bar the paging and the
 //     shortening.** These pages still show the store rather than a copy of it;
 //     `?format=json` still answers with the same payload; the schemas each one
@@ -11800,7 +11810,7 @@ function description(req) {
 //
 // The `?format=json` half of each is a `view()` function returning
 // `{ title, inner, json }` — the shape every view in `admin.js` returns — and
-// the five are handed to `admin.setDirectoryPages()` at the foot of this file
+// the eight are handed to `admin.setDirectoryPages()` at the foot of this file
 // so that `mgmt-api/admin_api.js` can answer them without requiring this
 // module. See the block above that slot in `admin.js`.
 // ---------------------------------------------------------------------------
@@ -12196,11 +12206,11 @@ app.get('/admin/ldap/directory', function (req, res) {
 // four functions plus the two conversions they call.
 //
 // The hook is INVERTED for the reason `vcClaims.setDirectory()` is: this module
-// is LAST in the require order because requiring it pulls every `/ldap` route
-// into the express router at that point, and `oauth2.js` — which reads the
-// registry on every authorization request in RFC 9700 mode — cannot drag those
-// routes to the front of it. So `applications.js` offers the slot and this file
-// fills it below.
+// is LAST in the require order because requiring it pulls every `/admin/ldap/*`
+// route into the express router at that point, and `oauth2.js` — which reads
+// the registry on every authorization request in RFC 9700 mode — cannot drag
+// those routes to the front of it. So `applications.js` offers the slot and
+// this file fills it below.
 //
 // **There is no cache on the other side of this.** Every read the registry does
 // is a read of these entries, which is what makes an `ldapmodify` take effect
@@ -13170,12 +13180,12 @@ applications.seedInternalApplications();
 // which is what lets `ldapmodify`, the console and both gRPC surfaces be three
 // doors onto one store rather than three stores.
 //
-// **The dependency is NOT inverted, and that is worth the sentence rule 3e
-// asks for.** This file requires `spiffe_registry.js` directly and fills its
-// slot; that module does not require this one. Neither of the two things that
-// force a slot in the other direction applies here — there is no cycle (that
-// module knows nothing about this one) and no route moves, because its slot is
-// filled at THIS module's require time, by which point every /ldap route is
+// **The dependency is NOT inverted, and that is worth the sentence rule 3e asks
+// for.** This file requires `spiffe_registry.js` directly and fills its slot;
+// that module does not require this one. Neither of the two things that force a
+// slot in the other direction applies here — there is no cycle (that module
+// knows nothing about this one) and no route moves, because its slot is filled
+// at THIS module's require time, by which point every /admin/ldap route is
 // already registered.
 //
 // **An entry is named by its ID, and an agent by a DIGEST of its SPIFFE ID.**
@@ -13408,14 +13418,14 @@ spiffeRegistry.setDirectory({
 // Neither knows the other's half.
 //
 // **THE DEPENDENCY IS NOT INVERTED HERE, and that is worth a sentence because
-// five other things in this file are.** `scim.js` requires this module directly
-// and `server.js` requires it AFTER this one, so neither of the two things that
-// force a slot applies: there is no cycle (this module knows nothing about
-// SCIM) and no route moves (the /ldap routes are already registered by the time
-// the /scim ones are). Rule 3e says a slot is what you reach for when a require
-// would close a cycle or move a route, and to check a new proposal both ways
-// round before adding one. This proposal fails that test both ways round, so it
-// is a plain require.
+// several other things in this file are.** `scim.js` requires this module
+// directly and the require order (`common/protocol_stack.js`) loads it AFTER
+// this one, so neither of the two things that force a slot applies: there is no
+// cycle (this module knows nothing about SCIM) and no route moves (the
+// /admin/ldap routes are already registered by the time the /scim ones are).
+// Rule 3e says a slot is what you reach for when a require would close a cycle
+// or move a route, and to check a new proposal both ways round before adding
+// one. This proposal fails that test both ways round, so it is a plain require.
 //
 // **THERE IS NO SECOND STORE AND NO CACHE**, exactly as the registry has none.
 // A SCIM POST and an `ldapadd` write the same entry, a SCIM PATCH and an
@@ -13476,11 +13486,12 @@ function allPersons() {
   return out;
 }
 
-// One person BY DN, which is what a SCIM id is. Null for a DN that names
-// nothing AND for one that names something outside ou=users: a SCIM client
-// asking for a User must not be handed an application entry because it guessed
-// the right DN, and answering 404 for it is the same answer any other directory
-// would give for a resource that is not of the type asked for.
+// One person BY SCIM id or DN (a SCIM id was the DN until 2026-09-14, and a DN
+// still resolves). Null for a DN that names nothing AND for one that names
+// something outside ou=users: a SCIM client asking for a User must not be
+// handed an application entry because it guessed the right DN, and answering
+// 404 for it is the same answer any other directory would give for a resource
+// that is not of the type asked for.
 function readPerson(dn) {
   log.debug('Entering readPerson(). dn=' + dn);
   // A SCIM id is the entry's `entryUUID` since 2026-09-14; a DN still
@@ -13769,7 +13780,7 @@ function allGroupEntries() {
 
 // THE THREE DOORS BELOW WERE A CROSS-REALM WRITE, and the record is worth
 // keeping because the shape recurs. `/scim/v2` answers under every realm prefix
-// and a SCIM id here IS a DN, so while one Map held every realm's entries the
+// and a SCIM id here WAS a DN, so while one Map held every realm's entries the
 // realm's endpoint could read, rewrite and — verified — DELETE a group in the
 // default realm: `DELETE
 // /realm/acme/scim/v2/Groups/cn=x,ou=groups,dc=example,dc=com` answered 204 and
@@ -14296,7 +14307,7 @@ function addGroupMember(group, member, options) {
 // `spiffe_registry.js` because it is a view of the CONTAINERS — where they
 // are, how full they are — which is this file's half of the division.
 //
-// IT IS THE ONE OF THE FIVE WITH TWO LISTS ON IT, so it is also the one that
+// IT IS THE ONE OF THE EIGHT WITH TWO LISTS ON IT, so it is also the one that
 // needs `pagedRows()`'s `name` option: registration entries and attested
 // agents page separately and share one `per`, exactly as the console's two
 // drill-downs do. A single `page` would have meant clicking "next" under the
@@ -15549,7 +15560,8 @@ function listen() {
       // 389 is privileged and it is a well-known port, so the two ways this
       // fails are "not root" and "something else is already there" — a host's
       // own slapd, most often. Neither is fatal to the rest of the service, so
-      // the failure is RECORDED rather than thrown, and published on /ldap so
+      // the failure is RECORDED rather than thrown, and published on
+      // /admin/ldap/service so
       // that it is visible from outside instead of only in this log.
       listening = false;
       listenError = err.message + (err.code ? ' (' + err.code + ')' : '');
@@ -15759,13 +15771,13 @@ module.exports = {
   ldapErrorNamed: ldapErrorNamed,
   // The live connections, and the only sign-out LDAP has. Read by
   // ../logout/logout.js, which requires this module in the ordinary direction:
-  // server.js loads it long before that one, so the require moves no route and
-  // closes no cycle, and rule 3e's test therefore asks for no slot. See the
-  // block above boundConnections().
+  // the require order loads it long before that one, so the require moves no
+  // route and closes no cycle, and rule 3e's test therefore asks for no slot.
+  // See the block above boundConnections().
   boundConnections: boundConnections,
   dropConnectionsFor: dropConnectionsFor,
-  // This node's connections alone, and the door a socket is held through —
-  // the second for tests/ldap_cluster_signout.js, which hands it a socket
+  // This node's connections alone, and the door a socket is held through — the
+  // second for tests/cluster_signout_signals.js, which hands it a socket
   // without binding a port. See the block above boundConnections().
   localBoundConnections: localBoundConnections,
   holdSocket: holdSocket,
