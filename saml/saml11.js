@@ -98,8 +98,12 @@ const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
 const CONFIRMATION_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:cm:artifact';
 
 // Sign the assertion enveloped, with the signature as the last child of
-// Assertion — which is where the SAML 1.1 schema requires it and, unusually,
-// also where xml-crypto puts it with no location option at all.
+// Assertion — which is where the SAML 1.1 schema requires it
+// (`PLACEMENT.LAST` below).
+//
+// THE REST OF THIS NOTE IS HISTORY as well (see the note above the requires):
+// since 2026-08-27 the shared signer resolves `AssertionID` itself and no
+// `idAttribute` is passed. It is kept for the bug it records.
 //
 // **`idAttribute: 'AssertionID'` IS LOAD-BEARING ON THE WAY OUT AS WELL AS THE
 // WAY BACK IN, and this file said the opposite until 2026-08-24.** It used to

@@ -125,7 +125,9 @@
 //    to work at all, and once it exists an `<AttributeQuery>` is the same
 //    assertion builder behind the same envelope. So all four of SAML 1.1's
 //    request types are answered: AssertionArtifact, AssertionIDReference,
-//    AttributeQuery and AuthenticationQuery. **The attribute authority is the
+//    AttributeQuery and AuthenticationQuery — the two QUERIES in development
+//    mode only, since product mode refuses both (see above soapEnvelope()).
+//    **The attribute authority is the
 //    half of SAML 1.1 that Shibboleth deployments actually leaned on**, and a
 //    mock that spoke the browser profile without it would be missing the part a
 //    Shibboleth service provider exercises on every sign-in.
@@ -165,9 +167,9 @@
 // ===========================================================================
 
 const crypto = require('crypto');
-// TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// TRUST REALMS: the stores below are partitioned by realm. It requires only
+// config.js and error_codes.js here, so it cannot join a cycle and it
+// registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const { DOMParser } = require('@xmldom/xmldom');
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -182,8 +184,8 @@ const config = require('../common/config');
 // The error-code registry, a leaf: every refusal below is marked with its code
 // on the response object, never in anything the relying party is sent.
 const errorCodes = require('../common/error_codes');
-// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers` and `config`, so a
-// require from 10b moves no route and closes no cycle. See
+// THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
+// `error_codes`, so a require from 10b moves no route and closes no cycle. See
 // `common/issuance_gate.js`; an unfilled decider answers "allowed".
 const gate = require('../common/issuance_gate');
 // The one assertion writer for this version. See decision 7.
@@ -194,10 +196,10 @@ const { buildSaml11Assertion, CONFIRMATION_BEARER, CONFIRMATION_ARTIFACT,
 // AN APPLICATION, and `/saml2/metadata/app-1a2b3c` and
 // `/saml11/metadata/app-9f8e7d` naming one entry in one directory would be the
 // same defect two spellings of a DN is — one thing that reads as two. It is
-// also a require in the ordinary direction (server.js takes 2.0 at 10a and this
-// file at 10b), so it closes no cycle and moves no route. Nothing else is taken
-// from that module; the two profiles share a registry and a session and know
-// nothing else about each other.
+// also a require in the ordinary direction (`common/protocol_stack.js` takes
+// 2.0 at 10a and this file at 10b), so it closes no cycle and moves no route.
+// Nothing else is taken from that module; the two profiles share a registry
+// and a session and know nothing else about each other.
 const { slugOf } = require('./saml2_sso');
 // The session, from the service that owns it. This profile starts none of its
 // own and has no sign-in screen: `beginAuthentication()` sends the browser to
@@ -212,7 +214,8 @@ const { sessionOf, sessionsOf, beginAuthentication, notePresented,
         noteSessionChanged } = require('../authn/authn');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
-// nothing about the route order this module's position in server.js fixes.
+// nothing about the route order this module's position in
+// `common/protocol_stack.js` fixes.
 const applications = require('../common/applications');
 // THE MODE, and the four libraries beside this file that saml2_sso.js takes too
 // (2026-09-12): how a session authenticated, the configured signature
@@ -2732,7 +2735,8 @@ function mockRelyingParty(req, res) {
 // THE ROUTES.
 //
 // Registered at require time, which is rule 1: this module's position in
-// server.js IS its position in the route order and on /admin/sts-metadata.
+// `common/protocol_stack.js` IS its position in the route order and on
+// /admin/sts-metadata.
 // Every path has a scoped and an unscoped spelling, for the reason
 // `saml2_sso.js` gives — the scoped one is what the per-relying-party metadata
 // document tells a service provider to use.

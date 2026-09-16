@@ -12,9 +12,11 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY. It registers no route (rule 3), and it is required by
-// `admin-ui/admin.js` for the refresh action and by `saml2_sso.js` for the
-// parse. It requires `helpers`, `config` and `applications` and nothing that
-// requires it, so it closes no cycle and moves nothing in the router.
+// `admin-core/admin_actions.js` for the refresh action and by `saml2_sso.js`
+// for the parse. It requires `common/` libraries (`helpers`, `config`,
+// `applications`, `audit`, `error_codes`, `version`) and
+// `federation/federation_http.js`, none of which requires it, so it closes no
+// cycle and moves nothing in the router.
 //
 // ---------------------------------------------------------------------------
 // THE FETCH NEVER HAPPENS DURING A FLOW, and that is the single most important

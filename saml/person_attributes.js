@@ -25,8 +25,9 @@
 //
 // A LIBRARY (rule 3). It registers no route. `claim_attributes.js` is required
 // LAZILY, inside the one function that needs it and only in product mode: that
-// module requires `admin_stats.js` and `oid4vc/vc_claims.js`, which `server.js`
-// has already loaded at position 5 so the require is a cache hit there — but
+// module requires `admin_stats.js` and `oid4vc/vc_claims.js`, which
+// `common/protocol_stack.js` has already loaded at position 5 so the require
+// is a cache hit there — but
 // the in-process tests and the parent project's Kerberos jobs load `saml/`
 // without them, and a development-mode process must not pay for a reader it
 // never uses.

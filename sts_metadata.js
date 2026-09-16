@@ -801,10 +801,11 @@ const SPECS = [
               'knowing which of the two this document actually standardised ' +
               '— StartTLS is in here; ldaps:// is the de-facto scheme it ' +
               'left alone, which is why no RFC defines the thing every ' +
-              'client speaks. The certificate is self-signed, regenerated on ' +
-              'every start and shared with the two HTTPS listeners, so a ' +
-              'client verifies it per run: fetch it from GET ' +
-              '/tls/server-certificate rather than reaching for ' +
+              'client speaks. The certificate is issued under this service\'s ' +
+              'own Root, regenerated on every start (unless ' +
+              'tls.certificateFile supplies one) and shared with the main ' +
+              'port, so a client verifies it per run: fetch the chain from ' +
+              'GET /tls/server-certificate rather than reaching for ' +
               'LDAPTLS_REQCERT=never, which would also hide the one thing ' +
               'worth checking here. In PRODUCT mode a simple bind IS ' +
               'verified, which makes 389 a password in the clear: ' +
@@ -858,15 +859,16 @@ const SPECS = [
   { id: 'rfc8446', name: 'TLS 1.3 (RFC 8446), and TLS 1.2 (RFC 5246)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc8446',
-    coverage: 'full, and none of it is this service\'s code — the two HTTPS ' +
-              'listeners and the directory\'s LDAPS listener on 636 are ' +
-              'node\'s own TLS stack over OpenSSL. The protocol floor and ' +
-              'cipher list are tls.minVersion (TLSv1.2, node\'s default) and ' +
-              'tls.ciphers (node\'s default list), applied to those three ' +
-              'and to the main port. What is written here is the POLICY and ' +
-              'the REPORT: one listener asks for a client certificate and ' +
-              'accepts whatever arrives, the other requires one, and both ' +
-              'hand back what the server saw. Two things about client ' +
+    coverage: 'full, and none of it is this service\'s code — the main ' +
+              'port (when global.https is on) and the directory\'s LDAPS ' +
+              'listener on 636 are node\'s own TLS stack over OpenSSL. The ' +
+              'protocol floor and cipher list are tls.minVersion (TLSv1.2, ' +
+              'node\'s default) and tls.ciphers (node\'s default list). What ' +
+              'is written here is the POLICY and the REPORT: the main port ' +
+              'asks every connection for a client certificate and requires ' +
+              'none, and GET /tls/sign-in hands back what the server saw (the ' +
+              'two listeners of this family\'s own, one asking and one ' +
+              'requiring, were deleted on 2026-09-16). Two things about client ' +
               'authentication are worth knowing before reading that report. ' +
               'Under TLS 1.3 the client sends its Certificate and Finished ' +
               'LAST, so the handshake is complete from its point of view ' +
@@ -875,8 +877,8 @@ const SPECS = [
               'happy mutual-TLS connection to a server that rejected it a ' +
               'millisecond later. And node refuses an unverified client ' +
               'certificate by CLOSING THE SOCKET WITH NO ALERT, which is why ' +
-              'the permissive listener exists at all: it is the only one ' +
-              'that can tell you why.' },
+              'a port that asks and does not require is the only kind that ' +
+              'can tell you why.' },
   { id: 'rfc5280', name: 'X.509 certificates and CRLs (RFC 5280)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc5280',
@@ -884,25 +886,26 @@ const SPECS = [
               'this service\'s: client certificates are verified against ' +
               'anchors POSTed to /tls/trust at runtime (development mode; ' +
               'product mode refuses that and reads tls.trustAnchorsFile at ' +
-              'startup), and the server certificate is self-signed here per ' +
-              'start with a subjectAltName carrying every name this stack is ' +
-              'reached by. THIS SERVICE PUBLISHES REVOCATION AND STILL ' +
-              'CHECKS NONE, and the two halves of that sentence must not be ' +
-              'run together. Section 5 is implemented: every authority in ' +
+              'startup), beside the service Root while ' +
+              'tls.trustIssuedClientCertificates is on, and the server ' +
+              'certificate is issued under that Root with a subjectAltName ' +
+              'carrying every name this stack is reached by. THIS SERVICE ' +
+              'PUBLISHES REVOCATION AND, SINCE 2026-09-12, CONSULTS IT. ' +
+              'Section 5 is implemented: every authority in ' +
               '/admin/pki signs a CRL, served at /pki/crl/{scope}/{ca} and ' +
               'published into the directory under ou=crl, and every ' +
               'certificate this service issues names its own over http and ' +
-              'ldap. What is unchanged is the VERIFYING side — a client ' +
-              'certificate presented to this service is checked against the ' +
-              'anchors on /tls/trust and no CRL is fetched and no OCSP ' +
-              'responder is consulted for it, so a certificate revoked here ' +
-              'still gets in here. Name constraints, policies and path ' +
+              'ldap. On the VERIFYING side a presented certificate this ' +
+              'service issued is checked against its own register, and ' +
+              'anybody else\'s against the OCSP responder and CRL it names ' +
+              '(common/revocation_status.js, policy pki.revocationCheck). ' +
+              'Name constraints, policies and path ' +
               'length are enforced only to the extent OpenSSL enforces them, ' +
               'which is to say properly, and by nothing written here.' },
   { id: 'rfc6960', name: 'Online Certificate Status Protocol (RFC 6960)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc6960',
-    coverage: 'partial, and it is the RESPONDER half only: one responder per ' +
+    coverage: 'partial. The RESPONDER half: one responder per ' +
               'certificate authority at /pki/ocsp/{scope}/{ca}, both ' +
               'transports of appendix A.1 (the DER POST and the base64 GET), ' +
               'good/revoked/unknown, the revocation reason and time from ' +
@@ -917,7 +920,10 @@ const SPECS = [
               'unsigned (section 2.3) rather than a signed `unknown` nobody ' +
               'could verify, and a nonce of 0 or more than 32 octets is ' +
               '`malformedRequest` (RFC 8954 section 2.1). Every certificate ' +
-              'names the responder over PLAIN HTTP, on `pki.httpPort`. NOT ' +
+              'names the responder over PLAIN HTTP, on `pki.httpPort`. SINCE ' +
+              '2026-09-12 ALSO A CLIENT: a presented certificate from another ' +
+              'authority is checked against the responder its Authority ' +
+              'Information Access names (common/revocation_status.js). NOT ' +
               'DONE: request signatures are neither required nor verified, ' +
               'no CRL reference extension, no archive cutoff, no service ' +
               'locator.' },
@@ -3054,7 +3060,8 @@ const ENDPOINTS = [
           'anchor and refuses a certified one, so a caller pinning the leaf ' +
           'alone got that same error about a Root it had never been given. ' +
           'The LEAF IS FIRST, for a caller that wants only it. It is ' +
-          'REGENERATED ON EVERY START in development mode, like the signing ' +
+          'REGENERATED ON EVERY START in either mode (unless ' +
+          'tls.certificateFile supplies it), like a development signing ' +
           'key, so it is an anchor nobody can have baked in and no cached ' +
           'copy of it stays valid — hence Cache-Control: no-store. It ' +
           'publishes no private key. Fetch it into your own truststore ' +
@@ -3065,18 +3072,23 @@ const ENDPOINTS = [
           'field of a form or JSON body — and client certificates chaining ' +
           'to them verify from the next handshake onward ' +
           '(tls.Server.setSecureContext; existing connections keep the ' +
-          'truststore they were made under). It starts EMPTY and has to: the ' +
-          'CA it verifies is usually generated in a browser minutes before ' +
-          'the connection and exists nowhere else, so no file could hold it. ' +
-          'It is on the PLAIN port because that is the one reachable before ' +
-          'anything is trusted. POST only. A DEVELOPMENT TEST CONTROL: it ' +
+          'truststore they were made under). It holds no runtime anchor at ' +
+          'start (the service Root is trusted beside it, behind ' +
+          'tls.trustIssuedClientCertificates): the CA a test verifies is ' +
+          'usually generated in a browser minutes before the connection and ' +
+          'exists nowhere else, so no file could hold it. It is on the main ' +
+          'port, which asks for a client certificate and requires none, so it ' +
+          'is reachable before anything is trusted. POST only. A ' +
+          'DEVELOPMENT TEST CONTROL: it ' +
           'needs no credential, so product mode refuses it and names the ' +
           'gated doors — /admin/tls/trust and POST /admin-api/tls/trust/add.' },
   { path: '/tls/trust/clear', group: 'TLS', name: 'Empty the client truststore',
     specs: ['rfc5280'],
-    what: 'Removes every anchor, returning the service to its starting ' +
-          'state: no client certificate verifies, and nothing can connect to ' +
-          'the listener that requires one. POST only. A development test ' +
+    what: 'Removes every anchor — a tls.trustAnchorsFile one until the ' +
+          'next start — so only a certificate chaining to the service Root ' +
+          '(trusted beside the truststore while ' +
+          'tls.trustIssuedClientCertificates is on) still verifies. POST ' +
+          'only. A development test ' +
           'control that product mode refuses; the gated doors remove one ' +
           'anchor at a time and have no clear.' },
 
@@ -3108,11 +3120,12 @@ const ENDPOINTS = [
           'prefix, the prefix SEGMENT itself (which is a setting, so a ' +
           'client cannot guess it), and which protocol families a realm ' +
           'actually separates. The last of those is the part nothing else ' +
-          'answers: a realm separates what this service ISSUES and not the ' +
-          'embedded DIRECTORY, and four families answer on sockets with ' +
-          'nowhere to put a path segment at all — so somebody who assumed a ' +
-          'realm was a boundary everywhere would find out from an ' +
-          'ldapsearch. A client being pointed at a realm cannot construct a ' +
+          'answers: most families are separated by the path, but the ' +
+          'directory is separated by DN, Kerberos by the realm NAME in the ' +
+          'request, SPIFFE by socket address, and the TLS certificate is ' +
+          'not separated at all — so somebody who assumed the path segment ' +
+          'was the boundary everywhere would be wrong about four of them. ' +
+          'A client being pointed at a realm cannot construct a ' +
           'single URL without this, which is why it is not behind the ' +
           'console\'s gate — the same argument every discovery document here ' +
           'rests on.' },
@@ -3163,7 +3176,10 @@ const ENDPOINTS = [
     what: 'THE ONE PAGE THAT DESCRIBES ALL THREE SERVER-SIDE SPIFFE ' +
           'SURFACES, and the only one that can report the two invisible ' +
           'ones. This service is the issuing authority for one trust domain ' +
-          '(spiffe.trustDomain, `example.org` by default): the BUNDLE ' +
+          'per trust realm (spiffe.trustDomain, `example.org` by default; a ' +
+          'realm created at runtime is seeded `<realm>.<that>` and binds ' +
+          'sockets of its own only when its spiffe.enabled is on — what ' +
+          'follows describes the default realm\'s): the BUNDLE ' +
           'ENDPOINT below is plain HTTPS; the SPIFFE WORKLOAD API (the gRPC ' +
           'service SpiffeWorkloadAPI, five of seven methods) is on a UNIX ' +
           'SOCKET at spiffe.workloadSocket — ' +
@@ -3713,7 +3729,7 @@ const ENDPOINTS = [
           'described a second time here: the endpoints, the four things SCIM ' +
           'here deliberately does not do, the five things you can do to make ' +
           'it fail, and which LDAP attribute each SCIM member is. Its ONE ' +
-          'control is the eighteen scim.* settings, which moved here from ' +
+          'control is the scim.* settings, which moved here from ' +
           '/admin/config on 2026-08-27 and post back to it — a second door ' +
           'onto one store, which is why /admin-api needs no POST beside its ' +
           'GET. The bulk count deliberately does not tally with the rest — ' +
@@ -3844,7 +3860,7 @@ const ENDPOINTS = [
           'or ends, which makes this THE ONLY PAGE IN THIS CONSOLE THAT ' +
           'CONFIGURES THIS SERVICE TO ACT WITHOUT BEING ASKED — ' +
           'caep.autoEmit, and turning it off restores the behaviour every ' +
-          'other family here has. The nine caep.* settings post back to it. ' +
+          'other family here has. The caep.* settings post back to it. ' +
           'Add ?format=json.' },
   { path: '/admin/caep-sessions', group: 'Admin', name: 'CAEP sessions',
     specs: ['caep', 'ssf'],
@@ -3904,7 +3920,7 @@ const ENDPOINTS = [
           'rather than as a report that it moved. The other four fire on ' +
           'their own when the DIRECTORY changes, which is a different ' +
           'observer from CAEP\'s: risc.autoEmit watches provisioning where ' +
-          'caep.autoEmit watches authentication. The eleven risc.* settings ' +
+          'caep.autoEmit watches authentication. The risc.* settings ' +
           'post back to it, including risc.googleSubjectType — the only ' +
           'deliberate defect in this service that a specification asks for ' +
           'by name (RISC section 3.1). Add ?format=json.' },
@@ -5129,12 +5145,14 @@ const ENDPOINTS = [
           'behave exactly as it did. Two things here are answered nowhere ' +
           'else — what a realm\'s endpoints actually are (the prefix segment ' +
           'is a setting and the ids are whatever somebody typed) and WHICH ' +
-          'FAMILIES ARE SEPARATED BY IT. The embedded directory is SHARED — ' +
-          'one set of people, groups and applications for every realm, since ' +
-          'LDAP answers on a socket with no path in it — so OAuth client ' +
-          'registrations, SAML service provider entries and the two admin ' +
-          'roles are shared, as are the certificate the main port and ' +
-          'LDAPS 636 present and SPIFFE\'s four sockets. KERBEROS left that ' +
+          'FAMILIES ARE SEPARATED BY IT. The embedded directory is PER REALM ' +
+          '— a subtree dc=<id> of its own, separated by DN because LDAP ' +
+          'answers on a socket with no path in it — so a realm has its own ' +
+          'people, groups and applications, and administrators of its own ' +
+          'confined to it (2026-09-14); the default realm\'s two admin roles ' +
+          'administer every realm. SPIFFE gives a realm a trust domain and ' +
+          'sockets of its own (2026-09-12). The certificate the main port ' +
+          'and LDAPS 636 present is still shared. KERBEROS left the shared ' +
           'list on 2026-09-15: a realm with a krb5.realm of its own and ' +
           'krb5.enabled on has a KDC, a principal database and keys of its ' +
           'own, on the shared port 88, routed by the realm name inside each ' +
@@ -5221,7 +5239,7 @@ const ENDPOINTS = [
   { path: '/admin/oid4vci', group: 'Admin', name: 'OpenID4VCI settings',
     specs: ['oid4vci', 'sd-jwt-vc', 'vcdm', 'did-core'],
     effect: 'changes what the credential issuer advertises and will accept',
-    what: 'NON-SPEC. The nine oid4vci.* settings: the wallet an offer sends ' +
+    what: 'NON-SPEC. The oid4vci.* settings: the wallet an offer sends ' +
           'a holder to, the authorization server the credential endpoint ' +
           'takes a token from, the batch size, the deferred issuance ' +
           'timings, the offer username, whether a credential request must be ' +
@@ -5233,7 +5251,7 @@ const ENDPOINTS = [
     specs: ['oid4vp', 'sd-jwt-vc'],
     effect: 'changes how the mock Verifier identifies itself and what it ' +
             'will accept in a presentation',
-    what: 'NON-SPEC. The four oid4vp.* settings: the verifier\'s client_id, ' +
+    what: 'NON-SPEC. The oid4vp.* settings: the verifier\'s client_id, ' +
           'the wallet it sends a holder to (which falls back to the OID4VCI ' +
           'one, since it is the same wallet in every arrangement this ' +
           'service is used in), the Key Binding JWT\'s maximum age, and the ' +
@@ -5242,7 +5260,7 @@ const ENDPOINTS = [
   { path: '/admin/kerberos', group: 'Admin', name: 'Kerberos settings',
     specs: ['rfc4120', 'rfc3961', 'rfc4178', 'rfc4559', 'ms-kkdcp', 'ms-sfu'],
     effect: 'changes the KDC, and most of it only on the next start',
-    what: 'NON-SPEC. The twenty krb5.* settings: whether this realm\'s KDC ' +
+    what: 'NON-SPEC. The krb5.* settings: whether this realm\'s KDC ' +
           'answers at all (krb5.enabled, off on a new trust realm), the ' +
           'realm and the two raw ' +
           'ports, the clock skew and the deliberate clock OFFSET that makes ' +
@@ -5260,7 +5278,7 @@ const ENDPOINTS = [
     specs: ['rfc4511', 'rfc4512', 'rfc4513', 'rfc4519', 'rfc8446'],
     effect: 'changes the embedded directory, and its two ports only on the ' +
             'next start',
-    what: 'NON-SPEC. The six ldap.* settings: the two raw ports, the base DN ' +
+    what: 'NON-SPEC. The ldap.* settings: the two raw ports, the base DN ' +
           'every realm\'s subtree hangs under, whether a name seen for the ' +
           'first time gets an entry, and the two ceilings that keep a mock ' +
           'from being filled up. What is IN the directory is /admin/users, ' +
@@ -5286,7 +5304,7 @@ const ENDPOINTS = [
     specs: ['rfc2849', 'rfc4511'],
     effect: 'changes what survives a restart, and where it is written — on ' +
             'the next start for five of the six settings',
-    what: 'NON-SPEC. The six persistence.* settings, plus a status block ' +
+    what: 'NON-SPEC. The persistence.* settings, plus a status block ' +
           'saying what the store is actually DOING: the mode in force, ' +
           'where it writes, how much it holds, when it last wrote and the ' +
           'error if that failed. A store that was CONFIGURED and could not ' +
@@ -5326,8 +5344,8 @@ const ENDPOINTS = [
     specs: ['rfc8446', 'rfc5280', 'rfc8705'],
     effect: 'changes the certificate both sockets share, on the next start',
     what: 'NON-SPEC. The tls.* settings: the hostnames and IP addresses that ' +
-          'go into the self-signed certificate this service mints on every ' +
-          'start and serves on the main port (when global.https is on) and ' +
+          'go into the certificate this service issues under its own Root ' +
+          'on every start and serves on the main port (when global.https is on) and ' +
           'on LDAPS 636. Restart-only: the certificate is minted before ' +
           'anything is listening. The two ports this page named until ' +
           '2026-09-16 — tls.port and tls.mutualPort — were removed with the ' +
@@ -5346,8 +5364,10 @@ const ENDPOINTS = [
           'controls: add PEM certificates, and remove ONE anchor by its ' +
           'fingerprint. There is deliberately no clear. THE GATED RUNTIME ' +
           'DOOR, and the one product mode has: /tls/trust needs no ' +
-          'credential and is refused there. Nothing on it is persisted, and ' +
-          'a removed `file` anchor comes back at the next start. Admin Write ' +
+          'credential and is refused there. A runtime anchor is persisted to ' +
+          'ou=trustAnchors in the default realm\'s directory (since ' +
+          '2026-09-12); a removed `file` anchor comes back at the next ' +
+          'start. Admin Write ' +
           'to change it. Answered by the process holding the listeners in ' +
           'workers.dispatch mode. Add ?format=json.' },
   { path: '/admin/kerberos/principals', group: 'Admin',
@@ -5362,9 +5382,10 @@ const ENDPOINTS = [
           'match the password, and service principals created here with a ' +
           'RANDOM key. A create or a rotate answers with a page carrying an ' +
           'MIT keytab ONCE; no page and no JSON shows a key. Two lists, ' +
-          'paged separately. One KDC for the process, so the default trust ' +
-          'realm\'s principals under every realm prefix. Admin Write to ' +
-          'change it. Add ?format=json.' },
+          'paged separately. A KDC per trust realm since 2026-09-15, so a ' +
+          'realm prefix shows THAT realm\'s principals; a realm with ' +
+          'krb5.enabled off has none. Admin Write to change it. Add ' +
+          '?format=json.' },
   { path: '/admin/token-lifetimes', group: 'Admin', name: 'Token lifetimes',
     specs: ['rfc6749', 'rfc7519', 'oidc'],
     effect: 'changes how long every FUTURE access token, ID Token and ' +
@@ -6508,7 +6529,7 @@ const ENDPOINTS = [
   { path: '/admin-api/oid4vci-settings', group: 'Management API',
     name: 'OpenID4VCI settings',
     specs: ['oid4vci', 'did-core', 'openapi'],
-    what: 'GET /admin/oid4vci over JSON: the nine oid4vci.* settings, ' +
+    what: 'GET /admin/oid4vci over JSON: the oid4vci.* settings, ' +
           'including the two restart-only ones that decide whether the ' +
           'SD-JWT VC and ldp_vc issuers name themselves by did:web or by ' +
           'URL. What a credential CONTAINS is /admin-api/credential-claims, ' +
@@ -6516,14 +6537,14 @@ const ENDPOINTS = [
   { path: '/admin-api/oid4vp-settings', group: 'Management API',
     name: 'OpenID4VP settings',
     specs: ['oid4vp', 'openapi'],
-    what: 'GET /admin/oid4vp over JSON: the four oid4vp.* settings, one of ' +
+    what: 'GET /admin/oid4vp over JSON: the oid4vp.* settings, one of ' +
           'which is DERIVED — the wallet falls back to the OID4VCI one. The ' +
           'DCQL query itself is /admin-api/verifier-request, which is why ' +
           'this path carries -settings. Read-only.' },
   { path: '/admin-api/kerberos', group: 'Management API', name: 'Kerberos ' +
       'settings',
     specs: ['rfc4120', 'rfc4178', 'rfc4559', 'openapi'],
-    what: 'GET /admin/kerberos over JSON: the nineteen krb5.* settings, most ' +
+    what: 'GET /admin/kerberos over JSON: the krb5.* settings, most ' +
           'of them restart-only because the principal database and every ' +
           'long-term key in it are built from them at startup. Two of them ' +
           'exist to make failures reachable — krb5.unknownUsers and ' +
@@ -6531,7 +6552,7 @@ const ENDPOINTS = [
   { path: '/admin-api/ldap', group: 'Management API', name: 'LDAP / LDAPS ' +
       'settings',
     specs: ['rfc4511', 'rfc4519', 'openapi'],
-    what: 'GET /admin/ldap over JSON: the six ldap.* settings. It also ' +
+    what: 'GET /admin/ldap over JSON: the ldap.* settings. It also ' +
           'carries the sentence a caller most needs about this family — no ' +
           'bind is ever refused and no setting is missing that would refuse ' +
           'one. What is IN the directory is /admin-api/users and ' +
@@ -6656,7 +6677,7 @@ const ENDPOINTS = [
   { path: '/admin-api/persistence', group: 'Management API',
     name: 'Persistence',
     specs: ['rfc2849', 'openapi'],
-    what: 'GET /admin/persistence over JSON: the six persistence.* settings ' +
+    what: 'GET /admin/persistence over JSON: the persistence.* settings ' +
           'and — uniquely in this group — a `status` member saying whether ' +
           'the store is open, healthy and writing, or whether it fell back ' +
           'to memory. persistence.databaseUrl is never echoed back there: it ' +
@@ -6684,7 +6705,7 @@ const ENDPOINTS = [
   { path: '/admin-api/tls', group: 'Management API', name: 'TLS / mutual TLS ' +
       'settings',
     specs: ['rfc8446', 'rfc5280', 'openapi'],
-    what: 'GET /admin/tls over JSON: the four tls.* settings, all ' +
+    what: 'GET /admin/tls over JSON: the tls.* settings, all ' +
           'restart-only because the certificate is minted and the sockets ' +
           'bound before anything is listening. Whether the MAIN port is ' +
           'HTTPS is global.https, on /admin-api/config with the process\'s ' +
@@ -6697,8 +6718,8 @@ const ENDPOINTS = [
           'PEM and source (`file` or `runtime`), paged with ?page= and ' +
           '?per=. One truststore for the PROCESS, so it answers the same ' +
           'under every realm prefix. No private key is in it — the ' +
-          'truststore holds certificates and nothing else. Nothing in it is ' +
-          'persisted.' },
+          'truststore holds certificates and nothing else. A runtime anchor ' +
+          'is persisted in the directory; a `file` anchor is not.' },
   { path: '/admin-api/tls/trust/:action', group: 'Management API',
     name: 'Add or remove a client-certificate trust anchor',
     specs: ['rfc5280', 'openapi'],
@@ -6708,7 +6729,7 @@ const ENDPOINTS = [
           'OpenSSL cannot read one); remove takes one `fingerprint`. NO BULK ' +
           'CLEAR, deliberately. Needs admin:write, works in both modes, and ' +
           'is the gated twin of POST /tls/trust, which product mode refuses. ' +
-          'Not persisted.' },
+          'Written to ou=trustAnchors, so a change survives a restart.' },
   { path: '/admin-api/kerberos/principals', group: 'Management API',
     name: 'Kerberos principals',
     specs: ['rfc4120', 'rfc3961', 'openapi'],
@@ -6716,8 +6737,8 @@ const ENDPOINTS = [
           'holding Kerberos keys derived from their password and the service ' +
           'principals holding a stored random key, each with kvno, enctypes ' +
           'and dates, paged with ?peoplePage=, ?servicesPage= and ?per=. NO ' +
-          'KEY MATERIAL, sealed or otherwise. The default trust realm\'s ' +
-          'principals under every realm prefix.' },
+          'KEY MATERIAL, sealed or otherwise. A KDC per trust realm since ' +
+          '2026-09-15, so a realm prefix answers that realm\'s principals.' },
   { path: '/admin-api/kerberos/principals/:action', group: 'Management API',
     name: 'Create, rotate or delete a service principal, clear a person\'s ' +
           'keys, or drop previous key versions',
@@ -6858,7 +6879,7 @@ const ENDPOINTS = [
           'URLS each one is configured from — which is a per-row fact rather ' +
           'than a constant, because the metadata is per application. A ' +
           'caller that guessed the slug rule would be a second ' +
-          'implementation of it. Also the nine saml2.* settings as read, and ' +
+          'implementation of it. Also the saml2.* settings as read, and ' +
           'two numbers about the profile that are invisible until they are ' +
           'wrong: artifacts awaiting resolution and requests held for ' +
           'sign-in. Mirrors GET /admin/saml2.' },
@@ -6878,7 +6899,7 @@ const ENDPOINTS = [
     specs: ['saml11', 'saml11-profiles', 'saml2-metadata'],
     what: 'NON-SPEC. Every SAML 1.1 relying party and the THREE ENDPOINT ' +
           'URLS each one is configured from, per row for the same reason the ' +
-          'SAML 2.0 resource\'s are. Also the nine saml11.* settings as ' +
+          'SAML 2.0 resource\'s are. Also the saml11.* settings as ' +
           'read, and THREE numbers about the profile: artifacts awaiting ' +
           'resolution and flows held for sign-in, which behave like the 2.0 ' +
           'ones, and assertions held by reference, which does NOT — it is ' +
@@ -8644,7 +8665,8 @@ const PROTOCOLS = [
   { name: 'SPIFFE', groups: ['SPIFFE'],
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
             'spiffe-jwt-svid', 'spiffe-workload-api', 'spire-server-api'],
-    what: 'One trust domain, its bundle endpoint, the SPIFFE Workload API ' +
+    what: 'A trust domain per trust realm (2026-09-12), its bundle ' +
+          'endpoint, the SPIFFE Workload API ' +
           'and 36 of the 42 SPIRE Server API methods. The Workload API ' +
           'authenticates NOBODY — a workload has no root of trust until ' +
           'that call gives it one — and the SPIRE Server API\'s TCP port is ' +
@@ -8662,11 +8684,11 @@ const PROTOCOLS = [
           'is here because RFC 7521 and RFC 7523 let an application ' +
           'authenticate, or present an authorization grant, with a signed ' +
           'assertion instead of a shared secret, and a signing key nobody ' +
-          'vouched for is a key somebody has to move by hand. It is the only ' +
-          'family here that issues an X.509 certificate to something that is ' +
-          'not this service — SPIFFE issues SVIDs and TLS issues its own ' +
-          'listener certificate — and it revokes nothing, ever: no CRL, no ' +
-          'OCSP, and the page says so.' },
+          'vouched for is a key somebody has to move by hand. SPIFFE\'s ' +
+          'SVIDs, the listener certificate and the certificates ACME, EST ' +
+          'and SCEP enroll are all leaves of this same hierarchy. Every ' +
+          'authority signs a CRL and answers OCSP (2026-09-11), and a ' +
+          'presented certificate\'s revocation is consulted (2026-09-12).' },
   // ===== ACME card (acme/) =====
   { name: 'ACME', groups: ['ACME'],
     specs: ['rfc8555', 'rfc9773', 'rfc8738', 'rfc8823', 'acme-profiles',
@@ -9114,8 +9136,9 @@ function renderInner(base, report) {
             'authorization response must not be sent over an unencrypted ' +
             'connection'
           : '') +
-        '), with the same self-signed certificate LDAPS 636 serves. It is ' +
-        'regenerated on every start, so fetch it from ' +
+        '), with the same certificate LDAPS 636 serves, issued under this ' +
+        'service\'s own Root. It is regenerated on every start unless ' +
+        'tls.certificateFile supplies one, so fetch it from ' +
         '<code>/tls/server-certificate</code> and trust it — without ' +
         'verification the first time, since there is no plain port left to ' +
         'fetch it from.'
