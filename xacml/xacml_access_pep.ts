@@ -100,11 +100,15 @@ interface AccessQuestion {
 }
 
 // What a decision answers.
+// The index signature matches `common/access_gate.ts`'s own AccessAnswer, so
+// this decider fits the gate's AccessDecider (#50, after merging batches E
+// and F).
 interface AccessAnswer {
   allowed: boolean;
   decision: string;
   why: string;
   policy: any;
+  [key: string]: unknown;
 }
 
 // Which document decides: `policy` when one does, `why` and `errorCode`
