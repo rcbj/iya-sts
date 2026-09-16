@@ -23,8 +23,9 @@
 //
 // The PROTOCOL half — that /saml2/metadata is signed, that a Browser/POST
 // response carries two verifiable signatures — is a different test and belongs
-// over there. It is not written yet; the root CLAUDE.md's "Tests" section says
-// so rather than implying it is covered.
+// over there. `tests/vendored/sts_saml11.js` checks SAML 1.1's signature
+// reference; what the SAML 2.0 half still lacks is recorded in
+// `saml/CLAUDE.md` rather than implied to be covered.
 //
 // **`xml-crypto` IS KEPT AS A DEPENDENCY FOR THIS FILE AND FOR NOTHING ELSE.**
 // No module in the service requires it any more. Removing it would save a

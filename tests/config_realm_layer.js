@@ -167,15 +167,15 @@ function checkMarker(t) {
   // and `oauth2.rfc9700` while there was one holder, and the point of the
   // assertion was never the number: it is that adding one is a DECISION taken
   // in the same commit, at the line somebody has to edit. Naming them keeps
-  // that exactly as strict — an eighth still fails here — and says what the
-  // seven are.
+  // that exactly as strict — one more than the list still fails here — and
+  // says what they are: the two OAuth modes, Kerberos's ten and SPIFFE's ten.
   //
-  // SPIFFE's six arrived together and are one argument, made at the head of
+  // SPIFFE's ten arrived together and are one argument, made at the head of
   // that group in config.js: this process binds four SPIFFE listeners and
   // builds one trust domain's authorities WHEN IT STARTS, and a realm's SPIFFE
   // is not started then — it is created OFF, its authorities are built on
   // first use and its listeners are bound when it is turned on. So for a realm
-  // none of the six was consumed at any startup.
+  // none of the ten was consumed at any startup.
   //
   // KERBEROS'S TEN ARRIVED TOGETHER on 2026-09-15 and are one argument too,
   // made at the head of the Kerberos group in config.js: this process builds

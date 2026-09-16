@@ -31,7 +31,7 @@
 // that `notePresented()` is protocol-independent (section A), and that every
 // module which answers a request out of an existing session actually calls it
 // (section B). B is a SOURCE check and it is the one that would catch the
-// regression, because the fifth browser SSO profile somebody adds will have
+// regression, because the next browser SSO profile somebody adds will have
 // the same hole and nothing else in either suite is looking for it.
 // ===========================================================================
 
@@ -46,9 +46,10 @@ const log =
     require('bunyan').createLogger({ name: 'caep_presented_every_protocol',
   level: process.env.LOG_LEVEL || 'info' });
 
-// The four browser SSO profiles: a module, and the identifier it passes as
-// `via` so the event says which door the session came back through. A profile
-// added here without a `notePresented()` fails section B by name.
+// The four browser SSO profiles, and GNAP's interaction: a module, and the
+// identifier it passes as `via` so the event says which door the session came
+// back through. A profile added here without a `notePresented()` fails
+// section B by name.
 const PROFILES = [
   { file: '../oauth-oidc/oauth2.js', via: 'OAuth 2.0 / OIDC' },
   { file: '../saml/saml2_sso.js', via: 'SAML 2.0' },
