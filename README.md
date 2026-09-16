@@ -1,32 +1,52 @@
-# Mock STS
+# iya-sts
 
-A deliberately permissive **mock identity service** that speaks seventeen protocol
-families — four of which, Kerberos, LDAP, TLS and SPIFFE, are not HTTP over its own
-listener at all — for exercising clients. It
-authenticates nobody, checks no passwords and validates no access tokens (UserInfo
-excepted, deliberately, and there is a section on why below): it exists so that a
-client can be driven through a complete protocol exchange without standing up a real
-identity provider. Kerberos is the one place a password is checked, because there the
-password *is* the encryption key — so it takes the nearest permissive equivalent
-instead: any username at all, and `password!` for every one of them.
+An **identity provider and security token service** that speaks seventeen protocol
+families. Four of them (Kerberos, LDAP, TLS and SPIFFE) do not run as HTTP on its
+main listener at all. The others include OAuth 2.0 and OpenID Connect, SAML,
+WS-Trust, WS-Federation, SCIM, OpenID4VC, Shared Signals, XACML and GNAP. The
+service also has a certificate authority of its own. *What it speaks*, below,
+has the full list.
 
-**Authentication is intentionally fake. Protocol behavior is not.**
+## Where it started, and where it is going
 
-Mock STS exists to test identity protocol integrations, not identity security. It 
-accepts essentially any identity and produces protocol-correct tokens, assertions,
-tickets, and credentials. It is deliberately unsuitable for production.
+**It started life as part of a test suite.** It was the mock STS inside the
+[OAuth2/OIDC Debugger](https://idptools.com) project, the identity service that
+project's tests drove clients against. That job needed a complete, protocol-correct
+exchange (real tokens, assertions, tickets and credentials) without standing up a
+real identity provider. So the service was deliberately permissive: it authenticated
+nobody, checked no passwords and validated no access tokens. *Authentication was
+intentionally fake; protocol behaviour was not.* It was later extracted into a
+repository of its own, and was called `mock-sts` until 2026-09-15.
 
-If you're testing whether your application correctly speaks OAuth, OIDC, SAML, WS-Federation,
-WS-Trust, WebAuthn, DPoP, OpenID4VC, or other supported protocols, Mock STS gives you a real
-protocol endpoint without requiring you to deploy or configure a real identity provider.
+**It is now on a journey to becoming a real identity provider.** The permissive
+service has not gone away. It has become one of two modes, set by `global.mode`
+for each trust realm, so a single process can serve both:
 
-Extracted from the [OAuth2/OIDC Debugger](https://idptools.com), where it is the
-fallback identity service for the test suite. The documentation below is carried over
-from that project's engineering notes, so it explains *why* things are the way they
-are — most of it is the record of something having gone wrong once.
+* **`development`**, the default, is the mock this project started as. Any username
+  typed at the sign-in screen becomes the identity. Anything named is created.
+  Signing keys are regenerated on every start. Test controls are open. In Kerberos,
+  where the password *is* the encryption key, every account shares `password!`.
+  Use this mode to test whether an application correctly speaks OAuth, OIDC, SAML,
+  WS-Federation, WS-Trust, WebAuthn, DPoP, OpenID4VC or any other protocol here.
+  **Never use it to protect anything.**
+* **`product`** runs the same protocol implementations with the permissiveness taken
+  out:
+  * a presented password is verified against the hashed password on the person's
+    own directory entry;
+  * a response goes only to an address somebody registered;
+  * there is no demonstration data and no invented claim value;
+  * signing keys and the certificate authority persist, sealed under a
+    key-encryption key the service never generates itself;
+  * several containers can serve one PostgreSQL store.
 
-> **Not for production.** No credential is ever verified. Any username typed at the
-> login screen becomes the identity in every token it issues.
+**The journey is not finished.** Much of what is described below was built for
+development mode first. Where product mode behaves differently, the setting or
+section says so. Read those notes before you deploy a feature, and do not assume
+that a feature which works in development has been hardened for product.
+
+The documentation below comes from the engineering notes of the project it came
+from, so it explains *why* things are the way they are. Most of it is the record of
+something having gone wrong once.
 
 ## Where the code is
 

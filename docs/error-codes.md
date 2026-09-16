@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2656** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2657** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 70
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 76
-* [TLS listeners (`STS-TLS`)](#sts-tls) — 31
+* [TLS listeners (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 51
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 272
@@ -2022,6 +2022,7 @@ Raised from: tls/.
 | `STS-TLS-0029` | A runtime trust anchor was removed from every listener but could not be removed from ou=trustAnchors, so it will come back on a restart. | — |
 | `STS-TLS-0030` | The stored trust anchors could not be read; the truststore was left as it was. | — |
 | `STS-TLS-0031` | The required-client-certificate listener refused a verified certificate this service issued that is not a TLS client identity (not from a TLS client or enrollment Issuing CA, no clientAuth, or no single urn:sts:person:/application: name). | HTTP 403 with the connection report |
+| `STS-TLS-0032` | The file named by tls.certificateFile holds self-signed certificates, none of which signs the chain the listener presents, so no trust anchor is taken from it. | — |
 
 ## STS-VC
 

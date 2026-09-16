@@ -7630,6 +7630,11 @@ const CODES = [
       '(not from a TLS client or enrollment Issuing CA, no clientAuth, or no ' +
       'single urn:sts:person:/application: name).',
     spec: 'HTTP 403 with the connection report' },
+  { code: 'STS-TLS-0032',
+    summary: 'The file named by tls.certificateFile holds self-signed ' +
+      'certificates, none of which signs the chain the listener presents, ' +
+      'so no trust anchor is taken from it.',
+    spec: '' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
