@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: pqc_support.js
@@ -164,7 +165,8 @@ function ofCertificate(pem) {
   }
   try {
     const parsed = asn1js.fromBER(alt.extnValue.valueBlock.valueHexView);
-    const oid = parsed.result.valueBlock.value[0].valueBlock.value[0]
+    const oid = /** @type {any} */ (parsed.result).valueBlock.value[0]
+      .valueBlock.value[0]
       .valueBlock.toString();
     const altKey = ofAlgorithm(oid);
     if (altKey) {

@@ -58,6 +58,33 @@ the list.
 
 ---
 
+## Every file here is type-checked (#50, 2026-09-16)
+
+Each file in this directory except `vendored/` starts with `// @ts-check`, and
+`tests/typecheck.js` fails on a type error in any of them — a new file needs the
+marker too, and that test says so. The first pass fixed 252 errors without
+changing behaviour, and three kinds of fix recur:
+
+* **A shape the code already documented in prose became a declaration** in
+  `types/`: `cluster/`'s claim, counter and window results, and
+  `password_policy.js`'s profile. The producing function's JSDoc names it, so
+  a caller reading `reason` after `ok` is checked.
+* **A helper that passed its arguments on untyped got a signature**:
+  `realms.obj(factory)` returns what the factory builds, and
+  `admin-ui/admin_rbac.js`'s `bound()` returns a function taking the realm as
+  an extra argument. Neither changed at runtime.
+* **A library whose declared types lag its behaviour gets a narrow cast** with
+  a comment saying which library: `asn1js` value blocks, `pkijs`'s engine and
+  `toSchema(true)`, `ajv/dist/2020`'s CommonJS export, `xmldom` as the DOM
+  globals, Node's GCM cipher when the algorithm name is built.
+
+Two edits were structural and are the same program: `app.js` hangs its four
+members on the app with one `Object.assign`, and `pki_revocation.js` names every
+export in its one export object (all are hoisted function declarations), where
+each assigned `module.exports` and then added to it — the form the checker
+refuses. `version.js` and `pki_merge.js` take rest parameters where they read
+`arguments`.
+
 ## `helpers.js` holds what more than one protocol needs
 
 **`parseBody()` PARSES multipart/form-data SINCE 2026-09-13**, every part as

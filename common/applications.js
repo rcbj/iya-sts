@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: applications.js
@@ -4556,10 +4557,11 @@ let authorizationDetailsAjv = null;
 function authorizationDetailsSchemaCompiler() {
   log.debug("Entering authorizationDetailsSchemaCompiler().");
   if (!authorizationDetailsAjv) {
-    const Ajv2020 = require('ajv/dist/2020');
+    // `any`: both are CommonJS modules whose declared types are ES defaults.
+    const Ajv2020 = /** @type {any} */ (require('ajv/dist/2020'));
     authorizationDetailsAjv = new Ajv2020({ strict: false, allErrors: false,
                                             coerceTypes: false });
-    require('ajv-formats')(authorizationDetailsAjv);
+    /** @type {any} */ (require('ajv-formats'))(authorizationDetailsAjv);
   }
   log.debug("Leaving authorizationDetailsSchemaCompiler().");
   return authorizationDetailsAjv;
@@ -6279,6 +6281,7 @@ function registrationOf(clientId) {
     return null;
   }
   const record = loaded.record;
+  /** @type {any} */
   let document = {};
   const raw = record.fields.appRegistrationJson;
   if (raw) {
@@ -9032,7 +9035,7 @@ function internalApplications() {
         scope: 'admin:read admin:write',
         token_endpoint_auth_method: 'client_secret_basic'
       } }
-  ].concat(debuggerApplications());
+  ].concat(/** @type {any} */ (debuggerApplications()));
   log.debug("Leaving internalApplications(). " + rows.length + " row(s).");
   return rows;
 }

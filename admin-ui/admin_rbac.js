@@ -1269,7 +1269,17 @@ function describe() {
 //
 // `grant()` and `revoke()` take it as `context.realm`, where their other
 // options already are.
+//
+// The JSDoc says what the wrapper accepts (#50): the wrapped function's
+// arguments and then any number more, the realm among them, returning what the
+// wrapped function returns.
 // ---------------------------------------------------------------------------
+/**
+ * @template {(...args: any[]) => any} F
+ * @param {F} fn
+ * @param {number} at
+ * @returns {(...args: any[]) => ReturnType<F>}
+ */
 function bound(fn, at) {
   log.debug("Entering bound(). " + fn.name);
   log.debug("Leaving bound().");

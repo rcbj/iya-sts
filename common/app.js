@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: app.js
@@ -925,16 +926,21 @@ app.get('/healthcheck', function (req, res) {
   log.debug("Leaving the healthcheck endpoint.");
 });
 
-module.exports = app;
-// The policy builder, for the routes that relax it. Exported off the app
-// object rather than as a second module because every one of them already
-// requires this file — and because a relaxation belongs beside the policy it
-// relaxes, where the next reader will find both.
-module.exports.contentSecurityPolicy = contentSecurityPolicy;
-module.exports.CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY;
-// For the one page that builds URLs in a script and therefore cannot have its
-// markup rewritten. See the comment on res.send above.
-module.exports.withRealmLinks = withRealmLinks;
-// For tests/front_process_realm_arrival.js, which drives it beside the request
-// pool's second ask; nothing in the service calls it off the export.
-module.exports.enterRealm = enterRealm;
+// The app, with four members hung off it. One `Object.assign` rather than an
+// assignment followed by four more (#50, 2026-09-16): the same object either
+// way, and the type checker accepts only this form.
+module.exports = Object.assign(app, {
+  // The policy builder, for the routes that relax it. Exported off the app
+  // object rather than as a second module because every one of them already
+  // requires this file — and because a relaxation belongs beside the policy
+  // it relaxes, where the next reader will find both.
+  contentSecurityPolicy: contentSecurityPolicy,
+  CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
+  // For the one page that builds URLs in a script and therefore cannot have
+  // its markup rewritten. See the comment on res.send above.
+  withRealmLinks: withRealmLinks,
+  // For tests/front_process_realm_arrival.js, which drives it beside the
+  // request pool's second ask; nothing in the service calls it off the
+  // export.
+  enterRealm: enterRealm
+});

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: request_pool.js
@@ -526,7 +527,8 @@ function awaitCommitConfirmations(servedBy) {
     return Promise.resolve();
   }
   log.debug("Leaving awaitCommitConfirmations().");
-  return new Promise(function (resolve) {
+  return new Promise(/** @param {(value?: any) => void} resolve */
+                     function (resolve) {
     let done = false;
     const waiter = { need: need, servedBy: servedBy, resolve: function () {
       log.debug("Entering resolve().");
@@ -2225,7 +2227,7 @@ function fork(pool) {
   }
 
   const settled = new Promise(function (resolve) {
-    child.on('message', function (message) {
+    child.on('message', /** @param {any} message */ function (message) {
       if (message && message.ready) {
         entry.ready = true;
         quickExits[entry.pool] = 0;

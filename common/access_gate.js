@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: access_gate.js

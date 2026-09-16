@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: helpers.js
@@ -629,9 +630,11 @@ function makeStsKeys(made) {
     // holding a cached copy.
     { alg: 'EdDSA', curve: 'Ed448', kty: 'OKP', gen: ['ed448', undefined] }
   ].map(function (spec) {
+    // `any`: the key type is a table value, and the overloads want literals.
+    const generate = /** @type {any} */ (crypto.generateKeyPairSync);
     const pair = spec.gen[1]
-      ? crypto.generateKeyPairSync(spec.gen[0], spec.gen[1])
-      : crypto.generateKeyPairSync(spec.gen[0]);
+      ? generate(spec.gen[0], spec.gen[1])
+      : generate(spec.gen[0]);
     const publicJwk = pair.publicKey.export({ format: 'jwk' });
     // The kid is derived from the key's own public material, the way the RSA
     // one is derived from its certificate: two instances of this mock must not
@@ -1870,7 +1873,7 @@ function resetStsKeys() {
   log.debug("Leaving resetStsKeys().");
 }
 
-const STS = new Proxy({}, {
+const STS = /** @type {any} */ (new Proxy({}, {
   get: function (target, prop) {
     log.debug("Entering get().");
     log.debug("Leaving get().");
@@ -1896,7 +1899,7 @@ const STS = new Proxy({}, {
     // over this — the JWKS builder spreads it.
     return d ? Object.assign({}, d, { configurable: true }) : undefined;
   }
-});
+}));
 
 
 // Every document that carries or describes this key is served `Cache-Control:

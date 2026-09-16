@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: pki.js
@@ -1576,7 +1577,7 @@ function describeChain(chain) {
     issuedCount: chain.issuedCount || 0,
     persisted: keystore.persists(),
     tiers: (chain.tiers || []).map(function (one, index) {
-      const tier = TIERS[index] || {};
+      const tier = /** @type {any} */ (TIERS[index] || {});
       return {
         tier: one.tier,
         label: one.label,

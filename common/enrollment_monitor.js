@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // common/enrollment_monitor.js — WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE

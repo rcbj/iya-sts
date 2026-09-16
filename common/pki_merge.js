@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: pki_merge.js
@@ -152,11 +153,13 @@ function pick(base, mine, theirs) {
   return { value: theirs, conflict: true };
 }
 
-function keysOf() {
+// Rest parameters rather than `arguments` (#50): the type checker reads a
+// function that names no parameter as taking none.
+function keysOf(...objects) {
   log.debug("Entering keysOf().");
   const seen = Object.create(null);
   const out = [];
-  Array.prototype.forEach.call(arguments, function (object) {
+  objects.forEach(function (object) {
     Object.keys(object || {}).forEach(function (key) {
       if (!seen[key]) {
         seen[key] = true;

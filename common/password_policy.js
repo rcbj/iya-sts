@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: password_policy.js
@@ -368,6 +369,10 @@ function entryFor(name) {
 // which is the direction that matters: somebody who `ldapmodify`s
 // `pwdMinLength: twelve` has broken one attribute, and the answer to that must
 // not be a policy with no minimum length.
+/**
+ * @param {string} [name]
+ * @returns {import('../types/password-policy').PasswordProfile}
+ */
 function read(name) {
   log.debug('Entering read(). name=' + name);
   const profile = String(name || DEFAULT_PROFILE);
@@ -399,7 +404,8 @@ function read(name) {
       problems.push(problem);
     });
   }
-  const out = Object.assign({
+  const out = /** @type {import('../types/password-policy').PasswordProfile} */
+    (Object.assign({
     name: profile,
     stored: !!entry,
     dn: entry ? entry.dn : '',
@@ -408,7 +414,7 @@ function read(name) {
     sources: sources,
     problems: problems,
     enforced: mode.verifiesCredentials()
-  }, values);
+  }, values));
   log.debug('Leaving read(). ' + (entry ? 'Stored.' : 'Built-in defaults.'));
   return out;
 }

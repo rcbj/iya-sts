@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: revocation_status.js
@@ -742,7 +743,8 @@ function integerExtensionOf(ext) {
     return null;
   }
   const integer = derParse(ext.extnValue.valueBlock.valueHexView);
-  const hex = Buffer.from(integer.valueBlock.valueHexView).toString('hex');
+  const hex = Buffer.from(/** @type {any} */ (integer).valueBlock.valueHexView)
+    .toString('hex');
   log.debug("Leaving integerExtensionOf().");
   return BigInt('0x' + (hex || '0'));
 }
@@ -1811,7 +1813,7 @@ function reasonOfEntry(entry) {
   }
   try {
     const decoded = asn1js.fromBER(found.extnValue.valueBlock.valueHexView);
-    const code = decoded.result.valueBlock.valueDec;
+    const code = /** @type {any} */ (decoded.result).valueBlock.valueDec;
     log.debug('Leaving reasonOfEntry(). code=' + code);
     return { code: code, id: reasonNameOf(code) };
   } catch (e) {

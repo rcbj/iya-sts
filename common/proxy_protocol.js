@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: common/proxy_protocol.js

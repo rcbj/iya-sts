@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // common/cert_enrollment.js — WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND
@@ -378,6 +379,7 @@ async function adminFor(username, password, via) {
     log.debug("Leaving adminFor(). No name.");
     return false;
   }
+  /** @type {any} */
   let verified = false;
   try {
     verified = await realms.run(realms.get(realms.DEFAULT_ID), function () {
@@ -526,7 +528,8 @@ async function authenticateApplication(clientId, secret, via) {
     return refuse('STS-ENROLL-0016', 401, 'The client credentials were not ' +
                   'accepted.');
   }
-  const cfg = applications.clientConfigOf(view.identifier) || {};
+  const cfg = /** @type {any} */ (
+    applications.clientConfigOf(view.identifier) || {});
   const expected = String(cfg.client_secret || '');
   if (mode.requiresClientSecret()) {
     if (!expected || !secretsEqual(secret, expected)) {

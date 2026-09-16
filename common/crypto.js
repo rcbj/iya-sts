@@ -1,3 +1,4 @@
+// @ts-check
 // File: common/crypto.js
 //
 // ---------------------------------------------------------------------------
@@ -137,11 +138,13 @@ const log = bunyan.createLogger({
 // installed a real DOM (a test harness, a future jsdom), and quietly replacing
 // it would be the kind of action at a distance that is impossible to find.
 // ---------------------------------------------------------------------------
+// The casts are for the type checker (#50): xmldom's classes are the DOM's
+// in behaviour and not, to the letter, in their declared types.
 if (!global.DOMParser) {
-  global.DOMParser = xmldom.DOMParser;
+  global.DOMParser = /** @type {any} */ (xmldom.DOMParser);
 }
 if (!global.XMLSerializer) {
-  global.XMLSerializer = xmldom.XMLSerializer;
+  global.XMLSerializer = /** @type {any} */ (xmldom.XMLSerializer);
 }
 const xmldsig = require('./vendored/xmldsig.js');
 
@@ -1554,7 +1557,8 @@ function checkJwtClaims(claims, options) {
   const skew = options.clockTolerance === undefined ? tokenClockSkew()
                                                     : options.clockTolerance;
   if (claims.exp !== undefined && now > Number(claims.exp) + skew) {
-    const e = new Error('jwt expired');
+    // `any` because `expiredAt` is jsonwebtoken's member, not Error's.
+    const e = /** @type {any} */ (new Error('jwt expired'));
     e.name = 'TokenExpiredError';
     e.expiredAt = new Date(Number(claims.exp) * 1000);
     log.debug('Leaving checkJwtClaims(). Expired.');
@@ -2083,8 +2087,10 @@ function wrapCek(alg, recipientJwk, cek, header) {
       // Section 4.7: AES-GCM over the CEK, with the IV and the tag carried in
       // the header rather than in the encrypted_key segment.
       const iv = nodeCrypto.randomBytes(12);
-      const cipher = nodeCrypto.createCipheriv('aes-' + (kek.length * 8) +
-                                               '-gcm', kek, iv);
+      // A GCM cipher; the name is built, so the checker cannot see the mode.
+      const cipher = /** @type {import('crypto').CipherGCM} */ (
+        nodeCrypto.createCipheriv('aes-' + (kek.length * 8) + '-gcm', kek,
+                                  iv));
       const wrapped = Buffer.concat([cipher.update(cek), cipher.final()]);
       header.iv = b64u(iv);
       header.tag = b64u(cipher.getAuthTag());
@@ -2220,9 +2226,11 @@ function unwrapCek(header, encryptedKey, options, spec) {
           'section 4.7.1); this one has ' +
           (header.iv ? 'no tag' : (header.tag ? 'no iv' : 'neither')) + '.');
       }
-      const decipher = nodeCrypto.createDecipheriv(
-        'aes-' + (kek.length * 8) + '-gcm', kek,
-        Buffer.from(String(header.iv), 'base64url'));
+      // A GCM decipher; the name is built, so the checker cannot see the mode.
+      const decipher = /** @type {import('crypto').DecipherGCM} */ (
+        nodeCrypto.createDecipheriv('aes-' + (kek.length * 8) + '-gcm', kek,
+                                    Buffer.from(String(header.iv),
+                                                'base64url')));
       decipher.setAuthTag(Buffer.from(String(header.tag), 'base64url'));
       const out = Buffer.concat([decipher.update(encryptedKey),
                                  decipher.final()]);
@@ -2702,7 +2710,8 @@ function selfSignedMlDsaCertificate(opts) {
                     'post-quantum JOSE algorithms are unaffected: they come ' +
                     'from @noble/post-quantum and need nothing of OpenSSL.');
   }
-  const pair = nodeCrypto.generateKeyPairSync(algorithm);
+  // `any`: the algorithm is a variable, and the overloads want literals.
+  const pair = /** @type {any} */ (nodeCrypto.generateKeyPairSync)(algorithm);
   const spkiDer = pair.publicKey.export({ type: 'spki', format: 'der' });
 
   function bufferOf(bytes) {
@@ -2755,6 +2764,7 @@ function selfSignedMlDsaCertificate(opts) {
   function extension(extnOid, critical, valueAsn1) {
     log.debug("Entering extension().");
     const der = new Uint8Array(valueAsn1.toBER(false));
+    /** @type {any[]} */
     const value = [new asn1js.ObjectIdentifier({ value: extnOid })];
     if (critical) value.push(new asn1js.Boolean({ value: true }));
     value.push(new asn1js.OctetString({ valueHex: bufferOf(der) }));

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: realms.js
@@ -1884,7 +1885,7 @@ function arr(options) {
       // been, because wrapping `map` or `slice` would cost every reader a
       // closure for nothing.
       // ---------------------------------------------------------------
-      if (!handle || MUTATORS.indexOf(prop) < 0) {
+      if (!handle || MUTATORS.indexOf(/** @type {string} */ (prop)) < 0) {
         log.debug("Leaving get().");
         return v.bind(real);
       }
@@ -2149,7 +2150,7 @@ function segmentedArr(options, per, size) {
         log.debug("Leaving get().");
         return v;
       }
-      if (!handle || MUTATORS.indexOf(prop) < 0) {
+      if (!handle || MUTATORS.indexOf(/** @type {string} */ (prop)) < 0) {
         log.debug("Leaving get().");
         return v.bind(real);
       }
@@ -2215,6 +2216,15 @@ function segmentedArr(options, per, size) {
 // seq: 0 }))` and spelling the reads `nums.seq` moves the counter into the
 // partition with the thing it counts — `nums.seq++` works through the proxy
 // exactly as it did through the binding.
+//
+// The JSDoc is for the type checker (#50): the proxy answers with the shape
+// the factory builds, so a reader of `nums.seq` is checked against it.
+/**
+ * @template T
+ * @param {(realm?: any) => T} [factory]
+ * @param {object} [options]
+ * @returns {T}
+ */
 function obj(factory, options) {
   log.debug("Entering obj().");
   const per = keyed(factory || function () { return {}; });
@@ -2262,7 +2272,7 @@ function obj(factory, options) {
     }
   });
   log.debug("Leaving obj().");
-  return new Proxy({}, {
+  return /** @type {T} */ (new Proxy({}, {
     get: function (target, prop) {
       log.debug("Entering get().");
       const real = per();
@@ -2309,7 +2319,7 @@ function obj(factory, options) {
       log.debug("Leaving defineProperty().");
       return true;
     }
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: common/client_address.js

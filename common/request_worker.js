@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: request_worker.js
@@ -1007,7 +1008,7 @@ function handleSync(message) {
   log.debug("Leaving handleSync().");
 }
 
-process.on('message', function (message) {
+process.on('message', /** @param {any} message */ function (message) {
   if (message && message.stop) {
     stop();
     return;
@@ -1052,7 +1053,8 @@ process.on('SIGUSR2', function () {
 // time can be reached through without every module learning about the pool.
 // ---------------------------------------------------------------------------
 if (require.main === module) {
-  process.on('message', function onStart(message) {
+  process.on('message', /** @param {any} message */
+                function onStart(message) {
     log.debug("Entering onStart().");
     if (!message || !message.begin) {
       log.debug("Leaving onStart().");
@@ -1164,7 +1166,7 @@ if (require.main === module) {
     // THE DIRECTORY'S CONNECTION LIST ARRIVES ON THIS SAME LISTENER, and is
     // handed straight to `ldap_server.js` — see installDirectoryMirror() for
     // what it is for and why this process cannot work it out for itself.
-    process.on('message', function (later) {
+    process.on('message', /** @param {any} later */ function (later) {
       if (later && later.adoptKeys && later.adoptKeys.realm) {
         keystore.adoptShared(later.adoptKeys.realm, later.adoptKeys.blob);
       }

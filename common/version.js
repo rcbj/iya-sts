@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 'use strict';
 //
 // File: common/version.js
@@ -102,23 +103,22 @@ const { execFileSync } = require('child_process');
 
 var DEBUG = false;
 var LOG_TAG = "[version]";
+// Rest parameters rather than `arguments` (#50, 2026-09-16): the type checker
+// reads a function that names no parameter as taking none. What is printed is
+// unchanged.
 var log = {
-  debug: function () {
+  debug: function (...args) {
     if (!DEBUG) return;
-    console.log.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+    console.log(LOG_TAG, ...args);
   },
-  info: function () {
-    console.log.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+  info: function (...args) {
+    console.log(LOG_TAG, ...args);
   },
-  warn: function () {
-    console.warn.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+  warn: function (...args) {
+    console.warn(LOG_TAG, ...args);
   },
-  error: function () {
-    console.error.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+  error: function (...args) {
+    console.error(LOG_TAG, ...args);
   }
 };
 

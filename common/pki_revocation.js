@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: pki_revocation.js
@@ -654,9 +655,21 @@ module.exports = {
   httpBase: httpBase,
   setDirectory: setDirectory,
   directoryBaseFor: directoryBaseFor,
-  // Filled in below by the CRL and OCSP halves.
-  buildCrl: null,
-  answerOcsp: null
+  // The CRL and OCSP halves below. Named here rather than assigned onto the
+  // export after each half (#50, 2026-09-16): every one is a function
+  // declaration, hoisted, so the object is the same at the end of the load,
+  // and the type checker accepts one export object where it refuses an
+  // assignment followed by additions.
+  buildCrl: buildCrl,
+  serialBytes: serialBytes,
+  publishSoon: publishSoon,
+  publishAll: publishAll,
+  publishScopeSoon: publishScopeSoon,
+  keepDirectoryCurrent: keepDirectoryCurrent,
+  agreedCrlNumber: agreedCrlNumber,
+  answerOcsp: answerOcsp,
+  issuedHere: issuedHere,
+  issuedList: issuedList
 };
 
 // ===========================================================================
@@ -698,9 +711,9 @@ function derFromPem(pem) {
   log.debug("Entering initEngine().");
   try {
     if (typeof crypto !== 'undefined' && crypto.subtle) {
-      pkijs.setEngine('webcrypto',
-                      new pkijs.CryptoEngine({ name: 'webcrypto',
-                                               crypto: crypto }));
+      // `any`: pkijs's declared engine interface lags its own class.
+      pkijs.setEngine('webcrypto', /** @type {any} */ (
+        new pkijs.CryptoEngine({ name: 'webcrypto', crypto: crypto })));
     }
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0062') + 'pki_revocation: the Web ' +
@@ -1175,12 +1188,6 @@ function keepDirectoryCurrent() {
   return true;
 }
 
-module.exports.buildCrl = buildCrl;
-module.exports.serialBytes = serialBytes;
-module.exports.publishSoon = publishSoon;
-module.exports.publishAll = publishAll;
-module.exports.publishScopeSoon = publishScopeSoon;
-module.exports.keepDirectoryCurrent = keepDirectoryCurrent;
 
 // ===========================================================================
 // THE OCSP RESPONDER — RFC 6960.
@@ -1251,7 +1258,7 @@ function bareResponse(status) {
   const response = new pkijs.OCSPResponse();
   response.responseStatus.valueBlock.valueDec = status;
   log.debug("Leaving bareResponse().");
-  return Buffer.from(response.toSchema(true).toBER(false));
+  return Buffer.from(/** @type {any} */ (response).toSchema(true).toBER(false));
 }
 
 // How many octets a request's nonce is. RFC 8954 section 2.1 makes the
@@ -1333,9 +1340,9 @@ async function answerOcsp(scopeId, caId, requestDer) {
       // NOT THIS AUTHORITY'S CERTIFICATE. `unknown`, which is the honest
       // answer and the one the specification asks for — answering `good`
       // would make this responder vouch for every issuer in the world.
-      single.certStatus = new asn1js.Primitive({
+      single.certStatus = new asn1js.Primitive(/** @type {any} */ ({
         idBlock: { tagClass: 3, tagNumber: 2 }, lenBlockLength: 1
-      });
+      }));
       reported.push({ serial: serial, status: 'unknown',
                       why: 'another issuer' });
       responses.push(single);
@@ -1365,17 +1372,17 @@ async function answerOcsp(scopeId, caId, requestDer) {
     // is `unknown`: a responder that answered `good` for a certificate it has
     // no record of is a responder that vouches for forgeries.
     if (!issuedHere(scopeId, caId, serial)) {
-      single.certStatus = new asn1js.Primitive({
+      single.certStatus = new asn1js.Primitive(/** @type {any} */ ({
         idBlock: { tagClass: 3, tagNumber: 2 }, lenBlockLength: 1
-      });
+      }));
       reported.push({ serial: serial, status: 'unknown',
                       why: 'no record of that serial' });
       responses.push(single);
       continue;
     }
-    single.certStatus = new asn1js.Primitive({
+    single.certStatus = new asn1js.Primitive(/** @type {any} */ ({
       idBlock: { tagClass: 3, tagNumber: 0 }, lenBlockLength: 1
-    });
+    }));
     reported.push({ serial: serial, status: 'good' });
     responses.push(single);
   }
@@ -1456,7 +1463,8 @@ async function answerOcsp(scopeId, caId, requestDer) {
   response.responseBytes.response = new asn1js.OctetString({
     valueHex: basic.toSchema().toBER(false)
   });
-  const der = Buffer.from(response.toSchema(true).toBER(false));
+  const der = Buffer.from(/** @type {any} */ (response).toSchema(true)
+    .toBER(false));
   log.debug('Leaving answerOcsp(). ' + reported.length + ' answer(s).');
   return { ok: true, der: der, status: 'successful', answers: reported,
            // For `pki/pki_service.js`'s RFC 5019 section 6.2 cache headers,
@@ -1586,7 +1594,6 @@ function issuedHere(scopeId, caId, serialHex) {
   });
 }
 
-module.exports.agreedCrlNumber = agreedCrlNumber;
 
 // DECLARED AT REQUIRE TIME (cluster/CLAUDE.md). Both halves of the row: a
 // revocation or an issued serial recorded on one node survives another node's
@@ -1595,7 +1602,3 @@ module.exports.agreedCrlNumber = agreedCrlNumber;
 // shared store so it only goes up across nodes (`agreedCrlNumber()` above).
 const capabilities = require('../cluster/cluster_capabilities');
 capabilities.provide('pki.revocation-register');
-
-module.exports.answerOcsp = answerOcsp;
-module.exports.issuedHere = issuedHere;
-module.exports.issuedList = issuedList;
