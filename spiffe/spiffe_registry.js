@@ -183,7 +183,8 @@ const SCHEMA = {
             'server) that this entry hangs beneath. It decides which ' +
             'entries GetAuthorizedEntries and SyncAuthorizedEntries tell an ' +
             'agent about: those beneath its own SPIFFE ID or a node alias ' +
-            'its selectors match. BatchNewX509SVID does not yet check it.' },
+            'its selectors match, and BatchNewX509SVID and NewJWTSVID ' +
+            'refuse an agent any other entry.' },
     { name: 'spiffeSelector', kind: 'multi', from: 'the caller', editable: true,
       what: 'One value per selector, written `type:value` — `unix:uid:1000`, ' +
             '`k8s:ns:default`, `docker:label:app:web`. The type is ' +

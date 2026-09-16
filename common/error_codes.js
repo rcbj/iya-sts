@@ -7612,6 +7612,10 @@ const CODES = [
     summary: 'A realm\'s SPIFFE JWT authority or self-signed X.509 authority ' +
       'could not be established once for the cluster, so none was made.',
     spec: 'the SPIFFE call fails as when no authority could be built' },
+  { code: 'STS-SPIFFE-0077',
+    summary: 'An agent asked for an SVID from a registration entry that is ' +
+      'not beneath it (BatchNewX509SVID, NewJWTSVID).',
+    spec: 'gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID)' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion or tls.ciphers ' +

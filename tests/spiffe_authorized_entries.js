@@ -11,7 +11,8 @@
 // entries parented on the calling agent, the node aliases its recorded
 // selectors match, and everything descended from either — and nothing
 // parented on another agent, nothing expired, and nothing at all for a caller
-// with no verified identity.
+// with no verified identity. And BatchNewX509SVID and NewJWTSVID issue an
+// agent nothing from an entry outside that set (STS-SPIFFE-0077).
 //
 // IN A CHILD PROCESS, for `spiffe_join_token.js`'s reasons: requiring the
 // SPIFFE server builds a certificate authority and writes into the default
@@ -88,6 +89,27 @@ function childScript() {
     "    forNobody: await ask({ authenticated: false, spiffeId: A }),",
     "    forNoCaller: await ask(null)",
     "  };",
+    "  const agentA = { authenticated: true, spiffeId: A };",
+    "  const batch = grpc.localMethod('server', 'SVID.BatchNewX509SVID');",
+    "  const codeOf = async function (entryName) {",
+    "    const reply = await batch({ request: { params: [",
+    "      { entry_id: made[entryName] }] }, spiffeCaller: agentA });",
+    "    return reply.results[0].status.code;",
+    "  };",
+    "  out.x509Foreign = await codeOf('underB');",
+    "  out.x509Own = await codeOf('underA');",
+    "  const jwt = grpc.localMethod('server', 'SVID.NewJWTSVID');",
+    "  const jwtCode = async function (entryName) {",
+    "    try {",
+    "      await jwt({ request: { entry_id: made[entryName], audience: [] },",
+    "                  spiffeCaller: agentA });",
+    "      return 0;",
+    "    } catch (e) {",
+    "      return e.code;",
+    "    }",
+    "  };",
+    "  out.jwtForeign = await jwtCode('underB');",
+    "  out.jwtOwn = await jwtCode('underAlias');",
     "  require('fs').writeFileSync(process.env.PROBE_OUT, JSON.stringify(out));",
     "  process.exit(0);",
     "})().catch(function (e) {",
@@ -144,6 +166,21 @@ function run(t) {
           'a caller whose identity did not verify is authorized for nothing');
   t.equal(out.forNoCaller.length, 0,
           'and so is a call with no caller at all');
+
+  t.log.info('=== and is issued nothing from any other entry ===');
+  // gRPC status codes: 7 is PERMISSION_DENIED, 3 is INVALID_ARGUMENT. The
+  // requests carry no CSR and no audience, so an entry the agent IS
+  // authorized for gets past the authorization and is refused for that.
+  t.equal(out.x509Foreign, 7,
+          'BatchNewX509SVID refuses agent A an entry beneath agent B ' +
+          '(PERMISSION_DENIED)');
+  t.equal(out.x509Own, 3,
+          'and lets its own entry through to the CSR check');
+  t.equal(out.jwtForeign, 7,
+          'NewJWTSVID refuses agent A an entry beneath agent B');
+  t.equal(out.jwtOwn, 3,
+          'and lets an entry under its node alias through to the audience ' +
+          'check');
   log.debug("Leaving run().");
 }
 

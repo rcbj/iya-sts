@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2679** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2680** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 128
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 70
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 73
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 76
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 77
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 32
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 51
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 91
@@ -2004,6 +2004,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0074` | The SPIFFE listeners could not be reconciled after a trust realm changed. | — |
 | `STS-SPIFFE-0075` | A join token at AttestAgent could not be proved unspent because the cluster store could not be asked, so the attestation was refused. | gRPC UNAVAILABLE |
 | `STS-SPIFFE-0076` | A realm's SPIFFE JWT authority or self-signed X.509 authority could not be established once for the cluster, so none was made. | the SPIFFE call fails as when no authority could be built |
+| `STS-SPIFFE-0077` | An agent asked for an SVID from a registration entry that is not beneath it (BatchNewX509SVID, NewJWTSVID). | gRPC PERMISSION_DENIED (per batch item for BatchNewX509SVID) |
 
 ## STS-TLS
 

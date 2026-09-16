@@ -655,6 +655,30 @@ function authorizedEntriesOf(call) {
   return rows;
 }
 
+// Whether the agent on this call may be issued an SVID from `entry`: the same
+// set GetAuthorizedEntries tells it about. Until 2026-09-16 an agent could
+// name ANY entry id to BatchNewX509SVID or NewJWTSVID and be issued that
+// identity, whatever it had been told.
+function authorizedFor(call, entry) {
+  log.debug('Entering authorizedFor(). entry=' + (entry && entry.id));
+  const ids = authorizedEntriesOf(call).map(function (one) {
+    return one.id;
+  });
+  const answer = !!entry && ids.indexOf(entry.id) >= 0;
+  log.debug('Leaving authorizedFor(). ' + answer);
+  return answer;
+}
+
+function notBeneath(call, entry) {
+  log.debug('Entering notBeneath().');
+  const caller = (call && call.spiffeCaller) || {};
+  log.debug('Leaving notBeneath().');
+  return 'Registration entry ' + entry.id + ' (' + entry.spiffeId + ') is ' +
+         'not beneath ' + (caller.spiffeId || 'this caller') + ', so this ' +
+         'agent may not be issued its identity. GetAuthorizedEntries lists ' +
+         'the entries it may.';
+}
+
 // Which fields of a submitted entry to apply. No mask, or an empty one, means
 // all of them — which is what the specification says and is what
 // `spire-server entry update` relies on.
@@ -1729,6 +1753,12 @@ const svidHandlers = {
           svid: null });
         continue;
       }
+      if (!authorizedFor(call, entry)) {
+        results.push({ status: refusedItem('STS-SPIFFE-0077',
+          status.PERMISSION_DENIED, notBeneath(call, entry), entry.id),
+          svid: null });
+        continue;
+      }
       if (!params.csr || !params.csr.length) {
         results.push({ status: refusedItem('STS-SPIFFE-0053',
           status.INVALID_ARGUMENT,
@@ -1772,6 +1802,10 @@ const svidHandlers = {
       errorCodes.mark(call, 'STS-SPIFFE-0046');
       throw rpc.notFound('No registration entry has the id ' +
                          String(request.entry_id || '(none given)') + '.');
+    }
+    if (!authorizedFor(call, entry)) {
+      errorCodes.mark(call, 'STS-SPIFFE-0077');
+      throw rpc.statusError(status.PERMISSION_DENIED, notBeneath(call, entry));
     }
     const audiences = (request.audience || []).map(String).filter(Boolean);
     if (!audiences.length) {
