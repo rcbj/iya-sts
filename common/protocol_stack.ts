@@ -62,10 +62,19 @@
 
 import appModule = require('./app');
 import helpers = require('./helpers');
+import InstanceSlot = require('./instance_slot');
 
 // A module whose routes this root registers.
 interface RouteModule {
   registerRoutes(app: any): void;
+}
+
+// A module whose instance this root builds (#50, R2): it takes the instance
+// through `installInstance()` and answers where its instance came from.
+// (Not `install`: three modules already export an `install` of their own.)
+interface InstalledModule {
+  installInstance(instance: object): void;
+  instanceOrigin(): string;
 }
 
 // What `load()` hands back: the six modules `server.js` needs to start and
@@ -81,6 +90,7 @@ interface StackSockets {
 
 class ProtocolStack {
   private registered: string[] = [];
+  private installed: Array<{ what: string; mod: InstalledModule }> = [];
 
   // One module's routes, now, on `app`. `what` is its path, for the log and
   // for `registeredModules()`.
@@ -89,6 +99,70 @@ class ProtocolStack {
     mod.registerRoutes(app);
     this.registered.push(what);
     helpers.log.debug("Leaving ProtocolStack.register().");
+  }
+
+  // One module's instance, built here and handed to it (#50, R2). The module
+  // refuses if it already has one, which is what catches a module used before
+  // the root reached it.
+  private install(what: string, mod: InstalledModule,
+                  instance: object): void {
+    helpers.log.debug("Entering ProtocolStack.install(). " + what);
+    mod.installInstance(instance);
+    this.installed.push({ what: what, mod: mod });
+    helpers.log.debug("Leaving ProtocolStack.install().");
+  }
+
+  // Every module this root builds, and where its instance came from now.
+  // After `load()` each must say `root`: a `default` means something in the
+  // service built its own, which R2 exists to rule out.
+  instanceOrigins(): Array<{ what: string; origin: string }> {
+    helpers.log.debug("Entering ProtocolStack.instanceOrigins().");
+    const out = this.installed.map(function (row) {
+      return { what: row.what, origin: row.mod.instanceOrigin() };
+    });
+    helpers.log.debug("Leaving ProtocolStack.instanceOrigins().");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // BUILD ONE MODULE'S INSTANCE (#50, R2). Called right after the require
+  // step that loaded the module, in the order the modules FINISHED loading,
+  // so everything a module depends on is installed before it is — the order
+  // was recorded from the running service (`build()` lines below) and the
+  // `wire` step each module moved its load-time work into runs in that
+  // order. A module that does not export `installInstance()` is not on R2's
+  // pattern
+  // yet and is skipped (TRANSITIONAL, for the rollout).
+  // ---------------------------------------------------------------------
+  private build(what: string, mod: any, className: string): void {
+    helpers.log.debug("Entering ProtocolStack.build(). " + what);
+    if (!mod || typeof mod.installInstance !== 'function' ||
+        typeof mod.instanceOrigin !== 'function') {
+      helpers.log.debug("Leaving ProtocolStack.build(). Not on R2's " +
+                        "pattern yet.");
+      return;
+    }
+    const Cls = mod[className];
+    this.install(what, mod, new Cls(Cls.defaultDeps()));
+    helpers.log.debug("Leaving ProtocolStack.build().");
+  }
+
+  // Refuses a stack in which any module this root builds holds an instance it
+  // did not build.
+  private checkOrigins(): void {
+    helpers.log.debug("Entering ProtocolStack.checkOrigins().");
+    const wrong = this.instanceOrigins().filter(function (row) {
+      return row.origin !== 'root';
+    });
+    if (wrong.length) {
+      helpers.log.debug("Leaving ProtocolStack.checkOrigins(). " +
+                        wrong.length + " wrong.");
+      throw new Error('the composition root did not build every instance: ' +
+                      wrong.map(function (row) {
+                        return row.what + ' (' + row.origin + ')';
+                      }).join(', '));
+    }
+    helpers.log.debug("Leaving ProtocolStack.checkOrigins().");
   }
 
   // The modules whose routes this root registered, in order.
@@ -100,6 +174,9 @@ class ProtocolStack {
 
   load(app: any): StackSockets {
     helpers.log.debug("Entering ProtocolStack.load().");
+    // Every module loaded from here on waits for `installInstance()` instead of
+    // building its own instance at the end of its load (#50, R2).
+    InstanceSlot.deferToRoot();
     // Which LDAP attributes the four claim sets carry. A LIBRARY — it registers
     // no route, so this line adds nothing to /admin/sts-metadata and its
     // position in the route order is not a position at all. It is required
@@ -110,6 +187,9 @@ class ProtocolStack {
     // on purpose, and what keeps it true for a process that loads the protocol
     // modules without the console.
     require('./claim_attributes');
+    this.build('oid4vc/vc_claims', require('../oid4vc/vc_claims'), 'VcClaims');
+    this.build('common/claim_attributes', require('./claim_attributes'),
+               'ClaimAttributes');
 
     // The groups claim: for anybody who is a member of a group in the embedded
     // directory, a claim naming those groups in every access token, ID Token
@@ -120,6 +200,7 @@ class ProtocolStack {
     // issue; the directory it reads arrives later, through its own slot, and
     // until then it simply reports that no directory is loaded.
     require('./group_claims');
+    this.build('common/group_claims', require('./group_claims'), 'GroupClaims');
 
     // The front door: GET / and the one image on it. It is first among the
     // modules that register routes, and the position is a preference rather
@@ -130,6 +211,7 @@ class ProtocolStack {
     // was an unrouted path, so the answer to the one URL somebody types first
     // was Express's `Cannot GET /`.
     require('../home/home');
+    this.build('home/home', require('../home/home'), 'Home');
     this.register(app, require('../home/home'), 'home/home');
 
     // The authentication service: the sign-in screen every protocol here sends
@@ -138,6 +220,17 @@ class ProtocolStack {
     // page and the thing that authenticates should be listed before the
     // protocols that lean on it.
     require('../authn/authn');
+    this.build('common/totp', require('./totp'), 'Totp');
+    this.build('common/backup_codes', require('./backup_codes'), 'BackupCodes');
+    this.build('common/password_policy', require('./password_policy'),
+               'PasswordPolicy');
+    this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
+               'WebauthnPolicy');
+    this.build('common/credentials', require('./credentials'), 'Credentials');
+    this.build('cluster/cluster_secrets', require('../cluster/cluster_secrets'),
+               'ClusterSecrets');
+    this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
+    this.build('authn/authn', require('../authn/authn'), 'Authn');
     this.register(app, require('../authn/authn'), 'authn/authn');
     // WS-Trust 1.0-1.4. **IT MOVED BELOW authn.js ON 2026-09-05 AND THE ORDER
     // IS NOW A DEPENDENCY** where it had been no constraint at all. Issuing a
@@ -153,6 +246,10 @@ class ProtocolStack {
     // no route — the `register()` calls here place them — but it would still
     // run authn's load-time code (its stores and slots) out of order.
     require('../ws-trust/wstrust');
+    this.build('saml/document_settings', require('../saml/document_settings'),
+               'DocumentSettings');
+    this.build('saml/saml2', require('../saml/saml2'), 'Saml2Assertions');
+    this.build('ws-trust/wstrust', require('../ws-trust/wstrust'), 'WsTrust');
     this.register(app, require('../ws-trust/wstrust'), 'ws-trust/wstrust');
     // THE USER PORTAL. **After `authn`**, whose session store every
     // authenticated route on it reads — a dependency of the same kind
@@ -172,6 +269,30 @@ class ProtocolStack {
     // `tls_server` LAZILY inside the one function that dials the back channel —
     // a require at its top would drag every /tls route here.
     require('../portal/portal');
+    this.build('common/realm_chooser', require('./realm_chooser'),
+               'RealmChooser');
+    this.build('ssf/account_signals', require('../ssf/account_signals'),
+               'AccountSignals');
+    this.build('saml/authn_context', require('../saml/authn_context'),
+               'AuthnContext');
+    this.build('common/inetorgperson', require('./inetorgperson'),
+               'InetOrgPerson');
+    this.build('common/oidc_rp', require('./oidc_rp'), 'OidcRelyingParty');
+    this.build('common/access_gate', require('./access_gate'), 'AccessGate');
+    this.build('ssf/ssf_streams', require('../ssf/ssf_streams'), 'SsfStreams');
+    this.build('ssf/ssf_http', require('../ssf/ssf_http'), 'SsfHttp');
+    this.build('ssf/ssf_receivers', require('../ssf/ssf_receivers'),
+               'SsfReceivers');
+    this.build('admin-ui/admin_rbac', require('../admin-ui/admin_rbac'),
+               'AdminRbac');
+    this.build('common/cert_enrollment', require('./cert_enrollment'),
+               'CertEnrollment');
+    this.build('common/enrollment_monitor', require('./enrollment_monitor'),
+               'EnrollmentMonitor');
+    this.build('portal/portal_certificates',
+               require('../portal/portal_certificates'),
+               'PortalCertificates');
+    this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
     // both halves are dependencies rather than preferences. AFTER, because it
@@ -184,9 +305,53 @@ class ProtocolStack {
     // the same way: this module knows nothing about OAuth beyond a `returnTo`
     // it is handed and a `consent_error` it hands back.
     require('../oauth-oidc/consent_screen');
+    this.build('common/consent', require('./consent'), 'Consent');
+    this.build('oauth-oidc/authorization_details',
+               require('../oauth-oidc/authorization_details'),
+               'AuthorizationDetails');
+    this.build('oauth-oidc/consent_screen',
+               require('../oauth-oidc/consent_screen'),
+               'ConsentScreen');
     this.register(app, require('../oauth-oidc/consent_screen'),
                   'oauth-oidc/consent_screen');
     require('../oauth-oidc/oauth2');
+    this.build('oauth-oidc/authorization_servers',
+               require('../oauth-oidc/authorization_servers'),
+               'AuthorizationServers');
+    this.build('oauth-oidc/jwt_access_token',
+               require('../oauth-oidc/jwt_access_token'),
+               'JwtAccessTokens');
+    this.build('oauth-oidc/oauth2_monitor',
+               require('../oauth-oidc/oauth2_monitor'),
+               'OAuth2Monitor');
+    this.build('oauth-oidc/step_up', require('../oauth-oidc/step_up'),
+               'StepUp');
+    this.build('oauth-oidc/dpop', require('../oauth-oidc/dpop'), 'Dpop');
+    this.build('oauth-oidc/software_statement',
+               require('../oauth-oidc/software_statement'),
+               'SoftwareStatement');
+    this.build('oid4vc/vc_configs', require('../oid4vc/vc_configs'),
+               'VcConfigs');
+    this.build('oid4vc/vc_offers', require('../oid4vc/vc_offers'), 'VcOffers');
+    this.build('oauth-oidc/frontchannel_logout',
+               require('../oauth-oidc/frontchannel_logout'),
+               'FrontchannelLogout');
+    this.build('oauth-oidc/refresh_token_crypto',
+               require('../oauth-oidc/refresh_token_crypto'),
+               'RefreshTokenCrypto');
+    this.build('oauth-oidc/introspection_jwt',
+               require('../oauth-oidc/introspection_jwt'),
+               'IntrospectionJwt');
+    this.build('oauth-oidc/request_object',
+               require('../oauth-oidc/request_object'),
+               'RequestObject');
+    this.build('oauth-oidc/par', require('../oauth-oidc/par'),
+               'PushedRequests');
+    this.build('debugger/debugger_access',
+               require('../debugger/debugger_access'),
+               'DebuggerAccess');
+    this.build('oauth-oidc/oauth2', require('../oauth-oidc/oauth2'),
+               'OAuth2Server');
     // The Credential Offer pages BEFORE the authorization server's own routes,
     // and that is not a slip: `oauth2.ts` requires `oid4vc/vc_offers.ts` (rule
     // 2), and until #50's R1 that require was what registered the offer pages,
@@ -201,6 +366,13 @@ class ProtocolStack {
     // authn.js knows nothing about this module — which is what keeps it out of
     // the cycles the split exists to avoid.
     require('../ws-federation/wsfed');
+    this.build('saml/saml11', require('../saml/saml11'), 'Saml11Assertions');
+    this.build('saml/return_address', require('../saml/return_address'),
+               'ReturnAddress');
+    this.build('saml/person_attributes', require('../saml/person_attributes'),
+               'PersonAttributes');
+    this.build('ws-federation/wsfed', require('../ws-federation/wsfed'),
+               'WsFederation');
     this.register(app, require('../ws-federation/wsfed'),
                   'ws-federation/wsfed');
     // SAML 2.0 Web Browser SSO — the profile this service spent years
@@ -212,6 +384,12 @@ class ProtocolStack {
     // about each other — and it sits here so that the two browser SSO profiles
     // read together in the route order and on /admin/sts-metadata.
     require('../saml/saml2_sso');
+    this.build('federation/federation_http',
+               require('../federation/federation_http'),
+               'FederationHttp');
+    this.build('saml/sp_metadata', require('../saml/sp_metadata'),
+               'SpMetadata');
+    this.build('saml/saml2_sso', require('../saml/saml2_sso'), 'Saml2Sso');
     this.register(app, require('../saml/saml2_sso'), 'saml/saml2_sso');
     // SAML 1.1's two browser profiles, and the SAML responder behind one of
     // them. TWO constraints, and the second is the interesting one. It must
@@ -225,6 +403,7 @@ class ProtocolStack {
     // cycle. Nothing else passes between them; the two profiles share a
     // registry and a session and know nothing else about each other.
     require('../saml/saml11_sso');
+    this.build('saml/saml11_sso', require('../saml/saml11_sso'), 'Saml11Sso');
     this.register(app, require('../saml/saml11_sso'), 'saml/saml11_sso');
     // FEDERATION, and it is the one module here that consumes rather than
     // issues. ONE constraint, and it is the strongest of the three sign-in
@@ -252,16 +431,29 @@ class ProtocolStack {
     // needs it: admin_stats.js and authn.js reach the register directly, and
     // ldap_server.js fills its directory slot at its own require time.
     require('../federation/federation_sp');
+    this.build('federation/federation_map',
+               require('../federation/federation_map'),
+               'FederationMap');
+    this.build('federation/federation_sp',
+               require('../federation/federation_sp'),
+               'FederationSp');
     this.register(app, require('../federation/federation_sp'),
                   'federation/federation_sp');
     // A cache hit since `oauth2` above; kept so that the require order still
     // reads 11-14 in one place. Its routes were registered above.
     require('../oid4vc/vc_offers');
     require('../oid4vc/vc_did');
+    this.build('oid4vc/vc_did', require('../oid4vc/vc_did'), 'VcDid');
     this.register(app, require('../oid4vc/vc_did'), 'oid4vc/vc_did');
     require('../oid4vc/vc_issuer');
+    this.build('oid4vc/vc_issuer', require('../oid4vc/vc_issuer'), 'VcIssuer');
     this.register(app, require('../oid4vc/vc_issuer'), 'oid4vc/vc_issuer');
     require('../oid4vc/vc_verifier');
+    this.build('oid4vc/vc_verifier_config',
+               require('../oid4vc/vc_verifier_config'),
+               'VcVerifierConfig');
+    this.build('oid4vc/vc_verifier', require('../oid4vc/vc_verifier'),
+               'VcVerifier');
     this.register(app, require('../oid4vc/vc_verifier'), 'oid4vc/vc_verifier');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
     // — it is one of the parent project's locked JavaScript files, which still
@@ -299,6 +491,8 @@ class ProtocolStack {
     // It starts nothing, exactly as `spnego.js` starts nothing.
     // -------------------------------------------------------------------------
     require('../kerberos/spnego_authn');
+    this.build('kerberos/spnego_authn', require('../kerberos/spnego_authn'),
+               'SpnegoAuthn');
     this.register(app, require('../kerberos/spnego_authn'),
                   'kerberos/spnego_authn');
     // -------------------------------------------------------------------------
@@ -327,6 +521,9 @@ class ProtocolStack {
     // list on `/admin/sts-metadata` groups it with the protocols it belongs to.
     // -------------------------------------------------------------------------
     require('../pki/pki_service');
+    this.build('common/proxy_protocol', require('./proxy_protocol'),
+               'ProxyProtocol');
+    this.build('pki/pki_service', require('../pki/pki_service'), 'PkiService');
     this.register(app, require('../pki/pki_service'), 'pki/pki_service');
     // The admin console. It must come AFTER oauth2.js and, like wsfed.ts, the
     // order is a dependency rather than a preference: its metrics page reports
@@ -337,6 +534,48 @@ class ProtocolStack {
     // app.js, so the counting is already running by the time this line is
     // reached.
     require('../admin-ui/admin');
+    this.build('oauth-oidc/protected_resource_metadata',
+               require('../oauth-oidc/protected_resource_metadata'),
+               'ProtectedResourceMetadata');
+    this.build('spiffe/spiffe_id', require('../spiffe/spiffe_id'), 'SpiffeId');
+    this.build('spiffe/spiffe_ca', require('../spiffe/spiffe_ca'), 'SpiffeCa');
+    this.build('spiffe/spiffe_registry', require('../spiffe/spiffe_registry'),
+               'SpiffeRegistry');
+    this.build('common/app_permissions', require('./app_permissions'),
+               'AppPermissions');
+    this.build('kerberos/krb5_keytab', require('../kerberos/krb5_keytab'),
+               'Krb5Keytab');
+    this.build('kerberos/krb5_person_keys',
+               require('../kerberos/krb5_person_keys'),
+               'Krb5PersonKeys');
+    this.build('admin-core/admin_actions',
+               require('../admin-core/admin_actions'),
+               'AdminActions');
+    this.build('scim/scim_map', require('../scim/scim_map'), 'ScimMap');
+    this.build('spiffe/spiffe_auth', require('../spiffe/spiffe_auth'),
+               'SpiffeAuth');
+    this.build('admin-core/admin_views', require('../admin-core/admin_views'),
+               'AdminViews');
+    this.build('admin-core/protocol_endpoints',
+               require('../admin-core/protocol_endpoints'),
+               'ProtocolEndpoints');
+    this.build('ldap/directory_create_claims',
+               require('../ldap/directory_create_claims'),
+               'DirectoryCreateClaims');
+    this.build('admin-ui/admin_scope', require('../admin-ui/admin_scope'),
+               'AdminScope');
+    this.build('federation/federation_graph',
+               require('../federation/federation_graph'),
+               'FederationGraph');
+    this.build('admin-ui/delegation_map', require('../admin-ui/delegation_map'),
+               'DelegationMap');
+    this.build('admin-ui/federation_diagram',
+               require('../admin-ui/federation_diagram'),
+               'FederationDiagram');
+    this.build('common/user_graph', require('./user_graph'), 'UserGraph');
+    this.build('common/credential_graph', require('./credential_graph'),
+               'CredentialGraph');
+    this.build('admin-ui/admin', require('../admin-ui/admin'), 'AdminConsole');
     this.register(app, require('../admin-ui/admin'), 'admin-ui/admin');
     // -------------------------------------------------------------------------
     // 18a. THE PKI PAGE. `/admin/pki` — the certificate authority this service
@@ -359,6 +598,21 @@ class ProtocolStack {
     // and not to add one by analogy.
     // -------------------------------------------------------------------------
     require('../admin-ui/pki_admin');
+    this.build('common/pki_authoring', require('./pki_authoring'),
+               'PkiAuthoring');
+    this.build('common/certificate_details', require('./certificate_details'),
+               'CertificateDetails');
+    this.build('admin-core/certificate_views',
+               require('../admin-core/certificate_views'),
+               'CertificateViews');
+    this.build('common/pqc_support', require('./pqc_support'), 'PqcSupport');
+    this.build('admin-ui/pqc_badge', require('../admin-ui/pqc_badge'),
+               'PqcBadge');
+    this.build('admin-ui/certificate_dialog',
+               require('../admin-ui/certificate_dialog'),
+               'CertificateDialog');
+    this.build('admin-ui/pki_admin', require('../admin-ui/pki_admin'),
+               'PkiAdmin');
     this.register(app, require('../admin-ui/pki_admin'), 'admin-ui/pki_admin');
     // -------------------------------------------------------------------------
     // 18b. THE ENCRYPTION REPORT. `/admin/encryption` — what this service seals
@@ -379,6 +633,9 @@ class ProtocolStack {
     // the require order is decided by what it requires.
     // -------------------------------------------------------------------------
     require('../admin-ui/encryption_admin');
+    this.build('admin-ui/encryption_admin',
+               require('../admin-ui/encryption_admin'),
+               'EncryptionAdmin');
     this.register(app, require('../admin-ui/encryption_admin'),
                   'admin-ui/encryption_admin');
     // -------------------------------------------------------------------------
@@ -400,6 +657,8 @@ class ProtocolStack {
     // state and not this line's.
     // -------------------------------------------------------------------------
     require('../admin-ui/database_admin');
+    this.build('admin-ui/database_admin', require('../admin-ui/database_admin'),
+               'DatabaseAdmin');
     this.register(app, require('../admin-ui/database_admin'),
                   'admin-ui/database_admin');
     // -------------------------------------------------------------------------
@@ -427,6 +686,8 @@ class ProtocolStack {
     // does not.
     // -------------------------------------------------------------------------
     require('../admin-ui/secrets_admin');
+    this.build('admin-ui/secrets_admin', require('../admin-ui/secrets_admin'),
+               'SecretsAdmin');
     this.register(app, require('../admin-ui/secrets_admin'),
                   'admin-ui/secrets_admin');
     // -------------------------------------------------------------------------
@@ -439,6 +700,8 @@ class ProtocolStack {
     // for the listener itself.
     // -------------------------------------------------------------------------
     require('../debugger/debugger_admin');
+    this.build('debugger/debugger_admin', require('../debugger/debugger_admin'),
+               'DebuggerAdmin');
     this.register(app, require('../debugger/debugger_admin'),
                   'debugger/debugger_admin');
     // -------------------------------------------------------------------------
@@ -456,6 +719,12 @@ class ProtocolStack {
     // lazily through `oauth-oidc/oauth2_monitor_api.ts`.
     // -------------------------------------------------------------------------
     require('../oauth-oidc/oauth2_monitor_admin');
+    this.build('oauth-oidc/oauth2_monitor_console',
+               require('../oauth-oidc/oauth2_monitor_console'),
+               'OAuth2MonitorConsole');
+    this.build('oauth-oidc/oauth2_monitor_admin',
+               require('../oauth-oidc/oauth2_monitor_admin'),
+               'OAuth2MonitorAdmin');
     this.register(app, require('../oauth-oidc/oauth2_monitor_admin'),
                   'oauth-oidc/oauth2_monitor_admin');
     // The management API: everything that console shows and everything it can
@@ -467,6 +736,18 @@ class ProtocolStack {
     // its own route table (admin_api.js -> admin_api_spec.js), so an operation
     // cannot be undocumented.
     require('../mgmt-api/admin_api');
+    this.build('mgmt-api/admin_api_spec', require('../mgmt-api/admin_api_spec'),
+               'AdminApiSpec');
+    this.build('mgmt-api/admin_api_docs', require('../mgmt-api/admin_api_docs'),
+               'AdminApiDocs');
+    this.build('acme/acme_api', require('../acme/acme_api'), 'AcmeApi');
+    this.build('est/est_api', require('../est/est_api'), 'EstApi');
+    this.build('scep/scep_api', require('../scep/scep_api'), 'ScepApi');
+    this.build('oauth-oidc/oauth2_monitor_api',
+               require('../oauth-oidc/oauth2_monitor_api'),
+               'OAuth2MonitorApi');
+    this.build('mgmt-api/admin_api', require('../mgmt-api/admin_api'),
+               'AdminApi');
     this.register(app, require('../mgmt-api/admin_api'), 'mgmt-api/admin_api');
     // 19a. THE API EXPLORER, which is a page of the CONSOLE and not of that
     // API.
@@ -488,6 +769,8 @@ class ProtocolStack {
     // before #50's R1 — and still closes a cycle, since the management API
     // requires the console.
     require('../admin-ui/api_explorer');
+    this.build('admin-ui/api_explorer', require('../admin-ui/api_explorer'),
+               'ApiExplorer');
     this.register(app, require('../admin-ui/api_explorer'),
                   'admin-ui/api_explorer');
     // TLS / mutual TLS. It registers its views (/tls, /tls/sign-in,
@@ -563,6 +846,20 @@ class ProtocolStack {
     // checked rather than agreed by hand.
     // -------------------------------------------------------------------------
     require('../admin-ui/crypto_metadata');
+    this.build('ldap/ldap_cluster_connections',
+               require('../ldap/ldap_cluster_connections'),
+               'LdapClusterConnections');
+    this.build('xacml/xacml_store', require('../xacml/xacml_store'),
+               'XacmlStore');
+    this.build('xacml/xacml_pep_registry',
+               require('../xacml/xacml_pep_registry'),
+               'PepRegistry');
+    this.build('xacml/xacml_pip', require('../xacml/xacml_pip'), 'XacmlPip');
+    this.build('scim/scim_auth', require('../scim/scim_auth'), 'ScimAuth');
+    this.build('ssf/ssf_auth', require('../ssf/ssf_auth'), 'SsfAuth');
+    this.build('admin-ui/crypto_metadata',
+               require('../admin-ui/crypto_metadata'),
+               'CryptoMetadata');
     this.register(app, require('../admin-ui/crypto_metadata'),
                   'admin-ui/crypto_metadata');
     // The embedded LDAPv3 directory (RFC 4511), built on the node-ldapjs
@@ -602,6 +899,7 @@ class ProtocolStack {
     // Unlike the three socket owners above it, it starts nothing: it is HTTP
     // all the way down, so requiring it is the whole of its installation.
     require('../scim/scim');
+    this.build('scim/scim', require('../scim/scim'), 'Scim');
     this.register(app, require('../scim/scim'), 'scim/scim');
     // SPIFFE — the sixteenth family, and the third family here (after Kerberos
     // and the directory) whose own listeners are started from `server.js`'s
@@ -627,6 +925,14 @@ class ProtocolStack {
     // share is the service Root an operator installs. See spiffe_ca.js and
     // common/CLAUDE.md (3w).
     const spiffeServer = require('../spiffe/spiffe_server');
+    this.build('spiffe/spiffe_grpc', require('../spiffe/spiffe_grpc'),
+               'SpiffeGrpc');
+    this.build('spiffe/spiffe_workload', require('../spiffe/spiffe_workload'),
+               'SpiffeWorkload');
+    this.build('spiffe/spiffe_api', require('../spiffe/spiffe_api'),
+               'SpiffeApi');
+    this.build('spiffe/spiffe_server', require('../spiffe/spiffe_server'),
+               'SpiffeServer');
     this.register(app, require('../spiffe/spiffe_server'),
                   'spiffe/spiffe_server');
     // -------------------------------------------------------------------------
@@ -663,6 +969,13 @@ class ProtocolStack {
     // kept exactly where persistence/CLAUDE.md keeps minted state and nowhere
     // else.
     require('../ssf/ssf');
+    this.build('ssf/caep', require('../ssf/caep'), 'CaepRegister');
+    this.build('ssf/risc', require('../ssf/risc'), 'RiscRegister');
+    this.build('ssf/ssf_dead_letter_report',
+               require('../ssf/ssf_dead_letter_report'),
+               'DeadLetterReport');
+    this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
+    this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
@@ -689,6 +1002,25 @@ class ProtocolStack {
     //
     // It starts nothing and holds no socket.
     require('../xacml/xacml');
+    this.build('xacml/xacml_pep_http', require('../xacml/xacml_pep_http'),
+               'PepNotifier');
+    this.build('xacml/xacml_monitor', require('../xacml/xacml_monitor'),
+               'XacmlMonitor');
+    this.build('xacml/xacml_editor', require('../xacml/xacml_editor'),
+               'XacmlEditor');
+    this.build('xacml/xacml_templates', require('../xacml/xacml_templates'),
+               'XacmlTemplates');
+    this.build('xacml/xacml_alfa', require('../xacml/xacml_alfa'),
+               'AlfaLanguage');
+    this.build('xacml/xacml_pep_tls', require('../xacml/xacml_pep_tls'),
+               'PepTls');
+    this.build('xacml/xacml_admin', require('../xacml/xacml_admin'),
+               'XacmlAdmin');
+    this.build('xacml/xacml_role_pep', require('../xacml/xacml_role_pep'),
+               'XacmlRolePep');
+    this.build('xacml/xacml_access_pep', require('../xacml/xacml_access_pep'),
+               'XacmlAccessPep');
+    this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');
 
@@ -704,6 +1036,41 @@ class ProtocolStack {
     // calls in the order the family's routes were registered before #50's R1:
     // `gnap`, then the resource-owner pages, then the two console pages.
     require('../gnap/gnap');
+    this.build('gnap/gnap_store', require('../gnap/gnap_store'), 'GnapStore');
+    this.build('gnap/gnap_keys', require('../gnap/gnap_keys'), 'GnapKeys');
+    this.build('gnap/gnap_sf', require('../gnap/gnap_sf'), 'GnapSf');
+    this.build('gnap/gnap_httpsig', require('../gnap/gnap_httpsig'),
+               'GnapHttpsig');
+    this.build('gnap/gnap_proof', require('../gnap/gnap_proof'), 'GnapProof');
+    this.build('gnap/gnap_schemas', require('../gnap/gnap_schemas'),
+               'GnapSchemas');
+    this.build('gnap/gnap_request', require('../gnap/gnap_request'),
+               'GnapRequest');
+    this.build('gnap/gnap_access', require('../gnap/gnap_access'),
+               'GnapAccess');
+    this.build('gnap/token_macaroon', require('../gnap/token_macaroon'),
+               'TokenMacaroon');
+    this.build('gnap/token_biscuit', require('../gnap/token_biscuit'),
+               'TokenBiscuit');
+    this.build('gnap/token_zcap', require('../gnap/token_zcap'), 'TokenZcap');
+    this.build('gnap/gnap_tokens', require('../gnap/gnap_tokens'),
+               'GnapTokens');
+    this.build('gnap/gnap_subject', require('../gnap/gnap_subject'),
+               'GnapSubject');
+    this.build('gnap/gnap_http', require('../gnap/gnap_http'), 'GnapHttp');
+    this.build('gnap/gnap_monitor', require('../gnap/gnap_monitor'),
+               'GnapMonitor');
+    this.build('gnap/gnap_signals', require('../gnap/gnap_signals'),
+               'GnapSignals');
+    this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
+               'GnapGrants');
+    this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');
+    this.build('gnap/gnap_interact', require('../gnap/gnap_interact'),
+               'GnapInteract');
+    this.build('gnap/gnap_console', require('../gnap/gnap_console'),
+               'GnapConsole');
+    this.build('gnap/gnap_admin', require('../gnap/gnap_admin'), 'GnapAdmin');
+    this.build('gnap/gnap', require('../gnap/gnap'), 'GnapRoutes');
     this.register(app, require('../gnap/gnap'), 'gnap/gnap');
     this.register(app, require('../gnap/gnap_interact'), 'gnap/gnap_interact');
     this.register(app, require('../gnap/gnap_admin'), 'gnap/gnap_admin');
@@ -717,12 +1084,28 @@ class ProtocolStack {
     // console pages, the order they had before #50's R1. No constraint
     // between the three.
     require('../acme/acme');
+    this.build('acme/acme_jws', require('../acme/acme_jws'), 'AcmeJws');
+    this.build('acme/acme_store', require('../acme/acme_store'), 'AcmeStore');
+    this.build('acme/acme_console', require('../acme/acme_console'),
+               'AcmeConsole');
+    this.build('acme/acme_admin', require('../acme/acme_admin'), 'AcmeAdmin');
+    this.build('acme/acme', require('../acme/acme'), 'Acme');
     this.register(app, require('../acme/acme'), 'acme/acme');
     this.register(app, require('../acme/acme_admin'), 'acme/acme_admin');
     require('../est/est');
+    this.build('est/est_codec', require('../est/est_codec'), 'EstCodec');
+    this.build('est/est_console', require('../est/est_console'), 'EstConsole');
+    this.build('est/est_admin', require('../est/est_admin'), 'EstAdmin');
+    this.build('est/est', require('../est/est'), 'Est');
     this.register(app, require('../est/est'), 'est/est');
     this.register(app, require('../est/est_admin'), 'est/est_admin');
     require('../scep/scep');
+    this.build('scep/scep_cms', require('../scep/scep_cms'), 'ScepCms');
+    this.build('scep/scep_ra', require('../scep/scep_ra'), 'ScepRa');
+    this.build('scep/scep_console', require('../scep/scep_console'),
+               'ScepConsole');
+    this.build('scep/scep_admin', require('../scep/scep_admin'), 'ScepAdmin');
+    this.build('scep/scep', require('../scep/scep'), 'Scep');
     this.register(app, require('../scep/scep'), 'scep/scep');
     this.register(app, require('../scep/scep_admin'), 'scep/scep_admin');
 
@@ -734,6 +1117,12 @@ class ProtocolStack {
     // and the console (18, whose roster decides who may use it). No route here
     // depends on its position.
     const debuggerServer = require('../debugger/debugger_server');
+    this.build('debugger/debugger_api_process',
+               require('../debugger/debugger_api_process'),
+               'DebuggerApiProcess');
+    this.build('debugger/debugger_server',
+               require('../debugger/debugger_server'),
+               'DebuggerServer');
 
     // -------------------------------------------------------------------------
     // THE PROTOCOL-INDEPENDENT LOGOUT — SECOND TO LAST, AND THE POSITION IS THE
@@ -758,10 +1147,15 @@ class ProtocolStack {
     // catch.
     // -------------------------------------------------------------------------
     require('../logout/logout');
+    this.build('logout/logout', require('../logout/logout'), 'Logout');
     this.register(app, require('../logout/logout'), 'logout/logout');
     require('../sts_metadata');
+    this.build('common/protocol_stack', require('./protocol_stack'),
+               'ProtocolStack');
+    this.checkOrigins();
     helpers.log.debug("Leaving ProtocolStack.load(). " +
-                      this.registered.length + " route module(s).");
+                      this.registered.length + " route module(s), " +
+                      this.installed.length + " instance(s) built here.");
     return {
       krb5: krb5,
       krb5Service: krb5Service,
@@ -784,6 +1178,8 @@ export = {
   ProtocolStack: ProtocolStack,
   registeredModules: stack.registeredModules.bind(stack) as
     ProtocolStack['registeredModules'],
+  instanceOrigins: stack.instanceOrigins.bind(stack) as
+    ProtocolStack['instanceOrigins'],
   krb5: sockets.krb5,
   krb5Service: sockets.krb5Service,
   tlsServer: sockets.tlsServer,

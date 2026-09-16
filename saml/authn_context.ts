@@ -65,6 +65,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 
 // What `forSession()` answers.
 interface AuthnReading {
@@ -149,6 +150,13 @@ class AuthnContext {
   constructor(private readonly deps: AuthnContextDeps) {
     deps.log.debug("Entering AuthnContext.constructor().");
     deps.log.debug("Leaving AuthnContext.constructor().");
+  }
+
+  // What the composition root passes: the service logger.
+  static defaultDeps(): AuthnContextDeps {
+    helpers.log.debug("Entering AuthnContext.defaultDeps().");
+    helpers.log.debug("Leaving AuthnContext.defaultDeps().");
+    return { log: helpers.log };
   }
 
   // Called several times per reading, so no Entering/Leaving pair — the
@@ -322,12 +330,28 @@ class AuthnContext {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const context = new AuthnContext({ log: helpers.log });
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that instance, for
+// the JavaScript that still calls this module through `require()`; a process
+// that never runs the root gets a default instance, built from
+// `defaultDeps()` on first use (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AuthnContext>(
+  'saml/authn_context',
+  () => new AuthnContext(AuthnContext.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AuthnContext: AuthnContext,
-  forSession: context.forSession.bind(context) as AuthnContext['forSession'],
+  installInstance: (instance: AuthnContext): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  forSession: slot.forward('forSession'),
   AC_PASSWORD_PROTECTED: AuthnContext.AC_PASSWORD_PROTECTED,
   AC_KERBEROS: AuthnContext.AC_KERBEROS,
   AC_TLS_CLIENT: AuthnContext.AC_TLS_CLIENT,

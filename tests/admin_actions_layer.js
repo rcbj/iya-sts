@@ -425,6 +425,11 @@ function checkNothingRequiresItEarly(t) {
                    // required at 18a, immediately after the console, so the
                    // require is a cache hit and moves no route.
                    'admin-ui/pki_admin.ts',
+                   // The composition root (#50, R2), which builds every
+                   // converted module's instance — these two layers
+                   // included — after the require step that loaded them,
+                   // so its requires are cache hits and move no route.
+                   'common/protocol_stack.ts',
                    'tests/admin_actions_layer.js'];
   const offenders = [];
   function walk(dir) {

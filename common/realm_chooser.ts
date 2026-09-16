@@ -62,6 +62,7 @@ import Html = require('./html');
 import helpers = require('./helpers');
 import realms = require('./realms');
 import mode = require('./mode');
+import InstanceSlot = require('./instance_slot');
 
 type SurfaceId = 'admin' | 'portal';
 
@@ -117,6 +118,15 @@ class RealmChooser {
   constructor(private readonly deps: RealmChooserDeps) {
     deps.log.debug("Entering RealmChooser.constructor().");
     deps.log.debug("Leaving RealmChooser.constructor().");
+  }
+
+  // What the composition root passes, from the real modules; `helpers`
+  // supplies both the logger and the base-URL reader, as it always did.
+  static defaultDeps(): RealmChooserDeps {
+    helpers.log.debug("Entering RealmChooser.defaultDeps().");
+    helpers.log.debug("Leaving RealmChooser.defaultDeps().");
+    return { realms: realms, mode: mode, baseUrlOf: helpers.baseUrlOf,
+             log: helpers.log };
   }
 
   // The service's own base with no realm prefix, whichever realm is ambient.
@@ -222,20 +232,28 @@ class RealmChooser {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one; `helpers` supplies both the logger and
-// the base-URL reader, as it did for this module before.
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that instance, for
+// the JavaScript that still calls this module through `require()`; a process
+// that never runs the root gets a default instance, built from
+// `defaultDeps()` on first use (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<RealmChooser>(
+  'common/realm_chooser',
+  () => new RealmChooser(RealmChooser.defaultDeps()),
+  null,
+  helpers.log);
 
-const chooser = new RealmChooser({
-  realms: realms,
-  mode: mode,
-  baseUrlOf: helpers.baseUrlOf,
-  log: helpers.log
-});
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   RealmChooser: RealmChooser,
   SURFACES: SURFACES,
-  decide: chooser.decide.bind(chooser) as RealmChooser['decide'],
-  form: chooser.form.bind(chooser) as RealmChooser['form']
+  installInstance: (instance: RealmChooser): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  decide: slot.forward('decide'),
+  form: slot.forward('form')
 };

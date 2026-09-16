@@ -46,6 +46,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 
 // What a delivery answers. `sent` and `streams` are `ssf.ts`'s own counts
 // when it ran; `why` is set when nothing was sent.
@@ -96,6 +97,14 @@ class AccountSignals {
   constructor(private readonly deps: AccountSignalsDeps) {
     deps.log.debug('Entering AccountSignals.constructor().');
     deps.log.debug('Leaving AccountSignals.constructor().');
+  }
+
+  // What the composition root passes: the service logger, and the
+  // `require.cache` lookup below as the way to find a loaded `ssf.js`.
+  static defaultDeps(): AccountSignalsDeps {
+    helpers.log.debug('Entering AccountSignals.defaultDeps().');
+    helpers.log.debug('Leaving AccountSignals.defaultDeps().');
+    return { log: helpers.log, findSsf: AccountSignals.loadedSsf };
   }
 
   // `ssf.ts` as it is loaded in THIS process, found in `require.cache`, or
@@ -183,21 +192,30 @@ class AccountSignals {
   }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const signals = new AccountSignals({
-  log: helpers.log,
-  findSsf: AccountSignals.loadedSsf
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds no
+// instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that instance, for
+// the JavaScript that still calls this module through `require()`; a process
+// that never runs the root gets a default instance, built from
+// `defaultDeps()` on first use (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<AccountSignals>(
+  'ssf/account_signals',
+  () => new AccountSignals(AccountSignals.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   AccountSignals: AccountSignals,
-  credentialChanged: signals.credentialChanged.bind(signals) as
-    AccountSignals['credentialChanged'],
-  credentialChangeRequired: signals.credentialChangeRequired.bind(signals) as
-    AccountSignals['credentialChangeRequired'],
-  recoveryInformationChanged:
-    signals.recoveryInformationChanged.bind(signals) as
-      AccountSignals['recoveryInformationChanged'],
+  installInstance: (instance: AccountSignals): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  credentialChanged: slot.forward('credentialChanged'),
+  credentialChangeRequired: slot.forward('credentialChangeRequired'),
+  recoveryInformationChanged: slot.forward('recoveryInformationChanged'),
   KEY_CREDENTIAL_TYPE: AccountSignals.KEY_CREDENTIAL_TYPE,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE
 };
