@@ -6,9 +6,9 @@
 // SIGNING IN CREATES A SESSION, SIGNING OUT INVALIDATES IT, AND ONE PERSON
 // CANNOT REACH ANOTHER'S ACCOUNT — ALL OF IT OVER HTTP.
 //
-// Three claims, driven through the real doors and checked through the
-// management API, which is what makes them assertions about the SERVICE rather
-// than about a function:
+// Three claims to begin with, driven through the real doors and checked
+// through the management API, which is what makes them assertions about the
+// SERVICE rather than about a function:
 //
 //   1. a sign-in at `/admin` and a sign-in at `/portal` each create a session
 //      that `GET /admin-api/sessions` lists, named by the surface it came
@@ -18,6 +18,12 @@
 //      another person's name in it;
 //   3. signing out INVALIDATES the session: it leaves that list AND the cookie
 //      stops working.
+//
+// Later sections added more, each argued above its own function: an
+// activation link ends at a sign-in that works, no page links to a bare
+// `/authn/login`, each surface's Sign out button ends the sign-on session
+// behind it, and `/portal/applications` lists what the issuance policy
+// permits.
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS HERE, WHICH IS THE FIRST QUESTION tests/CLAUDE.md ASKS.
@@ -59,7 +65,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -217,8 +223,9 @@ async function get(path) {
 }
 
 // The management API taking JSON, for the one thing this job needs that no
-// browser door offers: creating a person who has no credential yet. It is
-// ungated like everything under /admin-api, which is what a test drives.
+// browser door offers: creating a person who has no credential yet. The
+// access token /admin-api requires (since 2026-09-09) is attached by the
+// suite's preload, `tests/tools/attach-admin-token.js`, not here.
 async function post(path, body) {
   log.debug("Entering post().");
   const r = await fetch(api + path, {
@@ -342,7 +349,7 @@ async function rowFor(id) {
 // The browser ends up holding TWO cookies and that is the design: the sign-on
 // session (`sts_session`, the identity provider's) and the surface's own
 // (`sts_admin` or `sts_portal`, established from the ID Token). The
-// jar keeps whichever it was last sent, so `cookies` below holds both by name.
+// jar in `browser()` keys cookies by name, so it holds both.
 async function signInAt(door, who) {
   log.debug("Entering signInAt(). door=" + door);
   await ensurePerson(who);
@@ -605,7 +612,7 @@ async function oneUserCannotReachAnother(owner) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. SIGNING OUT INVALIDATES THE SESSION.
+// 4a. SIGNING OUT INVALIDATES THE SESSION. (Called last, from test().)
 //
 // **TWO ASSERTIONS AND NOT ONE.** Leaving the register is what an operator
 // SEES; the cookie no longer working is what actually matters, and a bug that
@@ -1025,8 +1032,10 @@ async function theSignOutButtonEndsBothSessions(door, surface, who) {
 // ---------------------------------------------------------------------------
 // 7. THE APPLICATIONS PAGE, AND THE FOUR PAGES THE PORTAL BECAME (2026-09-06).
 //
-// The portal was one page with four cards; it is four pages behind a
-// navigation column, and `/portal/applications` is the new one. This section
+// The portal was one page with four cards; it became four pages behind a
+// navigation column, and `/portal/applications` was the new one. The column
+// has grown since (`portal/portal.js`'s NAV); this section still checks the
+// original four. This section
 // is here rather than in the parent project's suite for the ownership reason
 // the manifest gives: the tree that adds a control to a hosted surface is the
 // tree that should go red when the control loses its meaning.
@@ -1464,8 +1473,9 @@ async function test() {
                                          usernameFor("console-signout"));
   await signingOutInvalidatesIt(newcomer, NEWCOMER, PORTAL_DOOR);
 
-  // SECTION 7 RUNS BEFORE THE SIGN-OUTS, in a browser of its own, so that
-  // nothing it signs in is signed out from underneath the sections above.
+  // SECTION 7 RUNS BEFORE THE THREE SIGN-OUTS BELOW, in a browser of its own,
+  // so that nothing it signs in is signed out from underneath the sections
+  // above.
   const appsBrowser = await theApplicationsPageIsDecidedByThePolicy();
 
   await signingOutInvalidatesIt(intruder, INTRUDER, PORTAL_DOOR);

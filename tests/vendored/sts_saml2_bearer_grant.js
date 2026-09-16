@@ -26,7 +26,7 @@
 // out of the source, the grammar `read()` applies. It sends no request, so it
 // cannot see a grant that is registered and unreachable, a
 // `grant_types_supported` member that promises something the endpoint refuses,
-// a key pair written to the wrong five attributes, or a console control that
+// a key pair written to the wrong six attributes, or a console control that
 // issues for the wrong profile. **Every function involved can be correct while
 // the feature does not work.**
 //
@@ -35,12 +35,12 @@
 //
 // **THE TWO PROFILES' KEY PAIRS MUST NOT BE ABLE TO SIGN FOR EACH OTHER, AND
 // THAT IS A CLAIM ABOUT TWO ENDPOINTS RATHER THAN ABOUT ONE MODULE.** Section
-// 6 below issues both to ONE application through the real console API, and
-// then presents each key pair at the OTHER profile's grant — a JWT signed with
-// the SAML key, and a SAML assertion signed with the JWT key. Both are
-// refused, and both are refused while the correct key pair works at the same
-// endpoint in the same realm seconds earlier, which is the only shape that
-// tells a rule from a service failing for some other reason.
+// 1 below issues both to ONE application through the real console API, and
+// section 6 then presents each key pair at the OTHER profile's grant — a JWT
+// signed with the SAML key, and a SAML assertion signed with the JWT key. Both
+// are refused, and both are refused while the correct key pair works at the
+// same endpoint in the same realm seconds earlier, which is the only shape
+// that tells a rule from a service failing for some other reason.
 //
 // ---------------------------------------------------------------------------
 // MOSTLY NEGATIVES, FOR `sts_dpop.js`'s REASON, and with more force here: a
@@ -70,7 +70,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -133,8 +133,9 @@ function check(what, fn) {
 }
 
 // ---------------------------------------------------------------------------
-// A JWS SIGNER, for section 6 ALONE — where a JWT has to be presented at the
-// RFC 7523 grant signed with the SAML profile's key. Thirty lines because RFC
+// A JWS SIGNER, for sections 6 and 12 ALONE — where a JWT has to be presented
+// at the RFC 7523 grant signed with the SAML profile's key, or with the JWT
+// profile's own to show that one still works. Thirty lines because RFC
 // 7515's compact serialization is thirty lines, and this file's own for
 // `saml_xmldsig.js`'s reason.
 // ---------------------------------------------------------------------------
