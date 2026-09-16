@@ -48,7 +48,7 @@
 // `config.js`, `error_codes.js` and `authorization_servers.ts` — the last of
 // which requires only `common/` modules — so it cannot join a cycle and its
 // place in the require order is not a place. `oauth2.ts` and `dpop.ts` both
-// require it, and `mgmt-api/admin_api.js` reaches it for its own check.
+// require it, and `mgmt-api/admin_api.ts` reaches it for its own check.
 //
 // **WHAT IT DOES NOT DO.** It does not verify a signature or `exp`: every
 // caller already verifies with `common/crypto.js` before it gets here, and a

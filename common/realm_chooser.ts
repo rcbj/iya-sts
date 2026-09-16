@@ -47,7 +47,7 @@
 //     so the composition root builds one and a test can build one with stubs.
 //     Nothing here reaches for a module on its own.
 //   * **THE MODULE STILL EXPORTS `SURFACES`, `decide` AND `form`**, from an
-//     instance built with the real modules, because `admin-ui/admin.js` and
+//     instance built with the real modules, because `admin-ui/admin.ts` and
 //     `portal/portal.ts` are not converted and require it by those names. That
 //     instance is TRANSITIONAL: it goes when the composition root exists and
 //     hands a `RealmChooser` to both surfaces. `RealmChooser` is exported

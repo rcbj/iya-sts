@@ -46,7 +46,7 @@ would put the two halves of one ceremony in two places and leave the pending
 record crossing a directory boundary for no gain.
 
 **It OWNS THE SESSION.** `ws-federation/wsfed.ts`, `saml/saml2_sso.ts` and
-`admin-ui/admin.js` take it from here through the exported `startSession` /
+`admin-ui/admin.ts` take it from here through the exported `startSession` /
 `sessionOf` / `endSession`, and `oauth-oidc/oauth2.ts` reads the session and
 never writes one. Do not give any other module a session store to "decouple" it:
 two stores would each look correct alone and never see each other, and the
@@ -336,7 +336,7 @@ the realm feature would have become a privilege escalation.
 `ldap/ldap_server.js` pins `admin_rbac.js`'s whole directory to the default realm
 for that reason, and this function is the other half of the same decision.
 (**Since 2026-09-14 (#32) a realm HAS a roster of its own, confined to that realm
-by `admin-ui/admin_scope.js`, and the gate asks the roster of the realm the
+by `admin-ui/admin_scope.ts`, and the gate asks the roster of the realm the
 session was signed in through** — `admin-ui/CLAUDE.md` 8d. This function still
 reads the session out of the default realm's partition; which roster decides
 moved, and the escalation above is closed by the confinement.) **The
@@ -347,7 +347,7 @@ were nobody.
 **Two things make this the boundary already drawn rather than a hole in it, and
 both have to stay true if anything here is reworked:**
 * **It grants nothing else.** Its only caller is `consoleSignOn()` in
-  `admin-ui/admin.js`, which REPORTS the sign-on session behind the console's
+  `admin-ui/admin.ts`, which REPORTS the sign-on session behind the console's
   own relying-party session; since 2026-09-06 the gate (`gateStateFor()`, now
   in `admin-core/admin_views.ts`) reads the relying-party session instead.
   No token is issued on the session it finds and no assertion names it. Every

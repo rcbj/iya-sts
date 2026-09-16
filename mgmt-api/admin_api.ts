@@ -157,7 +157,7 @@ import adminViews = require('../admin-core/admin_views');
 // DIRECTION, which is what rule 3e asks for when one is available: that module
 // is loaded at 18a — before this file — so this is a cache hit, and it
 // registers only `/admin/pki`, which is already in the router by now. Compare
-// `admin-ui/crypto_metadata.js`, which is at 20a and therefore needed a slot.
+// `admin-ui/crypto_metadata.ts`, which is at 20a and therefore needed a slot.
 import pkiAdmin = require('../admin-ui/pki_admin');
 // The key algorithms a TLS listener certificate may be issued with, for the
 // `issue-pep-certificate` request schema's enum (2026-09-13) — read from the
@@ -1489,7 +1489,7 @@ class AdminApi {
       // one function.
       //
       // It answers 503 rather than 404 when the reporter was never installed —
-      // which happens only if `admin-ui/crypto_metadata.js` was not required —
+      // which happens only if `admin-ui/crypto_metadata.ts` was not required —
       // and the two are different facts: a route that exists and cannot answer
       // is a wiring mistake somebody can fix, and a route that does not exist
       // is not. The message names the module rather than saying "unavailable".
@@ -1530,7 +1530,7 @@ class AdminApi {
             errorCodes.mark(res, 'STS-API-0011');
             self.sendJson(res, 503, { ok: false, errors: [
               'The crypto report is not installed in this process. ' +
-              'admin-ui/crypto_metadata.js fills it at its own require time, ' +
+              'admin-ui/crypto_metadata.ts fills it at its own require time, ' +
               'and server.js requires that module after tls/tls_server. This ' +
               'is a 503 and not a 404 because the route exists — what is ' +
               'missing is the module behind it.'] });
@@ -1887,7 +1887,7 @@ class AdminApi {
             errorCodes.mark(res, 'STS-API-0011');
             self.sendJson(res, 503, { ok: false, errors: [
               'The crypto reporter is not installed in this process. ' +
-              'admin-ui/crypto_metadata.js fills it at its own require ' +
+              'admin-ui/crypto_metadata.ts fills it at its own require ' +
               'time.'] });
             log.debug("Leaving the management API key list endpoint. No " +
                       "reporter.");
@@ -2029,7 +2029,7 @@ class AdminApi {
       // THE EXPLORER USED TO BE HERE — `GET /admin-api/docs` and
       // `/admin-api/docs/explorer.js` — AND MOVED TO THE CONSOLE ON 2026-09-09.
       //
-      // It is `/admin/api-explorer`, built by `admin-ui/api_explorer.js` at
+      // It is `/admin/api-explorer`, built by `admin-ui/api_explorer.ts` at
       // 19a. The move happened because of the gate at the foot of this file:
       // this API began requiring an OAuth 2.0 access token, and a browser
       // navigating to a URL carries none — so the one page in this service
@@ -3515,7 +3515,7 @@ class AdminApi {
       // EVERY ONE OF THEM CALLS THE FUNCTION THAT DRAWS THE PAGE, through
       // `adminViews.directoryPageJson()` and the slot `ldap/ldap_server.js`
       // fills — see the block above `setDirectoryPages()` in
-      // `admin-ui/admin.js` for why it cannot be a plain require from here. So
+      // `admin-ui/admin.ts` for why it cannot be a plain require from here. So
       // a page and its operation cannot come to disagree about what is in the
       // directory: there is one function and it is in the module that owns the
       // store.
@@ -10704,7 +10704,7 @@ class AdminApi {
       // Rule 7: every control on `/admin/pki` — four when this was written, and
       // the workbench, hierarchy and revocation panes' since — has an action
       // here, through the SAME functions — `pkiAction()` in
-      // `admin-ui/pki_admin.js` — and decides nothing that console does not.
+      // `admin-ui/pki_admin.ts` — and decides nothing that console does not.
       //
       // **THE MODULE IS REQUIRED IN THE ORDINARY DIRECTION AND NEEDS NO SLOT**,
       // which is the one thing about this resource worth knowing. That module
@@ -10781,7 +10781,7 @@ class AdminApi {
         // `issued` and `persons` stay WHOLE, because every reader of this
         // resource looks an application up in `issued` by identifier and a
         // reply holding one page would answer "not there" about page two.
-        // `admin-ui/pki_admin.js`'s `keyPairPaging()` argues it.
+        // `admin-ui/pki_admin.ts`'s `keyPairPaging()` argues it.
         parameters: this.pagingParameters().filter(function (one) {
           return one.name === 'per';
         }).concat(this.detailPagingParameters([
@@ -14940,7 +14940,7 @@ class AdminApi {
   // is what keeps the document from describing one moment. The cost of that
   // rule is that each CALLER has to supply those facts, and there are three:
   // this file's `/admin-api/openapi.json`, and the two in
-  // `admin-ui/api_explorer.js` (the console's copy of the document, and the
+  // `admin-ui/api_explorer.ts` (the console's copy of the document, and the
   // `?format=json` view that counts its operations).
   //
   // **THREE CALLERS ASSEMBLING THE SAME OPTIONS BY HAND IS THREE ANSWERS
@@ -15039,7 +15039,7 @@ class AdminApi {
         // tried at `/admin-api` itself or at another realm's. What such a token
         // may do is then bounded three ways below: its issuer and audience are
         // this realm's, it was issued to this realm's `sts-management-api`
-        // client, and `admin-ui/admin_scope.js` refuses it every service-wide
+        // client, and `admin-ui/admin_scope.ts` refuses it every service-wide
         // operation.
         //
         // This is the hole the comment above the default-realm key named — a

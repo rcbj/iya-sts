@@ -18,7 +18,7 @@
 // SHORT
 //
 // The argument this repository makes against `swagger-ui-dist` (see
-// `mgmt-api/admin_api_docs.js`) is a real argument and it was made again here,
+// `mgmt-api/admin_api_docs.ts`) is a real argument and it was made again here,
 // in the other direction. The Workload API is gRPC over HTTP/2 with protobuf
 // framing; this service already hand-rolls ASN.1, NDR and a Kerberos PAC, so a
 // hand-rolled protobuf codec and a gRPC server over node's built-in `http2`

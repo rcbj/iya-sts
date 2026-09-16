@@ -2311,7 +2311,7 @@ function multipartParts(req) {
 // before somebody looks for a bug there: it reads `req.query`, and express's
 // query parser gives an array for a repeat already.
 //
-// `admin-ui/admin.js`'s `listField()` is the same function, written first, for
+// `admin-ui/admin.ts`'s `listField()` is the same function, written first, for
 // the console's checkbox columns. It is not called from here and this is not
 // called from there — that module requires `oauth2.js` (rule 5), so nothing
 // below it can require it back. Folding the two together is a change to make in
@@ -3268,7 +3268,7 @@ function userFor(username) {
 // callers now need the same string and two of them cannot reach that module.
 // `scim_auth.js` and `spiffe_auth.js` require it directly and always could;
 // `spiffe_ca.js` cannot, and the reason is rule 3e's test rather than a
-// preference — `admin-ui/admin.js` requires `spiffe_ca.js`, and `server.js`
+// preference — `admin-ui/admin.ts` requires `spiffe_ca.js`, and `server.js`
 // requires `admin.js` at 18 and `tls_server.js` at 20, so a require from that
 // module would pull every `/tls*` route into the express router ahead of the
 // console's and `GET /admin/sts-metadata` walks that router. A leaf in

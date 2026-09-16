@@ -284,7 +284,7 @@ import claimAttributes = require('../common/claim_attributes');
 import gate = require('../common/issuance_gate');
 // WHO MAY BE GRANTED THE EMBEDDED DEBUGGER'S PERMISSION (2026-09-13). A
 // library (rule 3) that registers nothing and requires only libraries —
-// `admin-ui/admin_rbac.js`, `common/access_gate.ts`, `common/audit.js`,
+// `admin-ui/admin_rbac.ts`, `common/access_gate.ts`, `common/audit.js`,
 // `common/helpers.js`, `common/realms.js` — so it
 // cannot move a route or close a cycle. See `debugger/debugger_access.ts`.
 import debuggerAccess = require('../debugger/debugger_access');
@@ -12043,7 +12043,7 @@ capabilities.provide('oauth.codes-once');
 export = {
   OAuth2Server: OAuth2Server,
   asMetadata: server.asMetadata.bind(server) as OAuth2Server['asMetadata'],
-  // THE TWO ADVERTISED SIGNING LISTS, for `admin-ui/crypto_metadata.js`.
+  // THE TWO ADVERTISED SIGNING LISTS, for `admin-ui/crypto_metadata.ts`.
   // They are already in the discovery document, so exporting them
   // publishes nothing new; what it buys is that the crypto page reports the
   // list this module ENFORCES rather than a copy of it.

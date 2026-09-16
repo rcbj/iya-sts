@@ -170,7 +170,7 @@ Three ways to get seven modules into a second container, and two are wrong:
 **The seven are named individually rather than `COPY xacml/ ./xacml/`**, which
 looks like the fragile choice and is the safe one: a whole-directory copy would
 put `xacml.js`, `xacml_admin.js` and `xacml_pep_registry.js` in the image, every
-one of which requires `common/app.js`, `admin-ui/admin.js` or `common/config.js`
+one of which requires `common/app.js`, `admin-ui/admin.ts` or `common/config.js`
 — sitting there unloadable, waiting for a stack trace about express in a
 container that has no express.
 

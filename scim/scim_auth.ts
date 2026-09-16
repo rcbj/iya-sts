@@ -186,7 +186,7 @@
 //     TRANSITIONAL instance is built, which is still at require time.
 //
 // The module still exports every old name from that TRANSITIONAL instance,
-// because `scim.ts`, `admin-ui/crypto_metadata.js` and the tests are not
+// because `scim.ts`, `admin-ui/crypto_metadata.ts` and the tests are not
 // converted and require it by those names. `ScimAuth` is exported beside
 // them for the composition root.
 // ---------------------------------------------------------------------------
@@ -1145,7 +1145,7 @@ class ScimAuth {
   // leave a collision-broken hash on offer. On by default, because the
   // installed base of Digest clients is mostly MD5 and that is what this
   // service always offered. `DIGEST_ALGORITHMS` stays the table of what this
-  // BUILD can compute, for `admin-ui/crypto_metadata.js`; this is what a
+  // BUILD can compute, for `admin-ui/crypto_metadata.ts`; this is what a
   // challenge carries and a credential may use.
   // ---------------------------------------------------------------------------
   private digestAlgorithms() {
@@ -2933,7 +2933,7 @@ capabilities.provide('scim.challenge-state');
 export = {
   ScimAuth: ScimAuth,
   SCHEMES: scimAuth.SCHEMES,
-  // The two algorithm tables, for `admin-ui/crypto_metadata.js`.
+  // The two algorithm tables, for `admin-ui/crypto_metadata.ts`.
   // DIGEST_ALGORITHMS is already filtered by what this node build can actually
   // compute, which is exactly what that page should report — a console that
   // listed SHA-512-256 on a build without it would be naming an algorithm no

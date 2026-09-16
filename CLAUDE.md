@@ -233,8 +233,8 @@ holds is the table above; what each module is for is that directory's
 
    | Offered by | Slots | Argued in |
    |---|---|---|
-   | `admin-ui/admin.js` | `setLogoutReader`, `setCryptoReporter`, `setSignalsReporter`, `setCaepReporter`, `setRiscReporter`, `setDirectoryPages`, `setDirectoryReader`, `setDirectoryWriter`, `setGroupReader`, `setGroupWriter`, `setScimReader`, `setSpiffeReader`, `setXacmlPages`, `setRolePreviewer`, `setTruststore` | `admin-ui/CLAUDE.md`, and the filler's own file |
-   | `admin-ui/crypto_metadata.js` | `setProtocolFamilies`, filled by `sts_metadata.js` | `admin-ui/CLAUDE.md` |
+   | `admin-ui/admin.ts` | `setLogoutReader`, `setCryptoReporter`, `setSignalsReporter`, `setCaepReporter`, `setRiscReporter`, `setDirectoryPages`, `setDirectoryReader`, `setDirectoryWriter`, `setGroupReader`, `setGroupWriter`, `setScimReader`, `setSpiffeReader`, `setXacmlPages`, `setRolePreviewer`, `setTruststore` | `admin-ui/CLAUDE.md`, and the filler's own file |
+   | `admin-ui/crypto_metadata.ts` | `setProtocolFamilies`, filled by `sts_metadata.js` | `admin-ui/CLAUDE.md` |
    | `portal/portal.ts` | `setDirectory`, filled by `ldap/ldap_server.js` | `portal/CLAUDE.md` |
    | `authn/authn.ts` | `setSessionObserver`, filled by `ssf/ssf.ts` | `authn/CLAUDE.md`, `ssf/CLAUDE.md` |
    | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver` | `common/CLAUDE.md` |
@@ -261,7 +261,7 @@ outside it:
 4. **A realm has administrators of its own, CONFINED to it** (2026-09-14, #32; it
    read *deliberately NOT separated* until then). The console asks the roster of
    the realm a person signed in through; the default realm's is the service
-   roster over every realm, and `admin-ui/admin_scope.js` refuses a realm's own
+   roster over every realm, and `admin-ui/admin_scope.ts` refuses a realm's own
    everything about the process. — `admin-ui/CLAUDE.md` 8d, `mgmt-api/CLAUDE.md`
 5. **A client certificate at the handshake is still shared**, having no path
    and no name inside the protocol to put a realm in — the two TLS listeners
@@ -367,7 +367,7 @@ this table says what the constraint is and the named file says why.
 | 23b | `ssf/ssf` | After `admin-ui/admin`, whose slots it fills; also fills `authn.setSessionObserver()`. Starts nothing. | `ssf/CLAUDE.md`, `authn/CLAUDE.md` |
 | 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one line for the family. **Requiring `xacml_role_pep.js` here is what arms every issuance site** — before this line `issuance_gate.js` answers "allowed". | `xacml/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one line for the family. | `gnap/CLAUDE.md` |
-| 23e–g | `acme/acme`, `est/est`, `scep/scep` | **After `admin-ui/admin`** (18), whose shell each family's `_admin.js` draws its two pages with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each requires its own `_admin.js`, so each family is one line in `common/protocol_stack.js`; `mgmt-api/admin_api.js` spreads each `<family>_api.js`, which registers no route and requires its view model lazily. No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
+| 23e–g | `acme/acme`, `est/est`, `scep/scep` | **After `admin-ui/admin`** (18), whose shell each family's `_admin.js` draws its two pages with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each requires its own `_admin.js`, so each family is one line in `common/protocol_stack.js`; `mgmt-api/admin_api.ts` spreads each `<family>_api.js`, which registers no route and requires its view model lazily. No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
 | 23h | `debugger/debugger_server` | A socket owner: builds its OWN express app and registers nothing on this one. After `authn`, `oauth2`, `tls/tls_server` and the console, all of which it reads. | `debugger/CLAUDE.md` |
 | 23a | `logout/logout` | Second to last: it reads nine modules' stores. | `logout/CLAUDE.md` |
 | 24 | `sts_metadata` | **Last, for everybody.** It reads the router to list what everything else registered. | *Adding an endpoint*, below |
@@ -548,11 +548,11 @@ same test rather than going quietly.
 
 **So adding a protocol family costs three things**: an entry in `ENDPOINTS`, a
 card in `sts_metadata.js`'s `PROTOCOLS`, and a row in
-`admin-ui/crypto_metadata.js`'s `FAMILIES` — the second metadata page,
+`admin-ui/crypto_metadata.ts`'s `FAMILIES` — the second metadata page,
 `/admin/crypto-metadata`, checks its family list against `PROTOCOLS` in both
 directions. `tests/vendored/sts_metadata.js` fails on the first two and
 `tests/vendored/admin_api.js` on the third. What nothing checks, and what a
-settings group also owes, is a row in `admin-ui/admin.js`'s `SETTING_HOMES`;
+settings group also owes, is a row in `admin-ui/admin.ts`'s `SETTING_HOMES`;
 `admin-ui/CLAUDE.md` carries that and the second page's argument. **A new
 page under Protocols also owes a row in `admin-core/protocol_endpoints.ts`**
 (the endpoints of its realm, drawn on the page) or an exemption with its

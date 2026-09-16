@@ -30,7 +30,7 @@
 // ---------------------------------------------------------------------------
 // WHY IT IS NOT IN `authn/authn.ts`, WHICH IS THE OTHER OBVIOUS PLACE.
 //
-// `admin-ui/crypto_metadata.js` (20a) and `admin-ui/admin.js` (18) both need
+// `admin-ui/crypto_metadata.ts` (20a) and `admin-ui/admin.ts` (18) both need
 // the report, and `authn/authn.ts` is 8 — requiring it from either would be
 // requiring a module that is already loaded, which is harmless, but it would
 // also mean the console reaching into the sign-in service for a table of

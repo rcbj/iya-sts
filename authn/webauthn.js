@@ -464,7 +464,7 @@ function verifyAssertion(input) {
 }
 
 module.exports = {
-  // The COSE tables, for `admin-ui/crypto_metadata.js`, which reports what
+  // The COSE tables, for `admin-ui/crypto_metadata.ts`, which reports what
   // this relying party will accept rather than keeping a second copy of it.
   // They are DATA and not behaviour: exporting them cannot change what this
   // file verifies, and the alternative was a list of algorithms typed into a

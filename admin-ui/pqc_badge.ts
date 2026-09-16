@@ -32,7 +32,7 @@
 // there with nothing failing. The sentence is in `title` for a pointer and in
 // `aria-label` for a screen reader, which reads the element as one image.
 //
-// A LIBRARY: it registers no route. It requires `admin-ui/admin.js` for the
+// A LIBRARY: it registers no route. It requires `admin-ui/admin.ts` for the
 // escaper and `common/pqc_support.ts` for the sentence.
 // ===========================================================================
 

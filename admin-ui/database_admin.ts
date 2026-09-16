@@ -74,7 +74,7 @@
 // the logger through its constructor, and its `registerRoutes(app)` holds the
 // page's one route. The TRANSITIONAL code at the bottom builds one from the
 // real modules, registers its route at load where it always was, and exports
-// `databaseView` and `sections` bound to it, for `mgmt-api/admin_api.js` and
+// `databaseView` and `sections` bound to it, for `mgmt-api/admin_api.ts` and
 // `tests/database_metrics.js`; `DatabaseAdmin` is exported beside them for
 // the composition root.
 // ---------------------------------------------------------------------------
@@ -867,7 +867,7 @@ helpers.log.info('The database report is at /admin/database: everything ' +
 
 export = {
   DatabaseAdmin: DatabaseAdmin,
-  // For `mgmt-api/admin_api.js`. Rule 7 — one function behind the page and
+  // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report different numbers.
   databaseView: databaseAdmin.databaseJson.bind(databaseAdmin) as
     DatabaseAdmin['databaseJson'],

@@ -30,7 +30,7 @@
 # That looks like the fragile choice — a list to forget — and it is the safe
 # one here for two reasons. A whole-directory copy would put `xacml.js`,
 # `xacml_admin.js` and `xacml_pep_registry.js` in the image, and every one of
-# those requires `common/app.js`, `admin-ui/admin.js` or `common/config.js`;
+# those requires `common/app.js`, `admin-ui/admin.ts` or `common/config.js`;
 # they would sit there unloadable, waiting for somebody to require one and get
 # a stack trace about express in a container that has no express. And the list
 # CANNOT go stale: `tests/xacml_pep.js` parses these COPY lines and asserts

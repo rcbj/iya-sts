@@ -40,7 +40,7 @@ records the principal as the entry itself (`admin: false`, `hasEntry: true`).
 | `acme.ts` | The fourteen routes under `/enroll/acme`, and `require('./acme_admin')` so the family is one line in `common/protocol_stack.js` (23e) |
 | `acme_console.ts` | The view and action model both admin doors render (no route, no `res`, no markup), `gnap/gnap_console.ts`'s arrangement |
 | `acme_admin.ts` | `/admin/acme` (Protocols) and `/admin/acme/monitor` (Monitoring) |
-| `acme_api.ts` | `ROUTES` for `/admin-api/acme`, `/admin-api/acme/monitor` and `/admin-api/acme/:action`, spread into `mgmt-api/admin_api.js` |
+| `acme_api.ts` | `ROUTES` for `/admin-api/acme`, `/admin-api/acme/monitor` and `/admin-api/acme/:action`, spread into `mgmt-api/admin_api.ts` |
 
 ## The routes, and the RFC sections behind each
 

@@ -36,7 +36,7 @@
 // A LIBRARY (rule 3): IT REGISTERS NOTHING.
 //
 // The callback routes are registered by the surfaces —
-// `/admin/callback` in `admin-ui/admin.js`, `/portal/callback` in
+// `/admin/callback` in `admin-ui/admin.ts`, `/portal/callback` in
 // `portal/portal.ts`, and (since 2026-09-13) the debugger's `/_sts/callback`
 // on its own listener in `debugger/debugger_server.ts` — and that is
 // deliberate rather than tidy. A route

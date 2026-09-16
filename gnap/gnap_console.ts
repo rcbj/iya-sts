@@ -19,7 +19,7 @@
 // It holds `admin-core/`'s properties exactly, and
 // `tests/admin_actions_layer.js`'s reasoning applies to it: **no route, no
 // `res`, no markup**, and a view reads nothing from the request but its query.
-// `gnap_admin.ts` draws the markup and `mgmt-api/admin_api.js` sends the JSON,
+// `gnap_admin.ts` draws the markup and `mgmt-api/admin_api.ts` sends the JSON,
 // both out of the SAME call.
 //
 //   GET  /admin/gnap           gnapView()         Protocols -> GNAP
@@ -33,7 +33,7 @@
 // shape: `GnapConsole` takes the modules it reads through its constructor, as
 // `GnapConsoleDeps`, and the module still exports `GNAP_ACTIONS`, `STATES`
 // and the three calls from a TRANSITIONAL instance for `gnap_admin.ts` and
-// `mgmt-api/admin_api.js`. `gnap_signals` stays LAZY: the transitional
+// `mgmt-api/admin_api.ts`. `gnap_signals` stays LAZY: the transitional
 // instance is handed a loader that requires it at the moment a grant is
 // revoked, as the code here did before.
 // ---------------------------------------------------------------------------

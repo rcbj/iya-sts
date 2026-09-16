@@ -397,7 +397,7 @@ fail, which LDAP attribute each SCIM member is, and the eighteen `scim.*`
 settings. The monitor answers *how much traffic is there, from whom, and how
 much of it is failing*, which is what somebody asks when a provisioning client
 is misbehaving rather than when it is being set up. Both are drawn by
-`admin-ui/admin.js` and both live under `/admin/scim`; `SECTIONS` is the only
+`admin-ui/admin.ts` and both live under `/admin/scim`; `SECTIONS` is the only
 place placement is stated.
 
 **ONE STORE, TWO VIEWS, AND THAT IS WHY THEY CANNOT DISAGREE.**

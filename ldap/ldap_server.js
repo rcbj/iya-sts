@@ -4399,7 +4399,7 @@ function spiffePlan(info) {
 //     set together by the one caller that sets either.
 //
 // A GROUP GRANTS NOTHING here — bar the two that decide who may use /admin, see
-// `admin-ui/admin_rbac.js` — and neither does this: no endpoint reads these
+// `admin-ui/admin_rbac.ts` — and neither does this: no endpoint reads these
 // attributes, no token carries them, and nothing decides anything on them. They
 // are a record of what happened, on the page an LDAP client can see it from.
 // ---------------------------------------------------------------------------
@@ -6986,7 +6986,7 @@ if (typeof xacmlPip.setDirectory === 'function') {
 // `tls/tls_server.js` is already required at the top of this file — this module
 // serves its certificate on 636 — so filling its slot is a call in the ORDINARY
 // direction and costs no require at all. The other direction is out:
-// `tls_server.js` is loaded from inside `admin-ui/admin.js`'s require, long
+// `tls_server.js` is loaded from inside `admin-ui/admin.ts`'s require, long
 // before this module, and a require from there to here would register the eight
 // /admin/ldap/* pages ahead of the console's (rule 3e). Three functions,
 // validated whole over there, all pinned to the DEFAULT realm because the
@@ -8682,7 +8682,7 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 //
 // **THAT ARGUMENT IS ANSWERED RATHER THAN DROPPED (#32).** Each realm now has a
 // roster of its own, and what a member of it may reach is narrowed by
-// `admin-ui/admin_scope.js`: that realm's pages and actions, and nothing about
+// `admin-ui/admin_scope.ts`: that realm's pages and actions, and nothing about
 // the process — no other realm, no realm created or removed, no per-process
 // setting, no service Root. So the escalation the pinning prevented is closed
 // by the SCOPE instead, and the default realm's roster is still the only one
@@ -11783,7 +11783,7 @@ function description(req) {
 // touching any of it.
 //
 //   * **THEY ARE STILL BUILT HERE, and that is not a leftover.** A console
-//     page is a `path` and a `label` in `admin-ui/admin.js`'s `SECTIONS`
+//     page is a `path` and a `label` in `admin-ui/admin.ts`'s `SECTIONS`
 //     whoever builds the body — `/admin/sts-metadata` is built by
 //     `../sts_metadata.js` for the same reason and has been since 2026-08-24.
 //     Moving these bodies into that file would mean moving `description()`,
@@ -11812,7 +11812,7 @@ function description(req) {
 // The `?format=json` half of each is a `view()` function returning
 // `{ title, inner, json }` — the shape every view in `admin.js` returns — and
 // the eight are handed to `admin.setDirectoryPages()` at the foot of this file
-// so that `mgmt-api/admin_api.js` can answer them without requiring this
+// so that `mgmt-api/admin_api.ts` can answer them without requiring this
 // module. See the block above that slot in `admin.js`.
 // ---------------------------------------------------------------------------
 
@@ -13682,7 +13682,7 @@ function writePerson(dn, attributes) {
 // `admin.bootstrapUsername` in the DEFAULT realm is the account a new instance
 // is administered through: seeded into both console roles, forced to change its
 // password, and — until it first signs in to the console — the reason every
-// signed-in person may use the console (`admin-ui/admin_rbac.js`). Deleting it
+// signed-in person may use the console (`admin-ui/admin_rbac.ts`). Deleting it
 // would leave a service whose console roster is whatever happened to be left,
 // and renaming it is a delete under another name. So every door that removes a
 // person refuses it: SCIM (through `deletePerson()` here), an LDAP delete and an
@@ -15459,7 +15459,7 @@ app.get('/admin/ldap/peps', function (req, res) {
 // ---------------------------------------------------------------------------
 // THE NINTH SLOT ON admin.js, FILLED HERE.
 //
-// `mgmt-api/admin_api.js` mirrors every page of the console (rule 7) and sits
+// `mgmt-api/admin_api.ts` mirrors every page of the console (rule 7) and sits
 // two positions ABOVE this module in the require order, so it cannot require
 // this file to reach these eight views without dragging every route registered
 // here ahead of its own.
@@ -15489,7 +15489,7 @@ if (typeof admin.setDirectoryPages === 'function') {
     peps: ldapPepsView
   });
 } else {
-  log.warn('ldap: this copy of admin-ui/admin.js offers no ' +
+  log.warn('ldap: this copy of admin-ui/admin.ts offers no ' +
            'setDirectoryPages() slot, so /admin-api will not mirror the ' +
            'eight directory pages. The pages themselves are unaffected.');
 }

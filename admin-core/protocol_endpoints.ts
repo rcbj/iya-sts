@@ -22,7 +22,7 @@
 //   "concrete for the current realm".
 // * **THE TWO SURFACES READ IT AT THEIR TRANSPORT EDGES.** `admin.respond()`
 //   adds `protocolEndpoints` to a Protocols page's JSON and draws the section,
-//   and `mgmt-api/admin_api.js` adds the same member to the operation that
+//   and `mgmt-api/admin_api.ts` adds the same member to the operation that
 //   `mirrors` that page, so no view function had to learn a new argument and
 //   the page and the operation cannot disagree (rule 7).
 //
@@ -47,7 +47,7 @@
 // ---------------------------------------------------------------------------
 // WHY EVERY ROUTE-REGISTERING MODULE IS READ OUT OF `require.cache`.
 //
-// This file is required by `admin-ui/admin.js` at 18. `sts_metadata.js` must be
+// This file is required by `admin-ui/admin.ts` at 18. `sts_metadata.js` must be
 // required LAST, and `ldap/ldap_server.js`, `spiffe/spiffe_server.ts` and the
 // Kerberos modules register routes when first required (rule 1), so a require
 // of any of them from here would either close a cycle or drag routes ahead of
@@ -67,8 +67,8 @@
 // THE TABLE and the socket builders call the row builders, which are
 // methods now, so the constructor builds both — at load, for the
 // TRANSITIONAL instance at the bottom, which is when they were built before.
-// That instance exports the three old names for `admin-ui/admin.js`,
-// `mgmt-api/admin_api.js` and the test; `ProtocolEndpoints` is exported
+// That instance exports the three old names for `admin-ui/admin.ts`,
+// `mgmt-api/admin_api.ts` and the test; `ProtocolEndpoints` is exported
 // beside them for the composition root.
 // ---------------------------------------------------------------------------
 

@@ -238,7 +238,7 @@ inventing a link that is not there.
 answers the other half — *who is signed in at all* — and it is what
 `/admin/sessions` and `GET /admin-api/sessions` draw.
 
-**It is HERE and not in `admin-ui/admin.js` because this module is the one model
+**It is HERE and not in `admin-ui/admin.ts` because this module is the one model
 of what a live session is.** That is this directory's whole reason to exist, and
 a console page that walked `authn.sessions`, `ldap_server.boundConnections()`
 and the ticket register itself would be a SECOND answer to *is this still live* —

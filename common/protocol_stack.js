@@ -247,7 +247,7 @@ require('../admin-ui/admin');
 // WHY IT NEEDS NO SLOT.** It requires `admin-ui/admin` for the shell — so a
 // require the other way would close a cycle — and `common/pki.js`, which is a
 // LIBRARY (rule 3) and registers nothing. That is the entire list, so
-// `mgmt-api/admin_api.js` at 19 can require it in the ORDINARY DIRECTION and
+// `mgmt-api/admin_api.ts` at 19 can require it in the ORDINARY DIRECTION and
 // move no route: by then this line has already registered `/admin/pki` and
 // that require is a cache hit. `crypto_metadata.js` could not do this because
 // it reads an algorithm table out of `tls/tls_server.js` at 20, and requiring
@@ -266,11 +266,11 @@ require('../admin-ui/pki_admin');
 // way would close a cycle — and `common/crypto`, `common/keystore`,
 // `common/secrets`, `common/mode` and `persistence/persistence`, every one of
 // which is a LIBRARY (rule 3) that registers nothing and every one of which is
-// already loaded by this line. So `mgmt-api/admin_api.js` at 19 requires it in
+// already loaded by this line. So `mgmt-api/admin_api.ts` at 19 requires it in
 // the ORDINARY DIRECTION and moves no route.
 //
 // It is a MONITORING page rather than a protocol one, which is a statement
-// `admin-ui/admin.js`'s `SECTIONS` makes and this line does not: where a page
+// `admin-ui/admin.ts`'s `SECTIONS` makes and this line does not: where a page
 // is FILED is decided by the question it answers, and its position in the
 // require order is decided by what it requires.
 // ---------------------------------------------------------------------------
@@ -290,7 +290,7 @@ require('../admin-ui/encryption_admin');
 //
 // A MONITORING page rather than a settings one — `/admin/persistence` is what
 // this service is CONFIGURED to write down, and this is what the database has
-// DONE. That placement is `admin-ui/admin.js`'s `SECTIONS` to state and not
+// DONE. That placement is `admin-ui/admin.ts`'s `SECTIONS` to state and not
 // this line's.
 // ---------------------------------------------------------------------------
 require('../admin-ui/database_admin');
@@ -304,7 +304,7 @@ require('../admin-ui/database_admin');
 // `common/secrets`, `common/keystore` and `common/mode`, every one of which is
 // a LIBRARY (rule 3) that registers nothing and every one of which is already
 // loaded by this line — `secrets.js` is pulled in by `helpers.js` at 3. So
-// `mgmt-api/admin_api.js` at 19 requires it in the ORDINARY DIRECTION and
+// `mgmt-api/admin_api.ts` at 19 requires it in the ORDINARY DIRECTION and
 // moves no route.
 //
 // It holds no SDK and makes no request itself: every probe behind the page is
@@ -315,7 +315,7 @@ require('../admin-ui/database_admin');
 // A MONITORING page rather than a settings one, and rather than a second
 // `/admin/encryption`: that page says what is SEALED and with what, and this
 // says what is at the other end of the one paragraph in it about the key.
-// `admin-ui/admin.js`'s `SECTIONS` states the placement and this line does
+// `admin-ui/admin.ts`'s `SECTIONS` states the placement and this line does
 // not.
 // ---------------------------------------------------------------------------
 require('../admin-ui/secrets_admin');
@@ -323,7 +323,7 @@ require('../admin-ui/secrets_admin');
 // 18e. THE EMBEDDED PROTOCOL DEBUGGER'S REPORT (2026-09-13). `/admin/debugger`
 // — the same placement as 18a to 18d, for their reason: it requires
 // `admin-ui/admin` for the shell and nothing that registers a route, and
-// `mgmt-api/admin_api.js` at 19 requires it in the ordinary direction. It reads
+// `mgmt-api/admin_api.ts` at 19 requires it in the ordinary direction. It reads
 // the listener's status LAZILY, because `debugger/debugger_server.ts` requires
 // `tls/tls_server.js` at 20. See 23h for the listener itself.
 // ---------------------------------------------------------------------------
@@ -339,7 +339,7 @@ require('../debugger/debugger_admin');
 // `oauth-oidc/oauth2_monitor.ts` — libraries every one of which is loaded by
 // this line — so it moves no route. It cannot be required from `oauth2.js` at
 // 9, which would drag the whole console in front of the authorization server.
-// `mgmt-api/admin_api.js` at 19 reaches the model lazily through
+// `mgmt-api/admin_api.ts` at 19 reaches the model lazily through
 // `oauth-oidc/oauth2_monitor_api.ts`.
 // ---------------------------------------------------------------------------
 require('../oauth-oidc/oauth2_monitor_admin');
@@ -506,12 +506,12 @@ const spiffeServer = require('../spiffe/spiffe_server');
 // citing that one, because RFC 8935 push IS the receiver telling the
 // transmitter where to post).
 //
-// **AFTER `admin-ui/admin.js`, and that is the constraint that decides the
+// **AFTER `admin-ui/admin.ts`, and that is the constraint that decides the
 // line.** It fills that module's eighth slot — the reader and the four actions
 // behind `/admin/ssf` and `/admin-api/ssf` — and it requires it for the page
 // shell and the gate, exactly as `sts_metadata.js` and `crypto_metadata.js`
 // do. Rule 3e's test was applied both ways round: a require from `admin.js` to
-// here CLOSES A CYCLE, and a require from `mgmt-api/admin_api.js` to here
+// here CLOSES A CYCLE, and a require from `mgmt-api/admin_api.ts` to here
 // would MOVE ROUTES — every /ssf endpoint and the well-known document ahead of
 // the management API's own and of ldap, scim and spiffe. So a slot, not an
 // indirection added by analogy.
@@ -532,7 +532,7 @@ require('../ssf/ssf');
 //
 // AND AFTER `admin-ui/admin` (18), whose `setXacmlPages()` slot
 // `xacml/xacml_admin.ts` fills — for the reason SSF's does at 23b: a require
-// from mgmt-api/admin_api.js (19) to this module would drag every /xacml route
+// from mgmt-api/admin_api.ts (19) to this module would drag every /xacml route
 // ahead of the management API's own. `xacml.js` requires `xacml_admin.js`,
 // `xacml_role_pep.js` and `xacml_access_pep.js` itself, so the family is one
 // line here — and **requiring `xacml_role_pep.js` is what arms every issuance

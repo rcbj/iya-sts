@@ -705,7 +705,7 @@ const issuancePolicyState = pep.issuancePolicyState.bind(pep) as
 // ---------------------------------------------------------------------------
 // AND THE CONSOLE'S PREVIEW, which is admin.js's `setRolePreviewer()` slot.
 // Filled from here rather than that module requiring this one, and rule 3e's
-// test answers yes both ways round: a require from `admin-ui/admin.js` (18) to
+// test answers yes both ways round: a require from `admin-ui/admin.ts` (18) to
 // this file would load the XACML engine there and — much worse — fill the
 // DECIDER above from the console, so a process that loaded the console and not
 // `xacml/xacml.ts` would gate every issuance in the service with half this
@@ -723,7 +723,7 @@ const admin = require('../admin-ui/admin');
 if (typeof admin.setRolePreviewer === 'function') {
   admin.setRolePreviewer({ preview: preview, policy: issuancePolicyState });
 } else {
-  helpers.log.warn('xacml: admin-ui/admin.js offers no setRolePreviewer(), ' +
+  helpers.log.warn('xacml: admin-ui/admin.ts offers no setRolePreviewer(), ' +
                    'so /admin/roles cannot preview an issuance decision. ' +
                    'Enforcement is unaffected — the gate below is what ' +
                    'decides.');

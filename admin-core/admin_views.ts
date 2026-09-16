@@ -14,7 +14,7 @@
 // when one function computes both.
 //
 // So the split had to be made on a measurement rather than a hunch. Of the
-// eighty-nine view-shaped functions in `admin-ui/admin.js`, forty-six return a
+// eighty-nine view-shaped functions in `admin-ui/admin.ts`, forty-six return a
 // json half, and **only three of those separate at a clean boundary** — the
 // other forty-three build row markup part-way through the computation, inside
 // the `.map()` that walks the rows. Splitting those is real surgery on
@@ -29,7 +29,7 @@
 // ---------------------------------------------------------------------------
 // WHAT STAYED BEHIND, AND THE LINE IS NOT "IS IT PURE".
 //
-// Two kinds of thing are still on `admin-ui/admin.js` and belong there:
+// Two kinds of thing are still on `admin-ui/admin.ts` and belong there:
 //
 //   * **Anything that builds HTML**, which is the forty-three above plus the
 //     views that wrap them. That is the next increment and it is bespoke.
@@ -85,7 +85,7 @@
 // The helpers this half reaches for. `baseUrlOf` builds the issuer and endpoint
 // URLs `realmsJson()` reports and `stsKeysFor` is the per-realm key set
 // `keysView()` describes. Both were missed on the first pass — the
-// destructure they come from in admin-ui/admin.js is spread over thirty
+// destructure they come from in admin-ui/admin.ts is spread over thirty
 // comment-interleaved lines, which is the same trap that cost the action
 // half `numberWord` and `signJwt`. The symptom was `GET /admin-api/realms`
 // answering 500 with `baseUrlOf is not defined`, found by the job that
@@ -197,7 +197,7 @@ const TOKEN_LIFETIME_KEYS = adminActions.TOKEN_LIFETIME_KEYS;
 
 // ---------------------------------------------------------------------------
 // WHAT THE CONSOLE HANDS OVER. The first five to arrive are inverted hooks on
-// `admin-ui/admin.js` (rule 3e) filled by the module that owns the subsystem
+// `admin-ui/admin.ts` (rule 3e) filled by the module that owns the subsystem
 // — `crypto_metadata.js`, `xacml_admin.js`, `ldap_server.js`, `scim.js` and
 // `xacml_role_pep.js`. The sixth is the console's own settings-block builder,
 // which `scimJson()` embeds; see the header for why it is asked for rather
@@ -234,7 +234,7 @@ let scimReader = null;
 let rolePreviewer = null;
 let configSettingsJson = null;
 // The client-certificate truststore (2026-09-12). Forwarded by
-// `admin-ui/admin.js`'s `setTruststore()`, which `common/protocol_stack.js`
+// `admin-ui/admin.ts`'s `setTruststore()`, which `common/protocol_stack.js`
 // fills; that setter carries the argument.
 let truststore = null;
 
@@ -608,7 +608,7 @@ class AdminViews {
     //   * signed in through realm `acme`: acme's roster, whose answer holds
     //     while acme is the realm being read and in no other. Reaching the
     //     default realm or another realm with that session grants nothing, and
-    //     service pages are refused even in acme (`admin-ui/admin_scope.js`).
+    //     service pages are refused even in acme (`admin-ui/admin_scope.ts`).
     //
     // Until #32 every console session was asked the default realm's roster BY
     // NAME, so a person in any realm who shared a service administrator's
@@ -914,7 +914,7 @@ class AdminViews {
     return json;
   }
 
-  // What `mgmt-api/admin_api.js` calls. The `?format=json` half of each page,
+  // What `mgmt-api/admin_api.ts` calls. The `?format=json` half of each page,
   // which is the same object the page itself is built from.
   directoryPageJson(name, req) {
     const { log } = this.deps;
@@ -1849,7 +1849,7 @@ class AdminViews {
   // Paging.
   //
   // There is no script on these pages — `script-src 'none'`, see the shell in
-  // `admin-ui/admin.js` — so paging is links and a query parameter and nothing
+  // `admin-ui/admin.ts` — so paging is links and a query parameter and nothing
   // else. That is also why every number is settled server-side before the
   // markup is built: a page that renders "page 4 of 2" and leaves the browser
   // to sort it out has nothing to sort it out with.
@@ -1973,7 +1973,7 @@ class AdminViews {
     // (whether WS-Trust or WS-Federation issued it), every Kerberos ticket and
     // every SVID is still here — grouped where the protocol grouped them, which
     // is OAuth 2.0 and OIDC and nowhere else. See issuedSetRow() in
-    // admin-ui/admin.js for the argument, and stats.issuedSets() for the
+    // admin-ui/admin.ts for the argument, and stats.issuedSets() for the
     // grouping, which is decided by a set id the ISSUER stated rather than by
     // anything this file could infer from these rows.
     const all = stats.issuedSets();
@@ -2408,7 +2408,7 @@ class AdminViews {
 
   // Everything the page and the API both need out of one query string. Written
   // as a view function for the reason the comment above consoleJson() in
-  // admin-ui/admin.js gives: this console and /admin-api are two callers, and
+  // admin-ui/admin.ts gives: this console and /admin-api are two callers, and
   // two hand-built copies of the same filtering would be two answers that each
   // look right alone.
   auditView(query) {
@@ -2498,7 +2498,7 @@ class AdminViews {
 
   // The whole view, filtered and paged, for the page AND for
   // GET /admin-api/delegation. One function for the reason the block above
-  // consoleJson() (admin-ui/admin.js) gives: the filtering and the paging are
+  // consoleJson() (admin-ui/admin.ts) gives: the filtering and the paging are
   // work both need, and two copies of it would be two answers that each looked
   // right alone.
   delegationView(query) {
@@ -3301,7 +3301,7 @@ class AdminViews {
   // ---------------------------------------------------------------------------
   // THE SEARCH AND THE SLICE, as one pure function called twice — by the page
   // and by GET /admin-api/caep/sessions. Written once for the reason
-  // `permissionsListState()` (admin-ui/admin.js) is: the markup and the reply
+  // `permissionsListState()` (admin-ui/admin.ts) is: the markup and the reply
   // have to agree about what was filtered and what was drawn, and two walks of
   // one list is how they come to disagree about a session that ended in
   // between.
@@ -3904,7 +3904,7 @@ class AdminViews {
     // person chooser now: `personq` narrows, `personfrom` pages by
     // CHOOSER_HITS, a stale offset is clamped rather than obeyed, and `person`
     // is the one a result link picked. The page draws the pane from the same
-    // list with the same rule (chooserPane() in admin-ui/admin.js), so what the
+    // list with the same rule (chooserPane() in admin-ui/admin.ts), so what the
     // page shows and what `candidates` answers are the same twenty.
     //
     // `person` is RESOLVED against the candidates rather than echoed. The grant
@@ -4786,7 +4786,7 @@ class AdminViews {
   // certificate, issued by whom, through what chain, expiring when, and whether
   // this service holds the private half. So this parses the certificates and
   // names the attributes from `applications.KEY_PAIR_ATTRIBUTES`, the one table
-  // the writer (`admin-ui/pki_admin.js`) reads too.
+  // the writer (`admin-ui/pki_admin.ts`) reads too.
   //
   // **THE JSON CARRIES NO SECRET AND NO PRIVATE KEY.** Both are already in the
   // reply's `fields`, opened, for a caller holding `admin:read` — that is the
@@ -5244,7 +5244,7 @@ class AdminViews {
   // settings forms on the protocol pages already do this: they are drawn where
   // the setting belongs (`SETTING_HOMES`) and post to /admin/config, which
   // sends the reader back to the page the form was on. `from` is that field
-  // here, and permissionsReturnTo() (admin-ui/admin.js) rebuilds the
+  // here, and permissionsReturnTo() (admin-ui/admin.ts) rebuilds the
   // destination rather than echoing it, for configReturnTo()'s reason.
   //
   // WHAT IS NOT OFFERED, and each for its own reason:
@@ -6191,7 +6191,7 @@ class AdminViews {
   // round it is usually not. The rule says a console control owes an API
   // operation; it says nothing about an operation whose page moved, and
   // deleting a working one to tidy a table would be a regression dressed as
-  // consistency — the same argument `mgmt-api/admin_api.js` makes about `GET
+  // consistency — the same argument `mgmt-api/admin_api.ts` makes about `GET
   // /admin-api/users/new`.
   //
   // **BOTH ANSWER OUT OF THE USERS VIEW**, so there is ONE tally. A second scan
@@ -6299,7 +6299,7 @@ class AdminViews {
     }
 
     // Flattened, because this table filters and pages ACROSS families — see the
-    // console page's header in admin-ui/admin.js. The family's own prose stays
+    // console page's header in admin-ui/admin.ts. The family's own prose stays
     // on the summary above it.
     const all = [];
     inventory.families.forEach(function (family) {

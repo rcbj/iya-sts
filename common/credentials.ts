@@ -2383,7 +2383,7 @@ class Credentials {
   // management API resource beside it. Everything else in this file is asked
   // about one name because every other caller has one.
   //
-  // It is HERE and not in `admin-ui/admin.js` for the reason this file exists
+  // It is HERE and not in `admin-ui/admin.ts` for the reason this file exists
   // at all: *who holds a credential* is a credential-store question, and the
   // console answering it by reading `stsTotpCredential` off entries itself
   // would be a second implementation of what an enrolment IS — including the

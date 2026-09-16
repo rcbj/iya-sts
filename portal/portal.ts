@@ -199,7 +199,7 @@ import stats = require('../common/admin_stats');
 // THE REGISTRY AND THE ISSUANCE GATE, for `/portal/applications` (2026-09-06).
 //
 // Both are LIBRARIES (rule 3) and neither can move a route or close a cycle
-// here: `common/applications.js` registers nothing — `admin-ui/admin.js` and
+// here: `common/applications.js` registers nothing — `admin-ui/admin.ts` and
 // `ldap/ldap_server.js` draw its pages — and `common/issuance_gate.js` requires
 // `helpers` and `config` and nothing else, which is the whole point of it being
 // a leaf. Both are already loaded by `authn/authn.ts` at 8, above this module

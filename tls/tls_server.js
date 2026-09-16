@@ -2171,7 +2171,7 @@ function listAnchors() {
 // the change log and `reloadStoredAnchors()`.
 //
 // **A SLOT BECAUSE A REQUIRE CANNOT WORK IN EITHER DIRECTION.** This module is
-// loaded from inside `admin-ui/admin.js`'s require, long before the directory
+// loaded from inside `admin-ui/admin.ts`'s require, long before the directory
 // module, and a require from here to it would register every /ldap route ahead
 // of the console's (rule 3e); the directory module requires THIS one for its
 // LDAPS certificate, so it fills the slot with a call in the ordinary
@@ -3436,7 +3436,7 @@ app.get('/tls/server-certificate', function (req, res) {
 // **REFUSED RATHER THAN GATED, AND THE REFUSAL SAYS WHERE TO GO.** The obvious
 // alternative was to require the credential `/admin-api` requires — an access
 // token with `admin:write` — and it was not taken for a structural reason:
-// that verification is middleware inside `mgmt-api/admin_api.js`, exported as
+// that verification is middleware inside `mgmt-api/admin_api.ts`, exported as
 // nothing, and a second copy of it here would be a second answer to "who may
 // administer this service" (the mistake `logout.js` exists to prevent).
 //
@@ -3484,7 +3484,7 @@ function refuseTruststoreChange(req, res, route) {
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE AS THE GATED DOORS SEE IT (2026-09-12).
 //
-// Three functions, handed to `admin-ui/admin.js`'s `setTruststore()` slot and
+// Three functions, handed to `admin-ui/admin.ts`'s `setTruststore()` slot and
 // forwarded from there to the action and view layers in `admin-core/`. This
 // module cannot hand them over itself at require time, and the reason is worth
 // knowing before anybody tries: it is first loaded from INSIDE `admin.js`'s own

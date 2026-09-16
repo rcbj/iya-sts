@@ -73,7 +73,7 @@
 // `oauth-oidc/dpop.ts` for `presentedAccessToken()`, and although that module
 // registers no route it is loaded by oauth2.js anyway — requiring it first
 // from here would be harmless, and requiring it first is not what decides the
-// line. **After `admin-ui/admin.js`**, which is what does: the console page
+// line. **After `admin-ui/admin.ts`**, which is what does: the console page
 // and the settings block come from that module, exactly as `scim.js`'s do, and
 // requiring it earlier would drag every `/admin` route ahead of the protocol
 // endpoints. **Before `sts_metadata.js`**, which is last for everybody.
@@ -179,7 +179,7 @@ import streams = require('./ssf_streams');
 // endpoints and the two inbox pages are registered by the SURFACES, because a
 // receiver hosts its own endpoint; what this module does with it is SEED the
 // streams, which is why the require is here and not only there. A process that
-// loaded `admin-ui/admin.js` and not this file would have an inbox page and no
+// loaded `admin-ui/admin.ts` and not this file would have an inbox page and no
 // stream behind it, and the page says exactly that rather than looking empty.
 import receivers = require('./ssf_receivers');
 import transport = require('./ssf_http');
@@ -2123,7 +2123,7 @@ class SharedSignals {
   // ---------------------------------------------------------------------------
   // WHAT THE CONSOLE AND THE MANAGEMENT API CALL.
   //
-  // `admin-ui/admin.js` cannot require this module — it is loaded before it,
+  // `admin-ui/admin.ts` cannot require this module — it is loaded before it,
   // and a require the other way would move every SSF route ahead of the
   // console's own (rule 1). So this fills a slot on `admin.js`, exactly as
   // `ldap_server.js` and `crypto_metadata.js` do, and it carries ONE object:
@@ -2630,7 +2630,7 @@ class SharedSignals {
   // `/admin/caep`, `/admin/caep-sessions` and `/admin-api/caep` reach this
   // directory through `admin.setCaepReporter()`, the NINTH slot, for exactly
   // the reasons the eighth exists: a require from `admin.js` to this file would
-  // close a cycle, and one from `mgmt-api/admin_api.js` would move every `/ssf`
+  // close a cycle, and one from `mgmt-api/admin_api.ts` would move every `/ssf`
   // route ahead of the management API's own.
   //
   // `action` returns a PROMISE, like the signals slot's and for the same
@@ -3287,7 +3287,7 @@ class SharedSignals {
   // `/admin/risc`, `/admin/risc-accounts` and `/admin-api/risc` reach this
   // directory through `admin.setRiscReporter()`, the TENTH slot, for exactly
   // the reasons the eighth and ninth exist: a require from `admin.js` to this
-  // file would close a cycle, and one from `mgmt-api/admin_api.js` would move
+  // file would close a cycle, and one from `mgmt-api/admin_api.ts` would move
   // every `/ssf` route ahead of the management API's own.
   // ---------------------------------------------------------------------------
 

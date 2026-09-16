@@ -26,7 +26,7 @@
 //     token runs out.
 //
 // **WHAT "ADMINISTRATOR" MEANS IS THE CONSOLE'S AND IS NOT RESTATED HERE.**
-// `admin-ui/admin_rbac.js` decides who holds Admin Read or Admin Write, and it
+// `admin-ui/admin_rbac.ts` decides who holds Admin Read or Admin Write, and it
 // is asked in the DEFAULT realm, out of that realm's `ou=groups` — so a trust
 // realm's own administrators (2026-09-14, #32), who are confined to their
 // realm, are not debugger users. Holding EITHER role is enough: the debugger

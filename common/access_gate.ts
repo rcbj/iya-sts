@@ -84,9 +84,9 @@ import errorCodes = require('./error_codes');
 // which is why each entry below names its caller: a resource id that nothing
 // asks about is a rule somebody can write and never see refuse anything.
 //
-//   admin-console       `admin-ui/admin.js`'s gate, on every page and form
+//   admin-console       `admin-ui/admin.ts`'s gate, on every page and form
 //   user-portal         `portal/portal.ts`'s requireSignIn()
-//   management-api      `mgmt-api/admin_api.js`'s middleware — for a caller
+//   management-api      `mgmt-api/admin_api.ts`'s middleware — for a caller
 //                       with an access token (`adminApi.authRequired`, on by
 //                       default), and for a console session in PRODUCT MODE
 //                       with that setting off; see the asymmetry below

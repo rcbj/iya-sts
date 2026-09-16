@@ -64,7 +64,7 @@ the list.
 
 **AND THE FIRST TWO ARE TYPESCRIPT**: `realm_chooser.ts`, the pilot — a
 `RealmChooser` class built from injected dependencies, with a transitional
-instance exporting the old names for `admin-ui/admin.js` and
+instance exporting the old names for `admin-ui/admin.ts` and
 `portal/portal.ts` — and `html.ts`. Neither is in the parent project's
 Kerberos COPY set (`kerberos/CLAUDE.md`), which is the constraint on choosing
 what to convert next: a file on that list cannot become `.ts` without the
@@ -89,7 +89,7 @@ changing behaviour, and three kinds of fix recur:
   a caller reading `reason` after `ok` is checked.
 * **A helper that passed its arguments on untyped got a signature**:
   `realms.obj(factory)` returns what the factory builds, and
-  `admin-ui/admin_rbac.js`'s `bound()` returns a function taking the realm as
+  `admin-ui/admin_rbac.ts`'s `bound()` returns a function taking the realm as
   an extra argument. Neither changed at runtime.
 * **A library whose declared types lag its behaviour gets a narrow cast** with
   a comment saying which library: `asn1js` value blocks, `pkijs`'s engine and
@@ -134,7 +134,7 @@ sixty-odd call sites across fourteen modules read that object with
 one of them sees to serve two parameters. **The authorization endpoint needs none
 of it** — it reads `req.query`, and express gives an array for a repeat already,
 which is worth knowing before somebody looks for the same bug there.
-`admin-ui/admin.js`'s `listField()` is the same function, written first, for the
+`admin-ui/admin.ts`'s `listField()` is the same function, written first, for the
 console's checkbox columns; neither calls the other because that module requires
 `oauth2.js` (rule 5) and nothing below it can require back. The shapes are
 deliberately identical, so folding them is a one-line delegation in THAT file.
@@ -151,7 +151,7 @@ certificate every X509-SVID mint produces, using the same six `x509*` attributes
 a verified TLS client certificate writes, so the two paths must render a DN
 identically — **two spellings of one DN is two people on `/admin/users`** — and
 that module CANNOT require `tls_server.js`. Rule 3e's test says why:
-`admin-ui/admin.js` requires `spiffe_ca.js`, and `server.js` requires `admin.js`
+`admin-ui/admin.ts` requires `spiffe_ca.js`, and `server.js` requires `admin.js`
 at 18 and `tls_server.js` at 20, so the require would pull every `/tls*` route
 into the router ahead of the console's and `GET /admin/sts-metadata` walks that router.
 A leaf here moves no route and closes no cycle. **It takes BOTH shapes of DN node
@@ -636,7 +636,7 @@ caller that cannot be made asynchronous is better off blocking than wrong.
 **WHAT IS NOT DONE YET, SAID PLAINLY: no protocol surface calls the async door.**
 Eleven call sites still reach the synchronous one — `scim/scim_auth.ts`,
 `authn/authn.ts`, `ldap/ldap_server.js`, `ws-trust/wstrust.ts`, `portal/portal.ts`
-(three) and `admin-ui/admin.js` (four) — and every one of them needs its
+(three) and `admin-ui/admin.ts` (four) — and every one of them needs its
 enclosing handler chain made asynchronous first. That is not incidental: it is
 the same prerequisite the whole move-request-processing-to-workers plan needs,
 so it is phase 1 of that plan rather than eleven separate conversions, and
@@ -1465,7 +1465,7 @@ reader derives from four directory files. The short version:
   pinned to the DEFAULT realm's `ou=groups` until 2026-09-14** — one roster for
   the process, since a per-realm roster would have let anybody who can create a
   realm administer the service. **#32 gave each realm a roster of its own,
-  CONFINED to that realm by `admin-ui/admin_scope.js`**, and kept the default
+  CONFINED to that realm by `admin-ui/admin_scope.ts`**, and kept the default
   realm's as the service roster over every realm; `admin-ui/CLAUDE.md` 8d
   argues it. **The console's SESSION follows the roster and its SIGN-IN does
   not, and that sentence split in two on 2026-09-11.** It read *the console's
@@ -1696,7 +1696,7 @@ overrides before any realm is ambient — it is the only caller that can know th
 answer without asking. Every OTHER caller is inside a request, so the realm is
 the ambient one, and every one of them passed nothing: `setOverride()` here
 (which passes the realm it computed since), and the three places in
-`admin-ui/admin.js` — `admin-core/admin_actions.ts` now — that pre-validate a
+`admin-ui/admin.ts` — `admin-core/admin_actions.ts` now — that pre-validate a
 whole section before writing any of it. **So the exemption was unreachable
 through the four doors a person actually uses**, and the symptom was worse than
 the rule being
@@ -2820,7 +2820,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    make the page unable to report the difference.
 
    **`graph()` IS THE PICTURE'S MODEL AND IT IS NOT `chainList()` WITH BOXES.**
-   `/admin/delegation/map` draws it and `../admin-ui/delegation_map.js` lays it
+   `/admin/delegation/map` draws it and `../admin-ui/delegation_map.ts` lays it
    out; this file says what the nodes and edges ARE, for the reason every other
    view function is here — what counts as one party is a statement about this
    store. It walks the ACTS rather than that function's answer, deliberately: a
@@ -3004,7 +3004,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 3p. **`user_graph.ts` is a library over TWO registers, and the whole of it is
    the argument for why the union is here rather than in the console.** It
    requires `helpers.js`, `admin_stats.js`, `delegation.js` and
-   `applications.js`; nothing requires it but `../admin-ui/admin.js`, which
+   `applications.js`; nothing requires it but `../admin-ui/admin.ts`, which
    renders it at `/admin/delegation/user`, and `credential_graph.ts` (3q).
    It registers no route, so rule 3e's test is not even reached — a plain
    require in the ordinary direction closes no cycle and moves nothing.
@@ -3028,7 +3028,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    — so the delegation half is drawn by the code that owns it, byte for byte as
    `/admin/delegation/map` draws it — and folds the issuance on top as nodes and
    edges carrying the same fields plus three (`credentials`, `flows`,
-   `isSubject` on a node; `credentials` on an edge). `../admin-ui/delegation_map.js`
+   `isSubject` on a node; `credentials` on an edge). `../admin-ui/delegation_map.ts`
    therefore draws this picture with no idea it is different. A second shape
    would have meant a second renderer, and two renderers agreeing about what a
    box means is a thing that stays true for about a month.
@@ -3171,7 +3171,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 3q. **`credential_graph.ts` is the same union asked a NARROWER question, and it
    is a file for the same reason `user_graph.ts` is.** It requires `helpers.js`,
    `admin_stats.js`, `delegation.js`, `user_graph.ts` and `applications.js`;
-   nothing requires it but `../admin-ui/admin.js`, which renders it at
+   nothing requires it but `../admin-ui/admin.ts`, which renders it at
    `/admin/tokens/credential` — the first drill-down the tokens page has ever
    had, reached from every identifier in its last column. It registers no route,
    so rule 3e's test is not reached.
@@ -3477,7 +3477,7 @@ accepted — exactly what `appFederationRelationship` changes.
 
 `crypto.js` is the one place this service signs, verifies, encrypts and
 decrypts (rule 3r above). Since 2026-08-30 there is a console page that REPORTS
-it — `/admin/crypto-metadata`, built by `admin-ui/crypto_metadata.js` — and the
+it — `/admin/crypto-metadata`, built by `admin-ui/crypto_metadata.ts` — and the
 one thing worth knowing here is the direction: **that page reads this module's
 tables and this module knows nothing about it.** `JWS_ALGS`, `JWE_ALGS`,
 `JWE_ENCS`, `BLOCK_CIPHERS`, `KEY_TRANSPORTS` and the re-exported `xmldsig`
@@ -4582,7 +4582,7 @@ order is not a position. It requires `config`, `crypto`, `keystore`, `realms`,
 `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules
 (`x509.js`, `key_material.js`, `pqc_x509.js`, `pqc.js`) — none of which requires it
 back — and it is read by `oauth-oidc/assertion_grant.js`,
-`admin-ui/pki_admin.js`, `admin-ui/crypto_metadata.js` and `mgmt-api`. **It
+`admin-ui/pki_admin.ts`, `admin-ui/crypto_metadata.ts` and `mgmt-api`. **It
 makes a logger of its own rather than requiring `helpers.js`**, for
 `keystore.js`'s reason one file along: it sits on the token endpoint's path
 through `assertion_grant.js`, and putting the whole key-set proxy behind a
@@ -4919,7 +4919,7 @@ certificate chaining.
 register about every certificate on the path — through `revocation_status.js`'s
 synchronous door, because the checks before it guarantee the path is this
 service's own — and a revoked one is refused with `STS-PKI-0118`.
-`admin-ui/crypto_metadata.js` still draws published and consulted as SEPARATE
+`admin-ui/crypto_metadata.ts` still draws published and consulted as SEPARATE
 ROWS, because they are still two claims; the section below argues the check.
 
 **AND IT ASKS WHO WAS ENTITLED TO SIGN EACH LINK, SINCE 2026-09-13.** It
@@ -5038,7 +5038,7 @@ it.
 missing one is the JWKS: SAML has none, and what a party registers for that
 profile IS a certificate. The key handle differs for the same reason — a `kid`
 where a JWS header names one, a THUMBPRINT where an XML Signature carries the
-certificate itself. `admin-ui/pki_admin.js`'s `PURPOSE_WRITES` is the table, and
+certificate itself. `admin-ui/pki_admin.ts`'s `PURPOSE_WRITES` is the table, and
 `oauth-oidc/CLAUDE.md` 3z argues why the sets may never be merged: a SAML
 assertion is verified ONLY against a certificate registered under the RFC 7522
 attributes, and a chain to this realm's Root is deliberately not enough, because
@@ -5501,7 +5501,7 @@ refusal about a reuse checkbox nobody had ticked.
 
 A field parsed and never drawn falls back to its default on every round trip; a
 field drawn and never parsed is a control that does nothing. **Neither is an
-error anywhere.** So the list is declared here, `admin-ui/pki_admin.js` draws
+error anywhere.** So the list is declared here, `admin-ui/pki_admin.ts` draws
 from it, and `tests/pki_authoring.js` compares the two — which is
 `sts_metadata.js`'s argument about endpoints, one layer down. It caught
 `pki_selected` being absent whenever the object store was empty.
@@ -5708,7 +5708,7 @@ neither.
 require order is not a position. It requires `config`, `crypto`, `helpers` and
 `realms`, none of which requires it back, and it is read by
 `common/credentials.ts`, `authn/authn.ts`, `portal/portal.ts`,
-`admin-ui/admin.js` and `admin-ui/crypto_metadata.js`.
+`admin-ui/admin.ts` and `admin-ui/crypto_metadata.ts`.
 
 ### The split with `crypto.js` is the one every pair in that file makes
 
@@ -6177,7 +6177,7 @@ Development keeps all of it, which is what the test suite drives.
 **two of them asked** — the admin console and the User Portal. The management
 API, SCIM and the SPIRE Server API were entries in an enum that nothing
 consulted, and the prose in `xacml/xacml.ts`, `xacml/xacml_admin.ts`,
-`mgmt-api/admin_api_spec.js` and two test files said all five did.
+`mgmt-api/admin_api_spec.ts` and two test files said all five did.
 
 **THAT IS WORSE THAN AN UNFINISHED LIST AND IS THE LESSON WORTH KEEPING.** An
 unimplemented item on a list is visible. A five-entry enum with prose asserting
@@ -6193,11 +6193,11 @@ one available and an unedited service behaves exactly as it did.
 
 | Surface | Where it asks | What decided first |
 |---|---|---|
-| `admin-console` | `admin-ui/admin.js`'s gate | the two console roles |
+| `admin-console` | `admin-ui/admin.ts`'s gate | the two console roles |
 | `user-portal` | `portal/portal.ts`'s `requireSignIn()` | a sign-on session |
 | `scim` | `scim/scim_auth.ts`'s `authenticate()` funnel | six RFC 7644 schemes, then the scope |
 | `spire-server-api` | `spiffe/spiffe_grpc.ts`'s `prepareCall()` | SPIRE's own per-method table |
-| `management-api` | `mgmt-api/admin_api.js`'s middleware — for an access token (`adminApi.authRequired`, on by default, every mode), and for a console session in **product mode** with that setting off | the token's scopes, or the two console roles |
+| `management-api` | `mgmt-api/admin_api.ts`'s middleware — for an access token (`adminApi.authRequired`, on by default, every mode), and for a console session in **product mode** with that setting off | the token's scopes, or the two console roles |
 | `xacml-pep-api` | `xacml/xacml.ts`'s `pepAccess()`, including `POST /xacml/pip` | a VERIFIED client certificate resolved to a directory entry |
 | `xacml-api` | `xacml/xacml.ts`'s `xacmlAccess()` | the same chain, with `XACML_USER` on the end |
 | `protocol-debugger` | `debugger/debugger_access.ts` | the two console roles, carried in the request |
@@ -6414,8 +6414,8 @@ than a script.
 NOTHING from this repository — not `helpers.js`, not `config.js`, not even the
 logger. So its position in the require order is not a position, and it can never
 close a cycle. That matters more here than it did in the parent project:
-`server.js`, `home/home.ts` (6a), `admin-ui/admin.js` (18),
-`mgmt-api/admin_api.js` (19), `portal/portal.ts` and `sts_metadata.js` (24) all
+`server.js`, `home/home.ts` (6a), `admin-ui/admin.ts` (18),
+`mgmt-api/admin_api.ts` (19), `portal/portal.ts` and `sts_metadata.js` (24) all
 read it, which is six modules spread across the whole require order — including
 the two whose positions are the most constrained in the file. **A version module
 that could drag a route would be a version module that decided where routes

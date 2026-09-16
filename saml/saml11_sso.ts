@@ -176,7 +176,7 @@
 // module on its own.
 //
 // **THE MODULE STILL EXPORTS WHAT IT DID**, from a TRANSITIONAL instance
-// built at the bottom with the real modules, for `admin-ui/admin.js`, the
+// built at the bottom with the real modules, for `admin-ui/admin.ts`, the
 // management API and the tests, which are not converted. That instance also
 // REGISTERS THE ROUTES at load (`registerRoutes(app)`), exactly where rule 1
 // had them registered before. The three per-realm stores and the vocabulary
@@ -3111,7 +3111,7 @@ const saml11Sso = new Saml11Sso({
 });
 saml11Sso.registerRoutes(app);
 
-// Exported for `../admin-ui/admin.js`, which draws /admin/saml11 and needs to
+// Exported for `../admin-ui/admin.ts`, which draws /admin/saml11 and needs to
 // name the same endpoints and the same slug this file does — a console that
 // derived a URL of its own would be a console that tells somebody to configure
 // a path nothing serves.

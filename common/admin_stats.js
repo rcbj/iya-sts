@@ -2239,7 +2239,7 @@ const CLAIM_SET_IDS = Object.keys(CLAIM_SETS);
 // to reach it).
 //
 // DERIVED FROM `kind` rather than typed out, for the reason NAV is derived from
-// SECTIONS in admin-ui/admin.js: a set added to CLAIM_SETS and forgotten in a
+// SECTIONS in admin-ui/admin.ts: a set added to CLAIM_SETS and forgotten in a
 // hand-written list would be a set with a store, an issuance path and no page
 // to configure it on, and nothing would fail. `jwt` is the OAuth/OIDC half;
 // everything else is an assertion. The STORE did not split and must not — one

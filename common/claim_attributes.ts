@@ -981,7 +981,7 @@ export = {
   catalogueRows: attributes.catalogueRows.bind(attributes) as
     ClaimAttributes['catalogueRows'],
   // OIDC Core 5.5's half. Read by oauth-oidc/oauth2.ts at the UserInfo
-  // endpoint and by admin-ui/admin.js for the page that documents it — one
+  // endpoint and by admin-ui/admin.ts for the page that documents it — one
   // resolver, so the vocabulary the console publishes cannot drift from the
   // one the endpoint answers.
   requestedClaimsFor: attributes.requestedClaimsFor.bind(attributes) as

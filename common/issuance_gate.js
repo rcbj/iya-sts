@@ -36,7 +36,7 @@
 //     instead, ahead of the management API's own, which is the failure
 //     CLAUDE.md's require-order table exists to prevent.
 //   * And it would CLOSE A CYCLE. `xacml_admin.js` requires
-//     `admin-ui/admin.js`, which requires `oauth2.js`.
+//     `admin-ui/admin.ts`, which requires `oauth2.js`.
 //
 // A require in the other direction — the PEP reaching into `oauth2.js` — is
 // not a candidate at all: the PEP would then have to know about every caller.

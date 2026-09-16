@@ -89,7 +89,7 @@
 // order is not a position. It requires `config`, `crypto`, `helpers`,
 // `realms` and `error_codes` — none of which requires it back — and it is
 // required by `common/credentials.ts`, `portal/portal.ts`, `authn/authn.ts`,
-// `admin-ui/admin.js`, `admin-ui/crypto_metadata.js` and
+// `admin-ui/admin.ts`, `admin-ui/crypto_metadata.ts` and
 // `admin-core/admin_views.ts`.
 //
 // ---------------------------------------------------------------------------

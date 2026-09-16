@@ -29,7 +29,7 @@
 // SCEP alone in this service reads — and the primitives under it are node's
 // own `sign`/`verify`/`publicEncrypt`/`privateDecrypt`/`createDecipheriv`, with
 // every algorithm it accepts named in the tables below so that
-// `admin-ui/crypto_metadata.js` reads them from here rather than from a
+// `admin-ui/crypto_metadata.ts` reads them from here rather than from a
 // paragraph. It is the arrangement `gnap/gnap_httpsig.ts` has for RFC 9421.
 //
 // ---------------------------------------------------------------------------

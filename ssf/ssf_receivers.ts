@@ -8,7 +8,7 @@
 // `ssf_http.ts` and the error-code registry through its constructor. The inbox
 // store and the SURFACES table stay module-level declarations (a store becomes
 // per realm where it is DECLARED), and the module still exports its old names
-// from a TRANSITIONAL instance for `admin-ui/admin.js`, `portal/portal.ts` and
+// from a TRANSITIONAL instance for `admin-ui/admin.ts`, `portal/portal.ts` and
 // `ssf/ssf.ts`, which require it by those names.
 // ---------------------------------------------------------------------------
 
@@ -65,7 +65,7 @@
 // console's CLIENT entry was in the default realm only. That disagreement is
 // gone: `applications.js` seeds `sts-admin-console` in every realm since
 // 2026-09-11 (its row says why), and a realm has administrators of its own
-// since 2026-09-14 (#32, `admin-ui/admin_scope.js`). The streams' reason never
+// since 2026-09-14 (#32, `admin-ui/admin_scope.ts`). The streams' reason never
 // depended on either. Events happen in the realm they happen in, streams are
 // per realm (`ssf_streams.ts` argues why at length), and the console draws ONE
 // REALM AT A TIME — so a console with no stream in `acme` would show an empty
@@ -102,7 +102,7 @@
 // `common/crypto.js`, `cluster/cluster_secrets.ts`, the error-code registry,
 // `ssf_subjects`, `ssf_events`, `ssf_streams` and `ssf_http` — every one of
 // them a library that registers nothing and none of which requires this file —
-// so it can be required from `admin-ui/admin.js` (18) and `portal/portal.ts`
+// so it can be required from `admin-ui/admin.ts` (18) and `portal/portal.ts`
 // (just after `authn`, 8) without moving a route or closing a cycle, which is
 // the test rule 3e sets.
 // ===========================================================================

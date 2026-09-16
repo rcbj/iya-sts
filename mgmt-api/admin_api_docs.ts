@@ -6,7 +6,7 @@
 // The API explorer: one page that reads the management API's OpenAPI document
 // and renders a form per operation that calls it. Swagger UI's job, done by
 // this repository. Since 2026-09-09 the page is `/admin/api-explorer`, served
-// by `admin-ui/api_explorer.js` through `consoleBody()` below.
+// by `admin-ui/api_explorer.ts` through `consoleBody()` below.
 //
 // WHY NOT SWAGGER UI. It was weighed rather than skipped. swagger-ui-dist is
 // 11.7 MB unpacked with an install-time telemetry dependency of its own, in a
@@ -27,11 +27,11 @@
 // the clause that mattered, and this page never needs it. Everything else in
 // the policy stays as it is, `default-src 'none'` included, and `connect-src
 // 'self'` is what lets the page call the API it documents and nothing else.
-// `admin-ui/api_explorer.js` sets that policy through
+// `admin-ui/api_explorer.ts` sets that policy through
 // `app.contentSecurityPolicy()`; CONTENT_SECURITY_POLICY below is still
 // exported and no longer read by any route.
 //
-// This module registers no route — `admin-ui/api_explorer.js` does — so it is
+// This module registers no route — `admin-ui/api_explorer.ts` does — so it is
 // a library in the sense rule 3 gives, and its position in the require order
 // is free.
 // ---------------------------------------------------------------------------

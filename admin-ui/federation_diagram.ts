@@ -81,7 +81,7 @@
 // The module still exports `render`, `COLOURS` and `hexPath` — `render` bound
 // to a TRANSITIONAL instance at the bottom, `COLOURS` from the class's static
 // member, `hexPath` the delegation picture's own, as it always was — for
-// `admin-ui/admin.js` and the tests. `FederationDiagram` is exported beside
+// `admin-ui/admin.ts` and the tests. `FederationDiagram` is exported beside
 // them for the composition root. Still a LIBRARY: no route.
 // ---------------------------------------------------------------------------
 

@@ -70,7 +70,7 @@
 // page's one route. `DATA_CLASSES` stays a module-level table. The
 // TRANSITIONAL code at the bottom builds one instance from the real modules,
 // registers its route at load where it always was, and exports
-// `encryptionView` and `dataClasses` bound to it, for `mgmt-api/admin_api.js`
+// `encryptionView` and `dataClasses` bound to it, for `mgmt-api/admin_api.ts`
 // and `tests/encryption_report.js`; `EncryptionAdmin` is exported beside them
 // for the composition root.
 // ---------------------------------------------------------------------------
@@ -652,7 +652,7 @@ class EncryptionAdmin {
       }).join(', ') + '.</p>' +
       '<p>That is a call site somebody added without adding a row to ' +
       '<code>DATA_CLASSES</code> in ' +
-      '<code>admin-ui/encryption_admin.js</code>. It is drawn rather than ' +
+      '<code>admin-ui/encryption_admin.ts</code>. It is drawn rather than ' +
       'dropped on purpose: the alternative is a table that goes on looking ' +
       'complete while the totals above it do not add up to the rows ' +
       'below.</p>');
@@ -825,7 +825,7 @@ helpers.log.info('The encryption report is at /admin/encryption: what this ' +
 
 export = {
   EncryptionAdmin: EncryptionAdmin,
-  // For `mgmt-api/admin_api.js`. Rule 7 — the page and the operation read one
+  // For `mgmt-api/admin_api.ts`. Rule 7 — the page and the operation read one
   // function, so the API cannot report a different number from the console.
   encryptionView: encryptionAdmin.encryptionJson.bind(encryptionAdmin) as
     EncryptionAdmin['encryptionJson'],

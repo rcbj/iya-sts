@@ -80,7 +80,7 @@
 // invisible to `/admin-api`, where `xacmlAction()` had already been given
 // that translation, and invisible to `tests/xacml_pap.js`, which asserts the
 // refusal it gets back from the function rather than the sentence a browser is
-// shown. Fixed in `admin-ui/admin.js` so that the console and `/admin-api`
+// shown. Fixed in `admin-ui/admin.ts` so that the console and `/admin-api`
 // cannot disagree about what a refusal said.
 //
 // THE MUTANTS, each applied to a copy of the tree, driven, and reverted:

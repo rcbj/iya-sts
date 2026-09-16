@@ -479,7 +479,7 @@ function acceptsNonconformingResourceMetadata() {
 // Is the management API gated by the console's session and roles WHEN
 // `adminApi.authRequired` IS OFF? Since 2026-09-09 that setting — on by
 // default, in both modes — puts an access token in front of `/admin-api`
-// first, and `mgmt-api/admin_api.js` asks this only below it. See the note
+// first, and `mgmt-api/admin_api.ts` asks this only below it. See the note
 // above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
 // TURNS ON**, because it is the only one that was ever off.
 function gatesManagementApi() {
@@ -675,7 +675,7 @@ const REQUIREMENTS = [
     product: 'The same access token while adminApi.authRequired is on. With ' +
              'it off: gated exactly as /admin is — the same session, the ' +
              'same two roles.',
-    where: 'mgmt-api/admin_api.js' },
+    where: 'mgmt-api/admin_api.ts' },
   { id: 'console',
     what: '/admin requires a sign-in and a role',
     development: 'Required — and it always was; the setting that could turn ' +
@@ -683,7 +683,7 @@ const REQUIREMENTS = [
                  'so what the gate proves is that somebody typed a name that ' +
                  'holds a role.',
     product: 'Required, and the sign-in behind it verifies the credential.',
-    where: 'admin-ui/admin.js' },
+    where: 'admin-ui/admin.ts' },
   { id: 'certificate-enrollment',
     what: 'ACME and EST require TLS; an enrollment credential is verified',
     development: 'ACME (/enroll/acme) and EST (/.well-known/est) answer over ' +

@@ -40,7 +40,7 @@
 // **THE CONSOLE'S TWO ROLES ARE THE EXCEPTION AND THEY STAY WHERE THEY ARE.**
 // `admin_rbac.js` reads `cn=admin-read` and `cn=admin-write` — the default
 // realm's for a service administrator, and since 2026-09-14 (#32) a realm's own
-// for that realm's administrator, whom `admin-ui/admin_scope.js` confines to
+// for that realm's administrator, whom `admin-ui/admin_scope.ts` confines to
 // the realm. What this PEP does is put the roles that module found INTO the
 // request, so the policy decides on them; it does not take over deciding what
 // they are, or which roster they came from.

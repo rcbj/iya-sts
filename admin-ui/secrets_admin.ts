@@ -80,7 +80,7 @@
 // module-level table. The TRANSITIONAL code at the bottom builds one instance
 // from the real modules, registers its route at load where it always was, and
 // exports `secretsView` and `secretNotes` bound to it, for
-// `mgmt-api/admin_api.js` and `tests/secret_store_report.js`; `SecretsAdmin`
+// `mgmt-api/admin_api.ts` and `tests/secret_store_report.js`; `SecretsAdmin`
 // is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
@@ -746,7 +746,7 @@ helpers.log.info('The secret store report is at /admin/secrets: where the ' +
 
 export = {
   SecretsAdmin: SecretsAdmin,
-  // For `mgmt-api/admin_api.js`. Rule 7 — one function behind the page and
+  // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report a different state of the same
   // store.
   secretsView: secretsAdmin.secretsJson.bind(secretsAdmin) as

@@ -93,7 +93,7 @@
 // calls the second); `ApiExplorer` is exported beside them.
 //
 // **NO SCRIPT TEXT LIVES HERE.** The browser script `/explorer.js` serves is
-// `docs.SCRIPT`, read by `mgmt-api/admin_api_docs.js` out of
+// `docs.SCRIPT`, read by `mgmt-api/admin_api_docs.ts` out of
 // `mgmt-api/admin_api_explorer.js`; this file only hands it on.
 // ---------------------------------------------------------------------------
 

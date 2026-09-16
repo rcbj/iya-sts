@@ -597,7 +597,7 @@ that service's through `beginAuthentication()`. It has no constraint against
 each other. It sits between them and OID4VC so that the two browser SSO profiles
 read together in the route order and on `/admin/sts-metadata`.
 
-`../admin-ui/admin.js` (and `../admin-core/`) require it in the ORDINARY
+`../admin-ui/admin.ts` (and `../admin-core/`) require it in the ORDINARY
 direction — a plain require, not another inverted slot — and rule 3e's test is
 why: `common/protocol_stack.js` requires this module at 10a and those at 18 or
 later, so a require from there closes no cycle and moves no route.

@@ -7,7 +7,7 @@
 // it; it is one of the seven scripts the root CLAUDE.md lists.
 //
 // admin_api_docs.js reads it off disk at require time and
-// GET /admin/api-explorer/explorer.js (`admin-ui/api_explorer.js`; it was
+// GET /admin/api-explorer/explorer.js (`admin-ui/api_explorer.ts`; it was
 // /admin-api/docs/explorer.js until 2026-09-09) sends it verbatim, which is
 // why it is a file rather than a string constant in that module: a 400-line
 // program inside a JavaScript string is a program nobody can read a diff of.
@@ -440,7 +440,7 @@
   // The document is read from the CONSOLE's own path rather than from
   // `/admin-api/openapi.json`, so it arrives on the console session this page
   // was drawn with and needs no token of its own. See
-  // admin-ui/api_explorer.js.
+  // admin-ui/api_explorer.ts.
   fetch(SPEC_URL).then(function (response) {
     return response.json();
   }).then(render).catch(function (error) {

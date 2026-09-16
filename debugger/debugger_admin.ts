@@ -20,7 +20,7 @@
 // WHERE IT IS REQUIRED, AND THE ONE LAZY REQUIRE IN IT.
 //
 // `common/protocol_stack.js` requires it beside the other report pages at 18,
-// and `mgmt-api/admin_api.js` at 19 requires it in the ordinary direction for
+// and `mgmt-api/admin_api.ts` at 19 requires it in the ordinary direction for
 // the view. It must not require `debugger_server.ts` at the top: that module
 // requires `tls/tls_server.js`, which registers `/tls` routes and is at 20, so
 // the require would drag those ahead of the management API's (rule 1). The
@@ -223,7 +223,7 @@ debuggerAdmin.registerRoutes(app);
 
 export = {
   DebuggerAdmin: DebuggerAdmin,
-  // For `mgmt-api/admin_api.js` — rule 7, one function behind both.
+  // For `mgmt-api/admin_api.ts` — rule 7, one function behind both.
   debuggerView: debuggerAdmin.debuggerView.bind(debuggerAdmin) as
     DebuggerAdmin['debuggerView']
 };

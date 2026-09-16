@@ -21,7 +21,7 @@
 // A GROUP ITSELF CAN GRANT SOMETHING NOW, AND NONE OF IT GOES THROUGH HERE.
 // This paragraph used to say a group granted nothing at all, bar two. By now:
 // `admin.readGroup` and `admin.writeGroup` (`cn=admin-read`, `cn=admin-write`)
-// decide who may use the ADMIN CONSOLE (`admin-ui/admin_rbac.js`);
+// decide who may use the ADMIN CONSOLE (`admin-ui/admin_rbac.ts`);
 // `roles.remotePepGroup` and `roles.xacmlUserGroup` grant the built-in
 // REMOTE_PEPS and XACML_USER roles; and a group may be a member of a
 // configured role in `ou=roles` (`common/roles.js`). Every one of those reads

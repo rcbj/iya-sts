@@ -5,7 +5,7 @@ Federation relationships: this service as either end of one, in five protocols.
 | File | What it is |
 |---|---|
 | `federation.js` | **The register.** The schema, the two conversions, the CRUD, the counters, the release filter, and the broker resolver (`identityProviderFor()` / `authenticationFor()` / `usableServiceProvider()`). A library (rule 3): it registers nothing. Directory-backed — `ou=federations` IS the store. |
-| `federation_map.ts` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.js`**, which draws the picture — the near-collision is why that file is not called `federation_map.ts` too. |
+| `federation_map.ts` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.ts`**, which draws the picture — the near-collision is why that file is not called `federation_map.ts` too. |
 | `federation_graph.ts` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
 | `federation_http.ts` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. |
 | `federation_sp.ts` | The four endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued. |
@@ -72,7 +72,7 @@ anything heavier.**
 |---|---|---|
 | `common/admin_stats.js` | the release filter, at `jwtClaims()` and `samlAttributes()` | passes both ways: no route moves, no cycle closes |
 | `authn/authn.ts` | the partner buttons on the sign-in screen | same, and see below |
-| `admin-ui/admin.js` | `/admin/federation` | same |
+| `admin-ui/admin.ts` | `/admin/federation` | same |
 | `admin-core/admin_views.ts`, `admin_actions.js` | what `/admin/federation` and `/admin-api` show and do | same; they register nothing either |
 | `ldap/ldap_server.js` | fills `setDirectory()` at its own require time | the ordinary direction, exactly as `applications.js` |
 | `federation/federation_graph.ts` | the graph `/admin/federation/map` is drawn from | the easiest of them: it registers no route itself, and there is nothing in it this module wants |
@@ -118,7 +118,7 @@ Neither knows the other's half.
 ### `PATHS` is in the library and not beside the routes
 
 Three things need `/federation/acs/{id}` and only one of them may require the
-module that serves it. `admin-ui/admin.js` must not — `common/protocol_stack.js`
+module that serves it. `admin-ui/admin.ts` must not — `common/protocol_stack.js`
 loads `federation_sp.ts` at position 10c, BEFORE the console, and a require in the
 other direction would be the reason a route moved the day somebody reorders the
 two. But the console page's whole job is to tell an operator **which URL to
@@ -566,7 +566,7 @@ the first.
 
 ## `/admin/federation/map`: THE REGISTER AS A PICTURE, AND THE ARROW IS THE REQUEST
 
-`federation_graph.ts` builds the model and `../admin-ui/federation_diagram.js`
+`federation_graph.ts` builds the model and `../admin-ui/federation_diagram.ts`
 draws it; `admin.js` registers the route. The split is `delegation.js` /
 `delegation_map.js`'s exactly, and for the same reason: what a box IS belongs to
 whoever knows the registers, and it is the one question a layout engine has no
@@ -615,7 +615,7 @@ assert that nobody has ever signed in for the partner, in the same column that
 means exactly that two rows up.
 
 **IT ADDS NO SCRIPT**, and the argument is made again from scratch in
-`../admin-ui/federation_diagram.js` rather than cited from the delegation
+`../admin-ui/federation_diagram.ts` rather than cited from the delegation
 picture — the root `CLAUDE.md`'s rule about a refused candidate is exactly that
 "the same as the page next door" is not an argument, and that the second refusal
 is not cheaper than the first.

@@ -125,7 +125,7 @@
 // `typeof` each module. Its routes are registered by `registerRoutes(app)`, in
 // the order they always were, and the TRANSITIONAL instance at the bottom
 // calls it at load — where they were registered before (rule 1) — and exports
-// the old names for `admin-ui/admin.js`, `saml11_sso.ts`, `logout/logout.ts`
+// the old names for `admin-ui/admin.ts`, `saml11_sso.ts`, `logout/logout.ts`
 // and the others. The three stores stay module-level `realms.map()`
 // declarations, which is where a store becomes per realm.
 // ---------------------------------------------------------------------------
@@ -3875,7 +3875,7 @@ export = {
   BINDING_ARTIFACT: BINDING_ARTIFACT,
   BINDING_SOAP: BINDING_SOAP,
   NAMEID_FORMATS: NAMEID_FORMATS,
-  // Read by admin-ui/admin.js, which draws the console page for this profile
+  // Read by admin-ui/admin.ts, which draws the console page for this profile
   // and must not reimplement any of it — the same division /admin/groups keeps
   // with ldap_server.js.
   slugOf: saml2Sso.slugOf.bind(saml2Sso) as Saml2Sso['slugOf'],

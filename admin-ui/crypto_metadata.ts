@@ -2774,7 +2774,7 @@ class CryptoMetadata {
   // PROSE FOR THE PAGE. The tables above are written with `backticks` around
   // identifiers, because the SAME strings are served as JSON at `?format=json`
   // and on `/admin-api/crypto`, where the convention every description in this
-  // service follows is markdown — `mgmt-api/admin_api.js`'s operation
+  // service follows is markdown — `mgmt-api/admin_api.ts`'s operation
   // descriptions are full of them.
   //
   // So the conversion belongs HERE, in the renderer, and nowhere else: the JSON
@@ -4355,7 +4355,7 @@ const log = helpers.log;
 
 // ---------------------------------------------------------------------------
 // THE SLOT THIS MODULE FILLS, so that `/admin-api/crypto` can mirror this page
-// without `mgmt-api/admin_api.js` requiring this file. Rule 3e's test answers
+// without `mgmt-api/admin_api.ts` requiring this file. Rule 3e's test answers
 // yes in both directions and that is why it is a slot rather than a require:
 //
 //   * a require from `admin_api.js` (19) to this module (20a) would MOVE
@@ -4387,7 +4387,7 @@ if (typeof admin.setCryptoReporter === 'function') {
   // mirror is missing, which is what this line says rather than leaving a
   // 404 to be explained.
   log.error(errorCodes.tag('STS-ADMIN-0596') +
-            'crypto metadata: this build of admin-ui/admin.js offers no ' +
+            'crypto metadata: this build of admin-ui/admin.ts offers no ' +
             'setCryptoReporter(), so /admin/crypto-metadata is drawn and ' +
             'GET /admin-api/crypto will not answer.');
 }

@@ -64,7 +64,7 @@
 // `admin-core/` — both surfaces read it, and neither owns it. It requires
 // `common/` libraries in the ordinary direction. **`tls/tls_server.js` and
 // `spiffe/spiffe_ca.ts` are required INSIDE the functions that read them**, for
-// rule 1: `admin-ui/pki_admin.js` requires this file at 18a and the TLS module
+// rule 1: `admin-ui/pki_admin.ts` requires this file at 18a and the TLS module
 // registers its routes at 20, so a require at the top would move `/tls*` ahead
 // of the management API. A request handler runs after every module has loaded,
 // so inside a function the require is a cache hit — `request_pool.js`'s
@@ -78,8 +78,8 @@
 // `helpers`, the X.509 encoder and `pkijs` through its constructor — and the
 // three LAZY requires as loader functions, called where the requires were.
 // The module still exports `PAGES` and its three functions from a
-// TRANSITIONAL instance at the bottom, for `admin-ui/pki_admin.js`,
-// `admin-ui/crypto_metadata.js`, `mgmt-api/admin_api.js` and the test;
+// TRANSITIONAL instance at the bottom, for `admin-ui/pki_admin.ts`,
+// `admin-ui/crypto_metadata.ts`, `mgmt-api/admin_api.ts` and the test;
 // `CertificateViews` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 

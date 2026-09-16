@@ -155,7 +155,7 @@ import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 //
 // Thirty-one actions, the tables they dispatch on and the pure helpers they
 // share moved to `admin-core/admin_actions.ts` — see that file's header for
-// what may be in it and what may not. `mgmt-api/admin_api.js` requires it too,
+// what may be in it and what may not. `mgmt-api/admin_api.ts` requires it too,
 // and no longer requires this module for them, which is the whole point: the
 // surface a machine drives is no longer downstream of the surface a person
 // reads.
@@ -2447,12 +2447,12 @@ const SECTIONS = [
       // beside the first for the reason they are both here: each is a REPORT
       // about the whole service rather than a control over one part of it, and
       // a reader who wants "what does this thing do" wants them together.
-      // `admin-ui/crypto_metadata.js` builds it, calls `respond()` for this
+      // `admin-ui/crypto_metadata.ts` builds it, calls `respond()` for this
       // shell, and fills setCryptoReporter() below so that `/admin-api/crypto`
       // can mirror it. Nothing about the nav knows any of that — a page here
       // is a `path` and a `label` whoever builds it.
       // THE THIRD PAGE IN THIS CONSOLE THIS FILE DOES NOT DRAW, and the
-      // newest. `admin-ui/api_explorer.js` builds it at 19a, after the
+      // newest. `admin-ui/api_explorer.ts` builds it at 19a, after the
       // management API whose route table its document is built from. It is
       // filed HERE, beside Service metadata, because the question it answers
       // is the same one at a different scale: that page is every endpoint this
@@ -2752,7 +2752,7 @@ class AdminConsole {
           homed.filter(function (name) { return name === group; }).length;
       if (rows === 0) {
         problems.push('The setting group "' + group + '" has no page to live ' +
-          'on. Add a row to SETTING_HOMES in admin-ui/admin.js naming the ' +
+          'on. Add a row to SETTING_HOMES in admin-ui/admin.ts naming the ' +
           'console page that should draw it, or it is editable nowhere.');
       }
       if (rows > 1) {
@@ -4283,7 +4283,7 @@ class AdminConsole {
       // of those forms has a class at all.
       // ---------------------------------------------------------------------
       // THE PKI PANE (`/admin/pki`). Ten rules, and they are here rather than
-      // in `admin-ui/pki_admin.js` because this is the console's ONE
+      // in `admin-ui/pki_admin.ts` because this is the console's ONE
       // stylesheet: a page with a `<style>` of its own would be the second
       // place a reader has to look for why something is laid out as it is, and
       // `script-src 'none'` is already the reason there is no third.
@@ -4764,7 +4764,7 @@ class AdminConsole {
   // forty pages each remembering to: `admin-core/protocol_endpoints.ts` says
   // which routes a page lists and this adds them to what the page answers. The
   // JSON gets `protocolEndpoints` and the HTML gets a section shaped like
-  // GNAP's, which was the model — `mgmt-api/admin_api.js` adds the same member
+  // GNAP's, which was the model — `mgmt-api/admin_api.ts` adds the same member
   // to the operation mirroring the page, so the two surfaces answer alike.
   //
   // **ONLY WHERE THE REQUEST IS FOR THAT PAGE.** `active` names the tab, and a
@@ -14594,7 +14594,7 @@ class AdminConsole {
   // TO (2026-09-13). The Credentials section below draws `/admin/pki`'s issue,
   // upload and take-off controls, which post to that page's handler — moving a
   // FORM is not moving an ACTION — and that handler asks this for the way back.
-  // Exported for `admin-ui/pki_admin.js`; the destination is REBUILT from the
+  // Exported for `admin-ui/pki_admin.ts`; the destination is REBUILT from the
   // identifier and the list state `back` carries, never echoed, for
   // `permissionsReturnTo()`'s reason one section up.
   // ---------------------------------------------------------------------------
@@ -15980,7 +15980,7 @@ class AdminConsole {
         this.warn('These ' + leftovers.length + ' override a setting whose ' +
         'family this page does not know, so they are shown always rather ' +
         'than with a protocol. Add a row to <code>OVERRIDE_SECTIONS</code> ' +
-        'in <code>admin-ui/admin.js</code> naming the families they belong ' +
+        'in <code>admin-ui/admin.ts</code> naming the families they belong ' +
         'to.') +
         '<table><tr><th>Attribute</th><th>Overrides</th><th>Value</th>' +
         '<th>What it is</th></tr>' +
@@ -22680,7 +22680,7 @@ class AdminConsole {
     return inner;
   }
 
-  // What `mgmt-api/admin_api.js` calls for each of these. It takes the PATH
+  // What `mgmt-api/admin_api.ts` calls for each of these. It takes the PATH
   // rather than an index or a title, because that is what SETTING_HOMES and NAV
   // are keyed by and it is what the API's own route already carries.
   protocolSettingsJsonFor(path) {
@@ -37144,7 +37144,7 @@ let spiffeReader = null;
 // THE SEVENTH SLOT, filled by `./crypto_metadata.js` at its own require time,
 // and rule 3e's test answers yes in both directions at once.
 //
-//   * a require from `mgmt-api/admin_api.js` (19) to that module (20a) would
+//   * a require from `mgmt-api/admin_api.ts` (19) to that module (20a) would
 //     MOVE ROUTES — its own page, and `tls/tls_server.js`'s three, which it
 //     requires for the server certificate — ahead of the management API's own
 //     routes and of ldap, scim and spiffe.
@@ -37178,7 +37178,7 @@ let logoutReader = null;
 //     module requires this one for the shell and the gate — and it would drag
 //     every `/ldap`, `/admin/ldap/*` and (through it) every `/scim` and
 //     `/spiffe` route into the router ahead of this console's own.
-//   * A require from `mgmt-api/admin_api.js` (19) to it would MOVE ROUTES for
+//   * A require from `mgmt-api/admin_api.ts` (19) to it would MOVE ROUTES for
 //     the same reason: that module sits two positions above `ldap_server.js`
 //     (21) precisely so that the management API's routes are registered first.
 //
@@ -37203,7 +37203,7 @@ let logoutReader = null;
 //
 // A require from THIS file to `xacml/xacml_admin.ts` would CLOSE A CYCLE — it
 // requires this one for the shell, the settings block, the gate and the action
-// responder. And a require from `mgmt-api/admin_api.js` (19) to it would MOVE
+// responder. And a require from `mgmt-api/admin_api.ts` (19) to it would MOVE
 // ROUTES: every `/xacml` endpoint and all six `/admin/xacml*` pages would be
 // registered ahead of the management API's own, and ahead of ldap, scim and
 // spiffe. So the slot is the only arrangement left, and it is the same one SSF
@@ -37292,7 +37292,7 @@ let directoryWriter = null;
 // SAME DIRECTION AND SAME REASON AS THE THREE ABOVE: this file must not require
 // ldap_server.js. It passes rule 3e's test both ways round — a require from
 // here would close a cycle (that module requires this one for the page shell
-// and the gate), and a require from mgmt-api/admin_api.js (19) to it would MOVE
+// and the gate), and a require from mgmt-api/admin_api.ts (19) to it would MOVE
 // ROUTES, since ldap_server.js sits at 21 precisely so the management API's own
 // are registered first.
 //
@@ -38159,7 +38159,7 @@ const DEAD_LETTER_COLOURS = {
 //   * a require from THIS file to `../ssf/ssf.ts` would CLOSE A CYCLE: that
 //     module requires this one for the page shell and the gate, exactly as
 //     `../sts_metadata.js` and `./crypto_metadata.js` do.
-//   * a require the other way round — from `mgmt-api/admin_api.js` (19) to
+//   * a require the other way round — from `mgmt-api/admin_api.ts` (19) to
 //     `../ssf/ssf.ts` — would MOVE ROUTES: every `/ssf` endpoint, and the
 //     `/.well-known/ssf-configuration` document, ahead of the management API's
 //     own and of ldap, scim and spiffe.
@@ -38220,7 +38220,7 @@ let truststore = null;
 //
 //   * a require from THIS file to `../ssf/ssf.ts` would CLOSE A CYCLE — that
 //     module requires this one for the page shell and the gate;
-//   * a require from `mgmt-api/admin_api.js` would MOVE ROUTES, putting every
+//   * a require from `mgmt-api/admin_api.ts` would MOVE ROUTES, putting every
 //     `/ssf` endpoint and the well-known document ahead of the management
 //     API's own and of ldap, scim and spiffe.
 //
@@ -38245,7 +38245,7 @@ let caepReporter = null;
 // the same test answering yes in both directions:
 //
 //   * a require from THIS file to `../ssf/ssf.ts` would CLOSE A CYCLE;
-//   * a require from `mgmt-api/admin_api.js` would MOVE ROUTES.
+//   * a require from `mgmt-api/admin_api.ts` would MOVE ROUTES.
 //
 // **A THIRD SLOT RATHER THAN MORE MEMBERS ON THE NINTH.** The signals reporter
 // answers *what streams exist and what is on them*; the CAEP one answers *what
@@ -38971,7 +38971,7 @@ consoleInstance.registerRoutes(app);
 // absent so that the callers type-check as they ran: `messagesOf` (which
 // `est/est_admin.ts` and `scep/scep_admin.ts` test with `typeof` before
 // calling) and `MAX_ROWS` / `DEFAULT_PER_PAGE` (which
-// `mgmt-api/admin_api.js` reads into its OpenAPI document; both moved to
+// `mgmt-api/admin_api.ts` reads into its OpenAPI document; both moved to
 // `admin-core/admin_views.ts`). Each reads as `undefined`, as it did.
 interface AdminConsoleAbsentNames {
   messagesOf?: (req: unknown) => string;
@@ -39025,7 +39025,7 @@ const consoleExports = {
       AdminConsole['configSettingsJson'],
   // ---------------------------------------------------------------------
   // THE ACTIONS ARE NOT HERE ANY MORE (2026-09-12). All thirty-one live in
-  // `admin-core/admin_actions.ts`, which `mgmt-api/admin_api.js` requires
+  // `admin-core/admin_actions.ts`, which `mgmt-api/admin_api.ts` requires
   // directly — so the management API no longer reaches its decisions through
   // the console module.
   //
@@ -39037,7 +39037,7 @@ const consoleExports = {
   // ---------------------------------------------------------------------
   respondToAction: consoleInstance.respondToAction.bind(consoleInstance) as
     AdminConsole['respondToAction'],
-  // For `admin-ui/pki_admin.js`, whose key-pair controls are drawn on an
+  // For `admin-ui/pki_admin.ts`, whose key-pair controls are drawn on an
   // application's page too — see applicationReturnTo().
   applicationReturnTo:
     consoleInstance.applicationReturnTo.bind(consoleInstance) as
@@ -39096,7 +39096,7 @@ const consoleExports = {
     AdminConsole['clippedValues'],
   pageNavPair: consoleInstance.pageNavPair.bind(consoleInstance) as
     AdminConsole['pageNavPair'],
-  // For `admin-ui/pki_admin.js`, whose two key-pair tables share one `per`
+  // For `admin-ui/pki_admin.ts`, whose two key-pair tables share one `per`
   // (2026-09-13) — the same control every multi-list page here draws.
   perPageForm: consoleInstance.perPageForm.bind(consoleInstance) as
     AdminConsole['perPageForm'],
@@ -39206,7 +39206,7 @@ const consoleExports = {
   // what makes "every /admin control has an /admin-api operation" a property of
   // the code rather than a promise in a comment.
   // The trust realm registry's five writes and its whole view, for
-  // mgmt-api/admin_api.js. Rule 7 — every page of this console and every action
+  // mgmt-api/admin_api.ts. Rule 7 — every page of this console and every action
   // of its handlers has an operation on /admin-api, driven through the SAME
   // function, so that a realm created over the API and a realm created on the
   // form cannot come to mean two different things.
@@ -39217,7 +39217,7 @@ const consoleExports = {
   // so the API has two operations, and pointing them at configAction instead
   // would give a caller a door that took any setting config.js holds under a
   // name that promised six (`TOKEN_LIFETIME_KEYS`).
-  // THE TWO NARROW DOORS' KEY LISTS, for mgmt-api/admin_api.js to BUILD their
+  // THE TWO NARROW DOORS' KEY LISTS, for mgmt-api/admin_api.ts to BUILD their
   // request schemas from rather than to keep a second copy of.
   //
   // Both had gone stale in exactly the way a second copy does. The document

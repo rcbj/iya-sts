@@ -488,7 +488,7 @@ class SsfHttp {
     //
     // **THE REQUIRE IS LAZY AND HAS TO BE.** `tls/tls_server.js` registers the
     // /tls routes (rule 1), and this file is required by `ssf.ts` at 23b —
-    // but also, through `ssf_receivers.ts`, by `admin-ui/admin.js` at 18 and
+    // but also, through `ssf_receivers.ts`, by `admin-ui/admin.ts` at 18 and
     // `portal/portal.ts` just after `authn` (8), either of which would drag
     // /tls ahead of the management API's own routes. Here every module is
     // loaded and it is a cache hit.

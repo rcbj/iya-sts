@@ -2039,7 +2039,7 @@ class Authn {
   // of the same decision. The two have to agree: a gate that accepted an `acme`
   // session while the roster could only name default-realm people would let
   // somebody in and then insist they were nobody. (SINCE 2026-09-14 (#32) a
-  // realm has a roster of its own, confined to it by `admin-ui/admin_scope.js`,
+  // realm has a roster of its own, confined to it by `admin-ui/admin_scope.ts`,
   // and the gate asks the roster of the realm the person signed in through; the
   // default realm's is only what `admin_rbac.js` reads when no realm is named —
   // authn/CLAUDE.md and admin-ui/CLAUDE.md 8d. This function still reads the
@@ -2062,7 +2062,7 @@ class Authn {
   // Two properties this keeps from the version it replaced:
   //
   //   * IT GRANTS NOTHING. Its one caller is `consoleSignOn()` in
-  //     `admin-ui/admin.js`, which REPORTS the sign-on session behind the
+  //     `admin-ui/admin.ts`, which REPORTS the sign-on session behind the
   //     console's own relying-party session; since 2026-09-06 the gate
   //     (`gateStateFor()`, now in `admin-core/admin_views.ts`) reads the
   //     relying-party session and not this. No token is issued on the session

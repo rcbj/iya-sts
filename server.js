@@ -670,7 +670,7 @@ serviceState.start().then(function (both) {
   // in the default realm, made if absent, in both console roles, and forced to
   // change its password at its first sign-in. `credentials.bootstrap()` below
   // then gives that account its generated password in product mode. See
-  // admin-ui/admin_rbac.js's seedBootstrapAdministrator().
+  // admin-ui/admin_rbac.ts's seedBootstrapAdministrator().
   //
   // **ONCE FOR THE CLUSTER, SINCE 2026-09-14 (#46 section 8).** Several nodes
   // cold-started against one empty store each seeded the account and each

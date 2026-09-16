@@ -175,7 +175,7 @@ share — about 3,100 lines with their comments — to
 **They were not moved because they were wrong.** Not one of them had ever
 touched `req`, `res` or markup; each took a parsed body and an actor and
 returned a result object. They were a shared logic layer already, and this
-directory was simply the wrong address for it — `mgmt-api/admin_api.js`
+directory was simply the wrong address for it — `mgmt-api/admin_api.ts`
 required this module to reach them, which made the surface a machine drives
 downstream of the surface a person reads.
 
@@ -1702,7 +1702,7 @@ store's own spelling and resolves to the same row from every realm.
 Rule 3e's test is whether a require would close a cycle **or move a route**. A
 require from `admin.ts` to that module WOULD close a cycle — it requires this
 one for the shell — so the obvious direction is out. But a require from
-`mgmt-api/admin_api.js` (19) to it moves NOTHING: the only route it registers is
+`mgmt-api/admin_api.ts` (19) to it moves NOTHING: the only route it registers is
 `/admin/pki`, and it requires only `admin.ts` and `common/pki.js`, which is a
 LIBRARY (rule 3).
 
@@ -2057,7 +2057,7 @@ under rule 3e in the root `CLAUDE.md`; cite a slot by its setter's name.
 **`setLogoutReader()` is the sixth and `setCryptoReporter()` is the seventh**,
 and both passed that test in BOTH directions rather than one — which is the bar
 a proposal should be held to. The crypto one: a require from
-`../mgmt-api/admin_api.js` (19) to `./crypto_metadata.ts` (20a) would move that
+`../mgmt-api/admin_api.ts` (19) to `./crypto_metadata.ts` (20a) would move that
 page's route and `../tls/tls_server.js`'s three ahead of the management API's
 own and of ldap, scim and spiffe; and a require from THIS file to it would close
 a cycle, because it requires this one for the shell. `cryptoView(req)` is what
@@ -2073,7 +2073,7 @@ means "put a person in the directory", so widening it would have been a change
 to a slot four callers already fill correctly in order to add something none of
 them wants. It passes rule 3e's test both ways round for
 `setDirectoryWriter()`'s reasons exactly — a require from here would close a
-cycle, and one from `../mgmt-api/admin_api.js` (19) to `ldap_server.js` (21)
+cycle, and one from `../mgmt-api/admin_api.ts` (19) to `ldap_server.js` (21)
 would move every `/ldap` route ahead of the management API's own.
 
 **IT IS VALIDATED WHOLE**, for `setLogoutReader()`'s reason: a filler that
@@ -5012,7 +5012,7 @@ other.
 
 ### What did not move
 
-`mgmt-api/admin_api_docs.js` and `mgmt-api/admin_api_explorer.js` are still in
+`mgmt-api/admin_api_docs.ts` and `mgmt-api/admin_api_explorer.js` are still in
 that directory: the stylesheet, the browser script and the realm-prefix argument
 belong to that API's document rather than to this console's shell, and this page
 requires them. `admin_api_docs.js` grew a `consoleBody()` beside its `page()` —
@@ -5815,7 +5815,7 @@ things are this console's.
   `userReturnTo(body, who, '#credential-controls')`, which gained that anchor
   (and `#credentials`) beside the ones it already allowed.
 * **`base: baseUrlOf(req)` IS HANDED TO THE ACTION**, so the reset link names
-  the address the administrator is using. `mgmt-api/admin_api.js` passes the
+  the address the administrator is using. `mgmt-api/admin_api.ts` passes the
   same, which is what keeps the link realm-prefixed from both doors.
 
 `tests/admin_credential_controls.js` drives the actions, the portal page and the

@@ -6,7 +6,7 @@
 // THE OAUTH 2.0 / OIDC MONITORING OPERATIONS OF /admin-api (2026-09-13).
 //
 // Two operations mirroring `/admin/oauth2/monitor` and the one control on it,
-// spread into `mgmt-api/admin_api.js`'s table beside ACME's, EST's and SCEP's.
+// spread into `mgmt-api/admin_api.ts`'s table beside ACME's, EST's and SCEP's.
 // Both doors call `oauth2_monitor_console.ts` (rule 7).
 //
 // **THIS FILE REGISTERS NO ROUTE AND REQUIRES ITS VIEW MODEL LAZILY**, inside
@@ -32,7 +32,7 @@
 // constructor (`OAuth2MonitorApiDeps`), the view model among them as a
 // LOADER so it is still required lazily, and the module still exports
 // `ROUTES` from a TRANSITIONAL instance built from the real modules, for
-// `mgmt-api/admin_api.js`, which is not converted. The table is built by
+// `mgmt-api/admin_api.ts`, which is not converted. The table is built by
 // `buildRoutes()`, called at load where it was declared.
 // ---------------------------------------------------------------------------
 

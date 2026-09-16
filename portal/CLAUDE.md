@@ -695,7 +695,7 @@ path was wrong, so the flow most people take was the one that failed.
 **AND THE SAME MISTAKE WAS IN TWO OTHER FILES**, found by looking for it rather
 than by being told: the federation index's *The sign-in screen* link
 (`federation/federation_sp.ts`) and the admin console's 401 for a form posted
-with an expired session (`admin-ui/admin.js`, whose link was ALSO swallowed into
+with an expired session (`admin-ui/admin.ts`, whose link was ALSO swallowed into
 a `<details>` summary and so was not clickable at all). The rule read off all
 three: **`/authn/login` is never a destination — link to a page that STARTS a
 sign-in, and let it mint the record.**

@@ -106,8 +106,8 @@
 // slot — stay where they were, with the same writers: `setDirectory()`, now a
 // method, and `inRosterRealm()`'s binding for one call. The module still
 // exports every name it did, the realm-taking wrappers included, from a
-// TRANSITIONAL instance at the bottom, for `admin-ui/admin.js`,
-// `mgmt-api/admin_api.js`, `ldap/ldap_server.js`, `server.js`, the
+// TRANSITIONAL instance at the bottom, for `admin-ui/admin.ts`,
+// `mgmt-api/admin_api.ts`, `ldap/ldap_server.js`, `server.js`, the
 // `admin-core/` layer and the tests; `AdminRbac` is exported beside them for
 // the composition root.
 // ---------------------------------------------------------------------------

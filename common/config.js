@@ -803,7 +803,7 @@ const SETTINGS = [
     path: 'admin.bootstrapUsername', env: 'STS_ADMIN_BOOTSTRAP_USERNAME',
     type: 'string', dflt: 'admin', runtime: false,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     restartReason: 'the bootstrap runs once, between the persistence store ' +
                    'opening and the listener binding, so a change after that ' +
@@ -1461,7 +1461,7 @@ const SETTINGS = [
   // them.
   //
   // They are `totp.` and not `authn.` because the group is what decides the
-  // console page (`SETTING_HOMES` in `admin-ui/admin.js`), and what they
+  // console page (`SETTING_HOMES` in `admin-ui/admin.ts`), and what they
   // configure is a MECHANISM rather than the sign-in screen that offers it.
   // `authn.unauthenticatedSessions` is in the `Roles` group for the mirror
   // image of the same reason.
@@ -4971,7 +4971,7 @@ const SETTINGS = [
   { key: 'admin.readGroup', group: 'Admin console', label: 'Admin Read role',
     env: 'ADMIN_READ_GROUP', type: 'string', dflt: 'admin-read', runtime: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     description: 'The cn of the directory group whose members may READ the ' +
                  'console — every page, and every ?format=json view of one. ' +
@@ -4984,7 +4984,7 @@ const SETTINGS = [
   { key: 'admin.writeGroup', group: 'Admin console', label: 'Admin Write role',
     env: 'ADMIN_WRITE_GROUP', type: 'string', dflt: 'admin-write',
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     runtime: true,
     description: 'The cn of the directory group whose members may POST a ' +
@@ -5009,7 +5009,7 @@ const SETTINGS = [
     label: 'Require an access token on /admin-api',
     env: 'ADMIN_API_AUTH_REQUIRED', type: 'bool', dflt: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     runtime: true,
     description: 'Every call into /admin-api must present a Bearer access ' +
@@ -5025,7 +5025,7 @@ const SETTINGS = [
     label: 'The management API client\'s secret',
     env: 'ADMIN_API_CLIENT_SECRET', type: 'string', dflt: '',
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     secret: true,
     restartReason: 'the seeded registration is written once, at startup, so ' +
@@ -5053,14 +5053,14 @@ const SETTINGS = [
   // as the ONLY audience would refuse every token minted under another name
   // for the same process — `sts:8081` on the compose network, the random host
   // port the local launcher publishes — so while this row is still at its
-  // default (or set empty), mgmt-api/admin_api.js accepts this value AND
+  // default (or set empty), mgmt-api/admin_api.ts accepts this value AND
   // `/admin-api` under the request's own base. Set to anything else, it pins
   // exactly that one value, as it always did.
   { key: 'adminApi.audience', group: 'Management API',
     label: 'The audience an /admin-api token must carry',
     env: 'ADMIN_API_AUDIENCE', type: 'string', derived: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     dflt: function () {
       log.debug("Entering dflt().");
@@ -5084,7 +5084,7 @@ const SETTINGS = [
     label: 'Open until the bootstrap administrator signs in',
     env: 'ADMIN_OPEN_WHEN_EMPTY', type: 'bool', dflt: true, runtime: true,
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
-    // decides who administers the service — see admin-ui/admin_scope.js.
+    // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     description: 'SINCE 2026-09-13, on a service that seeded its bootstrap ' +
                  'administrator (admin.bootstrapUsername): ON, every ' +
@@ -10299,7 +10299,7 @@ function processValue(key) {
 // ---------------------------------------------------------------------------
 // THE BASE URL OF THE MANAGEMENT API, AS THE PROCESS KNOWS IT WITHOUT A
 // REQUEST. `adminApi.audience`'s derived default, and what
-// mgmt-api/admin_api.js compares a token's `aud` against beside the
+// mgmt-api/admin_api.ts compares a token's `aud` against beside the
 // request-relative base.
 //
 // Read process-wide, for the reason the audience itself is computed outside
@@ -10424,7 +10424,7 @@ function checkOverride(key, raw, forRealm) {
   // process, settable on a realm, because a realm binds no socket. realms.js
   // passes `true` explicitly, because it is validating a realm's overrides
   // before any realm is ambient. The OTHER CALLERS passed nothing: three in
-  // admin-core/admin_actions.ts (admin-ui/admin.js when this was written),
+  // admin-core/admin_actions.ts (admin-ui/admin.ts when this was written),
   // which pre-validate a whole section before writing any of it, and
   // setOverride() here (which passes the realm it computed since then). All of
   // them are inside a request, so the realm the write lands in is the ambient

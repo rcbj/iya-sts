@@ -49,7 +49,7 @@
 // the top of the page. `from` is an element id and is refused unless it looks
 // like one: it is written into an `href`.
 //
-// A LIBRARY: it registers no route. It requires `admin-ui/admin.js` for the
+// A LIBRARY: it registers no route. It requires `admin-ui/admin.ts` for the
 // escaper and `admin-ui/pqc_badge.ts` for the post-quantum icon, and nothing
 // requires it but the two pages (and `tests/certificate_details.js`).
 // ===========================================================================

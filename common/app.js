@@ -531,7 +531,7 @@ app.use(function (req, res, next) {
   // deliberately "does it still carry the clause" rather than "is it still the
   // value I set": several routes here legitimately relax the policy, and
   // every one of them goes through contentSecurityPolicy(), which cannot drop
-  // the framing clauses, or (mgmt-api/admin_api_docs.js, a leaf) writes them
+  // the framing clauses, or (mgmt-api/admin_api_docs.ts, a leaf) writes them
   // out itself — so a policy without them was set by something that is not
   // us, and the base policy is put back.
   //

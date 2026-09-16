@@ -8,7 +8,7 @@
 //
 // Every control on /admin has an operation on /admin-api behind it — rule 7 —
 // and until 2026-09-12 the way the two were kept from disagreeing was that
-// `mgmt-api/admin_api.js` REQUIRED `admin-ui/admin.js` and called its action
+// `mgmt-api/admin_api.ts` REQUIRED `admin-ui/admin.ts` and called its action
 // functions. That worked, and it made the API depend on the console: the
 // surface a machine drives sat downstream of the surface a person reads, and
 // the console was the home of logic that was never the console's.
@@ -19,7 +19,7 @@
 // wrote its audit row and returned `{ ok, errors, ... }`. They were already a
 // shared logic layer. What was wrong was where they lived. So this file is a
 // MOVE and not a rewrite — every function below is the one that was in
-// `admin-ui/admin.js`, carrying the comment that argued it, and the behaviour
+// `admin-ui/admin.ts`, carrying the comment that argued it, and the behaviour
 // is intended to be identical to the line.
 //
 // ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@
 // Seven of these actions need something that is filled by a module further
 // down the require order: the logout reader, the directory and group writers,
 // the three Shared Signals reporters, and the XACML pages. Those are INVERTED
-// HOOKS on `admin-ui/admin.js` (rule 3e), filled at require time by
+// HOOKS on `admin-ui/admin.ts` (rule 3e), filled at require time by
 // `ldap/ldap_server.js`, `ssf/ssf.ts`, `logout/logout.ts` and
 // `xacml/xacml_admin.ts` — and every one of those fillers, along with every
 // sentence of CLAUDE.md that explains why the hook has to exist, names that
@@ -87,7 +87,7 @@
 // second.** Nothing here is ever assigned from anywhere but the console's own
 // setter, so the two cannot drift apart; what would make them two answers is a
 // second writer, and `tests/admin_actions_layer.js` asserts that each of the
-// seven setters in `admin-ui/admin.js` writes both — and the eighth,
+// seven setters in `admin-ui/admin.ts` writes both — and the eighth,
 // `setTruststore()`, filled by `common/protocol_stack.js` since 2026-09-12
 // (below).
 // ===========================================================================
@@ -99,7 +99,7 @@
 // each; `oauth2` is among them although no action calls it, so that its
 // require stays where it was. Every action is a method, and the module still
 // exports every old name — bound to a TRANSITIONAL instance built at the
-// bottom — for `admin-ui/admin.js`, `mgmt-api/admin_api.js`,
+// bottom — for `admin-ui/admin.ts`, `mgmt-api/admin_api.ts`,
 // `admin_views.ts` and the tests; `AdminActions` is exported beside them for
 // the composition root.
 //
@@ -112,7 +112,7 @@
 // The helpers this layer reaches for, and no more. `numberWord` builds the
 // count in applicationsAction()'s refusal sentence and `signJwt` is reached
 // from one action that mints; both were missed on the first pass of this move
-// because the destructure they came from in admin-ui/admin.js is spread over
+// because the destructure they came from in admin-ui/admin.ts is spread over
 // thirty comment-interleaved lines. The symptom was a 500 with
 // `numberWord is not defined` on exactly one refusal path — which is the kind
 // of thing only a test that drives the surface can find, and
@@ -188,7 +188,7 @@ import krb5PersonKeys = require('../kerberos/krb5_person_keys');
 
 // ---------------------------------------------------------------------------
 // THE SEVEN, AS THE CONSOLE HANDS THEM OVER. See the header: this file does
-// not own them and does not ask for them — `admin-ui/admin.js` forwards each
+// not own them and does not ask for them — `admin-ui/admin.ts` forwards each
 // one from inside the setter the filler already calls. They are `let` and not
 // `const` because every one of them is filled AFTER this file is required.
 // ---------------------------------------------------------------------------
@@ -201,7 +201,7 @@ let riscReporter = null;
 let xacmlPages = null;
 // THE EIGHTH, AND THE ONE NOT FILLED BY THE MODULE THAT OWNS IT (2026-09-12):
 // the client-certificate truststore, whose array is `tls/tls_server.js`'s and
-// whose slot `common/protocol_stack.js` fills. `admin-ui/admin.js`'s
+// whose slot `common/protocol_stack.js` fills. `admin-ui/admin.ts`'s
 // `setTruststore()` carries the argument.
 let truststore = null;
 

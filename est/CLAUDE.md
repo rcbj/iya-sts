@@ -23,7 +23,7 @@ when registered).
 | `est_codec.ts` | **The four wire shapes EST adds and nothing else**: a request body decoded strictly (RFC 8951), a certs-only CMS message, the CSR attributes document and the `multipart/mixed` server-key response. A LIBRARY (rule 3): no route, requires only `helpers.js`. |
 | `est_console.ts` | The view and action model both admin doors render — `estView()`, `estMonitorView()`, `estAction()`. No route, no `res`, no markup (`gnap/gnap_console.ts`'s arrangement; `tests/admin_actions_layer.js` allows it to require `admin-core/admin_views`). |
 | `est_admin.ts` | `GET/POST /admin/est` (Protocols) and `GET /admin/est/monitor` (Monitoring), drawn in the console shell through `admin.respond()`. |
-| `est_api.ts` | `module.exports = { ROUTES }` — `GET /admin-api/est`, `GET /admin-api/est/monitor`, `POST /admin-api/est/:action` — spread into `mgmt-api/admin_api.js`'s table. Requires `./est_console` LAZILY inside each handler (rule 1). |
+| `est_api.ts` | `module.exports = { ROUTES }` — `GET /admin-api/est`, `GET /admin-api/est/monitor`, `POST /admin-api/est/:action` — spread into `mgmt-api/admin_api.ts`'s table. Requires `./est_console` LAZILY inside each handler (rule 1). |
 
 ## The decisions
 

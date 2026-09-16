@@ -59,7 +59,7 @@ the SSF scope.
 
 **After `admin-ui/admin`** and after `ssf/ssf` — it requires `gnap_admin.ts`,
 which draws two console pages in the shell, and installs its subject scope on
-`ssf/ssf_streams.ts` at require time. `mgmt-api/admin_api.js` reaches its view
+`ssf/ssf_streams.ts` at require time. `mgmt-api/admin_api.ts` reaches its view
 layer (`gnap_console.ts`) lazily, inside the three operations, so the management
 API does not move `/gnap` ahead of itself. Requires `gnap_interact.ts` and
 `gnap_admin.ts` itself, so the family is ONE line in the require order.

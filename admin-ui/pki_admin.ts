@@ -45,12 +45,12 @@
 // the drawing.
 //
 // ---------------------------------------------------------------------------
-// WHY IT IS AT 18a, ABOVE `mgmt-api/admin_api.js`, AND NOT A THIRTEENTH SLOT.
+// WHY IT IS AT 18a, ABOVE `mgmt-api/admin_api.ts`, AND NOT A THIRTEENTH SLOT.
 //
 // Rule 3e's test is whether a require would close a cycle or move a route. A
 // require from `admin.js` to this file WOULD close a cycle — this requires that
 // one for the shell — so the obvious direction is out. But a require from
-// `mgmt-api/admin_api.js` (19) to this file moves NOTHING: the only route it
+// `mgmt-api/admin_api.ts` (19) to this file moves NOTHING: the only route it
 // registers is `/admin/pki`, which collides with nothing and is not in any
 // other module's path space.
 //
@@ -74,7 +74,7 @@
 //
 // The TRANSITIONAL code at the bottom builds one instance from the real
 // modules, registers its routes at load, where they always were — still at
-// 18a, so `mgmt-api/admin_api.js`'s require of this file stays a cache hit —
+// 18a, so `mgmt-api/admin_api.ts`'s require of this file stays a cache hit —
 // and exports the old names from it: `pkiView`, `pkiAction`,
 // `pkiActionNames`, `paneHtml` and `returnTo`. `PkiAdmin` is exported beside
 // them for the composition root.
@@ -159,7 +159,7 @@ interface PkiAdminDeps {
 // `next ›` under People silently advancing the Applications table. The names
 // are the JSON members' own with `Page` on the end, answered by `issuedPaging`
 // and `personsPaging`, which is `/admin-api`'s one-name-per-list rule
-// (`detailPagingParameters()` in `mgmt-api/admin_api.js`): a caller that can
+// (`detailPagingParameters()` in `mgmt-api/admin_api.ts`): a caller that can
 // read the reply can write the request without a table between the two.
 //
 // **The Applications table pages its ROWS and the People table pages PEOPLE.**
@@ -4782,7 +4782,7 @@ pkiAdmin.registerRoutes(app);
 
 export = {
   PkiAdmin: PkiAdmin,
-  // For `mgmt-api/admin_api.js`. Rule 7: every control on this page has an
+  // For `mgmt-api/admin_api.ts`. Rule 7: every control on this page has an
   // operation, and both go through THESE functions so the API decides nothing
   // the console does not.
   pkiView: pkiAdmin.pkiJson.bind(pkiAdmin) as PkiAdmin['pkiJson'],

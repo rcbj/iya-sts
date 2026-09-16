@@ -21,7 +21,7 @@ family here and the first one that TALKS BACK.
 
 Twelve of the thirteen register nothing (rule 3), so their position in the
 route order is not a position. `ssf.ts` is required at **23b in
-`common/protocol_stack.js`** — after `admin-ui/admin.js`, whose slots
+`common/protocol_stack.js`** — after `admin-ui/admin.ts`, whose slots
 (`setSignalsReporter`, `setCaepReporter`, `setRiscReporter`) it fills, and
 before `sts_metadata.js`, which is last for everybody.
 
@@ -322,11 +322,11 @@ fourteen, that is the design going wrong.
 * `common/config.js` — a `RISC` group of eleven, `env/defaults.js`
   regenerated.
 * `common/audit.js` — four actions in the existing `signals` category.
-* `admin-ui/admin.js` — the tenth slot, `/admin/risc`, `/admin/risc-accounts`
+* `admin-ui/admin.ts` — the tenth slot, `/admin/risc`, `/admin/risc-accounts`
   and `/admin/risc-accounts/account`, `riscAccountChooser()`, two `SECTIONS`
   rows, two `LIST_PARAMS` rows and a `SETTING_HOMES` row.
-* `mgmt-api/admin_api.js` — two GETs and a POST with three actions;
-  `mgmt-api/admin_api_spec.js` — the `Risc` schema.
+* `mgmt-api/admin_api.ts` — two GETs and a POST with three actions;
+  `mgmt-api/admin_api_spec.ts` — the `Risc` schema.
 * `sts_metadata.js` — one `SPECS` entry and **six** `ENDPOINTS` rows, three
   admin and three management API — which is the count the CAEP block's own
   note warns about: a family's protocol endpoints are obvious and the CONSOLE
@@ -1124,10 +1124,10 @@ to set, because the algorithm and the key are what was actually used.
 ## THE CONSOLE AND THE MANAGEMENT API
 
 `/admin/ssf` and `/admin-api/ssf` reach this directory through
-**`admin.setSignalsReporter()`**, the eighth slot on `admin-ui/admin.js`, and
+**`admin.setSignalsReporter()`**, the eighth slot on `admin-ui/admin.ts`, and
 rule 3e's test answers yes in both directions at once: a require from
 `admin.js` to `ssf.ts` would CLOSE A CYCLE (this file requires that one for the
-page shell and the gate), and a require from `mgmt-api/admin_api.js` would MOVE
+page shell and the gate), and a require from `mgmt-api/admin_api.ts` would MOVE
 ROUTES — every `/ssf` endpoint and the well-known document ahead of the
 management API's own and of ldap, scim and spiffe.
 
@@ -1169,13 +1169,13 @@ For the next person adding one, this family's full list:
   reads literally say something false about the one attribute here with an
   outbound request behind it;
 * `common/audit.js` — a `signals` category and eight actions;
-* `admin-ui/admin.js` — the eighth slot, `/admin/ssf` and its action route, a
+* `admin-ui/admin.ts` — the eighth slot, `/admin/ssf` and its action route, a
   `SECTIONS` row with its `blurb`, and a `SETTING_HOMES` row;
-* `admin-ui/crypto_metadata.js` — a row in `FAMILIES`, whose `name` must match
+* `admin-ui/crypto_metadata.ts` — a row in `FAMILIES`, whose `name` must match
   the card in `sts_metadata.js`'s `PROTOCOLS` exactly, or the drift check
   reports it in both directions;
-* `mgmt-api/admin_api.js` — a GET and a POST with four actions;
-  `mgmt-api/admin_api_spec.js` — the `Ssf` schema;
+* `mgmt-api/admin_api.ts` — a GET and a POST with four actions;
+  `mgmt-api/admin_api_spec.ts` — the `Ssf` schema;
 * `sts_metadata.js` — five `SPECS` entries, **fourteen** `ENDPOINTS` rows and a
   `PROTOCOLS` card. It was eleven until 2026-09-01, and the three that were
   missing are the ones that are not `/ssf/*` at all: `/admin/ssf`,
@@ -1211,11 +1211,11 @@ purpose — the point of the section above is that this one is short.
 * `common/audit.js` — four actions in the EXISTING `signals` category, because
   a CAEP event travelling is an `ssf.event.transmit` and a second category
   would have split one delivery across two filters;
-* `admin-ui/admin.js` — the ninth slot, `/admin/caep` and
+* `admin-ui/admin.ts` — the ninth slot, `/admin/caep` and
   `/admin/caep-sessions` with their action routes, two `SECTIONS` rows with
   their blurbs, and a `SETTING_HOMES` row;
-* `mgmt-api/admin_api.js` — a GET and a POST with three actions;
-  `mgmt-api/admin_api_spec.js` — the `Caep` schema;
+* `mgmt-api/admin_api.ts` — a GET and a POST with three actions;
+  `mgmt-api/admin_api_spec.ts` — the `Caep` schema;
 * `sts_metadata.js` — one `SPECS` entry and **four** `ENDPOINTS` rows, of
   which the two that are easy to forget are again the CONSOLE and MANAGEMENT
   API ones rather than the protocol's own;

@@ -6,7 +6,7 @@
 // THE ACME OPERATIONS OF /admin-api (2026-09-13).
 //
 // Three operations mirroring the two pages `acme_admin.ts` draws and the six
-// controls on the first of them, spread into `mgmt-api/admin_api.js`'s table by
+// controls on the first of them, spread into `mgmt-api/admin_api.ts`'s table by
 // the integrator. Both doors call `acme_console.ts` (rule 7).
 //
 // **THIS FILE REGISTERS NO ROUTE AND REQUIRES ITS VIEW MODEL LAZILY**, inside

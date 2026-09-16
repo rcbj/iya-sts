@@ -173,7 +173,7 @@ const SUBSYSTEMS = [
   { id: 'PKI', label: 'Certificate authority',
     where: 'common/pki.js, common/pki_authoring.ts, ' +
            'common/pki_revocation.js, common/revocation_status.js, pki/, ' +
-           'admin-ui/pki_admin.js',
+           'admin-ui/pki_admin.ts',
     what: 'The Root, Intermediate and Issuing CAs, certificate authoring, ' +
           'the CRL and OCSP responders, and the revocation check a presented ' +
           'certificate is held to.' },
@@ -10800,7 +10800,7 @@ const CODES = [
       'so that operation runs unvalidated.',
     spec: '' },
   { code: 'STS-API-0011',
-    summary: 'The crypto reporter slot that admin-ui/crypto_metadata.js ' +
+    summary: 'The crypto reporter slot that admin-ui/crypto_metadata.ts ' +
       'fills was not installed, so the crypto report, the key list or ' +
       'a key export could not be answered.',
     spec: 'HTTP 503 { ok: false, errors }' },

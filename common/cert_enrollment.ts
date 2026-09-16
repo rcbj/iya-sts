@@ -42,7 +42,7 @@
 // front of the router. Beyond `common/`'s leaves (helpers, config, audit,
 // error_codes, keystore, mode, realms and the two vendored PKI modules) it
 // requires `common/pki.js`, `common/credentials.ts`,
-// `common/applications.js`, `admin-ui/admin_rbac.js`, `oauth-oidc/mtls.js`
+// `common/applications.js`, `admin-ui/admin_rbac.ts`, `oauth-oidc/mtls.js`
 // and `cluster/cluster_claims.js` / `cluster_capabilities.js`, all
 // libraries.
 //

@@ -906,7 +906,7 @@ product process must not be a way to add one.
 
 **REFUSED RATHER THAN GATED, AND THAT IS A STRUCTURAL CHOICE.** The natural gate is
 `/admin-api`'s access token with `admin:write`, and that verification is middleware inside
-`mgmt-api/admin_api.js`, exported as nothing — a copy here would be a second answer to who
+`mgmt-api/admin_api.ts`, exported as nothing — a copy here would be a second answer to who
 may administer this service. **That argument still holds for these two routes and they are
 unchanged**; what it no longer implies is that product mode has no runtime door. It read
 *"there is no management-API truststore operation either … the runtime door still to
@@ -946,7 +946,7 @@ Four things about it are decisions:
   `anchors`). The durable door is still `tls.trustAnchorsFile`. *Superseded later
   the same day — see* A RUNTIME ANCHOR SURVIVES A RESTART *below.*
 * **THE SLOT IS FILLED BY `common/protocol_stack.js`, NOT BY THIS MODULE, AND THAT IS
-  FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.js`'s require —
+  FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.ts`'s require —
   `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts` → here — so a
   `require('../admin-ui/admin')` at its top level would be a cycle and would find no
   `setTruststore` on that module's half-built exports. The stack fills it on the line after

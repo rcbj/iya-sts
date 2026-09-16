@@ -19,7 +19,7 @@
 //     `setLogoutReader()` slot exactly as before — with a plain `require` of
 //     the console at that same point, because that is where the module read it.
 //   * The module still exports its old names from that instance for
-//     `admin-ui/admin.js`, `mgmt-api/admin_api.js` and the tests.
+//     `admin-ui/admin.ts`, `mgmt-api/admin_api.ts` and the tests.
 // ---------------------------------------------------------------------------
 
 //
@@ -2644,7 +2644,7 @@ export = {
   // EVERY live session in the service, for /admin/sessions and
   // GET /admin-api/sessions. It is on this slot rather than on one of its own
   // for the reason the slot exists at all — see setLogoutReader() in
-  // admin-ui/admin.js — and it is validated with the other three, because a
+  // admin-ui/admin.ts — and it is validated with the other three, because a
   // reader that installed the inventory and not this would leave that page
   // saying no reader is loaded on a service that plainly has one.
   liveSessions: logout.liveSessions.bind(logout) as Logout['liveSessions'],

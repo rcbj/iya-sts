@@ -21,7 +21,7 @@
 // the whole design and it is the promise this file has to keep: the console
 // lists what is here, the management API offers what is here, and the
 // parameter form is DERIVED from the row's `parameters`. If adding one ever
-// needs an edit to `xacml_admin.ts` or to `mgmt-api/admin_api.js`, this
+// needs an edit to `xacml_admin.ts` or to `mgmt-api/admin_api.ts`, this
 // separation has gone wrong and the fix belongs here.
 //
 // ---------------------------------------------------------------------------

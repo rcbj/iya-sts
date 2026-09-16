@@ -59,7 +59,7 @@
 // and what an issue does with all of it. It owns NO STORE — the objects live
 // in `pki.js`'s `pki:<realm>` keystore row, for the argument that file makes
 // about there being one answer to *where does this service keep a private
-// key* — and it draws NO HTML, which is `admin-ui/pki_admin.js`'s.
+// key* — and it draws NO HTML, which is `admin-ui/pki_admin.ts`'s.
 //
 // A LIBRARY (rule 3): it registers no route, so its position in the require
 // order is not a position. It requires `config`, `pki`, `error_codes` and the
@@ -95,7 +95,7 @@
 // from the encoder's own tables at that moment; the class carries them as
 // static members too. The module still exports every name it did, from ONE
 // TRANSITIONAL instance built with the real modules below, for
-// `admin-ui/pki_admin.js`, `mgmt-api/` and the tests; it goes when the
+// `admin-ui/pki_admin.ts`, `mgmt-api/` and the tests; it goes when the
 // composition root exists.
 // ===========================================================================
 
@@ -1755,7 +1755,7 @@ class PkiAuthoring {
   // Windows and macOS.
   //
   // `ONE FILE IS THE BODY; SEVERAL ARE A ZIP THIS SERVICE WILL NOT BUILD` is
-  // `admin-ui/crypto_metadata.js`'s rule and it holds here: the DER export is
+  // `admin-ui/crypto_metadata.ts`'s rule and it holds here: the DER export is
   // two files and only the private one is sent, with the reply saying the
   // public half comes out of it with one openssl command.
   // ---------------------------------------------------------------------------

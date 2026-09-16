@@ -13,7 +13,7 @@
 //   /admin/xacml/decide     ask the PDP a question and see the answer
 //   /admin/xacml/monitor    the decision counters, filed under Monitoring
 //
-// Drawn HERE rather than in `admin-ui/admin.js`, the way `ldap/ldap_server.js`
+// Drawn HERE rather than in `admin-ui/admin.ts`, the way `ldap/ldap_server.js`
 // draws its `/admin/ldap/*` pages: a console page is a `path` and a
 // `label` in that file's `SECTIONS` whoever builds the body. What crosses is
 // `admin.respond()` for the shell, `admin.configFormsFor()` for the settings
@@ -677,7 +677,7 @@ class XacmlAdmin {
   // family are somewhere else because they answer a different question. **The
   // path did not move and must not** — it is `/admin/xacml/monitor` still,
   // drawn by this module, because a console page is a `path` and a `label` in
-  // `admin-ui/admin.js`'s `SECTIONS` whoever builds the body; the eight
+  // `admin-ui/admin.ts`'s `SECTIONS` whoever builds the body; the eight
   // `/admin/ldap/*` pages sit in the Directory section on the same terms. Two
   // things follow for anybody editing this route. Its `active` is its OWN path,
   // so the sidebar bolds Monitoring and the crumb takes the label from `NAV`

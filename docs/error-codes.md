@@ -410,7 +410,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 
 **Certificate authority.** The Root, Intermediate and Issuing CAs, certificate authoring, the CRL and OCSP responders, and the revocation check a presented certificate is held to.
 
-Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, common/revocation_status.js, pki/, admin-ui/pki_admin.js.
+Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, common/revocation_status.js, pki/, admin-ui/pki_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -2805,7 +2805,7 @@ Raised from: mgmt-api/.
 | `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
 | `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member or a wrong type). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
-| `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.js fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
+| `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
 | `STS-API-0012` | The database report could not be built (the probe run rejected). | HTTP 500 { ok: false, errors } |
 | `STS-API-0013` | The secret-store report could not be built (the probe run rejected). | HTTP 500 { ok: false, errors } |
 | `STS-API-0014` | A key export request named an action other than export. | HTTP 400 { ok: false, errors } |

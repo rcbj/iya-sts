@@ -552,7 +552,7 @@ class AppPermissions {
   // THE PICTURE, IN `delegation.graph()`'s SHAPE.
   //
   // It returns the same `{ nodes, edges }` that `common/delegation.js` returns,
-  // so `admin-ui/delegation_map.js` draws it with no argument about which graph
+  // so `admin-ui/delegation_map.ts` draws it with no argument about which graph
   // it is looking at — the renderer takes a graph and knows nothing about where
   // it came from, which is the property its header says it was split out to
   // keep.

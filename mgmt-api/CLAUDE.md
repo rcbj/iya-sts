@@ -5,9 +5,9 @@ browser-side explorer.
 
 | File | What it is |
 |---|---|
-| `admin_api.ts` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.ts`; every one that READS calls a view in `../admin-core/admin_views.ts`, bar the four console-structure functions still on `../admin-ui/admin.js` (table below). **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
+| `admin_api.ts` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.ts`; every one that READS calls a view in `../admin-core/admin_views.ts`, bar the four console-structure functions still on `../admin-ui/admin.ts` (table below). **It said "every one calls a function in `../admin-ui/admin.ts`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
 | `admin_api_spec.ts` | The OpenAPI document, GENERATED from that table. |
-| `admin_api_docs.ts` | The explorer's stylesheet, its script (read off disk) and the body `admin-ui/api_explorer.js` draws inside the console. It registers no route; it served `/admin-api/docs` until 2026-09-09. |
+| `admin_api_docs.ts` | The explorer's stylesheet, its script (read off disk) and the body `admin-ui/api_explorer.ts` draws inside the console. It registers no route; it served `/admin-api/docs` until 2026-09-09. |
 | `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.ts` and served verbatim. Its own header says so at length. |
 
 `admin_api_docs.ts` reads its sibling with `path.join(__dirname,
@@ -97,7 +97,7 @@ about that line had to change.
 ## THE DECISIONS MOVED OUT OF THE CONSOLE ON 2026-09-12, AND THIS FILE SAID THEY WERE THERE
 
 Every operation here that CHANGES something used to call a function on
-`admin-ui/admin.js`. They call `admin-core/admin_actions.ts` now, and this file
+`admin-ui/admin.ts`. They call `admin-core/admin_actions.ts` now, and this file
 requires both modules for two different reasons.
 
 **What was wrong with the old arrangement was not the enforcement, it was the
@@ -419,7 +419,7 @@ browser could not open, and the console linked to it and got a 401.
 
 It is behind the console's session and its two roles now, and the calls it makes
 carry a token minted for the reader with exactly the scopes those roles grant.
-`admin-ui/CLAUDE.md` argues the page; `admin-ui/api_explorer.js` builds it, at
+`admin-ui/CLAUDE.md` argues the page; `admin-ui/api_explorer.ts` builds it, at
 19a, after this module — it needs the route table below to build its document.
 
 **TWO FILES DID NOT MOVE AND ARE STILL HERE**: `admin_api_docs.ts` and
@@ -715,7 +715,7 @@ about what this service's cryptography is, and the way to make that impossible
 is for there to be one function.
 
 **The reason it goes through the console rather than through a require is the
-route order.** `admin-ui/crypto_metadata.js` is required at 20a — after
+route order.** `admin-ui/crypto_metadata.ts` is required at 20a — after
 `tls/tls_server`, whose certificate it reports — and this module is required at
 19. A require in the obvious direction would drag that page's route and
 `tls_server`'s ahead of every route in this file and ahead of ldap, scim
@@ -1269,7 +1269,7 @@ back after every write.
 
 `GET /admin-api/pki` and `POST /admin-api/pki/{build,issue,revoke,clear}`,
 mirroring `/admin/pki`. Rule 7 exactly: every control on that page has an
-operation and both go through the SAME functions in `admin-ui/pki_admin.js`, so
+operation and both go through the SAME functions in `admin-ui/pki_admin.ts`, so
 this API decides nothing that console does not.
 
 **THE MODULE IS A PLAIN REQUIRE AND NEEDS NO SLOT**, which is the one thing
@@ -1278,7 +1278,7 @@ about this resource worth knowing. It sits at **18a** in
 the time this require runs it is a cache hit and registers nothing; and it
 requires only `admin.js` and `common/pki.js`, which is a LIBRARY (rule 3), so
 there is no route it could move and no cycle it could close.
-`admin-ui/crypto_metadata.js` is the contrast: it is at 20a because it reads an
+`admin-ui/crypto_metadata.ts` is the contrast: it is at 20a because it reads an
 algorithm table out of `tls/tls_server.js` at 20, so it needed the seventh slot.
 Rule 3e says a slot is what you pay for a require that would close a cycle or
 move a route, and this one would do neither.

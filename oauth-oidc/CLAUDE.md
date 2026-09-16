@@ -22,10 +22,10 @@ libraries that decide things on its behalf.
 | `oauth2_monitor.ts` | **The counters behind `/admin/oauth2/monitor` (2026-09-13)**, in sections; pushed authorization requests are the first. |
 | `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.ts`. |
 | `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.js`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
-| `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.js` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
+| `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
-| `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.js` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
+| `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.ts` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.ts`, required at 18f rather than from here — registers
@@ -43,7 +43,7 @@ cycle or moving OID4VCI ahead of OAuth2 in the route order.
 
 Two ordering facts about this directory are in the root `CLAUDE.md` because they
 are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
-`oauth2.ts`, and so must `admin-ui/admin.js`.
+`oauth2.ts`, and so must `admin-ui/admin.ts`.
 
 ---
 
@@ -231,7 +231,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    added — could never be handed one. `bodyValues()` in `helpers.js` reads the
    repetition from the raw body, and `parseBody()` is deliberately NOT changed:
    sixty-odd call sites across fourteen modules read that object with
-   `String(body.x)`. `admin-ui/admin.js`'s `listField()` is the same function
+   `String(body.x)`. `admin-ui/admin.ts`'s `listField()` is the same function
    written first, for the console's checkbox columns; the two are deliberately
    identical in shape so that folding them is a one-line delegation, which has
    to happen in THAT file because it requires this one (rule 5).
@@ -975,7 +975,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    **ONE LIBRARY FOR BOTH HALVES, BECAUSE EACH FACT HAS TWO READERS.** The
    minter (`oauth2.ts`) and the resource servers (`dpop.ts`'s
    `presentedAccessToken()` — UserInfo, the three credential endpoints, SCIM
-   and SSF through it — `mgmt-api/admin_api.js`'s gate, and the embedded
+   and SSF through it — `mgmt-api/admin_api.ts`'s gate, and the embedded
    debugger's) must agree on the header, the issuer and the default audience.
    **`issuerOf()` MOVED HERE as `issuerFor()`** for that reason: `dpop.ts`
    cannot require `oauth2.ts`, and a second copy of "what is this service's
@@ -1598,7 +1598,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    themselves. **It may never require `dpop.ts`, `mtls.js`, `oauth2_bcp.js`,
    `applications.js` or `oauth2.ts`, because all five require IT** — and the
    binding one is `dpop.ts`, which sits BELOW `oauth2_bcp.js` and so could not
-   have reached the predicates there. `mgmt-api/admin_api.js` and
+   have reached the predicates there. `mgmt-api/admin_api.ts` and
    `debugger/debugger_server.ts` require it too, as cache hits: each verifies
    its own access token instead of going through `presentedAccessToken()`, so
    each has to ask for itself. The split is `oauth21.js`'s: every fact is PASSED
@@ -1664,7 +1664,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    `accessTokenRefusal()` is asked at `presentedAccessToken()` in `dpop.ts` —
    which is UserInfo, the RFC 9470 step-up resource, the three OpenID4VCI
    endpoints, `/scim/v2` and the Shared Signals endpoints in one place — and
-   again in `mgmt-api/admin_api.js`'s gate and `debugger/debugger_server.ts`'s,
+   again in `mgmt-api/admin_api.ts`'s gate and `debugger/debugger_server.ts`'s,
    each of which verifies its own token. **Deliberately out of scope**: GNAP's
    own tokens, which are not OAuth access tokens; the RFC 7592 registration
    access token; and the endpoints that take a token as a PARAMETER rather than
@@ -2337,7 +2337,7 @@ look like one service. BEFORE, because the authorization endpoint calls
 means, the global override, the register both console halves are read from — and
 it holds no store at all, because both halves of what it knows are attributes in
 the directory. This file holds the one thing that IS state: a `realms.map()` of
-consents in flight. That split is `app_permissions.js` / `admin-ui/admin.js`'s
+consents in flight. That split is `app_permissions.js` / `admin-ui/admin.ts`'s
 and `delegation.js` / `delegation_map.js`'s, made a third time.
 
 ### Where the check sits in `authorizeEndpoint()`, and why

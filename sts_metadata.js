@@ -9351,7 +9351,7 @@ function renderInner(base, report) {
           // rows, which made the one page in this console that lists
           // everything the one page nobody could skim. admin.note() leaves a
           // short description alone and folds a long one behind its first
-          // sentence; see the block above it in ../admin-ui/admin.js.
+          // sentence; see the block above it in ../admin-ui/admin.ts.
           '<td>' + admin.note(esc(r.what)) + '</td>' +
           '<td class="s">' + specLinks(r.specs) + '</td></tr>';
       });

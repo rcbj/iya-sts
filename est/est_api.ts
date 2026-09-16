@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 // THE THREE /admin-api OPERATIONS FOR EST (2026-09-13).
 //
-// Rows in `mgmt-api/admin_api.js`'s own shape, spread into its `ROUTES` by the
+// Rows in `mgmt-api/admin_api.ts`'s own shape, spread into its `ROUTES` by the
 // integrator, so that the registration loop there — the ajv body schemas, the
 // token gate, the OpenAPI document, the `mirrors` join that adds a Protocols
 // page's endpoints — treats them exactly as it treats every other operation.

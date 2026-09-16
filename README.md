@@ -80,7 +80,7 @@ the package root. **The files did not change; the paths did.**
 | `gnap/` | **GNAP** — the grant engine, the resource-owner pages, RFC 9421 HTTP message signatures, the five token formats, the RS-facing endpoints and the two console pages |
 | `persistence/` | **the only place this service writes anything down** — three modes (`memory`, `ldif`, `postgres`) behind one driver interface, and the RFC 2849 codec under the middle one |
 | `admin-ui/` · `mgmt-api/` | the console and the management API |
-| `admin-core/` | **what those two both DO, with neither of them in it** — the thirty-one actions behind every control on `/admin` and every `/admin-api` operation that changes something. They were in `admin-ui/admin.js` until 2026-09-12, which made the API depend on the console |
+| `admin-core/` | **what those two both DO, with neither of them in it** — the thirty-one actions behind every control on `/admin` and every `/admin-api` operation that changes something. They were in `admin-ui/admin.ts` until 2026-09-12, which made the API depend on the console |
 | `home/` | the front door — `GET /`, and the one image this service serves |
 | `logout/` | the protocol-independent sign-out — one model of what a live session IS across every family, and the endpoint that ends it |
 | `tests/` | **the only test directory in this repository** — in-process assertions about its own module contracts, `npm test`, no port and no container. Every test that drives this service over HTTP lives in the [OAuth2/OIDC Debugger](https://idptools.com) project's suite, federation included |

@@ -134,7 +134,7 @@
 // (`vc_claims.ts`'s CANONICAL_NAMES) through its constructor, and the two
 // mapping tables, the schema URNs and OWN_NAMES are its static members. The
 // module still exports every old name from a TRANSITIONAL instance, because
-// `scim.ts`, `admin-ui/admin.js`, `admin-core/admin_views.ts` and
+// `scim.ts`, `admin-ui/admin.ts`, `admin-core/admin_views.ts` and
 // `ldap/ldap_server.js` are not converted and require it by those names. The
 // spelling check that ran at require time runs when that instance is built,
 // which is still at require time.
@@ -1105,7 +1105,7 @@ class ScimMap {
   //
   // **IT IS HERE BECAUSE IT WAS IN TWO PLACES AND THEY HAD ALREADY DRIFTED.**
   // `/admin/scim` and `GET /admin-api/scim` render the mapping from
-  // `admin-ui/admin.js`'s own projection; `GET /scim` renders it from
+  // `admin-ui/admin.ts`'s own projection; `GET /scim` renders it from
   // `scim.ts`'s. The two carried different sets of members — one had
   // `required`, `schema` and `note`, the other did not — so the same table
   // published at two endpoints of one service described itself differently

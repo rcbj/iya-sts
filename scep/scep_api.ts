@@ -4,7 +4,7 @@
 //
 // ---------------------------------------------------------------------------
 // THE SCEP OPERATIONS OF /admin-api (2026-09-13): three rows, spread into
-// `mgmt-api/admin_api.js`'s ROUTES.
+// `mgmt-api/admin_api.ts`'s ROUTES.
 //
 //   GET  /admin-api/scep           mirrors GET  /admin/scep
 //   GET  /admin-api/scep/monitor   mirrors GET  /admin/scep/monitor

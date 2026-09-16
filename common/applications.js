@@ -2819,7 +2819,7 @@ const EDITABLE = {
   oauthAssertionExpiresAt: 'set',
   // WHERE THE KEY PAIR CAME FROM (2026-09-13) — issued here, or a certificate
   // uploaded in its place. `set` for the six's reason, and in this table at
-  // all because `admin-ui/pki_admin.js` writes it through updateApplication()
+  // all because `admin-ui/pki_admin.ts` writes it through updateApplication()
   // beside them; KEY_SOURCES below is the closed vocabulary it is checked
   // against.
   oauthAssertionKeySource: 'set',
@@ -3736,7 +3736,7 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        'gnapMacaroonKey'];
 
 // The label each sealed field is sealed under, which is what
-// /admin/encryption counts by (admin-ui/encryption_admin.js DATA_CLASSES). One
+// /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
 // label per KIND of secret, so the page can say what it is looking at.
 const SEAL_LABELS = {
   oauthAssertionPrivateKey: 'application-private-key',
@@ -3784,7 +3784,7 @@ const KEY_SOURCES = ['issued', 'uploaded-realm-ca', 'uploaded-external-ca'];
 // ---------------------------------------------------------------------------
 // WHICH ATTRIBUTE HOLDS WHICH HALF OF A MANAGED KEY PAIR, PER PROFILE
 // (2026-09-13). The two sets share no name — the RFC 7522 block in SCHEMA
-// argues why — and three modules have to agree on them: `admin-ui/pki_admin.js`
+// argues why — and three modules have to agree on them: `admin-ui/pki_admin.ts`
 // writes them, the application page and `GET /admin-api/applications` read
 // them, and `/admin/pki` lists them. This module owns the schema, so it owns
 // the answer; a second copy in any of the three is the one that would go
@@ -7294,7 +7294,7 @@ function updateApplication(identifier, change) {
   // FUNCTION TOUCHES THE VALUE — including the sentence that goes to the audit
   // log, which quotes it. See SEALED_FIELDS: this is the ONE door the console
   // form, `POST /admin-api/applications/set`, `POST /admin-api/pki/issue` and
-  // `admin-ui/pki_admin.js`'s Issue control all go through, so there is one
+  // `admin-ui/pki_admin.ts`'s Issue control all go through, so there is one
   // place a signing key can be written and one place it is encrypted.
   //
   // A CLEAR IS UNTOUCHED — an empty value takes the attribute off, and there is
@@ -8998,8 +8998,8 @@ function internalApplications() {
       // of them the machine door to their realm: a token this realm's
       // authorization server issues to this realm's copy of the client works
       // at `/realm/<id>/admin-api` and nowhere else, and never at a
-      // service-wide operation (`mgmt-api/admin_api.js`'s gate and
-      // `admin-ui/admin_scope.js`). The default realm's copy is still the
+      // service-wide operation (`mgmt-api/admin_api.ts`'s gate and
+      // `admin-ui/admin_scope.ts`). The default realm's copy is still the
       // service's and works everywhere.
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own management API at ' +
@@ -9186,7 +9186,7 @@ module.exports = {
   corsOriginsOfRealm: corsOriginsOfRealm,
   ssfAllowedEventProblem: ssfAllowedEventProblem,
   // THE SEALED ATTRIBUTE AND THE PREFIX TEST THAT RECOGNISES ONE. Exported for
-  // `admin-ui/admin.js`, whose application page dumps `attributes` — the entry
+  // `admin-ui/admin.ts`, whose application page dumps `attributes` — the entry
   // as the directory holds it — and therefore meets the ciphertext. It shows
   // the opened value from `fields` beside a note saying the store holds it
   // encrypted, which is the one place the two halves of view() are drawn

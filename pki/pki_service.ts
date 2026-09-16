@@ -6,7 +6,7 @@
 // THE REVOCATION ENDPOINTS: A CRL AND AN OCSP RESPONDER PER CA (2026-09-11).
 //
 // **THIS IS A PROTOCOL SURFACE AND NOT A CONSOLE ONE**, which is why it is a
-// directory of its own rather than more routes in `admin-ui/pki_admin.js`.
+// directory of its own rather than more routes in `admin-ui/pki_admin.ts`.
 // Nothing here is behind the console's gate and nothing here takes a
 // credential: a CRL and an OCSP answer are PUBLIC documents by construction —
 // a relying party fetches them before it has decided to trust anything, often

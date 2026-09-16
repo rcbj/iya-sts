@@ -105,7 +105,7 @@ listed below with the twelve.
 **After `admin-ui/admin`**, whose `setXacmlPages()` and `setRolePreviewer()`
 slots `xacml_admin.ts` and `xacml_role_pep.ts` fill and whose page shell,
 settings block and action responder it requires — so a require the other way
-would close a cycle, and one from `mgmt-api/admin_api.js` would move every
+would close a cycle, and one from `mgmt-api/admin_api.ts` would move every
 `/xacml` route and all six `/admin/xacml*` pages ahead of the management API's
 own. It requires `xacml_admin.ts` ITSELF rather than
 `common/protocol_stack.js` doing it, so this family has ONE line in the require
@@ -600,13 +600,13 @@ For the next person adding a console surface, following the shape
   `values`. The wrong key name is not a startup error: the setting loads, the
   service runs, and the settings form throws a 500 on the one page that draws
   it.
-* `admin-ui/admin.js` — the **tenth slot** `setXacmlPages()`, a `SETTING_HOMES`
+* `admin-ui/admin.ts` — the **tenth slot** `setXacmlPages()`, a `SETTING_HOMES`
   row (its absence is what the boot warning was about), an `XACML` group of
   four in `SECTIONS` with a `blurb` each, and three helpers exported that had
   been private: `configFormsFor`, `configSettingsJson` and `respondToAction`.
-* `mgmt-api/admin_api.js` — three GETs and a POST with ten documented actions
+* `mgmt-api/admin_api.ts` — three GETs and a POST with ten documented actions
   (`import-alfa` arrived in phase four);
-  `mgmt-api/admin_api_spec.js` — `Xacml`, `XacmlPolicies` and `XacmlEditor`.
+  `mgmt-api/admin_api_spec.ts` — `Xacml`, `XacmlPolicies` and `XacmlEditor`.
 * `sts_metadata.js` — **eight** `ENDPOINTS` rows, four of them console pages
   and four management API, which are again the ones a checklist forgets.
 
@@ -1082,13 +1082,13 @@ section 1b of `tests/vendored/sts_xacml_remote_pep.js` pin both.
 * `ldap/ldap_server.js` — `ou=peps`, its three store functions, and a slot
   carrying FOUR things: the three plus `certificateIdentity`, which is the whole
   reason the register does not invent a naming rule of its own.
-* `admin-ui/admin.js` — the tenth slot grew from four views to SIX, a
+* `admin-ui/admin.ts` — the tenth slot grew from four views to SIX, a
   `SECTIONS` row, and `xacmlPepsView` / `xacmlDecideView`.
 * `mgmt-api/` — two GETs, three actions and two schemas for phase five itself,
   plus the nineteen undocumented editor actions and thirty-two request bodies
   that defect 5 below turned out to owe.
 * `sts_metadata.js` — **six** `ENDPOINTS` rows.
-* `admin-ui/crypto_metadata.js` — the XACML row's missing halves (see below).
+* `admin-ui/crypto_metadata.ts` — the XACML row's missing halves (see below).
 * `docker-compose.yml` — a `xacml-pep` service under `profiles: [xacml]`.
 * And the container itself, `xacml-pep/`, which has its own `CLAUDE.md`.
 
@@ -1205,7 +1205,7 @@ a policy invalid is refused and the stored document is untouched. The sentence
 saying so — which names the type error the author has to fix — was the part
 being dropped.
 
-Fixed in `admin-ui/admin.js` rather than in the three handlers, so that a fourth
+Fixed in `admin-ui/admin.ts` rather than in the three handlers, so that a fourth
 handler written in that shape cannot reintroduce it and so that the console and
 `/admin-api` cannot disagree about what a refusal said.
 
@@ -1459,7 +1459,7 @@ Monitoring section's own heading, and it is labelled `XACML decisions` there
 because `Monitor` alone would name the section rather than the subject. **The
 PATH did not move**: it is `/admin/xacml/monitor` still, drawn by
 `xacml_admin.ts` still, because a console page is a `path` and a `label` in
-`admin-ui/admin.js`'s `SECTIONS` whoever builds the body — the arrangement the
+`admin-ui/admin.ts`'s `SECTIONS` whoever builds the body — the arrangement the
 eight `/admin/ldap/*` pages have with the Directory section and
 `/admin/sts-metadata` has had since 2026-08-24. Two consequences for this
 route: its `active` is its own path, so the crumb's label comes from `NAV`; and
@@ -1484,7 +1484,7 @@ later is counted BY CONSTRUCTION rather than by whoever adds it remembering.
 `xacml_monitor.ts` is a LEAF (rule 3) and **may not require `admin.js`**, which
 is the constraint that decides where the page lives. `xacml_access_pep.ts` fills
 `common/access_gate.ts`'s decider and is reached from `common/`, far above
-`admin-ui/admin.js` at 18 — so a console require here would drag every console
+`admin-ui/admin.ts` at 18 — so a console require here would drag every console
 route into the router at that position (rule 1). The symptom would not be an
 error: it would be `/admin/sts-metadata` reporting a different route order.
 

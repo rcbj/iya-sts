@@ -100,7 +100,7 @@
 // The module still exports `render`, `edgeSample`, `COLOURS`, `personGlyph`,
 // `hexPath`, `textWidth`, `wrapLabel` and `MAX_LABEL_CHARS` — the functions
 // bound to a TRANSITIONAL instance at the bottom, the two constants from the
-// class's static members — for `admin-ui/admin.js`,
+// class's static members — for `admin-ui/admin.ts`,
 // `admin-ui/federation_diagram.ts` and the tests. `DelegationMap` is exported
 // beside them for the composition root. Still a LIBRARY: no route.
 // ---------------------------------------------------------------------------

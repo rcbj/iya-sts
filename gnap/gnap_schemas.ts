@@ -33,7 +33,7 @@
 // where section 2.3 makes it `invalid_client`, and an `enum` on `flags` would
 // turn section 2.1.1's `invalid_flag` into the same. The walk refuses both, by
 // name, with the right code; the schema would pre-empt it with a worse answer.
-// It is the trade `mgmt-api/admin_api.js`'s `structureOnly()` made, for this
+// It is the trade `mgmt-api/admin_api.ts`'s `structureOnly()` made, for this
 // reason.
 //
 // **`additionalProperties` IS OPEN WHERE RFC 9635 HAS AN EXTENSION REGISTRY** —

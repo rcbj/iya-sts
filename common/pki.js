@@ -2277,7 +2277,7 @@ function signerSentence(problem, subject) {
 // `/admin/pki` is still accepted HERE.* The last check below asks the register
 // about every certificate on the path, and a revoked one is refused. No list is
 // FETCHED, and none needs to be: the checks before it guarantee the whole path
-// is this service's own. `admin-ui/crypto_metadata.js` still draws published
+// is this service's own. `admin-ui/crypto_metadata.ts` still draws published
 // and consulted as two rows, because they are still two claims.
 // ---------------------------------------------------------------------------
 async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
@@ -2597,7 +2597,7 @@ async function verifyLeaf(realmId, leafPem, presentedChainPems, opts) {
 // service Root is held to that function's rule and refused by its sentence.
 //
 // **THE RECORD IT RETURNS IS `issueSigningKeyPair()`'s SHAPE WITH AN EMPTY
-// PRIVATE KEY**, so `admin-ui/pki_admin.js` writes both through ONE table and
+// PRIVATE KEY**, so `admin-ui/pki_admin.ts` writes both through ONE table and
 // taking a key pair off is one act whichever way it arrived. `source` is the
 // one member an issue does not carry, and it is what the application's page
 // draws: `uploaded-realm-ca` or `uploaded-external-ca`.

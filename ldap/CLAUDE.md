@@ -392,7 +392,7 @@ from `listen()`* is the rule this is an instance of.
    say so where a reader will see it. The exceptions are `cn=admin-read` and
    `cn=admin-write` (`admin.readGroup`, `admin.writeGroup`), which decide who may
    use the ADMIN CONSOLE — the SIXTH slot below is what carries this module's
-   group functions to `admin-ui/admin_rbac.js` so that they can. Even those two
+   group functions to `admin-ui/admin_rbac.ts` so that they can. Even those two
    grant nothing outside `/admin`: no token, assertion, ticket, PAC or credential
    is changed by being in one, and every protocol endpoint answers a member
    exactly as it answers anybody else. The general sentence is what matters and
@@ -628,7 +628,7 @@ does, so a per-realm roster would have meant anybody who can create a realm
 granting themselves both roles inside it and walking back out into the default
 one. **Since #32 each realm has a roster of its own**: `rosterViewFor(realm)`
 builds the same nine functions bound to a named realm, the default view still
-answers a caller that names none, and `admin-ui/admin_scope.js` confines a
+answers a caller that names none, and `admin-ui/admin_scope.ts` confines a
 realm's administrators to their realm — which is what answers the escalation
 the pinning prevented (`admin-ui/CLAUDE.md` 8d).
 `setDirectoryReader()` and `setDirectoryWriter()` are deliberately NOT pinned:
@@ -1712,7 +1712,7 @@ happened to have been written here. Four things follow, and each is worth
 knowing before touching any of it.
 
 * **THEY ARE STILL BUILT HERE, and that is not a leftover.** A console page is
-  a `path` and a `label` in `admin-ui/admin.js`'s `SECTIONS` whoever builds the
+  a `path` and a `label` in `admin-ui/admin.ts`'s `SECTIONS` whoever builds the
   body — `/admin/sts-metadata` is built by `../sts_metadata.js` and has been
   since 2026-08-24. Moving these bodies into that file would mean moving
   `description()`, `eachEntryInRealm()` and `entryObject()` with them, or
@@ -1761,7 +1761,7 @@ comment above that function carries the argument, including why the `title` is
 set as well and is not redundant.
 
 **Rule 3e's NINTH SLOT is `admin.setDirectoryPages()` and this file fills it**,
-with the eight view functions, so that `mgmt-api/admin_api.js` (19) can mirror
+with the eight view functions, so that `mgmt-api/admin_api.ts` (19) can mirror
 these pages without requiring this module (21) and dragging every route
 registered here ahead of its own. It is validated WHOLE, so a name added to
 `DIRECTORY_PAGE_NAMES` without a view is a refused install rather than one
@@ -2200,7 +2200,7 @@ that had proved who it was could then add, modify, rename or delete any entry in
 any realm — `ou=trustAnchors` (the client-certificate truststore),
 `ou=federations` (whose signing certificates decide whose assertions this service
 believes), `ou=policies`, `ou=roles` and every person. **One write was an
-escalation rather than vandalism**: `admin-ui/admin_rbac.js` reads a person's OWN
+escalation rather than vandalism**: `admin-ui/admin_rbac.ts` reads a person's OWN
 `memberOf` when it decides whether they hold a console role, so
 `memberOf: cn=admin-write,…` written on your own entry made you an administrator
 of the service.

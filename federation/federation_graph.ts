@@ -16,8 +16,8 @@
 // It is a LIBRARY, like `common/user_graph.ts` and `common/credential_graph.ts`
 // beside it: it registers no route, so its position in the require order does
 // not matter and it cannot be the reason a route is missing.
-// `admin-ui/admin.js` renders it at `/admin/federation/map` through
-// `admin-ui/federation_diagram.js`; this file holds the model and NONE of the
+// `admin-ui/admin.ts` renders it at `/admin/federation/map` through
+// `admin-ui/federation_diagram.ts`; this file holds the model and NONE of the
 // geometry and none of the HTML.
 //
 // ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@
 // shape: `FederationGraph` takes the logger, `realms` and the federation
 // register through its constructor, and the module still exports `STS_ID`,
 // `graph()` and `describe()` from a TRANSITIONAL instance for
-// `admin-ui/admin.js` and the tests, which are not converted.
+// `admin-ui/admin.ts` and the tests, which are not converted.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./../common/helpers');
@@ -112,7 +112,7 @@ interface GraphFilter {
 
 // ---------------------------------------------------------------------------
 // THE NODE KINDS. Four, and each is drawn differently — see
-// `admin-ui/federation_diagram.js`, which reads this vocabulary and knows
+// `admin-ui/federation_diagram.ts`, which reads this vocabulary and knows
 // nothing else about federation.
 //
 //   sts          this realm. Exactly one, always present even in an empty

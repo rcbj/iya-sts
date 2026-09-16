@@ -109,7 +109,7 @@
 // WHY THIS FILE MAY NOT REQUIRE THE CONSOLE, AND THE PAGE IS NOT HERE.
 //
 // `xacml_access_pep.ts` fills `common/access_gate.ts`'s decider, and that
-// module is required from `common/` — early, and far above `admin-ui/admin.js`
+// module is required from `common/` — early, and far above `admin-ui/admin.ts`
 // at 18. If this file required `admin.js` in order to draw its own page, then
 // the access PEP requiring this file would drag EVERY CONSOLE ROUTE into the
 // express router at `access_gate.js`'s position (rule 1), ahead of `oauth2.js`

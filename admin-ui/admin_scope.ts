@@ -47,7 +47,7 @@
 // exported as static members; the two tables of RULES are built in the
 // constructor, because each rule logs through the instance's logger. The
 // module still exports every name it did, from a TRANSITIONAL instance at the
-// bottom, for `admin-ui/admin.js`, `mgmt-api/admin_api.js` and the test;
+// bottom, for `admin-ui/admin.ts`, `mgmt-api/admin_api.ts` and the test;
 // `AdminScope` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
