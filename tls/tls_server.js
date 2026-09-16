@@ -701,23 +701,121 @@ function suppliedServerCertificate() {
     .filter(function (entry) {
       return !!entry;
     });
-  const chainLength = splitPemCertificates(certPem).length;
+  const parts = splitSuppliedBundle(certPem, certFile);
   log.info('tls: serving the certificate from ' + certFile + ' (' +
-           chainLength + ' certificate(s) in the chain, subject ' +
-           leaf.subject.replace(/\n/g, ', ') + ', names ' +
-           (names.join(', ') || 'none') + '). It is NOT self-signed and is ' +
-           'not regenerated on restart, so a caller that trusts its issuer ' +
-           'stays trusting it.');
+           (1 + parts.chainPem.length) + ' certificate(s) presented, ' +
+           (parts.anchorPem ? 'a trust anchor in the file'
+                            : 'no trust anchor in the file') +
+           ', subject ' + leaf.subject.replace(/\n/g, ', ') + ', names ' +
+           (names.join(', ') || 'none') + '). It is not regenerated on ' +
+           'restart, so a caller that trusts its issuer stays trusting it.');
   log.debug('Leaving suppliedServerCertificate().');
   return {
     algorithm: 'supplied',
     privateKeyPem: keyPem,
-    certPem: certPem,
+    certPem: parts.leafPem,
+    chainPem: parts.chainPem,
+    suppliedAnchorPem: parts.anchorPem,
+    selfSigned: parts.selfSigned,
     subject: leaf.subject.replace(/\n/g, ', '),
     names: names,
-    fingerprint256: fingerprintOf(certPem),
+    fingerprint256: fingerprintOf(parts.leafPem),
     notAfter: new Date(leaf.validTo).toISOString()
   };
+}
+
+// ---------------------------------------------------------------------------
+// A SUPPLIED FILE IS A BUNDLE, AND ITS THREE KINDS OF CERTIFICATE ARE KEPT
+// APART (2026-09-15).
+//
+// Until this date the whole file went into `certPem` and `chainPem` stayed
+// empty. Serving was unaffected — node sends every certificate in `cert` —
+// but every reader of the record's SHAPE was misled by it, and one of them
+// mattered: `trustAnchorPems()` decides whether this service's own Root
+// signs the listener's chain by looking at `chainPem`, found none, concluded
+// there was nothing to check, and published that Root FIRST. So the console's
+// and the portal's OpenID Connect back channel, and the SSF loopback push,
+// pinned a Root that signs nothing this listener presents, and every
+// `/admin` sign-in on a deployment with `tls.certificateFile` set failed with
+// STS-AUTHN-0120 `self-signed certificate in certificate chain`.
+//
+// So the file is split the way the rest of this module already models a
+// certified listener:
+//
+//   * the LEAF is the first certificate — the one the key must match, and
+//     the one every reader of "the server certificate" means;
+//   * the CHAIN is every later certificate that is NOT self-signed, in file
+//     order, which is what travels with the leaf (RFC 8446 section 4.4.2
+//     lets the Root be left out, and this module leaves its own out);
+//   * the ANCHOR is a self-signed certificate in the file that signs the top
+//     of that chain — checked by signature, for the reason `anchorSigns()`
+//     gives. A file with none (a publicly issued certificate and its
+//     intermediates) has no anchor here, and a caller verifying this service
+//     uses its own trust store, which is right for that certificate.
+//
+// A self-signed certificate that signs nothing in the chain is reported and
+// not used: it is either the wrong Root or a stray, and pinning it is the
+// defect this function was written to end.
+// ---------------------------------------------------------------------------
+function splitSuppliedBundle(bundlePem, certFile) {
+  log.debug('Entering splitSuppliedBundle().');
+  const pems = splitPemCertificates(bundlePem).map(function (pem) {
+    return pem + '\n';
+  });
+  const leafPem = pems[0];
+  const chainPem = [];
+  const selfSignedPems = [];
+  pems.slice(1).forEach(function (pem) {
+    if (isSelfSignedPem(pem)) {
+      selfSignedPems.push(pem);
+    } else {
+      chainPem.push(pem);
+    }
+  });
+  const topPem = chainPem.length ? chainPem[chainPem.length - 1] : leafPem;
+  let anchorPem = '';
+  selfSignedPems.forEach(function (pem) {
+    if (anchorPem) {
+      return;
+    }
+    try {
+      const top = new crypto.X509Certificate(topPem);
+      if (top.verify(new crypto.X509Certificate(pem).publicKey)) {
+        anchorPem = pem;
+      }
+    } catch (e) {
+      log.debug('splitSuppliedBundle(): a candidate anchor could not be ' +
+                'checked: ' + e.message);
+    }
+  });
+  if (selfSignedPems.length && !anchorPem) {
+    log.warn(errorCodes.tag('STS-TLS-0032') +
+             'tls: ' + certFile + ' holds ' + selfSignedPems.length +
+             ' self-signed certificate(s) and none of them signs the chain ' +
+             'the listener presents, so none is used as this service\'s ' +
+             'trust anchor. A caller verifying this service will use its ' +
+             'own trust store.');
+  }
+  const selfSigned = pems.length === 1 && isSelfSignedPem(leafPem);
+  log.debug('Leaving splitSuppliedBundle(). chain=' + chainPem.length +
+            ' anchor=' + !!anchorPem + ' selfSigned=' + selfSigned);
+  return { leafPem: leafPem, chainPem: chainPem, anchorPem: anchorPem,
+           selfSigned: selfSigned };
+}
+
+// Issued by itself AND signed by its own key. The name comparison alone is
+// not enough, for the reason anchorSigns() gives about identical subjects.
+function isSelfSignedPem(pem) {
+  log.debug('Entering isSelfSignedPem().');
+  try {
+    const cert = new crypto.X509Certificate(pem);
+    const self = cert.checkIssued(cert) && cert.verify(cert.publicKey);
+    log.debug('Leaving isSelfSignedPem(). ' + self);
+    return self;
+  } catch (e) {
+    log.debug('Leaving isSelfSignedPem(). Unreadable: ' + e.message);
+    return false;
+  }
 }
 
 // Every certificate the listeners present, in the order the setting names
@@ -1354,6 +1452,29 @@ function trustAnchorPems() {
   if (out.length) {
     log.debug('Leaving trustAnchorPems(). ' + out.length +
               ' handed-in anchor(s).');
+    return out;
+  }
+  // ---------------------------------------------------------------------
+  // **A SUPPLIED CERTIFICATE IS NEVER THIS SERVICE'S ROOT'S** (2026-09-15),
+  // so that Root is not asked. The anchor is whatever self-signed
+  // certificate came in the file and signs its chain (see
+  // splitSuppliedBundle()); a lone self-signed certificate is its own; and
+  // anything else has no anchor here, which serverCertificate() reports as
+  // an empty string and a caller reads as "use your own trust store".
+  // ---------------------------------------------------------------------
+  const supplied = SERVER_CERTIFICATES.filter(function (one) {
+    return one.algorithm === 'supplied';
+  });
+  if (supplied.length) {
+    supplied.forEach(function (one) {
+      const pem = one.suppliedAnchorPem ||
+                  (one.selfSigned ? one.certPem : '');
+      if (pem && out.indexOf(pem) < 0) {
+        out.push(pem);
+      }
+    });
+    log.debug('Leaving trustAnchorPems(). ' + out.length +
+              ' supplied anchor(s).');
     return out;
   }
   try {
@@ -3781,8 +3902,11 @@ module.exports = {
       // `anchorSigns()`) and there is no honest anchor to give: the leaf
       // terminates no path, and neither does the Intermediate under OpenSSL's
       // default rules. An empty string is what a caller can test.
+      // A supplied certificate falls back to nothing: trustAnchorPems() has
+      // already answered for it, and a CA-issued leaf is no anchor.
       trustAnchorPem: trustAnchorPems()[0] ||
-        ((SERVER_CERTIFICATE.chainPem || []).length
+        (((SERVER_CERTIFICATE.chainPem || []).length ||
+          SERVER_CERTIFICATE.algorithm === 'supplied')
           ? '' : SERVER_CERTIFICATE.certPem),
       subject: SERVER_CERTIFICATE.subject,
       names: SERVER_CERTIFICATE.names.slice(0),
