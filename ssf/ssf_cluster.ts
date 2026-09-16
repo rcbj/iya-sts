@@ -65,9 +65,12 @@
 // shape: `SsfCluster` takes its logger, `config`, the error-code table, the
 // cluster layer, the claim store and LOADERS for `persistence.js` and the two
 // GNAP modules (loaders, for the lazy requires the header argues) through its
-// constructor. The module still exports its old names from a TRANSITIONAL
-// instance for `ssf/ssf.ts`, `ssf/ssf_auth.ts` and the tests, and that
-// instance asks for the probe lease at load, where the old module did.
+// constructor. The composition root builds the instance (#50, R2); the
+// module's old names are FACADES that forward to it, for `ssf/ssf.ts`,
+// `ssf/ssf_auth.ts` and the tests, and its `wire` step asks for the probe
+// lease, which the old module did at load. A process that loads this module
+// without the root builds a default when the module loads, and campaigns
+// then.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -75,6 +78,7 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import cluster = require('../cluster/cluster');
 import claims = require('../cluster/cluster_claims');
+import InstanceSlot = require('../common/instance_slot');
 
 const log = bunyan.createLogger({ name: 'sts-ssf-cluster' });
 config.registerLogger(log);
@@ -361,40 +365,66 @@ class SsfCluster {
     });
     log.debug("Leaving SsfCluster.campaign().");
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): SsfClusterDeps {
+    log.debug("Entering SsfCluster.defaultDeps().");
+    log.debug("Leaving SsfCluster.defaultDeps().");
+    return {
+      log: log,
+      config: config,
+      errorCodes: errorCodes,
+      cluster: cluster,
+      claims: claims,
+      loadPersistence: function () {
+        return require('../persistence/persistence');
+      },
+      loadGnapRs: function () {
+        return require('../gnap/gnap_rs');
+      },
+      loadGnapProof: function () {
+        return require('../gnap/gnap_proof');
+      }
+    };
+  }
+
+  // What loading this module did with its instance before R2 (#50): ask for
+  // the probe lease, as the module always did. Run once, for whichever
+  // instance is installed.
+  static wire(instance: SsfCluster): void {
+    log.debug("Entering SsfCluster.wire().");
+    instance.campaign();
+    log.debug("Leaving SsfCluster.wire().");
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. It campaigns for the
-// probe lease at load, as the module always did.
-const ssfCluster = new SsfCluster({
-  log: log,
-  config: config,
-  errorCodes: errorCodes,
-  cluster: cluster,
-  claims: claims,
-  loadPersistence: function () {
-    return require('../persistence/persistence');
-  },
-  loadGnapRs: function () {
-    return require('../gnap/gnap_rs');
-  },
-  loadGnapProof: function () {
-    return require('../gnap/gnap_proof');
-  }
-});
-ssfCluster.campaign();
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SsfCluster>(
+  'ssf/ssf_cluster',
+  () => new SsfCluster(SsfCluster.defaultDeps()),
+  SsfCluster.wire,
+  log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SsfCluster: SsfCluster,
+  installInstance: (instance: SsfCluster): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PROBE_LEASE: SsfCluster.PROBE_LEASE,
-  transitionOnce: ssfCluster.transitionOnce.bind(ssfCluster) as
-    SsfCluster['transitionOnce'],
-  leadsProbes: ssfCluster.leadsProbes.bind(ssfCluster) as
-    SsfCluster['leadsProbes'],
-  spendGnapProof: ssfCluster.spendGnapProof.bind(ssfCluster) as
-    SsfCluster['spendGnapProof'],
-  gnapSpentOf: ssfCluster.gnapSpentOf.bind(ssfCluster) as
-    SsfCluster['gnapSpentOf'],
-  sharedStore: ssfCluster.sharedStore.bind(ssfCluster) as
-    SsfCluster['sharedStore'],
-  report: ssfCluster.report.bind(ssfCluster) as SsfCluster['report']
+  transitionOnce: slot.forward('transitionOnce'),
+  leadsProbes: slot.forward('leadsProbes'),
+  spendGnapProof: slot.forward('spendGnapProof'),
+  gnapSpentOf: slot.forward('gnapSpentOf'),
+  sharedStore: slot.forward('sharedStore'),
+  report: slot.forward('report')
 };

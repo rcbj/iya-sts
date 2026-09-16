@@ -99,11 +99,14 @@
 // through its constructor. The register itself stays a module-level
 // `realms.map()`, declared at load as before, so it is still per realm and
 // still persisted. The module still exports its old names — the
-// `EVENTS_PER_ACCOUNT` getter among them — from a TRANSITIONAL instance for
-// `ssf/ssf.ts`, the console and the tests.
+// `EVENTS_PER_ACCOUNT` getter among them — as FACADES forwarding to the
+// instance the composition root builds (#50, R2), for `ssf/ssf.ts`, the
+// console and the tests. A process that loads this module without the root
+// builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // The partition. A LEAF requiring `config` and the error-code registry and
 // nothing else here.
@@ -1638,23 +1641,47 @@ class RiscRegister {
     log.debug("Leaving RiscRegister.report(). " + out.tracked + ' account(s).');
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): RiscRegisterDeps {
+    helpers.log.debug("Entering RiscRegister.defaultDeps().");
+    helpers.log.debug("Leaving RiscRegister.defaultDeps().");
+    return {
+      log: helpers.log,
+      nowSec: helpers.nowSec,
+      iso: helpers.iso,
+      nameForSubject: helpers.nameForSubject,
+      config: config,
+      mode: mode,
+      audit: audit,
+      events: events,
+      subjects: subjects
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const risc = new RiscRegister({
-  log: helpers.log,
-  nowSec: helpers.nowSec,
-  iso: helpers.iso,
-  nameForSubject: helpers.nameForSubject,
-  config: config,
-  mode: mode,
-  audit: audit,
-  events: events,
-  subjects: subjects
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<RiscRegister>(
+  'ssf/risc',
+  () => new RiscRegister(RiscRegister.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   RiscRegister: RiscRegister,
+  installInstance: (instance: RiscRegister): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   AUTO_ACTS: RiscRegister.AUTO_ACTS,
   OPT_OUT_EVENTS: RiscRegister.OPT_OUT_EVENTS,
   OPT_STATES: RiscRegister.OPT_STATES,
@@ -1664,32 +1691,29 @@ export = {
   get EVENTS_PER_ACCOUNT(): number {
     helpers.log.debug("Entering EVENTS_PER_ACCOUNT().");
     helpers.log.debug("Leaving EVENTS_PER_ACCOUNT().");
-    return risc.eventsPerAccount();
+    return slot.get().eventsPerAccount();
   },
-  enabled: risc.enabled.bind(risc) as RiscRegister['enabled'],
-  supportedEventUris: risc.supportedEventUris.bind(risc) as
-    RiscRegister['supportedEventUris'],
-  autoEmitActs: risc.autoEmitActs.bind(risc) as RiscRegister['autoEmitActs'],
-  subjectFor: risc.subjectFor.bind(risc) as RiscRegister['subjectFor'],
+  enabled: slot.forward('enabled'),
+  supportedEventUris: slot.forward('supportedEventUris'),
+  autoEmitActs: slot.forward('autoEmitActs'),
+  subjectFor: slot.forward('subjectFor'),
   // An act an administrator performed (2026-09-13) — see observeAct().
-  observeAct: risc.observeAct.bind(risc) as RiscRegister['observeAct'],
-  googleSubjectType: risc.googleSubjectType.bind(risc) as
-    RiscRegister['googleSubjectType'],
-  accountIdOf: risc.accountIdOf.bind(risc) as RiscRegister['accountIdOf'],
-  rowFor: risc.rowFor.bind(risc) as RiscRegister['rowFor'],
-  get: risc.get.bind(risc) as RiscRegister['get'],
-  list: risc.list.bind(risc) as RiscRegister['list'],
-  commonClaims: risc.commonClaims.bind(risc) as RiscRegister['commonClaims'],
-  buildPayload: risc.buildPayload.bind(risc) as RiscRegister['buildPayload'],
-  gate: risc.gate.bind(risc) as RiscRegister['gate'],
-  applyToState: risc.applyToState.bind(risc) as RiscRegister['applyToState'],
-  applyDue: risc.applyDue.bind(risc) as RiscRegister['applyDue'],
-  refusals: risc.refusals.bind(risc) as RiscRegister['refusals'],
-  noteTransmitted: risc.noteTransmitted.bind(risc) as
-    RiscRegister['noteTransmitted'],
-  observe: risc.observe.bind(risc) as RiscRegister['observe'],
-  actsFor: risc.actsFor.bind(risc) as RiscRegister['actsFor'],
-  reset: risc.reset.bind(risc) as RiscRegister['reset'],
-  clear: risc.clear.bind(risc) as RiscRegister['clear'],
-  report: risc.report.bind(risc) as RiscRegister['report']
+  observeAct: slot.forward('observeAct'),
+  googleSubjectType: slot.forward('googleSubjectType'),
+  accountIdOf: slot.forward('accountIdOf'),
+  rowFor: slot.forward('rowFor'),
+  get: slot.forward('get'),
+  list: slot.forward('list'),
+  commonClaims: slot.forward('commonClaims'),
+  buildPayload: slot.forward('buildPayload'),
+  gate: slot.forward('gate'),
+  applyToState: slot.forward('applyToState'),
+  applyDue: slot.forward('applyDue'),
+  refusals: slot.forward('refusals'),
+  noteTransmitted: slot.forward('noteTransmitted'),
+  observe: slot.forward('observe'),
+  actsFor: slot.forward('actsFor'),
+  reset: slot.forward('reset'),
+  clear: slot.forward('clear'),
+  report: slot.forward('report')
 };

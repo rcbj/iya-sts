@@ -117,16 +117,18 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `TokenZcap` takes the logger, the clock, the error-code table, the
 // access model (`gnap_access`), node's `crypto` and an IMPORTER for the ZCAP
-// libraries through its constructor. The importer is what keeps the ES
-// modules lazy: the class calls it once, on the first call that needs them,
-// and `import()` stays a real dynamic import in the compiled CommonJS (module
-// `nodenext` preserves it). The module still exports its old names from a
-// TRANSITIONAL instance for the unconverted modules and the tests that
-// require it.
+// libraries through its constructor. The importer is what keeps the ES modules
+// lazy: the class calls it once, on the first call that needs them, and
+// `import()` stays a real dynamic import in the compiled CommonJS (module
+// `nodenext` preserves it). The module still exports its old names as FACADES
+// forwarding to the instance the composition root builds (#50, R2), for the
+// unconverted modules and the tests that require it. A process that loads this
+// module without the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import gnapAccess = require('./gnap_access');
 
@@ -784,48 +786,69 @@ class TokenZcap {
     log.debug("Leaving TokenZcap.describe().");
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before. The importer is the old
+  // module-level load, unchanged: three ES modules by dynamic import and two
+  // CommonJS packages by require, all at the first call that needs them.
+  static defaultDeps(): TokenZcapDeps {
+    helpers.log.debug("Entering TokenZcap.defaultDeps().");
+    helpers.log.debug("Leaving TokenZcap.defaultDeps().");
+    return {
+      log: helpers.log,
+      nowSec: function () {
+        return helpers.nowSec();
+      },
+      errorCodes: errorCodes,
+      access: gnapAccess,
+      crypto: crypto,
+      importLibraries: function () {
+        return Promise.all([
+          import('@digitalbazaar/zcap'),
+          import('@digitalbazaar/ed25519-signature-2020'),
+          import('@digitalbazaar/ed25519-verification-key-2020')
+        ]).then(function (mods: any[]) {
+          const security = require('@digitalbazaar/security-context');
+          return {
+            jsigs: require('jsonld-signatures'),
+            zcap: mods[0],
+            Ed25519Signature2020: mods[1].Ed25519Signature2020,
+            suiteContext: mods[1].suiteContext,
+            Ed25519VerificationKey2020: mods[2].Ed25519VerificationKey2020,
+            securityContexts: security.contexts
+          };
+        });
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one. The importer is the old
-// module-level load, unchanged: three ES modules by dynamic import and two
-// CommonJS packages by require, all at the first call that needs them.
-const tokenZcap = new TokenZcap({
-  log: helpers.log,
-  nowSec: function () {
-    return helpers.nowSec();
-  },
-  errorCodes: errorCodes,
-  access: gnapAccess,
-  crypto: crypto,
-  importLibraries: function () {
-    return Promise.all([
-      import('@digitalbazaar/zcap'),
-      import('@digitalbazaar/ed25519-signature-2020'),
-      import('@digitalbazaar/ed25519-verification-key-2020')
-    ]).then(function (mods: any[]) {
-      const security = require('@digitalbazaar/security-context');
-      return {
-        jsigs: require('jsonld-signatures'),
-        zcap: mods[0],
-        Ed25519Signature2020: mods[1].Ed25519Signature2020,
-        suiteContext: mods[1].suiteContext,
-        Ed25519VerificationKey2020: mods[2].Ed25519VerificationKey2020,
-        securityContexts: security.contexts
-      };
-    });
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<TokenZcap>(
+  'gnap/token_zcap',
+  () => new TokenZcap(TokenZcap.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   TokenZcap: TokenZcap,
+  installInstance: (instance: TokenZcap): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FORMAT: TokenZcap.FORMAT,
   CONTEXT: TokenZcap.CONTEXT,
-  mint: tokenZcap.mint.bind(tokenZcap) as TokenZcap['mint'],
-  verify: tokenZcap.verify.bind(tokenZcap) as TokenZcap['verify'],
-  describe: tokenZcap.describe.bind(tokenZcap) as TokenZcap['describe'],
-  controllerDocument: tokenZcap.controllerDocument.bind(tokenZcap) as
-    TokenZcap['controllerDocument'],
-  controllerFor: tokenZcap.controllerFor.bind(tokenZcap) as
-    TokenZcap['controllerFor']
+  mint: slot.forward('mint'),
+  verify: slot.forward('verify'),
+  describe: slot.forward('describe'),
+  controllerDocument: slot.forward('controllerDocument'),
+  controllerFor: slot.forward('controllerFor')
 };

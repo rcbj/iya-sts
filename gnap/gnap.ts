@@ -69,12 +69,14 @@
 // shape, for a module that registers routes (rule 1): `GnapRoutes` takes the
 // grant engine, the resource server judge and the rest through its
 // constructor, and its `registerRoutes(app)` holds every route in its old
-// order. The TRANSITIONAL code at the bottom builds one from the real
-// modules, exports its `registerRoutes(app)` for `common/protocol_stack.ts`
-// to call at this module's old point in the route order (#50, R1), and then
-// — in the old order — requires the resource-owner pages and the console
-// pages (which register nothing when required either) and installs the SSF
-// scope. `gnap_access` and `gnap_monitor` stay LAZY, as they were, through
+// order. The composition root builds the instance (#50, R2) and calls its
+// `registerRoutes(app)` at this module's old point in the route order (#50,
+// R1); the exports are FACADES for the JavaScript callers, and a process
+// without the root builds a default when this module loads. Loading it still
+// requires the resource-owner pages and the console pages (which register
+// nothing when required either); installing the SSF scope is the `wire`
+// step, run once for whichever instance is installed. `gnap_access` and
+// `gnap_monitor` stay LAZY, as they were, through
 // the two loaders in `GnapRoutesDeps`. The module still exports `DEMO_TYPE`,
 // `DEMO_REFERENCE` and `gnapError`.
 // ---------------------------------------------------------------------------
@@ -82,6 +84,7 @@
 import app = require('../common/app');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
@@ -660,27 +663,55 @@ class GnapRoutes {
 
     log.debug("Leaving GnapRoutes.registerRoutes().");
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapRoutesDeps {
+    helpers.log.debug("Entering GnapRoutes.defaultDeps().");
+    helpers.log.debug("Leaving GnapRoutes.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log,
+      errorCodes: errorCodes,
+      validation: validation,
+      authorizationServers: authorizationServers,
+      grants: grants,
+      rs: rs,
+      tokens: tokens,
+      zcap: zcap,
+      loadAccess: function () {
+        return require('./gnap_access');
+      },
+      loadMonitor: function () {
+        return require('./gnap_monitor');
+      }
+    };
+  }
+
+  // What loading this module did with its instance's family before R2 (#50):
+  // install GNAP's subject scope on the SSF streams. Run once, for whichever
+  // instance is installed; the scope is `gnap_signals`' and needs nothing of
+  // the instance itself.
+  static wire(_instance: GnapRoutes): void {
+    helpers.log.debug("Entering GnapRoutes.wire().");
+    signals.install();
+    helpers.log.debug("Leaving GnapRoutes.wire().");
+  }
 }
 
-// THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, whose routes the composition root registers (below).
-const routes = new GnapRoutes({
-  config: config,
-  log: helpers.log,
-  errorCodes: errorCodes,
-  validation: validation,
-  authorizationServers: authorizationServers,
-  grants: grants,
-  rs: rs,
-  tokens: tokens,
-  zcap: zcap,
-  loadAccess: function () {
-    return require('./gnap_access');
-  },
-  loadMonitor: function () {
-    return require('./gnap_monitor');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapRoutes>(
+  'gnap/gnap',
+  () => new GnapRoutes(GnapRoutes.defaultDeps()),
+  GnapRoutes.wire,
+  helpers.log);
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
@@ -689,16 +720,20 @@ const routes = new GnapRoutes({
 // The pages a resource owner sees, the two console pages, and the scope hook
 // on the SSF streams. The two requires register nothing (#50, R1); they are
 // here so the family is one require, and `common/protocol_stack.ts` registers
-// their routes after this module's. `signals.install()` is a load-time effect
-// and still happens here.
+// their routes after this module's. `signals.install()`, which came after
+// them, is the `wire` step (#50, R2).
 require('./gnap_interact');
 require('./gnap_admin');
-signals.install();
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => routes.registerRoutes(target),
+  installInstance: (instance: GnapRoutes): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  registerRoutes: slot.forward('registerRoutes'),
   GnapRoutes: GnapRoutes,
   DEMO_TYPE: GnapRoutes.DEMO_TYPE,
   DEMO_REFERENCE: GnapRoutes.DEMO_REFERENCE,
-  gnapError: routes.gnapError.bind(routes) as GnapRoutes['gnapError']
+  gnapError: slot.forward('gnapError')
 };

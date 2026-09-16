@@ -66,12 +66,14 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape, for a module that registers routes (rule 1): `GnapInteract` takes
-// the sign-in service, the stores and the rest through its constructor, and
-// its `registerRoutes(app)` holds the six routes in their old order. The
-// TRANSITIONAL instance below is built from the real modules and exports its
-// `registerRoutes(app)`, which `common/protocol_stack.ts` calls (#50, R1)
-// right after `gnap.ts`'s, where requiring this file registered them before.
+// shape, for a module that registers routes (rule 1): `GnapInteract` takes the
+// sign-in service, the stores and the rest through its constructor, and its
+// `registerRoutes(app)` holds the six routes in their old order. The
+// composition root builds the instance (#50, R2), and the module's
+// `registerRoutes(app)` is a FACADE forwarding to it, which
+// `common/protocol_stack.ts` calls (#50, R1) right after `gnap.ts`'s, where
+// requiring this file registered them before. A process that loads this module
+// without the root builds a default instance when the module loads.
 //
 // **THE APPROVAL ROUTES ARE WRITTEN LAST, AND THEIR HANDLERS INLINE**, because
 // `tests/cluster_followups.js` reads this file from the approval route to its
@@ -81,6 +83,7 @@
 import app = require('../common/app');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import websecurity = require('../common/websecurity');
@@ -746,31 +749,54 @@ class GnapInteract {
 
     log.debug("Leaving GnapInteract.registerRoutes().");
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapInteractDeps {
+    helpers.log.debug("Entering GnapInteract.defaultDeps().");
+    helpers.log.debug("Leaving GnapInteract.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log,
+      xmlEscape: helpers.xmlEscape,
+      parseBody: helpers.parseBody,
+      bodyValues: helpers.bodyValues,
+      nowSec: helpers.nowSec,
+      errorCodes: errorCodes,
+      validation: validation,
+      websecurity: websecurity,
+      authn: authn,
+      store: store,
+      grants: grants,
+      monitor: monitor
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules; its routes are registered by the composition root (below).
-const interaction = new GnapInteract({
-  config: config,
-  log: helpers.log,
-  xmlEscape: helpers.xmlEscape,
-  parseBody: helpers.parseBody,
-  bodyValues: helpers.bodyValues,
-  nowSec: helpers.nowSec,
-  errorCodes: errorCodes,
-  validation: validation,
-  websecurity: websecurity,
-  authn: authn,
-  store: store,
-  grants: grants,
-  monitor: monitor
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapInteract>(
+  'gnap/gnap_interact',
+  () => new GnapInteract(GnapInteract.defaultDeps()),
+  null,
+  helpers.log);
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => interaction.registerRoutes(target),
+  installInstance: (instance: GnapInteract): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  registerRoutes: slot.forward('registerRoutes'),
   GnapInteract: GnapInteract
 };

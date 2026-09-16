@@ -108,13 +108,16 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GnapAccess` takes the logger, the clock, the error-code table, `fs`,
 // `path` and the directories `require` searches through its constructor. The
-// module still exports its old names from a TRANSITIONAL instance for the
-// unconverted modules and the three token formats that require it.
+// module still exports its old names as FACADES forwarding to the instance the
+// composition root builds (#50, R2), for the unconverted modules and the three
+// token formats that require it. A process that loads this module without the
+// root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
 import path = require('path');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 
 interface GnapAccessDeps {
@@ -874,58 +877,67 @@ class GnapAccess {
       return { name: name, version: null, license: null };
     }
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before. `modulePaths` is this file's
+  // own `module.paths`, which is what the function read before; the clock is
+  // read off `helpers` at each call, as it was.
+  static defaultDeps(): GnapAccessDeps {
+    helpers.log.debug("Entering GnapAccess.defaultDeps().");
+    helpers.log.debug("Leaving GnapAccess.defaultDeps().");
+    return {
+      log: helpers.log,
+      nowSec: function () {
+        return helpers.nowSec();
+      },
+      errorCodes: errorCodes,
+      fs: fs,
+      path: path,
+      modulePaths: (module as any).paths || []
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one. `modulePaths` is this
-// file's own `module.paths`, which is what the function read before; the
-// clock is read off `helpers` at each call, as it was.
-const gnapAccess = new GnapAccess({
-  log: helpers.log,
-  nowSec: function () {
-    return helpers.nowSec();
-  },
-  errorCodes: errorCodes,
-  fs: fs,
-  path: path,
-  modulePaths: (module as any).paths || []
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapAccess>(
+  'gnap/gnap_access',
+  () => new GnapAccess(GnapAccess.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapAccess: GnapAccess,
+  installInstance: (instance: GnapAccess): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   TOKEN_FLAGS: GnapAccess.TOKEN_FLAGS,
   ARRAY_DIMENSIONS: GnapAccess.ARRAY_DIMENSIONS,
   COMMON_FIELDS: GnapAccess.COMMON_FIELDS,
   MAX_POINTS: GnapAccess.MAX_POINTS,
-  refusal: gnapAccess.refusal.bind(gnapAccess) as GnapAccess['refusal'],
-  canonicalJson: gnapAccess.canonicalJson.bind(gnapAccess) as
-    GnapAccess['canonicalJson'],
-  normalise: gnapAccess.normalise.bind(gnapAccess) as
-    GnapAccess['normalise'],
-  dedupe: gnapAccess.dedupe.bind(gnapAccess) as GnapAccess['dedupe'],
-  union: gnapAccess.union.bind(gnapAccess) as GnapAccess['union'],
-  intersect: gnapAccess.intersect.bind(gnapAccess) as
-    GnapAccess['intersect'],
-  accessCovers: gnapAccess.accessCovers.bind(gnapAccess) as
-    GnapAccess['accessCovers'],
-  cnfToString: gnapAccess.cnfToString.bind(gnapAccess) as
-    GnapAccess['cnfToString'],
-  cnfFromString: gnapAccess.cnfFromString.bind(gnapAccess) as
-    GnapAccess['cnfFromString'],
-  validateModel: gnapAccess.validateModel.bind(gnapAccess) as
-    GnapAccess['validateModel'],
-  checkTime: gnapAccess.checkTime.bind(gnapAccess) as
-    GnapAccess['checkTime'],
-  checkAudience: gnapAccess.checkAudience.bind(gnapAccess) as
-    GnapAccess['checkAudience'],
-  checkBinding: gnapAccess.checkBinding.bind(gnapAccess) as
-    GnapAccess['checkBinding'],
-  checkAccess: gnapAccess.checkAccess.bind(gnapAccess) as
-    GnapAccess['checkAccess'],
-  checkPresentation: gnapAccess.checkPresentation.bind(gnapAccess) as
-    GnapAccess['checkPresentation'],
-  packageDir: gnapAccess.packageDir.bind(gnapAccess) as
-    GnapAccess['packageDir'],
-  libraryInfo: gnapAccess.libraryInfo.bind(gnapAccess) as
-    GnapAccess['libraryInfo']
+  refusal: slot.forward('refusal'),
+  canonicalJson: slot.forward('canonicalJson'),
+  normalise: slot.forward('normalise'),
+  dedupe: slot.forward('dedupe'),
+  union: slot.forward('union'),
+  intersect: slot.forward('intersect'),
+  accessCovers: slot.forward('accessCovers'),
+  cnfToString: slot.forward('cnfToString'),
+  cnfFromString: slot.forward('cnfFromString'),
+  validateModel: slot.forward('validateModel'),
+  checkTime: slot.forward('checkTime'),
+  checkAudience: slot.forward('checkAudience'),
+  checkBinding: slot.forward('checkBinding'),
+  checkAccess: slot.forward('checkAccess'),
+  checkPresentation: slot.forward('checkPresentation'),
+  packageDir: slot.forward('packageDir'),
+  libraryInfo: slot.forward('libraryInfo')
 };

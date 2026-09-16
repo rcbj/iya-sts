@@ -71,12 +71,15 @@
 // shape: `SsfAuth` takes `helpers`, `config`, `mode`, `credentials`, `dpop`,
 // the error-code table and LOADERS for `ssf_cluster.ts` and the two GNAP
 // modules (loaders, for the lazy requires argued beside `attemptGnap()`)
-// through its constructor. The module still exports its old names from a
-// TRANSITIONAL instance for `ssf/ssf.ts`, `ssf/ssf_receivers.ts` and the
-// tests.
+// through its constructor. The module still exports its old names as FACADES
+// forwarding to the instance the composition root builds (#50, R2), for
+// `ssf/ssf.ts`, `ssf/ssf_receivers.ts` and the tests. A process that loads
+// this module without the root builds a default instance when the module
+// loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 import mode = require('../common/mode');
@@ -757,39 +760,61 @@ class SsfAuth {
     log.debug("Leaving SsfAuth.describe().");
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): SsfAuthDeps {
+    helpers.log.debug("Entering SsfAuth.defaultDeps().");
+    helpers.log.debug("Leaving SsfAuth.defaultDeps().");
+    return {
+      helpers: helpers,
+      config: config,
+      mode: mode,
+      credentials: credentials,
+      dpop: dpop,
+      errorCodes: errorCodes,
+      loadSsfCluster: function () {
+        return require('./ssf_cluster');
+      },
+      loadGnapAccess: function () {
+        return require('../gnap/gnap_access');
+      },
+      loadGnapRs: function () {
+        return require('../gnap/gnap_rs');
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above.
-const ssfAuth = new SsfAuth({
-  helpers: helpers,
-  config: config,
-  mode: mode,
-  credentials: credentials,
-  dpop: dpop,
-  errorCodes: errorCodes,
-  loadSsfCluster: function () {
-    return require('./ssf_cluster');
-  },
-  loadGnapAccess: function () {
-    return require('../gnap/gnap_access');
-  },
-  loadGnapRs: function () {
-    return require('../gnap/gnap_rs');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<SsfAuth>(
+  'ssf/ssf_auth',
+  () => new SsfAuth(SsfAuth.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   SsfAuth: SsfAuth,
+  installInstance: (instance: SsfAuth): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SCHEMES: SsfAuth.SCHEMES,
   REFUSED_PASSWORD: SsfAuth.REFUSED_PASSWORD,
-  authRequired: ssfAuth.authRequired.bind(ssfAuth) as SsfAuth['authRequired'],
-  scopeRead: ssfAuth.scopeRead.bind(ssfAuth) as SsfAuth['scopeRead'],
-  scopeWrite: ssfAuth.scopeWrite.bind(ssfAuth) as SsfAuth['scopeWrite'],
-  realm: ssfAuth.realm.bind(ssfAuth) as SsfAuth['realm'],
-  challenges: ssfAuth.challenges.bind(ssfAuth) as SsfAuth['challenges'],
-  authenticate: ssfAuth.authenticate.bind(ssfAuth) as
-    SsfAuth['authenticate'],
-  schemesForMetadata: ssfAuth.schemesForMetadata.bind(ssfAuth) as
-    SsfAuth['schemesForMetadata'],
-  describe: ssfAuth.describe.bind(ssfAuth) as SsfAuth['describe']
+  authRequired: slot.forward('authRequired'),
+  scopeRead: slot.forward('scopeRead'),
+  scopeWrite: slot.forward('scopeWrite'),
+  realm: slot.forward('realm'),
+  challenges: slot.forward('challenges'),
+  authenticate: slot.forward('authenticate'),
+  schemesForMetadata: slot.forward('schemesForMetadata'),
+  describe: slot.forward('describe')
 };

@@ -52,7 +52,9 @@
 // through its constructor, and the two schema builders are static methods of
 // `SchemaParts`. The tables are still built and compiled at require time, for
 // the reason given above `COMPILED`. The module still exports `SCHEMAS` and
-// `validate` from a TRANSITIONAL instance for `gnap_request.ts`.
+// `validate` as FACADES forwarding to the instance the composition root builds
+// (#50, R2), for `gnap_request.ts`. A process that loads this module without
+// the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 // `any` for the type checker (#50): CommonJS modules whose declared types are
@@ -60,6 +62,7 @@
 import Ajv2020Module = require('ajv/dist/2020');
 import addFormatsModule = require('ajv-formats');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
 
 const Ajv2020: any = Ajv2020Module;
@@ -424,19 +427,42 @@ class GnapSchemas {
     return { ok: false, path: path,
              detail: detail + ' (JSON Schema ' + schemas[name].$id + ')' };
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before. The tables are the ones
+  // compiled at load.
+  static defaultDeps(): GnapSchemasDeps {
+    helpers.log.debug("Entering GnapSchemas.defaultDeps().");
+    helpers.log.debug("Leaving GnapSchemas.defaultDeps().");
+    return {
+      log: helpers.log,
+      compiled: COMPILED,
+      schemas: SCHEMAS
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules and the tables compiled at load, as the composition root will
-// build one.
-const schemas = new GnapSchemas({
-  log: helpers.log,
-  compiled: COMPILED,
-  schemas: SCHEMAS
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapSchemas>(
+  'gnap/gnap_schemas',
+  () => new GnapSchemas(GnapSchemas.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapSchemas: GnapSchemas,
+  installInstance: (instance: GnapSchemas): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SCHEMAS: GnapSchemas.SCHEMAS,
-  validate: schemas.validate.bind(schemas) as GnapSchemas['validate']
+  validate: slot.forward('validate')
 };

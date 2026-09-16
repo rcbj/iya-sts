@@ -122,12 +122,15 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `TokenMacaroon` takes the logger, the error-code table, the access
 // model (`gnap_access`) and the `macaroon` library through its constructor.
-// The module still exports its old names from a TRANSITIONAL instance for the
-// unconverted modules and the tests that require it.
+// The module still exports its old names as FACADES forwarding to the instance
+// the composition root builds (#50, R2), for the unconverted modules and the
+// tests that require it. A process that loads this module without the root
+// builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import macaroonLib = require('macaroon');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import gnapAccess = require('./gnap_access');
 
@@ -758,32 +761,50 @@ class TokenMacaroon {
     log.debug("Leaving TokenMacaroon.describe().");
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): TokenMacaroonDeps {
+    helpers.log.debug("Entering TokenMacaroon.defaultDeps().");
+    helpers.log.debug("Leaving TokenMacaroon.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      access: gnapAccess,
+      macaroon: macaroonLib
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const tokenMacaroon = new TokenMacaroon({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  access: gnapAccess,
-  macaroon: macaroonLib
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<TokenMacaroon>(
+  'gnap/token_macaroon',
+  () => new TokenMacaroon(TokenMacaroon.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   TokenMacaroon: TokenMacaroon,
+  installInstance: (instance: TokenMacaroon): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FORMAT: TokenMacaroon.FORMAT,
   IDENTIFIER_PREFIX: TokenMacaroon.IDENTIFIER_PREFIX,
-  mint: tokenMacaroon.mint.bind(tokenMacaroon) as TokenMacaroon['mint'],
-  verify: tokenMacaroon.verify.bind(tokenMacaroon) as TokenMacaroon['verify'],
-  attenuate: tokenMacaroon.attenuate.bind(tokenMacaroon) as
-    TokenMacaroon['attenuate'],
-  describe: tokenMacaroon.describe.bind(tokenMacaroon) as
-    TokenMacaroon['describe'],
-  parseCaveat: tokenMacaroon.parseCaveat.bind(tokenMacaroon) as
-    TokenMacaroon['parseCaveat'],
-  caveatsFor: tokenMacaroon.caveatsFor.bind(tokenMacaroon) as
-    TokenMacaroon['caveatsFor'],
-  encodeBinaryV2: tokenMacaroon.encodeBinaryV2.bind(tokenMacaroon) as
-    TokenMacaroon['encodeBinaryV2'],
+  mint: slot.forward('mint'),
+  verify: slot.forward('verify'),
+  attenuate: slot.forward('attenuate'),
+  describe: slot.forward('describe'),
+  parseCaveat: slot.forward('parseCaveat'),
+  caveatsFor: slot.forward('caveatsFor'),
+  encodeBinaryV2: slot.forward('encodeBinaryV2'),
   OPTIONAL_ONCE: TokenMacaroon.OPTIONAL_ONCE
 };

@@ -113,14 +113,17 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GnapHttpsig` takes node's crypto, the logger, the error-code table
 // and `gnap_sf` through its constructor, and every helper is one of its
-// private methods. The five tables are module constants; three are exported
-// as before and are static members too. The module still exports the old
-// names from a TRANSITIONAL instance for `gnap_proof.ts`, the other GNAP
-// modules and the tests, which require it by those names.
+// private methods. The five tables are module constants; three are exported as
+// before and are static members too. The module still exports the old names as
+// FACADES forwarding to the instance the composition root builds (#50, R2),
+// for `gnap_proof.ts`, the other GNAP modules and the tests, which require it
+// by those names. A process that loads this module without the root builds a
+// default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 // A leaf: the one table of codes, and `mark()`, which puts a code on a refusal
 // object under a Symbol so that nothing serialises it.
 import errorCodes = require('../common/error_codes');
@@ -1931,35 +1934,51 @@ class GnapHttpsig {
       base: built.base
     };
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapHttpsigDeps {
+    helpers.log.debug("Entering GnapHttpsig.defaultDeps().");
+    helpers.log.debug("Leaving GnapHttpsig.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      log: helpers.log,
+      errorCodes: errorCodes,
+      sf: sf
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const httpsig = new GnapHttpsig({
-  nodeCrypto: nodeCrypto,
-  log: helpers.log,
-  errorCodes: errorCodes,
-  sf: sf
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapHttpsig>(
+  'gnap/gnap_httpsig',
+  () => new GnapHttpsig(GnapHttpsig.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapHttpsig: GnapHttpsig,
+  installInstance: (instance: GnapHttpsig): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   ALGORITHMS: GnapHttpsig.ALGORITHMS,
   DIGEST_ALGORITHMS: GnapHttpsig.DIGEST_ALGORITHMS,
   KNOWN_FIELD_TYPES: GnapHttpsig.KNOWN_FIELD_TYPES,
-  contentDigest:
-    httpsig.contentDigest.bind(httpsig) as GnapHttpsig['contentDigest'],
-  verifyContentDigest:
-    httpsig.verifyContentDigest.bind(httpsig) as
-      GnapHttpsig['verifyContentDigest'],
-  componentValue:
-    httpsig.componentValue.bind(httpsig) as GnapHttpsig['componentValue'],
-  signatureBase:
-    httpsig.signatureBase.bind(httpsig) as GnapHttpsig['signatureBase'],
-  sign: httpsig.sign.bind(httpsig) as GnapHttpsig['sign'],
-  appendSignature:
-    httpsig.appendSignature.bind(httpsig) as GnapHttpsig['appendSignature'],
-  parseSignatures:
-    httpsig.parseSignatures.bind(httpsig) as GnapHttpsig['parseSignatures'],
-  verify: httpsig.verify.bind(httpsig) as GnapHttpsig['verify']
+  contentDigest: slot.forward('contentDigest'),
+  verifyContentDigest: slot.forward('verifyContentDigest'),
+  componentValue: slot.forward('componentValue'),
+  signatureBase: slot.forward('signatureBase'),
+  sign: slot.forward('sign'),
+  appendSignature: slot.forward('appendSignature'),
+  parseSignatures: slot.forward('parseSignatures'),
+  verify: slot.forward('verify')
 };

@@ -48,14 +48,17 @@
 // claim store, the error-code table and its twelve stores through its
 // constructor. The stores are still declared at module scope, one
 // `realms.map()` each, because a store becomes per realm at its declaration
-// (`tests/realm_isolation.js`). The module still exports its old names from a
-// TRANSITIONAL instance for the unconverted modules that require it, and
-// still provides the `gnap.once` capability at load, after that instance
-// exists.
+// (`tests/realm_isolation.js`). The module still exports its old names as
+// FACADES forwarding to the instance the composition root builds (#50, R2),
+// for the unconverted modules that require it, and still provides the
+// `gnap.once` capability at load, which needs no instance. A process that
+// loads this module without the root builds a default instance when the module
+// loads.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 // THE CLUSTER CLAIM (2026-09-14, #46) — see spend() below. A LIBRARY that
 // registers no route and requires persistence lazily, so this file stays a
@@ -712,94 +715,101 @@ class GnapStore {
     });
     log.debug("Leaving GnapStore.prune().");
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before. The stores are the module-scope
+  // ones.
+  static defaultDeps(): GnapStoreDeps {
+    helpers.log.debug("Entering GnapStore.defaultDeps().");
+    helpers.log.debug("Leaving GnapStore.defaultDeps().");
+    return {
+      log: helpers.log,
+      randomId: helpers.randomId,
+      nowSec: helpers.nowSec,
+      clusterClaims: clusterClaims,
+      errorCodes: errorCodes,
+      stores: {
+        grants: grants,
+        continuations: continuations,
+        interactions: interactions,
+        userCodes: userCodes,
+        tokens: tokens,
+        tokenValues: tokenValues,
+        manageValues: manageValues,
+        manageHandles: manageHandles,
+        instances: instances,
+        userRefs: userRefs,
+        resources: resources,
+        replay: replay
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules and the module-scope stores, as the composition root will build
-// one.
-const store = new GnapStore({
-  log: helpers.log,
-  randomId: helpers.randomId,
-  nowSec: helpers.nowSec,
-  clusterClaims: clusterClaims,
-  errorCodes: errorCodes,
-  stores: {
-    grants: grants,
-    continuations: continuations,
-    interactions: interactions,
-    userCodes: userCodes,
-    tokens: tokens,
-    tokenValues: tokenValues,
-    manageValues: manageValues,
-    manageHandles: manageHandles,
-    instances: instances,
-    userRefs: userRefs,
-    resources: resources,
-    replay: replay
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapStore>(
+  'gnap/gnap_store',
+  () => new GnapStore(GnapStore.defaultDeps()),
+  null,
+  helpers.log);
 
 // #46: every GNAP single-use value is spent once across the cluster — the
 // helper above, called from gnap_grants.ts, gnap_interact.ts, gnap_proof.ts
 // and gnap_rs.ts. Provided here because the capability row names this file.
 capabilities.provide('gnap.once');
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
   GnapStore: GnapStore,
+  installInstance: (instance: GnapStore): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   STATE: GnapStore.STATE,
-  spend: store.spend.bind(store) as GnapStore['spend'],
-  unspend: store.unspend.bind(store) as GnapStore['unspend'],
-  digest: store.digest.bind(store) as GnapStore['digest'],
-  mint: store.mint.bind(store) as GnapStore['mint'],
-  newGrant: store.newGrant.bind(store) as GnapStore['newGrant'],
-  getGrant: store.getGrant.bind(store) as GnapStore['getGrant'],
-  saveGrant: store.saveGrant.bind(store) as GnapStore['saveGrant'],
-  listGrants: store.listGrants.bind(store) as GnapStore['listGrants'],
-  deleteGrant: store.deleteGrant.bind(store) as GnapStore['deleteGrant'],
-  issueContinuation: store.issueContinuation.bind(store) as
-    GnapStore['issueContinuation'],
-  grantByContinuation: store.grantByContinuation.bind(store) as
-    GnapStore['grantByContinuation'],
-  dropContinuation: store.dropContinuation.bind(store) as
-    GnapStore['dropContinuation'],
-  putInteraction: store.putInteraction.bind(store) as
-    GnapStore['putInteraction'],
-  grantByInteraction: store.grantByInteraction.bind(store) as
-    GnapStore['grantByInteraction'],
-  dropInteraction: store.dropInteraction.bind(store) as
-    GnapStore['dropInteraction'],
-  putUserCode: store.putUserCode.bind(store) as GnapStore['putUserCode'],
-  grantByUserCode: store.grantByUserCode.bind(store) as
-    GnapStore['grantByUserCode'],
-  dropUserCode: store.dropUserCode.bind(store) as GnapStore['dropUserCode'],
-  userCodeTaken: store.userCodeTaken.bind(store) as
-    GnapStore['userCodeTaken'],
-  putToken: store.putToken.bind(store) as GnapStore['putToken'],
-  saveToken: store.saveToken.bind(store) as GnapStore['saveToken'],
-  tokenByJti: store.tokenByJti.bind(store) as GnapStore['tokenByJti'],
-  tokenByValue: store.tokenByValue.bind(store) as GnapStore['tokenByValue'],
-  listTokens: store.listTokens.bind(store) as GnapStore['listTokens'],
-  issueManagement: store.issueManagement.bind(store) as
-    GnapStore['issueManagement'],
-  moveManagement: store.moveManagement.bind(store) as
-    GnapStore['moveManagement'],
-  tokenByManagement: store.tokenByManagement.bind(store) as
-    GnapStore['tokenByManagement'],
-  dropManagement: store.dropManagement.bind(store) as
-    GnapStore['dropManagement'],
-  putInstance: store.putInstance.bind(store) as GnapStore['putInstance'],
-  instanceById: store.instanceById.bind(store) as GnapStore['instanceById'],
-  putUserRef: store.putUserRef.bind(store) as GnapStore['putUserRef'],
-  userByRef: store.userByRef.bind(store) as GnapStore['userByRef'],
-  putResource: store.putResource.bind(store) as GnapStore['putResource'],
-  resourceByReference: store.resourceByReference.bind(store) as
-    GnapStore['resourceByReference'],
-  resourceByCanonical: store.resourceByCanonical.bind(store) as
-    GnapStore['resourceByCanonical'],
-  listResources: store.listResources.bind(store) as
-    GnapStore['listResources'],
-  deleteResource: store.deleteResource.bind(store) as
-    GnapStore['deleteResource'],
-  remember: store.remember.bind(store) as GnapStore['remember'],
-  prune: store.prune.bind(store) as GnapStore['prune']
+  spend: slot.forward('spend'),
+  unspend: slot.forward('unspend'),
+  digest: slot.forward('digest'),
+  mint: slot.forward('mint'),
+  newGrant: slot.forward('newGrant'),
+  getGrant: slot.forward('getGrant'),
+  saveGrant: slot.forward('saveGrant'),
+  listGrants: slot.forward('listGrants'),
+  deleteGrant: slot.forward('deleteGrant'),
+  issueContinuation: slot.forward('issueContinuation'),
+  grantByContinuation: slot.forward('grantByContinuation'),
+  dropContinuation: slot.forward('dropContinuation'),
+  putInteraction: slot.forward('putInteraction'),
+  grantByInteraction: slot.forward('grantByInteraction'),
+  dropInteraction: slot.forward('dropInteraction'),
+  putUserCode: slot.forward('putUserCode'),
+  grantByUserCode: slot.forward('grantByUserCode'),
+  dropUserCode: slot.forward('dropUserCode'),
+  userCodeTaken: slot.forward('userCodeTaken'),
+  putToken: slot.forward('putToken'),
+  saveToken: slot.forward('saveToken'),
+  tokenByJti: slot.forward('tokenByJti'),
+  tokenByValue: slot.forward('tokenByValue'),
+  listTokens: slot.forward('listTokens'),
+  issueManagement: slot.forward('issueManagement'),
+  moveManagement: slot.forward('moveManagement'),
+  tokenByManagement: slot.forward('tokenByManagement'),
+  dropManagement: slot.forward('dropManagement'),
+  putInstance: slot.forward('putInstance'),
+  instanceById: slot.forward('instanceById'),
+  putUserRef: slot.forward('putUserRef'),
+  userByRef: slot.forward('userByRef'),
+  putResource: slot.forward('putResource'),
+  resourceByReference: slot.forward('resourceByReference'),
+  resourceByCanonical: slot.forward('resourceByCanonical'),
+  listResources: slot.forward('listResources'),
+  deleteResource: slot.forward('deleteResource'),
+  remember: slot.forward('remember'),
+  prune: slot.forward('prune')
 };

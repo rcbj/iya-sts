@@ -81,11 +81,14 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GnapSf` takes the logger through its constructor, and every helper
 // of the parser and the serializer is one of its private methods. The module
-// still exports the thirteen old names from a TRANSITIONAL instance for
-// `gnap_httpsig.ts` and the tests, which require it by those names.
+// still exports the thirteen old names as FACADES forwarding to the instance
+// the composition root builds (#50, R2), for `gnap_httpsig.ts` and the tests,
+// which require it by those names. A process that loads this module without
+// the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 
 // A parsed value, in the data model the header describes.
 type SfValue = any;
@@ -1068,28 +1071,50 @@ class GnapSf {
     log.debug("Leaving GnapSf.member().");
     return at < 0 ? undefined : dictionary[at][1];
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapSfDeps {
+    helpers.log.debug("Entering GnapSf.defaultDeps().");
+    helpers.log.debug("Leaving GnapSf.defaultDeps().");
+    return {
+      log: helpers.log
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const sf = new GnapSf({ log: helpers.log });
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapSf>(
+  'gnap/gnap_sf',
+  () => new GnapSf(GnapSf.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapSf: GnapSf,
-  parseList: sf.parseList.bind(sf) as GnapSf['parseList'],
-  parseDictionary: sf.parseDictionary.bind(sf) as GnapSf['parseDictionary'],
-  parseItem: sf.parseItem.bind(sf) as GnapSf['parseItem'],
-  serializeList: sf.serializeList.bind(sf) as GnapSf['serializeList'],
-  serializeDictionary:
-    sf.serializeDictionary.bind(sf) as GnapSf['serializeDictionary'],
-  serializeItem: sf.serializeItem.bind(sf) as GnapSf['serializeItem'],
-  serializeInnerList:
-    sf.serializeInnerList.bind(sf) as GnapSf['serializeInnerList'],
-  serializeParams: sf.serializeParams.bind(sf) as GnapSf['serializeParams'],
-  serializeBareItem:
-    sf.serializeBareItem.bind(sf) as GnapSf['serializeBareItem'],
-  serializeKey: sf.serializeKey.bind(sf) as GnapSf['serializeKey'],
-  param: sf.param.bind(sf) as GnapSf['param'],
-  paramValue: sf.paramValue.bind(sf) as GnapSf['paramValue'],
-  member: sf.member.bind(sf) as GnapSf['member']
+  installInstance: (instance: GnapSf): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  parseList: slot.forward('parseList'),
+  parseDictionary: slot.forward('parseDictionary'),
+  parseItem: slot.forward('parseItem'),
+  serializeList: slot.forward('serializeList'),
+  serializeDictionary: slot.forward('serializeDictionary'),
+  serializeItem: slot.forward('serializeItem'),
+  serializeInnerList: slot.forward('serializeInnerList'),
+  serializeParams: slot.forward('serializeParams'),
+  serializeBareItem: slot.forward('serializeBareItem'),
+  serializeKey: slot.forward('serializeKey'),
+  param: slot.forward('param'),
+  paramValue: slot.forward('paramValue'),
+  member: slot.forward('member')
 };

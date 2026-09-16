@@ -62,17 +62,20 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape: `GnapProof` takes node's crypto, the settings reader, the logger,
-// the base-URL and clock readers, the service's crypto module, the error-code
+// shape: `GnapProof` takes node's crypto, the settings reader, the logger, the
+// base-URL and clock readers, the service's crypto module, the error-code
 // table, `mtls.js`, `gnap_httpsig` and `gnap_store` through its constructor,
-// and every helper is one of its private methods. The module still exports
-// the old names from a TRANSITIONAL instance for `gnap_grants`, `gnap_rs`,
-// `ssf/ssf_cluster.ts` and the tests, which require it by those names.
+// and every helper is one of its private methods. The module still exports the
+// old names as FACADES forwarding to the instance the composition root builds
+// (#50, R2), for `gnap_grants`, `gnap_rs`, `ssf/ssf_cluster.ts` and the tests,
+// which require it by those names. A process that loads this module without
+// the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import mtls = require('../oauth-oidc/mtls');
@@ -962,36 +965,55 @@ class GnapProof {
               checkedInner.ok);
     return checkedInner.ok ? { ok: true } : checkedInner;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before. `helpers` supplies the logger
+  // and the base-URL and clock readers, as it did for this module before.
+  static defaultDeps(): GnapProofDeps {
+    helpers.log.debug("Entering GnapProof.defaultDeps().");
+    helpers.log.debug("Leaving GnapProof.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      config: config,
+      log: helpers.log,
+      baseUrlOf: helpers.baseUrlOf,
+      nowSec: helpers.nowSec,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes,
+      mtls: mtls,
+      httpsig: httpsig,
+      store: store
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one; `helpers` supplies the
-// logger and the base-URL and clock readers, as it did for this module
-// before.
-const proof = new GnapProof({
-  nodeCrypto: nodeCrypto,
-  config: config,
-  log: helpers.log,
-  baseUrlOf: helpers.baseUrlOf,
-  nowSec: helpers.nowSec,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes,
-  mtls: mtls,
-  httpsig: httpsig,
-  store: store
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapProof>(
+  'gnap/gnap_proof',
+  () => new GnapProof(GnapProof.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapProof: GnapProof,
-  readBody: proof.readBody.bind(proof) as GnapProof['readBody'],
-  verifyRequest: proof.verifyRequest.bind(proof) as GnapProof['verifyRequest'],
-  verifyRequestOnce:
-    proof.verifyRequestOnce.bind(proof) as GnapProof['verifyRequestOnce'],
-  spendProof: proof.spendProof.bind(proof) as GnapProof['spendProof'],
-  presentedToken:
-    proof.presentedToken.bind(proof) as GnapProof['presentedToken'],
-  targetUriOf: proof.targetUriOf.bind(proof) as GnapProof['targetUriOf'],
-  athOf: proof.athOf.bind(proof) as GnapProof['athOf'],
-  verifyJwsBytes:
-    proof.verifyJwsBytes.bind(proof) as GnapProof['verifyJwsBytes']
+  installInstance: (instance: GnapProof): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  readBody: slot.forward('readBody'),
+  verifyRequest: slot.forward('verifyRequest'),
+  verifyRequestOnce: slot.forward('verifyRequestOnce'),
+  spendProof: slot.forward('spendProof'),
+  presentedToken: slot.forward('presentedToken'),
+  targetUriOf: slot.forward('targetUriOf'),
+  athOf: slot.forward('athOf'),
+  verifyJwsBytes: slot.forward('verifyJwsBytes')
 };

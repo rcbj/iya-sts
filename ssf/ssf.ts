@@ -129,23 +129,24 @@
 //     `typeof` their modules, so this file checks the same whether each of them
 //     is JavaScript or TypeScript. `cluster/cluster_capabilities.js` arrives as
 //     a LOADER, because the original required it part way down the file and
-//     the transitional code below still does, at the same point.
+//     the instance still does, at the same point.
 //   * **`registerRoutes(app)` HOLDS EVERY ROUTE, IN THE ORIGINAL ORDER**, and
 //     `installHooks()` the five things this file hands to other modules at
 //     require time — the console's signals, CAEP and RISC slots, `authn`'s
 //     session observer and the directory's account observer — in the order the
 //     original filled them.
-//   * **THE MODULE STILL EXPORTS EVERY OLD NAME**, bound to a TRANSITIONAL
-//     instance built at the bottom from the real modules. That instance, at
-//     load and in the original's order, schedules the dead-letter sweep,
-//     provides `ssf.delivery`, installs the hooks and seeds this service's
-//     own two receivers. It does NOT register the routes (#50, R1): the
-//     module exports `registerRoutes(app)` and `common/protocol_stack.ts`
-//     calls it at the point in the route order where requiring this module
-//     used to register them — so the require order, the route order and
-//     every other load-time effect are what they were. It goes when the
-//     composition root exists. `SharedSignals` is exported beside it for that
-//     root.
+//   * **THE COMPOSITION ROOT BUILDS THE INSTANCE (#50, R2)**:
+//     `common/protocol_stack.ts` builds `SharedSignals` from `defaultDeps()`
+//     and installs it, and the module's old names are FACADES that forward
+//     to it, for the JavaScript callers. The `wire` step runs what loading
+//     the module used to do with its instance, in the original's order:
+//     schedules the dead-letter sweep, provides `ssf.delivery`, installs the
+//     hooks and seeds this service's own two receivers. It does NOT register
+//     the routes (#50, R1): the root calls `registerRoutes(app)` at the point
+//     in the route order where requiring this module used to register them —
+//     so the route order and every other load-time effect are what they
+//     were. A process that loads this module without the root builds a
+//     default instance, wired the same way, when the module loads.
 //   * **THE DEAD-LETTER SWEEP'S TIMER STAYS A MODULE-LEVEL `let`**, as it was:
 //     one per process, whatever builds the class.
 // ---------------------------------------------------------------------------
@@ -156,6 +157,7 @@ import app = require('../common/app');
 // `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were. See
 // the note above POST /ssf/receive.
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
@@ -3830,88 +3832,102 @@ class SharedSignals {
     });
     log.debug('Leaving SharedSignals.seedOwnReceivers().');
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): SharedSignalsDeps {
+    helpers.log.debug("Entering SharedSignals.defaultDeps().");
+    helpers.log.debug("Leaving SharedSignals.defaultDeps().");
+    return {
+      app: app,
+      log: helpers.log,
+      helpers: helpers,
+      config: config,
+      realms: realms,
+      stats: stats,
+      audit: audit,
+      applications: applications,
+      adminConsole: adminConsole,
+      authn: authn,
+      subjects: subjects,
+      events: events,
+      caep: caep,
+      risc: risc,
+      directory: directory,
+      streams: streams,
+      receivers: receivers,
+      transport: transport,
+      deadLetterReport: deadLetterReport,
+      ssfAuth: ssfAuth,
+      ssfCluster: ssfCluster,
+      errorCodes: errorCodes,
+      loadCapabilities: function (): Capabilities {
+        return require('../cluster/cluster_capabilities');
+      }
+    };
+  }
+
+  // What loading this module did with its instance before R2 (#50), run once
+  // for whichever instance is installed, in the original file's order: the
+  // sweep, the capability, the hooks, the receivers. The routes, which came
+  // between the capability and the hooks, are registered by the composition
+  // root right after it installs the instance.
+  static wire(instance: SharedSignals): void {
+    helpers.log.debug('Entering SharedSignals.wire().');
+    instance.scheduleSweep();
+    instance.provideCapability();
+    instance.installHooks();
+    instance.seedOwnReceivers();
+    helpers.log.debug('Leaving SharedSignals.wire().');
+  }
 }
 
 // ---------------------------------------------------------------------------
-// THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and set going in the original file's
-// order: the sweep, the capability, the hooks, the receivers. The routes,
-// which came between the capability and the hooks, are registered by the
-// composition root instead (below).
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
-const signals = new SharedSignals({
-  app: app,
-  log: helpers.log,
-  helpers: helpers,
-  config: config,
-  realms: realms,
-  stats: stats,
-  audit: audit,
-  applications: applications,
-  adminConsole: adminConsole,
-  authn: authn,
-  subjects: subjects,
-  events: events,
-  caep: caep,
-  risc: risc,
-  directory: directory,
-  streams: streams,
-  receivers: receivers,
-  transport: transport,
-  deadLetterReport: deadLetterReport,
-  ssfAuth: ssfAuth,
-  ssfCluster: ssfCluster,
-  errorCodes: errorCodes,
-  loadCapabilities: function (): Capabilities {
-    return require('../cluster/cluster_capabilities');
-  }
-});
-
-signals.scheduleSweep();
-signals.provideCapability();
+const slot = new InstanceSlot<SharedSignals>(
+  'ssf/ssf',
+  () => new SharedSignals(SharedSignals.defaultDeps()),
+  SharedSignals.wire,
+  helpers.log);
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
-signals.installHooks();
-signals.seedOwnReceivers();
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
-  registerRoutes: (target: any): void => signals.registerRoutes(target),
+  installInstance: (instance: SharedSignals): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  registerRoutes: slot.forward('registerRoutes'),
   SharedSignals: SharedSignals,
   WELL_KNOWN: SharedSignals.WELL_KNOWN,
-  metadata: signals.metadata.bind(signals) as SharedSignals['metadata'],
-  description: signals.description.bind(signals) as
-    SharedSignals['description'],
-  transmit: signals.transmit.bind(signals) as SharedSignals['transmit'],
-  sweepSignals: signals.sweepSignals.bind(signals) as
-    SharedSignals['sweepSignals'],
-  consoleReport: signals.consoleReport.bind(signals) as
-    SharedSignals['consoleReport'],
-  consoleAction: signals.consoleAction.bind(signals) as
-    SharedSignals['consoleAction'],
+  metadata: slot.forward('metadata'),
+  description: slot.forward('description'),
+  transmit: slot.forward('transmit'),
+  sweepSignals: slot.forward('sweepSignals'),
+  consoleReport: slot.forward('consoleReport'),
+  consoleAction: slot.forward('consoleAction'),
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
-  caepAutoEmit: signals.caepAutoEmit.bind(signals) as
-    SharedSignals['caepAutoEmit'],
-  emitProtocolEvent: signals.emitProtocolEvent.bind(signals) as
-    SharedSignals['emitProtocolEvent'],
-  caepReport: signals.caepReport.bind(signals) as
-    SharedSignals['caepReport'],
-  caepAction: signals.caepAction.bind(signals) as
-    SharedSignals['caepAction'],
+  caepAutoEmit: slot.forward('caepAutoEmit'),
+  emitProtocolEvent: slot.forward('emitProtocolEvent'),
+  caepReport: slot.forward('caepReport'),
+  caepAction: slot.forward('caepAction'),
   CAEP_CONSOLE_ACTIONS: SharedSignals.CAEP_CONSOLE_ACTIONS,
-  riscAutoEmit: signals.riscAutoEmit.bind(signals) as
-    SharedSignals['riscAutoEmit'],
+  riscAutoEmit: slot.forward('riscAutoEmit'),
   // What an administrator did to somebody's credentials (2026-09-13); reached
   // through `ssf/account_signals.ts`.
-  emitRiscAccountAct: signals.emitRiscAccountAct.bind(signals) as
-    SharedSignals['emitRiscAccountAct'],
-  emitCredentialChange: signals.emitCredentialChange.bind(signals) as
-    SharedSignals['emitCredentialChange'],
-  riscReport: signals.riscReport.bind(signals) as
-    SharedSignals['riscReport'],
-  riscAction: signals.riscAction.bind(signals) as
-    SharedSignals['riscAction'],
+  emitRiscAccountAct: slot.forward('emitRiscAccountAct'),
+  emitCredentialChange: slot.forward('emitCredentialChange'),
+  riscReport: slot.forward('riscReport'),
+  riscAction: slot.forward('riscAction'),
   RISC_CONSOLE_ACTIONS: SharedSignals.RISC_CONSOLE_ACTIONS,
   receivers: receivers
 };

@@ -46,14 +46,17 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GnapHttp` takes the settings reader, the logger, the error-code
 // table and the two transports through its constructor. The module still
-// exports `urlProblem` and `pushFinish` from a TRANSITIONAL instance for
-// `gnap_grants.ts`, which requires it by those names.
+// exports `urlProblem` and `pushFinish` as FACADES forwarding to the instance
+// the composition root builds (#50, R2), for `gnap_grants.ts`, which requires
+// it by those names. A process that loads this module without the root builds
+// a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import http = require('http');
 import https = require('https');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import version = require('../common/version');
 
@@ -261,20 +264,43 @@ class GnapHttp {
       }
     });
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapHttpDeps {
+    helpers.log.debug("Entering GnapHttp.defaultDeps().");
+    helpers.log.debug("Leaving GnapHttp.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log,
+      errorCodes: errorCodes,
+      http: http,
+      https: https
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const transport = new GnapHttp({
-  config: config,
-  log: helpers.log,
-  errorCodes: errorCodes,
-  http: http,
-  https: https
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapHttp>(
+  'gnap/gnap_http',
+  () => new GnapHttp(GnapHttp.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapHttp: GnapHttp,
-  urlProblem: transport.urlProblem.bind(transport) as GnapHttp['urlProblem'],
-  pushFinish: transport.pushFinish.bind(transport) as GnapHttp['pushFinish']
+  installInstance: (instance: GnapHttp): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  urlProblem: slot.forward('urlProblem'),
+  pushFinish: slot.forward('pushFinish')
 };
