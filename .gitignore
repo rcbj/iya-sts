@@ -1,5 +1,12 @@
 # Installed dependencies. package-lock.json IS committed, so `npm ci` reproduces.
-node_modules/
+#
+# `node_modules` WITHOUT A TRAILING SLASH, anywhere (2026-09-16). `node_modules/`
+# matches only a directory, so a worktree whose node_modules was a SYMLINK to
+# another checkout's had it committed by a `git add -A` (9d7ebd0). A checkout
+# that then merged that commit had its real, ignored node_modules directory
+# REPLACED by the link — git treats ignored files as disposable — and the link
+# pointed at itself. This pattern matches a file, a link and a directory alike.
+node_modules
 
 # Generated at runtime, never committed: the signing keys are regenerated on every
 # start by design (see README.md — a per-run kid is what stops a stale instance and
