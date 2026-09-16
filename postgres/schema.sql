@@ -171,11 +171,13 @@ CREATE TABLE IF NOT EXISTS sts_keys (
 -- list is written down, and adding a persisted store has to cost one word at
 -- its declaration and nothing here.
 --
--- `realm` IS THE EMPTY STRING for the stores that deliberately have no realm —
--- the Kerberos principal database, the replay caches, the rate limiter's
--- buckets — because the sockets they belong to have no path to put a realm
--- segment in. A column value rather than a NULL, so the primary key needs no
--- COALESCE.
+-- `realm` IS THE EMPTY STRING for the stores that deliberately have no realm
+-- (`realms.sharedMap()`) — the rate limiter's buckets, the cluster's mirror of
+-- LDAP connections — because what they count or mirror belongs to the process
+-- rather than to a path with a realm segment in it. (The Kerberos principal
+-- database and replay cache were on this list until they became per realm, by
+-- 2026-09-15 at the latest — #33.) A column value rather than a NULL, so the
+-- primary key needs no COALESCE.
 --
 -- `body` IS CIPHERTEXT, ALWAYS. Same AES-256-GCM, same self-describing
 -- `$aesgcm$1$salt$iv$tag$body` form and the SAME key-encryption key as

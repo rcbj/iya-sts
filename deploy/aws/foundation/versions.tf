@@ -3,7 +3,8 @@
 #
 # What an environment needs and must not re-create on every run: the project's
 # deployer identity, the KMS key everything is encrypted with, the image
-# repository and the log group that outlives every environment. Applied ONCE,
+# repository, and the log group and test report bucket that outlive every
+# environment. Applied ONCE,
 # by an administrator, because it creates the identity every later apply runs
 # as — the deployer cannot create itself.
 #

@@ -28,13 +28,15 @@
 //     service has sealed is unreadable without it, so a seeder that generated
 //     a fresh one on each start would quietly destroy the store it exists to
 //     protect. It is generated only when `secret/sts` does not exist.
-//   * **THE DATABASE PASSWORD IS WRITTEN EVERY TIME**, because the database's
-//     own copy comes from the same environment variable and the two have to
-//     agree. If they ever disagree, the one in the environment is the one the
-//     database was built with.
-//   * **THE CLIENT CERTIFICATE IS ISSUED ONCE** and left in the shared volume.
-//     Re-issuing on every start would be a new credential per restart for no
-//     reason; the certificate authority stays inside the store either way.
+//   * **THE DATABASE PASSWORD IS CHECKED EVERY TIME** and rewritten when it
+//     differs, because the database's own copy comes from the same
+//     environment variable and the two have to agree. If they ever disagree,
+//     the one in the environment is the one the database was built with.
+//   * **THE CLIENT CERTIFICATE IS ISSUED ONCE** and left in the shared volume,
+//     and re-issued only when it is within `STS_BAO_RENEW_WITHIN_DAYS` of
+//     expiring. Re-issuing on every start would be a new credential per
+//     restart for no reason; the certificate authority stays inside the store
+//     either way.
 //   * Everything else — mounts, roles, the policy, the trusted CA — is written
 //     on every run, because those are declarations and re-declaring them is
 //     free.

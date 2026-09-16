@@ -6,9 +6,10 @@
 # that file are the ones that are about the STS itself: the image/build pair and
 # the healthcheck probe.
 #
-# Compose format 2.4, matching the parent project's files. Nothing here uses
-# `depends_on: condition: service_healthy` — there is only one service — but the
-# version is kept the same so this file can be read beside those and so
+# Compose format 2.4, matching the parent project's files. This file uses
+# `depends_on: condition:` (`service_healthy` and
+# `service_completed_successfully`) now that it brings up several services, and
+# the version is also kept the same so this file can be read beside those and so
 # docker-compose v1, which treats a file with no `version:` as the v1 format that
 # has no `healthcheck` at all, still parses it. Docker Compose v2 and later print
 # "the attribute `version` is obsolete" and then ignore the line — that warning is
@@ -16,17 +17,20 @@
 #
 # ---------------------------------------------------------------------------
 # SINCE 2026-08-27 THIS FILE BRINGS UP TWO SERVICES AND THREE VOLUMES, BECAUSE
-# THIS SERVICE CAN NOW WRITE THINGS DOWN.
+# THIS SERVICE CAN NOW WRITE THINGS DOWN. (Since 2026-09-12 it is five services
+# — the three OpenBao ones are below — and the named volumes are listed at the
+# bottom of the file.)
 #
 # What persists is the embedded LDAP directory — which is also where the
 # applications registry, the federation register and the SPIFFE registry live,
 # because in this service those ARE directory entries — the trust realm
-# registry, and the runtime setting changes made in the console. NOTHING THIS
-# SERVICE MINTS is persisted in any mode: sessions, access tokens, ID Tokens,
-# refresh tokens, authorization codes, SAML artifacts, Kerberos tickets, the
-# statistics and the audit log all go with the process. That is deliberate and
-# not a gap — the signing key is regenerated on every start, so a token that
-# outlived it would verify against nothing.
+# registry, and the runtime setting changes made in the console. What this
+# service MINTS — sessions, tokens, codes, artifacts, tickets — went with the
+# process in every mode when this was written, because the signing key was
+# regenerated on every start. **That was reversed on 2026-09-06 for product
+# mode on postgres**, which is this stack's default (see STS_MODE below): the
+# signing keys are kept, sealed, and what is minted is persisted with them.
+# persistence/CLAUDE.md says exactly what is kept.
 #
 # THE PLAIN `docker compose up` RUNS AGAINST POSTGRES. That is the mode this
 # file configures because it is the one an operator keeping a mock around for a
@@ -37,7 +41,7 @@
 # becomes dead weight rather than a requirement.
 #
 # TWO DATABASE ROLES SINCE 2026-09-06, AND THIS SERVICE DIALS THE SMALLER ONE.
-# `postgres/schema.sql` builds the five tables as the owner `sts` and creates
+# `postgres/schema.sql` builds the tables as the owner `sts` and creates
 # `sts_app`, which holds SELECT, INSERT, UPDATE and DELETE on them and USAGE —
 # not CREATE — on the schema; STS_DATABASE_URL below dials that one. So a
 # running mock can change every row in its store and cannot add, alter,
@@ -62,11 +66,18 @@
 # is nothing; it is the plain `docker compose up` stack, and an operator's own
 # database, that connect as `sts_app`. Dropping `--no-deps` and setting
 # STS_PERSISTENCE_MODE=postgres is what a run against it would take, and the
-# paragraph above is why no run does that by default. The parent project's stack is unchanged and unaffected:
-# it starts this service with its own configuration and `persistence.mode` at
-# its default of `memory`, which is why not one job there had to change either.
+# paragraph above is why no run does that by default. The parent project's
+# stack is unchanged and unaffected: it starts this service with its own
+# configuration and `persistence.mode` at its default of `memory`, which is why
+# not one job there had to change either.
 #
-# THE THREE VOLUMES, and why the third is a bind mount rather than a named one:
+# (That describes the default launch. `tests/tools/modes.sh` since runs the
+# suite in `postgres` and `dispatch` modes as well, which bring the database up
+# — see that file.)
+#
+# THE THREE VOLUMES this paragraph was written about, and why the third is a
+# bind mount rather than a named one (the secret-store and key volumes added
+# since are described at the bottom of the file):
 #
 #   sts-db     PostgreSQL's own data. Named, because nothing outside the
 #              database container has any business reading it.
@@ -142,9 +153,9 @@
 version: '2.4'
 services:
   # -------------------------------------------------------------------------
-  # THE STORE. Postgres 16 on alpine, which is the smallest official image that
-  # is still the real thing — this is a mock identity service's sidecar and not
-  # a production database, so what matters is that it starts in two seconds.
+  # THE STORE. PostgreSQL 18 (it was 16 on alpine until 2026-08-30 — see the
+  # `image` line) — this is a mock identity service's sidecar and not a
+  # production database, so what matters is that it starts in seconds.
   #
   # ITS PORT IS NOT PUBLISHED, deliberately, and it is the same argument the
   # directory's 389 and 636 make below: 5432 is the assigned Postgres port, so a
@@ -170,15 +181,16 @@ services:
     # **A MAJOR UPGRADE DOES NOT READ THE OLD DATA DIRECTORY.** A `sts-db`
     # volume written by 16 makes an 18 container exit with "database files are
     # incompatible with server", naming the versions. `docker compose down -v`
-    # is the answer and costs nothing here: what this volume holds is the
-    # directory, the realm registry and the appconfig overrides — the three
-    # things somebody TYPED — and never anything this service minted.
+    # is the answer: what this volume holds is the directory, the realm
+    # registry and the appconfig overrides — the three things somebody TYPED —
+    # and, in product mode (this stack's default), the sealed signing keys and
+    # what this service minted, which go with it.
     image: postgres:18
     environment:
       # THE OWNER, AND SINCE 2026-09-06 IT IS NOT THE ROLE THIS SERVICE DIALS
       # WITH. This one is the cluster's bootstrap superuser: it is what initdb
       # creates, what the healthcheck below probes with, and what runs
-      # postgres/schema.sql — so it is the role that OWNS the five tables and
+      # postgres/schema.sql — so it is the role that OWNS the tables and
       # the only one that can change them. The service connects as
       # STS_DB_APP_USER instead; see the two variables below and
       # STS_DATABASE_URL on the sts service.
@@ -237,8 +249,8 @@ services:
       # application role, and the sts container then restart-loops with
       # `password authentication failed for user "sts_app"`. `docker compose
       # down -v` is the answer, and what it throws away is the directory, the
-      # realms and the appconfig overrides — never anything this service
-      # minted.
+      # realms and the appconfig overrides — and, in product mode, the sealed
+      # keys and what was minted under them.
       - ./postgres/apply-schema.sh:/docker-entrypoint-initdb.d/10-apply-schema.sh:ro
       - ./postgres/schema.sql:/usr/local/share/sts/schema.sql:ro
     # THE KEY PAIR IS MADE BEFORE THE SERVER STARTS, which is why this is a
@@ -468,8 +480,8 @@ services:
     # cannot do it says so on the way up and goes on to run everything else.
     # The failure is REPORTED and never fatal, for the reason every listener in
     # this service follows: a service that refused to start because one realm's
-    # address could not be added would take fourteen other protocol families
-    # down with it.
+    # address could not be added would take every other protocol family down
+    # with it.
     # -----------------------------------------------------------------------
     cap_add:
       - NET_ADMIN
@@ -577,9 +589,9 @@ services:
       # name it used.
       # - "8444:8444"
     # The database must be ACCEPTING CONNECTIONS, not merely started — see the
-    # healthcheck above for what goes wrong otherwise. This is the one thing in
-    # this file that needs compose format 2.4's `condition:`, which is also the
-    # format the header at the top of this file explains keeping.
+    # healthcheck above for what goes wrong otherwise. This was the first thing
+    # in this file that needed compose format 2.4's `condition:`, which is also
+    # the format the header at the top of this file explains keeping.
     depends_on:
       postgres:
         condition: service_healthy
@@ -648,8 +660,8 @@ services:
       # sets to false, and the parent project's three compose files each set
       # STS_HTTPS=true while this one — the repository's own — never did. So a
       # caller who trusted this service's certificate for 8443, 9443 and LDAPS
-      # 636 still met an unencrypted fourth listener, on the port every one of
-      # the sixteen protocol families actually answers on. (The first two of
+      # 636 still met an unencrypted fourth listener, on the port every HTTP
+      # protocol family actually answers on. (The first two of
       # those listeners were deleted on 2026-09-16; that port is now also where
       # a client certificate arrives, which makes the argument stronger.)
       #
@@ -695,8 +707,9 @@ services:
       - PKI_DISTRIBUTION_LDAP_HOST=${PKI_DISTRIBUTION_LDAP_HOST:-}
       # ---------------------------------------------------------------------
       # PERSISTENCE. The directory, the trust realms and the runtime setting
-      # changes survive `docker compose down` and come back on the next `up`.
-      # Everything this service MINTS does not, in any mode — see the header.
+      # changes survive `docker compose down` and come back on the next `up`,
+      # and in product mode on postgres (this file's default) so do the sealed
+      # signing keys and what this service minted — see the header.
       #
       # `docker compose down -v` removes the volumes and is therefore the way
       # to start clean; plain `down` keeps them.
@@ -722,11 +735,12 @@ services:
       #
       #   product mode      signing keys that SURVIVE A RESTART, sealed under a
       #                     key-encryption key this service never generates —
-      #                     and every gate that development mode leaves open
-      #                     (the console, SCIM, the management API) closed.
+      #                     and every credential the console, SCIM and the
+      #                     management API ask for actually CHECKED, where
+      #                     development mode takes it on trust.
       #   request workers   the handlers off the thread that owns every socket,
       #                     which is the only configuration where a slow
-      #                   signature does not stop the KDC answering.
+      #                     signature does not stop the KDC answering.
       #   coordination      because three workers against one store are three
       #                     processes, and the change log is what makes them
       #                     one service.
@@ -890,9 +904,11 @@ services:
     # listener, and a probe that spoke http at it would fail on every poll: the
     # container would go `unhealthy` while the service answered every request
     # perfectly, which is the worst shape a healthcheck failure can take. The
-    # certificate is self-signed and regenerated on every start, so verification
-    # is off for the same reason a first `curl -k` is needed: there is nothing to
-    # verify against until somebody fetches it. This probe asks whether the
+    # certificate is issued by this service's own Root, which nothing in the
+    # container is given as an anchor (and which development mode regenerates on
+    # every start), so verification is off for the same reason a first
+    # `curl -k` is needed: there is nothing to verify against until somebody
+    # fetches it. This probe asks whether the
     # process is alive, not whether its certificate is trustworthy.
     healthcheck:
       test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
@@ -914,7 +930,7 @@ services:
   #
   # IT IS `profiles: [xacml]`, SO A PLAIN `docker compose up` DOES NOT START
   # IT. That is deliberate and it is the same judgement the postgres service
-  # makes the other way: the mock is sixteen protocol families and a remote PEP
+  # makes the other way: the mock is many protocol families and a remote PEP
   # is one demonstration inside one of them, so it is opt-in
   # (`docker compose --profile xacml up`) rather than a container everybody
   # pays for.
@@ -1038,8 +1054,9 @@ services:
       - PEP_HTTPS_KEY=${XACML_PEP_HTTPS_KEY:-}
       - PEP_HTTPS_PORT=9443
       - PEP_HTTPS_RELOAD_INTERVAL_MS=${XACML_PEP_HTTPS_RELOAD_INTERVAL_MS:-5000}
-      # The mock regenerates its key on every start and signs it itself, so
-      # there is no anchor to verify against. `pep.js` logs this on every
+      # The mock's certificate is issued by its own Root, which this container
+      # is not given — and development mode regenerates both on every start —
+      # so there is no anchor to verify against. `pep.js` logs this on every
       # start rather than once, for federation_http.js's reason: a
       # certificate check turned off months ago and forgotten is the worst
       # kind of leftover.
@@ -1078,9 +1095,9 @@ services:
       - PEP_LOG_LEVEL=${XACML_PEP_LOG_LEVEL:-info}
 
 # ---------------------------------------------------------------------------
-# NAMED VOLUMES. Both survive `docker compose down` and are removed by
-# `docker compose down -v`, which is the difference somebody wants to know
-# before running either.
+# NAMED VOLUMES (listed at the bottom of the file). Every one survives
+# `docker compose down` and is removed by `docker compose down -v`, which is
+# the difference somebody wants to know before running either.
 #
 # There is no volume for the appconfig files: those are a BIND MOUNT of ./env
 # in this repository, because the point of them is that a person edits them
