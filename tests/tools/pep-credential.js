@@ -17,11 +17,13 @@
 // IT BUILDS THE CHAIN OUTSIDE THE SERVICE, WHICH IS THE ESTABLISHED PATTERN
 // AND NOT A CONVENIENCE.
 //
-// The mock has no certificate authority of its own for TLS: its server
-// certificate is self-signed, per start, and `tls/tls_server.js` argues why
-// that is the honest shape for a mock. What it has instead is a TRUSTSTORE —
-// `POST /tls/trust` — which starts EMPTY and is filled at runtime, precisely
-// because the CA in question does not exist anywhere until somebody builds it.
+// The mock has had a certificate authority of its own since 2026-09-11
+// (`common/pki.js`; its listener certificate is a leaf of the service Root),
+// but the PEP stands for a workload whose authority is SOMEBODY ELSE'S. What
+// admits a foreign authority is the TRUSTSTORE — `POST /tls/trust` — which
+// holds no foreign anchor until one is added at runtime, precisely because
+// the CA in question does not exist anywhere until somebody builds it
+// (`tls/CLAUDE.md`).
 //
 // The parent project's `tests/pki_mutual_tls.js` has done exactly this since
 // long before the remote PEP existed: it builds a Root CA and an Issuing CA in
@@ -30,10 +32,10 @@
 // sent. This file is that flow with a command line instead of a browser.
 //
 // **SO NOTHING WAS ADDED TO THE MOCK OR TO THE PEP TO PROVIDE THIS
-// CERTIFICATE.** The mock gained no issuance endpoint and the PEP gained no
-// enrolment step. The mock verifies what it is shown against anchors somebody
-// gave it, which is what a truststore is; the PEP reads a certificate from a
-// path, which it already did.
+// CERTIFICATE.** The mock gained no issuance endpoint for it and the PEP gained
+// no enrolment step. The mock verifies what it is shown against anchors
+// somebody gave it, which is what a truststore is; the PEP reads a certificate
+// from a path, which it already did.
 //
 // ---------------------------------------------------------------------------
 // THE ENGINE IS THE VENDORED ONE, AND THAT IS THE POINT OF USING IT
@@ -133,8 +135,8 @@ const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=mock-sts';
 // **THE DOCUMENTATION MOVED RATHER THAN THIS FUNCTION**, which is worth saying
 // because the other repair is four lines and looks obviously kinder. Nothing
 // calls this file the space way — both launchers pass `=`, `docs/remote-pep.md`
-// passes `=`, and the three tests that want a certificate `require()` this file
-// for `mint()` and never reach a command line at all — so accepting the space
+// passes `=`, and the tests that want a certificate `require()` this file for
+// `mint()` and never reach a command line at all — so accepting the space
 // form would have been a behaviour change made to rescue a comment, in the one
 // directory whose rule is that it takes no dependency and stays small.
 function parseArgs(argv) {
@@ -172,11 +174,11 @@ function say(opts, line) {
 // call posts a PUBLIC CERTIFICATE to a service this launcher started seconds
 // ago on this machine or on its own bridge. There is no secret in the request
 // and nothing in the response worth forging. More to the point, the anchor for
-// the mock's own certificate is fetched FROM the mock — it is self-signed and
-// regenerated per start, so there is no file, image or CA bundle that could
-// hold it before this runs. Verifying here would mean fetching that anchor
-// first over an unverified connection, which is the same trust decision one
-// step further away.
+// the mock's own certificate is fetched FROM the mock — the service Root,
+// regenerated per start in development mode — so there is no file, image or
+// CA bundle that could hold it before this runs. Verifying here would mean
+// fetching that anchor first over an unverified connection, which is the same
+// trust decision one step further away.
 // ---------------------------------------------------------------------------
 function postAnchor(url, pem) {
   log.debug("Entering postAnchor().");

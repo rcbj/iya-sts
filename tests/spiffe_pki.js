@@ -38,9 +38,10 @@
 //     naming neither certificate. Reading the encoded numbers is the only way
 //     to assert that before it ships.
 //   * **THE ANCHOR IS SHARED WHILE THE AUTHORITY IS NOT**, which is the single
-//     sentence that makes a per-realm SPIFFE authority coherent with four
-//     sockets that answer in one realm. Over HTTP it is two base URLs; here it
-//     is the bytes.
+//     sentence that made a per-realm SPIFFE authority coherent with four
+//     sockets that answered in one realm (a realm has sockets and a trust
+//     domain of its own since 2026-09-12 — `tests/spiffe_realm_domains.js`).
+//     Over HTTP it is two base URLs; here it is the bytes.
 //
 // The fourth — that an SVID actually carries its chain — is drivable over HTTP
 // and is asserted here anyway, because every claim above is about a chain and
@@ -380,12 +381,14 @@ async function run(t) {
   // -------------------------------------------------------------------------
   // 5. THE AUTHORITY IS PER REALM AND THE ANCHOR IS NOT.
   //
-  // **THIS IS THE CLAIM THAT MAKES THE WHOLE DESIGN COHERENT.** SPIFFE's four
-  // sockets are shared and answer in the default realm, so an authority per
-  // realm would be incoherent if the ANCHOR were per realm too — a workload
-  // holding one bundle could verify SVIDs from one realm and not another. It
-  // is not: the Root is the service's, every realm's bundle is the same
-  // document, and what the chain adds is which realm issued it.
+  // **THIS IS THE CLAIM THAT MADE THE WHOLE DESIGN COHERENT.** SPIFFE's four
+  // sockets were shared and answered in the default realm when it was
+  // written (a realm binds its own since 2026-09-12), so an authority per
+  // realm would have been incoherent if the ANCHOR were per realm too — a
+  // workload holding one bundle could verify SVIDs from one realm and not
+  // another. It is not: the Root is the service's, every realm's bundle
+  // publishes the same anchor, and what the chain adds is which realm issued
+  // it.
   // -------------------------------------------------------------------------
   t.log.info('=== one anchor, an authority per realm ===');
   const otherAuthority = ca.activeX509Authority(REALM_B);

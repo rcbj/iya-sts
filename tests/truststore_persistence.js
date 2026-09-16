@@ -332,8 +332,9 @@ async function run(t) {
   // requirement is a `reloadStoredAnchors();` statement reached at startup —
   // in `tls_server.js`'s `listen()` as before, or in `server.js` before it
   // binds the main port, which is where the sockets those anchors protect now
-  // are. Either satisfies this; neither is present as of the listener deletion,
-  // and that is a REGRESSION rather than a stale test.
+  // are. Either satisfies this. The first draft of the listener deletion had
+  // neither, and this check is what caught it as the REGRESSION it was rather
+  // than a stale test; `listen()` carries the statement again.
   //
   // A STATEMENT on a line of its own, not the text: the first version of this
   // check matched `// reloadStoredAnchors();` and passed a listen() whose

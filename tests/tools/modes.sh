@@ -87,8 +87,8 @@ STS_ALL_MODES=(memory postgres dispatch)
 # right report and is three modes' worth of run time after the mistake.
 #
 # So the rule is not "name what the other modes set". It is NAME WHAT THE STACK
-# COULD OTHERWISE DECIDE FOR YOU, and `STS_MODE` is now the fourth such
-# variable.
+# COULD OTHERWISE DECIDE FOR YOU. `STS_MODE` was the fourth such variable, and
+# every arm below now names twelve.
 #
 # `STS_DATABASE_URL` is deliberately NOT here: docker-compose.yml has the
 # in-network default and the launchers do not override it. A mode that named it

@@ -76,19 +76,18 @@ const log = bunyan.createLogger({ name: 'coverage-report',
   level: process.env.LOG_LEVEL || 'info' });
 
 // ---------------------------------------------------------------------------
-// THE `Entering`/`Leaving` PAIR IS ON THE FUNCTIONS THAT RUN A BOUNDED NUMBER
-// OF TIMES PER RUN, AND NOT ON THE ONES INSIDE THE PASS — argued here rather
-// than left to be noticed, which is this repository's pattern for an exemption
-// from its own code style.
+// THE `Entering`/`Leaving` PAIR WAS WRITTEN ONLY ON THE FUNCTIONS THAT RUN A
+// BOUNDED NUMBER OF TIMES PER RUN, AND EVERY FUNCTION HERE CARRIES IT NOW.
 //
 // `executableLines()`, `countsByLine()`, `summariseFile()`, `foldScript()`,
 // `addSets()` and `fileOf()` are the rendering pass: they run once per file,
-// per label, per script and — inside the first two — once per LINE of every
-// file in this repository, which is hundreds of thousands of calls. A debug
-// line each would make the log they would be written into unreadable, which is
-// the opposite of what the rule is for. `render()`, `readRaw()`,
-// `mergeLabel()`, `allSourceFiles()`, `writeLcov()` and `main()` all carry the
-// pair.
+// per label and per script, and the first two loop over every LINE of every
+// file in this repository. They were left without the pair so that a debug log
+// of a render stayed readable; the 2026-09-12 style sweep added it anyway, so a
+// render at LOG_LEVEL=debug is a long log (the root CLAUDE.md's hot-path
+// exception is the way to take it off again). `render()`, `readRaw()`,
+// `mergeLabel()`, `allSourceFiles()`, `writeLcov()` and `main()` always carried
+// it.
 // ---------------------------------------------------------------------------
 
 // Never coverage's subject: dependencies, the tests themselves, generated

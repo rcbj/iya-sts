@@ -4,10 +4,11 @@
 // SINCE 2026-08-30 THE MOCK'S MAIN PORT IS TLS IN EVERY STACK IN THIS
 // REPOSITORY (env/*.js carry `global.https: true`, and STS_HTTPS is set on the
 // service in both compose files), which leaves the suite one problem it did not
-// have before: the certificate is SELF-SIGNED AND REGENERATED ON EVERY START of
-// the service, so nothing that exists before the service does can hold an
-// anchor for it. Not an image, not a CA bundle, not a browser profile, not a
-// checked-in PEM.
+// have before: the certificate — self-signed until 2026-09-11, a leaf of the
+// service's own Root since (below) — is REGENERATED ON EVERY START of the
+// service in development mode, Root and all, so nothing that exists before the
+// service does can hold an anchor for it. Not an image, not a CA bundle, not a
+// browser profile, not a checked-in PEM.
 //
 // The only moment at which that key can be learned is AFTER the service is
 // answering and BEFORE the first job runs, and that is exactly where
@@ -15,13 +16,13 @@
 //
 // TWO CONSUMERS, WHICH IS WHY THERE ARE TWO OUTPUTS AND NOT ONE:
 //
-//   NODE_EXTRA_CA_CERTS   the twelve node-driven jobs. node reads it ONCE, at
+//   NODE_EXTRA_CA_CERTS   the node-driven jobs. node reads it ONCE, at
 //                         process start, so it can only be handed to a CHILD —
 //                         which is what these jobs are. It cannot be set for
 //                         the runner's own process from inside it, which is why
 //                         this module's callers probe with
 //                         `rejectUnauthorized: false` instead.
-//   STS_SPKI_PIN          the ONE browser job. tests/vendored/browser_flags.js
+//   STS_SPKI_PIN          the browser jobs. tests/vendored/browser_flags.js
 //                         already reads exactly this variable and turns it into
 //                         Chrome's --ignore-certificate-errors-spki-list. That
 //                         file is VENDORED from the parent project, whose
@@ -31,9 +32,9 @@
 //
 // WHY A PIN AND NOT --ignore-certificate-errors: the blunt flag accepts every
 // certificate, and this suite contains assertions about certificates being
-// REFUSED. A pin is a truststore of one entry — a different self-signed
-// certificate, including the one this same service will generate on its next
-// start, still meets an interstitial.
+// REFUSED. A pin is a truststore of one key — a different certificate,
+// including the one this same service will generate on its next start, still
+// meets an interstitial.
 //
 // NODE_EXTRA_CA_CERTS ACCEPTS A SELF-SIGNED CERTIFICATE DESPITE
 // `basicConstraints CA:FALSE`, which surprises people: OpenSSL takes a

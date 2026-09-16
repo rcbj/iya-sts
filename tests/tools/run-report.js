@@ -64,24 +64,21 @@
 // to harness.js, and a test file written before this existed reports in full.
 //
 // ---------------------------------------------------------------------------
-// THE SECOND HALF: THE PARENT PROJECT'S JOBS, AGAINST THE WORKING TREE.
+// THE SECOND HALF: THE PROTOCOL JOBS, AGAINST THE WORKING TREE.
 //
-// Most of what covers this service is not in this repository at all — a
-// protocol test goes in ../id-proto-debugger/tests/ by the decision the root
-// CLAUDE.md argues. Those jobs drive a RUNNING service over HTTP, and the one
-// they normally drive is the `sts/` gitlink over there, which is pinned. So
-// with `--protocol` this runner starts a throwaway copy of THIS WORKING TREE
-// on ports of its own and runs against that instead — the same jobs, the code
-// you just edited, no submodule bump, no container.
+// These drive a RUNNING service over HTTP. Some are copies of the parent
+// project's — a protocol test is written in ../id-proto-debugger/tests/ by the
+// decision the root CLAUDE.md argues, and over there it drives the `sts/`
+// gitlink, which is pinned — and most are this repository's own (`local:
+// true`). So this runner drives THIS WORKING TREE instead: a container a
+// launcher built from it, or a throwaway copy it starts on ports of its own —
+// the same jobs, the code you just edited, no submodule bump.
 //
-// WHICH jobs is DERIVED and not listed, for the reason this whole directory is
-// list-free. A job qualifies when the parent's own runner registers it, its
-// script does not require selenium-webdriver, it reads WSTRUST_STS_URL or
-// OID4VCI_ISSUER_URL — and it names no OTHER service's environment (walt.id,
-// Keycloak, the debugger's api). That last clause is what keeps this to the
-// jobs a lone mock can satisfy.
+// WHICH jobs is LISTED, in tests/vendored/MANIFEST.js. It was DERIVED from the
+// parent's own runner until the jobs were vendored on 2026-08-28; that
+// manifest's header says why a derivation stopped being possible.
 //
-// A job of theirs may be AHEAD of this tree — their suite is developed against
+// A copied job may be AHEAD of this tree — their suite is developed against
 // their own checkout — and it then fails here naming a feature this tree does
 // not have. That is information rather than a fault in this runner, and the
 // report says which side each job came from so it can be read that way.
@@ -93,9 +90,9 @@
 // The protocol half used to be off unless `--protocol` was passed, on the
 // argument that it needs the parent checkout beside this one and a run that
 // needs nothing installed is a better default. That argument was wrong in the
-// way that costs the most: the in-process half is TEN FILES about the realm
-// layer, the LDIF codec, the two map renderers and the crypto module, and it
-// finishes in under three seconds. So the default run answered in five
+// way that costs the most: the in-process half was then TEN FILES about the
+// realm layer, the LDIF codec, the two map renderers and the crypto module, and
+// it finished in under three seconds. So the default run answered in five
 // seconds, said "Tests passed", and had exercised NO protocol endpoint, NO
 // admin console and NO browser — which reads as a green suite and is a green
 // tenth of one. Somebody has to already know about a flag to find that out,
@@ -104,11 +101,11 @@
 //
 // So the whole set runs unless it is turned off. What that costs is about a
 // minute instead of three seconds, and — until the same day — a parent
-// checkout beside this one. THAT SECOND COST IS GONE: the thirteen protocol
-// jobs are VENDORED into tests/vendored/ and are this repository's own files
+// checkout beside this one. THAT SECOND COST IS GONE: the protocol jobs are
+// VENDORED into tests/vendored/ and are this repository's own files
 // now, so there is no checkout that can be missing and no job that can
-// silently not run. See tests/vendored/MANIFEST.js for what is copied and
-// why the copies are not edited here.
+// silently not run. See tests/vendored/MANIFEST.js for what is copied, what is
+// this repository's own, and why the copies are not edited here.
 //
 // `--no-protocol` is the way back to the old default, and the report says so
 // in its own banner rather than leaving a green page to be read as more than
@@ -120,8 +117,8 @@
 //   --only=<substr>[,...]  only these test files / job names
 //   --list                 name the jobs that would run; run none
 //   --protocol[=on|off|only]
-//                          also (or only) run the parent project's mock-only
-//                          jobs against a throwaway instance. DEFAULT ON, as
+//                          also (or only) run the protocol jobs under
+//                          tests/vendored/ against a service. DEFAULT ON, as
 //                          of 2026-08-28 — see THE DEFAULT IS THE WHOLE SET
 //                          above. `--protocol=off` (or --no-protocol) leaves
 //                          them out.
@@ -165,8 +162,8 @@
 //   things this service does are properties of its image and not of its
 //   source, and a suite that never builds one cannot see them.
 //
-//   A THROWAWAY PROCESS, started by tools/service.js on nine ports of its
-//   own. Still here, still what --no-docker uses, and still what a COVERAGE
+//   A THROWAWAY PROCESS, started by tools/service.js on a block of ports of
+//   its own. Still here, still what --no-docker uses, and still what a COVERAGE
 //   run uses — because V8 writes its coverage from inside the process being
 //   measured, and this runner cannot reach inside a container to collect it.
 //
@@ -182,10 +179,10 @@
 //                   the same thing --service-url says, for a caller that would
 //                   rather export than pass an argument. The option wins.
 //   STS_LOG_LEVEL   the throwaway service's level. Unset means its appconfig
-//                   file decides, and that is `debug` — every request and
-//                   every signed artifact written down, which is what a
-//                   failing protocol job is read from, and about half of that
-//                   service's CPU.
+//                   file decides, and that is `info` since 2026-09-12;
+//                   `debug` is every request and every signed artifact
+//                   written down, which is what a failing protocol job is read
+//                   from, and about half of that service's CPU.
 //   STS_TEST_CONFIG_FILE
 //                   the appconfig file that service reads (default
 //                   ./env/local.js, resolved by tests/tools/service.js). It is
@@ -289,25 +286,30 @@ const OTHER_SERVICE_ENV =
 // A job that drives a BROWSER, and — separately — one that drives the
 // DEBUGGER'S OWN SITE.
 //
+// **NONE OF THE FOUR PATTERNS HERE IS READ ANY MORE.** They were how the jobs
+// were DERIVED from the parent's runner; since the jobs were vendored,
+// MANIFEST.js lists them and marks a browser job `browser: true`, and
+// vendoredJobs() reads that. What follows is the record of the derivation.
+//
 // Until 2026-08-28 the first of these was used as the second, and it was right
 // by accident: every browser job in that suite drove the debugger's pages, so
 // "requires selenium" and "needs more than a lone mock" picked out the same
-// set. tests/sts_admin_console.js broke that — it became a browser job that
+// set. sts_admin_console.js broke that — it became a browser job that
 // drives THIS SERVICE'S OWN CONSOLE and needs a Chrome and nothing else — and
 // dropping the selenium exclusion on its own let all twenty-three of the
 // others back in, where they failed against a stack that is not running.
 //
-// So the two questions are asked separately now. A browser job runs unless
-// --no-browser; a job that names the debugger's client (port 3000) is not ours
-// whether it needs a browser or not. The port is the discriminator because it
-// is what those jobs actually reach for: each declares
-// `var baseUrl = "http://localhost:3000"` and drives pages under it, while a
-// job of ours locates the mock through WSTRUST_STS_URL / OID4VCI_ISSUER_URL
-// and never mentions 3000.
+// So the two questions were asked separately. A browser job ran unless
+// --no-browser; a job that named the debugger's client (port 3000) was not ours
+// whether it needed a browser or not. The port is the discriminator because it
+// is what those jobs actually reach for: each declares `var baseUrl =
+// "http://localhost:3000"` and drives pages under it, while a job of ours
+// locates the mock through WSTRUST_STS_URL / OID4VCI_ISSUER_URL and never
+// mentions 3000.
 // ---------------------------------------------------------------------------
 // THE STACK'S DEPLOYMENT VARIABLES, WHICH A UNIT JOB MUST NOT INHERIT.
 //
-// `tests/tools/modes.sh` defines the three modes as a block of `NAME=value`
+// `tests/tools/modes.sh` defines the modes as a block of `NAME=value`
 // lines, and both launchers EXPORT them into the shell this runner is started
 // from — they have to, because that is how `docker compose` and a host-mode
 // service are handed the mode. A unit job is a child of this process, so it
@@ -375,9 +377,9 @@ const DEBUGGER_SITE = /localhost:3000|127\.0\.0\.1:3000/;
 const NEEDS_THE_MOCK = /WSTRUST_STS_URL|OID4VCI_ISSUER_URL/;
 
 // ---------------------------------------------------------------------------
-// The parent's jobs that a lone copy of this service can satisfy. DERIVED from
-// their own runner — the file that already decides what a job is over there —
-// so a test added or renamed in that suite arrives here with nothing edited.
+// The protocol jobs, as tests/vendored/MANIFEST.js lists them — the copies of
+// the parent's and this repository's own — less the browser jobs when
+// --no-browser asked for that.
 // ---------------------------------------------------------------------------
 function vendoredJobs(options) {
   log.debug('Entering vendoredJobs().');
@@ -426,13 +428,13 @@ function vendoredJobs(options) {
 // has jobs that cannot LOAD, and node reports that as MODULE_NOT_FOUND at
 // startup: a non-zero exit, so the runner already calls it a failure.
 //
-// This check exists to make that failure READABLE. Thirteen jobs each dying
+// This check exists to make that failure READABLE. Every vendored job dying
 // with a stack trace about `commander` is a wall of noise that names a package
 // and not a command; one line naming the command, before anything is spawned,
 // is the difference between a five-second fix and an afternoon.
 //
 // It does NOT skip the jobs and does not stop the run. They are still spawned,
-// they still fail, and the report still counts thirteen failures — because a
+// they still fail, and the report still counts every one of them — because a
 // run that quietly declined to check anything is the exact thing this file was
 // changed on 2026-08-28 to stop doing.
 // ---------------------------------------------------------------------------
@@ -694,13 +696,13 @@ function runJob(job, opts) {
 }
 
 // ---------------------------------------------------------------------------
-// TWO FUNCTIONS BELOW CARRY NO `Entering`/`Leaving` PAIR AND SAY SO HERE
-// RATHER THAN LEAVING IT TO BE NOTICED — the repository's pattern is that the
-// exemption is argued in the file that takes it. `assertionOf()` is called
-// once per LINE of every job's output, which is tens of thousands of times in
-// an ordinary run, and the HTML helpers are called once per row; a debug line
-// each would bury the log those lines exist to make readable. Everything that
-// runs a bounded number of times per run is instrumented as usual.
+// THE FUNCTIONS BELOW WERE WRITTEN WITH NO `Entering`/`Leaving` PAIR, AND
+// CARRY ONE NOW. `assertionOf()` is called once per LINE of every job's
+// output, which is tens of thousands of times in an ordinary run, and the HTML
+// helpers are called once per row; a debug line each would bury the log those
+// lines exist to make readable. The 2026-09-12 style sweep added the pairs all
+// the same, so a run of this file at LOG_LEVEL=debug is that buried log (the
+// root CLAUDE.md's hot-path exception is the way to take them off again).
 //
 // One line of a job's output, read for an assertion. The harness prints bunyan
 // JSON whose `msg` begins with two spaces and a tick or a cross (harness.js),
@@ -794,7 +796,7 @@ function describeTree(dir) {
 // ---------------------------------------------------------------------------
 // THE HTML. Self-contained and with NO SCRIPT on it, which is not an accident
 // carried over from the console's rule (app.js sets `script-src 'none'` and
-// three pages argue their way past it one at a time): a report is read from a
+// seven pages argue their way past it one at a time): a report is read from a
 // file:// URL, from a CI artifact server, and from whatever a person pastes it
 // into, and `<details>` folds every long list without needing any of them to
 // allow one.
@@ -1099,8 +1101,9 @@ const USAGE = (function () {
 // LIVENESS, OVER EITHER SCHEME, WITH THE CERTIFICATE UNJUDGED.
 //
 // It was `fetch(url + '/')` until 2026-08-30, and that stopped working the day
-// the mock's main port became TLS in every stack here: the certificate is
-// self-signed and regenerated on every start, so the very first request this
+// the mock's main port became TLS in every stack here: the certificate — then
+// self-signed, a leaf of the service Root since 2026-09-11 — is regenerated on
+// every start with its anchor, so the very first request this
 // runner makes to a service it has not yet learned the key of would fail
 // verification — and the wait below would spend its whole thirty seconds on it
 // and report a service that "did not answer", naming a certificate error the
@@ -1160,7 +1163,7 @@ function probe(url) {
 // still answering NOW, from this process, with the environment these jobs will
 // actually use. A container that aborted between the two, a URL typed by hand
 // into --service-url, a stale STS_TEST_SERVICE_URL exported in a shell weeks
-// ago and forgotten — each of those reaches the jobs as thirteen failures
+// ago and forgotten — each of those reaches the jobs as a wall of failures
 // about tokens and metadata, and reaches this as one line naming the URL.
 //
 // A NON-200 IS AS GOOD AS AN ANSWER, deliberately. /healthcheck is what a
@@ -1212,42 +1215,11 @@ async function waitForExternalService(url, log, timeoutMs) {
 }
 
 // ---------------------------------------------------------------------------
-// THE MANAGEMENT API'S CREDENTIAL, WHEN THIS RUNNER IS THE ONE STARTING THE
-// SERVICE (2026-09-09).
-//
-// `/admin-api` requires an OAuth 2.0 access token, and twenty-three jobs drive
-// it. Both docker launchers mint one before any job runs and hand it here as
-// `STS_ADMIN_API_TOKEN` — but there are three paths on which NO launcher does
-// that, and all three share one trait: the service is a throwaway this runner
-// started itself.
-//
-//   * `./run-coverage.sh`, which never passes --service-url because V8
-//     collects from inside the process it measures
-//   * `./local-run-tests.sh --no-docker`, where STS_URL is only ever assigned
-//     inside composeUp()
-//   * a bare `node tests/tools/run-report.js`
-//
-// Until this existed all three ran the whole protocol half against a gated API
-// with no credential, and the report named nineteen broken tests instead of
-// one missing token. The coverage job in CI is where that was found.
-//
-// **THE SECRET HAS TO BE PINNED BEFORE THE SERVICE STARTS, WHICH IS WHY THIS
-// IS TWO FUNCTIONS AND NOT ONE.** `applications.js` seeds `sts-management-api`
-// with a secret minted at every start, readable only THROUGH the API it
-// unlocks — so a secret chosen after the child is up is a secret nobody can
-// use. `adminApi.clientSecret` exists for exactly this, and its environment
-// variable is what `service.js` inherits along with the rest of process.env.
-//
-// A FRESH ONE PER RUN rather than a constant, for the launchers' stated
-// reason: it lives as long as one throwaway service, it never reaches a
-// repository, and two runs on one machine cannot lend each other a token.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // THE PORTS THE THROWAWAY SERVICE ACTUALLY BOUND, HANDED TO EVERY JOB.
 //
 // `tests/tools/service.js` picks a free BLOCK — eight since 2026-09-16 — and
-// passes each to the
-// service under the environment variable that service reads for it — so the
+// passes each to the service under the environment variable that service
+// reads for it — so the
 // name of a port in `instance.ports` is already the name a job would look it
 // up by. Handing the whole block over is therefore one line of policy rather
 // than a list that has to be extended every time a job learns to dial another
@@ -1285,6 +1257,37 @@ function chosenPorts(instance) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE MANAGEMENT API'S CREDENTIAL, WHEN THIS RUNNER IS THE ONE STARTING THE
+// SERVICE (2026-09-09).
+//
+// `/admin-api` requires an OAuth 2.0 access token, and twenty-three jobs drive
+// it. Both docker launchers mint one before any job runs and hand it here as
+// `STS_ADMIN_API_TOKEN` — but there are three paths on which NO launcher does
+// that, and all three share one trait: the service is a throwaway this runner
+// started itself.
+//
+//   * `./run-coverage.sh`, which never passes --service-url because V8
+//     collects from inside the process it measures
+//   * `./local-run-tests.sh --no-docker`, where STS_URL is only ever assigned
+//     inside composeUp()
+//   * a bare `node tests/tools/run-report.js`
+//
+// Until this existed all three ran the whole protocol half against a gated API
+// with no credential, and the report named nineteen broken tests instead of
+// one missing token. The coverage job in CI is where that was found.
+//
+// **THE SECRET HAS TO BE PINNED BEFORE THE SERVICE STARTS, WHICH IS WHY THIS
+// IS TWO FUNCTIONS AND NOT ONE.** `applications.js` seeds `sts-management-api`
+// with a secret minted at every start, readable only THROUGH the API it
+// unlocks — so a secret chosen after the child is up is a secret nobody can
+// use. `adminApi.clientSecret` exists for exactly this, and its environment
+// variable is what `service.js` inherits along with the rest of process.env.
+//
+// A FRESH ONE PER RUN rather than a constant, for the launchers' stated
+// reason: it lives as long as one throwaway service, it never reaches a
+// repository, and two runs on one machine cannot lend each other a token.
+// ---------------------------------------------------------------------------
 function pinTheManagementApiSecret() {
   log.debug('Entering pinTheManagementApiSecret().');
   // A caller who set either name already MEANS it — `./local-run-tests.sh`
@@ -1531,10 +1534,10 @@ async function main() {
         logFile: path.join(logsDir, '00-mock-sts-service.log'),
         logLevel: process.env.STS_LOG_LEVEL || '',
         // The appconfig file that service reads, when the caller named one.
-        // STS_LOG_LEVEL alone does NOT quieten a run: the six vendored modules
-        // under common/vendored/ each build their own bunyan logger at load
-        // from the CONFIG_FILE's logLevel, so a `debug` file goes on writing
-        // every canonicalization however low this level is.
+        // STS_LOG_LEVEL alone does NOT quieten a run: the eight vendored
+        // modules under common/vendored/ each build their own bunyan logger at
+        // load from the CONFIG_FILE's logLevel, so a `debug` file goes on
+        // writing every canonicalization however low this level is.
         // ./local-run-tests.sh picks the file from the level and exports it
         // under this name.
         configFile: process.env.STS_TEST_CONFIG_FILE || '',
@@ -1552,7 +1555,8 @@ async function main() {
   // ---- the certificate the jobs will meet -------------------------------
   //
   // SINCE 2026-08-30 THE MOCK'S MAIN PORT IS TLS ON EVERY STACK HERE, and its
-  // certificate is self-signed and regenerated on every start — so this is the
+  // certificate and the Root above it are regenerated on every start in
+  // development mode — so this is the
   // first moment at which the key can be known and the last one before a job
   // meets it. Both shapes of instance go through here: a container the launcher
   // brought up and a throwaway this runner started have exactly the same
@@ -1602,7 +1606,6 @@ async function main() {
              'adminApi.authRequired=false.');
   }
 
-  // ---- run them ---------------------------------------------------------
   // ---- can the container-driven job(s) run? -------------------------------
   //
   // TWO WAYS, AND THE FIRST ONE IS THE ORDINARY ONE. A launcher that brought a
@@ -1629,6 +1632,7 @@ async function main() {
              ' is answering — the container-driven job(s) will start one of ' +
              'their own.');
   }
+  // ---- run them ---------------------------------------------------------
   const started = Date.now();
   const results = [];
   let n = 0;
@@ -1685,7 +1689,7 @@ async function main() {
                  '--only=' + job.file];
       job.env = Object.assign({}, process.env);
       // The mode's own variables, taken back off — see STACK_ENV above. This
-      // is what makes the unit half run identically in all three modes rather
+      // is what makes the unit half run identically in every mode rather
       // than accidentally so.
       STACK_ENV.forEach(function (name) {
         delete job.env[name];
@@ -1742,7 +1746,7 @@ async function main() {
         // THE MOCK UNDER TEST IS THIS REPOSITORY, WHICH IS THE ONE THING
         // VENDORING CHANGED FOR THESE JOBS.
         //
-        // Five of them load the service's own modules in process rather than
+        // Several of them load the service's own modules in process rather than
         // driving them over HTTP — vc_did.js and the two ldp_vc jobs read the
         // DID and credential modules, sts_jws_verification.js the crypto one.
         // `module_paths.js` finds those by looking for an `sts/` directory
@@ -1781,11 +1785,11 @@ async function main() {
         //
         // What it adds is the THROWAWAY case: `--no-docker`, and every
         // coverage run. There the service is a child of this process on a
-        // block of nine ports this runner chose, so nothing outside knows
-        // where its directory is listening and only this line can say. The
-        // port comes from `instance.ports` by NAME rather than from
-        // `instance.base + 5`, so a listener added to that block in the
-        // middle cannot silently move it.
+        // block of ports this runner chose, so nothing outside knows where
+        // its directory is listening and only this line can say. The port
+        // comes from `instance.ports` by NAME rather than as an offset from
+        // `instance.base`, so a listener added to or removed from the middle
+        // of that block cannot silently move it.
         STS_LDAP_URL: process.env.STS_LDAP_URL ||
           (instance.ports && instance.ports.LDAP_PORT
             ? 'ldap://localhost:' + instance.ports.LDAP_PORT
@@ -1818,20 +1822,17 @@ async function main() {
       // THEM. `NODE_EXTRA_CA_CERTS` is read by node ONCE at child start, which
       // is why it can only be handed to a job and never set for this runner;
       // `STS_SPKI_PIN` is read by tests/vendored/browser_flags.js and becomes
-      // Chrome's --ignore-certificate-errors-spki-list, so the one browser job
-      // is covered by the same two lines as the eleven node ones. An empty
+      // Chrome's --ignore-certificate-errors-spki-list, so the browser jobs
+      // are covered by the same two lines as the node ones. An empty
       // object on a plain-http run, which adds nothing rather than adding an
       // empty variable — see tests/tools/trust.js.
       }, trusted.variables);
-      // OURS, not theirs: NODE_V8_COVERAGE on a protocol job would collect the
-      // coverage of the parent project's own test code, which is not what this
-      // report is about. The service is the instrumented process there.
       // -------------------------------------------------------------------
       // THE MANAGEMENT API'S TOKEN, AND THE SHIM THAT PRESENTS IT.
       //
       // `/admin-api` requires an access token since 2026-09-09. A launcher
       // mints one and hands it here; `tools/attach-admin-token.js` is
-      // preloaded into every job so that the twenty-three that drive that API
+      // preloaded into every job so that the ones that drive that API
       // authenticate without each growing an HTTP client of its own. That file
       // argues why it is a preload and what it deliberately leaves alone.
       //
@@ -1887,6 +1888,9 @@ async function main() {
           process.env.STS_ADMIN_API_CLIENT_SECRET ||
           process.env.ADMIN_API_CLIENT_SECRET;
       }
+      // Not on a protocol job: NODE_V8_COVERAGE there would collect the
+      // coverage of the job's own test code, which is not what this report is
+      // about. The service is the instrumented process there.
       delete job.env.NODE_V8_COVERAGE;
     }
     log.info('[' + n + '/' + jobs.length + '] ' + job.suite + ' — ' + job.name);

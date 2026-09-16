@@ -5,11 +5,12 @@
 // ===========================================================================
 // ONE THROWAWAY COPY OF THIS SERVICE, STARTED AND STOPPED BY A TEST RUN.
 //
-// Nothing in `tests/` needs this — the whole point of that directory is that
-// it drives modules IN PROCESS and binds no port (see tests/CLAUDE.md). This
-// module exists for the report generator's OTHER half: the parent project's
-// jobs that drive this service over HTTP, which `tests/tools/run-report.js`
-// can run against the WORKING TREE rather than against the `sts/` gitlink the
+// Nothing in the in-process half of `tests/` needs this — the whole point of
+// that half is that it drives modules IN PROCESS and binds no port (see
+// tests/CLAUDE.md). This module exists for the report generator's OTHER half:
+// the protocol jobs under `tests/vendored/` (copies of the parent project's)
+// that drive this service over HTTP, which `tests/tools/run-report.js` runs
+// against the WORKING TREE rather than against the `sts/` gitlink the
 // parent's own suite is pinned to. Those need a listener, and somebody has to
 // own its lifetime.
 //
@@ -181,20 +182,21 @@ async function findPortBlock(preferredBase, log) {
 }
 
 // ---------------------------------------------------------------------------
-// The environment one throwaway instance runs under. Everything this service
-// binds is moved, both Unix sockets are turned OFF, and the log level is the
-// caller's choice — `debug` is this service's default and is what a failing
-// job is read from, but it is also about half of its CPU, so a run that is
-// only collecting coverage will usually want less.
+// The environment one throwaway instance runs under. Every port PORT_VARS
+// names is moved — the embedded debugger's `STS_DEBUGGER_PORT` (8444) is not
+// among them, and a failure to bind it is recorded rather than fatal — both
+// Unix sockets are turned OFF, and the log level is the caller's choice:
+// `debug` is what a failing job is read from, but it is also about half of
+// the service's CPU, so a run that is only collecting coverage will usually
+// want less. Every appconfig file in env/ has said `info` since 2026-09-12.
 //
 // THE LEVEL TAKES TWO OPTIONS AND NOT ONE, which is easy to get wrong: opts.
-// logLevel reaches the loggers config.js registers, and the six VENDORED
+// logLevel reaches the loggers config.js registers, and the eight VENDORED
 // modules under common/vendored/ each build their own from
 // `require(process.env.CONFIG_FILE).logLevel` at load and never see it. So a
-// caller that wants a quiet service passes opts.configFile as well —
-// ./env/test.js is ./env/local.js with `logLevel: "info"` and nothing else
-// different. Left empty, the fallback below is the `debug` file and those
-// modules write every canonicalization of every signed document.
+// caller that wants those loud or quiet passes opts.configFile as well. Left
+// empty, the fallback below is ./env/local.js, whose level is `info` — and
+// ./env/test.js has been identical to it since the same day.
 // ---------------------------------------------------------------------------
 function environmentFor(base, opts) {
   log.debug('Entering environmentFor(). base=' + base);
@@ -210,13 +212,12 @@ function environmentFor(base, opts) {
   // FILE (2026-08-30) — and the difference is not tidiness.
   //
   // start() below has to build a URL, and a URL has a SCHEME in it. If this
-  // were left to `global.https` in whichever file `opts.configFile` names,
-  // this module would be guessing what that file says: a caller pointing at
-  // an appconfig file of their own would get a service on https and a URL
-  // saying http, which reaches every one of the thirteen protocol jobs as a
-  // closed socket. Setting it makes the environment variable — which wins
-  // over every appconfig file — the single statement, and schemeFor() below
-  // reads back exactly what was set.
+  // were left to `global.https` in whichever file `opts.configFile` names, this
+  // module would be guessing what that file says: a caller pointing at an
+  // appconfig file of their own would get a service on https and a URL saying
+  // http, which reaches every protocol job as a closed socket. Setting it makes
+  // the environment variable — which wins over every appconfig file — the
+  // single statement, and schemeFor() below reads back exactly what was set.
   //
   // The DEFAULT is on, matching env/local.js, env/test.js and
   // env/docker-tests.js, and a caller's own STS_HTTPS still wins so that
@@ -358,9 +359,10 @@ async function start(opts) {
                       opts.logFile);
     }
     // `fetch()` until 2026-08-30, and it could not survive this service
-    // serving TLS: the certificate is self-signed and regenerated on every
-    // start, so the first request would fail verification for the whole
-    // timeout and the service would be reported as never having answered.
+    // serving TLS: the certificate's anchor is regenerated on every start in
+    // development mode, so the first request would fail verification for the
+    // whole timeout and the service would be reported as never having
+    // answered.
     // The question here is whether the port answers, not whether it is
     // trustworthy — the JOBS get a real anchor, from tests/tools/trust.js.
     /* eslint-disable no-await-in-loop */
