@@ -548,21 +548,24 @@ const CHALLENGE_RESPONSE = vz.looseObject({});
 // arrives at another process half a second to a second LATER, which is longer
 // than a client waits. So the nonce is SELF-DESCRIBING: a version byte, an
 // expiry, sixteen random bytes and a MAC over all three and the realm, under a
-// secret every process of this run shares. Any process can check that it
-// issued one, when it expires and for which realm, with no lookup at all.
+// secret every process shares. Any process can check that it issued one, when
+// it expires and for which realm, with no lookup at all.
 //
-// The secret travels the way `ssf/ssf_receivers.js` sends its own: generated
-// once into the environment, so a forked worker inherits it, and never written
-// down — a nonce outliving its process would outlive the only thing that could
-// have checked it, and a client told `badNonce` retries with the fresh one on
-// the same response (section 6.5), so a restart costs one retry.
+// The secret travels the way `ssf/ssf_receivers.js` sends its own: put into the
+// environment before any worker forks, so a forked worker inherits it. Where
+// the store cannot share it (memory, ldif) it is per run and never written
+// down, so a nonce from before a restart fails its MAC — and a client told
+// `badNonce` retries with the fresh one on the same response (section 6.5), so
+// a restart costs one retry. Where the store can share it, it is kept there,
+// sealed (`nonceSecret()` below).
 //
 // **SINGLE USE is the other half and is a store** (`acme_store.js`): the
 // random part is recorded on first use and a second presentation is refused.
 // That store converges across processes rather than synchronising, which is
-// the DPoP `jti` set's trade stated in the root CLAUDE.md, and what a replay
-// inside that window can achieve is bounded by every resource's own state — an
-// order finalizes once, a certificate revokes once, an EAB key binds once.
+// the DPoP `jti` set's trade (persistence/CLAUDE.md), and what a replay inside
+// that window can achieve is bounded by every resource's own state — an order
+// finalizes once, a certificate revokes once, an EAB key binds once. Since
+// 2026-09-14 the spend is also claimed atomically (`spendNonceOnce()`).
 // ---------------------------------------------------------------------------
 const NONCE_VERSION = 1;
 const NONCE_SECRET_VAR = 'STS_ACME_NONCE_SECRET';

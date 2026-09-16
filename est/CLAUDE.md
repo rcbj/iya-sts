@@ -75,11 +75,14 @@ when registered).
   the padding). `application/pkcs10` is in `common/app.js`'s raw-parser list so
   the bytes checked are the bytes sent.
 * **REFUSALS ARE PLAIN TEXT, ONE SENTENCE** — RFC 7030 section 4.2.3 asks for "a
-  human-readable error message". `estError(req, res, ctx, status, sentence)` is
-  the one writer; the code is marked on `res` on the line before and read back
-  for the monitor, never put in the body. A refusal at 400/401/403/409/413/415 is
-  counted against the caller with `core.countFailure()`; a 404 label, 405, 501 or
-  503 is the server's own shape and is not.
+  human-readable error message". `estError(req, res, ctx, status, sentence,
+  headers)` is the one writer; the code is marked on `res` on the line before
+  and read back for the monitor, never put in the body. A refusal at
+  400/401/403/409/413/415 is counted against the caller with
+  `core.countFailure()` — or, where the throttle is shared across nodes (#46),
+  `core.countFailureShared()`, whose answer can turn the refusal into the
+  throttle's 429; a 404 label, 405, 501 or 503 is the server's own shape and is
+  not.
 * **THE WRONG METHOD IS MIDDLEWARE, NOT `app.all()`.** Express 4 records `all` as
   every method it knows on the ROUTE, so `sts_metadata.js` would list thirty-four
   methods per EST path. A middleware after the routes answers 405 with `Allow`.
@@ -150,9 +153,11 @@ removed, and the KEM-profile check removed from the console (handlers); the
   trips the default 60 in a realm it has not touched. The protocol job raises
   `est.attemptsPerAddress` in each of its realms.
 * **The console's user page dumps the whole directory entry**, and in
-  development mode nothing is sealed, so `stsEnrolledPrivateKey` is visible there
-  exactly as `stsAssertionPrivateKey` is. The EST view carries none. The
-  attribute also comes back lower-cased, because the core's attribute names are
-  not merged into `ldap_server.js`'s `learnName()` — an integrator's item.
+  development mode nothing is sealed — so `stsEnrolledPrivateKey` was visible
+  there when this family was first built. It is WITHHELD now, from every dump
+  and every search in every mode (`cert_enrollment.withheldValues()`, called by
+  `ldap/ldap_server.js`), and the enrollment attribute names are in
+  `ldap_server.js`'s canonical list, so they no longer come back lower-cased.
+  The EST view carries no private key either.
 * **node's `X509Certificate` cannot read an ML-KEM key**, so the protocol job
   reads the SubjectPublicKeyInfo OID out of the DER itself.
