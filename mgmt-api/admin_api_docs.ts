@@ -1,7 +1,6 @@
-// @ts-check
 'use strict';
 //
-// File: admin_api_docs.js
+// File: admin_api_docs.ts
 //
 // ---------------------------------------------------------------------------
 // The API explorer: one page that reads the management API's OpenAPI document
@@ -37,9 +36,23 @@
 // is free.
 // ---------------------------------------------------------------------------
 
-const fs = require('fs');
-const path = require('path');
-const { log, xmlEscape } = require('../common/helpers');
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
+// shape: `AdminApiDocs` takes the modules it uses through its constructor
+// (`AdminApiDocsDeps`), and the module still exports its old names from a
+// TRANSITIONAL instance built from the real modules, for the callers that
+// are not converted. `AdminApiDocs` is exported beside them for the
+// composition root.
+//
+// **THE BROWSER SCRIPT IS NOT CONVERTED.** `admin_api_explorer.js` is read
+// off disk at load, by that name, and served verbatim, exactly as before;
+// `SCRIPT`, `STYLE` and `CONTENT_SECURITY_POLICY` are the same values.
+// ---------------------------------------------------------------------------
+
+import fs = require('fs');
+import path = require('path');
+import helpers = require('../common/helpers');
+const { log, xmlEscape } = helpers;
 
 // The relaxed policy, which differs from app.js's in exactly two clauses:
 // script-src is 'self' rather than 'none', and connect-src is added so the page
@@ -156,113 +169,150 @@ const BANNER =
   'and change what the next one contains. Fine on a laptop or a compose ' +
   'network; not fine on a public address.</div>';
 
-// ---------------------------------------------------------------------------
-// `realmPrefix` IS THE ONE THING THIS PAGE NEEDS THAT NO OTHER PAGE HERE DOES.
-//
-// app.js rewrites every root-relative href, action and src in an HTML response
-// to carry the current trust realm's prefix, which is what makes this whole
-// service's markup realm-correct without a line of it being edited. It cannot
-// help THIS page: the explorer builds its request URLs in JavaScript, from the
-// `path` members of the OpenAPI document, and a script is not markup.
-//
-// So the prefix is handed over as a value on the root element and the explorer
-// prepends it. Without this, pressing "Try it" inside
-// /realm/acme/admin-api/docs would call the DEFAULT realm's API — the page
-// would look right, the call would succeed, and it would have changed the wrong
-// service. That is exactly the failure the rewrite exists to prevent everywhere
-// else, so it is worth the extra parameter rather than a note saying not to.
-// ---------------------------------------------------------------------------
-function page(baseUrl, base, version, realmPrefix) {
-  log.debug("Entering page(). base=" + base + ", realm prefix=" +
-            (realmPrefix || "(none)"));
-  const specUrl = xmlEscape((realmPrefix || '') + base + '/openapi.json');
-  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>mock STS management API</title><style>' + STYLE + '</style>' +
-    '</head><body>' +
-    // The banner is BEFORE the app rather than after it, and the position is
-    // the point: it is the first thing on the page whether or not the document
-    // loads, and a warning at the bottom of hundreds of operations is a warning
-    // nobody has read yet when they press Try it.
-    BANNER +
-    '<div id="app" data-spec="' + specUrl + '" data-version="' +
-    xmlEscape(version) + '" data-realm-prefix="' +
-    xmlEscape(realmPrefix || '') + '">' +
-    '<h1>mock STS management API</h1>' +
-    '<p class="lede">Reading <code>' + specUrl + '</code>&hellip;</p>' +
-    '</div>' +
-    '<script src="' + xmlEscape(base) + '/docs/explorer.js" defer></script>' +
-    '</body></html>';
-  log.debug("Leaving page(). " + html.length + " bytes.");
-  return html;
+// What `AdminApiDocs` needs from the rest of the service: the modules this file
+// used to reach for itself, passed in so that the composition root can build
+// one and a test can build one with stubs.
+interface AdminApiDocsDeps {
+  log: typeof log;
+  xmlEscape: typeof xmlEscape;
 }
 
-// ---------------------------------------------------------------------------
-// THE SAME EXPLORER, AS A BODY FOR THE ADMIN CONSOLE'S SHELL (2026-09-09).
-//
-// The explorer moved from `/admin-api/docs` to `/admin/api-explorer` that day,
-// and `page()` above is what it used to be: a whole HTML document with its own
-// `<head>`, served from the management API's own path space. It is KEPT and
-// still exported, because the STYLE, the SCRIPT and the realm-prefix argument
-// are the same in both shapes and a second copy of any of them is the thing
-// this file exists to avoid — but nothing registers a route for it any more.
-//
-// **WHY THE MOVE.** That API stopped being open on 2026-09-09: it takes an
-// access token now, and a BROWSER carries none. So the one page in this
-// service whose entire purpose is to be opened in a browser had become the one
-// page a browser could not open — the console linked to it and the link
-// answered 401. Putting it behind the console's own session makes it reachable
-// again by the people it was written for, and it is a stronger gate rather
-// than a weaker one: a session AND one of two roles, instead of nothing at all.
-//
-// **WHAT THIS FUNCTION RETURNS IS AN `inner`**, in the sense `admin.js`'s
-// `respond()` means: the markup that goes inside the console's shell, with the
-// nav column, the realm switcher, the sign-out button and the footer supplied
-// around it. Three things ride in it that a console page does not usually
-// carry, and each is here rather than in the shell because exactly one page
-// needs it: the explorer's own stylesheet, the `<div id="app">` the script
-// looks for, and the `<script>` tag itself.
-//
-// THE BANNER IS NOT INCLUDED. It said "Nothing here is protected", which was
-// true of this API for as long as this page hung off it and is now false twice
-// over — the API takes a token and this page takes a session.
-// ---------------------------------------------------------------------------
-function consoleBody(opts) {
-  log.debug("Entering consoleBody(). spec=" + opts.specUrl);
-  const inner =
-    // SCOPED TO `#app` WHERE IT CAN BE, because these rules are loaded into a
-    // page the console styled. The selectors that are not scoped are the ones
-    // the explorer's own markup uses and the console's does not.
-    '<style>' + STYLE.replace(/(^|})body\{[^}]*\}/g, '$1') + '</style>' +
-    '<p class="lede">Every operation this service\'s management API offers, ' +
-    'read from the same OpenAPI document the API publishes, with a form that ' +
-    'calls it. ' +
-    (opts.token
-      ? 'Calls are made with an access token minted for <strong>' +
-        xmlEscape(opts.who || 'you') + '</strong> carrying <code>' +
-        xmlEscape(opts.scope || '(no scope)') + '</code> — the scopes your ' +
-        'console roles grant and no others, so an operation you may not ' +
-        'perform is refused here exactly as it would be anywhere else.'
-      : '<strong>No access token could be minted for this session</strong>, ' +
-        'so <em>Try it</em> will be refused. Every operation is still ' +
-        'described and the equivalent <code>curl</code> line is still shown.') +
-    '</p>' +
-    '<div id="app" data-spec="' + xmlEscape(opts.specUrl) + '" ' +
-    'data-version="' + xmlEscape(opts.version || '') + '" ' +
-    'data-realm-prefix="' + xmlEscape(opts.realmPrefix || '') + '" ' +
-    'data-token="' + xmlEscape(opts.token || '') + '">' +
-    '<p class="lede">Reading <code>' + xmlEscape(opts.specUrl) +
-    '</code>&hellip;</p>' +
-    '</div>' +
-    '<script src="' + xmlEscape(opts.scriptUrl) + '" defer></script>';
-  log.debug("Leaving consoleBody(). " + inner.length + " bytes.");
-  return inner;
+class AdminApiDocs {
+  constructor(private readonly deps: AdminApiDocsDeps) {
+    deps.log.debug("Entering AdminApiDocs.constructor().");
+    deps.log.debug("Leaving AdminApiDocs.constructor().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // `realmPrefix` IS THE ONE THING THIS PAGE NEEDS THAT NO OTHER PAGE HERE
+  // DOES.
+  //
+  // app.js rewrites every root-relative href, action and src in an HTML
+  // response to carry the current trust realm's prefix, which is what makes
+  // this whole service's markup realm-correct without a line of it being
+  // edited. It cannot help THIS page: the explorer builds its request URLs in
+  // JavaScript, from the `path` members of the OpenAPI document, and a script
+  // is not markup.
+  //
+  // So the prefix is handed over as a value on the root element and the
+  // explorer prepends it. Without this, pressing "Try it" inside
+  // /realm/acme/admin-api/docs would call the DEFAULT realm's API — the page
+  // would look right, the call would succeed, and it would have changed the
+  // wrong service. That is exactly the failure the rewrite exists to prevent
+  // everywhere else, so it is worth the extra parameter rather than a note
+  // saying not to.
+  // ---------------------------------------------------------------------------
+  page(baseUrl, base, version, realmPrefix) {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering AdminApiDocs.page(). base=" + base + ", realm prefix=" +
+              (realmPrefix || "(none)"));
+    const specUrl = xmlEscape((realmPrefix || '') + base + '/openapi.json');
+    const html =
+      '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<title>mock STS management API</title><style>' + STYLE + '</style>' +
+      '</head><body>' +
+      // The banner is BEFORE the app rather than after it, and the position is
+      // the point: it is the first thing on the page whether or not the
+      // document loads, and a warning at the bottom of hundreds of operations
+      // is a warning nobody has read yet when they press Try it.
+      BANNER +
+      '<div id="app" data-spec="' + specUrl + '" data-version="' +
+      xmlEscape(version) + '" data-realm-prefix="' +
+      xmlEscape(realmPrefix || '') + '">' +
+      '<h1>mock STS management API</h1>' +
+      '<p class="lede">Reading <code>' + specUrl + '</code>&hellip;</p>' +
+      '</div>' +
+      '<script src="' + xmlEscape(base) + '/docs/explorer.js" defer></script>' +
+      '</body></html>';
+    log.debug("Leaving AdminApiDocs.page(). " + html.length + " bytes.");
+    return html;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SAME EXPLORER, AS A BODY FOR THE ADMIN CONSOLE'S SHELL (2026-09-09).
+  //
+  // The explorer moved from `/admin-api/docs` to `/admin/api-explorer` that
+  // day, and `page()` above is what it used to be: a whole HTML document with
+  // its own `<head>`, served from the management API's own path space. It is
+  // KEPT and still exported, because the STYLE, the SCRIPT and the realm-prefix
+  // argument are the same in both shapes and a second copy of any of them is
+  // the thing this file exists to avoid — but nothing registers a route for it
+  // any more.
+  //
+  // **WHY THE MOVE.** That API stopped being open on 2026-09-09: it takes an
+  // access token now, and a BROWSER carries none. So the one page in this
+  // service whose entire purpose is to be opened in a browser had become the
+  // one page a browser could not open — the console linked to it and the link
+  // answered 401. Putting it behind the console's own session makes it
+  // reachable again by the people it was written for, and it is a stronger gate
+  // rather than a weaker one: a session AND one of two roles, instead of
+  // nothing at all.
+  //
+  // **WHAT THIS FUNCTION RETURNS IS AN `inner`**, in the sense `admin.js`'s
+  // `respond()` means: the markup that goes inside the console's shell, with
+  // the nav column, the realm switcher, the sign-out button and the footer
+  // supplied around it. Three things ride in it that a console page does not
+  // usually carry, and each is here rather than in the shell because exactly
+  // one page needs it: the explorer's own stylesheet, the `<div id="app">` the
+  // script looks for, and the `<script>` tag itself.
+  //
+  // THE BANNER IS NOT INCLUDED. It said "Nothing here is protected", which was
+  // true of this API for as long as this page hung off it and is now false
+  // twice over — the API takes a token and this page takes a session.
+  // ---------------------------------------------------------------------------
+  consoleBody(opts) {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering AdminApiDocs.consoleBody(). spec=" + opts.specUrl);
+    const inner =
+      // SCOPED TO `#app` WHERE IT CAN BE, because these rules are loaded into a
+      // page the console styled. The selectors that are not scoped are the ones
+      // the explorer's own markup uses and the console's does not.
+      '<style>' + STYLE.replace(/(^|})body\{[^}]*\}/g, '$1') + '</style>' +
+      '<p class="lede">Every operation this service\'s management API ' +
+      'offers, ' +
+      'read from the same OpenAPI document the API publishes, with a form ' +
+      'that calls it. ' +
+      (opts.token
+        ? 'Calls are made with an access token minted for <strong>' +
+          xmlEscape(opts.who || 'you') + '</strong> carrying <code>' +
+          xmlEscape(opts.scope || '(no scope)') + '</code> — the scopes your ' +
+          'console roles grant and no others, so an operation you may not ' +
+          'perform is refused here exactly as it would be anywhere else.'
+        : '<strong>No access token could be minted for this ' +
+          'session</strong>, so <em>Try it</em> ' +
+          'will be refused. Every operation is still ' +
+          'described and the equivalent <code>curl</code> line is still ' +
+          'shown.') +
+      '</p>' +
+      '<div id="app" data-spec="' + xmlEscape(opts.specUrl) + '" ' +
+      'data-version="' + xmlEscape(opts.version || '') + '" ' +
+      'data-realm-prefix="' + xmlEscape(opts.realmPrefix || '') + '" ' +
+      'data-token="' + xmlEscape(opts.token || '') + '">' +
+      '<p class="lede">Reading <code>' + xmlEscape(opts.specUrl) +
+      '</code>&hellip;</p>' +
+      '</div>' +
+      '<script src="' + xmlEscape(opts.scriptUrl) + '" defer></script>';
+    log.debug("Leaving AdminApiDocs.consoleBody(). " + inner.length +
+              " bytes.");
+    return inner;
+  }
 }
 
-module.exports = {
+// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
+// composition root will build one, and the source of every name this
+// module exports. It goes when that root exists.
+const docsPage = new AdminApiDocs({
+  log: log,
+  xmlEscape: xmlEscape
+});
+
+export = {
+  AdminApiDocs: AdminApiDocs,
   CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
   SCRIPT: SCRIPT,
   STYLE: STYLE,
-  page: page,
-  consoleBody: consoleBody
+  page: docsPage.page.bind(docsPage) as AdminApiDocs['page'],
+  consoleBody: docsPage.consoleBody.bind(docsPage) as
+    AdminApiDocs['consoleBody']
 };

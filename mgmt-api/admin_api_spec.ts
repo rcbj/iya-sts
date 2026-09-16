@@ -1,13 +1,12 @@
-// @ts-check
 'use strict';
 //
-// File: admin_api_spec.js
+// File: admin_api_spec.ts
 //
 // ---------------------------------------------------------------------------
 // The OpenAPI document for the management API, and the schemas it is written
 // in.
 //
-// It is BUILT FROM THE ROUTE TABLE in admin_api.js rather than kept beside it
+// It is BUILT FROM THE ROUTE TABLE in admin_api.ts rather than kept beside it
 // as a hand-written YAML file, and that is the whole point of this module. A
 // spec file next to the code it describes is a spec file that is wrong within a
 // month: somebody adds an action to the console, adds it to the API, and does
@@ -16,7 +15,7 @@
 // so an operation that exists is documented by construction and one that is
 // documented exists.
 //
-// The counterpart rule is in admin_api.js: an /admin control gets an /admin-api
+// The counterpart rule is in admin_api.ts: an /admin control gets an /admin-api
 // operation in the same commit. That one cannot be enforced by construction —
 // nothing can see a form appear on a page — so it is asserted by this
 // repository's own tests/vendored/admin_api.js (a `local: true` job) instead,
@@ -36,14 +35,29 @@
 // to be doing is a document that describes one moment.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
+// shape: `AdminApiSpec` takes the modules it uses through its constructor
+// (`AdminApiSpecDeps`), and the module still exports its old names from a
+// TRANSITIONAL instance built from the real modules, for the callers that
+// are not converted. `AdminApiSpec` is exported beside them for the
+// composition root.
+//
+// **`openObject()` AND `pagingObject()` ARE ALSO BOUND AT MODULE SCOPE**,
+// from that instance and under their old names, because the schema tables
+// below call them at load — some three hundred call sites that read exactly
+// as they did. The tables themselves stay module-level constants.
+// ---------------------------------------------------------------------------
+
 // The reply shape shared by every POST here: the console's own action result,
 // unchanged. `ok` is the only member that is always present; the rest depends
 // on what was asked, which is why this schema is open rather than closed.
-const { log } = require('../common/helpers');
+import helpers = require('../common/helpers');
+const { log } = helpers;
 // Which console pages list their realm's endpoints, so a GET mirroring one
 // can say that its reply carries them (2026-09-13). A library that requires
 // nothing route-registering; see its header.
-const protocolEndpoints = require('../admin-core/protocol_endpoints');
+import protocolEndpoints = require('../admin-core/protocol_endpoints');
 
 const ACTION_RESULT = {
   type: 'object',
@@ -216,40 +230,367 @@ const PAGING_PROPERTIES = {
   lastRow: { type: 'integer', description: '1-based and inclusive.' }
 };
 
-// The same members as an OBJECT, for a reply that carries more than one list
-// and therefore cannot put them at the top level. Built from PAGING_PROPERTIES
-// above rather than written out again, because two hand-kept copies of five
-// member names is one copy that will eventually be missing `lastRow`.
-//
-// `total` is here and not up there for a reason worth stating: at the top level
-// the number is called `matched`, which is the count AFTER a filter. A
-// drill-down's lists have no filter, so the honest name for the number is the
-// plain one.
-function pagingObject(what) {
-  log.debug("Entering pagingObject().");
-  log.debug("Leaving pagingObject().");
-  return {
-    type: 'object',
-    description: 'Where `' + what + '` came from in the whole list: the ' +
-                 'page, how many there are, and the 1-based row numbers this ' +
-                 'page covers. Same member names the flat lists carry at the ' +
-                 'top level, one level down.',
-    properties: Object.assign({
-      total: { type: 'integer',
-               description: 'How many there are in all, which is what to ' +
-                            'page through rather than the length of this ' +
-                            'array.' }
-    }, PAGING_PROPERTIES),
-    additionalProperties: false
-  };
+// What `AdminApiSpec` needs from the rest of the service: the modules this file
+// used to reach for itself, passed in so that the composition root can build
+// one and a test can build one with stubs.
+interface AdminApiSpecDeps {
+  log: typeof log;
+  protocolEndpoints: typeof protocolEndpoints;
 }
 
-function openObject(description, properties) {
-  log.debug("Entering openObject().");
-  log.debug("Leaving openObject().");
-  return { type: 'object', description: description,
-           properties: properties, additionalProperties: true };
+class AdminApiSpec {
+  constructor(private readonly deps: AdminApiSpecDeps) {
+    deps.log.debug("Entering AdminApiSpec.constructor().");
+    deps.log.debug("Leaving AdminApiSpec.constructor().");
+  }
+
+  // The same members as an OBJECT, for a reply that carries more than one list
+  // and therefore cannot put them at the top level. Built from
+  // PAGING_PROPERTIES above rather than written out again, because two
+  // hand-kept copies of five member names is one copy that will eventually be
+  // missing `lastRow`.
+  //
+  // `total` is here and not up there for a reason worth stating: at the top
+  // level the number is called `matched`, which is the count AFTER a filter. A
+  // drill-down's lists have no filter, so the honest name for the number is the
+  // plain one.
+  pagingObject(what) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApiSpec.pagingObject().");
+    log.debug("Leaving AdminApiSpec.pagingObject().");
+    return {
+      type: 'object',
+      description: 'Where `' + what + '` came from in the whole list: the ' +
+                   'page, how many there are, and the 1-based row numbers ' +
+                   'this page covers. Same member names the flat lists carry ' +
+                   'at the top level, one level down.',
+      properties: Object.assign({
+        total: { type: 'integer',
+                 description: 'How many there are in all, which is what to ' +
+                              'page through rather than the length of this ' +
+                              'array.' }
+      }, PAGING_PROPERTIES),
+      additionalProperties: false
+    };
+  }
+
+  openObject(description, properties) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApiSpec.openObject().");
+    log.debug("Leaving AdminApiSpec.openObject().");
+    return { type: 'object', description: description,
+             properties: properties, additionalProperties: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PROSE AT THE TOP OF THE DOCUMENT, AND IT IS A FUNCTION OF THE GATE
+  // SINCE 2026-09-10 BECAUSE IT USED TO BE A FLAT CONTRADICTION OF IT.
+  //
+  // It is long on purpose: the first thing anybody pointing a tool at this
+  // needs to know is whether it is protected and that four of its operations
+  // change what the PROTOCOL endpoints do.
+  //
+  // **IT SAID "Nothing here is protected" FOR A DAY AFTER IT STOPPED BEING
+  // TRUE.** `/admin-api` began requiring an OAuth 2.0 access token on
+  // 2026-09-09; the startup banner was taught to read `adminApi.authRequired`
+  // and this document was not, so the one artifact a machine reads went on
+  // stating the opposite of what every one of its 238 operations would do. That
+  // is worse than a stale comment: `security: []` is OpenAPI's way of saying a
+  // credential is not needed, so a generated client sent none and was refused
+  // everywhere, and the sentence a person read told them the refusal was a bug.
+  //
+  // Both states are still real — `adminApi.authRequired` is the off switch and
+  // it restores the open API exactly — so the paragraph is written twice rather
+  // than hedged once. The OFF text is the original, verbatim, because it is the
+  // argument for the switch.
+  // ---------------------------------------------------------------------------
+  describe(authRequired) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApiSpec.describe(). authRequired=" + authRequired);
+    const protection = authRequired ? PROTECTED_PARAGRAPH : OPEN_PARAGRAPH;
+    log.debug("Leaving AdminApiSpec.describe().");
+    return [DESCRIPTION_OPENING, protection].concat(DESCRIPTION_REST)
+      .join('\n\n');
+  }
+
+  // ===========================================================================
+  // THE SECURITY HALF OF THE DOCUMENT.
+  //
+  // **THE SCOPE A GIVEN OPERATION NEEDS IS DECIDED BY ITS METHOD, AND THE
+  // AUTHORITY IS THE GATE RATHER THAN THIS FILE.** `admin_api.ts`'s
+  // `app.use(BASE, ...)` middleware reads `req.method === 'GET' ? 'admin:read'
+  // : 'admin:write'`, and `scopeForMethod()` below is that one line written a
+  // second time — which is a duplication worth naming, because a document that
+  // disagrees with the gate is exactly the failure this whole change is about.
+  // `tests/admin_api_document_security.js` compares the two over every
+  // operation in the table, so the copy cannot drift silently.
+  //
+  // TWO SCHEMES, and they describe the same credential from the two ends a
+  // reader arrives from:
+  //
+  //   * `oauth2` (client credentials) is what the API actually wants and where
+  //     it comes from — the token endpoint, the two scopes, the client. It is
+  //     the accurate description, and it is the one a tool can act on.
+  //   * `bearerAuth` (http/bearer) is for the reader who already HAS a token —
+  //     out of a launcher's environment, out of the console's explorer, out of
+  //     a shell — and wants to paste it into a tool's Authorize box. Nothing
+  //     but a header, which is all such a reader needs.
+  //
+  // **`resource` HAS NO FIELD IN OPENAPI AND IT IS THE PARAMETER MOST LIKELY TO
+  // BE MISSED**, so it is in the scheme's own description rather than left to
+  // the prose at the top: a token minted without it carries the wrong `aud` and
+  // is refused by a gate that has just told the caller the credential was good
+  // enough to parse. Being explicit here is the difference between a
+  // five-second fix and reading a middleware.
+  // ===========================================================================
+  scopeForMethod(method) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApiSpec.scopeForMethod().");
+    log.debug("Leaving AdminApiSpec.scopeForMethod().");
+    return String(method).toUpperCase() === 'GET' ? 'admin:read' :
+           'admin:write';
+  }
+
+  securitySchemesFor(baseUrl) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApiSpec.securitySchemesFor().");
+    const schemes = {
+      oauth2: {
+        type: 'oauth2',
+        description:
+          'An access token from this service\'s own token endpoint. ' +
+          'Ask as the seeded client `sts-management-api`, whose secret is ' +
+          'the `adminApi.clientSecret` setting, and **send ' +
+          '`resource=' + String(baseUrl || '') + '/admin-api`** with the ' +
+          'request: OpenAPI has no field for RFC 8707\'s resource indicator ' +
+          'and it is what puts this API in the token\'s `aud`, without which ' +
+          'every call here is refused 401.',
+        flows: {
+          clientCredentials: {
+            tokenUrl: String(baseUrl || '') + '/oauth2/token',
+            scopes: {
+              'admin:read': 'Read anything this API exposes (every GET).',
+              'admin:write': 'Change anything this API can change ' +
+                             '(every other method).'
+            }
+          }
+        }
+      },
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'The same token, pasted. Use this when you already hold ' +
+          'one — from a launcher\'s ' +
+          '`STS_ADMIN_API_TOKEN`, from the console\'s ' +
+          'API explorer, or from a shell — rather than minting one here.'
+      }
+    };
+    log.debug("Leaving AdminApiSpec.securitySchemesFor().");
+    return schemes;
+  }
+
+  // What one operation requires. Two alternatives rather than one, because the
+  // schemes above are two ways to present the same credential and OpenAPI reads
+  // a LIST of requirement objects as "any one of these will do". The bearer
+  // entry carries an empty array because scopes are meaningless outside oauth2
+  // — naming them there would be a document that validators reject.
+  securityFor(method) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApiSpec.securityFor().");
+    log.debug("Leaving AdminApiSpec.securityFor().");
+    return [{ oauth2: [this.scopeForMethod(method)] }, { bearerAuth: [] }];
+  }
+
+  // One operation, as OpenAPI wants it. `entry` is a row of admin_api.ts's
+  // route table and `action` is one of its actions, or null for a plain route.
+  operationOf(entry, action) {
+    const { log, protocolEndpoints } = this.deps;
+    log.debug("Entering AdminApiSpec.operationOf().");
+    const source = action || entry;
+    const mirrors = source.mirrors || entry.mirrors || '';
+    const parts = [source.description || ''];
+    if (mirrors) {
+      parts.push('\n\n**Mirrors** `' + mirrors + '` on the admin console.');
+    }
+    // THE ONE MEMBER NO VIEW ADDS: `mgmt-api/admin_api.ts`'s `sendJson()` puts
+    // it on the reply of a GET mirroring exactly one Protocols page, so it is
+    // said here from the same test rather than in forty descriptions.
+    const mirroredPage = /^GET (\/admin\S*)$/.exec(String(mirrors));
+    if (!action && entry.method === 'GET' && mirroredPage &&
+        protocolEndpoints.pages().indexOf(mirroredPage[1]) >= 0) {
+      parts.push('\n\nThe reply also carries `protocolEndpoints`: every ' +
+                 'endpoint of this family in the realm the call arrived in, ' +
+                 'as `{ name, methods, url }` (plus `route` for an HTTP ' +
+                 'endpoint, `transport` for a socket, and `registered: ' +
+                 'false` for a route the router no longer has).');
+    }
+    const operation: Record<string, any> = {
+      operationId: source.operationId,
+      summary: source.summary,
+      description: parts.join(''),
+      tags: [entry.tag],
+      responses: {}
+    };
+    if (entry.parameters && entry.parameters.length) {
+      operation.parameters = entry.parameters;
+    }
+    if (source.requestBody) {
+      operation.requestBody = {
+        required: !!source.requestBodyRequired,
+        content: { 'application/json': { schema: source.requestBody } }
+      };
+    }
+    if (action) {
+      operation.responses['200'] = {
+        description: source.responseDescription || 'The operation was applied.',
+        content: { 'application/json': {
+          schema: { $ref: '#/components/schemas/ActionResult' } } }
+      };
+      operation.responses['400'] = {
+        description: 'The operation was refused; `errors` says why and ' +
+                     'nothing changed.',
+        content: { 'application/json': {
+          schema: { $ref: '#/components/schemas/ActionResult' } } }
+      };
+      log.debug("Leaving AdminApiSpec.operationOf().");
+      return operation;
+    }
+    operation.responses['200'] = {
+      description: source.responseDescription || 'The current state.',
+      content: {}
+    };
+    operation.responses['200'].content[source.responseType ||
+                                       'application/json'] = {
+      schema: source.responseSchema || { type: 'object' }
+    };
+    // EVERY POST DOCUMENTS ITS 400, not only the action resources. A refusal is
+    // the reply half a caller has to handle, and it is not a property of being
+    // an ACTION — a plain POST that takes a body can refuse it just as an
+    // action can refuse its name. This was found by the parity test rather than
+    // reasoned about: `POST /admin-api/keys/export` is the first non-action
+    // POST this API has had, and it went in documenting a 200 alone.
+    if (entry.method === 'POST') {
+      operation.responses['400'] = {
+        description: 'The operation was refused; `errors` says why and ' +
+                     'nothing was handed over.',
+        content: { 'application/json': {
+          schema: { $ref: '#/components/schemas/ActionResult' } } }
+      };
+    }
+    log.debug("Leaving AdminApiSpec.operationOf().");
+    return operation;
+  }
+
+  // The document. `routes` is admin_api.ts's table; an entry carrying `actions`
+  // becomes one operation per action, at the concrete URL each of them has —
+  // which is a real address even though express serves all of them from one
+  // `:action` pattern.
+  buildSpec(routes, options) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApiSpec.buildSpec().");
+    const opts = options || {};
+    // ---------------------------------------------------------------------
+    // **THE GATE'S STATE ARRIVES AS AN OPTION AND DEFAULTS TO ON.**
+    //
+    // It is not read from `config` here, and the header of this file is why:
+    // this module must not require anything that holds state, or the document
+    // becomes a description of one moment rather than of the API. `baseUrl` and
+    // `version` already arrive the same way — from a caller that has the
+    // request in its hand — and `adminApi.authRequired` is one more such fact.
+    // `admin_api.ts`'s `specOptions()` is the one place all three are gathered,
+    // so a fourth caller cannot assemble a different answer.
+    //
+    // **THE DEFAULT IS THE SETTING'S OWN DEFAULT, AND THE DIRECTION MATTERS.**
+    // A caller that forgets to pass it makes a document that OVER-states the
+    // requirement, which costs a client one unnecessary token; the other
+    // default would reproduce the exact bug this option was added for, where a
+    // client is told no credential is needed by an API that refuses it on every
+    // operation.
+    // ---------------------------------------------------------------------
+    const authRequired = opts.authRequired === undefined
+      ? true : opts.authRequired === true;
+    const paths = {};
+    const tags = [];
+    routes.forEach(function (entry) {
+      if (tags.indexOf(entry.tag) < 0) {
+        tags.push(entry.tag);
+      }
+      const method = entry.method.toLowerCase();
+      if (!entry.actions) {
+        paths[entry.path] = paths[entry.path] || {};
+        paths[entry.path][method] = self.operationOf(entry, null);
+        if (authRequired) {
+          paths[entry.path][method].security = self.securityFor(method);
+        }
+        return;
+      }
+      entry.actions.forEach(function (action) {
+        const path = entry.route.replace(':action', action.action);
+        paths[path] = paths[path] || {};
+        paths[path][method] = self.operationOf(entry, action);
+        if (authRequired) {
+          paths[path][method].security = self.securityFor(method);
+        }
+      });
+    });
+    log.debug("Leaving AdminApiSpec.buildSpec().");
+    const components: Record<string, any> = { schemas: SCHEMAS };
+    if (authRequired) {
+      components.securitySchemes = this.securitySchemesFor(opts.baseUrl);
+    }
+    log.debug("Leaving AdminApiSpec.buildSpec().");
+    return {
+      openapi: '3.1.0',
+      info: {
+        title: 'mock STS management API',
+        version: opts.version || '0.0.0',
+        description: this.describe(authRequired),
+        license: { name: 'MIT' }
+      },
+      servers: [{ url: opts.baseUrl || '/', description: 'This service.' }],
+      tags: tags.map(function (name) {
+        return { name: name, description: TAG_DESCRIPTIONS[name] || '' };
+      }),
+      // ---------------------------------------------------------------------
+      // THE DOCUMENT-WIDE DEFAULT, AND EVERY OPERATION STATES ITS OWN AS WELL.
+      //
+      // Redundant on purpose. A tool's Authorize box reads THIS one — so it has
+      // to name both scopes, which is what the token a reader will actually
+      // hold carries — while the per-operation entries say the narrower truth,
+      // that a GET needs only `admin:read`. Neither alone is both actionable
+      // and accurate.
+      //
+      // **AN EMPTY ARRAY IS NOT AN OMISSION, IT IS THE OPPOSITE CLAIM**, and
+      // that is why it may only appear when the gate is off: OpenAPI reads
+      // `security: []` as "no credential is needed", which is exactly what
+      // `adminApi.authRequired: false` means and exactly what this document
+      // wrongly said while the gate was on.
+      // ---------------------------------------------------------------------
+      security: authRequired
+        ? [{ oauth2: ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
+        : [],
+      paths: paths,
+      components: components
+    };
+  }
 }
+
+// THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
+// composition root will build one, and the source of every name this
+// module exports. It goes when that root exists.
+const specBuilder = new AdminApiSpec({
+  log: log,
+  protocolEndpoints: protocolEndpoints
+});
+
+// THE HELPERS THE TABLES BELOW CALL at load, bound to that instance so
+// that every call site in them reads as it did.
+const openObject = specBuilder.openObject.bind(specBuilder) as
+  AdminApiSpec['openObject'];
+const pagingObject = specBuilder.pagingObject.bind(specBuilder) as
+  AdminApiSpec['pagingObject'];
 
 
 // One row of config.js's table, as this API reports it. Written out rather than
@@ -1663,7 +2004,9 @@ const SCHEMAS = {
                                 'is invisible to every other realm, ' +
                                 'including to an ldapsearch that does not ' +
                                 'use that realm\'s base DN.' },
-      realm: openObject('The trust realm this call arrived in: `id` and `name`.', {}),
+      realm:
+        openObject('The trust realm this call arrived in: `id` and `name`.',
+                   {}),
       mode: { type: 'string',
               description: 'development or product, from global.mode. It ' +
                            'decides only whether EXAMPLE DATA is offered; ' +
@@ -1745,7 +2088,9 @@ const SCHEMAS = {
                           'rather than an old entry evicted.' },
       applicationCount: { type: 'integer',
                           description: 'How many it holds now.' },
-      realm: openObject('The trust realm this call arrived in: `id` and `name`.', {}),
+      realm:
+        openObject('The trust realm this call arrived in: `id` and `name`.',
+                   {}),
       kinds: {
         type: 'array',
         description: 'The eight kinds, each `{kind, label, what}`. A create ' +
@@ -3460,8 +3805,8 @@ const SCHEMAS = {
                      'whether it is `dead` (with `deadSince`, `deadReason`, ' +
                      '`nextProbeAt`) and its `deadLetters`: SETs that could ' +
                      'not be delivered, newest first, each with `reason`, ' +
-                     '`errorCode`, `status` and whether it was `signed`, never ' +
-                     'the token. The ' +
+                     '`errorCode`, `status` and whether it was `signed`, ' +
+                     'never the token. The ' +
                      'receiver\'s `authorization_header` is NEVER in it — it ' +
                      'is a credential belonging to somebody else\'s ' +
                      'endpoint, and this resource is not the door it goes ' +
@@ -4971,36 +5316,6 @@ const SCHEMAS = {
     }, PAGING_PROPERTIES))
 };
 
-// ---------------------------------------------------------------------------
-// THE PROSE AT THE TOP OF THE DOCUMENT, AND IT IS A FUNCTION OF THE GATE
-// SINCE 2026-09-10 BECAUSE IT USED TO BE A FLAT CONTRADICTION OF IT.
-//
-// It is long on purpose: the first thing anybody pointing a tool at this needs
-// to know is whether it is protected and that four of its operations change
-// what the PROTOCOL endpoints do.
-//
-// **IT SAID "Nothing here is protected" FOR A DAY AFTER IT STOPPED BEING
-// TRUE.** `/admin-api` began requiring an OAuth 2.0 access token on
-// 2026-09-09; the startup banner was taught to read `adminApi.authRequired`
-// and this document was not, so the one artifact a machine reads went on
-// stating the opposite of what every one of its 238 operations would do. That
-// is worse than a stale comment: `security: []` is OpenAPI's way of saying a
-// credential is not needed, so a generated client sent none and was refused
-// everywhere, and the sentence a person read told them the refusal was a bug.
-//
-// Both states are still real — `adminApi.authRequired` is the off switch and
-// it restores the open API exactly — so the paragraph is written twice rather
-// than hedged once. The OFF text is the original, verbatim, because it is the
-// argument for the switch.
-// ---------------------------------------------------------------------------
-function describe(authRequired) {
-  log.debug("Entering describe(). authRequired=" + authRequired);
-  const protection = authRequired ? PROTECTED_PARAGRAPH : OPEN_PARAGRAPH;
-  log.debug("Leaving describe().");
-  return [DESCRIPTION_OPENING, protection].concat(DESCRIPTION_REST)
-    .join('\n\n');
-}
-
 const DESCRIPTION_OPENING =
   'The management API of the mock STS: everything the /admin console ' +
   'shows and everything it can change, over JSON, with no browser.';
@@ -5088,260 +5403,6 @@ const DESCRIPTION_REST = [
   'writes down.'
 ];
 
-// ===========================================================================
-// THE SECURITY HALF OF THE DOCUMENT.
-//
-// **THE SCOPE A GIVEN OPERATION NEEDS IS DECIDED BY ITS METHOD, AND THE
-// AUTHORITY IS THE GATE RATHER THAN THIS FILE.** `admin_api.js`'s
-// `app.use(BASE, ...)` middleware reads `req.method === 'GET' ? 'admin:read' :
-// 'admin:write'`, and `scopeForMethod()` below is that one line written a
-// second time — which is a duplication worth naming, because a document that
-// disagrees with the gate is exactly the failure this whole change is about.
-// `tests/admin_api_document_security.js` compares the two over every operation
-// in the table, so the copy cannot drift silently.
-//
-// TWO SCHEMES, and they describe the same credential from the two ends a
-// reader arrives from:
-//
-//   * `oauth2` (client credentials) is what the API actually wants and where
-//     it comes from — the token endpoint, the two scopes, the client. It is
-//     the accurate description, and it is the one a tool can act on.
-//   * `bearerAuth` (http/bearer) is for the reader who already HAS a token —
-//     out of a launcher's environment, out of the console's explorer, out of
-//     a shell — and wants to paste it into a tool's Authorize box. Nothing
-//     but a header, which is all such a reader needs.
-//
-// **`resource` HAS NO FIELD IN OPENAPI AND IT IS THE PARAMETER MOST LIKELY TO
-// BE MISSED**, so it is in the scheme's own description rather than left to
-// the prose at the top: a token minted without it carries the wrong `aud` and
-// is refused by a gate that has just told the caller the credential was good
-// enough to parse. Being explicit here is the difference between a five-second
-// fix and reading a middleware.
-// ===========================================================================
-function scopeForMethod(method) {
-  log.debug("Entering scopeForMethod().");
-  log.debug("Leaving scopeForMethod().");
-  return String(method).toUpperCase() === 'GET' ? 'admin:read' : 'admin:write';
-}
-
-function securitySchemesFor(baseUrl) {
-  log.debug("Entering securitySchemesFor().");
-  const schemes = {
-    oauth2: {
-      type: 'oauth2',
-      description: 'An access token from this service\'s own token endpoint. ' +
-        'Ask as the seeded client `sts-management-api`, whose secret is the ' +
-        '`adminApi.clientSecret` setting, and **send ' +
-        '`resource=' + String(baseUrl || '') + '/admin-api`** with the ' +
-        'request: OpenAPI has no field for RFC 8707\'s resource indicator ' +
-        'and it is what puts this API in the token\'s `aud`, without which ' +
-        'every call here is refused 401.',
-      flows: {
-        clientCredentials: {
-          tokenUrl: String(baseUrl || '') + '/oauth2/token',
-          scopes: {
-            'admin:read': 'Read anything this API exposes (every GET).',
-            'admin:write': 'Change anything this API can change ' +
-                           '(every other method).'
-          }
-        }
-      }
-    },
-    bearerAuth: {
-      type: 'http',
-      scheme: 'bearer',
-      bearerFormat: 'JWT',
-      description: 'The same token, pasted. Use this when you already hold ' +
-        'one — from a launcher\'s `STS_ADMIN_API_TOKEN`, from the console\'s ' +
-        'API explorer, or from a shell — rather than minting one here.'
-    }
-  };
-  log.debug("Leaving securitySchemesFor().");
-  return schemes;
-}
-
-// What one operation requires. Two alternatives rather than one, because the
-// schemes above are two ways to present the same credential and OpenAPI reads
-// a LIST of requirement objects as "any one of these will do". The bearer
-// entry carries an empty array because scopes are meaningless outside oauth2 —
-// naming them there would be a document that validators reject.
-function securityFor(method) {
-  log.debug("Entering securityFor().");
-  log.debug("Leaving securityFor().");
-  return [{ oauth2: [scopeForMethod(method)] }, { bearerAuth: [] }];
-}
-
-// One operation, as OpenAPI wants it. `entry` is a row of admin_api.js's route
-// table and `action` is one of its actions, or null for a plain route.
-function operationOf(entry, action) {
-  log.debug("Entering operationOf().");
-  const source = action || entry;
-  const mirrors = source.mirrors || entry.mirrors || '';
-  const parts = [source.description || ''];
-  if (mirrors) {
-    parts.push('\n\n**Mirrors** `' + mirrors + '` on the admin console.');
-  }
-  // THE ONE MEMBER NO VIEW ADDS: `mgmt-api/admin_api.js`'s `sendJson()` puts
-  // it on the reply of a GET mirroring exactly one Protocols page, so it is
-  // said here from the same test rather than in forty descriptions.
-  const mirroredPage = /^GET (\/admin\S*)$/.exec(String(mirrors));
-  if (!action && entry.method === 'GET' && mirroredPage &&
-      protocolEndpoints.pages().indexOf(mirroredPage[1]) >= 0) {
-    parts.push('\n\nThe reply also carries `protocolEndpoints`: every ' +
-               'endpoint of this family in the realm the call arrived in, ' +
-               'as `{ name, methods, url }` (plus `route` for an HTTP ' +
-               'endpoint, `transport` for a socket, and `registered: false` ' +
-               'for a route the router no longer has).');
-  }
-  const operation = {
-    operationId: source.operationId,
-    summary: source.summary,
-    description: parts.join(''),
-    tags: [entry.tag],
-    responses: {}
-  };
-  if (entry.parameters && entry.parameters.length) {
-    operation.parameters = entry.parameters;
-  }
-  if (source.requestBody) {
-    operation.requestBody = {
-      required: !!source.requestBodyRequired,
-      content: { 'application/json': { schema: source.requestBody } }
-    };
-  }
-  if (action) {
-    operation.responses['200'] = {
-      description: source.responseDescription || 'The operation was applied.',
-      content: { 'application/json': {
-        schema: { $ref: '#/components/schemas/ActionResult' } } }
-    };
-    operation.responses['400'] = {
-      description: 'The operation was refused; `errors` says why and nothing ' +
-                   'changed.',
-      content: { 'application/json': {
-        schema: { $ref: '#/components/schemas/ActionResult' } } }
-    };
-    log.debug("Leaving operationOf().");
-    return operation;
-  }
-  operation.responses['200'] = {
-    description: source.responseDescription || 'The current state.',
-    content: {}
-  };
-  operation.responses['200'].content[source.responseType ||
-                                     'application/json'] = {
-    schema: source.responseSchema || { type: 'object' }
-  };
-  // EVERY POST DOCUMENTS ITS 400, not only the action resources. A refusal is
-  // the reply half a caller has to handle, and it is not a property of being
-  // an ACTION — a plain POST that takes a body can refuse it just as an action
-  // can refuse its name. This was found by the parity test rather than
-  // reasoned about: `POST /admin-api/keys/export` is the first non-action POST
-  // this API has had, and it went in documenting a 200 alone.
-  if (entry.method === 'POST') {
-    operation.responses['400'] = {
-      description: 'The operation was refused; `errors` says why and nothing ' +
-                   'was handed over.',
-      content: { 'application/json': {
-        schema: { $ref: '#/components/schemas/ActionResult' } } }
-    };
-  }
-  log.debug("Leaving operationOf().");
-  return operation;
-}
-
-// The document. `routes` is admin_api.js's table; an entry carrying `actions`
-// becomes one operation per action, at the concrete URL each of them has —
-// which is a real address even though express serves all of them from one
-// `:action` pattern.
-function buildSpec(routes, options) {
-  log.debug("Entering buildSpec().");
-  const opts = options || {};
-  // ---------------------------------------------------------------------
-  // **THE GATE'S STATE ARRIVES AS AN OPTION AND DEFAULTS TO ON.**
-  //
-  // It is not read from `config` here, and the header of this file is why:
-  // this module must not require anything that holds state, or the document
-  // becomes a description of one moment rather than of the API. `baseUrl` and
-  // `version` already arrive the same way — from a caller that has the
-  // request in its hand — and `adminApi.authRequired` is one more such fact.
-  // `admin_api.js`'s `specOptions()` is the one place all three are gathered,
-  // so a fourth caller cannot assemble a different answer.
-  //
-  // **THE DEFAULT IS THE SETTING'S OWN DEFAULT, AND THE DIRECTION MATTERS.** A
-  // caller that forgets to pass it makes a document that OVER-states the
-  // requirement, which costs a client one unnecessary token; the other
-  // default would reproduce the exact bug this option was added for, where a
-  // client is told no credential is needed by an API that refuses it on every
-  // operation.
-  // ---------------------------------------------------------------------
-  const authRequired = opts.authRequired === undefined
-    ? true : opts.authRequired === true;
-  const paths = {};
-  const tags = [];
-  routes.forEach(function (entry) {
-    if (tags.indexOf(entry.tag) < 0) {
-      tags.push(entry.tag);
-    }
-    const method = entry.method.toLowerCase();
-    if (!entry.actions) {
-      paths[entry.path] = paths[entry.path] || {};
-      paths[entry.path][method] = operationOf(entry, null);
-      if (authRequired) {
-        paths[entry.path][method].security = securityFor(method);
-      }
-      return;
-    }
-    entry.actions.forEach(function (action) {
-      const path = entry.route.replace(':action', action.action);
-      paths[path] = paths[path] || {};
-      paths[path][method] = operationOf(entry, action);
-      if (authRequired) {
-        paths[path][method].security = securityFor(method);
-      }
-    });
-  });
-  log.debug("Leaving buildSpec().");
-  const components = { schemas: SCHEMAS };
-  if (authRequired) {
-    components.securitySchemes = securitySchemesFor(opts.baseUrl);
-  }
-  log.debug("Leaving buildSpec().");
-  return {
-    openapi: '3.1.0',
-    info: {
-      title: 'mock STS management API',
-      version: opts.version || '0.0.0',
-      description: describe(authRequired),
-      license: { name: 'MIT' }
-    },
-    servers: [{ url: opts.baseUrl || '/', description: 'This service.' }],
-    tags: tags.map(function (name) {
-      return { name: name, description: TAG_DESCRIPTIONS[name] || '' };
-    }),
-    // ---------------------------------------------------------------------
-    // THE DOCUMENT-WIDE DEFAULT, AND EVERY OPERATION STATES ITS OWN AS WELL.
-    //
-    // Redundant on purpose. A tool's Authorize box reads THIS one — so it has
-    // to name both scopes, which is what the token a reader will actually
-    // hold carries — while the per-operation entries say the narrower truth,
-    // that a GET needs only `admin:read`. Neither alone is both actionable
-    // and accurate.
-    //
-    // **AN EMPTY ARRAY IS NOT AN OMISSION, IT IS THE OPPOSITE CLAIM**, and
-    // that is why it may only appear when the gate is off: OpenAPI reads
-    // `security: []` as "no credential is needed", which is exactly what
-    // `adminApi.authRequired: false` means and exactly what this document
-    // wrongly said while the gate was on.
-    // ---------------------------------------------------------------------
-    security: authRequired
-      ? [{ oauth2: ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
-      : [],
-    paths: paths,
-    components: components
-  };
-}
-
 const TAG_DESCRIPTIONS = {
   Service: 'What this API is, its document, and the explorer that calls it.',
   SCEP: 'The Simple Certificate Enrolment Protocol (RFC 8894) server of this ' +
@@ -5404,7 +5465,9 @@ const TAG_DESCRIPTIONS = {
                      'of ignoring it.'
 };
 
-module.exports = {
+export = {
+  AdminApiSpec: AdminApiSpec,
   SCHEMAS: SCHEMAS,
-  buildSpec: buildSpec
+  buildSpec: specBuilder.buildSpec.bind(specBuilder) as
+    AdminApiSpec['buildSpec']
 };

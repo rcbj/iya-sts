@@ -7,7 +7,7 @@
 // STOPS BEING ONE.
 //
 // Until 2026-09-12 every decision both admin surfaces make lived in
-// `admin-ui/admin.js`, and `mgmt-api/admin_api.js` reached them by requiring
+// `admin-ui/admin.js`, and `mgmt-api/admin_api.ts` reached them by requiring
 // the console module and calling its functions. Rule 7 was satisfied — a page
 // and its operation could not disagree, because they were the same call — and
 // the price was that the surface a machine drives sat downstream of the
@@ -68,7 +68,7 @@ const ROOT = path.join(__dirname, '..');
 // about being required by two surfaces rather than about writing or reading.
 const LAYERS = ['admin-core/admin_actions.ts', 'admin-core/admin_views.ts'];
 const CONSOLE_MODULE = 'admin-ui/admin.js';
-const API_MODULE = 'mgmt-api/admin_api.js';
+const API_MODULE = 'mgmt-api/admin_api.ts';
 
 // What the console forwards into each half. Named here rather than derived,
 // because the point of the check is that the list does not quietly shrink.
@@ -236,7 +236,7 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
   const api = codeOf(read(API_MODULE));
 
   t.check(/require\('\.\.\/admin-core\/admin_actions'\)/.test(read(API_MODULE)),
-          'mgmt-api/admin_api.js requires the action layer',
+          'mgmt-api/admin_api.ts requires the action layer',
           'without this the operations would be calling the console module ' +
           'for their decisions, which is the arrangement the move replaced');
 
@@ -398,7 +398,7 @@ function checkNothingRequiresItEarly(t) {
   // later in the require order: the console, the page it draws for the
   // management API's explorer, and the management API itself.
   const allowed = ['admin-ui/admin.js', 'admin-ui/api_explorer.js',
-                   'mgmt-api/admin_api.js', 'ldap/ldap_server.js',
+                   'mgmt-api/admin_api.ts', 'ldap/ldap_server.js',
                    // GNAP's view/action layer (2026-09-12), for `adminViews`'
                    // paging only. It is loaded at 23d, from
                    // `gnap/gnap_admin.ts` and lazily from the management API,
