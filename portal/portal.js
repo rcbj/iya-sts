@@ -2843,26 +2843,200 @@ function readableDate(value) {
 // The words are the page's: what the key is for, the grant type a client
 // names, and what the one-time card tells somebody to do with the private key.
 // ---------------------------------------------------------------------------
+const SIGNING_KEY_PROFILES = [
+  { id: 'jwt', rfc: 'RFC 7523', title: 'JWT bearer grant',
+    grantType: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    document: 'a JSON Web Token' },
+  { id: 'saml', rfc: 'RFC 7522', title: 'SAML 2.0 bearer grant',
+    grantType: 'urn:ietf:params:oauth:grant-type:saml2-bearer',
+    document: 'a SAML 2.0 assertion' }
+];
+
+function signingKeyProfile(id) {
+  log.debug("Entering signingKeyProfile().");
+  const found = SIGNING_KEY_PROFILES.filter(function (one) {
+    return one.id === id;
+  })[0] || null;
+  log.debug("Leaving signingKeyProfile().");
+  return found;
+}
+
+// What a person holds for one profile, read off `recordFor()`'s record by the
+// register's own attribute table. Null where nothing is held.
+function heldProfile(held, profile) {
+  log.debug("Entering heldProfile().");
+  const names = personAssertions.KEY_PAIR_ATTRIBUTES[profile.id];
+  if (!held || !names || !held[names.present]) {
+    log.debug("Leaving heldProfile(). Nothing held.");
+    return null;
+  }
+  log.debug("Leaving heldProfile().");
+  return {
+    handleLabel: profile.id === 'saml' ? 'Thumbprint' : 'Key',
+    handle: held[names.handle] || '',
+    expiresAt: held[names.expiresAt] || '',
+    certificate: held[names.certificate] || '',
+    issuers: profile.id === 'saml' ? held.samlEffectiveIssuers
+                                   : held.effectiveIssuers
+  };
+}
+
+// The one-time card's instructions, per profile. The JWT half is what this
+// page said before RFC 7522 joined it, word for word.
+function freshInstructions(profile, fresh, username, tokenEndpoint) {
+  log.debug("Entering freshInstructions().");
+  const who = esc(String(fresh.issuer || username));
+  let how;
+  if (profile.id === 'saml') {
+    how = '<p class="note"><strong>What to do with it.</strong> Build a ' +
+      'SAML 2.0 <code>&lt;Assertion&gt;</code> whose <code>&lt;Issuer&gt;' +
+      '</code> and <code>&lt;Subject&gt;&lt;NameID&gt;</code> are both ' +
+      '<code>' + who + '</code>, with an <code>&lt;Audience&gt;</code> and a ' +
+      'bearer <code>&lt;SubjectConfirmationData Recipient&gt;</code> of ' +
+      '<code>' + esc(tokenEndpoint) + '</code> and a ' +
+      '<code>NotOnOrAfter</code> a minute or two ahead. Sign it with an ' +
+      'enveloped XML Signature using this key, base64url-encode the ' +
+      'document, and present it to the token endpoint as an RFC 7522 ' +
+      'section 2.1 authorization grant. This service matches the signature ' +
+      'to the certificate it holds for you, thumbprint <code>' +
+      esc(String(fresh.thumbprint || '')) + '</code>.</p>' +
+      '<pre class="pem">' + esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
+      '  -d grant_type=' + profile.grantType + ' \\\n' +
+      '  -d assertion=<the signed assertion, base64url>') + '</pre>' +
+      '<p class="note"><strong>The <code>&lt;Subject&gt;</code> can only ' +
+      'ever be you.</strong> An assertion signed with this key that names ' +
+      'somebody else is refused — the key says who you are, and it is not ' +
+      'permission to speak for anybody.</p>';
+  } else {
+    how = '<p class="note"><strong>What to do with it.</strong> Sign a JSON ' +
+      'Web Token with it and present that to the token endpoint as an RFC ' +
+      '7523 section 2.1 authorization grant. The claims are <code>iss</code> ' +
+      'and <code>sub</code> both <code>' + who + '</code>, an ' +
+      '<code>aud</code> of <code>' + esc(tokenEndpoint) + '</code>, an ' +
+      '<code>exp</code> a minute or two ahead, and a <code>jti</code> you do ' +
+      'not reuse. The header carries <code>alg</code> <code>' +
+      esc(String(fresh.jwsAlg || '')) + '</code> and <code>kid</code> <code>' +
+      esc(String(fresh.kid || '')) + '</code>.</p>' +
+      '<pre class="pem">' + esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
+      '  -d grant_type=' + profile.grantType + ' \\\n' +
+      '  -d assertion=<the signed JWT>') + '</pre>' +
+      '<p class="note"><strong>`sub` can only ever be you.</strong> An ' +
+      'assertion signed with this key that names somebody else is refused — ' +
+      'the key says who you are, and it is not permission to speak for ' +
+      'anybody.</p>';
+  }
+  log.debug("Leaving freshInstructions().");
+  return how;
+}
+
+// One profile's card: what is held, and its two controls.
+function profileCard(profile, held, csrf, issuable, offered) {
+  log.debug("Entering profileCard(). profile=" + profile.id);
+  const mine = heldProfile(held, profile);
+  const heading = '<h2 id="' + profile.id + '">' + esc(profile.rfc) + ': ' +
+    esc(profile.title) + '</h2>';
+  const status = !held
+    ? ''
+    : (mine
+      ? '<table><tr><th>' + mine.handleLabel + '</th><td><code>' +
+        esc(mine.handle) + '</code></td></tr>' +
+        '<tr><th>You assert as</th><td>' +
+        (mine.issuers || []).map(function (one) {
+          return '<code>' + esc(one) + '</code>';
+        }).join(' ') + '</td></tr>' +
+        '<tr><th>Good until</th><td>' +
+        esc(readableDate(mine.expiresAt)) + '</td></tr></table>' +
+        (mine.certificate
+          ? '<details><summary>Your certificate (public — this is the half ' +
+            'anybody may hold)</summary><pre class="pem">' +
+            esc(mine.certificate) + '</pre></details>'
+          : '')
+      : '<p class="sub">You have no ' + esc(profile.rfc) +
+        ' signing key.</p>');
+
+  const hidden = csrf + '<input type="hidden" name="purpose" value="' +
+    profile.id + '">';
+  let controls = '';
+  if (held && issuable && offered) {
+    controls =
+      '<form method="post" action="' + BASE + '/signing-key">' + hidden +
+      '<input type="hidden" name="action" value="generate">' +
+      '<button' + (mine ? ' class="secondary"' : '') + '>' +
+      (mine ? 'Generate a new ' + esc(profile.rfc) + ' key pair'
+            : 'Generate my ' + esc(profile.rfc) + ' signing key') +
+      '</button></form>' +
+      (mine
+        ? '<p class="note"><strong>Generating replaces what you ' +
+          'have.</strong> The ' + esc(profile.rfc) + ' key you hold now ' +
+          'stops being accepted the moment the new one is written, and ' +
+          'anything signing with it starts being refused. Your other signing ' +
+          'key, if you hold one, is untouched.</p>'
+        : '<p class="note">The private half is shown once, on the page that ' +
+          'comes back. Nothing here can show it to you again.</p>');
+  }
+  const removeForm = mine
+    ? '<form method="post" action="' + BASE + '/signing-key">' + hidden +
+      '<input type="hidden" name="action" value="remove"><button ' +
+      'class="danger">Take my ' + esc(profile.rfc) + ' signing key off' +
+      '</button></form><p ' +
+      'class="note"><strong>This is not revocation.</strong> The certificate ' +
+      'stays valid and still chains to this service&rsquo;s root; what ' +
+      'changes is that this service stops accepting what the key signs, ' +
+      'because the key is no longer registered against you. Your other ' +
+      'signing key, your password, your security keys and your ' +
+      'authenticator app are untouched — this is not a way you sign in.</p>'
+    : '';
+  log.debug("Leaving profileCard().");
+  return '<div class="card">' + heading + status + controls + removeForm +
+    '</div>';
+}
+
+// ===========================================================================
+// A TLS CLIENT CERTIFICATE (2026-09-13): THE THIRD CARD ON THIS PAGE.
+//
+// The two cards above hand a person a key that signs a DOCUMENT. This one hands
+// them a key and a certificate that sign a TLS HANDSHAKE: installed in a
+// browser and presented to this service's main port at `GET /tls/sign-in`, it
+// signs them in as the person it names, in the realm this page was reached in.
+// `common/tls_client_certificates.js` issues, packages, revokes and — for that
+// route and the other main-port doors — decides what counts as an identity.
+//
+// **IT IS FILED HERE AND NOT ON A PAGE OF ITS OWN**, which is what rcbj asked
+// for and what the section's own description supports: the credentials on your
+// own entry that let something act as you. It shares the page's three
+// safeguards rather than growing its own — `pki.personSelfService`, the two
+// self-service rate limits (an RSA key generation costs the same CPU whatever
+// it certifies) and the page's CSRF token.
+//
+// **THE DOWNLOAD IS THE RESPONSE TO THE POST, AND NOTHING KEEPS IT.** The same
+// position the signing keys take, for their reason: a redirect has nowhere to
+// put a private key. The files go out as `data:` links with `download` on
+// them — the arrangement the console's keytab page already uses — so the page
+// that carries them also carries the install steps, and a person who closes it
+// without saving has to generate again. The PKCS#12 password is typed by the
+// person, used once to build the files, and not stored, logged or audited.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
 // WHERE A CLIENT CERTIFICATE WORKS (rewritten 2026-09-16).
 //
 // This answered two URLs — the 8443 and 9443 listeners — and both were
 // deleted. A person's certificate is presented to the MAIN port now, which
 // asks every connection for one and requires none, so the answer is one URL
 // and the route that turns it into a session.
+//
+// It is built from `base` — `helpers.baseUrlOf(req)`, which both callers
+// already hold — and not from the request. The 2026-09-16 rewrite took a `req`
+// while both callers still passed the base STRING, so `req.get` threw, the
+// catch swallowed it, and every card said `localhost`. The base also honours
+// `global.publicBaseUrl`, a trusted proxy's headers and the realm prefix,
+// none of which a bare `Host` does.
 // ---------------------------------------------------------------------------
-function tlsListenerUrls(req) {
+function tlsListenerUrls(base) {
   log.debug("Entering tlsListenerUrls().");
-  let host = 'localhost';
-  try {
-    host = String(req.get('host') || 'localhost');
-  } catch (e) {
-    log.debug("Caught in tlsListenerUrls(): " + ((e && e.message) || e));
-    host = 'localhost';
-  }
-  const scheme = config.value('global.https') ? 'https' : 'http';
+  const root = String(base || '').replace(/\/+$/, '');
   log.debug("Leaving tlsListenerUrls().");
-  return { signIn: scheme + '://' + host + '/tls/sign-in',
-           base: scheme + '://' + host + '/' };
+  return { signIn: root + '/tls/sign-in', base: root + '/' };
 }
 
 // The signed-in person's `mail`, read off their own entry, for the rfc822Name a

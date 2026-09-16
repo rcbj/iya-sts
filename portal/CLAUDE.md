@@ -1054,8 +1054,15 @@ What is this page's:
   8443 and 9443 listeners, built from `tls.port` and `tls.mutualPort`, because
   this module is required long before `tls/tls_server.js` and could not ask for
   the bound ports without moving routes — and both listeners and both settings
-  were deleted. `tlsListenerUrls()` now builds the address from the request's
-  own `Host` and `global.https`, so it needs no setting and no require. **The
+  were deleted. `tlsListenerUrls()` now builds the address from the page's
+  `base` (`helpers.baseUrlOf(req)`), so it needs no setting and no require and
+  honours `global.publicBaseUrl` and the realm prefix. **The same commit
+  deleted the signing-key half of this page with it** — `SIGNING_KEY_PROFILES`,
+  `signingKeyProfile()`, `heldProfile()`, `freshInstructions()`,
+  `profileCard()` — and took a `req` its callers never passed, so every
+  `GET /portal/signing-key` answered 500 and the card said `localhost`; both
+  were restored on 2026-09-16, and `sts_portal_signing_key` is what caught it.
+  **The
   card also stopped promising a port that REQUIRES a certificate**: the main
   port asks every connection for one and requires none, so it is the browser
   that decides to send it.
