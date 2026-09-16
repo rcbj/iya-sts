@@ -614,7 +614,7 @@ function run(t) {
   t.equal(ids.length, new Set(ids).size, 'the use-case ids are unique');
   let admin = null;
   try {
-    admin = fs.readFileSync(path.join(ROOT, 'admin-ui', 'admin.js'), 'utf8');
+    admin = fs.readFileSync(path.join(ROOT, 'admin-ui', 'admin.ts'), 'utf8');
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     admin = '';

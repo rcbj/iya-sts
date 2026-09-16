@@ -488,14 +488,18 @@ function childMain() {
            'E2b. the next create of a name, sent the moment the first was ' +
            'answered and before its claim is released, waits and runs rather ' +
            'than being refused as in progress', sequence.join(','));
-      const adminSource = fs.readFileSync(ROOT + '/admin-ui/admin.js', 'utf8');
+      const adminSource = fs.readFileSync(ROOT + '/admin-ui/admin.ts', 'utf8');
       const handlers = ["app.post('/admin/users',",
                         "app.post('/admin/users/new',",
                         "app.post('/admin/groups',"];
       note(handlers.every(function (head) {
         const at = adminSource.indexOf(head);
-        const next = adminSource.indexOf('\napp.', at + head.length);
-        return at >= 0 && adminSource.slice(at, next)
+        // The next registration, however deeply indented: since #50 the
+        // console registers its routes from a method. Not found is refused
+        // rather than read as "to the end of the file".
+        const after = /\n\s*app\./.exec(adminSource.slice(at + head.length));
+        const next = after ? at + head.length + after.index : -1;
+        return at >= 0 && next > at && adminSource.slice(at, next)
           .indexOf('createClaims.runClaimed(') >= 0;
       }), 'E3. the console\'s user, new-user and group create handlers each ' +
           'create through runClaimed()');

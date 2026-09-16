@@ -5,7 +5,7 @@ say; the rest are listed after the table and argued in their own sections.
 
 | File | What it is |
 |---|---|
-| `admin.js` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
+| `admin.ts` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
 | `admin_rbac.ts` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
 | `delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
 | `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
@@ -22,7 +22,7 @@ The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
 that can CHANGE what the protocol endpoints do, which is why it is the one that
 grew a gate.
 
-5. **`admin.js` must stay after `oauth2.js` too** (the root file's rule 5): it
+5. **`admin.ts` must stay after `oauth2.js` too** (the root file's rule 5): it
    requires that module, which registers routes. It also reads the `sessions` map
    — `authn.js`'s since the session moved there — so the metrics page can report
    real sign-on sessions. And the same
@@ -418,7 +418,7 @@ created for the families that had settings and no page at all.
 
 ### The table is the whole of it
 
-`SETTING_HOMES` in `admin.js` — one row per group, naming the page or pages
+`SETTING_HOMES` in `admin.ts` — one row per group, naming the page or pages
 that draw it. Four properties, and each is why it is a table rather than a
 placement made in twenty-one route handlers:
 
@@ -1167,7 +1167,7 @@ misremembering.
 ## ONE PAGE OF THIS CONSOLE IS NOT IN THIS DIRECTORY
 
 (Two, since 2026-08-30 — `/admin/crypto-metadata` is drawn by
-`./crypto_metadata.ts`, which is in this directory but is not `admin.js`. It
+`./crypto_metadata.ts`, which is in this directory but is not `admin.ts`. It
 borrows the shell on exactly the terms below and the section above argues the
 rest.)
 
@@ -1177,7 +1177,7 @@ built by `../sts_metadata.js`. It moved under `/admin` on 2026-08-24 from
 edited:
 
 * **That module builds the body; `page()` supplies everything around it.** It
-  calls `respond()`, exported from `admin.js` for exactly this one caller, so
+  calls `respond()`, exported from `admin.ts` for exactly this one caller, so
   the page gets the sidebar, the trail, the gate banner and the `?format=json`
   half without a second implementation of any of them.
 * **Its classes are in `page()`'s style block**, marked as that page's —
@@ -1264,7 +1264,7 @@ that same decision.
 
 ### PROSE LONGER THAN A LINE IS COLLAPSED, AND THREE FUNCTIONS DECIDE IT
 
-Added 2026-08-26. `note()`, `warn()` and `bullet()` in `admin.js` take a
+Added 2026-08-26. `note()`, `warn()` and `bullet()` in `admin.ts` take a
 fragment of prose and hand back either the paragraph it always was or a
 `<details>` whose `<summary>` is that paragraph's own opening sentence.
 `tip()` beside them returns a `title` attribute. Every page here goes through
@@ -1335,7 +1335,7 @@ table of 152 settings, the other is four rows somebody sets a number in
 repeatedly — and that is the test to apply, not which page came first.
 
 **Two mechanical traps, both of which bit.** The constants the folds are
-measured against are declared at the TOP of `admin.js`, not beside `note()`,
+measured against are declared at the TOP of `admin.ts`, not beside `note()`,
 because several of this file's module-level constants are built by calling
 `note()` at require time and a `const` in its temporal dead zone throws while
 the module is still loading — which takes the whole service down rather than
@@ -1493,7 +1493,7 @@ on its own says nothing, because a hand-written list is well-formed too. All
 three assertions were mutation-tested before they were committed.
 
 **The nineteenth family is PKI (2026-09-10)** and it paid all three;
-what it also owed, and what nothing checks, is a row in `admin-ui/admin.js`'s
+what it also owed, and what nothing checks, is a row in `admin-ui/admin.ts`'s
 `SETTING_HOMES` — `checkSettingHomes()` refuses a settings GROUP with no page,
 so a `pki.*` group with no `/admin/pki` row would have been reported at startup
 and drawn nowhere. **`ssf/CLAUDE.md` carries the full
@@ -1700,10 +1700,10 @@ store's own spelling and resolves to the same row from every realm.
 ### It is at 18a, and that is the whole of why there is no thirteenth slot
 
 Rule 3e's test is whether a require would close a cycle **or move a route**. A
-require from `admin.js` to that module WOULD close a cycle — it requires this
+require from `admin.ts` to that module WOULD close a cycle — it requires this
 one for the shell — so the obvious direction is out. But a require from
 `mgmt-api/admin_api.js` (19) to it moves NOTHING: the only route it registers is
-`/admin/pki`, and it requires only `admin.js` and `common/pki.js`, which is a
+`/admin/pki`, and it requires only `admin.ts` and `common/pki.js`, which is a
 LIBRARY (rule 3).
 
 So it is required in `common/protocol_stack.js` at **18a**, immediately after
@@ -1929,7 +1929,7 @@ refusal costs is written down rather than hidden: two *Apply* buttons where that
 page has an event handler, no Copy buttons (a textarea selects), and an
 algorithm menu that is narrowed by a round trip.
 
-#### The ten CSS rules are in `admin.js` and not here
+#### The ten CSS rules are in `admin.ts` and not here
 
 This console has ONE stylesheet. A page with a `<style>` of its own would be the
 second place a reader has to look for why something is laid out as it is, and
@@ -2050,7 +2050,7 @@ require time — `setDirectoryReader()`, `setGroupReader()`, `setDirectoryWriter
 in the root `CLAUDE.md`; do not add another by analogy.
 
 **THE ORDINALS IN THIS FILE ("the sixth slot", "the twelfth") ARE THE ORDER
-EACH WAS ARGUED IN, NOT A NUMBERING TO RELY ON** — `admin.js`'s own comments
+EACH WAS ARGUED IN, NOT A NUMBERING TO RELY ON** — `admin.ts`'s own comments
 give some of the same numbers to different slots. The inventory is the table
 under rule 3e in the root `CLAUDE.md`; cite a slot by its setter's name.
 
@@ -2298,7 +2298,7 @@ Eight things about it are decisions rather than defaults.
   reaching for the directory itself. That split is the whole reason there are two
   files: what a party IS belongs to this console, where `directoryReader` and
   `applications` are, and it is the one question a layout engine has no business
-  answering. `admin.js` is still the only place that knows both.
+  answering. `admin.ts` is still the only place that knows both.
 
 * **A BOX CARRIES THE IDENTIFIER A PROTOCOL WOULD HAVE TO PRESENT, AND NOT ONLY
   THE NAME SOMEBODY GAVE IT.** Added 2026-08-27, and it is the rule two
@@ -3055,7 +3055,7 @@ application in this registry gets. The two sentences that were load-bearing
 survive on the 403 for somebody holding no role, which is the page they
 actually reach and the page where that sentence is actionable.
 
-**It is ONE `app.use('/admin', ...)` in `admin.js`, above every route in that
+**It is ONE `app.use('/admin', ...)` in `admin.ts`, above every route in that
 file.** Express applies middleware only to routes added after it (rule 1), so
 that placement is the whole mechanism — a console page added below the guard is
 guarded and one added above it would not be. There are none above it, and there
@@ -4716,7 +4716,7 @@ rule on the tokens page, for `backTo()`'s reason: a `back` field carrying
 ## `/admin/sessions` SHOWS API CALLERS NOW, AND THIS FILE DID NOT CHANGE FOR IT (2026-09-06)
 
 The management API, SCIM and the SPIRE Server API hold sessions since that date,
-and they appear on this page with **no edit to `admin.js` at all**. That is the
+and they appear on this page with **no edit to `admin.ts` at all**. That is the
 sixth slot's design working rather than a coincidence worth mentioning in
 passing: this page draws whatever `logout/logout.ts`'s `liveSessions()` returns,
 and a console that had its own idea of what a session is would have needed one.

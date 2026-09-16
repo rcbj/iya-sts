@@ -409,11 +409,12 @@ function checkRegistration(t) {
   t.log.info('both surfaces register the renewal above everything that reads ' +
              'the session');
   const admin = fs.readFileSync(path.join(__dirname, '..', 'admin-ui',
-                                          'admin.js'), 'utf8');
+                                          'admin.ts'), 'utf8');
   const renewAdmin = admin.indexOf("app.use('/admin', " +
                                    "oidcRp.renewal('admin'))");
-  const firstAdmin = firstIndex(admin, [/^app\.use\('\/admin', function/m,
-                                        /^app\.(get|post|all)\('\/admin/m]);
+  // Indented since #50: the console registers its routes from a method.
+  const firstAdmin = firstIndex(admin, [/^\s*app\.use\('\/admin', function/m,
+                                        /^\s*app\.(get|post|all)\('\/admin/m]);
   t.check(renewAdmin >= 0, 'the console registers oidcRp.renewal(\'admin\')');
   t.check(renewAdmin >= 0 && firstAdmin > renewAdmin,
           'ABOVE the console gate and every /admin route (rule 1)',

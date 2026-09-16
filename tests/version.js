@@ -277,7 +277,7 @@ function run(t) {
   //    agree perfectly right up until the moment they stop.
   // -----------------------------------------------------------------------
   t.log.info('=== one source for every surface ===');
-  const drawers = ['home/home.ts', 'admin-ui/admin.js', 'portal/portal.ts',
+  const drawers = ['home/home.ts', 'admin-ui/admin.ts', 'portal/portal.ts',
                    'mgmt-api/admin_api.ts', 'sts_metadata.js'];
   drawers.forEach(function (rel) {
     const src = codeOf(rel);

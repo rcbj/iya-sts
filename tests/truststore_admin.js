@@ -35,7 +35,7 @@
 //      caught by the pin.
 //   5. **PRODUCT MODE'S REFUSAL NAMES THE NEW DOORS**, as a real request.
 //
-// Claims 2, 3 and 5 run in a CHILD PROCESS. Requiring `admin-ui/admin.js`
+// Claims 2, 3 and 5 run in a CHILD PROCESS. Requiring `admin-ui/admin.ts`
 // registers the whole console on the shared app and pulls the authorization
 // server and both SAML profiles in with it, and a file in `run.js`'s one
 // process that did that would change what every file after it resolved — the
