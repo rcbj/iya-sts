@@ -41,7 +41,7 @@
 // load for nothing.
 //
 // The doors: an LDAP add (`ldap_server.js`, at registration), a SCIM create
-// (`scim/scim.js`), `POST /admin-api/users/create` and
+// (`scim/scim.ts`), `POST /admin-api/users/create` and
 // `/admin-api/groups/create` — and since 2026-09-14 a SCIM Bulk create
 // (claimed in the ingress, which scimmy awaits, for an operation the create
 // handler did not already claim) and the console's own forms, `POST

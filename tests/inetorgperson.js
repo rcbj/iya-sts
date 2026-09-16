@@ -229,7 +229,7 @@ function run(t) {
           'draws all ' + all.length);
 
   t.log.info('=== the spellings agree with the other catalogue ===');
-  // `oid4vc/vc_claims.js` is the credential-claim catalogue and the THIRD
+  // `oid4vc/vc_claims.ts` is the credential-claim catalogue and the THIRD
   // independently maintained list of LDAP spellings in this repository
   // (`ldap_server.js`'s STANDARD_NAMES is the second, and `learnName()` merges
   // all of them so a disagreement is REPORTED at startup rather than resolved
@@ -268,7 +268,7 @@ function run(t) {
   // repository since those tables were: `givenName` cited as RFC 4519 2.6 (2.6
   // is `destinationIndicator` — that section is alphabetical, and `givenName`
   // is 2.12) and `labeledURI` as RFC 2079 2, in a document whose sections are
-  // unnumbered. `scim/scim_map.js` had a third, `employeeType` at RFC 2798 2.7
+  // unnumbered. `scim/scim_map.ts` had a third, `employeeType` at RFC 2798 2.7
   // rather than 2.5.
   //
   // It cannot check a citation against the RFC — nothing in this process can

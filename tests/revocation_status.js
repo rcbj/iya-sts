@@ -3199,14 +3199,14 @@ async function theRegisteredDoors(t) {
           /\}, verified\.jwk\);/.test(fedSource.join('\n')),
           'and a partner JWT\'s check is handed the key that verified it',
           'verifyForeignJwt() returns jwk');
-  const vpSource = fs.readFileSync(path.join(ROOT, 'oid4vc', 'vc_verifier.js'),
+  const vpSource = fs.readFileSync(path.join(ROOT, 'oid4vc', 'vc_verifier.ts'),
                                    'utf8');
   t.check(/verifyPresentation\(presentations\[0\], record\);\s*await issuerCertificateRevocation\(verified\);\s*record\.verdict = \{/
             .test(vpSource) && /pem: pem,/.test(vpSource) &&
           (vpSource.match(/result\.issuerCertificatePem = verifyIssuerSignature\(/g) || []).length === 2,
           'and the OID4VP response endpoint asks before it records a ' +
           'verdict, with the certificate both verifiers report having ' +
-          'used', 'vc_verifier.js');
+          'used', 'vc_verifier.ts');
   log.debug("Leaving theRegisteredDoors().");
 }
 

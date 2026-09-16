@@ -7373,8 +7373,8 @@ const ROUTES = [
   // is the durable record, cannot be reset either.
   // -------------------------------------------------------------------------
   // GNAP (RFC 9635 + RFC 9767), 2026-09-12. Three operations mirroring the two
-  // pages `gnap/gnap_admin.js` draws and the one form on the first of them.
-  // Both doors call `gnap/gnap_console.js`, the view and action layer of this
+  // pages `gnap/gnap_admin.ts` draws and the one form on the first of them.
+  // Both doors call `gnap/gnap_console.ts`, the view and action layer of this
   // family, so a page and its operation cannot disagree (rule 7). REQUIRED
   // LAZILY: this module is 19 in the require order and GNAP is 23d, and every
   // module that file loads is a library — but a lazy require keeps that true

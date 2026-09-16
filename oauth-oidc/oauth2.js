@@ -377,7 +377,7 @@ const capabilities = require('../cluster/cluster_capabilities');
 //
 // **THE BODY MOVED TO `jwt_access_token.js`'s `issuerFor()` ON 2026-09-13**,
 // and this function is kept, by name, as the call every site here and
-// `gnap/gnap_grants.js` already make. It moved because RFC 9068 section 4 has
+// `gnap/gnap_grants.ts` already make. It moved because RFC 9068 section 4 has
 // the RESOURCE SERVER compare `iss` against this same identifier, and the
 // resource-server check lives in `dpop.js`, which cannot require this module —
 // a second copy there would be two answers to what this service's issuer is.
@@ -2860,7 +2860,7 @@ const PERSONA_CLAIMS = ['name', 'given_name', 'family_name',
 //
 // **SO THE DIRECTORY FILLS THEM, THROUGH THE CATALOGUE EVERY CLAIM SET ALREADY
 // USES** — `cn` is `name`, `givenName` is `given_name`, `sn` is `family_name`
-// and `mail` is `email`, which is the mapping `oid4vc/vc_claims.js` states and
+// and `mail` is `email`, which is the mapping `oid4vc/vc_claims.ts` states and
 // `/admin/claims` draws. It is `claimAttributes.requestedClaimsFor()` rather
 // than a read of the entry here, so there is ONE answer to "which attribute is
 // a person's family name" and a directory that renamed one would change both
@@ -11116,7 +11116,7 @@ module.exports = {
   // a second builder in `gnap/` would be a second answer to what an ID Token
   // from this realm contains — claims layers, persona values, the directory's
   // facts, the registered signing algorithm — that would disagree with this one
-  // the first time either grew a claim. `gnap/gnap.js` is required long after
+  // the first time either grew a claim. `gnap/gnap.ts` is required long after
   // this module, so the require runs in the ordinary direction.
   idToken: idToken,
   // The outstanding authorization codes, for the protocol-independent logout.

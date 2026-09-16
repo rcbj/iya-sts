@@ -229,7 +229,7 @@ function checkNoQueueMember(t) {
   log.debug("Entering checkNoQueueMember().");
   const root = path.join(__dirname, '..');
   ['ssf/ssf.js', 'ssf/ssf_streams.js', 'ssf/ssf_receivers.js', 'ssf/caep.js',
-   'ssf/risc.js', 'gnap/gnap_signals.js'].forEach(function (rel) {
+   'ssf/risc.js', 'gnap/gnap_signals.ts'].forEach(function (rel) {
     const text = fs.readFileSync(path.join(root, rel), 'utf8')
       .split('\n').filter(function (line) {
         // The one legitimate mention: touch() dropping the member a record

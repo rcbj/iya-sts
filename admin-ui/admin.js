@@ -1290,7 +1290,7 @@ const SECTIONS = [
       // group: its one Protocols page carries the settings, the endpoints, the
       // authorization server capabilities, the grants and the resource sets,
       // and the traffic page is filed under Monitoring by the question it
-      // answers. Both are drawn by gnap/gnap_admin.js.
+      // answers. Both are drawn by gnap/gnap_admin.ts.
       { path: '/admin/gnap', label: 'GNAP',
         blurb: 'The Grant Negotiation and Authorization Protocol (RFC 9635) ' +
                'and its resource server connections (RFC 9767): one ' +
@@ -2858,7 +2858,7 @@ const LIST_PARAMS = {
   '/admin/saml2': ['q', 'per', 'page'],
   '/admin/saml11': ['q', 'per', 'page'],
   '/admin/authorization-servers': ['per', 'page'],
-  // GNAP's two lists and the grant state filter (gnap/gnap_admin.js).
+  // GNAP's two lists and the grant state filter (gnap/gnap_admin.ts).
   '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage'],
   '/admin/gnap/monitor': ['per', 'page'],
   // ===== certificate enrollment list params (2026-09-13) =====

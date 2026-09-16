@@ -11,7 +11,7 @@
 // for which profile, how many were refused and why — and three copies of a
 // counter are three places for "refused" to start meaning different things.
 //
-// **PER REALM AND MERGED ACROSS PROCESSES**, in `gnap/gnap_monitor.js`'s shape:
+// **PER REALM AND MERGED ACROSS PROCESSES**, in `gnap/gnap_monitor.ts`'s shape:
 // a `realms.map({ persist, merge: 'own' })` whose rows are this process's own
 // counts, and `snapshot()` adds every other process's rows read through
 // `persistence_replication.remoteRows()`. A number drawn on the page is

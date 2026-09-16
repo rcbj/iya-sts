@@ -489,7 +489,7 @@ function checkSignalRegisters(t) {
 // ---------------------------------------------------------------------------
 // 5c. THE STORES WHOSE MODULES CANNOT BE LOADED IN THIS PROCESS (2026-09-12).
 //
-// `oid4vc/vc_offers.js` registers the offer pages and `spiffe/spiffe_auth.js`
+// `oid4vc/vc_offers.ts` registers the offer pages and `spiffe/spiffe_auth.js`
 // requires `tls/tls_server.js`, which registers `/tls*` — and `run.js` runs
 // every file in ONE process, where a route registered here moves what a later
 // file sees of the router. So they are asserted in a CHILD PROCESS, which is
@@ -663,7 +663,7 @@ function checkChildStores(t) {
     log.debug("Leaving read().");
     return fs.readFileSync(path.join(root, rel), 'utf8');
   };
-  const scim = read('scim/scim_auth.js');
+  const scim = read('scim/scim_auth.ts');
   ['digestNonces', 'hobaChallenges', 'hobaSeen'].forEach(function (name) {
     t.check(new RegExp('^const ' + name + ' = realms\\.map\\(', 'm').test(
         scim) &&
@@ -723,8 +723,8 @@ function checkKerberosStores(t) {
 }
 
 // ---------------------------------------------------------------------------
-// 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.js`, the approver
-// index in `gnap/gnap_signals.js` and the counters in `gnap/gnap_monitor.js`.
+// 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
+// index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
 // `tests/vendored/sts_gnap_core.js` asserts the over-HTTP half — a token from
 // one realm refused by another realm's resource server, a continuation token

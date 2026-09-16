@@ -2041,7 +2041,7 @@ fingerprint — and asserts the truststore afterwards is exactly what it was bef
 ## Four reader slots and FOUR writer slots point INTO this module
 
 `common/protocol_stack.js` requires this module BEFORE `../ldap/ldap_server.js`,
-`../scim/scim.js` and `../spiffe/spiffe_server.js`, so this module cannot require
+`../scim/scim.ts` and `../spiffe/spiffe_server.js`, so this module cannot require
 any of them: the require would pull `/ldap`, `/scim` and `/spiffe` into the
 express router ahead of every `/admin` route, and `GET /admin/sts-metadata` is built by
 walking that router. So this module OFFERS slots and they fill them at their own
@@ -5696,7 +5696,7 @@ form, clicks the result, and grants on the form that opens.
 rcbj asked that each page under Protocols list the concrete endpoints the
 current trust realm answers on for that protocol, using `/admin/gnap`'s
 *Endpoints* table as the model. Thirty-seven pages have one now; GNAP keeps its
-own, which `gnap/gnap_console.js` writes.
+own, which `gnap/gnap_console.ts` writes.
 
 **THE TABLE IS `admin-core/protocol_endpoints.js` AND NOT THIS FILE**, which is
 how the paragraph that refused an endpoint list (under *The eight new pages*)

@@ -724,7 +724,7 @@ containers against this store need, and three things changed here for it:
   `highest` is beside it; `/admin/persistence` reports both and the hole count.
 
 `persistence.clusterStore()` hands the driver to `cluster/cluster_claims.js` and
-`cluster/cluster_secrets.js`. The four `sts_cluster_*` tables are schema version
+`cluster/cluster_secrets.ts`. The four `sts_cluster_*` tables are schema version
 5.
 
 **WHAT THE CLUSTER BARRIER HOLDS A RESPONSE ON (2026-09-14, #46 follow-up).** It

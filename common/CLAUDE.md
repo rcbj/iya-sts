@@ -634,7 +634,7 @@ supported configuration, the parent project loads this tree in process, and a
 caller that cannot be made asynchronous is better off blocking than wrong.
 
 **WHAT IS NOT DONE YET, SAID PLAINLY: no protocol surface calls the async door.**
-Eleven call sites still reach the synchronous one — `scim/scim_auth.js`,
+Eleven call sites still reach the synchronous one — `scim/scim_auth.ts`,
 `authn/authn.js`, `ldap/ldap_server.js`, `ws-trust/wstrust.js`, `portal/portal.js`
 (three) and `admin-ui/admin.js` (four) — and every one of them needs its
 enclosing handler chain made asynchronous first. That is not incidental: it is
@@ -1305,11 +1305,11 @@ directories, after SPIFFE gained a pair of sockets per realm:
 |---|---|---|---|
 | `ssf/caep.js` register | `new Map()` | `realms.map({ persist: 'caep.register' })` | every realm's sessions on every realm's `/admin/caep-sessions` |
 | `ssf/risc.js` register | `new Map()` | `realms.map({ persist: 'risc.register' })` | a deletion in one realm's directory on every realm's `/admin/risc-accounts` |
-| `oid4vc/vc_offers.js` `deferredAccessTokens` | `new Set()` | `realms.map({ persist })`, keyed by a SHA-256 of the token | a deferred token deferred in every realm, and on one worker |
+| `oid4vc/vc_offers.ts` `deferredAccessTokens` | `new Set()` | `realms.map({ persist })`, keyed by a SHA-256 of the token | a deferred token deferred in every realm, and on one worker |
 | `spiffe/spiffe_auth.js` recorded connections | `sharedMap()`, `scope: 'shared'` | `realms.map({ persist })` | one realm's gRPC connections evicting another's from the cap |
-| `scim/scim_auth.js` Digest nonces, HOBA challenges and replay set | `new Map()` ×3 | `realms.map()`, not persisted | one realm's unauthenticated challenges evicting another's |
+| `scim/scim_auth.ts` Digest nonces, HOBA challenges and replay set | `new Map()` ×3 | `realms.map()`, not persisted | one realm's unauthenticated challenges evicting another's |
 | `federation/federation.js` release index | two `let`s | `realms.keyed()` | one realm's release policy applied to another realm's tokens for five seconds |
-| `oid4vc/vc_issuer.js` last Credential Request | a `let` | `realms.keyed()` | one realm's debugging endpoint reporting another's request |
+| `oid4vc/vc_issuer.ts` last Credential Request | a `let` | `realms.keyed()` | one realm's debugging endpoint reporting another's request |
 
 **TWO OF THEM NEEDED MORE THAN A DECLARATION, AND THE REASON IS WORTH KEEPING.**
 CAEP's and RISC's state machines edit a row object ALREADY IN THE MAP —
@@ -3766,7 +3766,7 @@ author can match on, and RENAMING one silently stops every policy that named the
 old word from matching — which is a policy that permits nothing rather than an
 error. The nine were spread over eight `gate.check()` calls in seven modules
 when this was written; by 2026-09-16 there are twelve calls in eight issuing
-modules (`authn.js` three, `oauth2.js` and `gnap/gnap_grants.js` two each, and
+modules (`authn.js` three, `oauth2.js` and `gnap/gnap_grants.ts` two each, and
 one each in WS-Trust, WS-Federation, both SAML profiles and the KDC), plus the
 portal's preview.
 
@@ -4139,7 +4139,7 @@ the same way.**
 ### AND THE OPENID4VCI REQUEST-ENCRYPTION KEY IS A MEMBER OF THE SET (2026-09-12)
 
 `vciRequestEncKey` — `{ privateKey, publicJwk }` — is made by `makeStsKeys()`
-WITH the set, and it replaced a key of its own that `oid4vc/vc_issuer.js`
+WITH the set, and it replaced a key of its own that `oid4vc/vc_issuer.ts`
 generated at module load, `request_pool.js` handed down the fork in
 `STS_VCI_REQUEST_ENC_KEY_PEM`, and every realm in a pooled process shared.
 `mode.js`'s `vci-request-encryption-key` NOT_YET row was that. **Every property
@@ -6127,10 +6127,10 @@ found several in the draft (`mobile` and `pager` cited as RFC 2798 when they
 are RFC 4524; `audio` at RFC 2798 2.1, which is `carLicense`).
 
 **It also found six that had been in this repository since the tables they were
-in were written.** `oid4vc/vc_claims.js` had `givenName` at RFC 4519 2.6 — that
+in were written.** `oid4vc/vc_claims.ts` had `givenName` at RFC 4519 2.6 — that
 section is alphabetical and 2.6 is `destinationIndicator` — `labeledURI` at RFC
 2079 2 in a document whose sections are unnumbered, and all four of its RFC
-2798 rows off by two; `scim/scim_map.js` had `employeeType` at 2.7 rather than
+2798 rows off by two; `scim/scim_map.ts` had `employeeType` at 2.7 rather than
 2.5. All are corrected.
 
 `tests/inetorgperson.js` compares the two catalogues' citations for every
@@ -6195,7 +6195,7 @@ one available and an unedited service behaves exactly as it did.
 |---|---|---|
 | `admin-console` | `admin-ui/admin.js`'s gate | the two console roles |
 | `user-portal` | `portal/portal.js`'s `requireSignIn()` | a sign-on session |
-| `scim` | `scim/scim_auth.js`'s `authenticate()` funnel | six RFC 7644 schemes, then the scope |
+| `scim` | `scim/scim_auth.ts`'s `authenticate()` funnel | six RFC 7644 schemes, then the scope |
 | `spire-server-api` | `spiffe/spiffe_grpc.js`'s `prepareCall()` | SPIRE's own per-method table |
 | `management-api` | `mgmt-api/admin_api.js`'s middleware — for an access token (`adminApi.authRequired`, on by default, every mode), and for a console session in **product mode** with that setting off | the token's scopes, or the two console roles |
 | `xacml-pep-api` | `xacml/xacml.js`'s `pepAccess()`, including `POST /xacml/pip` | a VERIFIED client certificate resolved to a directory entry |

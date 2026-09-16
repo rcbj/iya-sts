@@ -40,7 +40,7 @@ const realms = require('./realms');
 const helpers = require('./helpers');
 // THE CLUSTER (2026-09-14, #46): the settings agreement and the shared secrets,
 // both of which need the key-encryption key the keystore opens. Libraries; see
-// cluster/cluster.js and cluster/cluster_secrets.js.
+// cluster/cluster.js and cluster/cluster_secrets.ts.
 const cluster = require('../cluster/cluster');
 const clusterSecrets = require('../cluster/cluster_secrets');
 

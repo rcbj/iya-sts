@@ -70,7 +70,7 @@ const CAPABILITIES = [
     what: 'An atomic "once" in the store that every single-use value can be ' +
           'spent through.' },
   { id: 'cluster.shared-secrets', section: '5',
-    by: 'cluster/cluster_secrets.js',
+    by: 'cluster/cluster_secrets.ts',
     what: 'Secrets every node must agree on are generated once, sealed, and ' +
           'read by every node before it serves.' },
   // ---- section 1: keys and the certificate authority -----------------------
@@ -94,7 +94,7 @@ const CAPABILITIES = [
     what: 'Every node issues SVIDs from, and verifies against, the same ' +
           'SPIFFE X.509 and JWT authorities.' },
   { id: 'vc.keys-agreement', section: '1',
-    by: 'cluster/cluster_secrets.js',
+    by: 'cluster/cluster_secrets.ts',
     what: 'Every node signs bbs-2023 Data Integrity proofs with, and ' +
           'publishes at /bbs/keys/1 and in the did:web document, the same ' +
           'BBS key pair.' },
@@ -129,11 +129,11 @@ const CAPABILITIES = [
     what: 'A SAML 2.0 or SAML 1.1 artifact is resolved once across the ' +
           'cluster.' },
   { id: 'oid4vc.once', section: '2',
-    by: 'oid4vc/vc_issuer.js',
+    by: 'oid4vc/vc_issuer.ts',
     what: 'An OpenID4VCI pre-authorized code and c_nonce are spent once, and ' +
           'tx_code failures are counted across the cluster.' },
   { id: 'gnap.once', section: '2',
-    by: 'gnap/gnap_store.js',
+    by: 'gnap/gnap_store.ts',
     what: 'A GNAP continuation, interaction reference, user code and request ' +
           'signature are spent once across the cluster.' },
   { id: 'kerberos.replay-cache', section: '2',
@@ -170,7 +170,7 @@ const CAPABILITIES = [
           'the cluster\'s shared secrets rather than generated per process ' +
           'or per run.' },
   { id: 'scim.challenge-state', section: '5',
-    by: 'scim/scim_auth.js',
+    by: 'scim/scim_auth.ts',
     what: 'A SCIM Digest or HOBA challenge issued by one node is answered at ' +
           'any node.' },
   { id: 'spnego.pending', section: '5',

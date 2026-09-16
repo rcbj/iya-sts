@@ -908,7 +908,7 @@ These attributes are written by an operator, by SCIM, or over LDAP. This portal
 changes how somebody AUTHENTICATES and not what the directory records about
 them, and the page says so rather than leaving a reader to wonder where the
 form is. **Most of them cannot be written through `/admin/users/new` either** —
-that form checks against `oid4vc/vc_claims.js`'s catalogue, which is
+that form checks against `oid4vc/vc_claims.ts`'s catalogue, which is
 twenty-seven claim-bearing attributes rather than this schema's fifty — so
 `departmentNumber` and `roomNumber` reach an entry over SCIM or LDAP or not at
 all.

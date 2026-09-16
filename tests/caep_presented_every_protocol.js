@@ -57,7 +57,7 @@ const PROFILES = [
   { file: '../ws-federation/wsfed.js', via: 'WS-Federation' },
   // GNAP (2026-09-12): an interaction that meets a live sign-on session
   // approves without a new authentication, which is a presentation.
-  { file: '../gnap/gnap_interact.js', via: 'GNAP' }
+  { file: '../gnap/gnap_interact.ts', via: 'GNAP' }
 ];
 
 // A session in the shape `startSession()` leaves one, INCLUDING the flag that

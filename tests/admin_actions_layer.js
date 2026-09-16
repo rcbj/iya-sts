@@ -399,10 +399,10 @@ function checkNothingRequiresItEarly(t) {
                    'mgmt-api/admin_api.js', 'ldap/ldap_server.js',
                    // GNAP's view/action layer (2026-09-12), for `adminViews`'
                    // paging only. It is loaded at 23d, from
-                   // `gnap/gnap_admin.js` and lazily from the management API,
+                   // `gnap/gnap_admin.ts` and lazily from the management API,
                    // so the require is a cache hit — the same position
                    // ldap_server.js argues.
-                   'gnap/gnap_console.js',
+                   'gnap/gnap_console.ts',
                    // Certificate enrollment's three view/action layers
                    // (2026-09-13), loaded at 23e-g from each family's
                    // `_admin.js` and lazily from the management API.

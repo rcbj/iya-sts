@@ -499,7 +499,7 @@ function childMain() {
           .indexOf('createClaims.runClaimed(') >= 0;
       }), 'E3. the console\'s user, new-user and group create handlers each ' +
           'create through runClaimed()');
-      const scimSource = fs.readFileSync(ROOT + '/scim/scim.js', 'utf8');
+      const scimSource = fs.readFileSync(ROOT + '/scim/scim.ts', 'utf8');
       note((scimSource.match(/\.ingress\(claimingIngress\('(User|Group)'/g) ||
             []).length === 2,
            'E4. both SCIM ingress handlers — the road a Bulk create takes — ' +
@@ -586,7 +586,7 @@ function childMain() {
            'there, whatever door asks', JSON.stringify(onEntry));
 
       // ================= G. A GNAP DECISION =================================
-      const gnapSource = fs.readFileSync(ROOT + '/gnap/gnap_interact.js',
+      const gnapSource = fs.readFileSync(ROOT + '/gnap/gnap_interact.ts',
                                          'utf8');
       const approveAt = gnapSource.indexOf("app.get('/gnap/approve/:id'");
       const tail = gnapSource.slice(approveAt);

@@ -17,7 +17,7 @@
 // kind of story told across a resource server, the authorization endpoint and
 // the sign-in screen.
 //
-// It is `gnap/gnap_monitor.js`'s shape, deliberately, and for its reasons:
+// It is `gnap/gnap_monitor.ts`'s shape, deliberately, and for its reasons:
 //
 //   * **a LEAF** — it requires helpers, error_codes, realms and the replication
 //     reader, none of which requires it back, so `par.js` and `oauth2.js` can

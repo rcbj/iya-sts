@@ -372,7 +372,7 @@ const MEMBERS = [
   // document, so an override of `key_proofs_supported` never appears in the RFC
   // 8414 metadata and an override of `grant_types_supported` never appears in
   // GNAP's. Like the OAuth rows marked `enforces`, the ones marked here are
-  // what `gnap/gnap_grants.js` checks a request against.
+  // what `gnap/gnap_grants.ts` checks a request against.
   { name: 'interaction_start_modes_supported', group: 'GNAP', kind: 'list',
     document: 'gnap',
     enforces: 'which interaction start modes the GNAP grant endpoint offers',

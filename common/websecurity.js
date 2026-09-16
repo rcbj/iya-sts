@@ -81,7 +81,7 @@ const realms = require('./realms');
 const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
-// THE CSRF KEY, FROM `cluster/cluster_secrets.js` SINCE 2026-09-14 (#46).
+// THE CSRF KEY, FROM `cluster/cluster_secrets.ts` SINCE 2026-09-14 (#46).
 //
 // It was `randomBytes(32)` here, per process and regenerated on every start,
 // with the argument that a CSRF token means nothing past its session and a

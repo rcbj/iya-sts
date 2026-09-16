@@ -192,7 +192,7 @@ holds is the table above; what each module is for is that directory's
    middleware has to live in `app.js`, because express applies middleware only to
    routes added after it.
 
-2. **`vc_configs.js` and `vc_offers.js` exist to break require cycles, not to group
+2. **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
    code.** The credential configurations are read by both the issuer and the
    authorization server; the Credential Offer's pre-authorized codes are minted by
    the offer pages and redeemed at the token endpoint. A cycle in node does not fail
@@ -203,8 +203,8 @@ holds is the table above; what each module is for is that directory's
    position in the require order does not matter, and it requires only `helpers.js`
    (plus npm leaves) so it cannot join a cycle. Keep it that way. It is also why
    `presentedAccessToken()` — the Bearer-or-DPoP check the four protected endpoints
-   share — lives there rather than in `vc_issuer.js` where it was written: the
-   fourth caller is in `oauth2.js`, which vc_issuer.js cannot be required from
+   share — lives there rather than in `vc_issuer.ts` where it was written: the
+   fourth caller is in `oauth2.js`, which vc_issuer.ts cannot be required from
    without building a cycle or moving OID4VCI ahead of OAuth2 in the route order.
 
 3e. **`admin_stats.js` now has three inverted hooks and one require of a
@@ -214,7 +214,7 @@ holds is the table above; what each module is for is that directory's
    `admin_stats.js` offers `setUserObserver()` and `ldap_server.js` fills it, so
    that seeding a directory entry cannot drag `/ldap`'s routes to the front of
    the router. `admin_stats.js` offers `setAttributeResolver()` and
-   `claim_attributes.js` fills it, because `vc_claims.js` requires this file.
+   `claim_attributes.js` fills it, because `vc_claims.ts` requires this file.
    `admin_stats.js` offers `setGroupResolver()` and `group_claims.js` fills it,
    because that module requires this file AND what it needs is the directory,
    which only `ldap_server.js` can answer. And `audit.js` is a plain require in
@@ -381,11 +381,11 @@ in every file, including the ones in the source comments. This is the index.
 | Rule | About | File |
 |---|---|---|
 | 1 | Requiring a module registers its endpoints | this file |
-| 2 | `vc_configs.js` / `vc_offers.js` break require cycles | this file, `oid4vc/CLAUDE.md` |
+| 2 | `vc_configs.ts` / `vc_offers.ts` break require cycles | this file, `oid4vc/CLAUDE.md` |
 | 3 | A library registers nothing (`dpop.js`) | this file |
-| 3a, 3a-ii | `vc_claims.js`, `vc_verifier_config.js` | `oid4vc/CLAUDE.md` |
+| 3a, 3a-ii | `vc_claims.ts`, `vc_verifier_config.ts` | `oid4vc/CLAUDE.md` |
 | 3b, 3c, 3d, 3d-ii | `admin_stats.js`, `audit.js`, `claim_attributes.js`, `group_claims.js` | `common/CLAUDE.md` |
-| 3d-iii | `scim_map.js` | `scim/CLAUDE.md` |
+| 3d-iii | `scim_map.ts` | `scim/CLAUDE.md` |
 | 3e | The inverted hooks, and the test for adding one | this file |
 | 3f, 3h, 3i, 3j | `oauth2_bcp.js`, `mtls.js`, `client_auth.js`, `authorization_servers.js` | `oauth-oidc/CLAUDE.md` |
 | 3ah | `oauth21.js`, OAuth 2.1 as a mode that implies RFC 9700 mode, and why it is a mode of its own | `oauth-oidc/CLAUDE.md` |
@@ -430,7 +430,7 @@ in every file, including the ones in the source comments. This is the index.
 | 4 | `wsfed.js` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
 | 6 | `ldap_server.js` after `admin.js` and `tls_server.js` | `ldap/CLAUDE.md` |
-| 6a (SCIM), 6a-ii | `scim.js`, `scim_auth.js` | `scim/CLAUDE.md` |
+| 6a (SCIM), 6a-ii | `scim.ts`, `scim_auth.ts` | `scim/CLAUDE.md` |
 | 6a (SPIFFE) | `spiffe_server.js` | `spiffe/CLAUDE.md` |
 | 7, 7a | The console/API parity rule, the breadcrumb trail | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 8, 8a, 8b | The console's gate, its two roles, and the claim they qualify | `admin-ui/CLAUDE.md` |

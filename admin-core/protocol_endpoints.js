@@ -8,7 +8,7 @@
 //
 // rcbj asked that every page under Protocols list the concrete endpoints the
 // current trust realm answers on for that protocol, the way Protocols -> GNAP
-// already did. GNAP's list is written out in `gnap/gnap_console.js` and stays
+// already did. GNAP's list is written out in `gnap/gnap_console.ts` and stays
 // there; this file is the same thing for every other page, and it is ONE TABLE
 // rather than forty hand-written lists for three reasons:
 //

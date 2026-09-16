@@ -229,7 +229,7 @@ contract:
   `sameIdentity()` treats a session under the alias as the same person.
 * **A rename keeps every name-keyed record together** — the identity register, the tokens
   and sessions filed under a person, the RISC register (`ssf/risc.js`), GNAP's opaque
-  identifier and user reference (`gnap/gnap_subject.js`), and a person's TLS client and
+  identifier and user reference (`gnap/gnap_subject.ts`), and a person's TLS client and
   enrolled certificates, whose issuing records now keep the holder's subject
   (`common/tls_client_certificates.js`'s `currentHolderOf()`: a rename follows the entry,
   a deleted-and-re-created name is refused `HOLDER_GONE`). A WS-Trust JWT for somebody

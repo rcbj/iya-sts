@@ -271,7 +271,7 @@ ALL.forEach(function (row) {
 });
 
 // The canonical spelling of each, for `ldap/ldap_server.js` to merge into its
-// own table through `learnName()`. The same shape `oid4vc/vc_claims.js` offers
+// own table through `learnName()`. The same shape `oid4vc/vc_claims.ts` offers
 // and for the same reason — see the header: two lists of spellings that
 // disagree are REPORTED rather than resolved by whichever was merged first.
 const CANONICAL_NAMES = {};

@@ -82,7 +82,7 @@ const errorCodes = require('./error_codes');
 //                       with an access token (`adminApi.authRequired`, on by
 //                       default), and for a console session in PRODUCT MODE
 //                       with that setting off; see the asymmetry below
-//   scim                `scim/scim_auth.js`'s authenticate() funnel
+//   scim                `scim/scim_auth.ts`'s authenticate() funnel
 //   spire-server-api    `spiffe/spiffe_grpc.js`'s prepareCall()
 //   xacml-pep-api       `xacml/xacml.js`'s pepAccess()
 //   xacml-api           `xacml/xacml.js`'s xacmlAccess()

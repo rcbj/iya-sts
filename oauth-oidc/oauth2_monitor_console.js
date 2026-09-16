@@ -7,7 +7,7 @@
 // WHAT THE OAUTH 2.0 / OIDC MONITORING PAGE AND ITS MANAGEMENT API OPERATIONS
 // READ AND DO — ONE MODEL, TWO DOORS (rule 7, 2026-09-13).
 //
-// `gnap/gnap_console.js`'s and `acme/acme_console.js`'s arrangement, for the
+// `gnap/gnap_console.ts`'s and `acme/acme_console.js`'s arrangement, for the
 // authorization server's own traffic: a VIEW computes the facts once and both
 // doors render them, an ACTION changes state once and both doors report it.
 // **No route, no `res`, no markup**, and a view reads nothing from the request
