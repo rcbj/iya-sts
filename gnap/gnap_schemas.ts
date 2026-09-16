@@ -1,7 +1,6 @@
-// @ts-check
 'use strict';
 //
-// File: gnap_schemas.js
+// File: gnap_schemas.ts
 //
 // ---------------------------------------------------------------------------
 // THE JSON SCHEMAS OF EVERY DOCUMENT A GNAP CLIENT OR RESOURCE SERVER SENDS,
@@ -23,7 +22,7 @@
 //      label, a class_id or a display name is echoed onto the approval page,
 //      the audit log and the console, and a C0 control character in it is never
 //      meaningful.
-//   3. `gnap_request.js`'s walk — the SEMANTICS, refused with the GNAP error
+//   3. `gnap_request.ts`'s walk — the SEMANTICS, refused with the GNAP error
 //      code the specification names: a flag twice is `invalid_flag`, a missing
 //      label in a multi-token request is `invalid_request`, a key in two
 //      formats is `invalid_client`.
@@ -47,32 +46,53 @@
 // object (2.5.2).
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
+// shape: `GnapSchemas` takes the logger and the schemas compiled at load
+// through its constructor, and the two schema builders are static methods of
+// `SchemaParts`. The tables are still built and compiled at require time, for
+// the reason given above `COMPILED`. The module still exports `SCHEMAS` and
+// `validate` from a TRANSITIONAL instance for `gnap_request.ts`.
+// ---------------------------------------------------------------------------
+
 // `any` for the type checker (#50): CommonJS modules whose declared types are
 // ES default exports.
-const Ajv2020 = /** @type {any} */ (require('ajv/dist/2020'));
-const addFormats = /** @type {any} */ (require('ajv-formats'));
-const { log } = require('../common/helpers');
-const validation = require('../common/validation');
+import Ajv2020Module = require('ajv/dist/2020');
+import addFormatsModule = require('ajv-formats');
+import helpers = require('../common/helpers');
+import validation = require('../common/validation');
+
+const Ajv2020: any = Ajv2020Module;
+const addFormats: any = addFormatsModule;
+const log = helpers.log;
 
 const CAP = validation.CAP;
 
 // A string with no C0 control character and no DEL.
 const SAFE = '^[^\\u0000-\\u001f\\u007f]*$';
 
-function str(max) {
-  log.debug("Entering str().");
-  log.debug("Leaving str().");
-  return { type: 'string', maxLength: max || CAP.DEFAULT, pattern: SAFE };
+// The two schema builders the tables below are written with. Static, and
+// reaching for the module's logger, because they run while the tables are
+// built at load — before any instance exists.
+class SchemaParts {
+  static str(max?: number) {
+    log.debug("Entering SchemaParts.str().");
+    log.debug("Leaving SchemaParts.str().");
+    return { type: 'string', maxLength: max || CAP.DEFAULT, pattern: SAFE };
+  }
+
+  static strings(maxItems: number, maxLength?: number) {
+    log.debug("Entering SchemaParts.strings().");
+    log.debug("Leaving SchemaParts.strings().");
+    return { type: 'array', maxItems: maxItems,
+             items: SchemaParts.str(maxLength || CAP.URI) };
+  }
 }
 
-function strings(maxItems, maxLength) {
-  log.debug("Entering strings().");
-  log.debug("Leaving strings().");
-  return { type: 'array', maxItems: maxItems,
-           items: str(maxLength || CAP.URI) };
-}
+const str = SchemaParts.str;
+const strings = SchemaParts.strings;
 
-const DEFS = {
+const DEFS: Record<string, any> = {
   uri: { type: 'string', maxLength: CAP.URI, format: 'uri', pattern: SAFE },
   // A logo may be a data: image (section 2.3.2), which is legitimately long.
   logoUri: { type: 'string', maxLength: CAP.TEXT,
@@ -245,7 +265,7 @@ const DEFS = {
                 pattern: '^[A-Za-z0-9._~+/-]*=*$' }
 };
 
-const SCHEMAS = {
+const SCHEMAS: Record<string, any> = {
   // RFC 9635 section 2 (plus RFC 9767 section 4's existing_access_token).
   grantRequest: {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -331,55 +351,92 @@ const SCHEMAS = {
 const ajv = new Ajv2020({ strict: true, allErrors: false, coerceTypes: false,
                           allowUnionTypes: true });
 addFormats(ajv);
-const COMPILED = {};
+const COMPILED: Record<string, any> = {};
 Object.keys(SCHEMAS).forEach(function (name) {
   COMPILED[name] = ajv.compile(SCHEMAS[name]);
 });
 
-// `{ ok: true }` or `{ ok: false, path, detail }`. The detail names the member
-// by its JSON Pointer, because the client developer's first question is which
-// one.
-function validate(name, document) {
-  log.debug("Entering validate(). schema=" + name);
-  const check = COMPILED[name];
-  if (!check) {
-    log.debug("Leaving validate(). No such schema.");
-    return { ok: false, path: '', detail: 'there is no schema called ' + name };
-  }
-  if (check(document)) {
-    log.debug("Leaving validate(). Valid.");
-    return { ok: true };
-  }
-  // THE MOST USEFUL ERROR, NOT THE FIRST. ajv reports every branch of an
-  // `anyOf` it tried, so a control character inside an object member arrives
-  // behind "must be string" from the string branch of the same union — true
-  // and useless. A control character is named whenever one was found, and
-  // otherwise the error at the deepest path is the one nearest the mistake.
-  const errors = check.errors || [];
-  const control = errors.filter(function (one) {
-    return one.keyword === 'pattern' && one.params &&
-           one.params.pattern === SAFE;
-  })[0];
-  const first = control || errors.slice().sort(function (a, b) {
-    return String(b.instancePath || '').length -
-           String(a.instancePath || '').length;
-  })[0] || {};
-  const path = first.instancePath || '(the document)';
-  let detail;
-  if (first.keyword === 'pattern' &&
-      String(first.schemaPath || '').indexOf('pattern') >= 0 &&
-      first.params && first.params.pattern === SAFE) {
-    detail = path + ' contains a control character, which no member of a ' +
-                    'GNAP document may carry';
-  } else {
-    detail = path + ' ' + (first.message || 'is not valid');
-  }
-  log.debug("Leaving validate(). " + detail);
-  return { ok: false, path: path,
-           detail: detail + ' (JSON Schema ' + SCHEMAS[name].$id + ')' };
+// What `validate()` answers.
+interface Verdict {
+  ok: boolean;
+  path?: string;
+  detail?: string;
 }
 
-module.exports = {
-  SCHEMAS: SCHEMAS,
-  validate: validate
+interface GnapSchemasDeps {
+  log: { debug(message: string): void };
+  // name -> an ajv validate function, compiled at load.
+  compiled: Record<string, any>;
+  schemas: Record<string, any>;
+}
+
+class GnapSchemas {
+  static readonly SCHEMAS = SCHEMAS;
+  static readonly SAFE = SAFE;
+
+  constructor(private readonly deps: GnapSchemasDeps) {
+    deps.log.debug("Entering GnapSchemas.constructor().");
+    deps.log.debug("Leaving GnapSchemas.constructor().");
+  }
+
+  // `{ ok: true }` or `{ ok: false, path, detail }`. The detail names the
+  // member by its JSON Pointer, because the client developer's first question
+  // is which one.
+  validate(name: string, document: unknown): Verdict {
+    const { log, compiled, schemas } = this.deps;
+    log.debug("Entering GnapSchemas.validate(). schema=" + name);
+    const check = compiled[name];
+    if (!check) {
+      log.debug("Leaving GnapSchemas.validate(). No such schema.");
+      return { ok: false, path: '',
+               detail: 'there is no schema called ' + name };
+    }
+    if (check(document)) {
+      log.debug("Leaving GnapSchemas.validate(). Valid.");
+      return { ok: true };
+    }
+    // THE MOST USEFUL ERROR, NOT THE FIRST. ajv reports every branch of an
+    // `anyOf` it tried, so a control character inside an object member
+    // arrives behind "must be string" from the string branch of the same
+    // union — true and useless. A control character is named whenever one
+    // was found, and otherwise the error at the deepest path is the one
+    // nearest the mistake.
+    const errors: any[] = check.errors || [];
+    const control = errors.filter(function (one) {
+      return one.keyword === 'pattern' && one.params &&
+             one.params.pattern === SAFE;
+    })[0];
+    const first = control || errors.slice().sort(function (a, b) {
+      return String(b.instancePath || '').length -
+             String(a.instancePath || '').length;
+    })[0] || {};
+    const path = first.instancePath || '(the document)';
+    let detail: string;
+    if (first.keyword === 'pattern' &&
+        String(first.schemaPath || '').indexOf('pattern') >= 0 &&
+        first.params && first.params.pattern === SAFE) {
+      detail = path + ' contains a control character, which no member of ' +
+                      'a GNAP document may carry';
+    } else {
+      detail = path + ' ' + (first.message || 'is not valid');
+    }
+    log.debug("Leaving GnapSchemas.validate(). " + detail);
+    return { ok: false, path: path,
+             detail: detail + ' (JSON Schema ' + schemas[name].$id + ')' };
+  }
+}
+
+// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
+// modules and the tables compiled at load, as the composition root will
+// build one.
+const schemas = new GnapSchemas({
+  log: helpers.log,
+  compiled: COMPILED,
+  schemas: SCHEMAS
+});
+
+export = {
+  GnapSchemas: GnapSchemas,
+  SCHEMAS: GnapSchemas.SCHEMAS,
+  validate: schemas.validate.bind(schemas) as GnapSchemas['validate']
 };
