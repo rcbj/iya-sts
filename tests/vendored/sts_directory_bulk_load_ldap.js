@@ -67,11 +67,13 @@
 // IN ADDITION is a real difference and part of the result:
 //
 //   * **AN LDAP `add` INVENTS NOTHING AND REGISTERS NOBODY.** It is
-//     `putEntry()`, a NUL-byte refusal, an audit row and the account observer.
-//     `vc_claims.js` is never called, so these five thousand entries carry
-//     exactly what was sent and nothing else; and `stats.noteKnownIdentity()`
-//     is not called either, so none of these people appears on `/admin/users`
-//     until they authenticate. The SCIM door does both.
+//     `putEntry()` behind the write-authorization and NUL-byte refusals, an
+//     audit row and the account observer. `vc_claims.js` is never called, so
+//     these five thousand entries carry exactly what was sent and nothing
+//     else; and `stats.noteKnownIdentity()` is not called either, so none of
+//     these people is in the identity register until they authenticate
+//     (`/admin/users` lists them anyway since 2026-09-10, read from the
+//     directory). The SCIM door does both.
 //   * **IT IS THE ONLY DOOR THAT CHOOSES THE DN.** The other two are handed a
 //     username and apply `namePlan()`. Here the job writes
 //     `uid=<name>,ou=users` itself — which is what `namePlan()` would have
@@ -107,7 +109,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }

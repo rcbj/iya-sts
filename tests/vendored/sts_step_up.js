@@ -67,10 +67,12 @@
 // THE CONSOLE HALF, AND WHY IT IS DRIVEN THE WAY IT IS.
 //
 // The console's session lives in the DEFAULT realm's partition wherever it is
-// reached (`common/CLAUDE.md`, the realm split), and one console session
-// reads every realm — so the operator signs in to the console at the default
-// realm through `console_signin.js` and reads the realm's page under its
-// prefix with that cookie. No browser: the page is JSON under `?format=json`.
+// reached (`common/CLAUDE.md`, the realm split), and a session signed in
+// through the default realm is asked the service roster, which reads every
+// realm (`admin-ui/CLAUDE.md`, 8d) — so the operator signs in to the console
+// at the default realm through `console_signin.js` and reads the realm's page
+// under its prefix with that cookie. No browser: the page is JSON under
+// `?format=json`.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT LEAVES BEHIND.
@@ -97,7 +99,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -1219,7 +1221,8 @@ program
       "code, the hierarchy, login_required, " +
       "unmet_authentication_requirements and invalid_request, UserInfo " +
       "under oauth2.stepUpAcrValues, and the monitor's step-up section.")
-  // Accepted and ignored: run-report.js passes --url to every job.
+  // Accepted and ignored: the parent project's run-report.js passes --url to
+  // every job; this repository's (tests/tools/run-report.js) passes none.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);
