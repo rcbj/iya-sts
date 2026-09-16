@@ -1392,13 +1392,45 @@ function register(def) {
 // on the client's side — and a product deployment that wants that says so in
 // its KDC rather than inheriting it from a demonstration.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ACCEPTOR'S SPN FOLLOWS THE REALM'S OWN DOMAIN (2026-09-15).
+//
+// `krb5.servicePrincipal` is a setting a trust realm carries, and a realm that
+// sets one gets exactly that. What this decides is the realm that sets NONE:
+// the process's value is `HTTP/web.example.com`, and a realm called
+// CORP.BANK.EXAMPLE inheriting it would hold an account in another domain
+// entirely — the one name in an otherwise realm-shaped database that still said
+// `example.com`, and the name SPNEGO advertises for clients to derive.
+//
+// So where the service's value is the one this repository SHIPS, a realm builds
+// `HTTP/web.<its own domain>` instead, exactly as `krb5.serviceDomains` derives
+// its default from the realm name. Where an operator has SET it — on the realm,
+// or service-wide to something of their own — that value is theirs and is used
+// as it stands.
+// ---------------------------------------------------------------------------
+function servicePrincipalFor(ctx) {
+  log.debug("Entering servicePrincipalFor().");
+  const configured = String(config.value('krb5.servicePrincipal') || '').trim();
+  const realm = realms.get(ctx.id);
+  const own = realm && realm.overrides &&
+    Object.prototype.hasOwnProperty.call(realm.overrides,
+                                         'krb5.servicePrincipal');
+  if (ctx.isDefault || own ||
+      configured !== publishedDefault('krb5.servicePrincipal')) {
+    log.debug("Leaving servicePrincipalFor(). As configured.");
+    return configured;
+  }
+  log.debug("Leaving servicePrincipalFor(). Derived from the realm's domain.");
+  return 'HTTP/web.' + ctx.DOMAIN;
+}
+
 // `ctx.serviceAccount` — `{ spn, available, reason }` — is filled here, for the
 // realm whose database is being built.
 function configuredServiceDefinition(ctx) {
   log.debug('Entering configuredServiceDefinition().');
   const account = ctx.serviceAccount;
   const REALM = ctx.REALM;
-  const spn = String(config.value('krb5.servicePrincipal') || '').trim();
+  const spn = servicePrincipalFor(ctx);
   account.spn = spn;
   const parts = spn.split('/');
   if (parts.length < 2 ||

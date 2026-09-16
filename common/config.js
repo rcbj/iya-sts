@@ -6570,7 +6570,11 @@ const SETTINGS = [
                  'service/hostname form. The account the acceptor decrypts ' +
                  'with is created FROM this name, with krb5.servicePassword ' +
                  'and krb5.serviceSalt — until 2026-09-12 it was always ' +
-                 'HTTP/web.<realm domain> whatever this said.' },
+                 'HTTP/web.<realm domain> whatever this said. **A TRUST ' +
+                 'REALM that sets none derives HTTP/web.<its own domain>** ' +
+                 'where this is still the value shipped here, so a realm is ' +
+                 'named after itself throughout; set it on the realm to ' +
+                 'name that realm\'s acceptor outright.' },
 
   { key: 'krb5.servicePassword', group: 'Kerberos',
     label: 'Service principal password', env: 'KRB5_SERVICE_PASSWORD',

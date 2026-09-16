@@ -275,7 +275,38 @@ async function theDatabase(t) {
               'the hosts it will invent a service principal for are its own ' +
               'domain\'s, derived from its name',
               JSON.stringify(principals.SERVICE_DOMAINS));
+      // NOTHING IN THE REALM IS NAMED AFTER THE SERVICE'S DOMAIN. The
+      // acceptor's SPN was the last thing that was: `krb5.servicePrincipal`
+      // ships as HTTP/web.example.com, and a realm that sets none inherited
+      // it — one account in another domain entirely, in an otherwise
+      // realm-shaped database, and the name SPNEGO advertises for clients to
+      // derive.
+      t.equal(principals.serviceAccount().spn, 'HTTP/web.acme.example.com',
+              'AND THE ACCEPTOR\'S SPN IS THE REALM\'S OWN DOMAIN TOO, ' +
+              'derived where the service\'s value is the one this repository ' +
+              'ships');
+      const foreign = principals.all().filter(function (one) {
+        return JSON.stringify(one.name).indexOf('example.com') >= 0 &&
+               JSON.stringify(one.name).indexOf('acme.example.com') < 0;
+      });
+      t.equal(foreign.length, 0,
+              'so NO principal in this realm is named after the service\'s ' +
+              'own domain — a realm may be CORP.BANK.EXAMPLE and look like ' +
+              'it throughout',
+              JSON.stringify(foreign.map(function (one) {
+                return one.name.join('/');
+              })));
     });
+
+    // A REALM THAT NAMES ITS OWN SPN KEEPS IT, which is the other half of the
+    // rule above: the derivation is for a realm that sets none.
+    realms.setOverride('krr-db', 'krb5.servicePrincipal',
+                       'HTTP/sso.acme.test');
+    realms.run(realm, function () {
+      t.equal(principals.serviceAccount().spn, 'HTTP/sso.acme.test',
+              'a realm that sets krb5.servicePrincipal gets exactly that');
+    });
+    realms.clearOverride('krr-db', 'krb5.servicePrincipal');
 
     // THE DEFAULT REALM IS UNTOUCHED, which is the claim a process with no
     // realms defined rests on.

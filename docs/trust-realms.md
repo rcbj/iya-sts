@@ -259,7 +259,12 @@ curl -X POST .../admin-api/realms/set \
 
 Turning it on builds that realm's principal database from **its own settings**:
 its own `krbtgt`, its own service account, its own fixture accounts in
-development mode, every key salted with its own realm name. Its people are the
+development mode, every key salted with its own realm name. **Every name in it
+follows the realm's own domain** — `ACME.EXAMPLE.COM` gives
+`HTTP/web.acme.example.com` and a service account to match, and a realm called
+`CORP.BANK.EXAMPLE` looks like itself throughout, with nothing inherited from
+the service's own domain. Set `krb5.servicePrincipal` on the realm to name its
+acceptor outright. Its people are the
 people in its own directory subtree, and their Kerberos keys (product mode) are
 derived onto their own entries there. Nothing restarts.
 

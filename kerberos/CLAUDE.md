@@ -561,6 +561,19 @@ chose, so answering a different realm's request on it would make the prefix a
 decoration. `krb5_service.js`'s `accept()` follows the same two rules for an
 AP-REQ (step 2a), refusing with `STS-KRB-0126`.
 
+**EVERY NAME IN A REALM'S DATABASE FOLLOWS THAT REALM'S OWN DOMAIN.** The realm
+name is the context's, the domain is its lower-cased form, the fixtures and the
+auto-service hosts are built from that domain, and `krb5.serviceDomains` derives
+from it — so a realm called `CORP.BANK.EXAMPLE` holds `alice@CORP.BANK.EXAMPLE`
+salted `CORP.BANK.EXAMPLEalice` and `HTTP/web.corp.bank.example`, with nothing
+named after `example.com`. **The acceptor's SPN was the last thing that did not
+follow it** (fixed the same day): `krb5.servicePrincipal` ships as
+`HTTP/web.example.com`, and a realm that sets none inherited that literal — one
+account in another domain entirely, and the name SPNEGO advertises for clients
+to derive. `servicePrincipalFor()` derives `HTTP/web.<domain>` where the
+service's value is the shipped default, and leaves a value an operator SET —
+on the realm or service-wide — exactly as it stands.
+
 **What a realm's context holds, and when it is built.** `krb5_principals.js`
 keeps one CONTEXT per trust realm — the realm name, the domain, the SIDs, the
 etypes, the kvno, the passwords, the service account, `SEEDS_DEMO`, and the set
