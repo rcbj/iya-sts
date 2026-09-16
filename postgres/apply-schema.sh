@@ -24,9 +24,10 @@
 # existed has the tables and NOT the application role, and the service then
 # fails to start with `password authentication failed for user "sts_app"`,
 # which names a role that was never created rather than a volume that is old.
-# `docker compose down -v` is the answer and costs nothing: what that volume
-# holds is the directory, the realm registry and the appconfig overrides, and
-# never anything this service minted.
+# `docker compose down -v` is the answer: what that volume holds is the
+# directory, the realm registry and the appconfig overrides — and, in product
+# mode (the compose stack's default), the sealed signing keys and what this
+# service minted under them, which go too.
 #
 # The same applies to a database that is not this stack's: run
 # `postgres/schema.sql` against it by hand, once, with psql. See its header.

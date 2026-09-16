@@ -21,9 +21,9 @@
 # THE SERVICE THE PROTOCOL JOBS DRIVE IS A CONTAINER SINCE 2026-08-28, BROUGHT
 # UP FROM THIS REPOSITORY'S OWN docker-compose.yml.
 #
-# It used to be a throwaway `node server.js` started on nine ports of its own,
-# and that still exists behind `--no-docker`. What the container buys is that
-# THE THING UNDER TEST IS THE IMAGE: the same Dockerfile, the same
+# It used to be a throwaway `node server.js` started on a block of ports of its
+# own, and that still exists behind `--no-docker`. What the container buys
+# is that THE THING UNDER TEST IS THE IMAGE: the same Dockerfile, the same
 # `npm install --omit=dev` against the committed lock, the same node version,
 # the same `COPY . ./` with .dockerignore deciding what is in it. Several of
 # the failures this repository has actually had are properties of the image and
@@ -37,9 +37,9 @@
 # THE TESTS THEMSELVES ARE STILL PLAIN SCRIPTS ON THIS MACHINE. Nothing is
 # containerized but the service. They are node processes started by
 # tests/tools/run-report.js with this repository as their cwd, which is what
-# keeps the loop short (edit a test, re-run it, no image), what lets the five
+# keeps the loop short (edit a test, re-run it, no image), what lets the
 # jobs that load this service's modules IN PROCESS keep doing so, and what lets
-# the browser job drive the Chrome that is already installed here.
+# the browser jobs drive the Chrome that is already installed here.
 #
 # FOUR THINGS ABOUT THE STACK ARE DECISIONS RATHER THAN MECHANICS:
 #
@@ -52,10 +52,14 @@
 #   using. So the run is `mock-sts-tests`, the container is `sts-tests`, and the
 #   host port is a FREE one found at start rather than a fixed number.
 #
-#   IT PERSISTS NOTHING. `STS_PERSISTENCE_MODE=memory`, and `--no-deps` so the
-#   postgres service in that file is never started. A suite that persisted
-#   would be a suite whose second run started from the first run's leavings,
-#   which is the failure that looks like a flaky test and is not one.
+#   IT PERSISTS NOTHING BETWEEN RUNS. In the `memory` mode that is
+#   `STS_PERSISTENCE_MODE=memory` and `--no-deps`, so the postgres service in
+#   that file is never started; the `postgres` and `dispatch` modes (see
+#   tests/tools/modes.sh) do start it, and the stack is brought down with
+#   `--volumes` before each mode, so every mode starts on an empty store. A
+#   suite that persisted across runs would be a suite whose second run started
+#   from the first run's leavings, which is the failure that looks like a flaky
+#   test and is not one.
 #
 #   THE IMAGE IS REBUILT EVERY RUN, because the whole point is to test what is
 #   in the working tree, and an image is a snapshot of when it was built. That
@@ -89,9 +93,9 @@
 #   so a leftover container is removed by the next run rather than met by it —
 #   that has been true since this stack was written, for the interrupted-run
 #   case. The project, the container name and the host port are this run's own,
-#   so what is left behind can never be somebody's dev stack. And nothing is
-#   persisted, so a container left up all week holds only what the run put in
-#   it.
+#   so what is left behind can never be somebody's dev stack. And nothing
+#   outlives the next run's `down --volumes`, so a stack left up all week holds
+#   only what the run put in it.
 #
 #   What it costs is a container and a network on this machine until the next
 #   run or a `--tear-down`, which the last lines of a run print the command
@@ -125,8 +129,9 @@
 # — they go to tests/report/<mode>-00-*.log instead, which is precisely when
 # they are the only evidence there is.
 #
-#   THE PROTOCOL JOBS, AGAINST THIS WORKING TREE. Fourteen jobs that drive a
-#   RUNNING service over HTTP — the Selenium admin-console job among them.
+#   THE PROTOCOL JOBS, AGAINST THIS WORKING TREE. The jobs that drive a
+#   RUNNING service over HTTP (tests/vendored/MANIFEST.js is the count) — the
+#   Selenium browser jobs among them.
 #   This builds an image from this tree, brings up one container from
 #   docker-compose.yml, runs them against it, and LEAVES IT UP (--tear-down
 #   removes it; see AND THE STACK IS LEFT UP above).
@@ -134,14 +139,14 @@
 # THE SUITE IS SELF-CONTAINED AS OF 2026-08-28, AND THAT WAS UNTRUE THE DAY
 # BEFORE.
 #
-# Those thirteen jobs used to be READ OUT OF the parent project's tests/ — the
-# decision the root CLAUDE.md argues — so this script could only run them on a
-# machine that had both checkouts, and a machine with only this repository on
-# it silently ran ten in-process files instead. They are under tests/vendored/
-# now — nine byte-identical copies plus the four this repository OWNS, with
+# Those jobs (thirteen then) used to be READ OUT OF the parent project's
+# tests/ — so this script could only run them on a machine that had both
+# checkouts, and a machine with only this repository on it silently ran ten
+# in-process files instead. They are under tests/vendored/ now — byte-identical
+# copies of the parent's plus the ones this repository OWNS, with
 # tests/vendored/MANIFEST.js recording where each came from, which are jobs,
-# and which four have no upstream at all. Nothing in a test run reaches outside
-# this checkout any more.
+# and which have no upstream at all. Nothing in a test run reaches outside this
+# checkout any more.
 #
 # AND THEY RUN BY DEFAULT, which reverses what this script did for its first
 # three days. They used to need `--protocol`, so the bare run was ten files in
@@ -156,17 +161,17 @@
 # the summary counts as passing — so a run in which nothing was checked exited
 # zero and said so in small grey text.
 #
-# THE PARENT IS STILL THE SOURCE OF TRUTH FOR NINE OF THE THIRTEEN. Those are
-# not edited here — the rule `common/vendored/` carries. Fix the parent's copy,
-# then `--vendor-sync`. `--vendor-check` reports drift and needs both checkouts.
+# THE PARENT IS STILL THE SOURCE OF TRUTH FOR THE COPIES. Those are not edited
+# here — the rule `common/vendored/` carries. Fix the parent's copy, then
+# `--vendor-sync`. `--vendor-check` reports drift and needs both checkouts.
 #
-# THE OTHER FOUR ARE OURS AND THE RULE IS INVERTED. sts_metadata.js,
-# admin_api.js, sts_admin_api_operations.js and sts_admin_console.js drive this
-# service's own /admin console and /admin-api. They left the parent's suite on
-# 2026-08-28 — a test of this console belongs in the tree where a control is
-# added to it — so there is nothing over there to sync from. MANIFEST.js marks
-# them `local: true`, which keeps them out of both the check and the sync, and
-# they are edited HERE.
+# THE REST ARE OURS AND THE RULE IS INVERTED. The first four — sts_metadata.js,
+# admin_api.js, sts_admin_api_operations.js and sts_admin_console.js — drive
+# this service's own /admin console and /admin-api, and left the parent's suite
+# on 2026-08-28 (a test of this console belongs in the tree where a control is
+# added to it); many more have been written here since. There is nothing over
+# there to sync them from. MANIFEST.js marks them `local: true`, which keeps
+# them out of both the check and the sync, and they are edited HERE.
 #
 # Options:
 #   --only=<substr>[,<substr>...]
@@ -194,15 +199,16 @@
 #   --no-protocol    Leave them out: the in-process suite only, three seconds,
 #                    and nothing said about any protocol surface or /admin.
 #   --unit-only      The same as --no-protocol.
-#   --no-browser     Leave out the jobs that drive a browser. One does:
-#                    tests/sts_admin_console.js, which is the admin console's
-#                    only coverage against this working tree — so a run with
-#                    this flag says nothing about /admin. Browser jobs are run
+#   --no-browser     Leave out the jobs that drive a browser (MANIFEST.js
+#                    marks them `browser: true`), among them
+#                    tests/vendored/sts_admin_console.js, the admin console's
+#                    only browser coverage against this working tree — so a run
+#                    with this flag says less about /admin. Browser jobs are run
 #                    one at a time like everything else here; this runner is
 #                    serial, so there is never a second Chrome open.
 #   --protocol-only  Run only those.
 #   --no-docker      Run the service the OLD way: a throwaway `node server.js`
-#   --host-service   started by tests/tools/service.js on nine ports of its
+#   --host-service   started by tests/tools/service.js on a block of ports of its
 #                    own, out of this working tree and this machine's
 #                    node_modules. Faster by however long an image build takes,
 #                    and blind to everything about the image — see the section
@@ -255,15 +261,15 @@
 #   --sts-log-level=L
 #                    The log level of the service the protocol jobs drive — the
 #                    container or, under --no-docker, the in-process copy; it
-#                    reaches both. DEFAULT `info`, which is this script's and
-#                    not the service's: run by hand it still logs at `debug` —
-#                    every request and every signed artifact written down,
-#                    which is what a failing protocol job is read from, and
-#                    about half of its CPU. --sts-log-level=debug asks for that
-#                    whole record back, and gets it: the level picks the
-#                    appconfig file (env/local.js or env/test.js) as well as
-#                    STS_LOG_LEVEL, because the vendored crypto modules read
-#                    only the file. See THE SERVICE'S LOG LEVEL below.
+#                    reaches both. DEFAULT `info`, which is also every
+#                    appconfig file's level since 2026-09-12 (it was `debug`
+#                    before — every request and every signed artifact written
+#                    down, and about half of the service's CPU).
+#                    --sts-log-level=debug asks for that whole record back: the
+#                    level picks the appconfig file (env/local.js or
+#                    env/test.js) as well as STS_LOG_LEVEL, because the
+#                    vendored crypto modules read only the file. See THE
+#                    SERVICE'S LOG LEVEL below.
 #   --timeout=MS     Per-job watchdog. Default 300000. 0 disables it.
 #   --quiet          Do not echo each job's output as it runs; the logs still
 #                    have all of it.
@@ -446,9 +452,9 @@ CLUSTER_COMPOSE_FILE="tests/docker-compose-cluster.yml"
 #
 # THE REALM IS FIXED AND THE JOB OWNS IT. That container is pointed at
 # /realm/${XACML_PEP_REALM} before the realm exists; the job creates it, works
-# in it, and removes it at the end (its last section is a PDP outage made that
-# way). The PEP retries its registration on the poll timer, so it converges on
-# a console row once the realm appears — see xacml-pep/sync.js.
+# in it, and LEAVES IT STANDING (no job in this suite removes a realm since
+# 2026-09-06). The PEP retries its registration on the poll timer, so it
+# converges on a console row once the realm appears — see xacml-pep/sync.js.
 # ---------------------------------------------------------------------------
 XACML_PEP_CONTAINER="xacml-pep-tests"
 # Isolated with the other two — see the block above them.
@@ -641,8 +647,8 @@ fi
 # 2026-08-29, because ./docker-run-tests.sh needs the same two — and the shape
 # is the parent project's: resolve the compose command once, forward the
 # variables compose substitutes EXPLICITLY, bring the service up, prove it is
-# answering before anything is run against it, collect its log, take it down. What is deliberately NOT copied from over there is the
-# unconditional `sudo`: that stack needs it because its CI runs as a user with
+# answering before anything is run against it, collect its log, take it down.
+# What is deliberately NOT copied from over there is the unconditional `sudo`: that stack needs it because its CI runs as a user with
 # no docker group, and paying a sudo prompt on a machine where docker already
 # answers is a cost for nothing.
 # ---------------------------------------------------------------------------
@@ -694,8 +700,8 @@ freePort()
 # TRUE BY DEFAULT since 2026-08-30, matching every appconfig file in env/ and
 # the ${STS_HTTPS:-true} in both compose files. `STS_HTTPS=false
 # ./local-run-tests.sh` is the whole of the way back to a plain port, and it
-# works for the container run and the --no-docker one alike: tests/tools/
-# service.js reads the same variable with the same default.
+# works for the container run and the --no-docker one alike:
+# tests/tools/service.js reads the same variable with the same default.
 # ---------------------------------------------------------------------------
 stsHttps()
 {
@@ -719,9 +725,10 @@ stsScheme()
 
 # The HTTP status the service gives, or 000 if the socket said nothing. node
 # rather than curl, because this suite already requires node 18 and requires
-# curl nowhere; `rejectUnauthorized: false` because the certificate is
-# self-signed and regenerated on every start, so nothing can have an anchor for
-# it — this asks whether the port answers, not whether it is trusted.
+# curl nowhere; `rejectUnauthorized: false` because the certificate is issued
+# under a Root generated on every start in these modes, so nothing can have an
+# anchor for it — this asks whether the port answers, not whether it is
+# trusted.
 stsProbe()
 {
   node -e '
@@ -866,10 +873,10 @@ captureRunnerLog()
 # driving.
 #
 # **A FAILURE HERE IS NOT FATAL TO THE RUN, AND THAT IS DELIBERATE.** One job
-# out of the suite drives this container; fifty-odd others do not care whether
+# out of the suite drives this container; every other job does not care whether
 # it exists. So a PEP image that will not build, or a container that will not
 # start, must fail THAT job with a message naming it — not take down a run that
-# was going to check the other fifty. The job says what is wrong: without
+# was going to check all the others. The job says what is wrong: without
 # XACML_PEP_URL it looks for a docker daemon to start its own container with,
 # and without one of those it is reported SKIPPED with the reason.
 #
@@ -888,7 +895,7 @@ composePepUp()
   # why this runs here rather than beside the other setup above.
   #
   # A FAILURE IS NOT FATAL TO THE RUN, for composePepUp()'s own reason: one job
-  # drives this container and fifty-odd others do not care. The PEP then starts
+  # drives this container and every other job does not care. The PEP then starts
   # with no certificate, is refused by the access policy, and the job that
   # drives it says so — which is a readable failure rather than a silent one.
   echo "Minting the remote PEP's client certificate (${XACML_PEP_SUBJECT})"
@@ -966,8 +973,9 @@ composePepUp()
   #
   # This anchor is posted to /tls/trust once, here, before the container
   # starts — and the truststore is a Map in the service's process that ANY job
-  # can empty: `POST /tls/trust/clear` needs no credential, and a job that
-  # exercises the truststore is entitled to use it. Until 2026-09-06 nothing
+  # can empty: `POST /tls/trust/clear` needs no credential in development mode
+  # (every mode this launcher runs), and a job that exercises the truststore is
+  # entitled to use it. Until 2026-09-06 nothing
   # noticed, because a client certificate was a turnstile; the container's
   # pull, heartbeat and PIP queries all resolve a VERIFIED chain now, so one
   # such job left this container authenticating as nobody for the rest of the
@@ -1491,8 +1499,8 @@ composeUp()
 # `run-report.js` hands it to every job together with
 # `tools/attach-admin-token.js`, which presents it. A failure here is FATAL
 # rather than a warning: without a token every job that touches that API would
-# fail with 401 and the run would report twenty-three broken tests instead of
-# one broken login.
+# fail with 401 and the run would report dozens of broken tests instead of one
+# broken login.
 # ---------------------------------------------------------------------------
 mintAdminApiToken()
 {
@@ -1529,9 +1537,9 @@ stackTeardown()
     echo "  logs:     ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} logs -f sts"
     # THE SECOND CONTAINER IS PART OF THE RECIPE TOO. Somebody who kept the
     # stack to poke at it will find a remote PEP in it and no explanation
-    # anywhere on screen otherwise — and the realm it polls is gone by then,
-    # because the job that owns it removes it as its last assertion. Both facts
-    # are surprising and both are one line.
+    # anywhere on screen otherwise. (The lines below still say the job REMOVES
+    # the realm it polls; the job has left it standing since 2026-09-06 — see
+    # composePepUp()'s own message.)
     if [ -n "${XACML_PEP_HOST_PORT}" ];
     then
       echo "  pep:      http://localhost:${XACML_PEP_HOST_PORT}/    (the remote XACML PEP,"
@@ -1549,9 +1557,10 @@ stackTeardown()
     fi
     echo "  stop it:  ${COMPOSE_CMD} -p ${COMPOSE_PROJECT} ${COMPOSE_FILE_ARGS[*]} --profile xacml down -v"
     # THE CERTIFICATE IS PART OF THE RECIPE NOW. With the main port on TLS a
-    # job run by hand meets a self-signed certificate this machine has no
-    # anchor for and fails with DEPTH_ZERO_SELF_SIGNED_CERT, which names
-    # neither this service nor the fix. run-report.js writes the PEM into the
+    # job run by hand meets a certificate this machine has no anchor for (it
+    # was self-signed, failing with DEPTH_ZERO_SELF_SIGNED_CERT; it is issued
+    # under the service's own Root now), and the error names neither this
+    # service nor the fix. run-report.js writes the PEM into the
     # run's own report directory; `curl -k ${STS_URL}/tls/server-certificate`
     # fetches it again from the container that is still up.
     if [ "$(stsHttps)" = "true" ];
@@ -1617,8 +1626,8 @@ preflight()
   # project, so node-ldapjs is one level deeper than `--init` reaches: an
   # uninitialised one is an EMPTY DIRECTORY, npm installs a package with no
   # `main`, and the failure arrives at runtime as `Cannot find module 'ldapjs'`
-  # — which names a package and not a checkout. Two of this suite's files reach
-  # modules that require it.
+  # — which names a package and not a checkout. Many of this suite's files
+  # reach modules that require it.
   if [ ! -f "${CURRENT_DIR}/node-ldapjs/package.json" ];
   then
     echo "node-ldapjs/ is empty — it is a git SUBMODULE and this repository is"
@@ -1640,8 +1649,8 @@ preflight()
   # protocol jobs need `commander` and `selenium-webdriver`, and those are in
   # tests/package.json rather than the root one because .npmrc carries
   # `omit=dev` — a devDependency added at the root would be SILENTLY not
-  # installed and thirteen jobs would die with a stack trace naming a package
-  # instead of a command. See tests/package.json.
+  # installed and every vendored protocol job would die with a stack trace
+  # naming a package instead of a command. See tests/package.json.
   #
   # Installed here rather than merely reported, because this is the one
   # preflight whose fix is a command with no decision in it. A run that is
@@ -1699,8 +1708,8 @@ resolveServiceMode()
 
 # ---------------------------------------------------------------------------
 # Would this run drive a service at all? Asked of the RUNNER rather than
-# guessed from the flags, because `--only=crypto` matches four in-process files
-# and no protocol job — and building an image for a run that has nothing to
+# guessed from the flags, because `--only=crypto` matches in-process files and
+# no protocol job — and building an image for a run that has nothing to
 # point it at is a minute spent on nothing. `--list` is the runner's own answer
 # to exactly this question, so the two can never disagree.
 # ---------------------------------------------------------------------------
@@ -1785,7 +1794,7 @@ ARGS+=("--protocol=${PROTOCOL}")
 # THE SECOND KNOB IS THE APPCONFIG FILE, AND LEAVING IT OUT WOULD HAVE MADE
 # THIS CHANGE LOOK LIKE IT WORKED WHILE DOING ALMOST NOTHING. STS_LOG_LEVEL
 # reaches the loggers `config.js` registers — its own, and the `sts` logger in
-# helpers.js that every protocol module destructures. It does NOT reach the six
+# helpers.js that every protocol module destructures. It does NOT reach the
 # VENDORED modules under common/vendored/, which each build a bunyan logger at
 # load from `require(process.env.CONFIG_FILE).logLevel` and cannot be edited
 # here (they are the parent project's files). On the run that measured this,
@@ -1970,7 +1979,7 @@ do
   # starts and run-report.js does not create tests/report until a moment later.
   # On a first ever run that is the difference between a log and a `tee: No such
   # file or directory` in front of the whole suite's output.
-  # THE TOKEN, BEFORE ANY JOB RUNS. `/admin-api` requires one and twenty-three
+  # THE TOKEN, BEFORE ANY JOB RUNS. `/admin-api` requires one and dozens of
   # jobs drive it, so a failure here is the run's failure rather than theirs —
   # see mintAdminApiToken().
   if [ -n "${STS_URL}" ];

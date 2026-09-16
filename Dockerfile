@@ -1,4 +1,5 @@
-# The mock STS: sixteen protocol families in one small Node service. See README.md.
+# iya-sts, the mock STS: every protocol family README.md lists, in one small Node
+# service. See README.md.
 #
 # Pinned to Node 24.16.0 via nvm rather than an official node image, which is what
 # the project this was extracted from does for all of its services.
@@ -230,8 +231,8 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # `tests/` is in the build context since 2026-08-29 and it is not here by
 # choice: ONE context serves two images — this one and the test runner
 # (tests/Dockerfile, built by docker-compose-run-tests.yml), which is nothing
-# BUT the suite and needs the whole source tree besides, because ten of its
-# jobs require this service's own modules. A context has one ignore file, and
+# BUT the suite and needs the whole source tree besides, because its
+# in-process jobs require this service's own modules. A context has one ignore file, and
 # the per-Dockerfile ignore file that would give it two is a BuildKit feature
 # that the legacy builder silently ignores. See .dockerignore, where the
 # failure that taught this is written down.
@@ -263,8 +264,9 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # A THIRD STEP OUT.** `README.md`, `docker-compose.yml` and this Dockerfile
 # were excluded in `.dockerignore` until that day, on the true grounds that
 # nothing reads them at runtime. What that overlooked is that they are the
-# SUBJECT of three in-process jobs — tests/readme_ports.js checks the README's
-# ports table against config.js and against the EXPOSE lines below it, and
+# SUBJECT of in-process jobs — tests/readme_ports.js checks the README's ports
+# table against config.js and against the EXPOSE lines below it,
+# tests/readme_settings.js checks its settings tables, and
 # tests/postgres_schema.js checks the application role in docker-compose.yml
 # against postgres/schema.sql — and those jobs run in the TESTS image, built
 # from this same context, where a file the context does not carry is an ENOENT
@@ -302,7 +304,7 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # in exactly the situation where it is asked. See common/version.js.
 #
 # It runs AFTER `COPY . ./` because it needs the VERSION file and the module,
-# and after the `rm` above because neither is in the two directories removed.
+# and after the `rm` above because neither is among what that removes.
 # It is the LAST layer that touches the source, so a rebuild of an unchanged
 # tree still produces a new build number — which is correct: that is a
 # different artifact.
@@ -331,9 +333,11 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
 # change.
 ENV CONFIG_FILE=./env/local.js
 
-# 8081 is the HTTP service. The rest are the listeners that are NOT HTTP and so
-# are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected test
-# service, 389 the LDAP directory and 636 the same directory over TLS.
+# 8081 is the HTTP service. Most of the rest are the listeners that are NOT HTTP
+# and so are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected
+# test service, 389 the LDAP directory and 636 the same directory over TLS. The
+# two other HTTP listeners (8082, 8444) and the SPIFFE gRPC ones are explained
+# beside their own lines below.
 # EXPOSE documents them; each compose file decides which it publishes.
 #
 # **8443 AND 9443 WERE HERE UNTIL 2026-09-16** — the TLS endpoint that asked
@@ -352,8 +356,8 @@ ENV CONFIG_FILE=./env/local.js
 #
 # 636 is a SEPARATE SOCKET rather than an option on 389 (ldapjs chooses between a
 # net.Server and a tls.Server at construction), and the two bind independently:
-# either can be up while the other is not, which is why GET /ldap reports them
-# separately. A compose file that publishes 389 and not 636 offers a directory a
+# either can be up while the other is not, which is why GET
+# /admin/ldap/service reports them separately. A compose file that publishes 389 and not 636 offers a directory a
 # TLS client cannot reach, with nothing in the image to say why.
 EXPOSE 8081
 # The plain-HTTP revocation listener (2026-09-13): /pki/ only, and the
@@ -367,8 +371,8 @@ EXPOSE 636
 # missing from this list until 2026-09-07 — found by `tests/readme_ports.js`,
 # which holds the README's ports table to config.js and this file to the table.
 # It is a raw TCP listener like 88 and 389, it is bound on every start, and the
-# sentence above enumerating "the listeners that are NOT HTTP" never mentioned
-# it either. Nothing failed, and nothing could: EXPOSE publishes nothing, so an
+# sentence above enumerating "the listeners that are NOT HTTP" did not mention
+# it either until then. Nothing failed, and nothing could: EXPOSE publishes nothing, so an
 # omission here costs exactly one thing — `docker run -P` leaves that port
 # unmapped, which is the one command that reads this.
 EXPOSE 8888

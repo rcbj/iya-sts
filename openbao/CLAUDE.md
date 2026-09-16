@@ -195,9 +195,9 @@ point of the exercise.
   files' connection strings no longer carry one.
 * `tests/vendored/sts_secret_store.js` asserts the half this directory cannot:
   that the RUNNING SERVICE took this path rather than a file.
-* `common/secrets.js` is the client — rule 3ab's neighbour in
-  `common/CLAUDE.md` — and `common/config.js`'s `keys.vault*` rows are how it is
-  told where the certificate is.
+* `common/secrets.js` is the client — argued in `common/CLAUDE.md` under
+  *`keystore.js` AND `secrets.js`* — and `common/config.js`'s `keys.vault*`
+  rows are how it is told where the certificate is.
 * **`/admin/secrets`, under Monitoring, is where an operator SEES all of this
   from the running service** (2026-09-12): the seal state and seal type, the
   version and build, the cluster and its leader, the store's clock against this

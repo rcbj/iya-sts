@@ -9,9 +9,10 @@
 # The build alone is worth running. This service is a shell — server.js requires
 # the other modules and listens — so a module that never reaches the image is not
 # a missing feature but a MODULE_NOT_FOUND before anything binds the port. The
-# Dockerfile copies with wildcards for exactly that reason, and the same class of
-# mistake (a new sibling directory that no COPY line mentions, a context file
-# bbs2023.js reads at module scope) still gets through a successful build. So the
+# Dockerfile copies the whole build context for exactly that reason, and the
+# same class of mistake (a directory .dockerignore or the Dockerfile's `rm`
+# leaves out, a context file bbs2023.js reads at module scope) still gets
+# through a successful build. So the
 # job does not stop at `docker build` — it starts the image and waits for
 # /healthcheck, which is the cheapest thing that proves every require resolved.
 name: Build container
@@ -124,8 +125,8 @@ jobs:
       # `global.https: true`, so the main port is a TLS listener and there is
       # NO plain one left in the process — an http probe here would loop for
       # sixty seconds and report a container that never started. `-k` because
-      # the certificate is self-signed and regenerated on every start of the
-      # container, so nothing that existed before this step can verify it; the
+      # the certificate is issued under a Root the container generates when it
+      # starts, so nothing that existed before this step can verify it; the
       # question these two steps ask is whether every module resolved and the
       # router registered, not whether the certificate is trustworthy.
       #
