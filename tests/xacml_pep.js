@@ -673,6 +673,22 @@ async function run(t) {
           'and in the PDP\'s own namespace');
 
   // -------------------------------------------------------------------------
+  // 3d. THE PIP QUERY TRUSTS WHAT THE PULL TRUSTS.
+  //
+  // `pip.js`'s request is not exported, so this reads the source. Until
+  // 2026-09-16 it took its anchor from `options.ca`, which nothing sets —
+  // `pep.js` stores PEP_TLS_CA as `pdpCa` — so the PIP query ignored the
+  // configured anchor that the pull beside it used.
+  // -------------------------------------------------------------------------
+  const pipSource = fs.readFileSync(path.join(PEP_DIR, 'pip.js'), 'utf8');
+  const syncSource = fs.readFileSync(path.join(PEP_DIR, 'sync.js'), 'utf8');
+  t.check(/ca:\s*options\.pdpCa\b/.test(pipSource) &&
+          /ca:\s*options\.pdpCa\b/.test(syncSource) &&
+          !/ca:\s*options\.ca\b/.test(pipSource),
+          'the PIP query and the policy pull both verify the PDP against ' +
+          'options.pdpCa, the name pep.js gives PEP_TLS_CA');
+
+  // -------------------------------------------------------------------------
   // 4. THE TWO ENFORCEMENT IMPLEMENTATIONS AGREE.
   //
   // `xacml.js`'s `enforce()` and `xacml-pep/pep.js`'s are two readings of

@@ -456,7 +456,7 @@ async function body(t, dir) {
           'key lengths offered: ' + offered.map(function (k) {
             return k.length;
           }).join(', '));
-  t.check(flaky.rows.has('test.retry default ' + expectedKey),
+  t.check(flaky.rows.has('test.retry\u0000default\u0000' + expectedKey),
           'and the row that finally lands is under that key, as an upsert ' +
           'rather than a delete of a name nothing holds');
   // Put back the driver section 6 restores from: `restore()` reads whichever
