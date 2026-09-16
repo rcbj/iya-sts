@@ -734,7 +734,7 @@ async function theCredentialsAreNotOnIt(b) {
 // ===========================================================================
 // 6. ONE PERSON CANNOT READ ANOTHER'S ENTRY.
 //
-// The rule at the top of `portal/portal.js`: no route here takes an identity
+// The rule at the top of `portal/portal.ts`: no route here takes an identity
 // from the request. This is the newest reader of the directory in that file
 // and therefore the newest place that rule could have been broken — a
 // `username` honoured here would be every attribute of anybody's account, to

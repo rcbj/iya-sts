@@ -421,10 +421,10 @@ function checkRegistration(t) {
           firstAdmin);
 
   const portal = fs.readFileSync(path.join(__dirname, '..', 'portal',
-                                           'portal.js'), 'utf8');
+                                           'portal.ts'), 'utf8');
   const renewPortal = portal.indexOf("app.use(BASE, oidcRp.renewal('portal'))");
   const firstPortal = firstIndex(portal,
-                                 [/^app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)/m]);
+                                 [/^\s*app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)/m]);
   t.check(renewPortal >= 0, 'the portal registers oidcRp.renewal(\'portal\')');
   t.check(renewPortal >= 0 && firstPortal > renewPortal,
           'ABOVE the first /portal route (rule 1)',
