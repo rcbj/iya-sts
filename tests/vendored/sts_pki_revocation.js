@@ -321,6 +321,21 @@ async function test() {
             "an unsigned OCSPResponse with responseStatus malformedRequest");
         });
 
+  // A PARSED BODY IS NO REQUEST EITHER. A JSON content type reaches the
+  // handler as an object rather than bytes, and until 2026-09-16 that threw
+  // and the responder answered 500.
+  const jsonBody = await anonymous("/pki/ocsp/" + scope + "/" + ca, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}"
+  });
+  check("a POST with a JSON body is answered malformedRequest the same way, " +
+        "not with a server error", function () {
+          assert.strictEqual(jsonBody.status, 200, "status " + jsonBody.status);
+          assert.strictEqual(jsonBody.bytes.toString("hex"), "30030a0101",
+            "an unsigned OCSPResponse with responseStatus malformedRequest");
+        });
+
   const huge = await anonymous("/pki/ocsp/" + scope + "/" + ca, {
     method: "POST",
     headers: { "Content-Type": "application/ocsp-request" },

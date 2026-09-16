@@ -334,6 +334,18 @@ function targetOf(body) {
   return pki.subjectKindFor(asked) ? asked : '';
 }
 
+// THE LEAF'S KEY ALGORITHM, UNDER EITHER NAME. The console's issue forms post
+// `leafKeyAlg` (the page carries the hierarchy's `keyAlg` elsewhere); the
+// management API documents `keyAlg` and its schema refuses any other member.
+// Until 2026-09-16 only `leafKeyAlg` was read, so an API caller's `keyAlg` was
+// accepted and silently ignored. Undefined means the Issuing CA's algorithm.
+function leafKeyAlgOf(body) {
+  log.debug("Entering leafKeyAlgOf().");
+  const asked = String(body.leafKeyAlg || body.keyAlg || '').trim();
+  log.debug("Leaving leafKeyAlgOf(). " + (asked || "The CA's."));
+  return asked || undefined;
+}
+
 // The purpose a request asked for, defaulted and validated in one place. An
 // empty value means `jwt`, which is what every caller written before
 // 2026-09-11 sends and is the reason that is the default rather than a
@@ -902,7 +914,7 @@ async function issueToPerson(identifier, body) {
     // indistinguishable from an application's.
     subjectKind: 'person',
     commonName: String(body.commonName || '').trim() || identifier,
-    keyAlg: String(body.leafKeyAlg || '').trim() || undefined,
+    keyAlg: leafKeyAlgOf(body),
     days: isFinite(days) && days > 0 ? Math.floor(days)
                                      : config.value('pki.leafLifetimeDays')
   });
@@ -1270,7 +1282,7 @@ async function pkiAction(body) {
       identifier: identifier,
       purpose: purpose,
       commonName: String(body.commonName || '').trim() || identifier,
-      keyAlg: String(body.leafKeyAlg || '').trim() || undefined,
+      keyAlg: leafKeyAlgOf(body),
       days: isFinite(days) && days > 0 ? Math.floor(days)
                                        : config.value('pki.leafLifetimeDays')
     });
