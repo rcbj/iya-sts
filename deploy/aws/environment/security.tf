@@ -2,7 +2,7 @@
 # THREE SECURITY GROUPS, EACH ACCEPTING ONLY THE ONE BEFORE IT.
 #
 #   allowed_cidrs ─┐
-#   runner's NAT ──┴─443,9443,389,8082─▶ nlb ─8081,9443,389,8082─▶ nodes ─5432─▶ database
+#   runner's NAT ──┴─443,389,8082─▶ nlb ─8081,389,8082─▶ nodes ─5432─▶ database
 #                                                                   │
 #   runner ◀──────────── any TCP (GNAP push, the PEP's notify) ─────┘
 #

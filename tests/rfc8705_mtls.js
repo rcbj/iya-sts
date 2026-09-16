@@ -753,38 +753,22 @@ function childMain() {
          '3k3. and refuses it without the certificate: 401 invalid_token, ' +
          'STS-API-0110', r.text.slice(0, 300));
 
-    // --- l. an application's certificate at the TLS listeners -----------------
-    await tlsServer.listen().whenReady;
-    const whoami = await new Promise(function (resolve) {
-      const req = https.request({ host: '127.0.0.1',
-        port: tlsServer.ports().mtls, path: '/tls/whoami', method: 'GET',
-        cert: otherIssued.tls.cert, key: otherIssued.tls.key,
-        rejectUnauthorized: false, agent: false }, function (res) {
-        let text = '';
-        res.on('data', function (c) { text += c; });
-        res.on('end', function () {
-          let body = {};
-          try {
-            body = JSON.parse(text);
-          } catch (e) {
-            body = { raw: text.slice(0, 200) };
-          }
-          resolve({ status: res.statusCode, body: body });
-        });
-      });
-      req.on('error', function (e) {
-        resolve({ status: 0, body: { error: e.message } });
-      });
-      req.end();
-    });
-    note(whoami.status === 200 && whoami.body.session &&
-         whoami.body.session.started === false &&
-         whoami.body.session.application === 'mtls-other',
-         '3l. an application\'s TLS client certificate at 9443 verifies and ' +
-         'starts NO browser session in the application\'s name',
-         JSON.stringify({ status: whoami.status,
-                          session: whoami.body.session }));
-    tlsServer.close();
+    // --- l. an application's certificate at GET /tls/sign-in -----------------
+    // It was 9443 until 2026-09-16; that listener is gone and the sign-in it
+    // performed is a route on the main port, which this listener is. The claim
+    // is unchanged and is the one that matters: an application's certificate
+    // is a CLIENT CREDENTIAL for the token endpoint above, and must never be a
+    // browser sign-on in the application's name.
+    const signIn = await request('GET', '/tls/sign-in', {
+      tls: { cert: otherIssued.tls.cert, key: otherIssued.tls.key } });
+    note(signIn.status === 200 && signIn.json &&
+         signIn.json.signedIn === false &&
+         signIn.json.session && signIn.json.session.started === false &&
+         signIn.json.session.application === 'mtls-other',
+         '3l. an application\'s TLS client certificate at GET /tls/sign-in ' +
+         'verifies and starts NO browser session in the application\'s name',
+         JSON.stringify({ status: signIn.status,
+                          session: signIn.json && signIn.json.session }));
 
     server.close();
     fsC.writeFileSync(OUT, JSON.stringify(findings));
@@ -857,12 +841,11 @@ function inAChild(t, material) {
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', M_ROOT: ROOT, M_OUT: out,
                                   M_MATERIAL: JSON.stringify(material),
-                                  STS_HTTPS: 'true', STS_TLS_PORT: '0',
+                                  STS_HTTPS: 'true',
                                   ADMIN_API_AUTH_REQUIRED: 'false',
                                   ADMIN_API_CLIENT_SECRET:
                                     nodeCrypto.randomBytes(24)
-                                      .toString('base64url'),
-                                  STS_MTLS_PORT: '0' }),
+                                      .toString('base64url') }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT,
       maxBuffer: 64 * 1024 * 1024
     });

@@ -293,7 +293,7 @@ function description(req) {
         ? 'The X.509 authority is this realm\'s SPIFFE Issuing CA under this ' +
           'service\'s own Root CA — see /admin/pki — so the trust anchor a ' +
           'consumer installs is that Root, which every realm shares and ' +
-          'which also covers 8443, 9443, LDAPS 636, the main port and every ' +
+          'which also covers the main port, LDAPS 636 and every ' +
           'token this service signs. An SVID carries the Issuing CA and this ' +
           'realm\'s Intermediate in its own chain. In DEVELOPMENT mode the ' +
           'Root is generated per start like every other key here; in PRODUCT ' +

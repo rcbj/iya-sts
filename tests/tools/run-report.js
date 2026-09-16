@@ -1245,7 +1245,8 @@ async function waitForExternalService(url, log, timeoutMs) {
 // ---------------------------------------------------------------------------
 // THE PORTS THE THROWAWAY SERVICE ACTUALLY BOUND, HANDED TO EVERY JOB.
 //
-// `tests/tools/service.js` picks a free BLOCK of nine and passes each to the
+// `tests/tools/service.js` picks a free BLOCK — eight since 2026-09-16 — and
+// passes each to the
 // service under the environment variable that service reads for it — so the
 // name of a port in `instance.ports` is already the name a job would look it
 // up by. Handing the whole block over is therefore one line of policy rather
@@ -1259,6 +1260,9 @@ async function waitForExternalService(url, log, timeoutMs) {
 // from both, NOTING each and passing — two protocols' worth of sign-in that no
 // run starting its own service had ever exercised. Any listener added to that
 // block from now on is covered without anybody remembering to add it.
+// (That job's certificate sign-in is `GET /tls/sign-in` on the MAIN port since
+// 2026-09-16, when 8443 and 9443 were deleted, so it needs nothing from this
+// map at all any more. The failure it records is what the loop is for.)
 //
 // **A LAUNCHER'S ANSWER ALWAYS WINS**, the same precedence `STS_LDAP_URL`
 // above uses: a variable already in this process's environment was put there

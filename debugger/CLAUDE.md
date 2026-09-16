@@ -105,6 +105,70 @@ administrator's session or token), adds `X-Forwarded-Proto`/`-Host`/`-Prefix:
 naming the child's configured origin to the one this request arrived at — so a
 SAML landing redirects to the host the browser is using.
 
+## The listener ASKS for a client certificate, and the gate reads both schemes (#34, 2026-09-15)
+
+Four changes, and only the third is one of #34's settings.
+
+**The listener asks for a client certificate and requires none.**
+`https.createServer()` gets `requestCert: true` with `rejectUnauthorized:
+false` over `tlsServer.clientTruststoreOptions()` — exactly the posture the main
+port takes (and 8443 took, until it was deleted on 2026-09-16 for being a second
+socket with it), so the handshake succeeds either way and what a certificate
+is worth is decided per request against the truststore. It was added because
+`oauth2.accessTokenRequireMtls` covers this listener, and **a listener that
+never asks makes a certificate-bound token impossible to present here rather
+than merely unusual** — which would have been an exemption dressed up as a
+refusal. `trustClientCertificatesOn()` was already registered for the leaf
+`build-root` replaces; it now keeps the ANCHORS current too.
+
+**A DPoP-bound token presented as a Bearer token is refused, in every mode.**
+The gate had been given RFC 8705's `cnf["x5t#S256"]` check (`STS-DBG-0030`) and
+never RFC 9449's, so a token carrying `cnf.jkt` — a token whose whole point is
+that holding it is not enough — was accepted here as a bearer token. It is
+`STS-DBG-0031` now, and a proof that fails with no code of its own is
+`STS-DBG-0032`. This is not one of the settings: it is about honouring a
+constraint the TOKEN already carries, so it runs whatever they say. **The same
+hole `/admin-api` carried, closed the same way** — `mgmt-api/CLAUDE.md`, and
+`oauth-oidc/CLAUDE.md` 3ao.
+
+**`presentedTokenOf()` reads `Bearer` AND `DPoP`.** `bearerOf()` matched
+`Bearer` alone, so a client doing the stricter thing was told it had presented
+no token at all, which is the least useful answer available. `bearerOf()` is
+kept as a wrapper over it; the scheme is carried beside the token because
+refusing a BOUND token sent as Bearer is a different refusal from a token that
+does not verify.
+
+**`oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` are
+honoured here**, through the same `senderConstraints.accessTokenRefusal()` every
+other surface asks, so an operator who turns one on cannot find that one door
+out of nine kept its own opinion. The refusal's own code (one of
+`STS-OAUTH-0527..0531`) is carried on the verdict and marked by `refuse()`.
+
+**`dpop.proofClaims()` runs on this app**, registered below `inDefaultRealm`
+(the reservation is per realm and this listener's realm is the default one) and
+above the gate (which is what verifies the proof). It is the same middleware
+`oauth2.js` registers on the main app: the proof's `jti` is reserved on arrival
+and given back unless the proof was accepted, so a proof replayed against a
+second node is refused there too.
+
+**The session path is deliberately exempt from all of it.**
+`verifyAccessToken()` takes `presented`, true only when the token came in on
+THIS request's
+`Authorization` header; the relying party's own session holds an access token
+that nobody sent, and **a token nobody sent cannot prove possession of anything
+on a request it was not part of**. Requiring it to would turn the two settings
+into "the debugger's sign-in stops working", which is not what either of them
+says. The session's token is still verified in `/admin-api`'s order, and
+`isAdministrator()` is still asked again.
+
+**And the debugger client is CONFIGURED, not exempted.** `sts-debugger-ui` is
+not on `sender_constraints.js`'s `MTLS_EXEMPT_CLIENTS` — that list is the two
+hosted surfaces, which redeem over a loopback call from this process to itself —
+and because #34's own sixth decision was that the embedded debugger is an
+ordinary client of this authorization server: an operator who makes a realm
+strict is expected to make its client match rather than to discover a hole
+shaped like a debugger.
+
 ## Why the permission's base is a URN
 
 `applications.js` joins a resource's `oauthPermissionBaseUri` and a name into the

@@ -221,12 +221,18 @@ function childMain() {
       }), 'the directory listeners are listed at the realm\'s own base DN',
            ldap.map(function (row) { return row.url; }).join(', '));
 
+      // ONE ROW SINCE 2026-09-16, AND IT IS THE MAIN PORT. It was two — the
+      // 8443 and 9443 listeners — and both were deleted; a client certificate
+      // is now presented to the port everything else answers on, which asks
+      // for one and requires none. The claim being kept is the same one: a
+      // TLS handshake has no path to carry a realm in, so this row is the
+      // same under every prefix.
       const tls = table.forPage(fakeReq('/admin/tls'), '/admin/tls')
                        .filter(function (row) { return !row.route; });
-      note(tls.length === 2 && tls.every(function (row) {
+      note(tls.length === 1 && tls.every(function (row) {
         return /^https:\/\/endpoints\.test:\d+\/$/.test(row.url);
-      }), 'the two TLS listeners carry no realm, because a handshake has ' +
-          'nowhere to put one', tls.map(function (row) {
+      }), 'the client-certificate row carries no realm, because a handshake ' +
+          'has nowhere to put one', tls.map(function (row) {
         return row.url;
       }).join(', '));
 

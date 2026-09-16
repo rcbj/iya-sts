@@ -28,10 +28,13 @@
 # defect: `sts_xacml_remote_pep` (a PEP container beside the runner that the
 # cluster nudges) and `sts_gnap_core` (the service posts back to a listener on
 # the runner) — nothing behind NAT can be dialled. The load balancer publishes
-# 9443, 389 and 8082 as well as 443 (environment/locals.tf), so the mutual-TLS
+# 389 and 8082 as well as 443 (environment/locals.tf), so the certificate
 # sign-in, the LDAP bulk load and the CRL addresses in certificates all work
 # from here. The job list is computed from tests/vendored/MANIFEST.js minus
 # the two, so a job added there runs here without this file being edited.
+# (It published 9443 as well until 2026-09-16, for the service's mutual-TLS
+# listener; that listener was deleted and a certificate sign-in is
+# GET /tls/sign-in on 443.)
 #
 # THE PER-JOB WATCHDOG IS TWENTY MINUTES, NOT THE RUNNER'S FIVE. Every request
 # crosses the internet on a new TLS connection (so the balancer spreads them),
@@ -124,7 +127,6 @@ STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
 STS_PUBLIC_BASE_URL="${URL}" \
 STS_LDAP_URL="ldap://${NLB_HOST}:389" \
 STS_LDAP_PORT=389 \
-STS_MTLS_PORT=9443 \
   node tests/tools/run-report.js --protocol=only \
     --service-url="${URL}" \
     --timeout="${STS_SUITE_JOB_TIMEOUT_MS:-1200000}" \

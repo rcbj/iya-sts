@@ -18,13 +18,23 @@
 // are not `app`:
 //
 //   * the two TLS listeners, which have a handler of their own in
-//     `tls/tls_server.js` rather than going through express;
+//     `tls/tls_server.js` rather than going through express — **DELETED ON
+//     2026-09-16**, see below;
 //   * the directory, on 389 and 636;
 //   * the KDC, on TCP and UDP 88;
 //   * SPIFFE's two gRPC surfaces.
 //
 // Everything minted on those is written by the front process, and no worker was
 // ever marked stale for it.
+//
+// **ONE OF THE FIVE FAMILIES IS GONE, AND THE FILE IS UNCHANGED BECAUSE THE
+// DECISION IT ASSERTS NEVER WAS ABOUT ANY OF THEM.** The 8443 and 9443
+// listeners were deleted on 2026-09-16 and the certificate sign-in became `GET
+// /tls/sign-in` on the main port — which IS `app`, and is therefore dispatched
+// like everything else, so that one path needs no front-process write at all
+// any more. The directory, the KDC and SPIFFE's two sockets still do, and what
+// is asserted below is `noteLocalWrites()`'s comparison of two integers, which
+// is deliberately testable apart from whoever calls it.
 //
 // ---------------------------------------------------------------------------
 // THE FAILURE IT PRODUCED, WHICH IS WHY THIS FILE IS NOT ABOUT AN ABSTRACTION.

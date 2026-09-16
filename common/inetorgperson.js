@@ -214,9 +214,9 @@ const INET_ORG_PERSON = [
   { ldap: 'userCertificate', label: 'X.509 certificate', rfc: 'RFC 4523 4.1',
     binary: true,
     note: 'A DER certificate. **This is not the certificate a client ' +
-          'presents on 9443** — nothing here reads this attribute during a ' +
-          'TLS handshake, and a certificate written to it authorises ' +
-          'nothing.' },
+          'presents to the main port** — nothing here reads this attribute ' +
+          'during a TLS handshake, and a certificate written to it ' +
+          'authorises nothing.' },
   { ldap: 'userSMIMECertificate', label: 'S/MIME certificate',
     rfc: 'RFC 2798 2.8', binary: true },
   { ldap: 'userPKCS12', label: 'PKCS#12 bundle', rfc: 'RFC 2798 2.9',

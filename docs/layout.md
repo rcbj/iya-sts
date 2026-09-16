@@ -32,7 +32,8 @@ ssf/                 Shared Signals: the transmitter, the RFC 9493 subject
                      grammar, the RFC 8417 envelope, the streams, the gate,
                      and the second outbound request in this repository
 spiffe/              six libraries, one server module, the vendored protos
-tls/                 the 8443 and 9443 listeners
+tls/                 the certificate the sockets share, the client
+                     truststore, and GET /tls/sign-in
 oid4vc/              OpenID4VCI, OpenID4VP, DID Core
 admin-ui/            the console at /admin
 mgmt-api/            /admin-api and its generated OpenAPI document

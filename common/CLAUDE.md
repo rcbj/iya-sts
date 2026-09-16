@@ -940,14 +940,17 @@ a caller that needs to know it is up to date.
 2026-09-09 — IT DID NOT, AND THAT IS A SECOND BUG OF THE SAME FAMILY AS THE
 LDAP ONE ABOVE.** It was bumped in exactly one place: a WORKER announcing that
 its flush had committed. That is the whole story for the dispatched HTTP port,
-and **this process answers on five more socket families that are never
-dispatched** — the two TLS listeners (which have a handler of their own rather
-than going through `app`), the directory, the KDC and SPIFFE's gRPC pair.
+and **this process answers on more socket families that are never
+dispatched** — the directory, the KDC and SPIFFE's gRPC pair. (The two TLS
+listeners, which had a handler of their own rather than going through `app`,
+were on that list until they were deleted on 2026-09-16; what replaced them is
+an ordinary route.)
 Everything minted there is written by the front process, and no worker was ever
 marked stale for it.
 
 The symptom was a sign-out that left a session behind. A verified client
-certificate on 9443 starts a sign-on session; the session is minted here,
+certificate starts a sign-on session — on 9443 then, at `GET /tls/sign-in` since
+the two TLS listeners were deleted on 2026-09-16; the session is minted here,
 `/logout` is answered by a worker, and that worker's copy of the session store
 had never heard of it — so a global sign-out reported ending everything and
 left a live way in. **It is intermittent by construction**: the worker gets
@@ -1427,8 +1430,9 @@ reader derives from four directory files. The short version:
   beside a correctly partitioned `tokens.held`, with
   `POST /realm/acme/oauth2/revoke` able to kill a jti the default realm issued.
   `tests/realm_isolation.js` guards both directions and the purge.
-* **Kerberos, the two TLS listeners and SPIFFE's four sockets are shared**, for
-  the same reason. **SPIFFE'S X.509 AUTHORITY STOPPED BEING SHARED ON
+* **Kerberos and SPIFFE's four sockets are shared**, for
+  the same reason — and the two TLS listeners were, until they were deleted on
+  2026-09-16 (`tls/CLAUDE.md`). **SPIFFE'S X.509 AUTHORITY STOPPED BEING SHARED ON
   2026-09-11 AND ITS SOCKETS DID NOT**, which looks like a contradiction and is
   not: the authority is a realm's SPIFFE Issuing CA, the trust ANCHOR is the
   service Root that no realm owns, so every realm's bundle is the same document
@@ -1448,10 +1452,13 @@ reader derives from four directory files. The short version:
   development-mode trust are still the process's. `kerberos/CLAUDE.md` argues
   it.
 * **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT IS LATER THAN
-  THE BULLET ABOVE:** the two TLS listeners are still shared, because a socket
-  has no path to put a segment in and — unlike the directory — no name inside it
-  to put one in either. **Kerberos was on this list until 2026-09-15**, when the
-  realm name inside the protocol turned out to be exactly such a name. **SPIFFE LEFT THIS LIST ON 2026-09-12
+  THE BULLET ABOVE:** what is still shared is the certificate a handshake
+  presents and the client certificate it carries, because a socket has no path
+  to put a segment in and — unlike the directory — no name inside it to put one
+  in either. **The two TLS listeners were on this list until 2026-09-16**, when
+  they were DELETED and what they did moved onto the main port. **Kerberos was
+  on it until 2026-09-15**, when the realm name inside the protocol turned out
+  to be exactly such a name. **SPIFFE LEFT THIS LIST ON 2026-09-12
   AND THE SENTENCE IT LEFT BEHIND IS WORTH KEEPING**: it read *SPIFFE's sockets
   are still shared and its X.509 authority is not, since 2026-09-11, and the two
   facts are compatible for exactly one reason — the trust ANCHOR is the service
@@ -4521,8 +4528,9 @@ for the process, and an Issuing CA under each for every use case: `jose`,
 `scep` and `tls-client` under a realm, `tls` under the process. (This sentence put `spiffe` under the
 process for two days after the paragraph below moved it.) **Every key pair this
 service generates is a leaf of it**, so an
-operator installs one anchor and it covers 8443, 9443, LDAPS 636, the main port
-and every token, assertion and signed document this service issues.
+operator installs one anchor and it covers the main port, LDAPS 636, the
+debugger listener and every token, assertion and signed document this service
+issues.
 
 **WHAT REVERSED IS THE SENTENCE BELOW, and what replaced it is not a weaker
 claim.** *IT IS PER REALM* used to be argued here as: a CA shared across realms
@@ -5171,7 +5179,7 @@ that — the fix lives in two files, and a mutation run showed that pinning only
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
 `pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client
-certificate on 8443, 9443 or the main port, an X509-SVID at the SPIRE Server API
+certificate on the main port (and on 8443 and 9443, deleted 2026-09-16), an X509-SVID at the SPIRE Server API
 and an assertion's `x5c` were checked against their anchors and never against a
 list. **One function answers** — `verdictFor(input)` (asynchronous) or
 `localVerdictFor(input)` (the register only, synchronous) — `good`, `revoked`
@@ -6685,10 +6693,11 @@ missing. Fourteen mutants, all caught.
 ## 3ag. `tls_client_certificates.js`: TRUSTING THE ROOT IS NOT TRUSTING WHAT IT ISSUED (2026-09-13)
 
 `/portal/signing-key` hands a person a TLS client certificate to install in a
-browser. It is useless unless the TLS listeners trust its chain, their client
-truststore was empty by default, and OpenSSL will not end a path at an Issuing CA
-without a partial-chain flag node does not expose — **so the listeners trust the
-SERVICE ROOT**, behind `tls.trustIssuedClientCertificates` (`tls/CLAUDE.md`).
+browser. It is useless unless the listener it is presented to trusts its chain,
+that client truststore was empty by default, and OpenSSL will not end a path at
+an Issuing CA without a partial-chain flag node does not expose — **so every
+listener trusts the SERVICE ROOT**, behind `tls.trustIssuedClientCertificates`
+(`tls/CLAUDE.md`).
 
 **THE ROOT VOUCHES FOR EVERY KEY PAIR THIS SERVICE HAS EVER ISSUED.** An
 application's RFC 7523 key pair has no extended key usage, which OpenSSL reads as
@@ -6712,11 +6721,11 @@ because a leaf failing two at once hid two deleted checks in the first round:
 A chain through NO held authority answers `issuedHere: false` and every door
 treats it exactly as before — that is an anchor somebody installed at `/tls/trust`.
 
-**THE REALM IS THE ISSUING CA'S.** The TLS listeners are shared by every realm and
-a socket has no path to carry one, so `identityOf()` answers the realm of the
-authority that signed the leaf and the listeners start the session and record the
-authentication there (`realms.run()`). `checkSocket()`, for the main-port doors
-that DO have an ambient realm — `mtls.peerVerified()` and SCIM's client-certificate
+**THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
+`identityOf()` answers the realm of the authority that signed the leaf, and
+`GET /tls/sign-in` starts the session and records the
+authentication there (`realms.run()`). `checkSocket()`, for the doors
+that read a certificate under an ambient realm — `mtls.peerVerified()` and SCIM's client-certificate
 scheme — refuses a certificate from another realm's authority, which is
 `pki.verifyLeaf()`'s Intermediate rule read at a TLS door.
 
@@ -6747,7 +6756,7 @@ whether the holder's record still lists a certificate — the `tls-client`
 register for this module's own, `cert_enrollment.findEnrolled()` in the
 certificate's realm for ACME, EST and SCEP — and is what RFC 8705's implicit
 mapping at the token endpoint asks (`oauth-oidc/CLAUDE.md` 3an). An
-application's certificate signs nobody in at 8443 or 9443 (`tls/CLAUDE.md`).
+application's certificate signs nobody in at `GET /tls/sign-in` (`tls/CLAUDE.md`).
 
 **A PERSON'S CERTIFICATE FOLLOWS THEIR ENTRY SINCE 2026-09-14.** The CN, the SAN, the
 slot and an enrolled certificate's issued record all carry the name the person had at
@@ -7065,8 +7074,8 @@ provided by `websecurity.js` at require time. What a maintainer needs:
   `helpers.forwardedFrom()` asks the same question for the base URL.
 * **Mutual TLS needs L4 passthrough.** No forwarded client-certificate header is
   read in any mode and none will be (a forwarded certificate is a certificate
-  anybody can forge). A balancer that TERMINATES TLS on 8443, 9443, the main
-  port when `global.https` is on, or the SPIRE Server API disables RFC 8705
+  anybody can forge). A balancer that TERMINATES TLS on the main
+  port when `global.https` is on, or on the SPIRE Server API, disables RFC 8705
   `tls_client_auth` and certificate-bound tokens, certificate sign-in, the XACML
   certificate gates and SPIRE's SVID authentication. Pass those listeners
   through at L4 (TCP) and terminate TLS on the node. Behind an L4 balancer the
@@ -7078,8 +7087,9 @@ provided by `websecurity.js` at require time. What a maintainer needs:
 
 `global.proxyProtocol` (`off` | `v2`, restart-only) reads a HAProxy PROXY
 protocol v2 header off every TCP listener this service owns — the main port,
-8443/9443, LDAP 389/636, the KDC's TCP listener, the debugger and the plain PKI
-listener — for an AWS Network Load Balancer with TLS passthrough and
+LDAP 389/636, the KDC's TCP listener, the debugger and the plain PKI
+listener (and 8443/9443 until both were deleted on 2026-09-16) — for an AWS
+Network Load Balancer with TLS passthrough and
 `proxy_protocol_v2.enabled`. The file's header argues every point; the ones a
 maintainer of a listener has to know:
 
@@ -7099,7 +7109,7 @@ maintainer of a listener has to know:
 * **The address is put on the SOCKET, not in a field.** The TCP handle gets an
   own `getpeername()` and the socket's `_peername` is replaced, so express's
   `req.ip`, `clientAddressOf()`, the request pool's `X-Forwarded-For`, ldapjs's
-  connection id, the LDAP bind limiter, the KDC and `/tls/whoami` read the
+  connection id, the LDAP bind limiter and the KDC read the
   client with no change. The HANDLE because a `TLSSocket` asks its TLSWrap,
   which proxies `getpeername` to the TCP handle — shadowing the JS socket's
   getter would miss every TLS reader (measured).

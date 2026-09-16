@@ -247,8 +247,10 @@ const SUBSYSTEMS = [
     what: 'The bundle endpoint, the Workload API and the SPIRE Server API.' },
   { id: 'TLS', label: 'TLS listeners',
     where: 'tls/',
-    what: 'The 8443 and 9443 listeners, the trust store, and the server ' +
-          'certificate three other sockets share.' },
+    what: 'The client-certificate truststore, the sign-in a verified one ' +
+          'starts, and the server certificate the main port and LDAPS 636 ' +
+          'share. The 8443 and 9443 listeners it was named for were deleted ' +
+          'on 2026-09-16.' },
   { id: 'VC', label: 'OpenID4VCI, OpenID4VP and DID',
     where: 'oid4vc/',
     what: 'The credential issuer, the verifier, credential offers and DID ' +
@@ -609,9 +611,10 @@ const CODES = [
       'service runs.',
     spec: '' },
   { code: 'STS-CORE-0032',
-    summary: 'The 8443/9443 TLS endpoints could not start; the rest of the ' +
-      'service runs.',
-    spec: '' },
+    summary: 'The 8443/9443 TLS endpoints could not start. Retired ' +
+      '2026-09-16: both listeners were deleted and this module binds nothing, ' +
+      'so there is no bind here to fail',
+    spec: '', retired: true },
   { code: 'STS-CORE-0033',
     summary: 'The last flush at shutdown failed, so the process exited ' +
       'non-zero and a change made just before it may not have been ' +
@@ -2017,8 +2020,9 @@ const CODES = [
     summary: 'A presented certificate chain was refused because a ' +
       'certificate in it is REVOKED — on this service\'s own register, or ' +
       'on the verified CRL of a foreign issuer (common/revocation_status.js).',
-    spec: 'Per door: HTTP 403 on 9443; no session and no recorded ' +
-      'authentication on 8443; invalid_client at the token endpoint ' +
+    spec: 'Per door: no session at GET /tls/sign-in (HTTP 200 with ' +
+      'signedIn false) and no recorded authentication for the sighting on ' +
+      'the main port; invalid_client at the token endpoint ' +
       '(tls_client_auth, and an x5c assertion as invalid_client or ' +
       'invalid_grant); HTTP 403 access_denied at /xacml; the SCIM ' +
       'client-certificate scheme not accepted (401 if nothing else ' +
@@ -4836,6 +4840,23 @@ const CODES = [
       'authorization server advertises in its introspection_*_values_' +
       'supported members.',
     spec: 'invalid_client (HTTP 400)' },
+  // THE UNKNOWN CLIENT AT THE TOKEN ENDPOINT (#34, 2026-09-15). OAuth 2.1
+  // section 4.3.1's rotation is bookkeeping about a chain belonging to a
+  // client, so a mode that rotates has to know whose chain it is.
+  { code: 'STS-OAUTH-0297',
+    summary: 'In OAuth 2.1 mode, a grant a client makes in its own name ' +
+      '(authorization_code, refresh_token, client_credentials, token ' +
+      'exchange) named no client_id at all.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0298',
+    summary: 'In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant ' +
+      'arrived with no client, so it was answered with an access token and ' +
+      'NO refresh token (recorded, not refused).',
+    spec: 'none — the token response is issued without refresh_token' },
+  { code: 'STS-OAUTH-0299',
+    summary: 'In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant ' +
+      'named a client that is not registered or declared here.',
+    spec: 'invalid_client (HTTP 401)' },
   // SOFTWARE STATEMENTS (RFC 7591 section 2.3), 2026-09-13. After the OAuth 2.1
   // block reserved at 0270..0299.
   { code: 'STS-OAUTH-0300',
@@ -5379,6 +5400,59 @@ const CODES = [
     summary: 'A DPoP proof was refused because the claim store could not be ' +
       'asked whether its jti had been used (fail closed).',
     spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
+  // SENDER CONSTRAINTS ASKED FOR BY CONFIGURATION (#34, 2026-09-15). Neither
+  // OAuth 2.1 nor RFC 9700 requires DPoP or mutual TLS; these eleven are the
+  // refusals an operator turns on when they want more than either document
+  // asks for, and each names the setting that caused it.
+  { code: 'STS-OAUTH-0521',
+    summary: 'A token request that would issue a refresh token carried no ' +
+      'DPoP proof, and oauth2.refreshTokenRequireDpop is on.',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0522',
+    summary: 'A token request that would issue a refresh token was made over ' +
+      'a connection with no verified client certificate, and ' +
+      'oauth2.refreshTokenRequireMtls is on.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0523',
+    summary: 'A refresh token carrying no cnf.jkt was presented while ' +
+      'oauth2.refreshTokenRequireDpop is on; it is refused rather than bound ' +
+      'to the key presenting it.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0524',
+    summary: 'A refresh grant carried no DPoP proof while ' +
+      'oauth2.refreshTokenRequireDpop is on.',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0525',
+    summary: 'A refresh token carrying no cnf x5t#S256 was presented while ' +
+      'oauth2.refreshTokenRequireMtls is on, by a client RFC 8705 section ' +
+      '7.1 does not cover.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0526',
+    summary: 'A refresh grant was made over a connection with no verified ' +
+      'client certificate while oauth2.refreshTokenRequireMtls is on.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0527',
+    summary: 'A setting requires mutual TLS, but the port the request ' +
+      'arrived on is not bound as HTTPS and cannot ask for a client ' +
+      'certificate (global.https).',
+    spec: 'invalid_request (HTTP 400 / 401)' },
+  { code: 'STS-OAUTH-0528',
+    summary: 'An access token carrying no cnf.jkt was presented at a ' +
+      'resource while oauth2.accessTokenRequireDpop is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0529',
+    summary: 'A DPoP-bound access token was presented with no proof while ' +
+      'oauth2.accessTokenRequireDpop is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0530',
+    summary: 'An access token carrying no cnf x5t#S256 was presented at a ' +
+      'resource while oauth2.accessTokenRequireMtls is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0531',
+    summary: 'A certificate-bound access token was presented at a resource ' +
+      'over a connection carrying no matching certificate, while ' +
+      'oauth2.accessTokenRequireMtls is on.',
+    spec: 'invalid_token (HTTP 401)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -7619,14 +7693,17 @@ const CODES = [
       'certificate.',
     spec: '' },
   { code: 'STS-TLS-0021',
-    summary: 'The required-client-certificate listener refused a handshake, ' +
-      'usually a client certificate missing or not verifying against ' +
-      'the truststore.',
+    summary: 'A TLS handshake failed on a listener this module watches — ' +
+      'a version, cipher or certificate mismatch, or a non-TLS client. It ' +
+      'named the required-client-certificate listener until 2026-09-16, when ' +
+      'that listener was deleted; it is now the main port, where a client ' +
+      'certificate is asked for and never required',
     spec: 'TLS handshake failure' },
   { code: 'STS-TLS-0022',
     summary: 'A TLS handshake failed on the optional-client-certificate ' +
-      'listener (a version, cipher or non-TLS mismatch).',
-    spec: 'TLS handshake failure' },
+      'listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the ' +
+      'one code for a failed handshake now',
+    spec: 'TLS handshake failure', retired: true },
   { code: 'STS-TLS-0023',
     summary: 'A /tls or /tls/forwarded request carried a format parameter ' +
       'other than json or html.',
@@ -7637,8 +7714,9 @@ const CODES = [
       'reach the port.',
     spec: 'HTTP 403' },
   { code: 'STS-TLS-0025',
-    summary: 'A TLS listener could not bind its port.',
-    spec: '' },
+    summary: 'A TLS listener could not bind its port. Retired 2026-09-16: ' +
+      'this module owns no listener to bind',
+    spec: '', retired: true },
   { code: 'STS-TLS-0026',
     summary: 'The TLS listener certificate does not chain to this service\'s ' +
       'Root and re-issuing it produced the same certificate.',
@@ -7663,10 +7741,11 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0031',
     summary: 'The required-client-certificate listener refused a verified ' +
-      'certificate this service issued that is not a TLS client identity ' +
-      '(not from a TLS client or enrollment Issuing CA, no clientAuth, or no ' +
-      'single urn:sts:person:/application: name).',
-    spec: 'HTTP 403 with the connection report' },
+      'certificate this service issued that is not a TLS client identity. ' +
+      'Retired 2026-09-16 with that listener: the same certificate is now ' +
+      'refused where it is USED — no session at GET /tls/sign-in, no client ' +
+      'authentication at the token endpoint — rather than at a socket',
+    spec: 'HTTP 403 with the connection report', retired: true },
   { code: 'STS-TLS-0032',
     summary: 'The file named by tls.certificateFile holds self-signed ' +
       'certificates, none of which signs the chain the listener presents, ' +
@@ -10987,6 +11066,16 @@ const CODES = [
     summary: 'A users or groups create that had claimed its name across ' +
       'nodes threw before it could answer; the claim was given back.',
     spec: 'HTTP 500' },
+  // THE SAME HOLE ONE CONSTRAINT ALONG (#34, 2026-09-15): this gate checked
+  // the certificate binding and never the DPoP one.
+  { code: 'STS-API-0120',
+    summary: 'A DPoP-bound access token (cnf.jkt) was presented at ' +
+      '/admin-api as a Bearer token.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-API-0121',
+    summary: 'A DPoP proof presented at /admin-api did not verify, and the ' +
+      'proof check reported no code of its own.',
+    spec: 'invalid_dpop_proof (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -11742,7 +11831,16 @@ const CODES = [
   { code: 'STS-DBG-0030',
     summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
       'presented to the debugger on a connection without that certificate.',
-    spec: 'invalid_token (HTTP 401)' }
+    spec: 'invalid_token (HTTP 401)' },
+  // #34 (2026-09-15), the DPoP half of the row above.
+  { code: 'STS-DBG-0031',
+    summary: 'A DPoP-bound access token (cnf.jkt) was presented to the ' +
+      'debugger as a Bearer token.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-DBG-0032',
+    summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
+      'proof check reported no code of its own.',
+    spec: 'invalid_dpop_proof (HTTP 401)' }
   // ===== END ===============================================================
 ];
 

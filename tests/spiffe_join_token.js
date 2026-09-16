@@ -144,9 +144,10 @@ function run(t) {
                             'out.json');
   const env = Object.assign({}, process.env, {
     LOG_LEVEL: 'fatal', PROBE_OUT: outFile,
-    // No socket is bound by requiring the server; these keep a stray bind off
-    // anything live all the same.
-    SPIFFE_GRPC_PORT: '0', STS_TLS_PORT: '0', STS_MTLS_PORT: '0'
+    // No socket is bound by requiring the server; this keeps a stray bind off
+    // anything live all the same. (`STS_TLS_PORT` and `STS_MTLS_PORT` were
+    // here too until 2026-09-16, when the listeners they named were deleted.)
+    SPIFFE_GRPC_PORT: '0'
   });
   delete env.CONFIG_FILE;
   const child = childProcess.spawnSync(process.execPath, ['-e', childScript()],

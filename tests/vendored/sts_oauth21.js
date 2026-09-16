@@ -581,6 +581,45 @@ async function theTokenEndpointsClients(issuer) {
   log.debug("Leaving theTokenEndpointsClients().");
 }
 
+// ---------------------------------------------------------------------------
+// #34 (2026-09-15). Section 4.3.1's rotation is bookkeeping about a chain
+// belonging to a CLIENT, so this mode refuses a grant a client makes in its
+// own name with no client_id at all — which, before this, skipped the
+// registered-client check entirely and was rotated as if it belonged to
+// somebody.
+//
+// The control is the refusal in the OTHER realm: the same request there is
+// refused for the token being nonsense, which is a different answer and proves
+// this one is the mode and not the token.
+// ---------------------------------------------------------------------------
+async function theUnnamedClient() {
+  log.debug("Entering theUnnamedClient().");
+  log.info("=== 7. a grant made in no client's name ===");
+  const unnamed = await token(PREFIX, { grant_type: "refresh_token",
+    refresh_token: "not-a-refresh-token" });
+  check("A REFRESH REQUEST NAMING NO CLIENT IS REFUSED invalid_client in " +
+        "OAuth 2.1 mode, before the token is looked at", function () {
+          assert.strictEqual(unnamed.status, 401, unnamed.raw.slice(0, 300));
+          assert.strictEqual(unnamed.body && unnamed.body.error,
+                             "invalid_client", unnamed.raw.slice(0, 300));
+        });
+  check("and the refusal names no error code — those are recorded, never sent",
+        function () {
+          assert.ok(unnamed.raw.indexOf("STS-OAUTH-") < 0,
+                    unnamed.raw.slice(0, 300));
+        });
+  const outside = await token("", { grant_type: "refresh_token",
+    refresh_token: "not-a-refresh-token" });
+  check("while the default realm refuses the same request for the TOKEN " +
+        "instead — invalid_grant, which is the control on the check above",
+        function () {
+          assert.strictEqual(outside.status, 400, outside.raw.slice(0, 300));
+          assert.strictEqual(outside.body && outside.body.error,
+                             "invalid_grant", outside.raw.slice(0, 300));
+        });
+  log.debug("Leaving theUnnamedClient().");
+}
+
 async function theSecretLimit() {
   log.debug("Entering theSecretLimit().");
   log.info("=== 6. a client secret that keeps failing ===");
@@ -647,6 +686,7 @@ async function test() {
   await theCodeFlowWithoutRedirectUri(issuer);
   await pkceForEveryClient();
   await theTokenEndpointsClients(issuer);
+  await theUnnamedClient();
   await theSecretLimit();
   await registration();
   assert.ok(checks >= 30,
@@ -665,7 +705,8 @@ program
       "unregistered client refused on this server, PKCE for confidential " +
       "clients and the nonce exemption, the token endpoint's client " +
       "refusals, the sole-issuer client assertion audience, the client " +
-      "secret rate limit, and registration's mirrors.")
+      "secret rate limit, the grant made in no client's name, and " +
+      "registration's mirrors.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

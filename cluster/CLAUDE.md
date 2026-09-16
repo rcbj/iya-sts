@@ -487,8 +487,10 @@ result as the store rows only.
 (`ldap.connections-cluster`, `ssf.delivery`): a sign-out writes an instruction
 by identity that every other node's socket-holding process acts on, and a
 per-node table lists every node's bound connections — reported as instructed,
-never closed (`ldap/CLAUDE.md`, *And across NODES*); the 8443/9443 listeners and
-the KDC catch up with the cluster before a certificate sign-in or a TGS-REQ
+never closed (`ldap/CLAUDE.md`, *And across NODES*); the certificate sign-in and
+the KDC catch up with the cluster before a session or a TGS-REQ — it was the
+8443 and 9443 listeners' own handler until both were deleted on 2026-09-16 and
+is `GET /tls/sign-in` now
 (`tls/CLAUDE.md`, `kerberos/CLAUDE.md`); a session's end is reported once
 through a claim (`authn/CLAUDE.md`); a poll on a shared store never writes a
 row an acknowledgement deleted, a stream's dead and revived transitions are

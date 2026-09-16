@@ -270,8 +270,9 @@ function certificateIdentity(certificate) {
   // RDN types, this service has exactly one function that turns it into a DN
   // (`helpers.dnRfc4514()`), and a second join written here would produce a
   // string that DIFFERED from the one the same certificate writes arriving on
-  // 8443 or 636 — which is two identities for one certificate. The other side
-  // of the slot has that function; this module does not and should not.
+  // the main port or 636 — which is two identities for one certificate. The
+  // other side of the slot has that function; this module does not and should
+  // not.
   const named = directory.certificateIdentity(certificate);
   log.debug('Leaving certificateIdentity(). dn=' + named.dn);
   return { dn: named.dn || '', commonName: named.commonName || '',

@@ -3571,9 +3571,10 @@ function revocationPane(json) {
     'the relying party. That is true of every certificate authority there ' +
     'has ever been, and it is exactly why a client author would point their ' +
     'stack at this one. <strong>This service does not consult it ' +
-    'either</strong> &mdash; a client certificate presented on 8443 or 9443 ' +
-    'is checked against the anchors on <code>/tls/trust</code> and no CRL is ' +
-    'fetched for it, so a certificate revoked here still gets in here.</p>',
+    'either</strong> &mdash; a client certificate presented on the main ' +
+    'port or on LDAPS 636 is checked against the anchors on ' +
+    '<code>/tls/trust</code> and no CRL is fetched for it, so a certificate ' +
+    'revoked here still gets in here.</p>',
     'What revoking here does, and the three things it does not do');
 
   const rotation = admin.note(
@@ -4004,9 +4005,10 @@ function renderPki(req, res, draft, banner, extra, certificate) {
                   'Intermediate CA per scope, and an Issuing CA for each use ' +
                   'case under it.</strong> Every key pair this service ' +
                   'generates is a leaf of this tree &mdash; the signing keys ' +
-                  'of every realm, and the certificate the TLS listeners ' +
-                  'serve &mdash; so an operator installs ONE anchor and it ' +
-                  'covers 8443, 9443, LDAPS 636, the main port and every ' +
+                  'of every realm, and the certificate the main port and ' +
+                  'LDAPS 636 serve &mdash; so an operator installs ONE ' +
+                  'anchor and it ' +
+                  'covers both of those sockets and every ' +
                   'token this service signs.<p><strong>A realm shares the ' +
                   'Root and has an Intermediate of its own</strong>, and ' +
                   'that is where the realm boundary is: with one Root, ' +

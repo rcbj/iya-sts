@@ -2996,7 +2996,7 @@ function jwkThumbprintUri(jwk) {
 // `x5t#S256` at the far end — and that is nonetheless perfectly stable, so it
 // agrees with itself everywhere this service reports it and disagrees only with
 // the handshake. It was published on GET /admin/ldap/service and in /tls's
-// views as the certificate 636, 8443 and 9443 present.
+// views as the certificate 636 and the main port present.
 //
 // The first certificate is the leaf, which is what those sockets present and
 // what every consumer of a chain reads; the rest are the path to it.

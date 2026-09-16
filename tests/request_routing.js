@@ -739,7 +739,14 @@ function checkTheSurfacePool(t) {
           /options\.from && options\.from\.stsProtocolWorker/.test(rpSource),
           'oidc_rp.js pins the back channel to the hinted worker in a ' +
           'surface worker', 'oidc_rp.js');
-  const calls = rpSource.match(/await backChannel\(\{[\s\S]*?\}\);/g) || [];
+  // BOTH SHAPES SINCE #34 (2026-09-15). The two token requests go through
+  // `tokenRequestWithProof()`, which adds the DPoP proof and hands everything
+  // else — `from` included — to `backChannel()`. Counting only the direct
+  // calls would have quietly dropped the two that matter most here: the code
+  // redemption and the renewal are the hops this whole check exists about.
+  const calls = (rpSource.match(/await backChannel\(\{[\s\S]*?\}\);/g) || [])
+    .concat(rpSource.match(
+      /await tokenRequestWithProof\([^,]+, \{[\s\S]*?\}\);/g) || []);
   t.check(calls.length >= 4 && calls.every(function (one) {
     return /from: req/.test(one);
   }), 'and every one of its ' + calls.length + ' back-channel calls passes ' +

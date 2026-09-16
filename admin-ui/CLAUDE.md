@@ -1979,8 +1979,10 @@ stream, clear what has been received — each have their operation on
 
 ## `/admin/tls/trust` AND THE THIRTEENTH SLOT (2026-09-12)
 
-The client-certificate truststore: every anchor 8443, 9443, LDAPS 636 and the main port
-verify a client certificate against, with its subject, issuer, serial, validity, SHA-256
+The client-certificate truststore: every anchor the main port verifies a client
+certificate against — it was 8443, 9443, LDAPS 636 and the main port until the
+two TLS listeners were deleted on 2026-09-16, and LDAPS asks for no client
+certificate — with its subject, issuer, serial, validity, SHA-256
 fingerprint and SOURCE (`file` from `tls.trustAnchorsFile`, `runtime` otherwise), paged,
 with an add form (a textarea of PEM blocks) and a Remove button on every row. It is the
 runtime door product mode did not have — `POST /tls/trust` needs no credential, so product
@@ -5667,8 +5669,11 @@ how the paragraph that refused an endpoint list (under *The eight new pages*)
 was answered rather than ignored. A row names Express ROUTES; the name comes
 from `sts_metadata.js`'s `ENDPOINTS`, the methods from the router, the URL from
 `baseUrlOf(req)` so it carries the realm prefix. Sockets the router cannot see
-(KDC, Kerberos service, LDAP/LDAPS at the realm's base DN, 8443/9443, SPIFFE's
-gRPC bindings for this realm) are built from their settings. `:param` is shown
+(KDC, Kerberos service, LDAP/LDAPS at the realm's base DN, SPIFFE's
+gRPC bindings for this realm) are built from their settings. The TLS row is one
+of them and names the MAIN PORT since 2026-09-16 — it was 8443 and 9443 until
+both listeners were deleted, and a client certificate is asked for and never
+required where every other protocol answers. `:param` is shown
 as `{param}`, and a named authorization server's routes are repeated per server
 by id.
 

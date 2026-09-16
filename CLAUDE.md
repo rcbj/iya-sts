@@ -74,7 +74,7 @@ files did not change; the paths did.
 | `scim/` | `/scim/v2`, its authentication and attribute mapping, and two console pages (`/admin/scim`, `/admin/scim/monitor`). `scim/CLAUDE.md`. |
 | `ssf/` | The Shared Signals Framework — the one family here that TALKS BACK — with CAEP and RISC as the two vocabularies over it and this service's own console and portal as registered receivers. `ssf/CLAUDE.md`. |
 | `spiffe/` | Six libraries, one server module and the vendored `protos/`: a trust domain per realm under the service Root, bound on an address of its own when turned on. `spiffe/CLAUDE.md`. |
-| `tls/` | The 8443 and 9443 listeners, and the certificate three other sockets share. `tls/CLAUDE.md`. |
+| `tls/` | The certificate three sockets share, the client truststore, the sighting on the main port and `GET /tls/sign-in`. **It owned the 8443 and 9443 listeners until 2026-09-16 and owns no socket now.** `tls/CLAUDE.md`. |
 | `oid4vc/` | OpenID4VCI, OpenID4VP and DID Core. `oid4vc/CLAUDE.md`. |
 | `admin-core/` | What both admin surfaces DO, in a directory neither owns: `admin_actions.js`, `admin_views.js`, `certificate_views.js`. It requires route-registering modules, so it may be required at 18 or later and is not in `common/`. `admin-core/CLAUDE.md`. |
 | `admin-ui/` | The console at `/admin`, its gate and two roles, every setting drawn on its protocol's page (`SETTING_HOMES`), the two server-laid-out drawings, and the pages that report on this service itself — `/admin/crypto-metadata`, `/admin/pki`, `/admin/secrets`, `/admin/api-explorer`. `admin-ui/CLAUDE.md`. |
@@ -121,7 +121,7 @@ these protocol families:
 - **OpenID4VCI 1.0, OpenID4VP 1.0**, and W3C DID Core with DIF domain linkage.
 - **LDAP v3**: an embedded directory on 389 and LDAPS 636.
 - **SCIM 2.0**: provisioning into that same directory, with no store of its own.
-- **TLS / mutual TLS**: listeners on 8443 and 9443 whose content is what the server saw of the connection.
+- **TLS / mutual TLS**: the main port asks every connection for a client certificate and requires none; `GET /tls/sign-in` signs the holder of a verified one in.
 - **Shared Signals** (SSF 1.0, with CAEP and RISC): a transmitter, and a receiver of its own.
 - **A certificate authority**: one Root, an Intermediate per realm, CRLs and OCSP (`/admin/pki`).
 - **SPIFFE**: the bundle endpoint, the Workload API and the SPIRE Server API, per trust realm.
@@ -252,13 +252,16 @@ outside it:
    the realm a person signed in through; the default realm's is the service
    roster over every realm, and `admin-ui/admin_scope.js` refuses a realm's own
    everything about the process. — `admin-ui/CLAUDE.md` 8d, `mgmt-api/CLAUDE.md`
-5. **The two TLS listeners are still shared**, having no path and no name
-   inside the protocol to put a realm in. SPIFFE left that list on 2026-09-12 —
-   a realm gets a trust domain and sockets of its own, told apart by ADDRESS —
-   and **Kerberos left it on 2026-09-15 (#33)**: a KDC per realm on the shared
-   port 88, told apart by the Kerberos realm NAME in the request, with the two
-   sockets and the development-mode trust still the process's. —
-   `tls/CLAUDE.md`, `spiffe/CLAUDE.md`, `kerberos/CLAUDE.md`
+5. **A client certificate at the handshake is still shared**, having no path
+   and no name inside the protocol to put a realm in — the two TLS listeners
+   left this list on 2026-09-16 by being DELETED, and what replaced them is a
+   route, so the SESSION goes in the realm of the authority that signed the
+   leaf. SPIFFE left it on 2026-09-12 — a realm gets a trust domain and sockets
+   of its own, told apart by ADDRESS — and **Kerberos left it on 2026-09-15
+   (#33)**: a KDC per realm on the shared port 88, told apart by the Kerberos
+   realm NAME in the request, with the two sockets and the development-mode
+   trust still the process's. — `tls/CLAUDE.md`, `spiffe/CLAUDE.md`,
+   `kerberos/CLAUDE.md`
 6. **A realm may be in RFC 9700 mode — or OAuth 2.1 mode, which implies it —
    while the process is not** — the `realmRuntime` marker, which must not grow
    rows by analogy. — `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md`
@@ -427,14 +430,16 @@ made that collision harmless.
 
 ## Socket owners start their listeners from `listen()`, not at require time
 
-The two Kerberos modules, `ldap/ldap_server.js`, `tls/tls_server.js`,
+The two Kerberos modules, `ldap/ldap_server.js`,
 `spiffe/spiffe_server.js` and `debugger/debugger_server.js` are the exception to rule 1 in one direction only:
 requiring them registers their HTTP views like everything else, but **their own
 listeners are started from `listen()` in `server.js`** — binding a port can fail,
 and a `require` that throws takes the whole service down where a route cannot. A
 failure to bind is RECORDED rather than thrown and published on the family's own
-view (`GET /admin/ldap/service`, `GET /tls`, SPIFFE per socket), because the HTTP
-view answers 200 either way.
+view (`GET /admin/ldap/service`, SPIFFE per socket), because the HTTP
+view answers 200 either way. **`tls/tls_server.js` was on that list until
+2026-09-16**, when its two listeners were deleted; it keeps `listen()` as a
+no-op so the call site did not change on the same day (`tls/CLAUDE.md`).
 
 **`persistence/persistence.js` binds nothing and still goes first**: the store
 is opened by `persistence.start()` before any listener binds, and **a failure
@@ -753,7 +758,7 @@ the file the row names.
 | ~~Revoke a certificate it issued~~ — **reversed 2026-09-11**: a CRL and OCSP per CA, and consulted for presented certificates since 2026-09-12 | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `docs/pki.md` |
 | Keep a certificate authority across a restart, **in development mode** | `common/CLAUDE.md` |
 | Enforce `value`/`values` in an OIDC Core 5.5 claims request, or treat `essential` as an instruction | `oauth-oidc/CLAUDE.md` |
-| Require DPoP — nonce mode makes proofs fresher, not mandatory | `oauth-oidc/CLAUDE.md` |
+| ~~Require DPoP — nonce mode makes proofs fresher, not mandatory~~ — **reversed 2026-09-15 (#34)**: five settings, all off by default because neither OAuth 2.1 nor RFC 9700 asks for any of them (rule 3ao) | `oauth-oidc/CLAUDE.md` |
 | ~~Turn a verified client certificate into a login~~ — **reversed 2026-09-05**, with revocation consulted first since 2026-09-12 | `tls/CLAUDE.md` |
 | Verify anything in an issued credential's values, which are invented | `oid4vc/CLAUDE.md` |
 | Turn a verified presentation into a sign-on | `oid4vc/CLAUDE.md` |
@@ -766,7 +771,7 @@ the file the row names.
 | Offer a self-service reset of a second factor | `admin-ui/CLAUDE.md` |
 | Decide who may delegate to whom IN THE ACT, in two of the three families that can | `common/CLAUDE.md`, `kerberos/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | ~~Give every trust realm a certificate authority of its own~~ — **reversed 2026-09-11**: one Root, an Intermediate per realm, and the boundary moved down a tier | `common/CLAUDE.md`, `docs/pki.md` |
-| Give a trust realm its own TLS listeners (the directory, SPIFFE and — **reversed 2026-09-15 (#33)** — Kerberos came off this row: a KDC, a Kerberos realm and keys per trust realm, routed by the realm name on the shared port 88) | `common/CLAUDE.md`, `ldap/CLAUDE.md`, `spiffe/CLAUDE.md`, `kerberos/CLAUDE.md` |
+| ~~Give a trust realm its own Kerberos KDC or TLS listeners~~ — **reversed 2026-09-15 (#33)**: a KDC, a Kerberos realm and keys per trust realm, routed by the realm name on the shared port 88. The TLS listeners left this row on 2026-09-16 by being DELETED, and the directory and SPIFFE came off it earlier — so nothing is left of what it used to say | `common/CLAUDE.md`, `ldap/CLAUDE.md`, `spiffe/CLAUDE.md`, `kerberos/CLAUDE.md`, `tls/CLAUDE.md` |
 | ~~Give a trust realm its own administrator~~ — **reversed 2026-09-14 (#32)**: a realm's own roster, confined to the realm; the default realm's stays the service roster | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `ldap/CLAUDE.md` |
 | ~~Persist anything it MINTS~~ — **reversed 2026-09-06, in product mode on postgres only** | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.js` |

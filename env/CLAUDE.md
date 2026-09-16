@@ -37,11 +37,19 @@ file (the parent project's in-process Kerberos jobs) still gets plain HTTP, and
 `tests/config_realm_layer.js` still asserts what it always did. What changed is
 what these files SAY.
 
-The argument is one sentence: 8443, 9443 and LDAPS 636 were TLS on a certificate
+The argument was one sentence: 8443, 9443 and LDAPS 636 were TLS on a certificate
 the main port did not use, so a caller who had trusted this service's key for
 three sockets still met an unencrypted fourth on the port every protocol family
-actually answers on. **`STS_HTTPS=false` is the way back and is a supported
+actually answers on. **Two of those sockets were deleted on 2026-09-16 and the
+sentence is stronger for it**: LDAPS 636 and the debugger's listener are TLS on
+that certificate, and the port every protocol family answers on — which is now
+also the port a client certificate is presented to — has no business being the
+one in the clear. **`STS_HTTPS=false` is the way back and is a supported
 configuration, not an escape hatch.**
+
+**And these files no longer carry a `tls.port` or a `tls.mutualPort`**, which
+went with the listeners: a deployment that sets either gets the "unknown
+setting" warning at startup rather than a silent no-op.
 
 What it costs is that the FIRST fetch of the certificate cannot be verified —
 there is no plain listener left and the key does not exist until the process
