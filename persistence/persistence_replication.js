@@ -75,9 +75,9 @@
 // ---------------------------------------------------------------------------
 // WHAT STILL DOES NOT COORDINATE, SAID PLAINLY.
 //
-//   * **THE SOCKETS.** The KDC, the LDAP listeners, the main port and
-//     SPIFFE's four are bound per process. Coordination is about state, and a
-//     socket is not state.
+//   * **THE SOCKETS.** The KDC, the LDAP listeners, the main port, SPIFFE's
+//     gRPC sockets and the debugger listener are bound per process.
+//     Coordination is about state, and a socket is not state.
 //   * **THE REPLAY CACHES AND THE DPoP `jti` SETS CONVERGE RATHER THAN
 //     SYNCHRONISE, AND THAT IS A SECURITY STATEMENT.** Between a write in one
 //     process and its arrival in another there is a window the size of the
