@@ -46,7 +46,7 @@
 // second reason: it is process-wide at the top level and realm-scoped here.
 //
 // ---------------------------------------------------------------------------
-// MOSTLY NEGATIVES, for `tests/sts_dpop.js`'s reason.
+// MOSTLY NEGATIVES, for `sts_dpop.js`'s reason.
 //
 // A service that issues a token to somebody who holds the role looks finished
 // and can be worth nothing: it is what an unmodified service does for
@@ -110,7 +110,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -263,8 +263,9 @@ async function setSetting(key, value) {
 async function resetSetting(key) {
   log.debug("Entering resetSetting().");
   // `reset` RATHER THAN WRITING THE OLD VALUE BACK, for the reason
-  // tests/saml11_sso.js records: a `set` leaves `source: override` behind and
-  // tests/vendored/admin_api.js reads that field.
+  // tests/CLAUDE.md's *Restore a setting with `reset`* records: a `set` leaves
+  // `source: override` behind and tests/vendored/admin_api.js reads that
+  // field.
   const r = await postJson(api("/config/reset"), { key: key });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "resetting " + key + " should have worked; it answered " + r.status);
@@ -407,7 +408,7 @@ async function createTheRealm() {
 //
 // It used to remove it here and assert that the removal happened. What changed
 // is not the argument for the realm — it is still what keeps this job's
-// narrowed applications and its `xacml.roleIssuance` off out of every other
+// narrowed applications and its `roles.enforceIssuance` off out of every other
 // job's way — but what happens to it AFTERWARDS: **a realm a test run created
 // stays, because it is what a person reads when the run went red.** A realm is
 // a whole logical copy of the service, so its directory, its role register,
@@ -461,10 +462,12 @@ async function anUnconfiguredRealmRefusesNobody() {
     // with the management API's access token — seven when REMOTE_PEPS was
     // added, eight when XACML_USER joined it. The COUNT is asserted rather
     // than the names because this file is about the register rather than the
-    // catalogue — `sts_roles_builtin.js` drives each built-in role one section
-    // at a time and is where a new one earns its coverage. What matters here
-    // is that they are COMPUTED: an empty ou=roles has all of them, which is
-    // what makes a role usable in a realm nobody configured.
+    // catalogue — `sts_roles_builtin.js` drives the six computed from what the
+    // party IS one section at a time, the XACML jobs drive REMOTE_PEPS and
+    // XACML_USER, and `sts_admin_api_auth.js` the two scope-held ones; a new
+    // one earns its coverage in whichever of those it belongs. What matters
+    // here is that they are COMPUTED: an empty ou=roles has all of them, which
+    // is what makes a role usable in a realm nobody configured.
     //
     // THE TWO NEW ONES ARE COMPUTED FROM A SCOPE rather than from what the
     // party IS, which is a third shape beside the other two: EVERYBODY and its
@@ -492,7 +495,7 @@ async function anUnconfiguredRealmRefusesNobody() {
     // the endpoints publishing the documents this service enforces its own
     // access with and a named person's directory attributes, XACML_USER
     // reaches the four endpoints proper. A change that collapsed them would
-    // leave the count at seven and pass every other assertion in this file,
+    // leave the count at nine and pass every other assertion in this file,
     // so the name is checked here even though the catalogue is somebody
     // else's subject.
     assert.ok(register.body.builtIn.some(function (one) {
@@ -733,10 +736,10 @@ async function theAuthorizationEndpointRefuses() {
 
   // THE CONSENT SCREEN IS TURNED OFF FOR THIS SECTION, in this realm only, and
   // the ORDER it would impose is asserted at the end of it rather than driven
-  // through four times. `oauth2.consentRequired` is ON by default — the one
-  // policy in this service that is — so every flow below would otherwise stop
-  // at `/oauth2/consent`, and this job would be asserting the consent
-  // screen's markup while claiming to be about roles.
+  // through four times. `oauth2.consentRequired` is ON by default — one of
+  // the few policies in this service that is — so every flow below would
+  // otherwise stop at `/oauth2/consent`, and this job would be asserting the
+  // consent screen's markup while claiming to be about roles.
   await setSetting("oauth2.consentRequired", false);
 
   // AND NOW THE ENDPOINT ITSELF, which is what the preview is a preview OF.
@@ -906,15 +909,16 @@ async function groupsAndApplicationsHoldRoles() {
   // THE GROUP HALF. Nobody is added to the ROLE; a group is, and the person is
   // in the group — so the role is resolved through two lookups at decision
   // time rather than expanded on write.
-  // THE GROUP IS MADE THROUGH SCIM, and that is not a detour. `/admin-api`
-  // has no group-writing operation at all — `/admin-api/groups` is read-only,
-  // deliberately, because the directory's own doors are what write it — so
-  // SCIM is the door this service actually offers for creating a group with a
-  // member in it over HTTP. `ldapmodify` is the other and needs a socket.
-  // THE MEMBER IS A DN AND NOT A USERNAME, which cost a run to find out and is
-  // worth the four lines. A SCIM Group member's `value` is the member's SCIM
-  // id, and this service's SCIM id IS the directory entry's DN — so a bare
-  // username produces a group with a DANGLING member: it is stored, it is
+  // THE GROUP IS MADE THROUGH SCIM. It was written when `/admin-api` had no
+  // group-writing operation; `POST /admin-api/groups/create` has existed since
+  // 2026-09-09, and SCIM is kept here because it is still a door this service
+  // offers for creating a group with a member in it over HTTP. `ldapmodify` is
+  // another and needs a socket.
+  // THE MEMBER IS THE SCIM ID AND NOT A USERNAME, which cost a run to find out
+  // and is worth the lines. A SCIM Group member's `value` is the member's SCIM
+  // id — the directory entry's DN when this was written, its `entryUUID` since
+  // 2026-09-14 (`scim/CLAUDE.md`) — so a bare username produces a group with a
+  // DANGLING member: it is stored, it is
   // counted, `/admin/groups` shows it, and `groupsOfUser()` resolves nothing,
   // because that walk matches on the person's normalised DN. Every symptom is
   // "the group exists and nobody is in it", which reads as the ROLE not
@@ -1258,7 +1262,7 @@ async function test() {
            "at " + base);
 
   // A SERVICE THAT IS NOT THERE IS A FAILURE AND NOT A SKIP, which is the rule
-  // CLAUDE.md records the 2026-08-28 default flip for: a job that reports
+  // tests/CLAUDE.md records the 2026-08-28 default flip for: a job that reports
   // green having driven nothing is worse than one that is honestly absent.
   const status = await fetchJson(base + "/admin-api/status");
   assert.strictEqual(status.status, 200,

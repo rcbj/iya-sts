@@ -74,10 +74,12 @@
 // IN ADDITION, and it is not a difference these jobs could remove without
 // stopping being tests of the doors:
 //
-//   * **SCIM INVENTS THE REST.** `scim.js`'s create calls `createUser()`
-//     without `invent: false`, so `vc_claims.js` makes up every attribute the
-//     resource did not carry and writes it onto the entry. That is what a SCIM
-//     client actually gets here, and it is real work this door does per person.
+//   * **SCIM INVENTS THE REST, IN DEVELOPMENT MODE.** `scim.js`'s create
+//     calls `createUser()` without `invent: false`, so `vc_claims.js` makes up
+//     every attribute the resource did not carry and writes it onto the entry
+//     (product mode invents nothing — `mode.inventsClaimValues()`). That is
+//     what a SCIM client actually gets here, and it is real work this door
+//     does per person.
 //   * **THE LDAP `add` INVENTS NOTHING** and registers nobody: it is
 //     `putEntry()` and an audit row.
 //   * **`/admin-api` DOES EITHER**, and that job sends `invent: false` — which
@@ -146,7 +148,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }

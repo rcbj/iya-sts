@@ -3,7 +3,8 @@
 // ---------------------------------------------------------------------------
 // THE GUIDED POLICY EDITOR AT /admin/xacml/editor, DRIVEN IN A REAL BROWSER.
 //
-// This console has NO JAVASCRIPT — `app.js` serves it `script-src 'none'` and
+// This page has NO JAVASCRIPT — `app.js` serves the console `script-src
+// 'none'` (`/admin/api-explorer` is its one scripted page) and
 // `admin-ui/CLAUDE.md` refuses a script nine times over — so every "pick the
 // next valid element" dropdown on this page is computed on the SERVER by the
 // same code that will validate the result, and choosing one is a form POST that
@@ -111,7 +112,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, the arrangement tests/wait_for.js has.
+  // load, the arrangement tests/vendored/wait_for.js has.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -216,10 +217,11 @@ function editorUrl(policy) {
 // differently from the one the product uses.
 //
 // The CN is `xacml-user-1` — the identity `ldap_server.js` seeds into
-// `cn=xacml-users` in every realm — so nothing has to be configured for this
-// to be admitted. **It is NOT `remote-pep-1`**: that identity holds
-// `REMOTE_PEPS` and is refused at both of these doors, which is the whole
-// point of there being two roles.
+// `cn=xacml-users` in every realm in development mode (product seeds the group
+// without it) — so nothing has to be configured for this to be admitted.
+// **It is NOT `remote-pep-1`**: that identity holds `REMOTE_PEPS` and is
+// refused at both of these doors, which is the whole point of there being two
+// roles.
 // ---------------------------------------------------------------------------
 const credentials = require("../tools/pep-credential.js");
 const https = require("https");
@@ -1512,8 +1514,9 @@ async function theChooserOpensAnotherPolicy(driver) {
 //
 // Every page here is served `default-src 'none'` with `script-src 'none'` over
 // it, so a severe line is the browser saying this page asked for something its
-// own policy refuses. The editor is the page most likely to grow one — it is
-// the only console page anybody would be tempted to make interactive.
+// own policy refuses. The editor is the page most likely to grow one — besides
+// `/admin/api-explorer`, which already carries a script, it is the console
+// page anybody would most be tempted to make interactive.
 // ===========================================================================
 async function theBrowserConsoleIsClean(driver) {
   log.debug("Entering theBrowserConsoleIsClean().");
@@ -1566,9 +1569,10 @@ async function createTheRealm() {
   log.debug("Leaving createTheRealm().");
 }
 
-// THE CONSOLE ACCOUNT, in the DEFAULT realm where the console's session and its
-// role roster live, and the two staff members the rule is about, in this run's
-// realm where the PIP will look them up.
+// THE CONSOLE ACCOUNT, in the DEFAULT realm, where the console's session lives
+// and whose roster — the service roster — administers every realm
+// (`admin-ui/CLAUDE.md`, 8d), and the two staff members the rule is about, in
+// this run's realm where the PIP will look them up.
 async function createThePeople() {
   log.debug("Entering createThePeople().");
   const consoleAccount = await apiPost("/admin-api/users/create", {
