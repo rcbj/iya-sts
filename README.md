@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" alt="IYA STS — Security Token Service" width="453"></p>
+
 # iya-sts
 
 An **identity provider and security token service** that speaks seventeen protocol
@@ -47,6 +49,16 @@ that a feature which works in development has been hardened for product.
 The documentation below comes from the engineering notes of the project it came
 from, so it explains *why* things are the way they are. Most of it is the record of
 something having gone wrong once.
+
+## Architecture
+
+[![iya-sts architecture: the leader process and its listeners, the request dispatcher, three worker pools and the caches, the protocol subsystems and hosted surfaces, the shared layer of tokens and sessions, the shared services, and the embedded directory and key material above their stores](docs/iya-sts-architecture.jpeg)](docs/iya-sts-architecture.jpeg)
+
+One leader process owns every listener, and a request dispatcher hands work
+from it to three worker pools: crypto, admin and request. The protocol
+subsystems and hosted surfaces share one session model and one set of services,
+over the embedded directory and the key material in their stores.
+[`docs/architecture.md`](docs/architecture.md) walks through each layer.
 
 ## Where the code is
 
