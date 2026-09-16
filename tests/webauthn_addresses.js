@@ -137,13 +137,15 @@ function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('=== 3. both ceremonies ask the same functions ===');
   const root = path.join(__dirname, '..');
-  const authnSource = fs.readFileSync(path.join(root, 'authn', 'authn.js'),
+  const authnSource = fs.readFileSync(path.join(root, 'authn', 'authn.ts'),
                                       'utf8');
   const portalSource = fs.readFileSync(path.join(root, 'portal', 'portal.js'),
                                        'utf8');
-  t.check(/const expectedOrigin = expectedOriginFor\(base, credential\);/
+  // `this.` since the module became a class (#50).
+  t.check(/const expectedOrigin = (?:this\.)?expectedOriginFor\(base, credential\);/
             .test(authnSource) &&
-          /const rpRefusal = rpIdProblem\(base\);/.test(authnSource),
+          /const rpRefusal = (?:this\.)?rpIdProblem\(base\);/.test(
+            authnSource),
           'the sign-in screen\'s verification asks expectedOriginFor() and ' +
           'rpIdProblem() — read as source, because the only other evidence ' +
           'is a ceremony a browser performs');

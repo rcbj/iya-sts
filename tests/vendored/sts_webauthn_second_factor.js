@@ -5,7 +5,7 @@
 // ===========================================================================
 // A SECURITY KEY ENROLLED HERE IS DEMANDED HERE AFTERWARDS (2026-09-10).
 //
-// **THIS JOB EXISTS BECAUSE IT WAS NOT TRUE.** `authn/authn.js` kept a
+// **THIS JOB EXISTS BECAUSE IT WAS NOT TRUE.** `authn/authn.ts` kept a
 // credential store of its own — a per-realm map of ONE key per person — while
 // `common/credentials.js` kept the security keys on the person's directory
 // entry, multi-valued, each with the ROLE it was enrolled in. Two stores, and
