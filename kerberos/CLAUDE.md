@@ -53,7 +53,7 @@ codec (a byte-identical copy of the parent project's `common/krb5/krb5_spnego.js
 kept honest by `tests/krb5_codec_sync.js` there), and `spnego.js` is this repo's own.
 Do not merge the two — one of them is somebody else's file.
 
-**`spnego_authn.js` must stay after `spnego.js` AND after `authn/authn.js` in the
+**`spnego_authn.ts` must stay after `spnego.js` AND after `authn/authn.js` in the
 require order.** It draws with `spnego.js`'s page shell and negotiates through
 `spnego_exchange.js`; and it calls `authn.startSession()`, which is why the
 endpoint is HERE and not in `authn/` — a require the other way would drag the
@@ -71,7 +71,7 @@ endpoint. It is now the last of four layers, and each adds exactly one thing.
 | `krb5_service.js` | the AP-REQ. Every Kerberos check, over any transport. | `/krb5/service` |
 | `spnego_exchange.js` | RFC 4178 and the RFC 4559 header. No Kerberos code, no HTML, no session. **A LIBRARY** — rule 3, so its position is not a position. | nothing |
 | `spnego.js` | a page that explains what happened. | `/spnego`, `/spnego/protected` |
-| `spnego_authn.js` | **a session, and the identity that goes in it.** | `/authn/spnego` |
+| `spnego_authn.ts` | **a session, and the identity that goes in it.** | `/authn/spnego` |
 
 **The split was forced by the second door and it is not tidiness.**
 `/spnego/protected` documents a handshake; `/authn/spnego` performs the same
@@ -90,7 +90,7 @@ is the part the PROTOCOL specifies and two spellings of it would be two
 acceptors. Both doors are renderers over it. A branch added to `spnego.js` that
 DECIDES something rather than describing it belongs one file over.
 
-### `spnego_authn.js`: the one sign-in here that checks a real credential
+### `spnego_authn.ts`: the one sign-in here that checks a real credential
 
 Everywhere else in this service the username typed IS the identity. Kerberos
 cannot work that way — the password there is the key — so this door verifies a

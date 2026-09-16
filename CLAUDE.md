@@ -444,7 +444,7 @@ made that collision harmless.
 ## Socket owners start their listeners from `listen()`, not at require time
 
 The two Kerberos modules, `ldap/ldap_server.js`,
-`spiffe/spiffe_server.js` and `debugger/debugger_server.js` are the exception to rule 1 in one direction only:
+`spiffe/spiffe_server.ts` and `debugger/debugger_server.ts` are the exception to rule 1 in one direction only:
 requiring them registers their HTTP views like everything else, but **their own
 listeners are started from `listen()` in `server.js`** — binding a port can fail,
 and a `require` that throws takes the whole service down where a route cannot. A
@@ -508,7 +508,7 @@ blocked the button is the whole mechanism.
 | `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy | `portal/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
-this origin** (2026-09-13): `debugger/debugger_server.js` serves them on a
+this origin** (2026-09-13): `debugger/debugger_server.ts` serves them on a
 listener of its own with a policy that allows their inline scripts THERE, which
 is the reason it is a separate origin — `debugger/CLAUDE.md` argues it.
 

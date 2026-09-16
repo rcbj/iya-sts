@@ -406,8 +406,8 @@ function checkNothingRequiresItEarly(t) {
                    // Certificate enrollment's three view/action layers
                    // (2026-09-13), loaded at 23e-g from each family's
                    // `_admin.js` and lazily from the management API.
-                   'acme/acme_console.js', 'est/est_console.js',
-                   'scep/scep_console.js',
+                   'acme/acme_console.ts', 'est/est_console.ts',
+                   'scep/scep_console.ts',
                    // The OAuth 2.0 / OIDC monitoring page's view/action
                    // layer (2026-09-13), for `adminViews`' paging and the
                    // console actor only. Loaded at 18f from

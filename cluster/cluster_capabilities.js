@@ -87,10 +87,10 @@ const CAPABILITIES = [
     what: 'A revocation or an issued certificate recorded on one node cannot ' +
           'be lost to another node\'s save, and CRL numbers only go up.' },
   { id: 'scep.ra-agreement', section: '1',
-    by: 'scep/scep_ra.js',
+    by: 'scep/scep_ra.ts',
     what: 'Every node presents the same SCEP RA certificate.' },
   { id: 'spiffe.authority-agreement', section: '1',
-    by: 'spiffe/spiffe_ca.js',
+    by: 'spiffe/spiffe_ca.ts',
     what: 'Every node issues SVIDs from, and verifies against, the same ' +
           'SPIFFE X.509 and JWT authorities.' },
   { id: 'vc.keys-agreement', section: '1',
