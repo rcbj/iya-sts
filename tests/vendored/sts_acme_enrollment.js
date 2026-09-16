@@ -7,9 +7,10 @@
 // CLIENT, EVERY PROFILE AND EVERY REFUSAL (2026-09-13).
 //
 // `acme_client.js` beside this file is a second reading of the RFCs with
-// nothing from acme/ in it; this job drives the running service with it, in a
-// throwaway trust realm it builds and leaves standing (`tests/CLAUDE.md`, *No
-// job removes a realm*). What it asserts:
+// nothing from acme/ in it; this job drives the running service with it, in
+// three throwaway trust realms it builds and leaves standing — the one under
+// test, a second for the cross-realm refusals and a product-mode one
+// (`tests/CLAUDE.md`, *No job removes a realm*). What it asserts:
 //
 //   * EACH OF THE NINE PROFILES ISSUED OVER ACME — five over a
 //     permanent-identifier order with an RSA key, the two server profiles over
@@ -23,9 +24,13 @@
 //   * THE ADMINISTRATOR'S PATH, which in ACME is an EAB key an administrator
 //     created on `/admin-api` for somebody else's entry. Every account here is
 //     bound through that door; the portal door (a person creating their own) is
-//     not this job's. No person is put in the DEFAULT realm's Admin Write
-//     group: a member there closes the console's empty-roster door for every
-//     job after this one, and nothing in ACME reads that roster.
+//     not this job's (`sts_portal_certificates.js` drives it). No person is
+//     put in the DEFAULT realm's Admin Write group: that roster is shared by
+//     every job after this one, and nothing in ACME reads it. (The reason
+//     given here first — a member closing the console's empty-roster door — no
+//     longer applies to a stack started through server.js, whose roster holds
+//     the seeded bootstrap administrator: `admin-ui/admin_rbac.js`,
+//     `rolesOf()`.)
 //   * THE RECORD: the certificate listed by `GET /admin-api/acme` against its
 //     entry; OCSP `good` from the ACME Issuing CA's responder before
 //     revocation and `revoked` after; the serial on `/pki/crl/{realm}/acme.crl`
@@ -58,7 +63,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
