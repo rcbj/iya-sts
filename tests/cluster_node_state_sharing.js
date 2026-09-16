@@ -406,7 +406,7 @@ function run(t) {
       ['saml/saml2_sso.ts', 'session.saml2ServiceProviders[ctx.spEntityId]'],
       ['saml/saml11_sso.ts', 'session.saml11RelyingParties[ctx.rpId]'],
       ['ws-federation/wsfed.ts', 'session.wsfedRealms[realm] = wreply;'],
-      ['oauth-oidc/frontchannel_logout.js', 'session.oidcClients[clientId]']
+      ['oauth-oidc/frontchannel_logout.ts', 'session.oidcClients[clientId]']
     ];
     const missing = sites.filter(function (site) {
       const text = fs.readFileSync(path.join(ROOT, site[0]), 'utf8');
