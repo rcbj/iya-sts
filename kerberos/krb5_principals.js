@@ -987,7 +987,7 @@ function realmForService(nameComponents) {
 // **WHAT IS RUNTIME STATE ON A CONFIGURED PRINCIPAL IS EXACTLY ONE FIELD**, and
 // that is a finding rather than a guess: every write to a configured principal
 // after buildDatabase() is signOut() and clearSignOut() (called from
-// `logout/logout.js`, `admin-core/admin_actions.js` and `krb5_kdc.js`'s AS
+// `logout/logout.ts`, `admin-core/admin_actions.js` and `krb5_kdc.js`'s AS
 // handler), and both write `signedOutAt`. `revoked` looks like runtime state
 // and is not — it is set only by the `locked` fixture's definition and nothing
 // mutates it. directoryUser() moves `kvno`, `salt` and `etypes`, but only on a

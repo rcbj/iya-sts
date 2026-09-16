@@ -120,7 +120,7 @@ interface ClusterSecretsDeps {
 // channel a front process hands it to its own request workers through: they
 // are forked with `Object.assign({}, process.env, …)`, so whatever is in the
 // variable when `request_pool.js` forks is what every worker holds. That is
-// the arrangement `acme/acme_jws.js` and `ssf/ssf_receivers.js` already had
+// the arrangement `acme/acme_jws.ts` and `ssf/ssf_receivers.ts` already had
 // for one container; this module only changes WHERE the front process's value
 // comes from.
 const DECLARED: Record<string, DeclaredSecret> = {
@@ -129,10 +129,10 @@ const DECLARED: Record<string, DeclaredSecret> = {
           '(common/websecurity.js).' },
   'acme-nonce': { bytes: 32, env: 'STS_ACME_NONCE_SECRET',
     what: 'The key ACME\'s Replay-Nonce values are MACed with ' +
-          '(acme/acme_jws.js).' },
+          '(acme/acme_jws.ts).' },
   'ssf-receiver': { bytes: 32, env: 'STS_SSF_RECEIVER_SECRET',
     what: 'The secret the console\'s and the portal\'s own SSF receivers ' +
-          'authenticate pushes with (ssf/ssf_receivers.js).' },
+          'authenticate pushes with (ssf/ssf_receivers.ts).' },
   // -------------------------------------------------------------------------
   // THE BBS KEY PAIR (2026-09-14, #46 section 1) — A SECRET WHOSE OFFER IS
   // MADE BY A GENERATOR RATHER THAN BY `randomBytes()`.

@@ -39,7 +39,7 @@
 // The callback routes are registered by the surfaces —
 // `/admin/callback` in `admin-ui/admin.js`, `/portal/callback` in
 // `portal/portal.js`, and (since 2026-09-13) the debugger's `/_sts/callback`
-// on its own listener in `debugger/debugger_server.js` — and that is
+// on its own listener in `debugger/debugger_server.ts` — and that is
 // deliberate rather than tidy. A route
 // registered HERE would land wherever this file was first required, which is a
 // position decided by whoever edits an import list; a route registered there
@@ -244,7 +244,7 @@ const SURFACES = {
     scopes: ['openid', 'profile', 'email']
   },
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the first surface that is
-  // NOT ON THIS SERVICE'S ORIGIN: it is served by `debugger/debugger_server.js`
+  // NOT ON THIS SERVICE'S ORIGIN: it is served by `debugger/debugger_server.ts`
   // on a listener of its own. Two things follow and both are options rather
   // than fields, because they are addresses a REQUEST decides:
   //
@@ -261,7 +261,7 @@ const SURFACES = {
   // THE FOURTH SCOPE IS THE DEBUGGER API'S PERMISSION, written out here for
   // the reason `applications.js` writes it out — this library is read by every
   // hosted surface and must not depend on a feature directory — and compared
-  // with `debugger/debugger_access.js` by `tests/debugger_access.js`. The
+  // with `debugger/debugger_access.ts` by `tests/debugger_access.js`. The
   // authorization server takes it off the grant for anybody who is not a
   // console administrator, and the debugger's gate reports that.
   debugger: {

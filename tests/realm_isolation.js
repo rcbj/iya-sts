@@ -489,7 +489,7 @@ function checkSignalRegisters(t) {
 // ---------------------------------------------------------------------------
 // 5c. THE STORES WHOSE MODULES CANNOT BE LOADED IN THIS PROCESS (2026-09-12).
 //
-// `oid4vc/vc_offers.ts` registers the offer pages and `spiffe/spiffe_auth.js`
+// `oid4vc/vc_offers.ts` registers the offer pages and `spiffe/spiffe_auth.ts`
 // requires `tls/tls_server.js`, which registers `/tls*` — and `run.js` runs
 // every file in ONE process, where a route registered here moves what a later
 // file sees of the router. So they are asserted in a CHILD PROCESS, which is

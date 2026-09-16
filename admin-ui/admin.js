@@ -1457,19 +1457,19 @@ const SECTIONS = [
               'or, for a holder of Admin Write, to any entry in the realm — ' +
               'and keep every certificate on the entry it names.',
         items: [
-          // ===== ACME section row (acme/acme_admin.js) =====
+          // ===== ACME section row (acme/acme_admin.ts) =====
           { path: '/admin/acme', label: 'ACME',
             blurb: 'Automatic Certificate Management Environment (RFC 8555): ' +
                    'the directory, accounts bound by External Account ' +
                    'Binding, orders, pre-validated authorizations and ' +
                    'revocation, issuing from this realm\'s ACME Issuing CA.' },
-          // ===== EST section row (est/est_admin.js) =====
+          // ===== EST section row (est/est_admin.ts) =====
           { path: '/admin/est', label: 'EST',
             blurb: 'Enrollment over Secure Transport (RFC 7030): cacerts, ' +
                    'simpleenroll, simplereenroll, serverkeygen and csrattrs, ' +
                    'authenticated by a password, a client secret or a ' +
                    'certificate this realm issued.' },
-          // ===== SCEP section row (scep/scep_admin.js) =====
+          // ===== SCEP section row (scep/scep_admin.ts) =====
           { path: '/admin/scep', label: 'SCEP',
             blurb: 'Simple Certificate Enrolment Protocol (RFC 8894): ' +
                    'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
@@ -5512,7 +5512,7 @@ app.use('/admin', function (req, res, next) {
   if (req.path === '/signals/receive') {
     log.debug("Leaving the admin console gate. The Shared Signals receive " +
               "endpoint is exempt: a push carries the stream's own bearer " +
-              "token and no session. See ssf/ssf_receivers.js.");
+              "token and no session. See ssf/ssf_receivers.ts.");
     next();
     return;
   }
@@ -8307,7 +8307,7 @@ app.get('/admin/sessions', function (req, res) {
     const inner = messagesOf(req) +
       '<div class="err"><strong>The logout reader is not installed in this ' +
       'process</strong>, so nothing here can say what is live. Every row on ' +
-      'this page is read from <code>logout/logout.js</code>, which is the ' +
+      'this page is read from <code>logout/logout.ts</code>, which is the ' +
       'one model of what a session IS across protocol families.</div>';
     respond(req, res, view.json, 'Sessions', '/admin/sessions', inner);
     log.debug("Leaving the admin sessions page. No reader.");
@@ -9450,7 +9450,7 @@ function logoutNoReaderNote() {
   log.debug("Leaving logoutNoReaderNote().");
   return '<div class="err"><strong>The logout module is not loaded in this ' +
     'process.</strong> That is a require-order fault rather than a ' +
-    'configuration one: <code>logout/logout.js</code> fills this console\'s ' +
+    'configuration one: <code>logout/logout.ts</code> fills this console\'s ' +
     'slot at its own require time, and <code>server.js</code> requires it ' +
     'second to last. Nothing else on this console is affected.</div>';
 }
@@ -30182,7 +30182,7 @@ function setSignalsReporter(reporter) {
 //   * a require the other way round, from `tls_server.js` to this file at its
 //     own top level, would CLOSE A CYCLE — and not a theoretical one: that
 //     module is really first loaded from inside THIS file's require, through
-//     `admin-core/admin_views.js` → `spiffe/spiffe_auth.js`, so it would be
+//     `admin-core/admin_views.js` → `spiffe/spiffe_auth.ts`, so it would be
 //     handed this module's half-built exports and find no `setTruststore` on
 //     them. That is why `common/protocol_stack.js` fills this, on the line
 //     after it requires `tls_server.js`, rather than the filler being the
@@ -30937,7 +30937,7 @@ app.get('/admin/ssf', function (req, res) {
             '&ldquo;create a stream&rdquo; form here: a stream carries a ' +
             'delivery endpoint THIS SERVICE WILL DIAL, and the one place ' +
             'that URL may come from is a receiver that authenticated and ' +
-            'asked &mdash; see <code>ssf/ssf_http.js</code>.'))
+            'asked &mdash; see <code>ssf/ssf_http.ts</code>.'))
       : '') +
 
     (json.installed
@@ -31964,7 +31964,7 @@ app.get('/admin/caep-sessions/session', function (req, res) {
     'type went out; this says WHICH, in order, with what the register ' +
     'noticed as each one was applied. They are separate on purpose &mdash; ' +
     'the state machine and the counters answer different questions, and ' +
-    '<code>ssf/caep.js</code> argues why.') +
+    '<code>ssf/caep.ts</code> argues why.') +
 
     '<h2>The session</h2>' +
     caepSessionFacts(row) +
@@ -32918,7 +32918,7 @@ app.get('/admin/risc-accounts/account', function (req, res) {
     'type went out; this says WHICH, in order, with what the register ' +
     'noticed as each one was applied. They are separate on purpose &mdash; ' +
     'the state machine and the counters answer different questions, and ' +
-    '<code>ssf/risc.js</code> argues why.') +
+    '<code>ssf/risc.ts</code> argues why.') +
 
     '<h2>The account</h2>' +
     riscAccountFacts(row) +

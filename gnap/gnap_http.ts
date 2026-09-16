@@ -16,7 +16,7 @@
 // does dial is "an address somebody is asking to be SENT something at". A push
 // finish URI is squarely the second kind — the client is naming where it wants
 // the notification delivered — which is SSF push delivery's argument
-// (`ssf/ssf_http.js`) made again rather than cited.
+// (`ssf/ssf_http.ts`) made again rather than cited.
 //
 // **SECTION 11.34 (SSRF) IS WHY THE BOUNDS BELOW EXIST**, and each is a bound
 // the SSF transmitter already applies, read from GNAP's own settings so that

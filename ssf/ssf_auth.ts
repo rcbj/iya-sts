@@ -32,7 +32,7 @@
 //
 // **IN PRODUCT MODE BASIC VERIFIES THE PASSWORD (2026-09-12)**, through
 // `common/credentials.js` — the one place a presented password is checked, and
-// the call `scim/scim_auth.js` already makes. Until this date this file never
+// the call `scim/scim_auth.ts` already makes. Until this date this file never
 // asked the mode at all, so a product deployment's SSF endpoints accepted any
 // name with any password and granted both scopes: a stream is an agreement to
 // be SENT security events about everybody in the realm, and to have this
@@ -140,7 +140,7 @@ interface SsfAuthDeps {
     presentedAccessToken(req: any, res: any, what: string): any;
   };
   errorCodes: { codeOf(value: any): string };
-  // `ssf/ssf_cluster.ts`, `gnap/gnap_access.js` and `gnap/gnap_rs.js`,
+  // `ssf/ssf_cluster.ts`, `gnap/gnap_access.ts` and `gnap/gnap_rs.ts`,
   // required when first asked for. See `attemptGnap()`.
   loadSsfCluster(): {
     gnapSpentOf(req: any): any;
@@ -170,7 +170,7 @@ const SCHEMES: Scheme[] = [
           'express the distinction, and pretending otherwise would be a ' +
           'refusal a client could not act on. Off with ssf.authBasic.' },
   // GNAP (2026-09-12). A GNAP client application is a stream OWNER in its own
-  // right, and `gnap/gnap_signals.js` scopes what a stream it owns may hear
+  // right, and `gnap/gnap_signals.ts` scopes what a stream it owns may hear
   // about — so the principal has to be the APPLICATION, which a GNAP token
   // names and an OAuth token for a person does not. See attemptGnap().
   { id: 'gnap', spec_urn: 'urn:ietf:rfc:9635',
@@ -322,7 +322,7 @@ class SsfAuth {
   // THE OAUTH ATTEMPT.
   //
   // It goes through `dpop.presentedAccessToken()` and NOT through a check of
-  // its own, for the reason `scim/scim_auth.js` gives at length about the same
+  // its own, for the reason `scim/scim_auth.ts` gives at length about the same
   // call: that function carries the RFC 9449 proof and the 401/DPoP-Nonce
   // handshake, the RFC 8705 certificate binding, the RFC 9700 refusal of a
   // token in the query string and the RFC 8707 audience check, and a second
@@ -403,7 +403,7 @@ class SsfAuth {
   // -------------------------------------------------------------------------
   // THE GNAP ATTEMPT.
   //
-  // Through `gnap/gnap_rs.js`'s `presentation()` and NOT a check of its own,
+  // Through `gnap/gnap_rs.ts`'s `presentation()` and NOT a check of its own,
   // for `attemptOAuth()`'s reason: that function is the ONE place a presented
   // GNAP token is judged against this authorization server's record of it —
   // issued here, live, presented under the scheme RFC 9635 section 7.2

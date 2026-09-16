@@ -10829,7 +10829,7 @@ const CODES = [
     spec: 'HTTP 503' },
   { code: 'STS-API-0018',
     summary: 'The Shared Signals action rejected instead of resolving a ' +
-      'refusal, which is a defect in ssf/ssf.js.',
+      'refusal, which is a defect in ssf/ssf.ts.',
     spec: 'HTTP 500 { ok: false, errors }' },
   { code: 'STS-API-0019',
     summary: 'The CAEP action rejected instead of resolving a refusal.',

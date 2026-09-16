@@ -5358,7 +5358,7 @@ const SETTINGS = [
     description: 'Whether this service may make an HTTP request OUT, to a ' +
                  'partner\'s token endpoint, UserInfo endpoint or JWKS. This ' +
                  'was the first outbound request in this service and ' +
-                 'federation/federation_http.js argues it at length: a URL ' +
+                 'federation/federation_http.ts argues it at length: a URL ' +
                  'an ADMINISTRATOR configured on a relationship is a ' +
                  'different thing from a URL an unauthenticated caller ' +
                  'REGISTERED, which is why oauthJwksUri on an application ' +
@@ -5520,7 +5520,7 @@ const SETTINGS = [
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
   // NOT oauth2.clockSkewS: that one is a TOLERANCE applied when this service
-  // READS a token or an assertion back — federation/federation_sp.js applies
+  // READS a token or an assertion back — federation/federation_sp.ts applies
   // it to an inbound partner assertion and argues there that a deployment
   // decides its reading tolerance once — and this one is what this service
   // WRITES into a document it issues. One is about somebody else's clock and
@@ -6079,7 +6079,7 @@ const SETTINGS = [
   // separated it from every other setting that governs an assertion's validity.
   //
   // UNTIL 2026-08-27 THIS WAS A MODULE-LEVEL `const lifetimeMin = 60` in
-  // ws-federation/wsfed.js and could not be changed at all — which is why the
+  // ws-federation/wsfed.ts and could not be changed at all — which is why the
   // default is 60 rather than something better argued: it is what this service
   // has always issued, and a new default would have changed every existing
   // caller's tokens on an upgrade.
@@ -6512,7 +6512,7 @@ const SETTINGS = [
     description: 'The `display.name` of the credential issuer metadata — ' +
                  'what a wallet shows as who is offering the credential. The ' +
                  'credential configurations\' own display names and colours ' +
-                 'are part of the catalogue in oid4vc/vc_issuer.js and are ' +
+                 'are part of the catalogue in oid4vc/vc_issuer.ts and are ' +
                  'not settings.' },
 
   { key: 'oid4vci.domainLinkageLifetimeS', group: 'OID4VCI',
@@ -6535,7 +6535,7 @@ const SETTINGS = [
   // THE TWO DID FLAGS, which were the last two environment variables in this
   // service with no row here.
   //
-  // They were read in `oid4vc/vc_did.js` as
+  // They were read in `oid4vc/vc_did.ts` as
   // `didFlag('OID4VCI_SD_JWT_ISSUER_DID')` — a module-level const, compared
   // against the literal string 'true' — which is the shape every setting in
   // this table used to have. Two consequences, and the second is why they moved
@@ -7724,7 +7724,7 @@ const SETTINGS = [
   //
   // THE FIRST IS THAT THIS SERVICE DIALS OUT. Push delivery (RFC 8935) posts
   // each Security Event Token to a URL the RECEIVER chose, which is a weaker
-  // position than federation's outbound request and `ssf/ssf_http.js` says so
+  // position than federation's outbound request and `ssf/ssf_http.ts` says so
   // at length rather than citing it. `ssf.pushDelivery`, `ssf.pushAllowedHosts`
   // and `ssf.pushAllowInsecure` are the bounds. Poll delivery (RFC 8936) dials
   // nothing at all — the receiver comes here — so a deployment that wants none
@@ -7886,7 +7886,7 @@ const SETTINGS = [
                  'and a weaker case than federation\'s: RFC 8935 push IS ' +
                  'the receiver telling the transmitter where to post, so ' +
                  'the URL is caller-supplied by construction. ' +
-                 'ssf/ssf_http.js argues it rather than citing federation. ' +
+                 'ssf/ssf_http.ts argues it rather than citing federation. ' +
                  'Turning it off leaves the whole of SSF working over POLL ' +
                  'delivery, which dials nothing — and ' +
                  'delivery_methods_supported then advertises only poll, so ' +
@@ -8040,7 +8040,7 @@ const SETTINGS = [
   // THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS (2026-09-10).
   //
   // It is RESTART-ONLY and that is a fact about where the seeding runs rather
-  // than a decision: the two streams are created as `ssf/ssf.js` is required
+  // than a decision: the two streams are created as `ssf/ssf.ts` is required
   // and again as each realm is built, so turning this off at runtime would
   // leave the streams that already exist and turning it on would create none.
   // What it does answer at runtime is `accept()`, which refuses a push at
@@ -8052,7 +8052,7 @@ const SETTINGS = [
     label: 'Register the console and the portal as receivers',
     env: 'STS_SSF_INTERNAL_RECEIVERS', type: 'bool', dflt: true,
     runtime: false,
-    restartReason: 'the two streams are seeded as ssf/ssf.js is required and ' +
+    restartReason: 'the two streams are seeded as ssf/ssf.ts is required and ' +
                    'again as each realm is built, so turning this off in ' +
                    'place would leave the streams that already exist and ' +
                    'turning it on would create none',

@@ -562,7 +562,7 @@ services:
       # THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13). Published because it
       # is the one listener whose entire purpose is to be reached from outside:
       # every certificate this service issues names it for its CRL, its OCSP
-      # responder and its issuer's certificate (pki/pki_service.js). The host
+      # responder and its issuer's certificate (pki/pki_service.ts). The host
       # side is `STS_PKI_HOST_PORT` for the reason `STS_HOST_PORT` is, and the
       # SAME variable is handed to the service below as PKI_DISTRIBUTION_PORT,
       # so the address in a certificate is the address this mapping made.

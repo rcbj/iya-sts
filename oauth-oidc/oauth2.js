@@ -293,7 +293,7 @@ const gate = require('../common/issuance_gate');
 // library (rule 3) that registers nothing and requires only libraries —
 // `admin-ui/admin_rbac.js`, `common/access_gate.js`, `common/audit.js`,
 // `common/helpers.js`, `common/realms.js` — so it
-// cannot move a route or close a cycle. See `debugger/debugger_access.js`.
+// cannot move a route or close a cycle. See `debugger/debugger_access.ts`.
 const debuggerAccess = require('../debugger/debugger_access');
 // THE ONE PLACE A PRESENTED PASSWORD IS CHECKED, for the RFC 6749 section 4.3
 // password grant (2026-09-12). A library (rule 3): it registers no route, and
@@ -2318,7 +2318,7 @@ async function tokenSet(base, opts) {
   // exchange, a client_credentials request naming the scope — can carry it for
   // somebody who may not hold it. The authorization endpoint narrows first;
   // this is the backstop. A no-op for every scope that does not name it. See
-  // `debugger/debugger_access.js`.
+  // `debugger/debugger_access.ts`.
   if (debuggerAccess.asksForPermission(opts.scope)) {
     opts.scope = debuggerAccess.narrowScope(opts.scope,
       issuanceSubjectOf(opts),
@@ -3803,7 +3803,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   const redirectUri = String(query.redirect_uri);
   const types = String(query.response_type || '').split(/\s+/).filter(Boolean);
   // The debugger permission comes off here for anybody who may not hold it,
-  // before a code carries it — see `debugger/debugger_access.js`, and the
+  // before a code carries it — see `debugger/debugger_access.ts`, and the
   // backstop in tokenSet().
   const scope = debuggerAccess.narrowScope(String(query.scope || 'openid'),
     { kind: 'user', name: user.username,

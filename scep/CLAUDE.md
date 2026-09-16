@@ -90,7 +90,7 @@ their failInfo with them.
 
 Rule 3r is about primitives having one policy. This is an ENVELOPE only SCEP
 reads, over node's own primitives, with every algorithm it accepts in a table
-`admin-ui/crypto_metadata.js` reads (`algorithms()`) — `gnap/gnap_httpsig.js`'s
+`admin-ui/crypto_metadata.js` reads (`algorithms()`) — `gnap/gnap_httpsig.ts`'s
 arrangement.
 
 ### The RA certificate

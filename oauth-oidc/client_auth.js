@@ -226,7 +226,7 @@ function clockSkewSeconds() {
   return config.value('oauth2.clientAssertionSkewS');
 }
 
-// One of two copies of this until 2026-08-27; `scim/scim_auth.js` had the
+// One of two copies of this until 2026-08-27; `scim/scim_auth.ts` had the
 // other, and both existed because `crypto.timingSafeEqual()` THROWS on buffers
 // of different lengths and every caller therefore has to write the same guard
 // around it. The name stays here because "do these two client secrets match" is

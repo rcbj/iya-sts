@@ -14,7 +14,7 @@
 //      an interaction honours an existing session. Nothing in this file.
 //   2. **GNAP web applications are receivers whose streams are SCOPED.** A
 //      stream owned by a GNAP client application carries events only about
-//      people who approved a grant to that application. `ssf/ssf_streams.js`
+//      people who approved a grant to that application. `ssf/ssf_streams.ts`
 //      offers one hook, `setSubjectScope()`, consulted by
 //      `streamCoversSubject()` — the single function every CAEP, RISC and
 //      by-hand delivery already asks — and this file fills it.
@@ -36,7 +36,7 @@
 // `session-revoked` by user needs nothing new, and the prefix means a GNAP
 // grant id can never be mistaken for a sign-on session id of the same bytes.
 //
-// **SSF IS REQUIRED LAZILY**, inside the functions that deliver. `ssf/ssf.js`
+// **SSF IS REQUIRED LAZILY**, inside the functions that deliver. `ssf/ssf.ts`
 // registers every `/ssf` route (rule 1), and this file is required by the
 // grant engine, which an in-process test loads with no router at all. Here, at
 // call time in a running service, the require is a cache hit.

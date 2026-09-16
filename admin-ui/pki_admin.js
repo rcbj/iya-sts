@@ -68,7 +68,7 @@ const app = require('../common/app');
 const admin = require('./admin');
 const pki = require('../common/pki');
 // The revocation register, the CRLs and the OCSP responders. A LIBRARY
-// (rule 3) that registers nothing — the HTTP endpoints are `pki/pki_service.js`
+// (rule 3) that registers nothing — the HTTP endpoints are `pki/pki_service.ts`
 // at 17b — so requiring it here moves no route and closes no cycle.
 const pkiRevocation = require('../common/pki_revocation');
 // The pane's model: the field table, the six line grammars, the profile
@@ -3252,7 +3252,7 @@ function rootControls(json) {
 // second was the SPIFFE X.509 authority, and the paragraph read: *It is
 // self-signed on purpose: a trust domain whose root was also this
 // service's would conflate two unrelated trust decisions, which is what
-// `spiffe/spiffe_ca.js` has said since it was written — one process, two
+// `spiffe/spiffe_ca.ts` has said since it was written — one process, two
 // PKIs. There is a second, mechanical reason: an Issuing CA here carries
 // `pathLen: 0`, so it may sign leaves and no further authority, and a SPIFFE
 // authority signs SVIDs. The SPIFFE Issuing CA is built and ready above,
@@ -3266,7 +3266,7 @@ function rootControls(json) {
 // and the trust-decision half is answered by the SPIFFE authority being a
 // SIBLING of the TLS one rather than the same certificate: narrowing trust to
 // SPIFFE alone is still sayable, by pinning that Issuing CA instead of the
-// Root. `spiffe/spiffe_ca.js`'s own header carries the argument in full.
+// Root. `spiffe/spiffe_ca.ts`'s own header carries the argument in full.
 // ---------------------------------------------------------------------------
 function coverageNote(json) {
   log.debug("Entering coverageNote().");

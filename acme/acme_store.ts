@@ -13,7 +13,7 @@
 // it is refused for, nothing — because the two realms are two logical
 // certificate authorities.
 //
-// **EACH IS DECLARED WITH `persist`**, `gnap/gnap_store.js`'s shape, so in
+// **EACH IS DECLARED WITH `persist`**, `gnap/gnap_store.ts`'s shape, so in
 // product mode on a postgres store it survives a restart and replicates
 // between request workers. Three consequences, honoured everywhere below:
 //

@@ -423,8 +423,8 @@ finds its row expired and it exits with `STS-CLUSTER-0005`.
 **Section 1 — keys and the CA — is provided (2026-09-14)**: `keys.agreement`
 (`common/keystore.js`), `pki.agreement` (`common/pki.js`),
 `pki.revocation-register` (`common/pki_revocation.js`, with
-`common/pki_merge.js`), `scep.ra-agreement` (`scep/scep_ra.js`) and
-`spiffe.authority-agreement` (`spiffe/spiffe_ca.js`), and — added after the
+`common/pki_merge.js`), `scep.ra-agreement` (`scep/scep_ra.ts`) and
+`spiffe.authority-agreement` (`spiffe/spiffe_ca.ts`), and — added after the
 suite's `cluster` mode found it — `vc.keys-agreement`
 (`cluster/cluster_secrets.ts`, the BBS key pair; *Claims and shared secrets*). `common/CLAUDE.md` argues
 the store arbitration, the merge and the build claim (*Between nodes the store

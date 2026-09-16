@@ -2020,7 +2020,7 @@ file's.
   and make the console the reason they are where they are; a require from that module back
   to this one at its top level is a REAL cycle, not a theoretical one — `tls_server.js` is
   first loaded from inside this file's own require, through `admin-core/admin_views.js` →
-  `spiffe/spiffe_auth.js`, so it would find no `setTruststore` on the half-built exports.
+  `spiffe/spiffe_auth.ts`, so it would find no `setTruststore` on the half-built exports.
   **So it is the one slot here NOT filled by the module that owns what it carries**:
   `common/protocol_stack.js` fills it on the line after it requires `tls_server.js`. It
   carries one object (`list`, `add`, `remove`), is validated whole for `setLogoutReader()`'s
@@ -2041,7 +2041,7 @@ fingerprint — and asserts the truststore afterwards is exactly what it was bef
 ## Four reader slots and FOUR writer slots point INTO this module
 
 `common/protocol_stack.js` requires this module BEFORE `../ldap/ldap_server.js`,
-`../scim/scim.ts` and `../spiffe/spiffe_server.js`, so this module cannot require
+`../scim/scim.ts` and `../spiffe/spiffe_server.ts`, so this module cannot require
 any of them: the require would pull `/ldap`, `/scim` and `/spiffe` into the
 express router ahead of every `/admin` route, and `GET /admin/sts-metadata` is built by
 walking that router. So this module OFFERS slots and they fill them at their own
@@ -2085,8 +2085,8 @@ SCIM `PATCH` for every other group, and deleting a group is a SCIM `DELETE` or
 an `ldapdelete`. Those doors exist and work; what did not exist anywhere but
 SCIM and the raw socket was CREATION.
 
-It DOES require `../spiffe/spiffe_ca.js`, `../spiffe/spiffe_id.js` and
-`../spiffe/spiffe_registry.js` directly, because they register nothing, so neither
+It DOES require `../spiffe/spiffe_ca.ts`, `../spiffe/spiffe_id.ts` and
+`../spiffe/spiffe_registry.ts` directly, because they register nothing, so neither
 thing that forces a slot applies.
 
 **This module renders and decides nothing.** What counts as a group, what a

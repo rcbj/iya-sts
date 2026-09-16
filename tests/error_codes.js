@@ -207,9 +207,9 @@ const FAILURE_PATTERNS = [
   // ===== SCEP patterns =====
   { re: /\bscepError\(\s*res\b/, before: 4, after: 2,
     what: 'the SCEP scepError(res, status, code, text) HTTP refusal ' +
-          '(scep/scep.js)' },
+          '(scep/scep.ts)' },
   { re: /\breturn failed\(\s*'STS-/, before: 1, after: 1,
-    what: 'a SCEP CertRep FAILURE built by failed() (scep/scep.js)' },
+    what: 'a SCEP CertRep FAILURE built by failed() (scep/scep.ts)' },
   // ----- KRB -------------------------------------------
   { re: /\berrorReply\(\s*[\w.]+\s*,/, before: 1, after: 3,
     what: 'a Kerberos KRB-ERROR built by errorReply()' },
@@ -228,7 +228,7 @@ const FAILURE_PATTERNS = [
     what: 'an OAuth error object handed to redirectBack()' },
   // ----- PKI -------------------------------------------
   { re: /\brefuse\(\s*res\s*,\s*[45]\d\d\b/, before: 4, after: 2,
-    what: 'pki/pki_service.js refuse(res, status, …) helper' },
+    what: 'pki/pki_service.ts refuse(res, status, …) helper' },
   // ----- PORTAL ----------------------------------------
   { re: /\bsend\(\s*res\s*,\s*[45]\d\d\b/, before: 4, after: 2,
     what: 'the portal\'s send(res, status, html) with a failure status' },

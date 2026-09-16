@@ -2383,7 +2383,7 @@ const entryHandlers = spiffeApi.buildEntryHandlers();
 // questions ever asked of this map, and a SHA-256 answers the first as well as
 // the value did: `joinTokenKey()` is the one spelling, and nothing here holds
 // the token after CreateJoinToken has returned it. Same argument, same shape,
-// as `oid4vc/vc_offers.js`'s deferred access tokens.
+// as `oid4vc/vc_offers.ts`'s deferred access tokens.
 const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
 
 const agentHandlers = spiffeApi.buildAgentHandlers();

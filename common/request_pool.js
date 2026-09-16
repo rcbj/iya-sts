@@ -1467,7 +1467,7 @@ function poolFor(url) {
 //
 // **THE EMBEDDED DEBUGGER'S STATUS IS THE SAME SHAPE OF FACT (2026-09-13).**
 // Its listener and its api child are held by the front process only
-// (`debugger/debugger_api_process.js`), so `/admin/debugger` and
+// (`debugger/debugger_api_process.ts`), so `/admin/debugger` and
 // `GET /admin-api/debugger` answered by a worker would report a listener that
 // never bound and a child that was never forked. Pinned for that reason; the
 // settings drawn on that page are ordinary configuration either way.

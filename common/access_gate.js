@@ -83,10 +83,10 @@ const errorCodes = require('./error_codes');
 //                       default), and for a console session in PRODUCT MODE
 //                       with that setting off; see the asymmetry below
 //   scim                `scim/scim_auth.ts`'s authenticate() funnel
-//   spire-server-api    `spiffe/spiffe_grpc.js`'s prepareCall()
+//   spire-server-api    `spiffe/spiffe_grpc.ts`'s prepareCall()
 //   xacml-pep-api       `xacml/xacml.js`'s pepAccess()
 //   xacml-api           `xacml/xacml.js`'s xacmlAccess()
-//   protocol-debugger   `debugger/debugger_access.js`
+//   protocol-debugger   `debugger/debugger_access.ts`
 //
 // **THE LAST THREE ARE NOT LIKE THE FIVE ABOVE THEM AND THE DIFFERENCE IS THE
 // DEFAULT.** The five are surfaces an operator NARROWS: they require
@@ -154,7 +154,7 @@ const RESOURCE = {
   // register makes is a policy layer somebody will work around.
   XACML_API: 'xacml-api',
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the third resource that
-  // is restricted from the start: `debugger/debugger_access.js` puts the two
+  // is restricted from the start: `debugger/debugger_access.ts` puts the two
   // console roles in the request, so only a console administrator is issued
   // the debugger permission or reaches the api it opens. Asked TWICE on
   // purpose — when the scope would be issued and on every call the api's

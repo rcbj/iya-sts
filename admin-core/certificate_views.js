@@ -64,7 +64,7 @@
 //
 // `admin-core/` — both surfaces read it, and neither owns it. It requires
 // `common/` libraries in the ordinary direction. **`tls/tls_server.js` and
-// `spiffe/spiffe_ca.js` are required INSIDE the functions that read them**, for
+// `spiffe/spiffe_ca.ts` are required INSIDE the functions that read them**, for
 // rule 1: `admin-ui/pki_admin.js` requires this file at 18a and the TLS module
 // registers its routes at 20, so a require at the top would move `/tls*` ahead
 // of the management API. A request handler runs after every module has loaded,

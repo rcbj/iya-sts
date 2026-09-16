@@ -15,7 +15,7 @@
 //                                                 add-host-name,
 //                                                 remove-host-name
 //
-// `gnap/gnap_console.js`'s arrangement exactly, and `tests/admin_actions_
+// `gnap/gnap_console.ts`'s arrangement exactly, and `tests/admin_actions_
 // layer.js`'s properties hold for it: **no route, no `res`, no markup**, a
 // view reads nothing from the request but its query and its base URL, and an
 // action is a function of (body, context). `scep_admin.ts` draws the markup and

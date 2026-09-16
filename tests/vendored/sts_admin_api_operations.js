@@ -3449,7 +3449,7 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     "GET /logout?user=… should answer 200; it answered " + inventory.status);
   assert.ok((inventory.body.families || []).length > 5,
     "the sign-out view should list every family a logout reaches — the " +
-    "prose for those lives in logout/logout.js and is rendered by both " +
+    "prose for those lives in logout/logout.ts and is rendered by both " +
     "doors, so a family added there appears here with no edit. It listed " +
     (inventory.body.families || []).length);
   const rows = inventory.body.rows || [];

@@ -1996,7 +1996,7 @@ function recordAuthentication(detail) {
         // itself would say nothing.
         linkedTo: info.linkedTo ? identityKeyOf(info.linkedTo) : '',
         // WHAT A FOREIGN IDENTITY PROVIDER SAID ABOUT THEM, where a federated
-        // sign-in is what brought us here. Only `federation/federation_sp.js`
+        // sign-in is what brought us here. Only `federation/federation_sp.ts`
         // sets it, and it is passed through UNTOUCHED for exactly the reason
         // `certificate` above is: this file counts, and the directory decides
         // what to do about it. Nothing here reads it.
@@ -3010,7 +3010,7 @@ function tokenList() {
 //   * A global logout can report what it invalidated rather than only what it
 //     could reach, which is what makes "everything for this person is dead" a
 //     checkable claim instead of a hope.
-//   * CAEP can carry it. `ssf/caep.js` transmits a Security Event Token the
+//   * CAEP can carry it. `ssf/caep.ts` transmits a Security Event Token the
 //     moment a session is revoked, and a receiver that acts on one has been
 //     told about an assertion this service considers dead — which is the
 //     channel SAML and Kerberos do not have.

@@ -7,7 +7,7 @@
 // WHAT THE OAUTH 2.0 / OIDC MONITORING PAGE AND ITS MANAGEMENT API OPERATIONS
 // READ AND DO — ONE MODEL, TWO DOORS (rule 7, 2026-09-13).
 //
-// `gnap/gnap_console.ts`'s and `acme/acme_console.js`'s arrangement, for the
+// `gnap/gnap_console.ts`'s and `acme/acme_console.ts`'s arrangement, for the
 // authorization server's own traffic: a VIEW computes the facts once and both
 // doors render them, an ACTION changes state once and both doors report it.
 // **No route, no `res`, no markup**, and a view reads nothing from the request
@@ -38,7 +38,7 @@
 //
 // **THERE IS NO RESET, AND THERE IS ONE CONTROL.** A console that could zero
 // its own monitoring would make every number on it one somebody might have
-// zeroed (`acme/acme_admin.js`). WITHDRAWING a pushed request is a different
+// zeroed (`acme/acme_admin.ts`). WITHDRAWING a pushed request is a different
 // kind of act: it changes what the authorization endpoint will accept rather
 // than what the page reports, it is counted (`par.deleted`) rather than
 // erasing a count, and it is audited.

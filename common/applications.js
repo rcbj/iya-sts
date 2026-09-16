@@ -484,7 +484,7 @@ const PROTOCOLS = [
   // an AuthnRequest, a bind DN on 389. A Shared Signals RECEIVER is the other
   // way round — it agrees a stream and then this service POSTs events to it —
   // which is why it is the only family here whose `deliveryAttribute` is a
-  // URL this service DIALS. See ssf/ssf_http.js, which argues that at length.
+  // URL this service DIALS. See ssf/ssf_http.ts, which argues that at length.
   { id: 'ssf', label: 'Shared Signals', kind: 'ssf-receiver',
     kinds: ['ssf-receiver'],
     identifierAttribute: 'ssfReceiverId', redirectAttribute: '',
@@ -2406,7 +2406,7 @@ const SCHEMA = {
             'push goes to the endpoint on the STREAM, which the receiver ' +
             'named when it created one, and this service will not take a URL ' +
             'to dial from an application entry. That is the same position ' +
-            'federation/federation_http.js takes about oauthJwksUri, one ' +
+            'federation/federation_http.ts takes about oauthJwksUri, one ' +
             'family along: a URL recorded here is a note about what a ' +
             'receiver is, and a URL on a stream is a URL this service opens ' +
             'a connection to. The two are deliberately not the same store.' },
@@ -2414,7 +2414,7 @@ const SCHEMA = {
     // THE ONE ATTRIBUTE ON THIS ENTRY THAT LIMITS SHARED SIGNALS (2026-09-12).
     //
     // Every other SSF attribute here is a declaration nothing reads. This one
-    // is READ, by `ssf/ssf_streams.js`'s allowedEventsFor(), at two moments:
+    // is READ, by `ssf/ssf_streams.ts`'s allowedEventsFor(), at two moments:
     // when a stream owned by this application is agreed (its `events_delivered`
     // is narrowed) and at every delivery (so tightening it takes effect on
     // streams that already exist). Empty means unrestricted, which is what
@@ -3560,7 +3560,7 @@ function corsOriginsForClient(name, attributes) {
 
 // ---------------------------------------------------------------------------
 // WHAT A SHARED SIGNALS STREAM'S OWNER IS ALLOWED, WITHOUT BUILDING A VIEW
-// (2026-09-14). `ssf/ssf_streams.js` asks this for every event on every stream,
+// (2026-09-14). `ssf/ssf_streams.ts` asks this for every event on every stream,
 // and it used `get()` and then `list()` — a whole `view()` of EVERY application
 // in the realm, sealed signing keys opened, to read one attribute. A session
 // sweep that expired 2,412 sessions sent a session-revoked for each, and on a
@@ -6842,7 +6842,7 @@ function createApplication(detail) {
              'identifier is being used as one. Its per-service-provider ' +
              'metadata is live from now — /admin/applications names the URL, ' +
              'which carries a slug this module deliberately does not compute ' +
-             '(slugOf() belongs to saml/saml2_sso.js, and requiring it here ' +
+             '(slugOf() belongs to saml/saml2_sso.ts, and requiring it here ' +
              'would point this module at a protocol). Set samlEntityId ' +
              'explicitly to use a different name.');
   }
@@ -8789,7 +8789,7 @@ function internalBaseUrl() {
 // (`common/app_permissions.js`). The api row comes first because a permission
 // is defined before it is granted.
 //
-// The identifiers and the permission are `debugger/debugger_access.js`'s and
+// The identifiers and the permission are `debugger/debugger_access.ts`'s and
 // are written out here rather than required: this file is a registry every
 // module reads, and a require from it into a feature directory would make the
 // registry depend on the feature. `tests/debugger_access.js` compares them.

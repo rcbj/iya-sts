@@ -175,7 +175,7 @@ RUN npm install --omit=dev && npm cache clean --force
 #                             and resolves path.join(__dirname, 'contexts') — so
 #                             they move when it moves and the file is not edited.
 #   spiffe/protos             the SPIFFE project's own workloadapi.proto and the
-#                             spire-api-sdk's, read by spiffe/spiffe_grpc.js at
+#                             spire-api-sdk's, read by spiffe/spiffe_grpc.ts at
 #                             module scope. Verbatim: the wire matching what a
 #                             real client expects is the entire reason
 #                             @grpc/grpc-js is a dependency here.

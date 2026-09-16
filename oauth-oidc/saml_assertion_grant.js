@@ -773,7 +773,7 @@ async function verify(opts) {
     return refuse('STS-OAUTH-0059', parsed.why);
   }
   if (parsed.version && parsed.version !== '2.0') {
-    // SAML 1.1 assertions exist here — `saml/saml11.js` builds them — and this
+    // SAML 1.1 assertions exist here — `saml/saml11.ts` builds them — and this
     // profile is not about them. Named rather than left to fail somewhere in
     // the Conditions, because the two documents look alike enough that
     // somebody will send the wrong one.

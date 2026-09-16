@@ -544,7 +544,7 @@ module.exports = {
     t.check(refusedWhenOptedOut,
             'and a caller that deliberately opts out still gets the strict ' +
             'reading',
-            'which is what spiffe/spiffe_ca.js does for a JWT-SVID');
+            'which is what spiffe/spiffe_ca.ts does for a JWT-SVID');
 
     // The algorithm list is never left to the token's own header.
     let algNoneRefused = false;

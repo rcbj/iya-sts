@@ -648,7 +648,7 @@ function sessionsAction(body, opts) {
   if (!logoutReader) {
     log.debug("Leaving sessionsAction(). No logout reader.");
     return refused('STS-ADMIN-0501', { ok: false, errors: [
-      'logout/logout.js is not loaded in this process, so there is nothing ' +
+      'logout/logout.ts is not loaded in this process, so there is nothing ' +
       'to end.'] });
   }
   const asked = body || {};
@@ -4186,7 +4186,7 @@ function ssfAction(body) {
   if (!signalsReporter) {
     log.debug("Leaving ssfAction(). Not installed.");
     return Promise.resolve(refused('STS-ADMIN-0501', { ok: false, errors: [
-      'ssf/ssf.js is not loaded in this process, so there is nothing to ' +
+      'ssf/ssf.ts is not loaded in this process, so there is nothing to ' +
       'act on.'] }));
   }
   const name = String(asked.action || '');
@@ -4203,7 +4203,7 @@ function caepAction(body) {
   if (!caepReporter) {
     log.debug("Leaving caepAction(). Not installed.");
     return Promise.resolve(refused('STS-ADMIN-0501', { ok: false, errors: [
-      'ssf/ssf.js is not loaded in this process, so there is nothing to ' +
+      'ssf/ssf.ts is not loaded in this process, so there is nothing to ' +
       'act on.'] }));
   }
   const name = String(asked.action || '');
@@ -4220,7 +4220,7 @@ function riscAction(body) {
   if (!riscReporter) {
     log.debug("Leaving riscAction(). Not installed.");
     return Promise.resolve(refused('STS-ADMIN-0501', { ok: false, errors: [
-      'ssf/ssf.js is not loaded in this process, so there is nothing to ' +
+      'ssf/ssf.ts is not loaded in this process, so there is nothing to ' +
       'act on.'] }));
   }
   const name = String(asked.action || '');

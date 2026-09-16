@@ -7,7 +7,7 @@
 // enrollments (2026-09-13).
 //
 // Drawn here, in the console's shell through `admin.respond()`, the way
-// `gnap/gnap_admin.js` draws GNAP's. Every fact on either page comes out of ONE
+// `gnap/gnap_admin.ts` draws GNAP's. Every fact on either page comes out of ONE
 // call to `scep_console.ts`, which is the same call `/admin-api/scep` and
 // `/admin-api/scep/monitor` answer with (rule 7).
 //

@@ -212,7 +212,7 @@ require('../kerberos/spnego_authn');
 // `/pki/revocation` — the HTTP half of the two schemes every certificate this
 // service issues names in its CRL distribution points and its Authority
 // Information Access (served on the main port and on the plain-HTTP listener
-// `server.js` binds from `pki/pki_service.js`). The LDAP half is the
+// `server.js` binds from `pki/pki_service.ts`). The LDAP half is the
 // directory's, published into `ou=crl` by `ldap/ldap_server.js`.
 //
 // **A PROTOCOL SURFACE AND NOT A CONSOLE ONE**, which is why it is here among
@@ -324,7 +324,7 @@ require('../admin-ui/secrets_admin');
 // — the same placement as 18a to 18d, for their reason: it requires
 // `admin-ui/admin` for the shell and nothing that registers a route, and
 // `mgmt-api/admin_api.js` at 19 requires it in the ordinary direction. It reads
-// the listener's status LAZILY, because `debugger/debugger_server.js` requires
+// the listener's status LAZILY, because `debugger/debugger_server.ts` requires
 // `tls/tls_server.js` at 20. See 23h for the listener itself.
 // ---------------------------------------------------------------------------
 require('../debugger/debugger_admin');
@@ -391,7 +391,7 @@ const tlsServer = require('../tls/tls_server');
 // at its own top level and filling it — does not work, and the reason is the
 // real load order rather than the one written above: that module is first
 // loaded from INSIDE `admin.js`'s require, through `admin-core/admin_views.js`
-// → `spiffe/spiffe_auth.js`. A require of `admin.js` from there is a cycle and
+// → `spiffe/spiffe_auth.ts`. A require of `admin.js` from there is a cycle and
 // hands back its half-built exports, on which `setTruststore` is not yet
 // defined. Here both modules are whole, and so is every process that runs the
 // stack — `server.js`'s and every request worker's.

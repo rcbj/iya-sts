@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 // THE OIDC HALF IS NOT WRITTEN HERE. IT IS DERIVED.
 //
-// `../oid4vc/vc_claims.js`'s `VC_ATTRIBUTES` already carries, for every LDAP
+// `../oid4vc/vc_claims.ts`'s `VC_ATTRIBUTES` already carries, for every LDAP
 // attribute this service knows how to put on a person, the OpenID Connect
 // claim name it corresponds to — because the credential issuer needed exactly
 // that mapping in the other direction. Writing a second table here would be

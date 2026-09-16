@@ -564,7 +564,7 @@ function fingerprintOf(pem) {
   // `colon-hex` is what `openssl x509 -fingerprint -sha256` prints, which is
   // what a person is holding when they compare this by eye. It is the same
   // digest RFC 8705's `x5t#S256` uses in `oauth-oidc/mtls.js` and the same one
-  // SPIRE's authority id truncates in `spiffe/spiffe_ca.js` — three spellings
+  // SPIRE's authority id truncates in `spiffe/spiffe_ca.ts` — three spellings
   // of one computation, which is why the format is a parameter and the three
   // functions that each computed it are one.
   return stsCrypto.certificateThumbprint(pem, { format: 'colon-hex' });
@@ -1337,7 +1337,7 @@ function secureContextOptions() {
 // While the certificate above was SELF-SIGNED those were one question with one
 // answer, and three callers in this repository answered it by pinning the leaf:
 // the back channel in `common/oidc_rp.js`, the loopback push in
-// `ssf/ssf_http.js`, and the suite's anchor in `tests/tools/trust.js`.
+// `ssf/ssf_http.ts`, and the suite's anchor in `tests/tools/trust.js`.
 //
 // The hour the leaf acquired an ISSUER all three broke, and they broke in the
 // way that names nothing about what changed. OpenSSL takes a self-signed leaf
@@ -3488,7 +3488,7 @@ function refuseTruststoreChange(req, res, route) {
 // forwarded from there to the action and view layers in `admin-core/`. This
 // module cannot hand them over itself at require time, and the reason is worth
 // knowing before anybody tries: it is first loaded from INSIDE `admin.js`'s own
-// require — `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.js`
+// require — `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.ts`
 // → here — so a `require('../admin-ui/admin')` at this module's top level
 // would be a cycle and would hand back that module's half-built exports, on
 // which `setTruststore` does not exist yet. `common/protocol_stack.js` fills

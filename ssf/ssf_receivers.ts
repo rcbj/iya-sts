@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `SsfReceivers` takes node's `crypto`, the logger, `randomId()`,
-// `iso()`, `common/crypto.js`, `cluster/cluster_secrets.js`, `config`, `mode`,
+// `iso()`, `common/crypto.js`, `cluster/cluster_secrets.ts`, `config`, `mode`,
 // `realms`, `audit`, `ssf_subjects.js`, `ssf_events.js`, `ssf_streams.ts`,
 // `ssf_http.ts` and the error-code registry through its constructor. The inbox
 // store and the SURFACES table stay module-level declarations (a store becomes
@@ -99,7 +99,7 @@
 // and the two pages are registered by the two SURFACES, because a receiver
 // hosts its own endpoint and a page belongs to the application it is a page
 // of. It requires `helpers`, `config`, `realms`, `audit`, `mode`,
-// `common/crypto.js`, `cluster/cluster_secrets.js`, the error-code registry,
+// `common/crypto.js`, `cluster/cluster_secrets.ts`, the error-code registry,
 // `ssf_subjects`, `ssf_events`, `ssf_streams` and `ssf_http` — every one of
 // them a library that registers nothing and none of which requires this file —
 // so it can be required from `admin-ui/admin.js` (18) and `portal/portal.js`
@@ -328,7 +328,7 @@ class SsfReceivers {
 
   // **THE CLUSTER'S SINCE 2026-09-14 (#46).** Per run, a push from another
   // container's transmitter to this node's receiver carried a token derived
-  // from a secret this node did not hold. `cluster/cluster_secrets.js` owns it
+  // from a secret this node did not hold. `cluster/cluster_secrets.ts` owns it
   // now and keeps the environment channel described above: the front process
   // puts the shared value in `SECRET_VAR` before it forks.
   private internalSecret() {

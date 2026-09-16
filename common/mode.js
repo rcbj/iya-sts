@@ -571,7 +571,7 @@ const REQUIREMENTS = [
              'holding a second factor, which that grant cannot carry. ' +
              'WS-Trust requires a credential, and accepts an assertion only ' +
              'when this realm signed it and it is inside its Conditions.',
-    where: 'common/credentials.js, ws-trust/wstrust.js, oauth-oidc/oauth2.js' },
+    where: 'common/credentials.js, ws-trust/wstrust.ts, oauth-oidc/oauth2.js' },
   { id: 'resource-metadata-import',
     what: 'An RFC 9728 protected resource metadata import is held to the ' +
           'rules a client of the document follows',
@@ -598,7 +598,7 @@ const REQUIREMENTS = [
     development: 'An assertion or token that should have been encrypted and ' +
                  'could not be is sent in the clear, with a warning.',
     product: 'Refused.',
-    where: 'saml/saml2_sso.js, ws-trust/wstrust.js' },
+    where: 'saml/saml2_sso.ts, ws-trust/wstrust.ts' },
   { id: 'objects',
     what: 'A referenced object must already exist',
     development: 'A user, application, service principal or authorization ' +
@@ -609,7 +609,7 @@ const REQUIREMENTS = [
              'of time, through the console, /admin-api, SCIM or an LDAP add.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'common/applications.js, oauth-oidc/authorization_servers.js, ' +
-           'spiffe/spiffe_workload.js, scim/scim_auth.js' },
+           'spiffe/spiffe_workload.ts, scim/scim_auth.ts' },
   { id: 'key-material',
     what: 'Signing keys survive a restart',
     development: 'A new signing key is generated on every start and held in ' +
@@ -708,7 +708,7 @@ const REQUIREMENTS = [
              'check neither; a HOBA key may be registered only by the ' +
              'signed-in owner of an existing account, and registering one ' +
              'never creates an account.',
-    where: 'scim/scim_auth.js' },
+    where: 'scim/scim_auth.ts' },
   { id: 'shared-signals',
     what: '/ssf requires a credential',
     development: 'Required in one of the schemes the endpoints accept — and ' +
@@ -716,7 +716,7 @@ const REQUIREMENTS = [
     product: 'Required and verified: a Basic credential is checked against ' +
              'the person\'s userPassword, and ssf.authBasic removes the ' +
              'scheme.',
-    where: 'ssf/ssf_auth.js' },
+    where: 'ssf/ssf_auth.ts' },
   { id: 'demo-data',
     what: 'A new service contains demonstration data',
     development: 'The directory is seeded with three people, two groups, a ' +
@@ -732,7 +732,7 @@ const REQUIREMENTS = [
              'KDC refuses to build krbtgt or its service account on the ' +
              'passwords published in this repository.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
-           'spiffe/spiffe_registry.js' },
+           'spiffe/spiffe_registry.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +
@@ -740,8 +740,8 @@ const REQUIREMENTS = [
                  'fills an absent attribute with a generated value, and a ' +
                  'security event names an @example.com subject.',
     product: 'A value comes from the person\'s directory entry or is omitted.',
-    where: 'common/helpers.js, oauth-oidc/oauth2.js, oid4vc/vc_claims.js, ' +
-           'ssf/ssf_subjects.js, ssf/risc.js' },
+    where: 'common/helpers.js, oauth-oidc/oauth2.js, oid4vc/vc_claims.ts, ' +
+           'ssf/ssf_subjects.js, ssf/risc.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -761,8 +761,8 @@ const REQUIREMENTS = [
              'are not learnt from a request\'s Host header (set ' +
              'global.publicBaseUrl), and a WebAuthn RP ID that does not fit ' +
              'the host refuses the ceremony instead of falling back to it.',
-    where: 'saml/saml2_sso.js, saml/saml11_sso.js, ws-federation/wsfed.js, ' +
-           'oid4vc/vc_offers.js, oid4vc/vc_verifier.js, ' +
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, ws-federation/wsfed.ts, ' +
+           'oid4vc/vc_offers.ts, oid4vc/vc_verifier.ts, ' +
            'common/applications.js, common/oidc_rp.js, authn/authn.js' },
   { id: 'test-controls',
     what: 'Test controls are open',
@@ -784,7 +784,7 @@ const REQUIREMENTS = [
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
     where: 'tls/tls_server.js, oauth-oidc/oauth2.js, kerberos/krb5_kdc.js, ' +
-           'logout/logout.js, saml/saml11_sso.js, scim/scim_auth.js' },
+           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -844,7 +844,7 @@ const REQUIREMENTS = [
                  'mint the SVID that gets them in.',
     product: 'The same, over a registry that no longer mints an entry for ' +
              'whoever asks.',
-    where: 'spiffe/spiffe_auth.js' },
+    where: 'spiffe/spiffe_auth.ts' },
   // 2026-09-12. The one row here whose two columns differ in what is REFUSED
   // for a reason that is not "development checks nothing": both modes consult
   // the register, and the difference is what an UNREACHABLE foreign CRL costs.
@@ -865,7 +865,7 @@ const REQUIREMENTS = [
              'pki.revocationRequireDistributionPoint is on.',
     where: 'common/revocation_status.js, tls/tls_server.js, ' +
            'oauth-oidc/mtls.js, oauth-oidc/client_auth.js, ' +
-           'scim/scim_auth.js, spiffe/spiffe_auth.js, common/pki.js' },
+           'scim/scim_auth.ts, spiffe/spiffe_auth.ts, common/pki.js' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -880,7 +880,7 @@ const REQUIREMENTS = [
              'handed an ALLOW-LIST — this service\'s own addresses and ' +
              'debugger.allowedDestinations — and refuses every other ' +
              'destination, raw sockets included.',
-    where: 'debugger/debugger_server.js, debugger/debugger_api_process.js' }
+    where: 'debugger/debugger_server.ts, debugger/debugger_api_process.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be

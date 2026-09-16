@@ -7,7 +7,7 @@
 // (2026-09-13).
 //
 // Drawn here, in the console's shell through `admin.respond()`, the way
-// `gnap/gnap_admin.js` draws GNAP's. Every fact on either page comes out of ONE
+// `gnap/gnap_admin.ts` draws GNAP's. Every fact on either page comes out of ONE
 // call to `est_console.ts`, which is the call `/admin-api/est` and
 // `/admin-api/est/monitor` answer with, so the page and the operation cannot
 // disagree (rule 7).

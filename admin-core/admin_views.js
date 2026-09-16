@@ -201,7 +201,7 @@ const samlAssertionRowFor = adminActions.samlAssertionRowFor;
 // THE THREE REPORTERS, filled by ssf/ssf.ts. They are the same slots the
 // action half holds — the reports READ what the actions ACT on — so the
 // console's one setter writes into both.
-// Filled by spiffe/spiffe_server.js through the console, like the rest.
+// Filled by spiffe/spiffe_server.ts through the console, like the rest.
 // The two directory slots the new-person answer needs: the writer says
 // whether an entry can be created at all, the reader finds the container.
 // The group slots: the reader lists them, the writer says whether the page
@@ -1825,7 +1825,7 @@ function sessionsView(req) {
              wantedText: '', wantedProtocol: '',
              json: { installed: false, held: 0, matched: 0, shown: 0,
                      sessions: [],
-                     note: 'logout/logout.js is not loaded in this process, ' +
+                     note: 'logout/logout.ts is not loaded in this process, ' +
                            'so there is no reader for what is live.' } };
   }
   const all = logoutReader.liveSessions();
@@ -2828,7 +2828,7 @@ function ssfJson(req) {
     log.debug("Leaving ssfJson(). Not installed.");
     return { installed: false, enabled: false, streamDetail: [],
              receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
-             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
+             note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                    'here can report on the Shared Signals Framework.' };
   }
   const report = signalsReporter.report(req);
@@ -2896,7 +2896,7 @@ function ssfDeadLettersJson(req) {
              filter: { q: null, stream: null, cause: null },
              paging: { letters: pagingJson(pagingOf(req.query, 0,
                { name: 'letters', noun: 'dead letters' })) },
-             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
+             note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                    'here can report on the Shared Signals dead-letter ' +
                    'queues.' };
   }
@@ -2924,7 +2924,7 @@ function caepJson(req) {
     return { installed: false, enabled: false, sessions: [], eventTypes: [],
              streams: [], totals: {}, tracked: 0,
              settings: configSettingsJson('/admin/caep'),
-             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
+             note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                    'here can report on the Continuous Access Evaluation ' +
                    'Profile.' };
   }
@@ -3035,7 +3035,7 @@ function riscJson(req) {
     return { installed: false, enabled: false, accounts: [], eventTypes: [],
              streams: [], totals: {}, tracked: 0,
              settings: configSettingsJson('/admin/risc'),
-             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
+             note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                    'here can report on the Risk Incident Sharing and ' +
                    'Coordination profile.' };
   }

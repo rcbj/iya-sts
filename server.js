@@ -406,7 +406,7 @@ function announce() {
   });
   // THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13): `/pki/` and nothing else,
   // because RFC 5280 section 8 and RFC 5019 section 5 put CRL and OCSP
-  // addresses on http:// — see pki/pki_service.js. Recorded rather than
+  // addresses on http:// — see pki/pki_service.ts. Recorded rather than
   // thrown, for the reason every raw listener here is.
   require('./pki/pki_service').listen().whenReady.then(function (ready) {
     if (ready.port) {

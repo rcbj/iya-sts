@@ -2952,7 +2952,7 @@ const ROUTES = [
                  'Without `user` it is the FAMILY LIST — what a logout can ' +
                  'reach, what it cannot, and why — which is the same prose ' +
                  '/logout and /admin/logout print, read off one table in ' +
-                 '`logout/logout.js` rather than copied here.\n\nWith `user` ' +
+                 '`logout/logout.ts` rather than copied here.\n\nWith `user` ' +
                  'it is that identity: every browser sign-on session, every ' +
                  'relying party, realm and service provider signed into on ' +
                  'one, every token still revocable, every outstanding ' +

@@ -55,7 +55,7 @@
 //    requires nothing from this repository — not `helpers.js`, not `config.js`
 //    — so it can never close a require cycle and its position in the require
 //    order is not a position. That matters more here than it did in the parent:
-//    `home/home.js` (6a), `admin-ui/admin.js` (18), `mgmt-api/admin_api.js`
+//    `home/home.ts` (6a), `admin-ui/admin.js` (18), `mgmt-api/admin_api.js`
 //    (19), `portal/portal.js`, `sts_metadata.js` (24), `server.js` itself and
 //    every module that sends an outbound request all read it — modules spread
 //    across the whole require order — and a version module that could drag a
@@ -300,7 +300,7 @@ function stamp(dir) {
 // in a CHECKOUT there is no stamp — so each of them computed its own record,
 // stamping the instant IT was required. `tests/vendored/admin_api.js` found
 // the front page reporting `0.1.20260907060910` while `/admin-api` reported
-// `0.1.20260907060911`: one second apart, because `home/home.js` is required
+// `0.1.20260907060911`: one second apart, because `home/home.ts` is required
 // at 6a and `mgmt-api/admin_api.js` at 19, and the modules between them took a
 // second to load.
 //

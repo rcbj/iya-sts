@@ -3,7 +3,7 @@
 An embedded LDAP v3 directory (RFC 4511) on raw TCP 389 and, over TLS, on raw TCP
 636 as LDAPS. One file — and it is the largest module in the service, because the
 directory is also the STORE for four other things: people, groups, applications
-(`../common/applications.js`) and the SPIFFE registry (`../spiffe/spiffe_registry.js`).
+(`../common/applications.js`) and the SPIFFE registry (`../spiffe/spiffe_registry.ts`).
 
 **It is built on the `node-ldapjs` SUBMODULE and the library is not patched.** See
 the root `CLAUDE.md` for the submodule's placement rules, which have already cost

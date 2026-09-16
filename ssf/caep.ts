@@ -152,7 +152,7 @@ interface CaepRegisterDeps {
 // other three CAEP events are things nothing here observes on a sign-on
 // session: no device reports compliance to this service and no risk engine
 // talks to it (`token-claims-change` is sent only by GNAP, through
-// `gnap/gnap_signals.js`), so they are emitted by hand and a row naming one of
+// `gnap/gnap_signals.ts`), so they are emitted by hand and a row naming one of
 // them is dropped with a warning rather than producing an event nothing can
 // cause.
 const AUTO_ACTS: Record<string, string> = {

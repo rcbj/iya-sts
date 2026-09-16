@@ -8,7 +8,7 @@
 // (2026-09-13).
 //
 // Drawn here, in the console's shell through `admin.respond()`, the way
-// `acme/acme_admin.js` draws `/admin/acme/monitor`. Every fact on the page
+// `acme/acme_admin.ts` draws `/admin/acme/monitor`. Every fact on the page
 // comes out of ONE call to `oauth2_monitor_console.js`, which is the same call
 // `GET /admin-api/oauth2/monitor` answers with (rule 7).
 //

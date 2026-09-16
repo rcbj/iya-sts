@@ -2612,9 +2612,9 @@ function retryAfterOf(refusal) {
 
 // DECLARED AT REQUIRE TIME, for `cluster/cluster.js`'s reason. The row is
 // four fixes and this file holds two of them; the other two are the ACME
-// Replay-Nonce and finalize claims in `acme/acme.js` (through
-// `acme/acme_store.js`) and the SPIFFE join token claim in
-// `spiffe/spiffe_api.js`. The row names this file because the capability is
+// Replay-Nonce and finalize claims in `acme/acme.ts` (through
+// `acme/acme_store.ts`) and the SPIFFE join token claim in
+// `spiffe/spiffe_api.ts`. The row names this file because the capability is
 // "an enrollment credential is spent once", and this is where they live.
 capabilities.provide('enrollment.credentials-once');
 

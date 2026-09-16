@@ -11,7 +11,7 @@
 // Both doors call `oauth2_monitor_console.js` (rule 7).
 //
 // **THIS FILE REGISTERS NO ROUTE AND REQUIRES ITS VIEW MODEL LAZILY**, inside
-// each handler, for `acme/acme_api.js`'s reason: the model requires
+// each handler, for `acme/acme_api.ts`'s reason: the model requires
 // `admin-core/admin_views.js`, which may be loaded at 18 or later and nowhere
 // earlier. By the time a handler runs the page module has loaded it at 18f and
 // the require is a cache hit.

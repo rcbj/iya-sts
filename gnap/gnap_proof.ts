@@ -67,7 +67,7 @@
 // table, `mtls.js`, `gnap_httpsig` and `gnap_store` through its constructor,
 // and every helper is one of its private methods. The module still exports
 // the old names from a TRANSITIONAL instance for `gnap_grants`, `gnap_rs`,
-// `ssf/ssf_cluster.js` and the tests, which require it by those names.
+// `ssf/ssf_cluster.ts` and the tests, which require it by those names.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -741,7 +741,7 @@ class GnapProof {
   // remembers a key (twice `gnap.signatureMaxAgeS`), plus the store's skew.
   //
   // `presentation()` in gnap_rs.ts keeps the synchronous call, because
-  // ssf/ssf_auth.js calls it synchronously; its asynchronous caller spends the
+  // ssf/ssf_auth.ts calls it synchronously; its asynchronous caller spends the
   // keys it returns (see there).
   // ---------------------------------------------------------------------------
   private noteReplayKey(ctx, key) {

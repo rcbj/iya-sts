@@ -293,7 +293,7 @@ Four decisions, and each is a refusal:
   directory, which a bulk-loaded realm holds fifty thousand people in. A lookup
   asks the authorities first, and a leaf signs nothing, so it is never a
   candidate issuer.
-* **`tls/tls_server.js` AND `spiffe/spiffe_ca.js` ARE REQUIRED INSIDE THE
+* **`tls/tls_server.js` AND `spiffe/spiffe_ca.ts` ARE REQUIRED INSIDE THE
   FUNCTIONS**, for rule 1: `admin-ui/pki_admin.js` requires this file at 18a and
   the TLS module registers routes at 20. A request runs after every module has
   loaded, so inside a function the require is a cache hit. `admin_views.js` is
@@ -318,7 +318,7 @@ cannot disagree.
 
 **IT NEVER LOADS A ROUTE-REGISTERING MODULE, NOT EVEN LAZILY.**
 `sts_metadata.js` (names, the router walk), `ldap/ldap_server.js` (the realm's
-base DN), `kerberos/krb5_kdc.js` (the realm name) and `spiffe/spiffe_server.js`
+base DN), `kerberos/krb5_kdc.js` (the realm name) and `spiffe/spiffe_server.ts`
 (the bindings) are read out of `require.cache` by `loaded()` only if something
 already loaded them. `certificate_views.js` requires inside a function, which
 is a cache hit once the stack is up; this goes one step further because the

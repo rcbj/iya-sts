@@ -1306,7 +1306,7 @@ directories, after SPIFFE gained a pair of sockets per realm:
 | `ssf/caep.ts` register | `new Map()` | `realms.map({ persist: 'caep.register' })` | every realm's sessions on every realm's `/admin/caep-sessions` |
 | `ssf/risc.ts` register | `new Map()` | `realms.map({ persist: 'risc.register' })` | a deletion in one realm's directory on every realm's `/admin/risc-accounts` |
 | `oid4vc/vc_offers.ts` `deferredAccessTokens` | `new Set()` | `realms.map({ persist })`, keyed by a SHA-256 of the token | a deferred token deferred in every realm, and on one worker |
-| `spiffe/spiffe_auth.js` recorded connections | `sharedMap()`, `scope: 'shared'` | `realms.map({ persist })` | one realm's gRPC connections evicting another's from the cap |
+| `spiffe/spiffe_auth.ts` recorded connections | `sharedMap()`, `scope: 'shared'` | `realms.map({ persist })` | one realm's gRPC connections evicting another's from the cap |
 | `scim/scim_auth.ts` Digest nonces, HOBA challenges and replay set | `new Map()` ×3 | `realms.map()`, not persisted | one realm's unauthenticated challenges evicting another's |
 | `federation/federation.js` release index | two `let`s | `realms.keyed()` | one realm's release policy applied to another realm's tokens for five seconds |
 | `oid4vc/vc_issuer.ts` last Credential Request | a `let` | `realms.keyed()` | one realm's debugging endpoint reporting another's request |
@@ -4593,7 +4593,7 @@ module about certificates would be a require nothing needs.
 That is `crypto.js`'s own split, made a second time and for the same reason.
 `common/vendored/x509.js` is the parent project's PKI code, byte-identical —
 already held to roughly 240 certificates against OpenSSL over there, already
-what `spiffe/spiffe_ca.js` mints every X509-SVID with. What this file adds is
+what `spiffe/spiffe_ca.ts` mints every X509-SVID with. What this file adds is
 what is true of THIS service: which three tiers, which realm they belong to,
 where the private keys live, that a leaf is a SIGNING certificate, and what a
 path check must refuse.
@@ -4705,7 +4705,7 @@ widened every Intermediate in the service for one use case in one of them.
 
 **A USE CASE MAY ALSO PREFER A KEY ALGORITHM, AND EXACTLY ONE DOES.** `spiffe`
 asks for EC P-256, which is what SPIRE issues and what the X509-SVID
-specification recommends — the fidelity `spiffe/spiffe_ca.js` justifies vendoring
+specification recommends — the fidelity `spiffe/spiffe_ca.ts` justifies vendoring
 a certificate encoder for. It is a PREFERENCE: `algorithmsForUseCase()` honours
 it only when neither the build call nor `pki.keyAlgorithm` named one, because an
 operator who chose an algorithm for their certificate authority meant it for
@@ -4814,7 +4814,7 @@ other node's tier (`STS-PKI-0182` at warn), a deliberate Build is refused with
 it. It is a claim and not `cluster.withLease()`, because a lease there is a role a
 node keeps, and a Build pressed on any other node would be refused for as long as
 the holder lived. `STS-PKI-0183` is a store that could not be asked,
-`STS-PKI-0184` a claim held past three minutes. `scep/scep_ra.js` uses the same
+`STS-PKI-0184` a claim held past three minutes. `scep/scep_ra.ts` uses the same
 function under a claim of its own. `buildScopeNow()` also writes its branch onto
 the row as it is when it saves, not as it was read before nine awaits.
 
@@ -6196,11 +6196,11 @@ one available and an unedited service behaves exactly as it did.
 | `admin-console` | `admin-ui/admin.js`'s gate | the two console roles |
 | `user-portal` | `portal/portal.js`'s `requireSignIn()` | a sign-on session |
 | `scim` | `scim/scim_auth.ts`'s `authenticate()` funnel | six RFC 7644 schemes, then the scope |
-| `spire-server-api` | `spiffe/spiffe_grpc.js`'s `prepareCall()` | SPIRE's own per-method table |
+| `spire-server-api` | `spiffe/spiffe_grpc.ts`'s `prepareCall()` | SPIRE's own per-method table |
 | `management-api` | `mgmt-api/admin_api.js`'s middleware — for an access token (`adminApi.authRequired`, on by default, every mode), and for a console session in **product mode** with that setting off | the token's scopes, or the two console roles |
 | `xacml-pep-api` | `xacml/xacml.js`'s `pepAccess()`, including `POST /xacml/pip` | a VERIFIED client certificate resolved to a directory entry |
 | `xacml-api` | `xacml/xacml.js`'s `xacmlAccess()` | the same chain, with `XACML_USER` on the end |
-| `protocol-debugger` | `debugger/debugger_access.js` | the two console roles, carried in the request |
+| `protocol-debugger` | `debugger/debugger_access.ts` | the two console roles, carried in the request |
 
 **THE TWO XACML ROWS AND THE DEBUGGER ARE NOT LIKE THE FIVE ABOVE THEM, AND
 THE DIFFERENCE IS THE DEFAULT.** The five are surfaces an operator NARROWS:
@@ -6729,7 +6729,7 @@ twelfth, 2026-09-13 — built by one `certificateHeaderSetting()` in
 * **THE `x5u` ORIGIN IS AMBIENT.** `common/app.js` enters the request into an
   `AsyncLocalStorage` just below the realm middleware; `global.publicBaseUrl`
   wins where pinned; a signature with neither gets no `x5u`. The address is
-  `/pki/chain/{scope}/{sha256}.pem` in `pki/pki_service.js`, scope in the path
+  `/pki/chain/{scope}/{sha256}.pem` in `pki/pki_service.ts`, scope in the path
   for the CRL's reason and named by the CERTIFICATE so it never answers a chain
   over a rotated key.
 * **TWO SIGNERS ARE EXEMPT AND ONE WAS A MISTAKE FIRST.** The SPIFFE JWT-SVID has
@@ -7037,7 +7037,7 @@ above the function named; what a maintainer needs before touching them:
   refused once — the claim cannot say which account holds it);
   `redeemScepChallengeOnce()` claims the challenge id between the peek and the
   spend. ACME's nonce and finalize and SCEP's transaction are in their own
-  directories' files; the SPIFFE join token in `spiffe/spiffe_api.js`.
+  directories' files; the SPIFFE join token in `spiffe/spiffe_api.ts`.
 * **`STS-AUTHN-0182`** is one code for "a single-use credential could not be
   proved unspent": every door refuses on it.
 

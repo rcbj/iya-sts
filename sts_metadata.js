@@ -442,7 +442,7 @@ const SPECS = [
               'different outcome from a network failure and is recorded as ' +
               'one. It also RECEIVES on that profile at POST /ssf/receive, ' +
               'the roles reversed, so a client can be the transmitter. NOT ' +
-              'covered: retries, deliberately — see ssf/ssf_http.js.' },
+              'covered: retries, deliberately — see ssf/ssf_http.ts.' },
   { id: 'caep', name: 'OpenID Continuous Access Evaluation Profile 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-caep-1_0-final.html',
@@ -3777,7 +3777,7 @@ const ENDPOINTS = [
           'own bearer token, compared in constant time, then the `aud`, then ' +
           'the signature — and it is exempt from the CSRF check for the same ' +
           'reason, there being no browser and no cookie. See ' +
-          'ssf/ssf_receivers.js.',
+          'ssf/ssf_receivers.ts.',
     coverage: 'full for RFC 8935 section 2.1 receipt: the media type, the ' +
               'authorization header, the 202 with an empty body, and section ' +
               '2.4\'s {err, description} refusal shape. Poll delivery at ' +
@@ -4201,7 +4201,7 @@ const ENDPOINTS = [
     what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, WITH THIS SERVICE AT BOTH ' +
           'ENDS (2026-09-10). The portal\'s stream names this path as its ' +
           '`delivery.endpoint_url`, on this service\'s own loopback ' +
-          'address, and `ssf/ssf_http.js` POSTs each SET here as ' +
+          'address, and `ssf/ssf_http.ts` POSTs each SET here as ' +
           'application/secevent+jwt with the stream\'s ' +
           '`authorization_header`. IT IS A REAL HTTP REQUEST ON PURPOSE: ' +
           'handing the event to the page in process would skip the body, the ' +
@@ -5827,7 +5827,7 @@ const ENDPOINTS = [
           '/admin-api/logout rather than a shape of it: that one answers ' +
           '"what is alice still signed into", keyed on one identity across ' +
           'ten families, and this one answers "who is signed in at all", ' +
-          'which has no user in it. Both read logout/logout.js, the one ' +
+          'which has no user in it. Both read logout/logout.ts, the one ' +
           'model of what a live session is. Every row carries the key and id ' +
           'the revoke takes, the sessionId that GET ' +
           '/admin-api/tokens?session= takes, and an expiryRule saying which ' +
@@ -8598,7 +8598,7 @@ const PROTOCOLS = [
     sockets: 'It is also the only protocol family here that makes an ' +
              'OUTBOUND request. Push delivery POSTs to a URL the RECEIVER ' +
              'chose, which is a weaker position than federation\'s ' +
-             'back-channel and ssf/ssf_http.js argues rather than cites: ' +
+             'back-channel and ssf/ssf_http.ts argues rather than cites: ' +
              'RFC 8935 push IS the receiver telling the transmitter where ' +
              'to post. ssf.pushDelivery turns it off entirely, and poll ' +
              'delivery dials nothing at all.' },
@@ -8612,7 +8612,7 @@ const PROTOCOLS = [
           'the third — plus Single Logout and SIGNED METADATA PER SERVICE ' +
           'PROVIDER, minted for any entityID asked for. **This card used to ' +
           'say NO ROUTE OF ITS OWN**, and it was true for years: the ' +
-          'assertions were built by saml/saml2.js and travelled inside ' +
+          'assertions were built by saml/saml2.ts and travelled inside ' +
           'somebody else\'s envelope. They still do — a WS-Trust RSTR and a ' +
           'WS-Federation wresult carry the same builder\'s output — and now ' +
           'there is a browser profile of their own beside it.',
@@ -8621,7 +8621,7 @@ const PROTOCOLS = [
              'before this profile existed.' },
   { name: 'SAML 1.1', groups: ['SAML 1.1'],
     specs: ['saml11', 'saml11-bindings', 'saml11-profiles', 'xmldsig'],
-    what: 'The same again in the older grammar (saml/saml11.js), because a ' +
+    what: 'The same again in the older grammar (saml/saml11.ts), because a ' +
           'WS-Federation relying party is as likely to want SAML 1.1 as 2.0 ' +
           'and an implementation that only ever tested the newer one has ' +
           'tested half of what it claims. **This card used to say it had no ' +

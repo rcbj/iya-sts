@@ -25,7 +25,7 @@ libraries that decide things on its behalf.
 | `oauth2_monitor_api.js` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.js` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.js` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.js` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
-| `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.js`, `oauth2_bcp.js`, `dpop.js`, `mgmt-api/admin_api.js` and `debugger/debugger_server.js` require and that may require none of them back. See 3ao. |
+| `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.js`, `oauth2_bcp.js`, `dpop.js`, `mgmt-api/admin_api.js` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
 
 **Everything but `oauth2.js` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.js`, required at 18f rather than from here — registers
@@ -1599,7 +1599,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    `applications.js` or `oauth2.js`, because all five require IT** — and the
    binding one is `dpop.js`, which sits BELOW `oauth2_bcp.js` and so could not
    have reached the predicates there. `mgmt-api/admin_api.js` and
-   `debugger/debugger_server.js` require it too, as cache hits: each verifies
+   `debugger/debugger_server.ts` require it too, as cache hits: each verifies
    its own access token instead of going through `presentedAccessToken()`, so
    each has to ask for itself. The split is `oauth21.js`'s: every fact is PASSED
    IN — what the request proved, what the token carries, what the connection
@@ -1664,7 +1664,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    `accessTokenRefusal()` is asked at `presentedAccessToken()` in `dpop.js` —
    which is UserInfo, the RFC 9470 step-up resource, the three OpenID4VCI
    endpoints, `/scim/v2` and the Shared Signals endpoints in one place — and
-   again in `mgmt-api/admin_api.js`'s gate and `debugger/debugger_server.js`'s,
+   again in `mgmt-api/admin_api.js`'s gate and `debugger/debugger_server.ts`'s,
    each of which verifies its own token. **Deliberately out of scope**: GNAP's
    own tokens, which are not OAuth access tokens; the RFC 7592 registration
    access token; and the endpoints that take a token as a PARAMETER rather than

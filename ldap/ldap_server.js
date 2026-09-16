@@ -5577,7 +5577,7 @@ function applyVcAttributes(stored, key) {
   // creation, Populate on /admin/vc, a SCIM create and a returning person's
   // sign-in all come through, which is why the refusal is here rather than at
   // those five callers. A credential then carries what the entry holds or
-  // omits the claim — see `oid4vc/vc_claims.js`.
+  // omits the claim — see `oid4vc/vc_claims.ts`.
   if (!mode.inventsClaimValues()) {
     log.debug('Leaving applyVcAttributes(). This service invents no claim ' +
               'value in this mode.');
@@ -9164,7 +9164,7 @@ const liveConnections = new Set();
 // "there are none" by the process that answers `/logout`.
 //
 // **THAT IS NOT A DEGRADED ANSWER, IT IS A WRONG ONE, AND IT WAS SILENT.** The
-// sign-out driver in ../logout/logout.js ends what `collect()` finds; an empty
+// sign-out driver in ../logout/logout.ts ends what `collect()` finds; an empty
 // list is nothing to end and nothing to report, so a global logout in dispatch
 // mode said it had ended everything while a bound LDAP connection — which IS
 // the session, RFC 4511 section 4.2 — went on being signed in. It cost a whole
@@ -9444,7 +9444,7 @@ function dropConnectionsFor(key, options) {
   //
   // THEY ARE REMOVED FROM THE MIRROR TOO, so that the second call for the same
   // person finds nothing left and says "already closed" — which is what the
-  // single-process path does, and ../logout/logout.js's ldap family depends on
+  // single-process path does, and ../logout/logout.ts's ldap family depends on
   // it: a global logout calls this once per row and every call after the first
   // must not re-report the same connection.
   // -------------------------------------------------------------------------
@@ -9457,7 +9457,7 @@ function dropConnectionsFor(key, options) {
     // -----------------------------------------------------------------------
     // A FAILED ASK THROWS, AND THAT IS THE POINT RATHER THAN AN OVERSIGHT.
     //
-    // ../logout/logout.js's driver catches whatever a family's terminate()
+    // ../logout/logout.ts's driver catches whatever a family's terminate()
     // throws and records the row as NOT ended, with the message. Returning the
     // rows here instead would report "the directory connection was closed"
     // about a socket nobody had been asked to close — which is the bug this
@@ -12347,7 +12347,7 @@ function applicationCount() {
 function allApplications() {
   log.debug('Entering allApplications().');
   // entriesUnder() RATHER THAN A WALK OF THE REALM (2026-09-12), for
-  // allPolicies()'s reason. `ssf/ssf_streams.js` asks the registry for every
+  // allPolicies()'s reason. `ssf/ssf_streams.ts` asks the registry for every
   // application on each event, per stream, to find a stream owner named by an
   // `ssfReceiverId` — and a walk normalises every DN in the realm, people
   // included. A SCIM bulk load in the dispatch mode emits an event per person,
@@ -13515,7 +13515,7 @@ function readPerson(dn) {
 //
 // RISC is a vocabulary about ACCOUNTS, and the acts it reports — an account
 // disabled, enabled, purged, an identifier changed — happen HERE, in the
-// directory, and nowhere else. `ssf/risc.js` is what turns one into a Security
+// directory, and nowhere else. `ssf/risc.ts` is what turns one into a Security
 // Event Token, and it cannot be required from this file: this module is loaded
 // early enough to bind port 389 and `ssf/` is 23b in the require order, so a
 // require in that direction would drag every `/ssf` route ahead of the
@@ -15772,7 +15772,7 @@ module.exports = {
   applyOperationResult: applyOperationResult,
   ldapErrorNamed: ldapErrorNamed,
   // The live connections, and the only sign-out LDAP has. Read by
-  // ../logout/logout.js, which requires this module in the ordinary direction:
+  // ../logout/logout.ts, which requires this module in the ordinary direction:
   // the require order loads it long before that one, so the require moves no
   // route and closes no cycle, and rule 3e's test therefore asks for no slot.
   // See the block above boundConnections().
@@ -15813,7 +15813,7 @@ module.exports = {
   publishConnectionsSoon: publishConnectionsSoon,
   setConnectionMirror: setConnectionMirror,
   setRemoteDropper: setRemoteDropper,
-  // THE ACCOUNT OBSERVER, filled by ssf/risc.js's host ssf/ssf.js at require
+  // THE ACCOUNT OBSERVER, filled by ssf/risc.ts's host ssf/ssf.ts at require
   // time. See setAccountObserver()'s header: this is the only direction that
   // works, and it is on the STORE rather than on any one door because the
   // same act reaches this directory over SCIM, over LDAP and from the console.

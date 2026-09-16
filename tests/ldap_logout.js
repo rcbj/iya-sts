@@ -127,7 +127,7 @@ function checkTheMirrorIsRead(t) {
       t.check(seen.some(function (c) { return c.key === 'alice'; }) &&
               seen.some(function (c) { return c.key === 'bob'; }),
               'and carries the identity key each connection is bound as',
-              'the key is what ../logout/logout.js filters on, so a row ' +
+              'the key is what ../logout/logout.ts filters on, so a row ' +
               'without one is a row no sign-out can ever match: ' +
               JSON.stringify(seen.map(function (c) { return c.key; })));
       const one = seen[0];

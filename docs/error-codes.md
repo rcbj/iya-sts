@@ -2812,7 +2812,7 @@ Raised from: mgmt-api/.
 | `STS-API-0015` | A key export was refused (an unknown key, an unsupported format, or a missing PKCS#12 password) and the refusal carried no more specific code. | HTTP 400 { ok: false, errors } |
 | `STS-API-0016` | A key export threw while the keystore file was being built. | HTTP 400 { ok: false, errors } |
 | `STS-API-0017` | The TLS truststore reader is not installed in this process, so the truststore could not be reported. | HTTP 503 |
-| `STS-API-0018` | The Shared Signals action rejected instead of resolving a refusal, which is a defect in ssf/ssf.js. | HTTP 500 { ok: false, errors } |
+| `STS-API-0018` | The Shared Signals action rejected instead of resolving a refusal, which is a defect in ssf/ssf.ts. | HTTP 500 { ok: false, errors } |
 | `STS-API-0019` | The CAEP action rejected instead of resolving a refusal. | HTTP 500 { ok: false, errors } |
 | `STS-API-0020` | The RISC action rejected instead of resolving a refusal. | HTTP 500 { ok: false, errors } |
 | `STS-API-0021` | The PKI action rejected (certificate authority or key generation threw). | HTTP 500 { ok: false, errors } |

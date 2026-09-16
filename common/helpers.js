@@ -326,7 +326,7 @@ const HOST = config.value('global.host');
 //
 // OID4VCI section 10: the ISSUER publishes a key in
 // `credential_request_encryption.jwks` and a wallet encrypts its Credential
-// Request to it. That key lived in `oid4vc/vc_issuer.js` until this date as a
+// Request to it. That key lived in `oid4vc/vc_issuer.ts` until this date as a
 // thing of its own — generated at module load, handed to request workers
 // through `process.env.STS_VCI_REQUEST_ENC_KEY_PEM`, persisted in no mode — and
 // every trust realm in a pooled process shared the one key the pool handed
@@ -1728,7 +1728,7 @@ function prepareKeySets(realmIds) {
 // ---------------------------------------------------------------------------
 // THE OPENID4VCI REQUEST-ENCRYPTION KEY OF A KEY SET, as `{ privateKey,
 // publicJwk }` — the CURRENT realm's when no set is named. What
-// `oid4vc/vc_issuer.js` publishes and decrypts with.
+// `oid4vc/vc_issuer.ts` publishes and decrypts with.
 //
 // Every set made from 2026-09-12 carries one, so this is a property read. The
 // rest of the function is the ONE case that does not: a set RESTORED from a
@@ -2026,7 +2026,7 @@ let bbsRefusedText = '';
 // **AND ACROSS NODES SINCE 2026-09-14 (#46 section 1).** The same three jobs
 // failed again in the suite's `cluster` mode, one level up: each CONTAINER
 // generated its own pair, so `/bbs/keys/1` answered a different key on each
-// node. `cluster/cluster_secrets.js` now declares the pair (`bbs-keypair`):
+// node. `cluster/cluster_secrets.ts` now declares the pair (`bbs-keypair`):
 // the store keeps the first node's, sealed, and every front process puts it in
 // `STS_BBS_KEYPAIR` before anything issues — the variable this function
 // already read. Its argument for being there rather than in `sts_keys` is at
@@ -2842,7 +2842,7 @@ function publishedKidFor(kid) {
 
 // Does a header's `kid` name the ambient realm's key with this internal kid,
 // under either spelling. For the verifiers here that find their own key by
-// `kid` (`ssf/ssf_events.js`, `oid4vc/vc_verifier.js`).
+// `kid` (`ssf/ssf_events.js`, `oid4vc/vc_verifier.ts`).
 function kidNamesKey(headerKid, internalKid) {
   log.debug("Entering kidNamesKey().");
   log.debug("Leaving kidNamesKey().");
@@ -3414,8 +3414,8 @@ function numberWord(count) {
 // to retry, and dropping them leaves a conforming client unable to proceed with
 // no error to point at.
 //
-// It was written inside `scim/scim_auth.js` and moved here on 2026-08-31 when
-// `ssf/ssf_auth.js` became the second caller. A second copy of this would be a
+// It was written inside `scim/scim_auth.ts` and moved here on 2026-08-31 when
+// `ssf/ssf_auth.ts` became the second caller. A second copy of this would be a
 // second thing to update, and it would be a version behind within a release —
 // which is the argument that file already made about not writing a second
 // access-token check.

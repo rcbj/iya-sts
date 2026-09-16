@@ -38,7 +38,7 @@ records the principal as the entry itself (`admin: false`, `hasEntry: true`).
 | `acme_jws.ts` | The envelope, read strictly: the media type, the flattened JWS, strict base64url, the protected header, account keys and their RFC 7638 thumbprint, the signature (through `common/crypto.js`), the Replay-Nonce, the External Account Binding, the payload schemas, contacts, RFC 9773 certificate identifiers. A LIBRARY — no route, no state |
 | `acme_store.ts` | Seven `realms.map({ persist })` stores: accounts, the key → account index, orders, authorizations, the certificate index, the renewal index, spent nonces |
 | `acme.ts` | The fourteen routes under `/enroll/acme`, and `require('./acme_admin')` so the family is one line in `common/protocol_stack.js` (23e) |
-| `acme_console.ts` | The view and action model both admin doors render (no route, no `res`, no markup), `gnap/gnap_console.js`'s arrangement |
+| `acme_console.ts` | The view and action model both admin doors render (no route, no `res`, no markup), `gnap/gnap_console.ts`'s arrangement |
 | `acme_admin.ts` | `/admin/acme` (Protocols) and `/admin/acme/monitor` (Monitoring) |
 | `acme_api.ts` | `ROUTES` for `/admin-api/acme`, `/admin-api/acme/monitor` and `/admin-api/acme/:action`, spread into `mgmt-api/admin_api.js` |
 
@@ -86,8 +86,8 @@ A nonce has to be accepted by whichever process answers the NEXT request — the
 front process or any request worker — and a replicated store arrives half a
 second to a second late. So a nonce is `version | expiry | 16 random bytes |
 MAC(realm, expiry, random)` under the `acme-nonce` secret
-`cluster/cluster_secrets.js` declares, put into `STS_ACME_NONCE_SECRET` before
-any worker forks (`ssf/ssf_receivers.js`'s channel). Any process can check it
+`cluster/cluster_secrets.ts` declares, put into `STS_ACME_NONCE_SECRET` before
+any worker forks (`ssf/ssf_receivers.ts`'s channel). Any process can check it
 with no lookup.
 
 **Single use is the store half** (`acme.usedNonces`) and it CONVERGES rather

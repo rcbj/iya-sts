@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE EMBEDDED DEBUGGER'S API CHILD, SUPERVISED (2026-09-13).
 //
-// `debugger/debugger_api_process.js` forks the debugger's api and keeps it
+// `debugger/debugger_api_process.ts` forks the debugger's api and keeps it
 // running. This file forks a STAND-IN api — thirty lines written here that bind
 // the socket, say they are listening and report what they were given — and
 // asserts the five things the supervisor exists for:

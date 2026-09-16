@@ -624,13 +624,13 @@ app.options('*', corsPolicy.preflight());
 // **`application/pkcs10` JOINED THEM ON 2026-09-13, FOR EST.** An EST body is
 // base64 text rather than DER (RFC 8951), so the text parser would not corrupt
 // it — but it would strip a byte-order mark and replace an invalid byte with
-// U+FFFD before `est/est.js` could refuse the body for containing one, which
+// U+FFFD before `est/est.ts` could refuse the body for containing one, which
 // turns a malformed request into a different malformed request. Taken raw, the
 // bytes EST checks are the bytes the client sent.
 // **`application/x-pki-message` JOINED THEM THE SAME DAY, FOR SCEP.** A
 // PKIOperation POST (RFC 8894 section 4.3) is a binary CMS SignedData, which
 // is the OCSP case exactly: the text parser would drain the stream and decode
-// DER as UTF-8, so `scep/scep.js` would verify a signature over bytes the
+// DER as UTF-8, so `scep/scep.ts` would verify a signature over bytes the
 // client never signed and refuse every correct request as badMessageCheck.
 app.use(bodyParser.raw({
   type: ['application/kerberos', 'application/octet-stream',

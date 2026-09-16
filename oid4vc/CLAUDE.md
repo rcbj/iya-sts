@@ -24,7 +24,7 @@ exists.
 **`vc_claims.ts` is read from many points of the require order and from
 eight directories** — `vc_issuer.ts` and `vc_verifier_config.ts` here,
 `../common/claim_attributes.js`, `../oauth-oidc/oauth2.js`,
-`../federation/federation_map.js`, `../admin-ui/admin.js`,
+`../federation/federation_map.ts`, `../admin-ui/admin.js`,
 `../admin-core/admin_actions.js` and `admin_views.js`,
 `../ldap/ldap_server.js` and `../scim/scim_map.ts` — so it must stay a
 library. It is in this directory rather than in `common/` because the

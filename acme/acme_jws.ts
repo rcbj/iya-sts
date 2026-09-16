@@ -537,7 +537,7 @@ class AcmeJws {
 
   // **THE CLUSTER'S SINCE 2026-09-14 (#46).** Per run and per container, every
   // other container refused this one's nonces as forged and a client
-  // alternating between them looped on `badNonce`. `cluster/cluster_secrets.js`
+  // alternating between them looped on `badNonce`. `cluster/cluster_secrets.ts`
   // now owns the value — the store's, sealed, where one can be shared; this
   // environment variable, per run, where none can — and keeps the environment
   // channel below working, which is why `NONCE_SECRET_VAR` is still named here.
@@ -987,7 +987,7 @@ const CHALLENGE_RESPONSE = vz.looseObject({});
 // secret every process shares. Any process can check that it issued one, when
 // it expires and for which realm, with no lookup at all.
 //
-// The secret travels the way `ssf/ssf_receivers.js` sends its own: put into the
+// The secret travels the way `ssf/ssf_receivers.ts` sends its own: put into the
 // environment before any worker forks, so a forked worker inherits it. Where
 // the store cannot share it (memory, ldif) it is per run and never written
 // down, so a nonce from before a restart fails its MAC — and a client told

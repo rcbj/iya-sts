@@ -121,8 +121,8 @@ interface SsfClusterDeps {
     claim(opts: { scope: string; value: string;
                   ttlMs: number }): Promise<any>;
   };
-  // `persistence/persistence.js`, `gnap/gnap_rs.js` and
-  // `gnap/gnap_proof.js`, required when first asked for. See the header.
+  // `persistence/persistence.js`, `gnap/gnap_rs.ts` and
+  // `gnap/gnap_proof.ts`, required when first asked for. See the header.
   loadPersistence(): { clusterStore(): unknown };
   loadGnapRs(): { presentation(req: ClusterRequest): any };
   loadGnapProof(): { spendProof(presented: unknown): unknown };

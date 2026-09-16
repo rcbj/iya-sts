@@ -6,7 +6,7 @@
 // WHAT THE TWO ACME CONSOLE PAGES AND THEIR MANAGEMENT API OPERATIONS READ AND
 // DO — ONE MODEL, TWO DOORS (rule 7).
 //
-// `gnap/gnap_console.js`'s arrangement for this family: a VIEW computes the
+// `gnap/gnap_console.ts`'s arrangement for this family: a VIEW computes the
 // facts once and both doors render them, an ACTION changes state once and both
 // doors report it. **No route, no `res`, no markup**, and a view reads nothing
 // from the request but its query and the base URL it was reached at.

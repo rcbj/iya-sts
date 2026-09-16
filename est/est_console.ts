@@ -6,7 +6,7 @@
 // WHAT THE TWO EST CONSOLE PAGES AND THEIR MANAGEMENT API OPERATIONS READ AND
 // DO — ONE MODEL, TWO DOORS (2026-09-13).
 //
-// `gnap/gnap_console.js`'s arrangement for EST, and for its reason: rule 7 says
+// `gnap/gnap_console.ts`'s arrangement for EST, and for its reason: rule 7 says
 // a console page and its `/admin-api` operation cannot disagree, and the way to
 // make that structural is one VIEW that computes every fact once and one ACTION
 // that changes state once, with `est_admin.ts` drawing the markup and

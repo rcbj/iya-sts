@@ -1042,7 +1042,7 @@ const SCHEMAS = {
     'protocols that have one, filtered and paged.',
     Object.assign({
       installed: { type: 'boolean',
-                   description: 'FALSE when `logout/logout.js` is not loaded ' +
+                   description: 'FALSE when `logout/logout.ts` is not loaded ' +
                                 'in this process, which is the module that ' +
                                 'holds the one model of what a live session ' +
                                 'is. Nothing else in the reply is then ' +
@@ -1989,7 +1989,7 @@ const SCHEMAS = {
                   description: 'Which attributes the console will change. An ' +
                                'ldapmodify reaches everything either way.' },
       schema: openObject('The object classes and the attributes, read out of ' +
-                         'spiffe/spiffe_registry.js.', {}),
+                         'spiffe/spiffe_registry.ts.', {}),
       entriesPaging: pagingObject('the registration entries'),
       agentsPaging: pagingObject('the attested agents'),
       registrationEntries: { type: 'array',
@@ -3422,7 +3422,7 @@ const SCHEMAS = {
     {
       installed: {
         type: 'boolean',
-        description: 'Whether ssf/ssf.js is loaded in this process at all. A ' +
+        description: 'Whether ssf/ssf.ts is loaded in this process at all. A ' +
                      'DIFFERENT question from `enabled`, exactly as it is ' +
                      'for SCIM: a process that never required it has no /ssf ' +
                      'routes, where one with ssf.enabled false has routes ' +
@@ -3550,7 +3550,7 @@ const SCHEMAS = {
     {
       installed: {
         type: 'boolean',
-        description: 'Whether ssf/ssf.js is loaded in this process at all. A ' +
+        description: 'Whether ssf/ssf.ts is loaded in this process at all. A ' +
                      'DIFFERENT question from `enabled`, and CAEP cannot be ' +
                      'installed without SSF: it has no transport of its own.'
       },
@@ -3685,7 +3685,7 @@ const SCHEMAS = {
     {
       installed: {
         type: 'boolean',
-        description: 'Whether ssf/ssf.js is loaded in this process at all. A ' +
+        description: 'Whether ssf/ssf.ts is loaded in this process at all. A ' +
                      'DIFFERENT question from `enabled`, and RISC cannot be ' +
                      'installed without SSF: it has no transport of its own.'
       },
@@ -4143,7 +4143,7 @@ const SCHEMAS = {
     'POST /admin-api/ssf/revive and /clear-dead-letters are the controls.',
     {
       installed: { type: 'boolean',
-        description: 'Whether ssf/ssf.js is loaded in this process at all.' },
+        description: 'Whether ssf/ssf.ts is loaded in this process at all.' },
       realm: { type: 'string', description: 'The realm counted.' },
       generatedAt: { type: 'string', format: 'date-time',
         description: 'When the store was read. Every number in the reply ' +

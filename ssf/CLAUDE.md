@@ -948,7 +948,7 @@ for every caller.
 **A THIRD SCHEME SINCE 2026-09-12: GNAP.** `ssf_auth.ts`'s `attemptGnap()` accepts
 a key-bound GNAP access token whose access names `ssf:read` / `ssf:write`, so a
 GNAP web application owns a stream as ITSELF — which is what
-`gnap/gnap_signals.js`'s subject scope needs. It takes only the `GNAP` scheme;
+`gnap/gnap_signals.ts`'s subject scope needs. It takes only the `GNAP` scheme;
 `Bearer` on these endpoints stays OAuth 2.0.
 
 ## `ssfAllowedEvents`: THE ONE PLACE AN APPLICATION ENTRY LIMITS A STREAM (2026-09-12)
@@ -1241,7 +1241,7 @@ administrator credential acts below) and `assurance-level-change` on
 | Act | Event | Where it is noticed |
 |---|---|---|
 | a session is created | `session-established` | `authn.startSession()` |
-| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.js`'s authorization endpoint, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts` and `gnap/gnap_interact.js` |
+| a session is presented and honoured | `session-presented` | `authn.notePresented()`, from `oauth-oidc/oauth2.js`'s authorization endpoint, `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts` and `gnap/gnap_interact.ts` |
 | a session ends | `session-revoked` | `authn.dropSession()`, which every sign-out door reaches |
 | the same person re-authenticates on a session they hold, and `acr` moves | `assurance-level-change` | `authn.reauthenticateSession()`'s `reauthenticated` notice |
 
@@ -1261,7 +1261,7 @@ and this event cannot disagree about which way is up. `authn/CLAUDE.md`, *What
 an authenticated identity is here*, carries the design and the probe.
 
 What remains — token claims change (except for a modified GNAP grant,
-`gnap/gnap_signals.js`), device compliance change, risk level change, and
+`gnap/gnap_signals.ts`), device compliance change, risk level change, and
 credential changes other than an administrator's — has **no act here that
 could cause it**. No device reports compliance to this service and no risk
 engine talks to it, so an automatic emission of one would be this service

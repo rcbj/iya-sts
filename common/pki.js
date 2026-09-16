@@ -254,7 +254,7 @@ const USE_CASES = [
   // encodes perfectly and every path builder refuses the chain with a message
   // about path length that names neither certificate.
   // **AND THE ONE USE CASE WITH A KEY ALGORITHM OF ITS OWN**, for the reason
-  // `spiffe/spiffe_ca.js`'s header gives at length and which is why the
+  // `spiffe/spiffe_ca.ts`'s header gives at length and which is why the
   // vendored encoder is here at all: EC P-256 is what SPIRE issues and what
   // the X509-SVID specification recommends, and `node-forge` — what this
   // service used before that module arrived — cannot sign with an EC key at
@@ -410,7 +410,7 @@ function intermediatePathLen(kind) {
 //
 // What the preference is FOR is the default case: out of the box an X509-SVID
 // is signed ES256 by an EC P-256 authority, as it was before the SPIFFE
-// authority joined this hierarchy and as SPIRE does. `spiffe/spiffe_ca.js`'s
+// authority joined this hierarchy and as SPIRE does. `spiffe/spiffe_ca.ts`'s
 // header argues why that particular fidelity was worth vendoring a certificate
 // encoder for.
 //
@@ -3624,7 +3624,7 @@ function thumbprintOf(pem) {
 
 // A certificate PEM as DER. Here rather than in one of the vendored modules
 // because those are byte-identical to the parent project's and must stay so;
-// `spiffe/spiffe_ca.js` has the same three lines for the same reason.
+// `spiffe/spiffe_ca.ts` has the same three lines for the same reason.
 function pemToDer(pem) {
   log.debug("Entering pemToDer().");
   log.debug("Leaving pemToDer().");
@@ -6490,7 +6490,7 @@ module.exports = {
   // The certificate register.
   certify: certify,
   // Issue WITHOUT recording, for a caller that owns what comes out — see
-  // `issueUnder()`'s header. `spiffe/spiffe_ca.js` is the caller.
+  // `issueUnder()`'s header. `spiffe/spiffe_ca.ts` is the caller.
   issueUnder: issueUnder,
   // The door ACME, EST and SCEP sign through — `issueUnder()` plus the
   // profile's extensions, the family CA's CDP/AIA and a record OCSP reads.
@@ -6568,7 +6568,7 @@ module.exports = {
   thumbprintOf: thumbprintOf,
   // THE CLUSTER'S BUILD AND READ (2026-09-14, #46), for a module that keeps
   // something in a scope's row which one node must make for all of them —
-  // `scep/scep_ra.js`'s RA certificate. `refreshScope()` lands this process's
+  // `scep/scep_ra.ts`'s RA certificate. `refreshScope()` lands this process's
   // queued writes of the row and takes what the store holds.
   oneBuildInTheCluster: oneBuildInTheCluster,
   refreshScope: function (scopeId) {

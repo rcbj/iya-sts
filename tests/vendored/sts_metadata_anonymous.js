@@ -77,7 +77,7 @@
 // document does not become private because the caller mumbled — and the three
 // SCIM discovery endpoints answer 401. **That is asserted rather than
 // tolerated, in both directions**, because it is a documented decision and not
-// an accident: `scim/scim_auth.js`'s authenticate() states the order it
+// an accident: `scim/scim_auth.ts`'s authenticate() states the order it
 // resolves in, and its first rule is that a credential which was PRESENTED and
 // FAILED is always a refusal even where none was required — so that a client
 // testing its expired-token path cannot get a 200 because the endpoint would
@@ -1007,7 +1007,7 @@ async function aBadCredentialIsNotTheAbsenceOfOne() {
         assert.strictEqual(r.status, 401,
           where + " answered " + r.status + " to a caller presenting a token " +
           "that does not verify, and this row expects 401. That is SCIM's " +
-          "documented order (scim/scim_auth.js's authenticate()): a " +
+          "documented order (scim/scim_auth.ts's authenticate()): a " +
           "credential which was presented and FAILED is always a refusal, " +
           "even on an endpoint that would have accepted nobody, so that a " +
           "client testing its expired-token path cannot get a 200 by " +

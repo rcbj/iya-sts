@@ -175,7 +175,7 @@ const DELIVERY_METHODS = [
 // streams its own applications own.
 //
 // GNAP's web applications are receivers whose streams carry events only about
-// people who approved a grant to that application (gnap/gnap_signals.js). That
+// people who approved a grant to that application (gnap/gnap_signals.ts). That
 // is a fact about GNAP's grants, which this module must not know, so it is a
 // registered function consulted HERE — the one function CAEP, RISC and a
 // by-hand emission all ask — rather than a filter at each of those call sites,

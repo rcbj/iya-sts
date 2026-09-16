@@ -170,7 +170,7 @@ import risc = require('./risc');
 // THE DIRECTORY, for the account observer alone. The require goes in the
 // ORDINARY direction — `common/protocol_stack.js` loads ldap/ldap_server.js
 // at 21 and this file at 23b — so it moves no route and closes no cycle, and
-// rule 3e's test therefore asks for no slot. `scim/scim.js` requires it the
+// rule 3e's test therefore asks for no slot. `scim/scim.ts` requires it the
 // same way. What travels back the other direction is one function: see
 // riscAutoEmit().
 import directory = require('../ldap/ldap_server');
@@ -2507,7 +2507,7 @@ class SharedSignals {
   // whose sessions are not sign-on sessions — a grant is a DELEGATED session
   // between a client instance and a resource owner, with a revocation of its
   // own — so it needs the same delivery without the register.
-  // `gnap/gnap_signals.js` argues why a revoked grant is a `session-revoked` at
+  // `gnap/gnap_signals.ts` argues why a revoked grant is a `session-revoked` at
   // all.
   //
   // **THE CALLER BUILDS THE SUBJECT AND THIS BUILDS EVERYTHING ELSE**, for
@@ -2842,7 +2842,7 @@ class SharedSignals {
   // talks to it — so this is the only way they are ever produced, and it is why
   // the action exists rather than the page being read-only. (Five are emitted
   // automatically — `caep.autoEmitTypes` — and `token-claims-change` only by
-  // GNAP, `gnap/gnap_signals.js`.)
+  // GNAP, `gnap/gnap_signals.ts`.)
   private caepEmit(asked: Json): Promise<Json> {
     const { log, audit, subjects, events, caep, streams } = this.deps;
     log.debug('Entering SharedSignals.caepEmit().');

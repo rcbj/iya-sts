@@ -7,7 +7,7 @@
 // enrollments.
 //
 // Drawn here, in the console's shell through `admin.respond()`, the way
-// `gnap/gnap_admin.js` draws GNAP's. Every fact on either page comes out of ONE
+// `gnap/gnap_admin.ts` draws GNAP's. Every fact on either page comes out of ONE
 // call to `acme_console.ts`, which is the same call `/admin-api/acme` and
 // `/admin-api/acme/monitor` answer with (rule 7).
 //

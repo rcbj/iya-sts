@@ -2595,7 +2595,7 @@ module.exports = {
       return both[0];
     });
   },
-  // THE STORE `cluster/cluster_claims.js` AND `cluster/cluster_secrets.js`
+  // THE STORE `cluster/cluster_claims.js` AND `cluster/cluster_secrets.ts`
   // WORK AGAINST (2026-09-14, #46): the open driver when it can hold an atomic
   // claim and a shared secret — postgres — and null otherwise, which those
   // modules answer from this process's memory. Handed over rather than

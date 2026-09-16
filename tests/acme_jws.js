@@ -463,7 +463,7 @@ function checkSecretAtRequire(t) {
     { cwd: require('path').join(__dirname, '..'), env: env,
       encoding: 'utf8', timeout: 60000 });
   t.check(/SECRET=set/.test(String(out.stdout)),
-          'requiring acme/acme_jws.js puts the nonce secret into the ' +
+          'requiring acme/acme_jws.ts puts the nonce secret into the ' +
           'environment, before any request and so before any worker is forked',
           String(out.stdout).slice(-200) + String(out.stderr).slice(-300));
   log.debug("Leaving checkSecretAtRequire().");

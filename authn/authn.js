@@ -186,7 +186,7 @@ const PASSWORD_CHANGE_PATH = '/authn/password-change';
 const MFA_SETUP_PATH = '/authn/mfa-setup';
 // ---------------------------------------------------------------------------
 // WHERE A PERSON SIGNS IN WITH A KERBEROS TICKET, and the reason the constant
-// is HERE while the endpoint is in `kerberos/spnego_authn.js`.
+// is HERE while the endpoint is in `kerberos/spnego_authn.ts`.
 //
 // This module owns `/authn/*` and it is the module that has to point at that
 // door: `beginAuthentication()` redirects to it, and the sign-in screen draws a
@@ -3689,7 +3689,7 @@ function beginAuthentication(opts) {
   // AND THE SAME COLLISION A THIRD TIME, for the mechanism added on
   // 2026-08-26. A Kerberos ticket claims whatever its own flags claim — one
   // factor for `pre-authent`, two only where `hw-authent` is there beside it
-  // (see `factorsFor()` in kerberos/spnego_authn.js) — so it cannot be
+  // (see `factorsFor()` in kerberos/spnego_authn.ts) — so it cannot be
   // PROMISED to answer a caller that demanded two. The demand wins, exactly as
   // it wins over passwordless WebAuthn and for the identical reason: a request
   // for two factors answered with one is the fake `acr_values` and `wauth`
@@ -7631,7 +7631,7 @@ module.exports = {
   CARD_CSS: CARD_CSS,
   // ---------------------------------------------------------------------
   // THE THREE THE SPNEGO SIGN-IN DOOR NEEDS, and the reason each is here
-  // rather than reimplemented in `kerberos/spnego_authn.js`.
+  // rather than reimplemented in `kerberos/spnego_authn.ts`.
   //
   // That module is a fourth thing beginAuthentication() can send a browser to
   // (see its own header, and the branch above). It is not a protocol module

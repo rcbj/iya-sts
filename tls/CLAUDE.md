@@ -947,7 +947,7 @@ Four things about it are decisions:
   the same day — see* A RUNTIME ANCHOR SURVIVES A RESTART *below.*
 * **THE SLOT IS FILLED BY `common/protocol_stack.js`, NOT BY THIS MODULE, AND THAT IS
   FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.js`'s require —
-  `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.js` → here — so a
+  `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.ts` → here — so a
   `require('../admin-ui/admin')` at its top level would be a cycle and would find no
   `setTruststore` on that module's half-built exports. The stack fills it on the line after
   it requires this module, where both are whole. **That load order is itself worth

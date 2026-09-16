@@ -55,7 +55,7 @@
 // ---------------------------------------------------------------------------
 // THE OUTBOUND REQUEST, AND WHY IT IS ALLOWED. This is the FIFTH outbound
 // request in this repository, and it is argued from scratch rather than cited,
-// because `federation/federation_http.js` is explicit that "this feature needs
+// because `federation/federation_http.ts` is explicit that "this feature needs
 // it" is the argument every SSRF ever shipped was made with.
 //
 //   **THE URL IS WRITTEN BY AN AUTHORITY THE OPERATOR CHOSE TO TRUST, AND ONLY

@@ -12,7 +12,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
 `/authn/spnego` — sign in with a Kerberos ticket — is
-`kerberos/spnego_authn.js`, and the split is a dependency rather than a filing
+`kerberos/spnego_authn.ts`, and the split is a dependency rather than a filing
 mistake. This module is #8 in the require order because `oauth2.js` reads the
 session it owns; every Kerberos module is #15 and below so that the KDC's routes
 are not dragged to the front of the router. A require from here to there would do

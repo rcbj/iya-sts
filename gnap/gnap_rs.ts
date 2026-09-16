@@ -42,7 +42,7 @@
 // shape: `GnapRs` takes every module it reads through its constructor, as
 // `GnapRsDeps`, and the module still exports `introspect`, `register`,
 // `authenticate`, `presentation` and `liveProblem` from a TRANSITIONAL
-// instance for `gnap.ts`, `ssf/ssf_auth.js` and `ssf/ssf_cluster.js`, which
+// instance for `gnap.ts`, `ssf/ssf_auth.ts` and `ssf/ssf_cluster.ts`, which
 // require it by those names. `tests/cluster_signout_signals.js` replaces the
 // whole module in `require.cache`, which is unaffected.
 // ---------------------------------------------------------------------------
@@ -405,7 +405,7 @@ class GnapRs {
   // is not this process would be doing, and is async because a zcap signature
   // check is.
   //
-  // `ssf/ssf_auth.js` takes the first half only. Its gate is synchronous
+  // `ssf/ssf_auth.ts` takes the first half only. Its gate is synchronous
   // across twelve endpoints, and for a token this process minted and still
   // holds the record of, the record IS the answer: the format check re-derives
   // facts the store already holds.
@@ -506,7 +506,7 @@ class GnapRs {
       return presented;
     }
     // THE PROOF, SPENT ACROSS THE CLUSTER (2026-09-14, #46). `presentation()`
-    // stays synchronous because ssf/ssf_auth.js calls it synchronously, so the
+    // stays synchronous because ssf/ssf_auth.ts calls it synchronously, so the
     // cluster half of its replay check is made here, at the first asynchronous
     // caller, before the token is honoured — gnap_proof.ts's spendProof()
     // argues it.

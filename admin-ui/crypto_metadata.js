@@ -814,7 +814,7 @@ const FAMILIES = [
               'find out who to ENCRYPT to. It checks no password behind it.',
     encrypts: 'With `?encrypt=1`, the issued 2.0 assertion, to the ' +
               'certificate found in the request signature. Same two tables ' +
-              'as SAML 2.0, because it is the same code — `saml/saml2.js` ' +
+              'as SAML 2.0, because it is the same code — `saml/saml2.ts` ' +
               're-exports it.',
     decrypts: '',
     hashes: 'SHA-256 for the Reference digest.',
@@ -1303,7 +1303,7 @@ const FAMILIES = [
     } },
   // ===== ACME family (acme/) =====
   // ACME (RFC 8555, 2026-09-13). The tables are read LAZILY from
-  // acme/acme_jws.js, which is the module that verifies with them, because
+  // acme/acme_jws.ts, which is the module that verifies with them, because
   // acme/ is required at 23e and this file at 20a.
   { name: 'ACME',
     signs: 'Every certificate it hands out, with this realm\'s ACME Issuing ' +
@@ -1354,7 +1354,7 @@ const FAMILIES = [
     } },
   // ===== EST family (est/) =====
   // EST (RFC 7030, 2026-09-13). The tables are read LAZILY from the modules
-  // that use them — est/est_codec.js for what csrattrs advertises, the vendored
+  // that use them — est/est_codec.ts for what csrattrs advertises, the vendored
   // key-material module for what /serverkeygen generates — because est/ is
   // required at 23f and this file at 20a.
   { name: 'EST',
@@ -1402,7 +1402,7 @@ const FAMILIES = [
     } },
   // ===== SCEP family (scep/) =====
   // SCEP (RFC 8894, 2026-09-13). Every table is read LAZILY from
-  // scep/scep_cms.js, which performs the algorithms, because scep/ is required
+  // scep/scep_cms.ts, which performs the algorithms, because scep/ is required
   // at 23g and this file at 20a.
   { name: 'SCEP',
     signs: 'Every certificate it issues, with this realm\'s SCEP Issuing CA ' +
@@ -1739,7 +1739,7 @@ const STANDARDS = [
     what: 'GNAP\'s preferred key proof. THE SIGNATURE BASE IS THE THING BOTH ' +
           'ENDS MUST BUILD IDENTICALLY, byte for byte, from a message each ' +
           'of them parsed separately — so the structured-field serializer is ' +
-          'written out in `gnap/gnap_sf.js` rather than borrowed, and held ' +
+          'written out in `gnap/gnap_sf.ts` rather than borrowed, and held ' +
           'to the RFC\'s own test vectors.' },
   { key: 'macaroon', name: 'Macaroons',
     specs: ['Macaroons (NDSS 2014)', 'libmacaroons V2 binary format'],
@@ -1769,7 +1769,7 @@ const STANDARDS = [
               'certs-only SignedData with certificates and CRLs. No ' +
               'KeyAgreeRecipientInfo, no authenticated or compressed data, no ' +
               'countersignatures.',
-    what: 'The envelope SCEP (scep/scep_cms.js) reads and writes: a request ' +
+    what: 'The envelope SCEP (scep/scep_cms.ts) reads and writes: a request ' +
           'signed by the requester and encrypted to the RA, and a CertRep ' +
           'signed by the RA whose certificate is encrypted to the requester.' }
 ];

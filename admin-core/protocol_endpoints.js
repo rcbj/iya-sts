@@ -49,7 +49,7 @@
 // WHY EVERY ROUTE-REGISTERING MODULE IS READ OUT OF `require.cache`.
 //
 // This file is required by `admin-ui/admin.js` at 18. `sts_metadata.js` must be
-// required LAST, and `ldap/ldap_server.js`, `spiffe/spiffe_server.js` and the
+// required LAST, and `ldap/ldap_server.js`, `spiffe/spiffe_server.ts` and the
 // Kerberos modules register routes when first required (rule 1), so a require
 // of any of them from here would either close a cycle or drag routes ahead of
 // the console. `certificate_views.js` answers the same problem with a require
@@ -252,7 +252,7 @@ const PAGES = {
 // that lists its endpoints itself; `tests/protocol_endpoints.js` fails on a
 // Protocols page that is in neither table.
 const EXEMPT = {
-  '/admin/gnap': 'draws its own list from gnap/gnap_console.js, and was the ' +
+  '/admin/gnap': 'draws its own list from gnap/gnap_console.ts, and was the ' +
                  'model for this table'
 };
 

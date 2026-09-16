@@ -45,7 +45,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_tokens.ts` | the format dispatcher; the two JWT formats go through `helpers.signJwt` and `common/crypto.js` |
 | `gnap_store.ts` | twelve `realms.map({ persist })` stores — grants, continuations, interactions, user codes, tokens and their value index, management handles, instances, user references, resource sets, replay |
 | `gnap_subject.ts` | sub_ids and the `id_token` / `saml2` assertions |
-| `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.js` |
+| `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
 | `gnap_signals.ts` | CAEP emission and the SSF subject scope |
 | `gnap_grants.ts` | the engine: identifying a caller, creating, continuing, modifying and revoking grants, issuing, rotating and deriving tokens |
@@ -59,7 +59,7 @@ the SSF scope.
 
 **After `admin-ui/admin`** and after `ssf/ssf` — it requires `gnap_admin.ts`,
 which draws two console pages in the shell, and installs its subject scope on
-`ssf/ssf_streams.js` at require time. `mgmt-api/admin_api.js` reaches its view
+`ssf/ssf_streams.ts` at require time. `mgmt-api/admin_api.js` reaches its view
 layer (`gnap_console.ts`) lazily, inside the three operations, so the management
 API does not move `/gnap` ahead of itself. Requires `gnap_interact.ts` and
 `gnap_admin.ts` itself, so the family is ONE line in the require order.
@@ -103,7 +103,7 @@ API does not move `/gnap` ahead of itself. Requires `gnap_interact.ts` and
 * **SSF's gate is synchronous across twelve endpoints; GNAP's resource server
   check is async** (a zcap signature). `gnap_rs.ts` is split: `presentation()`
   is everything decidable from this service's own record of the token plus the
-  key proof, and is what `ssf/ssf_auth.js` calls; `authenticate()` adds the
+  key proof, and is what `ssf/ssf_auth.ts` calls; `authenticate()` adds the
   format's own verification.
 * **Which refusal is 403.** Only a rights shortfall (`STS-GNAP-0308`) is
   `insufficient_scope`; deciding on the sentence made nearly every format
@@ -121,8 +121,8 @@ token revocation send CAEP `session-revoked` (session `gnap-grant:<id>` /
 `gnap-token:<jti>`), modification sends `token-claims-change`, and the scope
 installed with `ssf_streams.setSubjectScope('gnap', …)` refuses a stream owned by
 a GNAP web application (a `gnap-client` with a finish URI) any subject who never
-approved a grant to it. `ssf/ssf.js`'s `emitProtocolEvent()` is the delivery,
-and `ssf/ssf_auth.js`'s `gnap` scheme is how an application owns a stream as
+approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
+and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
 itself. **Nothing listens to CAEP or RISC to revoke a grant**, by decision.
 
 ## A person's opaque identifier is over their subject (2026-09-14)
@@ -174,9 +174,9 @@ A store that cannot be asked refuses with `STS-GNAP-0716`. What is decided:
   (`noteReplayKey()`), returned as `replayKeys`, and spent by
   `verifyRequestOnce()`, which every acting caller awaits — so `identifyCaller()`,
   `continuationCaller()`, `introspect()` and `register()` became asynchronous.
-  `presentation()` stays synchronous because `ssf/ssf_auth.js` calls it that
+  `presentation()` stays synchronous because `ssf/ssf_auth.ts` calls it that
   way; `authenticate()` spends its keys. **The SSF gate's GNAP scheme spends
-  them ahead of the handler**: `ssf/ssf_cluster.js`'s `spendGnapProof` route
+  them ahead of the handler**: `ssf/ssf_cluster.ts`'s `spendGnapProof` route
   middleware runs `presentation()` and the spend, and `ssf_auth.js` reads the
   result (`STS-SSF-0099` where a shared store has no spend) — `ssf/CLAUDE.md`
   carries it.

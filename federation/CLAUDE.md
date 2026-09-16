@@ -366,7 +366,7 @@ last hop ever draws a password field.
 
 ### `spnego` IS THE ONE THAT IS NEITHER THIS SERVICE'S SCREEN NOR SOMEBODY ELSE'S
 
-Added 2026-08-26 with `kerberos/spnego_authn.js`, and it is worth its own note
+Added 2026-08-26 with `kerberos/spnego_authn.ts`, and it is worth its own note
 because it breaks the shape the other four share. Three of them are a page
 here; the fourth is a redirect to a partner. This one is a **credential the
 browser already holds** — so a SAML 2.0 partner asking this service to
@@ -739,7 +739,7 @@ deliberately does not do*.
 
 ## `federation_map.ts`: THE OIDC HALF IS DERIVED, NOT WRITTEN
 
-`../oid4vc/vc_claims.js`'s `VC_ATTRIBUTES` already carries, for every LDAP
+`../oid4vc/vc_claims.ts`'s `VC_ATTRIBUTES` already carries, for every LDAP
 attribute this service knows how to put on a person, the OpenID Connect claim
 name it corresponds to — the credential issuer needed exactly that mapping in
 the other direction. Writing a second table here would be writing the same
