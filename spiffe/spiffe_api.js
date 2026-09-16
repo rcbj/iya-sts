@@ -619,7 +619,7 @@ const entryHandlers = {
   // for a registry this size. A client that handles `more: true` is untested by
   // this; a client that does not handle it works.
   SyncAuthorizedEntries: rpc.bidiStream('server', 'Entry.SyncAuthorizedEntries',
-    async function (request) {
+    async function (request, call) {
       const held = {};
       (request.ids || []).forEach(function (id) { held[String(id)] = true; });
       // The same narrowing as GetAuthorizedEntries: a stream that listed every
