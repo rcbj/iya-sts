@@ -286,7 +286,7 @@ async function theSettingsAreOnTheirPages() {
   const web = await get("/webauthn");
   check("GET /admin-api/webauthn carries the thirteen webauthn.* settings — " +
         "there were NONE of these before 2026-09-10, and every ceremony " +
-        "parameter was a literal in a string in authn/authn.js", function () {
+        "parameter was a literal in a string in authn/authn.ts", function () {
     assert.strictEqual(web.status, 200,
       "it answered " + web.status + " " + String(web.raw).slice(0, 200));
     const keys = keysOf(web.body);

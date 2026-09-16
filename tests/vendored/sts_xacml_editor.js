@@ -465,7 +465,7 @@ const SURVEY = `
                                     t.indexOf("Nothing to edit") === 0; }),
     // THE TREE TABLE ONLY, found by its own header (2026-09-13). Every
     // Protocols page now draws an Endpoints table as well
-    // (admin-core/protocol_endpoints.js), and "every tr on the page" counted
+    // (admin-core/protocol_endpoints.ts), and "every tr on the page" counted
     // its rows as elements of a policy — so the empty repository drew "1 row".
     rows: Array.from(document.querySelectorAll("table")).filter(function (t) {
         const th = t.querySelector("tr th");

@@ -6,9 +6,9 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 
 | File | What it is |
 |---|---|
-| `authn.js` | The sign-in screen, the session store, and the pending-authentication record. |
+| `authn.ts` | The sign-in screen, the session store, and the pending-authentication record. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
-| `webauthn_policy.js` | The ceremony's options and the four policy settings that refuse, kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_policy.ts` | The ceremony's options and the four policy settings that refuse, kept out of `webauthn.js` so that file stays loadable on its own. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
 `/authn/spnego` — sign in with a Kerberos ticket — is
@@ -349,7 +349,7 @@ both have to stay true if anything here is reworked:**
 * **It grants nothing else.** Its only caller is `consoleSignOn()` in
   `admin-ui/admin.js`, which REPORTS the sign-on session behind the console's
   own relying-party session; since 2026-09-06 the gate (`gateStateFor()`, now
-  in `admin-core/admin_views.js`) reads the relying-party session instead.
+  in `admin-core/admin_views.ts`) reads the relying-party session instead.
   No token is issued on the session it finds and no assertion names it. Every
   protocol module still calls `sessionOf()` and still sees its own realm's
   partition only.
@@ -372,7 +372,7 @@ conclude is that `/oauth2/authorize` would have taken the same cookie.
 ---
 
 
-**`authn.js` is the authentication service, and it is not part of any protocol.**
+**`authn.ts` is the authentication service, and it is not part of any protocol.**
 The sign-in screen used to be rendered inside `GET /oauth2/authorize`: no session
 meant a 200 with the login form in the body, at the authorization endpoint's own
 URL. It is now its own endpoint and its own module, and the protocol endpoints
@@ -629,7 +629,7 @@ Four things about a relying-party session:
 
 **A CONSOLE SESSION'S PARENT IS IN A DIFFERENT PARTITION FROM THE SESSION
 ITSELF (2026-09-11).** The console's code flow runs in the AMBIENT realm while
-its own session lives in the DEFAULT realm, so everything in `authn.js` that
+its own session lives in the DEFAULT realm, so everything in `authn.ts` that
 learnt that is here: `derivedFromRealm` is the field, `relyingPartySessionOf()`
 looks the parent up where it lives, and `dropSession()`'s cascade walks the
 default partition as well as the parent's own — without which a sign-out ends
@@ -1547,7 +1547,7 @@ description says which doors it does not reach: a federated assertion, SPNEGO,
 a TLS client certificate, the OAuth password grant, an LDAP bind, WS-Trust and
 SCIM Basic. A session that already exists is not ended. **The enrolment emits
 no CAEP event**, because the signals the request asked for are the ADMIN doors'
-(`admin-core/admin_actions.js`); the portal's own enrolment pages do not emit
+(`admin-core/admin_actions.ts`); the portal's own enrolment pages do not emit
 either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
 
 ## SEVERAL NODES: A SIGN-OUT HOLDS, AND TWO COPIES OF A SESSION MERGE (2026-09-14, #46 section 3)

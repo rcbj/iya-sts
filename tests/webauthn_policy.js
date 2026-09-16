@@ -6,7 +6,7 @@
 // THE WEBAUTHN SETTINGS, AND THE FOUR THINGS THAT GO WRONG QUIETLY
 // (2026-09-10).
 //
-// `authn/webauthn_policy.js` turned thirteen literals in a string into
+// `authn/webauthn_policy.ts` turned thirteen literals in a string into
 // settings. Twelve of them are values passed to a browser, and a browser is not
 // something a test can hold — so what this file asserts is not *does the
 // ceremony work* (that needs an authenticator, and
