@@ -17,9 +17,10 @@
 // CHECK, and a counter in the evaluator would also count in the wrong process
 // the moment the remote PEP loaded its build-time copy of it. So the counting
 // is here, at the PEPs, and this module is a LEAF (rule 3): it registers no
-// route, it requires `config`, `realms`, `helpers` and the PEP register, and
-// NOTHING requires it that it requires back. That is load-bearing rather than
-// tidiness — see *Why this file may not require the console* below.
+// route, it requires `config`, `realms`, `helpers`, the error-code registry,
+// `persistence_replication` and the PEP register, and NOTHING requires it that
+// it requires back. That is load-bearing rather than tidiness — see *Why this
+// file may not require the console* below.
 //
 // ---------------------------------------------------------------------------
 // A DECISION AND AN ENFORCEMENT ARE TWO DIFFERENT COUNTS AND THIS FILE KEEPS
@@ -58,8 +59,8 @@
 //                and the section 7.2 rule are demonstrated on.
 //   `issuance`   `xacml_role_pep.js`. Nine issuance sites ask it before this
 //                service mints anything, through `common/issuance_gate.js`.
-//   `access`     `xacml_access_pep.js`. Five gated surfaces ask it through
-//                `common/access_gate.js`.
+//   `access`     `xacml_access_pep.js`. Every surface `common/access_gate.js`
+//                lists asks it through that gate.
 //   `pdp`        `POST /xacml/pdp` — **NOT A PEP AND NOT COUNTED AS ONE.**
 //                Somebody else's PEP asked this service a question and enforced
 //                the answer in their own process. This service saw the
@@ -392,7 +393,7 @@ function record(id, outcome) {
 // `policies` comes through an argument rather than by requiring
 // `xacml_store.js` here. Not to avoid a cycle (there is none) but because this
 // file is required by the access PEP, which is reached from `common/`: keeping
-// its require list to four modules that are all leaves is what makes it
+// its require list to modules that register no route is what makes it
 // obviously safe to require from anywhere, and the caller already holds the
 // store.
 // ---------------------------------------------------------------------------

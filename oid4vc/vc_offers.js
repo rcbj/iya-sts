@@ -23,7 +23,7 @@
 //
 // The Wallet a browser page can be sent to is a URL, not the
 // openid-credential-offer:// scheme a native wallet would register —
-// OID4VCI_WALLET_URL says where it lives.
+// `oid4vci.walletUrl` (OID4VCI_WALLET_URL) says where it lives.
 // ---------------------------------------------------------------------------
 //
 // This module owns the STATE the offer creates — the offers themselves, the
@@ -39,8 +39,8 @@
 const crypto = require('crypto');
 const qrcode = require('qrcode');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// config.js and error_codes.js and nothing else here, so it cannot join a
+// cycle and it registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const app = require('../common/app');
 const { log, logArtifact, baseUrlOf, randomId, xmlEscape, vciError, userFor,

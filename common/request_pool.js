@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: request_pool.js
@@ -55,7 +56,7 @@
 // **THE STATE CHANNEL IS `persistence_replication.js` AND THERE IS NO
 // `state_channel.js` (corrected 2026-09-12).** This block named one, and so did
 // `request_worker.js`'s header; no such file was ever written. What was built
-// instead is the thing the root CLAUDE.md argues at length — a worker is just
+// instead is the thing `common/CLAUDE.md` argues at length — a worker is just
 // ANOTHER PROCESS AGAINST THE STORE, running the same four startup steps from
 // `service_state.js`, reconciled by the change log in
 // `persistence/persistence_replication.js`. A reader following either sentence
@@ -115,10 +116,11 @@ const WORKER_MODULE = path.join(__dirname, 'request_worker.js');
 // ---------------------------------------------------------------------------
 // THE SERVER CERTIFICATE, HANDED IN BY `server.js` BEFORE THE POOL STARTS.
 //
-// An INVERTED HOOK for the reason `admin.js` has eleven of them: this file is
-// loaded by `app.js`, which is above every route, and `tls/tls_server.js` sits
-// at 20 in the require order — so a require in the obvious direction would drag
-// three TLS routes to the front of the router (rule 1). The material travels
+// An INVERTED HOOK for the reason `admin.js` has its many slots (rule 3e):
+// this file is loaded by `app.js`, which is above every route, and
+// `tls/tls_server.js` sits at 20 in the require order — so a require in the
+// obvious direction would drag every /tls route to the front of the router
+// (rule 1). The material travels
 // the other way instead, filled once, before any worker is forked.
 // ---------------------------------------------------------------------------
 let tlsMaterial = null;
@@ -525,7 +527,8 @@ function awaitCommitConfirmations(servedBy) {
     return Promise.resolve();
   }
   log.debug("Leaving awaitCommitConfirmations().");
-  return new Promise(function (resolve) {
+  return new Promise(/** @param {(value?: any) => void} resolve */
+                     function (resolve) {
     let done = false;
     const waiter = { need: need, servedBy: servedBy, resolve: function () {
       log.debug("Entering resolve().");
@@ -1397,10 +1400,12 @@ function poolFor(url) {
 //     what the CLIENT presented, and the surfaces that read it are asking about
 //     the client. `/tls` is asking about the socket.
 //
-// Nothing else is excluded, and in particular the mTLS surfaces are NOT — the
-// certificate travels in a header and is put back on the request before the
-// app sees it, so `mtls.js`, `scim_auth.js` and `/xacml/pep/*` behave in a
-// worker exactly as they do here.
+// Nothing else is excluded for this reason — the truststore's two doors and
+// the debugger's status pages are pinned for the socket reason argued below —
+// and in particular the mTLS surfaces are NOT: the certificate travels in a
+// header and is put back on the request before the app sees it, so `mtls.js`,
+// `scim_auth.js` and `/xacml/pep/*` behave in a worker exactly as they do
+// here.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // SPIFFE WAS ON THIS LIST FOR AN HOUR AND IS NOT ANY MORE (2026-09-08), and
@@ -1418,9 +1423,11 @@ function poolFor(url) {
 // the state was private at all, and the cost was a feature serialised through
 // one process for no reason anybody would find in the specification.
 //
-// `spiffe_ca.js` shares the authority now — one trust domain for the service,
-// `certificateDer` base64 on the way into the journal — so every process
-// answers the same bundle and a rotation from any of them is the service's.
+// `spiffe_ca.js` shares the authority now — `certificateDer` base64 on the
+// way into the journal — so every process answers the same bundle and a
+// rotation from any of them is the service's. (It said "one trust domain for
+// the service" here; since 2026-09-12 there is one per trust realm, each
+// shared the same way — `spiffe/CLAUDE.md`.)
 // The pins came off with it. `tests/request_routing.js` asserts they are off
 // and `tests/spiffe_authority.js` asserts the sharing that replaced them.
 // ---------------------------------------------------------------------------
@@ -1845,8 +1852,9 @@ function receivePublishedPki(entry, published) {
   // dispatch mode, none of which names a certificate.
   //
   // This is the same rule the LDAP connection list established and it is the
-  // SECOND thing to need it, which the root CLAUDE.md said would take the
-  // argument being made again rather than the mechanism being copied. The
+  // SECOND thing to need it, which the root CLAUDE.md said (the rule is in
+  // `common/CLAUDE.md` now) would take the argument being made again rather
+  // than the mechanism being copied. The
   // shapes differ accordingly: the directory needed a MIRROR pushed out and an
   // instruction sent back, because the decision is a worker's; here the
   // decision is this process's alone — it owns the certificate — so nothing
@@ -1957,9 +1965,9 @@ function listenerRepairArmed() {
 function runListenerPass(repair) {
   log.debug("Entering runListenerPass(). repair=" + repair);
   // **LAZILY, AND THAT IS RULE 1 RATHER THAN TASTE.** `server.js` requires this
-  // module at 122 and the protocol stack — `tls/tls_server.js` with it — at
-  // 176, so a require at the top of this file would register `/tls`'s three
-  // views from HERE, ahead of every protocol module. Inside a function that
+  // module well before the protocol stack — `tls/tls_server.js` with it — so a
+  // require at the top of this file would register `/tls`'s views from HERE,
+  // ahead of every protocol module. Inside a function that
   // cannot run until a worker has published something, it is a cache hit.
   const tls = require('../tls/tls_server');
   log.debug("Leaving runListenerPass().");
@@ -2219,7 +2227,7 @@ function fork(pool) {
   }
 
   const settled = new Promise(function (resolve) {
-    child.on('message', function (message) {
+    child.on('message', /** @param {any} message */ function (message) {
       if (message && message.ready) {
         entry.ready = true;
         quickExits[entry.pool] = 0;
@@ -3272,7 +3280,7 @@ let generation = 0;
 // the write is fetchable, and the barrier does the waiting.
 //
 // It is sampled at DISPATCH rather than pushed from the writer, and that is
-// deliberate: the alternative is every one of those five socket families
+// deliberate: the alternative is every one of those socket families
 // learning about this pool, which is the coupling `worker.js` and the
 // request-worker design have avoided from the start. A comparison of two
 // integers on a request that was about to cross a process boundary anyway is
@@ -4096,12 +4104,14 @@ function proxy(entry, req, res, atGeneration, ticket) {
 // OPERATIONS, WHICH ARE HOW A NON-HTTP FRONT END REACHES THE POOL.
 //
 // Everything above this line is about the express app, and it would be a
-// mistake to read the pool as being about HTTP. **The front process owns SIX
-// listener families and only one of them speaks HTTP**: the Kerberos KDC on TCP
-// and UDP 88, the Kerberos service on 8888, the LDAP directory on 389 and 636,
-// and SPIFFE's two gRPC surfaces are the others. The work those do has exactly
-// the same reason to leave the front process as a `/scim/v2` POST does, and the
-// transport they arrive on is not a reason to keep it there.
+// mistake to read the pool as being about HTTP. **The front process owns
+// every listener family and only the main port's HTTP is dispatched as
+// requests**: the Kerberos KDC on TCP and UDP 88, the Kerberos service on
+// 8888, the LDAP directory on 389 and 636, and SPIFFE's gRPC surfaces are the
+// others that carry protocol work (the debugger listener and the plain-HTTP
+// PKI listener are HTTP too, and are not dispatched). The work those do has
+// exactly the same reason to leave the front process as a `/scim/v2` POST
+// does, and the transport they arrive on is not a reason to keep it there.
 //
 // So an OPERATION is the protocol-independent half: a `{ kind, args }` pair the
 // front process sends to a worker and gets a result back from. The front

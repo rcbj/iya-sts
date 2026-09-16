@@ -11,14 +11,14 @@
 // node's crypto and sharing no code with `gnap/`: an HTTP signature base built
 // by the same function at both ends verifies and interoperates with nobody.
 // The resource owner is a person created through /admin-api with a real
-// password, signing in through the one sign-in screen in a cookie-jar browser
-// of this file's own, and every refusal is asserted by its GNAP ERROR CODE
+// password, signing in through the one sign-in screen in `gnap_flow.js`'s
+// cookie-jar browser, and every refusal is asserted by its GNAP ERROR CODE
 // (RFC 9635 section 3.6), never by its status alone.
 //
 // Everything runs in a THROWAWAY TRUST REALM, with `gnap.continueWaitS` at zero
-// so no grant has to sleep five seconds, which the job restores for the one
-// section that asserts `too_fast`. Realms are left behind for troubleshooting
-// (tests/CLAUDE.md).
+// so no grant has to sleep its default five seconds; the job raises it for the
+// one section that asserts `too_fast` and sets it back to zero after. Realms
+// are left behind for troubleshooting (tests/CLAUDE.md).
 //
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
 // ---------------------------------------------------------------------------

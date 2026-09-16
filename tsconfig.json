@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "typeRoots": ["./tests/node_modules/@types"]
+  },
+  "include": ["server.js", "sts_metadata.js", "types/**/*.d.ts",
+              "common/*.js"],
+  "exclude": ["node_modules", "tests/node_modules", "node-ldapjs",
+              "common/vendored", "debugger/embedded"]
+}

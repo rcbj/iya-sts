@@ -237,7 +237,8 @@ function snapshot() {
   };
 }
 
-// Forget this realm's counts — the console's Reset, and a test's.
+// Forget this realm's counts — for a test. The console deliberately has no
+// Reset (`oauth2_monitor_console.js` says why), so nothing else calls this.
 function reset() {
   log.debug("Entering reset().");
   counters.clear();

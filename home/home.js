@@ -21,7 +21,7 @@
 //
 // **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.** `GET
 // /admin/sts-metadata` builds that list by walking the running Express router,
-// so it cannot go stale by omission, and the parent project's
+// so it cannot go stale by omission, and this repository's own
 // `tests/vendored/sts_metadata.js` fails on drift in either direction. A
 // hand-written list of highlights here would be a second, unchecked copy of it
 // — wrong within a month, on the page most likely to be read first and least
@@ -44,11 +44,11 @@
 //
 // **A failure to read it is recorded, not thrown.** A `require` that throws
 // takes the whole service down — the same reason the KDC, the directory, the
-// TLS endpoint and the SPIFFE listeners start their sockets from `listen()`
-// rather than at require time — and a missing image is the least important
-// thing that could go wrong here. With no image the page is drawn without one
-// and `/logo.png` answers 404 with a sentence saying why, which is also what
-// keeps that route honest for the link check in
+// SPIFFE listeners and the embedded debugger start their sockets from
+// `listen()` rather than at require time — and a missing image is the least
+// important thing that could go wrong here. With no image the page is drawn
+// without one and `/logo.png` answers 404 with a sentence saying why, which is
+// also what keeps that route honest for the link check in
 // `tests/vendored/sts_metadata.js`: it fails on Express's own `Cannot GET`, so
 // an endpoint answering for itself is the distinction it is looking for.
 //
@@ -82,7 +82,7 @@
 //
 // `app.js` sets `script-src 'none'` service-wide and this page needs no
 // exception: it has no behaviour. Its one `<style>` block is covered by the
-// `style-src 'unsafe-inline'` six other pages here already rely on, and the
+// `style-src 'unsafe-inline'` several other pages here already rely on, and the
 // image is same-origin, which is what `img-src 'self' data:` already allows.
 // A page that reached out to a CDN for a font would need the policy widened
 // for a decoration, so it does not.
@@ -94,12 +94,11 @@ const app = require('../common/app');
 const { log, xmlEscape, baseUrlOf } = require('../common/helpers');
 // The trust realm registry, for GET /realms below.
 const realms = require('../common/realms');
-// For ONE sentence: whether the console asks the reader to sign in. It is a
-// runtime setting (`/admin/config` and the management API can turn it off
-// while the process runs), so it is read per request rather than captured
-// here — a front page that said "it will ask you to sign in" over a console
-// that does not is exactly the kind of small lie that costs somebody ten
-// minutes.
+// For `realms.enabled`, which GET /realms below reads per request rather than
+// capturing here, so that /admin/config and the management API reach it while
+// the process runs. Whether the console asks the reader to sign in is no
+// longer a setting: `admin.authRequired` went on 2026-09-06 and `mode` below
+// answers it.
 const config = require('../common/config');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 const mode = require('../common/mode');

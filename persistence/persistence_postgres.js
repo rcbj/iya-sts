@@ -264,9 +264,11 @@ const SCHEMA_OBJECTS = [
   // drift the whole `sts_metadata.js` design exists to prevent. Adding a
   // persisted store must cost one word at its declaration and nothing here.
   //
-  // `realm` IS THE EMPTY STRING FOR THE SHARED STORES — the Kerberos principal
-  // database, the replay caches, the rate limiter's buckets — which have no
-  // realm because the sockets they belong to have no path to put one in. It is
+  // `realm` IS THE EMPTY STRING FOR THE SHARED STORES — the rate limiter's
+  // buckets and the directory's cluster connection lists today; the Kerberos
+  // principal database and replay cache were shared too until they became per
+  // realm (#33, 2026-09-15) — which have no realm because what they belong to
+  // has no path to put one in. It is
   // a column value rather than a nullable, so the primary key needs no COALESCE
   // and a query for one realm's rows cannot accidentally match them.
   //

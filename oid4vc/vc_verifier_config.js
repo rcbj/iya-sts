@@ -22,10 +22,11 @@
 // sets it, and this module is where it lives. It is a LIBRARY in the sense
 // dpop.js, admin_stats.js and vc_claims.js are: it registers no route, so its
 // position in the require order does not matter, and it requires only
-// helpers.js and the two other libraries below (vc_claims.js and vc_configs.js,
-// neither of which registers anything either) so it cannot join a cycle. That
-// matters here because both ends of the exchange read it — vc_verifier.js early
-// in the require order, admin.js late — and a require between those two in
+// helpers.js, realms.js, config.js and the two other libraries below
+// (vc_claims.js and vc_configs.js, neither of which registers anything either)
+// so it cannot join a cycle. That matters here because both ends of the
+// exchange read it — vc_verifier.js early in the require order, admin.js and
+// `admin-core/` late — and a require between those two in
 // either direction would drag one module's routes into the router at the
 // other's position, which is what `GET /admin/sts-metadata` is built by
 // walking.
@@ -315,9 +316,7 @@ function formatById(id) {
 }
 
 // ---------------------------------------------------------------------------
-// The state. In memory like every other piece of configuration here — the
-// signing key is regenerated on every start, so a selection that outlived it
-// would describe requests against credentials nothing can verify.
+// The state: per realm and persisted — see `state` below.
 // ---------------------------------------------------------------------------
 function parseNames(value) {
   log.debug("Entering parseNames().");

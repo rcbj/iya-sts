@@ -50,9 +50,9 @@ const log = require('bunyan').createLogger({ name: 'replication',
   level: process.env.LOG_LEVEL || 'info' });
 
 // ---------------------------------------------------------------------------
-// A DRIVER THAT IS A CHANGE LOG AND NOTHING ELSE. `changesSince()` does the
-// two things the real one does and that everything here depends on: it filters
-// out this process's own rows, and it pages.
+// A DRIVER THAT IS A CHANGE LOG AND NOTHING ELSE. `changesSince()` does what
+// the real one does and what everything here depends on: it hands over EVERY
+// row after the mark, this process's own included, and it pages.
 // ---------------------------------------------------------------------------
 function fakeDriver(me) {
   log.debug("Entering fakeDriver().");
@@ -82,12 +82,14 @@ function fakeDriver(me) {
     },
     // -----------------------------------------------------------------------
     // **IT DOES NOT FILTER BY ORIGIN, DELIBERATELY**, and the first version of
-    // this file did. The real driver filters in SQL (`origin <> $2`), so a
-    // stub that filtered too would have made the "a process skips its own
-    // rows" assertions below a test OF THE STUB — green whatever
+    // this file did. A stub that filtered would make the "a process skips its
+    // own rows" assertions below a test OF THE STUB — green whatever
     // `persistence_replication.js` did. Handing over everything is what makes
-    // them a test of the module's own skip, which is the second of the two
-    // places that protection lives.
+    // them a test of the module's own skip. The real driver filtered in SQL
+    // (`origin <> $2`) when this was written; since 2026-09-08 it does not
+    // either, because the filter hid holes in the sequence
+    // (`persistence/persistence_postgres.js`, `changesSince()`), so the
+    // module's skip is now the ONLY place that protection lives.
     // -----------------------------------------------------------------------
     changesSince: function (after, limit) {
       log.debug("Entering changesSince().");

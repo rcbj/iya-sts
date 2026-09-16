@@ -164,12 +164,12 @@ Every realm has two administrator rosters that matter to it:
 
 A realm's own administrators are **confined to their realm**. Everything about
 the whole process is hidden from them and refused if asked for: the persistence
-store, the database, encryption, the secret store, the TLS listeners and client
+store, the database, encryption, the secret store, the TLS certificate and client
 truststore, the LDAP service page, the embedded debugger and the API explorer.
 (Kerberos left that list on 2026-09-15: a realm has a KDC of its own, so its
 principals and keytabs are its administrator's — what stays service-wide is the
 two Kerberos sockets and the development-mode trust.) So are creating or removing a realm, reading or editing another realm,
-replacing the service Root, exporting the TLS listener's key, and every setting
+replacing the service Root, exporting the TLS certificate's key, and every setting
 that belongs to the process. That confinement is what makes a per-realm roster
 safe: creating a realm makes somebody an administrator of that realm and of
 nothing else.
@@ -309,10 +309,13 @@ development trust. A realm administrator manages their realm's Kerberos —
 principals, keytabs and the settings the database is built from — and those five
 settings stay service-wide.
 
-### Not separated — the TLS listeners
+### Not separated — the TLS certificate and client certificates
 
-The 8443 and 9443 listeners. A socket has no path in it, and what those two
-endpoints publish is what the server saw of the connection. LDAP's 389 and 636
+The certificate a handshake presents, and the client certificate it carries. A
+socket has no path in it, so neither can name a realm; a session started by
+`GET /tls/sign-in` goes in the realm of the authority that signed the
+certificate. The 8443 and 9443 listeners were on this list until they were
+deleted on 2026-09-16. LDAP's 389 and 636
 were on this list until the directory was partitioned — the sockets are still
 shared, but what they serve is told apart by DN — SPIFFE's four left it on
 2026-09-12 by giving each realm sockets of its own, and Kerberos left it on

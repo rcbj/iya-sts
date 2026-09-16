@@ -5,10 +5,11 @@
 // ---------------------------------------------------------------------------
 // THE XACML SURFACE: A DECISION ENDPOINT, THE REPOSITORY, AND AN EMBEDDED PEP.
 //
-// Everything else in this directory is a library with no DOM, no HTTP and no
-// store. This file is the only one that registers a route, and it is
-// deliberately thin — it reads a request, hands it to `xacml_pdp.js`, and
-// writes what comes back. No decision logic lives here, and none should: the
+// The engine modules in this directory are libraries with no DOM, no HTTP and
+// no store. This file is the only one that registers a PROTOCOL route
+// (`xacml_admin.js` registers the console pages), and it is deliberately thin
+// — it reads a request, hands it to `xacml_pdp.js`, and writes what comes
+// back. No decision logic lives here, and none should: the
 // whole point of the conformance suite driving the engine in process is that
 // the thing that decides is reachable without a port.
 //
@@ -17,6 +18,9 @@
 //   GET  /xacml/policies   the repository, as the PDP sees it
 //   GET  /xacml/protected  THE EMBEDDED PEP — a resource this service guards
 //                          with its own PDP
+//
+// and, in the PHASE FIVE section further down, the three `/xacml/pep/*`
+// endpoints a remote PEP uses and `POST /xacml/pip`.
 //
 // ---------------------------------------------------------------------------
 // THE EMBEDDED PEP IS THE POINT OF THE LAST ONE, AND IT IS NOT A DEMO PAGE.
@@ -127,8 +131,9 @@ const monitor = require('./xacml_monitor');
 // a decider this family itself installs at 23c.
 const roles = require('../common/roles');
 const accessGate = require('../common/access_gate');
-// THE CONSOLE PAGES. Required from here rather than from `server.js` so that
-// the require order has ONE line for this family: this module is 23c and the
+// THE CONSOLE PAGES. Required from here rather than from
+// `common/protocol_stack.js` so that the require order has ONE line for this
+// family: this module is 23c and the
 // pages are part of it. `xacml_admin.js` requires `admin-ui/admin` (18) for
 // the shell, which is already loaded by the time anything here runs — and it
 // requires THIS module lazily, inside the one function that needs it, because
@@ -145,19 +150,19 @@ require('./xacml_admin');
 // answers "allowed" and this service is exactly what it was.
 //
 // It registers NO ROUTE and is therefore a library (rule 3): it is here rather
-// than in `server.js` so that the require order keeps its one line for this
-// family, and its position within that line does not matter. It must come
-// after `xacml_admin.js` for no technical reason at all, and does, because the
-// pages are what an administrator fixes a refusal with.
+// than in `common/protocol_stack.js` so that the require order keeps its one
+// line for this family, and its position within that line does not matter. It
+// must come after `xacml_admin.js` for no technical reason at all, and does,
+// because the pages are what an administrator fixes a refusal with.
 require('./xacml_role_pep');
 // THE ACCESS PEP. Requiring it ARMS `common/access_gate.js` — the admin
-// console, the User Portal, SCIM and the SPIRE Server API all ask it, and the
-// management API does in PRODUCT MODE — it is open in development by design,
-// so there is no subject to decide about. Each asks AFTER its own check rather
-// than instead of it. Every surface that asks
-// all ask that gate, and before this line every one of them is allowed, which
-// is what a process without the XACML family does. Same arrangement as the
-// role PEP one line up, for the same reason.
+// console, the User Portal, SCIM, the SPIRE Server API, the embedded debugger
+// and this file's own two gates all ask it, and the management API does in
+// PRODUCT MODE (it is open in development by design, so there is no subject
+// to decide about). Each asks AFTER its own check rather than instead of it.
+// Before this line every one of them is allowed, which is what a process
+// without the XACML family does. Same arrangement as the role PEP one line
+// up, for the same reason.
 require('./xacml_access_pep');
 
 function enabled() {
@@ -296,9 +301,8 @@ function xacmlAccess(req, res, action, what) {
 }
 
 // The role those four endpoints require. Named once here rather than written
-// at four call sites, for the reason `REMOTE_PEP_ROLE` below is: renaming it
-// in `roles.js` must not leave this file asking for a role that no longer
-// exists.
+// at four call sites, for the reason `REMOTE_PEP_ROLE` below is: a rename in
+// `roles.js` is one line to follow here.
 const XACML_USER_ROLE = 'XACML_USER';
 
 // ---------------------------------------------------------------------------
@@ -948,10 +952,9 @@ function pepAccess(req, res, action, what, known) {
   return { allowed: false };
 }
 
-// The role those three endpoints require. Named once here rather than written
-// at three call sites, and read from `roles.js`'s own catalogue rather than
-// spelt as a literal, so that renaming it there cannot leave this file asking
-// for a role that no longer exists.
+// The role those endpoints require. Named once here rather than written at
+// each call site, so that a rename in `roles.js`'s catalogue (where the name
+// is defined) is one line to follow here rather than several to hunt for.
 const REMOTE_PEP_ROLE = 'REMOTE_PEPS';
 
 // ---------------------------------------------------------------------------
@@ -1131,9 +1134,10 @@ app.get('/xacml/pep/policies', function (req, res) {
   // policy; it is that these documents are now the ones this service ENFORCES
   // ITS OWN ACCESS WITH, and handing an unauthenticated caller the exact
   // conditions under which it lets people in is a different act from
-  // publishing a demonstration policy. The repository is still readable
-  // without a certificate at `GET /xacml/policies`, which is where a person
-  // reads it; this endpoint is for a machine that is about to enforce it.
+  // publishing a demonstration policy. The repository is still readable at
+  // `GET /xacml/policies` (behind `XACML_USER`, since the same day), which is
+  // where a person reads it; this endpoint is for a machine that is about to
+  // enforce it.
   const access = pepAccess(req, res, accessGate.ACTION.READ,
                            'a remote PEP policy pull');
   if (!access.allowed) {
@@ -1173,7 +1177,8 @@ app.get('/xacml/pep/policies', function (req, res) {
   //
   //   * `xacml.accessPolicy` (`access-control`) decides who reaches the admin
   //     console, the management API, the User Portal, SCIM, the SPIRE Server
-  //     API — and, since today, these very endpoints;
+  //     API, the embedded debugger and the rest of `/xacml` — and, since
+  //     2026-09-06, these very endpoints;
   //   * `xacml.issuancePolicy` (`role-issuance`) decides whether this service
   //     issues a token, an assertion or a ticket at its nine issuance sites.
   //
@@ -1606,7 +1611,7 @@ function writePipResponse(answers, unresolved) {
 // A refusal, in XML, because a caller that POSTed XML and asked for nothing
 // else should not have to parse two content types to find out what went wrong.
 // It carries the same two members `fail()` does so that a reader moving
-// between this endpoint and the six beside it meets one vocabulary.
+// between this endpoint and the seven beside it meets one vocabulary.
 function pipFail(res, status, code, description) {
   log.debug("Entering pipFail().");
   res.status(status).type('application/xml').set('Cache-Control', 'no-store')
@@ -2103,11 +2108,12 @@ function description(req) {
                  'xacml/conformance/ and xacml/CLAUDE.md.',
     // EVERY ROW SAYS WHAT IT REQUIRES, and the two answers are the point of
     // the column rather than decoration: the four endpoints proper require
-    // XACML_USER and the three a remote enforcement point lives on require
-    // REMOTE_PEPS, so a reader can see that being admitted to one surface is
-    // not being admitted to the other. The role names are read from this
-    // file's own two constants rather than spelt again, so a rename cannot
-    // leave this document describing a gate that no longer exists.
+    // XACML_USER and the four a remote enforcement point uses (the three
+    // under /xacml/pep and POST /xacml/pip) require REMOTE_PEPS, so a reader
+    // can see that being admitted to one surface is not being admitted to the
+    // other. The role names are read from this file's own two constants rather
+    // than spelt again, so a rename cannot leave this document describing a
+    // gate that no longer exists.
     endpoints: [
       { method: 'GET', path: '/xacml', what: 'this document',
         requires: XACML_USER_ROLE },

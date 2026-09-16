@@ -64,19 +64,21 @@
 // ---------------------------------------------------------------------------
 // WHAT IT DOES NOT DO, AND THE ONE THAT SURPRISES PEOPLE.
 //
-// **IT DOES NOT RETRY.** RFC 8935 section 2.4 lets a transmitter retry a
-// failed push and this service does not, because a mock that retried would
-// make a receiver's ONE-SHOT failure invisible: a client under test that
+// **IT DOES NOT RETRY BY DEFAULT.** RFC 8935 section 2.4 lets a transmitter
+// retry a failed push and this service does not, because a mock that retried
+// would make a receiver's ONE-SHOT failure invisible: a client under test that
 // answers 500 to the first push and 202 to the second looks, from its own
 // logs, like a client that works. The failed SET goes to the stream's
 // dead-letter queue with the reason (2026-09-14; it stayed on the live queue
 // before, and the `redeliver` operation this comment named never existed).
-// `ssf.pushRetries` turns retries on. Deliberate rather than unfinished, and
+// `ssf.pushRetries` (0 by default) turns retries on — see
+// `pushSetWithRetries()`. Deliberate rather than unfinished, and
 // `ssf/CLAUDE.md` lists it under what this family does not do.
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route and requires `helpers.js`,
-// `config.js` and node's own `http`/`https`/`url` — nothing else here — so it
+// `config.js`, `realms.js`, `version.js` and node's own `http`/`https`/`url`
+// (and `tls/tls_server.js` lazily, see pushSet()) — nothing else here — so it
 // cannot join a cycle and a test can drive it against a throwaway listener.
 // ===========================================================================
 
@@ -100,9 +102,9 @@ const USER_AGENT = require('../common/version').userAgent('ssf-transmitter');
 // its code on the result as `errorCode`, which `ssf.js`'s transmit() puts on
 // the SET's dead letter, and the sweep counts by code in its one summary line
 // (2026-09-14; it was an audit row per failure). That result is read field by
-// field there
-// and never serialised to anybody, so the code reaches no receiver and no
-// caller — which is why this file needs no require of the registry at all.
+// field there and never serialised to anybody, so the code reaches no receiver
+// and no caller — which is why this file needs no require of the registry at
+// all.
 
 // A receiver that answers a push with more than this is not answering RFC
 // 8935. A success is 202 with an EMPTY body and a failure is a small JSON
@@ -377,24 +379,28 @@ function pushSet(url, token, options) {
   // ---------------------------------------------------------------------
   // THE PIN, FOR THIS SERVICE'S OWN RECEIVERS ONLY (2026-09-10).
   //
-  // The certificate on 8081 is generated per start and signed by nobody, so
-  // the ordinary check below would refuse every push to the console's and the
-  // portal's receive endpoints — and `ssf.pushAllowInsecure` is NOT the way
-  // round it, because that setting turns the check off for every receiver in
-  // the world to fix a connection to ourselves.
+  // The certificate on the main port is issued by this service's own Root
+  // (or, with no Root, generated per start and self-signed) — nobody a
+  // public truststore knows — so the ordinary check below would refuse every
+  // push to the console's and the portal's receive endpoints — and
+  // `ssf.pushAllowInsecure` is NOT the way round it, because that setting
+  // turns the check off for every receiver in the world to fix a connection
+  // to ourselves.
   //
-  // So: our own certificate as the trust anchor — it is self-signed, so it is
-  // its own root — and the hostname check skipped, because the certificate
-  // names this service and the connection names the loopback interface.
-  // Pinning the key is the stronger half of the two. `common/oidc_rp.js`'s
-  // back channel does exactly this and these are the same three lines.
+  // So: our own trust anchor — the Root while there is one, the self-signed
+  // certificate while there is not (`trustAnchorPems()` in
+  // `tls/tls_server.js`) — and the hostname check skipped, because the
+  // certificate names this service and the connection names the loopback
+  // interface. Pinning the anchor is the stronger half of the two.
+  // `common/oidc_rp.js`'s back channel does exactly this and these are the
+  // same three lines.
   //
-  // **THE REQUIRE IS LAZY AND HAS TO BE.** `tls/tls_server.js` registers three
-  // routes (rule 1), and this file is required by `ssf.js` at 23b — but also,
-  // through `ssf_receivers.js`, by `admin-ui/admin.js` at 18 and
-  // `portal/portal.js` at 8c, either of which would drag /tls ahead of the
-  // management API's own routes. Here every module is loaded and it is a
-  // cache hit.
+  // **THE REQUIRE IS LAZY AND HAS TO BE.** `tls/tls_server.js` registers the
+  // /tls routes (rule 1), and this file is required by `ssf.js` at 23b — but
+  // also, through `ssf_receivers.js`, by `admin-ui/admin.js` at 18 and
+  // `portal/portal.js` just after `authn` (8), either of which would drag
+  // /tls ahead of the management API's own routes. Here every module is
+  // loaded and it is a cache hit.
   // ---------------------------------------------------------------------
   let anchor = null;
   if (ours && secure) {

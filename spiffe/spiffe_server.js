@@ -5,18 +5,20 @@
 // ---------------------------------------------------------------------------
 // THE FIRST OF THE THREE SERVER-SIDE SPIFFE SURFACES — the BUNDLE ENDPOINT,
 // which is plain HTTPS and needs no gRPC at all — plus the page that explains
-// all three, plus the `listen()` that starts the two gRPC listeners the other
-// two surfaces live on.
+// all three, plus the `listen()` that starts the gRPC listeners the other two
+// surfaces live on — four per realm that has SPIFFE turned on.
 //
-// It is the module `server.js` requires, and it is the SPIFFE analogue of
-// `ldap_server.js` and `tls_server.js`: requiring it registers its HTTP views
-// (rule 1), and its **own listeners are started from `listen()` in `server.js`,
-// not at require time**. That is the rule those two modules already carry and
-// the reason is the same — binding a port can fail, and a `require` that throws
-// takes the whole service down where a route cannot. A failure to bind is
-// RECORDED rather than thrown, and published on `GET /spiffe`, because the HTTP
-// view answers 200 either way and there is otherwise no way to tell a running
-// listener from one whose port was already taken.
+// It is the module `common/protocol_stack.js` requires for this family, and it
+// is the SPIFFE analogue of `ldap_server.js`: requiring it registers its HTTP
+// views (rule 1), and its **own listeners are started from `listen()` in
+// `server.js`, not at require time**. That is the rule every socket owner
+// carries (`tls_server.js` did too, until its listeners were deleted on
+// 2026-09-16) and the reason is the same — binding a port can fail, and a
+// `require` that throws takes the whole service down where a route cannot. A
+// failure to bind is RECORDED rather than thrown, and published on
+// `GET /spiffe`, because the HTTP view answers 200 either way and there is
+// otherwise no way to tell a running listener from one whose port was already
+// taken.
 //
 // ---------------------------------------------------------------------------
 // THE BUNDLE ENDPOINT IS THE SURFACE WITH NO MOVING PARTS
@@ -29,7 +31,8 @@
 //   `https_web`     the URL is verified with the WEB PKI, the way a browser
 //                   would. Which means it is only as good as the certificate
 //                   this service is reached over, and this service's
-//                   certificate is self-signed and regenerated every start.
+//                   certificate is issued by its own Root (or supplied), not
+//                   by anything in the Web PKI.
 //   `https_spiffe`  the URL is verified with a SPIFFE ID and an already-known
 //                   bundle. The chicken-and-egg is solved by the first bundle
 //                   being configured out of band.
@@ -63,7 +66,8 @@ const serverApi = require('./spiffe_api');
 // socket gets TLS. A library that registers nothing.
 const auth = require('./spiffe_auth');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
-// module — server.js requires it first, so the require would pull the bundle
+// module — `common/protocol_stack.js` requires admin.js first, so the require
+// would pull the bundle
 // endpoint and /spiffe into the express router ahead of every /admin route, and
 // GET /admin/sts-metadata is built by walking that router. So it offers a slot
 // and this module fills it at require time, the same shape
@@ -84,7 +88,8 @@ const BUNDLE_PATH = config.value('spiffe.bundlePath') || '/spiffe/bundle';
 // Listener state. Declared HERE, beside the other module state rather than
 // beside `listen()` where it is written, because the HTTP views read it and
 // they are registered above `listen()` — the same arrangement `ldap_server.js`
-// and `tls_server.js` both use, and for the same reason.
+// uses (and `tls_server.js` did, while it owned listeners), for the same
+// reason.
 // ONE ENTRY PER REALM THAT HAS SPIFFE SOCKETS, keyed by realm id with the
 // DEFAULT realm under the empty string — the same key every per-realm store in
 // this service uses, so `''` is a realm here rather than a missing value.
@@ -720,14 +725,15 @@ function page(document) {
 }
 
 // ---------------------------------------------------------------------------
-// STARTING THE TWO gRPC LISTENERS.
+// STARTING A REALM'S gRPC LISTENERS.
 //
 // Called from `listen()` in `server.js`, for the reason at the top of this
-// file. Four addresses at most — a Unix socket and a TCP port for each surface
-// — and each is reported separately, because "the Workload API socket is up and
-// the SPIRE Server API port is not" is an ordinary outcome and one flag could
-// only report one of them. That is the lesson `ldap_server.js` records about
-// 389 and 636, applied before it had to be learnt again.
+// file. Four addresses per realm at most — a Unix socket and a TCP port for
+// each surface — and each is reported separately, because "the Workload API
+// socket is up and the SPIRE Server API port is not" is an ordinary outcome
+// and one flag could only report one of them. That is the lesson
+// `ldap_server.js` records about 389 and 636, applied before it had to be
+// learnt again.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // **THE ADDRESSES ARE A REALM'S SINCE 2026-09-12, AND THE ENDPOINT ADDRESS IS
@@ -743,7 +749,7 @@ function page(document) {
 // So the realm is the SOCKET. A realm with SPIFFE turned on gets a Workload
 // API and a SPIRE Server API of its own — its own Unix socket paths, seeded
 // when the realm was created, and its own bind ADDRESS with the ports
-// unchanged, because a client configured for `:8081`/`:8092` should reach
+// unchanged, because a client configured for `:8181`/`:8092` should reach
 // every realm where it expects to. `spiffe.grpcHost` on the realm is the row
 // that does it, and rcbj's instruction was *for the SPIFFE service, a unique
 // IP will be used* — which is this.
@@ -839,12 +845,12 @@ async function bindAll(server, surface, realmId) {
   //                                  `spiffe.authRequired` was removed on
   //                                  2026-09-06.
   //
-  // That last line is the one that changes what an existing caller sees, which
-  // is why the setting is RESTART-ONLY: a flag that was runtime for its checks
-  // and restart-only for its socket is the silent disagreement config.js's
-  // header warns about — /admin/config would report mutual TLS while a plain
-  // listener went on answering. The same reasoning `oauth2.rfc9700` carries
-  // about `global.https`.
+  // That last line is the one that changed what an existing caller saw, which
+  // is why `spiffe.authRequired` was RESTART-ONLY while it existed: a flag
+  // that was runtime for its checks and restart-only for its socket is the
+  // silent disagreement config.js's header warns about — /admin/config would
+  // have reported mutual TLS while a plain listener went on answering. The
+  // same reasoning `oauth2.rfc9700` carries about `global.https`.
   // ---------------------------------------------------------------------
   let secure = null;
   if (surface === 'server' && auth.authRequired()) {
@@ -1113,9 +1119,9 @@ async function startRealm(realm) {
   }
   // The registry's seed entries, once the store exists. Here rather than at
   // require time because `ldap_server.js` fills the directory slot at ITS
-  // require time, and `server.js` requires this module after it — but
-  // `listen()` is the first moment BOTH are certainly true. IN THE REALM,
-  // because `ou=spiffe` is a container in that realm's own directory.
+  // require time, and `common/protocol_stack.js` requires this module after
+  // it — but `listen()` is the first moment BOTH are certainly true. IN THE
+  // REALM, because `ou=spiffe` is a container in that realm's own directory.
   try {
     inRealm(realmId, function () {
       registry.seed(ca.trustDomain(realmId));

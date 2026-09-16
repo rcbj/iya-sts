@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // common/cert_enrollment.js — WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND
@@ -37,9 +38,12 @@
 // **A LIBRARY, AND IT MUST STAY ONE (rule 3).** It registers no route and it
 // reaches the directory through `setDirectory()`, which `ldap/ldap_server.js`
 // fills — a require in that direction would drag every `/ldap` route to the
-// front of the router. It requires `common/pki.js`, `common/credentials.js`,
-// `common/applications.js`, `admin-ui/admin_rbac.js` and `oauth-oidc/mtls.js`,
-// all libraries.
+// front of the router. Beyond `common/`'s leaves (helpers, config, audit,
+// error_codes, keystore, mode, realms and the two vendored PKI modules) it
+// requires `common/pki.js`, `common/credentials.js`,
+// `common/applications.js`, `admin-ui/admin_rbac.js`, `oauth-oidc/mtls.js`
+// and `cluster/cluster_claims.js` / `cluster_capabilities.js`, all
+// libraries.
 
 const nodeCrypto = require('crypto');
 const net = require('net');
@@ -375,6 +379,7 @@ async function adminFor(username, password, via) {
     log.debug("Leaving adminFor(). No name.");
     return false;
   }
+  /** @type {any} */
   let verified = false;
   try {
     verified = await realms.run(realms.get(realms.DEFAULT_ID), function () {
@@ -523,7 +528,8 @@ async function authenticateApplication(clientId, secret, via) {
     return refuse('STS-ENROLL-0016', 401, 'The client credentials were not ' +
                   'accepted.');
   }
-  const cfg = applications.clientConfigOf(view.identifier) || {};
+  const cfg = /** @type {any} */ (
+    applications.clientConfigOf(view.identifier) || {});
   const expected = String(cfg.client_secret || '');
   if (mode.requiresClientSecret()) {
     if (!expected || !secretsEqual(secret, expected)) {
@@ -2432,7 +2438,7 @@ function withheldValues(attribute, values) {
 // plain HTTP listener (`mode.requiresEnrollmentTls()`); development answers and
 // logs. SCEP never asks, because its messages are CMS-protected by design.
 //
-// `throttle()` — the web-security window over a family's two limits, counted
+// `throttled()` — the web-security window over a family's two limits, counted
 // only for a FAILURE (`websecurity.blocked()` answers without counting, and
 // `attempt()` is called after a refusal): a device fleet enrolling legitimately
 // from one NAT must not be locked out by its own successes.
@@ -2441,9 +2447,11 @@ function transportRefusal(req, family) {
   log.debug("Entering transportRefusal(). family=" + family);
   // `req.protocol` rather than a header: express computes it from the socket,
   // and honours X-Forwarded-Proto only where a proxy is TRUSTED — the request
-  // worker trusts the front process (common/request_worker.js argues why), and
-  // the main listener trusts one only when `global.trustProxy` says so. A
-  // header read directly would let any client claim TLS.
+  // worker trusts the front process (common/request_worker.js argues why),
+  // which writes the header from its OWN `req.protocol`; the main listener
+  // sets no `trust proxy` at all, so there it is the socket's scheme whatever
+  // `global.trustProxy` says. A header read directly would let any client
+  // claim TLS.
   const encrypted = !!(req && req.socket && req.socket.encrypted) ||
     !!(req && req.protocol === 'https');
   if (encrypted) {

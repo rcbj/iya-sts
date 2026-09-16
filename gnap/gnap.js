@@ -407,8 +407,8 @@ app.post('/gnap/resource',
 
 // ---------------------------------------------------------------------------
 // VERIFICATION MATERIAL for the self-contained formats. Public keys only; a
-// document that publishes a key is served `no-store` (root CLAUDE.md, *The
-// signing key is regenerated on every start*) — both of these do.
+// document that publishes a key is served `no-store` (root CLAUDE.md,
+// *Signing keys, and any document that publishes one*) — both of these do.
 // ---------------------------------------------------------------------------
 app.get('/gnap/keys', function (req, res) {
   log.debug("Entering GET /gnap/keys.");

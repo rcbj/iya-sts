@@ -1,9 +1,11 @@
 # xacml/ — the XACML 3.0 engine
 
 **All five phases are here: the ENGINE, the STORE, the PIP, a service surface,
-the PAP, ALFA and the REMOTE PEP.** `server.js` requires `xacml.js` at 23c,
-seven routes answer under `/xacml`, five console pages under `/admin/xacml`,
-seventeen operations under `/admin-api/xacml`, policies live in `ou=policies`
+the PAP, ALFA and the REMOTE PEP.** `common/protocol_stack.js` requires
+`xacml.js` at 23c, eight routes answer under `/xacml` (see *The surface*), five
+configuration pages under `/admin/xacml` and a sixth, `/admin/xacml/monitor`,
+filed under Monitoring, seventeen operations under `/admin-api/xacml`,
+policies live in `ou=policies`
 in the embedded directory and registered remote enforcement points in
 `ou=peps`.
 
@@ -30,14 +32,16 @@ and the nudge.
 | `xacml_json.js` | The JSON Profile 1.1 request and response — what anybody actually sends. The second reader. **No I/O.** |
 | `xacml_store.js` | The repository. Owns the policy schema; `ou=policies` IS the store. |
 | `xacml_pip.js` | Attribute resolution off the subject's own directory entry. |
-| `xacml.js` | The protocol routes: four under `/xacml`, plus the embedded PEP. |
+| `xacml.js` | The protocol routes: the four under `/xacml` proper, the three under `/xacml/pep` and `POST /xacml/pip`, plus the embedded PEP. |
 | `xacml_templates.js` | Five starting points: RBAC, ABAC, this service's own two, and **`blank`** — an empty Policy or PolicySet, which is the only way to create a PolicySet from the console without ALFA. **Adding one is a row in `TEMPLATES` and nothing else.** No DOM. |
 | `xacml_editor.js` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.js` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
 | `xacml_pep_registry.js` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_http.js` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
 | `xacml_pep_tls.js` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.js` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
-| `xacml_admin.js` | The five `/admin/xacml` console pages and their actions. |
+| `xacml_admin.js` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
+| `xacml_monitor.js` | The decision and enforcement counters behind `/admin/xacml/monitor`. A LEAF. See *`/admin/xacml/monitor`* below. |
+| `xacml_access_pep.js`, `xacml_role_pep.js` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
 | `conformance/` | The vendored OASIS suite. `PROVENANCE.md` is the argument, `MANIFEST.js` the drift check. **Not edited here, ever.** |
 
 Five tests, all in-process, no port, no container:
@@ -47,7 +51,10 @@ PEP), `tests/xacml_pap.js` (the templates, the editor grammar and the XML
 writer), `tests/xacml_alfa.js` (ALFA, both directions) and — since phase five —
 `tests/xacml_pep.js`, which is the odd one out: it spawns a CHILD PROCESS in
 `xacml-pep/` and asks the container questions this process cannot answer about
-itself.
+itself. Three more have joined them since, each argued in its own header:
+`tests/xacml_service_own.js` (the two built-in policies, below),
+`tests/xacml_monitor.js` (the monitor's counters) and
+`tests/xacml_pep_realms.js` (a remote PEP registered in another realm).
 
 **AND THREE OVER HTTP, WHICH IS WHAT THOSE FIVE COULD NEVER
 COVER.** Between them the five hold the ENGINE to 455 cases, the store, the PIP,
@@ -82,24 +89,27 @@ no-root state reachable at all, and keeps `xacml.enabled`, `xacml.remotePeps`,
 turned off and on. **The remote-PEP job needs it for two reasons of its own**:
 it disables every policy in the repository to reach the state where a PEP holds
 nothing, and doing that anywhere but a realm of its own would stop every other
-job in the run being decided about — and it then REMOVES the realm while its
-container is still running, which is how it makes a PDP outage without stopping
-the service the rest of the suite is using. **The editor job needs the realm most**: the draft IS the
-stored policy, so a job editing in the default realm would be rewriting the
-seeded one, live, while every other job in the run decided against it.
+job in the run being decided about — and it then turns `xacml.remotePeps` OFF
+in that realm while its container is still running (it REMOVED the realm until
+2026-09-06, when the suite stopped removing realms), which is how it makes a
+PDP outage without stopping the service the rest of the suite is using. **The
+editor job needs the realm most**: the draft IS the stored policy, so a job
+editing in the default realm would be rewriting the seeded one, live, while
+every other job in the run decided against it.
 
 `sts_xacml_editor.js` found the thirteenth defect on its first run and it is
 listed below with the twelve.
 
 ## Where this family sits in the require order (23c)
 
-**After `admin-ui/admin`**, whose TENTH and ELEVENTH slots `xacml_admin.js` and
-`xacml_role_pep.js` fill and whose page shell, settings block and action
-responder it requires — so a require the other way would close a cycle, and one
-from `mgmt-api/admin_api.js` would move every `/xacml` route and all five
-`/admin/xacml*` pages ahead of the management API's own. It requires
-`xacml_admin.js` ITSELF rather than `server.js` doing it, so this family has ONE
-line in the require order; that module requires this one back LAZILY, inside
+**After `admin-ui/admin`**, whose `setXacmlPages()` and `setRolePreviewer()`
+slots `xacml_admin.js` and `xacml_role_pep.js` fill and whose page shell,
+settings block and action responder it requires — so a require the other way
+would close a cycle, and one from `mgmt-api/admin_api.js` would move every
+`/xacml` route and all six `/admin/xacml*` pages ahead of the management API's
+own. It requires `xacml_admin.js` ITSELF rather than
+`common/protocol_stack.js` doing it, so this family has ONE line in the require
+order; that module requires this one back LAZILY, inside
 the one function that needs it.
 
 **And after `ldap/ldap_server` (21) in effect** — not as an ordering
@@ -112,7 +122,7 @@ cycle.
 
 **AND IT REQUIRES `xacml_role_pep.js`, WHICH IS WHAT ARMS EVERY ISSUANCE SITE IN
 THE SERVICE**: that module fills `common/issuance_gate.js`'s decider at require
-time, so from this line onward the nine `gate.check()` calls reach the engine
+time, so from this line onward every `gate.check()` call reaches the engine
 and before it — in `npm test`, in the parent project's in-process Kerberos
 jobs, in the remote PEP container — they answer "allowed". See *AND SINCE
 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below.
@@ -311,12 +321,12 @@ closed.
 element MUST be present when a policy holds an `AttributeSelector` or an
 `xpathExpression`, and `xacml_validate.js` says nothing about it and never
 will — that file refuses what is CERTAINLY WRONG for every request, and this
-changes no decision this PDP makes, because there is one XPath engine here and
-it does not choose a dialect by URI. So the editor page names the policies that
-need one, beside the field that sets it. Refusing the write would be the editor
-inventing a rule the evaluator has not got; saying nothing would let somebody
-build a document here that this service is happy with and a schema validator
-elsewhere rejects.
+changes no decision this PDP makes, because this engine evaluates no XPath at
+all (see *What is not here yet*), so nothing here chooses a dialect by URI. So
+the editor page names the policies that need one, beside the field that sets it.
+Refusing the write would be the editor inventing a rule the evaluator has not
+got; saying nothing would let somebody build a document here that this service
+is happy with and a schema validator elsewhere rejects.
 
 **THE THREE THINGS IT DOES NOT DO, and each is a decision rather than a gap:**
 
@@ -448,7 +458,7 @@ policy system.
 **454 of 455 mandatory cases**, with the one exception recorded in
 `conformance/MANIFEST.js`'s `EXPECTED_FAILURES` and argued there. The
 VENDORED OASIS conformance suite is **Apache-2.0 rather than this repository's
-MIT** and says so in `LICENSE.md`.
+MIT** and says so in `conformance/LICENSE`.
 
 ```
 IIA   attribute references     18 of 18
@@ -867,7 +877,7 @@ stranger, and the one that had to be given its own number.
 |---|---|
 | **Authentication** | a client certificate this service VERIFIED, whose subject DN resolves to a directory entry holding `REMOTE_PEPS`. Four links, none permissive — see *The three `/xacml/pep` endpoints are GATED* above |
 | **Authorization** | `accessGate.check()` on resource **`xacml-pep-api`** and NOT `xacml-api`, which is the role not following the path said at the resource as well |
-| **Rate limiting** | `websecurity.attempt('xacml-pip', …)`, **BEFORE the access check** |
+| **Rate limiting** | `websecurity.attemptShared('xacml-pip', …)`, **BEFORE the access check** |
 | **Body ceiling** | `validation.parseXml()` at `CAP.LARGE` — a megabyte, where `app.js`'s parser stops at five |
 | **Scalar bounds** | AttributeId, Category and DataType at `CAP.IDENTIFIER`; the subject at `CAP.NAME`; C0 refused in all four |
 | **Designator cap** | fifty per query |
@@ -1105,8 +1115,9 @@ manifest) and all three of which would have failed the day the defect was made.
    resource to check that the refusal SENTENCE names the actions, and
    `admin_api.js`'s parity check reads that same sentence to find out what a
    resource can do. A resource answering `why` is invisible to both. The
-   conversion is in `admin.xacmlAction()`, which is the one function the
-   management API calls and the console does not.
+   conversion is in `xacmlAction()` (in `admin-core/admin_actions.js`; it was
+   `admin.js`'s until 2026-09-12), which is the one function the management
+   API calls and the console does not.
 5. **NINETEEN of the editor's twenty-three actions were undocumented, and not
    one of the thirty-two carried a request-body example.** Both halves matter
    and they fail differently: an undocumented action is a console control that
@@ -1180,7 +1191,8 @@ the page they had just posted from, unchanged, with no explanation — which rea
 exactly like a control that does nothing.
 
 **It was invisible from both of the places that look.** `/admin-api` had already
-been given the translation (`admin.xacmlAction()` puts `why` into `errors`), so
+been given the translation (`admin_actions.js`'s `xacmlAction()` puts `why`
+into `errors`), so
 every refusal was fully explained there and
 `tests/vendored/sts_admin_api_operations.js` was right to be satisfied. And
 `tests/xacml_pap.js` asserts the refusal the FUNCTION returns, which was correct
@@ -1205,8 +1217,11 @@ what a PDP is. This one turns THIS service's issuances into XACML requests and
 refuses the ones the PDP will not permit.
 
 It fills `common/issuance_gate.js`'s decider at require time, which is what arms
-every issuance site in the service: nine kinds of issuance, eight `gate.check()`
-calls, seven modules, all of them required BEFORE 23c. So `xacml/xacml.js`
+every issuance site in the service: the nine kinds of issuance in
+`issuance_gate.js`'s `ISSUANCE`, and every `gate.check()` call in the modules
+that issue them. The decider is read at CALL time, so a module required after
+23c (GNAP, at 23d) is armed exactly as one required before it. So
+`xacml/xacml.js`
 requiring this module is the line that turns a service which answers "allowed"
 to everything into one that asks a policy.
 
@@ -1277,7 +1292,7 @@ deliberately not read here**: that setting belongs to the demo PEP at
 `/xacml/protected`, which exists to SHOW what bias does, and this one is
 enforcing.
 
-### It fills `admin.js`'s eleventh slot
+### It fills `admin.js`'s `setRolePreviewer()` slot
 
 `setRolePreviewer()`, carrying TWO functions — the preview, and the thing that
 says WHICH POLICY answered. Validated together for `setLogoutReader()`'s reason:

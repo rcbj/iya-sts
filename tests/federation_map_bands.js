@@ -54,7 +54,7 @@ const diagram = require('../admin-ui/federation_diagram');
 // `ldap_server.js` is what fills `federation.js`'s directory slot —
 // ou=federations IS the store and there is deliberately no fallback Map — so
 // the model half below cannot run without it. Requiring it here registers the
-// `/ldap` routes, which costs nothing in a test that never listens.
+// `/admin/ldap/*` pages, which costs nothing in a test that never listens.
 require('../ldap/ldap_server');
 const federation = require('../federation/federation');
 const federationGraph = require('../federation/federation_graph');

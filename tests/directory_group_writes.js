@@ -72,9 +72,10 @@ function checkTheNameRules(t) {
 
   withRealm(t, 'dgw-names', function () {
     // NOT `developers`, WHICH IS SEEDED IN EVERY REALM. The first version of
-    // this file used it and failed, which is the seed doing its job: every
-    // realm gets `cn=developers` and `cn=directory-admins` at creation, so a
-    // test that picks either is asserting against a group it did not make.
+    // this file used it and failed, which is the seed doing its job: in
+    // development mode (`mode.seedsDemoData()`) every realm gets
+    // `cn=developers` and `cn=directory-admins` at creation, so a test that
+    // picks either is asserting against a group it did not make.
     const made = dir.createGroup('dgw-developers', { origin: 'test' });
     t.equal(made.ok, true, 'an ordinary name is accepted');
     t.check(String(made.dn).indexOf('cn=dgw-developers,ou=groups') === 0,

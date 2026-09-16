@@ -1,6 +1,7 @@
 # admin-ui/
 
-The admin console at `/admin`. Four files now:
+The admin console at `/admin`. The files below are the ones with the most to
+say; the rest are listed after the table and argued in their own sections.
 
 | File | What it is |
 |---|---|
@@ -11,12 +12,20 @@ The admin console at `/admin`. Four files now:
 | `crypto_metadata.js` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.js`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
 | `federation_diagram.js` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.js`'s palette, hexagon and text metric. |
 
+The others: `admin_scope.js` (what a realm administrator may not reach, 8d),
+`api_explorer.js` (`/admin/api-explorer`), `certificate_dialog.js` and
+`pqc_badge.js` (the certificate details dialog and the post-quantum icon),
+`database_admin.js` (`/admin/database`), `encryption_admin.js`
+(`/admin/encryption`) and `secrets_admin.js` (`/admin/secrets`).
+
 **It IS protected now, and it holds nothing on disk.** It is also the one surface
 that can CHANGE what the protocol endpoints do, which is why it is the one that
 grew a gate.
 
-5. **`admin.js` must stay after `oauth2.js` too, for the same reason**: it reads that
-   `sessions` map so the metrics page can report real sign-on sessions. And the same
+5. **`admin.js` must stay after `oauth2.js` too** (the root file's rule 5): it
+   requires that module, which registers routes. It also reads the `sessions` map
+   — `authn.js`'s since the session moved there — so the metrics page can report
+   real sign-on sessions. And the same
    one-store rule applies to REVOCATION — the set of revoked jtis lives in
    `admin_stats.js` and serves both the console and RFC 7009's `/oauth2/revoke`. Two
    sets would each look correct alone and never see each other, and a token revoked
@@ -235,8 +244,9 @@ would have meant editing four fillers to say something no more useful.
 
 Filed under **Monitoring** and not beside `/admin/persistence`, on this file's
 own rule that a page goes where the QUESTION it answers goes. That page is
-under Settings and answers *what is this service configured to write down,
-where, and is the connection encrypted* — configuration, plus the eighteen
+under Server configuration and answers *what is this service configured to
+write down, where, and is the connection encrypted* — configuration, plus the
+nineteen
 `persistence.*` settings, and it reads the same on a service that started a
 second ago. This one answers *what has that database been DOING*, and the
 numbers move while a reader watches. Same argument as `/admin/xacml/monitor`,
@@ -885,7 +895,8 @@ plausible person matching nothing, and the difference would have shown up in an
 `ldapsearch` weeks later.
 
 It is a round trip because this console is `script-src 'none'`, and the
-refusals recorded under *Six pages here have a script on them* are what settle
+refusals recorded under the root file's *Seven pages here have a script on
+them* are what settle
 that: "a field could be filled in without a reload" is not the argument that
 rule asks for. It is the same answer the XACML guided editor gives to the same
 question.
@@ -948,7 +959,8 @@ an endpoint this service documents. It is `usersAction()`'s third arm now.
 
 Added 2026-08-25. It creates an application entry in the embedded directory of
 the realm the console is showing, and it is the first page here whose main
-control is a set of CHECKBOXES: fourteen protocol families, from
+control is a set of CHECKBOXES: one per protocol family (fourteen then,
+sixteen by 2026-09-16), from
 `applications.js`'s `PROTOCOLS` table, landing on the entry's
 `appAllowedProtocol`.
 
@@ -962,21 +974,22 @@ membership (rule 8a) is the same shape at twice the count.
 
 What is different is the READER'S TASK, which is the test that header sets:
 
-* **The families do not fit in a `.formrow`.** Fourteen choices with a sentence
+* **The families do not fit in a `.formrow`.** Sixteen choices with a sentence
   each is a table, and a table at the foot of the applications list would have
   had to become a link to somewhere anyway.
 * **NOR DO THE IDENTIFIERS AND THE REDIRECT URIS**, which is the 2026-08-25
   addition and the half that makes this the only place a whole application can
-  be configured in one post. Fourteen more fields — eleven identifiers and three
-  return addresses — drawn from `applications.declarationAttributes()`.
+  be configured in one post. More fields — fourteen then (eleven identifiers
+  and three return addresses), twenty-four by 2026-09-16 — drawn from
+  `applications.declarationAttributes()`.
 * **Creating one is a different errand from reading the list.** The inline form
   sits BELOW the paging, so on a service with forty applications the one control
   somebody came for is off the bottom of the page.
 
 **THE KIND SELECT WAS REMOVED AND THAT IS THE MOST INSTRUCTIVE THING ON THIS
 PAGE.** It sat beside the family checkboxes and asked the same question in a
-vocabulary that did not line up with theirs: eight kinds against fourteen
-families, five of those families having no kind at all, and a reader made to
+vocabulary that did not line up with theirs: eight kinds against the fourteen
+families there were then, five of those families having no kind at all, and a reader made to
 choose in both. Worse, the two are on opposite sides of the line
 `applications.js`'s `EDITABLE` header draws and this file repeats everywhere — a
 family is DECLARED and a kind is DERIVED, written by `seen()` when a protocol
@@ -1173,7 +1186,7 @@ edited:
   inside `<body>` is markup no validator accepts.
 * **The require goes one way and must stay that way.** `sts_metadata.js`
   requires this module; this module must never require it back. That file is
-  the LAST thing `server.js` loads — it lists what every other module
+  the LAST thing `common/protocol_stack.js` loads — it lists what every other module
   registered — so a require from here would drag every console route behind it,
   and rule 6's route order is what `/admin/sts-metadata` is built by walking.
 * **It is gated by construction**, not by a check of its own: the
@@ -1274,7 +1287,7 @@ Six things about it are decisions rather than mechanics.
 * **IT IS NATIVE `<details>` AND NOTHING ELSE COULD BE.** This console is
   served under `script-src 'none'`, so the debugger's collapse-all switch — a
   checkbox and a listener — has no equivalent here, and the whole change adds
-  no seventh exception to the rule in `../CLAUDE.md`. What that costs is the
+  no new exception to the rule in `../CLAUDE.md`. What that costs is the
   *expand everything* control, which is why every summary is a full sentence:
   a reader skimming for one paragraph has to be able to find it without opening
   all of them.
@@ -1384,8 +1397,8 @@ what it implements is actively dangerous to somebody using it to learn.
 
 The page reports on the identity services this mock ADVERTISES, so the list of
 them has to be the list `/admin/sts-metadata` draws its cards from. Two tables
-naming fourteen protocol families are two tables that will disagree the first
-time a fifteenth arrives — invisibly, because each page would look complete on
+naming the same protocol families are two tables that will disagree the first
+time another arrives — invisibly, because each page would look complete on
 its own. So `sts_metadata.js` requires this module and hands `PROTOCOLS` over at
 its own require time (`setProtocolFamilies()`), and the page reports BOTH
 directions of drift the way that page reports both directions of endpoint drift:
@@ -1524,7 +1537,7 @@ this console, and `mayWrite()` exists for that one caller. It goes through
   what getting this wrong already cost.
 * **PKCS#12 only where there is a certificate**, and the refusal is the vendored
   module's own. A `.p12` wraps a key in a certificate and this service holds one
-  for the signing key and the TLS key and nothing else. Minting a throwaway so
+  for the signing key, the TLS key and (since 2026-09-11) the curve keys. Minting a throwaway so
   the format "worked" would hand somebody a keystore this service has never
   presented.
 * **The post-quantum keys are JWK and public-half only**, which is RFC 9964
@@ -1782,8 +1795,12 @@ not the console's fifty, because this page carries eight sections), with one
 It read *nothing is ever revoked — no CRL, no OCSP.* Every authority on this
 page now signs one and answers the other, and the page grew a REVOCATION PANE
 (below). What the warning says instead is the narrower thing, which is the one
-a reader can be hurt by: **revocation here is PUBLISHED and never CONSULTED**,
-so a certificate revoked on this page still authenticates to this service.
+a reader can be hurt by: it read **revocation here is PUBLISHED and never
+CONSULTED**, so a certificate revoked on this page still authenticated to this
+service — until 2026-09-12, when presented certificates began to be checked
+(rule 3ad). The warning's sentence is `pki.report()`'s and now says what is
+consulted; the bold heading in `pki_admin.js` above it still reads *never
+ENFORCED* and is stale.
 
 **AND THE PAGE NOW CARRIES TWO CONTROLS WITH THE WORD *REVOKE* ON THEM.** The
 older one, in the Applications table, takes a key pair OFF an application's
@@ -1991,7 +2008,8 @@ mirror it (rule 7). `tls/CLAUDE.md` argues what the truststore does; four things
 file's.
 
 * **FILED UNDER PROTOCOLS, DIRECTLY BENEATH `/admin/tls`, UNGROUPED.** It is configuration
-  of those listeners, which is the question that section answers. A `TLS` group heading over
+  of how the main port verifies a client certificate (the 8443 and 9443 listeners it was
+  written for were deleted on 2026-09-16), which is the question that section answers. A `TLS` group heading over
   `TLS / mutual TLS` would say the label twice, which is `SECTIONS`' test for a group.
 * **THERE IS DELIBERATELY NO CLEAR BUTTON**, and the page says why where one would be: a
   clear's reach is every client certificate every other caller relies on. The controls are
@@ -2022,7 +2040,7 @@ fingerprint — and asserts the truststore afterwards is exactly what it was bef
 
 ## Four reader slots and FOUR writer slots point INTO this module
 
-`server.js` requires this module BEFORE `../ldap/ldap_server.js`,
+`common/protocol_stack.js` requires this module BEFORE `../ldap/ldap_server.js`,
 `../scim/scim.js` and `../spiffe/spiffe_server.js`, so this module cannot require
 any of them: the require would pull `/ldap`, `/scim` and `/spiffe` into the
 express router ahead of every `/admin` route, and `GET /admin/sts-metadata` is built by
@@ -2030,6 +2048,11 @@ walking that router. So this module OFFERS slots and they fill them at their own
 require time — `setDirectoryReader()`, `setGroupReader()`, `setDirectoryWriter()`,
 `setSpiffeReader()`, `setScimReader()`. The pattern and its entry test are rule 3e
 in the root `CLAUDE.md`; do not add another by analogy.
+
+**THE ORDINALS IN THIS FILE ("the sixth slot", "the twelfth") ARE THE ORDER
+EACH WAS ARGUED IN, NOT A NUMBERING TO RELY ON** — `admin.js`'s own comments
+give some of the same numbers to different slots. The inventory is the table
+under rule 3e in the root `CLAUDE.md`; cite a slot by its setter's name.
 
 **`setLogoutReader()` is the sixth and `setCryptoReporter()` is the seventh**,
 and both passed that test in BOTH directions rather than one — which is the bar
@@ -3039,14 +3062,18 @@ guarded and one added above it would not be. There are none above it, and there
 is nowhere else in the file a route could go.
 
 **It authenticates nothing itself.** `authn.js` owns the session and the sign-in
-screen; the guard asks `consoleSession()` who is here and hands
-`beginAuthentication()` the page they wanted. A login screen of this console's
-own would be a second authentication service. The good consequence of sharing the
+screen; the guard asks `consoleRpSession()` who is here and, with nobody,
+`sendToConsoleSignIn()` starts the code flow through `oidc_rp.beginSignIn()`
+with the page they wanted as `returnTo`. (It asked `consoleSession()` and
+handed `beginAuthentication()` the page until the console became a relying
+party on 2026-09-06 — see the bullets at the top of this section.) A login
+screen of this console's own would be a second authentication service. The good consequence of sharing the
 first is that signing in with a security key at `/authn/login` is visible here,
 because it is the same session WS-Federation and the authorization endpoint read.
 
-**`consoleSession()` AND NOT `sessionOf()`, AND THIS GUARD IS ITS ONLY CALLER.**
-The ordinary reader answers out of the ambient realm's partition, which is right
+**`consoleSession()` AND NOT `sessionOf()`** — written while this guard was
+its only caller; the guard reads `consoleRpSession()` now and
+`consoleSession()` reports on the sign-on session (above). The ordinary reader answers out of the ambient realm's partition, which is right
 for `/oauth2/authorize` and was wrong here: the realm chooser on every page of
 this console is a link to the same page in another realm, and each click landed
 on the sign-in screen — then overwrote the browser's only session cookie, so
@@ -3063,11 +3090,12 @@ decides from are groups in the DEFAULT realm's `ou=groups` and nowhere else —
 `ldap_server.js` pins the whole RBAC directory there. If an `acme` session still
 opened this console, anybody who can create a realm could grant themselves both
 roles inside it and walk back out into the default realm. So an unauthenticated
-reader of ANY realm's console is sent to the DEFAULT realm's sign-in screen:
-`sendToConsoleSignIn()` runs both `beginAuthentication()` and the redirect inside
-`realms.run(DEFAULT_REALM, …)`, which is what stops `app.js` prefixing the
-Location and what puts the pending transaction in the store the default realm's
-screen will look in. `returnTo` is deliberately NOT run that way — it is
+reader of ANY realm's console WAS sent to the DEFAULT realm's sign-in screen:
+`sendToConsoleSignIn()` ran both `beginAuthentication()` and the redirect inside
+`realms.run(DEFAULT_REALM, …)`. **Since 2026-09-11 the code flow runs in the
+AMBIENT realm and only the console session stays the default realm's** — the
+bullet above on authenticating in the ambient realm, and `common/oidc_rp.js`,
+carry that. `returnTo` is deliberately NOT run that way — it is
 `req.originalUrl`, which `app.js` leaves alone precisely so it still carries the
 realm, so signing in once returns the reader to the realm page they asked for.
 
@@ -3088,8 +3116,11 @@ view with the click silently discarded.
 **IT GUARDS `/admin` AND NOT `/admin-api`.** Express matches a `use` path on
 segment boundaries, so `/admin-api` does not match — and that is the arrangement
 rather than an accident being relied on. `../mgmt-api/CLAUDE.md` carries the
-argument and the honest consequence: anybody who can reach this port can grant
-themselves both roles through the API. The gate exists so a client can be driven
+argument. Until 2026-09-09 the honest consequence was that anybody who could
+reach this port could grant themselves both roles through the API; that API now
+takes an access token carrying `admin:write` unless `adminApi.authRequired`
+is turned off. The
+gate exists so a client can be driven
 through 302/401/403 and a role model, not to make this service safe to expose.
 
 **THREE STATES, AND EVERY PAGE SAYS WHICH.** `gateBanner()` — off (the old
@@ -3098,7 +3129,9 @@ ROSTER (anybody who signs in holds both roles, said loudly), and on and enforced
 (who you are and what you hold). They are different enough that one banner with a
 detail changed would have been the wrong shape. `gateStateFor()` computes it and
 the guard's decision from ONE call, because the two were written separately at
-first and disagreed within the hour.
+first and disagreed within the hour. (The *off* state can no longer occur — the
+gate has been unconditional since 2026-09-06 — and a fourth, *nobody signed
+in*, arrived on 2026-09-10; see 8c-ii.)
 
 ## 8c. THE SIGN OUT BUTTON, AND THE THREE THINGS IT COST (2026-09-06)
 
@@ -4437,7 +4470,7 @@ not show where.
 **`autofocus` is the whole mechanism and it needs no script**, which is the
 only reason this console can have it: a browser scrolls a focused element into
 view, including scrolling the ancestor container it lives in. `script-src
-'none'` is untouched and there is no seventh scripted page.
+'none'` is untouched and no scripted page is added.
 
 Three things about it are decisions:
 
@@ -4775,7 +4808,7 @@ the last fifty requests individually.
 placement.** The section above records a page filed under Protocols and moved a
 day later; this one applied the rule while it was being written, which is what
 the rule is for. Everything else on `/admin/scim` is what the surface IS — the
-six schemes, the endpoints, the mapping, the eighteen settings — and this is
+six schemes, the endpoints, the mapping, the twenty-one settings — and this is
 what it has DONE. The path is under `/admin/scim/` and the module is this one,
 and neither is evidence, exactly as the paragraph above says.
 
@@ -5295,15 +5328,16 @@ second factor for any account.* The person reads their own set on
 functions precisely so that a page which wanted the count cannot render the
 codes by accident.
 
-### The Clear is an ISSUING control as well as a removal, which the other two are not
+### The Clear WAS an issuing control as well as a removal, until 2026-09-11
 
 Clearing an authenticator app or a key takes a factor away and that is all it
-does. **Clearing the recovery codes takes the way BACK away and, by doing so,
-re-arms the automatic issue**: `credentials.ensureBackupCodes()` does nothing
-while a set exists, so the next second factor that person enrols creates a new
-one. That is the whole route to a second set, and it is deliberately an
-operator's act — a way back a person can reissue for themselves is one an
-attacker who reached their session can reissue too.
+does. **Clearing the recovery codes takes the way BACK away** — and on the day
+this page was written it also re-armed the automatic issue, because
+`credentials.ensureBackupCodes()` did nothing while a set existed. That
+function was removed on 2026-09-11: a person now generates their own set from
+`/portal/mfa`, so the Clear is a plain removal again, kept for a set this
+process cannot read or one an operator believes was copied.
+`admin-core/admin_actions.js` argues it beside `clear-backup-codes`.
 
 It cannot lock anybody out: a recovery code is never a way in on its own. What
 it removes is the thing that stops a lost phone being final, which is why the

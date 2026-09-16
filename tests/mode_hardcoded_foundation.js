@@ -27,6 +27,9 @@ const log = require('bunyan').createLogger({ name: 'mode_hardcoded_foundation',
 //   3. `global.publicBaseUrl` pinning `baseUrlOf()` whatever Host a request
 //      carried, and reading the request exactly as before when empty;
 //   4. `listenHost()` / `loopbackHost()` / `hostForUrl()`;
+//  4b. a sighting refused a return address in product mode, where
+//      `applications.seen()` would otherwise write the very ACS URL that
+//      product mode checks the request against;
 //   5. `pki.crlLifetimeMinutes` honouring its own declared floor of one
 //      minute rather than a second, silent floor of sixty.
 // ---------------------------------------------------------------------------

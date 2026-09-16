@@ -16,8 +16,8 @@
 # gateway (network.tf).
 #
 # THREE CONTAINERS SHARING A NETWORK NAMESPACE AND ONE TASK VOLUME, which is
-# the shape ./docker-run-tests.sh gives the same jobs with three compose
-# services and a bind mount:
+# the shape ./docker-run-tests.sh gives the same jobs with a one-shot
+# `docker run` (the credential), two compose services and a bind mount:
 #
 #   pep-credential  mints the remote PEP's client certificate and posts its
 #                   Root to the service's truststore (tests/tools/pep-credential.js),

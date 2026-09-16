@@ -71,12 +71,11 @@
 // reading it as intersection means an entry asking for two selectors is
 // satisfied by a workload that has one of them, which hands out identities.
 //
-// **Nothing in this service actually attests a workload**, so on the Workload
-// API that rule is not what decides an answer — see `spiffe_workload.js`. It is
-// implemented and used by the SPIRE Server API's `GetAuthorizedEntries` and by
-// the console's "which entries would this workload match" view, because a
-// client author debugging their selectors needs a server that computes the same
-// thing SPIRE would.
+// **Nothing in this service actually attests a workload**, but the rule still
+// decides the Workload API's answer (`spiffe.attestWorkloads`, on by default),
+// matched against the selectors node CAN observe — see `spiffe_workload.js`,
+// which is where it decides an answer — because a client author debugging their
+// selectors needs a server that computes the same thing SPIRE would.
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -181,11 +180,11 @@ const SCHEMA = {
     { name: 'spiffeParentId', kind: 'single', from: 'the caller',
       editable: true,
       what: 'WHO MAY ISSUE IT: the SPIFFE ID of the agent (or of this ' +
-            'server) that this entry hangs beneath. A real deployment uses ' +
-            'it to decide which agent may hand out which identity. Nothing ' +
-            'here enforces it — no agent is authenticated — so it is ' +
-            'recorded, reported and used for GetAuthorizedEntries, and ' +
-            'nothing else.' },
+            'server) that this entry hangs beneath. It decides which ' +
+            'entries GetAuthorizedEntries and SyncAuthorizedEntries tell an ' +
+            'agent about: those beneath its own SPIFFE ID or a node alias ' +
+            'its selectors match, and BatchNewX509SVID and NewJWTSVID ' +
+            'refuse an agent any other entry.' },
     { name: 'spiffeSelector', kind: 'multi', from: 'the caller', editable: true,
       what: 'One value per selector, written `type:value` — `unix:uid:1000`, ' +
             '`k8s:ns:default`, `docker:label:app:web`. The type is ' +
@@ -715,6 +714,72 @@ function entriesForWorkload(selectors, parentId) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT AN AGENT IS AUTHORIZED FOR (2026-09-16): SPIRE's answer to
+// `GetAuthorizedEntries` and `SyncAuthorizedEntries`, which returned EVERY
+// entry here until then — so any agent learned every identity in the trust
+// domain, and the `spiffeParentId` this registry records decided nothing.
+//
+// The walk is SPIRE's: start from the agent's own SPIFFE ID, add the NODE
+// ALIASES the agent's recorded selectors match (entries parented on the
+// server, `spiffe://<td>/spire/server`), then every entry whose parent is an
+// identity already reached, until nothing new is reached. Expired entries are
+// left out, as `entriesForWorkload()` leaves them out.
+//
+// **A NODE ALIAS WITH NO SELECTORS MATCHES NOBODY HERE**, where
+// `selectorsMatch()` says it matches everything. An alias with no selectors
+// would put every agent in the trust domain under it, which is the answer this
+// function exists to stop giving; SPIRE refuses such an alias at creation.
+// ---------------------------------------------------------------------------
+function entriesAuthorizedFor(agentId, trustDomain) {
+  log.debug('Entering entriesAuthorizedFor(). agent=' + agentId);
+  const agent = String(agentId == null ? '' : agentId).trim();
+  if (!agent) {
+    log.debug('Leaving entriesAuthorizedFor(). No agent identity.');
+    return [];
+  }
+  const live = allEntries().filter(function (entry) {
+    return !entry.expired;
+  });
+  const server = spiffeId.serverId(trustDomain);
+  const recorded = agentById(agent);
+  const agentSelectors = (recorded && recorded.selectors) || [];
+  const reached = {};
+  reached[agent] = true;
+  const chosen = {};
+  const out = [];
+  function take(entry) {
+    if (chosen[entry.id]) {
+      return false;
+    }
+    chosen[entry.id] = true;
+    out.push(entry);
+    const before = !!reached[entry.spiffeId];
+    reached[entry.spiffeId] = true;
+    return !before;
+  }
+  live.forEach(function (entry) {
+    if (entry.parentId === server && entry.selectors.length &&
+        agentSelectors.length &&
+        selectorsMatch(entry.selectors, agentSelectors)) {
+      take(entry);
+    }
+  });
+  let grew = true;
+  while (grew) {
+    grew = false;
+    live.forEach(function (entry) {
+      if (!chosen[entry.id] && reached[entry.parentId]) {
+        take(entry);
+        grew = true;
+      }
+    });
+  }
+  log.debug('Leaving entriesAuthorizedFor(). ' + out.length + ' entr' +
+            (out.length === 1 ? 'y.' : 'ies.'));
+  return out;
+}
+
 function entryCount() {
   log.debug("Entering entryCount().");
   log.debug("Leaving entryCount().");
@@ -881,8 +946,10 @@ function noteSvidIssued(id) {
 // editable, for the reason stated in the header.
 //
 // **ATTESTATION IS NOT CHECKED.** Whatever the agent says its attestor was and
-// whatever selectors it claims are written down as claimed. That is this
-// service's posture everywhere — it authenticates nobody — and it is stated on
+// whatever selectors it claims are written down as claimed (a join token is
+// the exception — `spiffe_api.js` checks it). That was this service's posture
+// everywhere when this was written, and for node attestation it still is; it
+// is stated on
 // `/spiffe`, on `/admin/spiffe` and in the attribute descriptions above rather
 // than left to be inferred from a mock that never says no.
 //
@@ -1137,7 +1204,8 @@ function auditEntry(action, id, record, actor, summary) {
 //                           client libraries have and few callers ever run.
 //
 // Seeded ONCE, and only where the container is empty: a restart re-seeds
-// because nothing here is persisted, but an operator who deleted all three
+// wherever the directory is not persisted (`persistence.mode=memory`), but an
+// operator who deleted all three
 // meant it, and re-creating them on the next request would make the delete
 // button appear not to work.
 //
@@ -1215,6 +1283,7 @@ module.exports = {
   entryById: entryById,
   entriesForSpiffeId: entriesForSpiffeId,
   entriesForWorkload: entriesForWorkload,
+  entriesAuthorizedFor: entriesAuthorizedFor,
   entryCount: entryCount,
   createEntry: createEntry,
   updateEntry: updateEntry,

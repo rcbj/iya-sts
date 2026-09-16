@@ -33,13 +33,14 @@
 // ownership argument rather than a capability one.
 //
 // **IT IS SKIPPED RATHER THAN FAILED WHERE THE STACK HAS NO STORE**, and that
-// is the one concession this file makes. The `memory` and `postgres` modes
-// read no key-encryption key at all (`keys.source=generated`), and a throwaway
-// service started by `run-report.js` with no compose stack has no OpenBao to
-// dial — asserting the vault provider there would be asserting the launcher's
-// configuration rather than the service's behaviour. The skip says which
-// state it saw, so a run where the wiring silently went away does not read as
-// a pass.
+// is the one concession this file makes: a throwaway service started by
+// `run-report.js` with no compose stack has no OpenBao to dial, and asserting
+// the vault provider there would be asserting the launcher's configuration
+// rather than the service's behaviour. The skip says which state it saw, so a
+// run where the wiring silently went away does not read as a pass. Within a
+// compose stack the two halves are gated separately — the key half on the
+// keystore being on, the database half on a database being dialled — for the
+// reasons given above `keystoreOn` and `databaseOn` below.
 // ===========================================================================
 
 const assert = require("assert");
@@ -51,7 +52,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -120,9 +121,9 @@ async function test() {
   // compose file's connection string no longer carries one at all — so
   // section 2 has something to assert wherever this stack is up. The
   // KEY-ENCRYPTION KEY is only read when the keystore is ON, which is
-  // `keys.source=persisted` and therefore the `dispatch` mode and `docker
-  // compose up`; in `memory` and `postgres` the service generates its signing
-  // keys per start and never dials the store for a key at all.
+  // `keys.source=persisted` and therefore the `dispatch` and `cluster` modes
+  // and `docker compose up`; in `memory` and `postgres` the service generates
+  // its signing keys per start and never dials the store for a key at all.
   //
   // The first version of this file gated on `usingVault` alone — true in
   // every mode, because of the database password — and then asserted that a
@@ -143,7 +144,7 @@ async function test() {
   // configured as `vault` whether or not the keystore reads it — so section 2
   // asserted `passwordProvider === "vault"` about an absent report and failed
   // the memory mode on every run. It runs where a database is being dialled,
-  // which is the postgres and dispatch modes.
+  // which is the postgres, dispatch and cluster modes.
   const databaseOn = !!(database && database.host);
 
   if (!usingVault) {
@@ -297,7 +298,7 @@ async function test() {
   }
 
   // THE FLOOR IS PER MODE, for the reason the block above `keystoreOn`
-  // gives: four of the checks here are about a key this service does not read
+  // gives: three of the checks here are about a key this service does not read
   // unless the keystore is on. A single floor would either be vacuous in
   // dispatch or wrong in the other two. The database half adds its four only
   // where a database is dialled, which the memory mode does not.

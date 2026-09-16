@@ -131,9 +131,10 @@ function brokerKey(application, relationship) {
 // ---------------------------------------------------------------------------
 // ONE RELATIONSHIP, WITH EVERYTHING THE PICTURE AND THE TABLES UNDER IT NEED.
 //
-// It is deliberately a SUPERSET of `admin.js`'s `federationRow()` rather than a
-// second, smaller version of it: that function answers the list page and this
-// one answers the map, and every field they share is computed by the same two
+// It is deliberately a SUPERSET of `admin-core/admin_views.js`'s
+// `federationRow()` rather than a second, smaller version of it: that function
+// answers the list page and this one answers the map, and every field they
+// share is computed by the same two
 // calls into the register (`readinessOf`, `isEnabled`) so the two pages cannot
 // disagree about whether a partner is usable. What this adds is the two things
 // a table row has no room for — who is configured to use it, and what a person
@@ -172,7 +173,8 @@ function describe(record) {
     //
     // FOUR STATES AND NOT THREE, and the fourth is the important one:
     //
-    //   * a mechanism this service has        password, password-mfa, webauthn
+    //   * a mechanism this service has        password, password-mfa,
+    //                                         webauthn, spnego
     //   * `federation`                        THE BROKER CASE, which names an
     //                                         onward service-provider-side
     //                                         relationship
@@ -180,7 +182,8 @@ function describe(record) {
     //                                         relationship will refuse
     //   * NOTHING AT ALL                      and this is not "unknown". It is a
     //                                         decision with a name: the sign-in
-    //                                         screen, which checks no password.
+    //                                         screen, which checks no password
+    //                                         in development mode.
     //                                         Every relationship created before
     //                                         the attribute existed is in this
     //                                         state, so a picture that left it

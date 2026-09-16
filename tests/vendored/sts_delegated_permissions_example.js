@@ -47,8 +47,10 @@
 //
 // ---------------------------------------------------------------------------
 // IT WRITES TO THE **DEFAULT REALM** AND IT DOES NOT CLEAN UP, AND BOTH ARE
-// DELIBERATE — WHICH MAKES THIS THE ONE JOB IN THIS DIRECTORY THAT BREAKS THE
-// CONVENTION `sts_admin_api_operations.js` ARGUES AT LENGTH.
+// DELIBERATE — WHICH MAKES THIS THE FIRST JOB IN THIS DIRECTORY TO BREAK THE
+// CONVENTION `sts_admin_api_operations.js` ARGUES AT LENGTH. (The three
+// `sts_directory_bulk_load_*.js` jobs broke it later, with an argument of
+// their own — tests/CLAUDE.md.)
 //
 // That job does everything inside a throwaway realm of its own, so that a test
 // which writes to what every other job reads reaches nothing. (It used to
@@ -70,8 +72,8 @@
 //     for — so a second run against the same service would otherwise meet
 //     "already in this registry" five times. Every previous `abcapp*` is
 //     forgotten before anything is created, which also means a run against a
-//     service left up by `./local-run-tests.sh` starts from the same state as
-//     a run against a fresh container.
+//     service left up by `./local-run-tests.sh --keep-stack` starts from the
+//     same state as a run against a fresh container.
 //   * **NOTHING ELSE IN THE SUITE COUNTS APPLICATIONS.** The registry is
 //     append-only from every other job's point of view: no job asserts a total,
 //     and this one adds five entries under identifiers nothing else uses. It
@@ -134,7 +136,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -324,9 +326,9 @@ async function theServiceIsThere() {
 // STEP 0: FORGET ANY PREVIOUS COPY OF THE EXAMPLE.
 //
 // The identifiers are fixed, so this is what makes a second run against the
-// same service — the one `./local-run-tests.sh` now leaves up — start from the
-// state a fresh container starts from. `forget` is the one operation in this
-// API that loses a fact, and losing this one is the intention.
+// same service — the one `./local-run-tests.sh --keep-stack` leaves up — start
+// from the state a fresh container starts from. `forget` loses a fact, and
+// losing this one is the intention.
 //
 // A refusal is IGNORED and not asserted about, because the ordinary case is
 // that there is nothing there: "no application called abcapp1" is the expected
@@ -405,9 +407,10 @@ async function createTheFiveApplications() {
                          "client_credentials"],
         oauthResponseType: ["code"],
         oauthTokenEndpointAuthMethod: "client_secret_post",
-        // A mock's secret, and it is checked nowhere unless RFC 9700 mode is
-        // on — the entry carries it so the application reads as the
-        // confidential client it is declared to be.
+        // A mock's secret, which development mode checks nowhere unless RFC
+        // 9700 mode is on — the entry carries it so the application reads as
+        // the confidential client it is declared to be, and so the token
+        // request below can authenticate with it (see theTokenSaysBothHalves).
         oauthClientSecret: app.id + "-not-a-real-secret",
         oauthConfidential: "TRUE",
         oauthAccessTokenTtlS: "900",
@@ -1004,8 +1007,9 @@ function fieldValues(entry, attribute) {
 // Whether an identifier is one of this example's. Everything this file counts
 // is filtered through it, because the DEFAULT realm's registry holds whatever
 // the rest of the run put there — the console job's applications, a SAML
-// service provider, the console's own two entries — and an assertion about a
-// TOTAL would be an assertion about the other jobs.
+// service provider, this service's own seeded entries (the console, the
+// portal, the management API and the debugger's two) — and an assertion about
+// a TOTAL would be an assertion about the other jobs.
 function isOurs(identifier) {
   log.debug("Entering isOurs().");
   log.debug("Leaving isOurs().");
@@ -1083,7 +1087,9 @@ program
       "write and each granted both on the next one round — and assert the " +
       "register, the entries, the picture and the token it produces. It " +
       "leaves the example behind on purpose.")
-  // Accepted and ignored: run-report.js passes --url to every job.
+  // Accepted and ignored: the parent project's run-report.js passes --url to
+  // every job it runs (this repository's hands the URL over in the
+  // environment instead).
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

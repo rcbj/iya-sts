@@ -35,7 +35,7 @@
 //      that would rot most quietly: adding one `admin.somethingAction()` call
 //      back would restore the old direction for one operation and nothing
 //      would fail.
-//   4. **The seven forwarded collaborators are written in exactly one place
+//   4. **The forwarded collaborators are written in exactly one place
 //      each.** The console still owns those slots — every filler in the tree
 //      and every rule 3e sentence in CLAUDE.md names it — and forwards what it
 //      was handed. One statement with two destinations is one answer; a second
@@ -45,7 +45,7 @@
 // `teardown_bounds.js`'s shape and `admin_api_token_wiring.js`'s before it. The
 // one thing this cannot check is whether the actions still WORK, and nothing
 // here pretends to: that is `tests/vendored/sts_admin_api_operations.js`
-// driving all 273 operations and `sts_admin_console.js` driving the pages.
+// driving every operation and `sts_admin_console.js` driving the pages.
 // **Both of those matter more than this file** — the first run of the moved
 // layer failed in one of them with `numberWord is not defined`, on the single
 // refusal path that used a helper the move had not carried across.
@@ -273,7 +273,7 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
 }
 
 // ---------------------------------------------------------------------------
-// (4) THE SEVEN FORWARDS. One statement, two destinations, one writer.
+// (4) THE FORWARDS (`FORWARDED` above). One statement, one writer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // AND THE FOUR THAT STAY. This is the finish line, written down.
@@ -426,8 +426,10 @@ function checkNothingRequiresItEarly(t) {
       .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs', 'tests',
-             '.claude'].indexOf(entry.name) >= 0) { return; }
+        // `.claude` holds agent worktrees: a second checkout of this
+        // repository, whose files are not this one's (2026-09-16).
+        if (['node_modules', '.git', '.claude', 'node-ldapjs',
+             'tests'].indexOf(entry.name) >= 0) { return; }
         walk(rel);
         return;
       }
@@ -592,7 +594,8 @@ function checkNobodyReachesThroughTheConsole(t) {
       .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs', '.claude'].indexOf(
+        // `.claude`: see the first walk above.
+        if (['node_modules', '.git', '.claude', 'node-ldapjs'].indexOf(
             entry.name) >= 0) { return; }
         walk(rel);
         return;

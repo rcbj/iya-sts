@@ -51,10 +51,10 @@
 //   * A PARAMETER THAT IS NOT A DATALOG TERM PANICS THE WASM MODULE. A JS
 //     `Date` handed to `addCodeWithParameters()` aborts inside Rust with
 //     `unreachable`; the term must be `{ date: <ISO string> }`, which is what
-//     the package's own `prepareTerm()` does and what `term()` here does. The
-//     panic is caught and the instance kept working in every probe, but a panic
-//     is not a control-flow mechanism, so values are prepared rather than
-//     trusted.
+//     the package's own `prepareTerm()` does and what `dateTerm()` here does.
+//     The panic is caught and the instance kept working in every probe, but a
+//     panic is not a control-flow mechanism, so values are prepared rather
+//     than trusted.
 //   * A BUILDER THAT HAS THROWN IS CONSUMED. `addCode()` with a parse error
 //     moves the builder's contents out, and the NEXT call on it panics with
 //     "empty BiscuitBuilder". Every attempt here builds a fresh builder.

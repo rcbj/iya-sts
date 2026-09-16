@@ -45,7 +45,7 @@ const config = require('../common/config');
 const applications = require('../common/applications');
 // The registry's store is the directory, and requiring this is what fills the
 // slot and seeds `sts-admin-console`. It binds no port (the root CLAUDE.md's
-// four-modules rule).
+// *Socket owners start their listeners from `listen()`* rule).
 require('../ldap/ldap_server');
 const oidcRp = require('../common/oidc_rp');
 const helpers = require('../common/helpers');

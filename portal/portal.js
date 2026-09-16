@@ -16,7 +16,9 @@
 // NAVIGATION COLUMN NOW.** Four cards is a page; six is a scroll, and the
 // control somebody came for is below the fold of a page about something else.
 // `NAV` below is the page list, `navBar()` draws the column from it and
-// `paths()` reports it to `sts_metadata.js`, so there is one copy of it.
+// `paths()` reports it to `sts_metadata.js`, so there is one copy of it —
+// eight pages since 2026-09-13, and `portal/CLAUDE.md`'s table has every route.
+// The first of them:
 //
 //   `/portal/activate?user=…&token=…`   UNAUTHENTICATED. Spending an activation
 //                                       link to set up a credential. This is
@@ -41,15 +43,16 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A SEPARATE APPLICATION FROM THE ADMIN CONSOLE AND SHARES NOTHING BUT
-// THE SESSION.
+// THE SESSION STORE.
 //
 // Not the shell, not the navigation, not the gate. That is deliberate: the
 // console's `respond()` draws a sidebar of forty administrative pages and its
 // gate answers "does this person hold Admin Read" — neither of which is
 // anything a person managing their own account should meet. **What they share
-// is `authn.js`'s session**, because there is one answer in this service to
-// "who is this browser" and a second would be the thing that eventually
-// disagrees.
+// is `authn.js`'s session store**, because there is one answer in this service
+// to "who is this browser" and a second would be the thing that eventually
+// disagrees. Since 2026-09-06 each is a relying party with its OWN session in
+// that store (`portal/CLAUDE.md`).
 //
 // ---------------------------------------------------------------------------
 // ACCESS CONTROL: THE IDENTITY COMES FROM THE SESSION AND NEVER FROM THE
@@ -187,8 +190,8 @@ const stats = require('../common/admin_stats');
 // here: `common/applications.js` registers nothing — `admin-ui/admin.js` and
 // `ldap/ldap_server.js` draw its pages — and `common/issuance_gate.js` requires
 // `helpers` and `config` and nothing else, which is the whole point of it being
-// a leaf. Both are already loaded by `oauth-oidc/oauth2.js` at 9, four lines
-// above this module in `server.js`, so these two requires are cache hits.
+// a leaf. Both are already loaded by `authn/authn.js` at 8, above this module
+// in `common/protocol_stack.js`, so these two requires are cache hits.
 //
 // **THE GATE IS ASKED THE SAME QUESTION THE NINE ISSUANCE SITES ASK.** That is
 // the property that makes the page worth having: a portal that worked out for
@@ -208,7 +211,7 @@ const version = require('../common/version');
 // A LIBRARY (rule 3): it registers no route, and the receive endpoint and the
 // page below are registered HERE because a receiver hosts its own endpoint and
 // a page belongs to the application it is a page of. It requires only other
-// libraries, none of which requires this file, so it can sit at 8c without
+// libraries, none of which requires this file, so it can sit at 8a without
 // moving a route or closing a cycle — which matters more here than in the
 // console, because this module is required BEFORE `oauth-oidc/oauth2.js`.
 //
@@ -246,10 +249,10 @@ const RESET_PASSWORD = BASE + '/reset-password';
 // you pay for a require that would close a cycle or move a route, and warns
 // against adding one by analogy:
 //
-//   * This module is required at 8b, before `oauth-oidc/oauth2.js` at 9.
+//   * This module is required at 8a, before `oauth-oidc/oauth2.js` at 9.
 //     `ldap/ldap_server.js` is at 21. A `require('../ldap/ldap_server')` here
 //     would register every `/ldap` route AND the eight `/admin/ldap/*` console
-//     pages at 8b — ahead of the authorization server, ahead of the console,
+//     pages at 8a — ahead of the authorization server, ahead of the console,
 //     ahead of the management API. That is rule 1 doing exactly what it says.
 //   * And a require the other way, from `ldap_server.js` to this module, would
 //     move every `/portal` route to 21 — behind the console and the management
@@ -415,13 +418,13 @@ const CSS =
   // -------------------------------------------------------------------------
   // THE TWO-COLUMN SHELL AND ITS NAVIGATION (2026-09-06). Its own rules and
   // its own palette: the console's sidebar is #12107c and forty pages long,
-  // this one is the portal's blue and has four, and the two files sharing a
+  // this one is the portal's blue and has eight, and the two files sharing a
   // stylesheet is the thing this application deliberately does not do.
   //
   // `.side` is STICKY and has no `overflow-y` of its own, which is the one
   // difference from the console's worth stating rather than leaving as a
   // divergence somebody 'fixes'. That console scrolls its own nav because the
-  // list is longer than a screen; four items are not, and a scroll container
+  // list is longer than a screen; eight items are not, and a scroll container
   // here would only ever be a box that never scrolls — and would bring the
   // `autofocus` trick that console needs to scroll the list back to the
   // current page. There is no `autofocus` in this application at all.
@@ -879,23 +882,25 @@ function activationTotpForm(username, token, enrolment, error) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT THE FIVE PORTAL ROUTES TAKE, AND THE ONE THAT IS ALLOWED A USERNAME.
+// WHAT THE PORTAL ROUTES TAKE, AND THE ONES THAT ARE ALLOWED A USERNAME.
 //
 // The rule at the top of this file is that no route here takes an identity from
 // the request — every page reads `sessionOf(req).user.username`, so there is no
 // parameter for anybody to change. **These schemas are the mechanical statement
-// of that rule**: four of the five declare no identity field at all, and a
-// reader checking whether the rule still holds can read five short objects
-// instead of five handlers.
+// of that rule**: only the unauthenticated link pages declare an identity
+// field, and a reader checking whether the rule still holds can read short
+// objects instead of handlers. (Some schemas sit beside their handlers:
+// `RESET_*`, `SIGNING_KEY_FORM`, `MFA_FORM`, `SIGNALS_QUERY`.)
 //
 // `/portal/activate` is the exception and it is not one: it takes a username
 // BECAUSE nobody is signed in, and what authorises it is the token beside it,
-// which is a credential.
+// which is a credential. `/portal/reset-password` (2026-09-13) is the same
+// case for the same reason.
 //
 // **`done` IS THE ONE REFLECTED VALUE ON THIS SURFACE.** This service puts it
 // in a `Location` after a successful change and reads it straight back onto the
 // page — so anybody can craft `/portal?done=<anything>` and have it rendered.
-// It is escaped through `esc()` and this console is `script-src 'none'`, so the
+// It is escaped through `esc()` and this page is `script-src 'none'`, so the
 // bound here is depth rather than the fix; what it removes is the megabyte
 // version and the one with a NUL in it.
 // ---------------------------------------------------------------------------
@@ -1395,9 +1400,11 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
     // find the list afterwards is advice that reaches the ones who do not
     // need it.
     //
-    // They are recoverable from `/portal/mfa` afterwards, which is the whole
-    // argument for encrypting them rather than hashing them, so nothing is
-    // lost by somebody closing this page. What is gained is that they saw it.
+    // **NO CALLER PASSES A SET SINCE 2026-09-11**: a set is hashed now and is
+    // generated only on `/portal/mfa` (see the second-POST note in the
+    // activation handler), so `recovery` is always empty and this branch
+    // draws nothing. The prose inside it — "look at them again", "stored
+    // encrypted" — describes the arrangement before that date.
     (recovery && recovery.length
       ? '<h2>Your recovery codes</h2>' +
         '<p><strong>Keep these somewhere you can reach without the device ' +
@@ -1876,10 +1883,11 @@ function requireSignIn(req, res, returnTo, want) {
 // counted in the summary.
 //
 // **`<details>` IS MARKUP AND NOT SCRIPT**, which is why it is available here
-// at all: every page of this portal is `script-src 'none'`, and the console
-// made exactly this argument for its own collapsible prose. There is no
-// collapse-all and there will not be one; that is the cost, and it is said on
-// the console's page rather than worked around here.
+// at all: every page of this portal but `/portal/keys` is
+// `script-src 'none'`, and the console made exactly this argument for its own
+// collapsible prose. There is no collapse-all and there will not be one; that
+// is the cost, and it is said on the console's page rather than worked around
+// here.
 //
 // ---------------------------------------------------------------------------
 // THE THREE OBJECT CLASSES ARE THE HEADINGS, rather than one alphabetical
@@ -2239,10 +2247,11 @@ function keysPage(session, message, error, base) {
 // PORTAL. The argument has to be made from scratch and this is it.
 //
 // `app.js` sets `script-src 'none'` on everything, and the rule is that a page
-// gets an exception only when it CANNOT WORK WITHOUT ONE. Four candidates have
-// been refused on it — federation's outbound form, the two pictures, the
-// console's collapsible prose, and `/authn/totp`, which sits next door to a
-// scripted page and still had to argue its own case.
+// gets an exception only when it CANNOT WORK WITHOUT ONE. Several candidates
+// have been refused on it (the root CLAUDE.md lists them) — federation's
+// outbound form, the two pictures, the console's collapsible prose, and
+// `/authn/totp`, which sits next door to a scripted page and still had to argue
+// its own case, among them.
 //
 // **A WEBAUTHN CEREMONY IS A BROWSER API CALL.** There is no markup that
 // invokes `navigator.credentials.create()`, no form that produces an
@@ -2256,8 +2265,8 @@ function keysPage(session, message, error, base) {
 // page emits the same element and the same three ids and points at it. One
 // implementation of the ceremony in the browser, for both pages — a second
 // copy would be a second place for the base64url handling to go wrong, and
-// that has already happened once in this file's history (see
-// WEBAUTHN_SCRIPT's own header about `split/join`).
+// that has already happened once in that file's history (see `authn.js`'s
+// WEBAUTHN_SCRIPT and its header about `split/join`).
 //
 // **THE BUTTON IS REAL AND IS LABELLED FOR A PERSON**, which every scripted
 // page here does: with the script blocked, pressing it posts a form that
@@ -2402,8 +2411,8 @@ function enrolBlock(session, mechanisms, base) {
 // ---------------------------------------------------------------------------
 // THE QR CODE IS AN IMAGE THIS SERVER DREW, AND THE SECRET IS SHOWN BESIDE IT.
 //
-// `script-src 'none'` covers every page of this portal, so a QR library
-// running in the browser was never an option — `common/totp.js`'s
+// `script-src 'none'` covers this page (every page of this portal but
+// `/portal/keys`), so a QR library running in the browser was never an option — `common/totp.js`'s
 // `qrSvgDataUri()` renders it here and it arrives as a `data:` URI, which
 // `img-src 'self' data:` already allows for the two OID4VC offer pages.
 //
@@ -2436,11 +2445,12 @@ function enrolBlock(session, mechanisms, base) {
 // silently stopped working, so the warning is on the button rather than in a
 // note underneath it.
 // ===========================================================================
-// `fresh` and `revealed` are the two moments the recovery codes are drawn —
-// straight out of an enrolment that issued them, and in answer to a deliberate
-// *Show them* POST. Both are passed IN rather than read here, for the reason
-// `enrolment` is: the list is a live credential and a page builder that fetched
-// it would draw it on every GET.
+// `fresh` is the one moment the recovery codes are drawn — the response to
+// the `generate-codes` POST (since 2026-09-11 an enrolment issues none, and
+// `revealed` is kept only so an old caller's argument lands harmlessly; see
+// `backupCodesCard()`). It is passed IN rather than read here, for the reason
+// `enrolment` is: the list is a live credential and a page builder that
+// fetched it would draw it on every GET.
 function mfaPage(session, message, error, enrolment, fresh, revealed) {
   log.debug('Entering mfaPage().');
   const username = session.user.username;
@@ -3494,10 +3504,11 @@ const MFA_FORM = vz.object({
 // which is true, useful, and names nobody.
 //
 // **It is not a security boundary and it is not offered as one.** `/admin-api`
-// is ungated by design and hands the whole registry to anybody who can reach
-// the port; `admin-ui/CLAUDE.md` and `mgmt-api/CLAUDE.md` both argue that at
-// length. This is a page choosing not to answer a question it was not asked,
-// which is a different thing from a page that could not answer it.
+// hands the whole registry to anybody holding an `admin:read` access token (and
+// to anybody at all where `adminApi.authRequired` is off);
+// `mgmt-api/CLAUDE.md` argues that gate. This is a page choosing not to answer
+// a question it was not asked, which is a different thing from a page that
+// could not answer it.
 //
 // ---------------------------------------------------------------------------
 // AND IT IS A DRY RUN, WHICH THE GATE HAS TO BE TOLD.
@@ -3543,7 +3554,7 @@ const SIGN_IN_FAMILIES = [
 
 // How many entries the page will evaluate. Each entry costs one policy
 // evaluation per distinct issuance kind it has, on the one thread that answers
-// every socket this service holds — which is the stall `CLAUDE.md`'s
+// every socket this service holds — which is the stall `common/CLAUDE.md`'s
 // worker-pool section is about, so the cap is here rather than left to be
 // discovered. The page says when it bites.
 //
@@ -3879,7 +3890,7 @@ app.get(BASE + '/callback', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
-// THE FOUR SIGNED-IN PAGES. Each one is the same four steps in the same order,
+// THE SIGNED-IN PAGES. Each one is the same four steps in the same order,
 // and the order is the point: SIGN IN (which is also the access decision),
 // then VALIDATE what was asked for, then draw.
 //
@@ -3887,11 +3898,11 @@ app.get(BASE + '/callback', function (req, res) {
 // follows a link to their security keys with no session runs the code flow and
 // comes back to their security keys, rather than to the overview with the page
 // they asked for forgotten. `oidc_rp.js` holds it server-side and refuses
-// anything that is not a path on this service, so four `returnTo`s are no more
-// of an open-redirect surface than one was.
+// anything that is not a path on this service, so a `returnTo` per page is no
+// more of an open-redirect surface than one was.
 //
 // **AND THE ACTION IS `READ`, NOT `MANAGE_OWN`.** Drawing a page is reading;
-// the three POSTs below ask for `manage-own`. That distinction is the whole
+// the POSTs below ask for `manage-own`. That distinction is the whole
 // reason the portal has an action of its own — see `requireSignIn()`, where
 // the policy question is argued — and a deployment that later gives a helpdesk
 // role the right to READ somebody's account without changing it needs the two
@@ -3975,10 +3986,11 @@ const SIGNALS_QUERY = vz.object({
 // ---------------------------------------------------------------------------
 // THE RECEIVE ENDPOINT.
 //
-// **IT IS THE SECOND UNAUTHENTICATED ROUTE IN THIS FILE AND THE FIRST THAT IS
-// NOT A PERSON.** `/portal/activate` is the other, and its header says why it
-// is the only route here that takes an identity from the request — nobody is
-// signed in yet and the TOKEN is what authorises it. This one takes no
+// **IT IS AN UNAUTHENTICATED ROUTE IN THIS FILE AND THE FIRST THAT IS NOT A
+// PERSON.** `/portal/activate` was the other when it was written
+// (`/portal/reset-password` joined them on 2026-09-13), and its header says why
+// those are the only routes here that take an identity from the request —
+// nobody is signed in yet and the TOKEN is what authorises it. This one takes no
 // identity at all: what arrives is a Security Event Token addressed to this
 // portal, and what authorises it is the bearer token on this portal's OWN
 // stream, minted per start and given to nothing but this service's own
@@ -4202,8 +4214,9 @@ app.get(BASE + '/keys', function (req, res) {
 // ---------------------------------------------------------------------------
 // GET /portal/mfa — the authenticator app.
 //
-// **IT IS `async` AND IT IS THE ONLY PAGE HERE THAT IS**, because drawing a QR
-// code is asynchronous. That is worth a sentence rather than being left to be
+// **IT IS `async` AND IT WAS THE ONLY PAGE HERE THAT WAS**, because drawing a
+// QR code is asynchronous. (The link pages and several POSTs are `async` too
+// since 2026-09-14, for the cluster's shared rate-limit window.) That is worth a sentence rather than being left to be
 // noticed: `common/CLAUDE.md`'s worker-pool section lists exactly four
 // asynchronous call paths in this service and this is not one of them — the
 // work is a few hundred microseconds of squares, not a post-quantum signature,

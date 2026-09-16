@@ -340,9 +340,11 @@ that up silently.
      builder with a message naming neither certificate.
 
    **IT IS PER REALM AND THE TRUST DOMAIN IS NOT, WHICH IS THE ONE THING TO
-   GET STRAIGHT.** `spiffe.trustDomain` is read once, service-wide; the
-   AUTHORITY is a realm's, because `common/pki.js`'s SPIFFE Issuing CA is. That
-   is coherent with four shared sockets only because the anchor is shared:
+   GET STRAIGHT.** *(Superseded the next day: since 2026-09-12 the trust domain
+   and the sockets are a realm's too — see* A TRUST DOMAIN AND A PAIR OF
+   SOCKETS PER REALM *at the top. What follows is the 2026-09-11 state.)*
+   `spiffe.trustDomain` is read once, service-wide; the AUTHORITY is a
+   realm's, because `common/pki.js`'s SPIFFE Issuing CA is. That is coherent with four shared sockets only because the anchor is shared:
    every realm's bundle is byte-identical, the gRPC sockets answer in the
    DEFAULT realm (a socket still has no path to put a segment in), and what the
    chain adds is which realm issued the SVID. `tests/spiffe_pki.js` asserts all
@@ -418,10 +420,11 @@ that up silently.
    SPIFFE registry's store is the directory under `ou=spiffe`, and that module
    fills `spiffe_registry.js`'s `setDirectory()` slot at ITS require time — so
    requiring this any earlier leaves the registry with no store at the moment
-   `listen()` writes the seed entries. It is the FOURTH module whose own
-   listeners start from `listen()` in `server.js` rather than at require time,
-   and for the reason the other three carry: binding can fail, and a `require`
-   that throws takes the whole service down where a route cannot. FOUR sockets,
+   `listen()` writes the seed entries. It is one of the socket owners whose
+   own listeners start from `listen()` in `server.js` rather than at require
+   time (the root `CLAUDE.md` lists them), and for the reason they all carry:
+   binding can fail, and a `require` that throws takes the whole service down
+   where a route cannot. FOUR sockets,
    each reported SEPARATELY (`GET /spiffe`, `/admin/spiffe`), because "the
    Workload API socket is up and the SPIRE Server API port is not" is an
    ordinary outcome and one flag could only report one of them — the lesson
@@ -430,7 +433,7 @@ that up silently.
 
    **The inversion is the CONSOLE.** `/admin/spiffe` must report which listeners
    bound, and only this module knows — but `admin.js` cannot require it, because
-   `server.js` requires `admin.js` FIRST and the require would pull `/spiffe` and
+   `common/protocol_stack.js` requires `admin.js` FIRST and the require would pull `/spiffe` and
    the bundle endpoint into the router ahead of every `/admin` route, which
    `GET /admin/sts-metadata` walks. So `admin.js` offers `setSpiffeReader()` and this
    module fills it at require time — the same shape `setDirectoryReader()`,
@@ -482,7 +485,12 @@ that up silently.
   bundle whose JWKs have no `use`. The old posture is no longer reachable:
   `spiffe.authRequired` restored it and was removed on 2026-09-06. See rule 3k, `spiffe_auth.js` and `GET /spiffe`.
 
-## There is no test for this in either repository, and it is the largest untested surface here
+## There is no end-to-end protocol test for this in either repository, and it is the largest untested surface here
+
+*The in-process `tests/spiffe_*.js` files (realm domains, operations, PKI,
+authority, join tokens) cover pieces of it — one of them with a real gRPC client
+on a realm's Unix socket — and are argued where each is cited above. What is
+missing is the protocol suite's job below.*
 
 **By the root `CLAUDE.md`'s rule it belongs in the PARENT project's suite** —
 all of it is driven over gRPC against a running service.
@@ -522,7 +530,7 @@ deleting ONE of two registration entries naming an identity leaves it active and
 deleting the second marks it revoked; that a ban and an unban round-trip while
 `spiffeRevokedAt` survives the unban; and that nothing anywhere is ever deleted
 from `ou=users`. Drive it with `@grpc/grpc-js` as a
-CLIENT — which is what `tests/sts_dpop.js` does by writing its own DPoP client
+CLIENT — which is what `tests/vendored/sts_dpop.js` does by writing its own DPoP client
 rather than importing the wallet's, and for the same reason: if both ends came
 from one implementation, a shared misunderstanding passes and interoperates with
 nobody.
@@ -685,12 +693,15 @@ control converged too, through replication, before anything was minted.
 `joinTokens` replicates, and the token was deleted from it at the SUCCESSFUL
 attestation — so two AttestAgent calls with one token at two nodes inside the
 change log's window both attested, two agents from a single-use credential.
-In product mode (`auth.authRequired()`) the token is CLAIMED once every check
-that refuses without side effects has passed and before the CSR is signed; a
+Wherever the token is checked (`auth.authRequired()`, which is
+`mode.gatesSpireServerApi()` and answers true in both modes) it is CLAIMED once
+every check that refuses without side effects has passed and before the CSR is
+signed; a
 claim another call holds is `STS-SPIFFE-0055`, the spent-token refusal it
 always was, a store that cannot be asked is `UNAVAILABLE` (`STS-SPIFFE-0075`),
 and an attestation that throws after the claim (the CSR, a ban recorded
-between) gives it back. Development mode checks no join token and claims none.
+between) gives it back. (This read "Development mode checks no join token and
+claims none"; the predicate has never distinguished the modes.)
 
 ## THE SPIRE SERVER API ASKS THE ACCESS POLICY, AFTER SPIRE'S OWN TABLE (2026-09-06)
 

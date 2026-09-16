@@ -7,7 +7,7 @@ Federation relationships: this service as either end of one, in five protocols.
 | `federation.js` | **The register.** The schema, the two conversions, the CRUD, the counters, the release filter, and the broker resolver (`identityProviderFor()` / `authenticationFor()` / `usableServiceProvider()`). A library (rule 3): it registers nothing. Directory-backed — `ou=federations` IS the store. |
 | `federation_map.js` | What a foreign identity provider SAID, turned into directory attributes. The default mapping table and the username rule. A library. **Not to be confused with `../admin-ui/federation_diagram.js`**, which draws the picture — the near-collision is why that file is not called `federation_map.js` too. |
 | `federation_graph.js` | **This realm's register as a GRAPH**, for `/admin/federation/map`. Three bands, and the bands are a claim about direction. A library: it registers nothing, and nothing here requires it back. |
-| `federation_http.js` | **The only outbound request in this repository.** A library, and the narrowest one here. |
+| `federation_http.js` | **The first and strongest of this repository's outbound requests.** A library, and the narrowest one here. |
 | `federation_sp.js` | The four endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued. |
 
 ---
@@ -65,29 +65,32 @@ Nothing about the person is checked. A directory entry is created for them.
 
 It registers no route, so it cannot join a cycle and its position in the require
 order is not a position at all. That property is load-bearing rather than
-incidental: **five modules reach it, and two of them could not reach anything
-heavier.**
+incidental: **several modules reach it, and two of them could not reach
+anything heavier.**
 
 | Who requires it | Why | Rule 3e's test |
 |---|---|---|
 | `common/admin_stats.js` | the release filter, at `jwtClaims()` and `samlAttributes()` | passes both ways: no route moves, no cycle closes |
 | `authn/authn.js` | the partner buttons on the sign-in screen | same, and see below |
 | `admin-ui/admin.js` | `/admin/federation` | same |
+| `admin-core/admin_views.js`, `admin_actions.js` | what `/admin/federation` and `/admin-api` show and do | same; they register nothing either |
 | `ldap/ldap_server.js` | fills `setDirectory()` at its own require time | the ordinary direction, exactly as `applications.js` |
-| `federation/federation_graph.js` | the graph `/admin/federation/map` is drawn from | the easiest of the five: it registers no route itself, and there is nothing in it this module wants |
+| `federation/federation_graph.js` | the graph `/admin/federation/map` is drawn from | the easiest of them: it registers no route itself, and there is nothing in it this module wants |
+| `federation/federation_sp.js` | the register the four endpoints serve | the ordinary direction; see 4b |
 
 ### AND IT REQUIRES ONE THING BACK — `common/applications.js`, since 2026-08-26
 
 This paragraph used to say the module requires only `config.js`, `helpers.js`
-and `audit.js`. It requires the applications registry as well now, and the
+and `audit.js`. It requires `realms.js`, `error_codes.js` and the applications
+registry as well now, and the
 direction is worth stating because rule 3o is otherwise entirely about who
 requires THIS.
 
 It is a plain require in the ordinary direction rather than a slot, and rule
 3e's test is not reached in either direction: `applications.js` registers no
-route, and it requires only `config.js`, `helpers.js` and `audit.js` — none of
-which reaches back here — so nothing about requiring it can close a cycle or
-move a route. A slot would have cost a reader an indirection for nothing. It is
+route, and none of what it requires (`config.js`, `helpers.js`, `realms.js`,
+`audit.js`, `roles.js`, `keystore.js` and leaves) reaches back here — so nothing
+about requiring it can close a cycle or move a route. A slot would have cost a reader an indirection for nothing. It is
 the same argument `admin_stats.js` makes above its own require of that file.
 
 **What it is for is ONE question and only one**: *is this application actually
@@ -115,8 +118,8 @@ Neither knows the other's half.
 ### `PATHS` is in the library and not beside the routes
 
 Three things need `/federation/acs/{id}` and only one of them may require the
-module that serves it. `admin-ui/admin.js` must not — `server.js` loads
-`federation_sp.js` at position 10c, BEFORE the console, and a require in the
+module that serves it. `admin-ui/admin.js` must not — `common/protocol_stack.js`
+loads `federation_sp.js` at position 10c, BEFORE the console, and a require in the
 other direction would be the reason a route moved the day somebody reorders the
 two. But the console page's whole job is to tell an operator **which URL to
 configure at the partner**.
@@ -681,8 +684,8 @@ between two jobs in a pool is a flake rather than a failure.
 
 ## `federation_http.js`: THE ONLY OUTBOUND REQUEST, AND HOW THE OLD POSITION SURVIVES
 
-Nothing else in this repository has ever dialled anything, and that was a
-position taken twice and argued in both places:
+Nothing in this repository had dialled anything before this module, and that
+was a position taken twice and argued in both places:
 
 * `oauthJwksUri` on an application entry is **recorded and never fetched** —
   `applications.js`'s schema row calls following it "a server-side request
@@ -724,11 +727,13 @@ arrives is trusted** — this module returns parsed JSON and a status and makes 
 judgement, because a fetcher that also validated is where both halves of a check
 end up half-written.
 
-**IT IS THE FIRST OF THREE OUTBOUND REQUESTS in this repository**, in a module
-of its own that will not take a URL from anywhere but a relationship entry. It
-is the STRONGEST of the three and the other two each argue their own case rather
-than citing it — SSF's is `ssf/ssf_http.js` and XACML's nudge is
-`xacml/xacml_pep_http.js`.
+**IT IS THE FIRST OF THIS REPOSITORY'S OUTBOUND REQUESTS**, in a module of its
+own that will not take a URL from anywhere but a relationship entry. It is the
+STRONGEST of them and the others each argue their own case rather than citing
+it — SSF's is `ssf/ssf_http.js`, XACML's nudge is `xacml/xacml_pep_http.js`,
+and the embedded debugger's api, the RFC 9728 import and a registered RFC 9101
+`request_uri` are indexed in the root `CLAUDE.md`'s *Things this service
+deliberately does not do*.
 
 ---
 
@@ -840,10 +845,11 @@ for nothing at all.
 
 ## WHAT A FEDERATED SIGN-IN WRITES, AND THE ONE FUNNEL IT GOES THROUGH
 
-`completeSignIn()` does five things in an order that is not arbitrary: map, then
-the identity funnel, then the relationship's counters, then the partner's
-application record, then the session — **last**, because it is the thing that has
-an effect outside this process and everything above it is a record of why.
+`completeSignIn()` does four things in an order that is not arbitrary: map, then
+the relationship's counters, then the partner's application record, then the
+session — **last**, because it is the thing that has an effect outside this
+process and everything above it is a record of why. The identity funnel runs
+inside that last step, as the next paragraph explains.
 
 **It calls `authn.startSession()` and NOT `stats.recordAuthentication()`.** It
 was written the other way round first and produced TWO authentication records
@@ -938,15 +944,16 @@ because doing it silently would be this repository teaching the mistake.
 
 ---
 
-## NO CSP RELAXATION, AND THE SIXTH SCRIPTED PAGE THAT IS NOT
+## NO CSP RELAXATION, AND THE SCRIPTED PAGE THAT IS NOT
 
-`app.js` sets `script-src 'none'` for the whole service, and six pages relax it
-by naming one resource. **This feature adds none.**
+`app.js` sets `script-src 'none'` for the whole service, and seven pages relax
+it by naming one resource (the root `CLAUDE.md` lists them). **This feature adds
+none.**
 
 The obvious candidate is the outbound HTTP-POST binding, which everywhere else
 in this service auto-submits. It is a REAL FORM WITH A REAL BUTTON here, and the
-difference from the six is the argument rather than an oversight: those
-auto-submit because the person has already decided and a click would be
+difference from the auto-submitting ones is the argument rather than an
+oversight: those auto-submit because the person has already decided and a click would be
 ceremony. This one is a person **leaving this service for a foreign identity
 provider**, which is exactly the moment a deliberate click is worth having.
 
@@ -1095,7 +1102,7 @@ the custom claims, and **the protocol's own claims are untouched in both
 cases** — that third one is what catches a "simplification" that filters the
 whole payload.
 
-Drive it the way `tests/sts_dpop.js` is driven: write the partner side rather
+Drive it the way `tests/vendored/sts_dpop.js` is driven: write the partner side rather
 than importing this one. If both ends of the exchange came from this
 implementation, a shared misunderstanding about, say, which element the
 signature covers would pass and interoperate with nobody — and on this surface

@@ -20,8 +20,9 @@ TABLE`**, because `persistence/persistence_postgres.js` ran its whole schema on
 every `open()` — and in this stack that role was the cluster's bootstrap
 superuser. A mock identity service that can create a table can also drop one.
 
-So there are two roles now. `sts` owns the tables — seven since 2026-09-13,
-when `sts_used_assertions` joined them; `sts_app` holds
+So there are two roles now. `sts` owns the tables — seven on 2026-09-13,
+when `sts_used_assertions` joined them, and fifteen (counting `sts_schema`)
+since the cluster's tables arrived with schema version 5 (#46); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.
@@ -52,7 +53,8 @@ trap this directory now owns: a `sts-db` volume created before that date has the
 tables and no `sts_app`, and the service container then restart-loops on
 `password authentication failed`. `docker compose down -v` is the answer, and
 what it throws away is the directory, the realm registry and the appconfig
-overrides — never anything this service minted.
+overrides — and, in product mode (the compose stack's default), the sealed
+signing keys and what this service minted under them.
 
 **`tests/postgres_schema.js` is what keeps `schema.sql` and the driver from
 drifting**, since the DDL is now written down twice: it fails on a `CREATE`
@@ -62,8 +64,9 @@ the role name being changed in one of the three files that spell it.
 
 **The key pair is generated rather than committed, which is the same decision
 every other key in this repository follows**: a certificate committed to a
-repository is a private key committed to a repository. It is the reason this
-service's own signing key is regenerated on every start too.
+repository is a private key committed to a repository. It is also why this
+service's own signing keys are generated rather than shipped — per start in
+development mode, once and sealed in product mode (`common/CLAUDE.md`).
 
 **`require-tls.sh` is what makes TLS REQUIRED rather than merely available.** A
 server that supports TLS and still accepts a plaintext connection is one

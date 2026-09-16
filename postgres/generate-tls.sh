@@ -5,23 +5,24 @@
 # ---------------------------------------------------------------------------
 # A SERVER KEY PAIR FOR POSTGRES, GENERATED AT CONTAINER START.
 #
-# This is the same decision `common/helpers.js` and `tls/tls_server.js` make
-# about every other key in this stack, applied to the one process that did not
-# have one: **nothing about a mock is worth persisting, and a certificate
-# committed to a repository is a private key committed to a repository.** So
-# the pair is made on first start, lives in the data volume beside the
-# database, and is remade if it is ever removed.
+# This is the same decision this service makes about every other key in this
+# stack (`common/keystore.js`, `tls/tls_server.js`), applied to the one process
+# that did not have one: **a certificate committed to a repository is a private
+# key committed to a repository.** So the pair is made on first start, lives in
+# the data volume beside the database, and is remade if it is ever removed.
 #
-# IT IS NOT REGENERATED ON EVERY START, and that is the one place this differs
-# from the STS's own keys. Those are regenerated per start deliberately — the
-# `kid` is derived from the key material, and a client is expected to refetch.
+# IT IS NOT REGENERATED ON EVERY START, and that is where this differs from the
+# STS's own keys in development mode. Those are regenerated per start
+# deliberately — the `kid` is derived from the key material, and a client is
+# expected to refetch. (Product mode keeps them, sealed, in the store.)
 # A database client is not: `sslmode=verify-*` pins this certificate, and a
 # stack that handed its client a different one every morning would be teaching
 # people to turn verification off, which is the habit this whole change exists
 # to break. Delete the files (or the volume) to get a new pair.
 #
 # WHY openssl AND NOT THE STS'S OWN GENERATOR. The STS mints certificates with
-# forge and could mint this one — but it would have to be RUNNING to do it, and
+# its own certificate authority (`common/pki.js`) and could mint this one — but
+# it would have to be RUNNING to do it, and
 # this key is needed by the database the STS refuses to start without. A
 # circular dependency at boot is a worse thing to own than four lines of
 # openssl in the image that already ships it.

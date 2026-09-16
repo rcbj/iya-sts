@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: protocol_stack.js
@@ -23,15 +24,20 @@
 // ---------------------------------------------------------------------------
 // WHAT THIS FILE DOES NOT DO IS BIND ANYTHING.
 //
-// Four of these modules own listeners — the two Kerberos ones, the LDAP
-// directory and the TLS endpoints — plus SPIFFE's four sockets. Requiring them
-// registers their HTTP views and NOTHING ELSE; `listen()` is called by
-// `server.js` and by nothing here. That separation already existed and is what
-// makes a worker possible at all: a worker loads every route and owns no port,
-// so N of them can run beside one front process without a single conflict.
+// Five of these modules own listeners — the two Kerberos ones, the LDAP
+// directory, SPIFFE (its per-realm gRPC sockets) and the embedded debugger.
+// Requiring them registers their HTTP views and NOTHING ELSE; `listen()` is
+// called by `server.js` and by nothing here. That separation already existed
+// and is what makes a worker possible at all: a worker loads every route and
+// owns no port, so N of them can run beside one front process without a
+// single conflict.
 //
-// The five modules that bind are returned rather than merely required, because
-// `server.js` needs the handles to start and to report them.
+// Those five are returned rather than merely required, because `server.js`
+// needs the handles to start and to report them — and so is `tls/tls_server`,
+// which owned the 8443/9443 listeners until they were deleted on 2026-09-16
+// and binds nothing now: `server.js` still reads the certificate and the
+// client truststore it presents on the main port, and still calls its no-op
+// `listen()`.
 // ---------------------------------------------------------------------------
 
 // Which LDAP attributes the four claim sets carry. A LIBRARY — it registers no
@@ -90,12 +96,13 @@ require('../ws-trust/wstrust');
 // as an ordering constraint: this portal is an OpenID Connect RELYING PARTY of
 // this service's own authorization server (`common/oidc_rp.js`), so it needs
 // `/oauth2/authorize` and `/oauth2/token` to be REGISTERED rather than
-// required — and they are, at 9, four lines above. A process that loaded this
-// module without them would have a portal whose sign-in redirects to a 404.
+// required — and they are, at 9, a few lines below, which is before any
+// request arrives. A process that loaded this module without them would have
+// a portal whose sign-in redirects to a 404.
 // `oidc_rp.js` itself is a LIBRARY (rule 3): it registers nothing, the two
 // callbacks are registered by the two surfaces, and it requires `tls_server`
 // LAZILY inside the one function that dials the back channel — a require at
-// its top would drag three /tls routes here.
+// its top would drag every /tls route here.
 require('../portal/portal');
 // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
 // both halves are dependencies rather than preferences. AFTER, because it reads
@@ -150,7 +157,7 @@ require('../saml/saml11_sso');
 // identity satisfies an OAuth 2.0 authorization request, a WS-Federation
 // sign-in or a SAML AuthnRequest without any of those modules being told this
 // one exists. That is the whole design and it is why this require can sit
-// anywhere below line 137.
+// anywhere below `authn/authn`.
 //
 // It is placed HERE, after the four browser SSO profiles, so that the route
 // order and /admin/sts-metadata read in the order somebody thinks about them:
@@ -361,12 +368,13 @@ require('../mgmt-api/admin_api');
 // module requiring the management API, which would drag every `/admin-api`
 // route ahead of the console's own.
 require('../admin-ui/api_explorer');
-// The TLS / mutual-TLS endpoint. Third in the family of modules whose real
-// surface is a SOCKET rather than a route: it registers its plain-HTTP views
-// (/tls, /tls/server-certificate, /tls/trust) at require time and starts two
-// HTTPS listeners from listen() below, for the same reason the KDC and the
-// directory do — a bind can fail, and a require that throws takes the whole
-// service down where a route cannot.
+// TLS / mutual TLS. It registers its views (/tls, /tls/sign-in,
+// /tls/server-certificate, /tls/trust and the rest) at require time, and holds
+// the certificate the main port, LDAPS 636 and the debugger listener present
+// and the client truststore the main port asks with. **It owns no socket
+// since 2026-09-16**, when its 8443 and 9443 listeners were deleted and a
+// client certificate began arriving on the main port; its `listen()` is a
+// no-op kept so `server.js`'s call site did not change (`tls/CLAUDE.md`).
 //
 // Its position used to be free. It is not any more: ldap_server.js below serves
 // this module's server certificate on 636, so it requires this file — and node
@@ -420,17 +428,18 @@ require('../admin-ui/admin').setTruststore(tlsServer.truststore);
 //
 // It fills admin.js's setCryptoReporter() so that GET /admin-api/crypto can
 // mirror the page without the management API requiring this file — a require in
-// that direction would drag this page's route and tls_server's three ahead of
-// the management API's own. And ./sts_metadata.js, last in this file, hands it
-// the protocol family list so that the two pages' idea of what this service
-// advertises is checked rather than agreed by hand.
+// that direction would drag this page's route and every one of tls_server's
+// ahead of the management API's own. And ./sts_metadata.js, last in this
+// file, hands it the protocol family list so that the two pages' idea of what
+// this service advertises is checked rather than agreed by hand.
 // ---------------------------------------------------------------------------
 require('../admin-ui/crypto_metadata');
 // The embedded LDAPv3 directory (RFC 4511), built on the node-ldapjs submodule.
 // Like the two Kerberos modules it registers its HTTP views at require time
-// (/ldap, /admin/ldap/directory) and starts its TCP listener from listen()
-// below, for the same reason: binding port 389 is privileged and can fail, and
-// a require that throws takes the whole service down where a route cannot.
+// (the `/admin/ldap/*` console pages) and starts its TCP listeners from
+// `server.js`'s listen(), for the same reason: binding port 389 is privileged
+// and can fail, and a require that throws takes the whole service down where a
+// route cannot.
 //
 // It must come AFTER admin.js, and that is a dependency rather than a
 // preference: it installs itself as admin_stats.js's user observer, which is
@@ -439,7 +448,7 @@ require('../admin-ui/crypto_metadata');
 // during require — but keeping it beside the console is what makes the pairing
 // visible to the next reader.
 //
-// It must also come after ./tls_server below, and THAT one is not optional: its
+// It must also come after ./tls_server above, and THAT one is not optional: its
 // LDAPS listener on 636 serves the certificate and key that module generates,
 // so requiring it first is what makes the route order in this file the real one
 // rather than a fiction node quietly corrects.
@@ -459,17 +468,18 @@ const ldapServer = require('../ldap/ldap_server');
 // rule 3e's test, and this proposal fails it both ways round, so it is a plain
 // require.
 //
-// Unlike the four modules above it, it starts nothing: it is HTTP all the way
-// down, so requiring it is the whole of its installation.
+// Unlike the three socket owners above it, it starts nothing: it is HTTP all
+// the way down, so requiring it is the whole of its installation.
 require('../scim/scim');
-// SPIFFE — the sixteenth family, and the third module here whose own listeners
-// are started from listen() below rather than at require time.
+// SPIFFE — the sixteenth family, and the third family here (after Kerberos and
+// the directory) whose own listeners are started from `server.js`'s listen()
+// rather than at require time.
 //
 // Three server-side surfaces: the BUNDLE ENDPOINT (plain HTTPS, registered by
 // requiring this), the WORKLOAD API and the SPIRE SERVER API (both gRPC, on a
 // Unix socket and a TCP port each). The gRPC listeners are invisible to
-// /admin/sts-metadata for the same reason the KDC's, the directory's and the
-// TLS endpoint's sockets are, so they are described by hand there.
+// /admin/sts-metadata for the same reason the KDC's and the directory's
+// sockets are, so they are described by hand there.
 //
 // It must come AFTER ./ldap_server, and it is a dependency rather than a
 // preference: the SPIFFE registry's store is the directory under ou=spiffe, and
@@ -477,21 +487,24 @@ require('../scim/scim');
 // time. Requiring this any earlier would leave the registry with no store at
 // the moment the seed entries are written.
 //
-// The 636/8081 certificate is NOT shared with this. A SPIFFE trust
-// domain is its own PKI — the CA here signs identities in one trust domain and
-// the TLS certificate identifies a host — and one process holding two of them
-// is correct rather than wasteful. See spiffe_ca.js.
+// The 636/8081 certificate is NOT shared with this. The SPIFFE authority signs
+// identities in a trust domain and the TLS certificate identifies a host, so
+// since 2026-09-11 each is its own Issuing CA — `spiffe` under the realm's
+// Intermediate, `tls` under the process's — and the only thing they share is
+// the service Root an operator installs. See spiffe_ca.js and common/CLAUDE.md
+// (3w).
 const spiffeServer = require('../spiffe/spiffe_server');
 // ---------------------------------------------------------------------------
 // SHARED SIGNALS — THE SEVENTEENTH FAMILY, AND THE FIRST ONE THAT TALKS BACK.
 //
 // Every other module above answers a request. This one AGREES A STREAM and
 // then delivers a Security Event Token to somebody who asked in advance to be
-// told — which is why it is the only protocol module here that makes an
-// outbound request, and only the second module in the repository that does
-// (`federation/federation_http.js` is the first, and `ssf/ssf_http.js` argues
-// its own case rather than citing that one, because RFC 8935 push IS the
-// receiver telling the transmitter where to post).
+// told — which is why it was the first protocol module here to make an
+// outbound request, and the second module in the repository to do so
+// (`federation/federation_http.js` was the first; others have followed, each
+// argued in its own file, and `ssf/ssf_http.js` argues its own case rather than
+// citing that one, because RFC 8935 push IS the receiver telling the
+// transmitter where to post).
 //
 // **AFTER `admin-ui/admin.js`, and that is the constraint that decides the
 // line.** It fills that module's eighth slot — the reader and the four actions
@@ -504,43 +517,26 @@ const spiffeServer = require('../spiffe/spiffe_server');
 // indirection added by analogy.
 //
 // It starts nothing: it is HTTP all the way down, so requiring it is the whole
-// of its installation. It registers no listener and holds no socket, and its
-// streams are in memory and die with the process — which persistence/CLAUDE.md
-// decides: the signing key is regenerated on every start, so a restored queue
-// would be tokens nothing can verify.
+// of its installation. It registers no listener and holds no socket. Its
+// streams and queues are `realms.map({ persist })` stores, so they are kept
+// exactly where persistence/CLAUDE.md keeps minted state and nowhere else.
 require('../ssf/ssf');
 // ---------------------------------------------------------------------------
-// THE PROTOCOL-INDEPENDENT LOGOUT — SECOND TO LAST, AND THE POSITION IS THE
-// WHOLE OF ITS ARGUMENT.
+// 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded PEPs
+// and the PAP console.
 //
-// `GET|POST /logout` lists everything this service is still holding for one
-// identity — across the session store, the token registry, the authorization
-// codes, the pre-authorized codes, the directory's bound connections and the
-// Kerberos principal database — and ends what is asked for. So it READS NINE
-// MODULES, and it must come after every one of them.
+// AFTER `ldap/ldap_server` (21), which fills the directory slots this family
+// owns: the policy repository's (`xacml_store.js`), the remote PEP register's
+// (`xacml_pep_registry.js`) and the PIP's entry lookup (`xacml_pip.js`). The
+// store IS ou=policies, so this module has nothing to load and nothing to hold.
 //
-// It is a plain require of each rather than nine inverted hooks, and rule 3e's
-// test is why: a slot is what you reach for when a require would close a cycle
-// or move a route, and neither applies here. Every module it requires has
-// already been loaded by the lines above, so each require is a cache hit that
-// registers nothing and moves nothing; and nothing in this service requires
-// that module back, so there is no cycle to close.
-//
-// It is NOT last. `sts_metadata.js` is, for everybody, because it reads the
-// router to list what everything else registered — and a logout endpoint
-// missing from that list would be the exact drift that page exists to catch.
-// ---------------------------------------------------------------------------
-// 23c. XACML 3.0 — the PDP, the policy repository and the embedded PEP.
-//
-// AFTER `ldap/ldap_server` (21), which fills two slots it owns: the policy
-// repository's directory functions and the PIP's entry lookup. The store IS
-// ou=policies, so this module has nothing to load and nothing to hold.
-//
-// It does NOT go through a slot on admin.js, because it has no console page
-// yet — that is phase three, and when it lands the require stays here and a
-// slot appears, for the reason SSF's does at 23b: a require from
-// mgmt-api/admin_api.js (19) to this module would drag every /xacml route
-// ahead of the management API's own.
+// AND AFTER `admin-ui/admin` (18), whose `setXacmlPages()` slot
+// `xacml/xacml_admin.js` fills — for the reason SSF's does at 23b: a require
+// from mgmt-api/admin_api.js (19) to this module would drag every /xacml route
+// ahead of the management API's own. `xacml.js` requires `xacml_admin.js`,
+// `xacml_role_pep.js` and `xacml_access_pep.js` itself, so the family is one
+// line here — and **requiring `xacml_role_pep.js` is what arms every issuance
+// site**: before this line `common/issuance_gate.js` answers "allowed".
 //
 // It starts nothing and holds no socket.
 require('../xacml/xacml');
@@ -574,6 +570,27 @@ require('../scep/scep');
 // roster decides who may use it). No route here depends on its position.
 const debuggerServer = require('../debugger/debugger_server');
 
+// ---------------------------------------------------------------------------
+// THE PROTOCOL-INDEPENDENT LOGOUT — SECOND TO LAST, AND THE POSITION IS THE
+// WHOLE OF ITS ARGUMENT.
+//
+// `GET|POST /logout` lists everything this service is still holding for one
+// identity — across the session store, the token registry, the authorization
+// codes, the pre-authorized codes, the directory's bound connections and the
+// Kerberos principal database — and ends what is asked for. So it READS NINE
+// MODULES, and it must come after every one of them.
+//
+// It is a plain require of each rather than nine inverted hooks, and rule 3e's
+// test is why: a slot is what you reach for when a require would close a cycle
+// or move a route, and neither applies here. Every module it requires has
+// already been loaded by the lines above, so each require is a cache hit that
+// registers nothing and moves nothing; and nothing in this service requires
+// that module back, so there is no cycle to close.
+//
+// It is NOT last. `sts_metadata.js` is, for everybody, because it reads the
+// router to list what everything else registered — and a logout endpoint
+// missing from that list would be the exact drift that page exists to catch.
+// ---------------------------------------------------------------------------
 require('../logout/logout');
 require('../sts_metadata');
 

@@ -233,8 +233,9 @@ function keyPairPaging(query, json) {
 // branches because the two profiles differ in exactly one interesting way and
 // a branch would hide it: RFC 7523 registers a key as a JWKS (with the chain
 // in `x5c`) and RFC 7522 registers it as a PEM certificate, because SAML has
-// no JWKS. So the JWT set has six members and the SAML set has five, and the
-// handle is a `kid` in one and a thumbprint in the other.
+// no JWKS. So the JWT set has seven members and the SAML set has six (each
+// counting the provenance attribute since 2026-09-13), and the handle is a
+// `kid` in one and a thumbprint in the other.
 //
 // **THE TWO SETS SHARE NO ATTRIBUTE NAME, WHICH IS THE WHOLE POINT.** An
 // application may hold both key pairs; `oauth-oidc/saml_assertion_grant.js`
@@ -333,6 +334,18 @@ function targetOf(body) {
   return pki.subjectKindFor(asked) ? asked : '';
 }
 
+// THE LEAF'S KEY ALGORITHM, UNDER EITHER NAME. The console's issue forms post
+// `leafKeyAlg` (the page carries the hierarchy's `keyAlg` elsewhere); the
+// management API documents `keyAlg` and its schema refuses any other member.
+// Until 2026-09-16 only `leafKeyAlg` was read, so an API caller's `keyAlg` was
+// accepted and silently ignored. Undefined means the Issuing CA's algorithm.
+function leafKeyAlgOf(body) {
+  log.debug("Entering leafKeyAlgOf().");
+  const asked = String(body.leafKeyAlg || body.keyAlg || '').trim();
+  log.debug("Leaving leafKeyAlgOf(). " + (asked || "The CA's."));
+  return asked || undefined;
+}
+
 // The purpose a request asked for, defaulted and validated in one place. An
 // empty value means `jwt`, which is what every caller written before
 // 2026-09-11 sends and is the reason that is the default rather than a
@@ -349,12 +362,13 @@ function purposeOf(body) {
 // `ssf/CLAUDE.md` records that a handler phrasing that sentence its own way
 // turns two tests off with nothing failing.
 // THE FIRST FOUR ARE THE HIERARCHY AND THE APPLICATION LEAF, which is what
-// this page was when it was written. The seven after them are the Certificate
-// & Key Configuration pane, which arrived 2026-09-10 — and they are on the
-// SAME list because `/admin-api/pki/{action}` mirrors this list and rule 7
-// says every control on this console has an operation. A pane action answers
-// with a DRAFT as well as a verdict, which is what the console's own POST
-// re-renders and what lets a machine drive the pane through the API.
+// this page was when it was written. The eight after `upload-certificate` are
+// the Certificate & Key Configuration pane, which arrived 2026-09-10 — and
+// they are on the SAME list because `/admin-api/pki/{action}` mirrors this
+// list and rule 7 says every control on this console has an operation. A pane
+// action answers with a DRAFT as well as a verdict, which is what the
+// console's own POST re-renders and what lets a machine drive the pane
+// through the API.
 const PKI_ACTIONS = ['build', 'clear', 'issue', 'revoke',
                      // An application's key pair replaced by a certificate
                      // the application brought, since 2026-09-13 — the
@@ -454,11 +468,6 @@ function markRefusal(res, result, fallback) {
   log.debug("Leaving markRefusal().");
 }
 
-// WHICH STORED OBJECT AN ACTION IS ABOUT. `/admin-api` names it as `objectId`;
-// the console's own buttons carry it as the value of the button that was
-// pressed, which `paneActionFrom()` has already put there — and the store
-// table's radio column is the fallback, which is what makes the Export row
-// work without a button press naming anything.
 // WHICH SCOPE AN ACTION IS ABOUT. A missing one means the realm the request
 // arrived in, which is what every other control on this console means by
 // saying nothing — the console shows one realm at a time and the switcher is
@@ -528,6 +537,11 @@ async function recertifyScope(scopeId) {
   return done;
 }
 
+// WHICH STORED OBJECT AN ACTION IS ABOUT. `/admin-api` names it as `objectId`;
+// the console's own buttons carry it as the value of the button that was
+// pressed, which `paneActionFrom()` has already put there — and the store
+// table's radio column (`pki_selected`) is the fallback, which is what makes
+// the Export row work without a button press naming anything.
 function objectIdOf(body) {
   log.debug("Entering objectIdOf().");
   log.debug("Leaving objectIdOf().");
@@ -767,8 +781,9 @@ function currentRealmScope() {
 //
 // **ONLY THE AUTHORITIES THIS REALM IS UNDER.** The Root, because every realm
 // hangs from it and it is this realm's anchor; the PROCESS branch, because the
-// TLS and SPIFFE authorities certify sockets every realm answers on — so they
-// are this realm's front door as much as anybody's — and this realm's own
+// TLS authority certifies sockets every realm answers on — so it is this
+// realm's front door as much as anybody's (the SPIFFE authority was here too
+// until 2026-09-11, when it moved to a realm's branch) — and this realm's own
 // Intermediate with its Issuing CAs. **Another realm's branch is not drawn.**
 //
 // The console shows ONE REALM AT A TIME and the switcher is how you change it:
@@ -782,7 +797,7 @@ function currentRealmScope() {
 // **THE PROCESS BRANCH IS DRAWN IN EVERY REALM AND THAT IS DELIBERATE.** It
 // belongs to no realm, so no realm's page is more its home than another's, and
 // it has no other surface anywhere: hiding it from every realm would leave the
-// TLS and SPIFFE authorities unreadable and unmanageable from this console.
+// TLS authority unreadable and unmanageable from this console.
 //
 // **THE NARROWING IS IN THIS FILE AND NOT IN `common/pki.js`.** That module is
 // handed scope ids and has no opinion about which exist — which is the same
@@ -899,7 +914,7 @@ async function issueToPerson(identifier, body) {
     // indistinguishable from an application's.
     subjectKind: 'person',
     commonName: String(body.commonName || '').trim() || identifier,
-    keyAlg: String(body.leafKeyAlg || '').trim() || undefined,
+    keyAlg: leafKeyAlgOf(body),
     days: isFinite(days) && days > 0 ? Math.floor(days)
                                      : config.value('pki.leafLifetimeDays')
   });
@@ -1267,7 +1282,7 @@ async function pkiAction(body) {
       identifier: identifier,
       purpose: purpose,
       commonName: String(body.commonName || '').trim() || identifier,
-      keyAlg: String(body.leafKeyAlg || '').trim() || undefined,
+      keyAlg: leafKeyAlgOf(body),
       days: isFinite(days) && days > 0 ? Math.floor(days)
                                        : config.value('pki.leafLifetimeDays')
     });
@@ -1742,7 +1757,7 @@ async function pkiAction(body) {
   // =====================================================================
   // THE CERTIFICATE & KEY CONFIGURATION PANE.
   //
-  // Seven actions, and every one of them answers with a `draft` as well as a
+  // Eight actions, and every one of them answers with a `draft` as well as a
   // verdict — the whole form, as it should be redrawn. That is what the
   // console's own POST renders (it answers a 200 page rather than going
   // through `respondToAction()`, for `/admin/users/new`'s reason: a redirect
@@ -3692,7 +3707,10 @@ function renderPki(req, res, draft, banner, extra, certificate) {
   // **THIS BLOCK SAID *Nothing here is revoked, ever* UNTIL 2026-09-11**, and
   // it was true when it was written. What replaced it is narrower rather than
   // absent, because the interesting limit did not go away when the CRLs
-  // arrived — it moved: this service publishes revocation and consults none.
+  // arrived — it moved. It read *this service publishes revocation and
+  // consults none* until 2026-09-12, when presented certificates began to be
+  // checked (`common/revocation_status.js`); `json.revocationNote` is
+  // `pki.report()`'s sentence and says what is consulted now.
   const limits = admin.warn(
     '<p><strong>Revocation here is PUBLISHED and never ENFORCED.</strong> ' +
     esc(json.revocationNote) + '</p><p>' + esc(json.residency) + '</p>',

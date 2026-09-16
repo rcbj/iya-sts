@@ -21,18 +21,24 @@ somebody came for is below the fold of a page about something else.
 | `/portal/password` | authenticated | **Password** — the form, and the POST that answers it |
 | `/portal/keys` | authenticated | **Security keys** — the list, and a Remove per key |
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
+| `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
+| `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
+| `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
 | `/portal/callback` | — | the OIDC redirect URI |
+| `/portal/signals/receive` | **unauthenticated** | this portal's Shared Signals push endpoint — see the A01 section |
 | `/portal/remove-key`, `/portal/signout` | authenticated | the two other POSTs |
 
 **FIVE PAGES SINCE 2026-09-10**, and the fifth is the first here that HANDS
-SOMEBODY A CREDENTIAL rather than taking one.
+SOMEBODY A CREDENTIAL rather than taking one. **EIGHT SINCE 2026-09-13** —
+`NAV` below is the list.
 
 **`NAV` IS THE PAGE LIST AND THERE IS NO SECOND COPY.** `navBar()` draws the
 column from it, `headingFor()` titles the page from it, and `paths()` reports it
 to `sts_metadata.js` — so a page added there appears in the column, in the
 browser tab and in the endpoint list, and one removed leaves none of the three
-behind. `tests/vendored/sts_portal_sessions.js` asserts, for each of the four,
-that its own entry is marked `aria-current="page"`.
+behind. `tests/vendored/sts_portal_sessions.js` asserts, for the first four
+(Overview, Applications, Password, Security keys), that its own entry is marked
+`aria-current="page"`.
 
 **A `GET` AND A `POST` SHARE `/portal/password`.** The form has to live
 somewhere now that it is not on the overview, and a form and the handler that
@@ -170,8 +176,8 @@ request the application never asked for and is not expecting. The page says so.
 Twenty rows a page. The scan stops at `portal.applicationScanLimit` entries —
 1,000 by default — and says when it bit, with the number in force: each entry
 costs a policy evaluation per distinct kind, on the one thread that answers
-every socket this service holds, which is the stall `CLAUDE.md`'s worker-pool
-section is about. **This heading said "a guard rather than a setting"** on the
+every socket this service holds, which is the stall `common/CLAUDE.md`'s
+worker-pool section is about. **This heading said "a guard rather than a setting"** on the
 argument that a configuration row would be a knob nobody turns until the day
 the page is already slow. The half about the page being slow still holds; what
 it left out is the deployment whose registry is past a thousand on purpose,
@@ -337,8 +343,8 @@ It arrived 2026-09-10, in a directory whose own file said every page of it was
 `script-src 'none'`.
 
 `app.js` sets `script-src 'none'` everywhere and the rule is that a page gets an
-exception only when it CANNOT work without one — four candidates have been
-refused on it, `/authn/totp` among them, which sits next door to a scripted page
+exception only when it CANNOT work without one — several candidates have been
+refused on it (the root `CLAUDE.md` lists them), `/authn/totp` among them, which sits next door to a scripted page
 and still had to argue its own case.
 
 **A WebAuthn ceremony is a browser API call.** There is no markup that invokes
@@ -595,7 +601,7 @@ Three things about it are this directory's:
 
 **They were on one page when this was written and the page split under
 them.** The narrow one moved into the shell and is now in the corner of
-ALL FOUR pages, which is the same decision rather than a new one — a
+EVERY page, which is the same decision rather than a new one — a
 person who wants out should not have to find the page it lives on first.
 The wider one stayed where it was, at the foot of the Overview.
 
@@ -868,7 +874,7 @@ attempt.
 ### The directory arrives through a SLOT, and it is the first this application has offered
 
 `portal.setDirectory()`, filled by `ldap/ldap_server.js` at its require time.
-Rule 3e's test answers yes both ways round: this module is at 8b and that one
+Rule 3e's test answers yes both ways round: this module is at 8a and that one
 at 21, so a require from here would register every `/ldap` route and the eight
 `/admin/ldap/*` console pages ahead of the authorization server and the
 console, and a require the other way would move every `/portal` route behind
@@ -892,8 +898,8 @@ be explored is the more useful half. So the set ones are drawn plainly and the
 rest are one fold per class.
 
 **`<details>` is MARKUP and not script**, which is why it is available at all:
-every page of this portal is `script-src 'none'`, and the console made exactly
-this argument for its own collapsible prose. There is no collapse-all and there
+every page of this portal but `/portal/keys` is `script-src 'none'`, and the
+console made exactly this argument for its own collapsible prose. There is no collapse-all and there
 will not be one.
 
 ### Nothing here can be edited
@@ -1062,10 +1068,9 @@ What is this page's:
   `profileCard()` — and took a `req` its callers never passed, so every
   `GET /portal/signing-key` answered 500 and the card said `localhost`; both
   were restored on 2026-09-16, and `sts_portal_signing_key` is what caught it.
-  **The
-  card also stopped promising a port that REQUIRES a certificate**: the main
-  port asks every connection for one and requires none, so it is the browser
-  that decides to send it.
+  **The card also stopped promising a port that REQUIRES a certificate**: the
+  main port asks every connection for one and requires none, so it is the
+  browser that decides to send it.
 
 **NO `/admin-api` MIRROR**, for this page's standing reason: the answer is
 per-person. An operator revokes one on `/admin/pki`'s revocation pane, where it

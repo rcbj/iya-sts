@@ -43,9 +43,9 @@
 //      publishes arrive — a queued call becomes one more pass, a repair if any
 //      caller asked for one.
 //
-// IN A CHILD PROCESS: it replaces the service Root twice and rebuilds the
-// process branch four times, and `run.js` runs every file in one process —
-// the reason `tests/pki_scope_builds.js` forks. A fresh process also has no
+// IN A CHILD PROCESS: it replaces the service Root three times and rebuilds
+// the process branch four times, and `run.js` runs every file in one process
+// — the reason `tests/pki_scope_builds.js` forks. A fresh process also has no
 // Root until `pki.start()`, which is the state claim 1 starts from.
 // ===========================================================================
 

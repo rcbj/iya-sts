@@ -82,9 +82,9 @@
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route. It requires `assertion_grant.js`
 // and `jwt_access_token.js` from this directory and libraries from `common/`,
-// none of which requires it back; `oauth2.js` (9) and
-// `admin-core/admin_actions.js` require it. It never touches `res` — what a
-// refusal looks like on the wire is `oauth2.js`'s.
+// none of which requires it back; `oauth2.js` (9),
+// `admin-core/admin_actions.js` and `admin-core/admin_views.js` require it. It
+// never touches `res` — what a refusal looks like on the wire is `oauth2.js`'s.
 // ===========================================================================
 
 const nodeCrypto = require('crypto');

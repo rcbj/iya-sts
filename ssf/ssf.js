@@ -86,17 +86,19 @@
 // ---------------------------------------------------------------------------
 // WHAT THIS FAMILY DELIBERATELY DOES NOT DO.
 //
-// **IT DOES NOT RETRY A FAILED PUSH.** RFC 8935 permits it; `ssf_http.js`
-// argues at length why a mock must not. A client that answers 500 to the first
-// push and 202 to the second would look, from its own logs, like a client that
-// works.
+// **IT DOES NOT RETRY A FAILED PUSH BY DEFAULT.** RFC 8935 permits it;
+// `ssf_http.js` argues at length why a mock must not, and `ssf.pushRetries`
+// (0 by default) is the deployment's way to ask. A client that answers 500 to
+// the first push and 202 to the second would look, from its own logs, like a
+// client that works.
 //
-// **IT GENERATES NO EVENT ON ITS OWN.** Nothing here watches a session and
-// emits when it changes — every SET this service transmits was asked for, at
-// `/ssf/verify`, on `/admin/ssf` or through the management API. That is
-// deliberate and it is the honest shape for part one: SSF defines no event
-// about a session, so a transmitter that invented one would be inventing a
-// vocabulary. It changes with CAEP.
+// ~~IT GENERATES NO EVENT ON ITS OWN.~~ **It does since CAEP (2026-09-03)
+// and RISC**: SSF defines no event about a session or an account, so the
+// vocabularies are what let this transmitter emit on a sign-in, a sign-out
+// or a directory change (`caep.autoEmit`, `risc.autoEmit`). The SSF pipe
+// itself still emits only what was asked for — `/ssf/verify`, `/admin/ssf`
+// or the management API. `ssf/CLAUDE.md`, *What this family deliberately
+// does not do*, has the history.
 //
 // **IT VERIFIES NOTHING ABOUT A SUBJECT.** A stream may name a person who has
 // never been here, and this service will happily transmit about them. That is
@@ -137,10 +139,11 @@ const caep = require('./caep');
 // goes. See its header.
 const risc = require('./risc');
 // THE DIRECTORY, for the account observer alone. The require goes in the
-// ORDINARY direction — `server.js` loads ldap/ldap_server.js at 361 and this
-// file at 426 — so it moves no route and closes no cycle, and rule 3e's test
-// therefore asks for no slot. `scim/scim.js` requires it the same way. What
-// travels back the other direction is one function: see riscAutoEmit().
+// ORDINARY direction — `common/protocol_stack.js` loads ldap/ldap_server.js
+// at 21 and this file at 23b — so it moves no route and closes no cycle, and
+// rule 3e's test therefore asks for no slot. `scim/scim.js` requires it the
+// same way. What travels back the other direction is one function: see
+// riscAutoEmit().
 const directory = require('../ldap/ldap_server');
 const streams = require('./ssf_streams');
 // THIS SERVICE'S OWN TWO RECEIVERS. A LIBRARY (rule 3) — the two receive
@@ -415,8 +418,8 @@ function transmit(record, options) {
   // `subject: 'none'` — they are about the STREAM, and a receiver that
   // insisted on a subject could not be verified. So this is a check on the
   // ROW rather than a branch naming a vocabulary, which is what keeps
-  // `ssf_events.js`'s promise: RISC's rows will be `required` too and this
-  // line will not change.
+  // `ssf_events.js`'s promise: RISC's rows are `required` too, and adding
+  // them did not change this line.
   //
   // It is refused rather than carried because of what the omission MEANS. A
   // session-revoked with no `sub_id` says a session was revoked and does not
@@ -1874,7 +1877,7 @@ app.get('/ssf', function (req, res) {
 // a require the other way would move every SSF route ahead of the console's
 // own (rule 1). So this fills a slot on `admin.js`, exactly as `ldap_server.js`
 // and `crypto_metadata.js` do, and it carries ONE object: the reader and the
-// four actions together, validated whole when it is installed, because a
+// six actions together, validated whole when it is installed, because a
 // partial one would leave `/admin/ssf` able to list streams and unable to
 // change any of them.
 //
@@ -1973,7 +1976,7 @@ function actionRefused(code, protocol, name, result) {
   return Promise.resolve(result);
 }
 
-// The four actions the console's forms and `POST /admin-api/ssf/:action` share
+// The six actions the console's forms and `POST /admin-api/ssf/:action` share
 // — one function, so the two doors cannot disagree about what happened.
 function consoleAction(name, body, req) {
   log.debug('Entering consoleAction(). ' + name);
@@ -2575,10 +2578,12 @@ function caepReport(req) {
   return report;
 }
 
-// Emit one CAEP event BY HAND. Five of the eight describe things nothing here
+// Emit one CAEP event BY HAND. Two of the eight describe things nothing here
 // does — no device reports compliance to this service and no risk engine talks
 // to it — so this is the only way they are ever produced, and it is why the
-// action exists rather than the page being read-only.
+// action exists rather than the page being read-only. (Five are emitted
+// automatically — `caep.autoEmitTypes` — and `token-claims-change` only by
+// GNAP, `gnap/gnap_signals.js`.)
 function caepEmit(asked) {
   log.debug('Entering caepEmit().');
   const uri = String(asked.type || '').indexOf(events.CAEP_PREFIX) === 0
@@ -3007,8 +3012,8 @@ function emitCredentialChange(asked) {
   });
 }
 
-// The inverted hook, filled at require time. `ldap/ldap_server.js` is 361 in
-// the require order and this module is 426, so the require above goes the
+// The inverted hook, filled at require time. `ldap/ldap_server.js` is 21 in
+// the require order and this module is 23b, so the require above goes the
 // ordinary way and only the FUNCTION travels back — see setAccountObserver()
 // over there.
 directory.setAccountObserver(riscAutoEmit);
@@ -3174,13 +3179,14 @@ function riscReport(req) {
 // ---------------------------------------------------------------------------
 // EMIT ONE RISC EVENT BY HAND.
 //
-// Ten of the fourteen describe things nothing here does — no breach corpus is
-// searched by this service and no recovery flow runs in it — so this is the
-// only way they are produced. **AND FOUR OF THOSE TEN CHANGE REAL STATE WHEN
-// THEY GO**: RISC section 2.8 defines each opt-out event as *"the account is
-// in the X state"* rather than as a report that it moved, so emitting one is
-// the transition. That is why `applyToState()` runs on the way out and not
-// only on the way back through `noteTransmitted()`.
+// Eight of the fourteen describe things nothing here does — no breach corpus
+// is searched by this service and no recovery flow runs in it — so this is the
+// only way they are produced (the other six are `risc.autoEmitTypes`). **AND
+// FOUR OF THOSE EIGHT CHANGE REAL STATE WHEN THEY GO**: RISC section 2.8
+// defines each opt-out event as *"the account is in the X state"* rather than
+// as a report that it moved, so emitting one is the transition. That is why
+// `applyToState()` runs on the way out and not only on the way back through
+// `noteTransmitted()`.
 //
 // **AN ACCOUNT THIS SERVICE HAS NEVER HELD IS ACCEPTED**, which is the
 // opposite of what `caepEmit()` does with an unknown session, and the reason
@@ -3404,8 +3410,7 @@ adminConsole.setRiscReporter({
 // One stream each, per trust realm, asking for every CAEP and every RISC event
 // type. `ssf/ssf_receivers.js` carries the whole argument — why delivery is a
 // real RFC 8935 push over the loopback interface rather than a function call,
-// why the streams are in every realm while the console's CLIENT entry is in
-// one, and what an empty inbox page can mean.
+// why the streams are in every realm, and what an empty inbox page can mean.
 //
 // **THE DEFAULT REALM IS SEEDED HERE AND EVERY LATER REALM FROM `onCreate()`**,
 // which is the arrangement `applications.js`'s internal client entries have and

@@ -7,10 +7,10 @@
 // SERVICE ROOT SAFE (2026-09-13).
 //
 // `/portal/signing-key` issues a TLS client certificate from the realm's
-// `tls-client` Issuing CA, and the TLS listeners trust the service Root so that
-// it verifies. `common/tls_client_certificates.js` is what stops that Root
-// from turning EVERY key pair this service issued into a sign-in. What is here
-// is what no request to the portal can show on its own:
+// `tls-client` Issuing CA, and the main port's client truststore holds the
+// service Root so that it verifies. `common/tls_client_certificates.js` is what
+// stops that Root from turning EVERY key pair this service issued into a
+// sign-in. What is here is what no request to the portal can show on its own:
 //
 //   A. THE CERTIFICATE: clientAuth, the person's CN and urn:sts:person: name,
 //      the rfc822Name, issued by THIS realm's TLS Client Issuing CA, the key

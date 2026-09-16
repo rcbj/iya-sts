@@ -7,10 +7,10 @@
 //
 // `README.md` grew a *The ports* section on 2026-09-07 — ten bindings, their
 // settings, their environment variables. It is the most useful kind of table
-// and the kind this repository has already been bitten by twice: the root
-// CLAUDE.md says so in as many words about the job count, "**`tests/vendored/
-// MANIFEST.js` IS THE COUNT AND THIS TABLE IS NOT** — a number written here as
-// well went stale twice."
+// and the kind this repository has already been bitten by twice: a job count
+// written into the root CLAUDE.md beside `tests/vendored/MANIFEST.js` went
+// stale twice, which is why tests/CLAUDE.md now says "`MANIFEST.js` IS THE
+// COUNT" and writes no number of its own.
 //
 // A ports table cannot be read off the running router the way
 // `/admin/sts-metadata` reads its endpoint list, and that is the whole reason

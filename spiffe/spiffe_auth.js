@@ -4,8 +4,8 @@
 //
 // ---------------------------------------------------------------------------
 // WHO IS CALLING THE TWO gRPC SURFACES — the SPIFFE half of what `scim_auth.js`
-// is to `/scim/v2`, and the second surface in this service that enforces
-// anything at all.
+// is to `/scim/v2`, and the second surface in this service that enforced
+// anything at all when it was written.
 //
 // A LIBRARY: it registers no route, starts no listener and NEVER TOUCHES A
 // `call` TO ANSWER ONE. It decides and `spiffe_grpc.js` answers — the same
@@ -115,9 +115,9 @@ const audit = require('../common/audit');
 // gets; the descriptor itself never reaches a client.
 const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
-// PER PROCESS AND NOT PER REALM — see the store below. Required only for
-// `sharedMap()`, and it is a LEAF that registers no route, so this cannot
-// move a route or join a cycle.
+// PER REALM SINCE 2026-09-12 (it was per process) — see the store below.
+// Required only for `realms.map()`, and it is a LEAF that registers no route,
+// so this cannot move a route or join a cycle.
 const realms = require('../common/realms');
 const spiffeId = require('./spiffe_id');
 const ca = require('./spiffe_ca');
@@ -125,10 +125,12 @@ const registry = require('./spiffe_registry');
 // The RFC 4514 form of a certificate subject. Required rather than
 // reimplemented for the reason that module's export note gives — two spellings
 // of one DN is two people on /admin/users — and `scim_auth.js` requires it for
-// exactly this. Safe by rule 3e's test applied rather than assumed: this file
-// is reached through `spiffe_grpc.js` from `spiffe_server.js`, which
-// `server.js` requires LAST and long after `./tls_server`, so no route moves,
-// and that module knows nothing about SPIFFE, so there is no cycle.
+// exactly this. That module knows nothing about SPIFFE, so there is no cycle.
+// **THE ROUTE ORDER IS NOT WHAT IT LOOKS LIKE**: this file is first loaded
+// from inside `admin-ui/admin.js`'s require (`admin-core/admin_views.js` →
+// here), so THIS line is what first loads `tls/tls_server.js` and registers
+// its `/tls` routes during position 18 rather than 20, as `tls/CLAUDE.md`
+// records.
 const tls = require('../tls/tls_server');
 // THE REVOCATION CHECK (2026-09-12), its synchronous register-only door. A
 // LIBRARY that registers no route; it requires `common/pki.js`, which
@@ -888,8 +890,9 @@ function authorize(caller, method) {
 // **ONCE PER CONNECTION, NOT ONCE PER CALL.** The credential is the client
 // certificate and it was accepted at the TLS handshake; a caller that then
 // makes six RPCs on that connection has authenticated once. That is the same
-// decision `tls_server.js` made deliberately about its own listeners, and
-// counting per call would undo it from the other end. The key is the
+// decision `tls_server.js` makes deliberately about client certificates (it
+// records on `secureConnection`), and counting per call would undo it from
+// the other end. The key is the
 // certificate's thumbprint and the peer address together — a TCP peer's
 // ephemeral port differs per connection, so the pair is a connection.
 //
@@ -1064,8 +1067,9 @@ function assertedSelectorsOf(call) {
 
 // The address the caller reached, derived from configuration rather than from
 // the call. grpc-js tells a handler about the PEER and not about the local end,
-// and there is exactly one Workload API socket and one Workload API port — so
-// the transport settles which of the two it was. Deriving it beats reading it:
+// and there is exactly one Workload API socket and one Workload API port per
+// realm — read here in the ambient realm the listener entered — so the
+// transport settles which of the two it was. Deriving it beats reading it:
 // there is nothing to read.
 function endpointFor(surface, transport) {
   log.debug("Entering endpointFor().");

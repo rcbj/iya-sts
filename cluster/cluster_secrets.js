@@ -9,11 +9,11 @@
 // key a form's token is MACed with, the key ACME's Replay-Nonce is MACed with,
 // and the SSF receiver's secret. (The DPoP server nonce, which #46 lists beside
 // them, is not a key: it is a persisted store of issued nonces, and the read
-// barrier is what makes a nonce issued on one node current on the next.) Per process
-// that is fine and per container it is a service that refuses its own forms: a
-// form drawn by node A and posted to node B carries a token B cannot verify, and
-// without sticky sessions that is (N-1)/N of every console form. It never
-// converges, because nothing is wrong with either copy.
+// barrier is what makes a nonce issued on one node current on the next.) Per
+// process that is fine and per container it is a service that refuses its own
+// forms: a form drawn by node A and posted to node B carries a token B cannot
+// verify, and without sticky sessions that is (N-1)/N of every console form.
+// It never converges, because nothing is wrong with either copy.
 //
 // So each is DECLARED here, generated once for the whole store, and read by
 // every process before it serves: `start()` offers a fresh value, the store

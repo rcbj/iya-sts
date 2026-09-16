@@ -1,16 +1,19 @@
+// @ts-check
 'use strict';
 //
 // File: pki.js
 //
 // ===========================================================================
-// A CERTIFICATE AUTHORITY THIS SERVICE MAINTAINS, PER TRUST REALM.
+// A CERTIFICATE AUTHORITY THIS SERVICE MAINTAINS: ONE ROOT, AN INTERMEDIATE
+// PER TRUST REALM (since 2026-09-11 — see THE SHAPE OF THE HIERARCHY below).
 //
-// **WHAT IT IS FOR, IN ONE SENTENCE**: RFC 7521 and RFC 7523 let an application
-// authenticate with a signed assertion instead of a shared secret, and a
-// signing key that nobody vouched for is a key an operator has to move by hand.
-// This is the other half — a Root CA, an Intermediate CA and an Issuing CA that
-// this service builds and keeps, and a signing key pair per application issued
-// from the bottom of it.
+// **WHAT IT WAS FOR FIRST, IN ONE SENTENCE**: RFC 7521 and RFC 7523 let an
+// application authenticate with a signed assertion instead of a shared secret,
+// and a signing key that nobody vouched for is a key an operator has to move
+// by hand. This was the other half — a Root CA, an Intermediate CA and an
+// Issuing CA that this service builds and keeps, and a signing key pair per
+// application issued from the bottom of it. Every key pair this service
+// generates is a leaf of it now (the use cases below).
 //
 // ---------------------------------------------------------------------------
 // THREE TIERS, BUILT IN ONE ACT, AND THAT IS NOT LAZINESS.
@@ -48,12 +51,11 @@
 // a mock is disposable and its credentials are meant to die with it. A page
 // that promised otherwise would be promising on behalf of a mode it is not in.
 //
-// **AND IT IS PER REALM.** A trust realm is a logical identity service with its
-// own signing key, its own sessions and its own applications; a CA shared
-// across realms would be one authority vouching for several services, which is
-// the one thing a realm boundary exists to prevent. `common/realms.js` argues
-// the general rule; this is one more store obeying it, declared per realm AT
-// ITS DECLARATION as rule 2 of the realm design requires.
+// **AND THE ROW IS PER REALM**, declared per realm AT ITS DECLARATION as rule 2
+// of the realm design requires (`common/realms.js`). The AUTHORITY is not: the
+// Root is shared and the realm boundary is each realm's own Intermediate —
+// THE SHAPE OF THE HIERARCHY below records the reversal of the sentence that
+// stood here.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS HANDED OUT AND WHAT NEVER IS.
@@ -66,8 +68,10 @@
 // signing key" and the second one unreadable.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto`,
-// `keystore`, `realms` and the two vendored PKI modules — none of which
-// requires it back — so it is a LEAF and anything here may require it.
+// `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs`
+// and four vendored modules (`x509`, `key_material`, `pqc_x509`, `pqc`) —
+// none of which requires it back — so it is a LEAF and anything here may
+// require it.
 // ===========================================================================
 
 // A LOGGER OF ITS OWN rather than helpers.js's, for `keystore.js`'s reason one
@@ -159,12 +163,14 @@ const TIER_IDS = TIERS.map(function (one) { return one.id; });
 //
 //        Root CA                          ONE, service-wide
 //        ├── Intermediate — process       for what belongs to no realm
-//        │    ├── Issuing: TLS
-//        │    └── Issuing: SPIFFE
+//        │    └── Issuing: TLS
 //        ├── Intermediate — realm ""      the default realm
 //        │    ├── Issuing: JOSE signing
 //        │    ├── Issuing: XML signing
-//        │    └── Issuing: application assertions
+//        │    ├── Issuing: application assertions
+//        │    └── …SPIFFE, remote PEP TLS, ACME, EST, SCEP, TLS client
+//        │         (USE_CASES below; SPIFFE moved here from the process
+//        │         branch, and the other five arrived on 2026-09-13)
 //        └── Intermediate — realm acme    …and one per realm, unique
 //
 // **THE BOUNDARY MOVED DOWN A TIER AND IT HAD TO BE MOVED IN CODE AS WELL.**
@@ -1123,7 +1129,8 @@ async function oneBuildInTheCluster(scopeId, tier, existing, build, options) {
 // releases its place; the next caller runs regardless, because a failed build
 // is not a reason to fail the one behind it. And it is per PROCESS: two
 // processes of one service are kept from building the same realm's branch by
-// the realm watcher's rule about replicated realms, below, not by this.
+// the realm watcher's rule about replicated realms, below, and two NODES by
+// `oneBuildInTheCluster()` above (2026-09-14) — not by this.
 // ---------------------------------------------------------------------------
 const scopeBuilds = new Map();   // scope id -> the tail of that scope's queue
 
@@ -1570,7 +1577,7 @@ function describeChain(chain) {
     issuedCount: chain.issuedCount || 0,
     persisted: keystore.persists(),
     tiers: (chain.tiers || []).map(function (one, index) {
-      const tier = TIERS[index] || {};
+      const tier = /** @type {any} */ (TIERS[index] || {});
       return {
         tier: one.tier,
         label: one.label,
@@ -2020,7 +2027,8 @@ async function issueSigningKeyPair(realmId, opts) {
   // `x5c` is the certificate chain in the JWK itself (RFC 7517 section 4.7):
   // base64 DER, leaf first, NOT base64url. A client that registers this JWKS
   // therefore registers the chain as well, which is what lets `client_auth.js`
-  // check a path to this realm's Root instead of trusting a bare public key.
+  // check a path to the service Root through this realm's Intermediate
+  // (`verifyLeaf()`) instead of trusting a bare public key.
   // **NO `slice()` HERE — `chainPemFor()` DOES NOT INCLUDE THE LEAF.** It
   // answers the Issuing CA and the Intermediate, leaf-first order without the
   // leaf, so dropping its first member drops the ISSUING CA — and an `x5c`
@@ -2243,14 +2251,17 @@ function signerSentence(problem, subject) {
 }
 
 // ---------------------------------------------------------------------------
-// DOES THIS CERTIFICATE CHAIN TO THIS REALM'S ROOT?
+// DOES THIS CERTIFICATE CHAIN TO THIS SERVICE'S ROOT, THROUGH THIS REALM'S
+// INTERMEDIATE?
 //
 // **THIS IS A REAL PATH CHECK AND IT IS THE ONE THING IN THIS MODULE A SECURITY
-// CLAIM RESTS ON.** `oauth-oidc/client_auth.js` calls it when a client
-// authenticates with an assertion whose `x5c` this service is asked to believe,
-// and the answer decides whether a signature counts. So it verifies every link
-// — the signature, the issuer name, the validity window — and it refuses a
-// chain that ends anywhere but this realm's Root.
+// CLAIM RESTS ON.** `oauth-oidc/assertion_grant.js` calls it (for
+// `client_auth.js`'s client assertions and the JWT bearer grant) when an
+// assertion's `x5c` is one this service is asked to believe, and the answer
+// decides whether a signature counts. So it verifies every link — the
+// signature, the issuer name, the validity window — and it refuses a chain
+// that ends anywhere but the service Root or that does not pass through this
+// realm's own Intermediate (the realm boundary, below).
 //
 // **WHAT IT DOES NOT DO IS CONSULT A REVOCATION LIST**, and since 2026-09-11
 // that sentence is narrower than it was and more important. It used to read
@@ -4083,8 +4094,11 @@ function forgetCertificate(scopeId, useCaseId, slot) {
 // `issueTlsServerKeyPair()`.
 //
 // **THE ONE DOOR IN THIS MODULE THAT HANDS A SERVER PRIVATE KEY OUTSIDE THIS
-// PROCESS.** Every other `serverAuth` certificate here is the listener's own,
-// certified over a key that never leaves `tls/tls_server.js`. This one is for
+// PROCESS.** Every other `serverAuth` certificate here is either the
+// listener's own, certified over a key that never leaves `tls/tls_server.js`,
+// or an enrolled one (`issueEnrolled()`) over a key this module is handed
+// public — EST's `/serverkeygen` generates its pair in
+// `common/cert_enrollment.js`, not here. This one is for
 // a remote XACML PEP's HTTPS listener (`pep-tls`, and `xacml/xacml_pep_tls.js`
 // is the caller): the key pair is GENERATED here, certified from the use
 // case's Issuing CA, handed back ONCE, and forgotten — `certify()` records the
@@ -5802,14 +5816,16 @@ async function pinKeyPair(scopeId, useCaseId, slot, material) {
 //
 // The signing keys are handed to `certifyKeySet()` by the one module that owns
 // them. Everything else this service generates belongs to a module of its own
-// — the TLS listener certificate, and whatever comes after it — and those
-// modules REGISTER what they have here rather than being reached into.
+// — the TLS server certificates `tls/tls_server.js` makes, and whatever comes
+// after them — and those modules REGISTER what they have here rather than
+// being reached into.
 //
 // **IT IS A REGISTRATION AND NOT A REQUIRE, and rule 3e's test is why.** A
 // `require('../tls/tls_server')` from this module would drag every `/tls`
 // route into the router at whatever position this file is first required from
-// — which is `common/service_state.js`, above everything. This file is a LEAF
-// and must stay one.
+// — which is inside `common/app.js`'s own requires (through
+// `revocation_status.js`), above everything. This file is a LEAF and must
+// stay one.
 //
 // A registration carries a `publicKeyPem` FUNCTION rather than a string,
 // because the material it names may not exist when the module registers: the
@@ -5837,8 +5853,8 @@ function registerCertifiable(spec) {
 }
 
 // Certify everything registered. Called from `start()`, before anything binds,
-// which is what lets the TLS listener open with a certificate that already
-// chains to this service's Root rather than swapping one in afterwards.
+// which is what lets the main port and LDAPS open with a certificate that
+// already chains to this service's Root rather than swapping one in afterwards.
 //
 // `opts.repairBranch === false` (2026-09-13) is handed to `certify()` for
 // every registration: a branch that no longer chains to the Root is then left
@@ -5914,8 +5930,8 @@ async function certifyRegistered(opts) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT `server.js` AND `common/service_state.js` CALL, after `keystore.start()`
-// and before anything binds.
+// WHAT `common/service_state.js` CALLS (for `server.js` and for a request
+// worker alike), after `keystore.start()` and before anything binds.
 //
 // **IT IS NEVER FATAL.** `persistence.start()` is the one place in this
 // repository where a failure to open something stops the process, and its own
@@ -5979,7 +5995,8 @@ async function start(opts) {
     log.debug('Leaving pki.start(). No Root.');
     return { ok: false, built: false, errors: rooted.errors };
   }
-  // The process branch, for what belongs to no realm: TLS and SPIFFE.
+  // The process branch, for what belongs to no realm: TLS. (SPIFFE was here
+  // too until its authority became realm-scoped.)
   const process = await ensureScope(PROCESS_SCOPE);
   if (!process.ok) {
     log.error(errorCodes.tag('STS-PKI-0049') + 'pki: the process branch ' +
@@ -6021,7 +6038,7 @@ async function start(opts) {
   // front of every in-process caller of helpers — the parent project's
   // Kerberos jobs among them.
   // -------------------------------------------------------------------------
-  // Everything a module registered — the TLS listener certificate, today.
+  // Everything a module registered — the TLS server certificates, today.
   // Before the listener binds, so the socket opens with a certificate that
   // already chains rather than one swapped in afterwards.
   const registered = await certifyRegistered();
@@ -6070,8 +6087,8 @@ async function start(opts) {
   // AND PUBLISH A CRL FOR EVERY AUTHORITY, INTO THE DIRECTORY, ONCE.
   //
   // Every certificate above names an `ldap://` distribution
-  // point as well as an `http://` one, and a client that follows either of the
-  // first two reaches the embedded directory — where, until this line ran,
+  // point as well as an `http://` one, and a client that follows the `ldap://`
+  // one reaches the embedded directory — where, until this line ran,
   // there was NO ENTRY AT ALL. An address published inside a certificate that
   // answers `LDAP_NO_SUCH_OBJECT` is worse than one that was never named: a
   // client configured to require a fresh CRL refuses the certificate, and the
@@ -6504,8 +6521,8 @@ module.exports = {
   issueTlsServerKeyPair: issueTlsServerKeyPair,
   TLS_SERVER_KEY_ALGS: TLS_SERVER_KEY_ALGS,
   DEFAULT_TLS_SERVER_KEY_ALG: DEFAULT_TLS_SERVER_KEY_ALG,
-  // Startup. `server.js` and `common/service_state.js` call it after
-  // `keystore.start()` and before anything binds.
+  // Startup. `common/service_state.js` calls it, for `server.js` and a
+  // request worker, after `keystore.start()` and before anything binds.
   start: start,
   SUBJECT_KINDS: SUBJECT_KINDS,
   SUBJECT_KIND_IDS: SUBJECT_KIND_IDS,

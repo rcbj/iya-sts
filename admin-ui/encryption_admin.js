@@ -9,8 +9,8 @@
 // AND HOW MUCH OF IT HAS HAPPENED.**
 //
 // ---------------------------------------------------------------------------
-// WHY IT IS IN MONITORING AND NOT UNDER PROTOCOLS, AND WHY IT IS NOT A SECTION
-// OF `/admin/crypto-metadata`.
+// WHY IT IS IN MONITORING, AND WHY IT IS NOT A SECTION OF
+// `/admin/crypto-metadata`.
 //
 // `admin-ui/CLAUDE.md`'s filing rule is that a page goes where the QUESTION it
 // answers goes, rather than where the module that draws it lives. Two pages
@@ -20,25 +20,25 @@
 //     signs, verifies, encrypts or decrypts* — the algorithms, per protocol
 //     family, read out of the module that performs each. It is CONFIGURATION,
 //     it is the same on a service that has been running for a month and one
-//     that started a second ago, and it is filed under Protocols with the rest
-//     of what this service IS.
+//     that started a second ago, and it is filed under Server configuration
+//     with the rest of what this service IS.
 //   * **`/admin/keys`** answers *what signing keys does this realm hold* —
 //     one realm, the public halves, the residency policy.
 //
 // This one answers **what has been encrypted AT REST, and how often**, which
 // is a question about traffic: the numbers go up while somebody watches. That
 // is the same argument `/admin/xacml/monitor` and `/admin/scim/monitor` are
-// each filed under Monitoring on, made a third time rather than cited —
-// `console-section-by-question` is the rule and this is an instance of it.
+// each filed under Monitoring on, made a third time rather than cited — the
+// filing rule above is the rule and this is an instance of it.
 //
 // **IT IS ONE PAGE AND NOT A THIRD COPY OF ANYTHING.** Every figure on it is
 // read from the module that owns the fact: the ALGORITHM from
 // `crypto.js`'s `KEK_PARAMETERS` (the same rule `crypto_metadata.js` follows —
 // an algorithm this service performs must be in a table there rather than in a
 // literal on a page), the KEY from `secrets.describe()`, the STATE from
-// `keystore.report()`, the STORE from `persistence.describe()`, and the COUNTS
-// from `crypto.js`'s own tally. Nothing here computes a second opinion about
-// any of them.
+// `keystore.report()`, the STORE from `persistence.activeMode()`, and the
+// COUNTS from `crypto.js`'s own tally. Nothing here computes a second opinion
+// about any of them.
 //
 // ---------------------------------------------------------------------------
 // IT DRAWS NO CIPHERTEXT AND NO PLAINTEXT, AND THAT IS A RULE RATHER THAN AN
@@ -84,11 +84,11 @@ const minted = require('../persistence/persistence_minted');
 // It is kept honest in two ways rather than by care. The `label` on each row
 // is the label the CALL SITE passes to `keystore.seal()`, so a row whose
 // label never appears in the accounting is a row describing something that
-// never happens — and `tests/encryption_page.js` asserts that every label the
-// tally can produce has a row here and the reverse. And the NOT-SEALED half is
-// listed beside the sealed half on the same table, because the interesting
-// question about a page like this is almost always *is X encrypted* and a
-// table that lists only the yeses answers it by silence.
+// never happens — and `tests/encryption_report.js` asserts that every label
+// the tally can produce has a row here and the reverse. And the NOT-SEALED
+// half is listed beside the sealed half on the same table, because the
+// interesting question about a page like this is almost always *is X
+// encrypted* and a table that lists only the yeses answers it by silence.
 // ---------------------------------------------------------------------------
 const DATA_CLASSES = [
   {
@@ -481,11 +481,12 @@ function encryptionJson() {
 }
 
 // The store, from the module that owns it. **`activeMode()` AND NOT `mode()`,
-// which is the whole of the difference worth knowing here:** the first is the
-// SETTING and the second is what the driver actually opened, and they part
-// company exactly when it matters — a `postgres` store that would not open
-// falls back, so a page reading the setting would report that everything this
-// process mints is being sealed into a database it never reached.
+// which is the whole of the difference worth knowing here:** the first is what
+// the driver actually opened and the second is the SETTING. They part company
+// only before the configured store has opened — `activeMode()` is `memory`
+// until then, and a store that cannot open stops the service — so a page
+// reading the setting would report that everything this process mints is
+// being sealed into a database it has not reached yet.
 //
 // It is WRAPPED for the reason every other reporter on this console is: the
 // page is about encryption and the store is context, so a persistence layer
@@ -733,7 +734,7 @@ module.exports = {
   // For `mgmt-api/admin_api.js`. Rule 7 — the page and the operation read one
   // function, so the API cannot report a different number from the console.
   encryptionView: encryptionJson,
-  // For `tests/encryption_page.js`, which checks the table against the labels
+  // For `tests/encryption_report.js`, which checks the table against the labels
   // the call sites actually pass. Exported for `pki_authoring.js`'s reason: a
   // class described here and never sealed, or sealed and never described, is
   // an error nothing else in this service can see.

@@ -41,8 +41,8 @@ const config = require('../common/config');
 // code.
 const errorCodes = require('../common/error_codes');
 // The custom attributes an admin configured, and the register every assertion
-// is counted in. A library like dpop.js: it registers no route and requires
-// only helpers.js, so it cannot join a cycle with this file.
+// is counted in. A library (rule 3b): it registers no route, and nothing it
+// requires requires this file, so it cannot join a cycle with this file.
 const stats = require('../common/admin_stats');
 // The configured signature and canonicalization algorithms, and the one reading
 // of how a session authenticated. Both LIBRARIES in this directory that
@@ -50,7 +50,8 @@ const stats = require('../common/admin_stats');
 // cycle with this file. See each one's header.
 const documentSettings = require('./document_settings');
 const authnContext = require('./authn_context');
-// Sign a SAML assertion enveloped (signature after Issuer), like api/server.js.
+// Sign a SAML assertion enveloped (signature after Issuer), like the parent
+// project's api/server.js.
 function signAssertion(xml) {
   log.debug("Entering signAssertion().");
   logArtifact('SAML assertion', 'before signing', xml);
@@ -336,9 +337,9 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
 // lives in.
 // ---------------------------------------------------------------------------
 // The artifact log is INJECTED HERE rather than asked of every caller, and
-// that is what makes this a move with no behaviour change: at the default
-// `debug` level the before-and-after of an encryption is printed exactly as it
-// was, and none of the three call sites had to learn about a new parameter.
+// that is what makes this a move with no behaviour change: at the `debug` log
+// level (no longer the default; `STS_LOG_LEVEL=debug` asks for it) the
+// before-and-after of an encryption is printed exactly as it was, and none of the three call sites had to learn about a new parameter.
 // `common/crypto.js` cannot reach `logArtifact()` itself — helpers.js requires
 // that file, so requiring it back would close a cycle.
 function encryptElement(xml, certPem, opts) {

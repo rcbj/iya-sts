@@ -38,8 +38,8 @@
 
 const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// config.js and error_codes.js and nothing else here, so it cannot join a
+// cycle and it registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const jwt = require('jsonwebtoken');
 // One signer, one verifier and one JWE for the whole service since 2026-08-27.
@@ -323,7 +323,7 @@ function vciMetadata(req) {
     meta.credential_configurations_supported[id] = entry;
   });
 
-  // --- who this issuer says it is (both extensions; see the DID section) -----
+  // --- who this issuer says it is (both extensions; see vc_did.js) ----------
   //
   // OID4VCI registers neither of these members. They are here because without
   // them a wallet that receives a credential whose iss is a did:web has been
@@ -990,9 +990,11 @@ function subjectClaimsFrom(accessToken, configId) {
   //
   // What is being recorded is a credential being ACCEPTED and not a sign-on,
   // and the method and note say so rather than leaving a reader of /admin/users
-  // to assume otherwise — the same distinction tls_server.js draws for a
-  // verified client certificate. Nobody authenticated here; an access token was
-  // presented and this issuer does not verify tokens it did not issue.
+  // to assume otherwise. (tls_server.js drew the same line for a verified
+  // client certificate until 2026-09-05, when a verified certificate became a
+  // sign-on — `GET /tls/sign-in` since 2026-09-16; nothing here did.) Nobody
+  // authenticated here; an access token was presented and this issuer does not
+  // verify tokens it did not issue.
   //
   // HERE rather than at the two endpoints, because this function is the single
   // point that decides who a credential is about: it is called once per
@@ -1089,12 +1091,6 @@ function requestedClaimPaths(accessToken, configId) {
 }
 
 // ---------------------------------------------------------------------------
-// Which Credential Dataset identifiers an access token was granted.
-//
-// They were put into the token when it was issued, and the token is signed by
-// this service, so reading them back is a verification — a wallet cannot award
-// itself an identifier by editing anything.
-// ---------------------------------------------------------------------------
 // The nonces a set of proofs quoted, spent together: one Credential Request,
 // one c_nonce, however many proofs.
 //
@@ -1175,6 +1171,13 @@ async function spendProofNonces(proofJwts) {
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// Which Credential Dataset identifiers an access token was granted.
+//
+// They were put into the token when it was issued, and the token is signed by
+// this service, so reading them back is a verification — a wallet cannot award
+// itself an identifier by editing anything.
+// ---------------------------------------------------------------------------
 function grantedIdentifiers(accessToken) {
   log.debug("Entering grantedIdentifiers().");
   let claims;
@@ -1284,8 +1287,8 @@ function requestEncValues() {
   return encValuesFrom('oid4vci.requestEncryptionEncValues');
 }
 
-// Only an explicit "true" turns the requirement on: a mock that demanded
-// encryption because of a typo in an environment variable would fail every
+// `oid4vci.requestEncryptionRequired`, a boolean that is OFF by default: a
+// mock that demanded encryption unless told otherwise would fail every
 // existing test with an error about something the test never mentioned.
 function vciRequestEncryptionRequired() {
   log.debug("Entering vciRequestEncryptionRequired().");
@@ -1375,11 +1378,6 @@ function decryptJweRequest(compact) {
   return body;
 }
 
-// What either encrypted-capable endpoint does with its request body.
-//
-// Returns {body} or {error}. The caller answers; this decides. Both endpoints
-// go through it so the credential and deferred paths cannot drift — section 10
-// applies identically to each, and the deferred one is the easy one to forget.
 // How the most recent Credential Request actually arrived, readable at the
 // non-spec GET /oid4vci/last_request.
 //
@@ -1425,6 +1423,11 @@ function recordLastCredentialRequest(record) {
   log.debug("Leaving recordLastCredentialRequest().");
 }
 
+// What either encrypted-capable endpoint does with its request body.
+//
+// Returns {body} or {error}. The caller answers; this decides. Both endpoints
+// go through it so the credential and deferred paths cannot drift — section 10
+// applies identically to each, and the deferred one is the easy one to forget.
 function readPossiblyEncryptedRequest(req) {
   log.debug("Entering readPossiblyEncryptedRequest().");
   const contentType = String(req.get('content-type') || '').toLowerCase();
@@ -1443,7 +1446,7 @@ function readPossiblyEncryptedRequest(req) {
           'Credential Request must be a JWE sent as application/jwt.'
       };
     }
-    // Every content type arrives as raw text here (the body parser above takes
+    // Every content type arrives as raw text here (app.js's body parser takes
     // all of them), so the plain path still has to parse its own JSON.
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') :

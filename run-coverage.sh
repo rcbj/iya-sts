@@ -32,9 +32,10 @@
 #     protocol  — a throwaway copy of THIS WORKING TREE (of the tests IMAGE
 #                 built from it, in a containerized run — which is the same
 #                 tree one `COPY . ./` later), driven over HTTP by
-#                 the fourteen jobs in tests/vendored/ (nine vendored from the
-#                 parent, five this repository's own). This is where
-#                 the sixteen protocol families are actually exercised, and it
+#                 the jobs in tests/vendored/ (MANIFEST.js is the count: some
+#                 vendored from the parent, the `local: true` ones this
+#                 repository's own). This is where every protocol family is
+#                 actually exercised, and it
 #                 is ON BY DEFAULT since 2026-08-28. It used to need
 #                 --protocol, on the argument that it wanted the parent
 #                 checkout beside this one — an argument that expired the same
@@ -220,9 +221,10 @@ unset STS_TEST_SERVICE_URL
 # `STS_LOG_LEVEL` is a setting of this service (common/config.js) and an
 # environment variable OUTRANKS whatever appconfig file CONFIG_FILE selects, so
 # this one name turns the level down without either file being edited. The
-# service's own default is `debug` — every request, every response and every
-# artifact both before and after signing — which is the point of a mock and is
-# what a failing job is read from.
+# service's own default was `debug` until 2026-09-12 — every request, every
+# response and every artifact both before and after signing, which is what a
+# failing job is read from — and is `info` in every appconfig file since,
+# because every function now logs its entry and exit at debug.
 #
 # Under coverage it is also pure cost twice over: it is about half of this
 # service's CPU, and every one of those lines goes through the same log calls
@@ -238,7 +240,7 @@ unset STS_TEST_SERVICE_URL
 # service's own account of what it did is the thing being read.
 #
 # THE APPCONFIG FILE IS THE OTHER HALF OF THE LEVEL and this block cannot set
-# it: run-report.js starts the service in process here, and the six VENDORED
+# it: run-report.js starts the service in process here, and the VENDORED
 # modules under common/vendored/ each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel`, never seeing STS_LOG_LEVEL. So
 # the file is chosen the same way ./local-run-tests.sh chooses it, and by the
@@ -436,7 +438,7 @@ else
     # exist rather than being inferred.
     -e STS_LDAP_URL=
     # AND THE GNAP PUSH HOST, THE FOURTH OF THE SAME KIND (2026-09-12): the
-    # compose file names `tests`, the runner's name on the two-container
+    # compose file names `tests`, the runner's name on the compose stack's
     # bridge. Here the service is a child of this container, so `localhost`
     # — the job's own default — is where it has to dial.
     -e GNAP_PUSH_HOST=

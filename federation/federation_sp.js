@@ -54,12 +54,13 @@
 //    would have been the second store this repository refuses everywhere else,
 //    and it would have been the one `/admin/users` could not see.
 //
-//    The consequence worth stating: a federated sign-in produces a session with
-//    `amr` naming what the PARTNER said it did, not what this service did —
-//    this service did nothing. Where the partner said nothing, the amr is
-//    `["federated"]`, which is not an RFC 8176 value and deliberately is not
-//    one: inventing `pwd` because a partner probably used a password would put
-//    a factor in a token that nobody performed.
+//    The consequence worth stating: a federated sign-in produces a session
+//    whose `amr` is `federated` FIRST — the one thing this service did, which
+//    was verify a partner's signature — followed by whatever the PARTNER said
+//    it did (since 2026-09-12; see federatedAmr()). Where the partner said
+//    nothing, the amr is `["federated"]`, which is not an RFC 8176 value and
+//    deliberately is not one: inventing `pwd` because a partner probably used
+//    a password would put a factor in a token that nobody performed.
 //
 // 2. **ONE PATH RECEIVES ALL FIVE PROTOCOLS, and it is
 //    `/federation/acs/{id}`.** A SAML assertion consumer service, a
@@ -143,8 +144,9 @@ const errorCodes = require('./../common/error_codes');
 // `signerStillAccepted()`.
 const revocationStatus = require('./../common/revocation_status');
 const audit = require('./../common/audit');
-// For the context store below only. `realms.js` requires config.js and nothing
-// else here, so it registers no route and cannot join a cycle — rule 3m.
+// For the context store below only. `realms.js` requires config.js and
+// error_codes.js and nothing else here, so it registers no route and cannot
+// join a cycle — rule 3m.
 const realms = require('./../common/realms');
 // The configured XML signature algorithms, for a signed outbound AuthnRequest.
 // A leaf in saml/ that registers nothing — the same answer every SAML signer in
@@ -326,9 +328,10 @@ function enabled() {
 // posts a form (the outbound HTTP-POST binding) is a REAL form with a real
 // submit button and no script at all.
 //
-// THAT IS THE DIFFERENCE FROM THE FIVE SCRIPTED PAGES elsewhere here, and it is
-// worth the sentence so nobody adds a sixth by analogy: those five auto-submit
-// because the person has already decided and a click would be ceremony. This
+// THAT IS THE DIFFERENCE FROM THE SCRIPTED PAGES elsewhere here (the root
+// CLAUDE.md lists them), and it is worth the sentence so nobody adds another by
+// analogy: the ones that auto-submit do so because the person has already
+// decided and a click would be ceremony. This
 // one is a person LEAVING THIS SERVICE for a foreign identity provider, which
 // is exactly the moment a deliberate click is worth having — and it means the
 // federation feature adds no CSP relaxation anywhere.
@@ -827,15 +830,15 @@ function federatedAmr(partner) {
 // THE ORDER MATTERS AND IS NOT ARBITRARY:
 //
 //   1. map, so the username exists before anything is filed under it;
-//   2. `recordAuthentication()`, which is the funnel that seeds the directory
-//      entry AND carries the mapped attributes to it — a credential has been
-//      ACCEPTED by the time this line runs, which is the rule that funnel
-//      documents;
-//   3. the relationship's counters;
-//   4. the application record for the partner, so `/admin/applications` knows
+//   2. the relationship's counters;
+//   3. the application record for the partner, so `/admin/applications` knows
 //      the foreign identity provider exists;
-//   5. the session, LAST, because it is the thing that has an effect outside
-//      this process and everything above it is a record of why.
+//   4. the session, LAST, because it is the thing that has an effect outside
+//      this process and everything above it is a record of why. It goes
+//      through `authn.startSession()`, which is also where the identity
+//      funnel (`recordAuthentication()`) runs — the funnel that seeds the
+//      directory entry AND carries the mapped attributes to it; see WHAT THE
+//      FUNNEL IS TOLD below for why it is not called separately.
 // ---------------------------------------------------------------------------
 // ONE KIND FOR ALL FIVE PROTOCOLS, and it is a ROW ADDED TO `applications.js`'s
 // KINDS rather than a reuse of one that was already there.
@@ -1757,9 +1760,10 @@ function consumeSamlResponse(req, res, record, params, version) {
 //
 // `wresult` is an RSTR — a `<RequestSecurityTokenResponse>` wrapping a
 // `<RequestedSecurityToken>` wrapping an assertion which may be SAML 1.1 or
-// SAML 2.0. Which one it is decides the id attribute the signature reference
-// resolves through, and getting that wrong is the bug `wsfed.js`'s
-// `verifyAssertionSignature()` header describes.
+// SAML 2.0. Which one it is USED TO decide the id attribute the signature
+// reference resolves through, and getting that wrong is the bug `wsfed.js`'s
+// `verifyAssertionSignature()` header records; since 2026-08-27 the shared
+// verifier resolves it from the document (see verifyXmlSignature() above).
 // ---------------------------------------------------------------------------
 function consumeWsFedResponse(req, res, record, params) {
   log.debug('Entering consumeWsFedResponse().');
@@ -2559,8 +2563,8 @@ app.get(METADATA_PATH + '/:id', function (req, res) {
     'isDefault="true"/></md:SPSSODescriptor></md:EntityDescriptor>';
   logArtifact('federation service provider metadata', 'as served', xml);
   // no-store for the reason every document carrying this service's key gets it:
-  // the signing key is regenerated on every start, so a cached copy describes a
-  // key that no longer exists.
+  // in development mode the signing key is regenerated on every start, so a
+  // cached copy describes a key that no longer exists.
   res.type('application/samlmetadata+xml')
      .set('Cache-Control', 'no-store')
      .send(xml);

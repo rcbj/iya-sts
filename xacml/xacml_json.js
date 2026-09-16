@@ -13,7 +13,7 @@
 //
 // It reads a REQUEST and writes a RESPONSE, and it does not read or write
 // policies. The JSON Profile does not define a policy syntax at all: policies
-// stay XML (or ALFA, when `xacml_alfa.js` lands), and the profile covers only
+// stay XML (or ALFA, through `xacml_alfa.js`), and the profile covers only
 // the decision exchange. That surprises people who expect symmetry, so it is
 // worth saying rather than leaving them to look for the missing half.
 //

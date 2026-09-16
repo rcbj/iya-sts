@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: realm_chooser.js

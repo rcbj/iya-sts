@@ -3,8 +3,10 @@
 // File: admin.js
 //
 // ---------------------------------------------------------------------------
-// The admin console: five pages over the state admin_stats.js holds, and one
-// more — /admin/groups — over the embedded LDAP directory next door.
+// The admin console. It began as five pages over the state admin_stats.js
+// holds, and one more — /admin/groups — over the embedded LDAP directory next
+// door; the list below is those first pages, and `SECTIONS` further down is
+// the whole of it now.
 //
 //   GET  /admin           what the console is, and what it can do to this service
 //   GET  /admin/metrics   every call, every artifact, and both kinds of session
@@ -26,47 +28,53 @@
 //   POST /admin/saml-attributes   the same seven actions, on those two sets
 //
 // Every GET also answers `?format=json`, and every POST answers JSON when it
-// was sent JSON. That is not decoration: the four tests this repository still
-// owes the parent project are plain node scripts driven over HTTP with no
-// browser, and a console reachable only by clicking is a console no test can
-// assert against.
+// was sent JSON. That is not decoration: this repository's own
+// `tests/vendored/admin_api.js` and its siblings drive the console over HTTP
+// with no browser, and a console reachable only by clicking is a console no
+// test can assert against.
 //
 // **This module renders; it decides nothing.** All the state, all the caps and
 // all the rules about what a claim may be called live in admin_stats.js, so a
 // test can exercise them without going near an HTML page, and so this file
-// stays the one place the markup is. The only thing it reaches for elsewhere is
-// the browser sign-on session store, which oauth2.js owns.
+// stays the one place the markup is. It reads the browser sign-on session
+// store, which `../authn/authn.js` owns, so the metrics page can report real
+// sign-on sessions beside the ones derived from what was issued.
 //
-// **It must therefore come AFTER oauth2.js in server.js**, and that is a
-// dependency rather than a preference, the same one wsfed.js has: it reads the
-// `sessions` map oauth2.js exports so the metrics page can report real sign-on
-// sessions beside the ones derived from what was issued. The dependency is one
-// way — oauth2.js knows nothing about this module — so it is not a cycle.
+// **It must come AFTER oauth2.js in `common/protocol_stack.js`** (rule 5), and
+// that is a dependency rather than a preference: it requires
+// `../oauth-oidc/oauth2.js` for the drift report (see that require below).
+// The dependency is one way — oauth2.js knows nothing about this module — so
+// it is not a cycle.
 //
 // ---------------------------------------------------------------------------
 // THIS CONSOLE IS PROTECTED NOW, AND THE OLD PARAGRAPH IS KEPT BELOW BECAUSE
 // MOST OF IT IS STILL TRUE.
 //
 // The console gate is UNCONDITIONAL. Every page and every form under /admin
-// needs a browser sign-on session from `../authn/authn.js` and one of two roles
-// — Admin Read and Admin Write — held as two ordinary groups in the embedded
-// directory. The gate is one `app.use('/admin', ...)` further down this file
-// and the roles are `./admin_rbac.js`; both have headers of their own.
+// needs a session of the console's own — got through the OIDC code flow
+// against this service's authorization server (`common/oidc_rp.js`, since
+// 2026-09-06) — and one of two roles — Admin Read and Admin Write — held as
+// two ordinary groups in the embedded directory of the realm the person
+// signed in through (per realm since 2026-09-14, #32; admin-ui/CLAUDE.md 8d).
+// The gate is one `app.use('/admin', ...)` further down this file and the
+// roles are `./admin_rbac.js`; both have headers of their own.
 //
 // **IT IS A TURNSTILE AND NOT A LOCK, and that distinction is the same one
-// SCIM's authentication carries.** This service still checks no password
-// anywhere — the username typed at the sign-in screen simply becomes the
-// identity — so what the gate proves is that somebody TYPED a name that holds a
-// role. What it buys is what a mock is for: a client, or a person, can now be
-// driven through 302 to a sign-in screen, 401 with no session, 403 with the
-// wrong role and a role model that can be granted and revoked, none of which
-// was reachable here before.
+// SCIM's authentication carries.** In development mode this service checks no
+// password — the username typed at the sign-in screen simply becomes the
+// identity — so what the gate proves there is that somebody TYPED a name that
+// holds a role (product mode verifies the password; `common/mode.js`). What it
+// buys is what a mock is for: a client, or a person, can now be driven through
+// 302 to a sign-in screen, 401 with no session, 403 with the wrong role and a
+// role model that can be granted and revoked, none of which was reachable here
+// before.
 //
-// **AND `/admin-api` IS NOT GATED**, deliberately: it is how a test drives this
-// console, it is the way back in when nobody holds a role, and gating it would
-// have broken this repository's own `tests/vendored/admin_api.js`. So the
-// sentence below is still true of this PORT even though it is no longer true of
-// this PAGE — which is why it stays rather than being deleted:
+// **`/admin-api` WAS NOT GATED UNTIL 2026-09-09** and it is now: it takes an
+// OAuth 2.0 access token carrying `admin:read` / `admin:write`, and
+// `adminApi.authRequired=false` restores the open API
+// (`mgmt-api/CLAUDE.md`). With that switch off, the sentence below is true of
+// this PORT even though it is not true of this PAGE — which is why it stays
+// rather than being deleted:
 //
 //   anyone who can reach this port can revoke every token this service has
 //   issued and add a claim to every token it issues next. That is fine for a
@@ -75,7 +83,7 @@
 //   it will mint a token for any username asked of it. Do not put this service
 //   on a public address.
 //
-// Every page says which of the three states it is in (see gateBanner()),
+// Every page says which state the gate is in (see gateBanner()),
 // because "protected" and "protected, but nobody holds a role so anybody who
 // signs in is an administrator" are very different things to be reading a
 // console under.
@@ -409,13 +417,16 @@ const stats = require('../common/admin_stats');
 // `authn.js`. A `sessions.delete()` in this file would be the fourth way, and
 // the one that skipped the RFC 9700 refresh revocation and the audit row.
 //
-// THREE MORE THINGS COME FROM THAT MODULE NOW, and they are the whole of how
-// this console is protected: `consoleSession()` reads the cookie,
-// `beginAuthentication()` stashes the page somebody asked for and hands back
-// the URL of the sign-in screen, and `LOGIN_PATH` is where they are sent.
-// Nothing about signing in is implemented here — see the guard below — because
-// a console with a login screen of its own would be a second authentication
-// service, and this service has exactly one on purpose.
+// THREE MORE THINGS CAME FROM THAT MODULE, and until 2026-09-06 they were the
+// whole of how this console was protected: `consoleSession()` read the
+// cookie, `beginAuthentication()` stashed the page somebody asked for and
+// handed back the URL of the sign-in screen, and `LOGIN_PATH` was where they
+// were sent. The console is a relying party now (the paragraph below), so
+// `beginAuthentication()` has no caller here and `LOGIN_PATH` only names the
+// sign-in screen in a refusal. Nothing about signing in is implemented here —
+// see the guard below — because a console with a login screen of its own
+// would be a second authentication service, and this service has exactly one
+// on purpose.
 //
 // **`consoleSession()` AND NOT `sessionOf()`, AND IT IS THE ONE CALLER OF IT.**
 // The protocol reader answers out of the ambient realm's partition, which is
@@ -425,17 +436,18 @@ const stats = require('../common/admin_stats');
 // the sign-in screen — then overwrote the browser's only session cookie, so
 // clicking back landed there again.
 //
-// **IT IS THE DEFAULT REALM'S SESSION, ALWAYS**, and that is the second half of
-// a decision whose first half is in `ldap_server.js`: the embedded directory is
-// per realm since 2026-08-25, so the two console roles are groups in the
-// DEFAULT realm's `ou=groups` and nowhere else, and `admin_rbac.js`'s whole
-// directory is pinned there. If a session minted in `acme` still opened this
-// console, anybody who could create a realm could grant themselves both roles
-// inside it and walk back out into the default realm. The gate and the roster
-// have to agree about which realm decides, and they do. `authn.js`'s header
-// above `consoleSession()` argues it at length, including why this ALSO ends
-// the switcher loop rather than merely surviving it. THE RELYING PARTY
-// (2026-09-06). This console authenticates through the AUTHORIZATION CODE FLOW
+// **IT IS THE DEFAULT REALM'S SESSION, ALWAYS**, which is what ends the
+// switcher loop rather than merely surviving it — `authn.js`'s header above
+// `consoleSession()` argues it at length. This paragraph used to go on to say
+// that the two console roles are groups in the DEFAULT realm's `ou=groups`
+// and nowhere else; that stopped being true on 2026-09-14 (#32), when a realm
+// got a roster of its own, asked for the realm the person SIGNED IN THROUGH
+// and confined to that realm. The session store did not move; the roster it
+// is asked against did — `gateStateFor()` in `admin-core/admin_views.js`, and
+// admin-ui/CLAUDE.md 8d.
+//
+// THE RELYING PARTY (2026-09-06). This console authenticates through the
+// AUTHORIZATION CODE FLOW
 // against this service's own authorization server now, rather than by
 // redirecting to the sign-in screen and reading the session that screen minted.
 // `common/oidc_rp.js` runs the flow and argues the whole of it; what this file
@@ -532,16 +544,17 @@ const spMetadata = require('../saml/sp_metadata');
 //
 // **A PLAIN REQUIRE IN THE ORDINARY DIRECTION, AND NOT A SIXTH SLOT.** Rule
 // 3e's test is whether a require would close a cycle or move a route, and this
-// one does neither: `server.js` requires `saml/saml2_sso.js` at position 10a
-// and this file at 18, so that module's routes are already in the router by the
-// time this line runs, and it requires nothing from here.
+// one does neither: `common/protocol_stack.js` requires `saml/saml2_sso.js` at
+// position 10a and this file at 18, so that module's routes are already in the
+// router by the time this line runs, and it requires nothing from here.
 const saml2 = require('../saml/saml2_sso');
 // The SAML 1.1 browser profiles, for the same reason and on the same terms:
 // this page must name the endpoints and the providerID that module names,
 // because a console that derived a URL of its own would be a console telling
 // somebody to configure a path nothing serves. It is required at position 10b
-// in server.js and this file at 18, so this is a plain require in the ordinary
-// direction — not a sixth inverted slot, and rule 3e's test is why.
+// in `common/protocol_stack.js` and this file at 18, so this is a plain
+// require in the ordinary direction — not an inverted slot, and rule 3e's test
+// is why.
 const saml11 = require('../saml/saml11_sso');
 // The authorization server profiles — what each discovery document publishes.
 // A library that registers no route, so requiring it here moves nothing.
@@ -553,12 +566,13 @@ const authorizationServers = require('../oauth-oidc/authorization_servers');
 //
 // **`federation/federation_sp.js` is deliberately NOT required here**, and it
 // is the same line drawn around `spiffe_server.js` twenty lines down: that
-// module registers /federation and its four endpoints, and `server.js`
-// requires it at position 10c — BEFORE this file — so a require from here
-// would be harmless today and would silently become the reason a route moved
-// the day somebody reorders the two. What this page needs from it is the shape
-// the URLs to configure at the partner, and those come from `federation.PATHS`
-// — one copy of the strings, in the library both sides may reach, so this page
+// module registers /federation and its four endpoints, and
+// `common/protocol_stack.js` requires it at position 10c — BEFORE this file —
+// so a require from here would be harmless today and would silently become
+// the reason a route moved the day somebody reorders the two. What this page
+// needs from it is the shape of the URLs to configure at the partner, and those
+// come from `federation.PATHS` — one copy of the strings, in the library both
+// sides may reach, so this page
 // and that router cannot come to name different paths. See that constant's
 // header, where the failure it prevents is spelt out.
 const federation = require('../federation/federation');
@@ -581,13 +595,14 @@ const federationDiagram = require('./federation_diagram');
 // cannot close a cycle. `spiffe_id.js` comes with them for the server ID.
 //
 // **`spiffe_server.js` is deliberately NOT required here.** That module
-// registers the bundle endpoint and /spiffe, and server.js requires this file
-// FIRST — so a require from here would pull those routes into the express
-// router ahead of the console's own, and GET /admin/sts-metadata is built by
-// walking that router. What this page needs from it is two facts about sockets,
-// and they arrive through a reader slot instead: the same inversion
-// setDirectoryReader(), setGroupReader() and setScimReader() already use, and
-// justified by rule 3e's test in exactly the same way.
+// registers the bundle endpoint and /spiffe, and `common/protocol_stack.js`
+// requires this file FIRST — so a require from here would pull those routes
+// into the express router ahead of the console's own, and
+// GET /admin/sts-metadata is built by walking that router. What this page
+// needs from it is two facts about sockets, and they arrive through a reader
+// slot instead: the same inversion setDirectoryReader(), setGroupReader() and
+// setScimReader() already use, and justified by rule 3e's test in exactly the
+// same way.
 const spiffeCa = require('../spiffe/spiffe_ca');
 const spiffeRegistry = require('../spiffe/spiffe_registry');
 // WHO MAY CALL THE SPIRE SERVER API. A library like the two above it — it
@@ -617,7 +632,8 @@ const spiffeIdLib = require('../spiffe/spiffe_id');
 const signals = require('../ssf/ssf_receivers');
 // For the DRIFT report: the document this service would publish, to compare a
 // profile's overrides against. oauth2.js is required before admin.js in
-// server.js (rule 5), so this is a plain require in the ordinary direction.
+// `common/protocol_stack.js` (rule 5), so this is a plain require in the
+// ordinary direction.
 const oauth2 = require('../oauth-oidc/oauth2');
 // WHO ACTED ON WHOSE BEHALF. A library like the four above — it registers no
 // route — so requiring it here neither moves a route nor closes a cycle. It
@@ -691,10 +707,10 @@ const credentialGraph = require('../common/credential_graph');
 //
 // A plain require in the ordinary direction, and both tests that would force a
 // slot pass: `krb5_principals.js` registers no route (the KDC's own `/KdcProxy`
-// and `/krb5/principals` are in `krb5_kdc.js`), and server.js requires the
-// Kerberos modules BEFORE this one, so nothing here can be the reason a route
-// moved. It is the same argument the two SPIFFE libraries above are required
-// under.
+// and `/krb5/principals` are in `krb5_kdc.js`), and `common/protocol_stack.js`
+// requires the Kerberos modules BEFORE this one, so nothing here can be the
+// reason a route moved. It is the same argument the two SPIFFE libraries above
+// are required under.
 const krb5Principals = require('../kerberos/krb5_principals');
 
 // The input validator. A LEAF (rule 3): it registers no route of its own and
@@ -733,7 +749,7 @@ const MAX_WHO = 12;
 // ---------------------------------------------------------------------------
 // The page shell.
 //
-// One for all five pages, with the nav in it, so a page cannot be added without
+// One for every page, with the nav in it, so a page cannot be added without
 // a way back — which held for the SECTIONS and did not hold for the pages under
 // them until `up` existed, because the nav's answer on a drill-down was the
 // section's own tab, drawn as text. See navBar(). The CSS is inline because
@@ -741,11 +757,13 @@ const MAX_WHO = 12;
 // stylesheet as its own resource would need its own exception and would buy
 // nothing.
 //
-// There is NO SCRIPT anywhere here, and that constrains the design rather than
-// merely describing it — `script-src 'none'` is what makes the whole family of
-// reflected-content problems moot for this service, so the console does not get
-// an exception. Every control on these pages is therefore a plain form POST,
-// and every list is sorted server-side.
+// There is NO SCRIPT anywhere in this file, and that constrains the design
+// rather than merely describing it — `script-src 'none'` is what makes the
+// whole family of reflected-content problems moot for this service, so these
+// pages do not get an exception. Every control on them is therefore a plain
+// form POST, and every list is sorted server-side. (The one console page with
+// a script is `/admin/api-explorer`, drawn by `./api_explorer.js` since
+// 2026-09-09; admin-ui/CLAUDE.md argues it.)
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE NAVIGATION, WHICH IS NOW A LIST DOWN THE LEFT RATHER THAN A ROW ACROSS
@@ -862,8 +880,9 @@ const MAX_WHO = 12;
 // ONE ROW BELOW IS A PAGE THIS FILE DOES NOT DRAW. `Service metadata`
 // (`/admin/sts-metadata`) is built by `../sts_metadata.js`, which derives its
 // whole content from the live express router and therefore has to be the LAST
-// module server.js loads; it calls `respond()` for this shell. Nothing about
-// the nav knows that, and that is the point — a page here is a `path` and a
+// module `common/protocol_stack.js` loads; it calls `respond()` for this
+// shell. Nothing about the nav knows that, and that is the point — a page
+// here is a `path` and a
 // `label` whoever builds it. It was `/sts-metadata`, outside the console
 // altogether, until 2026-08-24.
 //
@@ -1725,8 +1744,9 @@ const SECTIONS = [
       // every attribute of every entry includes `oauthClientSecret` and
       // `fedClientSecret` in the clear, and it was the one surface in this
       // service printing those to anybody who could reach the port while the
-      // console next door asked for a role to show far less. `/admin-api` is
-      // still ungated and mirrors all eight, which is what a test drives.
+      // console next door asked for a role to show far less. `/admin-api`
+      // mirrors all eight, behind its access token since 2026-09-09, and that
+      // is what a test drives.
       { title: 'As the directory holds it',
         what: 'The store underneath the five pages above: every entry, every ' +
               'attribute, and the vocabulary each container uses.',
@@ -3162,8 +3182,9 @@ function navItem(item, active, up) {
 //
 // **`autofocus` is the whole mechanism and it needs no script**, which is why
 // this console can have it at all: a browser scrolls a focused element into
-// view, including scrolling the ancestor container it lives in. There is no
-// seventh scripted page here and `script-src 'none'` is untouched.
+// view, including scrolling the ancestor container it lives in. It adds no
+// scripted page to the root CLAUDE.md's list and `script-src 'none'` is
+// untouched.
 //
 // **`tabindex="-1"` is what makes it safe.** The active item is a `<span>`
 // when it is the page being drawn, and a span is not focusable without it — so
@@ -3329,9 +3350,16 @@ const OPEN_BANNER =
 
 // SAID WHEN — AND ONLY WHEN — THE SESSION BELONGS TO ANOTHER REALM.
 //
-// The console follows its reader across realms (see `sessionAnywhere()` in
-// authn.js), which is what makes the switcher a switcher rather than a
-// sign-in screen. Doing it silently would be the wrong kind of quiet: a realm
+// **NOT DRAWN SINCE 2026-09-06.** `consoleRpSession()` (admin-core/
+// admin_views.js) answers `foreign: false` always — a relying-party session
+// belongs to the surface that minted it — so `info.foreignSession` is never
+// true and this returns ''. It is kept because the banner still reads the
+// member; the text below describes the arrangement it was written for.
+//
+// The console follows its reader across realms (the function that did it,
+// `sessionAnywhere()` in authn.js, is `consoleSession()` now), which is what
+// makes the switcher a switcher rather than a sign-in screen. Doing it
+// silently would be the wrong kind of quiet: a realm
 // is a whole logical copy of this service, so a reader looking at the default
 // realm's tokens on a session minted in `acme` is one keystroke from believing
 // the two realms share the sessions as well — and the next thing they conclude
@@ -3519,9 +3547,8 @@ const SIGNOUT_PATH = '/admin/signout';
 //
 // **IT IS THE DEFAULT REALM'S PORTAL AND NOT THE ONE BEING READ, WHICH IS THE
 // WHOLE OF THE DECISION HERE.** The console's session is the DEFAULT realm's
-// whichever realm the page was reached in — see `consoleRpSession()`, and the
-// gate's rule that the role roster lives in one realm — while `/portal` runs
-// in the AMBIENT one. So a link to `/portal` from a page read at
+// whichever realm the page was reached in — see `consoleRpSession()` — while
+// `/portal` runs in the AMBIENT one. So a link to `/portal` from a page read at
 // `/realm/acme/admin` would be rewritten to `/realm/acme/portal` by app.js's
 // realm rewrite and would land this person in a portal where they are nobody:
 // the flow would run in `acme`, meet no sign-on session, and ask them to sign
@@ -3532,12 +3559,22 @@ const SIGNOUT_PATH = '/admin/signout';
 // ABSOLUTE URL rather than a root-relative one. That is not cosmetic either:
 // the rewrite matches `href="/` and leaves `https://…` alone, so an absolute
 // URL is the one form that cannot be prefixed again on the way out.
+//
+// **SINCE #32 THAT REALM IS THE ONE THE PERSON SIGNED IN THROUGH** (fixed
+// 2026-09-16). A realm's own administrator runs the console's flow in their
+// realm, so their sign-on session — and their account — is there, and the
+// default realm's portal was one where they were nobody: the very outcome
+// the paragraph above describes. The link now goes to the portal of the
+// gate's `identityRealm`, which is the default realm for a service
+// administrator and so the same link as before for them.
 const PORTAL_PATH = '/portal';
 
-function portalHref(req) {
+function portalHref(req, gate) {
   log.debug("Entering portalHref().");
-  log.debug("Leaving portalHref().");
-  return realmRoot(req) + PORTAL_PATH;
+  const home = realms.get((gate && gate.identityRealm) || realms.DEFAULT_ID) ||
+               realms.get(realms.DEFAULT_ID);
+  log.debug("Leaving portalHref(). realm=" + (home && home.id));
+  return realmRoot(req) + realms.prefixOf(home) + PORTAL_PATH;
 }
 
 // The base URL with the CURRENT realm's prefix taken back off, so that what is
@@ -3720,13 +3757,13 @@ function userMenu(req, gate) {
     '<div class="usermenupanel">' +
     '<p class="usermenuwho">Signed in as <strong>' + esc(gate.username) +
     '</strong></p>' +
-    '<a href="' + esc(portalHref(req)) + '" title="' +
+    '<a href="' + esc(portalHref(req, gate)) + '" title="' +
     esc('Your own account in the user portal — your password, your ' +
         'authenticator app, your security keys and the applications you can ' +
         'be signed in to. It is a different application from this console ' +
         'and it signs you in with the session you already hold, so nothing ' +
-        'is typed again. The link is to the DEFAULT realm\'s portal, because ' +
-        'that is the realm this console\'s session belongs to whichever ' +
+        'is typed again. The link is to the portal of the realm you signed ' +
+        'in through, because that is where your account is, whichever ' +
         'realm you are reading.') + '">My account</a>' +
     signOutControl(gate) +
     '</div></details>';
@@ -4682,8 +4719,9 @@ function page(title, active, inner, up, gate, req) {
     //
     // `/admin/sts-metadata` is built by `../sts_metadata.js` — it derives its
     // whole content from the live express router, which is why it is the last
-    // module server.js loads — but it is drawn by page() like every other
-    // console page, and page() emits the ONLY <style> this console has. A
+    // module `common/protocol_stack.js` loads — but it is drawn by page() like
+    // every other console page, and page() emits the ONLY <style> this
+    // console has. A
     // <style> of its own would have to sit inside <body>, which browsers accept
     // and no validator does, and there would then be two stylesheets to keep in
     // step. So its classes live here, the way .tile's and .state-valid's do: a
@@ -4703,8 +4741,8 @@ function page(title, active, inner, up, gate, req) {
     'td.p{width:22%}td.n{width:16%}td.s{width:14%}' +
     'td.p a{text-decoration:none}td.p a:hover code{text-decoration:underline}' +
     // A LINK THAT LOOKS LIKE A BUTTON, which is not decoration here: the
-    // download control has to be an <a download> — this service serves no
-    // script anywhere, so nothing else can hand a browser a file — and a
+    // download control has to be an <a download> — these pages run no
+    // script, so nothing else can hand a browser a file — and a
     // control that saves a document should not read as a sentence.
     'a.btn{display:inline-block;padding:5px 10px;border-radius:5px;' +
     'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.8em;' +
@@ -4751,8 +4789,7 @@ function page(title, active, inner, up, gate, req) {
     'table.key td.art{width:5.5rem;text-align:center;vertical-align:middle;' +
     'background:#fff}' +
     'table.key td.art svg{vertical-align:middle}' +
-        // The narrow case. One breakpoint and no more: below it the sidebar
-        // stops
+    // The narrow case. One breakpoint and no more: below it the sidebar stops
     // being sticky and sits above the page as an ordinary block, which is what
     // flex-wrap has already done to it by then — the rule only undoes the
     // stickiness, which on a full-width block would pin the whole nav to the
@@ -4865,7 +4902,11 @@ function page(title, active, inner, up, gate, req) {
     // The one sentence drawn at the foot of EVERY page in this console, which
     // is why it is the sentence most worth keeping true. It said "everything
     // here is held in memory" for the whole life of this service and that
-    // stopped being true on 2026-08-27 for exactly three things.
+    // stopped being true on 2026-08-27 for exactly three things. It is less
+    // true again since 2026-09-06: in product mode on postgres what this
+    // service MINTS persists too, and product mode keeps its signing keys
+    // (persistence/CLAUDE.md, common/CLAUDE.md) — which the sentence below
+    // does not yet say.
     '<div>' + (persistence.status().enabled
       ? 'The embedded directory, the trust realms and the settings changed ' +
         'here are written down (<a ' +
@@ -4927,6 +4968,28 @@ function consoleSignOn(req) {
   return consoleSession(req);
 }
 
+// ---------------------------------------------------------------------------
+// THE CSRF TOKEN GOES INTO EVERY POST FORM THIS SHELL DRAWS (2026-09-06).
+// OWASP A01/A08.
+//
+// **AT THE SHELL AND NOT AT EACH FORM, DELIBERATELY.** This console builds
+// something like a hundred and forty forms as inline strings across sixty
+// pages, and a scheme that required each author to remember a hidden field is a
+// scheme that is one page away from being incomplete for ever — silently, since
+// a missing token looks exactly like a page that works. Adding it HERE means a
+// page written tomorrow is protected by having been drawn at all.
+//
+// It is a string rewrite, which is the part worth being uncomfortable about,
+// and it is narrow on purpose: it matches the opening tag of a form whose
+// method is post and inserts one input directly after it. It cannot match
+// anything else, because `<form` with `method="post"` is not a sequence that
+// occurs in prose here — and if it ever did, the worst outcome is a stray
+// hidden input in a paragraph rather than a missing control.
+//
+// **A PAGE DRAWN FOR SOMEBODY WITH NO SESSION GETS NO TOKEN AND NEEDS NONE**:
+// `checkCsrf()` passes a request with no session, because there is nothing to
+// forge on behalf of an anonymous caller. See common/websecurity.js.
+// ---------------------------------------------------------------------------
 function withCsrf(req, html) {
   log.debug("Entering withCsrf().");
   const session = consoleRpSession(req);
@@ -5029,6 +5092,12 @@ function protocolEndpointDrift() {
   return drift;
 }
 
+// Both response shapes for a page, chosen by ?format=json. `no-store` on all of
+// them: they describe live state, and a cached metrics page is a wrong one.
+// `up`, when given, is what upTo() returned for the section this page hangs
+// under. Only a drill-down passes it; a section's own list page does not, and
+// the JSON answer ignores it either way — a way back up is a property of a page
+// a person is reading, and a caller of ?format=json has the URL it asked for.
 function respond(req, res, json, title, active, html, up) {
   log.debug("Entering respond(). title=" + title);
   res.set('Cache-Control', 'no-store');
@@ -5135,13 +5204,15 @@ function respondToAction(req, res, target, result) {
 // FOUR THINGS ABOUT IT ARE DELIBERATE.
 //
 // **It authenticates NOTHING itself.** `authn.js` owns the session and the
-// sign-in screen; this asks `sessionAnywhere()` who is here and, when nobody
-// is, sends the browser to `beginAuthentication()`'s URL with the page they
-// wanted stashed on the pending record. A login screen of this console's own
-// would be a second authentication service, and the one consequence of sharing
-// the first is the good one: sign in at `/authn/login` with a security key and
-// this console knows it, because it is the same session WS-Federation and the
-// authorization endpoint read.
+// sign-in screen; this asks `consoleRpSession()` who is here and, when nobody
+// is, sends the browser into the OIDC code flow (`sendToConsoleSignIn()`,
+// through `common/oidc_rp.js`) with the page they wanted as its return
+// address. (Until 2026-09-06 it read the sign-on session directly and sent
+// the browser to `beginAuthentication()`'s URL.) A login screen of this
+// console's own would be a second authentication service, and the one
+// consequence of sharing the first is the good one: sign in at `/authn/login`
+// with a security key and this console knows it, because the flow meets the
+// same sign-on session WS-Federation and the authorization endpoint read.
 //
 // **A BROWSER IS REDIRECTED AND A PROGRAM IS REFUSED, and telling them apart is
 // not a nicety.** Every page here answers `?format=json` and every form accepts
@@ -5154,11 +5225,12 @@ function respondToAction(req, res, target, result) {
 //
 // **IT GUARDS `/admin` AND NOT `/admin-api`.** Express matches a `use` path on
 // segment boundaries, so `/admin-api` does not match `/admin` — that is not an
-// accident being relied on, it is the arrangement: the management API stays
-// open (`mgmt-api/CLAUDE.md` rule 7 covers what that costs) and is therefore
-// the way back in for somebody who has locked themselves out of the console,
-// which is a state `admin.openWhenEmpty: false` makes reachable. It is also why
-// turning this on does not break this repository's own
+// accident being relied on, it is the arrangement: the management API has a
+// credential of its own — an OAuth 2.0 access token since 2026-09-09, which
+// `adminApi.authRequired=false` turns off — and is therefore the way back in
+// for somebody who has locked themselves out of the console, which is a state
+// `admin.openWhenEmpty: false` makes reachable. `mgmt-api/CLAUDE.md` argues
+// both halves. It is also why this gate does not break this repository's own
 // `tests/vendored/admin_api.js`.
 //
 // **A REFUSAL IS A PAGE AND NOT A BARE STATUS.** 403 with an empty body is the
@@ -5250,11 +5322,14 @@ function defaultRealmSignInUrl(req) {
 }
 
 // ---------------------------------------------------------------------------
-// WHERE THE CONSOLE SENDS SOMEBODY TO SIGN IN, AND WHY IT IS NEVER THIS REALM'S
-// LOGIN SCREEN.
+// WHERE THE CONSOLE SENDS SOMEBODY TO SIGN IN.
 //
-// The gate accepts the DEFAULT realm's session and nothing else (see
-// `consoleSession()`), so the sign-in it sends an anonymous reader to has to
+// THE FIRST FOUR PARAGRAPHS ARE THE ARRANGEMENT BEFORE 2026-09-06, kept for
+// the two `app.js` behaviours they record; the paragraphs after the rule say
+// what happens now.
+//
+// The gate accepted the DEFAULT realm's session and nothing else (see
+// `consoleSession()`), so the sign-in it sent an anonymous reader to had to
 // mint one there. Two things stand in the way of just handing back LOGIN_PATH,
 // and both are `app.js` doing exactly what it was built to do:
 //
@@ -5278,10 +5353,13 @@ function defaultRealmSignInUrl(req) {
 // every realm.
 // ---------------------------------------------------------------------------
 // **IT IS AN AUTHORIZATION CODE FLOW SINCE 2026-09-06 AND WAS A REDIRECT TO THE
-// SIGN-IN SCREEN BEFORE IT.** Everything the paragraphs above say about WHICH
-// realm still holds and is in fact why `oidc_rp.js` runs this surface's flow in
-// the default realm; what changed is that this console no longer reaches into
-// the authentication service for a session. It sends the browser to
+// SIGN-IN SCREEN BEFORE IT.** The console's own session still lives in the
+// default realm (`oidc_rp.js`'s `sessionRealm`), but since 2026-09-11 the FLOW
+// runs in the ambient realm (`flowRealm`), so a person signed in to
+// `/realm/acme/portal` is not asked again at `/realm/acme/admin`;
+// `oidc_rp.js`'s SURFACES header argues the split. What changed on 2026-09-06
+// is that this console no longer reaches into the authentication service for
+// a session. It sends the browser to
 // `/oauth2/authorize` as `sts-admin-console`, and the sign-in screen is reached
 // — if it is reached at all — by the AUTHORIZATION ENDPOINT deciding it needs
 // one. Single sign-on falls out of that for free: a person who already has a
@@ -5291,8 +5369,9 @@ function defaultRealmSignInUrl(req) {
 // used to hand `beginAuthentication()` four `details` that the sign-in screen
 // then showed somebody about to type a name into this console: what they were
 // signing in to, the page they had asked for, that membership of one of two
-// groups is what decides access, and that it is the DEFAULT realm's `ou=groups`
-// that decides it. An authorization request carries no such field — the screen
+// groups is what decides access, and that it was the DEFAULT realm's
+// `ou=groups` that decided it (the realm signed in through, since 2026-09-14).
+// An authorization request carries no such field — the screen
 // is drawn by the authorization endpoint about the CLIENT, so what a person now
 // sees is `Admin console` and the scopes it asked for, which is what every
 // other application in this registry gets and is the point of the move.
@@ -5515,11 +5594,14 @@ app.use('/admin', function (req, res, next) {
              // AN ABSOLUTE URL, and that is not decoration. `app.js` rewrites
              // every root-relative href in an HTML response to carry the realm
              // being read, so `href="/admin"` would send this reader to THIS
-             // realm's console — where they would sign in successfully and
-             // still be refused, because the gate accepts the default realm's
-             // session only. An absolute URL is not matched by that rewrite,
-             // which is what makes it the right shape here rather than a way
-             // around it.
+             // realm's console — where, before 2026-09-06, they would sign in
+             // successfully and still be refused, because the gate accepted
+             // the default realm's session only. (The console's own session
+             // now lives in the default realm whichever realm the flow runs
+             // in, and the roster asked is the realm signed in through — 8d
+             // in admin-ui/CLAUDE.md.) An absolute URL is not matched by that
+             // rewrite, which is what makes it the right shape here rather
+             // than a way around it.
              //
              // **AND THE LINK IS OUTSIDE THE `note()`, WHICH IT WAS NOT UNTIL
              // 2026-09-06.** A note longer than about a line folds itself and
@@ -5701,7 +5783,7 @@ app.use('/admin', function (req, res, next) {
     // change without a deployment.
     //
     // The SUBJECT is the session's person — `state.username` comes from
-    // `consoleSession(req)` and from nothing in the request — and their
+    // `consoleRpSession(req)` and from nothing in the request — and their
     // directory entry is available to the policy through the PIP, so a rule
     // can be written against anything the entry holds.
     //
@@ -5810,10 +5892,10 @@ function tile(n, label) {
 //
 // * IT IS NATIVE `<details>`, AND NOTHING ELSE COULD BE. This console is
 //   served under `script-src 'none'` — see ../CLAUDE.md, where that rule and
-//   the six pages that relax it are argued — so the debugger's collapse-all
+//   the pages that relax it are argued — so the debugger's collapse-all
 //   switch, which is a checkbox and a listener, has no equivalent here.
 //   `<details>` needs no script at all, so the whole of this change leaves
-//   that policy untouched and adds no seventh exception to it. What it costs
+//   that policy untouched and adds no exception to it. What it costs
 //   is the *expand everything* control, which is why the shape below keeps
 //   every summary a full sentence: a reader skimming for one paragraph has to
 //   be able to find it without opening all of them.
@@ -7080,11 +7162,11 @@ function pageNavPair(path, params, pg) {
 // chooses between HTML and JSON. admin_api.js calls these and nothing else — it
 // holds no second opinion about what a metrics reply contains.
 //
-// One cost is worth stating rather than discovering: usersView() and
-// groupsView() build the HTML as well, and the API throws it away. That is what
-// `/admin/users?format=json` has always done, it is a string concatenation on a
-// mock, and the alternative — a second set of builders for the same data — is
-// the thing this whole arrangement exists to prevent.
+// One cost used to be stated here: the API called usersView() and groupsView(),
+// which build the HTML as well, and threw the markup away. It no longer does —
+// `/admin-api/users` and `/admin-api/groups` call `usersJson()` and
+// `groupsJson()` in `admin-core/admin_views.js`, which choose between the same
+// answers without drawing a page.
 // ---------------------------------------------------------------------------
 function consoleJson() {
   log.debug("Entering consoleJson().");
@@ -7444,7 +7526,8 @@ app.get('/admin/callback', function (req, res) {
 // **AND IT MIRRORS NO `/admin-api` OPERATION**, which is the one place this
 // console departs from rule 7 rather than paying it. That rule exists so that
 // every control here can be driven by a program; this control ends the session
-// of the browser that pressed it, and `/admin-api` is ungated and sessionless —
+// of the browser that pressed it, and `/admin-api` authenticates with an
+// access token rather than a session (since 2026-09-09) and is sessionless —
 // an operation there would have nothing to end.
 // `tests/vendored/sts_admin_console.js` carries the exemption with that
 // sentence in it, so the check that reads the API's index for "every console
@@ -8091,11 +8174,13 @@ app.post('/admin/tokens', function (req, res) {
 // performed by another is a control that acts on something other than the row
 // it is beside.
 //
-// **THE EXPIRY COLUMN IS THE ONE WORTH READING TWICE.** Each of the three
-// session kinds works its expiry out differently and the difference is not a
-// detail — a browser session's is absolute and is not extended by use, a TGT's
-// was sealed into the ticket by the KDC and cannot be moved, and an LDAP
-// connection has no expiry at all. So the column carries the countdown AND the
+// **THE EXPIRY COLUMN IS THE ONE WORTH READING TWICE.** Each session kind
+// works its expiry out differently and the difference is not a detail — a
+// browser session's is absolute and is not extended by use, a TGT's was sealed
+// into the ticket by the KDC and cannot be moved, and an LDAP connection has
+// no expiry at all; since 2026-09-06 an API caller's session is extended by
+// use, and since 2026-09-12 the console's and portal's own sessions are
+// renewed with their refresh token. So the column carries the countdown AND the
 // rule, and the rule comes off `liveSessions()`'s row rather than being written
 // again here.
 //
@@ -8110,9 +8195,10 @@ app.post('/admin/tokens', function (req, res) {
 // ---------------------------------------------------------------------------
 
 
-// WHEN THIS SESSION ENDS, AND HOW THAT IS WORKED OUT. Three answers rather than
-// one, because the three kinds are genuinely different and a column that showed
-// only a timestamp would be read as one rule with three values.
+// WHEN THIS SESSION ENDS, AND HOW THAT IS WORKED OUT. Several answers rather
+// than one, because the kinds are genuinely different and a column that showed
+// only a timestamp would be read as one rule with several values. The rule is
+// the row's `expiryRule`, which `logout.js`'s SESSION_EXPIRY_RULES writes.
 function sessionExpiryCell(row, nowMs) {
   log.debug("Entering sessionExpiryCell().");
   const rule = row.expiryRule || '';
@@ -15444,9 +15530,9 @@ app.get('/admin/delegation/user', function (req, res) {
 // tokens is the point: the two are the same authentication seen from two sides.
 //
 // This module does NOT require ldap_server.js to get at it, and the reason is
-// the route order rather than a cycle. server.js requires ./admin before
-// ./ldap_server (that module needs admin_stats' identity normalisation, and the
-// console reads oauth2's sessions), so a require from here would pull the
+// the route order as much as a cycle (`ldap_server.js` requires this file to
+// fill its slots). `common/protocol_stack.js` requires this file at 18 and
+// `ldap/ldap_server.js` at 21 (rule 6), so a require from here would pull the
 // directory's routes into the router AHEAD of the console's — and
 // /admin/sts-metadata is built by walking that router. So the direction is
 // inverted the same way admin_stats.js's user observer is: this file offers a
@@ -15574,25 +15660,12 @@ function setGroupReader(fn) {
   log.debug("Leaving setGroupReader().");
 }
 
-// The FOURTH slot, and the third of the ones that READ. Same direction and same
-// reason as the two above, and it passes rule 3e's test for the same two
-// grounds: requiring scim.js from here would pull every /scim route — and,
-// since that module requires ldap_server.js, every /ldap route too — into the
-// express router ahead of the console's own, and /admin/sts-metadata is built
-// by walking that router.
-//
-// What it holds is scim.js's description(), which is the same object GET
-// /scim?format=json answers with. So /admin/scim shows what that page shows
-// rather than a second account of the same feature: the endpoint list, what
-// SCIM deliberately does not do, and the reachable negatives are written ONCE,
-// in the module that implements them, and this page renders them. A console
-// page carrying its own copy of "active: false deactivates nobody" would be the
-// copy that stops being true. The SPIFFE listeners, through a slot for the
-// reason given beside the requires above: this file must not require
-// spiffe_server.js. What it holds is that module's `bindings()` and its bundle
-// path — two facts about SOCKETS, which neither this page nor
-// /admin/sts-metadata can see any other way, so a page without this reports
-// "nothing bound" and cannot tell that from a listener whose port was taken.
+// The SPIFFE listeners, through a slot for the reason given beside the
+// requires above: this file must not require spiffe_server.js. What it holds
+// is that module's `bindings()` and its bundle path — two facts about
+// SOCKETS, which neither this page nor /admin/sts-metadata can see any other
+// way, so a page without this reports "nothing bound" and cannot tell that
+// from a listener whose port was taken.
 let spiffeReader = null;
 
 function setSpiffeReader(fn) {
@@ -15734,7 +15807,8 @@ function setLogoutReader(reader) {
 }
 
 // ---------------------------------------------------------------------------
-// THE NINTH SLOT: THE FIVE DIRECTORY PAGES' OWN VIEWS, FOR THE MANAGEMENT API.
+// THE NINTH SLOT: THE DIRECTORY PAGES' OWN VIEWS, FOR THE MANAGEMENT API —
+// FIVE WHEN IT WAS WRITTEN, EIGHT SINCE 2026-09-05 (`DIRECTORY_PAGE_NAMES`).
 //
 // It is filled by `ldap/ldap_server.js` at its require time, and rule 3e's test
 // answers yes both ways round.
@@ -15748,18 +15822,18 @@ function setLogoutReader(reader) {
 //     (21) precisely so that the management API's routes are registered first.
 //
 // WHY THE API NEEDS IT AT ALL is rule 7, the parity: every page of this console
-// has an operation on `/admin-api` that mirrors it, and these five became pages
-// of this console on 2026-09-01. The API answers them by calling exactly the
-// function that draws them, so the page and the operation cannot come to
+// has an operation on `/admin-api` that mirrors it, and the first five became
+// pages of this console on 2026-09-01. The API answers them by calling exactly
+// the function that draws them, so the page and the operation cannot come to
 // disagree about what is in the directory.
 //
-// IT IS ONE SLOT CARRYING FIVE VIEWS AND IT IS VALIDATED WHOLE, for the reason
-// `setLogoutReader()` gives: a filler that installed four of them would leave
-// one operation answering "no directory is loaded" on a service whose directory
-// is plainly loaded, which is worse than all five saying so. Each view takes
-// the request and returns `{ title, inner, json }` — the same shape every view
-// function in this file returns, so `respond()` and the API read them the same
-// way.
+// IT IS ONE SLOT CARRYING EVERY VIEW AND IT IS VALIDATED WHOLE, for the reason
+// `setLogoutReader()` gives: a filler that installed all but one of them would
+// leave one operation answering "no directory is loaded" on a service whose
+// directory is plainly loaded, which is worse than all of them saying so. Each
+// view takes the request and returns `{ title, inner, json }` — the same shape
+// every view function in this file returns, so `respond()` and the API read
+// them the same way.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -15769,12 +15843,13 @@ function setLogoutReader(reader) {
 // A require from THIS file to `xacml/xacml_admin.js` would CLOSE A CYCLE — it
 // requires this one for the shell, the settings block, the gate and the action
 // responder. And a require from `mgmt-api/admin_api.js` (19) to it would MOVE
-// ROUTES: every `/xacml` endpoint and all four `/admin/xacml*` pages would be
+// ROUTES: every `/xacml` endpoint and all six `/admin/xacml*` pages would be
 // registered ahead of the management API's own, and ahead of ldap, scim and
 // spiffe. So the slot is the only arrangement left, and it is the same one SSF
 // and the directory pages already take.
 //
-// IT CARRIES SIX FUNCTIONS AND IS VALIDATED WHOLE, for `setLogoutReader()`'s
+// IT CARRIES SEVEN FUNCTIONS — `XACML_PAGE_PARTS` below, `monitor` being the
+// seventh (2026-09-06) — AND IS VALIDATED WHOLE, for `setLogoutReader()`'s
 // reason: a filler that installed the views without the action would leave
 // `/admin-api` able to LIST policies and unable to change any of them, which
 // reads as a management API that is working and is not. It was four until
@@ -15786,11 +15861,12 @@ function setLogoutReader(reader) {
 // slots of their own because it is the same module filling it and a second
 // slot would have been a second indirection for no second reason (rule 3e).
 //
-// `actionNames` is the seventh and is not decoration. The refusal sentence for
-// an unknown action names every action and counts them, and that sentence is
-// READ by `tests/vendored/admin_api.js` — so the API has to be able to ask the
-// module what its actions are rather than keeping a second list that could
-// disagree.
+// `actionNames` is one more, outside the validated list (`xacmlActionNames()`
+// below answers `[]` without it), and is not decoration. The refusal sentence
+// for an unknown action names every action and counts them, and that sentence
+// is READ by `tests/vendored/admin_api.js` — so the API has to be able to ask
+// the module what its actions are rather than keeping a second list that
+// could disagree.
 // ---------------------------------------------------------------------------
 const XACML_PAGE_PARTS = ['overview', 'policies', 'editor', 'peps', 'decide',
                           'monitor', 'action'];
@@ -15880,7 +15956,20 @@ function setDirectoryPages(views) {
   log.debug("Leaving setDirectoryPages().");
 }
 
-
+// The SCIM slot (the FOURTH, and the third of the ones that READ). Same
+// direction and same reason as the directory readers above, and it passes
+// rule 3e's test for the same two grounds: requiring scim.js from here would
+// pull every /scim route — and, since that module requires ldap_server.js,
+// every /ldap route too — into the express router ahead of the console's own,
+// and /admin/sts-metadata is built by walking that router.
+//
+// What it holds is scim.js's description(), which is the same object GET
+// /scim?format=json answers with. So /admin/scim shows what that page shows
+// rather than a second account of the same feature: the endpoint list, what
+// SCIM deliberately does not do, and the reachable negatives are written ONCE,
+// in the module that implements them, and this page renders them. A console
+// page carrying its own copy of "active: false deactivates nobody" would be the
+// copy that stops being true.
 let scimReader = null;
 
 function setScimReader(fn) {
@@ -16530,8 +16619,8 @@ function mfaSection(row, key, state, back) {
   // `mech.backupCodes` — a status object — and there is no call anywhere in
   // this console to the codes themselves. There is no such door anywhere any
   // more — a set is stored as scrypt hashes since 2026-09-11 — and an
-  // administrative door
-  // that showed somebody's recovery codes would hand a working second factor
+  // administrative door that showed somebody's recovery codes would hand a
+  // working second factor
   // to whoever holds Admin Read, which is the same refusal this page already
   // makes about enrolling an authenticator app from here. The person's own
   // `/portal/mfa` is the only reader.
@@ -18433,7 +18522,7 @@ app.post('/admin/users/new', function (req, res, next) {
   // FILL. It creates nothing and answers with this same form, filled in.
   //
   // **ON THE SERVER BECAUSE THIS CONSOLE HAS NO JAVASCRIPT.** `app.js` sets
-  // `script-src 'none'` for the whole service and six pages are the only
+  // `script-src 'none'` for the whole service and seven pages are the only
   // exceptions, each of which CANNOT work without a script; this one plainly
   // can, at the cost of a round trip. It is the same answer the XACML guided
   // editor gives to the same question, and CLAUDE.md's rule is that a new
@@ -18587,16 +18676,21 @@ function newUserCreate(req, res, body, posted, wantsJson, held) {
 // GET /admin/groups — every group in the embedded directory, and one of them in
 // full.
 //
-// The one page in this console whose whole content comes from another module.
-// Everything else here reads admin_stats.js; this reads the directory through
-// the slot ldap_server.js fills, and it renders exactly what that returns
-// without deciding anything — including what counts as a group, which is that
-// module's rule and is stated on the page rather than reimplemented here.
+// The first page in this console whose whole content came from another module
+// (several more do now — /admin/rbac, /admin/roles, the /admin/ldap/* pages).
+// This reads the directory through the slot ldap_server.js fills, and it
+// renders exactly what that returns without deciding anything — including what
+// counts as a group, which is that module's rule and is stated on the page
+// rather than reimplemented here.
 //
 // A GROUP IS NOT AN AUTHORISATION HERE, and the page says so where a reader
-// will see it. Nothing in this service reads these groups: no token carries
-// them, no SAML assertion has them as an attribute, no endpoint checks one.
-// They are a directory's objects for a directory client to read, and a console
+// will see it. This paragraph used to say nothing in this service reads these
+// groups at all; three qualifications have landed since, and GROUPS_CAVEAT
+// below carries the first two: the groups claim (`groups.claim`) CARRIES a
+// membership into tokens and assertions without anything acting on it, the
+// two console role groups grant this console (8b in admin-ui/CLAUDE.md), and
+// a role under `ou=roles` may NAME a group (see /admin/roles). Otherwise they
+// are a directory's objects for a directory client to read, and a console
 // that listed them beside the tokens page without saying that would let
 // somebody conclude that adding a user to `cn=directory-admins` changed what
 // their token could do.
@@ -18874,7 +18968,7 @@ function groupsListPage(req) {
     //
     // A REAL BUTTON AND NO SCRIPT, like every other form on this console:
     // `script-src 'none'` is the service-wide policy and this page is not one
-    // of the six exceptions.
+    // of the seven exceptions.
     // ---------------------------------------------------------------------
     (groupWriter
       ? '<h2>Create a group</h2>' +
@@ -19198,15 +19292,17 @@ function groupsView(req) {
 // disagree with. An `ldapmodify` made a second ago shows up on the next
 // refresh.
 //
-// **There is no form on it, and that is a decision rather than an omission.**
-// The write paths into this registry are the protocol endpoints and LDAP
-// itself, and both are the point: a client is recorded because it turned up,
-// and an operator changes one with `ldapmodify` — which is what makes the
-// directory the source of truth rather than a display of one. A console form
-// would be a third door onto the same store, and the one a reader would then
-// expect to be authoritative. It is the same shape /admin/audit has and for a
-// related reason, so it needs no POST on /admin-api either (see rule 7 in
-// CLAUDE.md: the parity is about CONTROLS, and there are none here).
+// **It had no form when it was written, and that was argued as a decision.**
+// The write paths into this registry were the protocol endpoints and LDAP
+// itself: a client is recorded because it turned up, and an operator changed
+// one with `ldapmodify` — which is what makes the directory the source of
+// truth rather than a display of one. That argument was about a second STORE,
+// and it survived the reversal: the page now carries an *Add an application*
+// row, per-entry actions (`APPLICATION_ACTIONS` in
+// admin-core/admin_actions.js, POSTed to the handler below)
+// and `/admin/applications/new`, every one of them a DOOR onto the same
+// entries through `applications.js` and mirrored on
+// `POST /admin-api/applications/{action}` (rule 7).
 // ---------------------------------------------------------------------------
 const APPLICATIONS_CAVEAT =
   note('<strong>An entry here grants nothing.</strong> Being in this ' +
@@ -19771,7 +19867,7 @@ function applicationsListPage(req) {
 // reader take the column for evidence of traffic; the Authentications tile is
 // the figure that is.
 //
-// Only the families that are declared or recorded are listed. Fourteen rows of
+// Only the families that are declared or recorded are listed. Sixteen rows of
 // "no, no" on every drill-down would be a table nobody reads, and the ones that
 // say nothing are exactly the ones with nothing to say.
 function protocolFamilySection(row) {
@@ -21051,13 +21147,14 @@ app.get('/admin/applications', function (req, res) {
 // So the question this page has to answer is the one that file's header asks —
 // what is different about the READER'S TASK — and there are three answers:
 //
-//   * **THE PROTOCOL FAMILIES.** Fourteen checkboxes with a sentence each do
+//   * **THE PROTOCOL FAMILIES.** Sixteen checkboxes with a sentence each do
 //     not fit in a `.formrow` at the foot of a table of every application this
 //     service has ever seen; they are a table of their own, and the row on the
 //     list page would have had to become a link to somewhere anyway.
-//   * **THE IDENTIFIERS AND THE REDIRECT URIS.** Fourteen more fields, which is
-//     the 2026-08-25 change and the reason this page is now the only place a
-//     whole application can be configured in one post. Before it, a create took
+//   * **THE IDENTIFIERS AND THE REDIRECT URIS.** Two dozen more fields (as of
+//     2026-09-16), which is the 2026-08-25 change and the reason this page is
+//     now the only place a whole application can be configured in one post.
+//     Before it, a create took
 //     an identifier and a name and nothing else: every attribute that actually
 //     CONFIGURES the application — the client_id RFC 9700 mode reads, the
 //     redirect URIs it matches against, the entityID, the wtrealm — had to be
@@ -21130,12 +21227,13 @@ function protocolChoiceRow(row, checked) {
 }
 
 // ---------------------------------------------------------------------------
-// ONE DECLARED ATTRIBUTE AS A ROW OF THE IDENTIFIERS OR REDIRECT URIS TABLE.
+// ONE DECLARED ATTRIBUTE AS A ROW OF ONE OF THE DECLARATION TABLES
+// (`declarationFieldRow()`, below `familyClasses()`).
 //
 // The rows come from `applications.declarationAttributes()`, which walks the
-// PROTOCOLS table and dedupes by ATTRIBUTE — so this renders fourteen fields
-// for fourteen families rather than one per family, and names the families each
-// field serves underneath it. Building that list here instead was the obvious
+// PROTOCOLS table and dedupes by ATTRIBUTE — so this renders one field per
+// attribute rather than one per family, and names the families each field
+// serves underneath it. Building that list here instead was the obvious
 // thing and would have been a second opinion about which attribute a family's
 // identifier goes in; `createApplication()` has the first.
 //
@@ -21150,9 +21248,11 @@ function protocolChoiceRow(row, checked) {
 // gets an input. Newline-separated rather than comma-separated because a
 // redirect URI may legally contain a comma and may not contain a newline;
 // splitting on commas would silently cut one URI into two that both fail to
-// match. There is exactly one single-valued field here — mutual TLS's
-// `oauthTlsClientAuthSubjectDn` — and the row says why rather than leaving a
-// reader to notice that one box is a different shape.
+// match. There was once exactly one single-valued field here — mutual TLS's
+// `oauthTlsClientAuthSubjectDn` — and the row's note says why that one is a
+// different shape. There are four now (`oauthClientSecret`, `gnapInstanceId`
+// and `gnapSymmetricKey` joined it), and the note under the input still gives
+// the RFC 8705 reason on every one of them.
 // ---------------------------------------------------------------------------
 // The classes that make a block appear only when one of its families is
 // ticked. `pf` is what the stylesheet hides; each `pf-<id>` is what a checked
@@ -21212,8 +21312,13 @@ function declarationFieldRow(row) {
 // ---------------------------------------------------------------------------
 // THE PER-APPLICATION SAML SETTINGS, AS FORM FIELDS.
 //
-// Ten attributes, five per profile, each overriding one `config.js` setting for
-// this application alone. They are drawn from
+// THIS DECLARATION IS DEAD: an identical `samlOverrideFieldRow()` is declared
+// again under *THE PER-APPLICATION SETTINGS* below, and the later function
+// declaration is the one every caller gets. Its header is the current one.
+//
+// Written when there were ten attributes, five per SAML profile, each
+// overriding one `config.js` setting for this application alone. They are
+// drawn from
 // `applications.overridableSettings()` — the same table `saml2_sso.js` resolves
 // through and `/admin/saml-assertions` names the attribute from — so a setting
 // added there reaches this form without anybody editing it.
@@ -21325,14 +21430,15 @@ const OVERRIDE_SECTIONS = [
 // ---------------------------------------------------------------------------
 // THE PER-APPLICATION SETTINGS, AS FORM FIELDS.
 //
-// Twenty attributes across five sections, each overriding one `config.js`
-// setting for this application alone. They are drawn from
-// `applications.overridableSettings()` — the same table the protocol modules
-// resolve through and each defaults page names the attribute from — so a
-// setting that becomes per-application reaches this form without anybody
-// editing it. What it DOES need is a row in OVERRIDE_SECTIONS above, and a
-// setting whose prefix matches none of them is drawn in a section of its own
-// at the end rather than silently dropped.
+// Twenty-six attributes as of 2026-09-16 — twenty-five across the five
+// sections and `gnap.accessTokenLifetimeS`, which matches none — each
+// overriding one `config.js` setting for this application alone. They are
+// drawn from `applications.overridableSettings()` — the same table the
+// protocol modules resolve through and each defaults page names the
+// attribute from — so a setting that becomes per-application reaches this
+// form without anybody editing it. What it DOES need is a row in
+// OVERRIDE_SECTIONS above, and a setting whose prefix matches none of them is
+// drawn in a section of its own at the end rather than silently dropped.
 //
 // **EVERY FIELD IS EMPTY BY DEFAULT AND EMPTY MEANS INHERIT.** That is the
 // whole of the interaction and it is why there is no "use the default" checkbox
@@ -21531,11 +21637,11 @@ function samlOverrideFieldsSection() {
     sections + extra + samlKeySourceSection();
 }
 
-// The two tables, split by what the attribute IS rather than drawn as one list
-// of fourteen. A reader filling this in is answering two different questions —
-// "what is this application called" and "where does a response go back to" —
-// and the second only exists for the three families that send one through a
-// browser.
+// The tables, one per ROLE (`identifier`, `redirect`, `logout`, `secret`,
+// `delivery`, `events`), split by what the attribute IS rather than drawn as
+// one list. A reader filling this in is answering different questions — "what
+// is this application called", "where does a response go back to" — and each
+// of the later ones exists only for the families that have one.
 // `omit` names attributes another part of the page already draws a box for —
 // the RFC 9728 pane draws `oauthClientId` — because two fields with one name in
 // one form post the name twice and `parseBody()` keeps whichever came LAST,
@@ -21641,8 +21747,10 @@ const NEW_APPLICATION_EVENTS_INTRO =
   'events are always allowed.');
 
 // ---------------------------------------------------------------------------
-// THE CLIENT SECRET. One field, two families, and a warning that is the whole
-// point of it.
+// THE CLIENT SECRET. The `secret` role — `oauthClientSecret` for the two OAuth
+// families and, since GNAP arrived, `gnapSymmetricKey` too, though the intro
+// below still speaks of OAuth only — and a warning that is the whole point of
+// it.
 // ---------------------------------------------------------------------------
 const NEW_APPLICATION_SECRET_INTRO =
   note('The <code>client_secret</code> for the two OAuth families. Leave it ' +
@@ -24343,10 +24451,10 @@ app.post('/admin/consent', function (req, res) {
 // not a candidate either: it would close a cycle, since `xacml_admin.js`
 // requires this file for the page shell.
 //
-// It carries ONE function and is validated whole, for `setLogoutReader()`'s
-// reason: a preview that could be installed without the thing it previews
-// would be a page saying "no decider" beside a service that is plainly
-// deciding.
+// It carries TWO functions, `preview()` and `policy()`, and is validated
+// whole, for `setLogoutReader()`'s reason: a preview installed without the
+// thing that says WHICH POLICY answered would be a page able to ask a question
+// and unable to explain the answer.
 //
 // AN EMPTY SLOT IS A SENTENCE AND NOT A BLANK. The section draws anyway and
 // says the XACML family is not loaded in this process, which is the honest
@@ -26720,8 +26828,8 @@ app.get('/admin/vc-verifier-config', function (req, res) {
 // service providers, statistics and audit log — answering on the SAME sockets
 // as every other and told apart by a segment at the front of the path.
 //
-//   http://host:8081/oauth2/token                the default realm
-//   http://host:8081/realm/acme/oauth2/token     the realm `acme`
+//   https://host:8081/oauth2/token               the default realm
+//   https://host:8081/realm/acme/oauth2/token    the realm `acme`
 //
 // WHAT THIS PAGE IS FOR, and it is not "somewhere to keep a list". Two things
 // nothing else here can tell you:
@@ -26733,16 +26841,18 @@ app.get('/admin/vc-verifier-config', function (req, res) {
 //     first.
 //   * WHICH FAMILIES ARE REALM-AWARE AND WHICH ARE NOT, WHICH IS NOT A TIDY
 //     ANSWER. What a realm separates completely is what it ISSUES and what it
-//     is holding while it issues it. What it does not separate at all is the
-//     embedded DIRECTORY — one ou=users, one ou=groups and one ou=applications
-//     for the whole process, because LDAP answers on a socket with no path to
-//     put a realm segment in. So OAuth client registrations, SAML service
-//     provider entries, the SPIFFE registry and the two admin roles are shared,
-//     and so are Kerberos, the certificate the main port and LDAPS 636
-//     present, and SPIFFE's four sockets.
-//     Saying so is the whole reason the table at the foot of this page exists:
-//     a person who assumed a realm was a boundary everywhere would find out
-//     from an `ldapsearch`.
+//     is holding while it issues it. This paragraph used to say the embedded
+//     DIRECTORY was not separated at all; it has been a subtree per realm
+//     since 2026-08-25, and the two admin roles (2026-09-14, #32), SPIFFE's
+//     trust domains and sockets (2026-09-12) and Kerberos (a KDC per realm on
+//     the shared port 88, 2026-09-15, #33) have followed it. What is still the
+//     process's is what has no name inside its protocol to carry a realm —
+//     the certificate the main port and LDAPS 636 present, a client
+//     certificate at the handshake, and the Kerberos and directory SOCKETS
+//     themselves. `common/realms.js`'s per-family rows are the current answer
+//     and are what the table at the foot of this page draws: a person who
+//     assumed a realm was a boundary everywhere would otherwise find out the
+//     hard way.
 //
 // **IT KEEPS NOTHING OF ITS OWN.** The registry is common/realms.js's, the
 // per-realm settings are config.js's — set through the same
@@ -27193,8 +27303,8 @@ app.post('/admin/realms', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
-// /admin/config — THE FIVE SETTINGS THAT BELONG TO NO PROTOCOL, AND THE INDEX
-// OF WHERE EVERY OTHER ONE IS EDITED.
+// /admin/config — THE SETTINGS THAT BELONG TO NO PROTOCOL, AND THE INDEX OF
+// WHERE EVERY OTHER ONE IS EDITED.
 //
 // It was every setting this service has, in one page, until 2026-08-27. What
 // that page got right is that the sections were the PROTOCOLS, in the order
@@ -27209,11 +27319,13 @@ app.post('/admin/realms', function (req, res) {
 // So the settings live on the page for the family they configure, and what is
 // left here is the two things that have nowhere else to be:
 //
-//   * **The `Global` group** — a bind address, a port, the scheme, the proxy
-//     header and the log level. Facts about the PROCESS rather than about
-//     anything it speaks, so there is no family page they would be less
-//     surprising on. They are drawn by the same `configSection()` every
-//     protocol page draws.
+//   * **The groups that belong to no protocol** — `Global` (it was five rows,
+//     a bind address, a port, the scheme, the proxy header and the log level,
+//     and has grown the mode, the proxy and worker settings since), and
+//     `Key material` and `Web security` beside it. Facts about the PROCESS
+//     rather than about anything it speaks, so there is no family page they
+//     would be less surprising on. They are drawn by the same
+//     `configSection()` every protocol page draws; SETTING_HOMES is the list.
 //   * **The INDEX**: every group, how many settings are in it, how many of
 //     those are overridden right now, and the page that edits it. Derived from
 //     SETTING_HOMES and `config.groups()`, so a group cannot be added to
@@ -27249,8 +27361,9 @@ app.post('/admin/realms', function (req, res) {
 // No script here, like every other page in this console: each section is a
 // plain form that posts the whole section at once (`set-many`), and each row
 // has a Reset button of its own. See the shell's note above — `script-src
-// 'none'` is what makes reflected content moot for this service, and the
-// explorer at /admin-api/docs is the single exception.
+// 'none'` is what makes reflected content moot for this service, and the API
+// explorer (at `/admin/api-explorer` since 2026-09-09) is the one console page
+// that is an exception.
 // ---------------------------------------------------------------------------
 
 // The five sources, as a phrase a reader can act on. `env-legacy` is its own
@@ -27644,12 +27757,6 @@ function configRow(setting, from) {
   // `GET /admin-api/config`, and in README.md's table, so the text has three
   // other doors that a keyboard or a screen reader can reach. A field whose
   // prose has NO other door does not get this treatment.
-  //
-  // The tooltips are the same text at two lengths rather than a third thing to
-  // keep in step: the key carries the label, and the input carries as much of
-  // the description as a tooltip can hold. Neither is the only place anything
-  // is said — everything they carry is in the fold under them — because a
-  // tooltip is unreachable from a keyboard and invisible on a touch screen.
   return '<tr>' +
     '<td><label for="' + esc(id) + '"' + tip(setting.description, Infinity) +
     '><code>' + esc(setting.key) + '</code></label>' +
@@ -27731,8 +27838,10 @@ app.post('/admin/config', function (req, res) {
 // ---------------------------------------------------------------------------
 // /admin/token-lifetimes — HOW LONG WHAT THIS SERVICE ISSUES IS GOOD FOR.
 //
-// Four settings, all of them `config.js` rows, on a page of their own under
-// Protocols › OAuth2 / OIDC. They were three module-level `const`s in
+// Four settings when it was written — six now (`TOKEN_LIFETIME_KEYS`, with the
+// refresh idle timeout and the sign-out revocation) — all of them `config.js`
+// rows, on a page of their own under Protocols › OAuth2 / OIDC. The first
+// three were module-level `const`s in
 // `../oauth-oidc/oauth2.js` until 2026-08-24 and could not be changed at all
 // without a restart.
 //
@@ -27749,7 +27858,7 @@ app.post('/admin/config', function (req, res) {
 //
 //   * These four are a QUANTITY somebody sets to a specific number to watch
 //     something happen, over and over, in a session — "make it a minute so I
-//     can see my client refresh". `/admin/config`'s form is a table of
+//     can see my client refresh". `/admin/config`'s form was then a table of
 //     forty-nine settings with a text box each; finding four of them in it,
 //     every time, is the cost this page removes.
 //   * They INTERACT, and a page can say so where a flat table cannot. An access
@@ -27841,11 +27950,10 @@ function tokenLifetimeRow(setting, snapshot) {
       '<span class="state-revoked">' + counts.revoked + ' revoked</span>'
     : '<span class="state-none">&mdash;</span>';
   // The setting's own description, on the label and on the box. It is the same
-  // sentence /admin/config carries in the fold under each key, and the reason
-  // it is a tooltip HERE and a fold THERE is the two pages' different jobs:
-  // this one is a short list of rows somebody sets a number in, so a paragraph
-  // under each would be most of the page, and there is a link to the full row
-  // next door.
+  // sentence every settings form carries as its row's tooltip since
+  // 2026-09-05 (configRow()), where it used to be a fold; here it was always a
+  // tooltip, because this page is a short list of rows somebody sets a number
+  // in, so a paragraph under each would be most of the page.
   const hint = tip(setting.description, Infinity);
   // TWO CONTROLS, BY TYPE. It was one — a `number` input — until
   // `oauth2.revokeRefreshOnLogout` joined this page on 2026-08-27, and a bool
@@ -28089,8 +28197,11 @@ app.post('/admin/token-lifetimes', function (req, res) {
 // /admin/saml-assertions — HOW LONG AN ASSERTION IS VALID, AND HOW FAR THE
 // WINDOW IS WIDENED FOR SOMEBODY ELSE'S CLOCK.
 //
-// Three settings, all of them `config.js` rows, on a page of their own under
-// Protocols > SAML. It is the THIRD page of this shape — /admin/token-lifetimes
+// Three settings when it was written — sixteen now (`SAML_ASSERTION_SETTINGS`
+// in admin-core/admin_actions.js), since it became the page for the
+// per-application SAML defaults on 2026-08-27 — all of them `config.js` rows,
+// on a page of their own under Protocols > SAML. It is the THIRD page of this
+// shape — /admin/token-lifetimes
 // was the second and argues the form at length — so the test that header sets
 // is the one this page has to pass rather than cite: a page like this earns its
 // place when the reader's task is not the one /admin/config serves, and it
@@ -28492,10 +28603,11 @@ app.post('/admin/saml-assertions', function (req, res) {
 // against this server" is the question somebody arrives with, and a table that
 // listed only what had been used would answer it by omission.
 //
-// There are no CONTROLS here, which is what keeps rule 7 satisfied with only a
-// GET on /admin-api/scim: every one of these is a config.js row, so
-// /admin/config already has the form and POST /admin-api/config/set already has
-// the operation. A second form here would be a second door to one setting.
+// There are no CONTROLS in this section, which is what keeps rule 7 satisfied
+// with only a GET on /admin-api/scim: every one of these is a config.js row,
+// drawn in the page's settings block (`configFormsFor('/admin/scim')`), which
+// posts to /admin/config — and POST /admin-api/config/set already has the
+// operation. A second form here would be a second door to one setting.
 // ---------------------------------------------------------------------------
 function authenticationSection(auth, counters) {
   log.debug("Entering authenticationSection().");
@@ -29145,9 +29257,10 @@ app.get('/admin/scim/monitor', function (req, res) {
 // test is why — it answers NO in both directions, which is the answer that
 // means "do not add a slot". `ssf/ssf_receivers.js` registers no route (rule
 // 3) and requires only libraries, none of which requires this file, so a
-// require here can neither move a route nor close a cycle. The eight slots on
-// this file exist because `ssf/ssf.js`, `ldap/ldap_server.js` and the rest
-// register routes and sit BELOW this line in the require order; a library
+// require here can neither move a route nor close a cycle. The slots on this
+// file (the root CLAUDE.md's rule 3e table lists them) exist because
+// `ssf/ssf.js`, `ldap/ldap_server.js` and the rest register routes and sit
+// BELOW this line in the require order; a library
 // costs a reader nothing and an indirection is not free.
 //
 // It is required at the top of this file with the others.
@@ -30111,16 +30224,18 @@ function setTruststore(value) {
 // ---------------------------------------------------------------------------
 // GET /admin/tls/trust — THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12).
 //
-// Every anchor LDAPS 636 and the main port verify a client
-// certificate against, where each came from, and two controls: add one or more
+// Every anchor the main port verifies a client certificate against (LDAPS 636
+// asks for none — tls/CLAUDE.md), where each came from, and two controls: add
+// one or more
 // PEM certificates, and remove one row. It is the runtime door product mode
 // did not have — `POST /tls/trust` answers anybody who can reach the port and
 // is refused there, so until this page anchors could only come from
 // `tls.trustAnchorsFile` at startup.
 //
 // **FILED UNDER PROTOCOLS, DIRECTLY BENEATH `/admin/tls`, AND UNGROUPED.** It
-// is configuration of those two sockets, which is the question Protocols
-// answers.
+// is configuration of the TLS / mutual TLS family — the 8443 and 9443
+// listeners it was first written for were deleted on 2026-09-16, and the main
+// port is what reads it now — which is the question Protocols answers.
 // There is no TLS group to put it in and it does not make one: a heading `TLS`
 // over `TLS / mutual TLS` would say the label twice, which is the test
 // `SECTIONS` applies to a group.
@@ -31344,9 +31459,11 @@ function caepApplicationRow(row, shorts, prefix) {
     return '<td class="' + (n ? '' : 'sub') + '">' + esc(String(n)) + '</td>';
   }).join('');
   // WHERE IT IS IN THE REGISTRY, when it is there at all. A receiver seen when
-  // a stream was created has an entry; one that agreed a stream while
-  // `ssf.authRequired` was off has none, and that row is the collected total
-  // for all of them rather than an application.
+  // a stream was created has an entry; one that agreed a stream while the
+  // stream endpoint was not gated has none, and that row is the collected
+  // total for all of them rather than an application. The gate was
+  // `ssf.authRequired` until 2026-09-06 and is `mode.gatesSharedSignals()`
+  // now (ssf/ssf_auth.js); the page's note below still names the old setting.
   const who = row.registered
     ? '<a href="' + esc('/admin/applications' +
         queryWith({ application: row.identifier }, {})) + '">' +
@@ -32889,10 +33006,10 @@ app.get('/admin/config', function (req, res) {
   log.debug("Entering the admin configuration page.");
   const snapshot = config.snapshot();
   const overridden = snapshot.overridden.length;
-  // What this page still edits: the one group with no protocol to belong to.
-  // Asked for by path rather than by name, like every other page, so that
-  // moving `Global` somewhere else one day is a row in SETTING_HOMES and not an
-  // edit here.
+  // What this page still edits: the groups with no protocol to belong to
+  // (`Global`, `Key material`, `Web security`). Asked for by path rather than
+  // by name, like every other page, so that moving one somewhere else one day
+  // is a row in SETTING_HOMES and not an edit here.
   const mine = settingsGroupsFor('/admin/config');
   const mineCount = mine.reduce(function (n, group) {
     return n + group.settings.length;
@@ -33028,6 +33145,12 @@ app.get('/admin/config', function (req, res) {
 // catch, on a page that cannot be checked. The links below are to the
 // family's own surfaces — pages that explain themselves — and to the
 // service metadata for the rest.
+//
+// **REVERSED 2026-09-13, AND STILL NOT IN THIS TABLE**: every Protocols page
+// now lists its realm's endpoints, drawn by `respond()` from
+// `admin-core/protocol_endpoints.js`, which names ROUTES and takes names and
+// methods from `sts_metadata.js` and the router, so both drifts fail
+// `tests/protocol_endpoints.js`. admin-ui/CLAUDE.md argues it.
 // ---------------------------------------------------------------------------
 // WHAT THE PERSISTENT STORE IS ACTUALLY DOING, as HTML and as JSON at once.
 //
@@ -34044,13 +34167,16 @@ const PROTOCOL_SETTINGS_PAGES = [
   //
   // Every document here said this service persists nothing and that everything
   // is gone on restart. Since 2026-08-27 three things are not: the embedded
-  // directory, the trust realm registry and the runtime appconfig overrides.
-  // Nothing else is, and the page says which is which rather than leaving a
-  // reader to infer a boundary — because "it persists now" is exactly the kind
-  // of half-sentence that gets somebody expecting their access token back.
+  // directory, the trust realm registry and the runtime appconfig overrides —
+  // and since 2026-09-06, in product mode on postgres, what this service MINTS
+  // (persistence/CLAUDE.md has the current list). The page says which is which
+  // rather than leaving a reader to infer a boundary — because "it persists
+  // now" is exactly the kind of half-sentence that gets somebody expecting
+  // their access token back.
   //
   // IT IS IN THIS TABLE RATHER THAN BEING A PAGE OF ITS OWN because it is
-  // overwhelmingly a settings page: six appconfig rows and the sentences that
+  // overwhelmingly a settings page: appconfig rows (six when it was written,
+  // nineteen `persistence.*` now) and the sentences that
   // explain them, which is what every other row here is. What it has that they
   // do not is a STATUS block, and that is one optional member on the row rather
   // than a second kind of page — see protocolSettingsJson().
@@ -34334,14 +34460,16 @@ function protocolSettingsJson(row) {
     }),
     settings: configSettingsJson(row.path)
   };
-  // ONE OPTIONAL MEMBER, and only one page in the table has it. A settings
-  // page describes what this service is CONFIGURED to do; `/admin/persistence`
-  // also has to say what it is ACTUALLY doing right now — which store is open,
-  // whether the last write worked, how much is in it — because a persistence
-  // setting that is set and a persistence store that is working are two
-  // different facts and the gap between them is the whole failure mode. It is
-  // a function on the row rather than a second kind of page, so the JSON and
-  // the HTML stay one thing. See PERSISTENCE_PAGE below.
+  // ONE OPTIONAL MEMBER, invented for `/admin/persistence` and carried by five
+  // rows now (persistence, cluster and the three second-factor mechanism
+  // pages). A settings page describes what this service is CONFIGURED to do;
+  // `/admin/persistence` also has to say what it is ACTUALLY doing right now —
+  // which store is open, whether the last write worked, how much is in it —
+  // because a persistence setting that is set and a persistence store that is
+  // working are two different facts and the gap between them is the whole
+  // failure mode. It is a function on the row rather than a second kind of
+  // page, so the JSON and the HTML stay one thing. See
+  // `persistenceStatusBlock()`.
   if (typeof row.status === 'function') {
     json.status = row.status().json;
   }
@@ -34778,11 +34906,11 @@ function spiffePage(req) {
     'check</a></li><li><a href="/admin/ldap/spiffe">The containers and their ' +
     'schema</a></li><li><a href="/admin-api/spiffe">The same, over ' +
     'JSON</a></li></ul>' +
-    // The twenty-eight spiffe.* rows, on the page about the trust domain
-    // rather than on /admin/config. The two lists below them — the
-    // registration entries and the agents — are a STORE and are edited on
-    // their own pages; these are the settings that decide what an SVID minted
-    // against any entry looks like.
+    // The spiffe.* rows (thirty-four as of 2026-09-16), on the page about
+    // the trust domain rather than on /admin/config. The two lists below
+    // them — the registration entries and the agents — are a STORE and are
+    // edited on their own pages; these are the settings that decide what an
+    // SVID minted against any entry looks like.
     configFormsFor('/admin/spiffe');
   log.debug("Leaving spiffePage().");
   json.settings = configSettingsJson('/admin/spiffe');
@@ -35134,7 +35262,7 @@ function spiffeAgentsView(req) {
 
 
 // The known actions, as a list, so that an unknown one can be answered by
-// NAMING the ones that exist. The parent project's tests/vendored/admin_api.js
+// NAMING the ones that exist. This repository's tests/vendored/admin_api.js
 // reads exactly that reply to assert console/API parity — it asks each handler
 // for an action that does not exist and compares what comes back with the API's
 // operations — so this list is not decoration.
@@ -35402,7 +35530,8 @@ function federationListPage(req) {
         '</td><td ' +
         'class="sub">' + esc(one.spec) + '</td></tr>';
     }).join('') + '</table>' +
-    // The eight federation.* rows, on the page that configures the feature.
+    // The federation.* rows (fifteen as of 2026-09-16), on the page that
+    // configures the feature.
     // `federation.enabled` and `federation.outbound` are the two that turn
     // halves of it off, and a person reading a relationship that does not work
     // should not have to guess that the answer is a setting somewhere else.
@@ -36342,7 +36471,9 @@ app.get('/admin/federation/map', function (req, res) {
 });
 
 module.exports = {
-  // THE SHELL, for the one module outside this file that draws a console page:
+  // THE SHELL, written for the first module outside this file that drew a
+  // console page (many do now — `crypto_metadata.js`, `pki_admin.js`, the
+  // `*_admin.js` of several families, `ldap_server.js`):
   // `../sts_metadata.js`, which builds `/admin/sts-metadata` from the live
   // express router and cannot live in here (it must be the LAST module
   // server.js loads, or it would be the reason a route is missing from its own
@@ -36356,9 +36487,10 @@ module.exports = {
   protocolEndpointDrift: protocolEndpointDrift,
   page: page,
   // AND FOR A SECOND MODULE SINCE THE XACML WORK: `xacml/xacml_admin.js`
-  // draws the four /admin/xacml pages the way `ldap/ldap_server.js` draws its
-  // five. Those two helpers were private only because nothing outside this
-  // file had needed them — a page drawn elsewhere still wants the settings
+  // draws the /admin/xacml pages (four then, six now) the way
+  // `ldap/ldap_server.js` draws its (then five, now eight). Those two helpers
+  // were private only because nothing outside this file had needed them — a
+  // page drawn elsewhere still wants the settings
   // block for its own group, and still has to answer a form POST the way every
   // other action here does. Keeping them private would have meant a second
   // settings renderer and a second redirect-or-JSON rule, and two of either is
@@ -36409,12 +36541,14 @@ module.exports = {
   // the block above setDirectoryPages().
   setDirectoryPages: setDirectoryPages,
   // ---------------------------------------------------------------------
-  // THE LIST-PAGE FURNITURE, FOR THE ONE MODULE OUTSIDE THIS DIRECTORY THAT
-  // DRAWS LIST PAGES IN THIS SHELL.
+  // THE LIST-PAGE FURNITURE, WRITTEN FOR THE FIRST MODULE OUTSIDE THIS
+  // DIRECTORY THAT DREW LIST PAGES IN THIS SHELL (the certificate-enrollment,
+  // GNAP and OAuth monitor pages use it too now).
   //
-  // `ldap/ldap_server.js` draws five of them since 2026-09-01, and they are
-  // real list pages: the directory dump is one row per entry over a store
-  // with a cap in the hundreds, so it pages exactly the way
+  // `ldap/ldap_server.js` has drawn its /admin/ldap/* pages since 2026-09-01
+  // (five then, eight now), and they are real list pages: the directory dump
+  // is one row per entry over a store with a cap in the hundreds, so it pages
+  // exactly the way
   // /admin/applications and /admin/tokens page. Exported for the same reason
   // page(), note() and tip() are exported to sts_metadata.js — a page drawn
   // in this console's shell with a paging control of its own invention would
@@ -36518,7 +36652,7 @@ module.exports = {
   // The sign-out page's view and its four actions, for admin_api.js. Rule 7:
   // the API calls exactly these, so an action added to that switch is most of
   // adding it there — and the refusal sentence that names the four is what the
-  // parent project's tests/vendored/admin_api.js reads to check the parity.
+  // repository's own tests/vendored/admin_api.js reads to check the parity.
   logoutView: logoutView,
   jtiFrom: jtiFrom,
   // The four action functions. admin_api.js calls exactly these — it decides
@@ -36535,8 +36669,8 @@ module.exports = {
   // and not four more rows on /admin/config — and it is exported separately
   // because rule 7 is about the CONTROL: the form on that page has two actions,
   // so the API has two operations, and pointing them at configAction instead
-  // would give a caller a door that took any of forty-nine settings under a
-  // name that promised four.
+  // would give a caller a door that took any setting config.js holds under a
+  // name that promised six (`TOKEN_LIFETIME_KEYS`).
   // THE TWO NARROW DOORS' KEY LISTS, for mgmt-api/admin_api.js to BUILD their
   // request schemas from rather than to keep a second copy of.
   //
@@ -36549,13 +36683,14 @@ module.exports = {
   // never mentioned. Derived, that cannot happen: adding a row to either table
   // adds the property.
   // The JSON views, one per page, for the same reason. See the block comment
-  // The eight protocol settings pages, through ONE export keyed by path.
-  // Rule 7 wants an operation per page and there are eight of them, all
-  // answering the same shape — eight exported functions would have been eight
-  // names for one call. There is no action beside it, and that is the rule read
-  // exactly: every form on those pages posts `set-many` to /admin/config, which
+  // The protocol settings pages (PROTOCOL_SETTINGS_PAGES — eight when this was
+  // written, thirteen as of 2026-09-16), through ONE export keyed by path.
+  // Rule 7 wants an operation per page, all answering the same shape — one
+  // exported function per page would have been that many names for one call.
+  // There is no action beside it, and that is the rule read exactly: every
+  // form on those pages posts `set-many` to /admin/config, which
   // `POST /admin-api/config/set-many` already mirrors. A second POST per page
-  // would be eight more doors onto one function.
+  // would be that many more doors onto one function.
   protocolSettingsJsonFor: protocolSettingsJsonFor,
   // Where each group of settings is drawn, for the API's own /config resource
   // and for anything that wants to send a person to the right page.
@@ -36655,9 +36790,12 @@ module.exports = {
   saml2View: saml2View,
   saml11View: saml11View,
   // The roles page and its two writes. Rule 7 again — and this one is the page
-  // most in need of the API half rather than least: the management API is not
-  // gated, so `POST /admin-api/rbac/grant` is the only door onto the roster
-  // that still works when nobody holds a role and `admin.openWhenEmpty` is off.
+  // most in need of the API half rather than least: `POST
+  // /admin-api/rbac/grant` is gated by an access token rather than by the
+  // console's roles (since 2026-09-09; `adminApi.authRequired`), so it is a
+  // door onto the roster that does not depend on anybody already holding a
+  // console role — which is what it was written for when the API was ungated
+  // and `admin.openWhenEmpty` was off.
   rbacView: rbacView,
   // `mfaView` is gone (2026-09-12): the page it belonged to split into
   // /admin/totp and /admin/webauthn and its columns moved onto /admin/users,
@@ -36665,10 +36803,11 @@ module.exports = {
   // the resource, and only the resource.
   // The federation register's page and its seven writes. Rule 7 again: the API
   // calls exactly these, so an action added to that switch is most of adding it
-  // to /admin-api. This one matters more than most — the management API is not
-  // gated, so `POST /admin-api/federation/create` is how a test configures a
-  // partner with no browser at all, which is the only way the feature can be
-  // exercised automatically.
+  // to /admin-api. This one matters more than most —
+  // `POST /admin-api/federation/create`, with an access token (the API is
+  // gated since 2026-09-09), is how a test configures a partner with no
+  // browser at all, which is the only way the feature can be exercised
+  // automatically.
   federationView: federationView,
   // The gate's answer for one request, so admin_api.js's own /rbac view can say
   // WHO IS ASKING without a second reading of the cookie that could disagree

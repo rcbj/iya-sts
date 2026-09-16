@@ -317,6 +317,15 @@ function childMain() {
     note(r.status === 200 && second && second !== first,
          '3c. with oauth2.refreshTokenRotation on, a refresh hands back a ' +
          'NEW refresh token', r.status);
+    // THE REDEEMED TOKEN IS RETIRED, not merely refused on its next use: the
+    // rotation step revokes it, so it introspects as inactive. Until
+    // 2026-09-16 that step asked `enabled()` rather than `rotationRequired()`
+    // and this answered `active: true` with the setting on and no mode.
+    r = await post(port, '/oauth2/introspect', Object.assign({
+      token: first, token_type_hint: 'refresh_token' }, client));
+    note(r.status === 200 && r.json && r.json.active === false,
+         '3c2. and the one it replaced introspects as inactive at once',
+         r.status + ' ' + r.text.slice(0, 200));
     r = await refresh(first);
     note(r.status === 400 && r.json && r.json.error === 'invalid_grant',
          '3d. and presenting the spent one again is refused',

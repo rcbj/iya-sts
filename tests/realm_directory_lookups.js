@@ -77,8 +77,8 @@ function groupAttributes(cn) {
 }
 
 // Create a realm, hand it to `fn`, and remove it however that goes. Same shape
-// as the other two files here: the realm table is process-wide, and a realm
-// left behind changes what a later test resolves.
+// as the other realm-creating files here: the realm table is process-wide, and
+// a realm left behind changes what a later test resolves.
 function withRealm(t, id, fn) {
   log.debug("Entering withRealm().");
   const made = realms.create({ id: id, name: id,
@@ -100,11 +100,15 @@ function withRealm(t, id, fn) {
 // ---------------------------------------------------------------------------
 // 1. READING A GROUP BY DN.
 //
-// Both directions, because they fail for different reasons and a fix that
-// caught one and not the other would look complete. A non-default realm's base
-// is a SIBLING of every other realm's, so "under my base" refuses the default
-// realm's DN on its own; the DEFAULT realm's base CONTAINS every realm's
-// subtree, so only the carve-out in `containedRealmBases()` refuses theirs.
+// Both directions, because they failed for different reasons under the
+// hand-written guards and a fix that caught one and not the other would look
+// complete. A non-default realm's base is a SIBLING of every other realm's, so
+// "under my base" refused the default realm's DN on its own; the DEFAULT
+// realm's base CONTAINS every realm's subtree, so only a carve-out
+// (`containedRealmBases()`, gone with the guards) refused theirs. Since the
+// store was split per realm (see the header) both directions are the same
+// fact — the other realm's entry is not in this realm's Map — and the
+// "carve-out" assertion below still names the case that once needed one.
 // ---------------------------------------------------------------------------
 function checkGroupReads(t) {
   log.debug("Entering checkGroupReads().");
@@ -282,8 +286,8 @@ function checkPeopleAndApplications(t) {
 // 4. WITH NO REALM DEFINED, EVERY ONE OF THOSE LOOKUPS IS WHAT IT ALWAYS WAS.
 //
 // The property the whole realm design rests on, asserted for the accessors this
-// file is about: with nothing defined, `containedRealmBases()` is empty and
-// `inRealm()` is "under the naming context", which every entry is.
+// file is about: with nothing defined there is one realm and one Map, so every
+// entry is in the Map a lookup reads — as it was before realms existed.
 // ---------------------------------------------------------------------------
 function checkDefaultUnchanged(t) {
   log.debug("Entering checkDefaultUnchanged().");

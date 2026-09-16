@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: request_worker.js
@@ -61,11 +62,13 @@
 //
 // `protocol_stack.js` requires every module, which REGISTERS every route and
 // starts nothing: the Kerberos KDC's two sockets, the LDAP directory's two,
-// SPIFFE's four and the two TLS endpoints are all bound from `listen()` in
-// `server.js`, which a worker never calls. That separation predates this file
-// by a fortnight and was made for a different reason — binding can fail, and a
-// `require` that throws takes the process down where a route cannot — which is
-// the ordinary way a good boundary pays twice.
+// SPIFFE's gRPC sockets and the embedded debugger's listener are all bound
+// from `listen()` in `server.js`, which a worker never calls (the two TLS
+// endpoints were on that list until they were deleted on 2026-09-16). That
+// separation predates this file by a fortnight and was made for a different
+// reason — binding can fail, and a `require` that throws takes the process
+// down where a route cannot — which is the ordinary way a good boundary pays
+// twice.
 //
 // **A WORKER SERVES MORE THAN HTTP, AND THIS PARAGRAPH SAID OTHERWISE FOR AN
 // HOUR.** It read "what a worker does not serve is anything that is not HTTP —
@@ -100,7 +103,8 @@
 // ANOTHER PROCESS AGAINST THE STORE, so it runs `common/service_state.js` —
 // the same four startup steps `server.js` runs, from the same file — and the
 // stores are reconciled by `persistence/persistence_replication.js`'s change
-// log. The root CLAUDE.md argues why that was not a second mechanism.
+// log. `common/CLAUDE.md` (*A WORKER IS ANOTHER PROCESS AGAINST THE STORE*)
+// argues why that was not a second mechanism.
 //
 // **SO THE CONDITION FOR DISPATCHING A PATH IS NOW STATED AND CHECKED RATHER
 // THAN PENDING.** `request_pool.js`'s `start()` REFUSES to bring the pool up
@@ -861,11 +865,12 @@ function cleanup() {
 // ---------------------------------------------------------------------------
 // THE OPERATION TABLE: what a worker will do that is not an HTTP request.
 //
-// The front process owns six listener families and only one speaks HTTP. An
-// LDAP search, a Kerberos AS-REQ and a gRPC call all have the same reason to
-// leave that process as a `/scim/v2` POST does, and the transport they arrive
-// on is not a reason to keep them there — so the front process keeps the socket
-// and the framing, and hands over the OPERATION.
+// The front process owns every listener family, and only the main port's HTTP
+// is dispatched as requests. An LDAP search, a Kerberos AS-REQ and a gRPC call
+// all have the same reason to leave that process as a `/scim/v2` POST does,
+// and the transport they arrive on is not a reason to keep them there — so the
+// front process keeps the socket and the framing, and hands over the
+// OPERATION.
 //
 // **THE TABLE IS FILLED BY THE MODULE THAT OWNS THE OPERATION**, through
 // `register()`, rather than being written out here. This file must not require
@@ -1003,7 +1008,7 @@ function handleSync(message) {
   log.debug("Leaving handleSync().");
 }
 
-process.on('message', function (message) {
+process.on('message', /** @param {any} message */ function (message) {
   if (message && message.stop) {
     stop();
     return;
@@ -1048,7 +1053,8 @@ process.on('SIGUSR2', function () {
 // time can be reached through without every module learning about the pool.
 // ---------------------------------------------------------------------------
 if (require.main === module) {
-  process.on('message', function onStart(message) {
+  process.on('message', /** @param {any} message */
+                function onStart(message) {
     log.debug("Entering onStart().");
     if (!message || !message.begin) {
       log.debug("Leaving onStart().");
@@ -1160,7 +1166,7 @@ if (require.main === module) {
     // THE DIRECTORY'S CONNECTION LIST ARRIVES ON THIS SAME LISTENER, and is
     // handed straight to `ldap_server.js` — see installDirectoryMirror() for
     // what it is for and why this process cannot work it out for itself.
-    process.on('message', function (later) {
+    process.on('message', /** @param {any} later */ function (later) {
       if (later && later.adoptKeys && later.adoptKeys.realm) {
         keystore.adoptShared(later.adoptKeys.realm, later.adoptKeys.blob);
       }

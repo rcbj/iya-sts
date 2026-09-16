@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: used_assertions.js

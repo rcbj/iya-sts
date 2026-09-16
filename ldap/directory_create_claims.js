@@ -26,13 +26,13 @@
 // fail-closed rule.
 //
 // **THE CLAIM GUARDS THE WINDOW AND NOTHING LONGER.** Once the create has
-// committed every node sees the entry — the winner of the next claim catches
-// up with the store before its door looks — and the ordinary check refuses a
-// duplicate. So a claim is
-// released as soon as the write it guards has been flushed, and a refused or
-// failed create releases it at once: a person deleted and created again a
-// moment later must not be refused by the claim of their first life. The
-// lifetime below is only the ceiling for a process that dies holding one.
+// committed every node sees the entry — the winner of the next claim catches up
+// with the store before its door looks — and the ordinary check refuses a
+// duplicate. So a claim is released as soon as the write it guards has been
+// flushed, and a refused or failed create releases it at once: a person deleted
+// and created again a moment later must not be refused by the claim of their
+// first life. The lifetime below is only the ceiling for a process that dies
+// holding one.
 //
 // **ONLY WHERE SEVERAL PROCESSES WRITE ONE STORE** — active-active, or request
 // workers dispatched against a shared store. Anywhere else the directory
@@ -51,23 +51,23 @@
 // THE ONE THIS HEADER USED TO GIVE.** It said a sign-in creates "the SAME
 // person by name on both nodes, and the flush's merge makes it one entry".
 // Since a person's `sub` became `urn:uuid:<entryUUID>` (2026-09-14) that is
-// only half true: the merge keeps the FIRST committed entry
-// (`STS-STORE-0052`), and the node whose copy lost has already issued a
-// session and tokens naming ITS entryUUID — a subject that names nobody. What
-// keeps it unclaimed is the shape of the path: `ldap_server.js`'s
-// `autoCreateUser()` is `admin_stats.recordAuthentication()`'s synchronous
-// observer, reached from inside every protocol's credential check, and a claim
-// is a round trip that path cannot await without making every one of those
-// handlers asynchronous first. It is DEVELOPMENT MODE only (`mode.autoCreates()`
-// is false in product), and reachable with several processes only in a
-// development dispatch run or a development active-active cluster. **RESOLVED 2026-09-14 BY rcbj'S CHOICE: THE
-// ENTRY'S entryUUID IS NAME-DERIVED THERE.** `ldap_server.js`'s `putEntry()`
-// gives an entry created by a sign-in (`origin: 'authentication'`) the seed's
-// version 5 value over the realm and the DN whenever another process can race
-// — a cluster mode, or a dispatched pool — so both create the SAME entry and
-// the merge makes them one. A person deleted and signed in again under the
-// same name gets the same subject there; a single process keeps random values.
-// `tests/cluster_autocreate_subject.js` holds both halves.
+// only half true: the merge keeps the FIRST committed entry (`STS-STORE-0052`),
+// and the node whose copy lost has already issued a session and tokens naming
+// ITS entryUUID — a subject that names nobody. What keeps it unclaimed is the
+// shape of the path: `ldap_server.js`'s `autoCreateUser()` is
+// `admin_stats.recordAuthentication()`'s synchronous observer, reached from
+// inside every protocol's credential check, and a claim is a round trip that
+// path cannot await without making every one of those handlers asynchronous
+// first. It is DEVELOPMENT MODE only (`mode.autoCreates()` is false in
+// product), and reachable with several processes only in a development dispatch
+// run or a development active-active cluster. **RESOLVED 2026-09-14 BY rcbj'S
+// CHOICE: THE ENTRY'S entryUUID IS NAME-DERIVED THERE.** `ldap_server.js`'s
+// `putEntry()` gives an entry created by a sign-in (`origin: 'authentication'`)
+// the seed's version 5 value over the realm and the DN whenever another process
+// can race — a cluster mode, or a dispatched pool — so both create the SAME
+// entry and the merge makes them one. A person deleted and signed in again
+// under the same name gets the same subject there; a single process keeps
+// random values. `tests/cluster_autocreate_subject.js` holds both halves.
 //
 // A LIBRARY (rule 3): it registers no route. `persistence.js` and
 // `cluster_claims.js` are reached lazily inside the calls.
@@ -113,8 +113,9 @@ const CLAIM_RETRY_MS = 50;
 function persistence() {
   log.debug("Entering persistence().");
   log.debug("Leaving persistence().");
-  // LAZY: this module is required by `ldap_server.js`, which `persistence.js`
-  // is required above, and the value is only wanted inside a request.
+  // LAZY: this module is required by `ldap_server.js`, which the require order
+  // loads far below `persistence.js` (#4a), and the value is only wanted
+  // inside a request.
   return require('../persistence/persistence');
 }
 

@@ -20,10 +20,10 @@
 #
 # Three of the four kinds of job in this image reach outside that directory:
 #
-#   * the ten IN-PROCESS jobs (tests/*.js) require the service's own modules —
+#   * the IN-PROCESS jobs (tests/*.js) require the service's own modules —
 #     common/crypto.js, common/realms.js, the two map renderers, the Kerberos
 #     codecs — because asserting a module contract is what they are for;
-#   * five of the thirteen VENDORED protocol jobs load service modules too, and
+#   * several of the VENDORED protocol jobs load service modules too, and
 #     find them through MOCK_STS_DIR, which run-report.js sets to the
 #     repository root;
 #   * `npm install` at the root needs package.json, package-lock.json, .npmrc
@@ -125,11 +125,12 @@ RUN node -v && npm -v
 #
 # THE VERSION IS NOT THE PARENT PROJECT'S, AND THAT IS DELIBERATE. That image
 # pins 121.0.6167.85, and its own comments explain what it works around there
-# (Web Crypto Ed25519 behind a flag). The one browser job here —
-# tests/vendored/sts_admin_console.js — reads status codes and headers through
-# WEBDRIVER BiDi (`network.responseCompleted`), because `default-src 'none'` on
-# the console is the thing under test and blocks a `fetch()` from the page. BiDi
-# network events are a recent Chrome, so this pins a current stable one instead.
+# (Web Crypto Ed25519 behind a flag). The browser jobs here drive this
+# service's console, and tests/vendored/sts_admin_console.js reads status codes
+# and headers through WEBDRIVER BiDi (`network.responseCompleted`), because
+# `default-src 'none'` on the console is the thing under test and blocks a
+# `fetch()` from the page. BiDi network events are a recent Chrome, so this
+# pins a current stable one instead.
 # The version and the driver version are the SAME string on purpose: a
 # chromedriver that does not match its browser fails at session creation with a
 # message about a version, which is at least the truth, and a mismatch of one
@@ -221,7 +222,7 @@ ENV CONFIG_FILE=./env/local.js
 # and STS_SPKI_PIN (tests/tools/trust.js). Baking one in would be a truststore
 # that is wrong for every run after the one that built it.
 ENV STS_TEST_SERVICE_URL=https://sts:8081
-# The directory's own socket, for sts_directory_bulk_load_ldap.js. Both exist
+# The directory's own socket, for sts_directory_bulk_load_ldap.js. It exists
 # for the reason the line above does: a hand-run `docker run` on the same
 # network needs no environment, and a rename needs one edit. Nothing is
 # published anywhere in that stack — this container is on the bridge with the

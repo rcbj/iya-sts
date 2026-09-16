@@ -18,8 +18,9 @@
 //   1. A protocol module calls beginAuthentication({ returnTo, ... }) and
 //      redirects the browser to the path it returns.
 //   2. This service shows the screen, takes what the person types, and — on
-//      every successful sign-in, which is all of them, since no password is
-//      checked — establishes the session cookie.
+//      every successful sign-in, which in development mode is all of them,
+//      since no password is checked there (product mode verifies it) —
+//      establishes the session cookie.
 //   3. It redirects the browser to `returnTo`, which the caller built out of
 //      its ORIGINAL request, unchanged.
 //   4. The caller's endpoint runs again, sees the session cookie this time, and
@@ -59,9 +60,9 @@ const crypto = require('crypto');
 // The constant-time comparison a session handle is checked with. A LEAF that
 // never requires anything here back (rule 3r).
 const stsCrypto = require('../common/crypto');
-// TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
+// TRUST REALMS: the stores below are partitioned by realm. It requires only
+// config.js and error_codes.js here, so it cannot join a cycle and it
+// registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
 const app = require('../common/app');
 const { log, logArtifact, baseUrlOf, nowSec, randomId, xmlEscape, parseBody,
@@ -74,8 +75,9 @@ const stats = require('../common/admin_stats');
 // The federation register, for the buttons at the foot of the sign-in screen.
 // A plain require in the ordinary direction and it passes rule 3e's test both
 // ways round: that module registers no route, so nothing about requiring it
-// from here can move one, and it requires only config.js, helpers.js and
-// audit.js — none of which requires this file — so there is no cycle to close.
+// from here can move one, and it requires only `common/` libraries (config,
+// helpers, audit, realms, applications, error_codes) — none of which requires
+// this file — so there is no cycle to close.
 //
 // It is THIS module that requires the register rather than the other way about,
 // and that is the arrangement rather than an accident: `federation_sp.js`
@@ -87,33 +89,37 @@ const federation = require('./../federation/federation');
 // The application registry, for the one attribute on an entry that decides
 // where that application's people are sent to sign in —
 // `appFederationRelationship`. Same shape of dependency as the register above
-// and it passes the same test: `common/applications.js` requires config.js,
-// helpers.js and audit.js and nothing else here, so there is no cycle to close,
-// and it registers no route, so requiring it moves nothing in the require
-// order.
+// and it passes the same test: `common/applications.js` requires only
+// libraries (config, helpers, audit, realms, roles, keystore and a few more
+// leaves, and `ssf/ssf_events.js`), none of which requires this file, so there
+// is no cycle to close, and it registers no route, so requiring it moves
+// nothing in the require order.
 const applications = require('../common/applications');
 // For one thing only: whether the main port is an HTTPS listener, which decides
 // the Secure attribute on the session cookie below.
 const config = require('../common/config');
 // THE ROLE GATE. A LEAF (rule 3): it registers nothing and requires only
-// `helpers` and `config`, so this require cannot move a route and cannot close
-// a cycle — which is the whole reason `common/issuance_gate.js` exists rather
+// `helpers`, `config` and `error_codes`, so this require cannot move a route
+// and cannot close a cycle — which is the whole reason `common/issuance_gate.js` exists rather
 // than this module reaching into `xacml/`, which is at 23c and would bring
 // seven `/xacml` routes and five console pages to position 8. In a process
 // that never loaded the XACML family the gate answers "allowed" and this
 // screen behaves exactly as it did.
 const gate = require('../common/issuance_gate');
-// The credential verifier. A LEAF (rule 3) that registers no route and
-// requires nothing here, so it can neither move a route nor close a cycle.
+// The credential verifier. A library (rule 3) that registers no route and
+// requires nothing that requires this file back — `common/` and `cluster/`
+// libraries and this directory's `webauthn.js` and `webauthn_policy.js` — so
+// it can neither move a route nor close a cycle.
 // Development mode answers yes to everything but the reserved refusal, so
 // requiring it changes nothing about how this screen behaves today.
 const credentials = require('../common/credentials');
-// CSRF and rate limiting. A LEAF (rule 3): registers nothing, requires only
-// config, crypto and helpers.
+// CSRF and rate limiting. A library (rule 3): registers nothing, and requires
+// only `common/` and `cluster/` libraries, none of which requires this file.
 const websecurity = require('../common/websecurity');
 const mode = require('../common/mode');
 // The input validator. A LEAF (rule 3) — it registers no route and requires
-// only `config`, `bunyan` and zod, so it closes no cycle and moves nothing.
+// only `config`, `error_codes`, `bunyan` and zod, so it closes no cycle and
+// moves nothing.
 // `common/validation.js` argues the shape/existence line every schema below
 // rests on: what a value may BE is refused here in both modes, and whether the
 // person NAMED exists stays with `mode.js`.
@@ -1516,7 +1522,12 @@ function renewRelyingPartySession(spec) {
 // for that reason, and this is the other half of the same decision. The two
 // have to agree: a gate that accepted an `acme` session while the roster could
 // only name default-realm people would let somebody in and then insist they
-// were nobody.
+// were nobody. (SINCE 2026-09-14 (#32) a realm has a roster of its own,
+// confined to it by `admin-ui/admin_scope.js`, and the gate asks the roster of
+// the realm the person signed in through; the default realm's is only what
+// `admin_rbac.js` reads when no realm is named — authn/CLAUDE.md and
+// admin-ui/CLAUDE.md 8d. This function still reads the default realm's
+// partition.)
 //
 // **THERE IS STILL ONE COOKIE, AND THAT IS WHY THIS IS NOT `sessionOf()`.**
 // `startSession()` writes `sts_session` at `Path=/`, deliberately and for
@@ -1534,11 +1545,13 @@ function renewRelyingPartySession(spec) {
 //
 // Two properties this keeps from the version it replaced:
 //
-//   * IT GRANTS NOTHING ELSE. This is called from `gateStateFor()` in admin.js
-//     and from nowhere else, and the thing it answers is "may this browser read
-//     this console". No token is issued on the session it finds, no assertion
-//     names it, and `/oauth2/authorize` still calls `sessionOf()` and still
-//     sees only its own realm's.
+//   * IT GRANTS NOTHING. Its one caller is `consoleSignOn()` in
+//     `admin-ui/admin.js`, which REPORTS the sign-on session behind the
+//     console's own relying-party session; since 2026-09-06 the gate
+//     (`gateStateFor()`, now in `admin-core/admin_views.js`) reads the
+//     relying-party session and not this. No token is issued on the session it
+//     finds, no assertion names it, and `/oauth2/authorize` still calls
+//     `sessionOf()` and still sees only its own realm's.
 //   * ENDING IT STILL ENDS IT. The session is the one object in the default
 //     realm's map — so /logout, /admin/logout and an expiry sweep all shut the
 //     console too, because there is nothing here to end separately.
@@ -1703,12 +1716,13 @@ function methodPhraseFor(amr) {
 //
 // `ssf/caep.js` needs to know when a session starts, is presented and ends,
 // because that is what a CAEP event is ABOUT. It cannot be required from here:
-// this module is 8 in `server.js`'s require order and `ssf/ssf.js` is 23b, so
-// a require the other way would REGISTER EVERY `/ssf` ROUTE HERE — ahead of
-// `oauth2.js`, ahead of the admin console, ahead of ldap, scim and spiffe —
-// which is rule 1, and it would close a cycle besides. So this module holds a
-// function and `ssf/ssf.js` fills it at its own require time, exactly as
-// `admin.setSignalsReporter()` works one layer up.
+// this module is 8 in the require order (`common/protocol_stack.js`) and
+// `ssf/ssf.js` is 23b, so a require the other way would REGISTER EVERY `/ssf`
+// ROUTE HERE — ahead of `oauth2.js`, ahead of the admin console, ahead of
+// ldap, scim and spiffe — which is rule 1, and it would close a cycle
+// besides. So this module holds a function and `ssf/ssf.js` fills it at its
+// own require time, exactly as `admin.setSignalsReporter()` works one layer
+// up.
 //
 // **IT IS ONE FUNCTION AND IT IS ADVISORY.** `notifySession()` swallows
 // everything the observer throws, and the reason is the one `audit.js` gives
@@ -2062,11 +2076,12 @@ function notePresented(session, via, req) {
 //
 // Every caller of `startSession()` handed it an express response until the TLS
 // listeners started signing people in on a verified client certificate. Those
-// two sockets are `https.createServer()` with a handler of their own — they are
-// not this express app and cannot be, because a client certificate is a
-// property of the CONNECTION and the app is behind one listener that does not
-// ask for one — so their `res` is a bare node `ServerResponse`, which has
-// `setHeader` and no `set`.
+// two sockets (8443 and 9443) were `https.createServer()` with a handler of
+// their own, not this express app, so their `res` was a bare node
+// `ServerResponse`, which has `setHeader` and no `set`. They were DELETED on
+// 2026-09-16 and the certificate sign-in is now `GET /tls/sign-in`, an express
+// route on the main port — so no caller passes a bare response today. The
+// fallback stays because the failure it prevents is the one below.
 //
 // **THE SYMPTOM WITHOUT THIS WAS THE WORST HALF-STATE AVAILABLE**: the session
 // was created, entered the map, and appeared on `/admin/sessions` — and then
@@ -7358,8 +7373,8 @@ app.post(BACKUP_CODE_PATH, async function (req, res) {
   // A recovery code is stored as a scrypt hash now, and a WRONG one has to be
   // compared against every code in the set — ten by default. Measured on this
   // machine: 860ms with the event loop ticking **zero** times, against 263ms
-  // with it ticking 56. Node runs this service's six listener families on one
-  // thread, so the synchronous door here would mean the KDC, the directory and
+  // with it ticking 56. Node runs every listener family this service has on
+  // one thread, so the synchronous door here would mean the KDC, the directory and
   // every other endpoint answering nobody for most of a second every time
   // somebody mistypes ten characters off a printed list — which is the
   // ordinary case at this screen.

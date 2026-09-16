@@ -87,7 +87,9 @@
 // second.** Nothing here is ever assigned from anywhere but the console's own
 // setter, so the two cannot drift apart; what would make them two answers is a
 // second writer, and `tests/admin_actions_layer.js` asserts that each of the
-// seven setters in `admin-ui/admin.js` writes both.
+// seven setters in `admin-ui/admin.js` writes both — and the eighth,
+// `setTruststore()`, filled by `common/protocol_stack.js` since 2026-09-12
+// (below).
 // ===========================================================================
 
 // The helpers this layer reaches for, and no more. `numberWord` builds the
@@ -266,34 +268,6 @@ function setTruststore(value) {
   log.debug("Leaving setTruststore().");
 }
 
-// Both response shapes for a page, chosen by ?format=json. `no-store` on all of
-// them: they describe live state, and a cached metrics page is a wrong one.
-// `up`, when given, is what upTo() returned for the section this page hangs
-// under. Only a drill-down passes it; a section's own list page does not, and
-// the JSON answer ignores it either way — a way back up is a property of a page
-// a person is reading, and a caller of ?format=json has the URL it asked for.
-// ---------------------------------------------------------------------------
-// THE CSRF TOKEN GOES INTO EVERY POST FORM THIS SHELL DRAWS (2026-09-06).
-// OWASP A01/A08.
-//
-// **AT THE SHELL AND NOT AT EACH FORM, DELIBERATELY.** This console builds
-// something like a hundred and forty forms as inline strings across sixty
-// pages, and a scheme that required each author to remember a hidden field is a
-// scheme that is one page away from being incomplete for ever — silently, since
-// a missing token looks exactly like a page that works. Adding it HERE means a
-// page written tomorrow is protected by having been drawn at all.
-//
-// It is a string rewrite, which is the part worth being uncomfortable about,
-// and it is narrow on purpose: it matches the opening tag of a form whose
-// method is post and inserts one input directly after it. It cannot match
-// anything else, because `<form` with `method="post"` is not a sequence that
-// occurs in prose here — and if it ever did, the worst outcome is a stray
-// hidden input in a paragraph rather than a missing control.
-//
-// **A PAGE DRAWN FOR SOMEBODY WITH NO SESSION GETS NO TOKEN AND NEEDS NONE**:
-// `checkCsrf()` passes a request with no session, because there is nothing to
-// forge on behalf of an anonymous caller. See websecurity.js.
-// ---------------------------------------------------------------------------
 // THE FIELDS EVERY FORM ON THIS CONSOLE CARRIES THAT ARE NOT SETTINGS.
 //
 // Several action handlers refuse a field they do not recognise BY NAME rather
@@ -797,9 +771,9 @@ function logoutAction(body) {
     // itself as the jti: `stats.restore()` was handed one and matched nothing,
     // so the action ALWAYS reported "was not revoked, so nothing changed" and
     // put `[object Object]` in the sentence where the jti belongs. It is the
-    // same call tokenAction() makes two hundred lines up, where it is spelt
-    // `found.jti`, which is what makes /admin/tokens' restore work and this one
-    // not.
+    // same call tokenAction() makes further up, where it was always spelt
+    // `found.jti` — which is why /admin/tokens' restore worked and this one
+    // did not.
     const found = jtiFrom(String(body.jti || body.target || ''));
     if (!found.jti) {
       log.debug("Leaving logoutAction().");
@@ -1982,7 +1956,7 @@ function groupsAction(body) {
 }
 
 // ---------------------------------------------------------------------------
-// POST /admin/applications — the six actions.
+// POST /admin/applications — the actions in APPLICATION_ACTIONS below.
 //
 // **The console is not a second door onto this registry**, and that is the
 // whole design of these: every one calls a function in `applications.js` which
@@ -2669,10 +2643,10 @@ function saml11Action(body) {
 // in both directions, because `tests/vendored/admin_api.js`'s parity check
 // reads that sentence to discover what to look for. A bare delegation to
 // `usersAction()` therefore answered `/admin-api/mfa/no-such-action` by naming
-// all five actions the USERS resource has — so this resource claimed to offer
-// `create`, `set-password` and `issue-activation`, which it does not and must
-// not. It went red on the first full run, which is exactly what that assertion
-// is for.
+// all five actions the USERS resource had then — so this resource claimed to
+// offer `create`, `set-password` and `issue-activation`, which it does not and
+// must not. It went red on the first full run, which is exactly what that
+// assertion is for.
 //
 // So the repertoire is stated here and the WORK is not duplicated: an action
 // outside these two is refused in this resource's own words, and the two that
@@ -3156,13 +3130,16 @@ function passwordPoliciesAction(body, context) {
 // ---------------------------------------------------------------------------
 // GET /admin/claims, POST /admin/claims
 // GET /admin/saml-attributes, POST /admin/saml-attributes
+// GET /admin/userinfo-claims, POST /admin/userinfo-claims
 // ---------------------------------------------------------------------------
-// TWO PAGES, ONE ACTION FUNCTION AND ONE STORE. The four claim sets used to be
-// four sections of /admin/claims; since 2026-08-24 the two JWT sets are there
-// and the two SAML ones are on /admin/saml-attributes, under the console's own
-// SAML group. What did NOT split is anything underneath: `CLAIM_SETS` is one
-// object in admin_stats.js, `setClaimSet()` is the one door onto it, and this
-// one function is what both pages and both /admin-api resources post to. A
+// THREE PAGES, ONE ACTION FUNCTION AND ONE STORE. The claim sets used to be
+// sections of /admin/claims; since 2026-08-24 the two JWT sets are there and
+// the two SAML ones are on /admin/saml-attributes, under the console's own
+// SAML group, and since 2026-08-26 the fifth, the UserInfo response, is on
+// /admin/userinfo-claims. What did NOT split is anything underneath:
+// `CLAIM_SETS` is one object in admin_stats.js, `setClaimSet()` is the one
+// door onto it, and this one function is what all three pages and their
+// /admin-api resources post to. A
 // second action function would have been a second set of rules about reserved
 // names and duplicates that agreed with the first until one of them changed.
 //
@@ -3176,7 +3153,7 @@ function passwordPoliciesAction(body, context) {
 // cosmetic: it is the set ids the door being knocked on carries, so a POST to
 // /admin/claims naming `saml2` is refused by name instead of quietly changing a
 // set whose page it is not on and then redirecting to a page that cannot show
-// what it did. It defaults to all four, which is what a caller that has not
+// what it did. It defaults to all five, which is what a caller that has not
 // been given a family — nothing today — would get.
 function claimsAction(body, names, allowed) {
   log.debug("Entering claimsAction(). action=" + (body.action || '(none)'));
@@ -3860,10 +3837,11 @@ function configSettingFor(key) {
   })[0];
 }
 
-// The four keys, in the order the page draws them: the three lifetimes, then
-// the allowance applied when reading one back. Written once, and every part of
-// this page and its two API operations is derived from it, so a fifth setting
-// is one entry here.
+// The six keys, in the order the page draws them: the three lifetimes, the
+// refresh token's idle limit and its revoke-on-logout switch, then the
+// allowance applied when reading one back. Written once, and every part of
+// this page and its two API operations is derived from it, so a seventh
+// setting is one entry here.
 const TOKEN_LIFETIME_KEYS = ['oauth2.accessTokenTtlS', 'oauth2.idTokenTtlS',
                              'oauth2.refreshTokenTtlS',
                              'oauth2.refreshIdleSeconds',
@@ -3873,11 +3851,12 @@ const TOKEN_LIFETIME_KEYS = ['oauth2.accessTokenTtlS', 'oauth2.idTokenTtlS',
 // The action switch. Two actions, and both write through config.js.
 //
 // `set` is ALL-OR-NOTHING for the reason configAction()'s set-many is: this
-// form posts four fields at once, and applying two of them before refusing the
-// third would leave the service issuing tokens with a lifetime combination
-// nobody asked for and the page showing it as though it had been chosen.
+// form posts every one of its fields at once, and applying some of them before
+// refusing another would leave the service issuing tokens with a lifetime
+// combination nobody asked for and the page showing it as though it had been
+// chosen.
 //
-// `defaults` clears the runtime override on these four ONLY. It is not
+// `defaults` clears the runtime override on these keys ONLY. It is not
 // config.js's reset-all, which would also drop an unrelated override somebody
 // set on another page — that is the sort of button that is used once and
 // regretted, and "reset all" already exists on /admin/config for whoever wants
@@ -3887,12 +3866,12 @@ function tokenLifetimesAction(body) {
   const action = String((body && body.action) || '').trim();
 
   if (action === 'set') {
-    // Only the four this page owns, and only the ones actually posted. A JSON
-    // caller that sends one of them is setting one of them; a form sends all
-    // four. A field named here that is NOT one of the four is refused by name
-    // rather than ignored, because this action's whole surface is four keys and
-    // a caller that misspelt one deserves to be told rather than to watch
-    // nothing happen.
+    // Only the keys this page owns, and only the ones actually posted. A JSON
+    // caller that sends one of them is setting one of them; a form sends them
+    // all. A field named here that is NOT one of them is refused by name
+    // rather than ignored, because this action's whole surface is
+    // TOKEN_LIFETIME_KEYS and a caller that misspelt one deserves to be told
+    // rather than to watch nothing happen.
     const posted = Object.keys(body || {}).filter(function (name) {
       return !FORM_FURNITURE[name];
     });
@@ -3954,9 +3933,9 @@ function tokenLifetimesAction(body) {
   if (action === 'defaults') {
     // clearOverride() refuses a key that was never overridden, which is the
     // right answer for a caller naming one key and the wrong one for a button
-    // meaning "put these four back". So the refusals are counted rather than
-    // returned: a page where three of the four were overridden must not fail
-    // because the fourth was already where it belonged.
+    // meaning "put these back". So the refusals are counted rather than
+    // returned: a page where all but one were overridden must not fail
+    // because the last was already where it belonged.
     const cleared = [];
     TOKEN_LIFETIME_KEYS.forEach(function (key) {
       if (config.clearOverride(key).ok) cleared.push(key);
@@ -3982,14 +3961,15 @@ function tokenLifetimesAction(body) {
       'The two are: set, defaults.'] });
 }
 
-// THE ELEVEN SETTINGS THIS PAGE OWNS: five per profile, plus the skew both
-// share. `unit` is what an int row's number means; `kind` is the artifact kind
-// whose count belongs beside it (only the two lifetimes have one, because only
-// they govern how long an assertion lives); `profile` and `field` name the
-// per-application attribute that OVERRIDES the row, which is what makes these
-// ten defaults rather than settings. Written once, and every part of this page,
-// its two API operations and the per-application resolver's documentation is
-// derived from it.
+// THE SIXTEEN SETTINGS THIS PAGE OWNS: five per profile, SAML 2.0's four
+// encryption rows, WS-Federation's lifetime, and the skew all of them share.
+// `unit` is what an int row's number means; `kind` is the artifact kind whose
+// count belongs beside it (only the two profile lifetimes have one, because
+// only they govern how long an assertion of that kind lives); `profile` and
+// `field` name the per-application attribute that OVERRIDES the row, which is
+// what makes these fifteen defaults rather than settings. Written once, and
+// every part of this page, its two API operations and the per-application
+// resolver's documentation is derived from it.
 const SAML_ASSERTION_SETTINGS = [
   { key: 'saml2.assertionLifetimeMin', unit: 'min', kind: 'SAML 2.0',
     profile: 'saml2', field: 'saml2AssertionLifetimeMin' },
@@ -4032,7 +4012,7 @@ const SAML_ASSERTION_SETTINGS = [
   // The one row with no `profile` and no per-application field, and that is
   // the whole of what distinguishes it: a skew is a fact about the clocks in
   // the estate this service issues into, which is decided once and not per
-  // relying party. The ten above are per application because two service
+  // relying party. The fifteen above are per application because two service
   // providers in one estate legitimately want different answers.
   { key: 'saml.clockSkewS', unit: 's', kind: null, profile: '', field: '' }
 ];
@@ -4051,19 +4031,20 @@ function samlAssertionRowFor(key) {
 
 // The action switch. Two actions, both writing through config.js, and both
 // behaving exactly as /admin/token-lifetimes' do — including `set` being
-// ALL-OR-NOTHING, for that page's reason: this form posts three fields at once,
-// and applying two before refusing the third would leave this service issuing
-// assertions with a combination nobody asked for and the page showing it as
-// though it had been chosen.
+// ALL-OR-NOTHING, for that page's reason: this form posts every one of its
+// fields at once, and applying some before refusing one would leave this
+// service issuing assertions with a combination nobody asked for and the page
+// showing it as though it had been chosen.
 function samlAssertionsAction(body) {
   log.debug("Entering samlAssertionsAction(). action=" + (body && body.action));
   const action = String((body && body.action) || '').trim();
 
   if (action === 'set') {
-    // Only the three this page owns, and only the ones actually posted. A field
+    // Only the keys this page owns, and only the ones actually posted. A field
     // named here that is not one of them is refused BY NAME rather than
-    // ignored: this action's whole surface is three keys, and a caller that
-    // misspelt one deserves to be told rather than to watch nothing happen.
+    // ignored: this action's whole surface is SAML_ASSERTION_KEYS, and a caller
+    // that misspelt one deserves to be told rather than to watch nothing
+    // happen.
     const posted = Object.keys(body || {}).filter(function (name) {
       return !FORM_FURNITURE[name];
     });
@@ -4127,7 +4108,7 @@ function samlAssertionsAction(body) {
   if (action === 'defaults') {
     // clearOverride() refuses a key that was never overridden, which is right
     // for a caller naming one key and wrong for a button meaning "put these
-    // three back". So the refusals are counted rather than returned.
+    // back". So the refusals are counted rather than returned.
     const cleared = [];
     SAML_ASSERTION_KEYS.forEach(function (key) {
       if (config.clearOverride(key).ok) cleared.push(key);
@@ -4194,7 +4175,9 @@ function signalsAction(body) {
       'audit log, which cannot be cleared.' };
 }
 
-// The four actions, shared with `POST /admin-api/ssf/:action`. It resolves
+// The Shared Signals actions (`ssf/ssf.js`'s CONSOLE_ACTIONS — six since the
+// dead-letter pair arrived on 2026-09-14), shared with
+// `POST /admin-api/ssf/:action`. It resolves
 // rather than returning, for the reason the slot's header gives.
 function ssfAction(body) {
   log.debug("Entering ssfAction().");
@@ -4798,7 +4781,7 @@ async function spiffeAction(body) {
 // THE KERBEROS PRINCIPALS, AS `/admin/kerberos/principals` POSTS THEM AND
 // `POST /admin-api/kerberos/principals/{action}` CALLS THEM (2026-09-12).
 //
-// Four actions and each is one function in `kerberos/krb5_person_keys.js`,
+// Six actions and each is one function in `kerberos/krb5_person_keys.js`,
 // which decides everything: what an SPN may be, whether a key already exists,
 // the random keys, the seal, the keytab, the audit row. What this adds is the
 // vocabulary and the house refusal sentence.

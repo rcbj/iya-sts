@@ -47,8 +47,9 @@ const pki = require('../common/pki');
 const applications = require('../common/applications');
 // The registry's store is the directory, and requiring this is what fills the
 // slot `applications.js` reads through. It registers HTTP views and starts no
-// listener (see the four-modules rule in the root CLAUDE.md), so an in-process
-// test may require it and nothing binds a port.
+// listener (see the root CLAUDE.md's
+// *Socket owners start their listeners from `listen()`*), so an
+// in-process test may require it and nothing binds a port.
 require('../ldap/ldap_server');
 const keystore = require('../common/keystore');
 const stsCrypto = require('../common/crypto');
@@ -226,7 +227,7 @@ async function run(t) {
           'CN is a display name and a SAN is the machine-readable one');
   // **MATCHED AGAINST THE TIER'S OWN SUBJECT AND NOT AGAINST A NAME.** It read
   // `indexOf('Issuing')` until 2026-09-11, when the Issuing CAs grew names
-  // that say which of the five they are — "Application Assertion CA" — and a
+  // that say which use case each serves — "Application Assertion CA" — and a
   // check on a word in a common name is a check on a label somebody is free to
   // change. What is actually being claimed is that the LEAF WAS SIGNED BY THE
   // BOTTOM TIER and not by the Root, so it is asserted against that tier.

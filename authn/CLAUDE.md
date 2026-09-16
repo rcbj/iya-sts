@@ -8,6 +8,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 |---|---|
 | `authn.js` | The sign-in screen, the session store, and the pending-authentication record. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
+| `webauthn_policy.js` | The ceremony's options and the four policy settings that refuse, kept out of `webauthn.js` so that file stays loadable on its own. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
 `/authn/spnego` — sign in with a Kerberos ticket — is
@@ -18,7 +19,7 @@ are not dragged to the front of the router. A require from here to there would d
 exactly that AND close a cycle, since that module needs `startSession()`.
 
 **It needed no inverted hook either**, which is worth saying because rule 3e's
-list is six slots long and a seventh is the obvious move. The only two things
+inventory of slots is long and another is the obvious move. The only two things
 this module needs to know are the PATH — declared here, as `SPNEGO_PATH`, in a
 space this module already owns — and whether the door is open, which is
 `krb5.spnegoAuthentication` and is read from `config.js` by both files. Rule
@@ -38,7 +39,7 @@ and telling the calling protocol `access_denied` would end a flow that has not
 failed.
 
 **`webauthn.js` is here and not in a directory of its own** even though WebAuthn
-is one of the sixteen protocol families, because it is the other half of ONE act
+is a protocol family of its own, because it is the other half of ONE act
 of authentication: it shares the pending record, the choice between its two roles
 is made at the password screen, and it owns no session of its own. Splitting them
 would put the two halves of one ceremony in two places and leave the pending
@@ -345,8 +346,10 @@ were nobody.
 
 **Two things make this the boundary already drawn rather than a hole in it, and
 both have to stay true if anything here is reworked:**
-* **It grants nothing else.** `gateStateFor()` in `admin-ui/admin.js` is the only
-  caller, and the only thing it answers is "may this browser read this console".
+* **It grants nothing else.** Its only caller is `consoleSignOn()` in
+  `admin-ui/admin.js`, which REPORTS the sign-on session behind the console's
+  own relying-party session; since 2026-09-06 the gate (`gateStateFor()`, now
+  in `admin-core/admin_views.js`) reads the relying-party session instead.
   No token is issued on the session it finds and no assertion names it. Every
   protocol module still calls `sessionOf()` and still sees its own realm's
   partition only.
@@ -496,26 +499,24 @@ enrolment there is and it is reserved for people who hold no second factor yet.
 survived the over-HTTP job, which is the third time this repository has recorded
 *a surviving mutant is telling you about the fixture*.
 
-### What is still missing, and it is a door rather than a store
+### What was missing, and it was a door rather than a store
 
-**There is no way to enrol a SECOND key, and `/portal/keys` and
-`/portal/activate` still cannot enrol a first one.** A WebAuthn ceremony needs
-script, every page of the portal is `script-src 'none'`, and the six-scripted-pages
-rule says a seventh needs its own argument made from scratch. Until that is
-done: `webauthn.maxKeysPerPerson` cannot be exceeded because it cannot be
-reached above one, the multi-key `allowCredentials` list is exercised by no
-door, and the activation flow's *a security key instead of a password* still
-records an intention and produces no credential — which is a link spent on an
-account nobody can sign in to.
+**When this was written there was no way to enrol a SECOND key, and
+`/portal/keys` and `/portal/activate` could not enrol a first one**, because a
+WebAuthn ceremony needs script and every portal page was `script-src 'none'`.
+**`/portal/keys` became the seventh scripted page later the same day** (reusing
+`/authn/webauthn.js`), so a person can now enrol keys there, up to
+`webauthn.maxKeysPerPerson`. What is still open on the activation flow's *a
+security key instead of a password* is recorded in `portal/CLAUDE.md`.
 
 ## `setSessionObserver()` — the one INVERTED HOOK this module offers
 
 Added 2026-09-03 for the CAEP profile. `ssf/caep.js` needs to know when a
 session starts, is presented and ends, because that is what a CAEP event is
-*about* — and it cannot be required from here: this module is **8** in
-`server.js`'s require order and `ssf/ssf.js` is **23b**, so a require the other
-way would register every `/ssf` route here, ahead of `oauth2.js`, ahead of the
-admin console, ahead of ldap, scim and spiffe. That is rule 1, and it would
+*about* — and it cannot be required from here: this module is **8** in the
+require order (`common/protocol_stack.js`) and `ssf/ssf.js` is **23b**, so a
+require the other way would register every `/ssf` route here, ahead of
+`oauth2.js`, ahead of the admin console, ahead of ldap, scim and spiffe. That is rule 1, and it would
 close a cycle besides. So this module holds a function and `ssf/ssf.js` fills
 it at its own require time, exactly as `admin.setSignalsReporter()` works one
 layer up.
@@ -531,13 +532,18 @@ a JWS and pushing one dials out to somebody else's endpoint.
 on a receiver's TCP timeout would be a sign-out that hangs, and the person
 signing out has nothing to do with whether a receiver is up.
 
-### Three call sites, and the flag that keeps the third honest
+### The call sites, and the flag that keeps `presented` honest
 
 | Where | Kind |
 |---|---|
 | `startSession()`, last, after the cookie and the audit row | `established` |
 | `oauth-oidc/oauth2.js`'s authorization endpoint, through `notePresented()` | `presented` |
 | `dropSession()`, after the delete and before the audit row | `revoked` |
+
+Two more have been added since the table was written: `reauthenticateSession()`
+sends `reauthenticated` (2026-09-14, the CAEP `assurance-level-change` source —
+see *WHAT AN AUTHENTICATED IDENTITY IS HERE*), and `startSession()` sends
+`presented` when a keyed API caller's credential touches its existing session.
 
 `revoked` fires **after** the session is out of the store and **before** the
 audit row, which is the only order that works: the observer needs the session
@@ -655,7 +661,8 @@ Sign out buttons rather than by reading anything:
 `consoleSession()` still exists and still has one caller — the console REPORTS
 the sign-on session behind its own; it is no longer what lets anybody in.
 
-* **It checks no password.** The username typed at `/authn/login` becomes the
+* **It checks no password, in development mode** (product mode verifies it —
+  see below). The username typed at `/authn/login` becomes the
   identity in every token and every assertion — for every protocol, since
   2026-08-26, when WS-Federation gave up the screen of its own that used to post
   to `/wsfed/login` and started arriving here through `beginAuthentication()`
@@ -1085,7 +1092,7 @@ relax the policy and still had to argue its own case. A WebAuthn ceremony is a
 browser API call and cannot happen without script; a person reading six digits
 off a phone and typing them into an input needs none, and the QR code that
 enrols the app is an SVG this server rendered. Copying `sendWebauthnPage()`
-because it was next door would have added a seventh scripted page to the root
+because it was next door would have added another scripted page to the root
 `CLAUDE.md`'s inventory for a page with no script on it.
 
 ---

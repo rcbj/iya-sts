@@ -87,8 +87,8 @@ const MODULES = [
 //                          and has no store — see `sync.js`.
 //   xacml_pip.js           attributes come off a person's directory entry,
 //                          which is the mock's directory. A remote PEP has no
-//                          directory and asserts its attributes in the
-//                          request, which is what a real PEP does.
+//                          directory; it asks the PDP's `POST /xacml/pip`
+//                          through `pip.js` instead.
 //   xacml_alfa.js,         authoring. A PEP reads policy and never writes it.
 //   xacml_templates.js,
 //   xacml_editor.js
@@ -97,11 +97,12 @@ const MODULES = [
 //   xacml_pep_registry.js, the PDP's side of phase five.
 //   xacml_pep_http.js
 //
-// A PEP with no PIP is the interesting half of that list: it means every
-// attribute a policy asks about must be IN the request, and an attribute that
-// is not simply produces an empty bag. That is a real deployment shape rather
-// than a limitation of this container — most PEPs know who the caller is and
-// nothing else about them.
+// A PEP with no LOCAL PIP is the interesting half of that list: an attribute
+// the request did not carry is fetched from the PDP before evaluation
+// (`pip.js`), and with `PEP_PIP` off, or no client certificate, it simply
+// produces an empty bag. That is a real deployment shape rather than a
+// limitation of this container — most PEPs know who the caller is and nothing
+// else about them.
 
 // Where the engine modules are. The image puts them beside this file; a
 // developer's checkout has them one level up. Tried in that order so the

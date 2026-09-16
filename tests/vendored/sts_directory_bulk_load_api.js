@@ -64,8 +64,9 @@
 //     form sends and what this job's predecessor sent. So these entries carry
 //     their object classes, their uid, a description and what was sent — and
 //     `vc_claims.js` is never asked to make up the rest. The SCIM door DOES
-//     invent, because `scim.js` calls `createUser()` without that flag; the
-//     LDAP door invents nothing because it never reaches that function at all.
+//     invent in development mode, because `scim.js` calls `createUser()`
+//     without that flag; the LDAP door invents nothing because it never
+//     reaches that function at all.
 //   * **IT IS THE ONLY DOOR THAT REFUSES AN UNKNOWN ATTRIBUTE.** `POST
 //     /admin-api/users/create` validates every name against the catalogue at
 //     `GET /admin-api/users/new` and fails the whole create on one it does not
@@ -73,10 +74,12 @@
 //     and accepts anything. That is why the shared preflight reads that
 //     catalogue for ALL THREE jobs — it is the strictest of the three doors,
 //     and a population that satisfies it satisfies the other two.
-//   * **IT PUTS THE PERSON ON `/admin/users`.** `createUser()` calls
-//     `stats.noteKnownIdentity()`, so these five thousand appear in the
-//     identity register as known-without-a-sign-in. SCIM does too, through the
-//     same function; an LDAP `add` does not.
+//   * **IT PUTS THE PERSON IN THE IDENTITY REGISTER.** `createUser()` calls
+//     `stats.noteKnownIdentity()`, so these five thousand appear there as
+//     known-without-a-sign-in. SCIM does too, through the same function; an
+//     LDAP `add` does not. (`/admin/users` has listed directory people the
+//     register has never seen as well since 2026-09-10, so that page no
+//     longer tells the three apart.)
 //
 // ---------------------------------------------------------------------------
 // IT WRITES TO THE DEFAULT REALM AND DELETES NOTHING. The argument is in
@@ -102,7 +105,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -322,12 +325,13 @@ async function createTheGroups() {
 // 3. A HUNDRED PEOPLE INTO EACH GROUP, ONE AT A TIME.
 //
 // **THE MEMBER IS SENT AS A DN AND NOT AS A USERNAME**, although this operation
-// takes either. Two reasons and the second is the one that matters: the other
-// two jobs write a DN — SCIM's member id IS a DN and an LDAP `modify` has
-// nothing else to write — so sending a name here would be this job measuring a
-// resolution step the other two never pay for; and the DN is what the create
-// above answered with, so what is written is what this service said rather than
-// what this file assembled.
+// takes either. Two reasons and the second is the one that matters: an LDAP
+// `modify` has nothing else to write, and SCIM's member id was a DN when this
+// was written (it is the entry's `entryUUID` since 2026-09-14, which the
+// service resolves to the DN it stores) — so sending a name here would be this
+// job measuring a resolution step the LDAP job never pays for; and the DN is
+// what the create above answered with, so what is written is what this service
+// said rather than what this file assembled.
 // ---------------------------------------------------------------------------
 async function addTheMembers(people, groups) {
   log.debug("Entering addTheMembers().");

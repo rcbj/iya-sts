@@ -16,7 +16,8 @@
 // HTTP request.
 //
 // ---------------------------------------------------------------------------
-// WHAT IS HERE IS WHAT THAT FILE CANNOT SEE, AND IT IS FOUR THINGS.
+// WHAT IS HERE IS WHAT THAT FILE CANNOT SEE: FOUR THINGS, AND A FIFTH SINCE
+// 2026-09-11.
 //
 //   * **THE ROUND TRIP IS THE FEATURE.** This console has no script on it, so
 //     *Apply the profile* is a SUBMIT and the form is the only state there is:
@@ -77,15 +78,21 @@
 //      and the console's gate refuses that before any handler runs — so what
 //      that section asserts is the GATE and not the handler's own check. The
 //      check is reachable only by a session holding Admin Read and NOT Admin
-//      Write, and producing one means putting a member in the default realm's
-//      `admin-read` group: those two groups are the DEFAULT REALM's for the
-//      whole process, `admin.openWhenEmpty` grants both roles to everybody
-//      while neither has a member, and adding one would take console writes
-//      away from every other job in the run. The assertion is not worth that,
-//      and `/admin/keys/export` carries the identical check one page over with
-//      the same gap. **What section 6 does rule out is the failure that would
-//      actually matter**: a private key reaching a caller who presented
-//      nothing;
+//      Write. When this was written, producing one meant putting a member in
+//      the default realm's `admin-read` group — then the only roster, for the
+//      whole process — and that would have taken console writes away from
+//      every other job in the run. **That reason has since expired**: the
+//      open window is closed by the bootstrap administrator's first sign-in
+//      rather than by a grant, and grants nothing to a person who holds a
+//      role already (2026-09-13, `admin-ui/admin_rbac.js`), and the roster
+//      asked is the one of the realm the session was signed in through
+//      (2026-09-14, #32, `admin-ui/CLAUDE.md` 8d) — so an Admin Read grant
+//      in this job's own realm would now produce that session without
+//      touching anybody else. Nobody has written the section yet, so the
+//      mutant still survives. `/admin/keys/export` carries the identical
+//      check one page over with the same gap. **What section 6 does rule out
+//      is the failure that would actually matter**: a private key reaching a
+//      caller who presented nothing;
 //   5. `issue-certificate` left off `PKI_ACTIONS` so the API refuses it —
 //      caught by section 7, where the console and the API are compared;
 //   6. the issued object's private key reported in `GET /admin-api/pki` —
@@ -105,7 +112,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -137,8 +144,10 @@ const P12_PASSWORD = "changeit";
 // (2026-09-12). It was the seeded `alice` with the password `x`, which works
 // only because development mode seeds her and checks no password. The code
 // flow authenticates in the realm the console is reached in, so that is where
-// the account is made; the roster that decides what it may do is the default
-// realm's, unchanged.
+// the account is made. Since 2026-09-14 (#32) the roster that decides what it
+// may do is that realm's too (`admin-ui/CLAUDE.md` 8d); the account is on
+// neither of its role groups, and holds both roles because the realm's
+// bootstrap window is open.
 const OPERATOR = "pki-workbench-operator";
 const OPERATOR_PASSWORD = "pki-workbench-Passw0rd!-" + names.runStamp();
 
@@ -370,12 +379,13 @@ function ticked(page, name) {
 // ---------------------------------------------------------------------------
 // SIGN IN TO THE CONSOLE. It is an OpenID Connect relying party since
 // 2026-09-06, so this is the real code flow: `/admin` sends the browser to
-// `/oauth2/authorize`, the sign-in screen posts a name, and the code comes back
-// to `/admin/callback`.
+// `/oauth2/authorize`, the sign-in screen posts a name and a password, and the
+// code comes back to `/admin/callback`.
 //
-// **THE CONSOLE'S SESSION IS THE DEFAULT REALM'S** wherever the console is
-// reached, which is why this signs in at `/admin` and then walks to the
-// realm's own page rather than the other way round.
+// It starts at THIS REALM's `/admin/pki`: since 2026-09-11 the code flow runs
+// in the realm the console is reached in, and since 2026-09-14 the roster
+// asked is that realm's. The console's session record still lives in the
+// default realm's partition (`admin-ui/CLAUDE.md` 8 and 8d).
 // ---------------------------------------------------------------------------
 async function signIn() {
   log.debug("Entering signIn().");
@@ -683,9 +693,9 @@ async function theDownloadIsAFile(page, object) {
 //
 // **THIS IS NOT THE ROLE SPLIT AND THE HEADER SAYS WHY.** The handler's own
 // `mayWrite()` is reachable only by a session with Admin Read and not Admin
-// Write, and this job cannot produce one without editing the default realm's
-// role roster, which every other job in the run shares. What is asserted here
-// is the failure that would actually matter.
+// Write, which this job does not produce yet — the header's mutation record
+// says why it once could not and why it now could. What is asserted here is
+// the failure that would actually matter.
 async function theExportNeedsASession() {
   log.debug("Entering theExportNeedsASession().");
   log.info("=== 6. the export is not open to a caller with no session ===");
@@ -1029,8 +1039,11 @@ async function eachRealmSeesItsOwnAuthorities() {
     assert.strictEqual(is, was, "the refused rebuild rebuilt it anyway");
   });
 
-  // The process branch is the exception and must STAY reachable from any
-  // realm: it belongs to none, so no realm's page is more its home.
+  // What the refusal above must not take away: a realm still rebuilds its
+  // OWN branch. (The process branch passes the same visibility check from any
+  // realm — it belongs to none, so no realm's page is more its home — though
+  // since 2026-09-14 `admin_scope.js` refuses a `*` scope to a realm's own
+  // administrator. This call carries the run's service credential.)
   const ownScope = await postJson(api("/pki/build-scope"), { scope: REALM });
   check("a realm may still rebuild ITS OWN branch, which is the control the " +
         "refusal above must not have taken away", function () {

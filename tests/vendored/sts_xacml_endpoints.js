@@ -1,7 +1,7 @@
 // File: sts_xacml_endpoints.js
 //
 // ---------------------------------------------------------------------------
-// THE SEVEN /xacml ENDPOINTS, DRIVEN OVER HTTP.
+// THE EIGHT /xacml ENDPOINTS, DRIVEN OVER HTTP.
 //
 // `tests/xacml_conformance.js` holds the ENGINE to 455 cases somebody else
 // wrote, `tests/xacml_service.js` holds the store, the PIP and the JSON
@@ -9,7 +9,8 @@
 // that no running service can be asked. All three are in process, and between
 // them they never make one HTTP request — so until this file existed, every
 // route in `xacml/xacml.js` was uncovered: the decision endpoint, the
-// repository, the embedded PEP and the three the remote PEP lives on.
+// repository, the embedded PEP, the three the remote PEP lives on and — since
+// 2026-09-06 — the PIP.
 //
 // That gap is not academic. The engine being right says nothing about whether
 // the endpoint in front of it PARSES what a PEP sends, whether a malformed
@@ -23,15 +24,16 @@
 //
 // **THE CALLER HERE IS THIS TEST IMPERSONATING A PEP.** Sections 6 and 7 drive
 // `GET /xacml/pep/policies`, `POST /xacml/pep/register` and
-// `POST /xacml/pep/heartbeat` with `fetch` and a certificate made with forge,
-// which is the right way to assert what those endpoints ANSWER — the ETag, the
-// 304, the disabled policy left out, the name taken from the certificate and
-// never from the body. What it cannot assert is any CONSEQUENCE of those
-// bytes, because nothing here evaluates them: the document pulled in section 6
-// is checked for a `<Policy` and thrown away.
+// `POST /xacml/pep/heartbeat` over `https.request` with a client certificate
+// minted by `tests/tools/pep-credential.js`, which is the right way to assert
+// what those endpoints ANSWER — the ETag, the 304, the disabled policy left
+// out, the name taken from the certificate and never from the body. What it
+// cannot assert is any CONSEQUENCE of those bytes, because nothing here
+// evaluates them: the document pulled in section 6 is checked for a `<Policy`
+// and thrown away.
 //
-// `tests/vendored/sts_xacml_remote_pep.js` (2026-09-06) starts
-// `xacml-pep/pep.js` as a second process and asserts the other half — that a
+// `tests/vendored/sts_xacml_remote_pep.js` (2026-09-06) drives
+// `xacml-pep/pep.js` in a second CONTAINER and asserts the other half — that a
 // policy deployed through `/admin-api/xacml` reaches it by POLLING and changes
 // what it ALLOWS, and that a policy disabled here stops being ENFORCED there.
 // Keep the two apart when editing either: an assertion about what an endpoint
@@ -41,9 +43,9 @@
 // ---------------------------------------------------------------------------
 // WHY THIS IS THIS REPOSITORY'S OWN (`local: true`) AND NOT THE PARENT'S.
 //
-// CLAUDE.md's rule is that anything drivable over HTTP belongs in the parent
-// project's suite, and a naive reading puts the whole of this file there. It
-// does not survive the first assertion.
+// The root CLAUDE.md's rule is that anything drivable over HTTP belongs in the
+// parent project's suite, and a naive reading puts the whole of this file
+// there. It does not survive the first assertion.
 //
 // **A PDP WITH AN EMPTY REPOSITORY ANSWERS NotApplicable TO EVERYTHING.** There
 // is no interesting question to ask this surface until a policy exists, and the
@@ -91,14 +93,15 @@
 // where a defect would be a security bug rather than a fidelity one, and
 // neither can be checked without presenting a certificate: the refusal path
 // proves only that something was demanded, not that what was presented was
-// believed over what was claimed. So this file mints a self-signed pair with
-// node-forge and sends the registration through `https.request`, which is also
-// why those two requests are not `fetch` like everything else here.
+// believed over what was claimed. So this file presents a certificate and
+// sends those requests through `https.request`, because node's `fetch` cannot
+// present one.
 //
-// The certificate chains to nothing, deliberately: RFC 8705 section 3's
-// argument is what this service rests on, that the same key completed the
-// handshake — so a certificate that chained to something would be testing a
-// property this door does not have.
+// The certificate chained to nothing until 2026-09-06, when these doors began
+// requiring a VERIFIED chain whose DN resolves to a directory entry holding a
+// role: it is minted now by `tests/tools/pep-credential.js` under a Root this
+// file posts to `/tls/trust` — see *A trusted client credential* below.
+// (`selfSignedFor()` is what built the old one.)
 // ---------------------------------------------------------------------------
 //
 // ---------------------------------------------------------------------------
@@ -139,7 +142,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason tests/vendored/wait_for.js gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -169,16 +172,18 @@ const POLICY = "rbac-under-test";
 // while any certificate at all could register. The three endpoints are gated
 // now: a client certificate is resolved to a directory entry by its subject DN
 // and that entry has to be a member of `cn=remote-peps`, which every realm is
-// seeded with holding exactly `cn=remote-pep-1`. A random common name resolves
-// to an entry in no group and is refused — which is section 7a's assertion
-// rather than an obstacle to work around.
+// seeded with holding exactly `cn=remote-pep-1` (in development mode; product
+// mode seeds the group without it). A random common name resolves to an entry
+// in no group and is refused — which is section 7's rogue assertion rather
+// than an obstacle to work around.
 const PEP_CN = "remote-pep-1";
 // A second identity from the SAME trusted authority, for the one case that
 // matters most: verified, named, and holding no role.
 const ROGUE_CN = "rogue-pep-" + names.runStamp();
 // THE SEEDED XACML_USER IDENTITY, and it is a FIXED name rather than a stamped
 // one — `cn=xacml-user-1` is what `ldap_server.js` seeds into `cn=xacml-users`
-// in every realm, so a certificate for it is admitted with nothing configured.
+// in every realm in development mode, so a certificate for it is admitted
+// with nothing configured.
 // The rogue name above is stamped precisely because it must resolve to an
 // entry that exists and holds NOTHING, which a fresh name does.
 const XACML_USER_CN = "xacml-user-1";
@@ -193,10 +198,11 @@ const XACML_USER_CN = "xacml-user-1";
 //
 // **THE TWO CERTIFICATE IDENTITIES ABOVE STILL ARE SEEDS**, and that is
 // recorded rather than changed: `cn=remote-pep-1` and `cn=xacml-user-1` are
-// resolved in THIS realm and in the DEFAULT one (section 12 reads the default
-// realm's repository with the same certificate), so replacing them means
-// provisioning an entry and a group membership in both — which writes to the
-// default realm's role groups, a change every later job in the run inherits.
+// resolved in THIS realm and in the DEFAULT one (sections 9 and 10 read the
+// default realm's repository with the same certificate), so replacing them
+// means provisioning an entry and a group membership in both — which writes
+// to the default realm's role groups, a change every later job in the run
+// inherits.
 const ADMIN_PERSON = "xacml-admin-person";
 const STAFF_PERSON = "xacml-staff-person";
 // The XACML core namespace and the access-subject category, written out here
@@ -270,7 +276,7 @@ function postJson(url, payload) {
                           body: JSON.stringify(payload || {}) });
 }
 
-// A raw body, for the three malformed requests in section 3. `JSON.stringify`
+// A raw body, for malformed requests like section 4's. `JSON.stringify`
 // cannot produce them, which is the point.
 function postRaw(url, raw) {
   log.debug("Entering postRaw().");
@@ -307,8 +313,9 @@ async function setSetting(key, value) {
 async function resetSetting(key) {
   log.debug("Entering resetSetting().");
   // `reset` RATHER THAN WRITING THE OLD VALUE BACK, for the reason
-  // tests/saml11_sso.js records: a `set` leaves `source: override` behind, and
-  // tests/vendored/admin_api.js reads that field.
+  // tests/CLAUDE.md's *Restore a setting with `reset`* records: a `set` leaves
+  // `source: override` behind, and tests/vendored/admin_api.js reads that
+  // field.
   const r = await postJson(api("/config/reset"), { key: key });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "resetting " + key + " should have worked; it answered " + r.status);
@@ -433,10 +440,10 @@ function pepRequest(method, url, identity, payload, rawBody) {
   log.debug("Leaving pepRequest().");
   return new Promise(function (resolve, reject) {
     const target = new URL(url);
-    // A RAW STRING WINS OVER A PAYLOAD, for the three malformed bodies in
-    // section 3: `JSON.stringify` cannot produce them, which is the point, and
-    // they have to travel down THIS path now that /xacml/pdp needs a
-    // certificate and `fetch` cannot present one.
+    // A RAW STRING WINS OVER A PAYLOAD, for section 4's malformed bodies and
+    // the PIP section's XML: `JSON.stringify` cannot produce them, which is
+    // the point, and they have to travel down THIS path now that /xacml/pdp
+    // needs a certificate and `fetch` cannot present one.
     const data = rawBody !== undefined && rawBody !== null ? rawBody
       : (payload === undefined ? null : JSON.stringify(payload));
     const request = https.request({
@@ -521,8 +528,8 @@ function xPost(path, payload, identity) {
                     payload || {});
 }
 
-// A raw body, for the malformed requests in section 3. `JSON.stringify` cannot
-// produce them, which is the point.
+// A raw body, for the malformed requests in section 4 and the PIP's XML.
+// `JSON.stringify` cannot produce them, which is the point.
 function xPostRaw(path, raw, identity) {
   log.debug("Entering xPostRaw().");
   log.debug("Leaving xPostRaw().");
@@ -597,7 +604,7 @@ function postWithCertificate(url, payload, identity) {
 // 1. THE SURFACE DESCRIBES ITSELF, AND THE DESCRIPTION IS READ OFF THE SERVICE.
 //
 // `GET /xacml` is the document a client meets first. The assertion is not that
-// it renders: it is that the seven endpoints it advertises are the seven that
+// it renders: it is that the eight endpoints it advertises are the eight that
 // answer, and that every count on it agrees with the endpoint that owns the
 // number. A description that drifted from the surface it describes is the one
 // defect a page like this can have.
@@ -1170,8 +1177,8 @@ async function aRemotePepPulls() {
 // ===========================================================================
 // 7. REGISTERING, AND THE TWO PLACES A DEFECT WOULD BE A SECURITY BUG.
 //
-// Registering is the one door in this family that asks for a credential, and it
-// asks a different question from every other gate here: not who the decision is
+// Every door in this family asks for a credential since 2026-09-06, and
+// registering asks a different question from the rest: not who the decision is
 // about, but WHICH PEP IS THIS. What rests on the answer is a directory entry,
 // a row on the console and an address this service will later dial.
 //
@@ -1606,7 +1613,7 @@ async function turningItOff() {
     ["POST", "/xacml/pip"]
   ];
   for (const [method, path] of pepOff) {
-    // WITH THE CERTIFICATE, because these three are gated and a 403 would be
+    // WITH THE CERTIFICATE, because these four are gated and a 403 would be
     // read here as a 501 that never happened. The OFF CHECK RUNS FIRST in the
     // handler, so an unadmitted caller would in fact still see the 501 — but
     // asserting that by accident is asserting the wrong thing, and it would
@@ -1642,7 +1649,7 @@ async function turningItOff() {
   ];
   for (const [method, path] of allOff) {
     // EACH WITH THE IDENTITY ITS OWN GATE WANTS — two roles, so two
-    // credentials, and a job that used one for all six would be asserting a
+    // credentials, and a job that used one for all seven would be asserting a
     // 501 that a 403 could have been mistaken for.
     // `/xacml/pip` takes the PEP's identity even though it is not under
     // /xacml/pep/ — the one endpoint whose role does not follow its path.
@@ -1751,9 +1758,9 @@ async function theRepositoryIsPerRealm() {
 // This file used to remove it here and assert the removal. **A realm a test
 // run created stays now, because it is what a person reads when the run went
 // red**: its ou=policies, its ou=peps, its directory subtree and its
-// configuration overrides are the whole record of what these fourteen sections
-// did, and a teardown that took them destroyed the evidence at exactly the
-// moment it was worth something.
+// configuration overrides are the whole record of what these sections did,
+// and a teardown that took them destroyed the evidence at exactly the moment
+// it was worth something.
 //
 // The old argument for removing it was that a realm left behind with
 // `xacml.enabled: false` on it must not be met by a later run of this same
@@ -2211,8 +2218,8 @@ async function test() {
   log.info("Driving the mock STS's XACML endpoints at " + base + "/xacml");
 
   // A SERVICE THAT IS NOT THERE IS A FAILURE AND NOT A SKIP, which is the rule
-  // CLAUDE.md records the 2026-08-28 default flip for: a job that reports green
-  // having driven nothing is worse than one that is honestly absent.
+  // tests/CLAUDE.md records the 2026-08-28 default flip for: a job that reports
+  // green having driven nothing is worse than one that is honestly absent.
   const status = await fetchJson(base + "/admin-api/status");
   assert.strictEqual(status.status, 200,
     "GET /admin-api/status answered " + status.status + " at " + base +

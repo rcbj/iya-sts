@@ -12,9 +12,10 @@
 //
 // It is a **raw TCP acceptor**, deliberately, because that is the shape of the
 // Windows services people actually debug — CIFS, LDAP, SQL Server. An HTTP
-// service wrapping the same token in a `Negotiate` header is SPNEGO, which is
-// the next phase; the acceptor logic here is written as its own function so
-// that phase adds a transport and no protocol code.
+// service wrapping the same token in a `Negotiate` header is SPNEGO, which was
+// the next phase; the acceptor logic here was written as its own function so
+// that phase would add a transport and no protocol code — and it did:
+// `spnego_exchange.js` calls accept() for every Kerberos check and adds none.
 //
 // ---------------------------------------------------------------------------
 // WHAT A SERVICE ACTUALLY CHECKS, in order, and why each one matters.
@@ -67,9 +68,10 @@ const gss = require('./krb5_gss.js');
 const principals = require('./krb5_principals.js');
 const stats = require('../common/admin_stats');
 // The application registry. A plain require in the ordinary direction and safe
-// in the way rule 3g describes: applications.js registers no route and requires
-// only helpers.js, config.js and audit.js, so nothing about requiring it here
-// closes a cycle or moves an endpoint in the router.
+// in the way rule 3g describes: applications.js registers no route and
+// requires only `common/` libraries (helpers, config, audit and the leaves
+// beside them), none of which requires this directory, so nothing about
+// requiring it here closes a cycle or moves an endpoint in the router.
 const applications = require('../common/applications');
 // ERROR CODES and the audit log, both already in this closure through
 // applications.js. accept() names the condition on its result as `errorCode`
@@ -347,8 +349,7 @@ async function acceptInRealm(tokenBytes, opts) {
   }
 
   // 3. The ticket is for me. Checked BEFORE decrypting, because the answer is
-  //    more
-  // specific: a ticket for another service is a client mistake, not a key
+  // more specific: a ticket for another service is a client mistake, not a key
   // problem.
   //
   // "Me" is more than one name, and the line between the names that are mine
@@ -360,7 +361,8 @@ async function acceptInRealm(tokenBytes, opts) {
   // ticket names rather than that the name equals one configured string. This
   // acceptor therefore answers for two kinds of name:
   //
-  //   * its CANONICAL SPN, KRB5_SERVICE_PRINCIPAL; and
+  //   * its CANONICAL SPN — `krb5.servicePrincipal` as the realm's principal
+  //     database builds it (servicePrincipal() above); and
   //   * any SPN the KDC registered ON DEMAND for a host it is willing to be —
   //     HTTP/localhost, HTTP/sts, HTTP/127.0.0.1, HTTP/anything.example.com.
   //     Those are names no other account has claimed, created because a client
@@ -622,8 +624,7 @@ async function acceptInRealm(tokenBytes, opts) {
       'this one');
 
   // 8. The 0x8003 checksum: the GSS flags, and whether mutual authentication
-  //    was
-  // asked for.
+  // was asked for.
   let gssInfo = null;
   if (authenticator.cksum &&
       authenticator.cksum.type === gss.CHECKSUM_TYPE_GSS) {
@@ -720,10 +721,10 @@ async function acceptInRealm(tokenBytes, opts) {
   // then a service that decrypted a ticket under its own key appeared in no
   // registry at all while the CLIENT was recorded one line above.
   //
-  // Recorded HERE rather than in spnego.js as well, because that module calls
-  // this function for every check it makes and adds none of its own: one
-  // acceptor is one recording site, and a second call over there would count
-  // one ticket twice. `via` says which transport it arrived on.
+  // Recorded HERE rather than in spnego_exchange.js as well, because that
+  // module calls this function for every check it makes and adds none of its
+  // own: one acceptor is one recording site, and a second call over there
+  // would count one ticket twice. `via` says which transport it arrived on.
   //
   // The identifier is the SPN AS PRESENTED with the ticket's realm, which is
   // the same string the KDC files it under, so a ticket from this KDC lands on
@@ -757,11 +758,11 @@ async function acceptInRealm(tokenBytes, opts) {
       gss: gssInfo,
       // The INITIATOR's subkey, and the etype of the session key it falls back
       // to. Neither is used over the raw socket, and both are needed by
-      // spnego.js: SPNEGO's mechListMIC is signed by the client with the key
-      // established by its own Authenticator, which is this subkey when it
-      // sent one and the ticket's session key when it did not. Returned rather
-      // than re-derived there, because there is only one right answer and it
-      // is known here.
+      // spnego_exchange.js: SPNEGO's mechListMIC is signed by the client with
+      // the key established by its own Authenticator, which is this subkey
+      // when it sent one and the ticket's session key when it did not.
+      // Returned rather than re-derived there, because there is only one right
+      // answer and it is known here.
       initiatorSubkey: authenticator.subkey || null,
       sessionKey: sessionKey,
       sessionKeyEtype: ticketPart.key.etype,
@@ -801,10 +802,10 @@ async function acceptInRealm(tokenBytes, opts) {
     gss: gssInfo,
     mutual: true,
     acceptorSubkey: acceptorSubkey,
-    // See the note on the no-mutual return above: spnego.js verifies the
-    // client's mechListMIC with the initiator subkey and signs its own with
-    // the acceptor subkey, and the asymmetry is forced by when each MIC is
-    // computed rather than chosen.
+    // See the note on the no-mutual return above: spnego_exchange.js verifies
+    // the client's mechListMIC with the initiator subkey and signs its own
+    // with the acceptor subkey, and the asymmetry is forced by when each MIC
+    // is computed rather than chosen.
     initiatorSubkey: authenticator.subkey || null,
     sessionKey: sessionKey,
     sessionKeyEtype: ticketPart.key.etype

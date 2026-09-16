@@ -47,8 +47,8 @@
 // besides, since this file requires `authn.js` for `startSession()`.
 //
 // **AND IT NEEDED NO INVERTED HOOK EITHER**, which is worth saying because rule
-// 3e's list is six slots long and a seventh is the obvious move. It is not
-// needed here: the only two things `authn.js` has to know are the PATH and
+// 3e's inventory already holds many slots and one more is the obvious move. It
+// is not needed here: the only two things `authn.js` has to know are the PATH and
 // whether the door is open. The path is `/authn/spnego` — a path in the space
 // that module already owns, so it declares the constant and this file imports
 // it — and whether the door is open is `krb5.spnegoAuthentication`, a setting
@@ -67,11 +67,13 @@
 // signs in. That split exists precisely so that the sign-in and the page
 // documenting it cannot come to disagree about what was checked.
 //
-// **THE INTERESTING SENTENCE IS THE OTHER ONE.** This service checks no
-// password anywhere — the username typed at `/authn/login` IS the identity —
-// and Kerberos is the one family where that is impossible, because the password
-// there IS the key. So a session minted here is the ONLY kind in this service
-// that rests on a credential the service genuinely verified.
+// **THE INTERESTING SENTENCE IS THE OTHER ONE.** In development mode this
+// service checks no password anywhere — the username typed at `/authn/login`
+// IS the identity — and Kerberos is the one family where that is impossible,
+// because the password there IS the key. So in development a session minted
+// here is the ONLY kind in this service that rests on a credential the service
+// genuinely verified. (Product mode verifies passwords too; see the root
+// CLAUDE.md's *Things this service deliberately does not do*.)
 // `krb5_principals.js` makes the KDC as permissive as the protocol allows (one
 // password shared by every user account, an account created for any name on
 // first sight), which keeps the mock a mock — but the verification is real, and
@@ -79,7 +81,7 @@
 // it has been to the KDC" is the whole of what this door adds.
 //
 // ---------------------------------------------------------------------------
-// TRUST REALMS: THIS DOOR IS PER REALM AND THE KDC BEHIND IT IS NOT.
+// TRUST REALMS: THIS DOOR IS PER REALM, AND SINCE 2026-09-15 SO IS THE KDC.
 //
 // `/realm/acme/authn/spnego` mints a session in `acme` — the ambient-realm
 // middleware strips the prefix before the router sees the URL, and
@@ -153,16 +155,16 @@ const VIA = 'Kerberos v5 (SPNEGO)';
 //
 // **THE STRIPPING IS THE POINT AND IT IS NOT COSMETIC.** The session's username
 // names the entry whose `urn:uuid:<entryUUID>` is the `sub` of every token,
-// assertion and
-// credential that follows. Leaving the realm on would mean that somebody who
-// types `alice` at the sign-in screen and the same person arriving with a
-// ticket are TWO SUBJECTS as far as every relying party is concerned — which is
-// the exact failure `mock-sts`'s one-entry-per-person rule exists to prevent,
+// assertion and credential that follows. Leaving the realm on would mean that
+// somebody who types `alice` at the sign-in screen and the same person
+// arriving with a ticket are TWO SUBJECTS as far as every relying party is
+// concerned — which is the exact failure this service's one-entry-per-person
+// rule exists to prevent,
 // and the exact shape of the defect the first federated sign-in shipped with
 // (a foreign subject reaching `startSession()` unnormalised).
 //
 // **A FOREIGN REALM KEEPS ITS REALM**, and that asymmetry is deliberate.
-// `bob@PARTNER.EXAMPLE.COM` arriving over a cross-realm ticket is not this
+// `bob@PARTNER.COM` arriving over a cross-realm ticket is not this
 // service's `bob`, and issuing a token that says he is would be an assertion
 // nothing here has any basis for. What happens instead is worth knowing rather
 // than discovering: `admin_stats.js`'s `identityOf()` splits at the last '@'

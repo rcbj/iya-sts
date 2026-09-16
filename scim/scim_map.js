@@ -277,9 +277,10 @@ const USER_ATTRIBUTES = [
 // treating them alike is how every posixGroup membership silently disappears.
 // So the read side is handed the already-resolved list that module produces and
 // this file only reshapes it; the WRITE side puts every value in `member`,
-// because a SCIM client sends an id, an id here is a DN, and `member` is the
-// attribute that holds one. A group that already used `memberUid` keeps it —
-// see `fromScimGroup()`, which is the window rule again.
+// because a SCIM client sends an id, scim.js turns each id into the DN it names
+// before this file sees it (2026-09-14), and `member` is the attribute that
+// holds one. A group that already used `memberUid` keeps it — see
+// `fromScimGroup()`, which is the window rule again.
 // ---------------------------------------------------------------------------
 const GROUP_ATTRIBUTES = [
   { scim: 'displayName', ldap: 'cn', kind: 'single', required: true,
@@ -669,9 +670,8 @@ function toScimUser(entry, context) {
   // `uid` — the certificate is the identity, and `namePlan()`'s fold is what
   // later adds one if that person also signs in by name — so a single mutual
   // TLS connection presenting a client certificate was enough to break every
-  // SCIM list until somebody
-  // deleted the entry. An `ldapadd` can produce the same thing at will: this
-  // directory enforces no schema, on purpose.
+  // SCIM list until somebody deleted the entry. An `ldapadd` can produce the
+  // same thing at will: this directory enforces no schema, on purpose.
   //
   // The fallback is the RDN VALUE, and it is the DIRECTORY'S rule rather than
   // a second one invented here: `usernameOfEntry()` is what
@@ -864,10 +864,12 @@ function toScimGroup(entry, context) {
 
   (ctx.members || []).forEach(function (member) {
     resource.members.push({
-      // The DN rather than the raw value, so that a `memberUid` holding `alice`
-      // comes back as the same id the User resource has. Sending the bare name
-      // would be SCIM saying two different things about one person depending on
-      // which attribute their membership happened to be written in.
+      // The member's SCIM id (added by scim.js since 2026-09-14), or its DN
+      // where there is none — never the raw value, so that a `memberUid`
+      // holding `alice` comes back as the same id the User resource has.
+      // Sending the bare name would be SCIM saying two different things about
+      // one person depending on which attribute their membership happened to be
+      // written in.
       value: member.id || member.dn,
       display: member.cn || member.displayName || member.value,
       // RFC 7643 section 4.2 defines `type` on a member as User or Group. A

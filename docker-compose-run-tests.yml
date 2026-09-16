@@ -1,10 +1,11 @@
 # docker-compose-run-tests.yml — THE WHOLE SUITE, IN CONTAINERS.
 #
-# Four services on a private bridge network: `sts`, this repository built from
-# its own Dockerfile; `tests`, this repository's suite built from
+# Seven services on a private bridge network: `sts`, this repository built
+# from its own Dockerfile; `tests`, this repository's suite built from
 # tests/Dockerfile with a Chrome in it; `postgres`, the store the two
-# persisting modes of tests/tools/modes.sh run on; and `xacml-pep`, the remote
-# enforcement point one job drives the seam to. The tests container drives the
+# persisting modes of tests/tools/modes.sh run on; `openbao` and its two
+# one-shot helpers, the secret store; and `xacml-pep`, the remote enforcement
+# point one job drives the seam to. The tests container drives the
 # service by its compose DNS name and exits with the suite's status;
 # ./docker-run-tests.sh brings the pair up with --exit-code-from tests and takes
 # them down again.
@@ -65,16 +66,16 @@
 #   on a judgement rather than an oversight: this container carries a Chrome and
 #   runs a suite that reconfigures a service, and a docker socket in it is root
 #   on the host that runs CI. The two jobs are worth less than that.
-#   NO KEYCLOAK, NO walt.id, NO api, NO client. The thirteen vendored protocol
-#   jobs are exactly the ones a LONE mock can satisfy; that is the rule
-#   tests/vendored/MANIFEST.js records and the reason this file is two services
-#   where the parent project's equivalent is ten.
+#   NO KEYCLOAK, NO walt.id, NO api, NO client. The vendored protocol jobs are
+#   exactly the ones a LONE mock can satisfy; that is the rule
+#   tests/vendored/MANIFEST.js records and the reason this file has none of the
+#   parent project's third-party services.
 #   NO PUBLISHED PORTS. See below.
 #
-# Compose format 2.4, matching docker-compose.yml in this directory: nothing
-# here needs it, but docker-compose v1 treats a file with no `version:` as the
-# v1 format that has no `healthcheck` at all, and this file's whole ordering
-# rests on one. Compose v2 prints "the attribute `version` is obsolete" and
+# Compose format 2.4, matching docker-compose.yml in this directory: the
+# `depends_on: condition:` entries below need it, and docker-compose v1 treats a
+# file with no `version:` as the v1 format that has no `healthcheck` at all, and
+# this file's whole ordering rests on one. Compose v2 prints "the attribute `version` is obsolete" and
 # ignores the line; that warning is the entire cost.
 version: '2.4'
 
@@ -110,8 +111,8 @@ services:
     # teardown can never reach the database of a mock somebody is keeping up —
     # the same rule, and the same reason, as the `sts` container name below.
     container_name: ${STS_TEST_POSTGRES_CONTAINER_NAME:-sts-postgres-docker-tests}
-    # The host in STS_DATABASE_URL above. Not the container name: that one is
-    # per project and this one is what the connection string spells.
+    # The host in STS_DATABASE_URL on `sts` below. Not the container name: that
+    # one is per project and this one is what the connection string spells.
     hostname: postgres
     # POSTGRES 18 and not -alpine, matching docker-compose.yml: the three
     # scripts below are bash, which the alpine variant does not ship. The
@@ -171,6 +172,7 @@ services:
   # developer's node_modules cannot: an uninitialised nested submodule that
   # installs a package with no `main`, a module present in the tree and excluded
   # from the build context, a dependency `omit=dev` quietly did not install.
+  # (The service itself, `sts`, is below the secret store's three services.)
   # ---------------------------------------------------------------------------
   # ===========================================================================
   # THE SECRET STORE (2026-09-12), AND IT IS HERE FOR THE SAME REASON POSTGRES
@@ -255,8 +257,8 @@ services:
     # workspaces at once.
     container_name: ${STS_CONTAINER_NAME:-sts-docker-tests}
     # The name the tests container dials, and the one in the certificate's SANs
-    # (see common/crypto.js: localhost, sts, sts-mock, sts.example.com,
-    # 127.0.0.1). A different hostname here would be a certificate error in
+    # (`tls.hostnames` in common/config.js: localhost, sts, sts-mock,
+    # sts.example.com). A different hostname here would be a certificate error in
     # every job that verifies one.
     hostname: sts
     # A TAG OF ITS OWN WHEN A RUN NAMES ONE (2026-09-14): an image tag is
@@ -290,9 +292,10 @@ services:
       it will report that its listener did not come up."; fi; done;
       exec node server.js'
     build:
-      # The repository root, and the root .dockerignore applies — the SERVICE
-      # image carries no tests. The tests image is built from the same context
-      # with a per-Dockerfile ignore file; see tests/Dockerfile.
+      # The repository root, and the root .dockerignore applies. The tests
+      # image is built from the same context with the same ignore file, so the
+      # SERVICE image carries no tests because the root Dockerfile removes
+      # them; see that file and tests/Dockerfile.
       context: .
       # THE BUILD'S IDENTITY, both optional and both empty by default — the
       # same two arguments docker-compose.yml passes, and that file carries the
@@ -371,7 +374,7 @@ services:
       # IT SURVIVED THE MATRIX.** The volume is still refused and the service
       # is not: the leavings this is defending against are the PREVIOUS RUN'S,
       # and a database container with no volume in it cannot have any. See the
-      # `postgres` service below.
+      # `postgres` service above.
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
@@ -419,8 +422,9 @@ services:
       # and a different scheme made it a difference in the service.
       #
       # WHAT IT COSTS THE RUNNER is one certificate it cannot know in advance —
-      # this service regenerates a self-signed pair on every start, so no image,
-      # CA bundle or browser profile can hold an anchor for it. run-report.js
+      # this service issues it under a Root it generates at start (each mode's
+      # stack is new), so no image, CA bundle or browser profile can hold an
+      # anchor for it. run-report.js
       # fetches it once the service answers and hands every protocol job
       # NODE_EXTRA_CA_CERTS and STS_SPKI_PIN; see tests/tools/trust.js.
       #
@@ -447,8 +451,9 @@ services:
     # THE DATABASE MUST BE ACCEPTING CONNECTIONS BEFORE THIS STARTS, in the two
     # modes that have one: a configured store that cannot be opened does not
     # make this service log and carry on, it makes it REFUSE TO START. This is
-    # the one thing in this file that needs compose format 2.4's `condition:`,
-    # which is the format the header keeps for the healthcheck anyway.
+    # one of the things in this file that need compose format 2.4's
+    # `condition:`, which is the format the header keeps for the healthcheck
+    # anyway.
     #
     # IT COSTS `memory` MODE A DATABASE IT NEVER DIALS, and that is deliberate
     # rather than overlooked. ./local-run-tests.sh suppresses it there with
@@ -480,7 +485,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 24
-      # The image starts node, loads sixteen protocol families and generates a
+      # The image starts node, loads every protocol family and generates a
       # signing key before it listens. Two minutes of retries is generous on
       # purpose: a CI runner building two images at once is slower than any
       # developer's machine, and a healthcheck that gives up early fails the
@@ -509,13 +514,13 @@ services:
   # way it converges on policy. That retry exists BECAUSE of this ordering and
   # its own header argues why it is right independently of this file.
   #
-  # NO CLIENT CERTIFICATE, so it registers UNAUTHENTICATED — which is what the
-  # shipped `docker-compose.yml` does too, and for the same reason: generating
-  # one here would mean committing a private key or writing a first-start
-  # script for a container. The job turns `xacml.pepRequireCertificate` off IN
-  # ITS OWN REALM and asserts the row is marked unauthenticated. The
-  # authenticated path is asserted by `sts_xacml_endpoints.js`, which presents
-  # a real certificate over a real handshake.
+  # A CLIENT CERTIFICATE THE LAUNCHER MINTS AND MOUNTS (see PEP_TLS_CERT
+  # below), so it registers AUTHENTICATED and the job leaves the realm at its
+  # defaults. This paragraph used to say the opposite — no certificate, and the
+  # job turning `xacml.pepRequireCertificate` off — which is still what the
+  # shipped `docker-compose.yml` does by hand. `sts_xacml_endpoints.js` also
+  # presents a real certificate over a real handshake, and one claiming to be
+  # somebody else.
   # ---------------------------------------------------------------------------
   xacml-pep:
     container_name: ${XACML_PEP_CONTAINER_NAME:-xacml-pep-docker-tests}
@@ -569,8 +574,8 @@ services:
       - PEP_HTTPS_KEY=${XACML_PEP_HTTPS_KEY:-}
       - PEP_HTTPS_PORT=9443
       - PEP_HTTPS_RELOAD_INTERVAL_MS=1000
-      # The service regenerates and self-signs its key on every start, so there
-      # is no anchor any image could hold. `pep.js` logs this on every start
+      # The service's certificate is issued under a Root generated when this
+      # stack starts, so there is no anchor any image could hold. `pep.js` logs this on every start
       # rather than once, for federation_http.js's reason.
       - PEP_TLS_INSECURE=true
       # THE ADDRESS THE SERVICE NUDGES, and it is deliverable in this stack
@@ -618,9 +623,10 @@ services:
     container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
     image: ${STS_TESTS_IMAGE:-rcbj/mock-sts-tests}
     build:
-      # The same context as the service, with tests/Dockerfile.dockerignore
-      # deciding what is in it — see tests/Dockerfile's header for why the two
-      # images need different answers from one context.
+      # The same context as the service, with the root .dockerignore deciding
+      # what is in it — see tests/Dockerfile's header for why the two images
+      # share one ignore file and the service image removes what it must not
+      # carry.
       context: .
       dockerfile: tests/Dockerfile
     environment:
@@ -766,7 +772,7 @@ services:
         # The whole ordering of this file. `up` reports success for a container
         # that was created and then exited, so "started" is not the question —
         # a suite that begins against a service which is not listening reports
-        # thirteen protocol failures that are all one fact.
+        # every protocol job as a failure, and they are all one fact.
         condition: service_healthy
       xacml-pep:
         # STARTED RATHER THAN HEALTHY, AND IT IS AN ISOLATION DECISION.
@@ -775,8 +781,8 @@ services:
         # against a realm that does not exist yet — but it would mean a PEP
         # image that will not load takes the WHOLE SUITE down with
         # "dependency failed to start", instead of failing the one job that
-        # drives it. Fifty-odd jobs must not go red because a container none of
-        # them touch is broken. The job waits for it itself, names it, and says
+        # drives it. Every other job must not go red because a container none
+        # of them touch is broken. The job waits for it itself, names it, and says
         # to read `docker logs` on it.
         condition: service_started
 
@@ -814,8 +820,8 @@ volumes:
 # other one on this address space` before either brought up a container. The
 # launcher scans for a free /24 and names all four variables now; the default
 # below is the first candidate that scan offers, so nothing moves on an idle
-# machine. See freeSubnet() in tests/tools/compose.sh and tests/
-# stack_network.js.
+# machine. See freeSubnet() in tests/tools/compose.sh and
+# tests/stack_network.js.
 networks:
   default:
     driver: bridge

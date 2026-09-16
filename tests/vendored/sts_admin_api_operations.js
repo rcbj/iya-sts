@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // EVERY OPERATION OF THE MOCK STS'S MANAGEMENT API, DRIVEN FOR REAL.
 //
-// `tests/admin_api.js` next door asserts that the API is SHAPED right: that the
+// `admin_api.js` next door asserts that the API is SHAPED right: that the
 // OpenAPI document is well formed, that every console page and every console
 // action has an operation, that every documented RESPONSE property appears in a
 // live reply, and that one revocation reaches RFC 7662 introspection. It is a
@@ -12,7 +12,7 @@
 //
 // This file is the other half: **does EVERY ONE of those operations DO what it
 // says?** The count is not written down here on purpose — it was ninety when
-// this file was written and it is over a hundred and thirty now, and a number
+// this file was written and it is over three hundred now, and a number
 // in a comment is the first thing to go stale. What keeps the claim honest is
 // the LEDGER at the end of the run: every operation the document declares must
 // have been driven by this file, or hold a row in NOT_DRIVEN_HERE saying who
@@ -77,13 +77,16 @@
 //     rather than remembered.
 //
 // ---------------------------------------------------------------------------
-// ALMOST EVERYTHING HAPPENS IN A TRUST REALM THIS FILE CREATES AND REMOVES.
+// ALMOST EVERYTHING HAPPENS IN A TRUST REALM THIS FILE CREATES AND LEAVES.
 //
 // A management API test is by definition a test that writes to the thing every
 // other job reads. The mock holds its admin state in memory and never restarts
 // between jobs, so a claim set left changed here changes what every later
 // job's tokens contain — which is why admin_api.js restores everything it
-// touches, one value at a time, and why it is EXCLUSIVE in run-report.js.
+// touches, one value at a time, and why this file was EXCLUSIVE in the parent
+// project's runner. (This repository's run-report.js runs every job one at a
+// time, so it needs no such flag; the reasons are kept because they are what
+// would matter if jobs ever ran side by side.)
 //
 // Trust realms make that mostly unnecessary. A realm is a whole logical copy of
 // this service under a path prefix, with its own directory subtree, its own
@@ -94,15 +97,20 @@
 // NOT remove the realm afterwards** (2026-09-06): a realm a test run created
 // stays, because it is the record a person reads when the run went red. See
 // theThrowawayRealmIsLeftBehind(). What is left to restore by hand is only
-// what is genuinely
-// process-wide, and that list is short and is named where it is touched: the
-// two admin roles (groups in the DEFAULT realm, by design), the SPIFFE signing
-// authority, and one process-wide setting.
+// what is genuinely process-wide, and that list is short and is named where it
+// is touched: one process-wide setting and the client-certificate truststore.
+// The service Root, which has no opposite, is replaced LAST instead
+// (theRootIsReplacedLast()), and the default realm's Kerberos service
+// principal is created and deleted at the root. (The two admin roles and the
+// SPIFFE signing authority were on this list too: a grant under the realm
+// prefix lands in the realm's own roster since #32, and the SPIFFE authority
+// has been per realm since 2026-09-11.)
 //
-// It is still EXCLUSIVE in run-report.js, for one reason that a realm cannot
-// fix: `/admin-api/spiffe/rotate` replaces the signing authority for the whole
-// process, and a SPIFFE job holding a stream open across that would see its
-// SVID stop verifying with nothing to say why.
+// The reason that made this file exclusive over there was
+// `/admin-api/spiffe/rotate`, which then replaced the signing authority for
+// the whole process, so a SPIFFE job holding a stream open across it would
+// have seen its SVID stop verifying with nothing to say why. Driven under the
+// throwaway realm's prefix, it now rotates that realm's authority alone.
 //
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 // ---------------------------------------------------------------------------
@@ -117,7 +125,7 @@ try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
-  // load, for the reason tests/wait_for.js gives.
+  // load, for the reason wait_for.js (beside this file) gives.
   appconfigProblem = e;
   appconfig = {};
 }
@@ -250,7 +258,7 @@ function splitList(text) {
 // What it deliberately does NOT assert is the reverse direction — that every
 // path this file drove is in the document. The probes below post to
 // `/<resource>/__no_such_action__` on purpose, and console/API parity is
-// tests/admin_api.js's question, asked against the console rather than against
+// admin_api.js's question, asked against the console rather than against
 // this file's own call list.
 // ---------------------------------------------------------------------------
 const ledger = [];
@@ -331,13 +339,15 @@ async function refused(path, body, expect, what, root) {
 // ---------------------------------------------------------------------------
 // THE SERVICE, AND WHY A MISSING ONE IS A SKIP AND A STALE ONE IS A FAILURE.
 //
-// Nothing listening is an ordinary state: half the jobs in this suite run
-// against walt.id or a static deployment with no mock at all. A service that
-// ANSWERS and has no /admin-api on it is not — it is the parent project's `sts`
-// gitlink pinned at a commit older than the feature, and a skip there would
-// report a hundred and thirty operations green having driven none of them.
-// That is the rule tests/CLAUDE.md states and tests/sts_saml11.js already
-// follows.
+// Nothing listening was an ordinary state in the parent project's suite, where
+// this file ran until 2026-08-28 and half the jobs ran against walt.id or a
+// static deployment with no mock at all; here every run hands the job a
+// service, so the skip is reached only by a hand-run with nothing started. A
+// service that ANSWERS and has no /admin-api on it is not — over there it was
+// the `sts` gitlink pinned at a commit older than the feature — and a skip
+// would report three hundred-odd operations green having driven none of
+// them. That is the rule tests/CLAUDE.md states and sts_saml11.js beside this
+// file already follows.
 // ---------------------------------------------------------------------------
 async function theServiceIsThere() {
   log.debug("Entering theServiceIsThere().");
@@ -529,7 +539,7 @@ function settingRow(config, key) {
 // THE REFUSAL SENTENCES, BOTH WAYS ROUND.
 //
 // Every action handler answers an unknown action by naming the ones it knows.
-// That sentence is not documentation — tests/admin_api.js READS it to check
+// That sentence is not documentation — admin_api.js READS it to check
 // that every console action has an API operation — so it is load-bearing, and a
 // sentence that is short by one action narrows the only check that would have
 // noticed the missing operation.
@@ -716,19 +726,22 @@ function documentedActions(doc) {
 // service itself published means the document named a field the handler does
 // not read, and a caller following the document gets 400 for ever.
 //
-// THREE RESOURCES ARE HELD BACK, each because its example escapes the
-// throwaway realm this job cleans up by removing:
+// SIX RESOURCES ARE HELD BACK (REPLAY_HELD_BACK), each because its example
+// escapes, or would be stranded in, the throwaway realm this job works in:
 //
 //   * `realms/*`   — the registry is process-wide; the five operations are
 //                    exercised in theRealmRegistryWorks() against a realm this
 //                    file owns, rather than against the example's `acme`.
-//   * `rbac/*`     — the two console roles are groups in the DEFAULT realm by
-//                    design, read there from every realm, so a grant made here
-//                    would close the console's roster for every other job.
-//                    Exercised explicitly, and revoked, below.
-//   * `spiffe/rotate` — it replaces the signing authority for the whole
-//                    process and has no opposite. Exercised once, deliberately,
-//                    in the SPIFFE section.
+//   * `rbac/*`     — the two console roles are groups in the roster of the
+//                    realm being read (a roster per realm since #32), and a
+//                    replayed example would leave its person holding a role
+//                    nothing revokes.
+//                    Exercised explicitly, and revoked, in
+//                    theAdminRolesRoundTrip().
+//   * `spiffe/rotate` — it replaces a signing authority (the whole
+//                    process's until 2026-09-11, the realm's since) and has no
+//                    opposite. Exercised once, deliberately, in the SPIFFE
+//                    section.
 //   * `tls/trust/*` (2026-09-12) — the client-certificate truststore is ONE
 //                    array for the process, whatever realm prefix a call
 //                    carries, and every job after this one has its TLS
@@ -859,8 +872,8 @@ async function everyDocumentedExampleIsAccepted(doc) {
 //
 // Its other job is to keep this sweep inside the rule the whole file follows —
 // a write is never believed on its own account. everyAcceptedWriteWasReadBack()
-// is the enforcement of that rule, and this call is how the sixty-odd writes
-// made here satisfy it.
+// is the enforcement of that rule, and this call is how the sweep's writes
+// satisfy it.
 // ---------------------------------------------------------------------------
 async function theResourceReadsBack(path, operationId) {
   log.debug("Entering theResourceReadsBack(). path=" + path);
@@ -953,7 +966,7 @@ async function theRootIsReplacedLast(doc) {
 // ---------------------------------------------------------------------------
 // EVERY GET ANSWERS, AND ANSWERS ABOUT THIS REALM.
 //
-// Fifty-odd read operations, walked from the document. Two things are asserted
+// Ninety-odd read operations, walked from the document. Two things are asserted
 // beyond the status, and the second is the one that matters: the reply must be
 // an OBJECT rather than the HTML of a redirect or an error page — `httpJson`
 // hands back the raw text when it cannot parse, and a string body is how a
@@ -983,7 +996,7 @@ async function everyReadAnswersAboutThisRealm(doc) {
     // 2026-09-09 — `/admin/api-explorer` — because this API began requiring
     // an access token a browser has no way to carry. Every remaining
     // operation here answers JSON, which is what this walk was always really
-    // asserting, so it now has no exception at all. `tests/admin_api.js`
+    // asserting, so it now has no exception at all. `admin_api.js` next door
     // still owns the CSP half, at the page's new address.
     const reply = await get(path);
     assert.strictEqual(reply.status, 200,
@@ -995,9 +1008,10 @@ async function everyReadAnswersAboutThisRealm(doc) {
       "string body here is httpJson reporting that it could not parse the " +
       "reply, which is what a route that started returning HTML looks like.");
     const container = String(reply.body.container || reply.body.groupsDn || "");
-    // ou=groups and ou=users on /rbac are DELIBERATELY the default realm's —
-    // the two console roles are one roster for the process — so that resource
-    // is the one exception and it is asserted the other way round below.
+    // /rbac is left out of this walk: it was the default realm's roster from
+    // every realm until #32 (2026-09-14), and theAdminRolesRoundTrip() below
+    // now asserts its container — this realm's under the prefix, the default
+    // realm's at the root — in both directions.
     if (container && path !== "/rbac" && /dc=/.test(container)) {
       assert.ok(container.indexOf("dc=" + REALM + ",") >= 0,
         "GET " + path + " names the container " + container + ", which is " +
@@ -1094,8 +1108,8 @@ async function theApplicationsRegistryRoundTrips() {
 
   // An identifier names ONE application whatever protocol brought it, so a
   // second create is refused rather than merged. That refusal is what
-  // tests/sts_applications.js reconciles against, so it is load-bearing
-  // elsewhere in this suite.
+  // sts_applications.js (beside this file) reconciles against, so it is
+  // load-bearing elsewhere in this suite.
   await refused("/applications/create", { identifier: identifier },
     /already/i, "a duplicate identifier");
 
@@ -1293,7 +1307,7 @@ async function theApplicationsRegistryRoundTrips() {
 
     // CLEARING IS NEVER REFUSED, which is the other half of the rule and the
     // half a reader would not predict: a value can arrive by `ldapmodify` or be
-    // left behind when a family is untimed from the entry, so refusing the
+    // left behind when a family is undeclared on the entry, so refusing the
     // clear would shut the one door that could tidy it up.
     await ok("/applications/set",
       { application: wrongId, attribute: scoped.name, value: "" },
@@ -1627,7 +1641,7 @@ async function application(identifier) {
 // One attribute's values off an application entry. The reply is FLAT — the
 // entry's members at the top level rather than wrapped in an `application`
 // member the way the WRITES answer — which is the shape
-// tests/sts_applications.js already relies on.
+// sts_applications.js (beside this file) already relies on.
 //
 // `attributes` is the WHOLE entry and `fields` beside it is the narrower
 // editable subset, so the read goes to `attributes` first: an assertion that
@@ -1966,12 +1980,14 @@ async function reservedNameFor(door) {
 // THE FEDERATION REGISTER — the one resource on this API whose operations
 // change what this service will BELIEVE.
 //
-// mgmt-api/CLAUDE.md says so in the sharpest form it says anything: this API is
-// not gated, so `POST /admin-api/federation/create` is the door that works when
-// the console cannot be reached — and it is also the door through which anybody
-// who can reach this port configures a signing certificate this service will
-// then trust, and mints themselves a session as anybody. That is not a new
-// hole, but it makes these seven operations the ones worth driving properly.
+// mgmt-api/CLAUDE.md says so in the sharpest form it says anything:
+// `POST /admin-api/federation/create` is the door that works when the console
+// cannot be reached — and it is also the door through which whoever holds an
+// `admin:write` token (or anybody who can reach this port, with
+// `adminApi.authRequired` off) configures a signing certificate this service
+// will then trust, and mints themselves a session as anybody. That is not a
+// new hole, but it makes these seven operations the ones worth driving
+// properly.
 //
 // Two properties beyond the round trip, and both are about what the register
 // REFUSES rather than what it stores:
@@ -2429,8 +2445,9 @@ async function theSamlRegistriesRoundTrip() {
   //
   // It was found by ENFORCING the operation's own schema: every action here
   // declares a `requestBody` with `additionalProperties: false`, the OpenAPI
-  // document has always published it, and since 2026-09-06 `admin_api.js`
-  // compiles that same object with ajv and refuses a body that does not match.
+  // document has always published it, and since 2026-09-06
+  // `mgmt-api/admin_api.js` compiles that same object with ajv and refuses a
+  // body that does not match.
   //
   // That is precisely the hazard the comment twenty lines below this one warns
   // about — *the handler reads `value`, and a body naming the field anything
@@ -2721,7 +2738,7 @@ async function theCredentialResourcesRoundTrip() {
   // The FORMAT is deliberately not part of `defaults` — that action resets the
   // claims and says so — so it is put back by hand, for the reason every
   // section here restores what it changed: the verifier's configuration is
-  // this realm's, and this realm is thrown away, but a reader who found the
+  // this realm's, and nothing else reads this realm, but a reader who found the
   // format changed at the end of this section would reasonably think
   // `defaults` had failed to restore it.
   await ok("/verifier-request/format", { format: startingFormat },
@@ -2738,15 +2755,15 @@ async function theCredentialResourcesRoundTrip() {
 }
 
 // ---------------------------------------------------------------------------
-// SPIFFE: the registry's three actions, the agents' three, and the one that is
-// process-wide.
+// SPIFFE: the registry's three actions, the agents' three, and the rotation.
 //
 // The registration entries and the agents are directory entries under this
-// realm's ou=spiffe, so they are thrown away with the realm. `rotate` is not:
-// there is ONE signing authority for the process, because a socket has no path
-// to put a realm segment in. It is exercised once, here, and it is why this job
-// is EXCLUSIVE in run-report.js — a SPIFFE job holding a stream open across a
-// rotation would see its SVID stop verifying with nothing to say why.
+// realm's ou=spiffe, so they stay with the realm. `rotate` was the one that
+// was process-wide — ONE signing authority for the process, because a socket
+// had no path to put a realm segment in — and it is why this job was
+// EXCLUSIVE in the parent project's runner. Since 2026-09-11 each realm has an
+// authority of its own (spiffe/CLAUDE.md), so the rotation below, made under
+// this realm's prefix, replaces this realm's. It is still exercised once.
 // ---------------------------------------------------------------------------
 async function theSpiffeDoorsRoundTrip() {
   log.debug("Entering theSpiffeDoorsRoundTrip().");
@@ -2844,8 +2861,8 @@ async function theSpiffeDoorsRoundTrip() {
     "publishing, which is the one thing in this pair that has a consequence " +
     "outside the console.");
 
-  // Last, and once: rotating replaces the signing authority for the whole
-  // process. The bundle's sequence number is what says it really happened —
+  // Last, and once: rotating replaces this realm's signing authority. The
+  // bundle's sequence number is what says it really happened —
   // a rotation that answered 200 and changed nothing would leave every
   // previously issued SVID verifying, which is the opposite of what was asked.
   const rotated = await ok("/spiffe/rotate", {},
@@ -2872,7 +2889,7 @@ async function theSpiffeDoorsRoundTrip() {
 // store — which is what makes them worth driving properly: the API's whole
 // claim is that it is not a second implementation.
 //
-// tests/admin_api.js already proves that ONE revocation reaches
+// admin_api.js already proves that ONE revocation reaches
 // /oauth2/introspect. What is left, and is here, is the other five: `restore`,
 // which RFC 7009 defines no opposite for and which exists so that a test does
 // not have to restart the service; and the four BULK revocations, each of which
@@ -3199,9 +3216,9 @@ async function theIssuedListGroupsByIssuance() {
 }
 
 // A token set for one person, out of THIS REALM'S token endpoint. The password
-// grant is used because this service checks no password anywhere and it needs
-// no browser — which is the same reason every other node-only job in this
-// suite reaches for it.
+// grant is used because it needs no browser — which is the same reason every
+// other node-only job in this suite reaches for it — and the password it
+// presents is one the person was created with (below).
 // ---------------------------------------------------------------------------
 // THE PERSON AND THE CLIENT A TOKEN IS MINTED FOR, CREATED FIRST (2026-09-12).
 //
@@ -3288,8 +3305,8 @@ async function mintTokens(username, client) {
 // A SAML ASSERTION IN THIS REALM, through WS-Trust, so that the set doors have
 // something unrevocable to be refused about. The RST carries no AppliesTo — an
 // audience restriction is optional there and this job needs the assertion, not
-// the audience — and the username is a UsernameToken, which this service does
-// not check any more than it checks a password anywhere else.
+// the audience — and the username is a UsernameToken, which development mode
+// does not check any more than it checks a password anywhere else.
 async function mintAssertion(username) {
   log.debug("Entering mintAssertion(). username=" + username);
   const rst = '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -3695,11 +3712,13 @@ async function theTruststoreRoundTrips() {
 // THE STORED KERBEROS KEYS (2026-09-12): create, read, rotate, read, delete,
 // read — and a person's clear, which on a development stack clears nothing.
 //
-// **THE KDC IS THE PROCESS'S**, so this is the third section here that works at
-// the ROOT and cleans up by hand: the service principal it creates is the
-// DEFAULT realm's whatever prefix a call carries, and every later job's
-// Kerberos traffic is answered by the same KDC. The SPN carries this run's
-// realm id, so nobody else holds it, and it is deleted in a `finally`.
+// **THE KDC IT WORKS WITH IS THE DEFAULT REALM'S**, so this is the third
+// section here that works at the ROOT and cleans up by hand: the service
+// principal it creates is the default realm's, and every later job's Kerberos
+// traffic in that realm is answered by the same KDC. (It read "the KDC is the
+// process's" until #33 gave each trust realm a KDC of its own — see the
+// in-realm assertions below.) The SPN carries this run's realm id, so nobody
+// else holds it, and it is deleted in a `finally`.
 //
 // **THE KEYTAB IS THE ONE PIECE OF KEY MATERIAL THIS API EVER RETURNS**, so the
 // assertions that matter are about where it is NOT: the read of the resource
@@ -3921,10 +3940,12 @@ async function theKerberosPrincipalsRoundTrip() {
 // rule: a realm's grant is in the realm, and it leaves the service roster
 // untouched.
 //
-// Which makes this the one section that must clean up after itself by hand, and
-// the one that can lock every other job out of the console if it does not:
-// while neither role group has a member, anybody who signs in holds both, and
-// the FIRST grant closes that door for everybody who is not in the roster.
+// It still revokes what it grants, and reads the roster back to its starting
+// count. The window in which anybody who signs in holds both roles is closed
+// by the bootstrap administrator's first console sign-in wherever one was
+// seeded (every realm since #32; admin-ui/admin_rbac.js), and only where none
+// was does the older rule apply — open while neither role group has a member,
+// so that a first grant closes it for everybody not in the roster.
 // ---------------------------------------------------------------------------
 async function theAdminRolesRoundTrip() {
   log.debug("Entering theAdminRolesRoundTrip().");
@@ -4033,7 +4054,7 @@ async function theAdminRolesRoundTrip() {
 // ---------------------------------------------------------------------------
 // THE CONFIGURATION DOORS, AND THE TWO NARROW ONES BESIDE THEM.
 //
-// `/config` is the wide door: four actions over a hundred and fifty settings,
+// `/config` is the wide door: four actions over several hundred settings,
 // and `set-many` deliberately IGNORES a key it does not know, because a form
 // posts fields the resource never declared. That is right for what it is and
 // wrong for a caller that means to set a lifetime — a misspelt
@@ -4141,9 +4162,9 @@ async function theConfigurationDoorsRoundTrip(doc) {
   // every other job had pinned, and nothing would say so until one of them
   // failed for a reason that has nothing to do with itself.
   //
-  // It is also the one operation on this API that carries no example body,
-  // so nothing in the sweep reaches it. That is exactly the hole the coverage
-  // ledger at the end of this run exists to keep shut.
+  // It is also one of the six operations on this API that carry no example
+  // body, so nothing in the sweep reaches it. That is exactly the hole the
+  // coverage ledger at the end of this run exists to keep shut.
   // ---------------------------------------------------------------------
   await ok("/config/set", { key: candidate.key, value: wanted },
     "set " + candidate.key + " again, so that `reset-all` has something to " +
@@ -4857,7 +4878,7 @@ function everyAcceptedWriteWasReadBack() {
 // a realm a test run created STAYS, because it is what a person reads when the
 // run went red.** Its directory subtree, its applications registry, its
 // federation register, its claim sets, its SPIFFE registry, its tokens and its
-// overrides are the record of what a hundred and thirty operations actually
+// overrides are the record of what three hundred-odd operations actually
 // did — and removing it destroyed that record at exactly the moment it was
 // worth something.
 //
@@ -5084,8 +5105,9 @@ program
       "/admin-api for real: replay each documented example, round-trip each " +
       "write through a read, and check that a configuration change reaches " +
       "the persistence store.")
-  // Accepted and ignored: run-report.js passes --url to every job, and
-  // tests/jwk_pem_encoding.js fails the suite if a job does not declare it.
+  // Accepted and ignored: the parent project's runner passes --url to every
+  // job, and its tests/jwk_pem_encoding.js fails that suite if a job does not
+  // declare it. This repository's run-report.js passes none.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

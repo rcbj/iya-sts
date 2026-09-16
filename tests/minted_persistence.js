@@ -456,7 +456,7 @@ async function body(t, dir) {
           'key lengths offered: ' + offered.map(function (k) {
             return k.length;
           }).join(', '));
-  t.check(flaky.rows.has('test.retry default ' + expectedKey),
+  t.check(flaky.rows.has('test.retry\u0000default\u0000' + expectedKey),
           'and the row that finally lands is under that key, as an upsert ' +
           'rather than a delete of a name nothing holds');
   // Put back the driver section 6 restores from: `restore()` reads whichever
@@ -486,7 +486,8 @@ async function body(t, dir) {
 
   // -------------------------------------------------------------------------
   // 7. DEVELOPMENT MODE WRITES NOTHING, which is the property every other
-  //    test in this repository and every job in the parent suite depends on.
+  //    test in this repository and every single-process job in the parent
+  //    suite depends on.
   // -------------------------------------------------------------------------
   t.log.info('=== development mode ===');
   config.setOverride('global.mode', 'development');
@@ -508,9 +509,12 @@ async function body(t, dir) {
   // -------------------------------------------------------------------------
   // 7b. UNLESS SEVERAL PROCESSES ARE ANSWERING ONE PORT (2026-09-12).
   //
-  // The arm above is the promise; this is its one exception, and it is not a
-  // softening of it. A dispatched run is several processes against one store,
-  // and what they mint has to be in that store or they disagree: a token
+  // The arm above is the promise; this is one of its two exceptions, and it
+  // is not a softening of it. (The other, since 2026-09-14, is a node of a
+  // cluster — `cluster.mode` not `off` — which
+  // `tests/cluster_node_state_sharing.js` asserts.) A dispatched run is
+  // several processes against one store, and what they mint has to be in that
+  // store or they disagree: a token
   // minted on one worker is unknown to the next, and — the way it was actually
   // found — a REPLAYED RFC 7523 assertion is refused by the worker that saw it
   // and accepted by the two that did not.

@@ -358,8 +358,12 @@ app.post('/pki/ocsp/:scope/:ca', function (req, res) {
   // endpoint costs a content type in that parser's list and nothing else.
   // ---------------------------------------------------------------------
   const body = req.body;
+  // ANYTHING ELSE IS NO BYTES AT ALL, not `null`: a JSON content type reaches
+  // here as a parsed object, and until 2026-09-16 `der.length` below threw on
+  // it and the responder answered 500.
   const der = Buffer.isBuffer(body) ? body
-    : (typeof body === 'string' ? Buffer.from(body, 'binary') : null);
+    : (typeof body === 'string' ? Buffer.from(body, 'binary')
+                                : Buffer.alloc(0));
   // NO BODY IS A REQUEST THAT DOES NOT CONFORM TO THE OCSP SYNTAX, and it is
   // answered `malformedRequest` inside the protocol rather than a 400 — see
   // the GET route above. `answer()` hands it to the responder like any other
@@ -612,8 +616,10 @@ function status() {
 }
 
 module.exports = {
-  // For `sts_metadata.js` and the tests: the shapes, so nothing has to
-  // hand-build one of these URLs.
+  // `listen()` is what `server.js` calls. The other three are exported so a
+  // caller can read the listener's state, the CRL cache policy and the path
+  // filter without binding a socket; the URL shapes themselves are
+  // `common/pki_revocation.js`'s `distributionPoints()`.
   cacheSeconds: cacheSeconds,
   listen: listen,
   status: status,

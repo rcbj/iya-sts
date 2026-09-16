@@ -6,9 +6,11 @@
 // and vc_issuer.js's protected endpoints demand a proof for them.
 //
 // Requiring this module registers nothing. It is a library, unlike the protocol
-// modules beside it — there is no `app.get` here — so its position in
-// server.js's require order does not matter. It requires helpers.js and nothing
-// else, so it cannot be part of a cycle.
+// modules beside it — there is no `app.get` here — so its position in the
+// require order (`common/protocol_stack.js`) does not matter. It requires
+// `common/` libraries and the other libraries in this directory named at each
+// require below, none of which requires it back, so it cannot be part of a
+// cycle.
 //
 // What it is defending against. A Bearer access token (RFC 6750) is a password:
 // anything that can read it can spend it, so a token leaked from a log, a
@@ -35,8 +37,8 @@
 //     an OID4VCI credential proof of possession, say, which this very workflow
 //     also signs — is accepted as a DPoP proof.
 //
-// Which is why tests/sts_dpop.js removes each of those checks in turn and
-// requires that the suite notices.
+// Which is why tests/vendored/sts_dpop.js removes each of those checks in turn
+// and requires that the suite notices.
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -45,20 +47,20 @@ const crypto = require('crypto');
 // no route, so its position is not a position at all.
 const realms = require('../common/realms');
 // jsonwebtoken and the STS key arrived with presentedAccessToken() below: it
-// verifies an access token this service issued before believing its cnf. Still
-// a leaf — jsonwebtoken is an npm package and helpers.js is this module's only
-// project dependency, so the no-cycle property is unchanged. One signer and one
-// verifier for the whole service since 2026-08-27.
+// verifies an access token this service issued before believing its cnf.
+// `common/crypto.js` is a leaf and `helpers.js` requires nothing here, so the
+// no-cycle property is unchanged. One signer and one verifier for the whole
+// service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const helpers = require('../common/helpers');
 // The registry of error codes: a leaf. A refusal is MARKED on the response and
 // named on the refusal object this module hands back; neither is serialised.
 const errorCodes = require('../common/error_codes');
 // RFC 8705 — the other sender constraint. A library like this one: it registers
-// nothing and requires only helpers.js and config.js, so requiring it here
-// cannot create a cycle. It is required HERE rather than at the four protected
-// endpoints because presentedAccessToken() below is the single check they
-// share.
+// nothing and requires only helpers.js, config.js and common/crypto.js, so
+// requiring it here cannot create a cycle. It is required HERE rather than at
+// the protected endpoints because presentedAccessToken() below is the single
+// check they share.
 const mtls = require('./mtls');
 // #34 (2026-09-15) — the two settings that REQUIRE one of those constraints of
 // every presented access token, rather than checking the one a token happens
@@ -74,17 +76,18 @@ const senderConstraints = require('./sender_constraints');
 const jwtAccessToken = require('./jwt_access_token');
 // For one decision: whether to REFUSE an access token in a query string rather
 // than merely ignore it (RFC 9700 section 4.3.2). A library that registers no
-// route and requires only helpers.js, config.js and client_auth.js, so
+// route and requires `common/` and `cluster/` libraries, client_auth.js,
+// oauth21.js and sender_constraints.js — none of which requires this file — so
 // requiring it here cannot create a cycle.
 const bcp = require('./oauth2_bcp');
 // For one value: `oauth2.clockSkewS`, the allowance applied to `exp` and `nbf`
-// wherever this service reads back a token it signed. config.js requires
-// NOTHING from this repository — it is the module helpers.js itself sits on top
-// of — so this is still a leaf and the no-cycle property above is unchanged.
-// It is read here rather than passed in because presentedAccessToken() is the
-// single check the four protected endpoints share: a skew applied at three of
-// them and not the fourth is a token that is alive at UserInfo and dead at the
-// credential endpoint, which reads as a wallet bug from both sides.
+// wherever this service reads back a token it signed. config.js requires only
+// config_file.js and error_codes.js — it is the module helpers.js itself sits
+// on top of — so the no-cycle property above is unchanged. It is read here
+// rather than passed in because presentedAccessToken() is the single check the
+// protected endpoints share: a skew applied at some of them and not another is
+// a token that is alive at UserInfo and dead at the credential endpoint, which
+// reads as a wallet bug from both sides.
 const config = require('../common/config');
 // RFC 9470 (2026-09-13): whether the authentication behind a presented token
 // meets what the resource requires. A library requiring only `common/`
@@ -285,12 +288,12 @@ function proofClaims() {
 
 // Server-supplied nonces (sections 8 and 9). OFF by default: the mechanism is a
 // second round trip on the first request of every session, so a deployment opts
-// in. `requireNonces()` is read per request rather than captured at require
+// in. `nonceModeOn()` is read per request rather than captured at require
 // time, so a test can turn it on and off without restarting the service.
 // SHARED AND PERSISTED, NOT A MODULE VARIABLE (2026-09-08). It was
 // `let nonceMode = false`, which is exactly as much state as it looks like and
-// one process's worth of it. `POST /oauth2/dpop-nonce-mode` is the only thing
-// that writes it, that path FANS OUT (it carries no session), and the request
+// one process's worth of it. `POST /dpop/nonce-mode` was then the only thing
+// that wrote it, that path FANS OUT (it carries no session), and the request
 // that arms nonce mode therefore armed ONE request worker — after which the
 // server demanded a nonce from a third of the callers and accepted anything
 // from the rest. `sts_dpop.js` reported it exactly: a nonce the server never
@@ -839,12 +842,13 @@ function forgetProofs() {
 // would use.
 //
 // **It lives here rather than in vc_issuer.js, where it was written, because
-// there are now four.** /oauth2/userinfo is the fourth, and it is in oauth2.js
+// there were four.** /oauth2/userinfo was the fourth, and it is in oauth2.js
 // — a module vc_issuer.js cannot be required from without either building a
 // cycle or moving OID4VCI ahead of OAuth2 in the route order. Copying the check
 // into the OAuth2 module instead is precisely the mistake the paragraph above
-// records having already been made once. dpop.js registers no routes and
-// requires only helpers.js, so it is the one place both callers can reach.
+// records having already been made once. dpop.js registers no routes and joins
+// no cycle, so it is the one place every caller can reach — seven surfaces
+// since, listed at the #34 check below.
 //
 // It answers the request itself on failure and returns null, so a caller reads:
 //
@@ -1017,9 +1021,9 @@ function presentedAccessToken(req, res, where, options) {
   }
 
   // RFC 8705 section 3.1 — the OTHER sender constraint, checked here for the
-  // same reason the DPoP one is: this function is the single check the four
-  // protected endpoints share, and a second one beside it would be a fourth
-  // caller nobody updated. It refuses nothing on a token that carries no
+  // same reason the DPoP one is: this function is the single check the
+  // protected endpoints share, and a second one beside it would be a caller
+  // nobody updated. It refuses nothing on a token that carries no
   // certificate confirmation, so a Bearer or DPoP request is untouched.
   const certificateProblem = mtls.checkBinding(claims, req, verified);
   if (certificateProblem) {

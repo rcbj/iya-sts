@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 'use strict';
 //
 // File: common/version.js
@@ -55,9 +56,10 @@
 //    — so it can never close a require cycle and its position in the require
 //    order is not a position. That matters more here than it did in the parent:
 //    `home/home.js` (6a), `admin-ui/admin.js` (18), `mgmt-api/admin_api.js`
-//    (19), `portal/portal.js` and `server.js` itself all read it, which is five
-//    modules spread across the require order, and a version module that could
-//    drag a route would be a version module that decided where routes go.
+//    (19), `portal/portal.js`, `sts_metadata.js` (24), `server.js` itself and
+//    every module that sends an outbound request all read it — modules spread
+//    across the whole require order — and a version module that could drag a
+//    route would be a version module that decided where routes go.
 //
 // 3. **THE `log` IS CONSOLE-BACKED, NOT bunyan.** The parent's reason was that
 //    this file can run before any install has happened; here there is a second
@@ -101,23 +103,22 @@ const { execFileSync } = require('child_process');
 
 var DEBUG = false;
 var LOG_TAG = "[version]";
+// Rest parameters rather than `arguments` (#50, 2026-09-16): the type checker
+// reads a function that names no parameter as taking none. What is printed is
+// unchanged.
 var log = {
-  debug: function () {
+  debug: function (...args) {
     if (!DEBUG) return;
-    console.log.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+    console.log(LOG_TAG, ...args);
   },
-  info: function () {
-    console.log.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+  info: function (...args) {
+    console.log(LOG_TAG, ...args);
   },
-  warn: function () {
-    console.warn.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+  warn: function (...args) {
+    console.warn(LOG_TAG, ...args);
   },
-  error: function () {
-    console.error.apply(console,
-      [LOG_TAG].concat(Array.prototype.slice.call(arguments)));
+  error: function (...args) {
+    console.error(LOG_TAG, ...args);
   }
 };
 
@@ -133,7 +134,7 @@ const STAMP_FILE = 'version.json';
 
 // THE PACKAGE ROOT: the directory the VERSION file is in. Every path below is
 // resolved against it rather than against the working directory, because this
-// module is read from six different modules in four directories and by a
+// module is read from modules in a dozen directories and by a
 // `node common/version.js` run from anywhere.
 //
 // **IT IS FOUND RATHER THAN ASSUMED, AND THAT IS WHAT MAKES ONE COPY OF THIS
@@ -295,8 +296,8 @@ function stamp(dir) {
 // THE ONE RECORD THIS PROCESS REPORTS. Computed at most once.
 //
 // **THIS CACHE IS NOT AN OPTIMISATION AND IT WAS ADDED BECAUSE A TEST CAUGHT
-// THE BUG IT PREVENTS.** Six modules call `load()` at require time, and in a
-// CHECKOUT there is no stamp — so each of them computed its own record,
+// THE BUG IT PREVENTS.** Several modules call `load()` at require time, and
+// in a CHECKOUT there is no stamp — so each of them computed its own record,
 // stamping the instant IT was required. `tests/vendored/admin_api.js` found
 // the front page reporting `0.1.20260907060910` while `/admin-api` reported
 // `0.1.20260907060911`: one second apart, because `home/home.js` is required
@@ -356,27 +357,28 @@ function load(dir) {
 
 // --- the outbound User-Agent ------------------------------------------------
 //
-// This service makes FOUR outbound requests (root CLAUDE.md lists them and each
-// is argued where it lives), and three of them reach somebody else's server:
-// federation's, SSF's RFC 8935 push, and XACML's change nudge. Every one of
-// them should say what dialled it and which build of it, because the person
-// reading that access log is debugging an integration with a mock they did not
-// install.
+// This service makes several kinds of outbound request, each argued where it
+// lives, and most of them reach somebody else's server: federation's, SSF's
+// RFC 8935 push, XACML's change nudge, GNAP's push finish, an RFC 9101
+// request_uri, an RFC 9728 metadata import, a SAML service provider's metadata
+// and a CRL or OCSP fetch. Every one of them should say what dialled it and
+// which build of it, because the person reading that access log is debugging
+// an integration with a mock they did not install.
 //
 // **RFC 9110 product form**, `sts/<M.N.O> (<component>)`: one product token
 // with a version, and the component in a comment. The version is not decoration
 // there — "sts called my endpoint and sent the wrong thing" is answerable
 // only if the request said which build did it.
 //
-// It is HERE rather than three strings in three modules for the reason the rest
-// of this file exists: one copy of the product token, so a rename or a version
-// change cannot reach two of the three.
+// It is HERE rather than a string in each of those modules for the reason the
+// rest of this file exists: one copy of the product token, so a rename or a
+// version change cannot reach some of them and not the others.
 //
 // **THE TOKEN WAS `mock-sts` UNTIL 2026-09-12**, when the product name in
 // every identifier this service stores and emits became `sts`. That was the
 // rename this constant exists to make a one-line change, and it was. The
-// REPOSITORY and the package are still called mock-sts; this is the name on
-// the wire, which is a different thing.
+// package is still called mock-sts (the repository became iya-sts on
+// 2026-09-15); this is the name on the wire, which is a different thing.
 const PRODUCT = 'sts';
 
 function userAgent(component) {

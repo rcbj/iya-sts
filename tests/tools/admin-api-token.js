@@ -11,14 +11,16 @@
 // discovers a test as any `.js` file in `tests/`, and everything in here is
 // deliberately out of that path.
 //
-// THE CLIENT IS SEEDED, WHICH IS WHY THIS IS SHORT. `applications.js` puts
-// `sts-management-api` in the registry at startup — `client_credentials`,
-// `client_secret_basic`, `scope: 'admin:read admin:write'` — so a run does not
-// register anything. What it cannot know is the SECRET, which is minted per
-// start, so that is read back through `/admin-api/applications`… which is
-// itself gated. The way in is `adminApi.authRequired`: a launcher reads the
-// secret while the service is still open, or is given it. See the note on
-// `secretFor()`.
+// THE CLIENT IS SEEDED, WHICH IS WHY THIS IS SHORT. `common/applications.js`
+// puts `sts-management-api` in the registry at startup —
+// `client_credentials`, `client_secret_basic`,
+// `scope: 'admin:read admin:write'` — so a run does not register anything.
+// The SECRET is pinned by `adminApi.clientSecret` (`ADMIN_API_CLIENT_SECRET`):
+// every launcher chooses one per run, starts the service with it, and hands
+// it to this file as `STS_ADMIN_API_CLIENT_SECRET`. Only without that is it
+// read back through `/admin-api/applications`, which is itself gated and so
+// answers only a service started with `adminApi.authRequired` off. See the
+// note on `secretFor()`.
 // ===========================================================================
 
 'use strict';
@@ -59,10 +61,10 @@ function request(url, options, body) {
   });
 }
 
-// The seeded client's secret, read from the running service. `/admin-api` is
-// gated, so this asks the LDAP-backed applications view through the console's
-// own JSON door — which is open to a caller holding the console session — and
-// falls back to the environment where a deployment has been given one.
+// The seeded client's secret: `STS_ADMIN_API_CLIENT_SECRET` when the caller
+// was given it (every launcher is), and otherwise read from the running
+// service's `/admin-api/applications` with no credential — which answers only
+// when `adminApi.authRequired` is off, and is an empty string otherwise.
 async function secretFor(base) {
   log.debug("Entering secretFor().");
   if (process.env.STS_ADMIN_API_CLIENT_SECRET) {

@@ -22,8 +22,9 @@
 // Three kinds of thing are service-wide, and each is a table below:
 //
 //   * PAGES whose subject is the process — the store, the database, the secret
-//     store, the listeners and their truststore, the shared KDC, the embedded
-//     debugger. Refused whatever the method, and hidden from the navigation.
+//     store, TLS and its client-certificate truststore, the directory's
+//     sockets, the API explorer, the embedded debugger. Refused whatever the
+//     method, and hidden from the navigation.
 //   * ACTIONS on a realm-scoped page that reach past the realm — creating or
 //     removing a realm, editing another realm's row, replacing the service Root
 //     or the process branch, exporting the TLS listener's private key.
@@ -86,7 +87,7 @@ const SERVICE_SETTING_KEYS = [
   'spiffe.workloadPort', 'spiffe.serverPort',
   // KERBEROS, PER KEY SINCE 2026-09-15 (it was the `krb5.` prefix). A realm
   // carries its own Kerberos realm, principal database and keys, so the rows
-  // those are built from are the realm administrator's. These five are not:
+  // those are built from are the realm administrator's. These six are not:
   // the two SOCKETS are bound once for the process, and the development-mode
   // trust is the DEFAULT realm's second Kerberos realm — no other realm has
   // one, so setting them on a realm would say something untrue.

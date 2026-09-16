@@ -214,12 +214,13 @@ const TEMPLATES = [
     // ticket, an assertion, a session — and `xacml.issuancePolicy` names the
     // repository entry it lives in.
     //
-    // IT IS SEEDED, AND IT IS NOT THE REPOSITORY ROOT. Two questions, two
-    // documents: the root answers what a caller asks at /xacml/pdp and what
-    // every remote PEP pulls, and this answers who may be issued something
-    // here. Making them one document would mean editing the demo policy
-    // changed who could sign in, and narrowing one application's roles changed
-    // what /xacml/pdp told a remote PEP.
+    // IT IS BUILT IN RATHER THAN SEEDED (`xacml_role_pep.js` calls this row
+    // at decision time and says why), AND IT IS NOT THE REPOSITORY ROOT. Two
+    // questions, two documents: the root answers what a caller asks at
+    // /xacml/pdp and what every remote PEP pulls, and this answers who may be
+    // issued something here. Making them one document would mean editing the
+    // demo policy changed who could sign in, and narrowing one application's
+    // roles changed what /xacml/pdp told a remote PEP.
     //
     // WHY IT IS ONE POLICY FOR EVERY APPLICATION RATHER THAN ONE PER
     // APPLICATION. The alternative — a rule per application naming its roles —
@@ -360,7 +361,8 @@ const TEMPLATES = [
     //
     // That one answers "may this be ISSUED"; this one answers "may this
     // SUBJECT do this to this RESOURCE" — the admin console, the management
-    // API, the User Portal, SCIM and the SPIRE Server API.
+    // API, the User Portal, SCIM, the SPIRE Server API and the other surfaces
+    // `common/access_gate.js` lists.
     //
     // **THE SUBJECT IS ALWAYS THE SECURITY CONTEXT'S PERSON**, taken from the
     // session by `common/access_gate.js` and never from the request. That is
@@ -504,9 +506,9 @@ const TEMPLATES = [
         : apply(F1 + 'or', roleArms);
 
       // The resource names nobody. The same bag-size reading as above, and it
-      // is what makes this one policy serve five surfaces: four of them never
-      // set an owner, so this is true and the whole ownership question is
-      // vacuous for them.
+      // is what makes this one policy serve every gated surface: only the
+      // portal sets an owner, so for the rest this is true and the whole
+      // ownership question is vacuous.
       const ownerless = apply(F1 + 'integer-equal', [
         apply(F1 + 'string-bag-size', [
           designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.OWNER,
@@ -530,7 +532,7 @@ const TEMPLATES = [
       // `permitOwner: no` leaves `ownerless` alone, so a resource that names
       // an owner is refused to EVERYBODY — including the owner. That is what
       // the parameter's help says it does, and it is the only reading that
-      // makes the setting demonstrable: the four ownerless surfaces are
+      // makes the setting demonstrable: the ownerless surfaces are
       // untouched by it, which is how somebody can see that the portal is the
       // surface the setting is about.
       const satisfiesOwnership = permitOwner

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: delegation.js
@@ -8,10 +9,11 @@
 // Three of the protocol families here can do it and each calls it something
 // different — Kerberos has S4U2Self, two flavours of S4U2Proxy and a forwarded
 // ticket-granting ticket; WS-Trust has OnBehalfOf and ActAs; OAuth 2.0 Token
-// Exchange has impersonation and delegation. This file is the ONE model all six
-// are recorded against, because the question a person brings to this page is
-// protocol-independent: *alice never touched the back end, so why is there a
-// ticket to it in her name, and who asked for it?*
+// Exchange has impersonation and delegation, and since 2026-09-10 the RFC 7523
+// and RFC 7522 assertion grants join them. This file is the ONE model all of
+// them are recorded against, because the question a person brings to this
+// page is protocol-independent: *alice never touched the back end, so why is
+// there a ticket to it in her name, and who asked for it?*
 //
 // It is a LIBRARY, like admin_stats.js, audit.js and dpop.js — it registers no
 // route, so its position in the require order does not matter and it cannot be
@@ -19,8 +21,9 @@
 // `admin_api.js` serves it at /admin-api/delegation; this file holds the acts
 // and none of the HTML.
 //
-// It requires helpers.js, config.js and admin_stats.js — that last one for
-// identityOf()'s normalisation only, which is what makes `alice`,
+// It requires helpers.js, config.js, realms.js, error_codes.js,
+// persistence_replication.js and admin_stats.js — that last one for
+// identityKeyOf()'s normalisation only, which is what makes `alice`,
 // `alice@STS.MOCK` and `urn:uuid:<entryUUID>` one person on a chain rather
 // than three. admin_stats.js requires nothing here, so there is no cycle and
 // none of rule 3e's slots is needed. Keep it that way: this file is called from
@@ -64,10 +67,12 @@
 // one the audit log should grow a seventh category for. Cite this paragraph
 // before adding an audit call here.
 //
-// **IT IS IN MEMORY AND DIES WITH THE PROCESS**, like the counters, the audit
-// log, the sessions and the signing key. `delegation.maxRecords` is the cap and
-// what was dropped is COUNTED, so a truncated list says it was truncated rather
-// than implying the cap is all there ever was.
+// **IT IS CAPPED, AND WHAT IS DROPPED IS COUNTED.** This paragraph used to say
+// the register was in memory and died with the process; the store is declared
+// `persist: 'delegation.acts'` now, so where minted state is written down (see
+// `persistence/CLAUDE.md`) the acts are too. `delegation.maxRecords` is the cap
+// and what was dropped is COUNTED, so a truncated list says it was truncated
+// rather than implying the cap is all there ever was.
 // ---------------------------------------------------------------------------
 
 const { log } = require('./helpers');
@@ -81,8 +86,10 @@ const errorCodes = require('./error_codes');
 const config = require('./config');
 const stats = require('./admin_stats');
 // THE FAN-IN FOR OTHER PROCESSES' ACTS. A LIBRARY (rule 3) that registers no
-// route and requires only `config` and `realms`, so it can be required from
-// here without closing a cycle or moving anything. With one process it answers
+// route and requires `config`, `realms`, `error_codes` and the cluster
+// capability table (and `cluster/cluster.js` lazily), none of which reaches
+// this file, so it can be required from here without closing a cycle or
+// moving anything. With one process it answers
 // an empty array and this file behaves exactly as it always has.
 //
 // **IT IS NOT OPTIONAL AND THIS FILE WENT WITHOUT IT UNTIL 2026-09-11.** The
@@ -102,9 +109,9 @@ const replication = require('../persistence/persistence_replication');
 // THE TWO AXES, AND WHY THE PROTOCOL-INDEPENDENT ONE IS `mode` RATHER THAN THE
 // TYPE.
 //
-// `type` is what the protocol calls it, and there are eight because the three
-// protocols between them define eight. `mode` is the thing they share, and it
-// is the axis worth filtering on:
+// `type` is what the protocol calls it, and there are ten because the three
+// protocols between them define ten (eight until the two assertion grants).
+// `mode` is the thing they share, and it is the axis worth filtering on:
 //
 //   **impersonation** — the credential that comes out names the INITIAL identity
 //   and says nothing about the intermediary. The service at the far end cannot
@@ -123,9 +130,9 @@ const replication = require('../persistence/persistence_replication');
 // worse than getting its type wrong.
 //
 // One consequence to state rather than leave to be discovered: `mode` is a
-// property of the MECHANISM and not of what this service checked. Every row
-// here, in all eight types, was allowed — this service polices exactly one of
-// them (see `authorizedBy` below).
+// property of the MECHANISM and not of what this service checked. This
+// service polices only some of the types (`policed` below, and see
+// `authorizedBy`).
 // ---------------------------------------------------------------------------
 const MODES = [
   { mode: 'impersonation', label: 'Impersonation',
@@ -141,15 +148,15 @@ const MODES = [
 
 const MODE_IDS = MODES.map(function (one) { return one.mode; });
 
-// The eight, as the specifications name them. `spec` is cited on the page for
+// The ten, as the specifications name them. `spec` is cited on the page for
 // the same reason /admin/sts-metadata cites one per endpoint: a table of
 // delegation mechanisms with no references is a table somebody has to take on
 // trust.
 //
 // `policed` says whether THIS SERVICE decides who may perform the act. It is
-// true for exactly the three Kerberos S4U rows and false for everything else,
-// and that asymmetry is real rather than an omission — see the note on
-// `authorizedBy`.
+// true for the four Kerberos rows and the two assertion-grant rows and false
+// for WS-Trust and token exchange, and that asymmetry is real rather than an
+// omission — see the note on `authorizedBy`.
 const TYPES = [
   { type: 'krb5-s4u2self', protocol: 'Kerberos v5', mode: 'impersonation',
     label: 'S4U2Self (protocol transition)', spec: '[MS-SFU] 3.2.5.1',
@@ -223,7 +230,8 @@ const TYPES = [
   // -------------------------------------------------------------------------
   { type: 'oauth-assertion-grant', protocol: 'OAuth 2.0', mode: 'delegation',
     label: 'JWT bearer assertion grant', spec: 'RFC 7523 §2.1',
-    // POLICED, and it is the only OAuth row here that is. Kerberos is policed
+    // POLICED, and it is one of only two OAuth rows here that are (RFC 7522's,
+    // below, is the other). Kerberos is policed
     // because the KDC checks two attributes on every request; this is policed
     // because the assertion ISSUER has to be declared before this service will
     // believe anything it signs — there is no permissive answer available for
@@ -309,8 +317,8 @@ const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 // with everything in common — and `seq` is assigned here rather than derived
 // from anything in the request.
 // ---------------------------------------------------------------------------
-// PER TRUST REALM. `realms.arr()` is a array that holds a separate one for each
-// realm and hands out the ambient realm's — so every reader below is
+// PER TRUST REALM. `realms.arr()` is an array that holds a separate one for
+// each realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain array it replaced. See common/realms.js.
@@ -347,10 +355,10 @@ function maxRecords() {
 //     FOR it, so applications.js recorded it). Two entries, one party, and a
 //     model with only one slot would have had to choose which of them to lose.
 //
-// `key` is the normalised identity — identityOf()'s answer, so a row here and a
-// row on /admin/users name the same person — and `presented` is the form it
-// arrived in, kept for the reason the audit log keeps both: the collapse from
-// `alice@STS.MOCK` to `alice` is something a reader has to be able to SEE
+// `key` is the normalised identity — identityKeyOf()'s answer, so a row here
+// and a row on /admin/users name the same person — and `presented` is the form
+// it arrived in, kept for the reason the audit log keeps both: the collapse
+// from `alice@STS.MOCK` to `alice` is something a reader has to be able to SEE
 // rather than take on trust.
 //
 // `application` is an identifier and NOT a promise that an entry exists. What
@@ -1543,11 +1551,13 @@ module.exports = {
   actsForApplication: actsForApplication,
   applicationList: applicationList,
   // And the three that mirror them for a PARTY rather than an application, plus
-  // the function that decides what one IS. `nodeIdOf()` is exported because the
-  // picture of one person (common/user_graph.js) draws boxes for parties this
-  // store has never seen — an OAuth client a token names, a SAML audience — and
-  // has to key them the same way this file does, or the two halves of one
-  // diagram would put the same party in two boxes.
+  // the function that decides what one IS. `nodeIdOf()` is exported so a
+  // picture that draws boxes for parties this store has never seen — an OAuth
+  // client a token names, a SAML audience — can key them the same way this
+  // file does, or the two halves of one diagram would put the same party in
+  // two boxes. (`common/user_graph.js` does not call it today: it keys those
+  // boxes with `admin_stats.identityKeyOf()`, the normalisation nodeIdOf()
+  // itself applies.)
   nodeIdOf: nodeIdOf,
   identityRolesIn: identityRolesIn,
   actsForIdentity: actsForIdentity,

@@ -65,8 +65,10 @@ const ROOT = path.join(__dirname, '..');
 // parameter and decides nothing — and so is everything this repository may not
 // edit or that is not the service.
 // ---------------------------------------------------------------------------
+// `.claude` holds agent worktrees: a second checkout of this repository,
+// whose files are not this one's (2026-09-16).
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
-                   'vendored', 'coverage', '.claude'];
+                   '.claude', 'vendored', 'coverage'];
 const SKIP_FILES = ['common/crypto.js'];
 
 const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;

@@ -112,7 +112,7 @@ at it, so saying who you are is the entire question.
   route registered after this module for the rest of the process's life — rule 1
   in the root `CLAUDE.md`.
 * **It is read once, at require time**, and a failure to read it is RECORDED
-  rather than thrown, for the reason the four socket-owning modules start their
+  rather than thrown, for the reason the socket-owning modules start their
   listeners from `listen()`: a `require` that throws takes the whole service
   down, and a missing decoration is the least important thing that could go
   wrong here. With no image the page is drawn without one and the route answers
@@ -147,5 +147,5 @@ it has no behaviour. Its one `<style>` block is covered by the
 `style-src 'unsafe-inline'` several pages here already rely on, and the image is
 same-origin, which `img-src 'self' data:` already allows. A page that fetched a
 font from a CDN would need the policy widened for a decoration — so it does not.
-Four pages here have a script on them and each had to argue for it separately;
-this is not a fifth.
+Seven pages here have a script on them and each had to argue for it
+separately (the root `CLAUDE.md` lists them); this is not an eighth.

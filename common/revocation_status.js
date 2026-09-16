@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 //
 // File: revocation_status.js
@@ -42,7 +43,8 @@
 //     responder its Authority Information Access names and by the CRL its
 //     `cRLDistributionPoints` names** — in the order `pki.revocationOcsp`
 //     chooses, `first` by default, with the other as the fallback — each
-//     fetched over http or https only, with a timeout, a size cap and a cache
+//     fetched over http or https (and a CRL over LDAP too, point 1 below),
+//     with a timeout, a size cap and a cache
 //     that honours the document's own validity, and each verified against a
 //     key the certificate's ISSUER vouched for: its own, a delegated OCSP
 //     responder it certified, or the CRL issuer it named. A CRL and an OCSP
@@ -741,7 +743,8 @@ function integerExtensionOf(ext) {
     return null;
   }
   const integer = derParse(ext.extnValue.valueBlock.valueHexView);
-  const hex = Buffer.from(integer.valueBlock.valueHexView).toString('hex');
+  const hex = Buffer.from(/** @type {any} */ (integer).valueBlock.valueHexView)
+    .toString('hex');
   log.debug("Leaving integerExtensionOf().");
   return BigInt('0x' + (hex || '0'));
 }
@@ -1810,7 +1813,7 @@ function reasonOfEntry(entry) {
   }
   try {
     const decoded = asn1js.fromBER(found.extnValue.valueBlock.valueHexView);
-    const code = decoded.result.valueBlock.valueDec;
+    const code = /** @type {any} */ (decoded.result).valueBlock.valueDec;
     log.debug('Leaving reasonOfEntry(). code=' + code);
     return { code: code, id: reasonNameOf(code) };
   } catch (e) {
