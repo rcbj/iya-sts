@@ -360,16 +360,17 @@ function flatten(bag) {
 // THREE STEPS, IN THIS ORDER, AND THE ORDER IS THE WHOLE OF IT:
 //
 //   1. CHOOSE, from the configured attribute or from the subject;
-//   2. NORMALISE, through the same `identityOf()` every other family here is
-//      filed by;
+//   2. NORMALISE, through `identityKeyOf()` — the same `identityOf()` every
+//      other family here is filed by;
 //   3. PREFIX, if `federation.usernamePrefix` says so.
 //
 // **STEP 2 WAS MISSING AND IT WAS A REAL DEFECT**, found the first time this
 // was pointed at another instance of this service. A foreign `sub` is an opaque
 // string, and that partner's happened to be `urn:sts:user:alice` — this
-// service's OWN subject format, because the partner IS this service. The raw
-// value went to `startSession()`, `userFor()` put the prefix on again, and
-// every downstream token carried `sub: urn:sts:user:urn:sts:user:alice`.
+// service's OWN subject format at the time, because the partner IS this
+// service. The raw value went to `startSession()`, `userFor()` put the prefix
+// on again, and every downstream token carried
+// `sub: urn:sts:user:urn:sts:user:alice`.
 //
 // The doubling is the symptom and not the bug. The bug is that the identity
 // funnel ALREADY normalises — `recordAuthentication()` runs `presented` through

@@ -3,11 +3,14 @@
 // File: federation_http.js
 //
 // ===========================================================================
-// THE ONLY OUTBOUND REQUEST IN THIS REPOSITORY.
+// THE FIRST OUTBOUND REQUEST IN THIS REPOSITORY, AND THE STRONGEST.
 //
-// Nothing else here has ever dialled anything. This service is reached; it does
-// not reach. That is not an accident of what got built — it is a position taken
-// in two places and argued in both:
+// Until this file nothing here had ever dialled anything. This service is
+// reached; it does not reach. That was not an accident of what got built — it
+// is a position taken in two places and argued in both (the requesters added
+// since — SSF, the XACML nudge, the embedded debugger's api, the RFC 9728
+// import, a registered RFC 9101 `request_uri` — each argue their own case; the
+// root CLAUDE.md's non-goal index lists them):
 //
 //   * `oauthJwksUri` on an application entry is RECORDED AND NEVER FETCHED.
 //     `applications.js`'s schema row says why: following it would mean this
@@ -86,9 +89,9 @@
 //    a check ended up half-written.
 //
 // ---------------------------------------------------------------------------
-// IT IS A LIBRARY (rule 3). It registers nothing and requires `helpers.js` and
-// `config.js` — plus node's own `https`, `http` and `url` — so it cannot join a
-// cycle. `federation.js` is NOT required from here, deliberately: this module
+// IT IS A LIBRARY (rule 3). It registers nothing and requires `helpers.js`,
+// `config.js`, `error_codes.js` and `version.js` — plus node's own `https`,
+// `http` and `url` — so it cannot join a cycle. `federation.js` is NOT required from here, deliberately: this module
 // is handed a relationship record and reads two attributes off it, which keeps
 // the dependency pointing one way and lets a test drive this file with a plain
 // object.

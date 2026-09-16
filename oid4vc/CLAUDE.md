@@ -17,23 +17,28 @@ DID Core with DIF domain linkage.
 code** — see rule 2 in the root `CLAUDE.md`. The credential configurations are
 read by both the issuer and the authorization server; the Credential Offer's
 pre-authorized codes are minted by the offer pages and redeemed at the token
-endpoint. In `server.js` (positions 11–14), `vc_offers` is required before
-`vc_issuer`; both read `vc_configs`, which is why that module exists.
+endpoint. In `common/protocol_stack.js` (positions 11–14), `vc_offers` is
+required before `vc_issuer`; both read `vc_configs`, which is why that module
+exists.
 
-**`vc_claims.js` is read from three different points of the require order and
-from four directories** — `vc_issuer.js` here, `../admin-ui/admin.js`,
-`../ldap/ldap_server.js`, `../scim/scim_map.js` and `../common/claim_attributes.js`
-— so it must stay a library. It is in this directory rather than in `common/`
-because the catalogue is defined by what a CREDENTIAL carries; the other three
-readers are consumers of that definition, not co-owners of it.
+**`vc_claims.js` is read from many points of the require order and from
+eight directories** — `vc_issuer.js` and `vc_verifier_config.js` here,
+`../common/claim_attributes.js`, `../oauth-oidc/oauth2.js`,
+`../federation/federation_map.js`, `../admin-ui/admin.js`,
+`../admin-core/admin_actions.js` and `admin_views.js`,
+`../ldap/ldap_server.js` and `../scim/scim_map.js` — so it must stay a
+library. It is in this directory rather than in `common/` because the
+catalogue is defined by what a CREDENTIAL carries; the readers elsewhere are
+consumers of that definition, not co-owners of it.
 
-3a. **`vc_claims.js` is a library like `dpop.js` too, and it is read from three
+3a. **`vc_claims.js` is a library like `dpop.js` too, and it is read from several
    different points of the require order.** It holds which claims an issued
    Verifiable Credential carries — a catalogue of LDAP ATTRIBUTE TYPES, not of claim
    names, because a claim's value is the value on that person's directory entry —
    plus the invented, DETERMINISTIC persona that fills what an entry lacks.
-   `vc_issuer.js` (early), `admin.js` (late) and `ldap_server.js` (last) all read it,
-   so it must stay a library: it registers no route and requires only `helpers.js`
+   `vc_issuer.js` (early), `admin.js` (late) and `ldap_server.js` (later) all read it,
+   so it must stay a library: it registers no route and requires only `helpers.js`,
+   three leaves (`realms.js`, `mode.js`, `error_codes.js`)
    and `admin_stats.js` (for `identityKeyOf()`, so that `alice`,
    `alice@REALM` and her `urn:uuid:<entryUUID>` — or the retired
    `urn:sts:user:alice` — are one invented person and one entry). The DIRECTORY half is inverted the usual way — `setDirectory()` is filled
@@ -52,9 +57,10 @@ readers are consumers of that definition, not co-owners of it.
    OTHER end of that catalogue.** `vc_claims.js` says what an issued credential
    CARRIES; this says what the mock Verifier — the bar door at `/oid4vp/verifier` —
    ASKS FOR, and which of the three credential formats it asks in. Both ends read
-   it (`vc_verifier.js` early, `admin.js` late), so it registers no route and
-   requires only `helpers.js`, `vc_claims.js` and `vc_configs.js`, none of which
-   registers anything either. Four things in it are load-bearing:
+   it (`vc_verifier.js` early, `admin.js` and `admin-core/` late), so it
+   registers no route and requires only `helpers.js`, `realms.js`, `config.js`,
+   `vc_claims.js` and `vc_configs.js`, none of which registers anything
+   either. Four things in it are load-bearing:
    its catalogue is `vc_claims.js`'s rows GROUPED BY CLAIM rather than listed as
    attribute types, because `buildSdJwtVc()` makes one Disclosure per top-level
    claim and `address` is therefore one unit of disclosure however many attributes
@@ -96,8 +102,9 @@ readers are consumers of that definition, not co-owners of it.
   whether the claims asked for arrived — and then says yes on a web page and stops.
   No session starts, no token is issued and nothing else in this service reads what
   was presented. **It IS recorded, which is a different claim and the two must
-  not be merged** — the same distinction a verified TLS client certificate
-  draws. The holder goes through `recordAuthentication()` like every other
+  not be merged** — the distinction a verified TLS client certificate drew
+  until 2026-09-05, when it became a sign-on (`GET /tls/sign-in` since
+  2026-09-16). The holder goes through `recordAuthentication()` like every other
   accepted credential, so it appears on `/admin/users` and the directory seeds
   an entry for it; what the row says is that an identity presented a credential
   here and it verified, and nothing more. What it asks for is configuration
