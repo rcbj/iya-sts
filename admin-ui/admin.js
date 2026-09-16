@@ -3559,12 +3559,22 @@ const SIGNOUT_PATH = '/admin/signout';
 // ABSOLUTE URL rather than a root-relative one. That is not cosmetic either:
 // the rewrite matches `href="/` and leaves `https://…` alone, so an absolute
 // URL is the one form that cannot be prefixed again on the way out.
+//
+// **SINCE #32 THAT REALM IS THE ONE THE PERSON SIGNED IN THROUGH** (fixed
+// 2026-09-16). A realm's own administrator runs the console's flow in their
+// realm, so their sign-on session — and their account — is there, and the
+// default realm's portal was one where they were nobody: the very outcome
+// the paragraph above describes. The link now goes to the portal of the
+// gate's `identityRealm`, which is the default realm for a service
+// administrator and so the same link as before for them.
 const PORTAL_PATH = '/portal';
 
-function portalHref(req) {
+function portalHref(req, gate) {
   log.debug("Entering portalHref().");
-  log.debug("Leaving portalHref().");
-  return realmRoot(req) + PORTAL_PATH;
+  const home = realms.get((gate && gate.identityRealm) || realms.DEFAULT_ID) ||
+               realms.get(realms.DEFAULT_ID);
+  log.debug("Leaving portalHref(). realm=" + (home && home.id));
+  return realmRoot(req) + realms.prefixOf(home) + PORTAL_PATH;
 }
 
 // The base URL with the CURRENT realm's prefix taken back off, so that what is
@@ -3747,13 +3757,13 @@ function userMenu(req, gate) {
     '<div class="usermenupanel">' +
     '<p class="usermenuwho">Signed in as <strong>' + esc(gate.username) +
     '</strong></p>' +
-    '<a href="' + esc(portalHref(req)) + '" title="' +
+    '<a href="' + esc(portalHref(req, gate)) + '" title="' +
     esc('Your own account in the user portal — your password, your ' +
         'authenticator app, your security keys and the applications you can ' +
         'be signed in to. It is a different application from this console ' +
         'and it signs you in with the session you already hold, so nothing ' +
-        'is typed again. The link is to the DEFAULT realm\'s portal, because ' +
-        'that is the realm this console\'s session belongs to whichever ' +
+        'is typed again. The link is to the portal of the realm you signed ' +
+        'in through, because that is where your account is, whichever ' +
         'realm you are reading.') + '">My account</a>' +
     signOutControl(gate) +
     '</div></details>';

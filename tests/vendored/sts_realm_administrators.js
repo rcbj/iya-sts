@@ -75,6 +75,15 @@ const REALM_PERSON = usernameFor("realm-admin");
 const SERVICE_PERSON = usernameFor("service-admin");
 
 var checks = 0;
+// The href of the account menu's first link, the "My account" one.
+function myAccountHref(html) {
+  log.debug("Entering myAccountHref().");
+  const found = /class="usermenupanel">[\s\S]*?<a href="([^"]*)"/.exec(
+    String(html || ""));
+  log.debug("Leaving myAccountHref().");
+  return found ? found[1].replace(/&amp;/g, "&") : "";
+}
+
 function check(what, fn) {
   log.debug("Entering check().");
   fn();
@@ -281,6 +290,14 @@ async function aRealmAdministratorIsConfined() {
     assert.ok(!/href="[^"]*\/admin\/secrets"/.test(nav),
       "the navigation links to /admin/secrets");
   });
+  // THE ACCOUNT LINK GOES WHERE THEIR ACCOUNT IS. It named the default
+  // realm's portal for everybody until 2026-09-16, which for a realm
+  // administrator is a portal where they are nobody.
+  check("their My account link is their own realm's portal", function () {
+    const link = myAccountHref(drawn.text);
+    assert.ok(new RegExp(R + "/portal$").test(link),
+      "the link is " + JSON.stringify(link));
+  });
   check("nor the runtime footer's database host and secret-store paths",
     function () {
       assert.ok(!/secret store: key-encryption key/.test(drawn.text),
@@ -364,6 +381,12 @@ async function theServiceAdministratorIsNot() {
     }
     const drawn = await page(cookie, "/realm/" + REALM + "/admin/tokens",
                              false);
+    check("and, reading a realm, is linked to the DEFAULT realm's portal, " +
+          "where a service administrator's account is", function () {
+      const link = myAccountHref(drawn.text);
+      assert.ok(/:\/\/[^/]+\/portal$/.test(link),
+        "the link is " + JSON.stringify(link));
+    });
     check("and is offered the service pages in a realm's navigation",
       function () {
         assert.ok(/href="[^"]*\/admin\/persistence"/.test(navOf(drawn.text)),
