@@ -25,6 +25,7 @@ libraries that decide things on its behalf.
 | `oauth2_monitor_api.js` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.js` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.js` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.js`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.js` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
+| `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.js`, `oauth2_bcp.js`, `dpop.js`, `mgmt-api/admin_api.js` and `debugger/debugger_server.js` require and that may require none of them back. See 3ao. |
 
 **Everything but `oauth2.js` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.js`, required at 18f rather than from here — registers
@@ -1562,6 +1563,150 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    in a child process; `tests/vendored/sts_step_up.js` the page, the API and the
    flow over HTTP.
 
+3ao. **`sender_constraints.js` IS FIVE SETTINGS THAT ASK FOR MORE THAN EITHER
+   SPECIFICATION REQUIRES (#34, 2026-09-15).** Issue #34 asked a plain question
+   — does OAuth 2.1 or RFC 9700 require DPoP? — and the answer is no, twice.
+   **OAuth 2.1 (draft-ietf-oauth-v2-1-16) section 4.3.1 gives a PUBLIC client's
+   refresh token a CHOICE of two treatments**, sender-constrained or rotated
+   with replay detection, and this service already takes the second; **RFC 9700
+   section 2.2.1 makes a sender-constrained ACCESS token a SHOULD**, and nothing
+   anywhere makes it a MUST. So none of the five is implied by a compliance mode
+   and every one defaults to off. They exist because a client under test should
+   be able to meet a strict authorization server here before it meets one in
+   production. All five are `runtime: true` and therefore per trust realm, which
+   is why every predicate is read PER REQUEST rather than cached.
+
+   | Setting | What it does |
+   |---|---|
+   | `oauth2.refreshTokenRotation` | Rotation with replay detection, with both modes off. The only one of the five that changes what is ISSUED rather than what is accepted |
+   | `oauth2.refreshTokenRequireDpop` | Refuse to mint a refresh token without a DPoP proof; refuse an unbound one at the refresh grant |
+   | `oauth2.refreshTokenRequireMtls` | The same for RFC 8705, section 7.1 excepted |
+   | `oauth2.accessTokenRequireDpop` | Refuse an unconstrained access token at every resource |
+   | `oauth2.accessTokenRequireMtls` | The same for RFC 8705 |
+
+   **IT IS A LEAF (rule 3), AND THAT IS WHY IT IS A FILE RATHER THAN FIVE
+   PREDICATES IN `oauth2_bcp.js`.** It registers no route and requires
+   `helpers.js`, `config.js` and `oauth21.js`, all three of them leaves
+   themselves. **It may never require `dpop.js`, `mtls.js`, `oauth2_bcp.js`,
+   `applications.js` or `oauth2.js`, because all five require IT** — and the
+   binding one is `dpop.js`, which sits BELOW `oauth2_bcp.js` and so could not
+   have reached the predicates there. `mgmt-api/admin_api.js` and
+   `debugger/debugger_server.js` require it too, as cache hits: each verifies
+   its own access token instead of going through `presentedAccessToken()`, so
+   each has to ask for itself. The split is `oauth21.js`'s: every fact is PASSED
+   IN — what the request proved, what the token carries, what the connection
+   presented — and every answer is a refusal record or null. It never touches
+   `res`, so the caller chooses what a refusal looks like on the wire.
+
+   **ROTATION MOVED OFF `bcp.enabled()` ONTO `rotationRequired()`, AND THE MOVE
+   IS THE WHOLE OF WHAT `oauth2.refreshTokenRotation` COST.** Four sites in
+   `oauth2_bcp.js` (`noteRefreshIssued()`, `spendRefreshToken()`,
+   `noteRefreshRotated()`, `checkRefreshRequest()`) and the `FAMILY_CLAIM` in
+   `oauth2.js`'s `refreshToken()` asked "is RFC 9700 mode on"; they ask "is
+   rotation required" now, which is either compliance mode OR the setting.
+   `oauth2_bcp.js` re-exports `rotationRequired` so `oauth2.js` asks ONE name.
+   **`checkRefreshRequest()` answers two questions since that change and they
+   are switched by different things**: the replay of a rotated token belongs to
+   rotation and runs whenever rotation is required — rotation without replay
+   detection is bookkeeping nobody reads — while the idle timeout, the client
+   binding and the scope subset check below it are RFC 9700 section 2.2.2 and
+   2.3 rules and stay on `enabled()`. An operator who asked for rotation did not
+   ask to acquire three refusals a grant never had.
+
+   **THE FOUR REFUSALS REFUSE, AND REFUSING IS THE DESIGN.** Everywhere else
+   this service prefers to answer with something weaker rather than not answer
+   at all (`mode.sendsWeakerThanAsked()` is a predicate about exactly that).
+   These do the opposite, and **a token request that would hand back an access
+   token AND a refresh token the client could never redeem is refused WHOLE**:
+   half a token set is worse than an error, because the client discovers it an
+   hour later at a refresh it cannot make. The issuance refusal is therefore
+   thrown from inside `issue()` as `SenderConstraintRefused` and caught by the
+   token endpoint's refusal wrapper, rather than checked once at the top — the
+   question is "is a refresh token about to be minted", and the only honest
+   answer to that is `withRefresh`, which the grant decides; a list of grants
+   kept beside it is the second list that eventually disagrees.
+   **An UNBOUND refresh token is refused at redemption rather than bound on
+   first use**, which is the friendlier answer and the wrong one: the token was
+   handed out with no constraint, anybody holding it could bind it to a key of
+   their own, and the operator would have been told the tokens were constrained
+   at the moment a stolen one constrained itself. **RFC 8705 section 7.1 still
+   passes** a client that authenticated by `tls_client_auth` or
+   `self_signed_tls_client_auth` on the same request and owns the token, read
+   off the same decision the ordinary binding check made (`section71` is
+   `!refreshBound`) — its refresh token is bound to the CLIENT, so it may rotate
+   its certificate.
+
+   **ONE EXEMPTION, FROM ONE SETTING, AND IT IS A LIST OF TWO.**
+   `MTLS_EXEMPT_CLIENTS` is `sts-admin-console` and `sts-user-portal` —
+   `common/oidc_rp.js`'s `SURFACES` — under `oauth2.refreshTokenRequireMtls`
+   alone. They redeem over a loopback call from this process to itself, where
+   there is no client certificate to present and nobody on the other end who is
+   not already this process, so that setting would lock an operator out of
+   `/admin` and `/portal` in exchange for nothing. **They are NOT exempt from
+   the DPoP setting**, and the reason is the shape of the whole rule: rather
+   than exempt them, `common/oidc_rp.js` was given a key and now proves
+   possession on every back-channel token call, so the honest answer there was
+   to build the half that meets the requirement. **`sts-debugger-ui` IS NOT ON
+   THE LIST, on purpose (#34 decision 6)**: the embedded debugger is an ordinary
+   client of this authorization server and is configured to meet whatever the
+   realm it points at requires, which is the same answer `debugger/CLAUDE.md`
+   gives about everything else it does.
+
+   **THE RESOURCE SIDE IS AN INVENTORY, AND SO IS WHAT IT LEAVES OUT.**
+   `accessTokenRefusal()` is asked at `presentedAccessToken()` in `dpop.js` —
+   which is UserInfo, the RFC 9470 step-up resource, the three OpenID4VCI
+   endpoints, `/scim/v2` and the Shared Signals endpoints in one place — and
+   again in `mgmt-api/admin_api.js`'s gate and `debugger/debugger_server.js`'s,
+   each of which verifies its own token. **Deliberately out of scope**: GNAP's
+   own tokens, which are not OAuth access tokens; the RFC 7592 registration
+   access token; and the endpoints that take a token as a PARAMETER rather than
+   as a credential — introspection, revocation and token exchange. **A FOREIGN
+   TOKEN IS HELD TO IT TOO**, unlike the two binding checks above it: the
+   confirmation a token carries can be READ without trusting the signature, and
+   a token carrying none cannot satisfy a requirement that it be constrained.
+   **It is a refusal at the RESOURCE and nowhere else** — the token endpoint
+   goes on minting Bearer tokens, which these surfaces then refuse, and that is
+   what lets a client be driven against the refusal rather than merely told
+   about it. `/admin/api-explorer` stops working while
+   `oauth2.accessTokenRequireDpop` is on, because its script sends a plain
+   Bearer header.
+
+   **TWO PRE-EXISTING HOLES WERE CLOSED IN THE SAME CHANGE, AND NEITHER IS ONE
+   OF THE SETTINGS.** `/admin-api` and the debugger's listener had each been
+   given RFC 8705's `cnf["x5t#S256"]` check and never RFC 9449's, so a token
+   carrying `cnf.jkt` — a token whose whole point is that holding it is not
+   enough — was accepted at both as a bearer token. Both refuse it now in every
+   mode (`STS-API-0120`, `STS-DBG-0031`; a proof that fails with no code of its
+   own is `STS-API-0121` / `STS-DBG-0032`), and both learned to READ
+   `Authorization: DPoP`, which they had not: a client doing the stricter thing
+   was told it had presented no token at all.
+
+   **AND OAUTH 2.1 MODE STOPPED TREATING AN UNKNOWN CLIENT AS A PUBLIC ONE**,
+   because 4.3.1's rotation is bookkeeping about a chain belonging to a client
+   and a chain belonging to nobody cannot be checked against whoever presents
+   it. `tokenClientDeclarationRefusal()` opened with `clientId &&`, so a request
+   naming NO client skipped it entirely — the refresh grant reached it with no
+   `client_id` and was rotated as if it belonged to somebody. Three decisions,
+   all inside `oauth21.js`: a request naming no client at all on
+   `authorization_code`, `refresh_token`, `client_credentials` or token exchange
+   is refused (`STS-OAUTH-0297`); an RFC 7523 or RFC 7522 assertion grant NAMING
+   an undeclared client is refused (`STS-OAUTH-0299`, a separate function
+   because `ASSERTION_GRANTS` are deliberately outside
+   `REGISTERED_CLIENT_GRANTS` — they authenticate the SUBJECT and may arrive
+   with no client); and an assertion grant with no client at all gets its access
+   token and **no refresh token** (`STS-OAUTH-0298`, RECORDED and not refused,
+   because the grant itself is legitimate and RFC 6749 section 5.1 makes
+   `refresh_token` optional in the response).
+
+   The eleven refusals are `STS-OAUTH-0521..0531`, each naming the setting that
+   caused it in `setting` so that an operator reading an audit row does not have
+   to guess which of the four they turned on. `STS-OAUTH-0527` is the shared
+   one: a setting requires mutual TLS and the port cannot ask for a certificate
+   (`global.https` off), which is refused rather than waved through. `state()`
+   is what `GET /oauth2/rfc9700`, `GET /oauth2/oauth21` and `/admin/oauth2`
+   publish, so the console and the two compliance reports cannot disagree about
+   what is on.
+
 ## EVERY REFRESH TOKEN IS ENCRYPTED TO ITS OWN REALM (2026-09-12)
 
 `refresh_token_crypto.js` is a library (rule 3) and `refreshToken()` is the one
@@ -1861,10 +2006,19 @@ pages that relax `script-src`. The argument for it is made in `oauth2.js`, above
   (3ah). A foreign token at the credential endpoints still does not, and cannot:
   its header, issuer and audience are strings this service has no configuration
   to judge.
-* **There is no "DPoP required" mode.** Nonce mode makes proofs fresher, not
-  mandatory; a request with no `DPoP` header is a Bearer request and is answered as
-  one, so turning nonce mode on cannot break the Bearer clients this service also
-  exists to exercise.
+* **Nonce mode is not a "DPoP required" mode, and since 2026-09-15 there are
+  settings that are one.** This bullet read *there is no "DPoP required" mode*
+  until #34. The first half stands: nonce mode makes proofs fresher, not
+  mandatory; a request with no `DPoP` header is a Bearer request and is answered
+  as one, so turning nonce mode on cannot break the Bearer clients this service
+  also exists to exercise. **What is new is four settings that DO require a
+  sender constraint** — `oauth2.accessTokenRequireDpop`,
+  `oauth2.accessTokenRequireMtls`, `oauth2.refreshTokenRequireDpop` and
+  `oauth2.refreshTokenRequireMtls` — and the reason the old sentence gave is the
+  reason they are settings and not a mode: every one of them is OFF unless an
+  operator sets it, no compliance mode implies one, and **neither OAuth 2.1
+  section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them**. Rule 3ao and
+  `sender_constraints.js` argue the five.
 
 ---
 

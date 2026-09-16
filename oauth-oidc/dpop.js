@@ -60,6 +60,13 @@ const errorCodes = require('../common/error_codes');
 // endpoints because presentedAccessToken() below is the single check they
 // share.
 const mtls = require('./mtls');
+// #34 (2026-09-15) — the two settings that REQUIRE one of those constraints of
+// every presented access token, rather than checking the one a token happens
+// to carry. A leaf requiring helpers.js, config.js and oauth21.js, so
+// requiring it here cannot create a cycle, and it must never require this file
+// back. It is required HERE for mtls.js's reason: presentedAccessToken() is
+// the single check seven surfaces share.
+const senderConstraints = require('./sender_constraints');
 // RFC 9068 — what an access token's header, issuer and audience must be. A
 // library that registers no route and requires only `common/` modules and
 // `authorization_servers.js`, none of which requires this one, so the no-cycle
@@ -1040,6 +1047,53 @@ function presentedAccessToken(req, res, where, options) {
       'This access token is DPoP-bound (it carries cnf.jkt), so it must be ' +
       'presented as "Authorization: DPoP <token>" with a DPoP proof — not as ' +
       'a Bearer token.');
+    log.debug("Leaving presentedAccessToken().");
+    return null;
+  }
+
+  // #34 (2026-09-15): THE TWO SETTINGS THAT REQUIRE A CONSTRAINT RATHER THAN
+  // CHECKING THE ONE A TOKEN HAPPENS TO CARRY.
+  //
+  // Everything above this point refuses a token whose OWN binding does not
+  // hold and passes a token that carries none — which is the right default and
+  // exactly what an operator turning `oauth2.accessTokenRequireDpop` or
+  // `oauth2.accessTokenRequireMtls` on is asking to change.
+  //
+  // HERE, so that the seven surfaces sharing this function share the answer:
+  // UserInfo, the step-up resource, the three OpenID4VCI endpoints, SCIM and
+  // the Shared Signals endpoints. `/admin-api` and the debugger's listener ask
+  // `senderConstraints` themselves, because each verifies its own token.
+  //
+  // A FOREIGN TOKEN IS HELD TO IT TOO. The confirmation a token carries can be
+  // READ without trusting the signature, and a token carrying none cannot
+  // satisfy a requirement that it be constrained — so unlike the two checks
+  // above, this one does not step aside for a token this service cannot
+  // verify. The OpenID4VCI endpoints accept such tokens by design, and while
+  // one of these settings is on they accept constrained ones only.
+  const required = senderConstraints.accessTokenRefusal({
+    where: where || 'this resource',
+    boundJkt: boundTo,
+    // Whether a proof came at all. Whether it VERIFIES is decided below, by
+    // the same code that decides it for a token that carries its own binding.
+    proofOk: req.headers['dpop'] !== undefined,
+    boundThumbprint: mtls.boundThumbprintOf(claims),
+    certificate: !!mtls.peerCertificate(req),
+    certificateMatches: !!mtls.boundThumbprintOf(claims) &&
+                        mtls.peerVerified(req) &&
+                        mtls.presentedThumbprint(req) ===
+                          mtls.boundThumbprintOf(claims),
+    mtlsAvailable: mtls.available()
+  });
+  if (required) {
+    res.set('WWW-Authenticate',
+            (senderConstraints.accessTokenDpopRequired() ? 'DPoP' : 'Bearer') +
+            ' error="' + required.error + '"');
+    log.debug("Leaving presentedAccessToken(). A required sender constraint " +
+              "was not met (" + required.setting + ").");
+    errorCodes.mark(res, required.errorCode);
+    // error-code: none — marked above with the refusal's own code, one of
+    // STS-OAUTH-0527 to 0531.
+    vciError(res, 401, required.error, required.description);
     log.debug("Leaving presentedAccessToken().");
     return null;
   }

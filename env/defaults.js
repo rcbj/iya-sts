@@ -272,6 +272,11 @@ var config = {
     dpopNonceRequired: false,                    // Require a DPoP server nonce
     dpopIatSkewS: 300,                           // DPoP proof iat window (s)
     dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
+    refreshTokenRotation: false,                 // Rotate refresh tokens
+    refreshTokenRequireDpop: false,              // Require DPoP on refresh tokens
+    refreshTokenRequireMtls: false,              // Require mutual TLS on refresh tokens
+    accessTokenRequireDpop: false,               // Require DPoP for every access token
+    accessTokenRequireMtls: false,               // Require mutual TLS for every access token
     openRegistration: false,                     // Open dynamic client registration (product mode)
     softwareStatementRequireTrustedIssuer: true, // Refuse a software statement from an undeclared issuer
     softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint

@@ -96,6 +96,11 @@ RFC 9700-conforming one: registered redirect URIs, PKCE, no implicit grant, no
 password grant, refresh token rotation with replay detection, sender-constrained
 tokens, one-shot authorization codes.
 
+**Sender-constrained does not mean required.** Section 2.2.1 makes it a SHOULD,
+and the mode honours a DPoP or RFC 8705 binding wherever a client offers one
+rather than refusing a client that offers none. The five settings under *Sender
+constraints* below are how an operator asks for more than that.
+
 **Off changes nothing.** Every existing caller of this mock uses an unregistered
 `redirect_uri`, no PKCE, or the implicit grant, and both answers exercise a
 client — so the flag has to be able to be off and the mode has to be complete.
@@ -127,6 +132,144 @@ refused there and answered here.
 Restart-only and settable on a trust realm, for exactly the reason above.
 `GET /oauth2/oauth21` lists every requirement it adds, which it inherits, and
 the grants it deliberately exempts.
+
+### Sender constraints — five settings that ask for more than either mode
+
+**Neither OAuth 2.1 nor RFC 9700 requires DPoP**, and that is worth saying once
+before the five rows below. OAuth 2.1 section 4.3.1 gives a public client's
+refresh token a *choice* of two treatments — sender-constrained, or rotated with
+replay detection — and this service already takes the second. RFC 9700 section
+2.2.1 makes a sender-constrained access token a SHOULD, and nothing anywhere
+makes it a MUST.
+
+So none of these five is implied by either mode and every one of them defaults
+to off. They exist because a client under test should be able to meet a strict
+authorization server here before it meets one in production. All five are
+runtime settings and therefore per trust realm: one realm may demand a proof
+while the next does not.
+
+Four of the five **refuse**. Everywhere else this service prefers to answer with
+something weaker rather than not answer at all; these do the opposite, and that
+is the point of them. The fifth, `oauth2.refreshTokenRotation`, changes what is
+issued rather than what is accepted.
+
+### `oauth2.refreshTokenRotation`
+
+Off. On, every refresh issues a NEW refresh token, the one that was spent is
+refused, and a replay is treated as a compromise: the whole family descended
+from the original grant is revoked rather than only the token replayed (OAuth
+2.1 section 4.3.1, RFC 9700 section 4.14.2).
+
+**RFC 9700 mode and OAuth 2.1 mode already do this for every client**, so this
+setting is how to have it with both modes off. Turning it off while a mode is on
+changes nothing — the mode is the stricter answer and wins.
+
+**What it does not bring with it** is the rest of RFC 9700 section 2.2.2. The
+idle timeout (`oauth2.refreshIdleSeconds`), the client binding and the scope
+subset check stay behind `oauth2.rfc9700`, because none of them is what asking
+for rotation asked for. What does come with it is replay detection, because
+rotation without it is bookkeeping nobody reads.
+
+A refresh token minted before it was turned on carries no family and is rotated
+from its next use, so there is nothing to migrate.
+
+### `oauth2.refreshTokenRequireDpop`
+
+Off. On, a token request that would mint a refresh token and carries no DPoP
+proof is **refused**, and the refresh grant is refused unless the presented
+refresh token is bound (`cnf.jkt`) to the key that proves this request (RFC 9449
+section 5).
+
+**The whole token request is refused**, access token included. Minting the
+access token and dropping the refresh token silently would leave a client that
+believes it has a durable grant and discovers otherwise an hour later, which is
+a worse failure than the error it gets instead.
+
+**An unbound refresh token is refused rather than bound on first use.** Binding
+it would be the friendlier answer and the wrong one: the token was handed out
+with no constraint, anybody holding it could bind it to a key of their own, and
+the operator who turned this on would have been told the tokens were constrained
+at the moment a stolen one constrained itself. The message says to sign in again
+for a bound one.
+
+**Nothing is exempt from this setting, and nothing needs to be.** `/admin` and
+`/portal` are OpenID Connect clients of this service, and since 2026-09-15 they
+carry a DPoP key of their own and prove it on every back-channel token call — so
+turning this on does not lock an operator out of either. The two clients named
+under the next setting are exempt from **that setting only**.
+
+### `oauth2.refreshTokenRequireMtls`
+
+Off. The same refusal for RFC 8705: no refresh token is issued over a connection
+carrying no verified client certificate, and the refresh grant requires the
+presented token's `cnf["x5t#S256"]` to match the certificate on *this*
+connection.
+
+**RFC 8705 section 7.1 still passes** a client that authenticated with
+`tls_client_auth` or `self_signed_tls_client_auth` on the same request and owns
+the token, whether or not the token carries a thumbprint. That client's refresh
+token is bound to the CLIENT rather than to the certificate, which is exactly
+what the section is for: it may rotate its certificate without stranding the
+grant.
+
+**It needs `global.https`.** A listener that cannot ask for a client certificate
+cannot be satisfied by one, so where the main port is plain HTTP every affected
+request is refused with `STS-OAUTH-0527` rather than let through.
+
+**Two clients are exempt, and from this setting only.** The seeded
+`sts-admin-console` and `sts-user-portal` clients — this service's own relying
+parties — redeem their codes and refresh tokens over a loopback call from this
+process to itself, where there is no certificate to present and nobody on the
+other end who is not already this process. `sts-debugger-ui` is deliberately not
+exempt from anything: the embedded debugger is an ordinary client of this
+authorization server and is configured to meet whatever the realm it points at
+requires.
+
+### `oauth2.accessTokenRequireDpop`
+
+Off. On, a request presenting an access token as anything other than a proved,
+DPoP-bound token is refused: the token must carry `cnf.jkt` and the request must
+carry a proof for that key.
+
+**It is a refusal at the RESOURCE and nowhere else.** The token endpoint goes on
+minting Bearer tokens, which these surfaces then refuse — that is what lets a
+client be driven against the refusal rather than merely told about it, and it is
+why a 401 here is not a bug in the issuer.
+
+What it covers is every surface that accepts a PRESENTED access token: UserInfo,
+the RFC 9470 step-up resource, the three OpenID4VCI endpoints, `/scim/v2`, the
+Shared Signals endpoints, `/admin-api` and the embedded debugger's listener.
+What it does not cover is what is not an OAuth access token presented as a
+credential: GNAP's own tokens, an RFC 7592 registration access token, and the
+endpoints that take a token as a **parameter** (introspection, revocation, token
+exchange).
+
+**A token this service did not issue is held to it too.** The confirmation a
+token carries can be read without trusting the token, and one carrying none
+cannot satisfy a requirement that it be constrained — so unlike the binding
+checks that run in every mode, this one does not step aside for a token that
+cannot be verified.
+
+**`/admin/api-explorer` stops working while it is on**, because its script sends
+a plain `Bearer` header. Use `curl` with a DPoP proof, or turn the setting off
+for that realm.
+
+### `oauth2.accessTokenRequireMtls`
+
+Off. The RFC 8705 half of the setting above, at the same surfaces: a presented
+access token must carry `cnf["x5t#S256"]`, and the connection must present that
+certificate.
+
+**It needs `global.https`**, for the reason `oauth2.refreshTokenRequireMtls`
+does, and it is refused with the same `STS-OAUTH-0527` where a certificate
+cannot be asked for.
+
+**The debugger's listener began asking for a client certificate on 2026-09-15**
+so that a bound token can be presented there at all — `requestCert` with
+`rejectUnauthorized: false`, the posture the main port and 8443 already take, so
+the handshake succeeds either way and what a certificate is worth is decided per
+request. A listener that never asked would have made this setting an exemption
+dressed up as a refusal.
 
 ### `oauth2.delegatedPermissionsEnforced` — the OTHER mode, and not part of the first
 
@@ -265,9 +408,10 @@ credential arrives that it never asked for and must not leak.
 **What comes back is an ordinary refresh token of this service**, in every case
 and by construction: it is minted by the one function every grant here mints one
 through. It redeems at the refresh grant, reports at `/oauth2/introspect`, is
-revocable at `/oauth2/revoke`, lives for `oauth2.refreshTokenTtlS`, rotates in
-RFC 9700 mode, and is bound to the DPoP key or client certificate the exchange
-was made with. It also remembers the RFC 8707 resources the exchange named, so a
+revocable at `/oauth2/revoke`, lives for `oauth2.refreshTokenTtlS`, rotates
+wherever rotation is required (RFC 9700 mode, OAuth 2.1 mode or
+`oauth2.refreshTokenRotation`), and is bound to the DPoP key or client
+certificate the exchange was made with. It also remembers the RFC 8707 resources the exchange named, so a
 renewal cannot widen the audience the exchange narrowed.
 
 `issued_token_type` says `access_token` throughout. It describes the token in

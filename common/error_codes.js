@@ -4836,6 +4836,23 @@ const CODES = [
       'authorization server advertises in its introspection_*_values_' +
       'supported members.',
     spec: 'invalid_client (HTTP 400)' },
+  // THE UNKNOWN CLIENT AT THE TOKEN ENDPOINT (#34, 2026-09-15). OAuth 2.1
+  // section 4.3.1's rotation is bookkeeping about a chain belonging to a
+  // client, so a mode that rotates has to know whose chain it is.
+  { code: 'STS-OAUTH-0297',
+    summary: 'In OAuth 2.1 mode, a grant a client makes in its own name ' +
+      '(authorization_code, refresh_token, client_credentials, token ' +
+      'exchange) named no client_id at all.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0298',
+    summary: 'In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant ' +
+      'arrived with no client, so it was answered with an access token and ' +
+      'NO refresh token (recorded, not refused).',
+    spec: 'none — the token response is issued without refresh_token' },
+  { code: 'STS-OAUTH-0299',
+    summary: 'In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant ' +
+      'named a client that is not registered or declared here.',
+    spec: 'invalid_client (HTTP 401)' },
   // SOFTWARE STATEMENTS (RFC 7591 section 2.3), 2026-09-13. After the OAuth 2.1
   // block reserved at 0270..0299.
   { code: 'STS-OAUTH-0300',
@@ -5379,6 +5396,59 @@ const CODES = [
     summary: 'A DPoP proof was refused because the claim store could not be ' +
       'asked whether its jti had been used (fail closed).',
     spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
+  // SENDER CONSTRAINTS ASKED FOR BY CONFIGURATION (#34, 2026-09-15). Neither
+  // OAuth 2.1 nor RFC 9700 requires DPoP or mutual TLS; these eleven are the
+  // refusals an operator turns on when they want more than either document
+  // asks for, and each names the setting that caused it.
+  { code: 'STS-OAUTH-0521',
+    summary: 'A token request that would issue a refresh token carried no ' +
+      'DPoP proof, and oauth2.refreshTokenRequireDpop is on.',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0522',
+    summary: 'A token request that would issue a refresh token was made over ' +
+      'a connection with no verified client certificate, and ' +
+      'oauth2.refreshTokenRequireMtls is on.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0523',
+    summary: 'A refresh token carrying no cnf.jkt was presented while ' +
+      'oauth2.refreshTokenRequireDpop is on; it is refused rather than bound ' +
+      'to the key presenting it.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0524',
+    summary: 'A refresh grant carried no DPoP proof while ' +
+      'oauth2.refreshTokenRequireDpop is on.',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-0525',
+    summary: 'A refresh token carrying no cnf x5t#S256 was presented while ' +
+      'oauth2.refreshTokenRequireMtls is on, by a client RFC 8705 section ' +
+      '7.1 does not cover.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0526',
+    summary: 'A refresh grant was made over a connection with no verified ' +
+      'client certificate while oauth2.refreshTokenRequireMtls is on.',
+    spec: 'invalid_client (HTTP 401)' },
+  { code: 'STS-OAUTH-0527',
+    summary: 'A setting requires mutual TLS, but the port the request ' +
+      'arrived on is not bound as HTTPS and cannot ask for a client ' +
+      'certificate (global.https).',
+    spec: 'invalid_request (HTTP 400 / 401)' },
+  { code: 'STS-OAUTH-0528',
+    summary: 'An access token carrying no cnf.jkt was presented at a ' +
+      'resource while oauth2.accessTokenRequireDpop is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0529',
+    summary: 'A DPoP-bound access token was presented with no proof while ' +
+      'oauth2.accessTokenRequireDpop is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0530',
+    summary: 'An access token carrying no cnf x5t#S256 was presented at a ' +
+      'resource while oauth2.accessTokenRequireMtls is on.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-OAUTH-0531',
+    summary: 'A certificate-bound access token was presented at a resource ' +
+      'over a connection carrying no matching certificate, while ' +
+      'oauth2.accessTokenRequireMtls is on.',
+    spec: 'invalid_token (HTTP 401)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -10945,6 +11015,16 @@ const CODES = [
     summary: 'A users or groups create that had claimed its name across ' +
       'nodes threw before it could answer; the claim was given back.',
     spec: 'HTTP 500' },
+  // THE SAME HOLE ONE CONSTRAINT ALONG (#34, 2026-09-15): this gate checked
+  // the certificate binding and never the DPoP one.
+  { code: 'STS-API-0120',
+    summary: 'A DPoP-bound access token (cnf.jkt) was presented at ' +
+      '/admin-api as a Bearer token.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-API-0121',
+    summary: 'A DPoP proof presented at /admin-api did not verify, and the ' +
+      'proof check reported no code of its own.',
+    spec: 'invalid_dpop_proof (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -11700,7 +11780,16 @@ const CODES = [
   { code: 'STS-DBG-0030',
     summary: 'A certificate-bound access token (RFC 8705 cnf x5t#S256) was ' +
       'presented to the debugger on a connection without that certificate.',
-    spec: 'invalid_token (HTTP 401)' }
+    spec: 'invalid_token (HTTP 401)' },
+  // #34 (2026-09-15), the DPoP half of the row above.
+  { code: 'STS-DBG-0031',
+    summary: 'A DPoP-bound access token (cnf.jkt) was presented to the ' +
+      'debugger as a Bearer token.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-DBG-0032',
+    summary: 'A DPoP proof presented to the debugger did not verify, and the ' +
+      'proof check reported no code of its own.',
+    spec: 'invalid_dpop_proof (HTTP 401)' }
   // ===== END ===============================================================
 ];
 

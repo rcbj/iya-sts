@@ -139,6 +139,13 @@ const clientAuth = require('./client_auth');
 // to oauth2.redirectUris), plus the refusals 2.1 adds at the checks already
 // in this file. `oauth-oidc/CLAUDE.md` rule 3ah.
 const oauth21 = require('./oauth21');
+// THE FIVE SETTINGS THAT ASK FOR MORE THAN EITHER SPECIFICATION DOES (#34,
+// 2026-09-15). A leaf requiring helpers.js, config.js and oauth21.js, so this
+// closes no cycle — and it must never require this file back, because
+// `dpop.js` requires it too and `dpop.js` is below this one. It is here for
+// ONE question: whether refresh tokens rotate, which is no longer the same
+// question as whether this mode is on.
+const senderConstraints = require('./sender_constraints');
 // The redirect allowlist's one question this file needs answered — is a URI a
 // native app's private-use one. validation.js requires config.js, zod and
 // error_codes.js and nothing here, so this closes no cycle.
@@ -553,19 +560,35 @@ const REQUIREMENTS = [
 
   // --- section 2.2 / 2.2.1 — token replay prevention -----------------------
   { id: 'sender-constrained-tokens', section: '2.2, 2.2.1', level: 'SHOULD',
-    appliesTo: 'authorization server and resource server', enforced: 'detected',
+    appliesTo: 'authorization server and resource server',
+    // #34 (2026-09-15): 'detected' until an operator asks for more. The
+    // section is a SHOULD and this mode does not turn the settings on, so a
+    // reader of this report sees the difference between "observed" and
+    // "required" rather than one word covering both.
+    enforced: function () {
+      log.debug("Entering the sender-constrained-tokens enforcement report.");
+      const required = !!config.value('oauth2.accessTokenRequireDpop') ||
+                       !!config.value('oauth2.accessTokenRequireMtls');
+      log.debug("Leaving the sender-constrained-tokens enforcement report.");
+      return required ? 'yes' : 'detected';
+    },
     title: 'Sender-constrain access tokens (mTLS or DPoP)',
     note: 'BOTH mechanisms the section names are implemented — DPoP (RFC ' +
           '9449) in full, and RFC 8705 certificate-bound tokens (see ' +
           'mtls-bound-tokens) — and both are advertised. Whether a token is ' +
-          'BOUND is still the CLIENT\'s decision, because it binds by ' +
+          'BOUND is the CLIENT\'s decision by default, because it binds by ' +
           'sending a proof or by making the connection with a certificate, ' +
-          'so this stays a SHOULD that is observed and logged rather than ' +
-          'refused: every token issued without either gets a line saying a ' +
-          'bearer token went out. There is deliberately NO "DPoP required" ' +
-          'mode — this service exists to exercise Bearer clients too, and a ' +
-          'mode that refused them would remove the thing half its callers ' +
-          'are testing.' },
+          'so this is observed and logged rather than refused: every token ' +
+          'issued without either gets a line saying a bearer token went out. ' +
+          '**SINCE 2026-09-15 (#34) AN OPERATOR MAY REQUIRE IT**, with ' +
+          'oauth2.accessTokenRequireDpop or oauth2.accessTokenRequireMtls — ' +
+          'off unless set, and not turned on by this mode, because the ' +
+          'section is a SHOULD and this service exists to exercise Bearer ' +
+          'clients too. With one on, every surface that accepts a presented ' +
+          'access token refuses one that is not constrained, the management ' +
+          'API and the embedded debugger included. The refusal is at the ' +
+          'RESOURCE: the token endpoint goes on issuing bearer tokens, which ' +
+          'is what lets a client be tested against being refused.' },
 
   { id: 'mtls-bound-tokens', section: '2.2, 2.2.1', level: 'SHOULD',
     appliesTo: 'authorization server',
@@ -639,10 +662,21 @@ const REQUIREMENTS = [
           '"public" is the safe reading of an unknown one. Redeeming a ' +
           'refresh token REVOKES it, through the same set /oauth2/revoke ' +
           'writes to, so the retired token also reports inactive at ' +
-          '/oauth2/introspect. Without the mode a refresh token is reusable ' +
-          'until it expires when it expires — twenty-four hours later on the ' +
-          'default oauth2.refreshTokenTtlS, and for as long as that setting ' +
-          'says — which is the state this requirement exists about.' },
+          '/oauth2/introspect. **ROTATION IS NO LONGER THIS MODE\'S ALONE ' +
+          '(#34, 2026-09-15)**: oauth2.refreshTokenRotation does the same ' +
+          'thing with both modes off, and the replay detection beside it ' +
+          'comes with it, because rotation without replay detection is ' +
+          'bookkeeping nobody reads. What stays behind the mode is the rest ' +
+          'of what this row\'s neighbours check — the idle timeout, the ' +
+          'client binding, the scope narrowing. With neither the mode nor ' +
+          'that setting, a refresh token is reusable until it expires — ' +
+          'twenty-four hours later on the default oauth2.refreshTokenTtlS, ' +
+          'and for as long as that setting says — which is the state this ' +
+          'requirement exists about. The section\'s OTHER answer, a ' +
+          'sender-constrained refresh token, is what ' +
+          'oauth2.refreshTokenRequireDpop and oauth2.refreshTokenRequireMtls ' +
+          'require; neither is on unless an operator says so, and neither ' +
+          'specification asks for them.' },
 
   { id: 'refresh-replay-family', section: '2.2.2, 4.14.2', level: 'SHOULD',
     appliesTo: 'authorization server', enforced: 'yes',
@@ -2704,10 +2738,14 @@ function membersOf(familyId, alsoJti) {
 function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   log.debug("Entering noteRefreshIssued(). jti=" + jti + ", parent=" +
             (parentJti || '(root)'));
-  if (!enabled() || !jti) {
+  // ROTATION IS NO LONGER THE MODE'S ALONE (#34, 2026-09-15): the bookkeeping
+  // runs whenever rotation is required, which is either compliance mode OR
+  // `oauth2.refreshTokenRotation`. Everything else in this file still asks
+  // `enabled()`, because everything else in this file is an RFC 9700 rule.
+  if (!senderConstraints.rotationRequired() || !jti) {
     log.debug("Leaving noteRefreshIssued(). " +
-              (enabled() ? "No jti." : "RFC " +
-        "9700 mode is off."));
+              (senderConstraints.rotationRequired() ? "No jti."
+                                                    : "Rotation is off."));
     return;
   }
   const familyId = familyForIssuance(jti, parentJti, parentFamily);
@@ -2806,8 +2844,8 @@ function revokeFamily(familyId, clientId) {
 // ---------------------------------------------------------------------------
 async function spendRefreshToken(opts) {
   log.debug("Entering spendRefreshToken().");
-  if (!enabled()) {
-    log.debug("Leaving spendRefreshToken(). RFC 9700 mode is off.");
+  if (!senderConstraints.rotationRequired()) {
+    log.debug("Leaving spendRefreshToken(). Rotation is off.");
     return { ok: true };
   }
   const o = opts || {};
@@ -2906,7 +2944,7 @@ function storeRefusal() {
 // makes the difference between "revoked" and "replayed" reportable later.
 function noteRefreshRotated(jti) {
   log.debug("Entering noteRefreshRotated(). jti=" + jti);
-  if (!enabled() || !jti) {
+  if (!senderConstraints.rotationRequired() || !jti) {
     log.debug("Leaving noteRefreshRotated(). Nothing to mark.");
     return;
   }
@@ -2936,10 +2974,24 @@ function scopeSet(scope) {
   return String(scope || '').split(/\s+/).filter(Boolean);
 }
 
+// THIS FUNCTION ANSWERS TWO DIFFERENT QUESTIONS SINCE #34 (2026-09-15), and
+// they are switched by different things:
+//
+//   * the REPLAY of a rotated token, which belongs to rotation and therefore
+//     runs whenever `senderConstraints.rotationRequired()` — a service with
+//     `oauth2.refreshTokenRotation` on and neither mode on rotates, so it must
+//     detect the replay that rotation is FOR. Rotation without replay
+//     detection is bookkeeping nobody reads;
+//   * the idle timeout, the client binding and the scope check below it, which
+//     are RFC 9700 section 2.2.2 and 2.3 rules and stay on `enabled()`.
+//
+// Keeping them in one function is deliberate: they are all "what this server
+// thinks of the refresh token being presented", and a second entry point would
+// be two orders for a caller to get right.
 function checkRefreshRequest(opts) {
   log.debug("Entering checkRefreshRequest().");
-  if (!enabled()) {
-    log.debug("Leaving checkRefreshRequest(). RFC 9700 mode is off.");
+  if (!enabled() && !senderConstraints.rotationRequired()) {
+    log.debug("Leaving checkRefreshRequest(). Neither mode nor rotation.");
     return { ok: true };
   }
   const claims = opts.claims || {};
@@ -2974,6 +3026,16 @@ function checkRefreshRequest(opts) {
                           'all ' + members.length + ' refresh token(s) ' +
                           'descended from the original grant have been ' +
                           'revoked. Start a new authorization request.' };
+  }
+
+  // Everything from here down is an RFC 9700 rule rather than a consequence of
+  // rotation, so a service rotating because `oauth2.refreshTokenRotation` is
+  // on and neither mode is stops here. It rotates and detects a replay; it
+  // does not acquire an idle timeout, a client binding it never had, or a
+  // scope check, none of which the operator asked for by asking for rotation.
+  if (!enabled()) {
+    log.debug("Leaving checkRefreshRequest(). Rotation only.");
+    return { ok: true };
   }
 
   // RFC 9700 section 2.2.2's lifetime paragraph: a refresh token SHOULD expire
@@ -3476,8 +3538,26 @@ function state() {
       // reading this page to find out what it is talking to needs to know that
       // the ID Tokens are being spoiled on purpose, and this is the page they
       // are reading.
-      'oauth2.breakIdTokenNonce': !!config.value('oauth2.breakIdTokenNonce')
+      'oauth2.breakIdTokenNonce': !!config.value('oauth2.breakIdTokenNonce'),
+      // #34 (2026-09-15). Reported here for the reason the row above is:
+      // a client author reading this page is trying to find out what this
+      // server will do to their request, and four of these five turn a SHOULD
+      // into a refusal. None of them is part of this mode, and the mode turns
+      // none of them on.
+      'oauth2.refreshTokenRotation':
+        !!config.value('oauth2.refreshTokenRotation'),
+      'oauth2.refreshTokenRequireDpop':
+        !!config.value('oauth2.refreshTokenRequireDpop'),
+      'oauth2.refreshTokenRequireMtls':
+        !!config.value('oauth2.refreshTokenRequireMtls'),
+      'oauth2.accessTokenRequireDpop':
+        !!config.value('oauth2.accessTokenRequireDpop'),
+      'oauth2.accessTokenRequireMtls':
+        !!config.value('oauth2.accessTokenRequireMtls')
     },
+    // The same five as one block, with what turned rotation on — the console
+    // page and both reports read this rather than each deciding for itself.
+    sender_constraints: senderConstraints.state(),
     // Reported beside the settings because it is the one thing here that a
     // caller cannot infer from its own request: it already knows what scheme it
     // used, and what it wants to know is whether that was the only option.
@@ -3536,6 +3616,10 @@ module.exports = {
   // family by id.
   FAMILY_CLAIM: FAMILY_CLAIM,
   familyForIssuance: familyForIssuance,
+  // #34: re-exported so that `oauth2.js` asks ONE name whether refresh tokens
+  // rotate, whatever turned it on. The answer lives in sender_constraints.js,
+  // which this file may require and which may never require this file back.
+  rotationRequired: senderConstraints.rotationRequired,
   spendRefreshToken: spendRefreshToken,
   revokeFamily: revokeFamily,
   revokeRefreshOnLogout: revokeRefreshOnLogout,

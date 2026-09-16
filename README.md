@@ -847,7 +847,7 @@ unedited service behaves exactly as it did.
 | `oauth2.oauth21` | `STS_OAUTH2_OAUTH21` | `false` | **restart** — it turns RFC 9700 mode on, which decides whether the main port is bound as HTTPS (global.https). A **trust realm** may carry it even so: a realm binds no socket | Enforce the OAuth 2.1 Authorization Framework (draft-ietf-oauth-v2-1-16, still an Internet-Draft). It turns RFC 9700 mode on and adds PKCE for confidential clients (unless one relies on the OpenID Connect nonce), `code_challenge_method` required, a client that registered its own redirect URI (`oauth2.redirectUris` is not read), a token request naming an undeclared client refused, a presented credential that must verify, one authentication method per request, client credentials for authenticated clients only, a JWT client assertion addressed to the issuer alone, no SAML client authentication, no repeated parameters, a ten-minute code and `error_description`'s grammar. A token request may omit `redirect_uri`, and an authorization request may omit it when the client registered one. `GET /oauth2/oauth21` lists every requirement. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | REFUSE an authorization or token request that asks for a permission the client has not been granted. A permission is defined on a resource application — a base URI and a name, joined into `https://example.com/write` — and granted to a client application on its own entry; `/admin/delegation` is the register and defines both. With this OFF (the default) an ungranted permission is still honoured: the token is audienced to the base URI and carries the permission name on its scope claim exactly as a granted one would, and the console marks it. With it ON the same request is refused `invalid_scope` at the AUTHORIZATION endpoint — where the client can still be told — and at the token endpoint for the grants that never reach it. A scope naming no defined permission is unaffected in both modes. It does NOT re-judge a grant already issued. |
 | `oauth2.consentRequired` | `STS_OAUTH2_CONSENT_REQUIRED` | **`true`** — the one policy here that is on by default | yes | ASK THE PERSON before the authorization endpoint issues anything for a scope they have not already agreed to for that application. The first time a given username signs in to a given `client_id` for a given scope, `/oauth2/consent` is drawn listing the scopes that are new; nothing is issued until they press Allow, and Deny returns `access_denied` to the client. The answer is written to `oauthConsent` on that person's own entry under `ou=users` — one value per (person, application, scope), spelled `<when> <scope> <client_id>` — so the second sign-in is silent and an `ldapsearch` can read what somebody agreed to. A delegated permission is recorded by its WHOLE identifier (`https://example.com/write`) and never by the bare permission name, because two resources may each expose a `read`. `oauthGlobalConsent` on an APPLICATION's entry consents a scope for everybody who signs in to it and writes nothing about anybody — an override rather than a record, so removing it asks everybody again. `prompt=consent` asks again whatever is on the entry; `prompt=none` with something outstanding is `consent_required`. With this OFF nothing is asked and nothing is recorded, which is what this service did before the screen existed — it is NOT "everybody consented". `/admin/consent` is the register. |
-| `oauth2.tokenExchangeRefreshToken` | `STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN` | `when-requested` | yes | WHETHER AN RFC 8693 TOKEN EXCHANGE HANDS BACK A `refresh_token` beside the exchanged access token. Section 2.2.1 makes it OPTIONAL and names the case it is for: a client that must keep reaching a resource "even when the original credential is no longer valid" — the user-not-present case, where there is no session by design. Three values. `when-requested` is the default and is section 2.1 read literally — the client asks with `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token` and gets one only if it did. `never` refuses the ask silently: the exchange still succeeds, with no refresh token in it, which is what this service did before the parameter was implemented. `always` hands one to every exchange whether it asked or not, which is how several deployed authorization servers behave and is the path a client written against the other two has never run. What comes back is an ORDINARY refresh token of this service in every case — redeemable at the refresh grant, revocable, subject to `oauth2.refreshTokenTtlS`, rotated in RFC 9700 mode, and bound to the DPoP key or client certificate the exchange was made with — and `issued_token_type` says `access_token` throughout, because it describes the token in the `access_token` member. `oauthTokenExchangeRefreshToken` on the CLIENT application's entry overrides it for that client alone. |
+| `oauth2.tokenExchangeRefreshToken` | `STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN` | `when-requested` | yes | WHETHER AN RFC 8693 TOKEN EXCHANGE HANDS BACK A `refresh_token` beside the exchanged access token. Section 2.2.1 makes it OPTIONAL and names the case it is for: a client that must keep reaching a resource "even when the original credential is no longer valid" — the user-not-present case, where there is no session by design. Three values. `when-requested` is the default and is section 2.1 read literally — the client asks with `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token` and gets one only if it did. `never` refuses the ask silently: the exchange still succeeds, with no refresh token in it, which is what this service did before the parameter was implemented. `always` hands one to every exchange whether it asked or not, which is how several deployed authorization servers behave and is the path a client written against the other two has never run. What comes back is an ORDINARY refresh token of this service in every case — redeemable at the refresh grant, revocable, subject to `oauth2.refreshTokenTtlS`, rotated wherever rotation is required (either compliance mode, or `oauth2.refreshTokenRotation`), and bound to the DPoP key or client certificate the exchange was made with — and `issued_token_type` says `access_token` throughout, because it describes the token in the `access_token` member. `oauthTokenExchangeRefreshToken` on the CLIENT application's entry overrides it for that client alone. |
 | `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a DELIBERATELY WRONG nonce in every ID Token that should carry one. |
 | `oauth2.refreshIdleSeconds` | `STS_OAUTH2_REFRESH_IDLE_SECONDS` | `86400` | yes | In RFC 9700 mode, how long a refresh CHAIN may go unused before it stops working — section 2.2.2 says a refresh token SHOULD expire after a period of client inactivity, and says the period is deployment-dependent, which is why this is a setting rather than a constant. |
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In RFC 9700 mode, end a browser sign-on session and every refresh token issued ON that session is revoked — the section MAY that names logout and a password change as the examples. |
@@ -864,6 +864,11 @@ unedited service behaves exactly as it did.
 | `oauth2.dpopNonceRequired` | `STS_OAUTH2_DPOP_NONCE_REQUIRED` | `false` | yes | Require every DPoP proof to carry a nonce this server supplied (RFC 9449 sections 8 and 9), which turns the first request of a session into a 401 or 400 and a retry. It makes proofs FRESHER and never makes them mandatory: a request with no DPoP header is still a Bearer request. PER TRUST REALM since 2026-09-12 — it was one switch for the whole process, so a realm turning it on turned it on for every other. In development POST /dpop/nonce-mode writes this setting for the realm it is reached in; in product that endpoint refuses and this row — through /admin/oauth2 or POST /admin-api/config/set, both behind a credential — is the only way to change it. |
 | `oauth2.dpopIatSkewS` | `STS_OAUTH2_DPOP_IAT_SKEW_S` | `300` | yes | How far a DPoP proof's `iat` may be from now, either way (RFC 9449 section 11.1). It is how long a captured proof stays useful for the same method and URI, so it is short; the jti replay cache remembers a proof for twice this, so the two cover the same span. |
 | `oauth2.dpopNonceTtlS` | `STS_OAUTH2_DPOP_NONCE_TTL_S` | `300` | yes | How long a server-supplied DPoP nonce is accepted after it was handed out. Only read while oauth2.dpopNonceRequired is on. |
+| `oauth2.refreshTokenRotation` | `STS_OAUTH2_REFRESH_TOKEN_ROTATION` | `false` | yes | Issue a NEW refresh token on every refresh, refuse the one that was spent, and treat a replay as a compromise — the whole token family is revoked, not just the token replayed (OAuth 2.1 section 4.3.1, RFC 9700 section 4.14.2). **RFC 9700 mode and OAuth 2.1 mode already do this for every client**, so this row is how to have it with both modes off; turning it off while a mode is on changes nothing, because the mode is the stricter answer. What it does NOT bring with it is the rest of RFC 9700 section 2.2.2 — the idle timeout, the client binding and the scope subset check stay behind `oauth2.rfc9700`, because none of them is what asking for rotation asked for. A refresh token minted before it was turned on carries no family and is rotated from its next use, so there is nothing to migrate. |
+| `oauth2.refreshTokenRequireDpop` | `STS_OAUTH2_REFRESH_TOKEN_REQUIRE_DPOP` | `false` | yes | REFUSE to issue a refresh token to a request carrying no DPoP proof, and refuse the refresh grant unless the presented refresh token is bound (`cnf.jkt`) to the key that proves this request (RFC 9449 section 5). **Neither OAuth 2.1 nor RFC 9700 asks for this** — section 4.3.1 wants a public client's refresh token sender-constrained *or* rotated, and this service rotates — so it is off unless somebody sets it. An UNBOUND refresh token is refused rather than bound on first use: binding it here would let whoever is holding it choose the key, which is the opposite of the guarantee the setting was turned on for. The WHOLE token request is refused rather than the refresh token quietly dropped, so a client never receives an access token it can use beside a refresh token it cannot. **Nothing is exempt from this row and nothing needs to be**: `/admin` and `/portal` are OpenID Connect clients of this service and carry a DPoP key of their own, proving it on every back-channel token call since 2026-09-15, so turning this on does not lock an operator out of either. The two clients named on the row below are exempt from THAT row alone. |
+| `oauth2.refreshTokenRequireMtls` | `STS_OAUTH2_REFRESH_TOKEN_REQUIRE_MTLS` | `false` | yes | The same refusal for RFC 8705: no refresh token is issued over a connection carrying no verified client certificate, and the refresh grant requires the presented token's `cnf["x5t#S256"]` to match the certificate on THIS connection. Section 7.1 still passes a client that authenticated with `tls_client_auth` or `self_signed_tls_client_auth` on the same request and owns the token — its refresh token is bound to the CLIENT, so it may rotate its certificate. **It needs the main port bound as HTTPS** (`global.https`), which is the only way a certificate can be asked for at all; with HTTP every affected request is refused instead. The seeded `sts-admin-console` and `sts-user-portal` clients are EXEMPT from this row and nothing else: they redeem over a loopback call from this process to itself, where there is no certificate to present and nobody on the other end who is not already this process. `sts-debugger-ui` is deliberately NOT exempt — the embedded debugger is an ordinary client and is configured to match the realm it points at. |
+| `oauth2.accessTokenRequireDpop` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP` | `false` | yes | Refuse any inbound request that presents an access token as anything other than a proved, DPoP-bound token — the token must carry `cnf.jkt` and the request must carry a proof for that key. It covers every surface that accepts a PRESENTED access token: UserInfo, the RFC 9470 step-up resource, the three OpenID4VCI endpoints, `/scim/v2`, the Shared Signals endpoints, `/admin-api` and the embedded debugger's listener. It does not cover what is not an OAuth access token presented as a credential: GNAP's own tokens, an RFC 7592 registration access token, or the endpoints that take a token as a PARAMETER (introspection, revocation, token exchange). **This is a resource-side refusal only**: the token endpoint goes on minting Bearer tokens, which those resources then refuse — which is exactly what lets a client be tested against the refusal. A token this service did not issue is held to it too, because the confirmation a token carries can be read without trusting the token. `/admin/api-explorer` stops working while it is on, because its script sends a plain `Bearer` header. |
+| `oauth2.accessTokenRequireMtls` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_MTLS` | `false` | yes | The RFC 8705 half of the row above, at the same surfaces: a presented access token must carry `cnf["x5t#S256"]` and the connection must carry that certificate. **It needs the main port bound as HTTPS** (`global.https`), and the debugger's listener began ASKING for a client certificate on 2026-09-15 so that a bound token can be presented there at all — asked for, never required, the posture the main port and 8443 already take. Where a certificate cannot be asked for the affected request is refused with `STS-OAUTH-0527` rather than let through. |
 | `oauth2.openRegistration` | `STS_OAUTH2_OPEN_REGISTRATION` | `false` | yes | Whether POST /oauth2/register (RFC 7591) accepts a registration from anybody who can reach it IN PRODUCT MODE. Development always does — it is how a client under test registers itself — and this setting changes nothing there. In product it is OFF, the endpoint refuses with `access_denied` naming this setting, and `registration_endpoint` is left out of both discovery documents: a published endpoint that refuses every caller is a promise broken. Create applications through /admin or /admin-api instead, which require a credential. Turning it on is a decision to let the internet mint confidential clients on this authorization server. |
 | `oauth2.softwareStatementRequireTrustedIssuer` | `STS_OAUTH2_SOFTWARE_STATEMENT_REQUIRE_TRUSTED_ISSUER` | `true` | yes | Whether registration refuses a `software_statement` whose issuer nothing in this realm trusts, with `unapproved_software_statement`, in both modes. Off, such a statement is accepted UNVERIFIED: its claims lose to the JSON, the entry records it as untrusted, and it never opens a closed endpoint. A malformed, unsigned, badly signed or expired statement is refused either way. |
 | `oauth2.softwareStatementOpensRegistration` | `STS_OAUTH2_SOFTWARE_STATEMENT_OPENS_REGISTRATION` | `true` | yes | Whether a registration carrying a TRUSTED software statement is accepted where `POST /oauth2/register` is otherwise closed (product mode, `oauth2.openRegistration` off). While on, `registration_endpoint` stays advertised, and a client registered this way must present a trusted statement from the same issuer with every RFC 7592 update. |
@@ -893,7 +898,7 @@ unedited service behaves exactly as it did.
 | `oauth2.registeredSecretBytes` | `STS_OAUTH2_REGISTERED_SECRET_BYTES` | `24` | yes | How many random bytes make a registered client's `client_secret` and its RFC 7592 `registration_access_token`. Both ARE secrets, which is why the floor is 16 bytes (128 bits). |
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed. RFC 6749 section 4.1.2 recommends at most ten minutes. It is ALSO what RFC 9700 mode's transaction memory is measured from — a PKCE challenge or nonce is remembered for twice this — so the two cannot drift apart. A code already issued keeps the expiry it was minted with. |
 | `oauth2.maxPendingTransactions` | `STS_OAUTH2_MAX_PENDING_TRANSACTIONS` | `500` | yes | How many authorization transactions RFC 9700 mode remembers to refuse a reused PKCE challenge or nonce. Past it the oldest is forgotten, and a forgotten one is a reuse check NOT made rather than a false refusal — which is the safe direction for this cache, because what it protects against is a client bug and not a captured credential. |
-| `oauth2.maxRefreshTokenFamilies` | `STS_OAUTH2_MAX_REFRESH_TOKEN_FAMILIES` | `2000` | yes | How many refresh tokens RFC 9700 mode tracks for rotation and replay detection. When it is full, EXPIRED ones are forgotten first, then ROTATED ones (already revoked, so a replay of one is still refused — what is lost is the whole-family revocation that replay would trigger), and only then the oldest live one, with a warning. A live one forgotten still works; its next rotation starts a new family. Raise it for a deployment with more concurrently live refresh tokens than this. |
+| `oauth2.maxRefreshTokenFamilies` | `STS_OAUTH2_MAX_REFRESH_TOKEN_FAMILIES` | `2000` | yes | How many refresh tokens are tracked for rotation and replay detection wherever rotation is required — RFC 9700 mode, OAuth 2.1 mode or `oauth2.refreshTokenRotation`. When it is full, EXPIRED ones are forgotten first, then ROTATED ones (already revoked, so a replay of one is still refused — what is lost is the whole-family revocation that replay would trigger), and only then the oldest live one, with a warning. A live one forgotten still works; its next rotation starts a new family. Raise it for a deployment with more concurrently live refresh tokens than this. |
 | `oauth2.signedMetadataAlgorithm` | `STS_OAUTH2_SIGNED_METADATA_ALGORITHM` | `RS256` | yes | The JWS algorithm of the `signed_metadata` member of the RFC 8414 document, the OpenID Provider Configuration and the OID4VCI issuer metadata. Every value is one this realm holds a key for, and every key is in /oauth2/jwks under its own kid. The post-quantum algorithms are deliberately not offered: discovery is the most-fetched endpoint here and is signed on the request thread. |
 | `oauth2.signedMetadataCacheS` | `STS_OAUTH2_SIGNED_METADATA_CACHE_S` | `60` | yes | How long one signature over an unchanged metadata document is served before it is signed again. ZERO signs per request. The ceiling is half the signature's own hour, so a caller is never handed one about to expire. |
 | `oauth2.maxSignedMetadataEntries` | `STS_OAUTH2_MAX_SIGNED_METADATA_ENTRIES` | `64` | yes | How many distinct signed metadata documents are cached. The key includes the base URL a request arrived on, which comes off the Host header, so it has to be bounded. |
@@ -2318,6 +2323,35 @@ is why adding the certificate check there was one edit rather than four. A bound
 presented as a plain `Bearer` is refused rather than quietly accepted, which is the
 single most likely way to implement DPoP and gain nothing from it.
 
+**Two doors had been left out of that last sentence, and 2026-09-15 (#34) closed
+them.** `/admin-api` and the embedded debugger's listener each verify their own token
+rather than going through `presentedAccessToken()`, and each had been given RFC 8705's
+certificate check and never RFC 9449's — so a token carrying `cnf.jkt`, a token whose
+whole point is that holding it is not enough, was accepted at both as a bearer token.
+Both now refuse it (`STS-API-0120`, `STS-DBG-0031`), in every mode and whatever the
+settings below say, because that is about honouring a constraint the token already
+carries. Both also learned to READ `Authorization: DPoP`, which they had not: a client
+doing the stricter thing was told it had presented no token at all.
+
+**And the constraint can now be REQUIRED rather than merely honoured**, which is the
+other half of #34 and is four settings rather than a mode.
+`oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` refuse a presented
+access token that is not constrained, at every surface that takes one —
+`presentedAccessToken()`'s seven, plus `/admin-api` and the debugger — and
+`oauth2.refreshTokenRequireDpop` and `oauth2.refreshTokenRequireMtls` refuse to MINT an
+unconstrained refresh token and refuse an unbound one at the refresh grant. Section
+2.2.1's sender constraint is a SHOULD and OAuth 2.1 section 4.3.1 offers rotation as an
+equal alternative, so none of the four is implied by either mode and every one of them
+defaults to off; the settings table above says what each covers. Three things about
+them are worth knowing before turning one on. The refresh ones refuse the **whole**
+token request, access token included, because half a token set is worse than an error —
+a client would discover the missing half an hour later at a refresh it cannot make. The
+access-token ones are **resource-side only**: the token endpoint keeps minting Bearer
+tokens and the resources refuse them, which is what lets a client be driven against the
+refusal. And an unbound refresh token is **refused rather than bound on first use**,
+because binding it would let whoever is holding it choose the key and would tell the
+operator the tokens were constrained at the moment a stolen one constrained itself.
+
 #### Audience restriction and least privilege (section 2.3)
 
 Every access token here has always carried `aud` — and always the *same* `aud`,
@@ -2553,6 +2587,16 @@ client**: redeeming a refresh token retires it, through the same revocation set
 `active: false` at `/oauth2/introspect`. Without the mode a refresh token stays
 usable for the whole of its life — twenty-four hours by default, and whatever
 `oauth2.refreshTokenTtlS` says — which is the state this requirement is about.
+
+**Rotation is no longer the mode's alone.** `oauth2.refreshTokenRotation` (2026-09-15,
+#34) turns it on with both compliance modes off, and the predicate every site asks is
+`senderConstraints.rotationRequired()` — either mode, or that setting — rather than
+"is RFC 9700 mode on". What comes with it is rotation and the replay detection rotation
+exists for, and deliberately nothing else: the idle timeout, the client binding and the
+scope subset check in the paragraphs below stay behind `oauth2.rfc9700`, because an
+operator who asked for rotation did not ask to acquire three refusals a grant never had.
+Turning the setting off while a mode is on changes nothing — the mode is the stricter
+answer and wins.
 
 Rotation alone is half of it. The reason a retired token is *remembered* rather than
 merely revoked is **replay detection**: one coming back means the chain has been
@@ -3111,11 +3155,17 @@ Three requirements are the client's to keep, so this server reports them and doe
 refuse. A **reused `code_challenge` or `nonce`** is described above. An **unbound
 access token** is logged at issuance — section 2.2's sender-constraining is a SHOULD,
 DPoP is implemented here in full and advertised, and whether a token is bound is the
-client's decision because it binds by sending a proof. There is deliberately **no
-"DPoP required" mode**: this service exists to exercise Bearer clients too, and a mode
-that refused them would remove the thing half its callers are testing. And a client
-authenticating with a **shared secret** is logged as the asymmetric recommendation it
-did not follow.
+client's decision because it binds by sending a proof. **The mode itself still requires
+nothing, and since 2026-09-15 (#34) an operator can**: `oauth2.accessTokenRequireDpop`
+and `oauth2.accessTokenRequireMtls` refuse an unconstrained access token at every
+resource, and `oauth2.refreshTokenRequireDpop` and `oauth2.refreshTokenRequireMtls` do
+the same for refresh tokens at the token endpoint. All four are OFF unless set, and
+they are settings rather than part of this mode for the reason this paragraph always
+gave: this service exists to exercise Bearer clients too, and a mode that refused them
+would remove the thing half its callers are testing. Nothing in RFC 9700 asks for them
+— section 2.2.1 is a SHOULD — so a service that turns them on is going further than the
+document, deliberately and by an act. And a client authenticating with a **shared
+secret** is logged as the asymmetric recommendation it did not follow.
 
 #### What the mode does not cover
 
@@ -3166,6 +3216,8 @@ And it adds what 2.1 requires beyond RFC 9700:
 | `code_challenge` with no `code_challenge_method` | 4.1.1 |
 | A client with no redirect URI of its own — `oauth2.redirectUris` is **not read** | 2.3.1 |
 | A token request naming a client whose entry declares nothing a sighting would not have written | 2.5, 3.2.1 |
+| A token request naming **no client at all**, on the four grants a client makes in its own name (`authorization_code`, `refresh_token`, `client_credentials`, token exchange) — the row above opened with "naming a client", so this case skipped it entirely and a refresh grant with no `client_id` was rotated as if it belonged to somebody | 2.3.1, 2.5 |
+| An RFC 7523 or RFC 7522 assertion grant that **names** a client this server does not know. The assertion may speak for the subject; a client naming itself still has to be one this server registered or an administrator declared | 2.3.1, 2.5 |
 | A client secret or assertion that was sent and did not verify; two authentication methods in one request | 3.2.2, 2.4 |
 | The client credentials grant from a client that did not authenticate | 4.2 |
 | A JWT client assertion whose `aud` is not the issuer as its **sole** value | 2.4 → draft-ietf-oauth-rfc7523bis-11 |
@@ -3179,9 +3231,30 @@ port, section 8.4.2), caps a code's lifetime at ten minutes, and limits
 **What it deliberately does not hold to the registered-client rule**: the
 OpenID4VCI pre-authorized code grant, whose anonymous access is that
 specification's design, and the RFC 7523 and RFC 7522 grants when they carry no
-client. An OpenID4VCI wallet using the authorization code flow with a
-`client_id` nobody registered **is** refused — register it, or use a realm
-without this mode. Introspection and revocation still authenticate no client.
+client — those authenticate the SUBJECT with a signature and may legitimately
+arrive naming nobody, so refusing them for want of a declared client would refuse
+the grant for being what it is. An OpenID4VCI wallet using the authorization code
+flow with a `client_id` nobody registered **is** refused — register it, or use a
+realm without this mode. Introspection and revocation still authenticate no
+client.
+
+**An assertion grant carrying no client gets its access token and no refresh
+token** (2026-09-15, #34), which is recorded rather than refused. Section 4.3.1's
+rotation is bookkeeping about a chain belonging to a client, and a chain belonging
+to nobody cannot be checked against whoever presents it — the refresh grant would
+refuse every redemption of it for want of a `client_id` anyway, an hour later and
+with a message about RFC 6749. RFC 6749 section 5.1 makes `refresh_token` optional
+in the response, so withholding it is the honest version of what the redemption
+was going to do.
+
+**Section 4.3.1 is the one place either document says anything MUST be done about
+a refresh token, and it is a choice of two**: sender-constrained, or rotated with
+replay detection. This service takes the second, for every client rather than
+public ones alone, because it cannot authenticate a client it did not register and
+"public" is the safe reading of an unknown one. **Neither this section nor RFC 9700
+requires DPoP**; `oauth2.refreshTokenRequireDpop` and
+`oauth2.refreshTokenRequireMtls` are how an operator asks for the first way as
+well, and both are off unless set.
 
 **Three changes that came with it are in every mode**, because they are fixes
 rather than policy: a **private-use redirect URI** such as
@@ -3294,8 +3367,9 @@ CLIENT's own entry overrides it for that client alone** — the client performin
 exchange, because the refresh token is handed to the client and because in the
 interesting case the subject the exchange is *about* has no entry here at all. **What comes back is an ordinary refresh token of this service** — the same
 `typ`, the same lifetime (`oauth2.refreshTokenTtlS`), redeemable at the refresh grant,
-revocable at `/oauth2/revoke`, listed at `/admin/tokens`, rotated in RFC 9700 mode, and
-bound to the DPoP key or client certificate the exchange was made with, because it is
+revocable at `/oauth2/revoke`, listed at `/admin/tokens`, rotated wherever rotation is
+required, and bound to the DPoP key or client certificate the exchange was made with,
+because it is
 minted by the one function every grant here mints one through. It also remembers the
 RFC 8707 resources the exchange named, so a renewal cannot widen the audience the
 exchange narrowed. `issued_token_type` still says `access_token`, because it describes
@@ -3471,12 +3545,32 @@ with whatever certificate it now holds — its refresh token is bound through th
 client authentication (section 7.1) — so a renewed certificate does not strand the
 grant, and the new tokens bind to the new certificate (section 6.3).
 
+**Binding can be REQUIRED rather than honoured where it turns up, since 2026-09-15
+(#34).** Everything above is about a certificate a client chose to present;
+`oauth2.refreshTokenRequireMtls` refuses to issue a refresh token where there is no
+verified client certificate at all and refuses the refresh grant unless the presented
+token's `cnf["x5t#S256"]` matches the certificate on *that* connection, and
+`oauth2.accessTokenRequireMtls` refuses an unbound access token at every protected
+surface. Both are off unless set — RFC 9700 section 2.2.1 is a SHOULD and OAuth 2.1
+section 4.3.1 accepts rotation instead — and both need the main port bound as HTTPS,
+without which every affected request is refused `STS-OAUTH-0527` rather than let
+through, because a listener that cannot ask for a certificate cannot be satisfied by
+one. **Section 7.1 still passes** a client that authenticated with `tls_client_auth` or
+`self_signed_tls_client_auth` on the same request and owns the token, whether or not
+the token carries a thumbprint — that is the whole point of the section, and it is read
+off the same decision the binding check above makes. The seeded `sts-admin-console` and
+`sts-user-portal` clients are exempt from the refresh setting and from nothing else,
+because they redeem over a loopback call from this process to itself where there is no
+certificate to present; `sts-debugger-ui` is not exempt from anything.
+
 **Not done:** `mtls_endpoint_aliases` (section 5) is not published — the endpoints
 already ask for a certificate where they are; a certificate is never read from a
 header behind a TLS-terminating proxy (section 6.5, see `global.trustProxy`); and
 binding at the authorization endpoint's implicit flow is out of scope by the RFC
 (section 6.4). The error codes are `STS-OAUTH-0480..0488`, `STS-REG-0130..0136`,
-`STS-PKI-0180..0181`, `STS-ADMIN-0720..0724`, `STS-API-0110` and `STS-DBG-0030`.
+`STS-PKI-0180..0181`, `STS-ADMIN-0720..0724`, `STS-API-0110` and `STS-DBG-0030`;
+the settings that REQUIRE a constraint add `STS-OAUTH-0521..0531`, and the two
+holes #34 closed add `STS-API-0120..0121` and `STS-DBG-0031..0032`.
 
 ### Pushed authorization requests (RFC 9126, PAR)
 
@@ -5695,7 +5789,7 @@ A Bearer access token (RFC 6750) is a password: whatever can read the bytes can 
 
 **Where it applies, and where it deliberately does not.** OID4VCI 1.0 names DPoP exactly three times: its Security Considerations say the use of DPoP is **RECOMMENDED** for sender-constrained access tokens (mTLS being impractical for a native-app wallet), and its Nonce Response section says the Credential Issuer **MAY** return a `DPoP-Nonce` for use "when presenting an access token at the Credential Endpoint". So it covers the Token Endpoint and every protected endpoint the issuer publishes — Credential, Deferred Credential, Notification. **OID4VP 1.0 names it zero times**, and that is structural rather than an omission: in its own words "the result of an OpenID4VP interaction is one or more Verifiable Presentations … *instead of an Access Token*". There is no token in that exchange to sender-constrain, and the presentation's own proof of possession is the Key Binding JWT. A wallet is therefore right to offer no DPoP switch on its presentation pages; the parent project's carry a pane explaining why instead, with a table comparing the two proofs side by side (`typ`, what possession is proved of, where freshness comes from, `htu` vs `aud`, `ath` vs `sd_hash`). DPoP is also **indifferent to the credential format** — it binds an OAuth token, not a credential — so it works unchanged for `dc+sd-jwt`, `jwt_vc_json` and `ldp_vc`, and nothing in the implementation reads the format.
 
-**On the server.** `dpop.js` implements all twelve RFC 9449 section 4.3 checks, labelled by number, plus `jti` replay detection; `oauth2.js` binds the access **and refresh** tokens (section 5 — a wallet is a public client, so an unbound refresh token would be a bearer credential that mints bound access tokens for whoever holds it, which is worse than not binding because `token_type` would claim a guarantee nothing checked), advertises `dpop_signing_alg_values_supported` (section 5.1 — the *only* signal that DPoP is on offer, so a server that supports it silently is never asked), honours `dpop_jkt` on the authorization request (section 10, which closes the window PKCE does not: a thief holding the code *and* the `code_verifier` still cannot sign for the key), and reports `DPoP` rather than `Bearer` from introspection. The protected endpoints had three copies of a Bearer-only check and now share **one** `presentedAccessToken()`, because a per-endpoint copy is how one of three ends up not demanding the proof — and the one that forgot is the one an attacker would use. There are **four** of them since UserInfo, which is why that function now lives in `dpop.js` rather than in `vc_issuer.js` where it was written: the fourth caller is in `oauth2.js`, and requiring vc_issuer.js from there would either build a cycle or move OID4VCI ahead of OAuth2 in the route order, while copying the check into the OAuth2 module is exactly the mistake this paragraph records having been made once already. `dpop.js` registers no routes and requires only `helpers.js`, so it is the one place both callers can reach. Note a limitation stated in that function: this issuer accepts tokens from a foreign authorization server and cannot verify them, so for such a token `cnf.jkt` is a claim anyone could have written; the binding is real only for tokens this service issued — and `verified` in what it returns is how UserInfo, which cannot live with that, tells the difference. There is deliberately **no "DPoP required" mode** — nonce mode makes proofs fresher, not mandatory — and the two nonce-request shapes are *not* shared code, because an authorization server asks with a 400 JSON body while a resource server asks with a 401 `WWW-Authenticate`, and getting that wrong leaves a conforming wallet with no way forward. `POST /dpop/nonce-mode` is a non-spec runtime switch so the handshake can be exercised without a restart; it is listed as non-spec on `/admin/sts-metadata`. **Since 2026-09-12 it writes `oauth2.dpopNonceRequired` for the trust realm it is reached in** — it was one switch for the whole process — **and product mode refuses it** as a test control; there the setting is changed through `/admin/oauth2` or `POST /admin-api/config/set`.
+**On the server.** `dpop.js` implements all twelve RFC 9449 section 4.3 checks, labelled by number, plus `jti` replay detection; `oauth2.js` binds the access **and refresh** tokens (section 5 — a wallet is a public client, so an unbound refresh token would be a bearer credential that mints bound access tokens for whoever holds it, which is worse than not binding because `token_type` would claim a guarantee nothing checked), advertises `dpop_signing_alg_values_supported` (section 5.1 — the *only* signal that DPoP is on offer, so a server that supports it silently is never asked), honours `dpop_jkt` on the authorization request (section 10, which closes the window PKCE does not: a thief holding the code *and* the `code_verifier` still cannot sign for the key), and reports `DPoP` rather than `Bearer` from introspection. The protected endpoints had three copies of a Bearer-only check and now share **one** `presentedAccessToken()`, because a per-endpoint copy is how one of three ends up not demanding the proof — and the one that forgot is the one an attacker would use. There are **four** of them since UserInfo, which is why that function now lives in `dpop.js` rather than in `vc_issuer.js` where it was written: the fourth caller is in `oauth2.js`, and requiring vc_issuer.js from there would either build a cycle or move OID4VCI ahead of OAuth2 in the route order, while copying the check into the OAuth2 module is exactly the mistake this paragraph records having been made once already. `dpop.js` registers no routes and requires only `helpers.js`, so it is the one place both callers can reach. Note a limitation stated in that function: this issuer accepts tokens from a foreign authorization server and cannot verify them, so for such a token `cnf.jkt` is a claim anyone could have written; the binding is real only for tokens this service issued — and `verified` in what it returns is how UserInfo, which cannot live with that, tells the difference. **Nonce mode is not a "DPoP required" mode** — it makes proofs fresher, not mandatory, and a request with no `DPoP` header is a Bearer request whatever it is set to. **What DOES require DPoP, since 2026-09-15 (#34), is a setting of its own**: `oauth2.accessTokenRequireDpop` refuses an access token carrying no `cnf.jkt`, or a bound one presented without a proof, at every surface `presentedAccessToken()` guards and at `/admin-api` and the debugger's listener besides; `oauth2.refreshTokenRequireDpop` refuses to issue a refresh token to a request that proved no key, and refuses an unbound one at the refresh grant rather than binding it on first use. Both are OFF unless set, because this service exists to exercise Bearer clients too and neither RFC 9700 nor OAuth 2.1 asks for either — and the access-token one is a refusal at the RESOURCE only, so the token endpoint goes on minting Bearer tokens that those resources then refuse, which is what makes the refusal something a client can be driven against. The two nonce-request shapes are *not* shared code, because an authorization server asks with a 400 JSON body while a resource server asks with a 401 `WWW-Authenticate`, and getting that wrong leaves a conforming wallet with no way forward. `POST /dpop/nonce-mode` is a non-spec runtime switch so the handshake can be exercised without a restart; it is listed as non-spec on `/admin/sts-metadata`. **Since 2026-09-12 it writes `oauth2.dpopNonceRequired` for the trust realm it is reached in** — it was one switch for the whole process — **and product mode refuses it** as a test control; there the setting is changed through `/admin/oauth2` or `POST /admin-api/config/set`.
 
 ### Kerberos v5 — the protocol here that is not HTTP
 

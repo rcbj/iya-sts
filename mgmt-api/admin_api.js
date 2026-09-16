@@ -457,6 +457,12 @@ const jwtAccessToken = require('../oauth-oidc/jwt_access_token');
 // other resource server here makes through `dpop.presentedAccessToken()`. A
 // library that registers nothing; `oauth2.js` already required it.
 const mtls = require('../oauth-oidc/mtls');
+// RFC 9449 (#34, 2026-09-15): this gate never looked at `cnf.jkt`, so a
+// DPoP-bound token was usable here as a plain Bearer token — the hole RFC 8705
+// had closed above and this one had not. Both libraries register nothing and
+// `oauth2.js` has already required them, so these are cache hits.
+const dpop = require('../oauth-oidc/dpop');
+const senderConstraints = require('../oauth-oidc/sender_constraints');
 // THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
 // from this repository, so it cannot move a route or join a cycle.
 //
@@ -13766,15 +13772,29 @@ function operationSummaries() {
 // the management API needs ADMIN_READ" without the document knowing that OAuth
 // exists.
 // ---------------------------------------------------------------------------
+// BOTH SCHEMES SINCE #34 (2026-09-15). It read `Bearer` alone until then, so a
+// DPoP-bound token presented here — with `Authorization: DPoP` — counted as no
+// token at all and got the "this API requires an access token" 401, which is
+// the least useful thing it could say to a client doing the stricter thing.
+// `scheme` is returned with the value because the gate below has to refuse a
+// BOUND token presented as Bearer, and that is a different refusal from a
+// token that does not verify.
+function presentedTokenOf(req) {
+  log.debug("Entering presentedTokenOf().");
+  const said = String((req.headers && req.headers.authorization) || '');
+  const matched = /^(Bearer|DPoP)\s+(\S+)\s*$/i.exec(said);
+  if (!matched) {
+    log.debug("Leaving presentedTokenOf(). Nothing presented.");
+    return { token: '', scheme: '' };
+  }
+  log.debug("Leaving presentedTokenOf(). " + matched[1]);
+  return { token: matched[2].trim(), scheme: matched[1].toLowerCase() };
+}
+
 function bearerOf(req) {
   log.debug("Entering bearerOf().");
-  const said = String((req.headers && req.headers.authorization) || '');
-  if (!/^bearer\s+/i.test(said)) {
-    log.debug("Leaving bearerOf().");
-    return '';
-  }
   log.debug("Leaving bearerOf().");
-  return said.replace(/^bearer\s+/i, '').trim();
+  return presentedTokenOf(req).token;
 }
 
 // What `aud` has to name. The CONFIGURED audience first — since 2026-09-13
@@ -13968,7 +13988,8 @@ function realmTokenRefusal(claims, req) {
 app.use(BASE, function (req, res, next) {
   if (config.value('adminApi.authRequired')) {
     const scopesWanted = req.method === 'GET' ? 'admin:read' : 'admin:write';
-    const presented = bearerOf(req);
+    const presentation = presentedTokenOf(req);
+    const presented = presentation.token;
     if (!presented) {
       errorCodes.mark(res, 'STS-API-0001');
       res.set('WWW-Authenticate',
@@ -14111,6 +14132,76 @@ app.use(BASE, function (req, res, next) {
               'Bearer error="invalid_token", scope="' + scopesWanted + '"');
       return sendJson(res, 401, { error: 'invalid_token',
                                   errors: [certificateProblem.description] });
+    }
+    // ---------------------------------------------------------------------
+    // RFC 9449 SECTION 7, AND THE SAME HOLE ONE CONSTRAINT ALONG (#34,
+    // 2026-09-15). The check above was added for RFC 8705 and the DPoP one
+    // beside it was never written, so a token carrying `cnf.jkt` — a token
+    // whose whole point is that holding it is not enough — was accepted here
+    // as a bearer token. Every other resource server in this service refuses
+    // that through `dpop.presentedAccessToken()`; this gate verifies its own
+    // token and so has to ask for itself.
+    //
+    // It is NOT the two settings: this runs whatever they say, because it is
+    // about honouring a constraint the TOKEN already carries.
+    // ---------------------------------------------------------------------
+    const boundJkt = dpop.jktOf(claims);
+    let proofOk = false;
+    if (boundJkt) {
+      if (presentation.scheme !== 'dpop') {
+        errorCodes.mark(res, 'STS-API-0120');
+        res.set('WWW-Authenticate',
+                'DPoP error="invalid_token", scope="' + scopesWanted + '"');
+        return sendJson(res, 401, { error: 'invalid_token', errors: [
+          'That access token is DPoP-bound (it carries cnf.jkt), so it must ' +
+          'be sent as "Authorization: DPoP <token>" with a DPoP proof — not ' +
+          'as a Bearer token. Presenting it as a bearer token would throw ' +
+          'the binding away.'] });
+      }
+      const checked = dpop.verifyProof(req.headers['dpop'], {
+        htm: req.method, htu: dpop.htuOf(req), accessToken: presented,
+        expectedJkt: boundJkt, req: req
+      });
+      if (!checked.ok) {
+        errorCodes.mark(res, checked.errorCode || 'STS-API-0121');
+        if (checked.needNonce) {
+          res.set('DPoP-Nonce', dpop.issueNonce());
+          res.set('WWW-Authenticate', 'DPoP error="use_dpop_nonce"');
+        } else {
+          res.set('WWW-Authenticate', 'DPoP error="invalid_dpop_proof", ' +
+                                      'scope="' + scopesWanted + '"');
+        }
+        // error-code: none — marked above with the proof's own code, or
+        // STS-API-0121 where it reported none.
+        return sendJson(res, 401, { error: 'invalid_dpop_proof',
+                                    errors: [checked.description] });
+      }
+      proofOk = true;
+    }
+    // #34's two settings, asked of this surface as of every other. The answer
+    // is one function, so an operator who turns them on cannot find that one
+    // door out of nine kept its own opinion.
+    const required = senderConstraints.accessTokenRefusal({
+      where: 'the management API',
+      boundJkt: boundJkt,
+      proofOk: proofOk,
+      boundThumbprint: mtls.boundThumbprintOf(claims),
+      certificate: !!mtls.peerCertificate(req),
+      certificateMatches: !!mtls.boundThumbprintOf(claims) &&
+                          mtls.peerVerified(req) &&
+                          mtls.presentedThumbprint(req) ===
+                            mtls.boundThumbprintOf(claims),
+      mtlsAvailable: mtls.available()
+    });
+    if (required) {
+      errorCodes.mark(res, required.errorCode);
+      res.set('WWW-Authenticate',
+              (senderConstraints.accessTokenDpopRequired() ? 'DPoP' : 'Bearer') +
+              ' error="' + required.error + '", scope="' + scopesWanted + '"');
+      // error-code: none — marked above with the refusal's own code, one of
+      // STS-OAUTH-0527 to 0531.
+      return sendJson(res, 401, { error: required.error,
+                                  errors: [required.description] });
     }
     const scopes = String(claims.scope || '').split(/\s+/).filter(Boolean);
     const who = String(claims.client_id || claims.sub || '(a client)');

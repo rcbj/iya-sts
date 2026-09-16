@@ -3305,6 +3305,111 @@ const SETTINGS = [
                  'was handed out. Only read while oauth2.dpopNonceRequired ' +
                  'is on.' },
 
+  // -------------------------------------------------------------------------
+  // SENDER CONSTRAINTS AND REFRESH TOKEN ROTATION (#34, 2026-09-15).
+  //
+  // NEITHER SPECIFICATION REQUIRES DPoP, and these five rows are how an
+  // operator asks for more than either one does. OAuth 2.1
+  // (draft-ietf-oauth-v2-1-16 section 4.3.1) says a public client's refresh
+  // token must be sender-constrained OR rotated with replay detection — a
+  // choice of two, and this service already takes the second in RFC 9700 mode.
+  // RFC 9700 section 2.2.1 makes a sender-constrained ACCESS token a SHOULD.
+  // So every row here defaults to off, and no compliance mode turns one on.
+  //
+  // The four REQUIRE rows REFUSE rather than downgrade: a request that cannot
+  // meet them is answered with an error, never with a token that is weaker
+  // than what was asked for. That is the opposite of what this service does
+  // everywhere else, and it is the whole point of them — a client under test
+  // learns what a strict authorization server does to it.
+  // -------------------------------------------------------------------------
+  { key: 'oauth2.refreshTokenRotation', group: 'OAuth 2.0 / OIDC',
+    label: 'Rotate refresh tokens',
+    env: 'STS_OAUTH2_REFRESH_TOKEN_ROTATION', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Issue a NEW refresh token on every refresh, refuse the one ' +
+                 'that was spent, and treat a replay as a compromise — the ' +
+                 'whole token family is revoked, not just the token replayed ' +
+                 '(OAuth 2.1 section 4.3.1, RFC 9700 section 4.14.2). **RFC ' +
+                 '9700 mode and OAuth 2.1 mode already do this for every ' +
+                 'client**, so this row is how to have it with both modes ' +
+                 'off; turning it off while a mode is on changes nothing, ' +
+                 'because the mode is the stricter answer. A refresh token ' +
+                 'minted before it was turned on carries no family and is ' +
+                 'rotated from its next use, so there is nothing to migrate.' },
+
+  { key: 'oauth2.refreshTokenRequireDpop', group: 'OAuth 2.0 / OIDC',
+    label: 'Require DPoP on refresh tokens',
+    env: 'STS_OAUTH2_REFRESH_TOKEN_REQUIRE_DPOP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'REFUSE to issue a refresh token to a request carrying no ' +
+                 'DPoP proof, and refuse the refresh grant unless the ' +
+                 'presented refresh token is bound (`cnf.jkt`) to the key ' +
+                 'that proves this request (RFC 9449 section 5). An UNBOUND ' +
+                 'refresh token is refused rather than bound on first use, ' +
+                 'which is what this service does with the setting off. The ' +
+                 'whole token request is refused, so a client never receives ' +
+                 'an access token it can use and a refresh token it cannot. ' +
+                 '/admin and /portal carry proofs of their own since ' +
+                 '2026-09-15 and are unaffected; the embedded debugger is an ' +
+                 'ordinary client and must be configured to match.' },
+
+  { key: 'oauth2.refreshTokenRequireMtls', group: 'OAuth 2.0 / OIDC',
+    label: 'Require mutual TLS on refresh tokens',
+    env: 'STS_OAUTH2_REFRESH_TOKEN_REQUIRE_MTLS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The same refusal for RFC 8705: no refresh token is issued ' +
+                 'over a connection carrying no verified client certificate, ' +
+                 'and the refresh grant requires the presented token\'s ' +
+                 '`cnf["x5t#S256"]` to match the certificate on THIS ' +
+                 'connection. Section 7.1 still passes a client that ' +
+                 'authenticated with `tls_client_auth` or ' +
+                 '`self_signed_tls_client_auth` on the same request and owns ' +
+                 'the token — its refresh token is bound to the CLIENT, so ' +
+                 'it may rotate its certificate. **It needs the main port ' +
+                 'bound as HTTPS** (global.https), which is the only way a ' +
+                 'certificate can be asked for at all; with HTTP every ' +
+                 'affected request is refused and /admin/oauth2 says so. The ' +
+                 'seeded console and portal clients are EXEMPT: they redeem ' +
+                 'over a loopback call from this process to itself, where ' +
+                 'there is no certificate story to tell.' },
+
+  { key: 'oauth2.accessTokenRequireDpop', group: 'OAuth 2.0 / OIDC',
+    label: 'Require DPoP for every access token',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Refuse any inbound request that presents an access token ' +
+                 'as anything other than a proved, DPoP-bound token — the ' +
+                 'token must carry `cnf.jkt` and the request must carry a ' +
+                 'proof for that key. It covers every surface that accepts a ' +
+                 'presented access token: UserInfo, the RFC 9470 step-up ' +
+                 'resource, the three OpenID4VCI endpoints, /scim/v2, the ' +
+                 'Shared Signals endpoints, /admin-api and the embedded ' +
+                 'debugger\'s listener. It does NOT cover what is not an ' +
+                 'OAuth access token presented as a credential: GNAP\'s own ' +
+                 'tokens, an RFC 7592 registration access token, or the ' +
+                 'endpoints that take a token as a PARAMETER (introspection, ' +
+                 'revocation, token exchange). **This is a resource-side ' +
+                 'refusal only**: the token endpoint still mints a Bearer ' +
+                 'token, which those resources then refuse — that is what ' +
+                 'lets a client be tested against the refusal. ' +
+                 '/admin/api-explorer stops working while it is on, because ' +
+                 'its script sends a plain Bearer header.' },
+
+  { key: 'oauth2.accessTokenRequireMtls', group: 'OAuth 2.0 / OIDC',
+    label: 'Require mutual TLS for every access token',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_REQUIRE_MTLS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The RFC 8705 half of the row above, at the same surfaces: ' +
+                 'a presented access token must carry ' +
+                 '`cnf["x5t#S256"]` and the connection must carry that ' +
+                 'certificate. **It needs the main port bound as HTTPS** ' +
+                 '(global.https), and the debugger\'s listener began ASKING ' +
+                 'for a client certificate on 2026-09-15 so that a bound ' +
+                 'token can be presented there at all — it is asked for, ' +
+                 'never required. A token this service did not issue is held ' +
+                 'to the same rule: the binding it carries is checked even ' +
+                 'though the token itself cannot be verified.' },
+
   { key: 'oauth2.openRegistration', group: 'OAuth 2.0 / OIDC',
     label: 'Open dynamic client registration (product mode)',
     env: 'STS_OAUTH2_OPEN_REGISTRATION', type: 'bool', dflt: false,

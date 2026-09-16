@@ -750,7 +750,7 @@ the file the row names.
 | ~~Revoke a certificate it issued~~ — **reversed 2026-09-11**: a CRL and OCSP per CA, and consulted for presented certificates since 2026-09-12 | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `docs/pki.md` |
 | Keep a certificate authority across a restart, **in development mode** | `common/CLAUDE.md` |
 | Enforce `value`/`values` in an OIDC Core 5.5 claims request, or treat `essential` as an instruction | `oauth-oidc/CLAUDE.md` |
-| Require DPoP — nonce mode makes proofs fresher, not mandatory | `oauth-oidc/CLAUDE.md` |
+| ~~Require DPoP — nonce mode makes proofs fresher, not mandatory~~ — **reversed 2026-09-15 (#34)**: five settings, all off by default because neither OAuth 2.1 nor RFC 9700 asks for any of them (rule 3ao) | `oauth-oidc/CLAUDE.md` |
 | ~~Turn a verified client certificate into a login~~ — **reversed 2026-09-05**, with revocation consulted first since 2026-09-12 | `tls/CLAUDE.md` |
 | Verify anything in an issued credential's values, which are invented | `oid4vc/CLAUDE.md` |
 | Turn a verified presentation into a sign-on | `oid4vc/CLAUDE.md` |

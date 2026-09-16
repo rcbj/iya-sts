@@ -33886,6 +33886,50 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>redirect_uri</code>, which RFC 9700 mode refuses — so a ' +
            'client written for 2.1 is exercised in this mode and not in that ' +
            'one. Restart-only and realm-settable for the same reason.',
+           '<strong>The five sender-constraint settings ask for MORE than ' +
+           'either specification does (#34, 2026-09-15).</strong> Neither ' +
+           'OAuth 2.1 (section 4.3.1) nor RFC 9700 requires DPoP: section ' +
+           '4.3.1 asks a public client\'s refresh token to be ' +
+           'sender-constrained <em>or</em> rotated with replay detection, and ' +
+           'a sender-constrained access token is a SHOULD. So all five are ' +
+           'off unless set, and no mode turns one on. ' +
+           '<code>oauth2.refreshTokenRotation</code> takes the rotation ' +
+           'answer with both modes off — the modes already rotate for every ' +
+           'client. The four <code>Require</code> rows REFUSE rather than ' +
+           'downgrade: a token request that would hand out an unconstrained ' +
+           'refresh token is refused WHOLE, access token included, because ' +
+           'half a token set is discovered an hour later at a refresh that ' +
+           'cannot be made; and an unbound refresh token is refused at the ' +
+           'refresh grant rather than bound to whoever presents it first.',
+           '<strong>The two access-token rows refuse at the RESOURCE, not at ' +
+           'the token endpoint.</strong> This service goes on issuing bearer ' +
+           'tokens, which every surface that accepts a presented access ' +
+           'token then refuses — UserInfo, the step-up resource, the three ' +
+           'OpenID4VCI endpoints, <code>/scim/v2</code>, the Shared Signals ' +
+           'endpoints, <a href="/admin-api">the management API</a> and the ' +
+           'embedded debugger\'s listener. That is deliberate: a client under ' +
+           'test needs to MEET the refusal. What they do not cover is what is ' +
+           'not a presented OAuth access token — GNAP\'s own tokens, an RFC ' +
+           '7592 registration access token, and the endpoints that take a ' +
+           'token as a parameter (introspection, revocation, token ' +
+           'exchange). <strong>Two consequences worth knowing before you ' +
+           'turn one on</strong>: <a href="/admin/api-explorer">the API ' +
+           'explorer</a> stops working while DPoP is required, because its ' +
+           'script sends a plain <code>Bearer</code> header; and the mutual ' +
+           'TLS rows need <code>global.https</code>, without which every ' +
+           'affected request is refused rather than waved through.',
+           '<strong>This console and the user portal keep working, and the ' +
+           'debugger is an ordinary client.</strong> <code>/admin</code> and ' +
+           '<code>/portal</code> are OpenID Connect clients of this service; ' +
+           'since 2026-09-15 they carry a DPoP key of their own and prove it ' +
+           'on every back-channel token call, so the DPoP rows do not lock ' +
+           'you out. They are EXEMPT from ' +
+           '<code>oauth2.refreshTokenRequireMtls</code> alone, because their ' +
+           'token requests are loopback calls from this process to itself ' +
+           'and there is no certificate story to tell about one. The ' +
+           'debugger\'s client is not exempt from anything: point it at a ' +
+           'realm that requires a constraint and configure it to meet one, ' +
+           'the same as any other client here.',
            '<strong><code>oauth2.breakIdTokenNonce</code> makes this service ' +
            'wrong on purpose.</strong> Turn it on and every ID Token carries ' +
            'a <code>nonce</code> that is not the one the client sent, so a ' +

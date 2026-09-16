@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **2656** of them, in **34** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2674** of them, in **34** subsystems.
 
 ## Where a code appears
 
@@ -62,7 +62,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 25
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 46
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 176
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 394
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 408
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 60
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 17
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -78,11 +78,11 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 72
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 167
-* [Management API (`STS-API`)](#sts-api) — 69
+* [Management API (`STS-API`)](#sts-api) — 71
 * [User portal (`STS-PORTAL`)](#sts-portal) — 52
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 92
-* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 25
+* [Protocol debugger (`STS-DBG`)](#sts-dbg) — 27
 
 ## STS-HTTP
 
@@ -1285,6 +1285,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0294` | The introspection endpoint failed with an unexpected error outside every refusal it makes. | server_error (HTTP 500) |
 | `STS-OAUTH-0295` | A client authenticating at the introspection endpoint declares a token_endpoint_auth_method the selected authorization server does not list in introspection_endpoint_auth_methods_supported. | invalid_client (HTTP 400 for a JWT request, 401 for JSON) |
 | `STS-OAUTH-0296` | A resource server's registered (or default) RFC 9701 introspection response algorithm is not one the selected authorization server advertises in its introspection_*_values_supported members. | invalid_client (HTTP 400) |
+| `STS-OAUTH-0297` | In OAuth 2.1 mode, a grant a client makes in its own name (authorization_code, refresh_token, client_credentials, token exchange) named no client_id at all. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0298` | In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant arrived with no client, so it was answered with an access token and NO refresh token (recorded, not refused). | none — the token response is issued without refresh_token |
+| `STS-OAUTH-0299` | In OAuth 2.1 mode, an RFC 7523 or RFC 7522 assertion grant named a client that is not registered or declared here. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0300` | A software statement (RFC 7591 section 2.3) presented at registration is not a string holding a compact JWS — it is missing its three segments, or it is a JWE. | invalid_software_statement (HTTP 400) |
 | `STS-OAUTH-0301` | A software statement's JOSE header or claims are not JSON objects. | invalid_software_statement (HTTP 400) |
 | `STS-OAUTH-0302` | A software statement says alg "none" (RFC 7591 section 2.3 requires it to be signed or MACed). | invalid_software_statement (HTTP 400) |
@@ -1404,6 +1407,17 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0518` | In RFC 9700 mode, a refresh token could not be redeemed because the claim store could not be asked; refused, and left unspent (fail closed). | server_error (HTTP 500) |
 | `STS-OAUTH-0519` | A DPoP proof was refused because another request carrying the same jti claimed it first, on this node or another (RFC 9449 section 11.1). | invalid_dpop_proof (HTTP 400 / 401) |
 | `STS-OAUTH-0520` | A DPoP proof was refused because the claim store could not be asked whether its jti had been used (fail closed). | invalid_dpop_proof (HTTP 400 / 401) |
+| `STS-OAUTH-0521` | A token request that would issue a refresh token carried no DPoP proof, and oauth2.refreshTokenRequireDpop is on. | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0522` | A token request that would issue a refresh token was made over a connection with no verified client certificate, and oauth2.refreshTokenRequireMtls is on. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0523` | A refresh token carrying no cnf.jkt was presented while oauth2.refreshTokenRequireDpop is on; it is refused rather than bound to the key presenting it. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0524` | A refresh grant carried no DPoP proof while oauth2.refreshTokenRequireDpop is on. | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0525` | A refresh token carrying no cnf x5t#S256 was presented while oauth2.refreshTokenRequireMtls is on, by a client RFC 8705 section 7.1 does not cover. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0526` | A refresh grant was made over a connection with no verified client certificate while oauth2.refreshTokenRequireMtls is on. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0527` | A setting requires mutual TLS, but the port the request arrived on is not bound as HTTPS and cannot ask for a client certificate (global.https). | invalid_request (HTTP 400 / 401) |
+| `STS-OAUTH-0528` | An access token carrying no cnf.jkt was presented at a resource while oauth2.accessTokenRequireDpop is on. | invalid_token (HTTP 401) |
+| `STS-OAUTH-0529` | A DPoP-bound access token was presented with no proof while oauth2.accessTokenRequireDpop is on. | invalid_token (HTTP 401) |
+| `STS-OAUTH-0530` | An access token carrying no cnf x5t#S256 was presented at a resource while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
+| `STS-OAUTH-0531` | A certificate-bound access token was presented at a resource over a connection carrying no matching certificate, while oauth2.accessTokenRequireMtls is on. | invalid_token (HTTP 401) |
 
 ## STS-SAML
 
@@ -2839,6 +2853,8 @@ Raised from: mgmt-api/.
 | `STS-API-0111` | A trust realm's own access token was presented at /admin-api by a client other than that realm's sts-management-api. | HTTP 403 forbidden |
 | `STS-API-0112` | A trust realm's own token or administrator reached a service-wide /admin-api operation, or another realm's. | HTTP 403 forbidden |
 | `STS-API-0113` | A users or groups create that had claimed its name across nodes threw before it could answer; the claim was given back. | HTTP 500 |
+| `STS-API-0120` | A DPoP-bound access token (cnf.jkt) was presented at /admin-api as a Bearer token. | invalid_token (HTTP 401) |
+| `STS-API-0121` | A DPoP proof presented at /admin-api did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 
 ## STS-PORTAL
 
@@ -3051,6 +3067,8 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.js.
 | `STS-DBG-0023` | The /admin/debugger page or GET /admin-api/debugger could not build its report. | HTTP 500 page or JSON |
 | `STS-DBG-0024` | The debugger permission was refused because neither console role group has a member: the empty-roster rule that opens the console to everybody does not open the debugger. | none at issuance (the scope is left off); HTTP 403 at the debugger |
 | `STS-DBG-0030` | A certificate-bound access token (RFC 8705 cnf x5t#S256) was presented to the debugger on a connection without that certificate. | invalid_token (HTTP 401) |
+| `STS-DBG-0031` | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
+| `STS-DBG-0032` | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 
 ## Adding a code
 
