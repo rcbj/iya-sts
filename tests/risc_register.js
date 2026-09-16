@@ -16,9 +16,12 @@
 // Most of this profile belongs over HTTP and is not here. That a SCIM write
 // really does put a Security Event Token on a stream, that a stream asking
 // for the fourteen gets the fourteen back in `events_delivered`, that turning
-// `risc.autoEmit` off stops it — all of that is driven against a running
-// service by the parent project's `tests/risc_protocol.js`, with a real
-// receiver at the far end. What is here is the six things that CANNOT be:
+// `risc.autoEmit` off stops it — all of that is for a job driving a running
+// service with a real receiver at the far end. This header named the parent
+// project's `tests/risc_protocol.js` as that job; no such file exists there
+// (checked 2026-09-16), and the nearest over-HTTP coverage is
+// `tests/vendored/sts_ssf_allowed_events.js`, which emits RISC events by hand.
+// What is here is the six things that CANNOT be asserted over HTTP:
 //
 //   * **ONE DIRECTORY WRITE PRODUCING TWO EVENTS.** A `PUT /Users/:id` that
 //     sets `active` to false AND changes a mail address is two RISC events
@@ -46,7 +49,7 @@
 //
 //   * **THE COUNTERS AGAINST THE RING**, for `caep_register.js`'s reason.
 //
-//   * **THE SUBJECT FORMAT SWITCHING PER EVENT TYPE.** Eleven of the fourteen
+//   * **THE SUBJECT FORMAT SWITCHING PER EVENT TYPE.** Twelve of the fourteen
 //     use `risc.subjectFormat` and the two identifier events ignore it, and a
 //     transmitter that honoured the setting there would send an `iss_sub`
 //     subject on an event whose entire content is an email address.

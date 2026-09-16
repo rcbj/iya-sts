@@ -44,11 +44,12 @@
 //     and which `openssl crl` is then asked to verify, so even that one is read
 //     by an implementation other than the one under test.
 //
-// **MOSTLY NEGATIVES**, for `tests/sts_dpop.js`'s reason: a revocation check
-// that answers `good` for a good certificate looks finished and is worth
-// nothing. What it has to get right is `revoked` for a revoked one at every
-// door, `unknown` — and a REFUSAL only under hard-fail — for a list it could
-// not trust, and NOT dialling anything named by a chain that did not verify.
+// **MOSTLY NEGATIVES**, for `tests/vendored/sts_dpop.js`'s reason: a
+// revocation check that answers `good` for a good certificate looks finished
+// and is worth nothing. What it has to get right is `revoked` for a revoked
+// one at every door, `unknown` — and a REFUSAL only under hard-fail — for a
+// list it could not trust, and NOT dialling anything named by a chain that did
+// not verify.
 //
 // It REVOKES AN ISSUING CA, which would poison anybody else's test sharing its
 // process — one of the reasons every section runs in a child process of its
@@ -3460,12 +3461,12 @@ async function childBody() {
 // and their failure memory — and every one of those is state another file may
 // have left behind, or would inherit from this one.
 //
-// So the whole file runs in three fresh processes — the register-and-CRL half,
+// So the whole file runs in four fresh processes — the register-and-CRL half,
 // the listener half (which adds a trust anchor and revokes a certificate, both
-// of them module state) and the OpenSSL half — and this process only replays
-// what they asserted.
-// That is the arrangement `tests/tls_trust_anchor.js` and
-// `tests/spiffe_authority.js` use for the same class of reason.
+// of them module state), the OpenSSL half and the closing half (sections 12 to
+// 15 and 17) — and this process only replays what they asserted. That is the
+// arrangement `tests/tls_trust_anchor.js` and `tests/spiffe_authority.js` use
+// for the same class of reason.
 // ---------------------------------------------------------------------------
 function spawnChild(which) {
   log.debug("Entering spawnChild().");
@@ -3526,8 +3527,6 @@ function theListeners(t, got) {
   log.debug("Leaving theListeners().");
 }
 
-// The register-and-CRL half, in its own process. It records every assertion
-// rather than logging it, and the parent replays them in order.
 // A harness that RECORDS every assertion rather than logging it, for a child
 // whose parent replays them in order.
 function recordingHarness(results) {
@@ -3568,6 +3567,8 @@ function recordingHarness(results) {
   return t;
 }
 
+// The register-and-CRL half, in its own process. It records every assertion
+// rather than logging it, and the parent replays them in order.
 async function registerChildBody() {
   log.debug("Entering registerChildBody().");
   const results = [];

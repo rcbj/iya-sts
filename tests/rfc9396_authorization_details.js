@@ -29,7 +29,8 @@
 //           resource or scope naming another API, a client's registered types,
 //           a named server's list, malformed JSON;
 //        f. the direct grants (client_credentials), a request object (RFC
-//           9101) carrying details, a pushed request (RFC 9126) refused;
+//           9101) carrying details, a pushed request (RFC 9126) with an
+//           unknown type refused at the push;
 //        g. openid_credential unchanged: no forced consent, identifiers added;
 //        h. registration, RFC 7592 read-back, the console's writes, and the
 //           RFC 9728 import's plan.

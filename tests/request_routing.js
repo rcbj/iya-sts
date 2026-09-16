@@ -187,13 +187,10 @@ function checkTheRoutingPolicy(t) {
 }
 
 // ---------------------------------------------------------------------------
-// THE REALM SEGMENT IS NOT PART OF THE DECISION, which is what keeps the
-// dispatch list from being the first thing in this service that has to name
-// every realm.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// `*` IS HOW "EVERY PROTOCOL RUNS IN THE POOL" IS SAID, and `/tls` is the one
-// thing it does not reach.
+// `*` IS HOW "EVERY PROTOCOL RUNS IN THE POOL" IS SAID, and what it does not
+// reach is `request_pool.js`'s NEVER_DISPATCHED: `/tls`, asserted below, and
+// the pages that report what only the front process holds — the truststore
+// and the embedded debugger's status.
 // ---------------------------------------------------------------------------
 function checkDispatchEverything(t) {
   log.debug("Entering checkDispatchEverything().");
@@ -329,6 +326,11 @@ function checkDispatchEverything(t) {
   log.debug("Leaving checkDispatchEverything().");
 }
 
+// ---------------------------------------------------------------------------
+// THE REALM SEGMENT IS NOT PART OF THE DECISION, which is what keeps the
+// dispatch list from being the first thing in this service that has to name
+// every realm.
+// ---------------------------------------------------------------------------
 function checkTheRealmIsTransparent(t) {
   log.debug("Entering checkTheRealmIsTransparent().");
   t.log.info('=== a realm prefix does not change the routing ===');

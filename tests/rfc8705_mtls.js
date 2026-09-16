@@ -47,7 +47,11 @@
 //           certificate client presenting ANOTHER client's refresh token
 //           still meets the binding;
 //        j. RFC 7591 registration of the five parameters and the flag, and
-//           its refusals.
+//           its refusals;
+//        k. `/admin-api` as a resource server: a token asked for over a
+//           certificate is bound to it, answered with it and refused without;
+//        l. an application's certificate at `GET /tls/sign-in` starts no
+//           browser session in the application's name.
 //
 // Every refusal is asserted by its protocol error AND by its STS code, read
 // back off `/admin-api/audit`, because a code is recorded and never sent.
@@ -755,10 +759,10 @@ function childMain() {
 
     // --- l. an application's certificate at GET /tls/sign-in -----------------
     // It was 9443 until 2026-09-16; that listener is gone and the sign-in it
-    // performed is a route on the main port, which this listener is. The claim
-    // is unchanged and is the one that matters: an application's certificate
-    // is a CLIENT CREDENTIAL for the token endpoint above, and must never be a
-    // browser sign-on in the application's name.
+    // performed is a route on the main port, which this listener stands in
+    // for. The claim is unchanged and is the one that matters: an
+    // application's certificate is a CLIENT CREDENTIAL for the token endpoint
+    // above, and must never be a browser sign-on in the application's name.
     const signIn = await request('GET', '/tls/sign-in', {
       tls: { cert: otherIssued.tls.cert, key: otherIssued.tls.key } });
     note(signIn.status === 200 && signIn.json &&

@@ -32,7 +32,8 @@
 //
 //   * The parent project's `sts/` gitlink is pinned at a commit from before
 //     this repository was reorganised, so a guard written over there today
-//     does not run against this code at all. See the root CLAUDE.md.
+//     does not run against this code at all. tests/CLAUDE.md says the same of
+//     the jobs this repository owns.
 //   * What is actually being guarded is a MODULE CONTRACT — "a store that
 //     holds per-realm state is declared `realms.map()` and not `new Map()`" —
 //     and the assertions below are about that declaration rather than about
@@ -722,7 +723,7 @@ function checkKerberosStores(t) {
 }
 
 // ---------------------------------------------------------------------------
-// 5c. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.js`, the approver
+// 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.js`, the approver
 // index in `gnap/gnap_signals.js` and the counters in `gnap/gnap_monitor.js`.
 //
 // `tests/vendored/sts_gnap_core.js` asserts the over-HTTP half — a token from
