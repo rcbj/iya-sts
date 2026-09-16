@@ -661,15 +661,16 @@ function childMain() {
            'H4. under the limit a verified credential is answered and its ' +
            'buckets cleared (a limit of 1 no longer blocks)',
            JSON.stringify([cleared, afterClear]));
-      const oauthSource = fs.readFileSync(ROOT + '/oauth-oidc/oauth2.js',
+      const oauthSource = fs.readFileSync(ROOT + '/oauth-oidc/oauth2.ts',
                                           'utf8');
-      const counted = (oauthSource.match(/await countSecretFailure\(/g) ||
-                       []).length;
+      // Methods of `OAuth2Server` since #50, so each call is `self.`.
+      const counted = (oauthSource.match(
+        /await self\.countSecretFailure\(/g) || []).length;
       note(counted === 7 && (oauthSource.match(
-             /const overLimit = await countSecretFailure\(/g) || []).length ===
-           counted &&
-           (oauthSource.match(/await settleSecretSuccess\(/g) || []).length ===
-           3,
+             /const overLimit = await self\.countSecretFailure\(/g) ||
+           []).length === counted &&
+           (oauthSource.match(/await self\.settleSecretSuccess\(/g) ||
+            []).length === 3,
            'H5. every client-secret failure at the token, PAR and ' +
            'introspection endpoints is answered on its count, and every ' +
            'success is settled before it is answered');

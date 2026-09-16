@@ -17,7 +17,7 @@
 // the day CAEP landed, because both go through the ONE funnel:
 // `authn.startSession()` and `authn.dropSession()`. `session-presented` did
 // not, because there is no funnel for it — a presentation is a thing each
-// protocol endpoint decides it is doing, and only `oauth-oidc/oauth2.js`
+// protocol endpoint decides it is doing, and only `oauth-oidc/oauth2.ts`
 // called `notePresented()`. So a receiver watching a stream saw a SAML session
 // start and end with every single sign-on between the two missing, and the
 // evidence of the gap was a count of zero, which in this protocol is also what
@@ -51,7 +51,7 @@ const log =
 // back through. A profile added here without a `notePresented()` fails
 // section B by name.
 const PROFILES = [
-  { file: '../oauth-oidc/oauth2.js', via: 'OAuth 2.0 / OIDC' },
+  { file: '../oauth-oidc/oauth2.ts', via: 'OAuth 2.0 / OIDC' },
   { file: '../saml/saml2_sso.ts', via: 'SAML 2.0' },
   { file: '../saml/saml11_sso.ts', via: 'SAML 1.1' },
   { file: '../ws-federation/wsfed.ts', via: 'WS-Federation' },
