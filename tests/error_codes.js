@@ -50,6 +50,7 @@ delete process.env.CONFIG_FILE;
 
 const fs = require('fs');
 const path = require('path');
+const { isSourceFile } = require('./tools/source_file');
 const http = require('http');
 
 const errorCodes = require('../common/error_codes');
@@ -111,7 +112,9 @@ function sourceFiles() {
   const out = [];
   function walk(dir) {
     log.debug("Entering walk().");
-    fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const names = entries.map(function (e) { return e.name; });
+    entries.forEach(function (entry) {
       const full = path.join(dir, entry.name);
       const rel = path.relative(ROOT, full).split(path.sep).join('/');
       if (entry.isDirectory()) {
@@ -120,7 +123,8 @@ function sourceFiles() {
         walk(full);
         return;
       }
-      if (!/\.js$/.test(entry.name)) return;
+      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+      if (!isSourceFile(entry.name, names)) return;
       if (VENDORED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });

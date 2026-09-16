@@ -739,6 +739,7 @@ function checkGnapStores(t) {
   t.log.info('the GNAP stores');
   const fs = require('fs');
   const path = require('path');
+  const { sourceFilesIn } = require('./tools/source_file');
   const store = require('../gnap/gnap_store');
   const monitor = require('../gnap/gnap_monitor');
   const signals = require('../gnap/gnap_signals');
@@ -785,8 +786,8 @@ function checkGnapStores(t) {
   });
 
   const dir = path.join(__dirname, '..', 'gnap');
-  fs.readdirSync(dir)
-    .filter(function (f) { return /\.js$/.test(f); })
+  // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+  sourceFilesIn(fs.readdirSync(dir))
     .forEach(function (file) {
     const src = fs.readFileSync(path.join(dir, file), 'utf8');
     t.check(!/^(const|let|var)\s+\w+\s*=\s*new (Map|Set)\(/m.test(src),

@@ -53,6 +53,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isSourceFile } = require('./tools/source_file');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -422,8 +423,10 @@ function checkNothingRequiresItEarly(t) {
   const offenders = [];
   function walk(dir) {
     log.debug("Entering walk().");
-    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
-      .forEach(function (entry) {
+    const entries = fs.readdirSync(path.join(ROOT, dir),
+                                   { withFileTypes: true });
+    const names = entries.map(function (e) { return e.name; });
+    entries.forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
         // `.claude` holds agent worktrees: a second checkout of this
@@ -433,7 +436,8 @@ function checkNothingRequiresItEarly(t) {
         walk(rel);
         return;
       }
-      if (!/\.js$/.test(entry.name)) { return; }
+      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
+      if (!isSourceFile(entry.name, names)) { return; }
       if (allowed.indexOf(rel) >= 0) { return; }
       if (/admin-core\//.test(rel)) { return; }
       const src = read(rel);
@@ -590,8 +594,10 @@ function checkNobodyReachesThroughTheConsole(t) {
   const offenders = [];
   function walk(dir) {
     log.debug("Entering walk().");
-    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
-      .forEach(function (entry) {
+    const entries = fs.readdirSync(path.join(ROOT, dir),
+                                   { withFileTypes: true });
+    const names = entries.map(function (e) { return e.name; });
+    entries.forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
         // `.claude`: see the first walk above.
@@ -600,7 +606,9 @@ function checkNobodyReachesThroughTheConsole(t) {
         walk(rel);
         return;
       }
-      if (!/\.js$/.test(entry.name) || /^admin-core\//.test(rel)) { return; }
+      if (!isSourceFile(entry.name, names) || /^admin-core\//.test(rel)) {
+        return;
+      }
       read(rel).split('\n').forEach(function (l, i) {
         if (/^\s*(\/\/|\*)/.test(l)) { return; }
         (l.match(/\badmin\.([A-Za-z0-9_$]+)\s*\(/g) || []).forEach(
