@@ -11481,8 +11481,9 @@ const ROUTES = [
                  'every other process against the same store. A `file` ' +
                  'anchor is not stored there and comes back at the next ' +
                  'start however it was removed.\n\n**ONE TRUSTSTORE FOR THE ' +
-                 'PROCESS, NOT PER REALM.** The listeners are shared by ' +
-                 'every trust realm, so this answers the same list under ' +
+                 'PROCESS, NOT PER REALM.** The sockets that verify a client ' +
+                 'certificate are shared by every trust realm, so this ' +
+                 'answers the same list under ' +
                  'every realm prefix.\n\n**NO PRIVATE KEY IS IN THIS REPLY** ' +
                  '— the truststore holds certificates and nothing else.',
     mirrors: 'GET /admin/tls/trust',
@@ -11630,9 +11631,10 @@ const ROUTES = [
                  'created with a RANDOM key: the principal, the kvno, the ' +
                  'enctypes, when created and last rotated.\n\n**NO KEY ' +
                  'MATERIAL IS IN THIS REPLY**, sealed or otherwise — both ' +
-                 'lists are built from the public info attributes. The KDC ' +
-                 'is the process\'s, so this answers the default trust ' +
-                 'realm\'s principals under every realm prefix.',
+                 'lists are built from the public info attributes. A trust ' +
+                 'realm has a KDC and a principal database of its own ' +
+                 'since 2026-09-15, so a realm prefix answers that ' +
+                 'realm\'s principals.',
     mirrors: 'GET /admin/kerberos/principals',
     // `per` and the two lists' own page parameters — NOT pagingParameters(),
     // whose `page` this resource never reads.
