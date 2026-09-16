@@ -21,11 +21,13 @@
 // says". It is the four claims the FEATURE makes, each of which is a claim a
 // person is relying on and each of which is breakable by an innocent edit:
 //
-//   1. **A SET IS ISSUED BY AN ACT AND NOT BY A REQUEST** — enrolling a
-//      second factor creates one, and nothing else anywhere does.
-//   2. **ONCE.** Not once per enrolment. This is the assertion that protects
-//      somebody holding a printed list: re-enrolling must not silently
-//      replace it.
+//   1. **A SET IS GENERATED WHEN THE PERSON ASKS, AND STORED ONLY WHEN THEY
+//      CONFIRM** — enrolling a second factor ADVISES a set and issues none.
+//      (Until 2026-09-11 enrolling issued one; the section says why that
+//      reversed.)
+//   2. **WHAT IS STORED IS A HASH**, so nothing can show a code again — and a
+//      second set REPLACES the first, which is the sharp edge the page warns
+//      about. (Until 2026-09-11 a set was issued ONCE and sealed.)
 //   3. **A CODE IS SPENT** — each works exactly once, and a replay is refused
 //      BY NAME rather than as a wrong code.
 //   4. **A SET IS NEVER A WAY IN AND NEVER THE FACTOR DEMANDED.** Holding
@@ -36,12 +38,11 @@
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, WHICH IS THE QUESTION `tests/CLAUDE.md` ASKS FIRST.
 //
-// Claims 2 and 3 need to reach INSIDE the credential store. "Issued once"
-// means asserting that a second enrolment did not rewrite an attribute, and
-// the codes themselves — which is what would have been rewritten — are never
-// on the wire: no endpoint in this service returns somebody's recovery codes
-// except the person's own `/portal/mfa`, and the third claim's interesting
-// case is a directory write that FAILS, which no HTTP request can ask for.
+// Claims 2 and 3 need to reach INSIDE the credential store. "A hash is
+// stored" means reading the bytes on the entry, and the codes themselves are
+// never on the wire after the one page that shows a new set at
+// `/portal/mfa`; the third claim's interesting case is a directory write
+// that FAILS, which no HTTP request can ask for.
 //
 // The over-HTTP half is `tests/vendored/sts_portal_backup_codes.js`, which
 // drives the portal and the sign-in door with a code it reads off the page.
@@ -69,9 +70,9 @@
 //     deliberately not exported by `ldap/ldap_server.js`, and
 //     `credentials.js` deliberately offers no getter. Leaving a broken store
 //     behind would break every later file in this process, which run in one.
-//   * The remaining route — sealing with no key-encryption key — needs
-//     `STS_KEYS_SOURCE` set before `common/config.js` is first required, and
-//     by the time this file runs another test file has already required it.
+//   * The route that used to remain — sealing with no key-encryption key —
+//     disappeared on 2026-09-11: a set of hashes is stored unsealed, so
+//     `writeBackupCodesRecord()` has no sealing step left to fail.
 //
 // Exporting a hook table from `ldap/ldap_server.js` purely so that this branch
 // could be reached was considered and refused: production API whose only
@@ -466,19 +467,12 @@ function run(t) {
 
   t.log.info('=== a set this process cannot read is UNUSABLE, never absent ' +
              '===');
-  // The distinction that stops a second set being written over one somebody is
-  // holding on paper. It is asserted through `backupCodeStatus()` on a person
-  // who holds a NORMAL set, and then on the two states that are reachable —
-  // because the unreadable state itself is produced by a rotated
-  // key-encryption key, which this process cannot arrange for the reason the
-  // header gives about `STS_KEYS_SOURCE`.
-  //
-  // What IS checked here is the half that a future edit could break without
-  // any key rotation: that `ensureBackupCodes()` refuses to issue over ANY
-  // existing record, including one with every code spent. A set nobody can use
-  // and a set nobody can read are the same case as far as that function is
-  // concerned, and it is the one that matters — reissuing over a spent set
-  // would be a person's printed list going dead at a moment nothing announced.
+  // The unreadable state itself is a LEGACY SEALED set under a rotated
+  // key-encryption key, which this process cannot arrange — a hashed set
+  // (every set since 2026-09-11) is not sealed and has nothing to fail to
+  // open. What IS checked here is the reachable neighbour: a set with every
+  // code spent is still PRESENT, reported by its counts, and replaced only
+  // when the person generates a new one.
   const erin = somebody();
   const erinCodes = enrolAndTakeCodes(erin);
   erinCodes.forEach(function (code) {

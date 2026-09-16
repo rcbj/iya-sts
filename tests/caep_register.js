@@ -35,10 +35,10 @@
 //     purpose and hoping the gap landed where it was wanted.
 //
 //   * **THE COUNTERS AGAINST THE RING.** `counts` never forgets and `events`
-//     keeps the last twenty-five, and the defect worth catching is the two
-//     being conflated — a page that answered "how many" from the ring would
-//     say three where there were nine. Reaching that over HTTP means sending
-//     twenty-six events.
+//     keeps the last `caep.eventsPerSession` (twenty-five by default), and
+//     the defect worth catching is the two being conflated — a page that
+//     answered "how many" from the ring would say three where there were
+//     nine. Reaching that over HTTP means sending twenty-six events.
 //
 //   * **THE REGISTER OUTLIVING THE SESSION.** A row saying `revoked` for a
 //     session the service no longer holds is the whole point of the page, and
