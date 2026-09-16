@@ -3,16 +3,18 @@
 // File: xacml_admin.js
 //
 // ---------------------------------------------------------------------------
-// THE POLICY ADMINISTRATION POINT: FOUR CONSOLE PAGES.
+// THE POLICY ADMINISTRATION POINT: THE CONSOLE PAGES.
 //
 //   /admin/xacml            settings, and what the PDP currently decides with
 //   /admin/xacml/policies   the repository — enable, disable, choose the root,
 //                           delete, and create from a template
 //   /admin/xacml/editor     THE GUIDED EDITOR
+//   /admin/xacml/peps       the remote enforcement points (phase five)
 //   /admin/xacml/decide     ask the PDP a question and see the answer
+//   /admin/xacml/monitor    the decision counters, filed under Monitoring
 //
 // Drawn HERE rather than in `admin-ui/admin.js`, the way `ldap/ldap_server.js`
-// draws its five `/admin/ldap/*` pages: a console page is a `path` and a
+// draws its `/admin/ldap/*` pages: a console page is a `path` and a
 // `label` in that file's `SECTIONS` whoever builds the body. What crosses is
 // `admin.respond()` for the shell, `admin.configFormsFor()` for the settings
 // block and `admin.respondToAction()` for a form POST — three functions rather
@@ -250,8 +252,9 @@ function policiesJson() {
 // `common/issuance_gate.js`'s decider and requiring `xacml_access_pep.js` ARMS
 // `common/access_gate.js` — so a top-level require in this file would arm both
 // gates from a CONSOLE module, which is precisely the hazard `admin.js`'s
-// eleventh slot exists to avoid: a process holding the console and not
-// `xacml/xacml.js` would gate the whole service with half this family present.
+// `setRolePreviewer()` slot exists to avoid: a process holding the console and
+// not `xacml/xacml.js` would gate the whole service with half this family
+// present.
 //
 // It is also free. `xacml/xacml.js` requires this file at 23c and both PEPs
 // immediately after it, so by the time any route here can be reached both are
@@ -1656,12 +1659,6 @@ function editorJson(name) {
   return json;
 }
 
-// The inline edit form for one node, or '' where the node has no fields of its
-// own. This is where the "next valid element" idea stops being a menu and
-// becomes a form: a Match's function dropdown carries only the two-argument
-// boolean predicates, and choosing one RESETS the datatype of both its value
-// and its attribute, because a Match whose literal is a string and whose
-// designator is an integer does not typecheck.
 // A yes/no control that can say NO. It is a <select> and not a checkbox, and
 // that is the one piece of markup on this page worth arguing about: an
 // unchecked checkbox SENDS NOTHING, so a form carrying one could never turn
@@ -2446,10 +2443,11 @@ app.get('/admin/xacml/decide', function (req, res) {
 
 
 // ---------------------------------------------------------------------------
-// FILL admin.js's TENTH SLOT, so that `/admin-api` can mirror these four pages
-// without requiring this module — which it must not do, because it is 19 in
-// the require order and this file is reached at 23c, and a require the wrong
-// way would register every /xacml route ahead of the management API's own.
+// FILL admin.js's `setXacmlPages()` SLOT, so that `/admin-api` can mirror
+// these pages without requiring this module — which it must not do, because it
+// is 19 in the require order and this file is reached at 23c, and a require the
+// wrong way would register every /xacml route ahead of the management API's
+// own.
 //
 // THE ACTION IS ONE FUNCTION over both surfaces. `/admin/xacml/policies` and
 // `/admin/xacml/editor` are two pages with two POST endpoints, and a

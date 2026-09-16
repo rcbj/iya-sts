@@ -32,8 +32,8 @@
 //
 // ---------------------------------------------------------------------------
 // THE LOGGER IS BUNYAN AND THE SHAPE IS THE MOCK'S, deliberately: the engine
-// calls `log.debug()` on entry and exit of every function longer than about
-// ten lines (this repository's style rule), and a logger that did not answer
+// calls `log.debug()` on entry and exit of every named function (this
+// repository's style rule since 2026-09-12), and a logger that did not answer
 // `debug`, `info`, `warn` and `error` would make the engine throw somewhere
 // unpredictable rather than fail to load.
 // ===========================================================================

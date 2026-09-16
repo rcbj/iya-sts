@@ -85,8 +85,9 @@
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3). It registers no route and requires `helpers.js`,
-// `config.js` and node's own `http`/`https`/`url` — nothing else here — so it
-// cannot join a cycle and a test can drive it against a throwaway listener.
+// `config.js`, `audit.js`, `error_codes.js`, `version.js` and node's own
+// `http`/`https`/`url` — none of which reaches back here — so it cannot join a
+// cycle and a test can drive it against a throwaway listener.
 // ===========================================================================
 
 const https = require('https');
@@ -164,8 +165,8 @@ function urlProblem(raw) {
     parsed = new URL(String(raw));
   } catch (error) {
     log.debug("Caught in urlProblem(): " + ((error && error.message) || error));
-    // Not JSON and not a URL; the raw text is what gets shown, so the parse
-    // failure itself carries no information worth keeping.
+    // Not a URL. The parser's own message adds nothing a person reading the
+    // console row needs, so the refusal is the one sentence below.
     log.debug('Leaving urlProblem(). Unparseable.');
     return 'That is not a URL.';
   }

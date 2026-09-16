@@ -196,8 +196,9 @@ function call(options, method, path, body) {
       cert: options.clientCertificate || undefined,
       key: options.clientKey || undefined,
       ca: options.pdpCa || undefined,
-      // THE MOCK REGENERATES ITS KEY ON EVERY START AND SIGNS IT ITSELF, so
-      // there is no anchor to verify against until somebody fetches one. That
+      // THE MOCK'S LISTENER CERTIFICATE IS ISSUED BY A SERVICE ROOT THAT
+      // DEVELOPMENT MODE REGENERATES ON EVERY START, so there is no fixed
+      // anchor to verify against until somebody fetches one (PEP_TLS_CA). That
       // is a property of the thing this PEP exists to talk to, not laziness
       // here — and it is why PEP_TLS_INSECURE exists and why `pep.js` logs it
       // on every start rather than once.
@@ -415,10 +416,10 @@ async function pull(options) {
   }
   // PARSED AND STATICALLY VALIDATED HERE, by this PEP's own copy of the
   // validator, and NOT taken on trust because the PDP said it was fine. That
-  // is the same reason `tests/sts_dpop.js` writes its own DPoP client: if both
-  // ends of the exchange came from one running process, a shared
-  // misunderstanding would pass and interoperate with nobody. Here the two
-  // ends are the same SOURCE, which is deliberate — but they are different
+  // is the same reason `tests/vendored/sts_dpop.js` writes its own DPoP
+  // client: if both ends of the exchange came from one running process, a
+  // shared misunderstanding would pass and interoperate with nobody. Here the
+  // two ends are the same SOURCE, which is deliberate — but they are different
   // PROCESSES with different memory, and a document that has been through a
   // JSON round trip is a document worth parsing again.
   const repository = {};
@@ -455,7 +456,9 @@ async function pull(options) {
       root = engine.xml.parsePolicy(said.policies[0].document);
     } catch (error) {
       log.debug("Caught in pull(): " + ((error && error.message) || error));
-      // Already counted in `refused` above; nothing more to do here.
+      // Not reachable in practice: this branch runs only when the same
+      // document parsed cleanly above (`!refused.length`). If it did throw,
+      // there is no root and the state below says so.
       root = null;
     }
   }

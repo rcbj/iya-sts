@@ -194,9 +194,11 @@ PEP_RESOURCE=https://expenses.example.test \
 node xacml-pep/pep.js
 ```
 
-`PEP_TLS_INSECURE=true` is the ordinary setting against this mock: it regenerates
-its server key on every start and signs it itself, so there is nothing to verify
-against. It is logged on every start rather than once.
+`PEP_TLS_INSECURE=true` is the ordinary setting against this mock: in
+development mode its listener certificate is issued by a service Root that is
+regenerated on every start, so there is no fixed anchor to verify against
+(point `PEP_TLS_CA` at the current Root to verify anyway). It is logged on every
+start rather than once.
 
 You should see, within a second or two:
 
