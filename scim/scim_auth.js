@@ -14,16 +14,20 @@
 // asks nobody's name is the one place in a permissive mock where "permissive"
 // stops being a teaching device and starts being a hole somebody copies.
 //
-// **IT IS STILL PERMISSIVE, AND THAT IS THE WHOLE DESIGN.** Nothing here is a
-// lock; it is a turnstile. Anybody may get an access token from this service's
-// own token endpoint with any grant, asking for whatever scope they like.
-// Anybody may present Basic with any username and any password but one. Anybody
-// may register a HOBA public key and then authenticate with it. What changed is
-// that a caller must now SAY who they are through one of the schemes RFC 7644
-// section 2 names, and — for the OAuth ones — hold the scope for what they are
-// about to do. That is exactly the shape a real deployment has, which is what
-// makes a client's authentication and authorization paths runnable here; it is
-// not a claim that this service checks anybody.
+// **IN DEVELOPMENT MODE IT IS STILL PERMISSIVE, AND THAT IS THE WHOLE
+// DESIGN.** Nothing here is a lock there; it is a turnstile. (In product mode
+// the three "Anybody" sentences that follow do not hold as written —
+// passwords are verified, Digest is not offered and HOBA registration is
+// confined; scim/CLAUDE.md, the 2026-09-12 audit.) Anybody may get an access
+// token from this service's own token endpoint with any grant, asking for
+// whatever scope they like. Anybody may present Basic with any username and any
+// password but one. Anybody may register a HOBA public key and then
+// authenticate with it. What changed is that a caller must now SAY who they are
+// through one of the schemes RFC 7644 section 2 names, and — for the OAuth ones
+// — hold the scope for what they are about to do. That is exactly the shape a
+// real deployment has, which is what makes a client's authentication and
+// authorization paths runnable here; it is not a claim that this service checks
+// anybody.
 //
 // ---------------------------------------------------------------------------
 // WHAT THE SPECIFICATION ACTUALLY SAYS, BECAUSE IT IS SHORTER THAN PEOPLE
@@ -147,14 +151,16 @@
 // IT IS A LIBRARY (rule 3) AND IT REGISTERS NOTHING.
 //
 // It requires `helpers.js`, `config.js`, `dpop.js`, `mtls.js`,
-// `admin_stats.js`, `authn.js`, `tls_server.js` and `ldap_server.js`, and none
-// of those requires it back, so it cannot join a cycle. The last three are the
-// only ones worth a sentence: they register routes, so requiring them from a
-// module read EARLIER than they are would move those routes in the express
-// router — but `scim.js`, the only thing that requires this file, already sits
-// after all three in server.js's require order, so nothing moves. That is rule
-// 3e's test applied rather than a slot added by analogy: there is no cycle and
-// no route moves, so these are plain requires.
+// `admin_stats.js`, `authn.js`, `tls_server.js` and `ldap_server.js` — and the
+// leaves listed beside each require below — and none of those requires it back,
+// so it cannot join a cycle. `authn.js`, `tls_server.js` and `ldap_server.js`
+// are the only ones worth a sentence: they register routes, so requiring them
+// from a module read EARLIER than they are would move those routes in the
+// express router — but `scim.js`, the only thing that requires this file,
+// already sits after all three in the require order
+// (`common/protocol_stack.js`), so nothing moves. That is rule 3e's test
+// applied rather than a slot added by analogy: there is no cycle and no route
+// moves, so these are plain requires.
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -759,12 +765,13 @@ function attemptBearer(req, ctx) {
 // ---------------------------------------------------------------------------
 // HTTP BASIC (RFC 7617).
 //
-// Any username, any password but one. That is the LDAP bind rule stated again,
-// and the exception is the same reserved value: `invalid` is refused so that a
-// 401 is reachable on a scheme which otherwise cannot produce one. Note what is
-// NOT checked — the password — which is why what this authenticates is a name
-// and why the row says so in the ServiceProviderConfig rather than leaving a
-// reader to assume a check happened.
+// IN DEVELOPMENT MODE: any username, any password but one. That is the LDAP
+// bind rule stated again, and the exception is the same reserved value:
+// `invalid` is refused so that a 401 is reachable on a scheme which otherwise
+// cannot produce one. Note what is NOT checked there — the password — which is
+// why what this authenticates is a name and why the row says so in the
+// ServiceProviderConfig rather than leaving a reader to assume a check
+// happened. In product mode the password is verified (see the call below).
 // ---------------------------------------------------------------------------
 function attemptBasic(req, ctx) {
   log.debug("Entering attemptBasic().");
@@ -837,8 +844,9 @@ function attemptBasic(req, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP DIGEST (RFC 7616), WHICH IS THE ONE SCHEME HERE THAT CHECKS A PASSWORD —
-// AND CANNOT NOT.
+// HTTP DIGEST (RFC 7616), WHICH IS THE ONE SCHEME HERE THAT CHECKS A PASSWORD
+// IN DEVELOPMENT MODE — AND CANNOT NOT. (In product mode Basic is verified too,
+// and Digest is not offered at all: see `digestAllowedByMode()`.)
 //
 // This is the Kerberos argument, made again for the same reason. The digest
 // response is a hash OVER the password, so a server that accepted any response
@@ -900,9 +908,9 @@ function digestAlgorithms() {
   });
 }
 
-// The nonces this server has issued. In memory and dying with the process like
-// every other store here; bounded, because the value comes off a challenge
-// anybody can ask for by making an unauthenticated request.
+// The nonces this server has issued. Bounded, because the value comes off a
+// challenge anybody can ask for by making an unauthenticated request, and
+// persisted since 2026-09-14 — see the last block of this note.
 //
 // **THE BOUND IS `scim.maxDigestNonces` SINCE 2026-09-12** (2000, the old
 // constant, is its default). Evicting a nonce that has not expired does NOT
@@ -1242,9 +1250,10 @@ function attemptDigest(req, ctx) {
 // **THE SIGNATURE IS REALLY VERIFIED**, which is the same decision the Digest
 // password really being checked is, and for the same reason: a signature check
 // that passes anything is not the scheme, and the part of a client this
-// exercises IS the signing. What is permissive is the REGISTRATION — anybody
-// may register a key for any name, exactly as any name authenticates
-// everywhere else here. The turnstile, not the lock.
+// exercises IS the signing. What is permissive is the REGISTRATION — in
+// development mode anybody may register a key for any name, exactly as any
+// name authenticates everywhere else there. The turnstile, not the lock.
+// Outside development it is confined (2026-09-12): see `registerHobaKey()`.
 //
 // Two details of RFC 7486 are easy to get wrong and both are written out below:
 // the TBS blob is length-prefixed with a COLON and the fields are concatenated
@@ -1262,8 +1271,9 @@ function attemptDigest(req, ctx) {
 const HOBA_ALG_RSA_SHA256 = '0';
 
 // The challenges this server has issued, and the (kid, challenge, nonce)
-// triples it has already seen. Both bounded and both in memory: a challenge is
-// something anybody can ask for by making an unauthenticated request.
+// triples it has already seen. Both bounded: a challenge is something anybody
+// can ask for by making an unauthenticated request. The challenges are
+// persisted and the triples are not — see the last block of this note.
 //
 // **BOTH BOUNDS ARE SETTINGS SINCE 2026-09-12** — `scim.maxHobaChallenges`
 // (2000) and `scim.maxHobaSeen` (5000), the old constants as their defaults —
@@ -1652,17 +1662,21 @@ function attemptCookie(req, ctx) {
 //
 // The first scheme RFC 7644 section 2 names. Available only where this request
 // arrived over TLS and the certificate VERIFIED — which means `global.https`
-// is on, so the main port asks every connection for one, and somebody has
-// POSTed an anchor to /tls/trust.
+// is on, so the main port asks every connection for one, and the chain ends at
+// an anchor somebody POSTed to /tls/trust or, for a certificate this service
+// issued, at the service Root (`tls.trustIssuedClientCertificates`; see
+// tls/CLAUDE.md).
 //
-// **VERIFIED IS THE WHOLE OF WHAT IS CHECKED, and that is the same sentence
-// /tls says.** No revocation is consulted and no directory entry has to exist.
-// What is different HERE is that it now leads somewhere: on the TLS listeners a
-// verified certificate is reported and grants nothing, and at these endpoints
-// it authenticates a caller who may then write to the directory. That is the
-// first place in this service where a certificate is a credential rather than
-// an observation, which is worth knowing before turning `scim.authClientCert`
-// on in a deployment that had assumed otherwise.
+// **VERIFIED IS WHERE THE CHECKING STARTS, and no directory entry has to
+// exist.** Since 2026-09-12 revocation is consulted as well, and since
+// 2026-09-13 a chain to the service Root is taken only where
+// `common/tls_client_certificates.js` says the leaf is an identity — both
+// below. At these endpoints a verified certificate authenticates a caller who
+// may then write to the directory. It was the first place in this service
+// where a certificate was a credential rather than an observation;
+// `GET /tls/sign-in`, the XACML gates and RFC 8705 client authentication have
+// joined it since, and it is still worth knowing before turning
+// `scim.authClientCert` on in a deployment that had assumed otherwise.
 //
 // The identity is the subject in RFC 4514 form — the same string tls_server.js
 // records and the directory files a certificate under, through the same
@@ -1762,8 +1776,12 @@ function attemptClientCertificate(req, ctx) {
 //     already-authenticated context — the person is signed in and is adding a
 //     credential to the account they are signed in to. Here there is usually no
 //     such context, so `username` is a parameter, with the browser session used
-//     when there is one and no username given. Anybody may register any key for
-//     any name, which is the same statement as "every LDAP bind succeeds".
+//     when there is one and no username given. In development mode anybody may
+//     register any key for any name, which is the same statement as "every
+//     LDAP bind succeeds". Outside it (2026-09-12) a key may be added only to
+//     the EXISTING account the caller's sign-on session is, and a kid already
+//     registered to another account is refused in every mode — see
+//     scim/CLAUDE.md, the 2026-09-12 audit.
 //   * The key is stored ON THE PERSON'S DIRECTORY ENTRY, so it is visible in an
 //     ldapsearch and on /admin/users like everything else about them. If the
 //     name is new the entry is created through `createUser()` — the same door
@@ -2032,9 +2050,10 @@ function authenticate(req, need) {
 // nodes at once is accepted by both. So a decision that carries a spend (the
 // `SPEND` symbol, `withSpend()`) is claimed through `cluster_claims.js` here,
 // BEFORE the session and the policy run, so a replay mints no session: `used`
-// is the scheme's own replay refusal, `store` is 503 — a credential this
-// service cannot prove unspent is not one it accepts. With no shared store the
-// claim is this process's memory, as atomic as the Set it stands behind.
+// is the scheme's own replay refusal, `store` is a 500 (see `spendPresented()`)
+// — a credential this service cannot prove unspent is not one it accepts. With
+// no shared store the claim is this process's memory, as atomic as the Set it
+// stands behind.
 //
 // `scim.js` calls this; `authenticate()` stays synchronous for the callers
 // that read a decision in one tick, and does everything else identically.
@@ -2299,12 +2318,11 @@ function settleDecision(req, wanted, decision) {
 // already the longest function in this file.
 //
 // **AN ANONYMOUS DECISION GETS NO SESSION**, which is not a special case: it
-// means authentication is off — unreachable since 2026-09-06 — or this is
-// the open discovery endpoint, so
-// nobody authenticated and there is nothing to hold a session for. It returns
-// null and the policy is asked about an unauthenticated subject — which the
-// built-in policy refuses only if somebody has turned `requireAuthenticated`
-// into a requirement for this surface.
+// means authentication is off — unreachable since 2026-09-06 — or this is the
+// open discovery endpoint, so nobody authenticated and there is nothing to hold
+// a session for. It returns null and the policy is asked about an
+// unauthenticated subject — which the built-in policy refuses only if somebody
+// has turned `requireAuthenticated` into a requirement for this surface.
 function sessionFor(decision) {
   log.debug("Entering sessionFor().");
   if (!decision || decision.anonymous || !decision.principal) {
@@ -2363,8 +2381,9 @@ function recordAuthentication(decision, row) {
       method: row.name,
       // RFC 8176. Stated only where something really was checked: Digest hashes
       // the password so `pwd` is honest, HOBA verifies a signature so `sig` is,
-      // and Basic checked nothing at all — where nothing was stated, nothing is
-      // written onto the entry, which is applyAuthenticationFactors()'s rule.
+      // and Basic checks nothing in development mode, so it states nothing (in
+      // either mode) — where nothing was stated, nothing is written onto the
+      // entry, which is applyAuthenticationFactors()'s rule.
       amr: row.id === 'digest' ? ['pwd'] : (row.id === 'hoba' ? ['sig'] : []),
       note: decision.note || ''
     });
