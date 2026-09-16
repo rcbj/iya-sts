@@ -8,7 +8,8 @@
 //
 // `xacml_role_pep.js` beside this file decides what may be ISSUED. This one
 // decides who may REACH something: the admin console, the management API, the
-// User Portal, SCIM and the SPIRE Server API. It fills
+// User Portal, SCIM, the SPIRE Server API, the embedded debugger and the
+// `/xacml` surface itself (`common/access_gate.js` lists them). It fills
 // `common/access_gate.js`'s decider exactly as that one fills
 // `common/issuance_gate.js`'s, and the two are deliberately the same shape.
 //

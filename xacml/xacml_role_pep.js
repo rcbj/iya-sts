@@ -91,9 +91,9 @@ const roles = require('../common/roles');
 const gate = require('../common/issuance_gate');
 const model = require('./xacml_model');
 const store = require('./xacml_store');
-// The decision counters. A LEAF that registers no route and requires only
-// config, realms, helpers and the PEP register — see its header for why it may
-// not require the console, which is the constraint that decides where the
+// The decision counters. A LEAF that registers no route and requires nothing
+// that does — see its header for the list and for why it may not require the
+// console, which is the constraint that decides where the
 // /admin/xacml/monitor page lives.
 const monitor = require('./xacml_monitor');
 const pdp = require('./xacml_pdp');
@@ -568,11 +568,11 @@ function preview(question) {
 // that never loads the XACML family — the gate answers "allowed" and this
 // service is what it always was.
 // ---------------------------------------------------------------------------
-// AND THE CONSOLE'S PREVIEW, which is admin.js's ELEVENTH slot. Filled from
-// here rather than that module requiring this one, and rule 3e's test answers
-// yes both ways round: a require from `admin-ui/admin.js` (18) to this file
-// would load the XACML engine there and — much worse — fill the DECIDER above
-// from the console, so a process that loaded the console and not
+// AND THE CONSOLE'S PREVIEW, which is admin.js's `setRolePreviewer()` slot.
+// Filled from here rather than that module requiring this one, and rule 3e's
+// test answers yes both ways round: a require from `admin-ui/admin.js` (18) to
+// this file would load the XACML engine there and — much worse — fill the
+// DECIDER above from the console, so a process that loaded the console and not
 // `xacml/xacml.js` would gate every issuance in the service with half this
 // family present. A require from here to `admin.js` would close a cycle,
 // because `xacml_admin.js` requires it for the page shell.

@@ -46,7 +46,7 @@ FROM node:22-alpine
 WORKDIR /usr/src/pep
 
 # THE DEPENDENCIES FIRST, so that editing a source file below re-runs neither
-# the install nor the download. Three packages: @xmldom/xmldom for the policy
+# the install nor the download. Two packages: @xmldom/xmldom for the policy
 # reader, bunyan for the logger the engine's style rules assume, and nothing
 # else — a PEP that had pulled in the mock's dependency set would be evidence
 # that the shim below is not doing its job.

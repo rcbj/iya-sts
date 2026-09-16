@@ -15,7 +15,7 @@
 //
 // Keeping it DOM-free is the same rule the rest of this directory follows, and
 // here it buys something specific: the grammar is testable in node without a
-// browser, a page or a form, so `tests/xacml_service.js` can assert that a
+// browser, a page or a form, so `tests/xacml_pap.js` can assert that a
 // `<Match>` offers exactly the two-argument boolean functions and nothing else.
 // A grammar that only existed inside a `<select>` could not be checked at all.
 //
@@ -739,9 +739,9 @@ function applyEdit(policy, path, action, params) {
       // A REFERENCE TO SOMETHING THAT IS NOT THERE YET IS LEGAL AND IS NOT AN
       // ERROR HERE. It is resolved from the repository at DECISION time, not
       // at load time, so a policy may reference one that has not been written
-      // yet — and `xacml_store.js` reports an unresolved reference on the
-      // decision rather than refusing the document. Refusing it here would
-      // make the order in which two policies are authored matter.
+      // yet — and `xacml_pdp.js` reports an unresolved reference on the
+      // decision rather than the store refusing the document. Refusing it here
+      // would make the order in which two policies are authored matter.
       ref: given.ref ? String(given.ref) : 'urn:example:policy:referenced',
       version: given.version ? String(given.version) : null
     });
@@ -1703,7 +1703,7 @@ function tree(policy) {
 // rather than a typing rule, so `xacml_validate.js` says nothing about it and
 // never will — that file refuses what is CERTAINLY WRONG for every request,
 // and a missing XPathVersion changes no decision this PDP makes, because this
-// PDP has exactly one XPath engine and does not switch dialects on a URI.
+// PDP evaluates no XPath at all, so there is no dialect to switch on a URI.
 //
 // So it is reported rather than refused, and reported where it can be fixed:
 // the editor page draws it beside the field that sets it. Refusing the write

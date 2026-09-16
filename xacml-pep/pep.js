@@ -44,11 +44,11 @@
 // list, deliberately. It is the PEP's own decision — the bias and the
 // obligation rule — and a PEP that imported the PDP's enforcement would be
 // demonstrating that two processes agree because they are one program, which
-// is the thing `tests/sts_dpop.js` refuses to do when it writes its own DPoP
-// client. Written out here, this PEP can be configured with a DIFFERENT bias
-// from the mock's embedded one, and the two then disagree about exactly the
-// answers the two biases disagree about — which is the demonstration worth
-// having.
+// is the thing `tests/vendored/sts_dpop.js` refuses to do when it writes its
+// own DPoP client. Written out here, this PEP can be configured with a
+// DIFFERENT bias from the mock's embedded one, and the two then disagree about
+// exactly the answers the two biases disagree about — which is the
+// demonstration worth having.
 //
 // The rule, both halves:
 //
@@ -358,18 +358,18 @@ function enforce(answer) {
 // ---------------------------------------------------------------------------
 // A DECISION, HERE, WITH WHAT WAS PULLED.
 //
-// THERE IS NO PIP. Every attribute a policy asks about has to be in the
-// request, and one that is not produces an empty bag — which is a perfectly
-// ordinary XACML result rather than an error. That is not a gap in this
-// container: a real PEP knows who the caller is and generally nothing else
-// about them, and the mock's PIP reads a person's entry in an embedded
-// directory this process cannot see and should not have.
+// THERE IS NO LOCAL PIP. The mock's PIP reads a person's entry in an embedded
+// directory this process cannot see and should not have, so an attribute the
+// request did not carry is asked of the PDP's `POST /xacml/pip` through
+// `pip.js` (since 2026-09-06; see the PIP block below). With `PEP_PIP` off, or
+// no client certificate, it is an empty bag — a perfectly ordinary XACML
+// result rather than an error.
 //
-// So a policy that decides on `employeeType` decides here only if the caller
-// asserts one. `GET /protected?employeeType=staff` is how this container lets
-// somebody see that, and it is honest about what it means: an attribute the
-// SUBJECT asserted about itself, which no real deployment would believe and
-// which is exactly the sort of thing a mock exists to let you try.
+// A caller may still assert attributes itself: `GET
+// /protected?employeeType=staff` is how this container lets somebody see
+// that, and it is honest about what it means: an attribute the SUBJECT
+// asserted about itself, which no real deployment would believe and which is
+// exactly the sort of thing a mock exists to let you try.
 // ---------------------------------------------------------------------------
 async function decide(query) {
   log.debug('Entering decide().');

@@ -365,11 +365,13 @@ function number(value) {
 // against a THROWAWAY REALM (`XACML_PEP_REALM`, `pep-e2e` by default), so a
 // registration made by a passing suite has never been in the default realm and
 // never will be — while the default realm's page said, in effect, that nothing
-// had registered. **And that job REMOVES the realm at its teardown**, which
-// takes its `ou=peps` with it, so after a green run the honest answer really is
-// "none anywhere" — with a PEP container still running and still polling a
-// realm that is gone. Those are two different states and a reader has to be
-// able to tell them apart.
+// had registered. **That job REMOVED the realm at its teardown until
+// 2026-09-06**, taking its `ou=peps` with it, so after a green run the honest
+// answer was "none anywhere" — with a PEP container still running and still
+// polling a realm that was gone. The suite leaves its realms standing now, so
+// the ordinary state after a run is the second one: a registration in
+// `pep-e2e` and none in the realm being read. Those are two different states
+// and a reader has to be able to tell them apart.
 //
 // THE WALK IS OVER `realms.list()` AND IS BOUNDED BY IT. A service with no
 // realms defined does nothing at all here, because that list is the default

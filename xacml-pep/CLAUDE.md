@@ -3,13 +3,13 @@
 **A REMOTE XACML POLICY ENFORCEMENT POINT. PHASE FIVE, AND THE ONLY DIRECTORY
 IN THIS REPOSITORY THAT IS NOT PART OF THE MOCK.**
 
-Everything else here is required by `server.js` and runs in the identity
-service's process. This is a **second container**: five files, three npm
-packages, no express, no config table, no directory, and no key it generates —
-the two pairs it can hold, its client certificate and (since 2026-09-13) its
-HTTPS listener's, are both handed to it. It
-holds its own copy of the XACML engine, PULLS the policy repository from the
-mock's PDP and decides locally.
+Everything else here is required by `server.js` (through
+`common/protocol_stack.js`) and runs in the identity service's process. This is
+a **second container**: five files, two npm packages, no express, no config
+table, no directory, and no key it generates — the two pairs it can hold, its
+client certificate and (since 2026-09-13) its HTTPS listener's, are both handed
+to it. It holds its own copy of the XACML engine, PULLS the policy repository
+from the mock's PDP and decides locally.
 
 ```
 docker compose --profile xacml up --build
@@ -274,7 +274,8 @@ request was denied by a policy that was working perfectly.
 `xacml.js`'s `enforce()` is fifty lines and is not in the copy list. It is the
 PEP's own decision — the bias and the obligation rule — and a PEP that imported
 the PDP's would be demonstrating that two processes agree because they are one
-program. That is the thing `tests/sts_dpop.js` refuses to do when it writes its
+program. That is the thing `tests/vendored/sts_dpop.js` refuses to do when it
+writes its
 own DPoP client rather than importing the wallet's.
 
 Written out, this PEP can run a DIFFERENT bias from the mock's embedded one, and
@@ -378,7 +379,8 @@ authorization services.
 That is a real trade and both surfaces say so rather than hiding it: a policy
 change made during an outage is **not enforced here** until the next successful
 pull. **`sts_xacml_remote_pep.js` section 9 is the first thing to check it**: it
-removes the realm out from under a running container and asserts that it goes on
+turns `xacml.remotePeps` off in its realm under a running container (see the
+next paragraph) and asserts that it goes on
 deciding CORRECTLY IN BOTH DIRECTIONS — still permitting what the last pulled
 policy permits, still refusing what it refuses — while reporting `lastPullOk:
 false` and saying it is KEEPING what it has. Both halves matter and a mutant
@@ -411,7 +413,7 @@ console.
 | `PEP_NAME` | `pep-1` | **Ignored when a client certificate is presented** — the PDP names the row from the certificate. |
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | The client certificate. Without it the PDP refuses the registration unless `xacml.pepRequireCertificate` is off. Enforcement is unaffected either way. |
 | `PEP_TLS_CA` | — | An anchor for the PDP's certificate. |
-| `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, which regenerates its key on every start and signs it itself — so there is nothing to verify against. Logged on every start, for `federation_http.js`'s reason. |
+| `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, whose listener certificate is issued by a service Root that development mode regenerates on every start — so there is no fixed anchor to verify against (`tls/CLAUDE.md`). Logged on every start, for `federation_http.js`'s reason. |
 | `PEP_NOTIFY_URL` | — | Where the PDP should nudge. |
 | `PEP_BIAS` | `deny-biased` | This PEP's own. |
 | `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with no `PEP_TLS_CERT`, since that endpoint requires a verified certificate holding `REMOTE_PEPS`. On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. |
@@ -421,7 +423,7 @@ console.
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | **PATHS, re-read on an interval** — the listener's pair, issued by the PDP's realm. Unlike `PEP_TLS_CERT`, which is read once, because this pair normally does not exist when the container starts. See *The HTTPS listener*. |
 | `PEP_HTTPS_PORT` | `9443` | |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. |
-| `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
+| `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | |
 
 **The compose service ships with no certificate**, so out of the box it
 registers unauthenticated and the mock refuses it — which is the honest default

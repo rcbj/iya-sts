@@ -47,7 +47,7 @@
 // meets one rather than guessing.
 //
 // ---------------------------------------------------------------------------
-// THREE PLACES THIS DIALECT IS EXPLICIT WHERE ALFA IS VAGUE, AND EACH IS
+// FOUR PLACES THIS DIALECT IS EXPLICIT WHERE ALFA IS VAGUE, AND EACH IS
 // WRITTEN DOWN BECAUSE A READER WILL OTHERWISE THINK IT IS A BUG.
 //
 // 1. TYPED LITERALS. ALFA has native syntax for strings, integers, booleans
