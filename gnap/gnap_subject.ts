@@ -45,12 +45,15 @@
 // shape: `GnapSubject` takes `helpers`, the service's signing identity
 // (`STS`), `common/crypto.js`, the error-code table, the settings, the GNAP
 // store and a LOADER for each module it requires lazily through its
-// constructor. The module still exports its old names from a TRANSITIONAL
-// instance for the unconverted modules that require it.
+// constructor. The module still exports its old names as FACADES forwarding to
+// the instance the composition root builds (#50, R2), for the unconverted
+// modules that require it. A process that loads this module without the root
+// builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import config = require('../common/config');
@@ -537,43 +540,62 @@ class GnapSubject {
               "format.");
     return { ok: false };
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before. The loaders keep every require
+  // as lazy as it was.
+  static defaultDeps(): GnapSubjectDeps {
+    helpers.log.debug("Entering GnapSubject.defaultDeps().");
+    helpers.log.debug("Leaving GnapSubject.defaultDeps().");
+    return {
+      helpers: helpers,
+      STS: helpers.STS,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes,
+      config: config,
+      store: store,
+      loadPersonAttributes: function () {
+        return require('../saml/person_attributes');
+      },
+      loadClaimAttributes: function () {
+        return require('../common/claim_attributes');
+      },
+      loadOauth2: function () {
+        return require('../oauth-oidc/oauth2');
+      },
+      loadSaml2: function () {
+        return require('../saml/saml2');
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one; the loaders keep every
-// require as lazy as it was.
-const subject = new GnapSubject({
-  helpers: helpers,
-  STS: helpers.STS,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes,
-  config: config,
-  store: store,
-  loadPersonAttributes: function () {
-    return require('../saml/person_attributes');
-  },
-  loadClaimAttributes: function () {
-    return require('../common/claim_attributes');
-  },
-  loadOauth2: function () {
-    return require('../oauth-oidc/oauth2');
-  },
-  loadSaml2: function () {
-    return require('../saml/saml2');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapSubject>(
+  'gnap/gnap_subject',
+  () => new GnapSubject(GnapSubject.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapSubject: GnapSubject,
+  installInstance: (instance: GnapSubject): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   SUB_ID_FORMATS_SUPPORTED: GnapSubject.SUB_ID_FORMATS_SUPPORTED,
   ASSERTION_FORMATS_SUPPORTED: GnapSubject.ASSERTION_FORMATS_SUPPORTED,
-  opaqueIdFor: subject.opaqueIdFor.bind(subject) as
-    GnapSubject['opaqueIdFor'],
-  subIdsFor: subject.subIdsFor.bind(subject) as GnapSubject['subIdsFor'],
-  assertionsFor: subject.assertionsFor.bind(subject) as
-    GnapSubject['assertionsFor'],
-  resolveUser: subject.resolveUser.bind(subject) as
-    GnapSubject['resolveUser'],
-  normaliseName: subject.normaliseName.bind(subject) as
-    GnapSubject['normaliseName']
+  opaqueIdFor: slot.forward('opaqueIdFor'),
+  subIdsFor: slot.forward('subIdsFor'),
+  assertionsFor: slot.forward('assertionsFor'),
+  resolveUser: slot.forward('resolveUser'),
+  normaliseName: slot.forward('normaliseName')
 };

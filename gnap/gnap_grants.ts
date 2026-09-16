@@ -70,15 +70,18 @@
 // the consent register, the statistics, the authorization-server profiles and
 // the rest of the family — and `oauth2.js` as a LOADER, because that require
 // was lazy and stays lazy (it registers routes). The kinds, the protocol name,
-// the discovery members and the reserved names are its static constants.
-// The module still exports every name it did from a TRANSITIONAL instance for
-// `gnap.ts`, `gnap_interact.ts`, `gnap_rs.ts`, `gnap_console.ts` and the
-// tests, none of which are converted.
+// the discovery members and the reserved names are its static constants. The
+// module still exports every name it did as FACADES forwarding to the instance
+// the composition root builds (#50, R2), for `gnap.ts`, `gnap_interact.ts`,
+// `gnap_rs.ts`, `gnap_console.ts` and the tests, none of which are converted.
+// A process that loads this module without the root builds a default instance
+// when the module loads.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import mode = require('../common/mode');
 import audit = require('../common/audit');
@@ -2204,83 +2207,92 @@ class GnapGrants {
     log.debug("Leaving GnapGrants.manageVerified(). Rotated.");
     return { ok: true, status: 200, body: { access_token: response } };
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapGrantsDeps {
+    helpers.log.debug("Entering GnapGrants.defaultDeps().");
+    helpers.log.debug("Leaving GnapGrants.defaultDeps().");
+    return {
+      log: helpers.log,
+      nowSec: helpers.nowSec,
+      baseUrlOf: helpers.baseUrlOf,
+      config: config,
+      helpers: helpers,
+      errorCodes: errorCodes,
+      mode: mode,
+      audit: audit,
+      applications: applications,
+      keystore: keystore,
+      gate: gate,
+      consent: consent,
+      stats: stats,
+      authorizationServers: authorizationServers,
+      store: store,
+      keys: keys,
+      proof: proof,
+      request: request,
+      tokens: tokens,
+      subject: subject,
+      transport: transport,
+      monitor: monitor,
+      signals: signals,
+      accessRights: accessRights,
+      loadOauth2: function loadOauth2() {
+        helpers.log.debug("Entering loadOauth2().");
+        helpers.log.debug("Leaving loadOauth2().");
+        return require('../oauth-oidc/oauth2');
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const engine = new GnapGrants({
-  log: helpers.log,
-  nowSec: helpers.nowSec,
-  baseUrlOf: helpers.baseUrlOf,
-  config: config,
-  helpers: helpers,
-  errorCodes: errorCodes,
-  mode: mode,
-  audit: audit,
-  applications: applications,
-  keystore: keystore,
-  gate: gate,
-  consent: consent,
-  stats: stats,
-  authorizationServers: authorizationServers,
-  store: store,
-  keys: keys,
-  proof: proof,
-  request: request,
-  tokens: tokens,
-  subject: subject,
-  transport: transport,
-  monitor: monitor,
-  signals: signals,
-  accessRights: accessRights,
-  loadOauth2: function loadOauth2() {
-    helpers.log.debug("Entering loadOauth2().");
-    helpers.log.debug("Leaving loadOauth2().");
-    return require('../oauth-oidc/oauth2');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapGrants>(
+  'gnap/gnap_grants',
+  () => new GnapGrants(GnapGrants.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapGrants: GnapGrants,
+  installInstance: (instance: GnapGrants): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PROTOCOL: GnapGrants.PROTOCOL,
   KIND_CLIENT: GnapGrants.KIND_CLIENT,
   KIND_RS: GnapGrants.KIND_RS,
   GNAP_MEMBERS: GnapGrants.GNAP_MEMBERS,
   RESERVED_AS_NAMES: GnapGrants.RESERVED_AS_NAMES,
-  capabilities: engine.capabilities.bind(engine) as GnapGrants['capabilities'],
-  capabilityList: engine.capabilityList.bind(engine) as
-    GnapGrants['capabilityList'],
-  defaultCapabilities: engine.defaultCapabilities.bind(engine) as
-    GnapGrants['defaultCapabilities'],
-  grantEndpointOf: engine.grantEndpointOf.bind(engine) as
-    GnapGrants['grantEndpointOf'],
-  realmBase: engine.realmBase.bind(engine) as GnapGrants['realmBase'],
-  gnapApplications: engine.gnapApplications.bind(engine) as
-    GnapGrants['gnapApplications'],
-  field: engine.field.bind(engine) as GnapGrants['field'],
-  fieldValues: engine.fieldValues.bind(engine) as GnapGrants['fieldValues'],
-  resolveKeyReference: engine.resolveKeyReference.bind(engine) as
-    GnapGrants['resolveKeyReference'],
-  identifyCaller: engine.identifyCaller.bind(engine) as
-    GnapGrants['identifyCaller'],
-  createGrant: engine.createGrant.bind(engine) as GnapGrants['createGrant'],
-  continueGrant: engine.continueGrant.bind(engine) as
-    GnapGrants['continueGrant'],
-  manageToken: engine.manageToken.bind(engine) as GnapGrants['manageToken'],
-  decide: engine.decide.bind(engine) as GnapGrants['decide'],
-  rememberedFor: engine.rememberedFor.bind(engine) as
-    GnapGrants['rememberedFor'],
-  finishInteraction: engine.finishInteraction.bind(engine) as
-    GnapGrants['finishInteraction'],
-  interactionHash: engine.interactionHash.bind(engine) as
-    GnapGrants['interactionHash'],
-  normaliseUserCode: engine.normaliseUserCode.bind(engine) as
-    GnapGrants['normaliseUserCode'],
-  digestTokenOf: engine.digestTokenOf.bind(engine) as
-    GnapGrants['digestTokenOf'],
-  canonicalJson: engine.canonicalJson.bind(engine) as
-    GnapGrants['canonicalJson'],
-  resourceServersFor: engine.resourceServersFor.bind(engine) as
-    GnapGrants['resourceServersFor'],
-  revokeTokens: engine.revokeTokens.bind(engine) as GnapGrants['revokeTokens']
+  capabilities: slot.forward('capabilities'),
+  capabilityList: slot.forward('capabilityList'),
+  defaultCapabilities: slot.forward('defaultCapabilities'),
+  grantEndpointOf: slot.forward('grantEndpointOf'),
+  realmBase: slot.forward('realmBase'),
+  gnapApplications: slot.forward('gnapApplications'),
+  field: slot.forward('field'),
+  fieldValues: slot.forward('fieldValues'),
+  resolveKeyReference: slot.forward('resolveKeyReference'),
+  identifyCaller: slot.forward('identifyCaller'),
+  createGrant: slot.forward('createGrant'),
+  continueGrant: slot.forward('continueGrant'),
+  manageToken: slot.forward('manageToken'),
+  decide: slot.forward('decide'),
+  rememberedFor: slot.forward('rememberedFor'),
+  finishInteraction: slot.forward('finishInteraction'),
+  interactionHash: slot.forward('interactionHash'),
+  normaliseUserCode: slot.forward('normaliseUserCode'),
+  digestTokenOf: slot.forward('digestTokenOf'),
+  canonicalJson: slot.forward('canonicalJson'),
+  resourceServersFor: slot.forward('resourceServersFor'),
+  revokeTokens: slot.forward('revokeTokens')
 };

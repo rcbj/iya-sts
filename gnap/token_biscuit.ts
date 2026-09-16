@@ -125,19 +125,22 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape: `TokenBiscuit` takes the logger, the clock, the error-code table,
-// the access model (`gnap_access`), `fs`, `path` and `url` through its
+// shape: `TokenBiscuit` takes the logger, the clock, the error-code table, the
+// access model (`gnap_access`), `fs`, `path` and `url` through its
 // constructor. The lazy load is the instance's: the WASM library is still
 // loaded once, by the first mint or verify, and its glue modules still by a
 // real dynamic `import()` (module `nodenext` keeps it one in the compiled
-// CommonJS). The module still exports its old names from a TRANSITIONAL
-// instance for the unconverted modules and the tests that require it.
+// CommonJS). The module still exports its old names as FACADES forwarding to
+// the instance the composition root builds (#50, R2), for the unconverted
+// modules and the tests that require it. A process that loads this module
+// without the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
 import path = require('path');
 import url = require('url');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import gnapAccess = require('./gnap_access');
 
@@ -873,32 +876,52 @@ class TokenBiscuit {
     log.debug("Leaving TokenBiscuit.describe().");
     return out;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): TokenBiscuitDeps {
+    helpers.log.debug("Entering TokenBiscuit.defaultDeps().");
+    helpers.log.debug("Leaving TokenBiscuit.defaultDeps().");
+    return {
+      log: helpers.log,
+      nowSec: function () {
+        return helpers.nowSec();
+      },
+      errorCodes: errorCodes,
+      access: gnapAccess,
+      fs: fs,
+      path: path,
+      url: url
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const tokenBiscuit = new TokenBiscuit({
-  log: helpers.log,
-  nowSec: function () {
-    return helpers.nowSec();
-  },
-  errorCodes: errorCodes,
-  access: gnapAccess,
-  fs: fs,
-  path: path,
-  url: url
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<TokenBiscuit>(
+  'gnap/token_biscuit',
+  () => new TokenBiscuit(TokenBiscuit.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   TokenBiscuit: TokenBiscuit,
+  installInstance: (instance: TokenBiscuit): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FORMAT: TokenBiscuit.FORMAT,
   LIMITS: TokenBiscuit.LIMITS,
-  mint: tokenBiscuit.mint.bind(tokenBiscuit) as TokenBiscuit['mint'],
-  verify: tokenBiscuit.verify.bind(tokenBiscuit) as TokenBiscuit['verify'],
-  attenuate: tokenBiscuit.attenuate.bind(tokenBiscuit) as
-    TokenBiscuit['attenuate'],
-  describe: tokenBiscuit.describe.bind(tokenBiscuit) as
-    TokenBiscuit['describe'],
-  loadBiscuit: tokenBiscuit.loadBiscuit.bind(tokenBiscuit) as
-    TokenBiscuit['loadBiscuit']
+  mint: slot.forward('mint'),
+  verify: slot.forward('verify'),
+  attenuate: slot.forward('attenuate'),
+  describe: slot.forward('describe'),
+  loadBiscuit: slot.forward('loadBiscuit')
 };

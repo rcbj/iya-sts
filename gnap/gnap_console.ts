@@ -31,15 +31,18 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GnapConsole` takes the modules it reads through its constructor, as
-// `GnapConsoleDeps`, and the module still exports `GNAP_ACTIONS`, `STATES`
-// and the three calls from a TRANSITIONAL instance for `gnap_admin.ts` and
-// `mgmt-api/admin_api.ts`. `gnap_signals` stays LAZY: the transitional
-// instance is handed a loader that requires it at the moment a grant is
-// revoked, as the code here did before.
+// `GnapConsoleDeps`, and the module still exports `GNAP_ACTIONS`, `STATES` and
+// the three calls as FACADES forwarding to the instance the composition root
+// builds (#50, R2), for `gnap_admin.ts` and `mgmt-api/admin_api.ts`.
+// `gnap_signals` stays LAZY: the instance is handed a loader that requires it
+// at the moment a grant is revoked, as the code here did before. A process
+// that loads this module without the root builds a default instance when the
+// module loads.
 // ---------------------------------------------------------------------------
 
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import applications = require('../common/applications');
 import audit = require('../common/audit');
@@ -434,35 +437,57 @@ class GnapConsole {
                           'The two are: ' +
                           GNAP_ACTIONS.join(', ') + '.'] });
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapConsoleDeps {
+    helpers.log.debug("Entering GnapConsole.defaultDeps().");
+    helpers.log.debug("Leaving GnapConsole.defaultDeps().");
+    return {
+      config: config,
+      log: helpers.log,
+      baseUrlOf: helpers.baseUrlOf,
+      nowSec: helpers.nowSec,
+      errorCodes: errorCodes,
+      applications: applications,
+      audit: audit,
+      authorizationServers: authorizationServers,
+      adminViews: adminViews,
+      store: store,
+      grants: grants,
+      tokens: tokens,
+      monitor: monitor,
+      loadSignals: function () {
+        return require('./gnap_signals');
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const view = new GnapConsole({
-  config: config,
-  log: helpers.log,
-  baseUrlOf: helpers.baseUrlOf,
-  nowSec: helpers.nowSec,
-  errorCodes: errorCodes,
-  applications: applications,
-  audit: audit,
-  authorizationServers: authorizationServers,
-  adminViews: adminViews,
-  store: store,
-  grants: grants,
-  tokens: tokens,
-  monitor: monitor,
-  loadSignals: function () {
-    return require('./gnap_signals');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapConsole>(
+  'gnap/gnap_console',
+  () => new GnapConsole(GnapConsole.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapConsole: GnapConsole,
+  installInstance: (instance: GnapConsole): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   GNAP_ACTIONS: GnapConsole.GNAP_ACTIONS,
   STATES: GnapConsole.STATES,
-  gnapView: view.gnapView.bind(view) as GnapConsole['gnapView'],
-  gnapMonitorView:
-    view.gnapMonitorView.bind(view) as GnapConsole['gnapMonitorView'],
-  gnapAction: view.gnapAction.bind(view) as GnapConsole['gnapAction']
+  gnapView: slot.forward('gnapView'),
+  gnapMonitorView: slot.forward('gnapMonitorView'),
+  gnapAction: slot.forward('gnapAction')
 };

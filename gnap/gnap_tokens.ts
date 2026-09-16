@@ -58,15 +58,18 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape: `GnapTokens` takes `helpers`, the service's signing identity
-// (`STS`), `common/crypto.js`, the error-code table, the settings, the token
-// registry and the four GNAP token libraries through its constructor. The
-// module still exports its old names from a TRANSITIONAL instance for the
-// unconverted modules that require it.
+// shape: `GnapTokens` takes `helpers`, the service's signing identity (`STS`),
+// `common/crypto.js`, the error-code table, the settings, the token registry
+// and the four GNAP token libraries through its constructor. The module still
+// exports its old names as FACADES forwarding to the instance the composition
+// root builds (#50, R2), for the unconverted modules that require it. A
+// process that loads this module without the root builds a default instance
+// when the module loads.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import config = require('../common/config');
@@ -588,38 +591,58 @@ class GnapTokens {
     log.debug("Leaving GnapTokens.isRevokedJti().");
     return stats.isRevoked(jti);
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapTokensDeps {
+    helpers.log.debug("Entering GnapTokens.defaultDeps().");
+    helpers.log.debug("Leaving GnapTokens.defaultDeps().");
+    return {
+      helpers: helpers,
+      STS: helpers.STS,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes,
+      config: config,
+      stats: stats,
+      macaroon: macaroon,
+      biscuit: biscuit,
+      zcap: zcap,
+      access: access
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const tokens = new GnapTokens({
-  helpers: helpers,
-  STS: helpers.STS,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes,
-  config: config,
-  stats: stats,
-  macaroon: macaroon,
-  biscuit: biscuit,
-  zcap: zcap,
-  access: access
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapTokens>(
+  'gnap/gnap_tokens',
+  () => new GnapTokens(GnapTokens.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapTokens: GnapTokens,
+  installInstance: (instance: GnapTokens): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   FORMATS: GnapTokens.FORMATS,
   JWT_TYP: GnapTokens.JWT_TYP,
-  mint: tokens.mint.bind(tokens) as GnapTokens['mint'],
-  verify: tokens.verify.bind(tokens) as GnapTokens['verify'],
-  formatOf: tokens.formatOf.bind(tokens) as GnapTokens['formatOf'],
-  checkModel: tokens.checkModel.bind(tokens) as GnapTokens['checkModel'],
-  macaroonKeyFor: tokens.macaroonKeyFor.bind(tokens) as
-    GnapTokens['macaroonKeyFor'],
-  zcapKeys: tokens.zcapKeys.bind(tokens) as GnapTokens['zcapKeys'],
-  ed25519Keys: tokens.ed25519Keys.bind(tokens) as GnapTokens['ed25519Keys'],
-  publicMaterial: tokens.publicMaterial.bind(tokens) as
-    GnapTokens['publicMaterial'],
-  describe: tokens.describe.bind(tokens) as GnapTokens['describe'],
-  isRevokedJti: tokens.isRevokedJti.bind(tokens) as
-    GnapTokens['isRevokedJti']
+  mint: slot.forward('mint'),
+  verify: slot.forward('verify'),
+  formatOf: slot.forward('formatOf'),
+  checkModel: slot.forward('checkModel'),
+  macaroonKeyFor: slot.forward('macaroonKeyFor'),
+  zcapKeys: slot.forward('zcapKeys'),
+  ed25519Keys: slot.forward('ed25519Keys'),
+  publicMaterial: slot.forward('publicMaterial'),
+  describe: slot.forward('describe'),
+  isRevokedJti: slot.forward('isRevokedJti')
 };

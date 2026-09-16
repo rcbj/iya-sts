@@ -51,12 +51,15 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GnapKeys` takes node's crypto, the service's crypto module, the
 // error-code table and the logger through its constructor. The module still
-// exports every old name from a TRANSITIONAL instance for the unconverted GNAP
-// modules that require it; the two tables are static members.
+// exports every old name as FACADES forwarding to the instance the composition
+// root builds (#50, R2), for the unconverted GNAP modules that require it; the
+// two tables are static members. A process that loads this module without the
+// root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 
@@ -480,28 +483,49 @@ class GnapKeys {
     log.debug("Leaving GnapKeys.sameProof().");
     return JSON.stringify(a.params || {}) === JSON.stringify(b.params || {});
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapKeysDeps {
+    helpers.log.debug("Entering GnapKeys.defaultDeps().");
+    helpers.log.debug("Leaving GnapKeys.defaultDeps().");
+    return {
+      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
+      errorCodes: errorCodes,
+      log: helpers.log
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const keys = new GnapKeys({
-  nodeCrypto: nodeCrypto,
-  stsCrypto: stsCrypto,
-  errorCodes: errorCodes,
-  log: helpers.log
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapKeys>(
+  'gnap/gnap_keys',
+  () => new GnapKeys(GnapKeys.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapKeys: GnapKeys,
+  installInstance: (instance: GnapKeys): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   PROOF_METHODS: GnapKeys.PROOF_METHODS,
   KEY_FORMATS: GnapKeys.KEY_FORMATS,
-  normaliseProof: keys.normaliseProof.bind(keys) as GnapKeys['normaliseProof'],
-  describe: keys.describe.bind(keys) as GnapKeys['describe'],
-  confirmationOf: keys.confirmationOf.bind(keys) as GnapKeys['confirmationOf'],
-  presentedFor: keys.presentedFor.bind(keys) as GnapKeys['presentedFor'],
-  sameProof: keys.sameProof.bind(keys) as GnapKeys['sameProof'],
-  jwsAlgForKeyObject:
-    keys.jwsAlgForKeyObject.bind(keys) as GnapKeys['jwsAlgForKeyObject'],
-  certificateFrom:
-    keys.certificateFrom.bind(keys) as GnapKeys['certificateFrom']
+  normaliseProof: slot.forward('normaliseProof'),
+  describe: slot.forward('describe'),
+  confirmationOf: slot.forward('confirmationOf'),
+  presentedFor: slot.forward('presentedFor'),
+  sameProof: slot.forward('sameProof'),
+  jwsAlgForKeyObject: slot.forward('jwsAlgForKeyObject'),
+  certificateFrom: slot.forward('certificateFrom')
 };

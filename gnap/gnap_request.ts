@@ -45,11 +45,14 @@
 // document bound (`validation`) and the JSON Schemas (`gnap_schemas.ts`)
 // through its constructor. The vocabularies are its static constants. The
 // module still exports the constants, `checkAccess`, `checkSubId` and the six
-// parsers from a TRANSITIONAL instance for the unconverted modules that
-// require it (`gnap_rs.ts`, and the tests).
+// parsers as FACADES forwarding to the instance the composition root builds
+// (#50, R2), for the unconverted modules that require it (`gnap_rs.ts`, and
+// the tests). A process that loads this module without the root builds a
+// default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import schemas = require('./gnap_schemas');
@@ -1072,37 +1075,54 @@ class GnapRequest {
       introspectionRequired: body.token_introspection_required === true
     } };
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapRequestDeps {
+    helpers.log.debug("Entering GnapRequest.defaultDeps().");
+    helpers.log.debug("Leaving GnapRequest.defaultDeps().");
+    return {
+      log: helpers.log,
+      errorCodes: errorCodes,
+      validation: validation,
+      schemas: schemas
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one.
-const parser = new GnapRequest({
-  log: helpers.log,
-  errorCodes: errorCodes,
-  validation: validation,
-  schemas: schemas
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapRequest>(
+  'gnap/gnap_request',
+  () => new GnapRequest(GnapRequest.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapRequest: GnapRequest,
+  installInstance: (instance: GnapRequest): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
   REQUEST_FLAGS: GnapRequest.REQUEST_FLAGS,
   START_MODES: GnapRequest.START_MODES,
   FINISH_METHODS: GnapRequest.FINISH_METHODS,
   ASSERTION_FORMATS: GnapRequest.ASSERTION_FORMATS,
   SUB_ID_FORMATS: GnapRequest.SUB_ID_FORMATS,
   HASH_METHODS: GnapRequest.HASH_METHODS,
-  checkAccess: parser.checkAccess.bind(parser) as GnapRequest['checkAccess'],
-  checkSubId: parser.checkSubId.bind(parser) as GnapRequest['checkSubId'],
-  parseGrantRequest: parser.parseGrantRequest.bind(parser) as
-    GnapRequest['parseGrantRequest'],
-  parseContinuation: parser.parseContinuation.bind(parser) as
-    GnapRequest['parseContinuation'],
-  parseModification: parser.parseModification.bind(parser) as
-    GnapRequest['parseModification'],
-  parseRotation: parser.parseRotation.bind(parser) as
-    GnapRequest['parseRotation'],
-  parseIntrospection: parser.parseIntrospection.bind(parser) as
-    GnapRequest['parseIntrospection'],
-  parseRegistration: parser.parseRegistration.bind(parser) as
-    GnapRequest['parseRegistration']
+  checkAccess: slot.forward('checkAccess'),
+  checkSubId: slot.forward('checkSubId'),
+  parseGrantRequest: slot.forward('parseGrantRequest'),
+  parseContinuation: slot.forward('parseContinuation'),
+  parseModification: slot.forward('parseModification'),
+  parseRotation: slot.forward('parseRotation'),
+  parseIntrospection: slot.forward('parseIntrospection'),
+  parseRegistration: slot.forward('parseRegistration')
 };

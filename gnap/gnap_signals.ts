@@ -49,11 +49,14 @@
 // module it requires lazily (so each require stays lazy) through its
 // constructor. The approver store is still declared at module scope, as
 // `realms.map()`, because a store becomes per realm at its declaration. The
-// module still exports its old names from a TRANSITIONAL instance for the
-// unconverted modules that require it.
+// module still exports its old names as FACADES forwarding to the instance the
+// composition root builds (#50, R2), for the unconverted modules that require
+// it. A process that loads this module without the root builds a default
+// instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import config = require('../common/config');
@@ -333,47 +336,66 @@ class GnapSignals {
     log.debug("Leaving GnapSignals.install().");
     return false;
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before. The loaders keep every require
+  // as lazy as it was.
+  static defaultDeps(): GnapSignalsDeps {
+    helpers.log.debug("Entering GnapSignals.defaultDeps().");
+    helpers.log.debug("Leaving GnapSignals.defaultDeps().");
+    return {
+      log: helpers.log,
+      userFor: helpers.userFor,
+      nameForSubject: helpers.nameForSubject,
+      errorCodes: errorCodes,
+      config: config,
+      approvers: approvers,
+      loadConsent: function () {
+        return require('../common/consent');
+      },
+      loadSsfHttp: function () {
+        return require('../ssf/ssf_http');
+      },
+      loadSsf: function () {
+        return require('../ssf/ssf');
+      },
+      loadApplications: function () {
+        return require('../common/applications');
+      },
+      loadSsfStreams: function () {
+        return require('../ssf/ssf_streams');
+      }
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, as the composition root will build one; the loaders keep every
-// require as lazy as it was.
-const signals = new GnapSignals({
-  log: helpers.log,
-  userFor: helpers.userFor,
-  nameForSubject: helpers.nameForSubject,
-  errorCodes: errorCodes,
-  config: config,
-  approvers: approvers,
-  loadConsent: function () {
-    return require('../common/consent');
-  },
-  loadSsfHttp: function () {
-    return require('../ssf/ssf_http');
-  },
-  loadSsf: function () {
-    return require('../ssf/ssf');
-  },
-  loadApplications: function () {
-    return require('../common/applications');
-  },
-  loadSsfStreams: function () {
-    return require('../ssf/ssf_streams');
-  }
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapSignals>(
+  'gnap/gnap_signals',
+  () => new GnapSignals(GnapSignals.defaultDeps()),
+  null,
+  helpers.log);
+
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
 
 export = {
   GnapSignals: GnapSignals,
-  noteApprover: signals.noteApprover.bind(signals) as
-    GnapSignals['noteApprover'],
-  approvedBy: signals.approvedBy.bind(signals) as GnapSignals['approvedBy'],
-  grantRevoked: signals.grantRevoked.bind(signals) as
-    GnapSignals['grantRevoked'],
-  tokenRevoked: signals.tokenRevoked.bind(signals) as
-    GnapSignals['tokenRevoked'],
-  grantModified: signals.grantModified.bind(signals) as
-    GnapSignals['grantModified'],
-  scope: signals.scope.bind(signals) as GnapSignals['scope'],
-  usernameOf: signals.usernameOf.bind(signals) as GnapSignals['usernameOf'],
-  install: signals.install.bind(signals) as GnapSignals['install']
+  installInstance: (instance: GnapSignals): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  noteApprover: slot.forward('noteApprover'),
+  approvedBy: slot.forward('approvedBy'),
+  grantRevoked: slot.forward('grantRevoked'),
+  tokenRevoked: slot.forward('tokenRevoked'),
+  grantModified: slot.forward('grantModified'),
+  scope: slot.forward('scope'),
+  usernameOf: slot.forward('usernameOf'),
+  install: slot.forward('install')
 };

@@ -27,17 +27,19 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape, for a module that registers routes (rule 1): `GnapAdmin` takes the
-// console shell, the view model and the rest through its constructor, and
-// its `registerRoutes(app)` holds the three routes in their old order. The
-// TRANSITIONAL instance below is built from the real modules and exports its
-// `registerRoutes(app)`, which `common/protocol_stack.ts` calls (#50, R1)
-// right after `gnap_interact.ts`'s, exactly where requiring this file
-// registered them before; that function is the module's one export beside
-// the class.
+// console shell, the view model and the rest through its constructor, and its
+// `registerRoutes(app)` holds the three routes in their old order. The
+// composition root builds the instance (#50, R2), and the module's
+// `registerRoutes(app)` is a FACADE forwarding to it, which
+// `common/protocol_stack.ts` calls (#50, R1) right after `gnap_interact.ts`'s,
+// exactly where requiring this file registered them before; that function is
+// the module's one export beside the class. A process that loads this module
+// without the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import admin = require('../admin-ui/admin');
@@ -473,24 +475,47 @@ class GnapAdmin {
 
     log.debug("Leaving GnapAdmin.registerRoutes().");
   }
+
+  // What the composition root passes (#50, R2): the real modules, as the
+  // module built its own instance from before.
+  static defaultDeps(): GnapAdminDeps {
+    helpers.log.debug("Entering GnapAdmin.defaultDeps().");
+    helpers.log.debug("Leaving GnapAdmin.defaultDeps().");
+    return {
+      log: helpers.log,
+      parseBody: helpers.parseBody,
+      errorCodes: errorCodes,
+      validation: validation,
+      admin: admin,
+      consoleModel: consoleModel
+    };
+  }
 }
 
-// THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules; its routes are registered by the composition root (below).
-const pages = new GnapAdmin({
-  log: helpers.log,
-  parseBody: helpers.parseBody,
-  errorCodes: errorCodes,
-  validation: validation,
-  admin: admin,
-  consoleModel: consoleModel
-});
+// ---------------------------------------------------------------------------
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2). This module builds
+// no instance of its own: `common/protocol_stack.ts` builds one and calls
+// `installInstance()`. The exports below are FACADES that forward to that
+// instance, for the JavaScript that still calls this module through
+// `require()`; a process that never runs the root gets a default instance,
+// built from `defaultDeps()` (see `common/instance_slot.ts`).
+// ---------------------------------------------------------------------------
+const slot = new InstanceSlot<GnapAdmin>(
+  'gnap/gnap_admin',
+  () => new GnapAdmin(GnapAdmin.defaultDeps()),
+  null,
+  helpers.log);
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
 // exported `registerRoutes(app)` at the point in the route order where
 // requiring this module used to register them.
 
+// Standalone, build the default now, as loading this module always did.
+slot.buildNowUnlessDeferred();
+
 export = {
-  registerRoutes: (target: any): void => pages.registerRoutes(target),
+  installInstance: (instance: GnapAdmin): void => slot.install(instance),
+  instanceOrigin: (): string => slot.origin(),
+  registerRoutes: slot.forward('registerRoutes'),
   GnapAdmin: GnapAdmin
 };
