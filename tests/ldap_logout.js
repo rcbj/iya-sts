@@ -17,7 +17,7 @@
 // THE BUG THIS FILE EXISTS FOR, WHICH WAS GREEN IN TWO MODES OF THREE.
 //
 // A worker's `liveConnections` is permanently empty, so `boundConnections()`
-// answered "there are none". The sign-out driver in ../logout/logout.js ends
+// answered "there are none". The sign-out driver in ../logout/logout.ts ends
 // what `collect()` finds, an empty list is nothing to end and nothing to
 // report, and a global logout therefore reported that it had ended everything
 // while a bound LDAP connection went on being signed in. It cost a whole mode
@@ -330,7 +330,7 @@ function checkTheHeaderAgrees(t) {
 // the handler chain has run**, in node-ldapjs/lib/server.js at the point where
 // it finds no handler left. A snapshot taken inside the handler therefore
 // carries an empty DN, `consoleKeyFor()` derives no key from it, and
-// `logout.js`'s ldap family filters on exactly that key — so the worker's
+// `logout.ts`'s ldap family filters on exactly that key — so the worker's
 // mirror filled up with rows belonging to nobody and the sign-out found
 // nothing to end. The mechanism was in place, every part of it worked, and the
 // bug it was written to fix was still there.

@@ -64,7 +64,7 @@ existed, and every action was on the right side of it.
 Seven actions need something filled by a module further down the require order:
 the logout reader, the directory and group writers, the three Shared Signals
 reporters, and the XACML pages. Those are inverted hooks on `admin-ui/admin.js`
-(rule 3e), filled by `ldap/ldap_server.js`, `ssf/ssf.js`, `logout/logout.js`
+(rule 3e), filled by `ldap/ldap_server.js`, `ssf/ssf.ts`, `logout/logout.ts`
 and `xacml/xacml_admin.js`.
 
 **AN EIGHTH ARRIVED ON 2026-09-12: THE CLIENT-CERTIFICATE TRUSTSTORE**, which

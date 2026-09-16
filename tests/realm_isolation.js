@@ -422,7 +422,7 @@ function checkScimCounters(t) {
 // ---------------------------------------------------------------------------
 // 5b. THE CAEP AND RISC REGISTERS (2026-09-12).
 //
-// Both were `new Map()` beside `ssf_streams.js`'s streams, which have been per
+// Both were `new Map()` beside `ssf_streams.ts`'s streams, which have been per
 // realm since the day SSF arrived — so a stream agreed in `acme` counted its
 // events against a session row every realm's console listed, and deleting
 // `alice` in `acme` put a `purged` row on the DEFAULT realm's

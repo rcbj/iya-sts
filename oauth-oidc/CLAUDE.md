@@ -23,7 +23,7 @@ libraries that decide things on its behalf.
 | `oauth2_monitor_console.js` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.js`. |
 | `oauth2_monitor_admin.js` | **THE ONE FILE HERE BESIDE `oauth2.js` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.js`, never from `oauth2.js`, which would drag the console in front of the authorization server. |
 | `oauth2_monitor_api.js` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.js` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
-| `protected_resource_metadata.js` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.js`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
+| `protected_resource_metadata.js` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.js` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
 | `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.js`, `oauth2_bcp.js`, `dpop.js`, `mgmt-api/admin_api.js` and `debugger/debugger_server.js` require and that may require none of them back. See 3ao. |
 
@@ -42,7 +42,7 @@ in the one module that has a response object.
 cycle or moving OID4VCI ahead of OAuth2 in the route order.
 
 Two ordering facts about this directory are in the root `CLAUDE.md` because they
-are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
+are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
 `oauth2.js`, and so must `admin-ui/admin.js`.
 
 ---
@@ -457,7 +457,7 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    Do not read anything else out of an unverified assertion.
 
    **`jwks_uri` IS RECORDED AND NEVER FOLLOWED**, which is the same refusal
-   `wsfed.js` gives `wreqptr`: fetching a URL somebody registered in order to
+   `wsfed.ts` gives `wreqptr`: fetching a URL somebody registered in order to
    verify a credential is a server-side request forgery with a citation
    attached. Holding that position in one file and not the other would be no
    position at all.
@@ -2167,7 +2167,7 @@ produced is one good for a day and renewable.
 
    **It is a file of its own rather than code in `oauth2.js` for one reason:**
    `/oauth2/logout`, the protocol-independent `/logout` and the console all have
-   to render the SAME fan-out, and `logout/logout.js` reaching into `oauth2.js`
+   to render the SAME fan-out, and `logout/logout.ts` reaching into `oauth2.js`
    for it would be a require this file makes unnecessary — `oauth2.js` requires
    THIS, so the other direction would be a cycle.
 
@@ -2199,7 +2199,7 @@ produced is one good for a day and renewable.
    the provider cannot know whether a notification succeeded. A dead relying
    party, a certificate the browser will not accept and a mistyped URI all look
    exactly like success; the link is the only thing that turns "nothing
-   happened" into something a person can click. Same decision `wsfed.js` made
+   happened" into something a person can click. Same decision `wsfed.ts` made
    about its cleanup pings.
 
    **`/oauth2/logout` CAN NOW ANSWER WITH A PAGE INSTEAD OF A REDIRECT**, and

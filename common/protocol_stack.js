@@ -80,14 +80,14 @@ require('../authn/authn');
 // an assertion here starts a tracked sign-on session — see ws-trust/CLAUDE.md
 // for why an issued credential implies one — and it does that by calling
 // `authn.startSession()` directly, without a screen, exactly as
-// federation/federation_sp.js does and for the same reason: the caller
+// federation/federation_sp.ts does and for the same reason: the caller
 // presented a credential of its own (a UsernameToken) rather than being sent
 // somewhere to type one. Requiring it from ABOVE authn.js would have dragged
 // every /authn route to the front of the router (rule 1), which is why this
 // line moved rather than a require being added where it stood.
 require('../ws-trust/wstrust');
 // THE USER PORTAL. **After `authn`**, whose session store every authenticated
-// route on it reads — a dependency of the same kind `saml2_sso.js` and
+// route on it reads — a dependency of the same kind `saml2_sso.ts` and
 // `consent_screen.js` have, and one-way in the same way: `authn.js` knows
 // nothing about the portal. It registers its own routes under /portal, which
 // nothing else here could shadow.
@@ -124,19 +124,19 @@ require('../oauth-oidc/oauth2');
 // split exists to avoid.
 require('../ws-federation/wsfed');
 // SAML 2.0 Web Browser SSO — the profile this service spent years documenting
-// the absence of. It must come AFTER authn.js for the reason wsfed.js must, and
+// the absence of. It must come AFTER authn.js for the reason wsfed.ts must, and
 // it is a stronger dependency here rather than a weaker one: this module has NO
 // sign-in screen of its own at all and reaches that service's through
-// beginAuthentication(). It has no constraint against wsfed.js in either
+// beginAuthentication(). It has no constraint against wsfed.ts in either
 // direction — the two share the session and know nothing about each other — and
 // it sits here so that the two browser SSO profiles read together in the route
 // order and on /admin/sts-metadata.
 require('../saml/saml2_sso');
 // SAML 1.1's two browser profiles, and the SAML responder behind one of them.
 // TWO constraints, and the second is the interesting one. It must come AFTER
-// authn.js for the same reason saml2_sso.js must — no sign-in screen of its
+// authn.js for the same reason saml2_sso.ts must — no sign-in screen of its
 // own, and beginAuthentication() is how it reaches one. And it must come AFTER
-// saml/saml2_sso.js, because it takes that module's slugOf(): the slug is a
+// saml/saml2_sso.ts, because it takes that module's slugOf(): the slug is a
 // HANDLE FOR AN APPLICATION shared by both profiles and by the console, and two
 // spellings of it would make /saml2/metadata/app-1a2b3c and
 // /saml11/metadata/app-9f8e7d name one entry in one directory. That require is
@@ -163,8 +163,8 @@ require('../saml/saml11_sso');
 // order and /admin/sts-metadata read in the order somebody thinks about them:
 // what this service ISSUES, and then what it CONSUMES.
 //
-// Only federation_sp.js is required. `federation.js`, `federation_map.js` and
-// `federation_http.js` are libraries (rule 3) — they register nothing, so their
+// Only federation_sp.ts is required. `federation.js`, `federation_map.ts` and
+// `federation_http.ts` are libraries (rule 3) — they register nothing, so their
 // position is not a position — and each is required by whoever needs it:
 // admin_stats.js and authn.js reach the register directly, and ldap_server.js
 // fills its directory slot at its own require time.
@@ -230,7 +230,7 @@ require('../kerberos/spnego_authn');
 // `/admin/sts-metadata` groups it with the protocols it belongs to.
 // ---------------------------------------------------------------------------
 require('../pki/pki_service');
-// The admin console. It must come AFTER oauth2.js and, like wsfed.js, the order
+// The admin console. It must come AFTER oauth2.js and, like wsfed.ts, the order
 // is a dependency rather than a preference: its metrics page reports the
 // browser sign-on sessions oauth2.js owns, read through the `sessions` map that
 // module exports. The dependency is one way — oauth2.js knows nothing about the
@@ -501,8 +501,8 @@ const spiffeServer = require('../spiffe/spiffe_server');
 // then delivers a Security Event Token to somebody who asked in advance to be
 // told — which is why it was the first protocol module here to make an
 // outbound request, and the second module in the repository to do so
-// (`federation/federation_http.js` was the first; others have followed, each
-// argued in its own file, and `ssf/ssf_http.js` argues its own case rather than
+// (`federation/federation_http.ts` was the first; others have followed, each
+// argued in its own file, and `ssf/ssf_http.ts` argues its own case rather than
 // citing that one, because RFC 8935 push IS the receiver telling the
 // transmitter where to post).
 //

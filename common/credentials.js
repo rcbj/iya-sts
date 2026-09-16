@@ -8,7 +8,7 @@
 //
 // Four doors took a password and none of them checked one until product mode:
 // the sign-in screen (`authn.js`), an LDAP bind (`ldap_server.js`), a
-// WS-Security UsernameToken (`wstrust.js`) and SCIM Basic (`scim_auth.js`).
+// WS-Security UsernameToken (`wstrust.ts`) and SCIM Basic (`scim_auth.js`).
 // More have joined since — the OAuth password grant, EST Basic, the portal's
 // password forms (see *A PASSWORD THAT MUST BE CHANGED* below for the list).
 // They all ask here now, and that is the whole point — four verifications is
@@ -36,7 +36,7 @@
 // WHAT DEVELOPMENT MODE STILL REFUSES, which surprises people.
 //
 // It is not "everything passes". The reserved password `invalid` is refused in
-// both modes, and it predates this file: `wstrust.js` and `scim_auth.js` both
+// both modes, and it predates this file: `wstrust.ts` and `scim_auth.js` both
 // carry it, because a mock that cannot be made to say NO cannot be used to test
 // what a client does when it is told no. That convention is honoured here so
 // that it means the same thing at all four doors instead of two.

@@ -297,7 +297,7 @@ CAEP, RISC and the database and secret-store reports have since). Transmitting
 a Security Event Token signs a JWS — possibly ML-DSA or SLH-DSA on the worker
 pool — and then POSTs it to somebody else's endpoint. `sendJson()` is called
 from the `then`, and a rejection is answered as a 500 naming the message rather
-than becoming an unhandled rejection: `ssf/ssf.js`'s action function resolves a
+than becoming an unhandled rejection: `ssf/ssf.ts`'s action function resolves a
 refusal rather than throwing one, so a rejection there is a bug in this
 repository and not something a request can cause.
 
@@ -305,7 +305,7 @@ repository and not something a request can cause.
 GAP.** A stream carries a **delivery endpoint this service will DIAL**, and the
 one place that URL may come from is a receiver that authenticated at
 `POST /ssf/stream` and asked. An operation here that could mint one would be a
-second door onto the outbound request `ssf/ssf_http.js` spends its header
+second door onto the outbound request `ssf/ssf_http.ts` spends its header
 bounding — **and it would be the door with the WEAKER credential**, since this
 API takes a token that anybody holding the client secret can mint and the
 console takes a person's own sign-in. (It read "and it would be the UNGATED
@@ -633,7 +633,7 @@ show what an operation returns.
 
 The sign-out resource mirrors `/admin/logout` and calls the same two functions
 the console does (`adminViews.logoutJson()` and `adminActions.logoutAction()`),
-which call `logout/logout.js`. Rule 7 as usual: the API decides
+which call `logout/logout.ts`. Rule 7 as usual: the API decides
 nothing the console does not.
 
 **One thing about it is worth stating because it is the only place three doors
@@ -721,7 +721,7 @@ route order.** `admin-ui/crypto_metadata.js` is required at 20a — after
 `tls_server`'s ahead of every route in this file and ahead of ldap, scim
 and spiffe. So that module fills `admin.setCryptoReporter()` at its own require
 time and this one reads it, exactly as `/admin-api/logout` reaches
-`logout/logout.js` through the logout-reader slot (`adminViews.logoutJson()`). Rule 3e's test in the root
+`logout/logout.ts` through the logout-reader slot (`adminViews.logoutJson()`). Rule 3e's test in the root
 `CLAUDE.md` answers yes in both directions.
 
 **It answers 503 and not 404 when the reporter was never installed**, and the
@@ -1015,7 +1015,7 @@ URL, and rule 7's parity check reads the console's own list.
 
 ## `/admin-api/sessions` IS NOT A SHAPE OF `/admin-api/logout` (2026-09-04)
 
-Both read `logout/logout.js`, and they answer two different questions:
+Both read `logout/logout.ts`, and they answer two different questions:
 
 * `GET /admin-api/logout?user=` is *what is alice still signed into* — keyed on
   one identity, reaching all ten families, including the seven whose rows are

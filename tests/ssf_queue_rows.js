@@ -5,7 +5,7 @@
 // ===========================================================================
 // A STREAM'S QUEUE IS ONE ROW PER SET, AND EVERY CHANGE TO IT IS JOURNALLED.
 //
-// `ssf_streams.js` kept the queue as an array on the stream record, and
+// `ssf_streams.ts` kept the queue as an array on the stream record, and
 // nothing that changed it — queueing a SET, a poll's acknowledgement, a push
 // taking one off — was ever reported to the persistence journal. In the
 // request-worker pool that made the queue per PROCESS: in `dispatch` mode on
@@ -31,7 +31,7 @@
 //      have left open: a transmission that queues AFTER answering, on a
 //      worker that has not yet applied an acknowledgement, writing the
 //      acknowledged SET straight back. It is the reason the queue is a store
-//      of its own rather than the one-line fix `caep.js` got.
+//      of its own rather than the one-line fix `caep.ts` got.
 //   3. A delete applied from another process is final here: a SET another
 //      worker took an acknowledgement for is not delivered by this one.
 //   4. A record edited IN PLACE reaches the journal, a record another process
@@ -228,8 +228,8 @@ function child() {
 function checkNoQueueMember(t) {
   log.debug("Entering checkNoQueueMember().");
   const root = path.join(__dirname, '..');
-  ['ssf/ssf.js', 'ssf/ssf_streams.js', 'ssf/ssf_receivers.js', 'ssf/caep.js',
-   'ssf/risc.js', 'gnap/gnap_signals.ts'].forEach(function (rel) {
+  ['ssf/ssf.ts', 'ssf/ssf_streams.ts', 'ssf/ssf_receivers.ts', 'ssf/caep.ts',
+   'ssf/risc.ts', 'gnap/gnap_signals.ts'].forEach(function (rel) {
     const text = fs.readFileSync(path.join(root, rel), 'utf8')
       .split('\n').filter(function (line) {
         // The one legitimate mention: touch() dropping the member a record

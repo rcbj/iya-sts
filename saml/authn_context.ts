@@ -8,8 +8,8 @@
 // SAML 2.0 says it with an <AuthnContextClassRef> (saml-authn-context-2.0-os),
 // SAML 1.1 with an AuthenticationMethod URI (saml-core-1.1 section 7.1), and
 // WS-Federation carries whichever of the two its token type is. Until
-// 2026-09-12 the question was answered in FOUR places — `saml2_sso.js`,
-// `saml11_sso.js`, `wsfed.js`, and the defaults of the two builders — and all
+// 2026-09-12 the question was answered in FOUR places — `saml2_sso.ts`,
+// `saml11_sso.ts`, `wsfed.ts`, and the defaults of the two builders — and all
 // four had the same three outcomes: two factors, a security key alone, and
 // EVERYTHING ELSE CALLED A PASSWORD.
 //
@@ -47,8 +47,8 @@
 // for the reason that a require from `saml/` into `ws-federation/` would make
 // the newer and more widely spoken profile depend on the older and more niche
 // one. That reason is about DIRECTION, and it is honoured: this file is in
-// `saml/`, both SAML vocabularies are SAML's, and `wsfed.js` already requires
-// `saml/saml2.js` and `saml/saml11.js` in exactly this direction. It is not in
+// `saml/`, both SAML vocabularies are SAML's, and `wsfed.ts` already requires
+// `saml/saml2.ts` and `saml/saml11.ts` in exactly this direction. It is not in
 // `common/` because nothing outside the three SAML-carrying families speaks
 // either vocabulary.
 //
@@ -106,7 +106,7 @@ class AuthnContext {
   static readonly AC_TLS_CLIENT = AC_PREFIX + 'TLSClient';
   static readonly AC_X509 = AC_PREFIX + 'X509';
   static readonly AC_UNSPECIFIED = AC_PREFIX + 'unspecified';
-  // Microsoft's, and used for the reason wsfed.js recorded long before this
+  // Microsoft's, and used for the reason wsfed.ts recorded long before this
   // file: SAML 2.0's own classes have no member that describes a WebAuthn key
   // after a password without overstating a specific mechanism, and
   // `multipleauthn` is exactly the claim — more than one factor — and what
@@ -231,7 +231,7 @@ class AuthnContext {
   // ---------------------------------------------------------------------------
   // WHAT A FEDERATION PARTNER SAID, re-asserted rather than replaced.
   //
-  // `federation_sp.js` puts the partner's own authentication context on the
+  // `federation_sp.ts` puts the partner's own authentication context on the
   // session's `acr` and — since 2026-09-12 — the partner's amr beside
   // "federated" rather than instead of it. Three cases:
   //
@@ -242,7 +242,7 @@ class AuthnContext {
   //     Provider) — the amr is read exactly as this service's own would be;
   //   * the partner said nothing — `unspecified`. Inventing `pwd` because a
   //     partner probably used a password would put a factor in an assertion
-  //     nobody performed, which is `federation_sp.js`'s decision 1.
+  //     nobody performed, which is `federation_sp.ts`'s decision 1.
   // ---------------------------------------------------------------------------
   private federatedSignIn(amr: string[], acr?: string): AuthnReading {
     const { log } = this.deps;

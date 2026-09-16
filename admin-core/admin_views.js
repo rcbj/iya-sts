@@ -198,7 +198,7 @@ const samlAssertionRowFor = adminActions.samlAssertionRowFor;
 // `logoutReader` is the SECOND collaborator both halves need — sessionsView()
 // reads what is live and sessionsAction() ends it — so the console's one
 // setter now writes here as well as into admin_actions.js.
-// THE THREE REPORTERS, filled by ssf/ssf.js. They are the same slots the
+// THE THREE REPORTERS, filled by ssf/ssf.ts. They are the same slots the
 // action half holds — the reports READ what the actions ACT on — so the
 // console's one setter writes into both.
 // Filled by spiffe/spiffe_server.js through the console, like the rest.
@@ -2842,7 +2842,7 @@ function ssfJson(req) {
 // MONITORING -> SHARED SIGNALS -> DEAD LETTERS (2026-09-14).
 //
 // What every dead-letter queue in the realm holds, counted, and the letters
-// themselves searched and paged. `ssf/ssf_dead_letter_report.js` computes the
+// themselves searched and paged. `ssf/ssf_dead_letter_report.ts` computes the
 // report; this adds only the search and the slice, for both doors —
 // `/admin/ssf/dead-letters` and `GET /admin-api/ssf/dead-letters` — so the two
 // cannot disagree about what was filtered (rule 7).
@@ -3815,7 +3815,7 @@ function saml2ServiceProviders() {
 }
 
 // One service provider's four URLs and its entityID, from the profile's own
-// functions (`saml/saml2_sso.js`). Never rebuilt here, so the page cannot
+// functions (`saml/saml2_sso.ts`). Never rebuilt here, so the page cannot
 // publish an address the profile does not answer on.
 function saml2Facts(base, identifier) {
   log.debug("Entering saml2Facts().");
@@ -3973,7 +3973,7 @@ function saml11RelyingParties() {
 }
 
 // One relying party's three URLs and its providerID, from the profile's own
-// functions (`saml/saml11_sso.js`). Never rebuilt here, for saml2Facts()'s
+// functions (`saml/saml11_sso.ts`). Never rebuilt here, for saml2Facts()'s
 // reason.
 function saml11Facts(base, identifier) {
   log.debug("Entering saml11Facts().");
@@ -4971,7 +4971,7 @@ function federationDetailJson(req, id) {
   //     register and its assertion consumer service answers only under that
   //     realm's prefix, so the URL printed here named a path that 404s — while
   //     the AuthnRequest this service actually sends carries the right one,
-  //     because federation_sp.js does use baseUrlOf(). The page and the wire
+  //     because federation_sp.ts does use baseUrlOf(). The page and the wire
   //     disagreed, and the page is the half a person reads.
   //   * ALWAYS `http://`, on a service that binds TLS whenever `global.https`
   //     is set — which every launcher in the parent project's suite does.
@@ -5896,7 +5896,7 @@ function logoutInventoryFor(key) {
 }
 
 // The families, for the summary table and for the filter. Read off the slot so
-// that a family added to logout.js appears here with no edit — the reason the
+// that a family added to logout.ts appears here with no edit — the reason the
 // prose lives over there and not in this file.
 function logoutFamilies() {
   log.debug("Entering logoutFamilies().");

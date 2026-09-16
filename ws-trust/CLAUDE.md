@@ -8,10 +8,10 @@ trust namespace alone has four versions in use, so `firstByLocal()` and
 `textByLocal()` in `../common/helpers.js` match on LOCAL NAME WITH THE NAMESPACE
 IGNORED. That is what lets one `RST` parser serve WS-Trust 1.0–1.4 instead of
 four, and it is why those two functions are in `common/` rather than here — the
-other two readers are `../ws-federation/wsfed.js`'s `wreq` and the `wresult` the
+other two readers are `../ws-federation/wsfed.ts`'s `wreq` and the `wresult` the
 mock relying party is POSTed.
 
-It asks `../saml/saml2.js` for the assertion it puts in an `RSTR`; it records the
+It asks `../saml/saml2.ts` for the assertion it puts in an `RSTR`; it records the
 `AppliesTo` as a relying party through `../common/applications.js`, and a
 `AppliesTo` handed a SAML 2.0 assertion is BOTH a WS-Trust relying party AND that
 assertion's service provider, so `seen()` is passed a LIST rather than called

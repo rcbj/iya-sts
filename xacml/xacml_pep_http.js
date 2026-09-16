@@ -7,7 +7,7 @@
 // THE THIRD OUTBOUND REQUEST IN THIS REPOSITORY, AND IT IS THE WEAKEST CASE OF
 // THE THREE. MAKE THE ARGUMENT; DO NOT CITE THE OTHER TWO.
 //
-// `federation/federation_http.js` is the first and `ssf/ssf_http.js` is the
+// `federation/federation_http.ts` is the first and `ssf/ssf_http.ts` is the
 // second, and the second one's header opens by refusing to lean on the first.
 // That is the rule this file inherits — the ARGUMENT is what is inherited, not
 // the permission — so here it is from the beginning.

@@ -4063,8 +4063,8 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   // are in scope — the person was authenticated in authn.js, which never reads
   // a client_id, and the token endpoint sees the client without the browser.
   //
-  // It lives ON the session object, which is the same decision wsfed.js makes
-  // about `wsfedRealms` and saml2_sso.js makes about `saml2ServiceProviders`:
+  // It lives ON the session object, which is the same decision wsfed.ts makes
+  // about `wsfedRealms` and saml2_sso.ts makes about `saml2ServiceProviders`:
   // the list should die exactly when the session does, and nothing then has to
   // sweep it.
   frontchannel.noteClient(authInfo, String(query.client_id));
@@ -5679,7 +5679,7 @@ function logoutEndpoint(req, res) {
   // `frontchannel_logout_uri` in an iframe IN THIS BROWSER. A 302 to
   // post_logout_redirect_uri abandons the document before any of them load, so
   // where there is a fan-out to perform this endpoint renders it and offers the
-  // return as a LINK — the same trade wsfed.js's sign-out makes about its
+  // return as a LINK — the same trade wsfed.ts's sign-out makes about its
   // cleanup pings, and for the same reason: a redirect that defeats the
   // notifications is a sign-out that only looks federated.
   //
@@ -5780,7 +5780,7 @@ app.get('/oauth2/logout', logoutEndpoint);
 // redeemed for a token set naming whoever it was issued for. A sign-out that
 // revoked their tokens and left the codes alone would leave the one credential
 // that mints more of them, which is the gap this pair closes for
-// `logout/logout.js`.
+// `logout/logout.ts`.
 //
 // They are FUNCTIONS rather than an exported Map for the reason
 // `registeredClients` is not exported any more: a caller holding the Map would
@@ -11121,7 +11121,7 @@ module.exports = {
   idToken: idToken,
   // The outstanding authorization codes, for the protocol-independent logout.
   // Functions rather than the Map, and both stores behind them — see the block
-  // above outstandingCodesFor(). `logout/logout.js` requires this module in the
+  // above outstandingCodesFor(). `logout/logout.ts` requires this module in the
   // ordinary direction: `common/protocol_stack.js` loads it long before that
   // one, so the require moves no route and closes no cycle.
   outstandingCodesFor: outstandingCodesFor,
@@ -11170,6 +11170,6 @@ module.exports = {
   // second name for that would be the two-stores problem with extra steps. The
   // browser session used to be exported from here, because this module owned
   // the login flow it came out of. It does not any more: `authn.js` does, and
-  // wsfed.js and admin.js take it from there. Re-exporting it would leave two
+  // wsfed.ts and admin.js take it from there. Re-exporting it would leave two
   // names for one store and a reader no way to tell which is the real one.
 };

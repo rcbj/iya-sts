@@ -104,7 +104,7 @@ const authorizationServers = require('./oauth-oidc/authorization_servers');
 // loads that module long before this one, so it registers nothing here.
 //
 // It is a `setX()` rather than an export that module reads for the reason
-// `logout/logout.js` fills `admin.setLogoutReader()`: the reader has to run
+// `logout/logout.ts` fills `admin.setLogoutReader()`: the reader has to run
 // after the writer, and this is the only point in the process where that is
 // guaranteed.
 // ---------------------------------------------------------------------------
@@ -8462,7 +8462,7 @@ SPECS.forEach(function (s) { SPEC_BY_ID[s.id] = s; });
 // the router if it is HTTP:
 //
 //   * SAML 2.0 and SAML 1.1 register NO ROUTE. The assertions are built by
-//     saml/saml2.js and saml/saml11.js and travel inside somebody else's
+//     saml/saml2.ts and saml/saml11.ts and travel inside somebody else's
 //     envelope — a WS-Trust RSTR, a WS-Federation wresult — so a page built by
 //     walking the router lists neither, and a reader would conclude this
 //     service has no SAML in it.

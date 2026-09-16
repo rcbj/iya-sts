@@ -67,7 +67,7 @@
 // rather than citing the others. This one is the narrowest, because of who it
 // dials: **itself, at a
 // loopback address it computes, on a port it is listening on.** Nothing about
-// it is influenced by a caller. `DIALLABLE` in `federation_http.js` exists to
+// it is influenced by a caller. `DIALLABLE` in `federation_http.ts` exists to
 // stop a URL from a request becoming a URL this service fetches; here there is
 // no URL at all — the address is `helpers.loopbackHost()` and `helpers.PORT`,
 // and the paths are this service's own, three constants below.
@@ -80,7 +80,7 @@
 // a back channel that was a function call would be the half of it that only
 // looked run.
 //
-// Four things bound it, and each is `federation_http.js`'s rule made again:
+// Four things bound it, and each is `federation_http.ts`'s rule made again:
 //
 //   * **THE HOST HEADER IS THE BROWSER'S, THE ADDRESS IS LOOPBACK.** The
 //     connection goes to the loopback address of the interface this service
@@ -282,14 +282,14 @@ const AUTHORIZE_PATH = '/oauth2/authorize';
 const TOKEN_PATH = '/oauth2/token';
 const JWKS_PATH = '/oauth2/jwks';
 
-// A flow in progress, per realm, keyed by `state`. `federation_sp.js`'s
+// A flow in progress, per realm, keyed by `state`. `federation_sp.ts`'s
 // decision 3 exactly: the partner — here, the browser — carries an opaque
 // handle and every fact about the request stays on this side. The `returnTo` in
 // particular must never ride in a parameter, because a return address a caller
 // can write is an open redirect operated by whoever can forge a state.
 const flows = realms.map({ persist: 'oidc_rp.flows' });
 // In flight at once, per realm rather than per process, for the reason
-// `federation_sp.js` gives about a shared cap: one realm's flood would
+// `federation_sp.ts` gives about a shared cap: one realm's flood would
 // otherwise evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since
 // 2026-09-12; this is its default.
 const MAX_FLOWS = 200;
@@ -303,7 +303,7 @@ const MAX_FLOWS = 200;
 // way that sentence can quietly stop being true. Both read `authn.pendingTtlS`
 // now, so they cannot differ.
 const FLOW_TTL_MS = 10 * 60 * 1000;
-// The back channel's bounds. Both are `federation_http.js`'s and are set to the
+// The back channel's bounds. Both are `federation_http.ts`'s and are set to the
 // same values for the same reasons. The timeout is `oidcRp.backChannelTimeoutS`
 // since 2026-09-12; the body cap is not a deployment decision.
 const BACK_CHANNEL_TIMEOUT_MS = 10 * 1000;
@@ -644,7 +644,7 @@ function ensureRedirectUri(surface, client, uri) {
 
 // ---------------------------------------------------------------------------
 // PKCE. RFC 7636, S256, always — there is no setting to turn it off, which is
-// `federation_sp.js`'s position on the same question: the one thing worse than
+// `federation_sp.ts`'s position on the same question: the one thing worse than
 // not sending PKCE is a flag that stops.
 // ---------------------------------------------------------------------------
 function pkcePair() {
@@ -912,7 +912,7 @@ function backChannel(options) {
 //
 // Verified against the JWKS this service publishes, fetched over the same
 // loopback channel — NOT against the key material in this process, which would
-// prove nothing about what was actually served. `federation_sp.js`'s
+// prove nothing about what was actually served. `federation_sp.ts`'s
 // `verifyForeignJwt()` is the model and two of its rules are copied here
 // deliberately rather than referenced: `alg: none` is refused BY NAME, because
 // it is an attack with a name; and the algorithm family comes from the KEY
@@ -1278,7 +1278,7 @@ function beginSignIn(req, res, surfaceId, options) {
     const store = flows;
     const cap = maxFlows();
     if (store.size >= cap) {
-      // The oldest goes, exactly as `federation_sp.js` does it: the cap bounds
+      // The oldest goes, exactly as `federation_sp.ts` does it: the cap bounds
       // memory and the eviction has to fall on the flow least likely to still
       // be wanted.
       let oldestKey = null;
@@ -1344,7 +1344,7 @@ function beginSignIn(req, res, surfaceId, options) {
 // 2. THE CALLBACK. Where the browser comes back with a code.
 //
 // Every refusal here is REPORTED and never redirected, which is
-// `federation_sp.js`'s decision 6 and its reason applies unchanged: the
+// `federation_sp.ts`'s decision 6 and its reason applies unchanged: the
 // person's sign-in has already succeeded at the authorization endpoint, so the
 // only interesting question is what THIS side disliked about the answer — and
 // that is unanswerable from a redirect that has thrown the detail away.
@@ -1487,7 +1487,7 @@ async function handleCallback(req, res, surfaceId, options) {
     if (!idToken) {
       // The one refusal here that is about OIDC rather than OAuth: an access
       // token alone says a client was AUTHORIZED and not that anybody signed
-      // in, which is the distinction `federation_sp.js` warns about on every
+      // in, which is the distinction `federation_sp.ts` warns about on every
       // OAuth-shaped federated sign-in. Signing somebody in on it would be
       // signing in as nobody.
       return coded('STS-AUTHN-0127', { ok: false,

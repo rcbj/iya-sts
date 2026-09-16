@@ -1049,7 +1049,7 @@ GC, key generation and scimmy's own coercion.
 The sixth section moved `allPolicies()`, `allRoles()` and `applicationEntry()`'s
 fallback onto `entriesUnder()` and left `allApplications()` and
 `applicationCount()` walking every entry in the realm. That was cheap while
-nothing asked for the whole registry per request. Then `ssf/ssf_streams.js`
+nothing asked for the whole registry per request. Then `ssf/ssf_streams.ts`
 started asking — once per event, per stream, to find a stream owner named by an
 `ssfReceiverId` — and a SCIM create emits an event per person. A dispatched bulk
 load profiled with half a worker's CPU in `normalizeDn()` under
@@ -1383,7 +1383,7 @@ binds no protocol port at all. Its `liveConnections` is therefore permanently
 empty.
 
 **That did not degrade the sign-out, it inverted it.** `boundConnections()`
-answered "there are none"; the driver in `logout/logout.js` ends what
+answered "there are none"; the driver in `logout/logout.ts` ends what
 `collect()` finds; nothing was found, so nothing was ended and nothing was
 reported — and a global logout said it had ended everything while a bound
 connection went on being signed in. It was green in two modes of the suite and

@@ -236,7 +236,7 @@ holds is the table above; what each module is for is that directory's
    | `admin-ui/admin.js` | `setLogoutReader`, `setCryptoReporter`, `setSignalsReporter`, `setCaepReporter`, `setRiscReporter`, `setDirectoryPages`, `setDirectoryReader`, `setDirectoryWriter`, `setGroupReader`, `setGroupWriter`, `setScimReader`, `setSpiffeReader`, `setXacmlPages`, `setRolePreviewer`, `setTruststore` | `admin-ui/CLAUDE.md`, and the filler's own file |
    | `admin-ui/crypto_metadata.js` | `setProtocolFamilies`, filled by `sts_metadata.js` | `admin-ui/CLAUDE.md` |
    | `portal/portal.js` | `setDirectory`, filled by `ldap/ldap_server.js` | `portal/CLAUDE.md` |
-   | `authn/authn.js` | `setSessionObserver`, filled by `ssf/ssf.js` | `authn/CLAUDE.md`, `ssf/CLAUDE.md` |
+   | `authn/authn.js` | `setSessionObserver`, filled by `ssf/ssf.ts` | `authn/CLAUDE.md`, `ssf/CLAUDE.md` |
    | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver` | `common/CLAUDE.md` |
    | `common/helpers.js` | `setSubjectResolver` (a person's `sub` from their entry's `entryUUID`, and back), filled by `ldap/ldap_server.js` (2026-09-14) | `ldap/CLAUDE.md` |
 
@@ -392,9 +392,9 @@ in every file, including the ones in the source comments. This is the index.
 | 3an | RFC 8705 both halves: `tls_client_auth`'s implicit (issued to the application) and explicit (one of five subject parameters) mappings over a verified chain, the declaration held in every mode, section 7.1's refresh rule | `oauth-oidc/CLAUDE.md` |
 | 3g | `applications.js` | `common/CLAUDE.md` |
 | 3r | `crypto.js`, why it is a leaf, why the verifier is told which element, and why XML encryption moved rather than being replaced | `common/CLAUDE.md` |
-| 4a | `saml2_sso.js` after `authn.js`, and why it has no screen | `saml/CLAUDE.md` |
-| 4b | `federation_sp.js` after `authn.js`, and why it needs no screen at all | `federation/CLAUDE.md` |
-| 4b | `saml11_sso.js` after `authn.js` and after `saml2_sso.js`, and why the two profiles are separate implementations | `saml/CLAUDE.md` |
+| 4a | `saml2_sso.ts` after `authn.js`, and why it has no screen | `saml/CLAUDE.md` |
+| 4b | `federation_sp.ts` after `authn.js`, and why it needs no screen at all | `federation/CLAUDE.md` |
+| 4b | `saml11_sso.ts` after `authn.js` and after `saml2_sso.ts`, and why the two profiles are separate implementations | `saml/CLAUDE.md` |
 | 3l | `delegation.js`, and why it has no funnel | `common/CLAUDE.md` |
 | 3s | `app_permissions.js`, why a CONFIGURED register is not the observed one with a flag on it, and why the ordering rule lives in `applications.js` | `common/CLAUDE.md` |
 | 3t | `consent.js`, why an OVERRIDE is not a RECORD, and why the client_id is the last field of the value | `common/CLAUDE.md` |
@@ -424,10 +424,10 @@ in every file, including the ones in the source comments. This is the index.
 | 3o | `federation.js`, why four modules may require it, and why `PATHS` is not beside the routes | `federation/CLAUDE.md` |
 | 3m | `realms.js`, the realm slot in `config.js`, and why the realm is ambient | `common/CLAUDE.md` |
 | 3q | `persistence.js`, the override-store slot in `config.js`, the directory slot it offers, and why `realms.onChange()` is an event rather than a third slot | `persistence/CLAUDE.md` |
-| 3m | `logout/logout.js` holds no state, and the reading order is not the ending order | `logout/CLAUDE.md` |
+| 3m | `logout/logout.ts` holds no state, and the reading order is not the ending order | `logout/CLAUDE.md` |
 | 3n | `frontchannel_logout.js` | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
-| 4 | `wsfed.js` after `authn.js` | `ws-federation/CLAUDE.md` |
+| 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
 | 6 | `ldap_server.js` after `admin.js` and `tls_server.js` | `ldap/CLAUDE.md` |
 | 6a (SCIM), 6a-ii | `scim.ts`, `scim_auth.ts` | `scim/CLAUDE.md` |

@@ -125,7 +125,7 @@ const CAPABILITIES = [
           'challenge password and an ACME nonce are spent once, and a SPIFFE ' +
           'join token is used once.' },
   { id: 'saml.artifacts-once', section: '2',
-    by: 'saml/saml2_sso.js',
+    by: 'saml/saml2_sso.ts',
     what: 'A SAML 2.0 or SAML 1.1 artifact is resolved once across the ' +
           'cluster.' },
   { id: 'oid4vc.once', section: '2',
@@ -179,7 +179,7 @@ const CAPABILITIES = [
           'load balancer makes one address for everybody.' },
   // ---- section 6: shared signals -------------------------------------------
   { id: 'ssf.delivery', section: '6',
-    by: 'ssf/ssf.js',
+    by: 'ssf/ssf.ts',
     what: 'An acknowledged SET is never delivered again by another node, a ' +
           'session end emits one event, and stream health is one state.' },
   // ---- section 8: operations -----------------------------------------------

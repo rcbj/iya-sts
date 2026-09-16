@@ -45,7 +45,7 @@ is made at the password screen, and it owns no session of its own. Splitting the
 would put the two halves of one ceremony in two places and leave the pending
 record crossing a directory boundary for no gain.
 
-**It OWNS THE SESSION.** `ws-federation/wsfed.js`, `saml/saml2_sso.js` and
+**It OWNS THE SESSION.** `ws-federation/wsfed.ts`, `saml/saml2_sso.ts` and
 `admin-ui/admin.js` take it from here through the exported `startSession` /
 `sessionOf` / `endSession`, and `oauth-oidc/oauth2.js` reads the session and
 never writes one. Do not give any other module a session store to "decouple" it:
@@ -177,7 +177,7 @@ contract:
   **Rotation also closed a fixation hole**: an arrival session keeps its sid
   through the sign-in that upgrades it, and it used to keep its cookie too.
   `common/request_pool.js` binds worker affinity to the sid part.
-* **`assurance-level-change`**, from `ssf/caep.js` on a `reauthenticated`
+* **`assurance-level-change`**, from `ssf/caep.ts` on a `reauthenticated`
   notice whose `acr` moved, on the private `urn:sts:acr` scale with
   `change_direction` from `oauth-oidc/step_up.js`'s ordering. It is in
   `caep.autoEmitTypes`' default; a deployment that pinned the old list emits
@@ -228,7 +228,7 @@ contract:
 * **Two workers creating one person** keep both UUIDs (`ldap/CLAUDE.md`), and
   `sameIdentity()` treats a session under the alias as the same person.
 * **A rename keeps every name-keyed record together** — the identity register, the tokens
-  and sessions filed under a person, the RISC register (`ssf/risc.js`), GNAP's opaque
+  and sessions filed under a person, the RISC register (`ssf/risc.ts`), GNAP's opaque
   identifier and user reference (`gnap/gnap_subject.ts`), and a person's TLS client and
   enrolled certificates, whose issuing records now keep the holder's subject
   (`common/tls_client_certificates.js`'s `currentHolderOf()`: a rename follows the entry,
@@ -241,7 +241,7 @@ contract:
 **`startSession()` TOOK A SIXTH ARGUMENT FOR FEDERATION, AND IT REPLACED A
 DOUBLE-COUNT RATHER THAN ADDING A FEATURE.** This function has always recorded
 the authentication ITSELF — that is what makes a WS-Federation sign-in appear on
-`/admin/users` without `wsfed.js` knowing the console exists. `../federation/`
+`/admin/users` without `wsfed.ts` knowing the console exists. `../federation/`
 broke that assumption in two places at once: `methodPhraseFor()` answers "sign-in
 screen (password)" for an `amr` it does not recognise, which is exactly wrong for
 somebody who never saw this screen at all, and the attributes a foreign identity
@@ -261,7 +261,7 @@ at this screen is in the middle of SOMETHING — an authorization request, a
 something, whole. Handing it to the federated flow is what lets a foreign
 identity provider satisfy any protocol this service speaks.
 
-The require goes to the REGISTER and never to `federation_sp.js`: that module
+The require goes to the REGISTER and never to `federation_sp.ts`: that module
 requires THIS file — it has no sign-in screen of its own and calls
 `startSession()` directly — so a require back would close a cycle. The register
 in the middle is what both halves can safely reach, and it registers no route, so
@@ -407,7 +407,7 @@ Four things about that are load-bearing:
   authentication service that will redirect a browser to an arbitrary URL after
   signing somebody in is a credential phishing tool with a login screen in front
   of it.
-* **It owns the SESSION**, and `wsfed.js` and `admin.js` take it from here.
+* **It owns the SESSION**, and `wsfed.ts` and `admin.js` take it from here.
   `oauth2.js`'s old note said the session lived there "because this module owns
   the login flow the session comes out of" — which is exactly the sentence that
   moved it, now that the login flow has. `oauth2.js` reads the session and never
@@ -429,7 +429,7 @@ Four things about that are load-bearing:
   of a request. And `methodPhraseFor()` exists because there are three outcomes
   now: the two-way conditional it replaced asked whether `hwk` was present and
   called a passwordless sign-in a password one. Anything downstream that reads
-  `hwk` to mean "two factors" is wrong for the same reason — `wsfed.js`'s
+  `hwk` to mean "two factors" is wrong for the same reason — `wsfed.ts`'s
   `authnMethodsFor()` was, and now tests for `hwk` AND `pwd`.
 
 ---
@@ -511,13 +511,13 @@ security key instead of a password* is recorded in `portal/CLAUDE.md`.
 
 ## `setSessionObserver()` — the one INVERTED HOOK this module offers
 
-Added 2026-09-03 for the CAEP profile. `ssf/caep.js` needs to know when a
+Added 2026-09-03 for the CAEP profile. `ssf/caep.ts` needs to know when a
 session starts, is presented and ends, because that is what a CAEP event is
 *about* — and it cannot be required from here: this module is **8** in the
-require order (`common/protocol_stack.js`) and `ssf/ssf.js` is **23b**, so a
+require order (`common/protocol_stack.js`) and `ssf/ssf.ts` is **23b**, so a
 require the other way would register every `/ssf` route here, ahead of
 `oauth2.js`, ahead of the admin console, ahead of ldap, scim and spiffe. That is rule 1, and it would
-close a cycle besides. So this module holds a function and `ssf/ssf.js` fills
+close a cycle besides. So this module holds a function and `ssf/ssf.ts` fills
 it at its own require time, exactly as `admin.setSignalsReporter()` works one
 layer up.
 
@@ -576,7 +576,7 @@ authorization server now, so this module holds two kinds of browser row:
 | SIGN-ON | `startSession()`, at the screen or any other credential | `sts_session` | `/oauth2/authorize`, `/wsfed`, both SAML profiles — every protocol family |
 | RELYING PARTY | `startRelyingPartySession()`, from a verified ID Token | `sts_admin`, `sts_portal` | the surface that minted it, and nothing else |
 
-**They are one store because rule 3m says so** — `logout.js` reads this map,
+**They are one store because rule 3m says so** — `logout.ts` reads this map,
 `/admin/sessions` draws it, CAEP observes it, and a second register would be a
 second answer to "is somebody signed in" with the wrong half being whichever
 surface a reader happened to open. It is the same arrangement the KEYED API
@@ -588,7 +588,7 @@ Four things about a relying-party session:
 * **IT IS NOT AN AUTHENTICATION AND NOTHING RECORDS ONE.** The person
   authenticated at the authorization endpoint and `startSession()` counted it
   there. A second `recordAuthentication()` would double every console sign-in
-  on `/admin/users` — the defect `federation_sp.js` shipped once and the reason
+  on `/admin/users` — the defect `federation_sp.ts` shipped once and the reason
   `startSession()` has a sixth argument.
 * **IT NAMES THE SIGN-ON SESSION IT CAME FROM AND DIES WITH IT.** The cascade
   is in `dropSession()`, the one place a session ends, so every door that ends
@@ -696,7 +696,7 @@ and the password in front of the code.
 
 Since 2026-08-26 it takes an `application` — the identifier the caller's own
 protocol presented, a `client_id` from `oauth2.js`, an entityID from
-`saml2_sso.js`, a relying party id from `saml11_sso.js` — and what comes back
+`saml2_sso.ts`, a relying party id from `saml11_sso.ts` — and what comes back
 is now one of FOUR things:
 
 | What the entry names | What comes back |
@@ -835,7 +835,7 @@ so `beginAuthentication()` logs the other values' problems at INFO. There is no
 banner to put them on and the flow succeeding is exactly why nobody would go
 looking.
 
-**`returnTo` is checked twice, here and again in `federation_sp.js`**, which
+**`returnTo` is checked twice, here and again in `federation_sp.ts`**, which
 that module's decision 4 already argued for its own reasons. Two checks on one
 value is deliberate: this one catches a caller's bug and that one catches
 somebody handing the federated entry point a `returnTo` of their own.
@@ -1134,7 +1134,7 @@ Three things about it are decisions:
   Running in the realm is also what makes the event right rather than merely
   present, since the observer builds a subject from the realm's own issuer.
 
-**THE EVENT SAYS `policy` AND NOT `user`.** `caep.js`'s rule for a `revoked` act
+**THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
 neither — a lifetime this service configured ran out, which is what CAEP section
 2 means by a policy evaluation. Without that this event would have gone out
@@ -1147,7 +1147,7 @@ notice carries `initiatingEntity` and `expired`, and `reason_user` becomes
 `startSession()` puts `via` on the session as well as handing it to
 `recordAuthentication()` and to the observer. It was in neither place the
 session lives, so *what is this session* could only be answered fully by the
-CAEP register — which `ssf/ssf.js` fills, and a process without it lost the
+CAEP register — which `ssf/ssf.ts` fills, and a process without it lost the
 answer entirely. `/admin/sessions` reads it off the store that owns the session.
 
 It is the protocol the sign-in came THROUGH and not the only one the session
@@ -1254,9 +1254,9 @@ from elsewhere.
 A session IS an issuance — `ISSUANCE.SESSION` has been in
 `common/issuance_gate.js`'s list since it was written — and it was asked at
 exactly ONE door: this module's own sign-in screen. **Five other paths minted a
-session and never asked**: a federated assertion (`federation_sp.js`), a SPNEGO
+session and never asked**: a federated assertion (`federation_sp.ts`), a SPNEGO
 ticket (`spnego_authn.js`), a client certificate (`tls_server.js`), a WS-Trust
-UsernameToken (`wstrust.js`), and this file's OWN WebAuthn funnel.
+UsernameToken (`wstrust.ts`), and this file's OWN WebAuthn funnel.
 
 So an application narrowed to a role refused a password sign-in and admitted the
 same person through any of the five. Federation is where that cost most, for the
@@ -1271,7 +1271,7 @@ sites is four that remember and a sixth added later that does not.
 Four things about it are load-bearing.
 
 * **IT REFUSES BY RETURNING NULL AND NEVER BY THROWING.** Two callers —
-  `tls_server.js` and `wstrust.js` — wrap this in a `try` that treats a failure
+  `tls_server.js` and `wstrust.ts` — wrap this in a `try` that treats a failure
   as bookkeeping which must not break an exchange already completed. That is
   correct for a defect in this function and exactly wrong for a refusal, which
   would be swallowed and the session started anyway. A null is a value they have
@@ -1311,7 +1311,7 @@ points rather than families.
 FRONT DOOR, AND ON 2026-09-10 TWO OF THOSE ARRIVED.** This service's own admin
 console and user portal became Shared Signals receivers, each hosting a receive
 endpoint at `/admin/signals/receive` and `/portal/signals/receive`. Both are
-under a prefix on that list. What arrives at them is `ssf/ssf_http.js` POSTing a
+under a prefix on that list. What arrives at them is `ssf/ssf_http.ts` POSTing a
 Security Event Token over the loopback interface — a server-to-server request
 that carries no cookie, will never send one back, and is answered 202 with an
 empty body.
@@ -1424,7 +1424,7 @@ Four things are load-bearing:
   honouring a session nobody is using, so `sessionEnded()` — THE ONE PLACE the
   question is answered — asks it every time a session is looked up
   (`sessionOf()`, `relyingPartySessionOf()`, `consoleSession()`, the
-  keyed-session lookup) and on every sweep, and `logout/logout.js` asks the same
+  keyed-session lookup) and on every sweep, and `logout/logout.ts` asks the same
   function.
 * **AN IDLE SESSION IS ENDED, NOT MERELY REFUSED.** It goes through
   `expireSession()` like an absolute expiry, so it writes the `session.end` row
@@ -1578,7 +1578,7 @@ row (`ssf.delivery`), and the next section.
 
 **A merge only helps a list that reached the store, and until 2026-09-14 none
 of the four did on its own.** Each protocol records the party ON the session
-object — `saml2_sso.js`, `saml11_sso.js`, `wsfed.js`, and
+object — `saml2_sso.ts`, `saml11_sso.ts`, `wsfed.ts`, and
 `frontchannel_logout.js`'s `noteClient()` — and `sessions` journals a `set()`,
 never an edit to an object it holds, so the list was written only if something
 re-set the row later (with no idle timeout, nothing did). Identity-provider

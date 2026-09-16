@@ -4,7 +4,7 @@ The protocol-independent sign-out. One file:
 
 | File | What it is |
 |---|---|
-| `logout.js` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
+| `logout.ts` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
 
 It is a directory of its own rather than a file in `authn/` or in `common/`, and
 each of those was considered:
@@ -73,7 +73,7 @@ once.
 ## It is a plain require of everything and needs no slot — except one
 
 Rule 3e's test: a slot is what you reach for when a require would close a cycle
-or move a route. Neither applies to the nine requires at the top of `logout.js`,
+or move a route. Neither applies to the nine requires at the top of `logout.ts`,
 because `common/protocol_stack.js` requires this module SECOND TO LAST — after
 every one of them, before `sts_metadata.js` — so each is a cache hit that
 registers nothing, and nothing in this service requires this file back.
@@ -81,7 +81,7 @@ registers nothing, and nothing in this service requires this file back.
 **The one exception is `admin.js`, and it fails the test BOTH ways round**,
 which is why `setLogoutReader()` exists and is the console's sixth slot. This
 module requires `ldap_server.js`; `ldap_server.js` requires `admin.js`; so
-`admin.js -> logout.js -> ldap_server.js -> admin.js` is a cycle, and it would
+`admin.js -> logout.ts -> ldap_server.js -> admin.js` is a cycle, and it would
 also drag every `/admin/ldap/*` route into the router ahead of the console's own. The
 slot carries ONE object — `FAMILIES`, `inventoryFor`, `terminate` — validated
 whole at install time, because a partial one would leave `/admin/logout` listing

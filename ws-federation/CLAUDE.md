@@ -3,11 +3,11 @@
 WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
 `/wsfed/rp` that verifies a sign-in response check by check. One file.
 
-4. **`wsfed.js` must stay after `authn/authn.js` in the require order**, and
+4. **`wsfed.ts` must stay after `authn/authn.js` in the require order**, and
    that is a dependency rather than a preference: it signs users in to the
    browser session `authn.js` owns, through the `startSession` / `sessionOf` /
    `endSession` it exports, so that single sign-on works across the protocols.
-   (The rule named `oauth2.js` while that module owned the session; `wsfed.js`
+   (The rule named `oauth2.js` while that module owned the session; `wsfed.ts`
    sits after both, at 10 in `../common/protocol_stack.js`.) The dependency is
    one-way — `authn.js` knows nothing about WS-Federation — which is what keeps
    it out of the cycles rule 2 exists to avoid. Do not give WS-Federation a
@@ -49,7 +49,7 @@ and wrong about the funnel: the parameters a person needs to see for a
 `wsignin1.0` are `wtrealm`, `wreply`, `wctx`, `wauth` and `whr`, and a screen
 printing `client_id: (none)` would describe a request that does not exist. But
 `beginAuthentication()` takes a `details` array for exactly that, and
-`saml2_sso.js` and `saml11_sso.js` both pass their own protocol's parameters
+`saml2_sso.ts` and `saml11_sso.ts` both pass their own protocol's parameters
 through it. What owning the screen actually bought was owning the FUNNEL — and
 three features live in the funnel and were therefore inert for this profile
 alone:
@@ -91,7 +91,7 @@ is the whole mechanism. See the root `CLAUDE.md`.
 * **`wreply` must be registered in product mode** (`mode.acceptsUnregisteredAddresses()`):
   one of the `wsfedReplyUrl` values on the `wtrealm`'s entry, exact match, with
   none sent meaning the registered one and NO fallback to `/wsfed/rp`. The rule is
-  `../saml/return_address.js`, shared with both SAML profiles. Development passes
+  `../saml/return_address.ts`, shared with both SAML profiles. Development passes
   no registration to it at all, so a request with no `wreply` still goes to the
   mock relying party even when the entry recorded one — byte for byte what it did.
   **Which `wsfedReplyUrl` values count is `applications.returnAddressesOf()`'s
@@ -103,7 +103,7 @@ is the whole mechanism. See the root `CLAUDE.md`.
   federated or unauthenticated session was `am:password`). The `wauth` hardware
   and multi-factor checks read `hardwareKey` / `multiFactor` off the same answer.
 * **The persona claims** come off the directory entry in product mode or are
-  omitted (`../saml/person_attributes.js`), and **the signed metadata describes
+  omitted (`../saml/person_attributes.ts`), and **the signed metadata describes
   what the realm's mode emits** — it said `Always "Mock"` and
   `username@sts.example` in a product deployment's signed document.
 * **`wsfed.entityId` and `saml.issuer` differing is reported** on `/wsfed` and

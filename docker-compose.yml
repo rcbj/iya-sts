@@ -1064,7 +1064,7 @@ services:
       # The mock's certificate is issued by its own Root, which this container
       # is not given — and development mode regenerates both on every start —
       # so there is no anchor to verify against. `pep.js` logs this on every
-      # start rather than once, for federation_http.js's reason: a
+      # start rather than once, for federation_http.ts's reason: a
       # certificate check turned off months ago and forgotten is the worst
       # kind of leftover.
       - PEP_TLS_INSECURE=true

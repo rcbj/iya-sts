@@ -6,7 +6,7 @@
 // A STREAM OWNER'S `ssfAllowedEvents` IS CACHED UNTIL ou=applications CHANGES,
 // AND NOT A MOMENT LONGER (2026-09-14).
 //
-// `ssf/ssf_streams.js` asks what a stream's owner is allowed for every event on
+// `ssf/ssf_streams.ts` asks what a stream's owner is allowed for every event on
 // every stream. It built a whole view of every application to do it, and a
 // session sweep that expired 2,412 sessions blocked a postgres-mode service for
 // 58 seconds — long enough for an LDAP modify in `sts_directory_bulk_load_ldap`

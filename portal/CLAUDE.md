@@ -649,7 +649,7 @@ that calls `beginAuthentication()` — so the reason below is why the flow works
 at all rather than why this file redirects where it does.
 
 `requireSignIn()` used to send an unauthenticated visitor through
-`authn.beginAuthentication()`, exactly as `saml2_sso.js` and `consent_screen.js`
+`authn.beginAuthentication()`, exactly as `saml2_sso.ts` and `consent_screen.js`
 do. This was a plain `303` to `/authn/login` at first **and it does not work**:
 that endpoint draws a form for a PENDING AUTHENTICATION RECORD, and a POST
 naming no record is answered `This sign-in form has expired`. The portal is not a
@@ -694,7 +694,7 @@ path was wrong, so the flow most people take was the one that failed.
 
 **AND THE SAME MISTAKE WAS IN TWO OTHER FILES**, found by looking for it rather
 than by being told: the federation index's *The sign-in screen* link
-(`federation/federation_sp.js`) and the admin console's 401 for a form posted
+(`federation/federation_sp.ts`) and the admin console's 401 for a form posted
 with an expired session (`admin-ui/admin.js`, whose link was ALSO swallowed into
 a `<details>` summary and so was not clickable at all). The rule read off all
 three: **`/authn/login` is never a destination — link to a page that STARTS a
@@ -768,7 +768,7 @@ page must be drawn for the session's own person and must not name theirs.
 
 A person's own security activity: what this identity provider has SAID about
 their sessions and their account, to this portal, over OpenID CAEP and RISC.
-`ssf/ssf_receivers.js` holds the design, `ssf/CLAUDE.md` argues it, and the A01
+`ssf/ssf_receivers.ts` holds the design, `ssf/CLAUDE.md` argues it, and the A01
 half is above. Three things belong here.
 
 **IT IS UNDER *Your account* AND NOT UNDER *How you sign in*.** That section

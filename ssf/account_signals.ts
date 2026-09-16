@@ -8,15 +8,15 @@
 // security keys, authenticator apps and recovery codes off an entry; the user
 // portal's /portal/reset-password sets the password a link was for. Each of
 // those is a CAEP `credential-change`, and a password reset or a cleared set of
-// recovery codes is also a RISC event. `ssf/ssf.js` is what turns them into
+// recovery codes is also a RISC event. `ssf/ssf.ts` is what turns them into
 // Security Event Tokens — `emitCredentialChange()` and `emitRiscAccountAct()`.
 //
-// **THIS FILE EXISTS BECAUSE THOSE DOORS CANNOT REQUIRE `ssf/ssf.js`.** The
+// **THIS FILE EXISTS BECAUSE THOSE DOORS CANNOT REQUIRE `ssf/ssf.ts`.** The
 // console's actions are at 18 in the require order, the portal just after
 // `authn` (8), and SSF at 23b: a require from either would register every
 // `/ssf` route ahead of theirs (rule 1) and close a cycle through
 // `admin-ui/admin.js`. So this is a LIBRARY that requires nothing but the
-// logger, and it reads `ssf.js` out of `require.cache` at the moment an event
+// logger, and it reads `ssf.ts` out of `require.cache` at the moment an event
 // is due — which, in a running service, is always after the whole stack has
 // loaded. A process that never loaded SSF (an in-process test, the parent
 // project's Kerberos jobs) gets a no-op, and is told so in the answer rather
@@ -37,14 +37,14 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `AccountSignals` takes the logger and the way to find a loaded
-// `ssf.js` through its constructor, and the module still exports the old
+// `ssf.ts` through its constructor, and the module still exports the old
 // names from a TRANSITIONAL instance for `admin-core/admin_actions.js` and
 // `portal/portal.js`, which are not converted.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 
-// What a delivery answers. `sent` and `streams` are `ssf.js`'s own counts
+// What a delivery answers. `sent` and `streams` are `ssf.ts`'s own counts
 // when it ran; `why` is set when nothing was sent.
 interface Delivery {
   sent: number;
@@ -53,7 +53,7 @@ interface Delivery {
   [member: string]: unknown;
 }
 
-// The two `ssf.js` emitters this module calls, and nothing else of it.
+// The two `ssf.ts` emitters this module calls, and nothing else of it.
 interface SsfEmitters {
   emitCredentialChange?(notice: object): Delivery | Promise<Delivery>;
   emitRiscAccountAct?(notice: object): Delivery | Promise<Delivery>;
@@ -63,7 +63,7 @@ type EmitterName = 'emitCredentialChange' | 'emitRiscAccountAct';
 
 interface AccountSignalsDeps {
   log: { debug(m: string): void; warn(m: string): void };
-  // `ssf.js`'s exports when that module is loaded in this process, else null.
+  // `ssf.ts`'s exports when that module is loaded in this process, else null.
   // Never a require: see the header.
   findSsf(): SsfEmitters | null;
 }
@@ -95,7 +95,7 @@ class AccountSignals {
     deps.log.debug('Leaving AccountSignals.constructor().');
   }
 
-  // `ssf.js` as it is loaded in THIS process, found in `require.cache`, or
+  // `ssf.ts` as it is loaded in THIS process, found in `require.cache`, or
   // null. The default `findSsf` for the transitional instance below.
   static loadedSsf(): SsfEmitters | null {
     const { log } = helpers;
@@ -115,7 +115,7 @@ class AccountSignals {
     return cached && cached.exports ? cached.exports as SsfEmitters : null;
   }
 
-  // Hand one call to ssf.js, swallowing everything, so a caller can fire and
+  // Hand one call to ssf.ts, swallowing everything, so a caller can fire and
   // forget. `what` names the call for the log.
   private deliver(what: string, name: EmitterName,
                   notice: object): Promise<Delivery> {

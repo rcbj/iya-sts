@@ -5,7 +5,7 @@
 // ===========================================================================
 // THE CAEP SESSION REGISTER AND ITS STATE MACHINE, DRIVEN IN PROCESS.
 //
-// `ssf/caep.js` is what the eight CAEP event types are ABOUT: a session, the
+// `ssf/caep.ts` is what the eight CAEP event types are ABOUT: a session, the
 // state CAEP believes it is in, and how many events of which type have been
 // sent concerning it. It has no DOM, no socket and no route, which is what
 // makes it drivable here.
@@ -79,7 +79,7 @@ function signIn(id, username) {
       acr: 'urn:example:silver', amr: ['pwd'] } };
 }
 
-// What `ssf.js`'s transmit() hands back to the register once the SET exists.
+// What `ssf.ts`'s transmit() hands back to the register once the SET exists.
 function transmitted(row, uri, payload, streamId) {
   log.debug("Entering transmitted().");
   caep.noteTransmitted({ stream_id: streamId || 'st-1' }, {

@@ -98,7 +98,7 @@ const errorCodes = require('./error_codes');
 const clusterSecrets = require('../cluster/cluster_secrets');
 // The table active-active mode is held to, a LEAF. The CSRF key here, the ACME
 // nonce key in acme/acme_jws.js and the SSF receiver secret in
-// ssf/ssf_receivers.js were moved onto the cluster's shared secrets together,
+// ssf/ssf_receivers.ts were moved onto the cluster's shared secrets together,
 // and this is where the capability for all three is declared.
 const capabilities = require('../cluster/cluster_capabilities');
 capabilities.provide('secrets.protocol-keys');

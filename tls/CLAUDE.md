@@ -571,7 +571,7 @@ certificate was self-signed:
 | Caller | What it is | What it did instead |
 |---|---|---|
 | `common/oidc_rp.js`'s back channel | how `/admin` and `/portal` redeem an authorization code at `/oauth2/token` | **the admin console could not be signed into** — *Signing in did not complete*, with `the loopback request to /oauth2/token failed: unable to get local issuer certificate` under it |
-| `ssf/ssf_http.js`'s push | delivery to this service's own two Shared Signals receivers | every push to a loopback receiver failed |
+| `ssf/ssf_http.ts`'s push | delivery to this service's own two Shared Signals receivers | every push to a loopback receiver failed |
 | `tests/tools/trust.js` | the anchor every node-driven job in the protocol suite is handed as `NODE_EXTRA_CA_CERTS` | the suite could not open a connection to the service at all |
 
 **WHY IT LOOKS LIKE A PIN AND REFUSES EVERYTHING.** OpenSSL takes a

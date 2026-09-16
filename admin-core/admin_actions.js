@@ -72,7 +72,7 @@
 // down the require order: the logout reader, the directory and group writers,
 // the three Shared Signals reporters, and the XACML pages. Those are INVERTED
 // HOOKS on `admin-ui/admin.js` (rule 3e), filled at require time by
-// `ldap/ldap_server.js`, `ssf/ssf.js`, `logout/logout.js` and
+// `ldap/ldap_server.js`, `ssf/ssf.ts`, `logout/logout.ts` and
 // `xacml/xacml_admin.js` — and every one of those fillers, along with every
 // sentence of CLAUDE.md that explains why the hook has to exist, names that
 // module.
@@ -137,7 +137,7 @@ const spiffeRegistry = require('../spiffe/spiffe_registry');
 const spiffeIdLib = require('../spiffe/spiffe_id');
 const signals = require('../ssf/ssf_receivers');
 // WHAT A CREDENTIAL CHANGE SAYS OVER CAEP AND RISC (2026-09-13). A LIBRARY that
-// requires only the logger and reads `ssf/ssf.js` out of the require cache when
+// requires only the logger and reads `ssf/ssf.ts` out of the require cache when
 // an event is due, so requiring it here moves no route — see its header.
 const accountSignals = require('../ssf/account_signals');
 const oauth2 = require('../oauth-oidc/oauth2');
@@ -2218,7 +2218,7 @@ function applicationsAction(body, protocols, context) {
   // this one its own route would mean a second door onto the applications
   // resource that the parity rule would then have to describe twice.
   //
-  // WHY IT IS AN ACTION AND NOT PART OF ISSUING: sp_metadata.js's header argues
+  // WHY IT IS AN ACTION AND NOT PART OF ISSUING: sp_metadata.ts's header argues
   // it at length — an assertion that had to wait on somebody else's web server
   // makes every sign-in as reliable as that server. This writes the certificate
   // onto the entry and issuing reads the entry.
@@ -4176,7 +4176,7 @@ function signalsAction(body) {
       'audit log, which cannot be cleared.' };
 }
 
-// The Shared Signals actions (`ssf/ssf.js`'s CONSOLE_ACTIONS — six since the
+// The Shared Signals actions (`ssf/ssf.ts`'s CONSOLE_ACTIONS — six since the
 // dead-letter pair arrived on 2026-09-14), shared with
 // `POST /admin-api/ssf/:action`. It resolves
 // rather than returning, for the reason the slot's header gives.

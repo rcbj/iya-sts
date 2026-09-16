@@ -211,7 +211,7 @@ means **nothing in it reads `STS`, the ambient realm or a session**: every
 function takes the key it is to use as a parameter, and the realm-aware half
 stays in `helpers.js`. It also means `logArtifact()` is out of reach, which is
 why `encryptElement()` takes the logger as an ORDINARY PARAMETER that
-`saml/saml2.js` fills in — not a sixth inverted slot, because rule 3e is for a
+`saml/saml2.ts` fills in — not a sixth inverted slot, because rule 3e is for a
 require that would close a cycle or move a route, and a caller that already has
 the function can simply hand it over.
 
@@ -283,7 +283,7 @@ it.
 The attribute itself is DECLARATION ONLY and nothing reads it: a push goes to
 the endpoint on the STREAM, which the receiver named when it created one, and
 this service will not take a URL to dial from an application entry. That is the
-same position `federation/federation_http.js` takes about `oauthJwksUri` one
+same position `federation/federation_http.ts` takes about `oauthJwksUri` one
 family along — a URL recorded here is a note about what a receiver IS, and a URL
 on a stream is a URL this service dials. The two are deliberately not one store.
 
@@ -327,7 +327,7 @@ field. It is DERIVED and in no `EDITABLE` row.
   (what the check may believe in this realm's mode) and `unconfirmed` (what it
   withheld). Development believes everything and `unconfirmed` is always empty
   there; product withholds every marked address. Both SAML profiles and
-  WS-Federation hand both lists to `saml/return_address.js`, which refuses a
+  WS-Federation hand both lists to `saml/return_address.ts`, which refuses a
   withheld address with `STS-REG-0049` and a sentence naming the confirm
   operation, and `clientConfigOf()` builds `redirect_uris` from it — so the
   console's and portal's sign-in and RFC 9700 mode's exact match both see the
@@ -635,7 +635,7 @@ caller that cannot be made asynchronous is better off blocking than wrong.
 
 **WHAT IS NOT DONE YET, SAID PLAINLY: no protocol surface calls the async door.**
 Eleven call sites still reach the synchronous one — `scim/scim_auth.ts`,
-`authn/authn.js`, `ldap/ldap_server.js`, `ws-trust/wstrust.js`, `portal/portal.js`
+`authn/authn.js`, `ldap/ldap_server.js`, `ws-trust/wstrust.ts`, `portal/portal.js`
 (three) and `admin-ui/admin.js` (four) — and every one of them needs its
 enclosing handler chain made asynchronous first. That is not incidental: it is
 the same prerequisite the whole move-request-processing-to-workers plan needs,
@@ -1303,8 +1303,8 @@ directories, after SPIFFE gained a pair of sockets per realm:
 
 | Store | Was | Now | What leaked |
 |---|---|---|---|
-| `ssf/caep.js` register | `new Map()` | `realms.map({ persist: 'caep.register' })` | every realm's sessions on every realm's `/admin/caep-sessions` |
-| `ssf/risc.js` register | `new Map()` | `realms.map({ persist: 'risc.register' })` | a deletion in one realm's directory on every realm's `/admin/risc-accounts` |
+| `ssf/caep.ts` register | `new Map()` | `realms.map({ persist: 'caep.register' })` | every realm's sessions on every realm's `/admin/caep-sessions` |
+| `ssf/risc.ts` register | `new Map()` | `realms.map({ persist: 'risc.register' })` | a deletion in one realm's directory on every realm's `/admin/risc-accounts` |
 | `oid4vc/vc_offers.ts` `deferredAccessTokens` | `new Set()` | `realms.map({ persist })`, keyed by a SHA-256 of the token | a deferred token deferred in every realm, and on one worker |
 | `spiffe/spiffe_auth.js` recorded connections | `sharedMap()`, `scope: 'shared'` | `realms.map({ persist })` | one realm's gRPC connections evicting another's from the cap |
 | `scim/scim_auth.ts` Digest nonces, HOBA challenges and replay set | `new Map()` ×3 | `realms.map()`, not persisted | one realm's unauthenticated challenges evicting another's |
@@ -1329,7 +1329,7 @@ handler, in the front process.
 
 **WHAT WAS LOOKED AT AND LEFT PROCESS-WIDE**, each with an argument that does not
 rest on the directory: catalogues built once from code (`vc_claims.js`'s,
-`federation_map.js`'s `DEFAULT_MAP`/`seenIncoming`, the XACML function and
+`federation_map.ts`'s `DEFAULT_MAP`/`seenIncoming`, the XACML function and
 datatype tables, `ssf_events.js`'s `EVENT_BY_URI`, `applications.js`'s schema
 maps); `xacml_store.js`'s `parsed`, keyed by the SHA-256 of a document's TEXT, so
 two realms holding one policy share one parse and cannot share a wrong one;
@@ -1964,7 +1964,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    mean two things at once.
 
    **AND THE PAYLOAD CARRIES A `federation` FIELD, WHICH IS A THIRD THING AGAIN
-   AND STILL NOT A NEW SLOT.** A federated sign-in — `../federation/federation_sp.js`
+   AND STILL NOT A NEW SLOT.** A federated sign-in — `../federation/federation_sp.ts`
    — puts the attributes a FOREIGN identity provider asserted onto the observer's
    detail, already mapped to this directory's own names, and `ldap_server.js`
    writes them onto the entry. It is not a fourth `event`, and that is rule 3e's
@@ -2317,7 +2317,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    Kerberos service — as entries under `ou=applications`. It registers no route
    and requires only libraries (`helpers.js`, `audit.js`, `config.js` and the
    leaves its header lists at each require), so it cannot join a cycle;
-   `admin_stats.js`, `oauth2.js`, `wsfed.js`, `wstrust.js`, `krb5_kdc.js` and
+   `admin_stats.js`, `oauth2.js`, `wsfed.ts`, `wstrust.ts`, `krb5_kdc.js` and
    `krb5_service.js` require it in the ordinary direction, and `ldap_server.js`
    fills its `setDirectory()` slot at require time for the reason
    `vc_claims.js`'s is filled (rule 6). Seven things are load-bearing:
@@ -2582,7 +2582,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    **`wsfedReplyUrl` SPLIT OFF `samlAssertionConsumerService` ON 2026-08-25**,
    and the reason is worth keeping: that attribute is READ. `/admin/saml2` and
    `/admin/saml11` take the last value on it as the assertion consumer service
-   and as the Single Logout fallback, and `wsfed.js` had been writing its
+   and as the Single Logout fallback, and `wsfed.ts` had been writing its
    `wreply` into it — so a WS-Federation application appeared to have named a
    SAML ACS it had never heard of, and a LogoutResponse could have been handed to
    a WS-Federation endpoint. One attribute per fact.
@@ -3259,7 +3259,7 @@ entry carries a value, winning over that setting for that application alone.
 **IT IS A THIRD KIND, AND THE SECTION BELOW'S TWO-WAY SPLIT IS WHY THAT NEEDS
 SAYING.** Every attribute here used to be either RECORDED (what happened) or
 DECLARED (what somebody said, which nothing reads). These are declared AND read:
-`saml/saml2_sso.js` and `saml/saml11_sso.js` resolve every one of their five
+`saml/saml2_sso.ts` and `saml/saml11_sso.ts` resolve every one of their five
 settings through `settingFor()` on every assertion. They join
 `appFederationRelationship` and `appAuthnMechanism` on the short list of
 declarations that actually do something — and unlike those two, what they change
@@ -6227,7 +6227,7 @@ X509-SVID over mutual TLS — and held no session at all: nothing on
 session behind it for the policy.
 
 The obvious fix was a register of API sessions. **It is the mistake rule 3m
-exists to prevent**: `authn.js`'s map is where a session lives, `logout.js`
+exists to prevent**: `authn.js`'s map is where a session lives, `logout.ts`
 reads it, the console draws it and CAEP observes it, and a second store beside
 it would be a second answer to *is somebody signed in* — with the wrong half
 being whichever surface a reader happened to open. So it is one store and two
@@ -6246,7 +6246,7 @@ fields on the record:
   way into that surface none of its own rules would ever see. Opt-OUT, because
   every caller that existed before this field is a browser.
 
-**ONE STORE DOES NOT MEAN ONE KIND OF ROW.** `logout.js` branches on
+**ONE STORE DOES NOT MEAN ONE KIND OF ROW.** `logout.ts` branches on
 `credentialKey` — the one predicate that decides — so an API session is drawn
 by its own surface, carries the FOURTH expiry rule (`SESSION_EXPIRY_RULES.api`,
 the only one **extended by use**, because these exist only while a client is
@@ -6414,7 +6414,7 @@ than a script.
 NOTHING from this repository — not `helpers.js`, not `config.js`, not even the
 logger. So its position in the require order is not a position, and it can never
 close a cycle. That matters more here than it did in the parent project:
-`server.js`, `home/home.js` (6a), `admin-ui/admin.js` (18),
+`server.js`, `home/home.ts` (6a), `admin-ui/admin.js` (18),
 `mgmt-api/admin_api.js` (19), `portal/portal.js` and `sts_metadata.js` (24) all
 read it, which is six modules spread across the whole require order — including
 the two whose positions are the most constrained in the file. **A version module
@@ -6761,7 +6761,7 @@ its certificate. Four things reach outside the module:
 * **A LOOKUP OF THIS SERVICE'S OWN TOKEN ACCEPTS EITHER NAME, WHATEVER THE
   SETTING SAYS** — `helpers.kidNamesKey()`, asked by `ssf_events.js`'s
   `publicKeyForHeader()` and `vc_verifier.js`'s issuer check. The verifiers
-  that fetch `/oauth2/jwks` (`oidc_rp.js`, `federation_sp.js`) need nothing:
+  that fetch `/oauth2/jwks` (`oidc_rp.js`, `federation_sp.ts`) need nothing:
   the set carries both names.
 * **`crypto.js` GAINED THE AKP MEMBER LIST** (`alg`, `kty`, `pub`, RFC 9964),
   so a post-quantum key has a thumbprint. DPoP and ACME still refuse those

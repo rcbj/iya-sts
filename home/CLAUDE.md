@@ -4,7 +4,7 @@ The front door. One module, two routes, one image:
 
 | File | What it is |
 |---|---|
-| `home.js` | `GET /` — the page — and `GET /logo.png`, the only image this service serves. |
+| `home.ts` | `GET /` — the page — and `GET /logo.png`, the only image this service serves. |
 | `assets/debugger-logo.png` | That image. A DERIVATIVE of the parent project's artwork, not a copy of it — see below. |
 
 It is a directory of its own rather than a route in `common/`, and the entry

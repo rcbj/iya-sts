@@ -414,7 +414,7 @@ const stats = require('../common/admin_stats');
 // exactly those functions.
 //
 // What is still true is the line this file holds to: this map is READ here and
-// written nowhere here. The console's page calls `logout.js`, which calls
+// written nowhere here. The console's page calls `logout.ts`, which calls
 // `authn.js`. A `sessions.delete()` in this file would be the fourth way, and
 // the one that skipped the RFC 9700 refresh revocation and the audit row.
 //
@@ -545,7 +545,7 @@ const spMetadata = require('../saml/sp_metadata');
 //
 // **A PLAIN REQUIRE IN THE ORDINARY DIRECTION, AND NOT A SIXTH SLOT.** Rule
 // 3e's test is whether a require would close a cycle or move a route, and this
-// one does neither: `common/protocol_stack.js` requires `saml/saml2_sso.js` at
+// one does neither: `common/protocol_stack.js` requires `saml/saml2_sso.ts` at
 // position 10a and this file at 18, so that module's routes are already in the
 // router by the time this line runs, and it requires nothing from here.
 const saml2 = require('../saml/saml2_sso');
@@ -565,7 +565,7 @@ const authorizationServers = require('../oauth-oidc/authorization_servers');
 // rule 3e's test again, and it passes both ways round: that module requires
 // only config.js, helpers.js and audit.js.
 //
-// **`federation/federation_sp.js` is deliberately NOT required here**, and it
+// **`federation/federation_sp.ts` is deliberately NOT required here**, and it
 // is the same line drawn around `spiffe_server.js` twenty lines down: that
 // module registers /federation and its four endpoints, and
 // `common/protocol_stack.js` requires it at position 10c — BEFORE this file —
@@ -617,12 +617,12 @@ const spiffeIdLib = require('../spiffe/spiffe_id');
 // THIS CONSOLE AS A SHARED SIGNALS RECEIVER (2026-09-10), and it is a PLAIN
 // REQUIRE rather than a ninth slot for the reason rule 3e states: a slot is
 // what you pay for a require that would close a cycle or move a route, and
-// this one does neither. `ssf/ssf_receivers.js` registers nothing (rule 3) and
+// this one does neither. `ssf/ssf_receivers.ts` registers nothing (rule 3) and
 // requires only libraries — `helpers`, `config`, `realms`, `audit`,
 // `ssf_subjects`, `ssf_events`, `ssf_streams`, `ssf_http` — none of which
 // requires this file.
 //
-// It is emphatically NOT `ssf/ssf.js`, which is at 23b and registers every
+// It is emphatically NOT `ssf/ssf.ts`, which is at 23b and registers every
 // /ssf route and the well-known document: a require of THAT from here would
 // drag all of it ahead of the management API's own routes, which is exactly
 // what the eighth slot exists to prevent.
@@ -722,14 +722,14 @@ const vt = validation.types;
 const vz = validation.z;
 // THE PROTOCOL-INDEPENDENT LOGOUT IS NOT REQUIRED HERE, AND THAT IS RULE 3e's
 // TEST ANSWERING YES FOR THE SIXTH TIME. It is reached through a SLOT below —
-// setLogoutReader(), which `../logout/logout.js` fills at its own require time,
+// setLogoutReader(), which `../logout/logout.ts` fills at its own require time,
 // exactly as ldap_server.js, spiffe_server.js and scim.js fill the five above
 // it.
 //
 // A plain require would close a cycle AND move routes, which is both halves of
 // the test at once: that module requires `ldap_server.js` (for the bound
 // connections that are the LDAP session), and `ldap_server.js` requires THIS
-// file to fill those five slots — so `admin.js -> logout.js -> ldap_server.js
+// file to fill those five slots — so `admin.js -> logout.ts -> ldap_server.js
 // -> admin.js` hands ldap_server.js a half-initialised console whose
 // `setDirectoryReader` is undefined, and the symptom arrives as something that
 // is not a function. It would also drag every `/ldap` route into the router
@@ -2028,7 +2028,7 @@ const SECTIONS = [
           // incident — how many, since when, why, which streams, still
           // happening? — are counts over every stream at once. Read-only; the
           // Revive and Drop controls stay on the stream's card, linked from
-          // each row. `ssf/ssf_dead_letter_report.js` computes it.
+          // each row. `ssf/ssf_dead_letter_report.ts` computes it.
           { path: '/admin/ssf/dead-letters', label: 'Dead letters',
             blurb: 'Every Security Event Token this realm\'s transmitter ' +
                    'could not deliver and is still holding, counted: how ' +
@@ -5478,7 +5478,7 @@ app.use('/admin', function (req, res, next) {
   // AND IT IS THE SAME SHAPE OF EXEMPTION AS THE ONE ABOVE RATHER THAN A NEW
   // KIND.
   //
-  // This console is a Shared Signals RECEIVER now — `ssf/ssf_receivers.js`
+  // This console is a Shared Signals RECEIVER now — `ssf/ssf_receivers.ts`
   // argues the whole of it — and `/admin/signals/receive` is where its own
   // stream's Security Event Tokens are POSTed. A push carries NO CONSOLE
   // SESSION by construction: it is a server-to-server request and must not
@@ -7431,7 +7431,7 @@ app.use('/admin', function (req, res, next) {
 // console — where to go afterwards, and what a refusal looks like in this
 // console's shell.
 //
-// A refusal is DRAWN and never redirected, which is `federation_sp.js`'s
+// A refusal is DRAWN and never redirected, which is `federation_sp.ts`'s
 // decision 6 and holds for its reason: the person's sign-in has already
 // succeeded at the authorization endpoint, so the only interesting question is
 // what this side disliked about the answer, and a redirect throws that away.
@@ -8167,7 +8167,7 @@ app.post('/admin/tokens', function (req, res) {
 // state that makes somebody currently authenticated, which is the question
 // somebody actually arrives with when they ask who is signed in.
 //
-// **THE MODEL IS `logout/logout.js`'s AND NOT THIS FILE'S**, through the sixth
+// **THE MODEL IS `logout/logout.ts`'s AND NOT THIS FILE'S**, through the sixth
 // slot. That module is the one answer to "what is a live session" across
 // families — see its CLAUDE.md — and this page walking `authn.sessions`,
 // `boundConnections()` and the ticket register itself would be a SECOND answer,
@@ -8200,7 +8200,7 @@ app.post('/admin/tokens', function (req, res) {
 // WHEN THIS SESSION ENDS, AND HOW THAT IS WORKED OUT. Several answers rather
 // than one, because the kinds are genuinely different and a column that showed
 // only a timestamp would be read as one rule with several values. The rule is
-// the row's `expiryRule`, which `logout.js`'s SESSION_EXPIRY_RULES writes.
+// the row's `expiryRule`, which `logout.ts`'s SESSION_EXPIRY_RULES writes.
 function sessionExpiryCell(row, nowMs) {
   log.debug("Entering sessionExpiryCell().");
   const rule = row.expiryRule || '';
@@ -9418,7 +9418,7 @@ function auditRow(row, known) {
 // THE CONTROLS THAT END IT.
 //
 // The operator's half of `/logout`. The two are one behaviour — both call
-// `logout.js`'s `inventoryFor()` and `terminate()` and neither decides anything
+// `logout.ts`'s `inventoryFor()` and `terminate()` and neither decides anything
 // the other does not — and they differ in exactly three ways, each of which is
 // why this page exists rather than a link to the other:
 //
@@ -9532,7 +9532,7 @@ function logoutView(req) {
           (family.terminable ? 'yes' : '<span ' +
                                                 'class="state-none">no</span>') + '</td>' +
           // The family's prose is a paragraph on most rows and it is the same
-          // prose logout.js owns (see FAMILIES over there) — so it folds here
+          // prose logout.ts owns (see FAMILIES over there) — so it folds here
           // rather than being shortened, which would have made this file the
           // second place it is written.
           '<td class="sub">' + note(esc(family.what)) + '<em>' + esc(
@@ -13442,7 +13442,7 @@ function chooserPane(spec) {
 // for replacing it is chooserPane()'s own, one register further on: a control
 // on this page must be the same size whatever is behind it, and this register
 // grows BY ONE ROW PER SIGN-IN for the life of the process and never shrinks —
-// `caep.js` keeps a row after the session has been signed out, deliberately,
+// `caep.ts` keeps a row after the session has been signed out, deliberately,
 // because the row is the evidence that it existed and was revoked. So a
 // console left running for an afternoon of testing had a dropdown of several
 // hundred options, sorted by nothing a reader knows, each labelled with a
@@ -15686,7 +15686,7 @@ function setSpiffeReader(fn) {
 // AND THE SIXTH, WHICH IS THE PROTOCOL-INDEPENDENT LOGOUT.
 //
 // Same direction and both halves of rule 3e's test at once — see the note
-// beside the requires at the top of this file. `logout.js` requires
+// beside the requires at the top of this file. `logout.ts` requires
 // `ldap_server.js`, which requires THIS module, so a require in the obvious
 // direction closes a cycle; and it would drag every `/ldap` route into the
 // router ahead of the console's own.
@@ -21038,7 +21038,7 @@ function applicationDetailPage(req, identifier) {
 
     // THE METADATA REFRESH, and the only control on this page that reaches off
     // this machine. It is a button rather than something issuing does, for the
-    // reason sp_metadata.js argues at length: an assertion that had to wait on
+    // reason sp_metadata.ts argues at length: an assertion that had to wait on
     // somebody else's web server would make every sign-in as reliable as that
     // server. It is drawn only for an application that names a URL — a button
     // whose only possible outcome is "there is no URL" is not a control.
@@ -21322,7 +21322,7 @@ function declarationFieldRow(row) {
 // Written when there were ten attributes, five per SAML profile, each
 // overriding one `config.js` setting for this application alone. They are
 // drawn from
-// `applications.overridableSettings()` — the same table `saml2_sso.js` resolves
+// `applications.overridableSettings()` — the same table `saml2_sso.ts` resolves
 // through and `/admin/saml-assertions` names the attribute from — so a setting
 // added there reaches this form without anybody editing it.
 //
@@ -25724,7 +25724,7 @@ function attributeCatalogueNotes(family) {
 //
 // A placeholder is expanded against the CONTEXT the issuance path hands
 // admin_stats.expandValue(), and the two assertion builders hand it
-// `{ subject, audience }` — saml2.js and saml11.js, the same one line each —
+// `{ subject, audience }` — saml2.ts and saml11.ts, the same one line each —
 // where oauth2.js hands a token's whole claim context. So `${username}`,
 // `${email}` and the rest of PLACEHOLDERS reach an assertion as the characters
 // they were written as. That is the documented behaviour of an unknown
@@ -28246,7 +28246,7 @@ app.post('/admin/token-lifetimes', function (req, res) {
 //
 // AND IT IS NOT oauth2.clockSkewS. That one is a TOLERANCE applied when this
 // service READS something back, including an inbound federation partner's
-// assertion (federation/federation_sp.js, which argues there that a reading
+// assertion (federation/federation_sp.ts, which argues there that a reading
 // tolerance is decided once). This one is what this service WRITES into a
 // document it issues. A deployment wanting a strict reading and a forgiving
 // issuance has to be able to say so, and with one setting it could not.
@@ -29253,17 +29253,17 @@ app.get('/admin/scim/monitor', function (req, res) {
 // GET /admin/signals, POST /admin/signals, POST /admin/signals/receive —
 // THIS CONSOLE AS A SHARED SIGNALS RECEIVER (2026-09-10).
 //
-// `ssf/ssf_receivers.js` holds the design and is not summarised here. What
+// `ssf/ssf_receivers.ts` holds the design and is not summarised here. What
 // this block is: the receive endpoint this console hosts, the page that draws
 // what arrived, and the one control on it.
 //
 // **THE MODULE IS A PLAIN REQUIRE AND NOT AN ELEVENTH SLOT**, and rule 3e's
 // test is why — it answers NO in both directions, which is the answer that
-// means "do not add a slot". `ssf/ssf_receivers.js` registers no route (rule
+// means "do not add a slot". `ssf/ssf_receivers.ts` registers no route (rule
 // 3) and requires only libraries, none of which requires this file, so a
 // require here can neither move a route nor close a cycle. The slots on this
 // file (the root CLAUDE.md's rule 3e table lists them) exist because
-// `ssf/ssf.js`, `ldap/ldap_server.js` and the rest register routes and sit
+// `ssf/ssf.ts`, `ldap/ldap_server.js` and the rest register routes and sit
 // BELOW this line in the require order; a library
 // costs a reader nothing and an indirection is not free.
 //
@@ -29277,7 +29277,7 @@ app.get('/admin/scim/monitor', function (req, res) {
 // ---------------------------------------------------------------------------
 // THE RECEIVE ENDPOINT. Three lines, because everything a receiver checks is
 // in `accept()` — see the note in the gate above about why this path is
-// exempt from it, and `ssf/ssf_receivers.js` for what is checked instead.
+// exempt from it, and `ssf/ssf_receivers.ts` for what is checked instead.
 // ---------------------------------------------------------------------------
 app.post('/admin/signals/receive', function (req, res) {
   log.debug("Entering the admin console's Shared Signals receive endpoint.");
@@ -29519,7 +29519,7 @@ app.get('/admin/signals', function (req, res) {
 // MONITORING -> SHARED SIGNALS -> DEAD LETTERS (2026-09-14).
 //
 // What every dead-letter queue in the realm being read holds, counted, and the
-// letters themselves. `ssf/ssf_dead_letter_report.js` computes every number
+// letters themselves. `ssf/ssf_dead_letter_report.ts` computes every number
 // and `admin-core/admin_views.js`'s `ssfDeadLettersJson()` searches and pages
 // the list, for this page and `GET /admin-api/ssf/dead-letters` alike; this
 // draws them.
@@ -30113,14 +30113,14 @@ app.get('/admin/ssf/dead-letters', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
-// THE EIGHTH SLOT, filled by `../ssf/ssf.js` at its own require time, and rule
+// THE EIGHTH SLOT, filled by `../ssf/ssf.ts` at its own require time, and rule
 // 3e's test answers yes in both directions at once.
 //
-//   * a require from THIS file to `../ssf/ssf.js` would CLOSE A CYCLE: that
+//   * a require from THIS file to `../ssf/ssf.ts` would CLOSE A CYCLE: that
 //     module requires this one for the page shell and the gate, exactly as
 //     `../sts_metadata.js` and `./crypto_metadata.js` do.
 //   * a require the other way round — from `mgmt-api/admin_api.js` (19) to
-//     `../ssf/ssf.js` — would MOVE ROUTES: every `/ssf` endpoint, and the
+//     `../ssf/ssf.ts` — would MOVE ROUTES: every `/ssf` endpoint, and the
 //     `/.well-known/ssf-configuration` document, ahead of the management API's
 //     own and of ldap, scim and spiffe.
 //
@@ -30979,7 +30979,7 @@ app.post('/admin/ssf', function (req, res) {
     respondToAction(req, res, '/admin/ssf', result);
     log.debug("Leaving the admin Shared Signals action endpoint.");
   }).catch(function (e) {
-    // A rejected promise here is a bug in ssf/ssf.js rather than anything a
+    // A rejected promise here is a bug in ssf/ssf.ts rather than anything a
     // request can cause — consoleAction() resolves a refusal rather than
     // throwing one — so it is reported as a refusal naming the message
     // instead of becoming an unhandled rejection that ends the process.
@@ -30994,11 +30994,11 @@ app.post('/admin/ssf', function (req, res) {
 
 
 // ---------------------------------------------------------------------------
-// THE NINTH SLOT, filled by `../ssf/caep.js`'s host `../ssf/ssf.js` at its own
+// THE NINTH SLOT, filled by `../ssf/caep.ts`'s host `../ssf/ssf.ts` at its own
 // require time, for exactly the reasons the eighth exists and with the same
 // test answering yes in both directions:
 //
-//   * a require from THIS file to `../ssf/ssf.js` would CLOSE A CYCLE — that
+//   * a require from THIS file to `../ssf/ssf.ts` would CLOSE A CYCLE — that
 //     module requires this one for the page shell and the gate;
 //   * a require from `mgmt-api/admin_api.js` would MOVE ROUTES, putting every
 //     `/ssf` endpoint and the well-known document ahead of the management
@@ -31132,7 +31132,7 @@ function caepSessionRow(row, shorts, prefix, listView, back) {
 // One session, opened out: what has actually been sent about it, in order,
 // with the findings the register made as each one was applied. The counts on
 // the table above say HOW MANY and this says WHICH, and the two are different
-// questions — see caep.js on why the ring and the counters are separate.
+// questions — see caep.ts on why the ring and the counters are separate.
 //
 // **IT IS A PAGE OF ITS OWN SINCE 2026-09-04 AND USED TO BE A CARD PER SESSION
 // UNDER THE TABLE.** That block was drawn for EVERY session the register held,
@@ -31468,7 +31468,7 @@ function caepApplicationRow(row, shorts, prefix) {
   // stream endpoint was not gated has none, and that row is the collected
   // total for all of them rather than an application. The gate was
   // `ssf.authRequired` until 2026-09-06 and is `mode.gatesSharedSignals()`
-  // now (ssf/ssf_auth.js); the page's note below still names the old setting.
+  // now (ssf/ssf_auth.ts); the page's note below still names the old setting.
   const who = row.registered
     ? '<a href="' + esc('/admin/applications' +
         queryWith({ application: row.identifier }, {})) + '">' +
@@ -32033,11 +32033,11 @@ app.get('/admin/caep-sessions/session', function (req, res) {
 
 
 // ---------------------------------------------------------------------------
-// THE TENTH SLOT, filled by `../ssf/risc.js`'s host `../ssf/ssf.js` at its own
+// THE TENTH SLOT, filled by `../ssf/risc.ts`'s host `../ssf/ssf.ts` at its own
 // require time, for exactly the reasons the eighth and ninth exist and with
 // the same test answering yes in both directions:
 //
-//   * a require from THIS file to `../ssf/ssf.js` would CLOSE A CYCLE;
+//   * a require from THIS file to `../ssf/ssf.ts` would CLOSE A CYCLE;
 //   * a require from `mgmt-api/admin_api.js` would MOVE ROUTES.
 //
 // **A THIRD SLOT RATHER THAN MORE MEMBERS ON THE NINTH.** The signals reporter
@@ -36585,7 +36585,7 @@ module.exports = {
   setGroupReader: setGroupReader,
   setDirectoryWriter: setDirectoryWriter,
   setGroupWriter: setGroupWriter,
-  // Filled by logout/logout.js at ITS require time — the sixth slot, and rule
+  // Filled by logout/logout.ts at ITS require time — the sixth slot, and rule
   // 3e's test answers yes for the same two reasons at once. See the block above
   // setLogoutReader().
   setLogoutReader: setLogoutReader,
@@ -36593,7 +36593,7 @@ module.exports = {
   // third to pass rule 3e's test both ways round. See the block above
   // setCryptoReporter().
   setCryptoReporter: setCryptoReporter,
-  // Filled by ../ssf/ssf.js at ITS require time — the eighth, and the fourth
+  // Filled by ../ssf/ssf.ts at ITS require time — the eighth, and the fourth
   // to pass rule 3e's test both ways round. See the block above
   // setSignalsReporter().
   setSignalsReporter: setSignalsReporter,
@@ -36612,7 +36612,7 @@ module.exports = {
     log.debug("Leaving ssfActionNames().");
     return signalsReporter ? signalsReporter.actions.slice() : [];
   },
-  // Filled by ../ssf/ssf.js at ITS require time — the ninth, and the fifth to
+  // Filled by ../ssf/ssf.ts at ITS require time — the ninth, and the fifth to
   // pass rule 3e's test both ways round. A SECOND slot rather than more
   // members on the eighth, because "what streams exist" and "what has been
   // said about which session" are two questions with two pages, and one
