@@ -28,7 +28,7 @@ authority**, built at startup, and the tree is on this page.
 ```
 Root CA                             one, for the whole service
 ├── Intermediate — process          for what belongs to no realm
-│    └── Issuing: TLS               → 8443, 9443, LDAPS 636, the main port
+│    └── Issuing: TLS               → the main port, LDAPS 636, the debugger
 ├── Intermediate — realm (default)
 │    ├── Issuing: JOSE signing      → RS256, ES256/384/512/256K, EdDSA ×2
 │    ├── Issuing: XML signing       → SAML 2.0/1.1, WS-Fed, WS-Trust
@@ -38,9 +38,9 @@ Root CA                             one, for the whole service
      └── …the same four
 ```
 
-So an operator installs **one anchor** and it covers the TLS listeners, LDAPS,
-the main port, every token, assertion and signed document this service issues
-— and every X509-SVID it mints — in every realm.
+So an operator installs **one anchor** and it covers the main port, LDAPS, the
+embedded debugger's listener, every token, assertion and signed document this
+service issues — and every X509-SVID it mints — in every realm.
 
 ### The page shows the realm you are in
 
@@ -83,7 +83,7 @@ surface without touching the rest:
 | **JOSE signing** | realm | The RSA key behind RS256, the four ECDSA curves and both Edwards curves — what a client verifies against `/oauth2/jwks`. |
 | **XML signing** | realm | SAML 2.0 and 1.1 assertions and responses, WS-Federation, WS-Trust, per-service-provider metadata. |
 | **Application assertions** | realm | The signing key pairs issued for RFC 7521 / 7523 — to applications, and since 2026-09-11 to PEOPLE as well (`target=person`, written onto the person's own entry as `stsAssertion*`; see [JWT assertions](jwt-assertions.md)). This is the Issuing CA this page had before the others existed. |
-| **TLS listeners** | **process** | The certificate served on 8443, 9443, LDAPS 636 and the main port. |
+| **TLS listeners** | **process** | The certificate served on the main port, LDAPS 636 and the embedded debugger's listener. (It served 8443 and 9443 as well until those two listeners were deleted on 2026-09-16.) |
 | **SPIFFE authority** | realm | **Every X509-SVID minted in this realm** (2026-09-11 — it was self-signed and outside this tree before that). The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
 | **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** (2026-09-13) — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
 
@@ -505,27 +505,35 @@ signed-in person, from the realm's own **TLS Client Issuing CA**:
   encrypted `-key.pem` and a `-chain.pem`, with install steps for Windows, macOS,
   Firefox, Chrome on Linux and curl. Nothing keeps the private key.
 
-**The TLS listeners trust this service's Root for client certificates**
-(`tls.trustIssuedClientCertificates`, on by default), so after importing the
-`.p12`, opening `https://<host>:9443/` (or `:8443`) and choosing the certificate
-signs you in, **in the realm whose portal issued it**. Your other applications on
-this service then sign you in without asking.
+**This service trusts its own Root for client certificates**
+(`tls.trustIssuedClientCertificates`, on by default), and **the main port asks
+every connection for a client certificate and requires none** — so after
+importing the `.p12`, opening `https://<host>:8081/tls/sign-in` and choosing the
+certificate when the browser asks signs you in, **in the realm whose portal
+issued it**. Your other applications on this service then sign you in without
+asking.
+
+That address was `https://<host>:9443/` (or `:8443`) until 2026-09-16, when both
+of those listeners were deleted. Presenting a certificate is now the client's
+own decision rather than the port's demand: the browser sends it because you
+chose it, and `GET /tls/sign-in` answers what arrived, whether it verified, its
+thumbprint, the revocation verdict and whether a session was started.
 
 Trusting the Root does not make every certificate this service issues a way in.
 A verified chain through the Root is an identity only for a leaf from a TLS client
 (or ACME, EST or SCEP enrollment) Issuing CA, with `clientAuth` and one
 `urn:sts:person:` or `urn:sts:application:` name; an application's assertion key
-pair or an SVID completes the handshake and is refused as an identity — a 403 on
-9443.
+pair or an SVID completes the handshake and is refused as an identity — the
+sign-in says so and starts nothing.
 
 You may hold up to `pki.personTlsClientCertificateMax` (5) valid certificates, one
 per device. Each has a **Revoke** button; revocation is real — the CRL, the OCSP
-responder, and the listeners refuse it.
+responder, and every door that reads a certificate refuse it.
 
 ```bash
 curl --cert alice-laptop-tls-client-chain.pem \
      --key alice-laptop-tls-client-key.pem --pass '<file password>' \
-     https://localhost:9443/tls/whoami
+     https://localhost:8081/tls/sign-in
 ```
 
 ## Revocation is published, and consulted
@@ -555,7 +563,7 @@ is now checked under `pki.revocationCheck`:
 
 | Where a certificate is presented | What is checked |
 |---|---|
-| **8443 and 9443** (a verified client certificate) | the whole chain. A refused one starts no session and is not recorded as an authentication; **9443 answers 403** with the report, 8443 answers 200 and says *refused on revocation* |
+| **`GET /tls/sign-in`** (a verified client certificate) | the whole chain. A refused one starts no session and is not recorded as an authentication, and the answer says *refused on revocation*. (This was the 8443 and 9443 listeners until both were deleted on 2026-09-16; 9443 answered 403 and 8443 answered 200.) |
 | **The main port** — the remote XACML PEP and XACML user chains, SCIM's client-certificate scheme, RFC 8705 `tls_client_auth` / `self_signed_tls_client_auth` | the whole chain, computed once per request before any route; each of those doors refuses a certificate the policy refuses |
 | **An RFC 7523 assertion's `x5c`** | the register only — the path is this realm's own by construction |
 | **The SPIRE Server API** (an X509-SVID) | the register only, whatever the policy — a federated SVID has no revocation mechanism but its bundle |
@@ -627,7 +635,9 @@ key names no list, so only taking it off stops it verifying; plain `ldap:` is
 dialled only when allowed; a relative distribution point needs
 `pki.revocationLdapDirectory` and single-valued RDNs; LDAPS 636 asks for no client
 certificate. The verdict for a
-connection is on `GET /tls/whoami`; the policy is on `GET /tls` and
+certificate you present is in `GET /tls/sign-in`'s answer — it was on
+`GET /tls/whoami` until the two TLS listeners were deleted on 2026-09-16, and
+that page went with them; the policy is on `GET /tls` and
 `/admin/crypto-metadata`.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a

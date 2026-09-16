@@ -16,7 +16,7 @@
 // **"EVERYTHING ELSE" WAS WRONG IN EVERY MODE, AND THAT IS WHY THIS FILE IS
 // NOT BEHIND A PREDICATE.** Five kinds of session here never saw a password:
 //
-//   * a TLS client certificate on 8443/9443 — amr ["swk"];
+//   * a TLS client certificate on the main port — amr ["swk"];
 //   * a Kerberos ticket over SPNEGO — `via` "Kerberos v5 (SPNEGO)", with an amr
 //     read off the ticket's flags that may be ["pwd"] because the KDC was
 //     pre-authenticated with a key derived from one;
@@ -69,7 +69,7 @@ const AC_KERBEROS = AC_PREFIX + 'Kerberos';
 
 // TLSClient and not X509: the X509 class is "the principal authenticated by
 // means of a digital signature where the key was validated as part of an X.509
-// PKI" at the MESSAGE level, and what 8443/9443 verified is the client
+// PKI" at the MESSAGE level, and what the main port verified is the client
 // certificate of the TLS HANDSHAKE, which is exactly what TLSClient names.
 const AC_TLS_CLIENT = AC_PREFIX + 'TLSClient';
 

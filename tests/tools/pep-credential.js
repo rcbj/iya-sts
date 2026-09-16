@@ -380,11 +380,12 @@ async function main() {
       'useless until the anchor is trusted.\n');
     process.exit(1);
   }
-  say(opts, 'The Root CA is in the mock\'s client truststore. Since ' +
-            '2026-09-06 that truststore covers the MAIN listener as well as ' +
-            '8443 and 9443 — see tls/tls_server.js — which is what lets a ' +
-            'certificate presented at /xacml/pep/register be verified rather ' +
-            'than merely thumbprinted.');
+  say(opts, 'The Root CA is in the mock\'s client truststore. That ' +
+            'truststore covers the MAIN listener — since 2026-09-06, and ' +
+            'since 2026-09-16 there is no other, the 8443 and 9443 listeners ' +
+            'having been deleted; see tls/tls_server.js — which is what lets ' +
+            'a certificate presented at /xacml/pep/register be verified ' +
+            'rather than merely thumbprinted.');
 
   // THE DN, LAST AND ON STDOUT, so that `$(pep-credential.js --quiet ...)` is
   // the DN and a launcher needs no parsing. Everything else this file says

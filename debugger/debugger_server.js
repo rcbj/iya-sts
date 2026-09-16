@@ -95,6 +95,10 @@ const authn = require('../authn/authn');
 const jwtAccessToken = require('../oauth-oidc/jwt_access_token');
 // RFC 8705 section 3.1's resource-server check (2026-09-13); a library.
 const mtls = require('../oauth-oidc/mtls');
+// RFC 9449's binding check, and #34's two settings (2026-09-15). Both are
+// libraries this process has already loaded through oauth2.js.
+const dpop = require('../oauth-oidc/dpop');
+const senderConstraints = require('../oauth-oidc/sender_constraints');
 const tlsServer = require('../tls/tls_server');
 const access = require('./debugger_access');
 const apiProcess = require('./debugger_api_process');
@@ -268,8 +272,16 @@ function refuse(req, res, status, code, error, why, challenge) {
 // Answers `{ ok, claims, username }` or `{ ok: false, status, code, error,
 // why }`.
 // ---------------------------------------------------------------------------
-function verifyAccessToken(token, req) {
+// `opts.presented` is true when the token came in on THIS request's
+// Authorization header, and false when it is the one held inside the relying
+// party's own session (#34, 2026-09-15). The difference decides the sender
+// constraints below: a token nobody sent cannot prove possession of anything
+// on a request it was not part of, and requiring it to would turn the two new
+// settings into "the debugger's sign-in stops working", which is not what
+// either of them says. `opts.scheme` is how a presented one was sent.
+function verifyAccessToken(token, req, opts) {
   log.debug("Entering verifyAccessToken().");
+  const o = opts || {};
   let claims = null;
   try {
     const certPem = realms.run(realms.get(realms.DEFAULT_ID), function () {
@@ -348,6 +360,55 @@ function verifyAccessToken(token, req) {
     return { ok: false, status: 401, code: 'STS-DBG-0030',
              error: 'invalid_token', why: certificateProblem.description };
   }
+  // RFC 9449 SECTION 7 AND #34's TWO SETTINGS (2026-09-15), for a token this
+  // request PRESENTED. The binding check above was written for RFC 8705 and
+  // the DPoP one was never written, so a bound token was accepted here as a
+  // bearer token — the same hole `/admin-api` carried, closed the same way.
+  if (o.presented) {
+    const boundJkt = dpop.jktOf(claims);
+    let proofOk = false;
+    if (boundJkt) {
+      if (String(o.scheme || '') !== 'dpop') {
+        log.debug("Leaving verifyAccessToken(). Bound, presented as Bearer.");
+        return { ok: false, status: 401, code: 'STS-DBG-0031',
+                 error: 'invalid_token',
+                 why: 'That access token is DPoP-bound (it carries cnf.jkt), ' +
+                      'so it must be sent as "Authorization: DPoP <token>" ' +
+                      'with a DPoP proof rather than as a Bearer token.' };
+      }
+      const checked = dpop.verifyProof(req.headers['dpop'], {
+        htm: req.method, htu: dpop.htuOf(req), accessToken: String(token),
+        expectedJkt: boundJkt, req: req
+      });
+      if (!checked.ok) {
+        log.debug("Leaving verifyAccessToken(). The DPoP proof failed.");
+        return { ok: false, status: 401,
+                 code: checked.errorCode || 'STS-DBG-0032',
+                 error: 'invalid_dpop_proof', why: checked.description };
+      }
+      proofOk = true;
+    }
+    const required = senderConstraints.accessTokenRefusal({
+      where: 'the debugger api',
+      boundJkt: boundJkt,
+      proofOk: proofOk,
+      boundThumbprint: mtls.boundThumbprintOf(claims),
+      certificate: !!mtls.peerCertificate(req),
+      certificateMatches: !!mtls.boundThumbprintOf(claims) &&
+                          mtls.peerVerified(req) &&
+                          mtls.presentedThumbprint(req) ===
+                            mtls.boundThumbprintOf(claims),
+      mtlsAvailable: mtls.available()
+    });
+    if (required) {
+      log.debug("Leaving verifyAccessToken(). A required sender constraint " +
+                "was not met.");
+      // error-code: none — `code` IS the code, one of STS-OAUTH-0527 to 0531,
+      // and the gate's refuse() marks whatever this verdict carries.
+      return { ok: false, status: 401, code: required.errorCode,
+               error: required.error, why: required.description };
+    }
+  }
   const scopes = String(claims.scope || '').split(/\s+/);
   if (scopes.indexOf(access.PERMISSION_NAME) < 0) {
     log.debug("Leaving verifyAccessToken(). No permission.");
@@ -372,12 +433,25 @@ function verifyAccessToken(token, req) {
   return { ok: true, claims: claims, username: username };
 }
 
+// BOTH SCHEMES SINCE #34 (2026-09-15), for `/admin-api`'s reason: a DPoP-bound
+// token sent the way RFC 9449 says to send it counted as no token at all here,
+// and the client doing the stricter thing got the least helpful answer.
 function bearerOf(req) {
   log.debug("Entering bearerOf().");
-  const header = String(req.headers.authorization || '');
-  const match = /^Bearer\s+([A-Za-z0-9._~+/=-]+)\s*$/i.exec(header);
   log.debug("Leaving bearerOf().");
-  return match ? match[1] : '';
+  return presentedTokenOf(req).token;
+}
+
+function presentedTokenOf(req) {
+  log.debug("Entering presentedTokenOf().");
+  const header = String(req.headers.authorization || '');
+  const match = /^(Bearer|DPoP)\s+([A-Za-z0-9._~+/=-]+)\s*$/i.exec(header);
+  if (!match) {
+    log.debug("Leaving presentedTokenOf(). Nothing presented.");
+    return { token: '', scheme: '' };
+  }
+  log.debug("Leaving presentedTokenOf(). " + match[1]);
+  return { token: match[2], scheme: match[1].toLowerCase() };
 }
 
 function isLanding(req) {
@@ -410,6 +484,15 @@ app.disable('x-powered-by');
 app.use(function inDefaultRealm(req, res, next) {
   realms.run(realms.get(realms.DEFAULT_ID), next);
 });
+
+// THE CROSS-NODE `jti` RESERVATION FOR A DPoP PROOF (#34, 2026-09-15), the
+// same middleware `oauth2.js` registers above every route on the main app. It
+// reserves the proof's `jti` on arrival and gives it back unless the proof was
+// accepted, so a proof replayed against a second node is refused there too.
+// Below `inDefaultRealm` because the reservation is per realm and this
+// listener's realm is the default one; above the gate, which is what verifies
+// the proof.
+app.use(dpop.proofClaims());
 
 // THE HEADERS. `frame-ancestors 'none'` for RFC 9700 section 4.14, which is
 // the one CSP clause no page here may drop. The script policy allows the
@@ -509,9 +592,12 @@ app.use(function gate(req, res, next) {
     next();
     return;
   }
-  const presented = bearerOf(req);
+  const presentation = presentedTokenOf(req);
+  const presented = presentation.token;
   if (presented) {
-    const verdict = verifyAccessToken(presented, req);
+    const verdict = verifyAccessToken(presented, req,
+                                      { presented: true,
+                                        scheme: presentation.scheme });
     if (!verdict.ok) {
       // error-code: none — refuse() marks verdict.code, the STS-DBG code
       // verifyAccessToken() chose for this failure.
@@ -961,12 +1047,23 @@ function listen() {
   const port = Number(config.value('debugger.port'));
   const useHttps = !!config.value('global.https');
   server = useHttps
-    ? https.createServer(tlsServer.clientTruststoreOptions(), app)
+    // IT ASKS FOR A CLIENT CERTIFICATE SINCE #34 (2026-09-15), AND REQUIRES
+    // NONE. `requestCert` with `rejectUnauthorized: false` is exactly what the
+    // main port does: the handshake succeeds either way, and what a
+    // certificate is worth is decided per request against the truststore. It
+    // was added because `oauth2.accessTokenRequireMtls` covers this listener,
+    // and a listener that never asks makes a certificate-bound token
+    // impossible to present here rather than merely unusual — which would have
+    // been an exemption dressed up as a refusal.
+    ? https.createServer(Object.assign({}, tlsServer.clientTruststoreOptions(),
+                                       { requestCert: true,
+                                         rejectUnauthorized: false }), app)
     : http.createServer(app);
   if (useHttps) {
     // REGISTERED so that a certificate this service replaces at runtime —
     // `build-root` on /admin/pki — is presented here too, the way the main
-    // port's is. No client certificate is asked for on this listener.
+    // port's is. It also keeps the anchors this listener verifies a client
+    // certificate against current, now that it asks for one (#34).
     tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
                                                 port + ')');
   }

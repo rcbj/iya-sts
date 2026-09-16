@@ -151,6 +151,13 @@ const bcp = require('./oauth2_bcp');
 // 3ah): it requires helpers.js and config.js, decides, and never touches `res`.
 // Every call below is a no-op while `oauth2.oauth21` is off.
 const oauth21 = require('./oauth21');
+// THE FIVE SETTINGS THAT ASK FOR MORE THAN EITHER OF THE TWO MODES ABOVE (#34,
+// 2026-09-15): refresh token rotation on its own switch, and DPoP or mutual
+// TLS REQUIRED at the token endpoint and at every resource. A leaf like
+// `oauth21.js` — it decides and never touches `res` — and the same file
+// `dpop.js` asks the resource-side half of, so the console page, the two
+// compliance reports and both doors cannot disagree about what is on.
+const senderConstraints = require('./sender_constraints');
 
 // EVERY OAUTH ERROR BODY THIS MODULE WRITES GOES THROUGH HERE, so OAuth 2.1
 // mode's one rule about what an error SAYS — section 3.2.4's character set for
@@ -1934,13 +1941,14 @@ function refreshToken(base, opts) {
   if (opts.request) {
     payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
   }
-  // THE FAMILY THIS TOKEN BELONGS TO, IN THE TOKEN (2026-09-14, #46). RFC
-  // 9700 mode only — the family is that mode's bookkeeping — and inside the
-  // JWE, so no client reads it. It is what lets a node that never heard of
-  // the parent mint the child into the parent's family, where looking the
-  // parent up here would start a new one and split the chain. See
-  // `oauth2_bcp.js` above `familyForIssuance()`.
-  if (bcp.enabled()) {
+  // THE FAMILY THIS TOKEN BELONGS TO, IN THE TOKEN (2026-09-14, #46). Wherever
+  // rotation is required — either compliance mode, or
+  // `oauth2.refreshTokenRotation` since #34 — and inside the JWE, so no client
+  // reads it. It is what lets a node that never heard of the parent mint the
+  // child into the parent's family, where looking the parent up here would
+  // start a new one and split the chain. See `oauth2_bcp.js` above
+  // `familyForIssuance()`.
+  if (bcp.rotationRequired()) {
     payload[bcp.FAMILY_CLAIM] = bcp.familyForIssuance(
       refreshJti, opts.parent_refresh_jti, opts.parent_refresh_family);
   }
@@ -3720,6 +3728,27 @@ function AccessTokenRefused(refusal) {
   log.debug("Leaving AccessTokenRefused().");
 }
 AccessTokenRefused.prototype = Object.create(Error.prototype);
+
+// A refusal by one of the two REFRESH TOKEN sender-constraint settings (#34,
+// 2026-09-15), carried the same way and for the same reason. It is thrown from
+// `issue()` rather than checked once at the top of the token endpoint because
+// the question is "is a refresh token about to be minted", and the only honest
+// answer to that is `withRefresh`, which the grant decides — a list of grants
+// kept beside it would be the second list that eventually disagrees, which is
+// the argument `issuanceKindsOf()` already makes.
+//
+// THE WHOLE REQUEST IS REFUSED, access token included. Minting the access
+// token and dropping the refresh token silently would leave a client that
+// believes it has a durable grant and discovers otherwise an hour later, which
+// is a worse failure than the error it gets instead.
+function SenderConstraintRefused(refusal) {
+  log.debug("Entering SenderConstraintRefused().");
+  this.name = 'SenderConstraintRefused';
+  this.refusal = refusal;
+  this.message = refusal.description;
+  log.debug("Leaving SenderConstraintRefused().");
+}
+SenderConstraintRefused.prototype = Object.create(Error.prototype);
 
 // ASYNCHRONOUS BECAUSE idToken() IS — the implicit and hybrid flows mint one
 // here rather than at the token endpoint, and a client may have registered a
@@ -6923,6 +6952,21 @@ async function tokenEndpoint(req, res) {
       log.debug("Leaving tokenEndpoint().");
       return oauthError(res, 400, 'access_denied', e.message);
     }
+    // #34: one of the two refresh-token sender-constraint settings refused,
+    // from inside issue(). 400 for every one of them, which is section 5.2's
+    // status for everything but `invalid_client` — and `invalid_client` is
+    // what the certificate refusals carry, so they are answered 401.
+    if (e && e.name === 'SenderConstraintRefused') {
+      log.debug("Leaving the token endpoint's refusal wrapper. A sender " +
+                "constraint refused (" + e.refusal.setting + ").");
+      errorCodes.mark(res, e.refusal.errorCode);
+      log.debug("Leaving tokenEndpoint().");
+      // error-code: none — marked above with the refusal's own code, one of
+      // STS-OAUTH-0521, 0522 or 0527.
+      return oauthError(res,
+                        e.refusal.error === 'invalid_client' ? 401 : 400,
+                        e.refusal.error, e.refusal.description);
+    }
     // RFC 9068's refusal at the point of minting — see tokenSet() — answered
     // with the error the plan chose (`invalid_scope` or `invalid_target`),
     // here for the reason above: two registrations, one wrapper.
@@ -7379,6 +7423,26 @@ async function tokenGrant(req, res) {
     return oauthError(res, 401, declaration.error, declaration.description);
   }
 
+  // #34 (2026-09-15): THE SAME QUESTION FOR THE TWO ASSERTION GRANTS, which
+  // the check above leaves alone on purpose — they may arrive with no client
+  // at all. One that NAMES a client still has to name one this server knows;
+  // one that names none is answered without a refresh token, below.
+  const assertionClient = oauth21.assertionClientRefusal({
+    grant: grant, clientId: client.client_id, registered: registeredClient
+  });
+  if (assertionClient) {
+    if (presented.basic) {
+      res.set('WWW-Authenticate', basicChallenge());
+    }
+    log.debug("Leaving the token endpoint. OAuth 2.1 refused the client on " +
+              "an assertion grant.");
+    errorCodes.mark(res, assertionClient.errorCode || 'STS-OAUTH-0299');
+    log.debug("Leaving tokenGrant().");
+    // error-code: none — marked above with the refusal's own code.
+    return oauthError(res, 401, assertionClient.error,
+                      assertionClient.description);
+  }
+
   // The application again, and NOT counted again: redeeming a code is the same
   // transaction the authorization endpoint already recorded. What this adds is
   // the grant type actually used, which is a fact only this endpoint has — and
@@ -7707,12 +7771,48 @@ async function tokenGrant(req, res) {
     const opts =
         Object.assign({ clientAuthenticated: clientObservation.authenticated },
                                rawOpts);
+    // #34 (2026-09-15): an RFC 7523 or RFC 7522 grant that named no client
+    // gets no refresh token while OAuth 2.1 mode is on. RECORDED AND NOT
+    // REFUSED, because the grant itself is legitimate — the assertion speaks
+    // for the subject — and RFC 6749 section 5.1 makes `refresh_token`
+    // optional in the response. What would otherwise happen is a chain
+    // belonging to nobody, refused at its first redemption for want of a
+    // client_id. See `oauth21.js` above `withholdsRefreshToken()`.
+    if (opts.withRefresh !== false &&
+        oauth21.withholdsRefreshToken({ grant: grant,
+                                        clientId: opts.client_id })) {
+      log.info(errorCodes.tag('STS-OAUTH-0298') + 'OAuth 2.1 mode: the ' +
+               grant + ' grant arrived with no client, so it is answered ' +
+               'with an access token and no refresh token — a refresh chain ' +
+               'belonging to no client could not be checked against the ' +
+               'client redeeming it.');
+      opts.withRefresh = false;
+    }
     // THE ROLE GATE, HERE FOR THE REASON THE PARAGRAPH ABOVE GIVES ABOUT THE
     // CLIENT CERTIFICATE. Every grant mints through this closure, so every
     // grant is decided, and a seventh added below inherits the decision
     // without its author having to know it exists. It THROWS on a refusal —
     // see checkIssuance() — which is caught at the foot of this function.
     checkIssuance(opts);
+    // #34: and the two settings that refuse to hand out a refresh token that
+    // is not sender-constrained. Here for the same reason, and reading
+    // `withRefresh` — the grant's own answer to "is a refresh token about to
+    // be minted" — rather than a list of grants kept beside it.
+    if (opts.withRefresh !== false) {
+      const constraint = senderConstraints.refreshIssuanceRefusal({
+        grant: grant,
+        dpopJkt: dpopJkt,
+        certificate: !!mtls.peerCertificate(req),
+        certificateVerified: mtls.peerVerified(req),
+        exempt: senderConstraints.mtlsExemptClient(opts.client_id),
+        mtlsAvailable: mtls.available()
+      });
+      if (constraint) {
+        log.debug("Leaving issue(). A sender constraint refused the refresh " +
+                  "token.");
+        throw new SenderConstraintRefused(constraint);
+      }
+    }
     log.debug("Leaving issue().");
     return tokenSet(base, Object.assign({ request: req }, opts));
   };
@@ -8276,6 +8376,40 @@ async function tokenGrant(req, res) {
       log.debug("Leaving tokenGrant().");
       return oauthError(res, 400, 'invalid_grant',
                         certificateProblem.description);
+    }
+    // #34 (2026-09-15): the two settings that ask for MORE than either
+    // specification does. The four checks above refuse a BOUND token presented
+    // without its key; these refuse an UNBOUND one, which is the case those
+    // cannot see — and which is the whole of what an operator turning
+    // `oauth2.refreshTokenRequireDpop` or `oauth2.refreshTokenRequireMtls` on
+    // is asking about. Neither binds the token here: see the argument above
+    // `refreshRedemptionRefusal()`.
+    const constraintProblem = senderConstraints.refreshRedemptionRefusal({
+      tokenJkt: boundTo,
+      provedJkt: dpopJkt,
+      tokenThumbprint: mtls.boundThumbprintOf(claims),
+      certificate: !!mtls.peerCertificate(req),
+      certificateVerified: mtls.peerVerified(req),
+      // RFC 8705 section 7.1 again, read off the same decision the binding
+      // check above made: `refreshBound` is false exactly when the client
+      // authenticated by certificate on this request AND owns this token, and
+      // that is the case section 7.1 says is bound through the client id. It
+      // passes whether or not the token carries a thumbprint, which is the
+      // point of the section — a client whose certificate expired presents the
+      // new one.
+      section71: !refreshBound,
+      exempt: senderConstraints.mtlsExemptClient(client.client_id),
+      mtlsAvailable: mtls.available()
+    });
+    if (constraintProblem) {
+      log.debug("Leaving the token endpoint. A sender constraint refused the " +
+                "refresh.");
+      errorCodes.mark(res, constraintProblem.errorCode);
+      log.debug("Leaving tokenGrant().");
+      // error-code: none — marked above with the refusal's own code, one of
+      // STS-OAUTH-0523 to 0527.
+      return oauthError(res, 400, constraintProblem.error,
+                        constraintProblem.description);
     }
     // RFC 8707 again, one grant later: a refresh may NARROW the resources the
     // original authorization carried and may not add to them. Without this the

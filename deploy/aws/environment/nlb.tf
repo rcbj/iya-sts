@@ -1,11 +1,14 @@
 # ---------------------------------------------------------------------------
-# THE PUBLIC FRONT DOOR: AN NLB, 443 → 8081 AND THREE MORE PORTS, TLS PASSED
+# THE PUBLIC FRONT DOOR: AN NLB, 443 → 8081 AND TWO MORE PORTS, TLS PASSED
 # THROUGH. locals.tf's `published_ports` lists them and says which job needs
-# each; a listener and a target group per entry.
+# each; a listener and a target group per entry. It was 443 and three more
+# until 2026-09-16, when the service's 9443 mutual-TLS listener was deleted —
+# see that file's note; nothing here names the port, so the map lost a row and
+# this file lost a listener and a target group with no edit.
 #
 # Network and not application load balancer, because mock-sts terminates its
-# own TLS and some of what it serves is mutual TLS: a client certificate only
-# reaches the service if the TCP stream does. Each node presents its own leaf
+# own TLS and a client certificate presented to the main port only reaches the
+# service if the TCP stream does. Each node presents its own leaf
 # and every leaf chains to the cluster's one Root (tls/CLAUDE.md), so a client
 # that trusts the Root trusts whichever node it lands on.
 #

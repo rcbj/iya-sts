@@ -40,7 +40,9 @@
 // certificate. On this service that means `global.https` — which RFC 9700 mode
 // turns on — because the main listener is where `/oauth2/token` lives, and
 // `server.js` sets `requestCert: true, rejectUnauthorized: false` on it: asked
-// for, never required, exactly the posture port 8443 has. A client that
+// for, never required, which since 2026-09-16 is this service's only
+// posture — the two TLS listeners that had the other one are gone. A client
+// that
 // presents none gets an ordinary Bearer or DPoP-bound token and nothing about
 // its behaviour changes, which is what keeps this invisible to every caller
 // that does not use it.

@@ -1492,18 +1492,20 @@ const SECTIONS = [
                    'agent attested — which is why nothing on an agent is ' +
                    'editable and the ban is the only control.' } ] },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
-        blurb: 'The two HTTPS listeners of this service\'s own — 8443, and ' +
-               '9443 which asks for a client certificate — and the ' +
-               'certificate three other sockets share with them, regenerated ' +
-               'on every start. The names and addresses that certificate ' +
-               'carries are settings here; whether the MAIN port is HTTPS ' +
-               'too is <code>global.https</code> on <a ' +
+        blurb: 'The certificate the main port and LDAPS 636 present, ' +
+               'regenerated on every start, and what this service makes of a ' +
+               'CLIENT certificate presented to it. The names and addresses ' +
+               'that certificate carries are settings here; whether the MAIN ' +
+               'port is HTTPS at all is <code>global.https</code> on <a ' +
                'href="/admin/config">Configuration</a>, because it is a fact ' +
-               'about the process rather than about these listeners.' },
-      // Beside the listeners it configures, and UNGROUPED: a `TLS` heading
+               'about the process rather than about this certificate. The ' +
+               'two listeners of this service\'s own — 8443, and 9443 which ' +
+               'required a client certificate — were deleted on ' +
+               '2026-09-16.' },
+      // Beside the certificate it configures, and UNGROUPED: a `TLS` heading
       // over `TLS / mutual TLS` would say the label twice.
       { path: '/admin/tls/trust', label: 'Client-certificate truststore',
-        blurb: 'Every anchor 8443, 9443, LDAPS 636 and the main port verify ' +
+        blurb: 'Every anchor LDAPS 636 and the main port verify ' +
                'a client certificate against — which, since a verified ' +
                'certificate is an identity here, is the list of whose ' +
                'certificates this service believes. Each row says whether it ' +
@@ -2303,8 +2305,9 @@ const SECTIONS = [
                'JWKS, which is the point of a realm rather than a side ' +
                'effect. What a realm separates is what this service ISSUES: ' +
                'the embedded directory is SHARED, and so are Kerberos, the ' +
-               'two TLS listeners and SPIFFE\'s four sockets, because a ' +
-               'socket has no path to put a realm segment in.' },
+               'certificate the main port and LDAPS 636 present, and ' +
+               'SPIFFE\'s four sockets, because a socket has no path to put ' +
+               'a realm segment in.' },
       { path: '/admin/config', label: 'Configuration',
         blurb: 'Every setting this service has, grouped by the protocol it ' +
                'belongs to, with where each value came from: a runtime ' +
@@ -26735,7 +26738,8 @@ app.get('/admin/vc-verifier-config', function (req, res) {
 //     for the whole process, because LDAP answers on a socket with no path to
 //     put a realm segment in. So OAuth client registrations, SAML service
 //     provider entries, the SPIFFE registry and the two admin roles are shared,
-//     and so are Kerberos, the two TLS listeners and SPIFFE's four sockets.
+//     and so are Kerberos, the certificate the main port and LDAPS 636
+//     present, and SPIFFE's four sockets.
 //     Saying so is the whole reason the table at the foot of this page exists:
 //     a person who assumed a realm was a boundary everywhere would find out
 //     from an `ldapsearch`.
@@ -30107,7 +30111,7 @@ function setTruststore(value) {
 // ---------------------------------------------------------------------------
 // GET /admin/tls/trust — THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12).
 //
-// Every anchor 8443, 9443, LDAPS 636 and the main port verify a client
+// Every anchor LDAPS 636 and the main port verify a client
 // certificate against, where each came from, and two controls: add one or more
 // PEM certificates, and remove one row. It is the runtime door product mode
 // did not have — `POST /tls/trust` answers anybody who can reach the port and
@@ -30115,7 +30119,8 @@ function setTruststore(value) {
 // `tls.trustAnchorsFile` at startup.
 //
 // **FILED UNDER PROTOCOLS, DIRECTLY BENEATH `/admin/tls`, AND UNGROUPED.** It
-// is configuration of those listeners, which is the question Protocols answers.
+// is configuration of those two sockets, which is the question Protocols
+// answers.
 // There is no TLS group to put it in and it does not make one: a heading `TLS`
 // over `TLS / mutual TLS` would say the label twice, which is the test
 // `SECTIONS` applies to a group.
@@ -30185,11 +30190,11 @@ app.get('/admin/tls/trust', function (req, res) {
               'verifying. Nothing brings it back.') + '">Remove</button></form>'
         : '<span class="sub">Admin Write</span>') + '</td></tr>';
   }).join('') || '<tr><td colspan="7">' + esc('Empty. No client certificate ' +
-    'verifies on any listener, and nothing can connect to the one that ' +
-    'requires a certificate.') + '</td></tr>';
+    'verifies on any listener, so every one presented arrives UNVERIFIED and ' +
+    'everything that reads one refuses it.') + '</td></tr>';
 
   const inner = messagesOf(req) +
-    note('Every anchor <strong>8443, 9443, LDAPS 636 and the main ' +
+    note('Every anchor <strong>LDAPS 636 and the main ' +
     'port</strong> verify a client certificate against. A certificate that ' +
     'chains to one of these is VERIFIED — and since 2026-09-06 a verified ' +
     'certificate is an identity here: it starts a sign-on session, and it is ' +
@@ -33886,6 +33891,50 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>redirect_uri</code>, which RFC 9700 mode refuses — so a ' +
            'client written for 2.1 is exercised in this mode and not in that ' +
            'one. Restart-only and realm-settable for the same reason.',
+           '<strong>The five sender-constraint settings ask for MORE than ' +
+           'either specification does (#34, 2026-09-15).</strong> Neither ' +
+           'OAuth 2.1 (section 4.3.1) nor RFC 9700 requires DPoP: section ' +
+           '4.3.1 asks a public client\'s refresh token to be ' +
+           'sender-constrained <em>or</em> rotated with replay detection, and ' +
+           'a sender-constrained access token is a SHOULD. So all five are ' +
+           'off unless set, and no mode turns one on. ' +
+           '<code>oauth2.refreshTokenRotation</code> takes the rotation ' +
+           'answer with both modes off — the modes already rotate for every ' +
+           'client. The four <code>Require</code> rows REFUSE rather than ' +
+           'downgrade: a token request that would hand out an unconstrained ' +
+           'refresh token is refused WHOLE, access token included, because ' +
+           'half a token set is discovered an hour later at a refresh that ' +
+           'cannot be made; and an unbound refresh token is refused at the ' +
+           'refresh grant rather than bound to whoever presents it first.',
+           '<strong>The two access-token rows refuse at the RESOURCE, not at ' +
+           'the token endpoint.</strong> This service goes on issuing bearer ' +
+           'tokens, which every surface that accepts a presented access ' +
+           'token then refuses — UserInfo, the step-up resource, the three ' +
+           'OpenID4VCI endpoints, <code>/scim/v2</code>, the Shared Signals ' +
+           'endpoints, <a href="/admin-api">the management API</a> and the ' +
+           'embedded debugger\'s listener. That is deliberate: a client under ' +
+           'test needs to MEET the refusal. What they do not cover is what is ' +
+           'not a presented OAuth access token — GNAP\'s own tokens, an RFC ' +
+           '7592 registration access token, and the endpoints that take a ' +
+           'token as a parameter (introspection, revocation, token ' +
+           'exchange). <strong>Two consequences worth knowing before you ' +
+           'turn one on</strong>: <a href="/admin/api-explorer">the API ' +
+           'explorer</a> stops working while DPoP is required, because its ' +
+           'script sends a plain <code>Bearer</code> header; and the mutual ' +
+           'TLS rows need <code>global.https</code>, without which every ' +
+           'affected request is refused rather than waved through.',
+           '<strong>This console and the user portal keep working, and the ' +
+           'debugger is an ordinary client.</strong> <code>/admin</code> and ' +
+           '<code>/portal</code> are OpenID Connect clients of this service; ' +
+           'since 2026-09-15 they carry a DPoP key of their own and prove it ' +
+           'on every back-channel token call, so the DPoP rows do not lock ' +
+           'you out. They are EXEMPT from ' +
+           '<code>oauth2.refreshTokenRequireMtls</code> alone, because their ' +
+           'token requests are loopback calls from this process to itself ' +
+           'and there is no certificate story to tell about one. The ' +
+           'debugger\'s client is not exempt from anything: point it at a ' +
+           'realm that requires a constraint and configure it to meet one, ' +
+           'the same as any other client here.',
            '<strong><code>oauth2.breakIdTokenNonce</code> makes this service ' +
            'wrong on purpose.</strong> Turn it on and every ID Token carries ' +
            'a <code>nonce</code> that is not the one the client sent, so a ' +
@@ -34056,7 +34105,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'this service did before.',
            '<strong>It shares STATE and not SOCKETS, and the difference is ' +
            'where the surprises are.</strong> The KDC, the two LDAP ' +
-           'listeners, the two TLS ports and SPIFFE\'s four are bound per ' +
+           'listeners, the main port and SPIFFE\'s four are bound per ' +
            'process and always will be. And the <strong>replay caches and ' +
            'DPoP <code>jti</code> sets converge rather than ' +
            'synchronise</strong>: between a write in one process and its ' +
@@ -34221,28 +34270,36 @@ const PROTOCOL_SETTINGS_PAGES = [
             ['/admin/saml-attributes', 'what goes into the assertion']] },
 
   { path: '/admin/tls', title: 'TLS / mutual TLS',
-    lead: '<strong>Two HTTPS listeners of this service\'s own — 8443, and ' +
-          '9443 which asks the client for a certificate — whose whole ' +
-          'content is what the SERVER saw of the connection.</strong> They ' +
-          'exist so that a client author can find out what actually arrived: ' +
-          'the protocol version, the cipher, the SNI name, and every field ' +
-          'of the certificate that was presented.',
+    lead: '<strong>This service has no TLS listener of its own since ' +
+          '2026-09-16: 8443, which asked every connection for a client ' +
+          'certificate, and 9443, which required one at the handshake, were ' +
+          'both deleted.</strong> The main port already asks and requires ' +
+          'none, so the first was a second socket with the same posture as ' +
+          'the one every other protocol answers on; what this page ' +
+          'configures is the certificate that port and LDAPS 636 present, ' +
+          'and what this service makes of a certificate a CLIENT presents.',
     also: ['<strong>A verified client certificate IS a login since ' +
-           '2026-09-05, and no revocation is checked.</strong> 9443 requires ' +
-           'one and 8443 asks for one; a request on a connection whose ' +
-           'certificate verified starts a sign-on session for its common ' +
-           'name, and the response carries the cookie — so a browser that ' +
-           'presents a certificate here is signed in on the main port too. ' +
-           'What has NOT changed is what verification proved: a chain to an ' +
-           'anchor somebody POSTed to <code>/tls/trust</code>, with no ' +
-           'revocation checked, so a revoked certificate verifies here and ' +
-           'would not verify anywhere that matters. No token is issued. The ' +
-           'session is on <a href="/admin/sessions">Sessions</a> and ends ' +
-           'like any other.',
+           '2026-09-05, and it is now <a href="/tls/sign-in">GET ' +
+           '/tls/sign-in</a> on the main port.</strong> Presenting a ' +
+           'certificate is the CLIENT\'s decision here — this port asks for ' +
+           'one and requires none — and the route signs in whoever presented ' +
+           'a verified one, for its common name, with the response carrying ' +
+           'the cookie. What verification proved is unchanged: a chain to an ' +
+           'anchor somebody POSTed to <code>/tls/trust</code>. No token is ' +
+           'issued. The session is on <a ' +
+           'href="/admin/sessions">Sessions</a> and ends like any other.',
+           '<strong>The handshake refusal 9443 performed has no successor, ' +
+           'and that is deliberate.</strong> Refusing during the handshake ' +
+           'is a property of a SOCKET, and this socket carries OAuth, SAML, ' +
+           'SCIM, the console and everything else, so it cannot refuse every ' +
+           'caller who has no certificate. A certificate that does not ' +
+           'verify is refused where it is USED instead: RFC 8705 client ' +
+           'authentication at the token endpoint, <code>/xacml</code>, ' +
+           '<code>/scim/v2</code> and the sign-in above.',
            '<strong>One self-signed certificate, regenerated on every start, ' +
-           'is shared by four sockets</strong> — 8443, 9443, LDAPS 636 and ' +
-           'the main port when <code>global.https</code> is on — so a caller ' +
-           'trusts this service once rather than four times. The names and ' +
+           'is shared by two sockets</strong> — LDAPS 636, and the main port ' +
+           'when <code>global.https</code> is on — so a caller trusts this ' +
+           'service once rather than twice. The names and ' +
            'addresses below are what goes into it, which is why they are ' +
            'restart-only: it is minted before anything is listening.',
            '<strong>Whether the MAIN port is HTTPS is not here.</strong> ' +
@@ -34252,7 +34309,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>oauth2.rfc9700</code> is — RFC 9700 section 2.1 says an ' +
            'authorization response must not travel over an unencrypted ' +
            'connection, and the authorization endpoint is on that port.'],
-    links: [['/tls', 'both listeners, and whether they came up'],
+    links: [['/tls', 'the certificate, the truststore and the main port\'s ' +
+                'posture'],
             ['/tls/trust', 'the certificate, to trust it'],
             ['/tls/forwarded', 'what a proxy said about the connection'],
             ['/admin/spiffe', 'the one place a certificate authenticates']] }
@@ -34556,7 +34614,7 @@ function spiffePage(req) {
         '<a href="/admin/pki">manage it on the PKI page</a>, where it is one ' +
         'of the Issuing CAs in this realm\'s branch. So the trust anchor a ' +
         'consumer installs is the <strong>Root</strong>, which every realm ' +
-        'shares and which also covers 8443, 9443, LDAPS 636, the main port ' +
+        'shares and which also covers LDAPS 636, the main port ' +
         'and every token this service signs: one anchor, installed once. An ' +
         'X509-SVID carries the Issuing CA and this realm\'s Intermediate in ' +
         'its own chain' +

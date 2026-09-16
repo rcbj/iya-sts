@@ -194,8 +194,8 @@ const debuggerServer = stack.debuggerServer;
 // `global.https` — whose default is `oauth2.rfc9700`, so RFC 9700 mode brings
 // it with it — makes this an HTTPS listener instead of a plain one. It is not a
 // fourth certificate: `tls_server.js` generates ONE self-signed pair per start
-// and 8443, 9443 and the directory's LDAPS 636 already serve it, so a caller
-// trusts this service once rather than four times. That module has been
+// and the directory's LDAPS 636 already serves it, so a caller trusts this
+// service once rather than twice. That module has been
 // required above by the time this runs, which is what makes the key available
 // here without moving anything in the require order.
 //
@@ -278,8 +278,8 @@ function announce() {
               ', which OAuth 2.1 mode turned on' :
               (config.value('oauth2.rfc9700') ?
                ', which RFC 9700 mode turned on' : '')) +
-             '), served with the same certificate 8443, 9443 and ' +
-             'LDAPS 636 use. It is ' + tlsServer.certificateProvenance() +
+             '), served with the same certificate LDAPS 636 uses. It is ' +
+             tlsServer.certificateProvenance() +
              '. Fetch it from /tls/server-certificate and trust it — and ' +
              'fetch it WITHOUT verification the first time (curl -k), ' +
              'because with this on there is no plain port left to fetch it ' +
@@ -458,24 +458,21 @@ function announce() {
     log.error(errorCodes.tag('STS-DBG-0016') + 'debugger: the listener ' +
               'could not start: ' + err.message);
   });
-  const tlsListeners = tlsServer.listen();
-  tlsListeners.whenReady.then(function (ready) {
-    log.info('tls: an HTTPS endpoint that reports the connection back to ' +
-             'whoever made it is on ' + ready.tlsPort + ' (a client ' +
-             'certificate is asked for, never required, and always ' +
-             'explained) and on ' + ready.mtlsPort + ' (one is REQUIRED, and ' +
-             'refused during the handshake if it does not verify). GET ' +
-             '/tls/whoami over either. The client truststore starts EMPTY — ' +
-             'POST the issuing CA to /tls/trust on this port — because the ' +
-             'CA it has to verify is usually generated in a browser minutes ' +
-             'before the connection.');
-  }).catch(function (err) {
-    // Reported rather than thrown, as the other two are: the rest of this
-    // service is still useful, and a silent failure to bind would surface
-    // later as a TLS endpoint that never answers.
-    log.error(errorCodes.tag('STS-CORE-0032') + 'tls: the TLS endpoint could ' +
-                                                'not start: ' + err.message);
-  });
+  // THE TWO TLS LISTENERS WERE DELETED ON 2026-09-16 (8443 and 9443). What
+  // they did that was worth keeping now happens on THIS port: a client
+  // certificate is asked for and never required, whatever arrives is recorded,
+  // and GET /tls/sign-in turns a verified one into a session. `listen()` is
+  // kept as a no-op so that this call site and the tests did not have to
+  // change on the same day the sockets went.
+  tlsServer.listen();
+  log.info('tls: this port asks every connection for a client certificate ' +
+           'and requires none, so presenting one is the client\'s decision. ' +
+           'GET /tls/sign-in signs the holder of a verified one in; the token ' +
+           'endpoint binds a token to it (RFC 8705); /tls shows the ' +
+           'certificate this service presents. The client truststore starts ' +
+           'EMPTY — POST the issuing CA to /tls/trust — because the CA it has ' +
+           'to verify is usually generated in a browser minutes before the ' +
+           'connection.');
   log.debug('Leaving announce().');
 }
 
@@ -869,8 +866,8 @@ if (useHttps) {
   const mainServer = https.createServer(Object.assign({
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
-    // THE CLIENT TRUSTSTORE, THE SAME ONE /tls/trust FILLS FOR 8443 AND 9443
-    // (2026-09-06). Passed at creation AND kept current by the registration
+    // THE CLIENT TRUSTSTORE, THE ONE /tls/trust FILLS (2026-09-06; it
+    // covered 8443 and 9443 too until they were deleted on 2026-09-16). Passed at creation AND kept current by the registration
     // below, because anchors arrive at runtime — the CA a caller presents a
     // client certificate from does not exist anywhere until somebody POSTs it.
     //
@@ -886,7 +883,8 @@ if (useHttps) {
     ca: tlsServer.clientTruststoreOptions().ca,
     // RFC 8705 — certificate-bound access tokens. The token endpoint is on this
     // listener, so a certificate has to be ASKED FOR here or there is never one
-    // to bind to. The posture is 8443's exactly: asked for, never required.
+    // to bind to. Asked for, never required — which since 2026-09-16 is the
+    // only posture this service has, both deleted TLS listeners included.
     //
     // `rejectUnauthorized: false` looks like a hole and is not. A certificate
     // that built no chain to a trusted anchor is still thumbprinted and still
@@ -909,6 +907,15 @@ if (useHttps) {
   // this file requires that module, not the other way round.
   tlsServer.trustClientCertificatesOn(mainServer,
                                       'the main port (' + PORT + ')');
+  // AND SO THAT A CLIENT CERTIFICATE PRESENTED HERE IS WRITTEN DOWN
+  // (2026-09-16). The sighting hung on the 8443 and 9443 listeners'
+  // `secureConnection` until they were deleted, so the main port — where every
+  // certificate that authenticates a client, a remote PEP or a SCIM caller
+  // actually arrives — recorded nothing, and /admin/tls looked quiet while
+  // they came in. It also logs a failed handshake, which is otherwise
+  // invisible: the far end sees a closed socket and this log said nothing.
+  tlsServer.observeConnectionsOn(mainServer,
+                                 'the main port (' + PORT + ')');
   // The PROXY protocol header comes off BEFORE the TLS handshake — see
   // common/proxy_protocol.js. A no-op with global.proxyProtocol off.
   proxyProtocol.install(mainServer, { label: 'the main port (' + PORT + ')',

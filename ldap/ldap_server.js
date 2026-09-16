@@ -2943,10 +2943,10 @@ function seed() {
   //
   // A remote XACML Policy Enforcement Point authenticates with a CLIENT
   // CERTIFICATE, and this service resolves that certificate to a directory
-  // entry exactly as it resolves one arriving on 8443 or 636: by the subject
-  // DN, through `locateEntry()`. So the entry below is what a certificate for
-  // `CN=remote-pep-1` lands on, and the group beneath it is what turns that
-  // identity into a PERMISSION.
+  // entry exactly as it resolves one arriving on the main port or 636: by the
+  // subject DN, through `locateEntry()`. So the entry below is what a
+  // certificate for `CN=remote-pep-1` lands on, and the group beneath it is
+  // what turns that identity into a PERMISSION.
   //
   // **THE TWO ARE SEPARATE ON PURPOSE AND THE SEPARATION IS THE FEATURE.** The
   // certificate says WHO — a chain this service verified against an anchor in
@@ -6905,7 +6905,8 @@ if (typeof xacmlStore.setDirectory === 'function') {
 // THE REGISTER DOES NOT INVENT A NAMING RULE OF ITS OWN.** A remote PEP is
 // identified by its client certificate, and this service already has exactly
 // one answer to "what identity is this certificate" — `certificatePlan()`,
-// which every verified client certificate on 8443, 9443 and 636 goes through.
+// which every verified client certificate on the main port and 636 goes
+// through.
 // A second mapping written in `xacml_pep_registry.js` would be a second answer
 // to that question, and two answers is how one component ends up filed under
 // two names on two pages.
@@ -6935,9 +6936,9 @@ if (typeof xacmlPepRegistry.setDirectory === 'function') {
       // service — `tls_server.js` puts every client certificate's subject and
       // issuer through it before recording either — and using it here is what
       // makes a PEP's `x509subject` byte-for-byte the string the same
-      // certificate would write arriving on 8443 or 636. Two spellings of one
-      // DN is two identities, which `spiffe/CLAUDE.md` lists as an assertion a
-      // test should make.
+      // certificate would write arriving on the main port or 636. Two
+      // spellings of one DN is two identities, which `spiffe/CLAUDE.md` lists
+      // as an assertion a test should make.
       // BOTH DN FIELDS, not just the subject: `certificatePlan()` does the
       // same `String()` on `certificate.issuer` a few lines further down, so
       // fixing one of them moved the throw rather than removing it.
@@ -8503,12 +8504,16 @@ if (typeof consent.setDirectory === 'function') {
 // at 15 requires, so the directory reached from the KDC's side would move them
 // further still.
 //
-// **EVERY FUNCTION RUNS IN THE DEFAULT REALM**, through `inDefaultRealm()`. The
-// KDC's sockets and `krb5.realm` are process-wide — a raw Kerberos socket has
-// no path to carry a trust-realm segment — so the KDC answers in no trust
-// realm, and its people are the default realm's people. A person reached from a
-// request in `acme` is not a principal of this KDC; the register refuses to
-// derive for one before it ever gets here.
+// **EVERY FUNCTION RUNS IN THE AMBIENT REALM SINCE 2026-09-15**, where all six
+// were wrapped in `inDefaultRealm()` before it. The paragraph here read *the
+// KDC's sockets and `krb5.realm` are process-wide … so the KDC answers in no
+// trust realm, and its people are the default realm's people*. It does now:
+// each trust realm whose Kerberos is on has a Kerberos realm and a principal
+// database of its own, and the KDC ENTERS that realm before it looks anybody
+// up — so a person reached from a request in `acme` is exactly the principal of
+// `acme`'s KDC, and their keys belong on their entry in `acme`'s subtree. The
+// register asks `principals.enabledIn()` before deriving for a realm with no
+// KDC.
 //
 // **THE WRITES GO STRAIGHT ONTO THE STORED ENTRY, AND FOR AN APPLICATION THAT
 // IS DELIBERATE.** `applications.updateApplication()` quotes the value it wrote
@@ -8536,7 +8541,7 @@ function assignOrDelete(stored, lowerName, value) {
 
 if (typeof krb5PersonKeys.setDirectory === 'function') {
   krb5PersonKeys.setDirectory({
-    readPerson: inDefaultRealm(function (username) {
+    readPerson: function (username) {
       log.debug('Entering readPerson(). username=' + username);
       const located = locateEntry(String(username || ''));
       if (!located.stored || !isPersonEntry(located.stored)) {
@@ -8549,14 +8554,14 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
                keys: firstValue(stored, 'stskrb5keys'),
                info: firstValue(stored, 'stskrb5keyinfo'),
                passwordHash: firstValue(stored, 'userpassword') };
-    }),
-    writePerson: inDefaultRealm(function (username, keysValue, infoValue) {
+    },
+    writePerson: function (username, keysValue, infoValue) {
       log.debug('Entering writePerson(). username=' + username);
       const located = locateEntry(String(username || ''));
       if (!located.stored || !isPersonEntry(located.stored)) {
         // NOT created here, for `writeStoredPassword()`'s reason.
         log.warn(errorCodes.tag('STS-LDAP-0040') + 'ldap: "' + username +
-                 '" has no entry in the default realm, so no Kerberos key ' +
+                 '" has no entry in this trust realm, so no Kerberos key ' +
                  'was written.');
         log.debug('Leaving writePerson(). No entry.');
         return false;
@@ -8568,8 +8573,8 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       touchDirectory(located.stored.dn);
       log.debug('Leaving writePerson(). ' + located.stored.dn);
       return true;
-    }),
-    personKeyInfos: inDefaultRealm(function () {
+    },
+    personKeyInfos: function () {
       log.debug('Entering personKeyInfos().');
       const out = [];
       eachEntryInRealm(function (stored) {
@@ -8582,8 +8587,8 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       });
       log.debug('Leaving personKeyInfos(). ' + out.length + ' person(s).');
       return out;
-    }),
-    readService: inDefaultRealm(function (identifier) {
+    },
+    readService: function (identifier) {
       log.debug('Entering readService(). identifier=' + identifier);
       const stored = applicationEntry(String(identifier || ''));
       if (!stored) {
@@ -8593,8 +8598,8 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       log.debug('Leaving readService(). ' + stored.dn);
       return { dn: stored.dn, keys: firstValue(stored, 'krb5servicekeys'),
                info: firstValue(stored, 'krb5servicekeyinfo') };
-    }),
-    writeService: inDefaultRealm(function (identifier, keysValue, infoValue) {
+    },
+    writeService: function (identifier, keysValue, infoValue) {
       log.debug('Entering writeService(). identifier=' + identifier);
       const stored = applicationEntry(String(identifier || ''));
       if (!stored) {
@@ -8606,8 +8611,8 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       touchDirectory(stored.dn);
       log.debug('Leaving writeService(). ' + stored.dn);
       return true;
-    }),
-    serviceKeyInfos: inDefaultRealm(function () {
+    },
+    serviceKeyInfos: function () {
       log.debug('Entering serviceKeyInfos().');
       const out = [];
       entriesUnder(applicationsDn()).forEach(function (stored) {
@@ -8621,7 +8626,7 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       });
       log.debug('Leaving serviceKeyInfos(). ' + out.length + ' entr(ies).');
       return out;
-    })
+    }
   });
 } else {
   log.warn('ldap: kerberos/krb5_person_keys.js offers no setDirectory(), so ' +
@@ -8942,11 +8947,12 @@ if (serverCertificate && serverCertificate.certPem &&
   // is asked for here: this listener proves the SERVER's identity and nothing
   // else, which GET /admin/ldap/service says out loud rather than leaving
   // somebody to work out why the client certificate they offered was never
-  // requested. The permissive and strict client-certificate listeners are the
-  // HTTPS ones next door, where the whole content is the answer to that
-  // question. `tls.minVersion` and `tls.ciphers` go in too (2026-09-12): ldapjs
+  // requested. The listener that DOES ask for one is the MAIN port, which
+  // asks every connection and requires none; the two HTTPS listeners next
+  // door that used to ask and require were deleted on 2026-09-16.
+  // `tls.minVersion` and `tls.ciphers` go in too (2026-09-12): ldapjs
   // hands this whole object to `tls.createServer()`, so LDAPS takes the same
-  // protocol floor and cipher list as 8443, 9443 and the main port rather than
+  // protocol floor and cipher list as the main port rather than
   // node's defaults behind their back.
   secureServer = ldap.createServer(Object.assign({
     log: log,
@@ -11580,9 +11586,9 @@ registerWorkerOperations();
 function description(req) {
   log.debug('Entering description().');
   const host = String(req.get('host') || 'localhost').split(':')[0];
-  // Read rather than written down again: the HTTPS listeners' ports are that
-  // module's to decide, and a second copy here would be a second thing to keep
-  // right the day somebody sets STS_TLS_PORT.
+  // Read rather than written down again: which port client certificates are
+  // presented to is that module's to decide, and a second copy here would be
+  // a second thing to keep right.
   const tlsPorts = tlsServer.ports();
   const out = {
     url: 'ldap://' + host + ':' + boundPort,
@@ -11663,20 +11669,20 @@ function description(req) {
       startTls: false,
       clientCertificates: 'never requested. This listener proves the SERVER ' +
         'to the client and nothing more; a client certificate offered to it ' +
-        'is not asked for and would not be a login if it were. The HTTPS ' +
-        'listeners on ' + tlsPorts.tls + ' and ' + tlsPorts.mtls + ' are ' +
-        'where client certificates are the whole subject.',
+        'is not asked for and would not be a login if it were. The main ' +
+        'port (' + tlsPorts.main + ') is where client certificates are asked ' +
+        'for and read.',
       certificate: {
         subject: serverCertificate ? serverCertificate.subject : '',
         names: serverCertificate ? serverCertificate.names : [],
         fingerprint256: serverCertificate ? serverCertificate.fingerprint256 :
                         '',
         notAfter: serverCertificate ? serverCertificate.notAfter : '',
-        source: 'the same certificate and key the HTTPS listeners on ' +
-          tlsPorts.tls + ' and ' + tlsPorts.mtls + ' serve. It is ' +
+        source: 'the same certificate and key the main port (' +
+          tlsPorts.main + ') serves. It is ' +
           tlsServer.certificateProvenance() + ': GET ' +
-          '/tls/server-certificate hands it out in PEM. One anchor for all ' +
-          'three sockets is why they share it.'
+          '/tls/server-certificate hands it out in PEM. One anchor for both ' +
+          'sockets is why they share it.'
       }
     },
     autoCreateUsers: autocreateUsers(),
@@ -15576,9 +15582,9 @@ function listen() {
     // at 21 — before `pki.start()`, which is what certifies the listener
     // certificate under this service's own Root and REPLACES it on
     // `tls_server.js`'s record. So 636 would present the self-signed
-    // certificate this process threw away, while 8443, 9443 and the main port
-    // presented the certified one: "one anchor covers all four" said on this
-    // module's own page, and false on the one socket it is about.
+    // certificate this process threw away, while the main port presented the
+    // certified one: "one anchor covers both" said on this module's own page,
+    // and false on the one socket it is about.
     //
     // The chain goes with it for the reason `tls_server.js`'s
     // `secureContextOptions()` gives — a client holding only the Root cannot
@@ -15605,8 +15611,8 @@ function listen() {
       log.warn(errorCodes.tag('STS-LDAP-0030') +
                'ldap: LDAPS could not be re-keyed with the certificate this ' +
                'service ended up with (' + e.message + '); it is serving the ' +
-               'one built at require time, which may not be the one 8443, ' +
-               '9443 and the main port present.');
+               'one built at require time, which may not be the one the main ' +
+               'port presents.');
     }
     // Before TLS, on the tls.Server ldapjs built — see the plain listener.
     proxyProtocol.install(secureServer.server, {

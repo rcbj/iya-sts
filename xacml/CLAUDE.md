@@ -131,7 +131,7 @@ Four links, and each is checked by the module that owns it:
 | # | The question | Answered by |
 |---|---|---|
 | 1 | Did the certificate build a path to an anchor in this service's truststore? | `oauth-oidc/mtls.js`'s `peerVerified()`, over `POST /tls/trust` — and the MAIN listener joined that truststore the same day, which is what made the question answerable at all |
-| 2 | Which directory entry is that? | `xacml_pep_registry.js`'s `certificateIdentity()`, across the slot `ldap_server.js` fills — the same lookup a certificate arriving on 8443 or 636 gets, so one certificate is one person however it turns up |
+| 2 | Which directory entry is that? | `xacml_pep_registry.js`'s `certificateIdentity()`, across the slot `ldap_server.js` fills — the same lookup `GET /tls/sign-in` gets (it was a certificate arriving on 8443 or 9443 until both listeners were deleted on 2026-09-16), so one certificate is one person however it turns up |
 | 3 | What roles does that entry hold? | `common/roles.js`, with the groups LEFT UNRESOLVED so it reads them from the directory. `REMOTE_PEPS` was the first built-in role held through a GROUP rather than computed from what the party is; `XACML_USER` is the second, and the two are deliberately separate |
 | 4 | Does the policy allow it? | `common/access_gate.js` → `xacml_access_pep.js`, on resource `xacml-pep-api` or `xacml-api` — the same embedded PEP and the same `access-control` document that decide the console and the management API |
 

@@ -18,9 +18,22 @@
 //   * **A WORKER'S VIEW OF A CLIENT CERTIFICATE** — `request_pool.peerOf()` on
 //     a real TLS socket, decoded the way the worker decodes it. No endpoint
 //     reports what a worker was handed.
-//   * **THE STRICT LISTENER'S 403** needs the two TLS listeners bound on ports
-//     nothing else uses and a truststore holding a CA minted for the purpose,
-//     which is section 7's child process.
+//   * **A REVOKED CERTIFICATE AT `GET /tls/sign-in`** needs an HTTPS listener
+//     asking for a client certificate and a truststore holding a CA minted for
+//     the purpose, which is section 6 and 7's child process.
+//
+//     **THIS WAS THE 8443 AND 9443 LISTENERS UNTIL 2026-09-16, AND ONE CLAIM
+//     DIED WITH THEM.** Section 6 asserted that the STRICT listener answered
+//     403 for a chain that verified and a CRL that revoked it, and section 7
+//     that the permissive one answered 200 and started no session. The strict
+//     listener has no successor and the 403 is not coming back: refusing at
+//     the handshake is a property of a SOCKET, and the socket that remains
+//     carries every other protocol in the service. What is asserted instead is
+//     the thing that actually mattered — that a revoked certificate whose
+//     CHAIN VERIFIES starts NO SESSION and is reported refused on revocation,
+//     while a good one from the same authority signs in. That is where the
+//     refusal has to be made now, and it is the one place OpenSSL cannot make
+//     it: OpenSSL built the chain and was satisfied.
 //   * **AN OCSP RESPONDER THAT SIGNS WITH THE WRONG KEY, A DELEGATED RESPONDER
 //     WITHOUT THE EKU, A STALE OR REPLAYED RESPONSE, A DELTA THAT REVOKES OR
 //     REMOVES, AND AN INDIRECT CRL** — sections 8 to 11 — are documents a third
@@ -3334,9 +3347,14 @@ async function theMainPort(t, minted) {
 }
 
 // ===========================================================================
-// 6 AND 7. THE 8443 AND 9443 LISTENERS, IN A CHILD — they bind at listen(), on
-// ports read at require time, so the ports have to be set before the module
-// loads.
+// 6 AND 7. GET /tls/sign-in AGAINST A REVOKED CERTIFICATE, IN A CHILD.
+//
+// It was the 8443 and 9443 listeners until 2026-09-16 (see the header). The
+// child now builds the listener ITSELF — `requestCert: true,
+// rejectUnauthorized: false` over `common/app`, which is the main port's
+// posture in `server.js` — because this module binds nothing any more. It is
+// still a child process: it adds a trust anchor, revokes a certificate and
+// leaves both in module state.
 // ===========================================================================
 async function childBody() {
   log.debug("Entering childBody().");
@@ -3356,17 +3374,30 @@ async function childBody() {
                             crls: [fixture.base + '/l.crl'] });
   fixture.routes['/l.crl'] = { body: await makeCrl(issuing, [bad.serialHex]) };
   const tls = require('../tls/tls_server');
+  const app = require('../common/app');
   tls.truststore.add(root.pem, { by: 'revocation_status test' });
-  // `listen()` hands back `{ whenReady }` rather than a promise, because
-  // `server.js` does other work while the sockets bind.
-  await tls.listen().whenReady;
-  const ports = tls.ports();
-  const ask = function (port, leaf) {
+  // THE MAIN PORT'S POSTURE, BUILT HERE. A client certificate is asked for and
+  // never required, so nothing is refused by the handshake and every refusal
+  // below is one this service made after OpenSSL was satisfied — which is the
+  // whole subject of these two sections.
+  const serverCert = tls.serverCertificate();
+  const listener = https.createServer(Object.assign({
+    cert: serverCert.certPem, key: serverCert.privateKeyPem,
+    ca: tls.clientTruststoreOptions().ca,
+    requestCert: true, rejectUnauthorized: false
+  }, tls.protocolOptions()), app);
+  tls.trustClientCertificatesOn(listener, 'the revocation_status test ' +
+                                          'listener');
+  await new Promise(function (ok) {
+    listener.listen(0, '127.0.0.1', ok);
+  });
+  const port = listener.address().port;
+  const ask = function (leaf) {
     log.debug("Entering ask().");
     log.debug("Leaving ask().");
     return new Promise(function (resolve) {
       const req = https.request({ host: '127.0.0.1', port: port,
-        path: '/tls/whoami',
+        path: '/tls/sign-in',
         method: 'GET', cert: leaf.pem + issuing.pem, key: leaf.key,
         rejectUnauthorized: false, agent: false }, function (res) {
         let text = '';
@@ -3394,20 +3425,22 @@ async function childBody() {
 
   const summary = function (answer) {
     log.debug("Entering summary().");
-    const auth = answer.body.authentication || {};
     const cert = answer.body.clientCertificate || {};
+    const session = answer.body.session || {};
     log.debug("Leaving summary().");
     return { status: answer.status, error: answer.body.error || answer.body.raw,
-             authorized: cert.authorized,
-             revocation: cert.revocation && cert.revocation.status,
-             authenticated: auth.authenticated,
-             refused: auth.refusedOnRevocation,
-             started: answer.body.session && answer.body.session.started };
+             verified: cert.verified,
+             revocation: answer.body.revocation &&
+                         answer.body.revocation.status,
+             signedIn: answer.body.signedIn,
+             refused: session.refusedOnRevocation,
+             started: session.started, why: session.why };
   };
-  out.strictBad = summary(await ask(ports.mtls, bad));
-  out.strictGood = summary(await ask(ports.mtls, good));
-  out.optionalBad = summary(await ask(ports.tls, bad));
-  tls.close();
+  out.revoked = summary(await ask(bad));
+  out.good = summary(await ask(good));
+  await new Promise(function (ok) {
+    listener.close(ok);
+  });
   fixture.server.close();
   log.debug("Leaving childBody().");
   return out;
@@ -3428,8 +3461,9 @@ async function childBody() {
 // have left behind, or would inherit from this one.
 //
 // So the whole file runs in three fresh processes — the register-and-CRL half,
-// the listener half (which needs its ports set before `tls_server.js` loads)
-// and the OpenSSL half — and this process only replays what they asserted.
+// the listener half (which adds a trust anchor and revokes a certificate, both
+// of them module state) and the OpenSSL half — and this process only replays
+// what they asserted.
 // That is the arrangement `tests/tls_trust_anchor.js` and
 // `tests/spiffe_authority.js` use for the same class of reason.
 // ---------------------------------------------------------------------------
@@ -3442,8 +3476,6 @@ function spawnChild(which) {
     }
   });
   clean[CHILD_FLAG] = which;
-  clean.STS_TLS_PORT = '0';
-  clean.STS_MTLS_PORT = '0';
   clean.LOG_LEVEL = 'fatal';
   const result = childProcess.spawnSync(process.execPath, [__filename], {
     cwd: ROOT, env: clean, encoding: 'utf8', timeout: 240000,
@@ -3464,34 +3496,33 @@ function spawnChild(which) {
 
 function theListeners(t, got) {
   log.debug("Entering theListeners().");
-  t.log.info('=== 6 and 7. 9443 answers 403 and 8443 starts no session for a ' +
-             'revoked certificate ===');
+  t.log.info('=== 6 and 7. GET /tls/sign-in starts no session for a revoked ' +
+             'certificate ===');
   if (got.error) {
     t.bad('the listener child did not run', got.error);
     log.debug("Leaving theListeners().");
     return;
   }
-  t.check(got.strictBad.status === 403 && got.strictBad.authorized === true &&
-          got.strictBad.revocation === 'revoked',
-          'THE REQUIRED LISTENER ANSWERS 403 for a certificate whose chain ' +
-          'VERIFIED and whose issuer\'s CRL revokes it — at the request, ' +
-          'because node\'s own `crl` option would refuse every issuer that ' +
-          'publishes no list',
-          JSON.stringify(got.strictBad));
-  t.check(got.strictBad.started === false &&
-          got.strictBad.authenticated === false,
-          'and starts no session, and reports it as not authenticated',
-          JSON.stringify(got.strictBad));
-  t.check(got.strictGood.status === 200 &&
-          got.strictGood.revocation === 'good' &&
-          got.strictGood.authenticated === true,
-          'while a good certificate from the same authority is answered 200 ' +
-          'and authenticated', JSON.stringify(got.strictGood));
-  t.check(got.optionalBad.status === 200 && got.optionalBad.refused === true &&
-          got.optionalBad.started === false,
-          'THE PERMISSIVE LISTENER still answers 200 — reporting is what it ' +
-          'is for — and says REFUSED ON REVOCATION with no session started',
-          JSON.stringify(got.optionalBad));
+  t.check(got.revoked.verified === true &&
+          got.revoked.revocation === 'revoked',
+          'A REVOKED CERTIFICATE WHOSE CHAIN VERIFIED is found revoked at ' +
+          'the REQUEST, off its issuer\'s CRL — node\'s own `crl` option ' +
+          'would have to refuse every issuer that publishes no list, so this ' +
+          'is not a check a socket can make',
+          JSON.stringify(got.revoked));
+  t.check(got.revoked.signedIn === false && got.revoked.started === false &&
+          got.revoked.refused === true,
+          'and it SIGNS NOBODY IN, reported as refused on revocation. **The ' +
+          'HANDSHAKE REFUSAL 9443 made has no successor and is not coming ' +
+          'back** (2026-09-16): this port carries every other protocol, so a ' +
+          'certificate that must not be an identity is refused where it is ' +
+          'USED and the answer is a 200 saying so',
+          JSON.stringify(got.revoked));
+  t.check(got.good.status === 200 && got.good.revocation === 'good' &&
+          got.good.signedIn === true && got.good.started === true,
+          'while a good certificate from the SAME authority signs its holder ' +
+          'in — without which the assertion above passes on a door that is ' +
+          'simply shut', JSON.stringify(got.good));
   log.debug("Leaving theListeners().");
 }
 
@@ -3632,7 +3663,9 @@ module.exports = {
             'forged, stale, critical extension, timeout, redirect, ' +
             'unverified chain never dialled, no distribution point, an ' +
             'OpenSSL CRL), the main port\'s doors and a worker\'s view over ' +
-            'a real handshake, 9443\'s 403, and against OpenSSL-signed ' +
+            'a real handshake, GET /tls/sign-in refusing a revoked ' +
+            'certificate a session and signing a good one\'s holder in, and ' +
+            'against OpenSSL-signed ' +
             'documents: OCSP (good, revoked by a delegated responder, ' +
             'unknown, the wrong key, no EKU, stale, replayed, one request ' +
             'for two callers, the order setting), delta CRLs (revokes, ' +

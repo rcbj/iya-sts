@@ -2978,28 +2978,45 @@ const ENDPOINTS = [
 
   // --- TLS ---
   //
-  // The third instance of the blind spot the Kerberos and LDAP rows describe,
-  // and the one where it is easiest to forget it applies: these listeners speak
-  // HTTP, so they LOOK like they should already be on this page — but they are
-  // HTTPS on their own sockets (8443 and 9443), and this page is built by
-  // walking the Express router of the PLAIN listener. It cannot see them. The
-  // four rows below are the plain-HTTP views; the listeners themselves are
-  // described in their text.
+  // THE BLIND SPOT THIS GROUP USED TO ILLUSTRATE IS GONE (2026-09-16). It was
+  // two HTTPS listeners of this family's own — 8443 and 9443 — invisible to
+  // this page because it walks the Express router of the main listener and
+  // they were not on it. Both were deleted: the main port already asked every
+  // connection for a client certificate and required none, and requiring one
+  // at the handshake cannot be done on a socket that carries every other
+  // protocol. So every row in this group is now an ordinary route on the main
+  // port, and the router can see all of them.
   //
-  // There is a FOURTH TLS socket in this process and it is not in this group:
+  // There is one other TLS socket in this process and it is not in this group:
   // the directory's LDAPS listener on 636, which serves the certificate below.
   // It is under LDAP because that is the protocol it speaks, and the only
-  // reason to know it is here is the certificate — one anchor covers all three.
+  // reason to know it is here is the certificate — one anchor covers both.
   { path: '/tls', group: 'TLS', name: 'What the TLS endpoint is',
     specs: ['rfc8446', 'rfc5280'],
-    what: 'Two HTTPS listeners on their own sockets — 8443 asks for a client ' +
-          'certificate and never refuses one, 9443 REQUIRES one and refuses ' +
-          'it during the handshake — whose entire content is what the SERVER ' +
-          'saw: the request as it arrived, what TLS negotiated underneath ' +
-          'it, and the client certificate exactly as presented. Neither is ' +
-          'visible to this page, which walks the plain listener\'s router. ' +
-          'This row is the description; GET /tls/whoami over either listener ' +
-          'is the report itself. Add ?format=json.' },
+    what: 'The certificate this service presents, the client truststore it ' +
+          'verifies against, and what this deployment does with a client ' +
+          'certificate. THE MAIN PORT ASKS EVERY CONNECTION FOR ONE AND ' +
+          'REQUIRES NONE, so presenting it is the client\'s own decision. ' +
+          'Two listeners of this family\'s own — 8443, which asked, and ' +
+          '9443, which required — were deleted on 2026-09-16 along with the ' +
+          'connection report they served. What a certificate is worth is ' +
+          'decided where it is USED: GET /tls/sign-in for a session, the ' +
+          'token endpoint for RFC 8705, /xacml and /scim/v2 for theirs. Add ' +
+          '?format=json.' },
+  { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
+      'certificate',
+    specs: ['rfc8446', 'rfc5280'],
+    what: 'A VERIFIED CLIENT CERTIFICATE BECOMES A SESSION (2026-09-05), on ' +
+          'this port since 2026-09-16 — it was a side effect of reaching ' +
+          'either deleted TLS listener, which meant loading a diagnostic ' +
+          'page signed you in. It answers what arrived, whether it verified, ' +
+          'the thumbprint the token endpoint would bind a token to, what ' +
+          'revocation found, and whether a session was started. It refuses ' +
+          'nobody at the handshake and cannot: a certificate that does not ' +
+          'verify, one this service issued that is not a TLS client ' +
+          'identity, and an application\'s certificate (an RFC 8705 ' +
+          'credential, not a person) are each answered 200 with no session ' +
+          'and the reason.' },
   { path: '/tls/forwarded', group: 'TLS',
     name: 'What a proxy told this service',
     specs: ['rfc9700', 'rfc8446'],
@@ -3021,16 +3038,16 @@ const ENDPOINTS = [
       'certificate (PEM)',
     specs: ['rfc5280'],
     what: 'Everything a caller needs to VERIFY this service, as PEM: the ' +
-          'certificate every TLS socket in this process presents — both ' +
-          'HTTPS listeners, the main port and the directory\'s LDAPS ' +
-          'listener on 636, which serves this same certificate and key ' +
-          'rather than a second pair — followed by the chain between it and ' +
+          'certificate every TLS socket in this process presents — the main ' +
+          'port and the directory\'s LDAPS listener on 636, which serves ' +
+          'this same certificate and key rather than a second pair — ' +
+          'followed by the chain between it and ' +
           'this service\'s own Root CA, and that Root. That is a decision ' +
           'about what a CALLER has to do rather than a saved keypair: one ' +
-          'anchor covering 8443, 9443, the main port and 636 is ONE fetch, ' +
+          'anchor covering the main port and 636 is ONE fetch, ' +
           'where two would make an ldapsearch fail with "unable to get local ' +
           'issuer certificate" against a truststore built for the HTTPS ' +
-          'ports — an error that names nothing and reads as a broken ' +
+          'port — an error that names nothing and reads as a broken ' +
           'directory. SINCE 2026-09-11 THE CHAIN AND THE ROOT ARE IN THIS ' +
           'DOCUMENT, because the certificate stopped being self-signed that ' +
           'day: OpenSSL takes a self-signed leaf in a truststore as an ' +
@@ -5116,8 +5133,13 @@ const ENDPOINTS = [
           'one set of people, groups and applications for every realm, since ' +
           'LDAP answers on a socket with no path in it — so OAuth client ' +
           'registrations, SAML service provider entries and the two admin ' +
-          'roles are shared, as are Kerberos, the two TLS listeners and ' +
-          'SPIFFE\'s four sockets. What a realm separates is what this ' +
+          'roles are shared, as are the certificate the main port and ' +
+          'LDAPS 636 present and SPIFFE\'s four sockets. KERBEROS left that ' +
+          'list on 2026-09-15: a realm with a krb5.realm of its own and ' +
+          'krb5.enabled on has a KDC, a principal database and keys of its ' +
+          'own, on the shared port 88, routed by the realm name inside each ' +
+          'request. THE TWO TLS LISTENERS left it on 2026-09-16 by being ' +
+          'deleted. What a realm separates is what this ' +
           'service ISSUES about them, and everything it holds while doing ' +
           'it. It keeps no store of its own: the registry is ' +
           'common/realms.js\'s and a realm\'s settings go through the same ' +
@@ -5220,15 +5242,19 @@ const ENDPOINTS = [
   { path: '/admin/kerberos', group: 'Admin', name: 'Kerberos settings',
     specs: ['rfc4120', 'rfc3961', 'rfc4178', 'rfc4559', 'ms-kkdcp', 'ms-sfu'],
     effect: 'changes the KDC, and most of it only on the next start',
-    what: 'NON-SPEC. The nineteen krb5.* settings: the realm and the two raw ' +
+    what: 'NON-SPEC. The twenty krb5.* settings: whether this realm\'s KDC ' +
+          'answers at all (krb5.enabled, off on a new trust realm), the ' +
+          'realm and the two raw ' +
           'ports, the clock skew and the deliberate clock OFFSET that makes ' +
           'KRB_AP_ERR_SKEW reachable without touching a system clock, the ' +
           'one password every user account shares, the names that stay ' +
           'unknown so KDC_ERR_C_PRINCIPAL_UNKNOWN is reachable too, the ' +
           'long-term keys behind krbtgt and the inter-realm trust, ' +
           's2kparams, and the two that decide whether a ticket may start a ' +
-          'browser session at /authn/spnego. Most are restart-only because ' +
-          'the principal database is built from them at startup. Add ' +
+          'browser session at /authn/spnego. Most are restart-only for the ' +
+          'PROCESS because its principal database is built from them at ' +
+          'startup — and ten of those are settable on a TRUST REALM, whose ' +
+          'database is built when its Kerberos is turned on. Add ' +
           '?format=json.' },
   { path: '/admin/ldap', group: 'Admin', name: 'LDAP / LDAPS settings',
     specs: ['rfc4511', 'rfc4512', 'rfc4513', 'rfc4519', 'rfc8446'],
@@ -5298,23 +5324,22 @@ const ENDPOINTS = [
           'honoured, and wreqptr is never dereferenced. Add ?format=json.' },
   { path: '/admin/tls', group: 'Admin', name: 'TLS / mutual TLS settings',
     specs: ['rfc8446', 'rfc5280', 'rfc8705'],
-    effect: 'changes the two listeners and the certificate four sockets ' +
-            'share, on the next start',
-    what: 'NON-SPEC. The four tls.* settings: the two ports, and the ' +
-          'hostnames and IP addresses that go into the self-signed ' +
-          'certificate this service mints on every start and serves on 8443, ' +
-          '9443, LDAPS 636 and — when global.https is on — the main port. ' +
-          'All four are restart-only: the certificate is minted before ' +
-          'anything is listening. Whether the MAIN port is HTTPS is ' +
-          'global.https on /admin/config, which is a fact about the process ' +
-          'rather than about these listeners. Add ?format=json.' },
+    effect: 'changes the certificate both sockets share, on the next start',
+    what: 'NON-SPEC. The tls.* settings: the hostnames and IP addresses that ' +
+          'go into the self-signed certificate this service mints on every ' +
+          'start and serves on the main port (when global.https is on) and ' +
+          'on LDAPS 636. Restart-only: the certificate is minted before ' +
+          'anything is listening. The two ports this page named until ' +
+          '2026-09-16 — tls.port and tls.mutualPort — were removed with the ' +
+          'listeners they bound. Whether the main port is HTTPS is ' +
+          'global.https on /admin/config. Add ?format=json.' },
   { path: '/admin/tls/trust', group: 'Admin',
     name: 'Client-certificate truststore',
     specs: ['rfc5280', 'rfc8446'],
-    effect: 'POST adds or removes an anchor client certificates on 8443, ' +
-            '9443, LDAPS 636 and the main port are verified against, from ' +
-            'the next handshake',
-    what: 'NON-SPEC. Every trust anchor the TLS listeners verify a client ' +
+    effect: 'POST adds or removes an anchor client certificates on the main ' +
+            'port and LDAPS 636 are verified against, from the next ' +
+            'handshake',
+    what: 'NON-SPEC. Every trust anchor this service verifies a client ' +
           'certificate against — subject, issuer, serial, validity, SHA-256 ' +
           'fingerprint and SOURCE (`file` from tls.trustAnchorsFile, ' +
           '`runtime` added while the process runs) — paged, with two ' +
@@ -8419,8 +8444,8 @@ SPECS.forEach(function (s) { SPEC_BY_ID[s.id] = s; });
 //     envelope — a WS-Trust RSTR, a WS-Federation wresult — so a page built by
 //     walking the router lists neither, and a reader would conclude this
 //     service has no SAML in it.
-//   * Kerberos, LDAP, PKI and SPIFFE each have their real surface on a RAW
-//     SOCKET (port 88, 389 and 636, 8443 and 9443, and four gRPC listeners),
+//   * Kerberos, LDAP and SPIFFE each have their real surface on a RAW
+//     SOCKET (port 88, 389 and 636, and four gRPC listeners),
 //     which the walk cannot see either. What it sees are the explanatory HTTP
 //     views beside them.
 //
@@ -8691,12 +8716,16 @@ const PROTOCOLS = [
     sockets: 'BER over TCP 389, and TLS on 636. Neither is on the router.' },
   { name: 'PKI / X.509', groups: ['TLS'],
     specs: ['rfc5280', 'rfc8446'],
-    what: 'The other end of a TLS and a MUTUAL-TLS connection, whose whole ' +
-          'content is what the server saw of the handshake — which is the ' +
-          'only way a client can find out what its certificate actually ' +
-          'proved. The truststore is loaded over the plain port.',
-    sockets: 'The listeners are HTTPS on 8443 and 9443 (and LDAPS 636), so ' +
-             'this page sees only their plain-HTTP views.' },
+    what: 'The other end of a TLS and a MUTUAL-TLS connection: the ' +
+          'certificate this service presents, the truststore it verifies a ' +
+          'client certificate against, and what a verified one is worth — a ' +
+          'session at GET /tls/sign-in, an RFC 8705 binding at the token ' +
+          'endpoint, an identity at /xacml and /scim/v2. The main port asks ' +
+          'every connection for one and requires none.',
+    sockets: 'None of its own since 2026-09-16: the 8443 and 9443 listeners ' +
+             'were deleted and a client certificate is presented to the main ' +
+             'port, which every row here is on. LDAPS 636 shares the ' +
+             'certificate and is under LDAP.' },
   { name: 'WebAuthn / CTAP', groups: ['Authentication'], specs: ['webauthn'],
     what: 'A second factor on the sign-in screen every protocol here sends a ' +
           'person to: registration and assertion ceremonies against a real ' +
@@ -9085,8 +9114,8 @@ function renderInner(base, report) {
             'authorization response must not be sent over an unencrypted ' +
             'connection'
           : '') +
-        '), with the same self-signed certificate ports 8443, 9443 and LDAPS ' +
-        '636 serve. It is regenerated on every start, so fetch it from ' +
+        '), with the same self-signed certificate LDAPS 636 serves. It is ' +
+        'regenerated on every start, so fetch it from ' +
         '<code>/tls/server-certificate</code> and trust it — without ' +
         'verification the first time, since there is no plain port left to ' +
         'fetch it from.'

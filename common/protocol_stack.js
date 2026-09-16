@@ -477,7 +477,7 @@ require('../scim/scim');
 // time. Requiring this any earlier would leave the registry with no store at
 // the moment the seed entries are written.
 //
-// The 8443/9443/636/8081 certificate is NOT shared with this. A SPIFFE trust
+// The 636/8081 certificate is NOT shared with this. A SPIFFE trust
 // domain is its own PKI — the CA here signs identities in one trust domain and
 // the TLS certificate identifies a host — and one process holding two of them
 // is correct rather than wasteful. See spiffe_ca.js.

@@ -201,8 +201,6 @@ function spawnChild() {
   });
   clean[CHILD_FLAG] = '1';
   clean.LOG_LEVEL = 'fatal';
-  clean.STS_TLS_PORT = '0';
-  clean.STS_MTLS_PORT = '0';
   const result = childProcess.spawnSync(process.execPath, [__filename], {
     cwd: path.resolve(__dirname, '..'), env: clean, encoding: 'utf8',
     timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
