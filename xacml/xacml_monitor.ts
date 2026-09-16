@@ -115,7 +115,12 @@
 // express router at `access_gate.js`'s position (rule 1), ahead of `oauth2.js`
 // and everything else. The symptom would not be an error: it would be
 // `/admin/sts-metadata` reporting a different route order and a middleware
-// applying to routes it was written to sit above.
+// applying to routes it was written to sit above. (Since #50's R1 requiring
+// the console registers no route — `common/protocol_stack.ts` registers them
+// at 18 — so that symptom is gone; loading the whole console and everything
+// it requires, slot fills included, that early is not — and the console's
+// requires reach `tls/tls_server.js`, which is JavaScript and DOES register
+// its routes when required.)
 //
 // So this file counts and this file publishes a SNAPSHOT; the page that draws
 // it is `/admin/xacml/monitor` in `xacml_admin.ts`, which already requires the

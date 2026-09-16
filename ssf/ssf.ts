@@ -74,14 +74,19 @@
 // registers no route it is loaded by oauth2.js anyway — requiring it first
 // from here would be harmless, and requiring it first is not what decides the
 // line. **After `admin-ui/admin.ts`**, which is what does: the console page
-// and the settings block come from that module, exactly as `scim.js`'s do, and
-// requiring it earlier would drag every `/admin` route ahead of the protocol
-// endpoints. **Before `sts_metadata.js`**, which is last for everybody.
+// and the settings block come from that module, exactly as `scim.js`'s do.
+// Until #50's R1 requiring it earlier would have dragged every `/admin` route
+// ahead of the protocol endpoints; requiring it registers nothing now, and
+// the ROUTE half of this constraint is the order of the `register()` calls in
+// `common/protocol_stack.ts`, where this module's come after the console's.
+// The LOAD half stands: the slots this file fills must exist when it runs.
+// **Before `sts_metadata.js`**, which is last for everybody.
 //
 // It is NOT one of the inverted hooks (rule 3e). Both directions were tested,
 // as that rule requires: there is no cycle — `admin.js` knows nothing about
-// SSF — and no route moves, because `/admin` is already registered by the time
-// this file is read. So it is a plain require.
+// SSF — and no route moves: `/admin` was already registered by the time this
+// file was read, and since #50's R1 no require registers a route of a
+// converted module at all. So it is a plain require.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS FAMILY DELIBERATELY DOES NOT DO.
@@ -133,9 +138,12 @@
 //   * **THE MODULE STILL EXPORTS EVERY OLD NAME**, bound to a TRANSITIONAL
 //     instance built at the bottom from the real modules. That instance, at
 //     load and in the original's order, schedules the dead-letter sweep,
-//     provides `ssf.delivery`, registers the routes, installs the hooks and
-//     seeds this service's own two receivers — so the require order, the route
-//     order and every side effect are what they were. It goes when the
+//     provides `ssf.delivery`, installs the hooks and seeds this service's
+//     own two receivers. It does NOT register the routes (#50, R1): the
+//     module exports `registerRoutes(app)` and `common/protocol_stack.ts`
+//     calls it at the point in the route order where requiring this module
+//     used to register them — so the require order, the route order and
+//     every other load-time effect are what they were. It goes when the
 //     composition root exists. `SharedSignals` is exported beside it for that
 //     root.
 //   * **THE DEAD-LETTER SWEEP'S TIMER STAYS A MODULE-LEVEL `let`**, as it was:
@@ -168,7 +176,7 @@ import caep = require('./caep');
 // goes. See its header.
 import risc = require('./risc');
 // THE DIRECTORY, for the account observer alone. The require goes in the
-// ORDINARY direction — `common/protocol_stack.js` loads ldap/ldap_server.js
+// ORDINARY direction — `common/protocol_stack.ts` loads ldap/ldap_server.js
 // at 21 and this file at 23b — so it moves no route and closes no cycle, and
 // rule 3e's test therefore asks for no slot. `scim/scim.ts` requires it the
 // same way. What travels back the other direction is one function: see
@@ -1145,7 +1153,8 @@ class SharedSignals {
 
   // -------------------------------------------------------------------------
   // EVERY ROUTE THIS FAMILY REGISTERS, in the order the original file
-  // registered them (rule 1). The comments above each are the original's.
+  // registered them (rule 1). Called by `common/protocol_stack.ts` (#50, R1),
+  // not at load. The comments above each are the original's.
   // -------------------------------------------------------------------------
   registerRoutes(app: typeof import('../common/app')): void {
     const { log, config, audit, applications, events, streams, subjects,
@@ -2124,9 +2133,11 @@ class SharedSignals {
   // WHAT THE CONSOLE AND THE MANAGEMENT API CALL.
   //
   // `admin-ui/admin.ts` cannot require this module — it is loaded before it,
-  // and a require the other way would move every SSF route ahead of the
-  // console's own (rule 1). So this fills a slot on `admin.js`, exactly as
-  // `ldap_server.js` and `crypto_metadata.js` do, and it carries ONE object:
+  // and until #50's R1 a require the other way would have moved every SSF
+  // route ahead of the console's own (rule 1); requiring it registers nothing
+  // now, and the cycle below is reason enough. So this fills a slot on
+  // `admin.js`, exactly as `ldap_server.js` and `crypto_metadata.js` do, and
+  // it carries ONE object:
   // the reader and the six actions together, validated whole when it is
   // installed, because a partial one would leave `/admin/ssf` able to list
   // streams and unable to change any of them.
@@ -2630,8 +2641,9 @@ class SharedSignals {
   // `/admin/caep`, `/admin/caep-sessions` and `/admin-api/caep` reach this
   // directory through `admin.setCaepReporter()`, the NINTH slot, for exactly
   // the reasons the eighth exists: a require from `admin.js` to this file would
-  // close a cycle, and one from `mgmt-api/admin_api.ts` would move every `/ssf`
-  // route ahead of the management API's own.
+  // close a cycle, and one from `mgmt-api/admin_api.ts` would have moved every
+  // `/ssf` route ahead of the management API's own — until #50's R1; it would
+  // now move this family's LOAD (its stores, hooks and slots) to 19 instead.
   //
   // `action` returns a PROMISE, like the signals slot's and for the same
   // reason: emitting an event signs a JWS — possibly on the worker pool — and
@@ -3287,8 +3299,9 @@ class SharedSignals {
   // `/admin/risc`, `/admin/risc-accounts` and `/admin-api/risc` reach this
   // directory through `admin.setRiscReporter()`, the TENTH slot, for exactly
   // the reasons the eighth and ninth exist: a require from `admin.js` to this
-  // file would close a cycle, and one from `mgmt-api/admin_api.ts` would move
-  // every `/ssf` route ahead of the management API's own.
+  // file would close a cycle, and one from `mgmt-api/admin_api.ts` would have
+  // moved every `/ssf` route ahead of the management API's own — until #50's
+  // R1; it would now move this family's LOAD to 19 instead.
   // ---------------------------------------------------------------------------
 
   // WHAT THIS TRANSMITTER HAS SAID TO EACH RECEIVER ABOUT ACCOUNTS. It is
@@ -3822,7 +3835,9 @@ class SharedSignals {
 // ---------------------------------------------------------------------------
 // THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
 // the composition root will build one, and set going in the original file's
-// order: the sweep, the capability, the routes, the hooks, the receivers.
+// order: the sweep, the capability, the hooks, the receivers. The routes,
+// which came between the capability and the hooks, are registered by the
+// composition root instead (below).
 // ---------------------------------------------------------------------------
 const signals = new SharedSignals({
   app: app,
@@ -3854,11 +3869,15 @@ const signals = new SharedSignals({
 
 signals.scheduleSweep();
 signals.provideCapability();
-signals.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 signals.installHooks();
 signals.seedOwnReceivers();
 
 export = {
+  registerRoutes: (target: any): void => signals.registerRoutes(target),
   SharedSignals: SharedSignals,
   WELL_KNOWN: SharedSignals.WELL_KNOWN,
   metadata: signals.metadata.bind(signals) as SharedSignals['metadata'],

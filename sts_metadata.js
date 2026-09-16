@@ -27,14 +27,23 @@
 //     parent project's `tests/vendored/sts_metadata.js` now signs in the way
 //     `tests/vendored/admin_api.js` does.
 //   * **REQUIRING `admin.js` FROM HERE MOVES NOTHING.** That is the question to
-//     ask of any require in this service, because require order is route order
-//     — and this one is safe in both directions: server.js requires the console
-//     long before it requires this file, so the require below is a cache hit
-//     that registers nothing; and in a process that somehow loaded this file
-//     first, the console's routes and its gate would register AHEAD of this
-//     page's route, which is the order this page needs anyway. There is no
-//     cycle: `admin.js` does not require this module and must not — it would
-//     drag the console's own routes behind the last module in server.js.
+//     ask of any require in this service, because require order was route
+//     order until #50's R1 (and still is for a JavaScript module, which this
+//     one is) — and this one is safe in both directions:
+//     `common/protocol_stack.ts` requires the console long before it requires
+//     this file, so the require below is a cache hit that registers nothing;
+//     and in a process that somehow loaded this file first, the console's
+//     routes and its gate would have registered AHEAD of this page's route,
+//     which is the order this page needs anyway. Since R1 the console
+//     (`admin.ts`) registers nothing when required, so such a process would
+//     have this page's route with no gate in front of it until something
+//     called the console's `registerRoutes(app)` — one more reason this file
+//     is required last, by `common/protocol_stack.ts`, after that call. There
+//     is no cycle: `admin.ts` does not require this module and must not — it
+//     would register this page's route (this file still registers at require)
+//     at the console's position, ahead of everything it is meant to list, and
+//     before R1 it would also have dragged the console's own routes behind
+//     the last module in server.js.
 //
 // A DOWNLOAD BUTTON is on the page because the JSON form is now behind the
 // gate too: `?format=json` in a browser is a session-carrying GET, and an

@@ -32,9 +32,10 @@
 // are not converted. `ScepAdmin` is exported beside them for the
 // composition root.
 //
-// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the
-// transitional code calls at load where the first route used to be
-// registered, so rule 1's order is unchanged.
+// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
+// exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
+// route order where requiring this module used to register them, so rule 1's
+// order is unchanged. Requiring the module registers nothing.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -389,9 +390,10 @@ class ScepAdmin {
       : '<p class="sub">None yet.</p>');
   }
 
-  // THE ROUTES, registered where they always were: the transitional
-  // code below calls this at load, at the point the first of them
-  // used to be registered, so the route order is unchanged (rule 1).
+  // THE ROUTES, registered where they always were: the module exports
+  // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
+  // where requiring the module used to register them, so the route order
+  // is unchanged (rule 1). Nothing calls it at load.
   registerRoutes(app: RouteApp): void {
     const { log, parseBody, consoleModel, admin, esc, errorCodes } = this.deps;
     const self = this;
@@ -511,6 +513,12 @@ const scepAdmin = new ScepAdmin({
   esc: esc
 });
 
-scepAdmin.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
-export = { ScepAdmin: ScepAdmin };
+export = {
+  registerRoutes: (target: any): void => scepAdmin.registerRoutes(target),
+  ScepAdmin: ScepAdmin
+};

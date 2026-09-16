@@ -3491,7 +3491,7 @@ function refuseTruststoreChange(req, res, route) {
 // require — `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts`
 // → here — so a `require('../admin-ui/admin')` at this module's top level
 // would be a cycle and would hand back that module's half-built exports, on
-// which `setTruststore` does not exist yet. `common/protocol_stack.js` fills
+// which `setTruststore` does not exist yet. `common/protocol_stack.ts` fills
 // the slot on the line after it requires this module, where both are whole.
 //
 // **`add` IS STRICT AND `/tls/trust` IS NOT.** A block OpenSSL cannot read is
@@ -3842,7 +3842,7 @@ module.exports = {
   clearAnchors: clearAnchors,
   removeAnchor: removeAnchor,
   // The three the console and the management API reach the truststore
-  // through — see the block above it. `common/protocol_stack.js` hands this to
+  // through — see the block above it. `common/protocol_stack.ts` hands this to
   // `admin.setTruststore()`.
   truststore: truststore,
   // The truststore's durable half: `ldap/ldap_server.js` installs the store

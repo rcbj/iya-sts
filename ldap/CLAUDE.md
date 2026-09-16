@@ -43,7 +43,7 @@ from `listen()`* is the rule this is an instance of.
    applies — that module knows nothing about this one, so there is no cycle, and its
    routes (`/tls*`) collide with nothing here. What the require DOES do is pull those
    routes into the express router at that point, so the require order
-   (`common/protocol_stack.js`) loads `./tls_server` BEFORE `./ldap_server` to
+   (`common/protocol_stack.ts`) loads `./tls_server` BEFORE `./ldap_server` to
    keep "the require order is the route order" true rather than a fiction node
    quietly corrects. It changes no output —
    `/admin/sts-metadata` sorts its rows by path within a group. Its embedded directory grows an entry under
@@ -230,7 +230,7 @@ from `listen()`* is the rule this is an instance of.
    **A SECOND hook runs the other way, and it is the console that offers it.**
    `/admin/users?user=<name>` shows that user's directory object — every attribute,
    operational ones included — and `admin.js` must NOT require this module to get
-   it: the require order (`common/protocol_stack.js`) loads `admin.js` FIRST,
+   it: the require order (`common/protocol_stack.ts`) loads `admin.js` FIRST,
    so a require from there would pull
    every route this module registers into the router ahead of the console's routes, and
    `GET /admin/sts-metadata` is built by walking that router. So `admin.js` exports

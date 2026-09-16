@@ -21,7 +21,7 @@ family here and the first one that TALKS BACK.
 
 Twelve of the thirteen register nothing (rule 3), so their position in the
 route order is not a position. `ssf.ts` is required at **23b in
-`common/protocol_stack.js`** — after `admin-ui/admin.ts`, whose slots
+`common/protocol_stack.ts`** — after `admin-ui/admin.ts`, whose slots
 (`setSignalsReporter`, `setCaepReporter`, `setRiscReporter`) it fills, and
 before `sts_metadata.js`, which is last for everybody.
 
@@ -1186,7 +1186,7 @@ For the next person adding one, this family's full list:
   what caught them, in the direction only it checks: registered and described
   nowhere;
 * `oauth-oidc/oauth2.ts` — the two scopes in `scopes_supported`;
-* `server.js` (now `common/protocol_stack.js`) — the require, at 23b.
+* `server.js` (now `common/protocol_stack.ts`) — the require, at 23b.
 
 ---
 

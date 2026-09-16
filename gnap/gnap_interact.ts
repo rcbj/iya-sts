@@ -69,8 +69,9 @@
 // shape, for a module that registers routes (rule 1): `GnapInteract` takes
 // the sign-in service, the stores and the rest through its constructor, and
 // its `registerRoutes(app)` holds the six routes in their old order. The
-// TRANSITIONAL instance below is built from the real modules and registers
-// them at load, where the file registered them before.
+// TRANSITIONAL instance below is built from the real modules and exports its
+// `registerRoutes(app)`, which `common/protocol_stack.ts` calls (#50, R1)
+// right after `gnap.ts`'s, where requiring this file registered them before.
 //
 // **THE APPROVAL ROUTES ARE WRITTEN LAST, AND THEIR HANDLERS INLINE**, because
 // `tests/cluster_followups.js` reads this file from the approval route to its
@@ -748,7 +749,7 @@ class GnapInteract {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, and its routes registered at load, where they always were.
+// modules; its routes are registered by the composition root (below).
 const interaction = new GnapInteract({
   config: config,
   log: helpers.log,
@@ -764,8 +765,12 @@ const interaction = new GnapInteract({
   grants: grants,
   monitor: monitor
 });
-interaction.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => interaction.registerRoutes(target),
   GnapInteract: GnapInteract
 };

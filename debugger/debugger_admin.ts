@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 // WHERE IT IS REQUIRED, AND THE ONE LAZY REQUIRE IN IT.
 //
-// `common/protocol_stack.js` requires it beside the other report pages at 18,
+// `common/protocol_stack.ts` requires it beside the other report pages at 18,
 // and `mgmt-api/admin_api.ts` at 19 requires it in the ordinary direction for
 // the view. It must not require `debugger_server.ts` at the top: that module
 // requires `tls/tls_server.js`, which registers `/tls` routes and is at 20, so
@@ -40,9 +40,11 @@
 // are not converted. `DebuggerAdmin` is exported beside them for the
 // composition root.
 //
-// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the
-// transitional code calls at load where the first route used to be
-// registered, so rule 1's order is unchanged.
+// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
+// exports from the transitional instance and `common/protocol_stack.ts`
+// calls at 18e, the point in the route order where requiring this module
+// used to register them (#50, R1), so the order is unchanged. Requiring the
+// module registers nothing.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -175,9 +177,10 @@ class DebuggerAdmin {
            '<h2>Settings</h2>' + admin.configFormsFor(PAGE_PATH);
   }
 
-  // THE ROUTES, registered where they always were: the transitional
-  // code below calls this at load, at the point the first of them
-  // used to be registered, so the route order is unchanged (rule 1).
+  // THE ROUTES, registered where they always were: the composition root
+  // (`common/protocol_stack.ts`) calls this through the export below, at
+  // the point where requiring this module used to register them, so the
+  // route order is unchanged (rule 1; #50, R1).
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, admin } = this.deps;
     const self = this;
@@ -209,7 +212,8 @@ class DebuggerAdmin {
 
 // THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
 // composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
+// module exports. It goes when that root builds the modules as well as
+// registering their routes (#50's R2).
 const debuggerAdmin = new DebuggerAdmin({
   admin: admin,
   log: log,
@@ -219,9 +223,13 @@ const debuggerAdmin = new DebuggerAdmin({
   }
 });
 
-debuggerAdmin.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => debuggerAdmin.registerRoutes(target),
   DebuggerAdmin: DebuggerAdmin,
   // For `mgmt-api/admin_api.ts` — rule 7, one function behind both.
   debuggerView: debuggerAdmin.debuggerView.bind(debuggerAdmin) as

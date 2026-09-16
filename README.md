@@ -1524,7 +1524,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.maxJoinTokens` | `STS_SPIFFE_MAX_JOIN_TOKENS` | `256` | yes | Unspent, unexpired join tokens a realm holds. At the bound a NEW token is refused with RESOURCE_EXHAUSTED; a token already handed to an agent is never evicted. |
 | `spiffe.maxPageSize` | `STS_SPIFFE_MAX_PAGE_SIZE` | `1000` | yes | The cap on `page_size` for every SPIRE Server API `List*` method. |
 | `spiffe.maxRecordedConnections` | `STS_SPIFFE_MAX_RECORDED_CONNECTIONS` | `512` | yes (per process — a realm may not carry it) | How many mTLS connections are remembered so an X509-SVID is one authentication per connection rather than per call. |
-| `spiffe.bundlePath` | `STS_SPIFFE_BUNDLE_PATH` | `/spiffe/bundle` | **restart** — the route is registered at require time, and the require order is the route order | Where the trust bundle is published. A real federation partner is configured with this URL and polls it. |
+| `spiffe.bundlePath` | `STS_SPIFFE_BUNDLE_PATH` | `/spiffe/bundle` | **restart** — the route is registered once, at startup, by `common/protocol_stack.ts`, in the route order | Where the trust bundle is published. A real federation partner is configured with this URL and polls it. |
 | `spiffe.workloadSocketEnabled` | `STS_SPIFFE_WORKLOAD_SOCKET_ENABLED` | `true` | **restart** — the listener is bound when the process starts | Whether the Workload API is served on a Unix domain socket. ON by default because that is what SPIFFE_ENDPOINT_SOCKET means to every real client — go-spiffe, spiffe-helper, the SPIRE agent — so without it nothing connects unconfigured. |
 | `spiffe.workloadSocket` | `STS_SPIFFE_WORKLOAD_SOCKET` | `/tmp/spire-agent/public/api.sock` | **restart** — the listener is bound when the process starts | Where that socket lives. SPIRE's own default path, so a client that was pointed at a SPIRE agent needs no change. |
 | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` | `8092` | **restart** — the listener is bound when the process starts | The Workload API over TCP, which the Workload Endpoint specification permits (tcp://host:port) and which is how this is reached from another container or from a host that cannot share the socket. 0 turns it off and leaves the Unix socket alone. |
@@ -1580,12 +1580,17 @@ identities), `krb5_gss.js` (the RFC 4121 framing a real service is handed),
 `krb5_kdc.js` (the KDC) and `krb5_service.js` (the acceptor). Only the last two
 register anything.
 
-Three things about that split are load-bearing. **Requiring a module registers its
-endpoints** — each does `app.get(...)` at its top level against the shared app from
+Three things about that split are load-bearing. **Requiring a module registered its
+endpoints** — each did `app.get(...)` at its top level against the shared app from
 `app.js`, rather than exporting a `register()` function, which is what let 4,400
 lines of handlers move without being re-indented; so the require order in
-`server.js` is the route order, and the middleware has to live in `app.js` because
-express applies it only to routes added after it. **`vc_configs.js` and
+`server.js` was the route order, and the middleware has to live in `app.js` because
+express applies it only to routes added after it. **Since 2026-09-16 (#50) a module
+converted to TypeScript exports `registerRoutes(app)` instead and registers nothing
+when required**; `common/protocol_stack.ts` — where the sequence has lived since
+2026-09-07 — calls each one at the place its routes always had, and the modules
+still in JavaScript still register when required, so the route order did not
+move. **`vc_configs.js` and
 `vc_offers.js` exist to break cycles, not to group code**: the credential
 configurations are read by both the issuer and the authorization server, and the
 Credential Offer's pre-authorized codes are *minted* by the offer pages and
@@ -1597,8 +1602,8 @@ the symptom arrives later as something that is not a function. **Five helpers
 for the same reason** and not because they are especially general.
 
 `dpop.js` is the exception to the rule above: it registers nothing. It is a library
-— there is no `app.get` in it — so its position in `server.js`'s require order does
-not matter, and it requires `helpers.js` and nothing else, so it cannot be part of a
+— there is no `app.get` in it — so its position in the require order (in
+`common/protocol_stack.ts` since 2026-09-07) does not matter, and it requires `helpers.js` and nothing else, so it cannot be part of a
 cycle. **`admin_stats.js` is a library in exactly that sense and for exactly that
 reason**, and it needs the property more than `dpop.js` does: it is called from
 `app.js`'s call log, from `helpers.js`'s `signJwt()`, from both assertion builders,
@@ -6197,8 +6202,10 @@ never sent.
 
 **It changes the require order, and `server.js` says so out loud.** `ldap_server.js` now
 requires `tls_server.js` — for the certificate, nothing else — so node loads that module
-first whatever `server.js` says. Since **the require order in `server.js` is the route
-order**, the line there was moved to match: `./tls_server` before `./ldap_server`. It
+first whatever `server.js` says. Since **the require order in `server.js` was the route
+order** — and for these two modules, both still JavaScript, it still is, in
+`common/protocol_stack.ts` where the sequence now lives — the line there was moved
+to match: `./tls_server` before `./ldap_server`. It
 changes no output, because `/admin/sts-metadata` sorts its rows by path within a group; it keeps
 that file honest for the next reader.
 

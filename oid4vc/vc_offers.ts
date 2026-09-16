@@ -43,8 +43,13 @@
 // authentication service (still required lazily, inside the offer page) and
 // the five stores through its constructor, and registers the three pages from
 // `registerRoutes(app)`. The stores stay module-scope `realms.map()`
-// declarations. The TRANSITIONAL instance at the bottom registers the pages
-// and then the module exports every old name from it, as ONE `export =` where
+// declarations. The TRANSITIONAL instance at the bottom registers nothing
+// (#50, R1) — the module exports `registerRoutes(app)`, and
+// `common/protocol_stack.ts` calls it at the point in the route order where
+// requiring this module used to register the pages, which is IMMEDIATELY
+// BEFORE `oauth2.ts`'s routes, because `oauth2.ts` is what first requires this
+// file. The module exports every old name from that instance, as ONE
+// `export =` where
 // `module.exports` was — this file breaks a require cycle (root `CLAUDE.md`
 // rule 2: `oauth2.js` requires it for its stores), so what that caller sees
 // and when must not change.
@@ -765,7 +770,8 @@ class VcOffers {
     log.debug("Leaving VcOffers.renderOfferQrPage().");
   }
 
-  // The three pages, in the order they were registered at load.
+  // The three pages, in the order they were registered at load before
+  // #50's R1. Called by `common/protocol_stack.ts`.
   registerRoutes(app: any) {
     const { log, baseUrlOf, randomId, xmlEscape, vciError, userFor,
             walletBaseUrl, mode, errorCodes, validation, loadAuthn,
@@ -986,7 +992,7 @@ class VcOffers {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header above. Its pages are
-// registered here, at load, before the module's exports are set.
+// registered by the composition root, below, not here.
 const offers = new VcOffers({
   log: helpers.log,
   logArtifact: helpers.logArtifact,
@@ -1011,9 +1017,13 @@ const offers = new VcOffers({
   deferredTransactions: deferredTransactions,
   deferredAccessTokenStore: deferredAccessTokenStore
 });
-offers.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => offers.registerRoutes(target),
   VcOffers: VcOffers,
   credentialOffers: credentialOffers,
   issuerStates: issuerStates,

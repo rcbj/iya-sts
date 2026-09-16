@@ -55,6 +55,11 @@ require('../scep/scep');
 const cms = require('../scep/scep_cms');
 const ra = require('../scep/scep_ra');
 const scepModule = require('../scep/scep');
+// Loading a module registers nothing since #50's R1; the composition root
+// (`common/protocol_stack.ts`) does, so a test that loads one module
+// registers its routes itself.
+scepModule.registerRoutes(app);
+require('../scep/scep_admin').registerRoutes(app);
 const consoleModel = require('../scep/scep_console');
 const api = require('../scep/scep_api');
 const client = require('./vendored/scep_client');

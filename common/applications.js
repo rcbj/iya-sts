@@ -108,7 +108,7 @@
 // neither).
 //
 // The DIRECTORY half has to be inverted, for the reason `vc_claims.js`'s is:
-// `ldap_server.js` is required late (21 in `common/protocol_stack.js`) because
+// `ldap_server.js` is required late (21 in `common/protocol_stack.ts`) because
 // requiring it pulls every `/ldap` route into the router at that point, and a
 // module the token
 // endpoint reads cannot drag those routes to the front. So this file offers

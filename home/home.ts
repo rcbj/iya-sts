@@ -36,8 +36,9 @@
 // route rather than `express.static()` because one file does not need a static
 // middleware, and a middleware mounted at the root would sit in front of every
 // protocol module's routes for the rest of the process's life — see rule 1 in
-// the repository's CLAUDE.md: requiring a module registers its endpoints, and
-// middleware applies to everything registered after it.
+// the repository's CLAUDE.md: `common/protocol_stack.ts` registers each
+// module's routes in order (#50, R1), and middleware applies to everything
+// registered after it.
 //
 // The file is read ONCE, here, at require time. A per-request read would be a
 // disk hit for a decoration; the file cannot change while the process runs.
@@ -93,9 +94,11 @@
 // shape: `Home` takes node's `fs` and `path`, the express app, helpers, the
 // realm registry, `config`, `mode`, `version` and the error-code registry
 // through its constructor, and its three routes are registered by
-// `registerRoutes(app)`. The TRANSITIONAL instance at the bottom calls it at
-// load, which is where the routes were registered before (rule 1), and the
-// module exports only the class. The logo is still read at require time, at
+// `registerRoutes(app)`. The TRANSITIONAL instance at the bottom is built at
+// load and registers NOTHING (#50, R1): the module exports its
+// `registerRoutes(app)` beside the class, and `common/protocol_stack.ts` calls
+// it at the point in the route order where requiring this module used to
+// register the routes (rule 1). The logo is still read at require time, at
 // module level, for the reason given above.
 // ---------------------------------------------------------------------------
 
@@ -480,12 +483,17 @@ const home = new Home({
   errorCodes: errorCodes
 });
 
-home.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
-// Nothing else is exported. This module is required for its side effect — two
-// routes — the way every other route module here is, and the three URLs above
+// Nothing else is exported. This module is required for its
+// `registerRoutes(app)` — two routes, which the composition root registers —
+// the way every other converted route module here is, and the three URLs above
 // are this page's business alone. See rule 1 in the repository's CLAUDE.md.
 // The class is exported for the composition root, as the #50 section says.
 export = {
+  registerRoutes: (target: any): void => home.registerRoutes(target),
   Home: Home
 };

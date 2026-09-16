@@ -80,7 +80,7 @@ const API_MODULE = 'mgmt-api/admin_api.ts';
 //
 // `truststore` (2026-09-12) is in both for the same reason: the actions add and
 // remove through it and the view lists through it. It is the one collaborator
-// here that `common/protocol_stack.js` rather than its owning module hands to
+// here that `common/protocol_stack.ts` rather than its owning module hands to
 // the console, which changes nothing this file checks — the forward and the
 // single writer are the console's and the layer's either way.
 const FORWARDED = {

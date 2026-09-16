@@ -8,7 +8,8 @@
 // Three routes under `/admin/api-explorer`: the page, the OpenAPI document it
 // reads, and the browser script that renders it. All three sit BELOW the
 // console's gate — a sign-on session and one of the two roles — because they
-// are registered after `admin.js` in the require order and that gate is an
+// are registered after `admin.js`'s in the route order (the `register()`
+// calls in `common/protocol_stack.ts` since #50's R1) and that gate is an
 // `app.use('/admin', ...)`.
 //
 // ---------------------------------------------------------------------------
@@ -78,19 +79,26 @@
 // It is a file of its own rather than more of `admin.js` for the reason
 // `crypto_metadata.ts` is: `admin.js` is required at 18 and this needs the
 // management API's table, so a require the other way round would drag every
-// `/admin-api` route ahead of the console's own.
+// `/admin-api` route ahead of the console's own. **Since #50's R1 (2026-09-16)
+// a require no longer registers `admin_api.ts`'s routes** —
+// `common/protocol_stack.ts` does, at 19 — so that require would now move no
+// route; it would still load the whole management API from inside the
+// console's own require, which is a cycle, and the file stays separate.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape, for a module that registers routes (rule 1): `ApiExplorer` takes the
+// shape, for a module that has routes (rule 1): `ApiExplorer` takes the
 // console shell, the read layer, the management API's table, the document
 // builder, the page body and the authorization server through its
 // constructor, and its `registerRoutes(app)` holds the three routes in their
 // old order. The TRANSITIONAL code at the bottom builds one from the real
-// modules and registers its routes at load, where they always were, and the
-// module still exports `PATH` and `explorerJson` from it (the management API
-// calls the second); `ApiExplorer` is exported beside them.
+// modules and exports its `registerRoutes(app)`, which
+// `common/protocol_stack.ts` calls at 19a, the point in the route order where
+// requiring this module used to register them (#50, R1) — requiring the
+// module registers nothing. It still exports `PATH` and `explorerJson` from
+// the instance (the management API calls the second); `ApiExplorer` is
+// exported beside them.
 //
 // **NO SCRIPT TEXT LIVES HERE.** The browser script `/explorer.js` serves is
 // `docs.SCRIPT`, read by `mgmt-api/admin_api_docs.ts` out of
@@ -374,7 +382,7 @@ class ApiExplorer {
 }
 
 // THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, and its routes registered at load, where they always were.
+// real modules; its routes are registered by the composition root, below.
 const explorer = new ApiExplorer({
   log: helpers.log,
   baseUrlOf: helpers.baseUrlOf,
@@ -387,7 +395,10 @@ const explorer = new ApiExplorer({
   docs: docs,
   oauth2: oauth2
 });
-explorer.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 helpers.log.info('The API explorer is at ' + PATH + ': every operation of ' +
                  adminApi.BASE + ', with a form that calls it. It moved off ' +
@@ -398,6 +409,7 @@ helpers.log.info('The API explorer is at ' + PATH + ': every operation of ' +
                  'exactly what their roles grant.');
 
 export = {
+  registerRoutes: (target: any): void => explorer.registerRoutes(target),
   ApiExplorer: ApiExplorer,
   PATH: PATH,
   explorerJson: explorer.explorerJson.bind(explorer) as

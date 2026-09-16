@@ -802,7 +802,9 @@ function peerOf(req) {
 // The session cookie, which is the affinity key. Named here rather than
 // imported from authn.js because this file must not require a protocol module:
 // it is loaded by app.js, which is above every route, and a require in that
-// direction would drag authn's routes to the front of the router (rule 1).
+// direction would have dragged authn's routes to the front of the router
+// (rule 1, before #50's R1) — and would still run authn's load-time code, and
+// reach its JavaScript requires, from underneath app.js.
 const SESSION_COOKIE = 'sts_session';
 
 // AND THE TWO RELYING-PARTY COOKIES (2026-09-08). Since this service's own

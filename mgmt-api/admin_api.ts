@@ -73,7 +73,11 @@
 // Route order: this module must come AFTER admin.js, and that is a plain
 // dependency rather than a preference — it requires that module for the action
 // functions and the JSON views. Nothing here collides with any path, and it
-// registers no wildcard, so its position is otherwise free (rule 1).
+// registers no wildcard, so its position is otherwise free (rule 1). Since
+// #50's R1 (2026-09-16) that position is the place of this module's
+// `register()` call in `common/protocol_stack.ts` (19), not the place it is
+// required; the dependency on `admin.js` being loaded first is still a
+// require-order one.
 //
 // Every action resource takes the action as a PATH PARAMETER — /admin-api/
 // tokens/revoke, one express pattern `:action` behind every real URL. That
@@ -96,8 +100,13 @@
 // **THE ROUTES ARE REGISTERED BY TWO METHODS**, because the old file ran a
 // statement between them: `registerGate()` (the access-token middleware on
 // the base path), then `compileRequestSchemas()`, then `registerRoutes()`
-// (the table's operations). The transitional code calls the three at load in
-// that order, where they always ran, so rule 1's order is unchanged.
+// (the table's operations). The transitional code calls
+// `compileRequestSchemas()` at load and exports a `registerRoutes(app)`
+// that calls `registerGate()` and then the table's `registerRoutes()`;
+// `common/protocol_stack.ts` calls it at 19, where requiring this module used
+// to register both (#50, R1), so the route order is unchanged. Requiring the
+// module registers nothing. (The schemas are therefore compiled BEFORE the
+// gate is registered rather than after it; neither reads the other.)
 //
 // `PROTOCOL_SETTINGS_OPERATIONS` and `ROUTES` are typed `any[]`, as the
 // JavaScript's JSDoc typed the second: a union of a few hundred object
@@ -156,8 +165,11 @@ import adminViews = require('../admin-core/admin_views');
 // THE PKI PAGE'S VIEW AND ITS FOUR ACTIONS. A PLAIN REQUIRE IN THE ORDINARY
 // DIRECTION, which is what rule 3e asks for when one is available: that module
 // is loaded at 18a — before this file — so this is a cache hit, and it
-// registers only `/admin/pki`, which is already in the router by now. Compare
-// `admin-ui/crypto_metadata.ts`, which is at 20a and therefore needed a slot.
+// registers only `/admin/pki`, which is already in the router by now. Since
+// #50's R1 requiring it registers nothing at all — `common/protocol_stack.ts`
+// calls its `registerRoutes(app)` at 18a — so this require could not move
+// that route wherever it ran. Compare `admin-ui/crypto_metadata.ts`, which is
+// at 20a and therefore needed a slot.
 import pkiAdmin = require('../admin-ui/pki_admin');
 // The key algorithms a TLS listener certificate may be issued with, for the
 // `issue-pep-certificate` request schema's enum (2026-09-13) — read from the
@@ -172,9 +184,11 @@ import certificateViews = require('../admin-core/certificate_views');
 // `mirrors` that page — see the registration loop and sendJson().
 import protocolEndpoints = require('../admin-core/protocol_endpoints');
 // 18b, required in the ORDINARY DIRECTION for the same reason as the line
-// above: it registers `/admin/encryption` at its own require time, which
-// `common/protocol_stack.js` reaches before this file, so this is a cache
-// hit and moves no route.
+// above: `common/protocol_stack.ts` loads it, and registers
+// `/admin/encryption` through its `registerRoutes(app)`, before this file, so
+// this is a cache hit and moves no route. (Until #50's R1 it registered that
+// route at its own require time, which is why the order mattered; requiring
+// it registers nothing now.)
 import encryptionAdmin = require('../admin-ui/encryption_admin');
 // 18c, same ordinary-direction require and the same reason.
 import databaseAdmin = require('../admin-ui/database_admin');
@@ -2109,7 +2123,9 @@ class AdminApi {
           // route table below to build its document; a require at the top of
           // this file would be a cycle, and one in the other direction would
           // move routes. The same arrangement `xacml.js` and `xacml_admin.js`
-          // have.
+          // have. (Since #50's R1 a require of it registers nothing —
+          // `common/protocol_stack.ts` registers its routes at 19a — so only
+          // the cycle is left of that argument, and it is enough.)
           self.sendJson(res, 200,
                         loadApiExplorer().explorerJson(req));
           log.debug("Leaving the API explorer operation.");
@@ -10708,7 +10724,7 @@ class AdminApi {
       //
       // **THE MODULE IS REQUIRED IN THE ORDINARY DIRECTION AND NEEDS NO SLOT**,
       // which is the one thing about this resource worth knowing. That module
-      // sits at 18a in `common/protocol_stack.js` — after `admin-ui/admin` and
+      // sits at 18a in `common/protocol_stack.ts` — after `admin-ui/admin` and
       // BEFORE this file — so by the time this require runs it is a cache hit
       // and registers nothing. It requires only `admin.js` and `common/pki.js`,
       // and `pki.js` is a LIBRARY (rule 3), so there is no route this could
@@ -14642,7 +14658,9 @@ class AdminApi {
   //
   // One express route per row, which for an action resource is one pattern
   // behind every action in it. Registering at require time is what every module
-  // here does; see rule 1.
+  // here did until #50's R1 (2026-09-16); now `common/protocol_stack.ts` calls
+  // the exported `registerRoutes(app)`, which runs the two methods below. See
+  // rule 1.
   // ---------------------------------------------------------------------------
   // THE GATE (2026-09-06), AND IT IS THE ONLY THING BETWEEN THIS API AND A
   // TOTAL AUTHENTICATION BYPASS IN PRODUCT MODE.
@@ -14968,9 +14986,10 @@ class AdminApi {
     return options;
   }
 
-  // THE GATE, registered where it always was: the transitional code below
-  // calls this at load, at the point it used to be registered, so the
-  // route order is unchanged (rule 1).
+  // THE GATE, registered where it always was: the exported
+  // `registerRoutes(app)` calls this first, and `common/protocol_stack.ts`
+  // calls that at the point the gate used to be registered, so the route
+  // order is unchanged (rule 1; #50, R1).
   registerGate(app: RouteApp): void {
     const { log, config, errorCodes, realms, STS, stsCrypto, jwtAccessToken,
             mtls, dpop, senderConstraints, roles, accessGate, mode, adminViews,
@@ -15378,8 +15397,9 @@ class AdminApi {
     log.debug("Leaving AdminApi.registerGate().");
   }
 
-  // THE TABLE'S ROUTES, registered by the transitional code below after
-  // `compileRequestSchemas()`, where the loop always ran.
+  // THE TABLE'S ROUTES, registered by the exported `registerRoutes(app)`
+  // straight after the gate, which `common/protocol_stack.ts` calls at 19
+  // (#50, R1). `compileRequestSchemas()` has already run, at load.
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, protocolEndpoints } = this.deps;
     const self = this;
@@ -15492,7 +15512,8 @@ import mode = require('../common/mode');
 
 // THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
 // composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
+// module exports. It goes when that root builds the modules as well as
+// registering their routes (#50's R2).
 const managementApi = new AdminApi({
   errorCodes: errorCodes,
   createClaims: createClaims,
@@ -15635,11 +15656,13 @@ const PROTOCOL_SETTINGS_OPERATIONS =
 
 const ROUTES = managementApi.buildRoutes();
 
-managementApi.registerGate(app);
-
 managementApi.compileRequestSchemas();
 
-managementApi.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
+// Here that is the gate, then every operation, as it was.
 
 // WHAT THIS BANNER SAYS CHANGED ON 2026-09-08 AND THE OLD TEXT IS WORTH
 // RECORDING, because it was true for as long as this file existed and is now
@@ -15680,6 +15703,10 @@ log.info('The management API is at ' + BASE + ': ' +
              '/rbac/grant.'));
 
 export = {
+  registerRoutes: (target: any): void => {
+    managementApi.registerGate(target);
+    managementApi.registerRoutes(target);
+  },
   AdminApi: AdminApi,
   BASE: BASE,
   // The three facts the OpenAPI document is built from, gathered in one place

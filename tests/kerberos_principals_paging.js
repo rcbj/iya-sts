@@ -32,9 +32,12 @@ delete process.env.CONFIG_FILE;
 
 const krb5PersonKeys = require('../kerberos/krb5_person_keys');
 const adminViews = require('../admin-core/admin_views');
-// Registers `/admin/kerberos/principals` and starts nothing.
-require('../admin-ui/admin');
 const app = require('../common/app');
+// Registers `/admin/kerberos/principals` and starts nothing.
+// Loading a module registers nothing since #50's R1; the composition root
+// (`common/protocol_stack.ts`) does, so a test that loads one module
+// registers its routes itself.
+require('../admin-ui/admin').registerRoutes(app);
 
 const log = require('bunyan').createLogger({
   name: 'kerberos_principals_paging',

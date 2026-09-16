@@ -93,15 +93,19 @@
 //     inside the one function that needs them.
 //   * **`registerRoutes(app)` HOLDS EVERY ROUTE, IN THE ORIGINAL ORDER**, and
 //     installs the repository's change observer at the point the original
-//     did — after `POST /xacml/pip` and before `GET /xacml`.
+//     did — after `POST /xacml/pip` and before `GET /xacml`. Since #50's R1
+//     that happens when `common/protocol_stack.ts` calls it, not at load.
 //   * **THE THREE REQUIRES THAT ARM THIS FAMILY STAY AT THE TOP**, as plain
 //     `require()` calls in their old order and before any route: the console
 //     pages, then the role PEP (which fills `common/issuance_gate.js`'s
 //     decider), then the access PEP (which fills `common/access_gate.ts`'s).
 //   * **THE MODULE STILL EXPORTS `decide`, `enforce`, `description`,
 //     `enabled`, `pipMaxDesignators` AND `nudgeRegisteredPeps`**, bound to a
-//     TRANSITIONAL instance built at the bottom from the real modules, which
-//     registers the routes at load. `xacml_admin.ts` requires this module
+//     TRANSITIONAL instance built at the bottom from the real modules, whose
+//     `registerRoutes(app)` the module exports and `common/protocol_stack.ts`
+//     calls (#50, R1) — right after `xacml_admin.ts`'s, which is where
+//     requiring this module used to register them; requiring it registers
+//     nothing. `xacml_admin.ts` requires this module
 //     lazily and the tests require it by name. The instance goes when the
 //     composition root exists; `XacmlSurface` is exported beside it for that
 //     root. As before, the exports are assigned last.
@@ -158,13 +162,16 @@ import monitor = require('./xacml_monitor');
 import roles = require('../common/roles');
 import accessGate = require('../common/access_gate');
 // THE CONSOLE PAGES. Required from here rather than from
-// `common/protocol_stack.js` so that the require order has ONE line for this
-// family: this module is 23c and the
-// pages are part of it. `xacml_admin.ts` requires `admin-ui/admin` (18) for
-// the shell, which is already loaded by the time anything here runs — and it
-// requires THIS module lazily, inside the one function that needs it, because
-// a require at its top would close a cycle and node answers a cycle with a
-// half-initialised module rather than with an error.
+// `common/protocol_stack.ts` so that the require order has ONE line for this
+// family: this module is 23c and the pages are part of it. Requiring them
+// registers nothing (#50, R1); the stack registers their routes and then this
+// module's, in two `register()` calls, the order in which this require and
+// the routes below used to register them. `xacml_admin.ts` requires
+// `admin-ui/admin` (18) for the shell, which is already loaded by the time
+// anything here runs — and it requires THIS module lazily, inside the one
+// function that needs it, because a require at its top would close a cycle
+// and node answers a cycle with a half-initialised module rather than with an
+// error.
 require('./xacml_admin');
 
 // THE EMBEDDED PEP FOR THIS SERVICE'S OWN ISSUANCE, required from here for the
@@ -176,7 +183,7 @@ require('./xacml_admin');
 // answers "allowed" and this service is exactly what it was.
 //
 // It registers NO ROUTE and is therefore a library (rule 3): it is here rather
-// than in `common/protocol_stack.js` so that the require order keeps its one
+// than in `common/protocol_stack.ts` so that the require order keeps its one
 // line for this family, and its position within that line does not matter. It
 // must come after `xacml_admin.ts` for no technical reason at all, and does,
 // because the pages are what an administrator fixes a refusal with.
@@ -2557,8 +2564,9 @@ class XacmlSurface {
 
 // ---------------------------------------------------------------------------
 // THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and its routes registered at load,
-// after the three arming requires at the top, exactly where they always were.
+// the composition root will build one. Its routes are registered by the
+// composition root (below), which still happens after the three arming
+// requires at the top, because those run when this module is required.
 // ---------------------------------------------------------------------------
 const surface = new XacmlSurface({
   log: log,
@@ -2591,9 +2599,13 @@ const surface = new XacmlSurface({
     return require('../persistence/persistence');
   }
 });
-surface.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => surface.registerRoutes(target),
   XacmlSurface: XacmlSurface,
   decide: surface.decide.bind(surface) as XacmlSurface['decide'],
   enforce: surface.enforce.bind(surface) as XacmlSurface['enforce'],

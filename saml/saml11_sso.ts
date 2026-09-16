@@ -177,12 +177,14 @@
 //
 // **THE MODULE STILL EXPORTS WHAT IT DID**, from a TRANSITIONAL instance
 // built at the bottom with the real modules, for `admin-ui/admin.ts`, the
-// management API and the tests, which are not converted. That instance also
-// REGISTERS THE ROUTES at load (`registerRoutes(app)`), exactly where rule 1
-// had them registered before. The three per-realm stores and the vocabulary
-// stay module-level constants, declared as they were; the three counts that
-// were anonymous functions in the exports are methods now. It goes when a
-// composition root exists.
+// management API and the tests, which are not converted. That instance
+// REGISTERS NOTHING at load (#50, R1): the module exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it exactly
+// where rule 1 had the routes registered before. The three per-realm stores
+// and the vocabulary stay module-level constants, declared as they were; the
+// three counts that were anonymous functions in the exports are methods now.
+// The instance goes when the composition root also constructs the modules
+// (#50's R2).
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -213,7 +215,7 @@ import saml11 = require('./saml11');
 // AN APPLICATION, and `/saml2/metadata/app-1a2b3c` and
 // `/saml11/metadata/app-9f8e7d` naming one entry in one directory would be the
 // same defect two spellings of a DN is — one thing that reads as two. It is
-// also a require in the ordinary direction (`common/protocol_stack.js` takes
+// also a require in the ordinary direction (`common/protocol_stack.ts` takes
 // 2.0 at 10a and this file at 10b), so it closes no cycle and moves no route.
 // Nothing else is taken from that module; the two profiles share a registry
 // and a session and know nothing else about each other.
@@ -231,7 +233,7 @@ import authn = require('../authn/authn');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
 // nothing about the route order this module's position in
-// `common/protocol_stack.js` fixes.
+// `common/protocol_stack.ts` fixes.
 import applications = require('../common/applications');
 // THE MODE, and the four libraries beside this file that saml2_sso.ts takes too
 // (2026-09-12): how a session authenticated, the configured signature
@@ -2931,7 +2933,8 @@ class Saml11Sso {
   }
 
   // THE ROUTES, in the order this module registered them at load
-  // (rule 1). Called once, by the transitional instance below.
+  // (rule 1). Called once, by `common/protocol_stack.ts` through the
+  // module's `registerRoutes(app)` (#50, R1).
   registerRoutes(app: RouteApp): void {
     const { baseUrlOf, log, xmlEscape } = this.deps;
     log.debug("Entering Saml11Sso.registerRoutes().");
@@ -2979,11 +2982,12 @@ class Saml11Sso {
     // -------------------------------------------------------------------------
     // THE ROUTES.
     //
-    // Registered at require time, which is rule 1: this module's position in
-    // `common/protocol_stack.js` IS its position in the route order and on
-    // /admin/sts-metadata. Every path has a scoped and an unscoped spelling,
-    // for the reason `saml2_sso.ts` gives — the scoped one is what the
-    // per-relying-party metadata document tells a service provider to use.
+    // Registered when `common/protocol_stack.ts` calls `registerRoutes(app)`,
+    // which is rule 1: this module's position in that file IS its position in
+    // the route order and on /admin/sts-metadata. Every path has a scoped and
+    // an unscoped spelling, for the reason `saml2_sso.ts` gives — the scoped
+    // one is what the per-relying-party metadata document tells a service
+    // provider to use.
     // -------------------------------------------------------------------------
     app.get(BASE_PATH, (req, res) => {
       log.debug("Entering the SAML 1.1 landing page.");
@@ -3109,13 +3113,17 @@ const saml11Sso = new Saml11Sso({
   personAttributes: personAttributes,
   clusterClaims: clusterClaims
 });
-saml11Sso.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 // Exported for `../admin-ui/admin.ts`, which draws /admin/saml11 and needs to
 // name the same endpoints and the same slug this file does — a console that
 // derived a URL of its own would be a console that tells somebody to configure
 // a path nothing serves.
 export = {
+  registerRoutes: (target: any): void => saml11Sso.registerRoutes(target),
   Saml11Sso: Saml11Sso,
   PROFILE_POST: PROFILE_POST,
   PROFILE_ARTIFACT: PROFILE_ARTIFACT,

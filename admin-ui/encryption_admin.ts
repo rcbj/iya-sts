@@ -63,14 +63,16 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape, for a module that registers a route (rule 1): `EncryptionAdmin`
+// shape, for a module that has a route (rule 1): `EncryptionAdmin`
 // takes the console shell, the settings, the cryptography funnel, the
 // keystore, the secret reader, the mode, both persistence modules and the
 // logger through its constructor, and its `registerRoutes(app)` holds the
 // page's one route. `DATA_CLASSES` stays a module-level table. The
-// TRANSITIONAL code at the bottom builds one instance from the real modules,
-// registers its route at load where it always was, and exports
-// `encryptionView` and `dataClasses` bound to it, for `mgmt-api/admin_api.ts`
+// TRANSITIONAL code at the bottom builds one instance from the real modules
+// and exports its `registerRoutes(app)`, which `common/protocol_stack.ts`
+// calls at 18b, where requiring this module used to register the route (#50,
+// R1) — requiring it registers nothing. It also exports `encryptionView` and
+// `dataClasses` bound to the instance, for `mgmt-api/admin_api.ts`
 // and `tests/encryption_report.js`; `EncryptionAdmin` is exported beside them
 // for the composition root.
 // ---------------------------------------------------------------------------
@@ -804,7 +806,7 @@ class EncryptionAdmin {
 }
 
 // THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, and its route registered at load, where it always was.
+// real modules; its route is registered by the composition root, below.
 const encryptionAdmin = new EncryptionAdmin({
   log: helpers.log,
   admin: admin,
@@ -816,7 +818,10 @@ const encryptionAdmin = new EncryptionAdmin({
   persistence: persistence,
   minted: minted
 });
-encryptionAdmin.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 helpers.log.info('The encryption report is at /admin/encryption: what this ' +
                  'service seals at rest, with which key and under which ' +
@@ -824,6 +829,7 @@ helpers.log.info('The encryption report is at /admin/encryption: what this ' +
                  'happened in this process.');
 
 export = {
+  registerRoutes: (target: any): void => encryptionAdmin.registerRoutes(target),
   EncryptionAdmin: EncryptionAdmin,
   // For `mgmt-api/admin_api.ts`. Rule 7 — the page and the operation read one
   // function, so the API cannot report a different number from the console.

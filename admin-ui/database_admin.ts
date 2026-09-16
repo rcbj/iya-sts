@@ -69,14 +69,16 @@
 // ===========================================================================
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape, for a module that registers a route (rule 1): `DatabaseAdmin` takes
+// shape, for a module that has a route (rule 1): `DatabaseAdmin` takes
 // the console shell, the error codes, the settings, the persistence layer and
 // the logger through its constructor, and its `registerRoutes(app)` holds the
 // page's one route. The TRANSITIONAL code at the bottom builds one from the
-// real modules, registers its route at load where it always was, and exports
-// `databaseView` and `sections` bound to it, for `mgmt-api/admin_api.ts` and
-// `tests/database_metrics.js`; `DatabaseAdmin` is exported beside them for
-// the composition root.
+// real modules and exports its `registerRoutes(app)`, which
+// `common/protocol_stack.ts` calls at 18c, where requiring this module used to
+// register the route (#50, R1) — requiring it registers nothing. It also
+// exports `databaseView` and `sections` bound to the instance, for
+// `mgmt-api/admin_api.ts` and `tests/database_metrics.js`; `DatabaseAdmin`
+// is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -850,7 +852,7 @@ class DatabaseAdmin {
 }
 
 // THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, and its route registered at load, where it always was.
+// real modules; its route is registered by the composition root, below.
 const databaseAdmin = new DatabaseAdmin({
   log: helpers.log,
   admin: admin,
@@ -858,7 +860,10 @@ const databaseAdmin = new DatabaseAdmin({
   config: config,
   persistence: persistence
 });
-databaseAdmin.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 helpers.log.info('The database report is at /admin/database: everything ' +
                  'PostgreSQL will tell this service about itself, and the ' +
@@ -866,6 +871,7 @@ helpers.log.info('The database report is at /admin/database: everything ' +
                  'unless persistence.mode is postgres, and says so.');
 
 export = {
+  registerRoutes: (target: any): void => databaseAdmin.registerRoutes(target),
   DatabaseAdmin: DatabaseAdmin,
   // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report different numbers.

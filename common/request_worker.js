@@ -60,15 +60,16 @@
 // ---------------------------------------------------------------------------
 // A WORKER BINDS NO PROTOCOL PORT, AND THAT IS WHY N OF THEM CAN EXIST.
 //
-// `protocol_stack.js` requires every module, which REGISTERS every route and
-// starts nothing: the Kerberos KDC's two sockets, the LDAP directory's two,
-// SPIFFE's gRPC sockets and the embedded debugger's listener are all bound
-// from `listen()` in `server.js`, which a worker never calls (the two TLS
-// endpoints were on that list until they were deleted on 2026-09-16). That
-// separation predates this file by a fortnight and was made for a different
-// reason — binding can fail, and a `require` that throws takes the process
-// down where a route cannot — which is the ordinary way a good boundary pays
-// twice.
+// `protocol_stack.ts` requires every module and registers every route (by
+// `registerRoutes(app)` for the converted ones, at the require for the
+// JavaScript ones) and starts nothing: the Kerberos KDC's two sockets, the LDAP
+// directory's two, SPIFFE's gRPC sockets and the embedded debugger's listener
+// are all bound from `listen()` in `server.js`, which a worker never calls (the
+// two TLS endpoints were on that list until they were deleted on 2026-09-16).
+// That separation predates this file by a fortnight and was made for a
+// different reason — binding can fail, and a `require` that throws takes the
+// process down where a route cannot — which is the ordinary way a good boundary
+// pays twice.
 //
 // **A WORKER SERVES MORE THAN HTTP, AND THIS PARAGRAPH SAID OTHERWISE FOR AN
 // HOUR.** It read "what a worker does not serve is anything that is not HTTP —
@@ -294,7 +295,7 @@ function start(path) {
     log.debug("Caught in start(): " + ((e && e.message) || e));
   }
 
-  // THE WHOLE SERVICE, in the one order there is. See protocol_stack.js.
+  // THE WHOLE SERVICE, in the one order there is. See protocol_stack.ts.
   const app = require('./app');
 
   // -------------------------------------------------------------------------
@@ -877,7 +878,8 @@ function cleanup() {
 // `ldap_server.js`: it would be a route-order edge (rule 1) and, worse, it
 // would make this module know about one protocol family when the whole point is
 // that it knows about none. A family registers what it will answer to when it
-// loads, exactly as a protocol module registers its routes.
+// loads, exactly as a protocol module registered its routes before #50's R1
+// (and a JavaScript one still does).
 //
 // A handler may return a value or a promise; both are answered the same way.
 // ---------------------------------------------------------------------------

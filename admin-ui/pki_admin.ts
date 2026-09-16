@@ -54,18 +54,26 @@
 // registers is `/admin/pki`, which collides with nothing and is not in any
 // other module's path space.
 //
-// So this is required in `common/protocol_stack.js` at **18a**, immediately
+// So this is required in `common/protocol_stack.ts` at **18a**, immediately
 // after `admin-ui/admin` and BEFORE the management API — which makes the
 // management API's own require of it a cache hit that registers nothing. That
 // is the same arrangement `admin-ui/crypto_metadata.ts` could NOT have (it sits
 // at 20a, after `tls/tls_server` at 20, because it reads that module's
 // algorithm table — so it had to have a slot). A slot costs a reader an
 // indirection every time, and rule 3e says not to pay for one by analogy.
+//
+// **SINCE #50's R1 (2026-09-16) REQUIRING THIS FILE REGISTERS NOTHING AT
+// ALL**: `common/protocol_stack.ts` calls its `registerRoutes(app)` at 18a,
+// so `/admin/pki`'s place in the route order is that call's place, and the
+// management API's require of this file could not move a route wherever it
+// ran. The argument above is why the file sat where it did while a require
+// was a registration, and why the call sits at 18a now; the cycle half of it
+// is unchanged.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape, for a module that registers routes (rule 1): `PkiAdmin` takes the
+// shape, for a module that has routes (rule 1): `PkiAdmin` takes the
 // console shell, `pki`, the pane's model, both registers of key pairs and the
 // rest through its constructor, and its `registerRoutes(app)` holds the
 // page's five routes in their old order. The table the comments call
@@ -73,11 +81,13 @@
 // `applications` and call a method.
 //
 // The TRANSITIONAL code at the bottom builds one instance from the real
-// modules, registers its routes at load, where they always were — still at
-// 18a, so `mgmt-api/admin_api.ts`'s require of this file stays a cache hit —
-// and exports the old names from it: `pkiView`, `pkiAction`,
-// `pkiActionNames`, `paneHtml` and `returnTo`. `PkiAdmin` is exported beside
-// them for the composition root.
+// modules and exports its `registerRoutes(app)`, which
+// `common/protocol_stack.ts` calls at 18a, where requiring this module used
+// to register them (#50, R1) — requiring the module registers nothing, so
+// `mgmt-api/admin_api.ts`'s require of this file is a cache hit that could
+// not move a route anyway. It also exports the old names from the instance:
+// `pkiView`, `pkiAction`, `pkiActionNames`, `paneHtml` and `returnTo`.
+// `PkiAdmin` is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -4757,7 +4767,7 @@ class PkiAdmin {
   }
 }
 // THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules, and its routes registered at load, where they always were.
+// modules; its routes are registered by the composition root, below.
 const pkiAdmin = new PkiAdmin({
   log: helpers.log,
   parseBody: helpers.parseBody,
@@ -4778,9 +4788,13 @@ const pkiAdmin = new PkiAdmin({
   admin: admin,
   esc: admin.esc
 });
-pkiAdmin.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => pkiAdmin.registerRoutes(target),
   PkiAdmin: PkiAdmin,
   // For `mgmt-api/admin_api.ts`. Rule 7: every control on this page has an
   // operation, and both go through THESE functions so the API decides nothing

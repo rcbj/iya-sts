@@ -118,7 +118,7 @@ Neither knows the other's half.
 ### `PATHS` is in the library and not beside the routes
 
 Three things need `/federation/acs/{id}` and only one of them may require the
-module that serves it. `admin-ui/admin.ts` must not — `common/protocol_stack.js`
+module that serves it. `admin-ui/admin.ts` must not — `common/protocol_stack.ts`
 loads `federation_sp.ts` at position 10c, BEFORE the console, and a require in the
 other direction would be the reason a route moved the day somebody reorders the
 two. But the console page's whole job is to tell an operator **which URL to

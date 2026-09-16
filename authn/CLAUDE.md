@@ -514,9 +514,13 @@ security key instead of a password* is recorded in `portal/CLAUDE.md`.
 Added 2026-09-03 for the CAEP profile. `ssf/caep.ts` needs to know when a
 session starts, is presented and ends, because that is what a CAEP event is
 *about* — and it cannot be required from here: this module is **8** in the
-require order (`common/protocol_stack.js`) and `ssf/ssf.ts` is **23b**, so a
-require the other way would register every `/ssf` route here, ahead of
-`oauth2.js`, ahead of the admin console, ahead of ldap, scim and spiffe. That is rule 1, and it would
+require order (`common/protocol_stack.ts`) and `ssf/ssf.ts` is **23b**, so a
+require the other way would have registered every `/ssf` route here, ahead of
+`oauth2.js`, ahead of the admin console, ahead of ldap, scim and spiffe. That
+was rule 1 until #50's R1 — `ssf.ts` now registers nothing when required, and
+`common/protocol_stack.ts` registers it at 23b — but the require would still
+run that module's load-time code (its slot fills, and the JavaScript
+`ldap_server` it reaches, whose routes WOULD still move) at 8, and it would
 close a cycle besides. So this module holds a function and `ssf/ssf.ts` fills
 it at its own require time, exactly as `admin.setSignalsReporter()` works one
 layer up.

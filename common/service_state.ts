@@ -12,7 +12,7 @@
 // argument is written out below, where it has always been. It was four until
 // the certificate authority joined on 2026-09-11. The sequence lived in
 // `server.js` until 2026-09-07 and moved here for the reason
-// `protocol_stack.js` moved: it acquired a second reader.
+// `protocol_stack.ts` moved: it acquired a second reader.
 //
 // `server.js` runs it and then binds the sockets. `common/request_worker.js`
 // runs it and binds none of them — and it MUST run it, which is the whole

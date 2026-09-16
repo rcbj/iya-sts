@@ -73,8 +73,11 @@
 // its constructor, and its `registerRoutes(app)` holds the GET and the POST in
 // their old order. The pending store stays module-level, declared at load as
 // before. The TRANSITIONAL code at the bottom builds one from the real
-// modules, registers its routes at load and logs the line it always logged;
-// the module still exports `CONSENT_PATH`, `beginConsent` and `pendingFor`.
+// modules and logs the line it always logged, and registers NOTHING (#50,
+// R1): the module exports `registerRoutes(app)`, which
+// `common/protocol_stack.ts` calls at the point in the route order where
+// requiring this module used to register the routes. The module still
+// exports `CONSENT_PATH`, `beginConsent` and `pendingFor`.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -92,8 +95,10 @@ import errorCodes = require('../common/error_codes');
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 import validation = require('../common/validation');
 // The session, and the stylesheet the sign-in screen is drawn with. This module
-// is required AFTER authn.js in `common/protocol_stack.js`, so this moves no
-// route; and that module does not require this one, so there is no cycle.
+// is required AFTER authn.js in `common/protocol_stack.ts`, so this is a cache
+// hit — and since #50's R1 requiring a converted module registers nothing, so
+// it could move no route from anywhere; and that module does not require this
+// one, so there is no cycle.
 import authn = require('../authn/authn');
 // RFC 9396: what an authorization_details row says, and the one-time Allow.
 // A library that registers nothing, so requiring it here moves no route.
@@ -665,7 +670,7 @@ class ConsentScreen {
 }
 
 // THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, and its routes registered at load, where they always were.
+// real modules; its routes are registered by the composition root, below.
 const screen = new ConsentScreen({
   log: helpers.log,
   xmlEscape: helpers.xmlEscape,
@@ -682,7 +687,10 @@ const screen = new ConsentScreen({
   authn: authn,
   authorizationDetails: authorizationDetails
 });
-screen.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 helpers.log.info('The consent screen is registered at ' + CONSENT_PATH +
                  '. The authorization endpoint sends a person here before ' +
@@ -691,6 +699,7 @@ helpers.log.info('The consent screen is registered at ' + CONSENT_PATH +
                  'they interrupted.');
 
 export = {
+  registerRoutes: (target: any): void => screen.registerRoutes(target),
   ConsentScreen: ConsentScreen,
   CONSENT_PATH: ConsentScreen.CONSENT_PATH,
   beginConsent: screen.beginConsent.bind(screen) as

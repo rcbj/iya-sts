@@ -21,7 +21,7 @@ libraries that decide things on its behalf.
 | `par.ts` | **RFC 9126, PAR (2026-09-13).** The store of pushed authorization requests: the `request_uri`, bound to its client and authorization server, read without spending, spent when a response is issued, expired, listed and deleted. `oauth2.ts` answers `POST /oauth2/par`. See 3al. |
 | `oauth2_monitor.ts` | **The counters behind `/admin/oauth2/monitor` (2026-09-13)**, in sections; pushed authorization requests are the first. |
 | `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.ts`. |
-| `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.js`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
+| `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.ts`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
 | `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
@@ -38,12 +38,14 @@ in the one module that has a response object.
 
 `dpop.ts` is where `presentedAccessToken()` lives rather than
 `../oid4vc/vc_issuer.ts`, where it was written, because the fourth caller is in
-`oauth2.ts` — which `vc_issuer.js` cannot be required from without building a
-cycle or moving OID4VCI ahead of OAuth2 in the route order.
+`oauth2.ts` — which `vc_issuer.ts` cannot be required from without building a
+cycle or (before #50's R1, when a require registered routes) moving OID4VCI
+ahead of OAuth2 in the route order.
 
 Two ordering facts about this directory are in the root `CLAUDE.md` because they
-are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
-`oauth2.ts`, and so must `admin-ui/admin.ts`.
+are facts about `common/protocol_stack.ts` (the sequence `server.js` loads):
+`ws-federation/wsfed.ts` must be required and registered AFTER `oauth2.ts`, and
+so must `admin-ui/admin.ts`.
 
 ---
 

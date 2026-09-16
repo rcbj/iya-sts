@@ -29,8 +29,10 @@
 // `register(context)` rather than a require that registers routes at its top
 // level (rule 1), because everything that makes a page a PORTAL page — the
 // shell, the navigation column, the sign-in, the CSRF field — is private to
-// `portal.ts`. So `portal.ts` hands those over at the one point in its body
-// where the route order is right, and this file owns only what is new.
+// `portal.ts`. So `portal.ts` hands those over at the one point where the
+// route order is right — inside the composite `registerRoutes(app)` it
+// exports, after its own routes, which `common/protocol_stack.ts` calls
+// (#50, R1) — and this file owns only what is new.
 // `portal/CLAUDE.md` records the arrangement.
 //
 // ---------------------------------------------------------------------------
@@ -46,7 +48,8 @@
 //     GET and the POST in their old order.
 //   * **THE MODULE STILL EXPORTS `register` AND `REVOCATION_REASONS`**, from a
 //     TRANSITIONAL instance built from the real modules, for the portal. It
-//     goes when the composition root exists; `PortalCertificates` is exported
+//     goes when the composition root (`common/protocol_stack.ts`) also
+//     constructs the modules (#50's R2); `PortalCertificates` is exported
 //     beside it for that root.
 // ---------------------------------------------------------------------------
 

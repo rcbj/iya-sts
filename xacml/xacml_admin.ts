@@ -78,9 +78,13 @@
 //     `installSlot()` fills `admin.setXacmlPages()`, which the original did
 //     after the last route.
 //   * **THE MODULE STILL EXPORTS EVERY OLD NAME**, bound to a TRANSITIONAL
-//     instance built at the bottom from the real modules, which registers the
-//     routes and fills the slot at load, in that order — so the require order,
-//     the route order and the slot are what they were. It goes when the
+//     instance built at the bottom from the real modules, which fills the slot
+//     at load. It no longer registers the routes (#50, R1): the module exports
+//     `registerRoutes(app)` and `common/protocol_stack.ts` calls it at the
+//     point in the route order where requiring `./xacml` used to register
+//     them — just before `xacml.ts`'s own — so the route order is what it
+//     was. The slot is now filled BEFORE the routes exist rather than after;
+//     nothing reads it until a request arrives. It goes when the
 //     composition root exists. `XacmlAdmin` is exported beside it for that
 //     root, and the three action lists are its static members as well.
 // ---------------------------------------------------------------------------
@@ -2737,9 +2741,11 @@ class XacmlAdmin {
   // -------------------------------------------------------------------------
   // FILL admin.js's `setXacmlPages()` SLOT, so that `/admin-api` can mirror
   // these pages without requiring this module — which it must not do, because
-  // it is 19 in the require order and this file is reached at 23c, and a
-  // require the wrong way would register every /xacml route ahead of the
-  // management API's own.
+  // it is 19 in the require order and this file is reached at 23c, and until
+  // #50's R1 a require the wrong way would have registered every /xacml
+  // route ahead of the management API's own. Requiring it registers nothing
+  // now (the route order is `common/protocol_stack.ts`'s `register()` calls),
+  // but it would still move this file's load — and the slot fill — to 19.
   //
   // THE ACTION IS ONE FUNCTION over both surfaces. `/admin/xacml/policies` and
   // `/admin/xacml/editor` are two pages with two POST endpoints, and a
@@ -2811,8 +2817,10 @@ class XacmlAdmin {
 
 // ---------------------------------------------------------------------------
 // THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules; its routes are registered at load, where they always were, and the
-// console's slot is filled after them, as it always was.
+// modules. Its routes are registered by the composition root (below), at the
+// point where requiring this module used to register them; the console's slot
+// is filled here, at load, which is now BEFORE those routes exist rather than
+// after them — harmless, because nothing reads the slot before a request.
 // ---------------------------------------------------------------------------
 const pages = new XacmlAdmin({
   log: helpers.log,
@@ -2845,10 +2853,14 @@ const pages = new XacmlAdmin({
     return require('./xacml_access_pep');
   }
 });
-pages.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 pages.installSlot();
 
 export = {
+  registerRoutes: (target: any): void => pages.registerRoutes(target),
   XacmlAdmin: XacmlAdmin,
   overviewJson: pages.overviewJson.bind(pages) as XacmlAdmin['overviewJson'],
   pepsJson: pages.pepsJson.bind(pages) as XacmlAdmin['pepsJson'],

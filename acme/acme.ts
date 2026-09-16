@@ -40,10 +40,11 @@
 // `acme_admin.ts` draws. `acme/CLAUDE.md` carries the RFC sections, the
 // documented exceptions and the traps.
 //
-// **REQUIRED AT 23e** (`common/protocol_stack.js`), after the console at 18
+// **REQUIRED AT 23e** (`common/protocol_stack.ts`), after the console at 18
 // whose shell `acme_admin.ts` draws with, and after `ldap` at 21 whose slot the
 // enrollment core reads entries through. It requires `./acme_admin` itself so
-// the family is one line there.
+// the family is one REQUIRE there; the routes are two `register()` calls on
+// the next lines, this module's and then `acme_admin`'s (#50, R1).
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -54,9 +55,10 @@
 // are not converted. `Acme` is exported beside them for the
 // composition root.
 //
-// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the
-// transitional code calls at load where the first route used to be
-// registered, so rule 1's order is unchanged.
+// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
+// exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
+// route order where requiring this module used to register them, so rule 1's
+// order is unchanged. Requiring the module registers nothing.
 // ---------------------------------------------------------------------------
 
 import nodeCrypto = require('crypto');
@@ -967,9 +969,10 @@ class Acme {
     return self;
   }
 
-  // THE ROUTES, registered where they always were: the transitional
-  // code below calls this at load, at the point the first of them
-  // used to be registered, so the route order is unchanged (rule 1).
+  // THE ROUTES, registered where they always were: the module exports
+  // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
+  // where requiring the module used to register them, so the route order
+  // is unchanged (rule 1). Nothing calls it at load.
   registerRoutes(app: RouteApp): void {
     const { log, jws, store, core, errorCodes, audit, validation, config,
             nodeCrypto, claims, realms, stsCrypto } = this.deps;
@@ -1958,7 +1961,10 @@ const ALLOWED_METHODS = [
   { re: /^\/order\/[^/]+\/finalize$/, allow: 'POST' }
 ];
 
-acme.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 // ---------------------------------------------------------------------------
 // GET /enroll/acme/renewal-info/:id (RFC 9773 section 4). The suggested window
@@ -1972,11 +1978,14 @@ log.info('The ACME server is registered at ' + PREFIX + '/directory (RFC ' +
          'issuing from each realm\'s ACME Issuing CA with External Account ' +
          'Binding required.');
 
-// The console's two pages. After the routes above, and nothing depends on the
-// order: they are /admin paths.
+// The console's two pages. Required here so the family is one require in
+// `common/protocol_stack.ts`; their routes are registered there, by
+// `acme_admin`'s own `registerRoutes(app)`, right after this module's (#50,
+// R1). Nothing depends on that order: they are /admin paths.
 require('./acme_admin');
 
 export = {
+  registerRoutes: (target: any): void => acme.registerRoutes(target),
   Acme: Acme,
   FAMILY: FAMILY,
   PREFIX: PREFIX,

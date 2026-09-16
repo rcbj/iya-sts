@@ -51,7 +51,12 @@
 // required LAST, and `ldap/ldap_server.js`, `spiffe/spiffe_server.ts` and the
 // Kerberos modules register routes when first required (rule 1), so a require
 // of any of them from here would either close a cycle or drag routes ahead of
-// the console. `certificate_views.ts` answers the same problem with a require
+// the console. (Since #50's R1 (2026-09-16) `spiffe_server.ts` registers
+// nothing when required — `common/protocol_stack.ts` registers its routes at
+// 23 — but it requires the console, so a require of it from here is still a
+// cycle; `ldap_server.js`, `sts_metadata.js` and the Kerberos modules are
+// still JavaScript and still register when required.)
+// `certificate_views.ts` answers the same problem with a require
 // inside the function, which is a cache hit once the stack is up; this file
 // goes one step further and NEVER loads one: `loaded()` hands back the module
 // only if something else already did. An in-process test that loads the

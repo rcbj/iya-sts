@@ -11,8 +11,11 @@
 //
 // **THIS FILE REGISTERS NO ROUTE AND REQUIRES ITS VIEW MODEL LAZILY**, inside
 // each handler: the management API is 19 in the require order and ACME is 23e,
-// so a require at load would register every `/enroll/acme` route ahead of the
-// management API's own (rule 1). By the time a handler runs, the family has
+// so a require at load would have registered every `/enroll/acme` route ahead
+// of the management API's own (rule 1). Since #50's R1 requiring the family
+// registers nothing — `common/protocol_stack.ts` registers its routes at 23e —
+// but it would still load the family and its libraries at 19, ahead of where
+// they are loaded. By the time a handler runs, the family has
 // long been loaded and the require is a cache hit.
 //
 // Its `sendJson()` is the management API's, written again because this file

@@ -143,7 +143,7 @@ const SUBSYSTEMS = [
           '(global.trustedProxies), the header itself, and the startup ' +
           'refusal when nobody is trusted.' },
   { id: 'CORE', label: 'Service core',
-    where: 'server.js, common/protocol_stack.js, common/config.js, ' +
+    where: 'server.js, common/protocol_stack.ts, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
            'common/mode.js, common/version.js, sts_metadata.js, home/',
     what: 'Starting the service, the settings table, trust realms, and the ' +

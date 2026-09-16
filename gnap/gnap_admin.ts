@@ -29,9 +29,11 @@
 // shape, for a module that registers routes (rule 1): `GnapAdmin` takes the
 // console shell, the view model and the rest through its constructor, and
 // its `registerRoutes(app)` holds the three routes in their old order. The
-// TRANSITIONAL instance below is built from the real modules and registers
-// them at load, exactly where the file registered them before; the module
-// still exports an empty object beside the class.
+// TRANSITIONAL instance below is built from the real modules and exports its
+// `registerRoutes(app)`, which `common/protocol_stack.ts` calls (#50, R1)
+// right after `gnap_interact.ts`'s, exactly where requiring this file
+// registered them before; that function is the module's one export beside
+// the class.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -474,7 +476,7 @@ class GnapAdmin {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, and its routes registered at load, where they always were.
+// modules; its routes are registered by the composition root (below).
 const pages = new GnapAdmin({
   log: helpers.log,
   parseBody: helpers.parseBody,
@@ -483,8 +485,12 @@ const pages = new GnapAdmin({
   admin: admin,
   consoleModel: consoleModel
 });
-pages.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => pages.registerRoutes(target),
   GnapAdmin: GnapAdmin
 };

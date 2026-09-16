@@ -548,8 +548,10 @@ decisions are worth knowing before changing any of them.
 **Requiring `worker_pool.js` is what arms `pq_jose.js`.** The reference is
 handed down from the foot of that file, because the pool requires `worker.js`
 which requires `pq_jose.js` and a require back up would close a cycle (rule 2).
-The side effect is the point, and it is the same shape as rule 1 — requiring a
-protocol module is what registers its routes. **A worker is never armed**,
+The side effect is the point, and it is the shape rule 1 had until #50's R1 —
+requiring a protocol module was what registered its routes (it still is for the
+JavaScript ones; a converted module now waits for `common/protocol_stack.ts` to
+call its `registerRoutes(app)`). **A worker is never armed**,
 because a child requires `worker.js` and `worker.js` does not require the pool.
 
 `common/crypto.js` is what requires it, because that is the module that routes
@@ -738,13 +740,42 @@ use. `helpers.js`'s block below `warmPqKeys()` carries the measurement.
 loop is free.
 
 
-## `protocol_stack.js`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07)
+## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.**
 
 **The order is unchanged and the root `CLAUDE.md`'s require-order table is
-still the index of it.** What changed is where the sequence LIVES, and it moved
-for one reason: it acquired a second reader.
+still the index of it.** What changed first is where the sequence LIVES, and it
+moved for one reason: it acquired a second reader.
+
+**What changed second (#50's R1, 2026-09-16) is who registers the routes.** The
+file is TypeScript now, class `ProtocolStack`, and `load(app)` is the sequence.
+A module converted to TypeScript registers NOTHING when it is required: it
+exports `registerRoutes(app)`, and `load()` requires it and then calls
+`register(app, module, name)` on the next line — at the point where requiring it
+used to register the routes, so the route order did not move (Express's layer
+list, 603 layers with their handlers, is identical before and after). The
+JavaScript route modules — the parent project's locked `krb5_kdc`,
+`krb5_service` and `spnego`, `tls/tls_server`, `ldap/ldap_server` and
+`sts_metadata` — still register at their require, which `load()` makes at its
+old place. So the file now holds two interleaved orders: the REQUIRE order,
+which decides load-time effects (slot fills, stores, cycles, and where a
+JavaScript module's routes land), and the order of `register()` calls, which
+decides the converted modules' routes. Where requiring one module registered
+another's routes as a side effect, the calls say so explicitly and in the same
+order: `oid4vc/vc_offers` just before `oauth-oidc/oauth2` (which requires it),
+`xacml/xacml_admin` before `xacml/xacml`, `gnap/gnap` then `gnap_interact` then
+`gnap_admin`, and each enrollment family before its `_admin`. Two
+`registerRoutes` are composite — `mgmt-api/admin_api`'s is the gate then every
+operation, `portal/portal`'s the portal pages then `/portal/certificates`.
+`registeredModules()` lists what was registered, in order.
+
+**The one instance is still built and loaded when the file is required**, which
+is what `server.js`, `request_worker.js` and the whole-stack tests rely on; that
+is TRANSITIONAL until the composition root also constructs the modules (#50's
+R2). **A process that requires a single converted route module and not this
+file gets no routes from it** — it has to call that module's
+`registerRoutes(app)` itself.
 
 `server.js` loads that file and then binds the sockets. **`common/request_worker.js`
 loads the SAME file and binds none of them** — it is a child process that runs
@@ -757,8 +788,10 @@ The five modules that own listeners — the two Kerberos ones, the directory,
 SPIFFE and the debugger — are returned rather than merely required, because
 `server.js` needs the handles for `listen()`; so is `tls/tls_server`, whose
 8443/9443 listeners were deleted on 2026-09-16 and which `server.js` still
-reads for the main port's certificate and truststore. Requiring them still
-registers their HTTP views and starts nothing — which is a separation that
+reads for the main port's certificate and truststore. Loading them still
+registers their HTTP views (at the require for the JavaScript ones, by
+`register()` for `spiffe_server`; the debugger's are on its own app) and starts
+nothing — which is a separation that
 predates this change by a fortnight, made for a different reason (binding can
 fail and a `require` that throws takes the process down), and is what makes a
 request worker possible at all.

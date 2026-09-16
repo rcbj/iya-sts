@@ -709,6 +709,25 @@ logger). **Do not throw for an ordinary failure** — a throw is reserved for a
 test that could not RUN, and `run.js` reports that differently on purpose,
 because a test that did not run has not passed.
 
+**A route module you require gives you NO ROUTES unless you register them
+(#50's R1, 2026-09-16).** Until that day requiring a route module was what
+registered its routes (rule 1 in the root `CLAUDE.md`), so a test that did
+`require('../scep/scep')` and then drove the shared app, or read
+`app._router.stack`, found the module's handlers there. A module converted to
+TypeScript registers nothing when required now: it exports
+`registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the module's
+place in the route order. So a test that needs the handlers either calls the
+module's own `registerRoutes(app)` after requiring it — once, on the shared app
+from `common/app`, and for every module whose routes it needs (a family's
+`_admin` module is separate: `scep` and `scep_admin` are two calls) — or loads
+the whole stack with `require('../common/protocol_stack')`, in a CHILD
+PROCESS, the way `protocol_endpoints.js` does. A test that only calls a
+module's exported functions needs neither. **The JavaScript route modules are
+the exception** — `ldap/ldap_server.js`, `tls/tls_server.js`, `sts_metadata.js`
+and the Kerberos files still register at require. The failure when this is
+forgotten is a 404 (Express's `Cannot GET`) or an empty route filter, not a
+load error.
+
 Two rules that are not optional here:
 
 * **MUTATION-TEST IT BEFORE COMMITTING IT.** Break the thing it guards, watch it

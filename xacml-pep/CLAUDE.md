@@ -4,7 +4,7 @@
 IN THIS REPOSITORY THAT IS NOT PART OF THE MOCK.**
 
 Everything else here is required by `server.js` (through
-`common/protocol_stack.js`) and runs in the identity service's process. This is
+`common/protocol_stack.ts`) and runs in the identity service's process. This is
 a **second container**: five files, two npm packages, no express, no config
 table, no directory, and no key it generates — the two pairs it can hold, its
 client certificate and (since 2026-09-13) its HTTPS listener's, are both handed

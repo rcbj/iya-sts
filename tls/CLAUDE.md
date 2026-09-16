@@ -19,7 +19,7 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   the embedded debugger's listener. So one anchor covers all three and a caller
   trusts this service once per start rather than three times. The LDAPS half is
   what makes `ldap_server.js` require this module, and therefore what fixes
-  their order in `common/protocol_stack.js` (rule 6); the other two need no
+  their order in `common/protocol_stack.ts` (rule 6); the other two need no
   require order, because `server.js` and `debugger_server.js` already have this
   module in hand by the time they listen. The private key crosses a module boundary and no
   network one: it is generated per start, held in memory, and
@@ -945,7 +945,7 @@ Four things about it are decisions:
 * **NOTHING IS PERSISTED**, which is the rule this array already follows (the note above
   `anchors`). The durable door is still `tls.trustAnchorsFile`. *Superseded later
   the same day — see* A RUNTIME ANCHOR SURVIVES A RESTART *below.*
-* **THE SLOT IS FILLED BY `common/protocol_stack.js`, NOT BY THIS MODULE, AND THAT IS
+* **THE SLOT IS FILLED BY `common/protocol_stack.ts`, NOT BY THIS MODULE, AND THAT IS
   FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.ts`'s require —
   `admin.js` → `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts` → here — so a
   `require('../admin-ui/admin')` at its top level would be a cycle and would find no

@@ -85,11 +85,13 @@
 // refusal types are module-level classes that take the logger first.
 //
 // THE TRANSITIONAL CODE at the bottom builds ONE instance from the real
-// modules, registers its routes at load — where they always were — declares
-// `oauth.codes-once` as the old last statement did, and exports the old names
-// from that instance, for every module that requires this one by them. It
-// goes when the composition root exists; `OAuth2Server` is exported beside
-// them for that root.
+// modules, declares `oauth.codes-once` as the old last statement did, and
+// exports the old names from that instance, for every module that requires
+// this one by them. It registers NOTHING (#50, R1): it exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` — the composition
+// root — calls it at the point in the route order where requiring this module
+// used to register the routes. The instance goes when that root also
+// constructs the modules (R2); `OAuth2Server` is exported beside them for it.
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -253,12 +255,13 @@ import delegation = require('../common/delegation');
 // `common/consent.ts` is a LIBRARY (rule 3) — it registers no route and
 // requires helpers.js, config.js, applications.js, error_codes.js and
 // admin_stats.js — so requiring it here can neither create a cycle nor move a
-// route. `./consent_screen.js` DOES register two routes, and this require does
-// not move them: `common/protocol_stack.js` requires it BEFORE this module,
-// exactly as it requires
-// `authn/authn.ts` before this module, and for the identical reason — the
-// authorization endpoint hands a browser to a screen somebody else owns and
-// takes it back afterwards.
+// route. `./consent_screen.ts` DOES have two routes, and this require cannot
+// move them: since #50's R1 requiring it registers nothing, and
+// `common/protocol_stack.ts` registers them BEFORE this module's, exactly as
+// it registers `authn/authn.ts`'s before this module's, and for the identical
+// reason — the authorization endpoint hands a browser to a screen somebody
+// else owns and takes it back afterwards. It also requires it before this
+// module, so this require is a cache hit.
 import consent = require('../common/consent');
 import consentScreen = require('./consent_screen');
 // The LDAP-attribute half of a claim set, read here for ONE thing this module
@@ -278,7 +281,7 @@ import claimAttributes = require('../common/claim_attributes');
 // any process that never loaded the XACML family — so this require cannot move
 // a route, cannot close a cycle and cannot change what this module does on its
 // own. What fills its decider is `xacml/xacml_role_pep.ts` at 23c, far below
-// this module in `common/protocol_stack.js`, which is exactly why the gate
+// this module in `common/protocol_stack.ts`, which is exactly why the gate
 // exists rather than this file requiring the PEP. See
 // `common/issuance_gate.js`.
 import gate = require('../common/issuance_gate');
@@ -11522,8 +11525,9 @@ class OAuth2Server {
 
   // -------------------------------------------------------------------------
   // EVERY ROUTE AND MIDDLEWARE THIS MODULE REGISTERS, IN THE ORDER THE OLD FILE
-  // REGISTERED THEM (rule 1: the require order is the route order, and within
-  // a module the registration order is).
+  // REGISTERED THEM (rule 1: the order of `common/protocol_stack.ts`'s
+  // `register()` calls is the route order, and within a module the
+  // registration order is).
   // -------------------------------------------------------------------------
   registerRoutes(app: any): void {
     const self = this;
@@ -11552,7 +11556,7 @@ class OAuth2Server {
     // is registered HERE, above this module's first route — and so above every
     // route that verifies a proof: the token endpoint, the PAR endpoint,
     // UserInfo and the step-up stand-in below, and the credential endpoints,
-    // SCIM and Shared Signals, all required after this module (rule 1:
+    // SCIM and Shared Signals, all registered after this module (rule 1:
     // middleware applies only to routes added after it). Nothing required above
     // this module reads a DPoP header. It does nothing for a request without
     // one. Why the reservation is made on arrival rather than inside
@@ -11949,7 +11953,7 @@ class OAuth2Server {
 
 // ---------------------------------------------------------------------------
 // THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules; its routes registered at load, where they always were; and the
+// modules; its routes registered by the composition root, below; and the
 // capability this module declares, as its last statement always did.
 // ---------------------------------------------------------------------------
 const server = new OAuth2Server({
@@ -12036,11 +12040,15 @@ const server = new OAuth2Server({
   clusterBarrier: clusterBarrier,
   capabilities: capabilities
 });
-server.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 capabilities.provide('oauth.codes-once');
 
 export = {
+  registerRoutes: (target: any): void => server.registerRoutes(target),
   OAuth2Server: OAuth2Server,
   asMetadata: server.asMetadata.bind(server) as OAuth2Server['asMetadata'],
   // THE TWO ADVERTISED SIGNING LISTS, for `admin-ui/crypto_metadata.ts`.
@@ -12069,7 +12077,7 @@ export = {
   // The outstanding authorization codes, for the protocol-independent
   // logout. Functions rather than the Map, and both stores behind them —
   // see the block above outstandingCodesFor(). `logout/logout.ts` requires
-  // this module in the ordinary direction: `common/protocol_stack.js` loads
+  // this module in the ordinary direction: `common/protocol_stack.ts` loads
   // it long before that one, so the require moves no route and closes no
   // cycle.
   outstandingCodesFor: server.outstandingCodesFor.bind(server) as

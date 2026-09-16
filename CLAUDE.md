@@ -35,7 +35,7 @@ detail.
 | **2026-09-05** — what a SCIM, SPIFFE, UserInfo, SPNEGO test would cover | each family's file |
 | **2026-09-05** — the two shell scripts the database container runs | `postgres/CLAUDE.md` |
 | **2026-09-13** — the hosted surfaces as OIDC relying parties, the realm split, the `Location` header | `common/CLAUDE.md` (`oidc_rp.js`) |
-| **2026-09-13** — one listener process and N workers, `protocol_stack.js`, BOTH worker pools, the barrier, the tickets, `readYourWrite`, the measurements | `common/CLAUDE.md` |
+| **2026-09-13** — one listener process and N workers, `protocol_stack.ts`, BOTH worker pools, the barrier, the tickets, `readYourWrite`, the measurements | `common/CLAUDE.md` |
 | **2026-09-13** — LDAP as a dispatched operation, the connection mirror | `ldap/CLAUDE.md` |
 | **2026-09-13** — SPIFFE's dispatched gRPC methods, per-realm trust domains | `spiffe/CLAUDE.md` |
 | **2026-09-13** — the listener certificate after `build-root`, the truststore pin | `tls/CLAUDE.md` |
@@ -66,7 +66,7 @@ files did not change; the paths did.
 | `saml/` | The SAML 2.0 and SAML 1.1 assertion builders, each with a SEPARATE browser-facing identity provider rather than one with a version flag. `saml/CLAUDE.md`. |
 | `ws-trust/` | WS-Trust 1.0–1.4. `ws-trust/CLAUDE.md`. |
 | `ws-federation/` | WS-Federation 1.2's passive requestor profile and a mock relying party. `ws-federation/CLAUDE.md`. |
-| `pki/` | `pki_service.js`: the certificate authority's PUBLIC surface — a CRL and an OCSP responder per CA, each CA's own certificate, and the chain documents at `/pki/chain/`. No gate and no credential, by construction; the authority itself is `common/pki.js`. Its header is its documentation (no `CLAUDE.md`). |
+| `pki/` | `pki_service.ts`: the certificate authority's PUBLIC surface — a CRL and an OCSP responder per CA, each CA's own certificate, and the chain documents at `/pki/chain/`. No gate and no credential, by construction; the authority itself is `common/pki.js`. Its header is its documentation (no `CLAUDE.md`). |
 | `federation/` | Federation relationships in either direction, in five protocols; `ou=federations` is the register, and it holds the first and strongest of the outbound requests. `federation/CLAUDE.md`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO (the negotiation, the page, and the sign-in that turns a ticket into a session), and eight codec modules **VENDORED from the parent project and not editable here**, despite not being under `common/vendored/`. `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory — the store for people, groups, applications and the SPIFFE registry — and the eight `/admin/ldap/*` console pages that show it. `ldap/CLAUDE.md`. |
@@ -186,11 +186,35 @@ every setting.
 holds is the table above; what each module is for is that directory's
 `CLAUDE.md`.
 
-1. **Requiring a module registers its endpoints.** Each calls `app.get(...)` at its
-   top level against the shared app from `app.js`, rather than exporting a
-   `register()`. So **the require order is the route order**, and the
-   middleware has to live in `app.js`, because express applies middleware only to
+1. **A composition root registers every endpoint, in one order.** Since #50's
+   R1 (2026-09-16) a module converted to TypeScript registers NOTHING when it
+   is required: it exports `registerRoutes(app)`, and
+   `common/protocol_stack.ts` (class `ProtocolStack`) calls each one against
+   the shared app from `app.js`, at the point in its sequence where requiring
+   that module used to register the routes. That is the owner's decision on
+   issue #50 — `registerRoutes(app)` plus a composition root, rather than a
+   `register()` at each module's top level. **The modules still written in
+   JavaScript still register when they are required** — the parent project's
+   locked Kerberos files (`krb5_kdc`, `krb5_service`, `spnego`),
+   `tls/tls_server.js`, `ldap/ldap_server.js` and `sts_metadata.js` — and
+   `protocol_stack.ts` requires them at their old places, so the two kinds
+   interleave exactly as they did (Express's layer list, 603 layers with their
+   handlers, was compared before and after and is identical).
+   `debugger/debugger_server.ts` registers on an express app of its OWN and is
+   outside this. So **the route order is the order of the `register()` calls
+   and of the JavaScript requires in `protocol_stack.ts`**, and the middleware
+   still has to live in `app.js`, because express applies middleware only to
    routes added after it.
+
+   **The consequence for anything that loads a module by itself** — a test, a
+   script, another module: requiring a converted route module gets you its
+   exports and none of its routes. Call its `registerRoutes(app)`, or require
+   `common/protocol_stack` for the whole stack. And the old argument "a
+   require from here would drag X's routes to the front of the router" is now
+   true only where X is one of the JavaScript modules above; for a converted
+   X a require moves no route, though it can still close a cycle or run X's
+   load-time effects (slot fills, stores) early — see *The require order and
+   the route order*, below.
 
 2. **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
    code.** The credential configurations are read by both the issuer and the
@@ -204,8 +228,9 @@ holds is the table above; what each module is for is that directory's
    (plus npm leaves) so it cannot join a cycle. Keep it that way. It is also why
    `presentedAccessToken()` — the Bearer-or-DPoP check the four protected endpoints
    share — lives there rather than in `vc_issuer.ts` where it was written: the
-   fourth caller is in `oauth2.js`, which vc_issuer.ts cannot be required from
-   without building a cycle or moving OID4VCI ahead of OAuth2 in the route order.
+   fourth caller is in `oauth2.ts`, which vc_issuer.ts cannot be required from
+   without building a cycle or — before #50's R1, when a require registered
+   routes — moving OID4VCI ahead of OAuth2 in the route order.
 
 3e. **`admin_stats.js` now has three inverted hooks and one require of a
    library, and they are four different problems rather than a pattern.**
@@ -230,6 +255,10 @@ holds is the table above; what each module is for is that directory's
    validated WHOLE when installed (a filler that installs half of it leaves a
    page able to list and unable to act), and is argued both ways round — the
    require one way closes a cycle, the require the other way moves routes.
+   **Since #50's R1 "moves routes" is true only of a require that reaches a
+   JavaScript route module** (rule 1); a require of a converted module moves
+   none, so for those the case for a slot is a cycle or a load-time effect
+   that would run in the wrong place, and it has to be made on those terms.
 
    | Offered by | Slots | Argued in |
    |---|---|---|
@@ -241,7 +270,7 @@ holds is the table above; what each module is for is that directory's
    | `common/helpers.js` | `setSubjectResolver` (a person's `sub` from their entry's `entryUUID`, and back), filled by `ldap/ldap_server.js` (2026-09-14) | `ldap/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
-   it carries** — `common/protocol_stack.js` fills it, because the owner is first
+   it carries** — `common/protocol_stack.ts` fills it, because the owner is first
    loaded from inside `admin.js`'s own require (`tls/CLAUDE.md`).
 
 ## Trust realms: several logical copies of this service in one process
@@ -320,26 +349,50 @@ the front process (`tls/CLAUDE.md`), and the client-certificate truststore took
 a pin (`tls/CLAUDE.md`). **Dispatch without coordination is refused and the
 service does not start**, because it answers WRONGLY rather than slowly.
 
-## The require order IS the route order
+## The require order and the route order
 
-Because of rule 1. **The sequence lives in `common/protocol_stack.js`**, which
-`server.js` loads before binding sockets and `common/request_worker.js` loads
-without binding any — one copy, so the two processes cannot disagree about
-which handler wins. Every constraint below is a DEPENDENCY, not a preference;
-this table says what the constraint is and the named file says why.
+**There are two orders, and until 2026-09-16 they were one.** Rule 1 made the
+require order the route order; since #50's R1 they are kept apart, in ONE file,
+side by side:
 
-| # | Required | Constraint | Argument in |
+* **The require order** decides the LOAD-TIME effects: which slot is filled
+  before whom (rule 3e), which store exists when a seed is written, which
+  `require` would close a cycle, and — for the JavaScript modules rule 1 names —
+  where their routes land.
+* **The route order** is the order of `ProtocolStack.register()` calls (and of
+  those JavaScript requires) and decides which handler wins and which
+  middleware a route sits behind.
+
+**Both live in `common/protocol_stack.ts`**, which `server.js` loads before
+binding sockets and `common/request_worker.js` loads without binding any — one
+copy, so the two processes cannot disagree about which handler wins. Each
+converted module is required and then registered on the next line, at the
+place its routes always had, so every row below holds for both orders; where a
+row's argument is "requiring X would drag X's routes", it now applies to the
+`register()` call for a converted X and to the require only for a JavaScript
+one. **A composite registration is still one row**: `mgmt-api/admin_api`
+registers its gate and then its operations, `portal/portal` its pages and then
+`/portal/certificates`, and a family whose route module requires its `_admin`
+module is still one require but one `register()` per module (`acme` then
+`acme_admin`, likewise `est` and `scep`; `xacml_admin` before `xacml`; `gnap`,
+`gnap_interact`, `gnap_admin`) — in the order the load-time registration ran,
+and `oid4vc/vc_offers` is registered just BEFORE `oauth-oidc/oauth2`, because
+`oauth2` requires it and that is where its routes landed. Every constraint
+below is a DEPENDENCY, not a preference; this table says what the constraint
+is and the named file says why.
+
+| # | Required (then registered, if converted) | Constraint | Argument in |
 |---|---|---|---|
-| 0 | `common/compiled_tree` | Before everything (#50): refuses a tree whose TypeScript is not compiled, and requires nothing of this service. Called by `server.js` itself rather than listed in `protocol_stack.js`. | `common/CLAUDE.md` |
+| 0 | `common/compiled_tree` | Before everything (#50): refuses a tree whose TypeScript is not compiled, and requires nothing of this service. Called by `server.js` itself rather than listed in `protocol_stack.ts`. | `common/CLAUDE.md` |
 | 1 | `common/config_file` | First of all that configures anything; every reader of `CONFIG_FILE` is below it. | `common/CLAUDE.md` |
-| 2 | `common/app` | Before every protocol module: they register against it, and middleware applies only to routes added after it. Also installs the JWT recorder (rule 3e). | `common/CLAUDE.md` |
+| 2 | `common/app` | Before every protocol module and every `register()` call: routes are registered against it, and middleware applies only to routes added after it. Also installs the JWT recorder (rule 3e). | `common/CLAUDE.md` |
 | 2a | `common/realms` | No line of its own (loaded by `app` and `helpers`), but above every setting read and every store: requiring it fills `config.js`'s realm slot (rule 3m). | `common/CLAUDE.md` |
 | 3–4 | `common/helpers`, `common/config` | `config.js` is below `helpers.js` and requires nothing here. | `common/CLAUDE.md` |
 | 4a | `persistence/persistence` | Below `config`, above everything else: fills the override-store slot and subscribes to `realms.onChange()`. A library; it opens nothing here — `persistence.start()` does, before any listener binds. | `persistence/CLAUDE.md` |
 | 4b | `common/crypto` | Loaded by `helpers`. A LEAF library that may never require `helpers` back. | `common/CLAUDE.md` |
 | 5 | `common/claim_attributes` | Ahead of everything that ISSUES: it fills `setAttributeResolver()`. | `common/CLAUDE.md` |
 | 6 | `common/group_claims` | Same reason, for `setGroupResolver()`. | `common/CLAUDE.md` |
-| 6a | `home/home` | No constraint; first among the route modules. | `home/CLAUDE.md` |
+| 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
 | 8a | `portal/portal` | After `authn`, whose session every portal route reads; an OIDC relying party of `oauth2`, which needs that module's routes registered, not required. | `portal/CLAUDE.md` |
@@ -349,28 +402,31 @@ this table says what the constraint is and the named file says why.
 | 10a | `saml/saml2_sso` | After `authn`; it has no sign-in screen of its own. | `saml/CLAUDE.md` |
 | 10b | `saml/saml11_sso` | After `authn` and after `saml2_sso` (`slugOf()`). | `saml/CLAUDE.md` |
 | 10c | `federation/federation_sp` | After `authn`; it calls `startSession()` directly. | `federation/CLAUDE.md` |
-| 11–14 | `oid4vc/*` | `vc_offers` before `vc_issuer` (rule 2). | `oid4vc/CLAUDE.md` |
-| 15–16 | `kerberos/krb5_kdc`, `krb5_service` | Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
-| 17 | `kerberos/spnego` | After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
-| 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so the KDC's routes are not dragged ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
+| 11–14 | `oid4vc/*` | `vc_offers` before `vc_issuer` (rule 2). `vc_offers` is loaded by `oauth2` and so REGISTERED just before `oauth2`'s own routes, where its routes always landed. | `oid4vc/CLAUDE.md` |
+| 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript, locked: their routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
+| 17 | `kerberos/spnego` | JavaScript, locked: registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
+| 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
+| 17b | `pki/pki_service` | No constraint: it requires only libraries. Here, ahead of the console, so `/admin/sts-metadata` groups the revocation endpoints with the protocols. | `common/protocol_stack.ts` (17b) |
 | 18 | `admin-ui/admin` | After `oauth2` (rule 5), and before the families whose modules would otherwise have to be required from it — which is why it offers slots (rule 3e). | `admin-ui/CLAUDE.md` |
-| 18-core | `admin-core/*` | No line of its own. Registers nothing, but requires `oauth2`, `saml2`, `saml11` and `federation`, so it may be required at 18 or later and nowhere earlier. | `admin-core/CLAUDE.md` |
-| 18a | `admin-ui/pki_admin` | After `admin-ui/admin`, before `mgmt-api/admin_api`, so the API's require of it is a cache hit and it needs no slot. | `admin-ui/CLAUDE.md` |
+| 18-core | `admin-core/*` | No line of its own. Registers nothing, but requires `oauth2`, `saml2`, `saml11` and `federation`, so it may be required at 18 or later and nowhere earlier — since R1 such a require moves no route, but it still runs those modules' load-time code out of order. | `admin-core/CLAUDE.md` |
+| 18a | `admin-ui/pki_admin` | After `admin-ui/admin`, before `mgmt-api/admin_api`, so the API's require of it is a cache hit and it needs no slot (and since R1 that require could register nothing anyway). | `admin-ui/CLAUDE.md` |
+| 18b–d | `admin-ui/encryption_admin`, `database_admin`, `secrets_admin` | 18a's placement and 18a's reason: the console's shell, libraries already loaded, and `mgmt-api/admin_api` requires each in the ordinary direction. | `admin-ui/CLAUDE.md` |
 | 18e | `debugger/debugger_admin` | Beside the other report pages, before `mgmt-api/admin_api` which requires it. Reads the listener's status LAZILY, because `debugger_server` requires `tls/tls_server` (20). | `debugger/CLAUDE.md` |
-| 18f | `oauth-oidc/oauth2_monitor_admin` | Beside the other report pages and for 18a's reason: it requires the console's shell and libraries already loaded, and `oauth2.js` (9) cannot require it. | `oauth-oidc/CLAUDE.md` |
+| 18f | `oauth-oidc/oauth2_monitor_admin` | Beside the other report pages and for 18a's reason: it requires the console's shell and libraries already loaded, and `oauth2.ts` (9) cannot require it without closing a cycle through the console. | `oauth-oidc/CLAUDE.md` |
 | 19 | `mgmt-api/admin_api` | After `admin-ui/admin` (rule 7). | `mgmt-api/CLAUDE.md` |
-| 20 | `tls/tls_server` | Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |
-| 20a | `admin-ui/crypto_metadata` | After `tls/tls_server`: it reads algorithm tables out of eleven modules and must find each already loaded. | `admin-ui/CLAUDE.md` |
-| 21 | `ldap/ldap_server` | After `admin-ui/admin` and `tls/tls_server` (rule 6). Fills the directory's slots and registers the `/admin/ldap/*` pages. | `ldap/CLAUDE.md` |
+| 19a | `admin-ui/api_explorer` | After `admin-ui/admin` (the shell and gate) and `mgmt-api/admin_api` (the route table its OpenAPI document is built from); a file of its own so `admin.ts` never requires the API. | `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| 20 | `tls/tls_server` | JavaScript: registers its `/tls*` views at this require. Before `ldap/ldap_server`, which serves its certificate on 636. | `tls/CLAUDE.md` |
+| 20a | `admin-ui/crypto_metadata` | After `tls/tls_server`: it reads algorithm tables out of eleven modules and must find each already loaded — two of them (`tls_server`, `krb5_kdc`) are JavaScript, whose require would register their routes wherever it first ran. | `admin-ui/CLAUDE.md` |
+| 21 | `ldap/ldap_server` | JavaScript: registers the `/admin/ldap/*` pages at this require. After `admin-ui/admin` and `tls/tls_server` (rule 6). Fills the directory's slots. | `ldap/CLAUDE.md` |
 | 22 | `scim/scim` | After `ldap/ldap_server`, as a plain require. | `scim/CLAUDE.md` |
 | 23 | `spiffe/spiffe_server` | After `ldap/ldap_server` and `tls/tls_server`; its registry's store is the directory. | `spiffe/CLAUDE.md` |
 | 23b | `ssf/ssf` | After `admin-ui/admin`, whose slots it fills; also fills `authn.setSessionObserver()`. Starts nothing. | `ssf/CLAUDE.md`, `authn/CLAUDE.md` |
-| 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one line for the family. **Requiring `xacml_role_pep.js` here is what arms every issuance site** — before this line `issuance_gate.js` answers "allowed". | `xacml/CLAUDE.md` |
-| 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one line for the family. | `gnap/CLAUDE.md` |
-| 23e–g | `acme/acme`, `est/est`, `scep/scep` | **After `admin-ui/admin`** (18), whose shell each family's `_admin.js` draws its two pages with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each requires its own `_admin.js`, so each family is one line in `common/protocol_stack.js`; `mgmt-api/admin_api.ts` spreads each `<family>_api.js`, which registers no route and requires its view model lazily. No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
+| 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require for the family, and two `register()` calls — `xacml_admin`, then `xacml`. **Requiring `xacml_role_pep.ts` here is what arms every issuance site** — before this REQUIRE (a load-time effect, not a route) `issuance_gate.js` answers "allowed". | `xacml/CLAUDE.md` |
+| 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |
+| 23e–g | `acme/acme`, `est/est`, `scep/scep` | **After `admin-ui/admin`** (18), whose shell each family's `_admin.ts` draws its two pages with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each requires its own `_admin.ts`, so each family is one require in `common/protocol_stack.ts`, followed by two `register()` calls (the family, then its `_admin`); `mgmt-api/admin_api.ts` spreads each `<family>_api.ts`, which registers no route and requires its view model lazily. No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
 | 23h | `debugger/debugger_server` | A socket owner: builds its OWN express app and registers nothing on this one. After `authn`, `oauth2`, `tls/tls_server` and the console, all of which it reads. | `debugger/CLAUDE.md` |
 | 23a | `logout/logout` | Second to last: it reads nine modules' stores. | `logout/CLAUDE.md` |
-| 24 | `sts_metadata` | **Last, for everybody.** It reads the router to list what everything else registered. | *Adding an endpoint*, below |
+| 24 | `sts_metadata` | JavaScript: registers `/admin/sts-metadata` at this require. **Last, for everybody.** It reads the router to list what everything else registered. | *Adding an endpoint*, below |
 
 ### Where the numbered rules live now
 
@@ -380,7 +436,7 @@ in every file, including the ones in the source comments. This is the index.
 
 | Rule | About | File |
 |---|---|---|
-| 1 | Requiring a module registers its endpoints | this file |
+| 1 | A composition root (`common/protocol_stack.ts`) registers every converted module's endpoints, in order; a JavaScript module still registers when required | this file |
 | 2 | `vc_configs.ts` / `vc_offers.ts` break require cycles | this file, `oid4vc/CLAUDE.md` |
 | 3 | A library registers nothing (`dpop.js`) | this file |
 | 3a, 3a-ii | `vc_claims.ts`, `vc_verifier_config.ts` | `oid4vc/CLAUDE.md` |
@@ -443,14 +499,19 @@ made that collision harmless.
 
 ## Socket owners start their listeners from `listen()`, not at require time
 
-The two Kerberos modules, `ldap/ldap_server.js`,
-`spiffe/spiffe_server.ts` and `debugger/debugger_server.ts` are the exception to rule 1 in one direction only:
-requiring them registers their HTTP views like everything else, but **their own
-listeners are started from `listen()` in `server.js`** — binding a port can fail,
-and a `require` that throws takes the whole service down where a route cannot. A
-failure to bind is RECORDED rather than thrown and published on the family's own
-view (`GET /admin/ldap/service`, SPIFFE per socket), because the HTTP
-view answers 200 either way. **`tls/tls_server.js` was on that list until
+The two Kerberos modules, `ldap/ldap_server.js`, `spiffe/spiffe_server.ts`,
+`pki/pki_service.ts` (the plain-HTTP revocation listener) and
+`debugger/debugger_server.ts` are the exception to rule 1 in one direction
+only: their HTTP views are registered like everything else — at the require
+for the three JavaScript modules, by `common/protocol_stack.ts`'s `register()`
+for `spiffe_server` and `pki_service` since #50's R1, and on an express app of
+its own for the debugger — but **their own listeners are started from
+`listen()` in `server.js`**, never from a require or a `registerRoutes()`:
+binding a port can fail, and a `require` that throws takes the whole service
+down where a route cannot. A failure to bind is RECORDED rather than thrown
+and published on the family's own view (`GET /admin/ldap/service`, SPIFFE per
+socket) or logged under its error code, because the HTTP view answers 200
+either way. **`tls/tls_server.js` was on that list until
 2026-09-16**, when its two listeners were deleted; it keeps `listen()` as a
 no-op so the call site did not change on the same day (`tls/CLAUDE.md`).
 
@@ -545,6 +606,12 @@ builds the body and `admin.respond()` supplies the shell. Adding a PROTOCOL
 family costs a card in that file's `PROTOCOLS` as well as the entry above —
 the page reports an endpoint group no card claims, so leaving it out fails the
 same test rather than going quietly.
+
+**A new route module written in TypeScript also owes a `register()` line in
+`common/protocol_stack.ts`**, after its require, at the place its routes
+belong (rule 1): requiring it registers nothing, so without that line its
+routes do not exist, and the drift check below reports every description of
+them as a path that is not registered.
 
 **So adding a protocol family costs three things**: an entry in `ENDPOINTS`, a
 card in `sts_metadata.js`'s `PROTOCOLS`, and a row in
@@ -674,12 +741,14 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   change behaviour** — an edit made for the checker is the same program.
 * **A module converted to TypeScript (#50) is a CLASS whose dependencies arrive
   through its constructor**, requires with `import x = require('...')` (the
-  same `require` once compiled, so rule 1's order is untouched) and exports
-  with `export =`. A small helper is a STATIC method of a utility class
+  same `require` once compiled, so the require order is untouched) and exports
+  with `export =`. **A converted route module registers nothing at load**: it
+  exports `registerRoutes(app)` and `common/protocol_stack.ts` calls it (rule
+  1, #50's R1). A small helper is a STATIC method of a utility class
   (`common/html.ts`'s `Html.esc()`), never a free function. Until the
-  composition root exists, a converted module also exports the names its
-  unconverted callers require, from an instance it builds — marked
-  TRANSITIONAL. `common/realm_chooser.ts` is the pattern.
+  composition root also CONSTRUCTS the modules (#50's R2), a converted module
+  also exports the names its unconverted callers require, and its
+  `registerRoutes`, from an instance it builds — marked TRANSITIONAL. `common/realm_chooser.ts` is the pattern.
 * **A refusal or a failure carries an error code** — see *Every failure has an
   error code* above. `errorCodes.mark(res, 'STS-…')` on the line before the
   call that sends an HTTP refusal, `errorCode: 'STS-…'` on an audit row, and

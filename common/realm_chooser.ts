@@ -49,11 +49,13 @@
 //   * **THE MODULE STILL EXPORTS `SURFACES`, `decide` AND `form`**, from an
 //     instance built with the real modules, because `admin-ui/admin.ts` and
 //     `portal/portal.ts` are not converted and require it by those names. That
-//     instance is TRANSITIONAL: it goes when the composition root exists and
-//     hands a `RealmChooser` to both surfaces. `RealmChooser` is exported
+//     instance is TRANSITIONAL: it goes when the composition root
+//     (`common/protocol_stack.ts`, which since #50's R1 registers the routes)
+//     also constructs the modules and hands a `RealmChooser` to both surfaces
+//     (#50's R2). `RealmChooser` is exported
 //     beside it for that root.
 //   * **`require` STAYS**, as `import x = require(...)`, which compiles to the
-//     same `require` call (rule 1's order is untouched).
+//     same `require` call (the require order is untouched).
 // ---------------------------------------------------------------------------
 
 import Html = require('./html');

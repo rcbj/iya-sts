@@ -74,7 +74,7 @@ once.
 
 Rule 3e's test: a slot is what you reach for when a require would close a cycle
 or move a route. Neither applies to the nine requires at the top of `logout.ts`,
-because `common/protocol_stack.js` requires this module SECOND TO LAST — after
+because `common/protocol_stack.ts` requires this module SECOND TO LAST — after
 every one of them, before `sts_metadata.js` — so each is a cache hit that
 registers nothing, and nothing in this service requires this file back.
 

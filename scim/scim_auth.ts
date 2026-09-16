@@ -156,11 +156,13 @@
 // so it cannot join a cycle. `authn.js`, `tls_server.js` and `ldap_server.js`
 // are the only ones worth a sentence: they register routes, so requiring them
 // from a module read EARLIER than they are would move those routes in the
-// express router — but `scim.ts`, the only thing that requires this file,
-// already sits after all three in the require order
-// (`common/protocol_stack.js`), so nothing moves. That is rule 3e's test
-// applied rather than a slot added by analogy: there is no cycle and no route
-// moves, so these are plain requires.
+// express router. (Since #50's R1 that is true of the two JavaScript ones
+// only: `authn.ts` registers nothing when required, and
+// `common/protocol_stack.ts` registers its routes at 8.) But `scim.ts`, the
+// only thing that requires this file, already sits after all three in the
+// require order (`common/protocol_stack.ts`), so nothing moves. That is rule
+// 3e's test applied rather than a slot added by analogy: there is no cycle and
+// no route moves, so these are plain requires.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

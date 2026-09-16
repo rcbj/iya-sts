@@ -15,8 +15,10 @@ package root, where there are exactly two modules and both earn it.
 ## Its place in the require order (6a)
 
 No constraint. Two EXACT paths (`/` and `/logo.png`) and nothing but the app
-behind them; first among the route modules so that the page a person meets
-first heads the list on `/admin/sts-metadata`.
+behind them; first among the route modules — the first `register()` call in
+`common/protocol_stack.ts`, since #50's R1 moved registration out of the
+require — so that the page a person meets first heads the list on
+`/admin/sts-metadata`.
 
 ## What this page is for, and the one rule it must keep
 
@@ -109,8 +111,9 @@ at it, so saying who you are is the entire question.
 
 * **It is a route, not `express.static()`.** One file does not need a static
   middleware, and a middleware mounted at the root would sit in front of every
-  route registered after this module for the rest of the process's life — rule 1
-  in the root `CLAUDE.md`.
+  route registered after this module's for the rest of the process's life — rule
+  1 in the root `CLAUDE.md`. (This module's routes are registered first among
+  the route modules, by `common/protocol_stack.ts`, since #50's R1.)
 * **It is read once, at require time**, and a failure to read it is RECORDED
   rather than thrown, for the reason the socket-owning modules start their
   listeners from `listen()`: a `require` that throws takes the whole service

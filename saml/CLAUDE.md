@@ -587,7 +587,7 @@ enforced for these two, because `exp` collides with nothing in an assertion.
 `authn_context.ts` — none of which requires them back, so they cannot join a
 cycle and their position is not a position at all.
 
-**`saml2_sso.ts` is position 10a in `common/protocol_stack.js` (the require
+**`saml2_sso.ts` is position 10a in `common/protocol_stack.ts` (the require
 order `server.js` loads) and has one real constraint**: it
 must come after `../authn/authn.ts`, and it is a STRONGER dependency than
 WS-Federation's rather than a weaker one — that module signs users into the
@@ -599,7 +599,7 @@ read together in the route order and on `/admin/sts-metadata`.
 
 `../admin-ui/admin.ts` (and `../admin-core/`) require it in the ORDINARY
 direction — a plain require, not another inverted slot — and rule 3e's test is
-why: `common/protocol_stack.js` requires this module at 10a and those at 18 or
+why: `common/protocol_stack.ts` requires this module at 10a and those at 18 or
 later, so a require from there closes no cycle and moves no route.
 
 **`saml11_sso.ts` is position 10b and has TWO constraints**, the second of which

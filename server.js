@@ -49,12 +49,15 @@
 // are*; the module list that stood here named root-level files that moved into
 // directories on 2026-08-23.
 //
-// **Requiring a module registers its endpoints** (rule 1). Each one does
+// **A composition root registers every endpoint** (rule 1). Until #50's R1
+// (2026-09-16) requiring a module registered its endpoints — each did
 // `app.get(...)` at its top level against the shared app from
-// `common/app.js`, rather than exporting a register() function — which kept
-// every handler exactly where it was written instead of re-indented inside a
-// wrapper. So the require order is the route order, and it lives in
-// `common/protocol_stack.js` (below); the root CLAUDE.md's table says what
+// `common/app.js`, which kept every handler exactly where it was written
+// instead of re-indented inside a wrapper. A module converted to TypeScript
+// now exports `registerRoutes(app)` and registers nothing when required; the
+// JavaScript ones still register at their require. Both orders — the
+// requires and the `register()` calls, interleaved as they always ran — live
+// in `common/protocol_stack.ts` (below); the root CLAUDE.md's table says what
 // each position depends on. sts_metadata.js is last on purpose: it reads the
 // router to list what everything else registered, and while it re-reads it
 // per request, being last means it is never the reason a route is missing.
@@ -147,15 +150,15 @@ const persistence = require('./persistence/persistence');
 // ---------------------------------------------------------------------------
 // EVERY PROTOCOL MODULE, IN THE ORDER THAT IS THE ROUTE ORDER.
 //
-// That sequence moved to `common/protocol_stack.js` on 2026-09-07 and the
+// That sequence moved to `common/protocol_stack.ts` on 2026-09-07 and the
 // reason is that it acquired a SECOND READER: a request worker loads the same
 // stack, registers the same routes in the same order, and binds none of the
 // sockets. Two copies of the order would be two answers to "which handler
 // wins" — see that file's header.
 //
 // The modules whose `listen()` is called below come back from it, because
-// this file needs the handles. Requiring them registered their HTTP views and
-// started nothing. (`tlsServer` is among them and owns no socket since
+// this file needs the handles. Loading the stack registered their HTTP views
+// and started nothing. (`tlsServer` is among them and owns no socket since
 // 2026-09-16; its `listen()` is still a startup step — see announce().)
 // ---------------------------------------------------------------------------
 const stack = require('./common/protocol_stack');

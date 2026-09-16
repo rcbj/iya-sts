@@ -89,7 +89,7 @@
 // The DIRECTORY arrives through a slot pointing the other way, exactly as
 // `group_claims.js`, `applications.js` and `xacml_store.js` do it: only
 // `ldap/ldap_server.js` can answer what is in `ou=roles`, and it is required
-// at 21 in `common/protocol_stack.js`, so a require reaching it from here
+// at 21 in `common/protocol_stack.ts`, so a require reaching it from here
 // would drag every `/ldap` route to the front of the router.
 // ---------------------------------------------------------------------------
 

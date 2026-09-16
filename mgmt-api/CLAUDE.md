@@ -717,9 +717,10 @@ is for there to be one function.
 **The reason it goes through the console rather than through a require is the
 route order.** `admin-ui/crypto_metadata.ts` is required at 20a — after
 `tls/tls_server`, whose certificate it reports — and this module is required at
-19. A require in the obvious direction would drag that page's route and
-`tls_server`'s ahead of every route in this file and ahead of ldap, scim
-and spiffe. So that module fills `admin.setCryptoReporter()` at its own require
+19. A require in the obvious direction would drag `tls_server`'s routes — a
+JavaScript module still registers when required (the root file's rule 1) —
+ahead of every route in this file and ahead of ldap, scim and spiffe; before
+#50's R1 it would have dragged that page's own route as well. So that module fills `admin.setCryptoReporter()` at its own require
 time and this one reads it, exactly as `/admin-api/logout` reaches
 `logout/logout.ts` through the logout-reader slot (`adminViews.logoutJson()`). Rule 3e's test in the root
 `CLAUDE.md` answers yes in both directions.
@@ -1274,7 +1275,7 @@ this API decides nothing that console does not.
 
 **THE MODULE IS A PLAIN REQUIRE AND NEEDS NO SLOT**, which is the one thing
 about this resource worth knowing. It sits at **18a** in
-`common/protocol_stack.js` — after `admin-ui/admin` and BEFORE this file — so by
+`common/protocol_stack.ts` — after `admin-ui/admin` and BEFORE this file — so by
 the time this require runs it is a cache hit and registers nothing; and it
 requires only `admin.js` and `common/pki.js`, which is a LIBRARY (rule 3), so
 there is no route it could move and no cycle it could close.

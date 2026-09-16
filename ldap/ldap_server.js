@@ -253,7 +253,7 @@ const proxyProtocol = require('../common/proxy_protocol');
 // The admin console, for ONE reason: to hand it the reader below so that a
 // user's page can show that user's directory entry. It is required here rather
 // than the other way round because the require order
-// (`common/protocol_stack.js`) loads ./admin BEFORE this module (rule 6), so
+// (`common/protocol_stack.ts`) loads ./admin BEFORE this module (rule 6), so
 // admin.js must not require this one back — see the note
 // above objectFor().
 const admin = require('../admin-ui/admin');
@@ -276,7 +276,7 @@ const adminViews = require('../admin-core/admin_views');
 // there is no cycle to make; and its routes are /tls, which collide with
 // nothing here. What the require DOES do is pull those routes into the express
 // router at this point rather than after this module's, so the require order
-// (`common/protocol_stack.js`) now requires ./tls_server BEFORE ./ldap_server
+// (`common/protocol_stack.ts`) now requires ./tls_server BEFORE ./ldap_server
 // to say so out loud. It changes no output — /admin/sts-metadata sorts its rows
 // by path within a group — and the line over there is for the next reader
 // rather than for the page.
@@ -5856,7 +5856,7 @@ function vcAttributesFor(key) {
 // observer above is, and it is worth stating because it is the OPPOSITE way
 // round from what the call graph looks like. admin.js renders this; it would
 // naturally require this module and read `entries`. It must not: the require
-// order (`common/protocol_stack.js`) loads ./admin before ./ldap_server (rule 6
+// order (`common/protocol_stack.ts`) loads ./admin before ./ldap_server (rule 6
 // — this module needs admin_stats' identity normalisation), and a require from
 // admin.js would drag this module's routes in ahead of the console's, which
 // reorders the express router that /admin/sts-metadata reads. So admin.js
@@ -8211,7 +8211,11 @@ if (typeof credentials.setDirectory === 'function') {
 // HALF.** `portal/portal.ts` sits at 8b and this module at 21, so a require
 // from there to here would register all eight `/admin/ldap/*` pages ahead of
 // the authorization server and the console (rule 1); a require from here to
-// there would move every `/portal` route behind the management API. Rule 3e's
+// there would have moved every `/portal` route behind the management API
+// before #50's R1. Since R1 `portal.ts` registers nothing when required (its
+// routes are placed by `common/protocol_stack.ts`), so that half now rests on
+// the portal's load-time code running out of order rather than on routes;
+// the first half, this JavaScript module's routes, still stands. Rule 3e's
 // test answers yes both ways round, which is what a slot is for.
 //
 // **IT HANDS OVER THE WHOLE ENTRY, WHERE `credentials.persons()` ABOVE
@@ -10192,8 +10196,9 @@ function throughTheRequestPool(operation, local) {
 //
 // `common/request_worker.js` offers `register(kind, fn)` and its header says
 // the table is filled BY THE MODULE THAT OWNS THE OPERATION — so this is that
-// module doing it, at require time, exactly as requiring a protocol module is
-// what registers its routes (rule 1).
+// module doing it, at require time, exactly as requiring this module is what
+// registers its routes (rule 1 — it is still JavaScript, so #50's R1 did not
+// move them into a `registerRoutes(app)`).
 //
 // **IT IS GUARDED AND SILENT IN A PROCESS THAT IS NOT A WORKER.** Requiring
 // `request_worker.js` from the front process is harmless (its child wiring is
@@ -13420,7 +13425,7 @@ spiffeRegistry.setDirectory({
 //
 // **THE DEPENDENCY IS NOT INVERTED HERE, and that is worth a sentence because
 // several other things in this file are.** `scim.js` requires this module
-// directly and the require order (`common/protocol_stack.js`) loads it AFTER
+// directly and the require order (`common/protocol_stack.ts`) loads it AFTER
 // this one, so neither of the two things that force a slot applies: there is no
 // cycle (this module knows nothing about SCIM) and no route moves (the
 // /admin/ldap routes are already registered by the time the /scim ones are).
@@ -13518,8 +13523,11 @@ function readPerson(dn) {
 // directory, and nowhere else. `ssf/risc.ts` is what turns one into a Security
 // Event Token, and it cannot be required from this file: this module is loaded
 // early enough to bind port 389 and `ssf/` is 23b in the require order, so a
-// require in that direction would drag every `/ssf` route ahead of the
-// management API's. The hook goes the other way, exactly as CAEP's does.
+// require in that direction would have dragged every `/ssf` route ahead of the
+// management API's (before #50's R1; `ssf.ts` now registers nothing when
+// required), and would still close a cycle — `ssf.ts` requires this module —
+// and run SSF's slot fills at 21. The hook goes the other way, exactly as
+// CAEP's does.
 //
 // **IT SITS ON THE STORE AND NOT ON A DOOR**, which is the whole reason there
 // are five call sites below rather than one in `scim.js`. The same act reaches

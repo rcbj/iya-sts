@@ -755,7 +755,7 @@ class VcClaims {
   // ---------------------------------------------------------------------------
   // THE DIRECTORY, WHICH THIS MODULE MUST NOT REQUIRE.
   //
-  // ldap_server.js is required late in `common/protocol_stack.js`, after the
+  // ldap_server.js is required late in `common/protocol_stack.ts`, after the
   // console and the TLS module, and the reasons are in CLAUDE.md rule 6 —
   // requiring it from here would drag its routes into the express router ahead
   // of every console route, and /admin/sts-metadata is built by walking that

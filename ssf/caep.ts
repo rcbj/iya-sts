@@ -39,7 +39,9 @@
 //
 // A version of this file that sent the event itself would have had to require
 // `ssf.ts`, and `ssf.ts` requires this one for the register — a cycle, and the
-// second require would have moved every `/ssf` route.
+// second require would have moved every `/ssf` route. (Since #50's R1
+// requiring `ssf.ts` registers no route — `common/protocol_stack.ts` does —
+// so only the cycle is left, and it is reason enough.)
 //
 // ---------------------------------------------------------------------------
 // THE REGISTER OUTLIVES THE SESSION, ON PURPOSE.

@@ -63,8 +63,11 @@
 // shape: `VcVerifier` takes the helpers it uses, the settings, the mode, the
 // error codes, the revocation check, the identity registry, the request
 // configuration, the signer and verifier, and the two stores through its
-// constructor, and registers its six endpoints from `registerRoutes(app)`,
-// which the TRANSITIONAL instance at the bottom calls at load. The stores stay
+// constructor, and registers its six endpoints from `registerRoutes(app)`.
+// The TRANSITIONAL instance at the bottom does not call it (#50, R1): the
+// module exports it, and `common/protocol_stack.ts` calls it at the point in
+// the route order where requiring this module used to register the endpoints.
+// The stores stay
 // module-scope `realms.map()` declarations. The module still exports its four
 // old names from that instance. Two method aliases keep the spellings
 // `tests/revocation_status.js` reads in this file's source.
@@ -1328,7 +1331,8 @@ class VcVerifier {
     return result;
   }
 
-  // The six endpoints, in the order they were registered at load.
+  // The six endpoints, in the order they were registered at load before
+  // #50's R1. Called by `common/protocol_stack.ts`.
   registerRoutes(app: any) {
     const { log, logArtifact, baseUrlOf, xmlEscape, parseBody, oauthError,
             errorCodes, stats, vpConfig, vpTransactions,
@@ -1791,7 +1795,7 @@ class VcVerifier {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header above. Its endpoints are
-// registered here, at load.
+// registered by the composition root, below, not here.
 const verifier = new VcVerifier({
   log: helpers.log,
   logArtifact: helpers.logArtifact,
@@ -1819,9 +1823,13 @@ const verifier = new VcVerifier({
   vpTransactions: vpTransactions,
   vpRequests: vpRequests
 });
-verifier.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => verifier.registerRoutes(target),
   VcVerifier: VcVerifier,
   verifyPresentation: verifier.verifyPresentation.bind(verifier) as
     VcVerifier['verifyPresentation'],

@@ -19,7 +19,7 @@ when registered).
 
 | Module | What it is |
 |---|---|
-| `est.ts` | The routes. Six operations at `/.well-known/est/` and under `/.well-known/est/:label/`, the checks every operation makes before a credential is read, EST's own authentication, and the answers. Requires `./est_admin` itself, so the family is ONE line in `common/protocol_stack.js` (23f). |
+| `est.ts` | The routes. Six operations at `/.well-known/est/` and under `/.well-known/est/:label/`, the checks every operation makes before a credential is read, EST's own authentication, and the answers. Requires `./est_admin` itself, so the family is ONE require in `common/protocol_stack.ts` (23f), followed by two `register()` calls — `est`, then `est_admin` (#50's R1: neither registers anything when required). |
 | `est_codec.ts` | **The four wire shapes EST adds and nothing else**: a request body decoded strictly (RFC 8951), a certs-only CMS message, the CSR attributes document and the `multipart/mixed` server-key response. A LIBRARY (rule 3): no route, requires only `helpers.js`. |
 | `est_console.ts` | The view and action model both admin doors render — `estView()`, `estMonitorView()`, `estAction()`. No route, no `res`, no markup (`gnap/gnap_console.ts`'s arrangement; `tests/admin_actions_layer.js` allows it to require `admin-core/admin_views`). |
 | `est_admin.ts` | `GET/POST /admin/est` (Protocols) and `GET /admin/est/monitor` (Monitoring), drawn in the console shell through `admin.respond()`. |

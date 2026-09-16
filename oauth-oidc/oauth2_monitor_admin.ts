@@ -25,13 +25,17 @@
 // counted per client, with the requirement this service's own resource
 // server enforces.
 //
-// **REQUIRED AT 18f**, from `common/protocol_stack.js`, for 18a's reason: it
+// **REQUIRED AT 18f**, from `common/protocol_stack.ts`, for 18a's reason: it
 // requires `admin-ui/admin` for the shell — a require the other way would
 // close a cycle — and `oauth2_monitor_console.ts`, which requires
 // `oauth-oidc/par.ts`, `oauth-oidc/oauth2_monitor.ts`, `oauth-oidc/step_up.ts`
 // and `admin-core/admin_views.ts`, libraries already loaded by that line.
-// `oauth2.ts` at 9 cannot require it: that would drag the whole console in
-// front of the authorization server.
+// `oauth2.ts` at 9 cannot require it: that would load the whole console in
+// front of the authorization server — a cycle, since the console requires
+// `oauth2.ts`, and, through it, the JavaScript modules that still register
+// their routes when required (`tls/tls_server.js` among them). The console's
+// OWN routes would no longer move since #50's R1, because
+// `common/protocol_stack.ts` registers them in its own order.
 //
 // No script, like every page of this console but one: paging and the filter
 // are GET links and a GET form, and Withdraw is a POST form the console gate
@@ -44,8 +48,10 @@
 // takes the console shell, the view model and the rest through its
 // constructor, and its `registerRoutes(app)` holds the page's two routes in
 // their old order. The TRANSITIONAL code at the bottom builds one from the
-// real modules and registers its routes at load, where they always were.
-// The module still exports nothing but the class: it is required for its
+// real modules and registers NOTHING (#50, R1): the module exports its
+// `registerRoutes(app)` beside the class, and `common/protocol_stack.ts`
+// calls it at the point in the route order where requiring this module used
+// to register the routes. It exports nothing else: it is required for its
 // routes.
 // ---------------------------------------------------------------------------
 
@@ -528,7 +534,7 @@ class OAuth2MonitorAdmin {
 }
 
 // THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, and its routes registered at load, where they always were.
+// real modules; its routes are registered by the composition root, below.
 const monitorAdmin = new OAuth2MonitorAdmin({
   log: helpers.log,
   parseBody: helpers.parseBody,
@@ -537,6 +543,12 @@ const monitorAdmin = new OAuth2MonitorAdmin({
   esc: admin.esc,
   consoleModel: consoleModel
 });
-monitorAdmin.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
-export = { OAuth2MonitorAdmin: OAuth2MonitorAdmin };
+export = {
+  registerRoutes: (target: any): void => monitorAdmin.registerRoutes(target),
+  OAuth2MonitorAdmin: OAuth2MonitorAdmin
+};

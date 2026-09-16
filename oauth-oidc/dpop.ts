@@ -9,7 +9,7 @@
 //
 // Requiring this module registers nothing. It is a library, unlike the protocol
 // modules beside it — there is no `app.get` here — so its position in the
-// require order (`common/protocol_stack.js`) does not matter. It requires
+// require order (`common/protocol_stack.ts`) does not matter. It requires
 // `common/` libraries and the other libraries in this directory named at each
 // require below, none of which requires it back, so it cannot be part of a
 // cycle.

@@ -73,13 +73,15 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape, for a module that registers a route (rule 1): `SecretsAdmin` takes
+// shape, for a module that has a route (rule 1): `SecretsAdmin` takes
 // the console shell, the error codes, the settings, the secret reader, the
 // keystore, the mode and the logger through its constructor, and its
 // `registerRoutes(app)` holds the page's one route. `SECRET_NOTES` stays a
 // module-level table. The TRANSITIONAL code at the bottom builds one instance
-// from the real modules, registers its route at load where it always was, and
-// exports `secretsView` and `secretNotes` bound to it, for
+// from the real modules and exports its `registerRoutes(app)`, which
+// `common/protocol_stack.ts` calls at 18d, where requiring this module used to
+// register the route (#50, R1) — requiring it registers nothing. It also
+// exports `secretsView` and `secretNotes` bound to the instance, for
 // `mgmt-api/admin_api.ts` and `tests/secret_store_report.js`; `SecretsAdmin`
 // is exported beside them for the composition root.
 // ---------------------------------------------------------------------------
@@ -726,7 +728,7 @@ class SecretsAdmin {
 }
 
 // THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, and its route registered at load, where it always was.
+// real modules; its route is registered by the composition root, below.
 const secretsAdmin = new SecretsAdmin({
   log: helpers.log,
   admin: admin,
@@ -736,7 +738,10 @@ const secretsAdmin = new SecretsAdmin({
   keystore: keystore,
   mode: mode
 });
-secretsAdmin.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 helpers.log.info('The secret store report is at /admin/secrets: where the ' +
                  'key-encryption key and the database password come from, ' +
@@ -745,6 +750,7 @@ helpers.log.info('The secret store report is at /admin/secrets: where the ' +
                  'has no control.');
 
 export = {
+  registerRoutes: (target: any): void => secretsAdmin.registerRoutes(target),
   SecretsAdmin: SecretsAdmin,
   // For `mgmt-api/admin_api.ts`. Rule 7 — one function behind the page and
   // the operation, so the two cannot report a different state of the same

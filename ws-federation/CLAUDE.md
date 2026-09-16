@@ -8,7 +8,7 @@ WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
    browser session `authn.js` owns, through the `startSession` / `sessionOf` /
    `endSession` it exports, so that single sign-on works across the protocols.
    (The rule named `oauth2.js` while that module owned the session; `wsfed.ts`
-   sits after both, at 10 in `../common/protocol_stack.js`.) The dependency is
+   sits after both, at 10 in `../common/protocol_stack.ts`.) The dependency is
    one-way — `authn.js` knows nothing about WS-Federation — which is what keeps
    it out of the cycles rule 2 exists to avoid. Do not give WS-Federation a
    session store of its own to "decouple" them: two stores would each look

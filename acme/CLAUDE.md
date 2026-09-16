@@ -37,7 +37,7 @@ records the principal as the entry itself (`admin: false`, `hasEntry: true`).
 |---|---|
 | `acme_jws.ts` | The envelope, read strictly: the media type, the flattened JWS, strict base64url, the protected header, account keys and their RFC 7638 thumbprint, the signature (through `common/crypto.js`), the Replay-Nonce, the External Account Binding, the payload schemas, contacts, RFC 9773 certificate identifiers. A LIBRARY — no route, no state |
 | `acme_store.ts` | Seven `realms.map({ persist })` stores: accounts, the key → account index, orders, authorizations, the certificate index, the renewal index, spent nonces |
-| `acme.ts` | The fourteen routes under `/enroll/acme`, and `require('./acme_admin')` so the family is one line in `common/protocol_stack.js` (23e) |
+| `acme.ts` | The fourteen routes under `/enroll/acme`, and `require('./acme_admin')` so the family is one require in `common/protocol_stack.ts` (23e), followed by two `register()` calls — `acme`, then `acme_admin` (#50's R1: neither registers anything when required) |
 | `acme_console.ts` | The view and action model both admin doors render (no route, no `res`, no markup), `gnap/gnap_console.ts`'s arrangement |
 | `acme_admin.ts` | `/admin/acme` (Protocols) and `/admin/acme/monitor` (Monitoring) |
 | `acme_api.ts` | `ROUTES` for `/admin-api/acme`, `/admin-api/acme/monitor` and `/admin-api/acme/:action`, spread into `mgmt-api/admin_api.ts` |

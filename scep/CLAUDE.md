@@ -5,7 +5,9 @@
 request inside a CMS SignedData it signed and a CMS EnvelopedData encrypted to
 the realm's SCEP RA, and is answered with a CertRep signed by the RA whose
 certificate is encrypted back to it. Required at 23g in
-`common/protocol_stack.js`, as one line.
+`common/protocol_stack.ts`, as one require, and registered there by two
+`register()` calls — `scep`, then `scep_admin` — since #50's R1, when requiring
+a converted module stopped registering its routes.
 
 | File | What it is |
 |---|---|

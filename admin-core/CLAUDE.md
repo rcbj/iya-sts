@@ -70,7 +70,7 @@ and `xacml/xacml_admin.ts`.
 **AN EIGHTH ARRIVED ON 2026-09-12: THE CLIENT-CERTIFICATE TRUSTSTORE**, which
 `truststoreAction()` here and `truststoreJson()` in the views layer both reach
 through `admin.setTruststore()`. It is the one collaborator whose slot is
-filled by `common/protocol_stack.js` rather than by the module that owns the
+filled by `common/protocol_stack.ts` rather than by the module that owns the
 array (`tls/tls_server.js`), because that module is first loaded from inside the
 console's own require and could not fill it without a cycle —
 `admin-ui/CLAUDE.md` argues it. It changes nothing about the rule below: one
@@ -92,12 +92,18 @@ second writer. `tests/admin_actions_layer.js` asserts there is exactly one.
 ## Where it may be required
 
 **At 18 or later, and nowhere earlier.** `admin_actions.ts` requires `oauth2`,
-`saml2`, `saml11` and `federation`, every one of which registers routes when it
-is required (rule 1) — so anything that loads this file loads them. That is
-free from the console (18) and the management API (19), where all four are
-already loaded and every require is a cache hit. From position 4 it would pull
-the authorization server and both SAML profiles into the router ahead of
-themselves, and the symptom would be a handler winning somewhere else entirely.
+`saml2`, `saml11` and `federation`, every one of which registered routes when it
+was required (rule 1) until #50's R1 — so anything that loads this file loads
+them. That is free from the console (18) and the management API (19), where all
+four are already loaded and every require is a cache hit. From position 4 it
+would have pulled the authorization server and both SAML profiles into the
+router ahead of themselves, and the symptom would have been a handler winning
+somewhere else entirely. **Since R1 all four are TypeScript and register
+nothing when required** — `common/protocol_stack.ts` calls their
+`registerRoutes(app)` in its own order — so an early require no longer moves a
+route; it still runs their load-time code (stores, slot fills, and whatever
+JavaScript route module THEY require) out of order, which is reason enough to
+keep the rule.
 
 **That is why this is not in `common/`.** That directory reads as *anything may
 require this, at any point in the order*. This one may not.

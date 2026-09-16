@@ -8,10 +8,12 @@
 // all three, plus the `listen()` that starts the gRPC listeners the other two
 // surfaces live on — four per realm that has SPIFFE turned on.
 //
-// It is the module `common/protocol_stack.js` requires for this family, and it
-// is the SPIFFE analogue of `ldap_server.js`: requiring it registers its HTTP
-// views (rule 1), and its **own listeners are started from `listen()` in
-// `server.js`, not at require time**. That is the rule every socket owner
+// It is the module `common/protocol_stack.ts` requires for this family, and it
+// is the SPIFFE analogue of `ldap_server.js`: its HTTP views are registered
+// by its exported `registerRoutes(app)`, which that file calls (rule 1; #50,
+// R1) where `ldap_server.js` still registers its own at require time; and
+// its **own listeners are started from `listen()` in `server.js`, not at
+// require time**. That is the rule every socket owner
 // carries (`tls_server.js` did too, until its listeners were deleted on
 // 2026-09-16) and the reason is the same — binding a port can fail, and a
 // `require` that throws takes the whole service down where a route cannot. A
@@ -53,9 +55,10 @@
 // are not converted. `SpiffeServer` is exported beside them for the
 // composition root.
 //
-// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the
-// transitional code calls at load where the first route used to be
-// registered, so rule 1's order is unchanged.
+// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
+// exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
+// route order where requiring this module used to register them, so rule 1's
+// order is unchanged. Requiring the module registers nothing.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -80,21 +83,26 @@ import serverApi = require('./spiffe_api');
 // socket gets TLS. A library that registers nothing.
 import auth = require('./spiffe_auth');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
-// module — `common/protocol_stack.js` requires admin.js first, so the require
-// would pull the bundle
-// endpoint and /spiffe into the express router ahead of every /admin route, and
-// GET /admin/sts-metadata is built by walking that router. So it offers a slot
+// module — `common/protocol_stack.ts` requires admin.js first, and until
+// #50's R1 the require would have pulled the bundle endpoint and /spiffe into
+// the express router ahead of every /admin route, and GET /admin/sts-metadata
+// is built by walking that router. Requiring this module registers nothing
+// now, so that half of the argument is history; the other half is not — this
+// module requires admin.js (below), so a require back would close a cycle and
+// hand one of the two a half-built module. So it offers a slot
 // and this module fills it at require time, the same shape
 // setDirectoryReader(), setGroupReader() and setScimReader() already have.
 //
 // What crosses is two facts about SOCKETS — which of the four bound, and where
 // the bundle is — because a page cannot see a socket any other way. Requiring
-// admin.js from here is safe in the direction that matters: it registers its
-// routes at ITS require time, which has already happened.
+// admin.js from here is safe in the direction that matters: the stack has
+// already required it, so this is a cache hit, and requiring it registers no
+// route in any case — the stack registers its routes, at 18 (#50, R1).
 import admin = require('../admin-ui/admin');
 
-// Read once: the route is registered with it at require time, which is what
-// makes `spiffe.bundlePath` restart-only in config.js. `sts_metadata.js` reads
+// Read once, at require time: `registerRoutes()` registers the route with
+// this value when the stack calls it at startup, which is what makes
+// `spiffe.bundlePath` restart-only in config.js. `sts_metadata.js` reads
 // the same setting for its row, so the description cannot name a path the
 // router does not have.
 const BUNDLE_PATH = config.value('spiffe.bundlePath') || '/spiffe/bundle';
@@ -1130,7 +1138,7 @@ class SpiffeServer {
     }
     // The registry's seed entries, once the store exists. Here rather than at
     // require time because `ldap_server.js` fills the directory slot at ITS
-    // require time, and `common/protocol_stack.js` requires this module after
+    // require time, and `common/protocol_stack.ts` requires this module after
     // it — but `listen()` is the first moment BOTH are certainly true. IN THE
     // REALM, because `ou=spiffe` is a container in that realm's own directory.
     try {
@@ -1272,9 +1280,10 @@ class SpiffeServer {
     log.debug('Leaving SpiffeServer.close().');
   }
 
-  // THE ROUTES, registered where they always were: the transitional
-  // code below calls this at load, at the point the first of them
-  // used to be registered, so the route order is unchanged (rule 1).
+  // THE ROUTES, registered where they always were: the module exports
+  // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
+  // where requiring the module used to register them, so the route order
+  // is unchanged (rule 1). Nothing calls it at load.
   registerRoutes(app: RouteApp): void {
     const { log, errorCodes, ca, audit } = this.deps;
     const self = this;
@@ -1399,7 +1408,10 @@ const spiffeServer = new SpiffeServer({
   auth: auth
 });
 
-spiffeServer.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 // ---------------------------------------------------------------------------
 // **RECONCILE, AND WHY IT IS NOT A RESTART.**
@@ -1452,6 +1464,7 @@ admin.setSpiffeReader(function () {
 });
 
 export = {
+  registerRoutes: (target: any): void => spiffeServer.registerRoutes(target),
   SpiffeServer: SpiffeServer,
   listen: spiffeServer.listen.bind(spiffeServer) as SpiffeServer['listen'],
   close: spiffeServer.close.bind(spiffeServer) as SpiffeServer['close'],

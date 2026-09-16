@@ -66,9 +66,12 @@
 // WebAuthn libraries, the gate, `mode`, `config`, the audit log and the rest)
 // through its constructor, typed as `typeof` each. Its routes — the arrival
 // middleware first, then every `/authn/*` page, in the order they always
-// were — are registered by `registerRoutes(app)`, which the TRANSITIONAL
-// instance at the bottom calls at load, where they were registered before
-// (rule 1); the audit actor slot is filled right after, as it was.
+// were — are registered by `registerRoutes(app)`. The TRANSITIONAL instance
+// at the bottom registers NOTHING at load (#50, R1): the module exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the point
+// in the route order where requiring this module used to register the routes
+// (rule 1). The audit actor slot is still filled at load, right after the
+// instance is built, as it was.
 //
 // What did NOT move into the class, and why:
 //
@@ -226,7 +229,10 @@ const MFA_SETUP_PATH = '/authn/mfa-setup';
 // module is at #15 and below in the require order, this one is at #8 because
 // `oauth2.js` reads the session it owns, and a require in that direction would
 // drag the KDC's routes to the front of the router AND close a cycle, since
-// that module needs `startSession()`.
+// that module needs `startSession()`. The first half still holds after #50's
+// R1: `spnego_authn.ts` itself would register nothing when required, but it
+// requires `kerberos/spnego.js`, which is JavaScript, one of the parent
+// project's locked files, and still registers its routes when required.
 //
 // **AND IT DOES NOT NEED AN INVERTED HOOK EITHER**, which is worth saying
 // because rule 3e's list is six slots long and a seventh is the obvious move.
@@ -426,12 +432,15 @@ const MFA_TTL_MS = 5 * 60 * 1000;
 //
 // **THE POSITION IS THE MECHANISM.** Rule 1 in the root CLAUDE.md: express
 // applies a middleware only to routes added AFTER it, and this module is 8 in
-// the require order. So a middleware registered here covers every browser
-// protocol that follows — the authorization endpoint (9), WS-Federation (10),
-// both SAML profiles (10a, 10b), federation (10c), OID4VC, the portal and the
-// console — and covers nothing registered before it, which is `home` and
-// WS-Trust. That is the right set by construction rather than by a list
-// somebody keeps up to date, and WS-Trust is SOAP with no browser in it.
+// the route order — the middleware is registered by `registerRoutes(app)`,
+// which `common/protocol_stack.ts` calls at 8 (#50, R1). So a middleware
+// registered here covers every browser protocol that follows — the
+// authorization endpoint (9), WS-Federation (10), both SAML profiles (10a,
+// 10b), federation (10c), OID4VC, the portal and the console — and covers
+// nothing registered before it, which is `home`. That is the right set by
+// construction rather than by a list somebody keeps up to date. WS-Trust has
+// followed this module since 2026-09-05, but it is SOAP with no browser in it
+// and names no front door below.
 //
 // **THE PATHS ARE STILL NAMED, and the list is of FRONT DOORS rather than of
 // families.** A protocol has one or two paths a browser ARRIVES at and many it
@@ -520,10 +529,14 @@ const NOT_ARRIVAL_PATHS = [
 //
 // `ssf/caep.ts` needs to know when a session starts, is presented and ends,
 // because that is what a CAEP event is ABOUT. It cannot be required from here:
-// this module is 8 in the require order (`common/protocol_stack.js`) and
-// `ssf/ssf.ts` is 23b, so a require the other way would REGISTER EVERY `/ssf`
-// ROUTE HERE — ahead of `oauth2.js`, ahead of the admin console, ahead of
-// ldap, scim and spiffe — which is rule 1, and it would close a cycle
+// this module is 8 in the require order (`common/protocol_stack.ts`) and
+// `ssf/ssf.ts` is 23b, so a require the other way would load the whole SSF
+// family HERE — ahead of `oauth2.js`, ahead of the admin console. Until #50's
+// R1 that REGISTERED EVERY `/ssf` ROUTE here too, which was rule 1. Since R1
+// `ssf/ssf.ts`'s own routes would stay where `common/protocol_stack.ts`
+// registers them, but it requires `ldap/ldap_server.js`, which is still
+// JavaScript and still registers every `/admin/ldap/*` route when required,
+// so the require would still move routes — and it would close a cycle
 // besides. So this module holds a function and `ssf/ssf.ts` fills it at its
 // own require time, exactly as `admin.setSignalsReporter()` works one layer
 // up.
@@ -6461,7 +6474,8 @@ class Authn {
     return session.user.username;
   }
 
-  // The routes, in the order they were always registered (rule 1).
+  // The routes, in the order they were always registered (rule 1). Called by
+  // `common/protocol_stack.ts` through the module's `registerRoutes(app)`.
   registerRoutes(app: AppModule) {
     const { log, baseUrlOf, randomId, parseBody, oauthError, stats, config,
       gate, credentials, websecurity, mode, validation, audit, errorCodes,
@@ -7972,7 +7986,10 @@ const authn = new Authn({
   totp: totp
 });
 
-authn.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 audit.setActorResolver(authn.auditActorOf.bind(authn));
 
@@ -7985,6 +8002,7 @@ audit.setActorResolver(authn.auditActorOf.bind(authn));
 // four lines repeated per call site for the reason written above them.
 // ---------------------------------------------------------------------------
 export = {
+  registerRoutes: (target: any): void => authn.registerRoutes(target),
   Authn: Authn,
   // What two nodes' copies of one session become, for
   // `tests/cluster_lww_stores.js` — the merge is declared on the store and

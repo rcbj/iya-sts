@@ -67,7 +67,7 @@
 //
 // 3. **The session is the one authn.js owns** (it was oauth2.js's until the
 //    sign-in service was split out), through its startSession/sessionOf —
-//    this module is required after it in common/protocol_stack.js, so the
+//    this module is required after it in common/protocol_stack.ts, so the
 //    dependency is one-way and no cycle exists — and since 2026-08-26 the
 //    SCREEN that establishes it is `authn.js`'s too, rather than one of this
 //    module's own. That change is argued at length in `signIn()`; the short
@@ -97,12 +97,15 @@
 //
 // **THE MODULE STILL EXPORTS WHAT IT DID**, from a TRANSITIONAL instance
 // built at the bottom with the real modules, for `logout/logout.ts`, the
-// management API and the tests, which are not converted. That instance also
-// REGISTERS THE ROUTES at load (`registerRoutes(app)`), exactly where rule 1
-// had them registered before, and then makes the startup check
-// (`warnAtStartup()`) that used to run as a top-level expression after them.
-// The per-realm store and the vocabulary stay module-level constants,
-// declared as they were. It goes when a composition root exists.
+// management API and the tests, which are not converted. That instance
+// REGISTERS NOTHING at load (#50, R1): the module exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it exactly where
+// rule 1 had the routes registered before. At load the instance makes the
+// startup check (`warnAtStartup()`) that used to run as a top-level
+// expression after the routes — so it now runs BEFORE they are registered,
+// which changes nothing it reports. The per-realm store and the vocabulary
+// stay module-level constants, declared as they were. The instance goes when
+// the composition root also constructs the modules (#50's R2).
 // ---------------------------------------------------------------------------
 
 import xmldom = require('@xmldom/xmldom');
@@ -132,7 +135,7 @@ import authn = require('../authn/authn');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
 // nothing about the route order this module's position in
-// common/protocol_stack.js fixes.
+// common/protocol_stack.ts fixes.
 import applications = require('../common/applications');
 // For the store below only. `realms.js` requires only config.js and
 // error_codes.js here, so it registers no route and cannot join a cycle — see
@@ -1966,7 +1969,8 @@ class WsFederation {
   }
 
   // THE ROUTES, in the order this module registered them at load
-  // (rule 1). Called once, by the transitional instance below.
+  // (rule 1). Called once, by `common/protocol_stack.ts` through the
+  // module's `registerRoutes(app)` (#50, R1).
   registerRoutes(app: RouteApp): void {
     const { baseUrlOf, errorCodes, iso, log, logArtifact, parseBody, randomId,
             xmlEscape } = this.deps;
@@ -2202,10 +2206,14 @@ const wsFederation = new WsFederation({
   personAttributes: personAttributes,
   errorCodes: errorCodes
 });
-wsFederation.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 wsFederation.warnAtStartup();
 
 export = {
+  registerRoutes: (target: any): void => wsFederation.registerRoutes(target),
   WsFederation: WsFederation,
   SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
   issuerDisagreement: wsFederation.issuerDisagreement.bind(wsFederation) as
@@ -2221,7 +2229,7 @@ export = {
   // The cleanup requests one session is owed. Read by ../logout/logout.ts so
   // that a global sign-out sends exactly what wsignout1.0 sends — see the block
   // above cleanupTargetsFor(). That module requires this one in the ordinary
-  // direction: common/protocol_stack.js loads this at 10 and that one last but
+  // direction: common/protocol_stack.ts loads this at 10 and that one last but
   // one, so the require moves no route and closes no cycle.
   cleanupTargetsFor: wsFederation.cleanupTargetsFor.bind(wsFederation) as
     WsFederation['cleanupTargetsFor']

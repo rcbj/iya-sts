@@ -58,9 +58,10 @@
 // are not converted. `PkiService` is exported beside them for the
 // composition root.
 //
-// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the
-// transitional code calls at load where the first route used to be
-// registered, so rule 1's order is unchanged.
+// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the module
+// exports and `common/protocol_stack.ts` calls (#50, R1) at the point in the
+// route order where requiring this module used to register them, so rule 1's
+// order is unchanged. Requiring the module registers nothing.
 // ---------------------------------------------------------------------------
 
 import http = require('http');
@@ -362,9 +363,10 @@ class PkiService {
              listenError: httpListenError || null };
   }
 
-  // THE ROUTES, registered where they always were: the transitional
-  // code below calls this at load, at the point the first of them
-  // used to be registered, so the route order is unchanged (rule 1).
+  // THE ROUTES, registered where they always were: the module exports
+  // this, and `common/protocol_stack.ts` calls it (#50, R1) at the point
+  // where requiring the module used to register them, so the route order
+  // is unchanged (rule 1). Nothing calls it at load.
   registerRoutes(app: RouteApp): void {
     const { log, certificateHeader, revocation, errorCodes, pki,
             config } = this.deps;
@@ -665,7 +667,10 @@ const pkiService = new PkiService({
   proxyProtocol: proxyProtocol
 });
 
-pkiService.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 log.info('The PKI revocation endpoints are registered: a CRL at ' +
          'GET /pki/crl/{scope}/{ca}.crl, an OCSP responder at ' +
@@ -720,6 +725,7 @@ let httpListenError = '';
 let httpBoundPort = 0;
 
 export = {
+  registerRoutes: (target: any): void => pkiService.registerRoutes(target),
   PkiService: PkiService,
   // `listen()` is what `server.js` calls. The other three are exported so a
   // caller can read the listener's state, the CRL cache policy and the path

@@ -94,7 +94,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    `ldap_server.js` (and a handful of leaves); the last three register routes,
    and requiring them is safe for rule 3e's reason applied rather than assumed —
    `scim.ts` is the only thing that requires this file and it already sits
-   after all three in the require order (`common/protocol_stack.js`), so there
+   after all three in the require order (`common/protocol_stack.ts`), so there
    is no cycle and no route moves. Eight things:
 
    **THE TABLE IS THE MODULE.** `SCHEMES` is the single source for the
@@ -216,8 +216,10 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    **THE CONVERSIONS ARE HERE RATHER THAN IN `scim.ts` FOR ONE REASON**, and it
    is the route-order one: `admin.js` draws the mapping table on `/admin/scim`
    and must be able to require what it draws. A require from the console into
-   `scim.ts` would drag every `/scim` route — and, since that module requires
-   `ldap_server.js`, every `/admin/ldap/*` route — into the express router ahead of the
+   `scim.ts` would have dragged every `/scim` route (until #50's R1, after which
+   requiring it registers none) and — since that module requires
+   `ldap_server.js`, which is JavaScript and still registers when required —
+   still drags every `/admin/ldap/*` route into the express router ahead of the
    console's own, and `/admin/sts-metadata` is built by walking that router. So there
    are two readers of two different halves: `scim.ts` reads the CONVERSIONS on
    every request, `admin.js` reads the CATALOGUE to draw it.

@@ -52,7 +52,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_rs.ts` | introspection, registration, and judging a presented token |
 | `gnap_console.ts` | the view and action layer both admin doors render (no route, no `res`, no markup) |
 
-Route modules: `gnap.ts` (required from `common/protocol_stack.js`, **23d**,
+Route modules: `gnap.ts` (required from `common/protocol_stack.ts`, **23d**,
 after XACML and before logout), which requires `gnap_interact.ts` (the
 resource-owner pages) and `gnap_admin.ts` (the two console pages), then installs
 the SSF scope.
@@ -61,8 +61,12 @@ the SSF scope.
 which draws two console pages in the shell, and installs its subject scope on
 `ssf/ssf_streams.ts` at require time. `mgmt-api/admin_api.ts` reaches its view
 layer (`gnap_console.ts`) lazily, inside the three operations, so the management
-API does not move `/gnap` ahead of itself. Requires `gnap_interact.ts` and
-`gnap_admin.ts` itself, so the family is ONE line in the require order.
+API does not move `/gnap` ahead of itself (before #50's R1 a require moved
+routes; now only `common/protocol_stack.ts`'s `register()` calls place them,
+and the lazy require still keeps the view layer's load-time code where it
+belongs). Requires `gnap_interact.ts` and `gnap_admin.ts` itself, so the family
+is ONE require in the require order — and three `register()` calls, `gnap`,
+`gnap_interact`, `gnap_admin`, in the order their routes always landed.
 
 ## Things that cost real time, and would again
 

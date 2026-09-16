@@ -101,7 +101,7 @@
 //    a redirect that has thrown the detail away.
 //
 // ---------------------------------------------------------------------------
-// WHERE IT SITS IN THE REQUIRE ORDER (rule 1).
+// WHERE IT SITS IN THE REQUIRE ORDER AND THE ROUTE ORDER (rule 1).
 //
 // **AFTER `authn/authn.ts`**, and it is the same dependency `saml2_sso.ts` has
 // and stronger than WS-Federation's: it has no sign-in screen of its own and it
@@ -118,6 +118,8 @@
 // than by calling `stats.recordAuthentication()` itself. That is not merely
 // tidiness: calling both produced TWO authentication records for one federated
 // sign-in, which is what `startSession()`'s sixth argument exists to prevent.
+// That argument is unchanged by #50's R1: `ldap_server.js` is still
+// JavaScript, and still registers its routes when it is required.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -127,10 +129,11 @@
 // `FederationSpDeps`, and its four endpoints are registered by
 // `registerRoutes(app)`. node's `crypto` and `zlib`, `jsonwebtoken` and
 // xmldom are libraries and are used directly. The module still exports its
-// old names from a TRANSITIONAL instance, which registers the routes at load —
-// the point in the require order at which this module always registered them
-// (rule 1) — for `common/protocol_stack.js` and the tests, which are not
-// converted.
+// old names from a TRANSITIONAL instance, for the modules and tests that
+// require it by them. That instance registers NOTHING at load (#50, R1): the
+// module exports `registerRoutes(app)`, and `common/protocol_stack.ts` calls
+// it at the point in the route order where requiring this module used to
+// register the routes (rule 1).
 // ---------------------------------------------------------------------------
 
 import crypto = require('crypto');
@@ -2950,8 +2953,8 @@ class FederationSp {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules, and it registers this module's routes now, at load, as the module
-// always did.
+// modules; this module's routes are registered by the composition root,
+// below.
 const federationSp = new FederationSp({
   config: config,
   applications: applications,
@@ -2979,9 +2982,13 @@ const federationSp = new FederationSp({
   subjectForName: helpers.subjectForName,
   hasSubjectResolver: helpers.hasSubjectResolver
 });
-federationSp.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => federationSp.registerRoutes(target),
   FederationSp: FederationSp,
   audienceCheck: federationSp.audienceCheck.bind(federationSp) as
     FederationSp['audienceCheck'],

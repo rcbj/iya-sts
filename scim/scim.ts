@@ -70,7 +70,7 @@
 // for the twelve functions that make ou=users and ou=groups a store, and
 // requiring it from anywhere EARLIER would pull every /admin/ldap route into
 // the express router at that point — the same reason the require order
-// (`common/protocol_stack.js`) puts ./tls_server before ./ldap_server. Note
+// (`common/protocol_stack.ts`) puts ./tls_server before ./ldap_server. Note
 // what this is NOT: it is not one of the inverted hooks that file fills. Rule
 // 3e says a slot is what you reach for when a require would close a cycle or
 // move a route, and to test a new proposal both ways round. This one fails that
@@ -197,10 +197,14 @@
 //
 // **THE TRANSITIONAL CODE AT THE BOTTOM** builds ONE instance from the real
 // modules and calls those methods at load, in the order the statements used
-// to run — capabilities, User, Group, the routes, the slot, the log line — so
-// the route order (rule 1) and what scimmy holds when the first request
-// arrives are unchanged. It exports `BASE`, `REFUSED_USERNAME`, `enabled` and
-// `description` as before, and `Scim` beside them for the composition root.
+// to run — capabilities, User, Group, the slot, the log line — EXCEPT the
+// routes: since #50's R1 it exports `registerRoutes(app)` and
+// `common/protocol_stack.ts` calls it at the point in the route order where
+// requiring this module used to register them, so requiring it registers
+// nothing. The route order (rule 1) and what scimmy holds when the first
+// request arrives are unchanged. It exports `BASE`, `REFUSED_USERNAME`,
+// `enabled` and `description` as before, and `Scim` beside them for the
+// composition root.
 // ---------------------------------------------------------------------------
 
 // `any` for the type checker (#50): scimmy's declared types are stricter than
@@ -233,7 +237,7 @@ import createClaims = require('../ldap/directory_create_claims');
 // WWW-Authenticate challenge and this document's authenticationSchemes.
 import scimAuth = require('./scim_auth');
 // The console, for its reader slot only — see the bottom of this file.
-// Requiring it moves nothing: the require order (`common/protocol_stack.js`)
+// Requiring it moves nothing: the require order (`common/protocol_stack.ts`)
 // loads ./admin long before ./scim, so node already has it in hand.
 import adminConsole = require('../admin-ui/admin');
 import scimMap = require('./scim_map');
@@ -2610,10 +2614,13 @@ class Scim {
   //
   // The direction is inverted for the reason ldap_server.js's readers are, and
   // it passes rule 3e's test on both grounds: a require from admin.js into this
-  // module would pull every /scim route — and, because this module requires
-  // ldap_server.js, every /admin/ldap route as well — into the express router
-  // ahead of the console's own, and /admin/sts-metadata is built by walking
-  // that router.
+  // module would have pulled every /scim route — and, because this module
+  // requires ldap_server.js, every /admin/ldap route as well — into the express
+  // router ahead of the console's own, and /admin/sts-metadata is built by
+  // walking that router. Since #50's R1 the /scim half is gone (requiring
+  // this module registers nothing; `common/protocol_stack.ts` registers its
+  // routes at 22), but `ldap_server.js` is JavaScript and still registers
+  // /admin/ldap when required, and a require from admin.js closes a cycle.
   //
   // Guarded, exactly as those two are: a copy of admin.js without the slot
   // costs a warning rather than a TypeError at require time, which would take
@@ -2647,7 +2654,8 @@ class Scim {
 
 // THE TRANSITIONAL INSTANCE — see the header above. Built from the real
 // modules, as the composition root will build one, and driven through the
-// load-time steps in the order the statements used to run.
+// load-time steps in the order the statements used to run — all but the
+// routes, which the composition root registers (below).
 const scim = new Scim({
   SCIMMY: SCIMMY,
   log: helpers.log,
@@ -2667,11 +2675,15 @@ const scim = new Scim({
 
 scim.applyCapabilities();
 scim.declareResources();
-scim.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 scim.fillConsoleSlot();
 scim.announce();
 
 export = {
+  registerRoutes: (target: any): void => scim.registerRoutes(target),
   Scim: Scim,
   BASE: Scim.BASE,
   REFUSED_USERNAME: Scim.REFUSED_USERNAME,

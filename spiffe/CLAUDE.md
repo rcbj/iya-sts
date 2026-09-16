@@ -433,7 +433,7 @@ that up silently.
 
    **The inversion is the CONSOLE.** `/admin/spiffe` must report which listeners
    bound, and only this module knows — but `admin.js` cannot require it, because
-   `common/protocol_stack.js` requires `admin.js` FIRST and the require would pull `/spiffe` and
+   `common/protocol_stack.ts` requires `admin.js` FIRST and the require would pull `/spiffe` and
    the bundle endpoint into the router ahead of every `/admin` route, which
    `GET /admin/sts-metadata` walks. So `admin.js` offers `setSpiffeReader()` and this
    module fills it at require time — the same shape `setDirectoryReader()`,

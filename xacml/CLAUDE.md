@@ -1,7 +1,7 @@
 # xacml/ — the XACML 3.0 engine
 
 **All five phases are here: the ENGINE, the STORE, the PIP, a service surface,
-the PAP, ALFA and the REMOTE PEP.** `common/protocol_stack.js` requires
+the PAP, ALFA and the REMOTE PEP.** `common/protocol_stack.ts` requires
 `xacml.ts` at 23c, eight routes answer under `/xacml` (see *The surface*), five
 configuration pages under `/admin/xacml` and a sixth, `/admin/xacml/monitor`,
 filed under Monitoring, seventeen operations under `/admin-api/xacml`,
@@ -105,12 +105,16 @@ listed below with the twelve.
 **After `admin-ui/admin`**, whose `setXacmlPages()` and `setRolePreviewer()`
 slots `xacml_admin.ts` and `xacml_role_pep.ts` fill and whose page shell,
 settings block and action responder it requires — so a require the other way
-would close a cycle, and one from `mgmt-api/admin_api.ts` would move every
-`/xacml` route and all six `/admin/xacml*` pages ahead of the management API's
-own. It requires `xacml_admin.ts` ITSELF rather than
-`common/protocol_stack.js` doing it, so this family has ONE line in the require
-order; that module requires this one back LAZILY, inside
-the one function that needs it.
+would close a cycle, and one from `mgmt-api/admin_api.ts` would have moved
+every `/xacml` route and all six `/admin/xacml*` pages ahead of the management
+API's own (since #50's R1 the routes are placed only by
+`common/protocol_stack.ts`'s `register()` calls, but that require would still
+arm the issuance gate and fill the console's slots at 19 rather than 23c). It
+requires `xacml_admin.ts` ITSELF rather than `common/protocol_stack.ts` doing
+it, so this family has ONE require in the require order — and two `register()`
+calls, `xacml_admin` then `xacml`, because requiring `xacml.ts` used to
+register `xacml_admin.ts`'s pages first; that module requires this one back
+LAZILY, inside the one function that needs it.
 
 **And after `ldap/ldap_server` (21) in effect** — not as an ordering
 constraint, since both registers take their directory across a slot that module
@@ -1484,9 +1488,13 @@ later is counted BY CONSTRUCTION rather than by whoever adds it remembering.
 `xacml_monitor.ts` is a LEAF (rule 3) and **may not require `admin.js`**, which
 is the constraint that decides where the page lives. `xacml_access_pep.ts` fills
 `common/access_gate.ts`'s decider and is reached from `common/`, far above
-`admin-ui/admin.ts` at 18 — so a console require here would drag every console
-route into the router at that position (rule 1). The symptom would not be an
-error: it would be `/admin/sts-metadata` reporting a different route order.
+`admin-ui/admin.ts` at 18 — so a console require here would have dragged every
+console route into the router at that position (rule 1). Since #50's R1 the
+console registers nothing when required, but it still loads the JavaScript
+`tls/tls_server` on the way (through `admin-core/admin_views.ts`), whose routes
+WOULD move, and it would run the console's load-time code far too early. The
+symptom would not be an error: it would be `/admin/sts-metadata` reporting a
+different route order.
 
 ### A DECISION IS NOT AN ENFORCEMENT, and both are counted
 

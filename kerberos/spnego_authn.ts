@@ -44,7 +44,10 @@
 // listeners and the acceptor's socket must not be dragged to the front of the
 // router by something the authorization endpoint depends on. A require from
 // `authn.js` to this file would do exactly that, and would close a cycle
-// besides, since this file requires `authn.js` for `startSession()`.
+// besides, since this file requires `authn.js` for `startSession()`. #50's R1
+// did not change that: this file registers nothing when required any more,
+// but it requires `./spnego.js`, a locked JavaScript file of the parent
+// project that still registers its routes when it is required.
 //
 // **AND IT NEEDED NO INVERTED HOOK EITHER**, which is worth saying because rule
 // 3e's inventory already holds many slots and one more is the obvious move. It
@@ -122,9 +125,10 @@
 // are not converted. `SpnegoAuthn` is exported beside them for the
 // composition root.
 //
-// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which the
-// transitional code calls at load where the first route used to be
-// registered, so rule 1's order is unchanged.
+// **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, and not at load
+// (#50, R1): the module exports it, and `common/protocol_stack.ts` calls it at
+// the point in the route order where requiring this module used to register
+// the first route, so rule 1's order is unchanged.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -593,9 +597,10 @@ class SpnegoAuthn {
               'return to.');
   }
 
-  // THE ROUTES, registered where they always were: the transitional
-  // code below calls this at load, at the point the first of them
-  // used to be registered, so the route order is unchanged (rule 1).
+  // THE ROUTES, registered where they always were: the composition
+  // root (`common/protocol_stack.ts`) calls this, through the module's
+  // `registerRoutes(app)`, at the point the first of them used to be
+  // registered, so the route order is unchanged (rule 1).
   registerRoutes(app: RouteApp): void {
     const { log, SPNEGO_PATH, errorCodes, page, xmlEscape } = this.deps;
     const self = this;
@@ -623,7 +628,8 @@ class SpnegoAuthn {
 
 // THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
 // composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
+// module exports. It goes when that root also constructs the modules
+// (#50's R2).
 const spnegoAuthn = new SpnegoAuthn({
   log: log,
   xmlEscape: xmlEscape,
@@ -653,9 +659,13 @@ const BROWSER_NOTE =
   'service principal named below and send it as <code>Authorization: ' +
   'Negotiate &lt;base64&gt;</code>. That is all this endpoint is.</p>';
 
-spnegoAuthn.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => spnegoAuthn.registerRoutes(target),
   SpnegoAuthn: SpnegoAuthn,
   SPNEGO_PATH: SPNEGO_PATH,
   enabled: spnegoAuthn.enabled.bind(spnegoAuthn) as SpnegoAuthn['enabled'],

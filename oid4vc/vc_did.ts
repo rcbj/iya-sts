@@ -20,9 +20,11 @@
 // shape: `VcDid` takes the logger, the key and base-URL readers of
 // `helpers.js`, the identity registry, the settings, the error codes, the
 // signer and the configuration table through its constructor, and registers
-// its four routes from `registerRoutes(app)`, which the TRANSITIONAL instance
-// at the bottom calls at load — where the `app.get()` calls used to run, so
-// the route order is unchanged. The two DID flags are still read ONCE, at
+// its four routes from `registerRoutes(app)`. The TRANSITIONAL instance at
+// the bottom registers nothing at load (#50, R1): the module exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the point
+// in the route order where the `app.get()` calls used to run at load, so the
+// route order is unchanged. The two DID flags are still read ONCE, at
 // require time, as module-scope constants. The module still exports its old
 // names from that instance for `vc_issuer.ts` and the tests.
 // ---------------------------------------------------------------------------
@@ -543,7 +545,8 @@ class VcDid {
     return SD_JWT_ISSUER_DID ? this.stsDid(req) : '';
   }
 
-  // The four routes, in the order they were registered at load.
+  // The four routes, in the order they were registered at load before
+  // #50's R1. Called by `common/protocol_stack.ts`.
   registerRoutes(app: any): void {
     const { log, errorCodes, logArtifact, baseUrlOf, stats } = this.deps;
     log.debug("Entering VcDid.registerRoutes().");
@@ -701,7 +704,7 @@ class VcDid {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header above. Its routes are registered
-// here, at load, where the `app.get()` calls used to run.
+// by the composition root, below, not here.
 const did = new VcDid({
   log: helpers.log,
   logArtifact: helpers.logArtifact,
@@ -717,9 +720,13 @@ const did = new VcDid({
   stsCrypto: stsCrypto,
   VCI_CONFIGS: vcConfigs.VCI_CONFIGS
 });
-did.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 export = {
+  registerRoutes: (target: any): void => did.registerRoutes(target),
   VcDid: VcDid,
   stsDid: did.stsDid.bind(did) as VcDid['stsDid'],
   didWebPartsOf: did.didWebPartsOf.bind(did) as VcDid['didWebPartsOf'],

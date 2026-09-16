@@ -47,9 +47,12 @@
 // LAZILY, through `VcIssuer.loadOauth2()`, for the cycle the note
 // at `sendVciMetadata()` names.
 //
-// The routes are registered by `registerRoutes(app)`, which the TRANSITIONAL
-// instance at the bottom calls at require time, in the order they always
-// had, and before `capabilities.provide()` as before. That instance also
+// The routes are registered by `registerRoutes(app)`, in the order they
+// always had. Since #50's R1 the TRANSITIONAL instance at the bottom does not
+// call it: the module exports it, and `common/protocol_stack.ts` calls it at
+// the point in the route order where requiring this module used to register
+// the routes — so `capabilities.provide()`, still run at require time, now
+// runs BEFORE the routes are registered rather than after. That instance also
 // supplies the module's old exports, as bound methods, for the unconverted
 // modules and tests that require it. `VcIssuer` is exported beside them.
 // ---------------------------------------------------------------------------
@@ -1759,6 +1762,7 @@ class VcIssuer {
   }
 
   // THE ROUTES, in the order this module always registered them (rule 1).
+  // Called by `common/protocol_stack.ts` through `registerRoutes(app)`.
   registerRoutes(app: RouteApp): void {
     const { log, logArtifact, baseUrlOf, b64u, randomId, bbsKeyPair, vciError,
             crypto, config, bbs2023, dpop, errorCodes, vciBatchSize,
@@ -2281,8 +2285,8 @@ class VcIssuer {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header. Built from the real modules, as
-// the composition root will build one, and its routes registered here, at
-// require time, where they always were.
+// the composition root will build one. Its routes are registered by that
+// root, below, not here.
 const issuer = new VcIssuer({
   log: helpers.log,
   logArtifact: helpers.logArtifact,
@@ -2334,7 +2338,10 @@ const issuer = new VcIssuer({
   lastCredentialRequestStore: lastCredentialRequestStore,
   loadOauth2: VcIssuer.loadOauth2
 });
-issuer.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 // `jwt` is referenced so the compiler keeps its require (an unused
 // `import = require` is dropped from the output).
 void jwt;
@@ -2348,6 +2355,7 @@ void jwt;
 capabilities.provide('oid4vc.once');
 
 export = {
+  registerRoutes: (target: any): void => issuer.registerRoutes(target),
   VcIssuer: VcIssuer,
   vciMetadata: issuer.vciMetadata.bind(issuer) as VcIssuer['vciMetadata'],
   // For tests/cluster_single_use_protocols.js: the c_nonce's spend, driven

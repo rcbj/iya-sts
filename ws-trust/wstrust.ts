@@ -76,11 +76,13 @@
 // its constructor as `WsTrustDeps`, and its three endpoints are registered by
 // `registerRoutes(app)`; xmldom is a library and is used directly. The module
 // still exports `handleRst()`, `issuerDisagreement()`, `checkedAssertion()`,
-// `buildToken()` and `soapFault()` from a TRANSITIONAL instance, which
-// registers the routes at load — the point in the require order at which this
-// module always registered them (rule 1) — and then logs the startup issuer
-// check, as the module did, for `common/protocol_stack.js` and the tests,
-// which are not converted.
+// `buildToken()` and `soapFault()` from a TRANSITIONAL instance, for the
+// modules and tests that require it by them. That instance registers NOTHING
+// at load (#50, R1): the module exports `registerRoutes(app)`, and
+// `common/protocol_stack.ts` calls it at the point in the route order where
+// requiring this module always registered them (rule 1). At load the
+// instance still logs the startup issuer check, as the module did — now
+// before the routes are registered rather than after.
 // ---------------------------------------------------------------------------
 
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -119,8 +121,10 @@ import delegation = require('../common/delegation');
 // THE SESSION STORE. A plain require in the ordinary direction, and it is why
 // this module moved BELOW authn.js in the require order on 2026-09-05 rather
 // than keeping its old place — see the note on its line in
-// common/protocol_stack.js. Requiring it from above
-// would have dragged every /authn route to the front of the router (rule 1);
+// common/protocol_stack.ts. Requiring it from above would have dragged every
+// /authn route to the front of the router (rule 1) until #50's R1; since
+// then requiring it registers nothing, and `common/protocol_stack.ts`
+// registers the /authn routes ahead of this module's in its own order.
 // `authn.js` does not require this module, so no cycle closes either way.
 import authn = require('../authn/authn');
 // The credential verifier and the mode. Libraries that register no route and
@@ -1595,8 +1599,8 @@ class WsTrust {
 }
 
 // THE TRANSITIONAL INSTANCE — see the header above. Built from the real
-// modules; it registers this module's routes now, at load, and then makes the
-// startup issuer check, both as the module always did.
+// modules; it makes the startup issuer check at load, as the module always
+// did. The routes are registered by the composition root, below.
 const wsTrust = new WsTrust({
   stsCrypto: stsCrypto,
   config: config,
@@ -1624,10 +1628,14 @@ const wsTrust = new WsTrust({
   subjectForName: helpers.subjectForName,
   hasSubjectResolver: helpers.hasSubjectResolver
 });
-wsTrust.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 wsTrust.warnAtStartup();
 
 export = {
+  registerRoutes: (target: any): void => wsTrust.registerRoutes(target),
   WsTrust: WsTrust,
   handleRst: wsTrust.handleRst.bind(wsTrust) as WsTrust['handleRst'],
   issuerDisagreement: wsTrust.issuerDisagreement.bind(wsTrust) as

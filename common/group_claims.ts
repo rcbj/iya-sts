@@ -70,7 +70,7 @@
 //
 // **AND THE DIRECTORY ARRIVES THROUGH A SECOND SLOT, pointing the other way.**
 // The membership can only be answered by `ldap_server.js`, which
-// `common/protocol_stack.js` requires at 21 (rule 6): requiring it from here
+// `common/protocol_stack.ts` requires at 21 (rule 6): requiring it from here
 // would drag every `/ldap` route to the front of the express router that
 // `/admin/sts-metadata` is built by walking. So this file offers
 // `setDirectory()` and that one fills it, the same shape `vc_claims.js` and

@@ -22,8 +22,11 @@ The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
 that can CHANGE what the protocol endpoints do, which is why it is the one that
 grew a gate.
 
-5. **`admin.ts` must stay after `oauth2.js` too** (the root file's rule 5): it
-   requires that module, which registers routes. It also reads the `sessions` map
+5. **`admin.ts` must stay after `oauth2.ts` too** (the root file's rule 5): it
+   requires that module, which used to register routes when required — since
+   #50's R1 it registers nothing until `common/protocol_stack.ts` calls its
+   `registerRoutes(app)`, so the constraint now holds in that file's order of
+   `register()` calls, where `oauth2` comes before the console. It also reads the `sessions` map
    — `authn.js`'s since the session moved there — so the metrics page can report
    real sign-on sessions. And the same
    one-store rule applies to REVOCATION — the set of revoked jtis lives in
@@ -529,9 +532,11 @@ the one a reader believes.
 
 Three things about them:
 
-* **Registration is still at the top level.** The loop runs while the module is
-  being required, so the routes are registered in order, below the gate, and
-  visible to `sts_metadata.js` reading the router. Rule 1 is held, not bent.
+* **Registration is still one loop, in order.** It runs inside `admin.ts`'s
+  `registerRoutes(app)` — which, since #50's R1, `common/protocol_stack.ts`
+  calls at 18 rather than the module's require running it — so the routes are
+  registered in order, below the gate, and visible to `sts_metadata.js` reading
+  the router. Rule 1 is held, not bent.
 * **A row carries what its family does NOT do.** These are the pages somebody
   lands on while deciding whether this service can stand in for a real one, and
   "it speaks the protocol" without "it checks nothing" is the misleading half
@@ -1186,7 +1191,7 @@ edited:
   inside `<body>` is markup no validator accepts.
 * **The require goes one way and must stay that way.** `sts_metadata.js`
   requires this module; this module must never require it back. That file is
-  the LAST thing `common/protocol_stack.js` loads — it lists what every other module
+  the LAST thing `common/protocol_stack.ts` loads — it lists what every other module
   registered — so a require from here would drag every console route behind it,
   and rule 6's route order is what `/admin/sts-metadata` is built by walking.
 * **It is gated by construction**, not by a check of its own: the
@@ -1382,7 +1387,11 @@ the constraint that decides the line.** It reads an algorithm table out of
 eleven modules — `common/crypto`, `pq_jose`, the vendored `xmldsig`,
 `krb5_crypto`, `webauthn`, `oauth2`/`dpop`/`client_auth`/`mtls`, `spiffe_ca`,
 `scim_auth` and `tls_server` — and requiring one it has not yet loaded would
-REGISTER ITS ROUTES THERE (rule 1). At 20a every one of them is a cache hit.
+have REGISTERED ITS ROUTES THERE (rule 1). Since #50's R1 that is still true of
+`tls_server`, which is JavaScript, and no longer of `oauth2` or `webauthn`'s
+module, which register only when `common/protocol_stack.ts` calls them; an
+early require of those would still run their load-time code out of place. At
+20a every one of them is a cache hit.
 Also after `admin-ui/admin` for the shell and the gate.
 
 **Only two things on the page are written by hand, and both are things no table
@@ -1706,7 +1715,7 @@ one for the shell — so the obvious direction is out. But a require from
 `/admin/pki`, and it requires only `admin.ts` and `common/pki.js`, which is a
 LIBRARY (rule 3).
 
-So it is required in `common/protocol_stack.js` at **18a**, immediately after
+So it is required in `common/protocol_stack.ts` at **18a**, immediately after
 this file and BEFORE the management API — which makes that module's own require
 a cache hit that registers nothing.
 
@@ -2022,7 +2031,7 @@ file's.
   first loaded from inside this file's own require, through `admin-core/admin_views.ts` →
   `spiffe/spiffe_auth.ts`, so it would find no `setTruststore` on the half-built exports.
   **So it is the one slot here NOT filled by the module that owns what it carries**:
-  `common/protocol_stack.js` fills it on the line after it requires `tls_server.js`. It
+  `common/protocol_stack.ts` fills it on the line after it requires `tls_server.js`. It
   carries one object (`list`, `add`, `remove`), is validated whole for `setLogoutReader()`'s
   reason, and forwards to both `admin-core/` halves from inside the setter;
   `tests/admin_actions_layer.js`'s `FORWARDED` holds the single writer in each.
@@ -2040,7 +2049,7 @@ fingerprint — and asserts the truststore afterwards is exactly what it was bef
 
 ## Four reader slots and FOUR writer slots point INTO this module
 
-`common/protocol_stack.js` requires this module BEFORE `../ldap/ldap_server.js`,
+`common/protocol_stack.ts` requires this module BEFORE `../ldap/ldap_server.js`,
 `../scim/scim.ts` and `../spiffe/spiffe_server.ts`, so this module cannot require
 any of them: the require would pull `/ldap`, `/scim` and `/spiffe` into the
 express router ahead of every `/admin` route, and `GET /admin/sts-metadata` is built by

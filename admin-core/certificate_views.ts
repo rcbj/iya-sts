@@ -66,7 +66,11 @@
 // `spiffe/spiffe_ca.ts` are required INSIDE the functions that read them**, for
 // rule 1: `admin-ui/pki_admin.ts` requires this file at 18a and the TLS module
 // registers its routes at 20, so a require at the top would move `/tls*` ahead
-// of the management API. A request handler runs after every module has loaded,
+// of the management API. (That still holds after #50's R1: `tls_server.js` is
+// JavaScript and registers its routes when it is required, where the
+// converted modules now leave that to `common/protocol_stack.ts`.
+// `spiffe_ca.ts` is a library and is lazy for the load order alone.) A
+// request handler runs after every module has loaded,
 // so inside a function the require is a cache hit — `request_pool.js`'s
 // `reconcileTheListener()` makes the same argument.
 // ===========================================================================

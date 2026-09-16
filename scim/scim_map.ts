@@ -39,9 +39,12 @@
 // and neither requires it back — which is what lets `admin.js` require it to
 // draw the mapping table on /admin/scim even though admin.js is required BEFORE
 // ldap_server.js. That is the whole reason the conversions live here rather
-// than in `scim.ts`: a require from the console into the SCIM module would drag
-// the /scim routes into the express router ahead of /admin, and
-// /admin/sts-metadata is built by walking that router.
+// than in `scim.ts`: a require from the console into the SCIM module would
+// have dragged the /scim routes into the express router ahead of /admin, and
+// /admin/sts-metadata is built by walking that router. Since #50's R1
+// requiring `scim.ts` registers nothing of its own, but it still requires
+// `ldap_server.js`, which is JavaScript and DOES register its routes when
+// required — so the argument stands, one module further down.
 //
 // So there are two readers and they read different halves:
 //

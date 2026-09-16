@@ -86,8 +86,9 @@
 //                         person" from "wrong credential"
 //   A09 logging           every act audited through `audit.js`
 //
-// A LIBRARY? No — it registers routes (rule 1), so its place in the require
-// order is a place. It must come AFTER `authn.js`, whose session it reads.
+// A LIBRARY? No — it registers routes (rule 1), so its place in the route
+// order is a place: `common/protocol_stack.ts` registers them (#50, R1). It
+// must come AFTER `authn.js`, whose session it reads.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -105,13 +106,17 @@
 //     page and form target as this file has always registered them.
 //   * **THE MODULE STILL EXPORTS `BASE`, `ACTIVATE`, `setDirectory` AND
 //     `paths`**, from a TRANSITIONAL instance built at the bottom from the
-//     real modules. That instance, at load and in the original's order,
-//     registers the routes, logs where the portal is, and hands
-//     `portal/portal_certificates` the pieces of a portal page — so
+//     real modules. At load that instance only logs where the portal is; it
+//     registers NOTHING (#50, R1). The module exports a composite
+//     `registerRoutes(app)` instead, which `common/protocol_stack.ts` calls at
+//     the point in the route order where requiring this module used to
+//     register the routes: the portal's own routes, and then
+//     `portal/portal_certificates`, handed the pieces of a portal page — so
 //     `/portal/certificates` is still registered after every other page of
 //     the column. `ldap/ldap_server.js` still fills the slot through the
 //     exported `setDirectory`. The instance goes when the composition root
-//     exists; `Portal` is exported beside it for that root.
+//     also constructs the modules (#50's R2); `Portal` is exported beside it
+//     for that root.
 //   * **THE VALIDATION SCHEMAS, THE STYLESHEET, `NAV` AND THE OTHER
 //     CONSTANTS STAY AT MODULE SCOPE**, declared where they always were.
 // ---------------------------------------------------------------------------
@@ -203,7 +208,7 @@ import stats = require('../common/admin_stats');
 // `ldap/ldap_server.js` draw its pages — and `common/issuance_gate.js` requires
 // `helpers` and `config` and nothing else, which is the whole point of it being
 // a leaf. Both are already loaded by `authn/authn.ts` at 8, above this module
-// in `common/protocol_stack.js`, so these two requires are cache hits.
+// in `common/protocol_stack.ts`, so these two requires are cache hits.
 //
 // **THE GATE IS ASKED THE SAME QUESTION THE NINE ISSUANCE SITES ASK.** That is
 // the property that makes the page worth having: a portal that worked out for
@@ -227,9 +232,12 @@ import version = require('../common/version');
 // moving a route or closing a cycle — which matters more here than in the
 // console, because this module is required BEFORE `oauth-oidc/oauth2.ts`.
 //
-// It is emphatically NOT `ssf/ssf.ts` (23b), which registers every /ssf route
-// and the well-known document: a require of that from here would put the whole
-// Shared Signals surface ahead of the authorization server.
+// It is emphatically NOT `ssf/ssf.ts` (23b), which has every /ssf route and
+// the well-known document: a require of that from here would have put the
+// whole Shared Signals surface ahead of the authorization server. Since #50's
+// R1 its own routes would stay where `common/protocol_stack.ts` registers
+// them, but it would still load the console and `ldap/ldap_server.js` here,
+// and that JavaScript module still registers its routes when required.
 // ---------------------------------------------------------------------------
 import signals = require('../ssf/ssf_receivers');
 // WHAT SPENDING A PASSWORD RESET LINK SAYS OVER CAEP (2026-09-13). A LIBRARY
@@ -983,8 +991,14 @@ class Portal {
   //     console, ahead of the management API. That is rule 1 doing exactly what
   //     it says.
   //   * And a require the other way, from `ldap_server.js` to this module,
-  //     would move every `/portal` route to 21 — behind the console and the
-  //     management API — which is the same defect pointing the other way.
+  //     would have moved every `/portal` route to 21 — behind the console and
+  //     the management API — which was the same defect pointing the other
+  //     way. **That half no longer holds since #50's R1**: requiring this
+  //     module registers nothing, and `common/protocol_stack.ts` registers the
+  //     `/portal` routes at 8a wherever the module is first loaded. The first
+  //     half still holds, because `ldap_server.js` is JavaScript and still
+  //     registers its routes when required; whether the slot is still worth
+  //     its indirection is a question for when that module is converted.
   //
   // It carries ONE function and is validated whole for `setLogoutReader()`'s
   // reason: half of it is not a smaller feature, it is a page that reports an
@@ -3899,14 +3913,15 @@ class Portal {
     //
     // `requireSignIn()` is synchronous and is called from inside every handler,
     // so the renewal cannot live there; it is ONE middleware on the whole
-    // `/portal` prefix, registered above the first route in this file (rule 1),
-    // so a page added tomorrow is renewed by construction. When the session's
-    // ID Token and access token run out it redeems the refresh token and writes
-    // the new tokens onto the same session — the person stays signed in and on
-    // the page they asked for. `common/oidc_rp.ts`'s section 4 argues all of
-    // it. It answers no request itself; a renewal that could not happen ends
-    // the session, and `requireSignIn()` then sends the browser through the
-    // code flow as it always did for a request with no session.
+    // `/portal` prefix, registered above the first route in this module
+    // (rule 1), so a page added tomorrow is renewed by construction. When the
+    // session's ID Token and access token run out it redeems the refresh token
+    // and writes the new tokens onto the same session — the person stays
+    // signed in and on the page they asked for. `common/oidc_rp.ts`'s
+    // section 4 argues all of it. It answers no request itself; a renewal that
+    // could not happen ends the session, and `requireSignIn()` then sends the
+    // browser through the code flow as it always did for a request with no
+    // session.
     // -------------------------------------------------------------------------
     app.use(BASE, oidcRp.renewal('portal'));
 
@@ -5681,8 +5696,9 @@ class Portal {
 
 // ---------------------------------------------------------------------------
 // THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules as the composition root will build one, and set going in the
-// original file's order: the routes, the log line, the certificates page.
+// modules as the composition root will build one. At load it logs the line;
+// the routes and the certificates page are registered, in that order, by the
+// composite `registerRoutes(app)` exported below.
 // ---------------------------------------------------------------------------
 const portal = new Portal({
   app: app,
@@ -5715,7 +5731,11 @@ const portal = new Portal({
   parseBody: helpers.parseBody,
   baseUrlOf: helpers.baseUrlOf
 });
-portal.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
+// Here that is the portal's pages, then /portal/certificates.
 
 helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
                  'account, in ' + NAV_PAGES.length + ' pages behind a ' +
@@ -5731,26 +5751,33 @@ helpers.log.info('The User Portal is at ' + BASE + ': a person\'s own ' +
                  'here takes an identity from the request.');
 
 // ---------------------------------------------------------------------------
-// /portal/certificates (2026-09-13), registered here — after every other page
-// of the column, so the route order is the column's — by the file beside this
-// one, which is handed the pieces that make a page a portal page. See its
-// header for why this is a `register()` rather than a require that registers
-// at its top level.
+// /portal/certificates (2026-09-13), registered by the exported
+// `registerRoutes(app)` below — after every other page of the column, so the
+// route order is the column's — by the file beside this one, which is handed
+// the pieces that make a page a portal page. See its header for why this is a
+// `register()` rather than a require that registers at its top level.
 // ---------------------------------------------------------------------------
-require('./portal_certificates').register({
-  app: app, BASE: BASE, log: helpers.log,
-  esc: portal.esc.bind(portal) as Portal['esc'],
-  shell: portal.shell.bind(portal) as Portal['shell'],
-  send: portal.send.bind(portal) as Portal['send'],
-  requireSignIn: portal.requireSignIn.bind(portal) as Portal['requireSignIn'],
-  refuseShape: portal.refuseShape.bind(portal) as Portal['refuseShape'],
-  innerCode: portal.innerCode.bind(portal) as Portal['innerCode'],
-  baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
-  validation: validation, websecurity: websecurity, accessGate: accessGate,
-  audit: audit, errorCodes: errorCodes, config: config
-});
+const portalCertificates = require('./portal_certificates');
 
 export = {
+  registerRoutes: (target: any): void => {
+    portal.registerRoutes(target);
+    portalCertificates.register({
+      app: target, BASE: BASE, log: helpers.log,
+      esc: portal.esc.bind(portal) as Portal['esc'],
+      shell: portal.shell.bind(portal) as Portal['shell'],
+      send: portal.send.bind(portal) as Portal['send'],
+      requireSignIn:
+        portal.requireSignIn.bind(portal) as Portal['requireSignIn'],
+      refuseShape:
+        portal.refuseShape.bind(portal) as Portal['refuseShape'],
+      innerCode: portal.innerCode.bind(portal) as Portal['innerCode'],
+      baseUrlOf: helpers.baseUrlOf, parseBody: helpers.parseBody,
+      validation: validation, websecurity: websecurity,
+      accessGate: accessGate,
+      audit: audit, errorCodes: errorCodes, config: config
+    });
+  },
   Portal: Portal,
   BASE: Portal.BASE,
   ACTIVATE: Portal.ACTIVATE,

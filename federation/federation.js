@@ -204,7 +204,7 @@ const applications = require('./../common/applications');
 //
 // Three things need them and only one of them may require that module.
 // `federation_sp.js` registers routes, so `admin-ui/admin.ts` must not require
-// it — `common/protocol_stack.js` loads that module BEFORE the console, and a
+// it — `common/protocol_stack.ts` loads that module BEFORE the console, and a
 // require in the other direction would be the reason a route moved the day
 // somebody reorders the two (the line already drawn around
 // `spiffe_server.js`). But the console page's whole job is to tell an operator

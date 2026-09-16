@@ -36,11 +36,13 @@
 //     repeated checkbox values as a PARAMETER rather than reading them:
 //     `listField()` is the console's, it sits at the transport edge, and it
 //     stays there. That boundary is what made this move possible at all.
-//   * A ROUTE. Requiring a module registers its endpoints (rule 1), and this
-//     file is required by two modules — so a route here would be registered
-//     twice, once from the console and once from the management API. It
-//     registers none, and `tests/admin_actions_layer.js` fails if that stops
-//     being true.
+//   * A ROUTE. Requiring a module registered its endpoints (rule 1, until
+//     #50's R1 moved registration into `common/protocol_stack.ts`), and this
+//     file is required by two modules — so a route here would have been
+//     registered twice, once from the console and once from the management
+//     API; and since R1 a route here would belong to neither surface's
+//     `registerRoutes()`. It registers none, and
+//     `tests/admin_actions_layer.js` fails if that stops being true.
 //   * A SESSION, or anything read from one. The actor arrives in `context`,
 //     and `via` says which door it came through.
 //
@@ -48,18 +50,27 @@
 // WHY THIS IS NOT IN common/, WHICH IS WHERE A SHARED LIBRARY NORMALLY GOES.
 //
 // Because of what it requires. The domain modules below include `oauth2`,
-// `saml2`, `saml11` and `federation`, every one of which REGISTERS ROUTES when
-// it is required — so anything that loads this file loads them too. That is
+// `saml2`, `saml11` and `federation`, every one of which REGISTERED ROUTES when
+// it was required — so anything that loads this file loads them too. That is
 // harmless where this file stands, because the console (18) and the management
 // API (19) both come after all of them in the require order, and every one of
 // these requires is therefore a cache hit.
 //
+// **Since #50's R1 (2026-09-16) the converted ones register nothing when
+// required**: `common/protocol_stack.ts` calls each one's `registerRoutes(app)`
+// at its own place, so an early require can no longer reorder the router. It
+// can still run their load-time work — stores declared, slots filled, the
+// authorization server's tables built — ahead of everything the stack
+// argues must come first, which is why the rule below is kept.
+//
 // It would NOT be harmless from `common/`, which reads as *anything may
 // require this, at any point in the order*. The first module to do so from
 // position 4 would pull the authorization server and both SAML profiles in
-// ahead of themselves, and rule 1 says the require order IS the route order —
-// so the symptom would be a handler winning that should not have, somewhere
-// else entirely.
+// ahead of themselves, and rule 1 said the require order IS the route order —
+// so the symptom would have been a handler winning that should not have,
+// somewhere else entirely. (Since R1 the route order is the order of the
+// `register()` calls in `common/protocol_stack.ts`, and the symptom would be
+// a load-time effect out of order instead.)
 //
 // **SO THE DIRECTORY IS THE WARNING.** This file may be required at 18 or
 // later and nowhere earlier. `tests/admin_actions_layer.js` pins that as well.
@@ -88,7 +99,7 @@
 // setter, so the two cannot drift apart; what would make them two answers is a
 // second writer, and `tests/admin_actions_layer.js` asserts that each of the
 // seven setters in `admin-ui/admin.ts` writes both — and the eighth,
-// `setTruststore()`, filled by `common/protocol_stack.js` since 2026-09-12
+// `setTruststore()`, filled by `common/protocol_stack.ts` since 2026-09-12
 // (below).
 // ===========================================================================
 
@@ -201,7 +212,7 @@ let riscReporter = null;
 let xacmlPages = null;
 // THE EIGHTH, AND THE ONE NOT FILLED BY THE MODULE THAT OWNS IT (2026-09-12):
 // the client-certificate truststore, whose array is `tls/tls_server.js`'s and
-// whose slot `common/protocol_stack.js` fills. `admin-ui/admin.ts`'s
+// whose slot `common/protocol_stack.ts` fills. `admin-ui/admin.ts`'s
 // `setTruststore()` carries the argument.
 let truststore = null;
 

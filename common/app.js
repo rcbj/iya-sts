@@ -9,17 +9,22 @@
 // CORS, the body parser and the call log.
 //
 // It is a module of its own, and the reason is the registration order. Each
-// protocol module registers its endpoints as a side effect of being required
-// (`const app = require('./app')` then `app.get(...)` at its top level), which
-// keeps every handler exactly where it was written instead of wrapped in a
-// register() function and re-indented. Express applies middleware in the order
+// protocol module used to register its endpoints as a side effect of being
+// required (`const app = require('./app')` then `app.get(...)` at its top
+// level), which kept every handler exactly where it was written instead of
+// wrapped in a register() function and re-indented. Since #50's R1
+// (2026-09-16) a module converted to TypeScript exports `registerRoutes(app)`
+// instead and `common/protocol_stack.ts` calls it; the JavaScript ones still
+// register when required. Either way, Express applies middleware in the order
 // it was added and only to routes added AFTER it, so the middleware has to be
-// installed by the time any protocol module is loaded — i.e. here, in the
-// module they all require, rather than in server.js, which requires them.
+// installed before the first route is registered — i.e. here, in the module
+// every route module requires and every registration is made against, rather
+// than in server.js, which loads them.
 //
-// The consequence to remember when adding a module: `common/protocol_stack.js`
+// The consequence to remember when adding a module: `common/protocol_stack.ts`
 // (which server.js and every request worker load) requires the protocol
-// modules in a deliberate order, and that order is the route order.
+// modules and calls their `registerRoutes(app)` in a deliberate order, and
+// that order is the route order.
 // Nothing here has overlapping paths, so it does not currently matter — but a
 // new module that registers a wildcard would matter a great deal.
 // ---------------------------------------------------------------------------

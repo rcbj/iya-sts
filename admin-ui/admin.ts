@@ -40,8 +40,10 @@
 // store, which `../authn/authn.ts` owns, so the metrics page can report real
 // sign-on sessions beside the ones derived from what was issued.
 //
-// **It must come AFTER oauth2.js in `common/protocol_stack.js`** (rule 5), and
-// that is a dependency rather than a preference: it requires
+// **It must come AFTER oauth2.js in `common/protocol_stack.ts`** (rule 5) —
+// in the require order and, since #50's R1, in the order of that file's
+// `register()` calls as well — and that is a dependency rather than a
+// preference: it requires
 // `../oauth-oidc/oauth2.ts` for the drift report (see that require below).
 // The dependency is one way — oauth2.js knows nothing about this module — so
 // it is not a cycle.
@@ -107,23 +109,27 @@
 // **THE ROUTES ARE REGISTERED BY `registerRoutes()`**, which holds every
 // route and middleware of the old file in the old order — the console gate
 // (`app.use('/admin', …)`) and the realm chooser ahead of every page, and
-// `/admin/api-explorer`'s CSP relaxation where it was. The transitional code
-// calls it at load where the LAST of them used to be registered rather than
-// the first, because the old file declared tables between its routes that
-// some registrations read at load (`PROTOCOL_SETTINGS_PAGES`); nothing
-// between the first route and the last registers a route or requires a
-// module, so rule 1's order — within this file and against every other
-// module — is unchanged.
+// `/admin/api-explorer`'s CSP relaxation where it was. Until #50's R1 the
+// transitional code called it at load, where the LAST of them used to be
+// registered rather than the first, because the old file declared tables
+// between its routes that some registrations read at load
+// (`PROTOCOL_SETTINGS_PAGES`); nothing between the first route and the last
+// registers a route or requires a module. **Since R1 (2026-09-16) requiring
+// this module registers nothing**: the module exports `registerRoutes(app)`
+// and `common/protocol_stack.ts` calls it at 18, straight after the require,
+// which is where requiring this module used to register them — so rule 1's
+// order, within this file and against every other module, is unchanged.
 //
 // The stores, the slot variables every `set…()` fills (rule 3e) and the
 // tables are still declared at module scope, where they were, so what a slot
 // sets is what the pages read.
 //
 // THE TRANSITIONAL CODE at the bottom builds ONE instance from the real
-// modules, calls `registerRoutes(app)`, and exports the old names from that
-// instance, for every module that requires this one by them. It goes when
-// the composition root exists; `AdminConsole` is exported beside them for
-// that root.
+// modules, exports its `registerRoutes(app)` for the composition root to
+// call, and exports the old names from that instance, for every module that
+// requires this one by them. It goes when the composition root builds the
+// modules as well as registering their routes (#50's R2); `AdminConsole` is
+// exported beside them for that root.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -583,15 +589,17 @@ import spMetadata = require('../saml/sp_metadata');
 //
 // **A PLAIN REQUIRE IN THE ORDINARY DIRECTION, AND NOT A SIXTH SLOT.** Rule
 // 3e's test is whether a require would close a cycle or move a route, and this
-// one does neither: `common/protocol_stack.js` requires `saml/saml2_sso.ts` at
+// one does neither: `common/protocol_stack.ts` requires `saml/saml2_sso.ts` at
 // position 10a and this file at 18, so that module's routes are already in the
-// router by the time this line runs, and it requires nothing from here.
+// router by the time this line runs, and it requires nothing from here. (Since
+// #50's R1 requiring it registers nothing in any case — the stack's
+// `register()` call at 10a does — so the route half of the test cannot fail.)
 import saml2 = require('../saml/saml2_sso');
 // The SAML 1.1 browser profiles, for the same reason and on the same terms:
 // this page must name the endpoints and the providerID that module names,
 // because a console that derived a URL of its own would be a console telling
 // somebody to configure a path nothing serves. It is required at position 10b
-// in `common/protocol_stack.js` and this file at 18, so this is a plain
+// in `common/protocol_stack.ts` and this file at 18, so this is a plain
 // require in the ordinary direction — not an inverted slot, and rule 3e's test
 // is why.
 import saml11 = require('../saml/saml11_sso');
@@ -606,10 +614,15 @@ import authorizationServers = require('../oauth-oidc/authorization_servers');
 // **`federation/federation_sp.ts` is deliberately NOT required here**, and it
 // is the same line drawn around `spiffe_server.js` twenty lines down: that
 // module registers /federation and its four endpoints, and
-// `common/protocol_stack.js` requires it at position 10c — BEFORE this file —
+// `common/protocol_stack.ts` requires it at position 10c — BEFORE this file —
 // so a require from here would be harmless today and would silently become
-// the reason a route moved the day somebody reorders the two. What this page
-// needs from it is the shape of the URLs to configure at the partner, and those
+// the reason a route moved the day somebody reorders the two. (That was the
+// argument while a require was a registration. Since #50's R1 the stack
+// registers those routes at 10c with its own `register()` call, so no require
+// could move them; a require from here would still load the module, and run
+// its load-time work, from inside the console's — which is reason enough.)
+// What this page needs from it is the shape of the URLs to configure at the
+// partner, and those
 // come from `federation.PATHS` — one copy of the strings, in the library both
 // sides may reach, so this page
 // and that router cannot come to name different paths. See that constant's
@@ -634,10 +647,13 @@ import federationDiagram = require('./federation_diagram');
 // cannot close a cycle. `spiffe_id.js` comes with them for the server ID.
 //
 // **`spiffe_server.js` is deliberately NOT required here.** That module
-// registers the bundle endpoint and /spiffe, and `common/protocol_stack.js`
+// registers the bundle endpoint and /spiffe, and `common/protocol_stack.ts`
 // requires this file FIRST — so a require from here would pull those routes
 // into the express router ahead of the console's own, and
-// GET /admin/sts-metadata is built by walking that router. What this page
+// GET /admin/sts-metadata is built by walking that router. (Since #50's R1
+// requiring it registers nothing — the stack's `register()` call at 23 does —
+// but that module requires THIS file for the shell, so a require from here
+// would still close a cycle, and the slot below stays.) What this page
 // needs from it is two facts about sockets, and they arrive through a reader
 // slot instead: the same inversion setDirectoryReader(), setGroupReader() and
 // setScimReader() already use, and justified by rule 3e's test in exactly the
@@ -663,7 +679,10 @@ import spiffeIdLib = require('../spiffe/spiffe_id');
 // It is emphatically NOT `ssf/ssf.ts`, which is at 23b and registers every
 // /ssf route and the well-known document: a require of THAT from here would
 // drag all of it ahead of the management API's own routes, which is exactly
-// what the eighth slot exists to prevent.
+// what the eighth slot exists to prevent. Since #50's R1 its own routes are
+// registered by `common/protocol_stack.ts` at 23b wherever it is loaded, but
+// it requires this file (a cycle) and `ldap/ldap_server.js`, which is still
+// JavaScript and still registers the directory's routes when required.
 //
 // What crosses it is this console's own inbox and the stream behind it. See
 // GET /admin/signals below.
@@ -671,7 +690,7 @@ import spiffeIdLib = require('../spiffe/spiffe_id');
 import signals = require('../ssf/ssf_receivers');
 // For the DRIFT report: the document this service would publish, to compare a
 // profile's overrides against. oauth2.js is required before admin.ts in
-// `common/protocol_stack.js` (rule 5), so this is a plain require in the
+// `common/protocol_stack.ts` (rule 5), so this is a plain require in the
 // ordinary direction.
 import oauth2 = require('../oauth-oidc/oauth2');
 // WHO ACTED ON WHOSE BEHALF. A library like the four above — it registers no
@@ -746,7 +765,7 @@ import credentialGraph = require('../common/credential_graph');
 //
 // A plain require in the ordinary direction, and both tests that would force a
 // slot pass: `krb5_principals.js` registers no route (the KDC's own `/KdcProxy`
-// and `/krb5/principals` are in `krb5_kdc.js`), and `common/protocol_stack.js`
+// and `/krb5/principals` are in `krb5_kdc.js`), and `common/protocol_stack.ts`
 // requires the Kerberos modules BEFORE this one, so nothing here can be the
 // reason a route moved. It is the same argument the two SPIFFE libraries above
 // are required under.
@@ -776,13 +795,15 @@ const vz = validation.z;
 // it.
 //
 // A plain require would close a cycle AND move routes, which is both halves of
-// the test at once: that module requires `ldap_server.js` (for the bound
-// connections that are the LDAP session), and `ldap_server.js` requires THIS
-// file to fill those five slots — so `admin.ts -> logout.ts -> ldap_server.js
-// -> admin.ts` hands ldap_server.js a half-initialised console whose
-// `setDirectoryReader` is undefined, and the symptom arrives as something that
-// is not a function. It would also drag every `/ldap` route into the router
-// ahead of the console's own, which is rule 6 read backwards.
+// the test at once — and the second half survives #50's R1, because the
+// routes it would move are `ldap_server.js`'s, which is still JavaScript and
+// registers when required. That module requires `ldap_server.js` (for the
+// bound connections that are the LDAP session), and `ldap_server.js` requires
+// THIS file to fill those five slots — so `admin.ts -> logout.ts ->
+// ldap_server.js -> admin.ts` hands ldap_server.js a half-initialised console
+// whose `setDirectoryReader` is undefined, and the symptom arrives as
+// something that is not a function. It would also drag every `/ldap` route
+// into the router ahead of the console's own, which is rule 6 read backwards.
 //
 // See the slot itself, further down, beside the other five.
 
@@ -930,7 +951,7 @@ const MAX_WHO = 12;
 // ONE ROW BELOW IS A PAGE THIS FILE DOES NOT DRAW. `Service metadata`
 // (`/admin/sts-metadata`) is built by `../sts_metadata.js`, which derives its
 // whole content from the live express router and therefore has to be the LAST
-// module `common/protocol_stack.js` loads; it calls `respond()` for this
+// module `common/protocol_stack.ts` loads; it calls `respond()` for this
 // shell. Nothing about the nav knows that, and that is the point — a page
 // here is a `path` and a
 // `label` whoever builds it. It was `/sts-metadata`, outside the console
@@ -4464,7 +4485,7 @@ class AdminConsole {
       //
       // `/admin/sts-metadata` is built by `../sts_metadata.js` — it derives its
       // whole content from the live express router, which is why it is the last
-      // module `common/protocol_stack.js` loads — but it is drawn by page()
+      // module `common/protocol_stack.ts` loads — but it is drawn by page()
       // like every other console page, and page() emits the ONLY <style> this
       // console has. A <style> of its own would have to sit inside <body>,
       // which browsers accept and no validator does, and there would then be
@@ -21887,11 +21908,13 @@ class AdminConsole {
   // repository warns about everywhere else. So the prose is a table and the
   // handler is written once. Three things follow and each is deliberate:
   //
-  //   * **REGISTRATION IS STILL AT THE TOP LEVEL** (rule 1). The loop runs
-  //     while this module is being required, so these routes are registered in
-  //     the order they appear here, are behind the gate registered above them,
-  //     and are visible to `sts_metadata.js` reading the router — a page built
-  //     in a loop is not a page built differently.
+  //   * **REGISTRATION IS STILL IN THE ONE REGISTRATION PASS** (rule 1). The
+  //     loop runs inside `registerRoutes()` — while this module was being
+  //     required until #50's R1, and when `common/protocol_stack.ts` calls
+  //     that method since — so these routes are registered in the order they
+  //     appear here, are behind the gate registered above them, and are
+  //     visible to `sts_metadata.js` reading the router — a page built in a
+  //     loop is not a page built differently.
   //   * **THE SETTINGS ARE NOT IN THIS TABLE.** A row names a `path`, and
   //     SETTING_HOMES says what lives there. Naming keys here would be the
   //     second list that disagrees with the first.
@@ -24348,10 +24371,12 @@ class AdminConsole {
       '</tr>';
   }
 
-  // THE ROUTES, registered in the order they always were: the transitional
-  // code below calls this at load, at the point the LAST of them used to be
-  // registered — the file header says why not the first — so the route
-  // order is unchanged (rule 1).
+  // THE ROUTES, registered in the order they always were: the composition
+  // root (`common/protocol_stack.ts`) calls this through the export at the
+  // foot of the file, at 18, where requiring this module used to register
+  // them (#50, R1) — the file header says why the transitional call sat where
+  // the LAST of them was rather than the first — so the route order is
+  // unchanged (rule 1).
   registerRoutes(app: RouteApp): void {
     const { log, oidcRp, mode, gateStateFor, rbac, realms, errorCodes,
             LOGIN_PATH, loginRealmChooser, websecurity, parseBody, adminScope,
@@ -32831,13 +32856,14 @@ class AdminConsole {
     // **THE MODULE IS A PLAIN REQUIRE AND NOT AN ELEVENTH SLOT**, and rule 3e's
     // test is why — it answers NO in both directions, which is the answer that
     // means "do not add a slot". `ssf/ssf_receivers.ts` registers no route
-    // (rule
-    // 3) and requires only libraries, none of which requires this file, so a
-    // require here can neither move a route nor close a cycle. The slots on
-    // this file (the root CLAUDE.md's rule 3e table lists them) exist because
-    // `ssf/ssf.ts`, `ldap/ldap_server.js` and the rest register routes and sit
-    // BELOW this line in the require order; a library costs a reader nothing
-    // and an indirection is not free.
+    // (rule 3) and requires only libraries, none of which requires this file,
+    // so a require here can neither move a route nor close a cycle. The slots
+    // on this file (the root CLAUDE.md's rule 3e table lists them) exist
+    // because `ssf/ssf.ts`, `ldap/ldap_server.js` and the rest register routes
+    // and sit BELOW this line in the require order (since #50's R1 a converted
+    // one's routes are registered by `common/protocol_stack.ts` instead, but
+    // each still requires this file, so the cycle half stands); a library
+    // costs a reader nothing and an indirection is not free.
     //
     // It is required at the top of this file with the others.
     // =========================================================================
@@ -35636,9 +35662,11 @@ class AdminConsole {
       log.debug("Leaving the admin configuration page.");
     });
 
-    // REGISTERED IN A LOOP, at the top level, which is rule 1 held rather than
-    // bent: requiring this module registers these routes, in this order, below
-    // the gate. `row` is captured per iteration because `forEach`'s callback
+    // REGISTERED IN A LOOP, in the one registration pass, which is rule 1 held
+    // rather than bent: `registerRoutes()` registers these routes, in this
+    // order, below the gate — when `common/protocol_stack.ts` calls it since
+    // #50's R1, as requiring this module did before. `row` is captured per
+    // iteration because `forEach`'s callback
     // has its own scope — the same reason the equivalent `for (var i…)` would
     // not have worked and is not what this is.
     PROTOCOL_SETTINGS_PAGES.forEach(function (row) {
@@ -36040,7 +36068,8 @@ class AdminConsole {
 
 // THE TRANSITIONAL INSTANCE (#50): built from the real modules, as the
 // composition root will build one, and the source of every name this
-// module exports. It goes when that root exists.
+// module exports. It goes when that root builds the modules as well as
+// registering their routes (#50's R2).
 const consoleInstance = new AdminConsole({
   log: log,
   xmlEscape: xmlEscape,
@@ -37071,7 +37100,7 @@ const CHOOSER_HITS = adminViews.CHOOSER_HITS;
 //
 // This module does NOT require ldap_server.js to get at it, and the reason is
 // the route order as much as a cycle (`ldap_server.js` requires this file to
-// fill its slots). `common/protocol_stack.js` requires this file at 18 and
+// fill its slots). `common/protocol_stack.ts` requires this file at 18 and
 // `ldap/ldap_server.js` at 21 (rule 6), so a require from here would pull the
 // directory's routes into the router AHEAD of the console's — and
 // /admin/sts-metadata is built by walking that router. So the direction is
@@ -37145,9 +37174,11 @@ let spiffeReader = null;
 // and rule 3e's test answers yes in both directions at once.
 //
 //   * a require from `mgmt-api/admin_api.ts` (19) to that module (20a) would
-//     MOVE ROUTES — its own page, and `tls/tls_server.js`'s three, which it
-//     requires for the server certificate — ahead of the management API's own
-//     routes and of ldap, scim and spiffe.
+//     MOVE ROUTES — `tls/tls_server.js`'s three, which it requires for the
+//     server certificate, ahead of the management API's own routes and of
+//     ldap, scim and spiffe. (Its own page moved too until #50's R1; since
+//     then `common/protocol_stack.ts` registers that at 20a wherever the
+//     module is loaded, but `tls_server.js` is still JavaScript.)
 //   * a require from THIS file to it would CLOSE A CYCLE: it requires this one
 //     for the shell, exactly as `../sts_metadata.js` does.
 //
@@ -37208,6 +37239,14 @@ let logoutReader = null;
 // registered ahead of the management API's own, and ahead of ldap, scim and
 // spiffe. So the slot is the only arrangement left, and it is the same one SSF
 // and the directory pages already take.
+//
+// **THE ROUTE HALF OF THAT WAS WRITTEN WHILE A REQUIRE WAS A REGISTRATION.**
+// Since #50's R1 (2026-09-16) `common/protocol_stack.ts` registers the XACML
+// family's routes at 23c with its own `register()` calls, wherever the
+// modules were first loaded, so a require from `admin_api.ts` would no longer
+// move them. It would still load the family — and arm `issuance_gate.js`
+// through `xacml_role_pep.ts` — at 19 instead of 23c, which is a load-time
+// effect out of order, and the cycle half stands; so the slot stays.
 //
 // IT CARRIES SEVEN FUNCTIONS — `XACML_PAGE_PARTS` below, `monitor` being the
 // seventh (2026-09-06) — AND IS VALIDATED WHOLE, for `setLogoutReader()`'s
@@ -38162,7 +38201,12 @@ const DEAD_LETTER_COLOURS = {
 //   * a require the other way round — from `mgmt-api/admin_api.ts` (19) to
 //     `../ssf/ssf.ts` — would MOVE ROUTES: every `/ssf` endpoint, and the
 //     `/.well-known/ssf-configuration` document, ahead of the management API's
-//     own and of ldap, scim and spiffe.
+//     own and of ldap, scim and spiffe. **Since #50's R1 (2026-09-16) those
+//     are not the routes it would move** — `common/protocol_stack.ts`
+//     registers SSF's own at 23b wherever the module is loaded — but
+//     `ssf.ts` requires `ldap/ldap_server.js`, which is still JavaScript and
+//     registers when required, so the require would still pull the
+//     directory's routes (21) ahead of the management API's (19).
 //
 // So `/admin/ssf` and `/admin-api/ssf` reach it through a function this console
 // holds, the way `/admin-api/crypto` reaches the crypto report.
@@ -38195,7 +38239,7 @@ let signalsReporter = null;
 //     module is really first loaded from inside THIS file's require, through
 //     `admin-core/admin_views.ts` → `spiffe/spiffe_auth.ts`, so it would be
 //     handed this module's half-built exports and find no `setTruststore` on
-//     them. That is why `common/protocol_stack.js` fills this, on the line
+//     them. That is why `common/protocol_stack.ts` fills this, on the line
 //     after it requires `tls_server.js`, rather than the filler being the
 //     module that owns the array. It is the one slot here filled that way.
 //
@@ -38222,7 +38266,8 @@ let truststore = null;
 //     module requires this one for the page shell and the gate;
 //   * a require from `mgmt-api/admin_api.ts` would MOVE ROUTES, putting every
 //     `/ssf` endpoint and the well-known document ahead of the management
-//     API's own and of ldap, scim and spiffe.
+//     API's own and of ldap, scim and spiffe — the directory's routes, since
+//     #50's R1; see the eighth.
 //
 // **A SECOND SLOT RATHER THAN MORE MEMBERS ON THE EIGHTH**, and that is a
 // decision rather than a habit. The signals reporter answers "what streams
@@ -38245,7 +38290,8 @@ let caepReporter = null;
 // the same test answering yes in both directions:
 //
 //   * a require from THIS file to `../ssf/ssf.ts` would CLOSE A CYCLE;
-//   * a require from `mgmt-api/admin_api.ts` would MOVE ROUTES.
+//   * a require from `mgmt-api/admin_api.ts` would MOVE ROUTES (the
+//     directory's, since #50's R1; see the eighth).
 //
 // **A THIRD SLOT RATHER THAN MORE MEMBERS ON THE NINTH.** The signals reporter
 // answers *what streams exist and what is on them*; the CAEP one answers *what
@@ -38965,7 +39011,10 @@ const FEDERATION_LINKS =
   'href="/admin/ldap/federations">the register as the directory sees ' +
   'it</a></p>';
 
-consoleInstance.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 // THREE NAMES CALLERS READ THAT THIS MODULE HAS NEVER EXPORTED, declared as
 // absent so that the callers type-check as they ran: `messagesOf` (which
@@ -38980,6 +39029,7 @@ interface AdminConsoleAbsentNames {
 }
 
 const consoleExports = {
+  registerRoutes: (target: any): void => consoleInstance.registerRoutes(target),
   AdminConsole: AdminConsole,
   // THE SHELL, written for the first module outside this file that drew a
   // console page (many do now — `crypto_metadata.js`, `pki_admin.js`, the
@@ -39132,7 +39182,7 @@ const consoleExports = {
   setSignalsReporter:
     consoleInstance.setSignalsReporter.bind(consoleInstance) as
       AdminConsole['setSignalsReporter'],
-  // Filled by ../common/protocol_stack.js on the line after it requires
+  // Filled by ../common/protocol_stack.ts on the line after it requires
   // ../tls/tls_server.js — the thirteenth, and the one slot here NOT filled by
   // the module that owns what it carries. See the block above setTruststore().
   setTruststore: consoleInstance.setTruststore.bind(consoleInstance) as

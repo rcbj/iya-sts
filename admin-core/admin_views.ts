@@ -53,7 +53,9 @@
 // THE SAME TWO RULES AS `admin_actions.ts`, FOR THE SAME REASONS.
 //
 // No route may be registered here — two modules require this file, so a route
-// would be registered twice and rule 1 means the second can never win. And
+// would have been registered twice while a require was a registration (rule
+// 1, until #50's R1) and the second could never win; since R1 it would belong
+// to neither surface's `registerRoutes()`. And
 // nothing here may build markup: the moment one of these functions returns a
 // string with a tag in it, the console is no longer the only thing that
 // renders and there are two places a page can come from.
@@ -61,7 +63,9 @@
 // It may be required at 18 or later and nowhere earlier, for
 // `admin_actions.ts`'s reason: the modules below include route-registering
 // ones, and from `common/` or from anything earlier in the order this file
-// would pull them into the router ahead of themselves.
+// would pull them into the router ahead of themselves — or, for the ones
+// converted by #50's R1, which register nothing when required, run their
+// load-time work ahead of the order `common/protocol_stack.ts` argues.
 // `tests/admin_actions_layer.js` pins every one of these.
 // ===========================================================================
 
@@ -234,7 +238,7 @@ let scimReader = null;
 let rolePreviewer = null;
 let configSettingsJson = null;
 // The client-certificate truststore (2026-09-12). Forwarded by
-// `admin-ui/admin.ts`'s `setTruststore()`, which `common/protocol_stack.js`
+// `admin-ui/admin.ts`'s `setTruststore()`, which `common/protocol_stack.ts`
 // fills; that setter carries the argument.
 let truststore = null;
 

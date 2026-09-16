@@ -6,9 +6,13 @@
 // GNAP: THE GRANT NEGOTIATION AND AUTHORIZATION PROTOCOL (RFC 9635) AND ITS
 // RESOURCE SERVER CONNECTIONS (RFC 9767), AS ROUTES.
 //
-// Requiring this module registers every GNAP endpoint (rule 1) — and requires
-// `gnap_interact.ts`, which registers the pages a resource owner sees, so this
-// family has ONE line in the require order the way XACML's does. Every decision
+// This module holds every GNAP endpoint — registered by its exported
+// `registerRoutes(app)`, which `common/protocol_stack.ts` calls (#50, R1) —
+// and it requires `gnap_interact.ts` (the pages a resource owner sees) and
+// `gnap_admin.ts`, so this family has ONE require in the stack the way XACML's
+// does, followed by three `register()` calls: this module's, then
+// `gnap_interact`'s, then `gnap_admin`'s, the order they registered in when
+// requiring them did. Every decision
 // is `gnap_grants.ts`'s and `gnap_rs.ts`'s; what is here is transport: which
 // path, which method, which JSON and which HTTP status.
 //
@@ -66,9 +70,11 @@
 // grant engine, the resource server judge and the rest through its
 // constructor, and its `registerRoutes(app)` holds every route in its old
 // order. The TRANSITIONAL code at the bottom builds one from the real
-// modules, registers its routes at load, and then — in the old order —
-// requires the resource-owner pages and the console pages and installs the
-// SSF scope. `gnap_access` and `gnap_monitor` stay LAZY, as they were, through
+// modules, exports its `registerRoutes(app)` for `common/protocol_stack.ts`
+// to call at this module's old point in the route order (#50, R1), and then
+// — in the old order — requires the resource-owner pages and the console
+// pages (which register nothing when required either) and installs the SSF
+// scope. `gnap_access` and `gnap_monitor` stay LAZY, as they were, through
 // the two loaders in `GnapRoutesDeps`. The module still exports `DEMO_TYPE`,
 // `DEMO_REFERENCE` and `gnapError`.
 // ---------------------------------------------------------------------------
@@ -657,7 +663,7 @@ class GnapRoutes {
 }
 
 // THE TRANSITIONAL CODE — see the header above. One instance, built from the
-// real modules, and its routes registered at load, where they always were.
+// real modules, whose routes the composition root registers (below).
 const routes = new GnapRoutes({
   config: config,
   log: helpers.log,
@@ -675,15 +681,22 @@ const routes = new GnapRoutes({
     return require('./gnap_monitor');
   }
 });
-routes.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 // The pages a resource owner sees, the two console pages, and the scope hook
-// on the SSF streams.
+// on the SSF streams. The two requires register nothing (#50, R1); they are
+// here so the family is one require, and `common/protocol_stack.ts` registers
+// their routes after this module's. `signals.install()` is a load-time effect
+// and still happens here.
 require('./gnap_interact');
 require('./gnap_admin');
 signals.install();
 
 export = {
+  registerRoutes: (target: any): void => routes.registerRoutes(target),
   GnapRoutes: GnapRoutes,
   DEMO_TYPE: GnapRoutes.DEMO_TYPE,
   DEMO_REFERENCE: GnapRoutes.DEMO_REFERENCE,

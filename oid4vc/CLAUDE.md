@@ -17,9 +17,12 @@ DID Core with DIF domain linkage.
 code** — see rule 2 in the root `CLAUDE.md`. The credential configurations are
 read by both the issuer and the authorization server; the Credential Offer's
 pre-authorized codes are minted by the offer pages and redeemed at the token
-endpoint. In `common/protocol_stack.js` (positions 11–14), `vc_offers` is
+endpoint. In `common/protocol_stack.ts` (positions 11–14), `vc_offers` is
 required before `vc_issuer`; both read `vc_configs`, which is why that module
-exists.
+exists. **Its ROUTES are registered earlier than that line, just before
+`oauth-oidc/oauth2`'s** (#50's R1): `oauth2.ts` requires `vc_offers.ts`, and
+until R1 that require was what registered the offer pages, so the composition
+root's `register()` for `vc_offers` sits where they always landed.
 
 **`vc_claims.ts` is read from many points of the require order and from
 eight directories** — `vc_issuer.ts` and `vc_verifier_config.ts` here,

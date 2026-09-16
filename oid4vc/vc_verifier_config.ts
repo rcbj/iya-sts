@@ -29,7 +29,10 @@
 // `admin-core/` late — and a require between those two in
 // either direction would drag one module's routes into the router at the
 // other's position, which is what `GET /admin/sts-metadata` is built by
-// walking.
+// walking. (Since #50's R1 that is true only of what such a require LOADS
+// that is still JavaScript — `common/protocol_stack.ts` registers every
+// converted module's routes in its own order — but a leaf is still the
+// answer that needs no such argument at all.)
 //
 // ---------------------------------------------------------------------------
 // THE CATALOGUE IS vc_claims.ts's CATALOGUE, TURNED AROUND.

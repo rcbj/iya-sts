@@ -82,7 +82,9 @@
 // that is not advertised. A slot rather than a require because rule 3e's test
 // answers yes — a `require('../sts_metadata')` from this file would load that
 // module HERE, and its one constraint is that it is required LAST, so the
-// require would take the last module in server.js and make it not last.
+// require would take the last module in `common/protocol_stack.ts` and make
+// it not last. (`sts_metadata.js` is still JavaScript, so requiring it still
+// registers its routes; #50's R1 did not change this.)
 //
 // The slot is optional in the only direction that matters: with nothing in it
 // the page draws its own table and says the check did not run, rather than
@@ -93,13 +95,21 @@
 // WHERE IT SITS IN THE REQUIRE ORDER, AND WHY EVERY REQUIRE BELOW IS A CACHE
 // HIT.
 //
-// server.js requires this module at 20a — after `tls/tls_server` (20) and
-// before `ldap/ldap_server` (21). That position is a DEPENDENCY and not a
+// `common/protocol_stack.ts` requires this module at 20a — after
+// `tls/tls_server` (20) and before `ldap/ldap_server` (21) — and registers
+// its routes on the next line. That position is a DEPENDENCY and not a
 // preference: this file reads tables out of many other modules (eleven when
-// this was written; the list below names the originals), and
-// requiring one of them that server.js has not yet loaded would REGISTER ITS
-// ROUTES HERE (rule 1). At 20a every one of them is already loaded, so every
-// require below is a cache hit that registers nothing and moves nothing:
+// this was written; the list below names the originals), and requiring one
+// of them that the stack has not yet loaded would REGISTER ITS ROUTES HERE
+// (rule 1). **Since #50's R1 (2026-09-16) that is true only of the modules
+// still written in JavaScript** — `tls/tls_server.js` below, and
+// `kerberos/krb5_kdc.js`, which loads `krb5_crypto`; a converted module
+// registers nothing when required,
+// and the composition root registers its routes at its own place — but an
+// early require of a converted one would still run its load-time work (its
+// slot fills, its stores) out of the order the stack argues. At 20a every one
+// of them is already loaded, so every require below is a cache hit that
+// registers nothing and moves nothing:
 //
 //   common/crypto, common/pq_jose, the vendored xmldsig and bbs2023   leaves
 //   kerberos/krb5_crypto                loaded at 15 by krb5_kdc
@@ -110,7 +120,8 @@
 //   admin-ui/admin                      loaded at 18 — the SHELL, and the gate
 //   tls/tls_server                      loaded at 20, for its certificate
 //
-// The gate is admin.js's one `app.use('/admin', ...)`, registered at 18 and
+// The gate is admin.js's one `app.use('/admin', ...)`, registered at 18 (by
+// `common/protocol_stack.ts`'s `register()` call for `admin-ui/admin`) and
 // therefore above this route: express applies middleware only to routes added
 // after it, so this page is behind the console's sign-on and its two roles by
 // construction, exactly like `/admin/sts-metadata`. Nothing here repeats that
@@ -128,7 +139,7 @@
 
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
-// shape, for a module that registers routes (rule 1):
+// shape, for a module that has routes (rule 1):
 //
 //   * **`CryptoMetadata` TAKES EVERY MODULE IT READS THROUGH ITS
 //     CONSTRUCTOR** — the shell, the logger, `common/crypto.js` and the other
@@ -143,8 +154,10 @@
 //     plain data and stays a module-level constant.
 //   * **`registerRoutes(app)` HOLDS THE THREE ROUTES** in their old order, and
 //     the TRANSITIONAL code at the bottom builds one instance from the real
-//     modules, registers its routes at load, fills `admin.js`'s
-//     `setCryptoReporter()` slot after them, and exports every old name —
+//     modules, fills `admin.js`'s `setCryptoReporter()` slot at load, and
+//     exports `registerRoutes(app)`, which `common/protocol_stack.ts` calls
+//     at 20a, where requiring this module used to register them (#50, R1) —
+//     requiring the module registers nothing. It also exports every old name —
 //     `setProtocolFamilies` (the slot `sts_metadata.js` fills) and the rest
 //     bound to that instance, `FAMILIES` and `STANDARDS` as the same arrays.
 //     `CryptoMetadata` is exported beside them for the composition root.
@@ -218,13 +231,17 @@ import pqcBadge = require('./pqc_badge');
 
 import scimAuth = require('../scim/scim_auth');
 // The Shared Signals event catalogue and its gate. BOTH ARE LIBRARIES that
-// register no route — `ssf/ssf.ts`, which does, is deliberately NOT required
-// here: server.js loads it after this module, so requiring it would register
-// every /ssf endpoint and the well-known document AT THIS POINT in the router
-// (rule 1), ahead of ldap, scim and spiffe. What this page needs is the
-// algorithm and the scheme list, and those are exactly what the two leaves
-// hold. `ssf_auth` requires `oauth-oidc/dpop`, which this file already
-// requires two lines up, so it is a cache hit like every other require here.
+// register no route — `ssf/ssf.ts`, which has routes, is deliberately NOT
+// required here: `common/protocol_stack.ts` loads it after this module, so
+// requiring it would have registered every /ssf endpoint and the well-known
+// document AT THIS POINT in the router (rule 1), ahead of ldap, scim and
+// spiffe. Since #50's R1 (2026-09-16) such a require would register no route
+// — the stack registers SSF's at 23b wherever the module was loaded — but it
+// would still load the whole family, and fill its slots on the console, from
+// inside this one's require. What this page needs is the algorithm and the
+// scheme list, and those are exactly what the two leaves hold. `ssf_auth`
+// requires `oauth-oidc/dpop`, which this file already requires two lines up,
+// so it is a cache hit like every other require here.
 import ssfEvents = require('../ssf/ssf_events');
 import ssfAuth = require('../ssf/ssf_auth');
 
@@ -3457,10 +3474,10 @@ class CryptoMetadata {
     const self = this;
     log.debug("Entering CryptoMetadata.registerRoutes().");
     // ------------------------------------------------------------------------
-    // THE ROUTE. Behind the console's gate by construction — admin.js registers
-    // its one `app.use('/admin', ...)` at require 18 and express applies
-    // middleware only to routes added after it, and this module is required at
-    // 20a. Nothing here repeats that check.
+    // THE ROUTE. Behind the console's gate by construction — admin.js's one
+    // `app.use('/admin', ...)` is registered at 18 and express applies
+    // middleware only to routes added after it, and `common/protocol_stack.ts`
+    // calls this at 20a (#50, R1). Nothing here repeats that check.
     //
     // `admin.respond()` answers `?format=json` itself, which keeps the
     // machine-readable form byte-for-byte the shape every other console page's
@@ -4281,8 +4298,10 @@ class CryptoMetadata {
 
 // ---------------------------------------------------------------------------
 // THE TRANSITIONAL CODE — see the header. One instance, built from the real
-// modules as the composition root will build one; its routes registered at
-// load, where they always were; then the slot below, after them, as before.
+// modules as the composition root will build one; then the slot below. Its
+// routes are registered by the composition root through the export — which,
+// since #50's R1, is AFTER the slot is filled rather than before it; nothing
+// reads the slot until a request arrives, so the order of the two is moot.
 // ---------------------------------------------------------------------------
 const cryptoMetadata = new CryptoMetadata({
   log: helpers.log,
@@ -4349,7 +4368,10 @@ const cryptoMetadata = new CryptoMetadata({
     return require('../scep/scep_cms');
   }
 });
-cryptoMetadata.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 const log = helpers.log;
 
@@ -4359,9 +4381,11 @@ const log = helpers.log;
 // yes in both directions and that is why it is a slot rather than a require:
 //
 //   * a require from `admin_api.js` (19) to this module (20a) would MOVE
-//     ROUTES — this page's own, and `tls/tls_server.js`'s six, which this
-//     file requires for the server certificate — ahead of the management API's
-//     own routes and of ldap, scim and spiffe.
+//     ROUTES — `tls/tls_server.js`'s six, which this file requires for the
+//     server certificate, ahead of the management API's own routes and of
+//     ldap, scim and spiffe. (It moved this page's own as well until #50's
+//     R1; `common/protocol_stack.ts` registers those at 20a now, wherever
+//     the module is loaded.)
 //   * a require from `admin.js` (18) to this module would CLOSE A CYCLE: this
 //     file requires that one for the shell.
 //
@@ -4382,8 +4406,9 @@ if (typeof admin.setCryptoReporter === 'function') {
   });
 } else {
   // An older copy of admin.js, which is a real possibility while this
-  // repository is vendored into another one. The PAGE still works — it is
-  // registered above and does not go through the slot — and only the API
+  // repository is vendored into another one. The PAGE still works — its
+  // route is registered by the composition root through `registerRoutes()`
+  // and does not go through the slot — and only the API
   // mirror is missing, which is what this line says rather than leaving a
   // 404 to be explained.
   log.error(errorCodes.tag('STS-ADMIN-0596') +
@@ -4393,6 +4418,7 @@ if (typeof admin.setCryptoReporter === 'function') {
 }
 
 export = {
+  registerRoutes: (target: any): void => cryptoMetadata.registerRoutes(target),
   CryptoMetadata: CryptoMetadata,
   FAMILIES: cryptoMetadata.families,
   STANDARDS: STANDARDS,

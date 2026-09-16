@@ -2361,7 +2361,7 @@ function resolvedSamlAttributes(id, context) {
 //     loop and hands back a half-initialised module.
 //   * what it needs is the DIRECTORY's group membership, and only
 //     ldap_server.js can answer that — required late in
-//     `common/protocol_stack.js` (21), so any require reaching it drags every
+//     `common/protocol_stack.ts` (21), so any require reaching it drags every
 //     /ldap route to the front of the express router that
 //     /admin/sts-metadata is built by walking.
 //

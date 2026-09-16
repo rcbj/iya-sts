@@ -13,9 +13,12 @@
 //
 // **THIS FILE EXISTS BECAUSE THOSE DOORS CANNOT REQUIRE `ssf/ssf.ts`.** The
 // console's actions are at 18 in the require order, the portal just after
-// `authn` (8), and SSF at 23b: a require from either would register every
-// `/ssf` route ahead of theirs (rule 1) and close a cycle through
-// `admin-ui/admin.ts`. So this is a LIBRARY that requires nothing but the
+// `authn` (8), and SSF at 23b: a require from either would have registered
+// every `/ssf` route ahead of theirs (rule 1) and would close a cycle through
+// `admin-ui/admin.ts`. Since #50's R1 the first half is gone — requiring
+// `ssf.ts` registers nothing, and `common/protocol_stack.ts` registers its
+// routes at 23b — but the cycle, and SSF's load-time effects moving to 8,
+// are not. So this is a LIBRARY that requires nothing but the
 // logger, and it reads `ssf.ts` out of `require.cache` at the moment an event
 // is due — which, in a running service, is always after the whole stack has
 // loaded. A process that never loaded SSF (an in-process test, the parent

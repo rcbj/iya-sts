@@ -123,11 +123,13 @@
 // functions of `authn.js`, the issuance gate, `mode`, this directory's four
 // libraries and the two cluster libraries) through its constructor, typed as
 // `typeof` each module. Its routes are registered by `registerRoutes(app)`, in
-// the order they always were, and the TRANSITIONAL instance at the bottom
-// calls it at load — where they were registered before (rule 1) — and exports
-// the old names for `admin-ui/admin.ts`, `saml11_sso.ts`, `logout/logout.ts`
-// and the others. The three stores stay module-level `realms.map()`
-// declarations, which is where a store becomes per realm.
+// the order they always were. The TRANSITIONAL instance at the bottom does
+// not call it (#50, R1): the module exports it, and
+// `common/protocol_stack.ts` calls it at the point in the route order where
+// requiring this module used to register the routes (rule 1). The instance
+// exports the old names for `admin-ui/admin.ts`, `saml11_sso.ts`,
+// `logout/logout.ts` and the others. The three stores stay module-level
+// `realms.map()` declarations, which is where a store becomes per realm.
 // ---------------------------------------------------------------------------
 
 import zlib = require('zlib');
@@ -169,7 +171,7 @@ import gate = require('../common/issuance_gate');
 // The application registry, which lives under ou=applications in the embedded
 // directory. A library that registers no route, so requiring it here changes
 // nothing about the route order this module's position in
-// `common/protocol_stack.js` fixes.
+// `common/protocol_stack.ts` fixes.
 import applications = require('../common/applications');
 // THE MODE, and four libraries beside this file (2026-09-12), each a leaf that
 // registers nothing: the one reading of how a session authenticated, the
@@ -3860,7 +3862,10 @@ const saml2Sso = new Saml2Sso({
   capabilities: capabilities
 });
 
-saml2Sso.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 // #46: an artifact is resolved once across the cluster — here by
 // spendArtifact(), and in saml11_sso.ts by respond()'s claim. Provided from
 // THIS file for both profiles because the capability row names it, and
@@ -3869,6 +3874,7 @@ saml2Sso.registerRoutes(app);
 capabilities.provide('saml.artifacts-once');
 
 export = {
+  registerRoutes: (target: any): void => saml2Sso.registerRoutes(target),
   Saml2Sso: Saml2Sso,
   BINDING_REDIRECT: BINDING_REDIRECT,
   BINDING_POST: BINDING_POST,

@@ -13,11 +13,14 @@
 //     (`families`, `familyById`, `sessionExpiryRules`), each exactly as it was
 //     written, and the module exports them from the instance under their old
 //     names. They hold no state, which is this directory's first rule.
-//   * `registerRoutes(app)` holds `GET` and `POST /logout`, and the
-//     TRANSITIONAL instance at the bottom calls it at load, where the routes
-//     used to be registered (rule 1), then fills `admin.js`'s
-//     `setLogoutReader()` slot exactly as before — with a plain `require` of
-//     the console at that same point, because that is where the module read it.
+//   * `registerRoutes(app)` holds `GET` and `POST /logout`. The TRANSITIONAL
+//     instance at the bottom registers NOTHING at load (#50, R1): the module
+//     exports `registerRoutes(app)`, and `common/protocol_stack.ts` calls it
+//     at the point in the route order where requiring this module used to
+//     register the routes (rule 1). At load the instance still fills
+//     `admin.js`'s `setLogoutReader()` slot exactly as before — with a plain
+//     `require` of the console at that same point, because that is where the
+//     module read it.
 //   * The module still exports its old names from that instance for
 //     `admin-ui/admin.ts`, `mgmt-api/admin_api.ts` and the tests.
 // ---------------------------------------------------------------------------
@@ -62,7 +65,7 @@
 //
 // **IT IS A PLAIN REQUIRE OF EVERYTHING AND NEEDS NO SLOT.** Rule 3e says a
 // slot is what you reach for when a require would close a cycle or move a
-// route, and neither applies here: `common/protocol_stack.js` requires this
+// route, and neither applies here: `common/protocol_stack.ts` requires this
 // module SECOND TO LAST — after every module it reads, before `sts_metadata.js`
 // — so each require below is a cache hit that registers nothing, and nothing in
 // this service requires this file back. Do not add an inverted hook for a
@@ -2341,7 +2344,8 @@ class Logout {
   }
 
   // ---------------------------------------------------------------------------
-  // THE TWO ROUTES, registered in the order they always were (rule 1).
+  // THE TWO ROUTES, in the order they always were (rule 1). Called by
+  // `common/protocol_stack.ts` through the module's `registerRoutes(app)`.
   // ---------------------------------------------------------------------------
   registerRoutes(app?) {
     const { log, authn, baseUrlOf, errorCodes, mode, parseBody, validation,
@@ -2592,8 +2596,10 @@ const logout = new Logout({
   ldapServer: ldapServer
 });
 
-// The routes, registered at load where they always were (rule 1).
-logout.registerRoutes(app);
+// ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
+// module no longer registers anything. `common/protocol_stack.ts` calls the
+// exported `registerRoutes(app)` at the point in the route order where
+// requiring this module used to register them.
 
 // ---------------------------------------------------------------------------
 // THE CONSOLE'S SLOT, FILLED HERE — AND IT IS RULE 3e's TEST ANSWERING YES.
@@ -2628,6 +2634,7 @@ if (typeof adminConsole.setLogoutReader === 'function') {
 }
 
 export = {
+  registerRoutes: (target: any): void => logout.registerRoutes(target),
   Logout: Logout,
   LOGOUT_PATH: LOGOUT_PATH,
   // The list of families, for /admin/logout and the management API's OpenAPI

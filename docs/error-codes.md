@@ -133,7 +133,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.js, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.js, home/.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.js, home/.
 
 | Code | What failed | Client sees |
 |---|---|---|
