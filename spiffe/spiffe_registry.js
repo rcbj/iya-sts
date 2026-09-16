@@ -180,11 +180,10 @@ const SCHEMA = {
     { name: 'spiffeParentId', kind: 'single', from: 'the caller',
       editable: true,
       what: 'WHO MAY ISSUE IT: the SPIFFE ID of the agent (or of this ' +
-            'server) that this entry hangs beneath. A real deployment uses ' +
-            'it to decide which agent may hand out which identity. Nothing ' +
-            'here enforces it — no agent is authenticated — so it is ' +
-            'recorded, reported and used for GetAuthorizedEntries, and ' +
-            'nothing else.' },
+            'server) that this entry hangs beneath. It decides which ' +
+            'entries GetAuthorizedEntries and SyncAuthorizedEntries tell an ' +
+            'agent about: those beneath its own SPIFFE ID or a node alias ' +
+            'its selectors match. BatchNewX509SVID does not yet check it.' },
     { name: 'spiffeSelector', kind: 'multi', from: 'the caller', editable: true,
       what: 'One value per selector, written `type:value` — `unix:uid:1000`, ' +
             '`k8s:ns:default`, `docker:label:app:web`. The type is ' +
@@ -714,6 +713,72 @@ function entriesForWorkload(selectors, parentId) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT AN AGENT IS AUTHORIZED FOR (2026-09-16): SPIRE's answer to
+// `GetAuthorizedEntries` and `SyncAuthorizedEntries`, which returned EVERY
+// entry here until then — so any agent learned every identity in the trust
+// domain, and the `spiffeParentId` this registry records decided nothing.
+//
+// The walk is SPIRE's: start from the agent's own SPIFFE ID, add the NODE
+// ALIASES the agent's recorded selectors match (entries parented on the
+// server, `spiffe://<td>/spire/server`), then every entry whose parent is an
+// identity already reached, until nothing new is reached. Expired entries are
+// left out, as `entriesForWorkload()` leaves them out.
+//
+// **A NODE ALIAS WITH NO SELECTORS MATCHES NOBODY HERE**, where
+// `selectorsMatch()` says it matches everything. An alias with no selectors
+// would put every agent in the trust domain under it, which is the answer this
+// function exists to stop giving; SPIRE refuses such an alias at creation.
+// ---------------------------------------------------------------------------
+function entriesAuthorizedFor(agentId, trustDomain) {
+  log.debug('Entering entriesAuthorizedFor(). agent=' + agentId);
+  const agent = String(agentId == null ? '' : agentId).trim();
+  if (!agent) {
+    log.debug('Leaving entriesAuthorizedFor(). No agent identity.');
+    return [];
+  }
+  const live = allEntries().filter(function (entry) {
+    return !entry.expired;
+  });
+  const server = spiffeId.serverId(trustDomain);
+  const recorded = agentById(agent);
+  const agentSelectors = (recorded && recorded.selectors) || [];
+  const reached = {};
+  reached[agent] = true;
+  const chosen = {};
+  const out = [];
+  function take(entry) {
+    if (chosen[entry.id]) {
+      return false;
+    }
+    chosen[entry.id] = true;
+    out.push(entry);
+    const before = !!reached[entry.spiffeId];
+    reached[entry.spiffeId] = true;
+    return !before;
+  }
+  live.forEach(function (entry) {
+    if (entry.parentId === server && entry.selectors.length &&
+        agentSelectors.length &&
+        selectorsMatch(entry.selectors, agentSelectors)) {
+      take(entry);
+    }
+  });
+  let grew = true;
+  while (grew) {
+    grew = false;
+    live.forEach(function (entry) {
+      if (!chosen[entry.id] && reached[entry.parentId]) {
+        take(entry);
+        grew = true;
+      }
+    });
+  }
+  log.debug('Leaving entriesAuthorizedFor(). ' + out.length + ' entr' +
+            (out.length === 1 ? 'y.' : 'ies.'));
+  return out;
+}
+
 function entryCount() {
   log.debug("Entering entryCount().");
   log.debug("Leaving entryCount().");
@@ -1217,6 +1282,7 @@ module.exports = {
   entryById: entryById,
   entriesForSpiffeId: entriesForSpiffeId,
   entriesForWorkload: entriesForWorkload,
+  entriesAuthorizedFor: entriesAuthorizedFor,
   entryCount: entryCount,
   createEntry: createEntry,
   updateEntry: updateEntry,

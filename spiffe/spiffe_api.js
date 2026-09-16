@@ -595,17 +595,16 @@ const entryHandlers = {
     return { results: results };
   }),
 
-  // What an AGENT calls to learn what it may issue. In a real server this is
-  // authorized against the caller's own agent SVID and returns only the entries
-  // beneath it. Here it returns every entry. It was written when nothing
-  // identified the caller; `spiffe_auth.js` now authenticates it and its
-  // POLICY row allows only an agent to call this, but the answer is still not
-  // narrowed to the entries beneath that agent.
+  // What an AGENT calls to learn what it may issue: the entries beneath the
+  // caller's own agent SVID, and nothing else. `spiffe_auth.js` authenticates
+  // the caller and its POLICY row lets only an agent call this. Until
+  // 2026-09-16 the answer was every entry in the registry; see
+  // `registry.entriesAuthorizedFor()`.
   GetAuthorizedEntries: rpc.unary('server', 'Entry.GetAuthorizedEntries',
                                   async function (call) {
     const request = call.request || {};
     return {
-      entries: registry.allEntries().map(function (entry) {
+      entries: authorizedEntriesOf(call).map(function (entry) {
         return entryToProto(entry, request.output_mask);
       })
     };
@@ -623,7 +622,9 @@ const entryHandlers = {
     async function (request) {
       const held = {};
       (request.ids || []).forEach(function (id) { held[String(id)] = true; });
-      const rows = registry.allEntries();
+      // The same narrowing as GetAuthorizedEntries: a stream that listed every
+      // entry would undo it. `call` is the stream, carrying the caller.
+      const rows = authorizedEntriesOf(call);
       return {
         entry_revisions: rows.map(function (entry) {
           return { id: entry.id,
@@ -639,6 +640,20 @@ const entryHandlers = {
       };
     })
 };
+
+// The entries the authenticated agent on this call is authorized for. No
+// caller, or one with no verified SPIFFE ID, is authorized for nothing — the
+// policy table has already refused such a caller, so this is the second lock
+// rather than the first.
+function authorizedEntriesOf(call) {
+  log.debug('Entering authorizedEntriesOf().');
+  const caller = (call && call.spiffeCaller) || null;
+  const agent = caller && caller.authenticated ? caller.spiffeId : '';
+  const rows = registry.entriesAuthorizedFor(agent, trustDomain());
+  log.debug('Leaving authorizedEntriesOf(). ' + rows.length + ' for ' +
+            (agent || 'nobody') + '.');
+  return rows;
+}
 
 // Which fields of a submitted entry to apply. No mask, or an empty one, means
 // all of them — which is what the specification says and is what
