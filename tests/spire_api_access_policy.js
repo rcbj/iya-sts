@@ -66,7 +66,7 @@ function run(t) {
   log.debug("Entering run().");
   const config = require('../common/config');
   // The gate is a no-op with no decider installed, and requiring the PEP is
-  // what installs one — the same act `xacml/xacml.js` performs at 23c.
+  // what installs one — the same act `xacml/xacml.ts` performs at 23c.
   require('../xacml/xacml_access_pep');
   const grpc = require('../spiffe/spiffe_grpc');
 

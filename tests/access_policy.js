@@ -14,7 +14,7 @@ const log = require('bunyan').createLogger({ name: 'access_policy',
 //
 // `common/access_gate.js` is the LEAF the admin console, the management API,
 // the User Portal, SCIM and the SPIRE Server API ask before they let anybody
-// in; `xacml/xacml_access_pep.js` fills its decider and turns the question
+// in; `xacml/xacml_access_pep.ts` fills its decider and turns the question
 // into a XACML request against the `access-control` policy. This file asserts
 // what that document actually decides.
 //
@@ -62,7 +62,7 @@ function run(t) {
   log.debug("Entering run().");
   const config = require('../common/config');
   // The gate is a no-op with no decider installed, and requiring the PEP is
-  // what installs one — the same act `xacml/xacml.js` performs at 23c.
+  // what installs one — the same act `xacml/xacml.ts` performs at 23c.
   require('../xacml/xacml_access_pep');
   const gate = require('../common/access_gate');
 

@@ -105,7 +105,7 @@ function run(t) {
   websecurity.reset();
 
   const portalSource = fs.readFileSync(path.join(__dirname, '..', 'portal',
-                                                 'portal.js'), 'utf8');
+                                                 'portal.ts'), 'utf8');
   t.check(/attempt(?:Shared)?\('portal-signing-key',\s*req,\s*username, \{\s*identity: config\.value\('pki\.personSelfServicePerIdentity'\),\s*address: config\.value\('pki\.personSelfServicePerAddress'\)/
             .test(portalSource),
           'the portal\'s signing-key door passes the two settings rather ' +
@@ -126,7 +126,7 @@ function run(t) {
 
   // -----------------------------------------------------------------------
   t.log.info('=== 3. the applications page\'s cap ===');
-  t.check(/const limit = scanLimit\(\);\s*const scanned = all\.slice\(0, limit\);/
+  t.check(/const limit = (?:self\.)?scanLimit\(\);\s*const scanned = all\.slice\(0, limit\);/
             .test(portalSource) &&
           /config\.value\('portal\.applicationScanLimit'\)/.test(portalSource),
           'the portal slices the registry at portal.applicationScanLimit — ' +
@@ -144,8 +144,8 @@ function run(t) {
             'and xacml.pipMaxDesignators when set');
   });
   const xacmlSource = fs.readFileSync(path.join(__dirname, '..', 'xacml',
-                                                'xacml.js'), 'utf8');
-  t.check(/const most = pipMaxDesignators\(\);\s*if \(nodes\.length > most\)/
+                                                'xacml.ts'), 'utf8');
+  t.check(/const most = (?:self\.)?pipMaxDesignators\(\);\s*if \(nodes\.length > most\)/
             .test(xacmlSource),
           'and the query handler compares against it, not against the ' +
           'constant');

@@ -1,7 +1,6 @@
-// @ts-check
 'use strict';
 //
-// File: xacml_templates.js
+// File: xacml_templates.ts
 //
 // ---------------------------------------------------------------------------
 // STARTING POINTS: A POLICY SOMEBODY CAN EDIT, RATHER THAN A BLANK ONE.
@@ -22,7 +21,7 @@
 // the whole design and it is the promise this file has to keep: the console
 // lists what is here, the management API offers what is here, and the
 // parameter form is DERIVED from the row's `parameters`. If adding one ever
-// needs an edit to `xacml_admin.js` or to `mgmt-api/admin_api.js`, this
+// needs an edit to `xacml_admin.ts` or to `mgmt-api/admin_api.js`, this
 // separation has gone wrong and the fix belongs here.
 //
 // ---------------------------------------------------------------------------
@@ -59,8 +58,66 @@
 // This comment said "TWO TEMPLATES" until 2026-09-06, when there were five.
 // ---------------------------------------------------------------------------
 
-const { log } = require('../common/helpers');
-const model = require('./xacml_model');
+// ---------------------------------------------------------------------------
+// TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
+// shape:
+//
+//   * **THE SMALL MODEL BUILDERS ARE `PolicyBuilders`' STATIC METHODS**, so a
+//     row of the table below calls `B.apply(...)` rather than a free
+//     function. They take nothing but their arguments.
+//   * **THE TABLE STAYS A MODULE-LEVEL CONSTANT**, because it IS the design
+//     (adding a template is a row and nothing else), and `XacmlTemplates`
+//     takes it, the logger and nothing more through its constructor.
+//   * **THE MODULE STILL EXPORTS `ISSUANCE_ATTRIBUTE`, `TEMPLATES`, `lookup`,
+//     `build`, `catalogue`, `listOf` AND `slug`**, the functions bound to a
+//     TRANSITIONAL instance built at the bottom, for the callers that are not
+//     converted. It goes when the composition root exists; both classes are
+//     exported beside it for that root.
+// ---------------------------------------------------------------------------
+
+import helpers = require('../common/helpers');
+import model = require('./xacml_model');
+
+const { log } = helpers;
+
+// One parameter of a template, as the form draws it.
+interface TemplateParameter {
+  name: string;
+  label: string;
+  dflt: string;
+  type: string;
+  help: string;
+}
+
+// What a row's `build` is handed besides the answers.
+interface BuildOptions {
+  idBase: string;
+}
+
+// One row of `TEMPLATES`. `build` answers a MODEL, whose shape is the
+// engine's (`xacml_model.js`) and is not restated here.
+interface TemplateRow {
+  id: string;
+  label: string;
+  blurb: string;
+  what: string;
+  parameters: TemplateParameter[];
+  build(answers: any, options: BuildOptions): any;
+}
+
+// What `build()` answers: `why` when it is not `ok`, the rest when it is.
+interface BuildResult {
+  ok: boolean;
+  why?: string;
+  policy?: any;
+  answers?: Record<string, string>;
+  template?: TemplateRow;
+}
+
+interface XacmlTemplatesDeps {
+  log: { debug(message: string): void };
+  templates: TemplateRow[];
+}
 
 const F1 = 'urn:oasis:names:tc:xacml:1.0:function:';
 const F3 = 'urn:oasis:names:tc:xacml:3.0:function:';
@@ -70,7 +127,7 @@ const TYPE = model.TYPE;
 // THE ATTRIBUTE VOCABULARY OF AN ISSUANCE DECISION.
 //
 // These four identifiers are the contract between the embedded PEP that
-// ASSERTS them (`xacml/xacml_role_pep.js`) and the policy that READS them —
+// ASSERTS them (`xacml/xacml_role_pep.ts`) and the policy that READS them —
 // which is the one below, and any policy anybody writes afterwards. They are
 // exported so there is ONE spelling of each: a template that built a policy
 // reading `urn:sts:xacml:roles` while the PEP asserted
@@ -78,7 +135,7 @@ const TYPE = model.TYPE;
 // intersection, and no intersection is a Deny — a policy that refuses
 // everybody for a reason invisible in both files.
 //
-// **THEY ARE URI-SHAPED ON PURPOSE.** `xacml_pip.js` treats a BARE name as a
+// **THEY ARE URI-SHAPED ON PURPOSE.** `xacml_pip.ts` treats a BARE name as a
 // directory attribute to look up on the subject's own entry, so an attribute
 // called `roles` would send the PIP looking for a `roles` attribute in LDAP
 // and quietly answer with whatever it found there instead of with what the PEP
@@ -118,84 +175,92 @@ const ISSUANCE_ATTRIBUTE = {
 // the point of building the model is that a template author does not have to
 // know the element names — that is the writer's problem.
 // ---------------------------------------------------------------------------
-function value(type, lexical) {
-  log.debug("Entering value().");
-  log.debug("Leaving value().");
-  return { kind: 'value', type: type, lexical: String(lexical) };
-}
-
-function designator(category, attributeId, type) {
-  log.debug("Entering designator().");
-  log.debug("Leaving designator().");
-  return { kind: 'designator', category: category, attributeId: attributeId,
-           dataType: type, issuer: null, mustBePresent: false };
-}
-
-function match(matchId, literal, reference) {
-  log.debug("Entering match().");
-  log.debug("Leaving match().");
-  return { matchId: matchId, value: literal, reference: reference };
-}
-
-// A Target that is satisfied when ALL of the given match-groups are — one
-// `AnyOf` per group, since a Target ANDs its AnyOf children. Each group is a
-// list of alternatives, ORed, since an AnyOf ORs its AllOf children.
-function targetOf(groups) {
-  log.debug("Entering targetOf().");
-  const anyOf = groups.filter(function (group) {
-    return group && group.length;
-  }).map(function (group) {
-    return { allOf: group.map(function (one) {
-      return { matches: [one] };
-    }) };
-  });
-  log.debug("Leaving targetOf().");
-  return anyOf.length ? { anyOf: anyOf } : null;
-}
-
-function apply(functionId, args) {
-  log.debug("Entering apply().");
-  log.debug("Leaving apply().");
-  return { kind: 'apply', functionId: functionId, args: args };
-}
-
-// A list typed into a form: commas or newlines, blanks dropped. One reader for
-// every template parameter of list type, so that "a, b" and "a\nb" cannot mean
-// different things on two different templates.
-function listOf(raw) {
-  log.debug("Entering listOf().");
-  log.debug("Leaving listOf().");
-  return String(raw || '').split(/[,\n]/).map(function (one) {
-    return one.trim();
-  }).filter(function (one) {
-    return one.length > 0;
-  });
-}
-
-// A yes/no answer from a template parameter, which is a text field like every
-// other one. Anything that is not plainly a no is a yes, because these two
-// parameters both default to yes and the cost of misreading a typo as a yes is
-// a policy that permits slightly more than intended — while misreading one as
-// a no builds the issuance policy without an arm and refuses people.
-function yes(answer, dflt) {
-  log.debug("Entering yes().");
-  const text = String(answer === undefined || answer === null ? '' : answer)
-    .trim().toLowerCase();
-  if (!text) {
-    log.debug("Leaving yes().");
-    return dflt !== false;
+class PolicyBuilders {
+  static value(type: string, lexical: unknown): any {
+    log.debug("Entering PolicyBuilders.value().");
+    log.debug("Leaving PolicyBuilders.value().");
+    return { kind: 'value', type: type, lexical: String(lexical) };
   }
-  log.debug("Leaving yes().");
-  return !(text === 'no' || text === 'false' || text === 'off' ||
-           text === '0' || text === 'n');
+
+  static designator(category: string, attributeId: string,
+                    type: string): any {
+    log.debug("Entering PolicyBuilders.designator().");
+    log.debug("Leaving PolicyBuilders.designator().");
+    return { kind: 'designator', category: category,
+             attributeId: attributeId, dataType: type, issuer: null,
+             mustBePresent: false };
+  }
+
+  static match(matchId: string, literal: any, reference: any): any {
+    log.debug("Entering PolicyBuilders.match().");
+    log.debug("Leaving PolicyBuilders.match().");
+    return { matchId: matchId, value: literal, reference: reference };
+  }
+
+  // A Target that is satisfied when ALL of the given match-groups are — one
+  // `AnyOf` per group, since a Target ANDs its AnyOf children. Each group is a
+  // list of alternatives, ORed, since an AnyOf ORs its AllOf children.
+  static targetOf(groups: any[][]): any {
+    log.debug("Entering PolicyBuilders.targetOf().");
+    const anyOf = groups.filter(function (group) {
+      return group && group.length;
+    }).map(function (group) {
+      return { allOf: group.map(function (one) {
+        return { matches: [one] };
+      }) };
+    });
+    log.debug("Leaving PolicyBuilders.targetOf().");
+    return anyOf.length ? { anyOf: anyOf } : null;
+  }
+
+  static apply(functionId: string, args: any[]): any {
+    log.debug("Entering PolicyBuilders.apply().");
+    log.debug("Leaving PolicyBuilders.apply().");
+    return { kind: 'apply', functionId: functionId, args: args };
+  }
+
+  // A list typed into a form: commas or newlines, blanks dropped. One reader
+  // for every template parameter of list type, so that "a, b" and "a\nb"
+  // cannot mean different things on two different templates.
+  static listOf(raw: unknown): string[] {
+    log.debug("Entering PolicyBuilders.listOf().");
+    log.debug("Leaving PolicyBuilders.listOf().");
+    return String(raw || '').split(/[,\n]/).map(function (one) {
+      return one.trim();
+    }).filter(function (one) {
+      return one.length > 0;
+    });
+  }
+
+  // A yes/no answer from a template parameter, which is a text field like
+  // every other one. Anything that is not plainly a no is a yes, because these
+  // two parameters both default to yes and the cost of misreading a typo as a
+  // yes is a policy that permits slightly more than intended — while
+  // misreading one as a no builds the issuance policy without an arm and
+  // refuses people.
+  static yes(answer: unknown, dflt?: boolean): boolean {
+    log.debug("Entering PolicyBuilders.yes().");
+    const text = String(answer === undefined || answer === null ? '' : answer)
+      .trim().toLowerCase();
+    if (!text) {
+      log.debug("Leaving PolicyBuilders.yes().");
+      return dflt !== false;
+    }
+    log.debug("Leaving PolicyBuilders.yes().");
+    return !(text === 'no' || text === 'false' || text === 'off' ||
+             text === '0' || text === 'n');
+  }
+
+  static slug(text: unknown): string {
+    log.debug("Entering PolicyBuilders.slug().");
+    log.debug("Leaving PolicyBuilders.slug().");
+    return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'x';
+  }
 }
 
-function slug(text) {
-  log.debug("Entering slug().");
-  log.debug("Leaving slug().");
-  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'x';
-}
+// The table's short name for the builders.
+const B = PolicyBuilders;
 
 // ---------------------------------------------------------------------------
 // THE TABLE.
@@ -204,7 +269,7 @@ function slug(text) {
 // person reads and its `dflt` is what they get if they say nothing. `build`
 // receives the answers already coerced and returns a MODEL.
 // ---------------------------------------------------------------------------
-const TEMPLATES = [
+const TEMPLATES: TemplateRow[] = [
   {
     // -----------------------------------------------------------------------
     // THE ONE TEMPLATE THIS SERVICE EVALUATES ABOUT ITSELF.
@@ -215,7 +280,7 @@ const TEMPLATES = [
     // ticket, an assertion, a session — and `xacml.issuancePolicy` names the
     // repository entry it lives in.
     //
-    // IT IS BUILT IN RATHER THAN SEEDED (`xacml_role_pep.js` calls this row
+    // IT IS BUILT IN RATHER THAN SEEDED (`xacml_role_pep.ts` calls this row
     // at decision time and says why), AND IT IS NOT THE REPOSITORY ROOT. Two
     // questions, two documents: the root answers what a caller asks at
     // /xacml/pdp and what every remote PEP pulls, and this answers who may be
@@ -271,8 +336,8 @@ const TEMPLATES = [
     build: function (answers, options) {
       log.debug('Entering buildRoleIssuance().');
       const given = answers || {};
-      const useTokenRoles = yes(given.allowTokenRoles, true);
-      const permitEmpty = yes(given.permitWhenNothingRequired, true);
+      const useTokenRoles = B.yes(given.allowTokenRoles, true);
+      const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
 
       // THE INTERSECTION TEST, and it is a HIGHER-ORDER function because that
       // is the only way XACML expresses "do these two bags share a member".
@@ -282,12 +347,12 @@ const TEMPLATES = [
       function intersects(subjectAttribute) {
         log.debug("Entering intersects().");
         log.debug("Leaving intersects().");
-        return apply(F3 + 'any-of-any', [
+        return B.apply(F3 + 'any-of-any', [
           { kind: 'function', functionId: F1 + 'string-equal' },
-          designator(model.CATEGORY.ACCESS_SUBJECT, subjectAttribute,
-                     TYPE.STRING),
-          designator(model.CATEGORY.RESOURCE,
-                     ISSUANCE_ATTRIBUTE.REQUIRED_ROLE, TYPE.STRING)
+          B.designator(model.CATEGORY.ACCESS_SUBJECT, subjectAttribute,
+                       TYPE.STRING),
+          B.designator(model.CATEGORY.RESOURCE,
+                       ISSUANCE_ATTRIBUTE.REQUIRED_ROLE, TYPE.STRING)
         ]);
       }
 
@@ -300,17 +365,17 @@ const TEMPLATES = [
         // XACML has no way to ask whether a designator matched — an absent
         // attribute and an attribute with no values are the same empty bag,
         // which is the right answer here: both mean nobody said.
-        arms.push(apply(F1 + 'integer-equal', [
-          apply(F1 + 'string-bag-size', [
-            designator(model.CATEGORY.RESOURCE,
-                       ISSUANCE_ATTRIBUTE.REQUIRED_ROLE, TYPE.STRING)
+        arms.push(B.apply(F1 + 'integer-equal', [
+          B.apply(F1 + 'string-bag-size', [
+            B.designator(model.CATEGORY.RESOURCE,
+                         ISSUANCE_ATTRIBUTE.REQUIRED_ROLE, TYPE.STRING)
           ]),
-          value(TYPE.INTEGER, '0')
+          B.value(TYPE.INTEGER, '0')
         ]));
       }
 
       const condition = arms.length === 1 ? arms[0]
-        : apply(F1 + 'or', arms);
+        : B.apply(F1 + 'or', arms);
 
       log.debug('Leaving buildRoleIssuance(). ' + arms.length + ' arm(s).');
       return {
@@ -441,19 +506,19 @@ const TEMPLATES = [
     build: function (answers, options) {
       log.debug('Entering buildAccessControl().');
       const given = answers || {};
-      const permitOwner = yes(given.permitOwner, true);
-      const permitEmpty = yes(given.permitWhenNothingRequired, true);
-      const requireAuth = yes(given.requireAuthenticated, true);
+      const permitOwner = B.yes(given.permitOwner, true);
+      const permitEmpty = B.yes(given.permitWhenNothingRequired, true);
+      const requireAuth = B.yes(given.requireAuthenticated, true);
 
       // The same intersection test `role-issuance` uses, and for the same
       // reason: `any-of-any` is the only way XACML asks whether two bags share
       // a member.
-      const holdsRequiredRole = apply(F3 + 'any-of-any', [
+      const holdsRequiredRole = B.apply(F3 + 'any-of-any', [
         { kind: 'function', functionId: F1 + 'string-equal' },
-        designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
-                   TYPE.STRING),
-        designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.REQUIRED_ROLE,
-                   TYPE.STRING)
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING),
+        B.designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.REQUIRED_ROLE,
+                     TYPE.STRING)
       ]);
 
       // ---------------------------------------------------------------------
@@ -493,41 +558,41 @@ const TEMPLATES = [
         // A bag-size test, because XACML cannot ask whether a designator
         // matched: an absent attribute and one with no values are the same
         // empty bag, and here both mean "nobody narrowed this".
-        roleArms.push(apply(F1 + 'integer-equal', [
-          apply(F1 + 'string-bag-size', [
-            designator(model.CATEGORY.RESOURCE,
-                       ISSUANCE_ATTRIBUTE.REQUIRED_ROLE, TYPE.STRING)
+        roleArms.push(B.apply(F1 + 'integer-equal', [
+          B.apply(F1 + 'string-bag-size', [
+            B.designator(model.CATEGORY.RESOURCE,
+                         ISSUANCE_ATTRIBUTE.REQUIRED_ROLE, TYPE.STRING)
           ]),
-          value(TYPE.INTEGER, '0')
+          B.value(TYPE.INTEGER, '0')
         ]));
       }
 
       const satisfiesRole = roleArms.length === 1
         ? roleArms[0]
-        : apply(F1 + 'or', roleArms);
+        : B.apply(F1 + 'or', roleArms);
 
       // The resource names nobody. The same bag-size reading as above, and it
       // is what makes this one policy serve every gated surface: only the
       // portal sets an owner, so for the rest this is true and the whole
       // ownership question is vacuous.
-      const ownerless = apply(F1 + 'integer-equal', [
-        apply(F1 + 'string-bag-size', [
-          designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.OWNER,
-                     TYPE.STRING)
+      const ownerless = B.apply(F1 + 'integer-equal', [
+        B.apply(F1 + 'string-bag-size', [
+          B.designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.OWNER,
+                       TYPE.STRING)
         ]),
-        value(TYPE.INTEGER, '0')
+        B.value(TYPE.INTEGER, '0')
       ]);
 
       // **THE COMPARISON THAT COULD NOT HAVE BEEN AN `if`.** Two designators
       // compared to each other — the subject's id and the resource's owner —
       // which is a statement about the RELATIONSHIP between them rather than
       // about either one. `any-of-any` because both are bags.
-      const isTheOwner = apply(F3 + 'any-of-any', [
+      const isTheOwner = B.apply(F3 + 'any-of-any', [
         { kind: 'function', functionId: F1 + 'string-equal' },
-        designator(model.CATEGORY.ACCESS_SUBJECT, model.ATTRIBUTE.SUBJECT_ID,
-                   TYPE.STRING),
-        designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.OWNER,
-                   TYPE.STRING)
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, model.ATTRIBUTE.SUBJECT_ID,
+                     TYPE.STRING),
+        B.designator(model.CATEGORY.RESOURCE, ISSUANCE_ATTRIBUTE.OWNER,
+                     TYPE.STRING)
       ]);
 
       // `permitOwner: no` leaves `ownerless` alone, so a resource that names
@@ -537,7 +602,7 @@ const TEMPLATES = [
       // untouched by it, which is how somebody can see that the portal is the
       // surface the setting is about.
       const satisfiesOwnership = permitOwner
-        ? apply(F1 + 'or', [ownerless, isTheOwner])
+        ? B.apply(F1 + 'or', [ownerless, isTheOwner])
         : ownerless;
 
       const conjuncts = [];
@@ -552,11 +617,11 @@ const TEMPLATES = [
         // surface refused everybody and the reason said only "the policy
         // denied it". `any-of-all` is the 1.0 one, which is a different
         // function; the neighbouring namespace is the trap.
-        conjuncts.push(apply(F3 + 'any-of', [
+        conjuncts.push(B.apply(F3 + 'any-of', [
           { kind: 'function', functionId: F1 + 'boolean-equal' },
-          value(TYPE.BOOLEAN, 'true'),
-          designator(model.CATEGORY.ACCESS_SUBJECT,
-                     ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)
+          B.value(TYPE.BOOLEAN, 'true'),
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)
         ]));
       }
       conjuncts.push(satisfiesRole);
@@ -564,7 +629,7 @@ const TEMPLATES = [
 
       const condition = conjuncts.length === 1
         ? conjuncts[0]
-        : apply(F1 + 'and', conjuncts);
+        : B.apply(F1 + 'and', conjuncts);
 
       log.debug('Leaving buildAccessControl(). ' + conjuncts.length +
                 ' conjunct(s), ' + roleArms.length + ' role arm(s).');
@@ -643,25 +708,25 @@ const TEMPLATES = [
     build: function (answers, options) {
       log.debug('Entering buildRbac().');
       const roleAttribute = answers.roleAttribute || 'employeeType';
-      const actions = listOf(answers.readerActions);
+      const actions = B.listOf(answers.readerActions);
       const rules = [];
-      listOf(answers.adminRoles).forEach(function (role) {
+      B.listOf(answers.adminRoles).forEach(function (role) {
         rules.push({
-          id: options.idBase + ':rule:' + slug(role) + '-anything',
+          id: options.idBase + ':rule:' + B.slug(role) + '-anything',
           effect: model.EFFECT.PERMIT,
           description: 'Anyone whose ' + roleAttribute + ' is "' + role +
                        '" may perform any action.',
-          target: targetOf([[
-            match(F1 + 'string-equal', value(TYPE.STRING, role),
-                  designator(model.CATEGORY.ACCESS_SUBJECT, roleAttribute,
-                             TYPE.STRING))
+          target: B.targetOf([[
+            B.match(F1 + 'string-equal', B.value(TYPE.STRING, role),
+                    B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                                 roleAttribute, TYPE.STRING))
           ]]),
           condition: null, obligations: [], advice: []
         });
       });
-      listOf(answers.readerRoles).forEach(function (role) {
+      B.listOf(answers.readerRoles).forEach(function (role) {
         rules.push({
-          id: options.idBase + ':rule:' + slug(role) + '-limited',
+          id: options.idBase + ':rule:' + B.slug(role) + '-limited',
           effect: model.EFFECT.PERMIT,
           description: 'Anyone whose ' + roleAttribute + ' is "' + role +
                        '" may perform ' +
@@ -673,15 +738,16 @@ const TEMPLATES = [
           // same category, and putting them in one AnyOf would be an OR —
           // which is the mistake that grants every action to anybody holding
           // the role.
-          target: targetOf([
-            [match(F1 + 'string-equal', value(TYPE.STRING, role),
-                   designator(model.CATEGORY.ACCESS_SUBJECT, roleAttribute,
-                              TYPE.STRING))],
+          target: B.targetOf([
+            [B.match(F1 + 'string-equal', B.value(TYPE.STRING, role),
+                     B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                                  roleAttribute, TYPE.STRING))],
             actions.map(function (action) {
-              return match(F1 + 'string-equal', value(TYPE.STRING, action),
-                           designator(model.CATEGORY.ACTION,
-                                      model.ATTRIBUTE.ACTION_ID,
-                                      TYPE.STRING));
+              return B.match(F1 + 'string-equal',
+                             B.value(TYPE.STRING, action),
+                             B.designator(model.CATEGORY.ACTION,
+                                          model.ATTRIBUTE.ACTION_ID,
+                                          TYPE.STRING));
             })
           ]),
           condition: null, obligations: [], advice: []
@@ -741,20 +807,21 @@ const TEMPLATES = [
     ],
     build: function (answers, options) {
       log.debug('Entering buildAbac().');
-      const actions = listOf(answers.actions);
+      const actions = B.listOf(answers.actions);
       const groups = [];
       if (answers.resource) {
-        groups.push([match(F1 + 'anyURI-equal',
-                           value(TYPE.ANYURI, answers.resource),
-                           designator(model.CATEGORY.RESOURCE,
-                                      model.ATTRIBUTE.RESOURCE_ID,
-                                      TYPE.ANYURI))]);
+        groups.push([B.match(F1 + 'anyURI-equal',
+                             B.value(TYPE.ANYURI, answers.resource),
+                             B.designator(model.CATEGORY.RESOURCE,
+                                          model.ATTRIBUTE.RESOURCE_ID,
+                                          TYPE.ANYURI))]);
       }
       if (actions.length) {
         groups.push(actions.map(function (action) {
-          return match(F1 + 'string-equal', value(TYPE.STRING, action),
-                       designator(model.CATEGORY.ACTION,
-                                  model.ATTRIBUTE.ACTION_ID, TYPE.STRING));
+          return B.match(F1 + 'string-equal', B.value(TYPE.STRING, action),
+                         B.designator(model.CATEGORY.ACTION,
+                                      model.ATTRIBUTE.ACTION_ID,
+                                      TYPE.STRING));
         }));
       }
       const tests = [];
@@ -765,19 +832,19 @@ const TEMPLATES = [
         // attribute makes `one-and-only` Indeterminate, and makes `is-in`
         // true if either matches. A multi-valued directory attribute is the
         // normal case, not the exception.
-        tests.push(apply(F1 + 'string-is-in', [
-          value(TYPE.STRING, answers.subjectValue || ''),
-          designator(model.CATEGORY.ACCESS_SUBJECT, answers.subjectAttribute,
-                     TYPE.STRING)
+        tests.push(B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, answers.subjectValue || ''),
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       answers.subjectAttribute, TYPE.STRING)
         ]));
       }
       if (answers.clearanceAttribute) {
-        tests.push(apply(F1 + 'integer-greater-than-or-equal', [
-          apply(F1 + 'integer-one-and-only', [
-            designator(model.CATEGORY.ACCESS_SUBJECT,
-                       answers.clearanceAttribute, TYPE.INTEGER)
+        tests.push(B.apply(F1 + 'integer-greater-than-or-equal', [
+          B.apply(F1 + 'integer-one-and-only', [
+            B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                         answers.clearanceAttribute, TYPE.INTEGER)
           ]),
-          value(TYPE.INTEGER, answers.clearanceMinimum || '0')
+          B.value(TYPE.INTEGER, answers.clearanceMinimum || '0')
         ]));
       }
       // A Condition must be exactly one boolean. One test is that test; two or
@@ -789,7 +856,7 @@ const TEMPLATES = [
       if (tests.length === 1) {
         condition = tests[0];
       } else if (tests.length > 1) {
-        condition = apply(F1 + 'and', tests);
+        condition = B.apply(F1 + 'and', tests);
       }
       log.debug('Leaving buildAbac(). ' + tests.length + ' test(s).');
       return {
@@ -807,7 +874,7 @@ const TEMPLATES = [
           id: options.idBase + ':rule:permit',
           effect: model.EFFECT.PERMIT,
           description: 'Permit when every attribute test holds.',
-          target: targetOf(groups),
+          target: B.targetOf(groups),
           condition: condition,
           obligations: [], advice: []
         }],
@@ -848,7 +915,7 @@ const TEMPLATES = [
     // WHAT IT DECIDES BEFORE YOU EDIT IT, which is the thing to know before
     // making it the root: an empty deny-unless-permit document DENIES. It
     // does not answer NotApplicable and it is not inert. That is the same
-    // choice `xacml_editor.js` makes for a child policy added in the editor,
+    // choice `xacml_editor.ts` makes for a child policy added in the editor,
     // and for the same reason — this editor is LIVE, so a blank document that
     // started life permitting whatever reached it would be a hole opened by
     // pressing Create. The `blurb` says so on the page, because the person
@@ -883,7 +950,7 @@ const TEMPLATES = [
       log.debug('Entering buildBlank().');
       const given = answers || {};
       const set = String(given.kind || '').trim().toLowerCase() === 'policyset';
-      const policy = {
+      const policy: any = {
         kind: set ? 'PolicySet' : 'Policy',
         id: options.idBase,
         version: '1.0',
@@ -897,7 +964,7 @@ const TEMPLATES = [
         // DENY-UNLESS-PERMIT, and the two spellings are genuinely different
         // URIs rather than one with a word swapped — a PolicySet carrying the
         // rule-combining spelling names an algorithm that does not exist for
-        // it. `xacml_editor.js` chooses the menu by the node for the same
+        // it. `xacml_editor.ts` chooses the menu by the node for the same
         // reason.
         combiningAlgId: set ? model.POLICY_ALG.DENY_UNLESS_PERMIT
                             : model.RULE_ALG.DENY_UNLESS_PERMIT,
@@ -921,76 +988,101 @@ const TEMPLATES = [
   }
 ];
 
-function lookup(id) {
-  log.debug("Entering lookup().");
-  log.debug("Leaving lookup().");
-  return TEMPLATES.filter(function (one) {
-    return one.id === id;
-  })[0] || null;
-}
+class XacmlTemplates {
+  static readonly ISSUANCE_ATTRIBUTE = ISSUANCE_ATTRIBUTE;
+  static readonly TEMPLATES = TEMPLATES;
 
-// ---------------------------------------------------------------------------
-// BUILD ONE.
-//
-// `answers` is whatever the form or the management API sent; missing
-// parameters fall back to the row's `dflt`, so a caller may send none at all
-// and get the documented example. That is deliberate: the management API's
-// "create from template" with an empty body should produce something, because
-// the first thing anybody does with an API is call it with nothing.
-// ---------------------------------------------------------------------------
-function build(id, answers, options) {
-  log.debug('Entering build(). template=' + id);
-  const template = lookup(id);
-  if (!template) {
-    log.debug('Leaving build(). No such template.');
-    return { ok: false,
-             why: 'There is no template "' + id + '". The ones here are: ' +
-                  TEMPLATES.map(function (one) {
-                    return one.id;
-                  }).join(', ') + '.' };
+  constructor(private readonly deps: XacmlTemplatesDeps) {
+    deps.log.debug("Entering XacmlTemplates.constructor().");
+    deps.log.debug("Leaving XacmlTemplates.constructor().");
   }
-  const settings = options || {};
-  const filled = {};
-  template.parameters.forEach(function (parameter) {
-    const given = answers ? answers[parameter.name] : undefined;
-    filled[parameter.name] = (given === undefined || given === null ||
-                              String(given).trim() === '')
-      ? parameter.dflt : String(given).trim();
-  });
-  const name = settings.name || template.id;
-  const policy = template.build(filled, {
-    idBase: settings.idBase || 'urn:sts:xacml:policy:' + slug(name)
-  });
-  // A PolicySet HAS NO `rules`, and this line said `undefined rule(s)` for
-  // one from the moment the blank template could build one. What a document
-  // holds is named by what it IS.
-  log.debug('Leaving build(). ' + (policy.kind === 'PolicySet'
-    ? (policy.children || []).length + ' child policy(ies).'
-    : (policy.rules || []).length + ' rule(s).'));
-  return { ok: true, policy: policy, answers: filled, template: template };
+
+  lookup(id: string): TemplateRow | null {
+    const { log, templates } = this.deps;
+    log.debug("Entering XacmlTemplates.lookup().");
+    log.debug("Leaving XacmlTemplates.lookup().");
+    return templates.filter(function (one) {
+      return one.id === id;
+    })[0] || null;
+  }
+
+  // -------------------------------------------------------------------------
+  // BUILD ONE.
+  //
+  // `answers` is whatever the form or the management API sent; missing
+  // parameters fall back to the row's `dflt`, so a caller may send none at all
+  // and get the documented example. That is deliberate: the management API's
+  // "create from template" with an empty body should produce something,
+  // because the first thing anybody does with an API is call it with nothing.
+  // -------------------------------------------------------------------------
+  build(id: string, answers?: Record<string, unknown> | null,
+        options?: { name?: string; idBase?: string } | null): BuildResult {
+    const { log, templates } = this.deps;
+    log.debug('Entering XacmlTemplates.build(). template=' + id);
+    const template = this.lookup(id);
+    if (!template) {
+      log.debug('Leaving XacmlTemplates.build(). No such template.');
+      return { ok: false,
+               why: 'There is no template "' + id + '". The ones here are: ' +
+                    templates.map(function (one) {
+                      return one.id;
+                    }).join(', ') + '.' };
+    }
+    const settings = options || {};
+    const filled: Record<string, string> = {};
+    template.parameters.forEach(function (parameter) {
+      const given = answers ? answers[parameter.name] : undefined;
+      filled[parameter.name] = (given === undefined || given === null ||
+                                String(given).trim() === '')
+        ? parameter.dflt : String(given).trim();
+    });
+    const name = settings.name || template.id;
+    const policy = template.build(filled, {
+      idBase: settings.idBase || 'urn:sts:xacml:policy:' + B.slug(name)
+    });
+    // A PolicySet HAS NO `rules`, and this line said `undefined rule(s)` for
+    // one from the moment the blank template could build one. What a document
+    // holds is named by what it IS.
+    log.debug('Leaving XacmlTemplates.build(). ' +
+      (policy.kind === 'PolicySet'
+        ? (policy.children || []).length + ' child policy(ies).'
+        : (policy.rules || []).length + ' rule(s).'));
+    return { ok: true, policy: policy, answers: filled, template: template };
+  }
+
+  // What the console and the management API list. Derived, so a template
+  // added to the table above appears in both with no second edit.
+  catalogue(): object[] {
+    const { log, templates } = this.deps;
+    log.debug("Entering XacmlTemplates.catalogue().");
+    log.debug("Leaving XacmlTemplates.catalogue().");
+    return templates.map(function (one) {
+      return { id: one.id, label: one.label, blurb: one.blurb, what: one.what,
+               parameters: one.parameters.map(function (parameter) {
+                 return { name: parameter.name, label: parameter.label,
+                          help: parameter.help, type: parameter.type,
+                          dflt: parameter.dflt };
+               }) };
+    });
+  }
 }
 
-// What the console and the management API list. Derived, so a template added
-// to the table above appears in both with no second edit.
-function catalogue() {
-  log.debug("Entering catalogue().");
-  log.debug("Leaving catalogue().");
-  return TEMPLATES.map(function (one) {
-    return { id: one.id, label: one.label, blurb: one.blurb, what: one.what,
-             parameters: one.parameters.map(function (parameter) {
-               return { name: parameter.name, label: parameter.label,
-                        help: parameter.help, type: parameter.type,
-                        dflt: parameter.dflt };
-             }) };
-  });
-}
+// THE TRANSITIONAL INSTANCE — see the header. Built from the real table and
+// logger, as the composition root will build one.
+const catalogue = new XacmlTemplates({
+  log: log,
+  templates: TEMPLATES
+});
 
-module.exports = {
-  ISSUANCE_ATTRIBUTE: ISSUANCE_ATTRIBUTE,
-  TEMPLATES: TEMPLATES,
-  lookup: lookup,
-  build: build,
-  catalogue: catalogue,
-  listOf: listOf,
-  slug: slug
+export = {
+  XacmlTemplates: XacmlTemplates,
+  PolicyBuilders: PolicyBuilders,
+  ISSUANCE_ATTRIBUTE: XacmlTemplates.ISSUANCE_ATTRIBUTE,
+  TEMPLATES: XacmlTemplates.TEMPLATES,
+  lookup: catalogue.lookup.bind(catalogue) as XacmlTemplates['lookup'],
+  build: catalogue.build.bind(catalogue) as XacmlTemplates['build'],
+  catalogue: catalogue.catalogue.bind(catalogue) as
+    XacmlTemplates['catalogue'],
+  listOf: PolicyBuilders.listOf,
+  slug: PolicyBuilders.slug
 };

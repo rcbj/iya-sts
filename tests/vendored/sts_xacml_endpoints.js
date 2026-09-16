@@ -8,7 +8,7 @@
 // Profile, and `tests/xacml_pep.js` holds the two things about the remote PEP
 // that no running service can be asked. All three are in process, and between
 // them they never make one HTTP request — so until this file existed, every
-// route in `xacml/xacml.js` was uncovered: the decision endpoint, the
+// route in `xacml/xacml.ts` was uncovered: the decision endpoint, the
 // repository, the embedded PEP, the three the remote PEP lives on and — since
 // 2026-09-06 — the PIP.
 //
