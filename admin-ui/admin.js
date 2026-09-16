@@ -4958,6 +4958,28 @@ function consoleSignOn(req) {
   return consoleSession(req);
 }
 
+// ---------------------------------------------------------------------------
+// THE CSRF TOKEN GOES INTO EVERY POST FORM THIS SHELL DRAWS (2026-09-06).
+// OWASP A01/A08.
+//
+// **AT THE SHELL AND NOT AT EACH FORM, DELIBERATELY.** This console builds
+// something like a hundred and forty forms as inline strings across sixty
+// pages, and a scheme that required each author to remember a hidden field is a
+// scheme that is one page away from being incomplete for ever — silently, since
+// a missing token looks exactly like a page that works. Adding it HERE means a
+// page written tomorrow is protected by having been drawn at all.
+//
+// It is a string rewrite, which is the part worth being uncomfortable about,
+// and it is narrow on purpose: it matches the opening tag of a form whose
+// method is post and inserts one input directly after it. It cannot match
+// anything else, because `<form` with `method="post"` is not a sequence that
+// occurs in prose here — and if it ever did, the worst outcome is a stray
+// hidden input in a paragraph rather than a missing control.
+//
+// **A PAGE DRAWN FOR SOMEBODY WITH NO SESSION GETS NO TOKEN AND NEEDS NONE**:
+// `checkCsrf()` passes a request with no session, because there is nothing to
+// forge on behalf of an anonymous caller. See common/websecurity.js.
+// ---------------------------------------------------------------------------
 function withCsrf(req, html) {
   log.debug("Entering withCsrf().");
   const session = consoleRpSession(req);
@@ -5060,6 +5082,12 @@ function protocolEndpointDrift() {
   return drift;
 }
 
+// Both response shapes for a page, chosen by ?format=json. `no-store` on all of
+// them: they describe live state, and a cached metrics page is a wrong one.
+// `up`, when given, is what upTo() returned for the section this page hangs
+// under. Only a drill-down passes it; a section's own list page does not, and
+// the JSON answer ignores it either way — a way back up is a property of a page
+// a person is reading, and a caller of ?format=json has the URL it asked for.
 function respond(req, res, json, title, active, html, up) {
   log.debug("Entering respond(). title=" + title);
   res.set('Cache-Control', 'no-store');
@@ -7124,11 +7152,11 @@ function pageNavPair(path, params, pg) {
 // chooses between HTML and JSON. admin_api.js calls these and nothing else — it
 // holds no second opinion about what a metrics reply contains.
 //
-// One cost is worth stating rather than discovering: usersView() and
-// groupsView() build the HTML as well, and the API throws it away. That is what
-// `/admin/users?format=json` has always done, it is a string concatenation on a
-// mock, and the alternative — a second set of builders for the same data — is
-// the thing this whole arrangement exists to prevent.
+// One cost used to be stated here: the API called usersView() and groupsView(),
+// which build the HTML as well, and threw the markup away. It no longer does —
+// `/admin-api/users` and `/admin-api/groups` call `usersJson()` and
+// `groupsJson()` in `admin-core/admin_views.js`, which choose between the same
+// answers without drawing a page.
 // ---------------------------------------------------------------------------
 function consoleJson() {
   log.debug("Entering consoleJson().");
