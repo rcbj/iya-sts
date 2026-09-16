@@ -121,13 +121,14 @@
 //            rather than ignorable
 //
 // ---------------------------------------------------------------------------
-// A LIBRARY (rule 3). It registers no route. It requires `helpers.js`,
-// `config.js`, `applications.js`, `common/crypto.js` and
-// `common/used_assertions.js` —
-// none of which requires it back — and it is required by `oauth2.js` (9) and
-// by `client_auth.js`. **IT DOES NOT REQUIRE `assertion_grant.js` AND MUST
-// NOT**: the two share a framework and no code, and a require between them
-// would be the first step towards the format flag the header refuses.
+// A LIBRARY (rule 3). It registers no route. It requires only `common/`
+// libraries — `helpers.js`, `config.js`, `applications.js`, `crypto.js`,
+// `pki.js`, `revocation_status.js`, `person_assertions.js`,
+// `used_assertions.js` and `error_codes.js` — none of which requires it
+// back — and it is required by `oauth2.js` (9) and by `client_auth.js`. **IT
+// DOES NOT REQUIRE `assertion_grant.js` AND MUST NOT**: the two share a
+// framework and no code, and a require between them would be the first step
+// towards the format flag the header refuses.
 // ===========================================================================
 
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');

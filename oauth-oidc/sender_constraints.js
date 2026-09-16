@@ -66,13 +66,13 @@ const CERTIFICATE_CLIENT_METHODS = ['tls_client_auth',
 
 // THE ONE EXEMPTION, AND WHAT IT IS NOT.
 //
-// These two are this service's OWN relying parties — `common/oidc_rp.js`'s
-// `SURFACES` — and they redeem their codes and refresh tokens over a loopback
-// call from this process to itself. There is no client certificate to present
-// on that call and nobody on the other end of it who is not already this
-// process, so `oauth2.refreshTokenRequireMtls` would lock an operator out of
-// /admin and /portal in exchange for nothing. They are exempt from THAT
-// SETTING ONLY.
+// These two are this service's OWN relying parties — the console and portal
+// rows of `common/oidc_rp.js`'s `SURFACES` — and they redeem their codes and
+// refresh tokens over a loopback call from this process to itself. There is no
+// client certificate to present on that call and nobody on the other end of it
+// who is not already this process, so `oauth2.refreshTokenRequireMtls` would
+// lock an operator out of /admin and /portal in exchange for nothing. They are
+// exempt from THAT SETTING ONLY.
 //
 // They are NOT exempt from the DPoP setting: `oidc_rp.js` carries a key and
 // proves possession on every back-channel call since 2026-09-15, which is why

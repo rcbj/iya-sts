@@ -65,9 +65,10 @@
 // answering a request.
 //
 // **A LIBRARY (rule 3).** It registers no route and requires `helpers.js`,
-// `common/crypto.js`, `common/applications.js` and `error_codes.js`, none of
-// which requires it back, so it cannot join a cycle and its place in the
-// require order is not a place. `oauth2.js` requires it.
+// `common/crypto.js`, `common/applications.js`, `error_codes.js` and
+// `jwt_access_token.js`, none of which requires it back, so it cannot join a
+// cycle and its place in the require order is not a place. `oauth2.js`
+// requires it.
 // ===========================================================================
 
 const helpers = require('../common/helpers');

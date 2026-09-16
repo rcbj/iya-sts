@@ -15,13 +15,15 @@
 //
 // It is a LIBRARY (rule 3): it registers no route, so its position in the
 // require order does not matter and it cannot be the reason a route is missing.
-// It requires `helpers.js`, `config.js` and `applications.js` — none of which
-// requires it back — and deliberately NOT `oauth2.js`, because that module
-// requires THIS one. That is the whole reason this file exists rather than the
-// code living in `oauth2.js`: `/oauth2/logout`, WS-Federation's `wsignout1.0`
-// and the protocol-independent `/logout` all have to render the same fan-out,
-// and `logout/logout.js` reaching into `oauth2.js` for it would be a require
-// this file makes unnecessary.
+// It requires `helpers.js`, `config.js`, `app.js`, `applications.js`,
+// `validation.js` and `error_codes.js` (and `authn/authn.js` lazily, once a
+// session changes) — none of which requires it back — and deliberately NOT
+// `oauth2.js`, because that module requires THIS one. That is the whole reason
+// this file exists rather than the code living in `oauth2.js`:
+// `/oauth2/logout`, the protocol-independent `/logout` and the console's
+// sign-outs (both through `logout/logout.js`) all have to render the same
+// fan-out, and `logout/logout.js` reaching into `oauth2.js` for it would be a
+// require this file makes unnecessary.
 //
 // ---------------------------------------------------------------------------
 // FIVE THINGS ARE WORTH KNOWING BEFORE READING FURTHER.
@@ -56,7 +58,8 @@
 // LOADING, enumerated from the URIs themselves, rather than to `*`. It goes
 // through `app.contentSecurityPolicy()` like every other relaxation in this
 // service, so `frame-ancestors` and `base-uri` cannot be dropped by it — see
-// the repository CLAUDE.md's two CSP rules, which this is the sixth caller of.
+// the repository CLAUDE.md's two CSP rules, which this is one more caller of
+// (it was the sixth relaxation when it was written).
 //
 // **THE URLS ARE LISTED VISIBLY BESIDE THE IFRAMES.** A hidden iframe that
 // failed — a dead RP, a certificate a browser will not accept, a URI somebody

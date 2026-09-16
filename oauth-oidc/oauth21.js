@@ -38,12 +38,15 @@
 // IT IS A LEAF (rule 3, and `oauth-oidc/CLAUDE.md` rule 3ah).
 //
 // It registers no route and requires `helpers.js` and `config.js` and nothing
-// else. `oauth2_bcp.js` requires IT, for the two places RFC 9700 mode has to
-// step aside, and `oauth2.js` requires it for the rest — so it must never
-// require either of those back, nor `applications.js` or `client_auth.js`,
-// which `oauth2_bcp.js` already requires. Every record it decides about is
-// PASSED IN: the client's configuration, the authorization code, what the
-// request presented, what the observation found.
+// else. `oauth2_bcp.js` requires IT — for its own `enabled()`, the two places
+// RFC 9700 mode has to step aside, and the stricter checks that ride inside
+// its own (PKCE, the registered-URI rule, registration, the metadata) —
+// `sender_constraints.js` requires it (#34), and `oauth2.js` requires it for
+// the rest — so it must never require any of those back, nor
+// `applications.js` or `client_auth.js`, which `oauth2_bcp.js` already
+// requires. Every record it decides about is PASSED IN: the client's
+// configuration, the authorization code, what the request presented, what the
+// observation found.
 //
 // THE SPLIT IS `oauth2_bcp.js`'s: this decides and says why, and never touches
 // `res`. A refusal is
