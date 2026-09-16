@@ -36,8 +36,8 @@
 //     BROKEN while every settings row is right.
 //
 // That is the same argument `/admin/database` is filed under Monitoring on
-// against `/admin/persistence` under Settings, made a second time for a
-// second thing somebody else is running rather than cited.
+// against `/admin/persistence` under Server configuration, made a second time
+// for a second thing somebody else is running rather than cited.
 //
 // ---------------------------------------------------------------------------
 // THE PAGE HOLDS NO PROBE, NO SDK AND NO CREDENTIAL.
@@ -361,9 +361,9 @@ function probeRows(probes) {
 // **THE STORE HALF COMES FROM `secrets.js` AND THE CONTEXT HALF IS ASSEMBLED
 // HERE**, which is the one place this page adds anything: whether the mode
 // makes the key-encryption key REQUIRED, and whether this process is actually
-// persisting keys. `secrets.js` cannot answer either — it is required by
-// `helpers.js`, so `keystore.js` and `mode.js` are both below it and a require
-// either way would close a cycle (rule 2).
+// persisting keys. `secrets.js` cannot answer the second: `keystore.js`
+// requires it (and `helpers.js` requires `keystore.js`), so a require back
+// would close a cycle (rule 2).
 // ===========================================================================
 function secretsJson() {
   log.debug('Entering secretsJson().');

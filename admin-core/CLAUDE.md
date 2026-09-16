@@ -2,7 +2,7 @@
 
 **What the admin console and the management API both do, in a directory
 neither of them owns.** Two files arrived on 2026-09-12 out of
-`admin-ui/admin.js`, and a third was written here on 2026-09-13:
+`admin-ui/admin.js`, and two more were written here on 2026-09-13:
 
 | File | | |
 |---|---|---|
@@ -101,8 +101,10 @@ themselves, and the symptom would be a handler winning somewhere else entirely.
 
 **That is why this is not in `common/`.** That directory reads as *anything may
 require this, at any point in the order*. This one may not.
-`tests/admin_actions_layer.js` walks the tree and fails if a third module
-requires it.
+`tests/admin_actions_layer.js` walks the tree and fails if any module outside
+its named `allowed` list requires `admin_actions.js` or `admin_views.js` — the
+console, the management API and a handful of view/action layers that all load
+at 18 or later.
 
 ## What the move cost, which is the honest part
 

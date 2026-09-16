@@ -11,13 +11,14 @@
 // calls `render()`; this file holds the geometry and none of the console's
 // HTML.
 //
-// It requires `../common/helpers` (for `log` and `xmlEscape`),
-// `@dagrejs/dagre`, and `./delegation_map` — for the PALETTE, the hexagon and
-// the two text functions, and for nothing else. That last require is worth
-// being explicit about: it is not this picture reusing that one's layout. It
-// reuses the arithmetic that decides how wide a box holding a given string is,
-// and the colours the console has already taught a reader to read, because two
-// answers to either of those is two pictures that do not look like one console.
+// It requires `../common/helpers` (for `log` and `xmlEscape`), the error-code
+// table, `@dagrejs/dagre`, and `./delegation_map` — for the PALETTE, the
+// hexagon and the two text functions, and for nothing else. That last require
+// is worth being explicit about: it is not this picture reusing that one's
+// layout. It reuses the arithmetic that decides how wide a box holding a given
+// string is, and the colours the console has already taught a reader to read,
+// because two answers to either of those is two pictures that do not look like
+// one console.
 //
 // It is NAMED `federation_diagram.js` AND NOT `federation_map.js` for one
 // reason, and it is worth a line because the collision is real:

@@ -70,8 +70,9 @@
 //
 // The page reports on the identity services this mock ADVERTISES, so the list
 // of them must be the same list `/admin/sts-metadata` draws its cards from. Two
-// tables naming fourteen protocol families is two tables that will disagree the
-// first time a fifteenth arrives — and the disagreement would be invisible,
+// tables naming the same protocol families (fourteen when this was written,
+// more than twenty now) are two tables that will disagree the first time
+// another arrives — and the disagreement would be invisible,
 // because each page would look complete on its own.
 //
 // So `sts_metadata.js` hands its `PROTOCOLS` over at its own require time
@@ -94,7 +95,8 @@
 //
 // server.js requires this module at 20a — after `tls/tls_server` (20) and
 // before `ldap/ldap_server` (21). That position is a DEPENDENCY and not a
-// preference: this file reads a table out of eleven other modules, and
+// preference: this file reads tables out of many other modules (eleven when
+// this was written; the list below names the originals), and
 // requiring one of them that server.js has not yet loaded would REGISTER ITS
 // ROUTES HERE (rule 1). At 20a every one of them is already loaded, so every
 // require below is a cache hit that registers nothing and moves nothing:
@@ -103,7 +105,8 @@
 //   kerberos/krb5_crypto                loaded at 15 by krb5_kdc
 //   authn/webauthn                      loaded at 8 by authn.js
 //   oauth-oidc/{oauth2,dpop,client_auth,mtls}   loaded at 9
-//   spiffe/spiffe_ca                    loaded at 18 by admin.js
+//   spiffe/spiffe_ca                    loaded at 18, by admin-core/ under
+//                                       admin.js
 //   admin-ui/admin                      loaded at 18 — the SHELL, and the gate
 //   tls/tls_server                      loaded at 20, for its certificate
 //
@@ -236,10 +239,11 @@ const ssfAuth = require('../ssf/ssf_auth');
 // ---------------------------------------------------------------------------
 const FAMILIES = [
   // ---------------------------------------------------------------------------
-  // PKI IS THE ONLY FAMILY HERE THAT MINTS AN X.509 CERTIFICATE FOR SOMETHING
-  // THAT IS NOT THIS SERVICE. TLS issues its own listener certificate and
-  // SPIFFE issues SVIDs for workloads it also authenticates; this issues a
-  // signing key pair to an APPLICATION and hands both halves over.
+  // PKI MINTS AN X.509 CERTIFICATE FOR SOMETHING THAT IS NOT THIS SERVICE —
+  // the first family here that did; ACME, EST and SCEP (below) have done so
+  // too since 2026-09-13. TLS issues its own listener certificate and SPIFFE
+  // issues SVIDs for workloads it also authenticates; this issues a signing
+  // key pair to an APPLICATION (or a person) and hands both halves over.
   //
   // The algorithm tables are read from `common/vendored/x509.js` — the module
   // that performs the encoding — through `common/pki.js`'s `report()`, which
@@ -1195,15 +1199,13 @@ const FAMILIES = [
     } },
 
   // ---------------------------------------------------------------------
-  // RECOVERY CODES (2026-09-10). **THE ONLY FAMILY ON THIS PAGE THAT SIGNS
-  // NOTHING, VERIFIES NO SIGNATURE AND HASHES NOTHING**, and it has a row
-  // anyway because it ENCRYPTS — a set of live credentials sealed at rest,
-  // under the same key-encryption key as the signing keys.
-  //
-  // That is the whole reason it is worth a row rather than a footnote on the
-  // TOTP one: this page's question is *when this service signs, verifies,
-  // encrypts or decrypts something, with what* — and this family answers two
-  // of the four with something a reader would not otherwise find.
+  // RECOVERY CODES (2026-09-10). A family that SIGNS NOTHING and verifies no
+  // signature, with a row anyway because what it keeps at rest is a set of
+  // live credentials. It was written when the set was ENCRYPTED under the
+  // key-encryption key; since 2026-09-11 each code is stored as a scrypt HASH
+  // (`common/backup_codes.js`'s header records the reversal), and the
+  // `encrypts`/`decrypts`/`hashes` strings below still describe the old
+  // design — the `At rest` row, read from `report()`, is the current one.
   //
   // The table is read from `common/backup_codes.js`, which is this page's
   // design everywhere: the facts live with the code that performs them.
@@ -1855,9 +1857,10 @@ function driftReport() {
 //
 // A realm has its own signing key (`realms.keyed()` in helpers.js), so this
 // reads whichever realm the console is being viewed in — the same rule every
-// settings form on this console follows. The two TLS certificates and the
-// SPIFFE authorities are NOT per realm and the table says so, because those
-// three socket families have no path to put a realm segment in.
+// settings form on this console follows. The TLS certificate is NOT per realm
+// and the table says so, because a TLS handshake has no path to put a realm
+// segment in; the SPIFFE authority IS per realm since 2026-09-11, while its
+// trust domain and sockets are the service's (see the `spiffe` row below).
 //
 // **IT DOES NOT CALL `allSigningKeys()`, AND THAT IS THE ONE THING TO KNOW
 // BEFORE CHANGING THIS FUNCTION.** The post-quantum keys are made on FIRST USE
@@ -2318,8 +2321,10 @@ function encryption() {
 // to a quantum computer in 2035 is a problem in 2035. A KEY AGREEMENT is not:
 // ciphertext captured today can be kept and opened when the machine arrives,
 // which is what "harvest now, decrypt later" names. So the surface that most
-// needs a post-quantum answer here is the one that has none — there is no
-// ML-KEM anywhere in this process, in JWE, in XML Encryption or in TLS.
+// needs a post-quantum answer here is the one that has none — no ML-KEM key
+// establishment happens in this process, in JWE, in XML Encryption or in TLS.
+// (EST's `/serverkeygen` can GENERATE an ML-KEM key pair for a client since
+// 2026-09-13; that hands a key over, it agrees none.)
 //
 // THE THIRD CATEGORY IS THE ONE PEOPLE GET WRONG. Symmetric ciphers and hashes
 // are not broken by Shor's algorithm; Grover's costs a square root, which is
@@ -3285,7 +3290,7 @@ function respondToKeyRefusal(req, res, message) {
 // yes in both directions and that is why it is a slot rather than a require:
 //
 //   * a require from `admin_api.js` (19) to this module (20a) would MOVE
-//     ROUTES — this page's own, and `tls/tls_server.js`'s three, which this
+//     ROUTES — this page's own, and `tls/tls_server.js`'s six, which this
 //     file requires for the server certificate — ahead of the management API's
 //     own routes and of ldap, scim and spiffe.
 //   * a require from `admin.js` (18) to this module would CLOSE A CYCLE: this
@@ -3349,9 +3354,11 @@ module.exports = {
 // distinction is the whole design: a report about what this service can do is
 // something to leave lying around, and a private key is not.
 //
-// **WHY IT IS DEFENSIBLE HERE AND WOULD NOT BE ANYWHERE ELSE.** Every key in
-// this process is generated at start, lives only in memory, and dies with the
-// process. None of them protects anything: the service checks no password,
+// **WHY IT IS DEFENSIBLE HERE AND WOULD NOT BE ANYWHERE ELSE.** In development
+// mode every key in this process is generated at start, lives only in memory,
+// and dies with the process (where the keystore persists them — product mode —
+// the page says the opposite out loud; see `keysJson()`). None of them
+// protects anything: the service checks no password in development mode,
 // validates no token it did not mint, and says so on every page. What a person
 // actually needs, constantly, is the far end of an exchange — a keystore to
 // put in a Java truststore, a PEM for `openssl s_client`, a JWK to paste into
@@ -3372,7 +3379,9 @@ module.exports = {
 // **PKCS#12 IS OFFERED ONLY WHERE THERE IS A CERTIFICATE**, and the refusal is
 // the vendored module's own rather than a rule invented here: a .p12 wraps a
 // private key in a certificate, and this service holds one for the RSA signing
-// key and the TLS key and for nothing else. The alternative — minting a
+// key, the TLS key and (since 2026-09-11) the curve keys, and for nothing
+// else — the post-quantum keys' certificates travel with their JWK, below.
+// The alternative — minting a
 // throwaway self-signed certificate so the format "works" — would hand
 // somebody a keystore containing a certificate this service has never used and
 // will never present, which is worse than a clear no.
@@ -3765,8 +3774,9 @@ function keysJson(base) {
   // generated once and read back, so a resource asserting the opposite was
   // telling a caller that a key it had just exported would be gone after a
   // restart — which is the reassurance somebody would act on. It is read from
-  // the keystore now, and the TLS and SPIFFE keys really are per start, which
-  // is why `keyInventory()` marks each row rather than the report as a whole.
+  // the keystore now. (The TLS key and the SPIFFE JWT authority really are
+  // per start; the SPIFFE X.509 authority stopped being on 2026-09-11, when it
+  // became a realm's Issuing CA. `keyInventory()`'s rows carry `scope`.)
   const store = stsKeystore.report();
   const out = {
     issuer: base,

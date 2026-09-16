@@ -183,12 +183,12 @@ const noXacml = adminActions.noXacml;
 const samlAssertionRowFor = adminActions.samlAssertionRowFor;
 
 // ---------------------------------------------------------------------------
-// WHAT THE CONSOLE HANDS OVER. Five of these are inverted hooks on
+// WHAT THE CONSOLE HANDS OVER. The first five to arrive are inverted hooks on
 // `admin-ui/admin.js` (rule 3e) filled by the module that owns the subsystem
 // — `crypto_metadata.js`, `xacml_admin.js`, `ldap_server.js`, `scim.js` and
 // `xacml_role_pep.js`. The sixth is the console's own settings-block builder,
 // which `scimJson()` embeds; see the header for why it is asked for rather
-// than reimplemented.
+// than reimplemented. The rest arrived later, each noted below.
 //
 // The slots do not move: every filler in the tree names the console module,
 // and so does every rule 3e sentence in CLAUDE.md. The console forwards from
@@ -368,9 +368,9 @@ function gateStateFor(req) {
   // setting is gone: "is authentication required here" had four answers across
   // this service and now has one. See common/mode.js.
   const enforced = mode.gatesConsole();
-  // THE DEFAULT REALM'S SESSION, whichever realm is being read, and only here —
-  // see the require at the top of this file for why the console asks the
-  // question that way and why no other module may.
+  // THE CONSOLE'S OWN RELYING-PARTY SESSION, whichever realm is being read —
+  // see consoleRpSession() above for why it is looked up in the default realm
+  // and why it is no longer the sign-on session.
   const found = consoleRpSession(req);
   const session = found ? found.session : null;
   const username = session ? session.user.username : '';
@@ -489,9 +489,9 @@ function signOnSessionRows() {
 // The metrics reply: the whole snapshot, with the sign-on sessions beside it.
 // The snapshot's own keys are at the TOP LEVEL of it rather than under a
 // `snapshot` member, which is what /admin/metrics?format=json has always
-// answered and what the parent project's tests read — so the route below uses
-// this object for the markup too rather than taking a second snapshot a few
-// microseconds later.
+// answered and what the parent project's tests read — so the console's route
+// uses this object for the markup too rather than taking a second snapshot a
+// few microseconds later.
 function metricsJson() {
   log.debug("Entering metricsJson().");
   const snap = stats.snapshot();
@@ -946,13 +946,14 @@ function claimsPreviewUser(query) {
 // and not only on the page because the first thing a caller of POST
 // .../claims/add needs is the list of names it will refuse.
 //
-// TWO CALLERS, ONE BUILDER, for the reason claimsAction() has one: the two
-// pages differ in WHICH sets they carry and in one rule each — the reserved JWT
-// names apply to a token and the default SAML 1.1 namespace to an assertion —
-// and everything else about the reply is the same fact answered twice. Two
-// builders would have been two previews that could disagree about one person,
-// which is precisely the thing every preview here is built through the issuance
-// path to prevent.
+// THREE CALLERS, ONE BUILDER, for the reason claimsAction() has one: the
+// three pages (JWT claims, SAML attributes, UserInfo claims) differ in WHICH
+// sets they carry and in a rule or two each — the reserved JWT names apply to
+// a token and a UserInfo response, the default SAML 1.1 namespace to an
+// assertion — and everything else about the reply is the same fact answered
+// again. Separate builders would have been previews that could disagree about
+// one person, which is precisely the thing every preview here is built through
+// the issuance path to prevent.
 function claimSetsJson(ids, previewUser) {
   log.debug("Entering claimSetsJson(). " + ids.length + " set(s).");
   const user = previewUser || 'alice';
@@ -1026,8 +1027,9 @@ function claimsJson(previewUser) {
 // The two SAML sets, and the one rule that is theirs: the namespace a SAML 1.1
 // attribute gets when nobody names one. THERE IS NO `reservedJwtClaims` HERE
 // and its absence is the honest answer rather than an oversight — that list is
-// enforced for a JWT set only (admin_stats.js's setClaimSet() checks `kind`),
-// because an assertion attribute called `exp` collides with nothing. Reporting
+// enforced for the JWT and UserInfo sets only (admin_stats.js's setClaimSet()
+// asks `reservedNames()`), because an assertion attribute called `exp`
+// collides with nothing. Reporting
 // it here would have told a caller their call would be refused when it will
 // succeed.
 function samlAttributesJson(previewUser) {
@@ -1343,14 +1345,16 @@ function samlAssertionsJson() {
 //     once, in the module that implements them, and rendered here. See
 //     setScimReader().
 //
-// **IT HAS NO CONTROLS, AND THAT IS WHY IT NEEDS ONLY A GET ON /admin-api.**
-// Everything about SCIM that can be changed is a `config.js` row —
-// `scim.enabled`, the three limits, and the thirteen authentication settings
-// (which scheme is offered, the two scope names, the realm, the shared Digest
-// password, the two lifetimes) — so /admin/config already has the form
-// and POST /admin-api/config/set already has the operation. A second form here
-// would be a second door to one setting, which is the mistake rule 5 exists for
-// and the same argument group_claims.js makes about `groups.claim`.
+// **IT HAS NO CONTROLS OF ITS OWN, AND THAT IS WHY IT NEEDS ONLY A GET ON
+// /admin-api.** Everything about SCIM that can be changed is a `config.js` row
+// — `scim.enabled`, the three limits, and the seventeen authentication
+// settings (which scheme is offered, the two scope names, the realm, the
+// shared Digest password, the Digest and HOBA lifetimes and caps) — so the
+// page draws the console's ordinary settings form for its group
+// (`SETTING_HOMES`) and POST /admin-api/config/set already has the operation.
+// A SCIM-specific form here would be a second door to one setting, which is
+// the mistake rule 5 exists for and the same argument group_claims.js makes
+// about `groups.claim`.
 //
 // **THE BULK COUNT DOES NOT TALLY WITH THE REST, ON PURPOSE.** One
 // POST /scim/v2/Bulk carrying five creates is one `bulk` row AND five `create`
@@ -1386,7 +1390,7 @@ function scimJson(req) {
     mapping: { user: scimMap.USER_ATTRIBUTES.map(scimMappingRow),
                group: scimMap.GROUP_ATTRIBUTES.map(scimMappingRow) },
     counters: counters,
-    // The eighteen scim.* rows this page now edits, described. It answers the
+    // The twenty-one scim.* rows this page now edits, described. It answers the
     // question the rest of this reply cannot: not what the server does, but
     // where the value that decides it came from.
     settings: configSettingsJson('/admin/scim')
@@ -1403,9 +1407,10 @@ function scimJson(req) {
 // page goes is decided by the QUESTION IT ANSWERS and never by the module that
 // draws it or the path space it sits in. `/admin/scim` answers "what is this
 // surface, and what will it do" — the schemes, the endpoints, the attribute
-// mapping, the eighteen settings. This one answers "how much traffic is there,
-// from whom, and how much of it is failing", which is the question somebody has
-// when a provisioning client is misbehaving, and it is a monitoring question.
+// mapping, the twenty-one settings. This one answers "how much traffic is
+// there, from whom, and how much of it is failing", which is the question
+// somebody has when a provisioning client is misbehaving, and it is a
+// monitoring question.
 // It shares a path prefix with the protocol page because the path is where the
 // module's other page is; `SECTIONS` is the only place placement is stated.
 //
@@ -1532,11 +1537,11 @@ function scimMappingRow(row) {
 // ---------------------------------------------------------------------------
 // Paging.
 //
-// There is no script on these pages — `script-src 'none'`, see the shell above
-// — so paging is links and a query parameter and nothing else. That is also why
-// every number is settled server-side before the markup is built: a page that
-// renders "page 4 of 2" and leaves the browser to sort it out has nothing to
-// sort it out with.
+// There is no script on these pages — `script-src 'none'`, see the shell in
+// `admin-ui/admin.js` — so paging is links and a query parameter and nothing
+// else. That is also why every number is settled server-side before the markup
+// is built: a page that renders "page 4 of 2" and leaves the browser to sort it
+// out has nothing to sort it out with.
 //
 // Both parameters are read defensively. `?page=abc`, `?page=-3` and `?page=999`
 // all have to land somewhere sensible, because they arrive from hand-edited
@@ -1623,10 +1628,10 @@ function pagedRows(query, rows, options) {
 }
 
 // The filtered, paged token list and the reply built from it. The WHOLE view
-// rather than only its JSON, because the markup below needs every intermediate
-// step of it — and a second walk of the same list a few lines later is how a
-// table and the JSON beside it come to disagree about a revocation that
-// happened in between.
+// rather than only its JSON, because the console's markup needs every
+// intermediate step of it — and a second walk of the same list a few lines
+// later is how a table and the JSON beside it come to disagree about a
+// revocation that happened in between.
 function tokensView(query) {
   log.debug("Entering tokensView().");
   const wantedFamily = String(query.family || '');
@@ -1648,10 +1653,10 @@ function tokensView(query) {
   // lists what came back in ONE REPLY. Every JWT, every SAML assertion (whether
   // WS-Trust or WS-Federation issued it), every Kerberos ticket and every SVID
   // is still here — grouped where the protocol grouped them, which is OAuth 2.0
-  // and OIDC and nowhere else. See issuedSetRow() above for the argument, and
-  // stats.issuedSets() for the grouping, which is decided by a set id the
-  // ISSUER stated rather than by anything this file could infer from these
-  // rows.
+  // and OIDC and nowhere else. See issuedSetRow() in admin-ui/admin.js for the
+  // argument, and stats.issuedSets() for the grouping, which is decided by a
+  // set id the ISSUER stated rather than by anything this file could infer
+  // from these rows.
   const all = stats.issuedSets();
   // EVERY FILTER MATCHES A SET WHEN ANY MEMBER MATCHES, and that is the one
   // thing about this page a reader has to be told rather than left to work out.
@@ -1892,29 +1897,6 @@ function sessionsView(req) {
 }
 
 // ---------------------------------------------------------------------------
-// THE ERROR CODES, AS /admin/error-codes AND GET /admin-api/error-codes DRAW
-// THEM (2026-09-12).
-//
-// The table is `common/error_codes.js`'s and nothing here restates it: this is
-// the table FILTERED and PAGED, with one column the documentation page cannot
-// have — how many rows in this realm's audit log carry each code right now.
-// That column is what makes the page worth having beside `docs/error-codes.md`:
-// the page answers *what does STS-FED-0012 mean* and *which failures has this
-// service actually been producing*, and only a running service can answer the
-// second.
-//
-// **THE COUNT IS OF THE HELD AUDIT LOG IN THIS REALM**, the same rows
-// `/admin/audit` lists, so it drops as that ring's cap discards the oldest and
-// it is zero for a code logged only as a line (`tag()`) — a startup refusal, or
-// anything the remote PEP container records. The page says so rather than
-// letting a zero read as "never happens".
-//
-// **A CODE ON A ROW THAT THE TABLE DOES NOT HOLD IS REPORTED**, not dropped:
-// `mark()` and `audit()` both record an unregistered code as given, precisely
-// so that the one row saying the table is incomplete survives, and this is the
-// page somebody would look for it on.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // THE USED-ASSERTION HISTORY — every RFC 7523 JWT and RFC 7522 SAML assertion
 // this realm has accepted and that has not yet expired (2026-09-13).
 //
@@ -1975,6 +1957,29 @@ function usedAssertionsView(query) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// THE ERROR CODES, AS /admin/error-codes AND GET /admin-api/error-codes DRAW
+// THEM (2026-09-12).
+//
+// The table is `common/error_codes.js`'s and nothing here restates it: this is
+// the table FILTERED and PAGED, with one column the documentation page cannot
+// have — how many rows in this realm's audit log carry each code right now.
+// That column is what makes the page worth having beside `docs/error-codes.md`:
+// the page answers *what does STS-FED-0012 mean* and *which failures has this
+// service actually been producing*, and only a running service can answer the
+// second.
+//
+// **THE COUNT IS OF THE HELD AUDIT LOG IN THIS REALM**, the same rows
+// `/admin/audit` lists, so it drops as that ring's cap discards the oldest and
+// it is zero for a code logged only as a line (`tag()`) — a startup refusal, or
+// anything the remote PEP container records. The page says so rather than
+// letting a zero read as "never happens".
+//
+// **A CODE ON A ROW THAT THE TABLE DOES NOT HOLD IS REPORTED**, not dropped:
+// `mark()` and `audit()` both record an unregistered code as given, precisely
+// so that the one row saying the table is incomplete survives, and this is the
+// page somebody would look for it on.
+// ---------------------------------------------------------------------------
 function errorCodesView(query) {
   log.debug("Entering errorCodesView().");
   const wantedSubsystem = String(query.subsystem || '').trim().toUpperCase();
@@ -2067,9 +2072,10 @@ function errorCodesView(query) {
 }
 
 // Everything the page and the API both need out of one query string. Written as
-// a view function for the reason the comment above consoleJson() gives: this
-// console and /admin-api are two callers, and two hand-built copies of the same
-// filtering would be two answers that each look right alone.
+// a view function for the reason the comment above consoleJson() in
+// admin-ui/admin.js gives: this console and /admin-api are two callers, and
+// two hand-built copies of the same filtering would be two answers that each
+// look right alone.
 function auditView(query) {
   log.debug("Entering auditView().");
   const wantedCategory = String(query.category || '');
@@ -2154,8 +2160,9 @@ function auditView(query) {
 
 // The whole view, filtered and paged, for the page AND for
 // GET /admin-api/delegation. One function for the reason the block above
-// consoleJson() gives: the filtering and the paging are work both need, and two
-// copies of it would be two answers that each looked right alone.
+// consoleJson() (admin-ui/admin.js) gives: the filtering and the paging are
+// work both need, and two copies of it would be two answers that each looked
+// right alone.
 function delegationView(query) {
   log.debug("Entering delegationView().");
   const wantedType = String(query.type || '');
@@ -2392,6 +2399,11 @@ function queryOne(query, key) {
   return value === undefined || value === null ? '' : String(value);
 }
 
+// How many results a chooser pane shows at a time. One number for the console
+// (chooserPane()) and for the replies that page the same list, so a page and
+// its resource cannot come to show different twenties.
+const CHOOSER_HITS = 20;
+
 // Does one catalogue entry match what was typed? Case-insensitive, and over
 // EVERY spelling the catalogue holds rather than the one it shows: an
 // application arrives as `HTTP/backend@EXAMPLE.COM` and as `HTTP/backend`, a
@@ -2400,11 +2412,6 @@ function queryOne(query, key) {
 // of the acts table four inches up the page is pasting the OTHER one about half
 // the time, and a search that answers "nothing matches" to a string printed on
 // the same page is worse than no search at all.
-// How many results a chooser pane shows at a time. One number for the console
-// (chooserPane()) and for the replies that page the same list, so a page and
-// its resource cannot come to show different twenties.
-const CHOOSER_HITS = 20;
-
 function chooserMatches(names, wanted) {
   log.debug("Entering chooserMatches().");
   if (!wanted) {
@@ -2944,9 +2951,9 @@ function caepJson(req) {
 // ---------------------------------------------------------------------------
 // THE SEARCH AND THE SLICE, as one pure function called twice — by the page and
 // by GET /admin-api/caep/sessions. Written once for the reason
-// `permissionsListState()` is: the markup and the reply have to agree about
-// what was filtered and what was drawn, and two walks of one list is how they
-// come to disagree about a session that ended in between.
+// `permissionsListState()` (admin-ui/admin.js) is: the markup and the reply
+// have to agree about what was filtered and what was drawn, and two walks of
+// one list is how they come to disagree about a session that ended in between.
 function caepSessionsState(req, report) {
   log.debug("Entering caepSessionsState().");
   const wanted = queryOne(req.query, 'sessq').trim();
@@ -3414,9 +3421,6 @@ function newUserJson(req, prefill) {
   }
 }
 
-// One route, three answers, and the choice between them is here rather than in
-// the route so that /admin-api/users makes the same one. `known: false` is the
-// third and it is not a 404 — see the comment inside it.
 // WHERE A USER CREATED ON THIS PAGE LANDS, in the realm the page is being read
 // in. `directoryReader('')` is the same slot the drill-down uses, asked with no
 // name: it answers about the DIRECTORY rather than about a person, which is
@@ -3672,7 +3676,8 @@ function rbacListJson(req) {
 // THE TWO LISTS ARE DIFFERENT QUESTIONS, and this is where that shows.
 //
 // The directory holds an entry for anybody somebody wrote one for — the three
-// it seeds at startup, and whatever a client has added since. The users page
+// it seeds at startup in development mode, and whatever a client has added
+// since. The users page
 // holds everybody who has actually presented a credential to this service.
 // `alice` is in the directory from the moment the process starts and is on the
 // users page only once somebody signs in as her, so a member row that always
@@ -3809,7 +3814,8 @@ function saml2ServiceProviders() {
 }
 
 // One service provider's four URLs and its entityID, from the profile's own
-// functions. Never rebuilt here — see the require at the top of this file.
+// functions (`saml/saml2_sso.js`). Never rebuilt here, so the page cannot
+// publish an address the profile does not answer on.
 function saml2Facts(base, identifier) {
   log.debug("Entering saml2Facts().");
   const where = saml2.endpointsFor(base, identifier);
@@ -3966,7 +3972,8 @@ function saml11RelyingParties() {
 }
 
 // One relying party's three URLs and its providerID, from the profile's own
-// functions. Never rebuilt here — see the require at the top of this file.
+// functions (`saml/saml11_sso.js`). Never rebuilt here, for saml2Facts()'s
+// reason.
 function saml11Facts(base, identifier) {
   log.debug("Entering saml11Facts().");
   const where = saml11.endpointsFor(base, identifier);
@@ -4042,9 +4049,9 @@ function asDriftRows(id) {
   log.debug("Leaving asDriftRows().");
   // The document this service would publish for THIS profile if the profile
   // said nothing — built from the same function the endpoints serve, so the
-  // comparison cannot go stale as that document grows members. `truthFor()`
-  // gives it a request-shaped object because asMetadata() derives every URL in
-  // it from the one the request arrived on.
+  // comparison cannot go stale as that document grows members.
+  // `asTruthRequest()` gives it a request-shaped object because asMetadata()
+  // derives every URL in it from the one the request arrived on.
   return authorizationServers.driftOf(id, oauth2.asMetadata(asTruthRequest()));
 }
 
@@ -4305,12 +4312,13 @@ function applicationDetailJson(req, identifier) {
     //
     // **THAT IS A DECISION AND `/admin/ldap/applications` MAKES THE OPPOSITE
     // ONE**, which is why it is argued here rather than done quietly: the seal
-    // protects the STORE — an ldapsearch on 389 where every bind succeeds, an
-    // ldif file, a postgres row, a backup of either — and not this console,
-    // which is behind a session and a role and is where an operator goes to
-    // collect a credential this service issued them. The directory page is
-    // headed "the registry as the directory sees it" and shows the ciphertext,
-    // because an opened value there would be a page lying about its subject.
+    // protects the STORE — an ldapsearch on 389, where no read is authorized
+    // in either mode, an ldif file, a postgres row, a backup of either — and
+    // not this console, which is behind a session and a role and is where an
+    // operator goes to collect a credential this service issued them. The
+    // directory page is headed "the registry as the directory sees it" and
+    // shows the ciphertext, because an opened value there would be a page
+    // lying about its subject.
     // ---------------------------------------------------------------------
     const opened = applications.isSealed(value) && row.fields
       ? row.fields[name] : null;
@@ -4822,11 +4830,11 @@ function applicationsJson(req) {
 // /admin-api/applications/grant-permission` beside the `POST
 // /admin-api/permissions/grant-permission` that already exists, which is two
 // API operations for one write. Moving a FORM is not moving an ACTION. The
-// settings forms on twenty-one pages already do this: they are drawn where the
-// setting belongs and post to /admin/config, which sends the reader back to the
-// page the form was on. `from` is that field here, and permissionsReturnTo()
-// rebuilds the destination rather than echoing it, for configReturnTo()'s
-// reason.
+// settings forms on the protocol pages already do this: they are drawn where
+// the setting belongs (`SETTING_HOMES`) and post to /admin/config, which
+// sends the reader back to the page the form was on. `from` is that field
+// here, and permissionsReturnTo() (admin-ui/admin.js) rebuilds the destination
+// rather than echoing it, for configReturnTo()'s reason.
 //
 // WHAT IS NOT OFFERED, and each for its own reason:
 //   * this application's OWN permissions — the token would be audienced to
@@ -5208,8 +5216,6 @@ function usersListJson(req) {
   };
 }
 
-// The list. Filtered by a name fragment and by protocol, and paged with the
-// same controls the tokens page uses.
 // ===========================================================================
 // EVERYBODY THIS REALM KNOWS ABOUT, AND WHAT EACH OF THEM CAN SIGN IN WITH
 // (2026-09-10).
@@ -5551,8 +5557,10 @@ function userDetailJson(req, key) {
   };
 }
 
-// `?user=` means the drill-down.
-// `?user=` means the drill-down.
+// One route, three answers, and the choice between them is here rather than in
+// the route so that /admin-api/users makes the same one. `?user=` means the
+// drill-down; `known: false` is the third answer and it is not a 404 — see the
+// comment inside the console's usersView().
 //
 // **`known: true` IS ADDED HERE AND THAT IS NOT DECORATION.** The console's
 // `usersView()` wrapped the detail as `Object.assign({ known: true },
@@ -5845,7 +5853,8 @@ function logoutJson(req) {
   }
 
   // Flattened, because this table filters and pages ACROSS families — see the
-  // header. The family's own prose stays on the summary above it.
+  // console page's header in admin-ui/admin.js. The family's own prose stays
+  // on the summary above it.
   const all = [];
   inventory.families.forEach(function (family) {
     family.rows.forEach(function (r) {
@@ -5871,9 +5880,9 @@ function logoutJson(req) {
   };
 }
 
-// Answered as an empty inventory rather than null when the slot is unfilled, so
-// the page renders its own explanation instead of every caller guarding. Same
-// shape spiffeListeners() uses one screen up.
+// NULL when the slot is unfilled — not an empty inventory, which would read as
+// "nothing is live". logoutJson() turns the null into its own no-reader
+// answer, and the page renders its own explanation from that.
 function logoutInventoryFor(key) {
   log.debug("Entering logoutInventoryFor(). key=" + key);
   if (!logoutReader) {
