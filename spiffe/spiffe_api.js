@@ -829,7 +829,7 @@ const agentHandlers = {
   // only the public key is read out of it, so an agent still cannot name itself
   // something it is not — the join token's single use, and the ban.
   AttestAgent: rpc.bidiStream('server', 'Agent.AttestAgent',
-                              async function (request) {
+                              async function (request, call) {
     await ca.ready();
     // A challenge response arriving when no challenge was issued. Refused
     // rather than ignored: a client in that state has misread the protocol, and
