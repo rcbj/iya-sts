@@ -100,7 +100,7 @@ const CAPABILITIES = [
           'BBS key pair.' },
   // ---- section 2: single-use values ----------------------------------------
   { id: 'oauth.codes-once', section: '2',
-    by: 'oauth-oidc/oauth2.js',
+    by: 'oauth-oidc/oauth2.ts',
     what: 'An authorization code and a PAR request_uri are spent once across ' +
           'the cluster, and a replayed code revokes what it bought.' },
   { id: 'oauth.refresh-rotation', section: '2',
@@ -108,7 +108,7 @@ const CAPABILITIES = [
     what: 'A rotated refresh token is redeemed once, reuse detection sees ' +
           'every node, and the hosted surfaces renew once.' },
   { id: 'oauth.dpop-jti', section: '2',
-    by: 'oauth-oidc/dpop.js',
+    by: 'oauth-oidc/dpop.ts',
     what: 'A DPoP proof\'s jti is accepted once across the cluster, and the ' +
           'server nonce verifies on every node.' },
   { id: 'authn.second-factors-once', section: '2',

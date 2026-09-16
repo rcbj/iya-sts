@@ -5,49 +5,49 @@ libraries that decide things on its behalf.
 
 | File | What it is |
 |---|---|
-| `oauth2.js` | Every endpoint. The only module here that touches `res`. |
+| `oauth2.ts` | Every endpoint. The only module here that touches `res`. |
 | `oauth2_bcp.js` | RFC 9700, the Security BCP, as a table of requirements with a check citing each. A MODE. |
 | `client_auth.js` | All six token-endpoint authentication methods. The mechanics half of section 2.5. |
-| `dpop.js` | RFC 9449, and `presentedAccessToken()` — the Bearer-or-DPoP check four protected endpoints share. |
+| `dpop.ts` | RFC 9449, and `presentedAccessToken()` — the Bearer-or-DPoP check four protected endpoints share. |
 | `mtls.js` | RFC 8705 certificate-bound tokens — the other half of RFC 9700 section 2.2 — and, since 2026-09-13, the POLICY RFC 8705's two sections share: a declared certificate method or `tls_client_certificate_bound_access_tokens` held to in every mode, and section 7.1's refresh rule. See 3an. |
 | `assertion_grant.js` | **RFC 7521 and RFC 7523, both halves.** The JWT bearer AUTHORIZATION grant (§2.1), and the assertion FORMAT `client_auth.js` takes its JWKS reading and its JWE unwrap from. |
 | `saml_assertion_grant.js` | **RFC 7521 and RFC 7522, both halves.** The SAML 2.0 bearer AUTHORIZATION grant (§2.1) and CLIENT AUTHENTICATION by the same document (§2.2), in ONE `verify()`. A SEPARATE implementation from `assertion_grant.js` and not that one with a format flag — see 3z. |
-| `authorization_servers.js` | Makes one process BE several authorization servers, selected by a path component. |
+| `authorization_servers.ts` | Makes one process BE several authorization servers, selected by a path component. |
 | `oauth21.js` | **OAuth 2.1 (draft-ietf-oauth-v2-1-16), as a MODE that turns RFC 9700 mode on** — the difference between the two, as a table of requirements with a decision citing each. See 3ah. |
-| `introspection_jwt.js` | **RFC 9701 (2026-09-13).** Whether an introspection request asked for a JWT, what the resource server registered (section 6's defaults applied), and the signed — optionally encrypted — `token-introspection+jwt` response. See 3ai. |
-| `software_statement.js` | **RFC 7591 section 2.3 (2026-09-13).** Whether a software statement is trusted, what it fixes in a registration, the RFC 7592 update binding, and issuing one as this realm. See 3aj. |
-| `request_object.js` | **RFC 9101, JAR (2026-09-13).** Resolves an authorization request's `request` or `request_uri` — fetched only from a registered address — decrypts, verifies and checks the object, and hands the endpoint the parameters that replace the query's. See 3ak. |
-| `authorization_details.js` | **RFC 9396, RAR (2026-09-13).** Parses and checks `authorization_details` against the types resource applications DECLARE, the section 6 subset rule, the resource a set of details addresses, and the one-time consent. See 3am. |
-| `par.js` | **RFC 9126, PAR (2026-09-13).** The store of pushed authorization requests: the `request_uri`, bound to its client and authorization server, read without spending, spent when a response is issued, expired, listed and deleted. `oauth2.js` answers `POST /oauth2/par`. See 3al. |
-| `oauth2_monitor.js` | **The counters behind `/admin/oauth2/monitor` (2026-09-13)**, in sections; pushed authorization requests are the first. |
-| `oauth2_monitor_console.js` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.js`. |
-| `oauth2_monitor_admin.js` | **THE ONE FILE HERE BESIDE `oauth2.js` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.js`, never from `oauth2.js`, which would drag the console in front of the authorization server. |
-| `oauth2_monitor_api.js` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.js` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
-| `protected_resource_metadata.js` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
-| `jwt_access_token.js` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
-| `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.js`, `oauth2_bcp.js`, `dpop.js`, `mgmt-api/admin_api.js` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
+| `introspection_jwt.ts` | **RFC 9701 (2026-09-13).** Whether an introspection request asked for a JWT, what the resource server registered (section 6's defaults applied), and the signed — optionally encrypted — `token-introspection+jwt` response. See 3ai. |
+| `software_statement.ts` | **RFC 7591 section 2.3 (2026-09-13).** Whether a software statement is trusted, what it fixes in a registration, the RFC 7592 update binding, and issuing one as this realm. See 3aj. |
+| `request_object.ts` | **RFC 9101, JAR (2026-09-13).** Resolves an authorization request's `request` or `request_uri` — fetched only from a registered address — decrypts, verifies and checks the object, and hands the endpoint the parameters that replace the query's. See 3ak. |
+| `authorization_details.ts` | **RFC 9396, RAR (2026-09-13).** Parses and checks `authorization_details` against the types resource applications DECLARE, the section 6 subset rule, the resource a set of details addresses, and the one-time consent. See 3am. |
+| `par.ts` | **RFC 9126, PAR (2026-09-13).** The store of pushed authorization requests: the `request_uri`, bound to its client and authorization server, read without spending, spent when a response is issued, expired, listed and deleted. `oauth2.ts` answers `POST /oauth2/par`. See 3al. |
+| `oauth2_monitor.ts` | **The counters behind `/admin/oauth2/monitor` (2026-09-13)**, in sections; pushed authorization requests are the first. |
+| `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.js`. |
+| `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.js`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
+| `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.js` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
+| `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`); section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
+| `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
+| `sender_constraints.js` | **The five settings that ask for MORE than either specification requires (#34, 2026-09-15)** — refresh token rotation on a switch of its own, and DPoP or RFC 8705 REQUIRED of a refresh token at the token endpoint and of a presented access token at every resource. All off by default, because neither OAuth 2.1 section 4.3.1 nor RFC 9700 section 2.2.1 asks for any of them. A leaf that `oauth2.ts`, `oauth2_bcp.js`, `dpop.ts`, `mgmt-api/admin_api.js` and `debugger/debugger_server.ts` require and that may require none of them back. See 3ao. |
 
-**Everything but `oauth2.js` — and, since 2026-09-13, the console page
-`oauth2_monitor_admin.js`, required at 18f rather than from here — registers
+**Everything but `oauth2.ts` — and, since 2026-09-13, the console page
+`oauth2_monitor_admin.ts`, required at 18f rather than from here — registers
 nothing.** They are libraries in the sense
 rule 3 of the root `CLAUDE.md` means: they require only `../common` and each
 other, so they cannot join a cycle and their position in the require order is not
 a position at all. The split throughout is the same one: **a library decides and
-`oauth2.js` answers.** What a refusal LOOKS like is protocol knowledge and stays
+`oauth2.ts` answers.** What a refusal LOOKS like is protocol knowledge and stays
 in the one module that has a response object.
 
-`dpop.js` is where `presentedAccessToken()` lives rather than
+`dpop.ts` is where `presentedAccessToken()` lives rather than
 `../oid4vc/vc_issuer.ts`, where it was written, because the fourth caller is in
-`oauth2.js` — which `vc_issuer.js` cannot be required from without building a
+`oauth2.ts` — which `vc_issuer.js` cannot be required from without building a
 cycle or moving OID4VCI ahead of OAuth2 in the route order.
 
 Two ordering facts about this directory are in the root `CLAUDE.md` because they
 are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
-`oauth2.js`, and so must `admin-ui/admin.js`.
+`oauth2.ts`, and so must `admin-ui/admin.js`.
 
 ---
 
-3f. **`oauth2_bcp.js` is a library like `dpop.js`, and it is a MODE rather than a
+3f. **`oauth2_bcp.js` is a library like `dpop.ts`, and it is a MODE rather than a
    change of behaviour.** It holds this service's model of RFC 9700 (the OAuth 2.0
    Security Best Current Practice) — the whole of that BCP's section 2, as a table
    of requirements with a check citing each by id. It registers nothing and
@@ -56,7 +56,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    (#34), `error_codes.js` and `cluster/`'s claims and capability table (#46)
    — this sentence named only the first three until 2026-09-13, when a
    reviewer found it had been out of date for weeks — none of which requires
-   it back (`dpop.js` requires this file, not the reverse), so it cannot join
+   it back (`dpop.ts` requires this file, not the reverse), so it cannot join
    a cycle and its position in the require order does not matter.
    **`common/cors.js`
    requires it too** (it was `app.js` until 2026-09-13, when CORS became an
@@ -102,7 +102,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    the compliant pass over HTTPS turns `global.https` on for the whole process
    and leaves the mode to the realm.
 
-   **It decides; `oauth2.js` answers.** This module never touches `res`. What a
+   **It decides; `oauth2.ts` answers.** This module never touches `res`. What a
    refusal LOOKS like is protocol knowledge and stays there — the same split
    `authn.js` has — and the order is load-bearing rather than stylistic: the
    `redirect_uri` is matched FIRST and a failure is answered as a 400 on this
@@ -113,7 +113,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
 
    **THREE THINGS OUTSIDE THE AUTHORIZATION ENDPOINT, and each is at a funnel
    rather than a call site.** Refresh token lineage is recorded inside
-   `refreshToken()` in `oauth2.js` — the one function that mints one, so no
+   `refreshToken()` in `oauth2.ts` — the one function that mints one, so no
    grant can issue a refresh token outside its family; the sender-constraining
    note is inside `tokenSet()`, the one place a grant mints a token set; and the
    client-authentication and grant-type checks are ABOVE the grant switch at the
@@ -140,7 +140,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    serious, indistinguishable from an afternoon off.
 
    **REVOCATION IS STILL `stats.revoke()` AND THIS MODULE NEVER CALLS IT.**
-   `checkRefreshRequest()` returns the jtis a replay should kill and `oauth2.js`
+   `checkRefreshRequest()` returns the jtis a replay should kill and `oauth2.ts`
    revokes them, which keeps both rules intact at once: the one-store rule (the
    revocation set `/oauth2/revoke` and the console write to is the only one), and
    this module's own — it decides, the protocol acts. A rotated token is revoked
@@ -176,7 +176,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
 
    **ONE DECISION ABOUT FORWARDED HEADERS, SHARED.** `helpers.forwardedFrom()`
    decides whether `X-Forwarded-Proto`/`X-Forwarded-Host` are believed, and both
-   `baseUrlOf()` and `dpop.js`'s `htuOf()` go through it. They used to disagree
+   `baseUrlOf()` and `dpop.ts`'s `htuOf()` go through it. They used to disagree
    — dpop believed them unconditionally and baseUrlOf ignored them — and each
    answer was wrong for the deployment the other was written for: behind a proxy
    the metadata published the last hop's URLs, and without one a client could
@@ -252,7 +252,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    how a client SHOULD say which resource server a token is for; a scope list
    carrying the API's name (`scope=openid email profile apigw1`, no `resource`
    parameter anywhere) is how every real deployment of the pattern does it. So
-   `audienceScopes()` in `oauth2.js` reads one: a scope value that is the
+   `audienceScopes()` in `oauth2.ts` reads one: a scope value that is the
    `oauthClientId` of ANOTHER application in the registry becomes the `aud` and
    comes off the scope claim, and everything else is untouched. Four rules and
    each has a reason written above the function — the match is against
@@ -275,7 +275,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    section 4.3.3), in both modes; before that, one narrowing refresh shrank the
    grant for good. ~~And an `openid` token gets
    the default audience APPENDED beside the derived one
-   (`withOwnResource()`), because `audienceRefusal()` in `dpop.js` refuses a
+   (`withOwnResource()`), because `audienceRefusal()` in `dpop.ts` refuses a
    token addressed elsewhere and `/oauth2/userinfo` is one of the endpoints it
    guards: without it, the exact request this feature was written for produced a
    token that could not call UserInfo.~~ **REVERSED 2026-09-13 AT RCBJ'S CHOICE
@@ -290,12 +290,12 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    and the same now holds for RFC 8707's `resource`, which never had the append.
 
    **THE REPLAY RELAXATION IS THE ONE THING THE TWO MODES ANSWER DIFFERENTLY
-   ABOUT A CODE.** `redeemedCodes` in `oauth2.js` answers an IDENTICAL repeat
+   ABOUT A CODE.** `redeemedCodes` in `oauth2.ts` answers an IDENTICAL repeat
    with the tokens it already bought, for the reason written where it is
    declared. RFC 9700 section 4.5 says a real server refuses that, so
    `checkCodeReplay()` does — and revokes the access, refresh and ID Tokens that
    code bought (RFC 6749 section 10.5), through `stats.revoke()` called by
-   `oauth2.js`, never by this module. It sits BELOW the two refusals that are
+   `oauth2.ts`, never by this module. It sits BELOW the two refusals that are
    more specific — a repeat that differs, and a code whose lifetime ran out —
    because those are already refusals in both modes and each deserves its own
    sentence.
@@ -338,7 +338,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    token together, with no module told about any of it. Do not "fix" that by
    hardcoding a scheme anywhere — it would be wrong on the default plain
    listener. The ONE exception is a PINNED `oauth2.issuer`: `issuerOf()` in
-   `oauth2.js` upgrades an `http://` pin to `https://` when the port is TLS and
+   `oauth2.ts` upgrades an `http://` pin to `https://` when the port is TLS and
    logs it, because a client MUST reject a document whose issuer is not the
    identifier it fetched from, and that failure names the issuer rather than the
    scheme. Pinning a different HOST still produces the mismatch it exists for.
@@ -349,8 +349,8 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    draft-ietf-oauth-v2-1-16 — an Internet-Draft, which every row and
    `GET /oauth2/oauth21` say by revision — and it is a LEAF: `helpers.js` and
    `config.js`, nothing else, with every record it decides about PASSED IN.
-   `oauth2_bcp.js`, `sender_constraints.js` (#34) and `oauth2.js` require it.
-   It decides; `oauth2.js` answers,
+   `oauth2_bcp.js`, `sender_constraints.js` (#34) and `oauth2.ts` require it.
+   It decides; `oauth2.ts` answers,
    which is 3f's split.
 
    **`oauth2.oauth21` IMPLIES `oauth2.rfc9700`.** `oauth2_bcp.js`'s `enabled()`
@@ -411,7 +411,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    * **No SAML client authentication**, dropped from the metadata and refused at
      registration too (3f's mirror rule). The RFC 7522 GRANT is untouched.
    * **No repeated parameters, a ten-minute code, `error_description`'s
-     grammar.** The last is applied in one wrapper — `oauth2.js`'s local
+     grammar.** The last is applied in one wrapper — `oauth2.ts`'s local
      `oauthError()` over the helper — and in `redirectBack()`/`redirectTarget()`.
 
    **THREE CHANGES CAME WITH IT AND ARE IN EVERY MODE**, because they are fixes:
@@ -492,17 +492,17 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    one before this existed is on exactly the path it was.
 
 
-3h. **`mtls.js` is a library like `dpop.js`, and it is the OTHER half of RFC
-   9700 section 2.2.** `dpop.js` binds a token to a KEY proved per request;
+3h. **`mtls.js` is a library like `dpop.ts`, and it is the OTHER half of RFC
+   9700 section 2.2.** `dpop.ts` binds a token to a KEY proved per request;
    this binds it to the CLIENT CERTIFICATE the TLS connection was made with (RFC
    8705 section 3). It registers nothing and requires only `helpers.js`,
    `config.js` and `common/crypto.js` (and `common/tls_client_certificates.js`
    lazily), so it cannot join a cycle. Five things are load-bearing:
 
-   **`dpop.js` REQUIRES IT, and that is where the resource-server check goes.**
+   **`dpop.ts` REQUIRES IT, and that is where the resource-server check goes.**
    `presentedAccessToken()` there is the single check `/oauth2/userinfo` and the
    three credential endpoints share — the same reasoning that put that function
-   in `dpop.js` rather than in `vc_issuer.js`. A second check beside it would be
+   in `dpop.ts` rather than in `vc_issuer.js`. A second check beside it would be
    a fourth caller nobody updated.
 
    **The thumbprint is of the DER**, base64url, unpadded — not the PEM, not the
@@ -606,11 +606,11 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    is refused there rather than usable. `tests/rfc8705_mtls.js` holds it — 72
    assertions over real handshakes, 27 mutants all caught.
 
-3j. **`authorization_servers.js` makes one process BE several authorization
+3j. **`authorization_servers.ts` makes one process BE several authorization
    servers, and the document is the server rather than a description of one.**
    The path component both discovery shapes carry selects one; its endpoints
    live under that name (`/{id}/oauth2/…`, registered in one block in
-   `oauth2.js` so the prefixed set cannot drift from the unprefixed one); and
+   `oauth2.ts` so the prefixed set cannot drift from the unprefixed one); and
    the capabilities in its document DRIVE those endpoints. A library requiring
    only `helpers.js`, `config.js`, `realms.js` and `mode.js`. Nine things:
 
@@ -690,7 +690,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
 ---
 
 3x. **`assertion_grant.js` holds RFC 7521 and RFC 7523 in one file, and the
-   dependency runs ONE WAY.** It is a library like `dpop.js`: it registers no
+   dependency runs ONE WAY.** It is a library like `dpop.ts`: it registers no
    route, so its position in the require order is not a position, and it
    requires only `common/` libraries — `helpers.js`, `config.js`,
    `applications.js`, `crypto.js`, `pki.js`, `revocation_status.js`,
@@ -747,7 +747,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    accepted a replay for up to `persistence.pollInterval`), and an assertion is
    **spent only when tokens are issued** — reserved while its token request is
    answered, confirmed on a 2xx and released otherwise, through the response's
-   own `finish`, which is why both grant branches in `oauth2.js` and
+   own `finish`, which is why both grant branches in `oauth2.ts` and
    `client_auth.verify()` pass the request down. The claim is the LAST check of
    the document in every verifier, so a refusal for any other reason is not
    also a use.
@@ -956,14 +956,14 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    a multi-valued one stays a list — `"department": ["engineering"]` in a token
    reads as a bug to every relying party that meets it.
 
-3ah. **`jwt_access_token.js` IS RFC 9068, AND EVERY ACCESS TOKEN HERE IS A JWT
+3ah. **`jwt_access_token.ts` IS RFC 9068, AND EVERY ACCESS TOKEN HERE IS A JWT
    ACCESS TOKEN BY THAT PROFILE (2026-09-13).** Every access token was a JWT
    from the first day, and none was one RFC 9068 recognised: its header said
    `typ: "JWT"` exactly as the ID Token's did, so a resource server following
    section 4 refused every one at step one, and one that did not could be handed
    an ID Token signed by the same key and take it for an access token. A library
    (rule 3): it registers nothing and requires `common/` modules and
-   `authorization_servers.js` (for `ID_SHAPE`), none of which requires it back.
+   `authorization_servers.ts` (for `ID_SHAPE`), none of which requires it back.
 
    **IN EVERY MODE, AND THAT WAS ASKED.** rcbj chose *"RFC 9068 checks in every
    mode"* over gating the refusals on `oauth2.rfc9700`, which is the opposite of
@@ -973,13 +973,13 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    under one name.
 
    **ONE LIBRARY FOR BOTH HALVES, BECAUSE EACH FACT HAS TWO READERS.** The
-   minter (`oauth2.js`) and the resource servers (`dpop.js`'s
+   minter (`oauth2.ts`) and the resource servers (`dpop.ts`'s
    `presentedAccessToken()` — UserInfo, the three credential endpoints, SCIM
    and SSF through it — `mgmt-api/admin_api.js`'s gate, and the embedded
    debugger's) must agree on the header, the issuer and the default audience.
-   **`issuerOf()` MOVED HERE as `issuerFor()`** for that reason: `dpop.js`
-   cannot require `oauth2.js`, and a second copy of "what is this service's
-   issuer" is the fact a check like this must not have two of. `oauth2.js`'s
+   **`issuerOf()` MOVED HERE as `issuerFor()`** for that reason: `dpop.ts`
+   cannot require `oauth2.ts`, and a second copy of "what is this service's
+   issuer" is the fact a check like this must not have two of. `oauth2.ts`'s
    `issuerOf()` is kept, by name, as a one-line call.
 
    **WHAT IS ISSUED.** `accessToken()` signs with `header()` — `signJwt()`
@@ -1013,7 +1013,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    before `at+jwt` is refused once presented; access tokens live an hour.
 
    **WHAT A TOKEN MAY BE ADDRESSED TO — `audiencePlan()`, one decision behind
-   `accessTokenPlan()` in `oauth2.js`**, which classifies each scope value
+   `accessTokenPlan()` in `oauth2.ts`**, which classifies each scope value
    (an application's client_id, a delegated permission, an OIDC scope, or
    anything else) because only that module knows the registry:
 
@@ -1052,11 +1052,11 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    `tests/rfc9068_access_tokens.js` holds the library, the plan and the
    endpoints in a child process.
 
-3ai. **`introspection_jwt.js` IS RFC 9701, AND IT CHANGED WHO MAY CALL
+3ai. **`introspection_jwt.ts` IS RFC 9701, AND IT CHANGED WHO MAY CALL
    `/oauth2/introspect` (2026-09-13).** A library (rule 3): it registers
    nothing and requires `helpers.js`, `common/crypto.js`,
-   `common/applications.js`, `error_codes.js` and `jwt_access_token.js`, none
-   of which requires it back. `introspectEndpoint()` in `oauth2.js` answers; this decides. Three
+   `common/applications.js`, `error_codes.js` and `jwt_access_token.ts`, none
+   of which requires it back. `introspectEndpoint()` in `oauth2.ts` answers; this decides. Three
    decisions were asked of rcbj before it was built and each took the
    recommended answer, and they are the design:
 
@@ -1143,7 +1143,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
      development JSON caller is not restricted: there is nobody to compare the
      token with.
    * **A NAMED AUTHORIZATION SERVER'S PROFILE NARROWS INTROSPECTION** — four
-     catalogue rows in `authorization_servers.js` marked `enforces`:
+     catalogue rows in `authorization_servers.ts` marked `enforces`:
      `introspection_endpoint_auth_methods_supported` refuses a client whose
      declared method is not listed before its credential is read
      (`STS-OAUTH-0295`, 400 for a JWT request and 401 for JSON), and the three
@@ -1166,11 +1166,11 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    is the deployment's to establish and nothing here can decide it.
    `oauth2.introspectionCertificateHeader` is the twelfth `x5c`/`x5u` use case.
 
-3aj. **`software_statement.js` IS RFC 7591 SECTION 2.3, AND A TRUSTED STATEMENT
+3aj. **`software_statement.ts` IS RFC 7591 SECTION 2.3, AND A TRUSTED STATEMENT
    IS THE SECOND DOOR THROUGH A CLOSED REGISTRATION ENDPOINT (2026-09-13).** A
    library (rule 3): it requires `assertion_grant.js` (for `keysForParty()` and
-   `keyFromChain()`, exported for it), `jwt_access_token.js` (the issuer) and
-   `common/` modules, none of which requires it back; `oauth2.js`,
+   `keyFromChain()`, exported for it), `jwt_access_token.ts` (the issuer) and
+   `common/` modules, none of which requires it back; `oauth2.ts`,
    `admin-core/admin_actions.js` and `admin-core/admin_views.js` require it. Four
    decisions were asked of rcbj and each took the recommended answer:
 
@@ -1242,10 +1242,10 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    operation are reached by the owned jobs' generic walks, not by a job about
    statements.
 
-3ak. **`request_object.js` IS RFC 9101, AND A JWT-SECURED REQUEST IS RESOLVED
+3ak. **`request_object.ts` IS RFC 9101, AND A JWT-SECURED REQUEST IS RESOLVED
    BEFORE THE AUTHORIZATION ENDPOINT READS ANYTHING (2026-09-13).** A library
    (rule 3): it requires `common/` modules and `assertion_grant.js` (for
-   `keysForParty()`), none of which requires it back; `par.js` is required
+   `keysForParty()`), none of which requires it back; `par.ts` is required
    LAZILY, because it requires this file for `verifyObject()`. Four decisions
    were asked of rcbj, each taking the recommended answer, and then *"all
    optional spec features should be implemented"*:
@@ -1258,7 +1258,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    | Encryption | A per-realm RSA and EC key published with `use: "enc"` (`common/CLAUDE.md`), plus the symmetric algorithms keyed by the client secret |
 
    **THE OBJECT REPLACES `req.query`, SO EVERY CHECK RUNS ON WHAT WAS SIGNED.**
-   `oauth2.js`'s `authorizeEndpoint()` is now the route handler: a request with
+   `oauth2.ts`'s `authorizeEndpoint()` is now the route handler: a request with
    no `request`/`request_uri` and no signing requirement takes the synchronous
    path to `authorizeRequest()` unchanged; anything else is resolved first, a
    refusal answered 400 on this server (never redirected — the redirect URI is
@@ -1276,7 +1276,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    object, so `jar_prompt_honoured=1` tells the second pass the first honoured
    it — without it `prompt=login` asks for ever. The consequence is that a
    `request_uri` is fetched twice per flow unless `oauth2.requestUriCacheS` is
-   set, and a PAR URN resolves twice (`par.js` spends it at issuance).
+   set, and a PAR URN resolves twice (`par.ts` spends it at issuance).
 
    **THE ORDER OF REFUSALS, EACH WITH ITS CODE (`STS-OAUTH-0340..0373`)**: the
    shape (none required 0340, both or repeated 0341, a profile's
@@ -1293,7 +1293,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    certificate chain 0363 and revocation `STS-PKI-0129`, unsigned claims 0364);
    then the claims (`iss`/`aud` required 0369, `iss` 0365, `aud` 0366,
    `client_id` 0367, a duplicated `response_type` 0371). A PAR URN with no
-   `par.js` is 0372; a throw is 0373.
+   `par.ts` is 0372; a throw is 0373.
 
    **THE SYMMETRIC KEY IS OPENID CONNECT CORE 10.2's**: the leftmost octets of
    SHA-256/384/512 of the client secret, as many as the algorithm (or, for
@@ -1302,7 +1302,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    nothing, so `symmetricKeyFor()` is where it happens.
 
    **WHAT A PROFILE NARROWS**: the six catalogue rows in
-   `authorization_servers.js` marked `enforces` — the two booleans, the
+   `authorization_servers.ts` marked `enforces` — the two booleans, the
    requirement, and the three algorithm lists — through
    `authorizationProfileOf(req)`. **THE REGISTRY**: five attributes
    (`oauthRequestUri`, `oauthRequestObjectSigningAlg`,
@@ -1317,12 +1317,12 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    refuses the plain-http `request_uri` a loopback test server can offer.
    `tests/rfc9101_request_objects.js` holds the rest.
 
-3al. **`par.js` IS RFC 9126, AND A PUSHED REQUEST IS VALIDATED BY THE
+3al. **`par.ts` IS RFC 9126, AND A PUSHED REQUEST IS VALIDATED BY THE
    AUTHORIZATION ENDPOINT'S OWN CHECKS (2026-09-13).** Two libraries (rule 3):
-   `par.js` holds a pushed request behind its `request_uri` and
-   `oauth2_monitor.js` counts what happens to it; both require only `common/`
+   `par.ts` holds a pushed request behind its `request_uri` and
+   `oauth2_monitor.ts` counts what happens to it; both require only `common/`
    modules and each other, and nothing requires them back. The endpoint,
-   `parEndpoint()`, is `oauth2.js`'s, for 3f's split. Four decisions were asked
+   `parEndpoint()`, is `oauth2.ts`'s, for 3f's split. Four decisions were asked
    of rcbj and each took the recommended answer (the third with a change of
    shape):
 
@@ -1351,7 +1351,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    query and run through the same function.
 
    **JAR RESOLVES THE URN; PAR NEVER SEES THE AUTHORIZATION ENDPOINT'S QUERY.**
-   `request_object.js`'s `resolve()` hands a `request_uri` in the
+   `request_object.ts`'s `resolve()` hands a `request_uri` in the
    `urn:ietf:params:oauth:request_uri:` namespace to `par.resolve()` (lazily
    required, so there is no cycle) and never fetches one; the parameters it
    answers REPLACE the query, and `req.stsJar` carries `source: 'par'` and
@@ -1408,9 +1408,9 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    URI's shape. `tests/par.js` holds the library, the registry check and the
    endpoints in a child process; its mutation record is in its header.
 
-3am. **`authorization_details.js` IS RFC 9396, AND A TYPE BELONGS TO THE
+3am. **`authorization_details.ts` IS RFC 9396, AND A TYPE BELONGS TO THE
    RESOURCE THAT DECLARES IT (2026-09-13).** A library (rule 3): it requires
-   `common/` modules only; `oauth2.js` and `consent_screen.js` require it.
+   `common/` modules only; `oauth2.ts` and `consent_screen.ts` require it.
    OpenID4VCI's `openid_credential` was the only type before, hard-coded in
    `parseAuthorizationDetails()`; it is now the BUILT-IN type, its checks
    handed to `parse()` as `builtIn` (`vciAuthorizationDetail()`). Four
@@ -1492,7 +1492,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    declared type's details. `tests/rfc9396_authorization_details.js` holds the
    rest.
 
-3an. **`step_up.js` IS RFC 9470, AND A SESSION IS NO LONGER AN ANSWER TO A
+3an. **`step_up.ts` IS RFC 9470, AND A SESSION IS NO LONGER AN ANSWER TO A
    REQUEST IT DOES NOT MEET (2026-09-13).** Asked for as *a couple of new query
    parameters on the authorization endpoint*; `acr_values` and `max_age` were
    already accepted and access tokens already carried `acr` and `auth_time`
@@ -1501,7 +1501,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    password session got the password session's token back; nothing refused
    `unmet_authentication_requirements`; introspection carried neither claim; and
    no resource server here sent the challenge. A library (rule 3): it requires
-   `common/` modules and `oauth2_monitor.js`; `oauth2.js`, `dpop.js` and the
+   `common/` modules and `oauth2_monitor.ts`; `oauth2.ts`, `dpop.ts` and the
    monitor's view require it. Four decisions were asked of rcbj:
 
    | Asked | Chosen |
@@ -1595,9 +1595,9 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    **IT IS A LEAF (rule 3), AND THAT IS WHY IT IS A FILE RATHER THAN FIVE
    PREDICATES IN `oauth2_bcp.js`.** It registers no route and requires
    `helpers.js`, `config.js` and `oauth21.js`, all three of them leaves
-   themselves. **It may never require `dpop.js`, `mtls.js`, `oauth2_bcp.js`,
-   `applications.js` or `oauth2.js`, because all five require IT** — and the
-   binding one is `dpop.js`, which sits BELOW `oauth2_bcp.js` and so could not
+   themselves. **It may never require `dpop.ts`, `mtls.js`, `oauth2_bcp.js`,
+   `applications.js` or `oauth2.ts`, because all five require IT** — and the
+   binding one is `dpop.ts`, which sits BELOW `oauth2_bcp.js` and so could not
    have reached the predicates there. `mgmt-api/admin_api.js` and
    `debugger/debugger_server.ts` require it too, as cache hits: each verifies
    its own access token instead of going through `presentedAccessToken()`, so
@@ -1610,9 +1610,9 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    IS THE WHOLE OF WHAT `oauth2.refreshTokenRotation` COST.** Four sites in
    `oauth2_bcp.js` (`noteRefreshIssued()`, `spendRefreshToken()`,
    `noteRefreshRotated()`, `checkRefreshRequest()`) and the `FAMILY_CLAIM` in
-   `oauth2.js`'s `refreshToken()` asked "is RFC 9700 mode on"; they ask "is
+   `oauth2.ts`'s `refreshToken()` asked "is RFC 9700 mode on"; they ask "is
    rotation required" now, which is either compliance mode OR the setting.
-   `oauth2_bcp.js` re-exports `rotationRequired` so `oauth2.js` asks ONE name.
+   `oauth2_bcp.js` re-exports `rotationRequired` so `oauth2.ts` asks ONE name.
    **`checkRefreshRequest()` answers two questions since that change and they
    are switched by different things**: the replay of a rotated token belongs to
    rotation and runs whenever rotation is required — rotation without replay
@@ -1661,7 +1661,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
    gives about everything else it does.
 
    **THE RESOURCE SIDE IS AN INVENTORY, AND SO IS WHAT IT LEAVES OUT.**
-   `accessTokenRefusal()` is asked at `presentedAccessToken()` in `dpop.js` —
+   `accessTokenRefusal()` is asked at `presentedAccessToken()` in `dpop.ts` —
    which is UserInfo, the RFC 9470 step-up resource, the three OpenID4VCI
    endpoints, `/scim/v2` and the Shared Signals endpoints in one place — and
    again in `mgmt-api/admin_api.js`'s gate and `debugger/debugger_server.ts`'s,
@@ -1717,7 +1717,7 @@ are facts about `server.js`: `ws-federation/wsfed.ts` must be required AFTER
 
 ## EVERY REFRESH TOKEN IS ENCRYPTED TO ITS OWN REALM (2026-09-12)
 
-`refresh_token_crypto.js` is a library (rule 3) and `refreshToken()` is the one
+`refresh_token_crypto.ts` is a library (rule 3) and `refreshToken()` is the one
 place it seals. A refresh token is a **nested JWT**: the JWS this file always
 minted, encrypted as a compact JWE with `cty: "JWT"` to the realm's own keys.
 Three decisions, each asked of the user before it was built:
@@ -1767,7 +1767,7 @@ the same day and read it at introspection instead.
 
 ## `signed_metadata` is signed once a minute, not once a request
 
-`signedMetadata()` in `oauth2.js` caches, and both discovery documents go
+`signedMetadata()` in `oauth2.ts` caches, and both discovery documents go
 through it — the RFC 8414 one and the OpenID Provider Configuration. Discovery
 is the most-fetched endpoint here (every client reads it first) and signing it
 per request made it the slowest read-only endpoint in the service by a factor
@@ -1796,7 +1796,7 @@ rather than keeping a copy.
 ## The three lifetimes and the skew are SETTINGS now, and one default changed
 
 `ACCESS_TOKEN_TTL` (an hour), `REFRESH_TOKEN_TTL` (thirty days) and the ID
-Token's reuse of the first were module-level `const`s in `oauth2.js` until
+Token's reuse of the first were module-level `const`s in `oauth2.ts` until
 2026-08-24. They are four `config.js` rows read through four one-line functions
 — `accessTokenTtl()`, `idTokenTtl()`, `refreshTokenTtl()`, `tokenClockSkew()` —
 and `/admin/token-lifetimes` is the console page over them. Five things about
@@ -1809,7 +1809,7 @@ this service.
   exactly the old behaviour. Every sentence in this repository that asserted
   "thirty days" about a refresh token was CHANGED rather than left to be
   discovered — `oauth2_bcp.js`'s requirement table and its section 2.2.2 header,
-  `oauth2.js`'s rotation comment, `config.js`'s `refreshIdleSeconds` row and
+  `oauth2.ts`'s rotation comment, `config.js`'s `refreshIdleSeconds` row and
   README.md. A default that moves while five documents still name the old number
   is worse than either number.
 * **THE ACCESS TOKEN AND THE ID TOKEN NO LONGER SHARE A NUMBER.** They shared a
@@ -1846,7 +1846,7 @@ this service.
 The allowance passed to `jwt.verify()` as `clockTolerance` wherever this service
 reads back a token it signed. **Six places take it and a seventh is not in this
 directory**: `tokenFailure()`, the refresh grant, token exchange,
-`/oauth2/introspect`, `/oauth2/revoke`, `dpop.js`'s `presentedAccessToken()` —
+`/oauth2/introspect`, `/oauth2/revoke`, `dpop.ts`'s `presentedAccessToken()` —
 the check the four protected endpoints share — and `common/admin_stats.js`'s
 `tokenStateOf()`, which is what every console screen reports state from.
 
@@ -1866,9 +1866,9 @@ and a deployment wanting a strict assertion check and a forgiving expiry reading
 has to be able to say so. Capped at 300, which is what `krb5.clockSkew` allows,
 because a window wider than that has stopped being a tolerance.
 
-**`dpop.js` requires `config.js` for it and joins no cycle** — that module
+**`dpop.ts` requires `config.js` for it and joins no cycle** — that module
 requires only `config_file.js` and `error_codes.js`, so the no-cycle property
-rule 3 asserts about `dpop.js` is unchanged.
+rule 3 asserts about `dpop.ts` is unchanged.
 
 ## THE USERINFO ENDPOINT HAS FOUR LAYERS AND A CLIENT CONTROLS ONE OF THEM
 
@@ -1913,7 +1913,7 @@ to be swept and would not survive a refresh. `claims` is on
 and the refresh grant carries it forward so that a renewal cannot narrow the
 grant any more than it can widen it.
 
-**THE FOUR LAYERS, LATER WINNING**, written out at the merge in `oauth2.js`
+**THE FOUR LAYERS, LATER WINNING**, written out at the merge in `oauth2.ts`
 because that is where somebody debugging an unexpected member is looking:
 
 1. the configured `userinfo` set — what everybody gets;
@@ -1967,7 +1967,7 @@ names every claim a request may ask for.
 
 `response_mode=form_post` is answered with a self-submitting form whose script
 is `/oauth2/autopost.js` — one entry in the root `CLAUDE.md`'s inventory of
-pages that relax `script-src`. The argument for it is made in `oauth2.js`, above
+pages that relax `script-src`. The argument for it is made in `oauth2.ts`, above
 `AUTOPOST_SCRIPT`, and is not repeated here.
 
 ---
@@ -2003,7 +2003,7 @@ pages that relax `script-src`. The argument for it is made in `oauth2.js`, above
 * **It does not verify access tokens it did not issue — except at UserInfo.**
   OID4VCI lets the authorization server be somebody else, so at the three
   credential endpoints a foreign token is accepted as-is. The consequence for DPoP
-  is stated in `presentedAccessToken()` (in `dpop.js`, shared by all four
+  is stated in `presentedAccessToken()` (in `dpop.ts`, shared by all four
   protected endpoints): for such a token, `cnf.jkt` is a claim anyone could have
   written, and the binding is real only for tokens this service issued.
   `/oauth2/userinfo` is the exception and is meant to be — it answers "who did YOU
@@ -2152,7 +2152,7 @@ produced is one good for a day and renewable.
 
 ---
 
-3n. **`frontchannel_logout.js` is a library (rule 3) and it exists because THREE
+3n. **`frontchannel_logout.ts` is a library (rule 3) and it exists because THREE
    sign-outs have to fan out identically.** It registers no route, so its place
    in the require order does not matter, and it requires `helpers.js`,
    `config.js`, `app.js`, `applications.js`, `validation.js` and
@@ -2165,10 +2165,10 @@ produced is one good for a day and renewable.
    notification URLs (`notificationsFor()`), the CSP the iframes need
    (`contentSecurityPolicyFor()`), and the block of HTML (`render()`).
 
-   **It is a file of its own rather than code in `oauth2.js` for one reason:**
+   **It is a file of its own rather than code in `oauth2.ts` for one reason:**
    `/oauth2/logout`, the protocol-independent `/logout` and the console all have
-   to render the SAME fan-out, and `logout/logout.ts` reaching into `oauth2.js`
-   for it would be a require this file makes unnecessary — `oauth2.js` requires
+   to render the SAME fan-out, and `logout/logout.ts` reaching into `oauth2.ts`
+   for it would be a require this file makes unnecessary — `oauth2.ts` requires
    THIS, so the other direction would be a cycle.
 
    **`sid` REVERSED A DOCUMENTED DECISION AND THE REVERSAL IS THE INTERESTING
@@ -2215,7 +2215,7 @@ produced is one good for a day and renewable.
    stays `false`; advertising it because front-channel arrived would be the
    overstatement that document exists not to make.
 
-   `outstandingCodesFor()` / `dropCode()` are exported from `oauth2.js` for the
+   `outstandingCodesFor()` / `dropCode()` are exported from `oauth2.ts` for the
    same feature and are FUNCTIONS rather than the `authzCodes` Map, for the
    reason `registeredClients` is no longer exported: a caller holding the Map
    would be a second place that decides what a code is, and would miss
@@ -2315,7 +2315,7 @@ minute was reported as never having asked for it. It is CONDITIONAL on the body
 carrying a scope, because an `authorization_code` redemption does not (the grant
 does) and writing an empty value would record that the client asked for nothing.
 
-## `consent_screen.js`: the screen, and why it is not in `oauth2.js`
+## `consent_screen.ts`: the screen, and why it is not in `oauth2.ts`
 
 Rule 4c. `/oauth2/consent` is the one thing between a signed-in person and an
 issued credential since 2026-09-01, and it is a module of its own for the reason
@@ -2323,7 +2323,7 @@ issued credential since 2026-09-01, and it is a module of its own for the reason
 somebody else owns and takes it back afterwards**, and the thing that owns the
 screen must not have to know what OAuth is.
 
-**IT IS REQUIRED AFTER `authn.js` AND BEFORE `oauth2.js`, and both halves are
+**IT IS REQUIRED AFTER `authn.js` AND BEFORE `oauth2.ts`, and both halves are
 dependencies.** AFTER, because it reads that module's session — to check that
 the person answering is the person the question was asked of — and draws with
 its stylesheet, so that two screens a person meets seconds apart in one flow
@@ -2636,7 +2636,7 @@ sign a SAML assertion. A person has no registered-by-value certificate.
 **Below the signature, a `<Subject>` that is not that person is refused
 `STS-OAUTH-0242`** — `subjectIsSelf(record, subject, 'saml')`, the username or the
 SAML declaration. The verdict carries `issuerKind` and `person` like the JWT
-grant's, and `oauth2.js` writes the authentication note and the delegation row as
+grant's, and `oauth2.ts` writes the authentication note and the delegation row as
 *a person presenting themselves* rather than as a third party vouching.
 `tests/person_credentials.js` holds it in process and
 `tests/vendored/sts_user_credentials.js` at `/oauth2/token`.
@@ -2673,7 +2673,7 @@ read and the write inside ONE process as well, so two concurrent requests to one
 could already both win. Each is now spent through `cluster/cluster_claims.js`
 (`cluster/CLAUDE.md`): one `INSERT … ON CONFLICT` on postgres, this process's memory
 otherwise. The capability rows `oauth.codes-once`, `oauth.refresh-rotation` and
-`oauth.dpop-jti` are provided by `oauth2.js`, `oauth2_bcp.js` and `dpop.js`.
+`oauth.dpop-jti` are provided by `oauth2.ts`, `oauth2_bcp.js` and `dpop.ts`.
 
 | Value | Scope | Where it is spent | The loser |
 |---|---|---|---|
@@ -2712,7 +2712,7 @@ does not reach.
 and `presentedAccessToken()` has synchronous callers in three other families (the
 credential endpoints, SCIM, Shared Signals) besides UserInfo; an async verifier would be a
 change to every one, and a caller that forgot the `await` would be a resource server that
-checks nothing. So `oauth2.js` registers `dpop.proofClaims()` with `app.use()` above its
+checks nothing. So `oauth2.ts` registers `dpop.proofClaims()` with `app.use()` above its
 first route — above every route that reads a proof, since nothing required before it
 does — and that middleware reserves the proof's unverified `jti`. `verifyProof()` refuses a
 refused reservation at the place the local replay check already sits (so every earlier

@@ -5,7 +5,7 @@
 // ===========================================================================
 // RFC 9470 — OAUTH 2.0 STEP UP AUTHENTICATION CHALLENGE PROTOCOL (2026-09-13).
 //
-// `oauth-oidc/step_up.js` argues the design. What is held here, every feature
+// `oauth-oidc/step_up.ts` argues the design. What is held here, every feature
 // with the request that must work and the requests that must not:
 //
 //   1. THE LIBRARY: the parse, the ordered levels and the three key aliases,

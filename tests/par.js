@@ -5,7 +5,7 @@
 // ===========================================================================
 // RFC 9126 — OAUTH 2.0 PUSHED AUTHORIZATION REQUESTS (2026-09-13).
 //
-// `oauth-oidc/par.js` argues the design. What is held here, every feature with
+// `oauth-oidc/par.ts` argues the design. What is held here, every feature with
 // the request that must work and the requests that must not:
 //
 //   1. THE LIBRARY: the request_uri namespace and its entropy, the binding to

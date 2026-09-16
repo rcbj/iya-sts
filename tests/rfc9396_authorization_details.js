@@ -6,7 +6,7 @@
 // RFC 9396 — RICH AUTHORIZATION REQUESTS, EVERY FEATURE, POSITIVE AND NEGATIVE
 // (2026-09-13).
 //
-// `oauth-oidc/authorization_details.js` argues the design. What is held here:
+// `oauth-oidc/authorization_details.ts` argues the design. What is held here:
 //
 //   1. THE REGISTRY: a resource's type definition
 //      (`authorizationDetailsTypeOf`) in every shape it may and may not take,
