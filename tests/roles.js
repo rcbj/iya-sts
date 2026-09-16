@@ -5,12 +5,12 @@
 // ===========================================================================
 // THE ROLE REGISTER AND THE ISSUANCE GATE, IN PROCESS.
 //
-// The line CLAUDE.md draws is "can it be asserted by driving the running
-// service over HTTP?" Most of this feature CAN be — making a role, narrowing
-// an application, watching `/oauth2/token` answer `access_denied` — and all of
-// that is in `tests/vendored/sts_roles.js`, which drives an authoring door and
-// a deciding door in one job because that is the only way either half means
-// anything.
+// The line tests/CLAUDE.md draws is "can it be asserted by driving the
+// running service over HTTP?" Most of this feature CAN be — making a role,
+// narrowing an application, watching `/oauth2/token` answer `access_denied` —
+// and all of that is in `tests/vendored/sts_roles.js`, which drives an
+// authoring door and a deciding door in one job because that is the only way
+// either half means anything.
 //
 // WHAT IS HERE IS THE FIVE THINGS THAT CANNOT BE, and each is a property of
 // the MODULES rather than of a running service:
@@ -46,7 +46,7 @@
 // **IT RESTORES BOTH SLOTS IT TOUCHES**, which `tests/CLAUDE.md` makes
 // non-optional: `run.js` requires every file in this directory into ONE
 // process, so a directory left installed here is what `xacml_service.js` gets
-// when it runs next.
+// when it runs later in the same process.
 // ===========================================================================
 
 const roles = require('../common/roles');
@@ -82,9 +82,10 @@ function directoryOf(table, groupsByUser) {
 
 function run(t) {
   log.debug("Entering run().");
-  // WHAT WAS INSTALLED, not `null`. `xacml_store.js` argues why that
-  // distinction is not pedantry and it is the same one-process, one-reference
-  // situation here: another file in this run may have filled these.
+  // WHAT WAS INSTALLED, not `null`. `xacml/xacml_store.js`'s
+  // `directoryInstalled()` argues why that distinction is not pedantry, and it
+  // is the same one-process, one-reference situation here: another file in
+  // this run may have filled these.
   const beforeDirectory = roles.directoryInstalled();
   const beforeDecider = gate.deciderInstalled();
 
