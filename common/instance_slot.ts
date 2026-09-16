@@ -140,6 +140,11 @@ class InstanceSlot<T extends object> {
         (...inner: unknown[]) => unknown;
       return method.apply(target, args);
     };
+    // The name the old export had: before R2 each was
+    // `instance.method.bind(instance)`, whose name is `bound method`. Express
+    // reports a middleware by its name, so the route list — which R2 must
+    // leave unchanged — reads the same, and so does any stack trace.
+    Object.defineProperty(facade, 'name', { value: 'bound ' + String(key) });
     this.log.debug("Leaving InstanceSlot.forward().");
     return facade as unknown as T[K];
   }
